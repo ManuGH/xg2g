@@ -46,8 +46,10 @@ import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem'
 import { useTvInitialFocus } from '../../hooks/useTvInitialFocus';
 import {
   createInitialPlaybackDomainState,
-  playbackMachine,
 } from './orchestrator/playbackMachine';
+import { usePlaybackMachineRuntime } from './orchestrator/usePlaybackMachineRuntime';
+import type { PlaybackCommand, PlaybackCommandExecutor } from './orchestrator/playbackTypes';
+import { sessionTimeline } from './orchestrator/sessionTimeline';
 import type { VodStreamMode } from './orchestrator/playbackTypes';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
 import {
@@ -337,11 +339,15 @@ export function usePlaybackOrchestrator(
     }
   }, [sRef]);
 
+  const executeCommandRef = useRef<PlaybackCommandExecutor | null>(null);
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
-  const [playbackState, dispatchPlayback] = useReducer(
-    playbackMachine,
-    requestedDuration,
-    createInitialPlaybackDomainState,
+  const [playbackState, dispatchPlayback] = usePlaybackMachineRuntime(
+    () => createInitialPlaybackDomainState(requestedDuration),
+    useCallback((command) => {
+      if (executeCommandRef.current) {
+        executeCommandRef.current(command);
+      }
+    }, []),
   );
   const playbackStateRef = useRef(playbackState);
   const {
@@ -805,6 +811,7 @@ export function usePlaybackOrchestrator(
     reportError,
     waitForSessionReady,
     shouldPreferNativeHls: shouldPreferNativeWebKitHls,
+    revealHoldMs: props.revealHoldMs,
     setStats,
     setStatus,
     clearPlaybackFailure,
@@ -1666,6 +1673,55 @@ export function usePlaybackOrchestrator(
     }
   }, [stopStream, startStream]);
   // --- Effects ---
+  executeCommandRef.current = useCallback((command: PlaybackCommand) => {
+    switch (command.type) {
+      case 'command.timeline.record':
+        sessionTimeline.record(command.kind as any, command.detail);
+        break;
+      case 'command.timeline.begin_attempt':
+        sessionTimeline.beginAttempt(command.epoch);
+        break;
+      case 'command.timeline.end_attempt':
+        sessionTimeline.endAttempt(command.reason);
+        break;
+      case 'command.timeline.report':
+        telemetry.emit('ui.player.timeline', { reason: command.reason, events: sessionTimeline.describe() });
+        break;
+      case 'command.playback.start':
+        void startStream(command.serviceRef);
+        break;
+      case 'command.playback.stop':
+        void stopStream(!command.notifyClose);
+        break;
+      case 'command.telemetry.emit':
+        telemetry.emit(command.eventName, command.payload);
+        break;
+      case 'command.playback.schedule_auto_fallback':
+        setTimeout(() => {
+          if (!isStalePlaybackEpoch(command.epoch)) {
+            dispatchPlayback({
+              type: 'intent.start.requested',
+              epoch: command.epoch,
+              kind: playbackStateRef.current.playbackMode === 'VOD' ? 'vod' : (playbackStateRef.current.playbackMode === 'SRC' ? 'src' : 'live'),
+              serviceRef: sRef,
+              recordingId: recordingId || undefined,
+              srcUrl: src || undefined,
+              explicitProfile: command.profile,
+            });
+          }
+        }, command.delayMs);
+        break;
+    }
+  }, [
+    startStream,
+    stopStream,
+    dispatchPlayback,
+    isStalePlaybackEpoch,
+    sRef,
+    recordingId,
+    src,
+  ]);
+
   // Update sRef on channel change
   useEffect(() => {
     if (channel) {
@@ -1681,9 +1737,17 @@ export function usePlaybackOrchestrator(
     const hasSource = !!(src || recordingId || normalizedRef);
     if (hasSource) {
       mounted.current = true;
-      startStream(normalizedRef || undefined);
+      dispatchPlayback({
+        type: 'intent.start.requested',
+        epoch: allocatePlaybackEpoch(),
+        kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+        serviceRef: normalizedRef || undefined,
+        recordingId: recordingId || undefined,
+        srcUrl: src || undefined,
+        explicitProfile: explicitProfile,
+      });
     }
-  }, [autoStart, src, recordingId, sRef, startStream]);
+  }, [autoStart, src, recordingId, sRef, explicitProfile, allocatePlaybackEpoch, dispatchPlayback]);
 
   useEffect(() => {
     dispatchPlayback({
@@ -2402,8 +2466,15 @@ export function usePlaybackOrchestrator(
         // ignore
       }
       if (hasActivePlayback()) {
-        teardownActivePlayback();
-        setTimeout(() => startStream(sRef), 100);
+        dispatchPlayback({
+          type: 'intent.start.requested',
+          epoch: allocatePlaybackEpoch(),
+          kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+          serviceRef: sRef || undefined,
+          recordingId: recordingId || undefined,
+          srcUrl: src || undefined,
+          explicitProfile: profile,
+        });
       }
     },
   };
