@@ -890,14 +890,13 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 	require.True(t, vaapiDevIdx >= 0 && vaapiDevIdx < iIdx, "vaapi_device must come before -i")
 	assert.Equal(t, "/dev/dri/renderD128", args[vaapiDevIdx+1])
 
-	assert.Contains(t, args, "-hwaccel")
-	assert.Contains(t, args, "-hwaccel_output_format")
+	assert.NotContains(t, args, "-hwaccel")
+	assert.NotContains(t, args, "-hwaccel_output_format")
 
 	// Encoder
 	assert.Contains(t, args, "h264_vaapi")
 
-	// Deinterlace in GPU memory (NOT CPU yadif)
-	assert.Contains(t, args, "deinterlace_vaapi")
+	// Deinterlace via stable encode-only path
 	assert.NotContains(t, args, "yadif")
 
 	// CQP with an explicit QP becomes the primary quality knob.
@@ -1092,11 +1091,11 @@ func TestBuildArgs_VaapiHEVCDeinterlaceFallsBackToH264UntilVerified(t *testing.T
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 	assert.Contains(t, args, "-vaapi_device")
-	assert.Contains(t, args, "-hwaccel", "safe h264 fallback may still use the verified full VAAPI path")
-	assert.Contains(t, args, "-hwaccel_output_format", "safe h264 fallback may still use the verified full VAAPI path")
+	assert.NotContains(t, args, "-hwaccel", "safe h264 fallback uses stable encode-only path")
+	assert.NotContains(t, args, "-hwaccel_output_format", "safe h264 fallback uses stable encode-only path")
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Contains(t, vf, "deinterlace_vaapi")
+	assert.Contains(t, vf, "bwdif=")
 	assert.Contains(t, args, "h264_vaapi")
 	assert.NotContains(t, args, "hevc_vaapi")
 	assert.NotContains(t, args, "-tag:v", "h264 fallback must not emit hvc1 tags")
@@ -1200,12 +1199,12 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 	assert.Contains(t, args, "-vaapi_device")
-	assert.Contains(t, args, "-hwaccel")
-	assert.Contains(t, args, "-hwaccel_output_format")
+	assert.NotContains(t, args, "-hwaccel")
+	assert.NotContains(t, args, "-hwaccel_output_format")
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Contains(t, vf, "deinterlace_vaapi")
-	assert.NotContains(t, vf, "bwdif=")
+	assert.Contains(t, vf, "bwdif=")
+	assert.NotContains(t, vf, "deinterlace_vaapi")
 	assert.Contains(t, args, "hevc_vaapi")
 }
 
@@ -2028,7 +2027,7 @@ func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T
 	require.NoError(t, err)
 	assert.Contains(t, args, "h264_vaapi")
 	assert.NotContains(t, args, "av1_vaapi")
-	assert.Contains(t, args, "-hwaccel", "safe h264 fallback may still use the verified full VAAPI path")
+	assert.NotContains(t, args, "-hwaccel", "safe h264 fallback uses stable encode-only path")
 }
 
 func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {

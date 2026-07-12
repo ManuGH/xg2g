@@ -9,8 +9,8 @@ afterEach(() => {
 });
 
 describe('nativeHevcExperiment flag', () => {
-  it('is off by default', () => {
-    expect(isNativeHevcSafariExperimentEnabled()).toBe(false);
+  it('is on by default with the kill switch off', () => {
+    expect(isNativeHevcSafariExperimentEnabled()).toBe(true);
     expect(isNativeHevcSafariKillSwitchOn()).toBe(false);
   });
 

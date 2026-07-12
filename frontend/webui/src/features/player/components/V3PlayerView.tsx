@@ -331,6 +331,31 @@ export function V3PlayerView({
               </Button>
             )}
 
+            <div style={{ display: 'inline-flex', alignItems: 'center', margin: '0 4px' }}>
+              <select
+                value={viewState.explicitProfile}
+                onChange={(e) => actions.changeProfile(e.target.value)}
+                style={{
+                  background: 'rgba(0,0,0,0.5)',
+                  color: 'var(--text-primary, #fff)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '4px',
+                  padding: '4px 8px',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  outline: 'none'
+                }}
+                title="Codec / Profile"
+              >
+                <option value="auto" style={{ color: 'black' }}>Auto (Smart)</option>
+                <option value="copy" style={{ color: 'black' }}>Direct Play (Copy)</option>
+                <option value="av1_hw" style={{ color: 'black' }}>AV1 Hardware</option>
+                <option value="hevc_hw" style={{ color: 'black' }}>HEVC Hardware</option>
+                <option value="h264_fmp4" style={{ color: 'black' }}>H.264 fMP4</option>
+                <option value="repair" style={{ color: 'black' }}>Repair (Rescue)</option>
+              </select>
+            </div>
+
             {viewState.showNativeFullscreenButton && (
               <Button
                 variant="ghost"

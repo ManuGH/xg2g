@@ -55,6 +55,9 @@ func (a *LocalAdapter) shouldAvsyncAtrim(spec ports.StreamSpec) bool {
 	if !a.LiveAvsyncAtrim {
 		return false
 	}
+	if spec.Profile.TranscodeVideo {
+		return false
+	}
 	if spec.Mode != ports.ModeLive {
 		return false
 	}

@@ -317,14 +317,14 @@ func PickProfileForCodecsWithCapabilitiesAndHost(raw string, hwaccelMode profile
 	}
 
 	if hwAllowed {
-		if _, ok := requested["hevc"]; ok {
-			if cap, exists := capabilityForRequestedCodec(encoderCaps, "hevc"); exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
-				candidates = append(candidates, newCandidate(profiles.ProfileSafariHEVCHW, "hevc", cap.ProbeElapsed, 1))
-			}
-		}
 		if _, ok := requested["av1"]; ok {
 			if cap, exists := capabilityForRequestedCodec(encoderCaps, "av1"); exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
-				candidates = append(candidates, newCandidate(profiles.ProfileAV1HW, "av1", cap.ProbeElapsed, 2))
+				candidates = append(candidates, newCandidate(profiles.ProfileAV1HW, "av1", cap.ProbeElapsed, 1))
+			}
+		}
+		if _, ok := requested["hevc"]; ok {
+			if cap, exists := capabilityForRequestedCodec(encoderCaps, "hevc"); exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
+				candidates = append(candidates, newCandidate(profiles.ProfileSafariHEVCHW, "hevc", cap.ProbeElapsed, 2))
 			}
 		}
 	}

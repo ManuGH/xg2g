@@ -223,6 +223,7 @@ export interface V3PlayerViewState {
   resumeActionLabel: string;
   startOverLabel: string;
   resumePositionSeconds: number | null;
+  explicitProfile: string;
   playback: {
     durationSeconds: number | null;
   };
@@ -248,6 +249,7 @@ export interface PlaybackOrchestratorActions {
   toggleErrorDetails(): void;
   resumeFrom(positionSeconds: number): void;
   startOver(): void;
+  changeProfile(profile: string): void;
 }
 
 export interface UsePlaybackOrchestratorResult {
@@ -277,6 +279,13 @@ export function usePlaybackOrchestrator(
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
   );
+  const [explicitProfile, setExplicitProfile] = useState<string>(() => {
+    try {
+      return localStorage.getItem('xg2g.player.explicitProfile') || 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
   const ttffStartT0Ref = useRef<number | null>(null);
   const ttffManifestT1Ref = useRef<number | null>(null);
   const [ttffMetrics, setTtffMetrics] = useState<{
@@ -2318,6 +2327,7 @@ export function usePlaybackOrchestrator(
     resumeActionLabel: t('player.resumeAction'),
     startOverLabel: t('player.startOver'),
     resumePositionSeconds: resumeState?.posSeconds ?? null,
+    explicitProfile,
     playback: {
       durationSeconds,
     },
@@ -2353,6 +2363,18 @@ export function usePlaybackOrchestrator(
     startOver() {
       seekWhenReady(0);
       setShowResumeOverlay(false);
+    },
+    changeProfile(profile: string) {
+      setExplicitProfile(profile);
+      try {
+        localStorage.setItem('xg2g.player.explicitProfile', profile);
+      } catch {
+        // ignore
+      }
+      if (hasActivePlayback()) {
+        teardownActivePlayback();
+        setTimeout(() => startStream(sRef), 100);
+      }
     },
   };
 

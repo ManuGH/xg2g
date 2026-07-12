@@ -11,8 +11,9 @@ import { isTruthyOverrideValue } from './iosNativeAv1Experiment';
 // transcode, no quality loss). This deviates from the MSE/hls.js default, so it
 // is gated and HEVC-only; H.264 stays on hls.js/MSE (seek benefits).
 //
-// Default OFF, no hostname auto-enable: this must be an explicit, per-device
-// opt-in for the device test before any broader rollout.
+// Default ON for Safari devices that positively report native HEVC Main10.
+// The runtime capability check remains the primary guard; the kill switch is
+// retained as an operational escape hatch.
 //
 // Enable:  ?xg2g_native_hevc=1  or  localStorage XG2G_NATIVE_HEVC_SAFARI=1
 // Kill:    localStorage XG2G_NATIVE_HEVC_SAFARI_KILL=1  (checked first, forces OFF)
@@ -55,5 +56,5 @@ export function isNativeHevcSafariExperimentEnabled(): boolean {
   } catch {
     // ignore
   }
-  return false;
+  return true;
 }

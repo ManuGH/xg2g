@@ -37,10 +37,10 @@ describe('shouldForceRevealNativeVideo', () => {
     ).toBe(false);
   });
 
-  it('requires decodable data (readyState >= 3)', () => {
+  it('trusts sustained playhead advancement when Safari leaves readyState below 3', () => {
     expect(
       shouldForceRevealNativeVideo({ paused: false, readyState: 2, advancedSeconds: 0.5 }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('honours the threshold boundary exactly', () => {

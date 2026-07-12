@@ -163,6 +163,24 @@ function canPlayHevcMain10(videoEl: VideoElementRef): boolean {
   }
 }
 
+function canPlayNativeAv1(videoEl: VideoElementRef): boolean {
+  if (!videoEl) return false;
+  try {
+    return videoEl.canPlayType('video/mp4; codecs="av01.0.05M.08"') !== '';
+  } catch {
+    return false;
+  }
+}
+
+function isSafariWebKitRuntime(): boolean {
+  try {
+    const ua = navigator.userAgent || '';
+    return /safari/i.test(ua) && !/(chrome|chromium|crios|fxios|edgios|android)/i.test(ua);
+  } catch {
+    return false;
+  }
+}
+
 export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupported: boolean = false): boolean {
   if (!videoEl) return false;
   try {
@@ -178,7 +196,12 @@ export function shouldPreferNativeWebKitHls(videoEl?: VideoElementRef, hlsJsSupp
     // Takes precedence over the MMS/AV1 hls.js routing below. The backend only
     // flips the container to fMP4/hvc1 for HEVC sources, so H.264 stays MPEG-TS
     // (still plays via native Safari HLS). See nativeHevcExperiment.ts / ADR-026.
-    if (isNativeHevcSafariExperimentEnabled() && canPlayHevcMain10(videoEl)) {
+    if (
+      isNativeHevcSafariExperimentEnabled()
+      && isSafariWebKitRuntime()
+      && canPlayHevcMain10(videoEl)
+      && canPlayNativeAv1(videoEl)
+    ) {
       return true;
     }
 

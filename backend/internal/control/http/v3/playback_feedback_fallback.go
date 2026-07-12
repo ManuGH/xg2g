@@ -57,13 +57,13 @@ func buildPlaybackFeedbackRepairPlan(current model.ProfileSpec) playbackFeedback
 	next.PolicyModeHint = ports.RuntimeModeSafe
 	next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
 	next.TranscodeVideo = true
-	next.Deinterlace = false
+	next.Deinterlace = true
 	next.HWAccel = ""
 	next.VideoCodec = "libx264"
 	next.VideoCRF = 24
 	next.VideoMaxWidth = 1280
 	next.Preset = "veryfast"
-	next.Container = "fmp4"
+	next.Container = "mpegts"
 	return playbackFeedbackFallbackPlan{
 		id:      playbackFeedbackFallbackPlanRepairFMP4,
 		reason:  playbackFeedbackFallbackReasonDefaultRepair,
