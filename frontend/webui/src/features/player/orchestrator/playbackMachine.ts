@@ -1,8 +1,10 @@
 import type { AppError } from '../../../types/errors';
 import type { PlayerStatus } from '../../../types/v3-player';
 import type {
+  PlaybackCommand,
   PlaybackDomainState,
   PlaybackMachineEvent,
+  PlaybackMachineResult,
   PlaybackFailure,
   PlaybackFailureSource,
   MediaPhase,
@@ -301,4 +303,60 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
     default:
       return state;
   }
+}
+
+export function runPlaybackMachine(
+  state: PlaybackDomainState,
+  event: PlaybackMachineEvent,
+): PlaybackMachineResult {
+  const commands: PlaybackCommand[] = [];
+
+  if (event.type === 'intent.stop.requested') {
+    if (event.epoch < state.epoch.playback) {
+      return { state, commands: [] };
+    }
+    return {
+      state,
+      commands: [
+        { type: 'command.timeline.end_attempt', reason: event.reason },
+        { type: 'command.timeline.report', reason: event.reason },
+        { type: 'command.playback.stop', epoch: event.epoch, reason: event.reason, notifyClose: event.notifyClose },
+      ],
+    };
+  }
+
+  if (event.type === 'intent.start.requested') {
+    if (event.epoch < state.epoch.playback) {
+      return { state, commands: [] };
+    }
+    return {
+      state,
+      commands: [
+        {
+          type: 'command.playback.start',
+          epoch: event.epoch,
+          kind: event.kind,
+          serviceRef: event.serviceRef,
+          recordingId: event.recordingId,
+          srcUrl: event.srcUrl,
+          explicitProfile: event.explicitProfile,
+        },
+      ],
+    };
+  }
+
+  const nextState = playbackMachine(state, event);
+  if (nextState === state) {
+    return { state, commands: [] };
+  }
+
+  if (nextState.sessionPhase !== state.sessionPhase) {
+    commands.push({
+      type: 'command.timeline.record',
+      kind: 'session_phase',
+      detail: nextState.sessionPhase,
+    });
+  }
+
+  return { state: nextState, commands };
 }

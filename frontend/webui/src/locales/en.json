@@ -317,7 +317,8 @@
     "liveWindowState": "Live Window",
     "liveWindowReady": "Window ready",
     "liveWindowAtEdge": "At live edge",
-    "liveWindowBehindEdge": "{{seconds}}s behind live"
+    "liveWindowBehindEdge": "{{seconds}}s behind live",
+    "timeline": "Timeline"
   },
   "dashboard": {
     "controlSummary": "Control summary",

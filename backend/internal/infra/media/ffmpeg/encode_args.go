@@ -66,7 +66,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	} else {
 		args = appendAV1VAAPILevelArgs(args)
 	}
-	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
+	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv", "-chroma_sample_location", "left")
 	return args
 }
 
@@ -106,7 +106,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	} else {
 		args = appendAV1VAAPILevelArgs(args)
 	}
-	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
+	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv", "-chroma_sample_location", "left")
 	return args
 }
 
@@ -142,6 +142,7 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	if f := transcodeSharpenFilterForProfile(spec.Profile); f != "" {
 		parts = append(parts, f)
 	}
+	parts = append(parts, "setparams=field_mode=prog:range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709:chroma_location=left")
 	uploadFormat := "nv12"
 	if isAV1 {
 		uploadFormat = "p010le"
@@ -268,7 +269,7 @@ func defaultTranscodeSharpenStrength(sourceHeight int) float64 {
 	case sourceHeight <= 720:
 		return 0.75
 	default:
-		return 0.5
+		return 0.35
 	}
 }
 
@@ -290,7 +291,7 @@ func av1VAAPIGeometryPadFilter() string {
 	//     1082-line frames. Padding to a 16-line height keeps the decoded
 	//     geometry stable for native HLS clients; SAR is adjusted before padding
 	//     so the display aspect ratio is unchanged after 1088p.
-	return "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=lanczos," +
+	return "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=lanczos+accurate_rnd+full_chroma_int," +
 		"setsar=sar=sar*ceil(h/16)*16/h:max=1000," +
 		"pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
@@ -309,7 +310,7 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
 		}
 		if isAV1 {
-			args = append(args, "-async_depth", "1")
+			args = append(args, "-async_depth", "2")
 		}
 		return args
 	}
@@ -347,13 +348,13 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			args = append(args, "-global_quality", strconv.Itoa(envIntBounded("XG2G_AV1_QVBR_QUALITY", 90, 1, 255)))
 		}
 		if isAV1 {
-			args = append(args, "-async_depth", "1")
+			args = append(args, "-async_depth", "2")
 		}
 		return args
 	}
 
 	if isAV1 {
-		args = append(args, "-rc_mode", "CQP", "-global_quality", "28", "-async_depth", "1")
+		args = append(args, "-rc_mode", "CQP", "-global_quality", "28", "-async_depth", "2")
 		return args
 	}
 	return append(args, "-global_quality", "23")

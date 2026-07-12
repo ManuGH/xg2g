@@ -81,6 +81,54 @@ describe('resolvePlaybackRequestProfile', () => {
       'recording'
     )).toBe('bandwidth');
   });
+
+  it('treats an AV1-only client as a modern quality path', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext(),
+      buildCapabilities({ videoCodecs: ['av1'] }),
+      'live'
+    )).toBe('quality');
+  });
+
+  it('withholds quality when Media Capabilities reports no smooth modern codec', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext(),
+      buildCapabilities({
+        videoCodecs: ['h264', 'hevc'],
+        videoCodecSignals: [
+          { codec: 'h264', supported: true, smooth: false },
+          { codec: 'hevc', supported: true, smooth: false },
+        ],
+      }),
+      'live'
+    )).toBeUndefined();
+  });
+
+  it('keeps quality when at least one modern codec is reported smooth', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext(),
+      buildCapabilities({
+        videoCodecs: ['h264', 'av1'],
+        videoCodecSignals: [
+          { codec: 'h264', supported: true, smooth: false },
+          { codec: 'av1', supported: true, smooth: true, powerEfficient: true },
+        ],
+      }),
+      'live'
+    )).toBe('quality');
+  });
+
+  it('ignores signals without a smooth verdict instead of demoting', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext(),
+      buildCapabilities({
+        videoCodecSignals: [
+          { codec: 'h264', supported: true },
+        ],
+      }),
+      'live'
+    )).toBe('quality');
+  });
 });
 
 describe('buildPlaybackProfileHeaders', () => {

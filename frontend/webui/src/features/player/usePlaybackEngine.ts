@@ -72,6 +72,7 @@ interface UsePlaybackEngineProps {
   primePlaybackAuth?: PrimePlaybackAuthFn;
   onPlaybackMilestone?: (milestone: 'manifest' | 'firstFrame') => void;
   runtimeProbeActive?: boolean;
+  revealHoldMs?: number;
   setStats: Dispatch<SetStateAction<PlayerStats>>;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
   clearPlaybackFailure: () => void;
@@ -124,6 +125,7 @@ export function usePlaybackEngine({
   primePlaybackAuth,
   onPlaybackMilestone,
   runtimeProbeActive = false,
+  revealHoldMs,
   setStats,
   setStatus,
   clearPlaybackFailure,
@@ -1389,11 +1391,17 @@ export function usePlaybackEngine({
       reportedWarningKeysRef.current.clear();
       if (revealHoldRef.current) {
         if (revealTimerRef.current === null) {
-          revealTimerRef.current = window.setTimeout(() => {
-            revealTimerRef.current = null;
+          const holdMs = revealHoldMs ?? 1800;
+          if (holdMs <= 0) {
             revealHoldRef.current = false;
             setStatus('playing');
-          }, 1800);
+          } else {
+            revealTimerRef.current = window.setTimeout(() => {
+              revealTimerRef.current = null;
+              revealHoldRef.current = false;
+              setStatus('playing');
+            }, holdMs);
+          }
         }
       } else {
         setStatus('playing');

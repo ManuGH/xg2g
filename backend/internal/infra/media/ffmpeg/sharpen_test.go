@@ -68,7 +68,7 @@ func TestSourceAwareTranscodeFilters(t *testing.T) {
 	t.Run("known 1080p preserves native detail", func(t *testing.T) {
 		profile := ports.ProfileSpec{VideoSourceHeight: 1080}
 		assert.Empty(t, transcodeDenoiseFilterForProfile(profile))
-		assert.Equal(t, "unsharp=5:5:0.50:5:5:0.0", transcodeSharpenFilterForProfile(profile))
+		assert.Equal(t, "unsharp=5:5:0.35:5:5:0.0", transcodeSharpenFilterForProfile(profile))
 		assert.Empty(t, transcodeDebandFilterForProfile(profile))
 	})
 

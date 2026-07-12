@@ -38,6 +38,7 @@ export interface PlaybackFailureReportOptions
   source?: PlaybackFailureSource;
   telemetryContext?: string | null;
   telemetryReason?: string | null;
+  explicitProfilePinned?: boolean;
 }
 
 export interface PlaybackAdvisorySignal {

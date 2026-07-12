@@ -1,0 +1,52 @@
+name: Transcode Quality Gate
+# Role:
+# - Golden-sample encode gate: a synthetic 1080i50 BT.709 source runs through a
+#   production-shaped deinterlace+encode; the build fails on dropped frames,
+#   sub-realtime encode speed, broken DAR/framerate, or lost color metadata.
+# - PR-time coverage lives in pr-required-gates.yml (transcode_gate_needed
+#   scope) so it counts toward the single required status check. This workflow
+#   covers push-to-main and manual runs only.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/internal/infra/media/ffmpeg/**'
+      - 'scripts/quality-gate.sh'
+      - '.github/workflows/quality-gate.yml'
+
+concurrency:
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    name: Golden Sample (x264 CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+
+      - name: Run quality gate (h264 software)
+        run: scripts/quality-gate.sh
+        env:
+          XG2G_QG_ENCODER: libx264
+          XG2G_QG_MIN_SPEED: '1.02'
+
+      - name: Run quality gate (AV1 software, correctness only)
+        # CI-CPU-AV1 ist nicht echtzeitfähig; hier zählen nur die
+        # Korrektheits-Invarianten (DAR, 50p, Farbe, A/V-Sync, keine Drops).
+        run: scripts/quality-gate.sh
+        env:
+          XG2G_QG_ENCODER: libsvtav1
+          XG2G_QG_ENFORCE_SPEED: '0'

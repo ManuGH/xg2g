@@ -285,137 +285,6 @@ export function V3PlayerView({
                     LIVE
                   </button>
                 )}
-
-                <div className={styles.utilityControls}>
-                  {onOpenChannels && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={styles.channelsButton}
-                      onClick={onOpenChannels}
-                      title="Sender wechseln"
-                      aria-label="Sender wechseln"
-                    >
-                      <ChannelsGlyph />
-                      <span>Sender</span>
-                    </Button>
-                  )}
-
-                  {viewState.audioTracks && viewState.audioTracks.length > 1 && (
-                    <DropdownMenu
-                      icon={<AudioTracksGlyph />}
-                      title="Tonspur"
-                      activeId={viewState.activeAudioTrack}
-                      onSelect={(id) => actions.changeAudioTrack(id as number)}
-                      options={viewState.audioTracks.map((t) => ({
-                        id: t.id,
-                        label: t.name || t.language || `Track ${t.id}`,
-                      }))}
-                    />
-                  )}
-
-                  <DropdownMenu
-                    icon={<SettingsGlyph />}
-                    title="Profil"
-                    activeId={viewState.explicitProfile}
-                    onSelect={(id) => actions.changeProfile(id as string)}
-                    options={[
-                      { id: 'auto', label: 'Auto (Smart)' },
-                      { id: 'copy', label: 'Direct Play (Copy)' },
-                      { id: 'av1_hw', label: 'AV1 Hardware' },
-                      { id: 'hevc_hw', label: 'HEVC Hardware' },
-                      { id: 'h264_fmp4', label: 'H.264 fMP4' },
-                      { id: 'repair', label: 'Rescue' },
-                    ]}
-                  />
-
-                  {viewState.showNativeFullscreenButton && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={actions.enterNativeFullscreen}
-                      title={viewState.nativeFullscreenTitle}
-                    >
-                      TV {viewState.nativeFullscreenLabel}
-                    </Button>
-                  )}
-
-                  {viewState.showFullscreenButton && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      active={viewState.fullscreenActive}
-                      onClick={() => void actions.toggleFullscreen()}
-                      title={viewState.fullscreenLabel}
-                      aria-label={viewState.fullscreenLabel}
-                    >
-                      <FullscreenGlyph />
-                      <span className="sr-only">Vollbild</span>
-                    </Button>
-                  )}
-
-                  {viewState.showVolumeControls && (
-                    <div className={styles.volumeControl}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={[styles.audioToggleButton, viewState.audioToggleActive ? null : styles.audioMuted].filter(Boolean).join(' ')}
-                        onClick={actions.toggleMute}
-                        title={viewState.audioToggleLabel}
-                        aria-label={viewState.audioToggleLabel}
-                        aria-pressed={viewState.audioToggleActive}
-                      >
-                        <span className={styles.audioToggleIcon} aria-hidden="true">
-                          <VolumeGlyph muted={!viewState.audioToggleActive} />
-                        </span>
-                      </Button>
-                      {viewState.canAdjustVolume ? (
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.05"
-                          className={styles.volumeSlider}
-                          value={viewState.volume}
-                          onChange={(e) => actions.changeVolume(parseFloat(e.target.value))}
-                        />
-                      ) : (
-                        <span className={styles.deviceVolumeHint}>{viewState.deviceVolumeHint}</span>
-                      )}
-                    </div>
-                  )}
-
-                  {viewState.showPipButton && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void actions.togglePiP()}
-                      title={viewState.pipTitle}
-                      aria-label={viewState.pipLabel}
-                    >
-                      <PipGlyph />
-                      <span>PiP</span>
-                    </Button>
-                  )}
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    active={viewState.showStatsOverlay}
-                    onClick={actions.toggleStats}
-                    title={viewState.statsTitle}
-                    aria-label={viewState.statsLabel}
-                    className={viewState.ttffTitle ? styles.statsButtonHasTTFF : ''}
-                  >
-                    {viewState.ttffBadgeLabel && (
-                      <span className={styles.ttffBadge} title={viewState.ttffTitle ?? undefined}>
-                        ⚡ {viewState.ttffBadgeLabel}
-                      </span>
-                    )}
-                    <StatsGlyph />
-                    <span className="sr-only">Statistiken</span>
-                  </Button>
-                </div>
               </div>
             </div>
           ) : (
@@ -449,6 +318,137 @@ export function V3PlayerView({
               DVR
             </Button>
           )}
+
+          <div className={styles.utilityControls}>
+            {onOpenChannels && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={styles.channelsButton}
+                onClick={onOpenChannels}
+                title="Sender wechseln"
+                aria-label="Sender wechseln"
+              >
+                <ChannelsGlyph />
+                <span>Sender</span>
+              </Button>
+            )}
+
+            {viewState.audioTracks && viewState.audioTracks.length > 1 && (
+              <DropdownMenu
+                icon={<AudioTracksGlyph />}
+                title="Tonspur"
+                activeId={viewState.activeAudioTrack}
+                onSelect={(id) => actions.changeAudioTrack(id as number)}
+                options={viewState.audioTracks.map((t) => ({
+                  id: t.engineIndex !== undefined ? t.engineIndex : t.id,
+                  label: t.label || t.name || t.language || `Track ${t.engineIndex !== undefined ? t.engineIndex : t.id}`,
+                }))}
+              />
+            )}
+
+            <DropdownMenu
+              icon={<SettingsGlyph />}
+              title="Profil"
+              activeId={viewState.explicitProfile}
+              onSelect={(id) => actions.changeProfile(id as string)}
+              options={[
+                { id: 'auto', label: 'Auto (Smart)' },
+                { id: 'copy', label: 'Direct Play (Copy)' },
+                { id: 'av1_hw', label: 'AV1 Hardware' },
+                { id: 'hevc_hw', label: 'HEVC Hardware' },
+                { id: 'h264_fmp4', label: 'H.264 fMP4' },
+                { id: 'repair', label: 'Rescue' },
+              ]}
+            />
+
+            {viewState.showNativeFullscreenButton && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={actions.enterNativeFullscreen}
+                title={viewState.nativeFullscreenTitle}
+              >
+                TV {viewState.nativeFullscreenLabel}
+              </Button>
+            )}
+
+            {viewState.showFullscreenButton && (
+              <Button
+                variant="ghost"
+                size="sm"
+                active={viewState.fullscreenActive}
+                onClick={() => void actions.toggleFullscreen()}
+                title={viewState.fullscreenLabel}
+                aria-label={viewState.fullscreenLabel}
+              >
+                <FullscreenGlyph />
+                <span className="sr-only">Vollbild</span>
+              </Button>
+            )}
+
+            {viewState.showVolumeControls && (
+              <div className={styles.volumeControl}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={[styles.audioToggleButton, viewState.audioToggleActive ? null : styles.audioMuted].filter(Boolean).join(' ')}
+                  onClick={actions.toggleMute}
+                  title={viewState.audioToggleLabel}
+                  aria-label={viewState.audioToggleLabel}
+                  aria-pressed={viewState.audioToggleActive}
+                >
+                  <span className={styles.audioToggleIcon} aria-hidden="true">
+                    <VolumeGlyph muted={!viewState.audioToggleActive} />
+                  </span>
+                </Button>
+                {viewState.canAdjustVolume ? (
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    className={styles.volumeSlider}
+                    value={viewState.volume}
+                    onChange={(e) => actions.changeVolume(parseFloat(e.target.value))}
+                  />
+                ) : (
+                  <span className={styles.deviceVolumeHint}>{viewState.deviceVolumeHint}</span>
+                )}
+              </div>
+            )}
+
+            {viewState.showPipButton && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void actions.togglePiP()}
+                title={viewState.pipTitle}
+                aria-label={viewState.pipLabel}
+              >
+                <PipGlyph />
+                <span>PiP</span>
+              </Button>
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              active={viewState.showStatsOverlay}
+              onClick={actions.toggleStats}
+              title={viewState.statsTitle}
+              aria-label={viewState.statsLabel}
+              className={viewState.ttffTitle ? styles.statsButtonHasTTFF : ''}
+            >
+              {viewState.ttffBadgeLabel && (
+                <span className={styles.ttffBadge} title={viewState.ttffTitle ?? undefined}>
+                  ⚡ {viewState.ttffBadgeLabel}
+                </span>
+              )}
+              <StatsGlyph />
+              <span className="sr-only">{viewState.statsLabel}</span>
+            </Button>
+          </div>
 
           {viewState.showStopButton && (
             <Button variant="danger" onClick={() => void actions.stopStream()}>

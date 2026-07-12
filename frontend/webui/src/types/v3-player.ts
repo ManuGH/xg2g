@@ -39,6 +39,26 @@ export interface Channel {
   [key: string]: unknown;
 }
 
+export interface PlayerAudioTrack {
+  key: string;
+  engineIndex: number;
+  nativeId?: string;
+  language?: string;
+  label?: string;
+  kind?: string;
+  id: number;
+  name: string;
+}
+
+export interface AudioTrackPreference {
+  sessionId?: string | null;
+  nativeId?: string;
+  id?: string;
+  language?: string;
+  label?: string;
+  kind?: string;
+}
+
 export interface V3PlayerBaseProps {
   token?: string;
   autoStart?: boolean;
@@ -46,6 +66,7 @@ export interface V3PlayerBaseProps {
   duration?: number; // Duration in seconds (enables VOD mode)
   startPositionSeconds?: number;
   suppressResumePrompt?: boolean;
+  revealHoldMs?: number;
   /** Live-only: full channel list + switch callback for the in-player zapper. */
   channels?: Service[];
   onSwitchChannel?: (channel: Service) => void;

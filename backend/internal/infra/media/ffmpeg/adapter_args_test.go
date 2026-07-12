@@ -2087,6 +2087,7 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, vf, "bwdif=mode=send_frame:parity=auto:deint=all")
 	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
+	assert.Contains(t, vf, "setparams=field_mode=prog:range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709:chroma_location=left")
 	assert.Contains(t, vf, "format=p010le,hwupload")
 	outputFPS, ok := valueAfter(args, "-r")
 	require.True(t, ok)
@@ -2096,7 +2097,75 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 	assert.Equal(t, "50", gop)
 	assert.Contains(t, args, "av1_vaapi")
 	assert.NotContains(t, args, "h264_vaapi")
+	assert.Contains(t, args, "-color_range")
+	assert.Contains(t, args, "tv")
+	assert.Contains(t, args, "-chroma_sample_location")
+	assert.Contains(t, args, "left")
+	assert.Contains(t, args, "-async_depth")
+	assert.Contains(t, args, "2")
 }
+
+func TestBuildArgs_HDSDRProfile_ColorAndQualityParameters(t *testing.T) {
+	t.Setenv("XG2G_ADAPTIVE_QUALITY_ENABLED", "false")
+	hardware.SetPathCapabilities(map[string]hardware.HardwarePathCapability{
+		hardware.PathVAAPIEncodeOnlyInterlacedAV1: {
+			Verified: true,
+			Status:   hardware.PathStatusVerified,
+			Reason:   "synthetic verified",
+		},
+	})
+	t.Cleanup(func() {
+		hardware.SetPathCapabilities(nil)
+	})
+
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
+	)
+	adapter.detector.vaapiEncoders = map[string]bool{
+		"av1_vaapi": true,
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "hd-sdr-high-quality-test",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:              "av1_hw",
+			Container:         "fmp4",
+			TranscodeVideo:    true,
+			HWAccel:           "vaapi",
+			VideoCodec:        "av1",
+			VideoSourceHeight: 1080,
+			Deinterlace:       true,
+			VideoMaxRateK:     60000,
+			VideoBufSizeK:     120000,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://example.com/stream",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=lanczos+accurate_rnd+full_chroma_int")
+	assert.Contains(t, vf, "unsharp=5:5:0.35:5:5:0.0")
+	assert.Contains(t, vf, "setparams=field_mode=prog:range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709:chroma_location=left")
+	assert.Contains(t, vf, "format=p010le,hwupload")
+
+	assert.Contains(t, args, "-color_range")
+	assert.Contains(t, args, "tv")
+	assert.Contains(t, args, "-chroma_sample_location")
+	assert.Contains(t, args, "left")
+	assert.Contains(t, args, "-async_depth")
+	assert.Contains(t, args, "2")
+}
+
 
 func TestBuildArgs_AV1HWHQ50ServiceRefPreserves50fpsMotion(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_HQ50_SERVICE_REFS", "1:0:19:91:4:85:C00000:0:0:0:")

@@ -144,7 +144,8 @@ func TestAV1FullChainBenchmarkMatchesProductionQualityPath(t *testing.T) {
 	for _, required := range []string{
 		"bwdif=mode=send_field",
 		"scale=w=trunc(max(720\\,ih)",
-		"unsharp=5:5:0.50",
+		"unsharp=5:5:0.35",
+		"setparams=field_mode=prog:range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709:chroma_location=left",
 		"format=p010le,hwupload",
 	} {
 		if !strings.Contains(filter, required) {

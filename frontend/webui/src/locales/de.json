@@ -317,7 +317,8 @@
     "liveWindowState": "Live-Fenster",
     "liveWindowReady": "Fenster bereit",
     "liveWindowAtEdge": "Am Live-Rand",
-    "liveWindowBehindEdge": "{{seconds}}s hinter Live"
+    "liveWindowBehindEdge": "{{seconds}}s hinter Live",
+    "timeline": "Timeline"
   },
   "dashboard": {
     "controlSummary": "Kontrollübersicht",

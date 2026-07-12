@@ -169,10 +169,25 @@ export function gatherPlaybackClientContext(): PlaybackClientContext {
   };
 }
 
+const MODERN_VIDEO_CODECS = ['av1', 'hevc', 'h264'] as const;
+
 function supportsHighQualityPlayback(capabilities: CapabilitySnapshot): boolean {
-  const hasModernVideoPath = capabilities.videoCodecs.includes('h264') || capabilities.videoCodecs.includes('hevc');
-  if (!hasModernVideoPath) {
+  const modernCodecs = MODERN_VIDEO_CODECS.filter((codec) => capabilities.videoCodecs.includes(codec));
+  if (modernCodecs.length === 0) {
     return false;
+  }
+
+  // Media Capabilities verdicts (decodingInfo) beat static codec lists: when
+  // every modern codec the client offers carries an explicit smooth=false
+  // signal, the device decodes but cannot keep up — don't request quality.
+  const signals = capabilities.videoCodecSignals;
+  if (signals && signals.length > 0) {
+    const verdicts = modernCodecs
+      .map((codec) => signals.find((signal) => signal.codec === codec))
+      .filter((signal): signal is NonNullable<typeof signal> => signal != null && signal.smooth !== undefined);
+    if (verdicts.length > 0 && verdicts.every((signal) => signal.smooth === false)) {
+      return false;
+    }
   }
 
   if (!capabilities.maxVideo) {

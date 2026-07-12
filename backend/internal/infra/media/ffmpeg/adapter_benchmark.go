@@ -116,6 +116,7 @@ func vaapiProfileBenchmarkFilter(profileID string) (string, error) {
 		if filter := transcodeSharpenFilterForProfile(profile); filter != "" {
 			parts = append(parts, filter)
 		}
+		parts = append(parts, "setparams=field_mode=prog:range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709:chroma_location=left")
 		parts = append(parts, "format=p010le", "hwupload")
 		return strings.Join(parts, ","), nil
 	default:
