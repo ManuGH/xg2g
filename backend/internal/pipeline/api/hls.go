@@ -29,7 +29,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const hlsStartupArtifactWaitTimeout = 5 * time.Second
+const hlsStartupArtifactWaitTimeout = 12 * time.Second
 
 const (
 	hlsReasonHeader           = "X-XG2G-Reason"

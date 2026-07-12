@@ -28,15 +28,14 @@ function V3Player(props: V3PlayerProps) {
   const handleCloseChannels = useCallback(() => setChannelsOpen(false), []);
 
   return (
-    <>
-      <V3PlayerView
-        containerRef={containerRef}
-        videoRef={videoRef}
-        resumePrimaryActionRef={resumePrimaryActionRef}
-        viewState={viewState}
-        actions={actions}
-        onOpenChannels={hasChannels ? () => setChannelsOpen(true) : undefined}
-      />
+    <V3PlayerView
+      containerRef={containerRef}
+      videoRef={videoRef}
+      resumePrimaryActionRef={resumePrimaryActionRef}
+      viewState={viewState}
+      actions={actions}
+      onOpenChannels={hasChannels ? () => setChannelsOpen(true) : undefined}
+    >
       {hasChannels ? (
         <ChannelSwitcher
           channels={props.channels!}
@@ -46,7 +45,7 @@ function V3Player(props: V3PlayerProps) {
           onClose={handleCloseChannels}
         />
       ) : null}
-    </>
+    </V3PlayerView>
   );
 }
 

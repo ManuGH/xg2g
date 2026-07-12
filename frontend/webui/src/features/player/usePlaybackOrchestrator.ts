@@ -223,6 +223,9 @@ export interface V3PlayerViewState {
   resumeActionLabel: string;
   startOverLabel: string;
   resumePositionSeconds: number | null;
+  explicitProfile: string;
+  audioTracks: Array<{ id: number; name: string; language?: string }>;
+  activeAudioTrack: number;
   playback: {
     durationSeconds: number | null;
   };
@@ -232,6 +235,7 @@ export interface PlaybackOrchestratorActions {
   stopStream(skipClose?: boolean): Promise<void>;
   retry(): Promise<void>;
   seekBy(deltaSeconds: number): void;
+  changeAudioTrack(trackId: number): void;
   seekTo(positionSeconds: number): void;
   seekToLiveEdge(): void;
   togglePlayPause(): void;
@@ -248,6 +252,7 @@ export interface PlaybackOrchestratorActions {
   toggleErrorDetails(): void;
   resumeFrom(positionSeconds: number): void;
   startOver(): void;
+  changeProfile(profile: string): void;
 }
 
 export interface UsePlaybackOrchestratorResult {
@@ -277,6 +282,13 @@ export function usePlaybackOrchestrator(
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
   );
+  const [explicitProfile, setExplicitProfile] = useState<string>(() => {
+    try {
+      return localStorage.getItem('xg2g.player.explicitProfile') || 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
   const ttffStartT0Ref = useRef<number | null>(null);
   const ttffManifestT1Ref = useRef<number | null>(null);
   const [ttffMetrics, setTtffMetrics] = useState<{
@@ -284,6 +296,9 @@ export function usePlaybackOrchestrator(
     manifestMs: number;
     bufferMs: number;
   } | null>(null);
+
+  const [audioTracks, setAudioTracks] = useState<Array<{ id: number; name: string; language?: string }>>([]);
+  const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
 
   const handleAttemptStarted = useCallback(() => {
     ttffStartT0Ref.current = performance.now();
@@ -795,6 +810,8 @@ export function usePlaybackOrchestrator(
     clearPlaybackFailure,
     reportPlaybackFailure,
     onPlaybackMilestone: handlePlaybackMilestone,
+    onAudioTracksUpdated: setAudioTracks,
+    onAudioTrackSwitched: setActiveAudioTrack,
   });
 
   // --- Core Helpers & Wrappers (Memoized) ---
@@ -1438,7 +1455,7 @@ export function usePlaybackOrchestrator(
         }
         liveEngine = engineDecision.engine;
 
-        const intentBody = buildLiveIntentBody(ref, liveDecisionToken, requestCaps, liveMode);
+        const intentBody = buildLiveIntentBody(ref, liveDecisionToken, requestCaps, liveMode, undefined, explicitProfile);
         sessionEpoch = allocateSessionEpoch(playbackEpoch);
 
         // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
@@ -1821,6 +1838,10 @@ export function usePlaybackOrchestrator(
           debugWarn('[V3Player] Browser resume play blocked', err);
         }
       },
+      onFailed: () => {
+        debugWarn('[V3Player] Browser resume play failed to advance, retrying session');
+        void handleRetry();
+      },
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
 
@@ -1897,6 +1918,10 @@ export function usePlaybackOrchestrator(
         } else {
           debugWarn('[V3Player] Reconnect resume play blocked', err);
         }
+      },
+      onFailed: () => {
+        debugWarn('[V3Player] Reconnect resume play failed to advance, retrying session');
+        void handleRetry();
       },
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, setStatus, videoRef]);
@@ -2318,6 +2343,9 @@ export function usePlaybackOrchestrator(
     resumeActionLabel: t('player.resumeAction'),
     startOverLabel: t('player.startOver'),
     resumePositionSeconds: resumeState?.posSeconds ?? null,
+    explicitProfile,
+    audioTracks,
+    activeAudioTrack,
     playback: {
       durationSeconds,
     },
@@ -2327,6 +2355,18 @@ export function usePlaybackOrchestrator(
     retry: handleRetry,
     seekBy,
     seekTo,
+    changeAudioTrack(trackId: number) {
+      if (hlsRef.current) {
+        hlsRef.current.audioTrack = trackId;
+      } else if (videoRef.current && 'audioTracks' in videoRef.current) {
+        const tracks = (videoRef.current as any).audioTracks;
+        if (tracks) {
+          for (let i = 0; i < tracks.length; i++) {
+            tracks[i].enabled = (i === trackId);
+          }
+        }
+      }
+    },
     seekToLiveEdge,
     togglePlayPause,
     updateServiceRef: setSRef,
@@ -2353,6 +2393,18 @@ export function usePlaybackOrchestrator(
     startOver() {
       seekWhenReady(0);
       setShowResumeOverlay(false);
+    },
+    changeProfile(profile: string) {
+      setExplicitProfile(profile);
+      try {
+        localStorage.setItem('xg2g.player.explicitProfile', profile);
+      } catch {
+        // ignore
+      }
+      if (hasActivePlayback()) {
+        teardownActivePlayback();
+        setTimeout(() => startStream(sRef), 100);
+      }
     },
   };
 

@@ -406,7 +406,13 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.AudioBitrateK = 160
 	case ProfileHigh:
 		spec.PolicyModeHint = ports.RuntimeModeCopy
-		spec.TranscodeVideo = false // Default to copy (passthrough) for original quality
+		if cap != nil && cap.Interlaced {
+			spec.TranscodeVideo = true
+			spec.Deinterlace = true
+			applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentCompatible))
+		} else {
+			spec.TranscodeVideo = false // Default to copy (passthrough) for original quality
+		}
 		spec.AudioBitrateK = 192    // FORCE AAC: Browsers cannot decode MP2/AC3 natively
 		applyDVRWindow(&spec, dvrWindowSec)
 	case ProfileAndroid:
@@ -560,7 +566,8 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.PolicyModeHint = ports.RuntimeModeSafe
 		// RESCUE MODE: Force Transcode to repair timestamps/GOP
 		spec.TranscodeVideo = true
-		spec.Deinterlace = false // Keep simple unless needed
+		spec.Deinterlace = true // Deinterlace for browser compatibility
+		spec.Container = "mpegts" // Use universal MPEG-TS segments
 		applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentRepair))
 		spec.VideoMaxWidth = 1280
 		spec.AudioBitrateK = 192 // Ensure audio is clean too

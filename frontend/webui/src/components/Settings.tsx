@@ -179,17 +179,24 @@ function Settings() {
       return 'stereo';
     }
   });
-  const [dvrMode, setDvrMode] = useState<'live_only' | '1h' | '2h' | '4h'>(() => {
+  const [dvrMode, setDvrMode] = useState<'live_only' | '1h' | '2h' | '4h'>('live_only');
+  const [multiAudioMode, setMultiAudioMode] = useState<boolean>(false);
+
+  useEffect(() => {
     try {
-      const stored = localStorage.getItem('xg2g.settings.dvrMode');
-      if (stored === 'live_only' || stored === '1h' || stored === '2h' || stored === '4h') {
-        return stored;
+      const storedDvr = localStorage.getItem('xg2g.settings.dvrMode');
+      if (storedDvr === 'live_only' || storedDvr === '1h' || storedDvr === '2h' || storedDvr === '4h') {
+        setDvrMode(storedDvr);
       }
-      return '2h';
-    } catch {
-      return '2h';
-    }
-  });
+      const storedMultiAudio = localStorage.getItem('xg2g.settings.multiAudio');
+      if (storedMultiAudio === 'true') {
+        setMultiAudioMode(true);
+      } else {
+        setMultiAudioMode(false);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const requestedSection = searchParams.get('section');
   const requestedTool = searchParams.get('tool');
@@ -1405,6 +1412,47 @@ function Settings() {
               <div>
                 <div style={{ fontWeight: 600 }}>{t('settings.streaming.dvrMode.dvr4h.label')}</div>
                 <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr4h.hint')}</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div className={styles.group} style={{ marginTop: '24px' }}>
+          <label style={{ fontWeight: 600, fontSize: '1.05rem' }}>{t('settings.streaming.multiAudio.title', { defaultValue: 'Mehrsprachiger Ton / Tonspur-Auswahl' })}</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="multiAudioMode"
+                value="false"
+                checked={!multiAudioMode}
+                onChange={() => {
+                  setMultiAudioMode(false);
+                  try { localStorage.setItem('xg2g.settings.multiAudio', 'false'); } catch {}
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.multiAudio.instant.label', { defaultValue: 'Instant Start (Nur Hauptspur)' })}</div>
+                <div className={styles.hint}>{t('settings.streaming.multiAudio.instant.hint', { defaultValue: 'Deaktiviert die Audio-Analyse vor dem Start. Streams starten dadurch sofort ohne Verzögerung (0 ms), es wird jedoch immer nur die erste gefundene Tonspur übertragen (meistens Deutsch).' })}</div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="multiAudioMode"
+                value="true"
+                checked={multiAudioMode}
+                onChange={() => {
+                  setMultiAudioMode(true);
+                  try { localStorage.setItem('xg2g.settings.multiAudio', 'true'); } catch {}
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.multiAudio.multi.label', { defaultValue: 'Multi-Audio (Verzögerter Start)' })}</div>
+                <div className={styles.hint}>{t('settings.streaming.multiAudio.multi.hint', { defaultValue: 'Ermöglicht den Sprachwechsel (z.B. Englisch / Dolby Digital) im Player. Der Startvorgang verzögert sich um 1-4 Sekunden, da der Stream vorab analysiert werden muss, um Apple alle verfügbaren Spuren zu präsentieren.' })}</div>
               </div>
             </label>
           </div>
