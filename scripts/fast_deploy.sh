@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${XG2G_DEPLOY_HOST:-proxmox}"
 REMOTE_ROOT="${XG2G_DEPLOY_ROOT:-/root/xg2g}"
+REMOTE_BUILD_ROOT="${XG2G_DEPLOY_BUILD_ROOT:-/root/xg2g-build}"
 
 die() {
   echo "ERROR: $*" >&2
@@ -24,17 +25,26 @@ git fetch origin "${branch}" --quiet
   die "local branch is behind origin/${branch}; update it before deployment"
 
 echo "Preparing ${branch} on ${REMOTE_HOST}:${REMOTE_ROOT}..."
-ssh "${REMOTE_HOST}" bash -s -- "${REMOTE_ROOT}" "${branch}" <<'REMOTE'
+ssh "${REMOTE_HOST}" bash -s -- "${REMOTE_ROOT}" "${REMOTE_BUILD_ROOT}" "${branch}" <<'REMOTE'
 set -euo pipefail
-root="$1"
-branch="$2"
+source_root="$1"
+build_root="$2"
+branch="$3"
 
-cd "${root}"
+origin_url="$(git -C "${source_root}" remote get-url origin)"
+if [[ ! -d "${build_root}/.git" ]]; then
+  [[ ! -e "${build_root}" ]] || {
+    echo "ERROR: ${build_root} exists but is not a Git checkout" >&2
+    exit 1
+  }
+  git clone "${origin_url}" "${build_root}"
+fi
+
+cd "${build_root}"
 [[ -z "$(git status --porcelain --untracked-files=no)" ]] || {
-  echo "ERROR: tracked Proxmox changes must be committed before deployment" >&2
+  echo "ERROR: tracked Proxmox build-checkout changes must be committed" >&2
   exit 1
 }
-
 git fetch origin "${branch}" --quiet
 if git show-ref --verify --quiet "refs/heads/${branch}"; then
   git switch "${branch}"
