@@ -71,6 +71,7 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 		plan.Mode = "copy"
 		plan.DeliveryEngine = "direct"
 		resolveMediaTargets(&plan, ev)
+		applyPolicyModifiers(&plan, ev)
 		return PlanningResult{Plan: plan, Trace: trace}, nil
 	}
 
@@ -96,6 +97,7 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 		plan.Mode = "remux"
 		plan.DeliveryEngine = "hls"
 		resolveMediaTargets(&plan, ev)
+		applyPolicyModifiers(&plan, ev)
 		return PlanningResult{Plan: plan, Trace: trace}, nil
 	}
 
@@ -115,6 +117,7 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 		plan.Mode = "transcode"
 		plan.DeliveryEngine = "hls"
 		resolveMediaTargets(&plan, ev)
+		applyPolicyModifiers(&plan, ev)
 		return PlanningResult{Plan: plan, Trace: trace}, nil
 	}
 
