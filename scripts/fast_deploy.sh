@@ -1,43 +1,107 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROXMOX_HOST="root@10.10.55.2"
-PROXMOX_DIR="/root/xg2g"
-LXC_ID="110"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REMOTE_HOST="${XG2G_DEPLOY_HOST:-root@10.10.55.2}"
+REMOTE_SOURCE_ROOT="${XG2G_DEPLOY_SOURCE_ROOT:-/root/xg2g}"
+REMOTE_BUILD_ROOT="${XG2G_DEPLOY_BUILD_ROOT:-/root/xg2g-build}"
+CTID="${XG2G_DEPLOY_CTID:-110}"
 
-echo "🚀 Starting fast-track deployment to Proxmox / LXC 110..."
+die() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
 
-echo "📦 1. Rsyncing local code to Proxmox build server ($PROXMOX_HOST:$PROXMOX_DIR)..."
-# Fast rsync excluding heavy/unnecessary directories
-rsync -avz --delete \
-  --exclude='.git' \
-  --exclude='node_modules' \
-  --exclude='frontend/webui/node_modules' \
-  --exclude='.venv' \
-  --exclude='bin' \
-  --exclude='artifacts' \
-  ./ "$PROXMOX_HOST:$PROXMOX_DIR/"
+if [[ "${XG2G_PROMOTE_PRODUCTION:-0}" =~ ^(1|true|yes|on)$ ]]; then
+  die "fast_deploy.sh is staging-only; use scripts/promote_production.sh --confirm-production"
+fi
 
-echo "🔨 2. Compiling on Proxmox ($PROXMOX_HOST)..."
-ssh "$PROXMOX_HOST" "cd $PROXMOX_DIR && make build-with-ui"
+cd "${ROOT}"
+branch="$(git branch --show-current)"
+[[ -n "${branch}" ]] || die "detached HEAD is not deployable"
+[[ "${branch}" =~ ^[A-Za-z0-9._/-]+$ ]] || die "unsafe branch name: ${branch}"
+[[ -z "$(git status --porcelain)" ]] || die "working tree must be completely clean before deployment"
 
-echo "🛑 3. Stopping services on LXC 110..."
-ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- systemctl stop xg2g || true"
-ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- sh -c 'cd /srv/xg2g-staging && docker compose stop || true'"
+git fetch origin "${branch}" --quiet
+commit="$(git rev-parse HEAD)"
+origin_commit="$(git rev-parse "origin/${branch}")"
+[[ "${commit}" == "${origin_commit}" ]] || die "HEAD must exactly match pushed origin/${branch} before deployment"
 
-echo "🚚 4. Pushing binary to Staging/Prod LXC 110..."
-# Copy the compiled binary from the Proxmox host into the LXC container
-ssh "$PROXMOX_HOST" "pct push $LXC_ID $PROXMOX_DIR/bin/xg2g /srv/xg2g/xg2g"
-ssh "$PROXMOX_HOST" "pct push $LXC_ID $PROXMOX_DIR/bin/xg2g /srv/xg2g-staging/xg2g || true"
-ssh "$PROXMOX_HOST" "pct push $LXC_ID $PROXMOX_DIR/bin/xg2g /srv/xg2g-staging/xg2g-staging-binary || true"
+echo "Preparing commit ${commit} in ${REMOTE_HOST}:${REMOTE_BUILD_ROOT}..."
+ssh "${REMOTE_HOST}" bash -s -- "${REMOTE_SOURCE_ROOT}" "${REMOTE_BUILD_ROOT}" "${branch}" "${commit}" <<'REMOTE'
+set -euo pipefail
+source_root="$1"
+build_root="$2"
+branch="$3"
+commit="$4"
 
-# Ensure binary is executable inside the LXC
-ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- chmod +x /srv/xg2g/xg2g"
-ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- chmod +x /srv/xg2g-staging/xg2g || true"
-ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- chmod +x /srv/xg2g-staging/xg2g-staging-binary || true"
+origin_url="$(git -C "${source_root}" remote get-url origin)"
+if [[ ! -d "${build_root}/.git" ]]; then
+  [[ ! -e "${build_root}" ]] || {
+    echo "ERROR: ${build_root} exists but is not a Git checkout" >&2
+    exit 1
+  }
+  git clone "${origin_url}" "${build_root}"
+fi
 
-echo "✅ 5. Starting services on LXC 110..."
-ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- systemctl start xg2g"
-ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- sh -c 'cd /srv/xg2g-staging && docker compose up -d --force-recreate || true'"
+cd "${build_root}"
+[[ -z "$(git status --porcelain)" ]] || {
+  echo "ERROR: remote build checkout is dirty" >&2
+  exit 1
+}
+git remote set-url origin "${origin_url}"
+git fetch origin "${branch}" --quiet
+[[ "$(git rev-parse "origin/${branch}")" == "${commit}" ]] || {
+  echo "ERROR: remote origin/${branch} does not match requested commit ${commit}" >&2
+  exit 1
+}
+git switch --detach "${commit}"
+[[ "$(git rev-parse HEAD)" == "${commit}" ]] || exit 1
+make build-with-ui
+REMOTE
 
-echo "🎉 Deployment complete!"
+remote_binary="${REMOTE_BUILD_ROOT}/bin/xg2g"
+expected_sha="$(ssh "${REMOTE_HOST}" "sha256sum '${remote_binary}' | awk '{print \$1}'")"
+[[ -n "${expected_sha}" ]] || die "could not hash remote build artifact"
+
+echo "Deploying ${commit} (${expected_sha}) to staging :8089..."
+ssh "${REMOTE_HOST}" bash -s -- "${CTID}" "${remote_binary}" "${expected_sha}" "${commit}" <<'REMOTE'
+set -euo pipefail
+ctid="$1"
+binary="$2"
+expected_sha="$3"
+commit="$4"
+next="/srv/xg2g-staging/xg2g-staging-binary.next"
+destination="/srv/xg2g-staging/xg2g-staging-binary"
+
+pct push "${ctid}" "${binary}" "${next}"
+pct exec "${ctid}" -- chmod 0755 "${next}"
+pct exec "${ctid}" -- mv "${next}" "${destination}"
+pct exec "${ctid}" -- docker compose --project-directory /srv/xg2g-staging -f /srv/xg2g-staging/docker-compose.yml up -d --force-recreate
+
+healthy=0
+for ((i = 0; i < 90; i++)); do
+  status="$(pct exec "${ctid}" -- docker inspect --format '{{.State.Health.Status}}' xg2g-staging 2>/dev/null || true)"
+  if [[ "${status}" == "healthy" ]] && pct exec "${ctid}" -- curl -fsS http://127.0.0.1:8089/healthz >/dev/null; then
+    healthy=1
+    break
+  fi
+  [[ "${status}" != "unhealthy" ]] || break
+  sleep 1
+done
+[[ "${healthy}" == "1" ]] || {
+  pct exec "${ctid}" -- docker logs --tail 100 xg2g-staging >&2 || true
+  echo "ERROR: staging did not become healthy" >&2
+  exit 1
+}
+
+running_sha="$(pct exec "${ctid}" -- docker exec xg2g-staging sha256sum /usr/local/bin/xg2g | awk '{print $1}')"
+[[ "${running_sha}" == "${expected_sha}" ]] || {
+  echo "ERROR: running staging hash ${running_sha} != ${expected_sha}" >&2
+  exit 1
+}
+pct exec "${ctid}" -- sh -c "printf '%s %s\n' '${commit}' '${expected_sha}' > /srv/xg2g-staging/deploy-manifest"
+REMOTE
+
+echo "Staging deployment complete: commit=${commit} sha256=${expected_sha} port=8089"
+echo "Production :8088 was not touched."
