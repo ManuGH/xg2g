@@ -309,6 +309,14 @@ func ClassifyComparableDiffs(legacy, planner ComparablePlaybackPlan) []Classifie
 				item.Disposition = DiffAccepted
 				item.Reason = "compatible_audio_copy_avoids_reencode"
 			}
+		case "video_mode_mismatch":
+			if legacy.Mode == "transcode" && planner.Mode == "transcode" &&
+				legacy.VideoMode == "transcode" && planner.VideoMode == "copy" &&
+				legacy.VideoCodec != "" && legacy.VideoCodec == planner.VideoCodec &&
+				legacy.AudioMode == "transcode" && planner.AudioMode == "transcode" {
+				item.Disposition = DiffAccepted
+				item.Reason = "compatible_video_copy_avoids_reencode_during_audio_transcode"
+			}
 		}
 		classified = append(classified, item)
 	}

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDiffComparablePlans_RemainsStrict(t *testing.T) {
@@ -35,6 +36,36 @@ func TestClassifyComparableDiffs_GenericHLSWrapperIsAccepted(t *testing.T) {
 		Reason: "generic_hls_wrapper_vs_known_segment_container",
 	}}, classified)
 	assert.Empty(t, UnexplainedDiffCodes(legacy, planner))
+}
+
+func TestClassifyComparableDiffs_CompatibleVideoCopyDuringAudioTranscodeIsAccepted(t *testing.T) {
+	legacy := ComparablePlaybackPlan{
+		IsValid: true, TerminalKind: "decision", Outcome: "allow", Mode: "transcode",
+		Engine: "hls", Container: "fmp4", VideoMode: "transcode", AudioMode: "transcode",
+		VideoCodec: "h264", AudioCodec: "aac",
+	}
+	planner := legacy
+	planner.VideoMode = "copy"
+
+	classified := ClassifyComparableDiffs(legacy, planner)
+	require.Equal(t, []ClassifiedDiff{{
+		Code:        "video_mode_mismatch",
+		Disposition: DiffAccepted,
+		Reason:      "compatible_video_copy_avoids_reencode_during_audio_transcode",
+	}}, classified)
+	require.Empty(t, UnexplainedDiffCodes(legacy, planner))
+}
+
+func TestClassifyComparableDiffs_VideoCopyDifferenceWithoutAudioTranscodeRemainsUnexplained(t *testing.T) {
+	legacy := ComparablePlaybackPlan{
+		IsValid: true, TerminalKind: "decision", Outcome: "allow", Mode: "transcode",
+		Engine: "hls", Container: "fmp4", VideoMode: "transcode", AudioMode: "copy",
+		VideoCodec: "h264", AudioCodec: "aac",
+	}
+	planner := legacy
+	planner.VideoMode = "copy"
+
+	require.Equal(t, []string{"video_mode_mismatch"}, UnexplainedDiffCodes(legacy, planner))
 }
 
 func TestDiffComparablePlans_DenyReasonMismatchBlocksCutover(t *testing.T) {
