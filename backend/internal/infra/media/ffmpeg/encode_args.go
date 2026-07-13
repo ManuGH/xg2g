@@ -183,7 +183,7 @@ func transcodeSharpenFilterWithAmount(amount float64) string {
 // (0 disables, default 0.6, capped at 1.5); spatial and temporal strengths scale
 // together. Encoder cost is fixed regardless of strength, so the strength is a
 // pure quality knob (lower = gentler, preserves more fine detail).
-func transcodeDenoiseFilter() string {
+func transcodeDenoiseFilter() string { //nolint:unused
 	s := envFloatBounded("XG2G_TRANSCODE_DENOISE", 0.6, 0.0, 1.5)
 	return transcodeDenoiseFilterWithStrength(s)
 }
@@ -205,7 +205,7 @@ func transcodeDenoiseFilterWithStrength(s float64) string {
 
 // transcodeDebandFilter returns a deband expression for the transcode chain, or
 // "" when disabled via XG2G_TRANSCODE_DEBAND=false (default on; deband is gentle).
-func transcodeDebandFilter() string {
+func transcodeDebandFilter() string { //nolint:unused
 	if !envBool("XG2G_TRANSCODE_DEBAND", true) {
 		return ""
 	}

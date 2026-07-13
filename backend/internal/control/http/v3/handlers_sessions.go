@@ -637,7 +637,7 @@ func (s *Server) logPlaybackFeedback(sessionID string, sess *model.SessionRecord
 // appendPlaybackFeedbackDetails logs the free-form details blob (e.g. the
 // client session timeline) so it lands next to the session's server logs.
 // Bounded so a hostile or buggy client cannot blow up the log line.
-func appendPlaybackFeedbackDetails(event *zerolog.Event, details *map[string]interface{}) {
+func appendPlaybackFeedbackDetails(event *zerolog.Event, details *map[string]any) {
 	if details == nil || len(*details) == 0 {
 		return
 	}
