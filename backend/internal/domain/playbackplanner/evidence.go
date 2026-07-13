@@ -128,8 +128,9 @@ type HostSnapshot struct {
 }
 
 type OperatorPolicy struct {
-	ForceIntent        string
-	MaxQualityRung     string
-	DisableTranscoding bool
-	MaxGlobalBitrate   int
+	ForceIntent        string // "copy", "remux", "transcode"
+	MaxQualityRung     string // Highest allowed bit-rate tier
+	DisableTranscoding bool   // Operator-level switch to block transcoding (e.g., peak load)
+	MaxGlobalBitrate   int    // Global bandwidth cap per session (kbps)
+	StrictFreshness    bool   // If true, stale evidence results in hard denial instead of fallback
 }

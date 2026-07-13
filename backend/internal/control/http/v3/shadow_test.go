@@ -2,10 +2,13 @@ package v3
 
 import (
 	"testing"
+	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/http/v3/intents/testfixtures"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -104,4 +107,140 @@ func TestComparableFromPlanner(t *testing.T) {
 	assert.Equal(t, "ts", comp.Container)
 	assert.Equal(t, "h264", comp.VideoCodec)
 	assert.Equal(t, 3000, comp.TargetBitrate)
+}
+
+func buildLegacyPlanningInput(tc testfixtures.CharacterizationTest) LegacyPlanningInput {
+	confidence := "high"
+	if tc.TruthConfidence > 0 && tc.TruthConfidence < 0.3 {
+		confidence = "stale"
+	} else if tc.TruthConfidence > 0 && tc.TruthConfidence < 0.8 {
+		confidence = "partial"
+	} else if tc.SourceCap.State == scan.CapabilityStatePartial || (tc.SourceCap.Width == 0 && tc.SourceCap.VideoCodec != "") {
+		confidence = "partial"
+	}
+
+	supportedVideoCodecs := []string{"h264"}
+	if tc.ClientFam == playbackprofile.ClientSafariNative || tc.ClientFam == playbackprofile.ClientIOSSafariNative {
+		supportedVideoCodecs = []string{"hevc", "h264"}
+	}
+
+	return LegacyPlanningInput{
+		EvaluatedAt:        time.Now().UnixMilli(),
+		Scope:              "live",
+		RequestedIntent:    "stream",
+		SourceIdentity:     "ch-1",
+		Provenance:         "scan",
+		Confidence:         confidence,
+		ObservedAt:         time.Now().UnixMilli(),
+		NetworkCaptureTime: time.Now().UnixMilli(),
+		PolicyVersion:      "v1",
+
+		Container:         tc.SourceCap.Container,
+		VideoCodec:        tc.SourceCap.VideoCodec,
+		AudioCodec:        tc.SourceCap.AudioCodec,
+		Width:             tc.SourceCap.Width,
+		Height:            tc.SourceCap.Height,
+		FPS:               int(tc.SourceCap.FPS),
+		Interlaced:        tc.SourceCap.Interlaced,
+		BitrateKbps:       tc.SourceCap.BitrateKbps,
+		BitrateConfidence: "high",
+
+		ClientFamily:         tc.ClientFam,
+		DeviceType:           "unknown",
+		CapabilityVersion:    "1.0",
+		AllowTranscode:       tc.Params["allow_transcode"] != "0",
+		SupportsHls:          true,
+		SupportedContainers:  []string{"mpegts", "fmp4"},
+		SupportedVideoCodecs: supportedVideoCodecs,
+		SupportedAudioCodecs: []string{"aac", "ac3"},
+		DownlinkKbps:         tc.NetworkKbps,
+		RTTMillis:            tc.NetworkRTT,
+
+		HostPressureBand: string(tc.HostPressure),
+		AvailableEngines: []string{"hls"},
+		PerformanceClass: "standard",
+		BenchmarkClass:   "standard",
+
+		ForceIntent:        "",
+		MaxQualityRung:     "",
+		DisableTranscoding: false,
+		MaxGlobalBitrate:   0,
+		StrictFreshness:    true,
+	}
+}
+
+func buildExpectedLegacyPlan(tc testfixtures.CharacterizationTest) ComparablePlaybackPlan {
+	mode := "remux"
+	if tc.WantProfile != "high" && tc.WantProfile != "" {
+		mode = "transcode"
+	} else if tc.WantOutcome == "deny" {
+		mode = "none"
+	}
+
+	container := tc.WantContainer
+	if container == "" {
+		container = "mpegts"
+	}
+
+	comp := ComparablePlaybackPlan{
+		IsValid:        true,
+		Outcome:        "allow",
+		Mode:           mode,
+		Engine:         "hls",
+		Container:      container,
+		VideoCodec:     tc.WantVideoCodec,
+		MinQualityRung: tc.WantVideoRung,
+		MaxQualityRung: "",
+	}
+	
+	if mode == "remux" {
+		comp.VideoMode = "copy"
+		comp.AudioMode = "copy"
+		if comp.VideoCodec == "" {
+			comp.VideoCodec = tc.SourceCap.VideoCodec
+		}
+		comp.AudioCodec = tc.SourceCap.AudioCodec
+	} else if mode != "none" {
+		comp.VideoMode = "transcode"
+		comp.AudioMode = "transcode"
+		comp.AudioCodec = "aac"
+	}
+	
+	if tc.WantOutcome != "" {
+		comp.Outcome = tc.WantOutcome
+	}
+	if comp.Outcome == "deny" {
+		comp.Mode = "none"
+		comp.Engine = ""
+		comp.Container = ""
+		comp.VideoCodec = ""
+		comp.AudioCodec = ""
+		comp.VideoMode = ""
+		comp.AudioMode = ""
+	}
+	
+	return comp
+}
+
+func TestEquivalenceGate(t *testing.T) {
+	for _, tc := range testfixtures.Cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			input := buildLegacyPlanningInput(tc)
+			ev, err := BuildPlaybackEvidence(input)
+			assert.NoError(t, err)
+
+			res, err := playbackplanner.Plan(ev)
+			assert.NoError(t, err)
+
+			newComp := ComparableFromPlanner(res.Plan)
+			legacyComp := buildExpectedLegacyPlan(tc)
+
+			diffs := DiffComparablePlans(legacyComp, newComp)
+			if len(diffs) > 0 {
+				t.Logf("Legacy: %+v", legacyComp)
+				t.Logf("Domain: %+v", newComp)
+			}
+			assert.Empty(t, diffs, "Expected 0 diffs, got: %v", diffs)
+		})
+	}
 }

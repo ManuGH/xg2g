@@ -60,6 +60,7 @@ type LegacyPlanningInput struct {
 	MaxQualityRung     string
 	DisableTranscoding bool
 	MaxGlobalBitrate   int
+	StrictFreshness    bool
 }
 
 // BuildPlaybackEvidence maps the legacy HTTP boundary inputs into the new pure domain model.
@@ -118,6 +119,7 @@ func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackE
 			MaxQualityRung:     input.MaxQualityRung,
 			DisableTranscoding: input.DisableTranscoding,
 			MaxGlobalBitrate:   input.MaxGlobalBitrate,
+			StrictFreshness:    input.StrictFreshness,
 		},
 	}
 	return ev, nil

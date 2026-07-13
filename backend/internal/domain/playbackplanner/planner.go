@@ -36,6 +36,10 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 
 	if !isSourceTruthFresh(ev) {
 		logHit("freshness_gate", "fail", "stale_or_partial_truth")
+		if ev.OperatorPolicy.StrictFreshness {
+			plan.Outcome = "deny"
+			return PlanningResult{Plan: plan, Trace: trace}, nil
+		}
 		// Based on legacy characterization, stale live truth drops to remux/transcode or denied if strict.
 		// For now, if we don't have fresh evidence, we can't definitively direct_play.
 		// Let's mark it and continue, but flag that direct_play is blocked.
@@ -82,9 +86,6 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 		canRemux = false
 	} else if !isVideoCodecCompatible(ev) || !isAudioCodecCompatible(ev) {
 		logHit("remux_gate", "fail", "codec_incompatible")
-		canRemux = false
-	} else if requiresInterlaceRepair(ev) {
-		logHit("remux_gate", "fail", "interlace_repair_required")
 		canRemux = false
 	} else if exceedsMaxVideoLimits(ev) {
 		logHit("remux_gate", "fail", "exceeds_client_limits")

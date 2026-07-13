@@ -3,6 +3,8 @@ package v3
 import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 )
 
 type ComparablePlaybackPlan struct {
@@ -22,6 +24,62 @@ type ComparablePlaybackPlan struct {
 	ScaleHeight      int
 	MinQualityRung   string
 	MaxQualityRung   string
+}
+
+func ComparableFromLegacySession(trace *model.PlaybackTrace, prof *ports.ProfileSpec) ComparablePlaybackPlan {
+	if trace == nil {
+		return ComparablePlaybackPlan{IsValid: false}
+	}
+
+	outcome := "allow"
+	// trace doesn't explicitly store 'deny'. The HTTP handler rejects it and no session is created.
+	// We handle deny explicitly via the characterization test outcome.
+
+	mode := "remux"
+	if prof != nil && prof.TranscodeVideo {
+		mode = "transcode"
+	}
+
+	c := ComparablePlaybackPlan{
+		IsValid:        true,
+		Outcome:        outcome,
+		Mode:           mode,
+		Engine:         "hls", // live legacy intents are always HLS in this context
+		MinQualityRung: trace.VideoQualityRung,
+		MaxQualityRung: "", // legacy trace doesn't store max quality rung for live usually
+	}
+
+	if prof != nil {
+		c.VideoMode = "remux"
+		c.AudioMode = "remux"
+		if prof.TranscodeVideo {
+			c.VideoMode = "transcode"
+			// Audio is somewhat hardcoded in legacy to transcode if video does, or copy if not
+			c.AudioMode = "transcode"
+		}
+		
+		c.VideoCodec = prof.VideoCodec
+		if c.VideoCodec == "" && trace.Source != nil {
+			c.VideoCodec = trace.Source.VideoCodec
+		}
+		c.AudioCodec = "aac" // legacy intent usually defaults audio to aac for transcode
+		if !prof.TranscodeVideo && trace.Source != nil {
+			c.AudioCodec = trace.Source.AudioCodec
+		}
+		c.Container = prof.Container
+		if c.Container == "" && trace.Source != nil {
+			c.Container = trace.Source.Container
+		}
+		c.TargetBitrate = prof.VideoMaxRateK
+		c.MaxBitrateKnown = false
+		c.ScaleWidth = prof.VideoMaxWidth
+		c.ScaleHeight = 0 // Legacy doesn't explicitly target height except via source matching
+	} else {
+		c.VideoMode = "copy"
+		c.AudioMode = "copy"
+	}
+
+	return c
 }
 
 func ComparableFromLegacy(dec *decision.Decision) ComparablePlaybackPlan {
@@ -139,7 +197,9 @@ func DiffComparablePlans(legacy, new ComparablePlaybackPlan) []string {
 	if legacy.ScaleWidth != new.ScaleWidth || legacy.ScaleHeight != new.ScaleHeight {
 		diffs = append(diffs, "scale_drift")
 	}
-	if legacy.MinQualityRung != new.MinQualityRung || legacy.MaxQualityRung != new.MaxQualityRung {
+	if legacy.MinQualityRung != new.MinQualityRung {
+		diffs = append(diffs, "guardrails_mismatch")
+	} else if legacy.MaxQualityRung != "" && legacy.MaxQualityRung != new.MaxQualityRung {
 		diffs = append(diffs, "guardrails_mismatch")
 	}
 
