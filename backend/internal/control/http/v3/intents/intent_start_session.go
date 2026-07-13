@@ -19,7 +19,7 @@ func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profil
 	if controller == nil {
 		return &Error{Kind: ErrorAdmissionUnavailable}
 	}
-	decision := controller.Check(ctx, admission.Request{WantsTranscode: profileSpec.TranscodeVideo}, s.deps.AdmissionRuntimeState(ctx))
+	decision := controller.Check(ctx, admission.Request{WantsTranscode: profileSpec.TranscodeVideo || profileSpec.TranscodesAudio()}, s.deps.AdmissionRuntimeState(ctx))
 	if !decision.Allow {
 		if decision.Problem != nil {
 			s.deps.RecordReject(decision.Problem.Code)
@@ -83,6 +83,13 @@ func buildStartRequestParams(intent Intent, resolution startProfileResolution) m
 	if intent.Mode != "" {
 		requestParams[model.CtxKeyMode] = intent.Mode
 	}
+	if receipt := intent.PlanningReceipt; receipt != nil {
+		requestParams["plannerReceiptId"] = receipt.ReceiptID
+		requestParams["plannerPlanHash"] = receipt.PlanHash
+		requestParams["plannerEvidenceHash"] = receipt.EvidenceHash
+		requestParams["plannerVersion"] = receipt.PlannerVersion
+		requestParams["plannerPolicyVersion"] = receipt.PolicyVersion
+	}
 	return requestParams
 }
 
@@ -104,7 +111,13 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	targetProfile := model.TraceTargetProfileFromProfile(resolution.profileSpec)
 	targetVideoQualityRung := model.TraceVideoQualityRungFromProfile(resolution.profileSpec)
 	targetStep := runtimepolicy.PlaybackLadderStepFromTargetProfile(targetProfile, playbackprofile.NormalizeQualityRung(targetVideoQualityRung))
-	startupProfile, _ := capLiveStartupProfile(intent, resolution.profileSpec, targetStep)
+	startupProfile := resolution.profileSpec
+	// A verified planning receipt is the immutable start decision. Legacy
+	// startup capping remains available only on the legacy path; applying it here
+	// would silently re-plan after the receipt was signed.
+	if intent.PlanningReceipt == nil {
+		startupProfile, _ = capLiveStartupProfile(intent, resolution.profileSpec, targetStep)
+	}
 	if v := intent.Params["dvr_window_sec"]; v != "" {
 		if sec, err := strconv.Atoi(v); err == nil && sec >= 0 {
 			startupProfile.DVRWindowSec = sec

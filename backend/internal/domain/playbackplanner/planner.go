@@ -21,9 +21,15 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 	if !hasValidEvidence(ev) {
 		return PlanningResult{}, ErrInvalidEvidence
 	}
+	evidenceHash, err := ev.Hash()
+	if err != nil {
+		return PlanningResult{}, ErrInvalidEvidence
+	}
 
 	trace := PlanTrace{
-		PlannerVersion: "v4", // or whatever we use
+		PlannerVersion: "v4",
+		PolicyVersion:  ev.PolicyVersion,
+		EvidenceHash:   evidenceHash,
 		Log:            []RuleHit{},
 	}
 

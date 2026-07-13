@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -125,6 +126,16 @@ func ToFileConfig(cfg *AppConfig) FileConfig {
 			FailuresThreshold:    cfg.Breaker.FailuresThreshold,
 			ConsecutiveThreshold: cfg.Breaker.ConsecutiveThreshold,
 		},
+		PlannerShadow: &PlannerShadowFileConfig{
+			Enabled:       boolPtr(cfg.PlannerShadow.Enabled),
+			QueueCapacity: intPtr(cfg.PlannerShadow.QueueCapacity),
+		},
+		PlannerReceipt: &PlannerReceiptFileConfig{
+			Enabled:  boolPtr(cfg.PlannerReceipt.Enabled),
+			Required: boolPtr(cfg.PlannerReceipt.Required),
+			Capacity: intPtr(cfg.PlannerReceipt.Capacity),
+			TTL:      durationPtr(cfg.PlannerReceipt.TTL),
+		},
 		Household: householdFileConfigFromRuntime(cfg.Household),
 	}
 }
@@ -150,5 +161,6 @@ func splitCSV(s string) []string {
 	return strings.Split(s, ",")
 }
 
-func boolPtr(b bool) *bool { return &b }
-func intPtr(i int) *int    { return &i }
+func boolPtr(b bool) *bool                       { return &b }
+func intPtr(i int) *int                          { return &i }
+func durationPtr(d time.Duration) *time.Duration { return &d }

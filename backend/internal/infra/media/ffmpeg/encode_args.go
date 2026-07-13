@@ -45,6 +45,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		Str("vaapi.device", a.VaapiDevice).
 		Str("video.codec", outputCodec).
 		Int("video.qp", prof.VideoQP).
+		Int("video.targetRateK", prof.VideoTargetRateK).
 		Int("video.maxRateK", prof.VideoMaxRateK).
 		Int("video.bufSizeK", prof.VideoBufSizeK).
 		Bool("deinterlace", prof.Deinterlace).
@@ -229,8 +230,11 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 	if prof.VideoMaxRateK > 0 {
 		// AMD VAAPI AV1 (Phoenix3 / VCN4) stalls the VCN ring when -b:v == -maxrate.
 		// Use a 25% target headroom (-b:v = 75% of -maxrate) to keep the ring stable.
-		bV := prof.VideoMaxRateK
-		if isAV1 {
+		bV := prof.VideoTargetRateK
+		if bV <= 0 {
+			bV = prof.VideoMaxRateK
+		}
+		if isAV1 && prof.VideoTargetRateK <= 0 {
 			bV = max((prof.VideoMaxRateK*3)/4, 1)
 		}
 		// AV1 QVBR: quality-targeted encode that still honours -maxrate as a hard
@@ -278,6 +282,7 @@ func (a *LocalAdapter) buildNVENCVideoArgs(args []string, spec ports.StreamSpec,
 		Str("transcode.mode", "nvenc").
 		Str("video.codec", outputCodec).
 		Int("video.qp", prof.VideoQP).
+		Int("video.targetRateK", prof.VideoTargetRateK).
 		Int("video.maxRateK", prof.VideoMaxRateK).
 		Int("video.bufSizeK", prof.VideoBufSizeK).
 		Bool("deinterlace", prof.Deinterlace).
@@ -319,8 +324,12 @@ func appendNVENCRateControlArgs(args []string, prof ports.ProfileSpec) []string 
 	}
 
 	if prof.VideoMaxRateK > 0 {
+		bV := prof.VideoTargetRateK
+		if bV <= 0 {
+			bV = prof.VideoMaxRateK
+		}
 		args = append(args,
-			"-b:v", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+			"-b:v", fmt.Sprintf("%dk", bV),
 			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
 		)
 		if prof.VideoBufSizeK > 0 {
@@ -462,7 +471,11 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 	if tune != "" {
 		args = append(args, "-tune", tune)
 	}
-	args = append(args, "-crf", strconv.Itoa(crf))
+	if prof.PlannerBound && prof.VideoTargetRateK > 0 {
+		args = append(args, "-b:v", fmt.Sprintf("%dk", prof.VideoTargetRateK))
+	} else {
+		args = append(args, "-crf", strconv.Itoa(crf))
+	}
 
 	if !legacy && prof.VideoMaxRateK > 0 {
 		args = append(args, "-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK))

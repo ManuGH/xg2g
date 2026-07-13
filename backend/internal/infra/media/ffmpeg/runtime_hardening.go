@@ -40,6 +40,9 @@ type runtimeHardeningDecision struct {
 
 func (a *LocalAdapter) FinalizePlan(ctx context.Context, spec ports.StreamSpec, inputURL string) ports.StreamSpec {
 	spec = seedRuntimeMode(spec)
+	if spec.Profile.PlannerBound {
+		return spec
+	}
 	spec = a.applyRuntimeHardeningPlan(ctx, spec, inputURL)
 	if spec.Profile.EffectiveRuntimeMode == "" || spec.Profile.EffectiveRuntimeMode == ports.RuntimeModeUnknown {
 		spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)

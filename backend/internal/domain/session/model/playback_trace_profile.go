@@ -29,6 +29,20 @@ func TraceTargetProfileFromProfile(profile ProfileSpec) *playbackprofile.TargetP
 		}
 	}
 
+	// Preserve the legacy trace contract when AudioMode is unspecified: the
+	// target profile historically advertised AAC even though execution coupled
+	// audio to TranscodeVideo. Planner-issued profiles are explicit and can now
+	// represent both audio-only transcode and explicit audio copy.
+	audioMode := playbackprofile.MediaModeTranscode
+	audioCodec := "aac"
+	if strings.EqualFold(strings.TrimSpace(profile.AudioMode), "copy") {
+		audioMode = playbackprofile.MediaModeCopy
+		audioCodec = ""
+	} else if profile.TranscodesAudio() {
+		audioMode = playbackprofile.MediaModeTranscode
+		audioCodec = profile.ResolvedAudioCodec()
+	}
+
 	audioBitrate := profile.AudioBitrateK
 	if audioBitrate <= 0 {
 		audioBitrate = 192
@@ -50,8 +64,8 @@ func TraceTargetProfileFromProfile(profile ProfileSpec) *playbackprofile.TargetP
 			Width:  profile.VideoMaxWidth,
 		},
 		Audio: playbackprofile.AudioTarget{
-			Mode:        playbackprofile.MediaModeTranscode,
-			Codec:       "aac",
+			Mode:        audioMode,
+			Codec:       audioCodec,
 			Channels:    2,
 			BitrateKbps: audioBitrate,
 			SampleRate:  48000,

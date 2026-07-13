@@ -226,6 +226,10 @@ func buildRegistry() (*Registry, error) {
 		// --- PLANNER SHADOW ---
 		{Path: "plannerShadow.enabled", Env: "XG2G_PLANNER_SHADOW", FieldPath: "PlannerShadow.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "plannerShadow.queueCapacity", Env: "XG2G_PLANNER_SHADOW_QUEUE_CAPACITY", FieldPath: "PlannerShadow.QueueCapacity", Profile: ProfileAdvanced, Status: StatusActive, Default: 512},
+		{Path: "plannerReceipt.enabled", Env: "XG2G_PLANNER_RECEIPT_ENABLED", FieldPath: "PlannerReceipt.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "plannerReceipt.required", Env: "XG2G_PLANNER_RECEIPT_REQUIRED", FieldPath: "PlannerReceipt.Required", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "plannerReceipt.capacity", Env: "XG2G_PLANNER_RECEIPT_CAPACITY", FieldPath: "PlannerReceipt.Capacity", Profile: ProfileAdvanced, Status: StatusActive, Default: 2048},
+		{Path: "plannerReceipt.ttl", Env: "XG2G_PLANNER_RECEIPT_TTL", FieldPath: "PlannerReceipt.TTL", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
 
 		{Path: "monetization.enabled", Env: "XG2G_MONETIZATION_ENABLED", FieldPath: "Monetization.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "monetization.model", Env: "XG2G_MONETIZATION_MODEL", FieldPath: "Monetization.Model", Profile: ProfileAdvanced, Status: StatusActive, Default: MonetizationModelFree},

@@ -6,6 +6,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 )
 
 type PlaybackSubjectKind string
@@ -74,6 +75,9 @@ type PlaybackInfoResult struct {
 	RuntimePolicyConstraints  []string
 	RuntimeProbeSuccessStreak int
 	RuntimeProbeFailureStreak int
+	// PlannerEvidence is the immutable snapshot evaluated by shadow mode. The
+	// HTTP adapter may synchronously plan it when receipt handoff is enabled.
+	PlannerEvidence *playbackplanner.PlaybackEvidence
 }
 
 type PlaybackInfoProblem struct {

@@ -71,17 +71,28 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	// branching must go through the live truth resolver used by /live/stream-info.
 	capability := s.lookupStartCapability(intent.ServiceRef)
 	hardwareState := detectStartHardwareState()
-	hwaccelMode, err := s.resolveStartHWAccelMode(intent, hardwareState)
-	if err != nil {
-		return nil, err
-	}
-	reqProfileID, requestedPlaybackMode, err := s.resolveRequestedStartProfile(ctx, intent, hwaccelMode, capability)
-	if err != nil {
-		return nil, err
-	}
-	resolution, err := s.resolveStartProfile(ctx, intent, capability, hardwareState, hwaccelMode, reqProfileID, requestedPlaybackMode)
-	if err != nil {
-		return nil, err
+	hwaccelMode := profiles.HWAccelAuto
+	var resolution startProfileResolution
+	if intent.PlannerPlan != nil || intent.PlanningReceipt != nil {
+		var err *Error
+		resolution, err = s.resolvePlannerStartProfile(intent, hardwareState)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err *Error
+		hwaccelMode, err = s.resolveStartHWAccelMode(intent, hardwareState)
+		if err != nil {
+			return nil, err
+		}
+		reqProfileID, requestedPlaybackMode, err := s.resolveRequestedStartProfile(ctx, intent, hwaccelMode, capability)
+		if err != nil {
+			return nil, err
+		}
+		resolution, err = s.resolveStartProfile(ctx, intent, capability, hardwareState, hwaccelMode, reqProfileID, requestedPlaybackMode)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := s.checkStartAdmission(ctx, intent, resolution.profileSpec); err != nil {
 		return nil, err

@@ -844,6 +844,40 @@
       },
       "type": "object"
     },
+    "plannerReceipt": {
+      "properties": {
+        "capacity": {
+          "default": 2048,
+          "type": "integer"
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "required": {
+          "default": false,
+          "type": "boolean"
+        },
+        "ttl": {
+          "default": "1m",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "plannerShadow": {
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "queueCapacity": {
+          "default": 512,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "playback": {
       "properties": {
         "operator": {

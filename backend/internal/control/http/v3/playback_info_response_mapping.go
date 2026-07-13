@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
+	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
@@ -26,7 +27,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
-func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int) PlaybackInfo {
+func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int, plannerReceipt *v3intents.PlanningHandoff) PlaybackInfo {
 	proto := decision.ProtocolFrom(dec)
 	var mode PlaybackInfoMode
 	var url string
@@ -79,7 +80,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 		Resume:                resDTO,
 		RequestId:             dec.Trace.RequestID,
 		SessionId:             fmt.Sprintf("rec:%s", id),
-		PlaybackDecisionToken: s.buildLivePlaybackDecisionToken(id, dec, schemaType, caps),
+		PlaybackDecisionToken: s.buildLivePlaybackDecisionToken(id, dec, schemaType, caps, plannerReceipt),
 	}
 	if durSec > 0 {
 		info.DurationSeconds = &durSec
@@ -308,7 +309,7 @@ func buildPlaybackResumeSummary(rState *resume.State) *ResumeSummary {
 	}
 }
 
-func (s *Server) buildLivePlaybackDecisionToken(id string, dec *decision.Decision, schemaType string, caps *PlaybackCapabilities) *string {
+func (s *Server) buildLivePlaybackDecisionToken(id string, dec *decision.Decision, schemaType string, caps *PlaybackCapabilities, plannerReceipt *v3intents.PlanningHandoff) *string {
 	s.mu.RLock()
 	jwtSecret := append([]byte(nil), s.JWTSecret...)
 	s.mu.RUnlock()
@@ -320,6 +321,17 @@ func (s *Server) buildLivePlaybackDecisionToken(id string, dec *decision.Decisio
 	now := time.Now().Unix()
 	capHash := hashV3Capabilities(caps)
 
+	expiresAt := now + 60
+	if plannerReceipt != nil {
+		receiptExpiry := plannerReceipt.Receipt.ExpiresAt / 1000
+		if receiptExpiry < expiresAt {
+			expiresAt = receiptExpiry
+		}
+		if expiresAt <= now {
+			return nil
+		}
+	}
+
 	claims := v3auth.TokenClaims{
 		Iss:     "xg2g",
 		Aud:     "xg2g/v3/intents",
@@ -327,10 +339,17 @@ func (s *Server) buildLivePlaybackDecisionToken(id string, dec *decision.Decisio
 		Jti:     uuid.New().String(),
 		Iat:     now,
 		Nbf:     now,
-		Exp:     now + 60,
+		Exp:     expiresAt,
 		Mode:    string(dec.Mode),
 		CapHash: capHash,
 		TraceID: dec.Trace.RequestID,
+	}
+	if plannerReceipt != nil {
+		claims.ReceiptID = plannerReceipt.Receipt.ReceiptID
+		claims.PlanHash = plannerReceipt.Receipt.PlanHash
+		claims.EvidenceHash = plannerReceipt.Receipt.EvidenceHash
+		claims.PlannerVersion = plannerReceipt.Receipt.PlannerVersion
+		claims.PolicyVersion = plannerReceipt.Receipt.PolicyVersion
 	}
 
 	tokenStr, err := v3auth.GenerateHS256(jwtSecret, claims, "kid-v1")

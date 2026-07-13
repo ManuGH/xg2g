@@ -68,16 +68,21 @@ func ClassifyError(err error) string {
 }
 
 type TokenClaims struct {
-	Iss     string `json:"iss"`
-	Aud     string `json:"aud"`
-	Sub     string `json:"sub"`
-	Jti     string `json:"jti"`
-	Iat     int64  `json:"iat"`
-	Nbf     int64  `json:"nbf"`
-	Exp     int64  `json:"exp,omitempty"`
-	Mode    string `json:"mode,omitempty"`
-	CapHash string `json:"capHash,omitempty"`
-	TraceID string `json:"traceId,omitempty"`
+	Iss            string `json:"iss"`
+	Aud            string `json:"aud"`
+	Sub            string `json:"sub"`
+	Jti            string `json:"jti"`
+	Iat            int64  `json:"iat"`
+	Nbf            int64  `json:"nbf"`
+	Exp            int64  `json:"exp,omitempty"`
+	Mode           string `json:"mode,omitempty"`
+	CapHash        string `json:"capHash,omitempty"`
+	TraceID        string `json:"traceId,omitempty"`
+	ReceiptID      string `json:"receiptId,omitempty"`
+	PlanHash       string `json:"planHash,omitempty"`
+	EvidenceHash   string `json:"evidenceHash,omitempty"`
+	PlannerVersion string `json:"plannerVersion,omitempty"`
+	PolicyVersion  string `json:"policyVersion,omitempty"`
 }
 
 type JWTHeader struct {

@@ -124,6 +124,14 @@ network:
     enabled: false
 picons:
   baseUrl: ""
+plannerReceipt:
+  capacity: 2048
+  enabled: false
+  required: false
+  ttl: 1m
+plannerShadow:
+  enabled: false
+  queueCapacity: 512
 playback:
   operator:
     disable_client_fallback: false

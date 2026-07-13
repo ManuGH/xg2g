@@ -57,6 +57,15 @@ func TestLoadDefaults(t *testing.T) {
 	if len(cfg.Playback.Operator.SourceRules) != 0 {
 		t.Errorf("expected Playback.Operator.SourceRules default empty, got %d entries", len(cfg.Playback.Operator.SourceRules))
 	}
+	if cfg.PlannerReceipt.Enabled || cfg.PlannerReceipt.Required {
+		t.Error("expected planner receipt handoff to be disabled by default")
+	}
+	if cfg.PlannerReceipt.Capacity != 2048 {
+		t.Errorf("expected PlannerReceipt.Capacity=2048, got %d", cfg.PlannerReceipt.Capacity)
+	}
+	if cfg.PlannerReceipt.TTL != 60*time.Second {
+		t.Errorf("expected PlannerReceipt.TTL=60s, got %v", cfg.PlannerReceipt.TTL)
+	}
 }
 
 func TestLoadFromYAML(t *testing.T) {

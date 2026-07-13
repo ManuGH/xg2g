@@ -34,8 +34,11 @@ type PlaybackPlan struct {
 }
 
 type TrackPlan struct {
-	Mode  string // "copy", "transcode", "disabled"
-	Codec string // e.g. "h264", "aac"
+	Mode        string // "copy", "transcode", "disabled"
+	Codec       string // e.g. "h264", "aac"
+	BitrateKbps int
+	Channels    int
+	SampleRate  int
 }
 
 // PlanTrace records the sequence of rules and decisions that led to the plan.

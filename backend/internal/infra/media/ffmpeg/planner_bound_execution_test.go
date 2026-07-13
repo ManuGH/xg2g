@@ -1,0 +1,90 @@
+package ffmpeg
+
+import (
+	"context"
+	"io"
+	"testing"
+	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/domain/vod"
+)
+
+func TestFinalizePlanDoesNotMutatePlannerBoundProfile(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.streamProbeFn = func(context.Context, string) (*vod.StreamInfo, error) {
+		t.Fatal("planner-bound profiles must not be probed or re-planned")
+		return nil, nil
+	}
+	profile := model.ProfileSpec{
+		Name:             "safari",
+		PlannerBound:     true,
+		TranscodeVideo:   true,
+		VideoCodec:       "libx264",
+		AudioMode:        "transcode",
+		AudioCodec:       "aac",
+		Container:        "fmp4",
+		VideoTargetRateK: 8000,
+		VideoMaxRateK:    16000,
+		VideoBufSizeK:    32000,
+	}
+	spec := ports.StreamSpec{
+		SessionID: "planner-bound",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Profile:   profile,
+		Source: ports.StreamSource{
+			ID:   "1:0:19:11:6:85:C00000:0:0:0:",
+			Type: ports.SourceTuner,
+		},
+	}
+
+	finalized := adapter.FinalizePlan(context.Background(), spec, spec.Source.ID)
+	require.Equal(t, profile.TranscodeVideo, finalized.Profile.TranscodeVideo)
+	require.Equal(t, profile.VideoCodec, finalized.Profile.VideoCodec)
+	require.Equal(t, profile.AudioMode, finalized.Profile.AudioMode)
+	require.Equal(t, profile.Container, finalized.Profile.Container)
+	require.Equal(t, profile.VideoTargetRateK, finalized.Profile.VideoTargetRateK)
+	require.Equal(t, profile.VideoMaxRateK, finalized.Profile.VideoMaxRateK)
+}
+
+func TestPlannerBoundRateControlPreservesTargetAndMaximum(t *testing.T) {
+	profile := model.ProfileSpec{
+		PlannerBound:     true,
+		TranscodeVideo:   true,
+		VideoTargetRateK: 8000,
+		VideoMaxRateK:    16000,
+		VideoBufSizeK:    32000,
+	}
+
+	vaapi := appendVaapiRateControlArgs(nil, profile, "av1", LoadAdapterConfig("", ""))
+	value, ok := valueAfter(vaapi, "-b:v")
+	require.True(t, ok)
+	require.Equal(t, "8000k", value)
+	value, ok = valueAfter(vaapi, "-maxrate")
+	require.True(t, ok)
+	require.Equal(t, "16000k", value)
+
+	nvenc := appendNVENCRateControlArgs(nil, profile)
+	value, ok = valueAfter(nvenc, "-b:v")
+	require.True(t, ok)
+	require.Equal(t, "8000k", value)
+	value, ok = valueAfter(nvenc, "-maxrate")
+	require.True(t, ok)
+	require.Equal(t, "16000k", value)
+
+	adapter := &LocalAdapter{Logger: zerolog.Nop()}
+	cpu := adapter.buildCPUVideoArgs(nil, ports.StreamSpec{Profile: profile}, "h264", 50, 2)
+	value, ok = valueAfter(cpu, "-b:v")
+	require.True(t, ok)
+	require.Equal(t, "8000k", value)
+	require.NotContains(t, cpu, "-crf")
+}

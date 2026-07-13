@@ -57,7 +57,8 @@ func ComparableFromLegacySession(trace *model.PlaybackTrace, prof *ports.Profile
 		c.AudioMode = "copy"
 		if prof.TranscodeVideo {
 			c.VideoMode = "transcode"
-			// Audio is somewhat hardcoded in legacy to transcode if video does, or copy if not
+		}
+		if prof.TranscodesAudio() {
 			c.AudioMode = "transcode"
 		}
 
@@ -65,8 +66,8 @@ func ComparableFromLegacySession(trace *model.PlaybackTrace, prof *ports.Profile
 		if c.VideoCodec == "" && trace.Source != nil {
 			c.VideoCodec = trace.Source.VideoCodec
 		}
-		c.AudioCodec = "aac" // legacy intent usually defaults audio to aac for transcode
-		if !prof.TranscodeVideo && trace.Source != nil {
+		c.AudioCodec = prof.ResolvedAudioCodec()
+		if !prof.TranscodesAudio() && trace.Source != nil {
 			c.AudioCodec = trace.Source.AudioCodec
 		}
 		c.Container = prof.Container
@@ -76,7 +77,10 @@ func ComparableFromLegacySession(trace *model.PlaybackTrace, prof *ports.Profile
 		if c.Container == "ts" {
 			c.Container = "mpegts" // Align with new planner nomenclature
 		}
-		c.TargetBitrate = prof.VideoMaxRateK
+		c.TargetBitrate = prof.VideoTargetRateK
+		if c.TargetBitrate <= 0 {
+			c.TargetBitrate = prof.VideoMaxRateK
+		}
 		c.MaxBitrate = prof.VideoMaxRateK
 		c.MaxBitrateKnown = true
 		c.ScaleWidth = prof.VideoMaxWidth

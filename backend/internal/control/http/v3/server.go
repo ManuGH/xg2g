@@ -18,7 +18,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
@@ -39,6 +38,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/receipts"
 	recinfra "github.com/ManuGH/xg2g/internal/recordings"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -111,6 +111,9 @@ type Server struct {
 	deviceAuthStateStore   deviceauthstore.StateStore
 	plannerShadowWorker    *playbackshadow.Worker
 	plannerShadowObserver  playbackshadow.PlannerShadowObserver
+	plannerReceiptStore    *v3intents.PlanningHandoffStore
+	plannerReceiptEnabled  bool
+	plannerReceiptRequired bool
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -198,6 +201,23 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		}
 	}
 	s.plannerShadowObserver = observer
+	receiptEnabled := cfg.PlannerReceipt.Enabled || cfg.PlannerReceipt.Required
+	if cfg.PlannerReceipt.Required && !cfg.PlannerReceipt.Enabled {
+		log.L().Warn().Msg("planner receipt required implies enabled")
+	}
+	if receiptEnabled {
+		receiptTTL := cfg.PlannerReceipt.TTL
+		if receiptTTL > 2*time.Minute {
+			log.L().Warn().Dur("configuredTTL", receiptTTL).Msg("planner receipt TTL clamped to decision token maximum")
+			receiptTTL = 2 * time.Minute
+		}
+		s.plannerReceiptStore = v3intents.NewPlanningHandoffStore(v3intents.PlanningHandoffStoreConfig{
+			Capacity: cfg.PlannerReceipt.Capacity,
+			TTL:      receiptTTL,
+		})
+	}
+	s.plannerReceiptEnabled = receiptEnabled
+	s.plannerReceiptRequired = cfg.PlannerReceipt.Required
 
 	// JWTSecret must be set explicitly via SetJWTSecret before serving requests (fail-closed).
 	// owiFactory defaults to nil (uses newOpenWebIFClient in prod)

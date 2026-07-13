@@ -22,7 +22,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 
 	case "transcode":
 		plan.Video = TrackPlan{Mode: "transcode", Codec: "h264"} // Default
-		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac"}
+		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
 		plan.Packaging = Packaging{Container: "mpegts"}
 		if ev.ClientEvidence.PrefersFMP4 || ev.ClientEvidence.PrefersFMP4ForTranscode {
 			plan.Packaging.Container = "fmp4"

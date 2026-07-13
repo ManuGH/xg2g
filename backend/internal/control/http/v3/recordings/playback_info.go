@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
+	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -95,7 +96,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint)
 
 	// Phase 2c: Shadow Observer
-	s.observePlannerShadow(req, sourceRef, truth, liveTruth, resolvedCaps, hostContext, hostPressure, operatorPolicy, dec)
+	plannerEvidence := s.observePlannerShadow(req, sourceRef, truth, liveTruth, resolvedCaps, hostContext, hostPressure, operatorPolicy, dec)
 
 	return PlaybackInfoResult{
 		SourceRef:                 sourceRef,
@@ -112,6 +113,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		RuntimePolicyConstraints:  playbackPolicyConstraintNames(runtimeFeedbackPolicy),
 		RuntimeProbeSuccessStreak: playbackPolicyProbeSuccessStreak(runtimeFeedbackPolicy),
 		RuntimeProbeFailureStreak: playbackPolicyProbeFailureStreak(runtimeFeedbackPolicy),
+		PlannerEvidence:           plannerEvidence,
 	}, nil
 }
 
@@ -647,9 +649,9 @@ func (s *Service) observePlannerShadow(
 	hostPressure playbackprofile.HostPressureAssessment,
 	operatorPolicy config.PlaybackOperatorConfig,
 	dec *decision.Decision,
-) {
+) *playbackplanner.PlaybackEvidence {
 	if s.observer == nil {
-		return
+		return nil
 	}
 
 	scope := "recording"
@@ -754,7 +756,7 @@ func (s *Service) observePlannerShadow(
 	ev, err := playbackshadow.BuildPlaybackEvidence(legacyInput)
 	if err != nil {
 		log.L().Debug().Err(err).Msg("failed to build playback evidence for shadow observer")
-		return
+		return nil
 	}
 
 	obs := playbackshadow.ShadowObservation{
@@ -762,6 +764,7 @@ func (s *Service) observePlannerShadow(
 		Legacy:   playbackshadow.ComparableFromLegacy(dec),
 	}
 	s.observer.TryObserve(obs)
+	return &ev
 }
 
 func plannerAutoTranscodePrefersFMP4(req PlaybackInfoRequest, truth playback.MediaTruth, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot) bool {

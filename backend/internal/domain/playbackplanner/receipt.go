@@ -19,7 +19,10 @@ type PlanningReceipt struct {
 	PrincipalBind  string
 	ServiceRefBind string
 	ScopeBind      string
-	LifecycleState string // e.g., "issued", "consumed", "expired"
+	LifecycleState string // "issued", "consumed", "expired"
+	// ConsumedSessionID makes consumption idempotent. A retried intent may load
+	// the same immutable plan again, but it must resolve to the same session.
+	ConsumedSessionID string
 }
 
 // Hash returns a deterministic hash of the plan to be embedded in the receipt.

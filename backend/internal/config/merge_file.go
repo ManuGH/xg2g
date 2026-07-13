@@ -63,6 +63,7 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 	l.mergeFileResilience(dst, src)
 	l.mergeFilePlayback(dst, src)
+	l.mergeFilePlanner(dst, src)
 	l.mergeFileMonetization(dst, src)
 	if err := l.mergeFileHousehold(dst, src); err != nil {
 		return err
@@ -70,6 +71,31 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	l.mergeFileVOD(dst, src)
 
 	return nil
+}
+
+func (l *Loader) mergeFilePlanner(dst *AppConfig, src *FileConfig) {
+	if shadow := src.PlannerShadow; shadow != nil {
+		if shadow.Enabled != nil {
+			dst.PlannerShadow.Enabled = *shadow.Enabled
+		}
+		if shadow.QueueCapacity != nil {
+			dst.PlannerShadow.QueueCapacity = *shadow.QueueCapacity
+		}
+	}
+	if receipt := src.PlannerReceipt; receipt != nil {
+		if receipt.Enabled != nil {
+			dst.PlannerReceipt.Enabled = *receipt.Enabled
+		}
+		if receipt.Required != nil {
+			dst.PlannerReceipt.Required = *receipt.Required
+		}
+		if receipt.Capacity != nil {
+			dst.PlannerReceipt.Capacity = *receipt.Capacity
+		}
+		if receipt.TTL != nil {
+			dst.PlannerReceipt.TTL = *receipt.TTL
+		}
+	}
 }
 
 func (l *Loader) mergeFileCore(dst *AppConfig, src *FileConfig) {

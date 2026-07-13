@@ -20,6 +20,20 @@ func (s *Server) buildPlaybackInfoHTTPResponse(ctx context.Context, deps recordi
 
 	logPlaybackTargetProfile(recordingID, schemaType, playbackInfo.Decision)
 	runtimeState := resolvePlaybackRuntimeState(ctx, deps, serviceRequest.PrincipalID, recordingID, playbackInfo.Decision.Mode)
+	plannerReceipt, receiptErr := s.issuePlannerReceipt(playbackInfo, serviceRequest, schemaType)
+	if receiptErr != nil {
+		log.L().Error().Err(receiptErr).Str("schemaType", schemaType).Msg("failed to issue planner receipt")
+		s.mu.RLock()
+		required := s.plannerReceiptRequired
+		s.mu.RUnlock()
+		if required {
+			return PlaybackInfo{}, &v3recordings.PlaybackInfoError{
+				Kind:    v3recordings.PlaybackInfoErrorInternal,
+				Message: "planner receipt unavailable; refresh playback info",
+				Cause:   receiptErr,
+			}
+		}
+	}
 
 	return s.mapPlaybackInfoV2(
 		ctx,
@@ -42,6 +56,7 @@ func (s *Server) buildPlaybackInfoHTTPResponse(ctx context.Context, deps recordi
 		playbackInfo.RuntimePolicyConstraints,
 		playbackInfo.RuntimeProbeSuccessStreak,
 		playbackInfo.RuntimeProbeFailureStreak,
+		plannerReceipt,
 	), nil
 }
 
