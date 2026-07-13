@@ -88,3 +88,32 @@ func TestPlannerBoundRateControlPreservesTargetAndMaximum(t *testing.T) {
 	require.Equal(t, "8000k", value)
 	require.NotContains(t, cpu, "-crf")
 }
+
+func TestPlannerBoundScaleWidthReachesEveryEncoderPath(t *testing.T) {
+	adapter := &LocalAdapter{Logger: zerolog.Nop()}
+	spec := ports.StreamSpec{Profile: model.ProfileSpec{
+		PlannerBound:   true,
+		TranscodeVideo: true,
+		VideoMaxWidth:  640,
+	}}
+
+	fullVAAPI := adapter.buildVaapiVideoArgs(nil, spec, "h264", 50, 2)
+	filter, ok := valueAfter(fullVAAPI, "-vf")
+	require.True(t, ok)
+	require.Equal(t, "scale_vaapi=w=640:h=-2", filter)
+
+	encodeOnlyVAAPI := adapter.buildVaapiEncodeOnlyVideoArgs(nil, spec, "h264", 50, 2)
+	filter, ok = valueAfter(encodeOnlyVAAPI, "-vf")
+	require.True(t, ok)
+	require.Equal(t, "scale=w=640:h=-2:flags=lanczos,format=nv12,hwupload", filter)
+
+	nvenc := adapter.buildNVENCVideoArgs(nil, spec, "h264", 50, 2)
+	filter, ok = valueAfter(nvenc, "-vf")
+	require.True(t, ok)
+	require.Equal(t, "scale=w=640:h=-2:flags=lanczos", filter)
+
+	cpu := adapter.buildCPUVideoArgs(nil, spec, "h264", 50, 2)
+	filter, ok = valueAfter(cpu, "-vf")
+	require.True(t, ok)
+	require.Equal(t, "scale=w=640:h=-2:flags=lanczos", filter)
+}

@@ -51,8 +51,15 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		Bool("deinterlace", prof.Deinterlace).
 		Msg("pipeline video: vaapi")
 
+	filters := make([]string, 0, 2)
 	if prof.Deinterlace {
-		args = append(args, "-vf", "deinterlace_vaapi")
+		filters = append(filters, "deinterlace_vaapi")
+	}
+	if prof.VideoMaxWidth > 0 {
+		filters = append(filters, fmt.Sprintf("scale_vaapi=w=%d:h=-2", prof.VideoMaxWidth))
+	}
+	if len(filters) > 0 {
+		args = append(args, "-vf", strings.Join(filters, ","))
 	}
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
@@ -114,6 +121,9 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	parts := make([]string, 0, 4)
 	if spec.Profile.Deinterlace {
 		parts = append(parts, a.deinterlaceFilterForProfile(spec))
+	}
+	if spec.Profile.VideoMaxWidth > 0 {
+		parts = append(parts, softwareScaleWidthFilter(spec.Profile.VideoMaxWidth))
 	}
 	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
 	if isAV1 {
@@ -288,8 +298,15 @@ func (a *LocalAdapter) buildNVENCVideoArgs(args []string, spec ports.StreamSpec,
 		Bool("deinterlace", prof.Deinterlace).
 		Msg("pipeline video: nvenc")
 
+	filters := make([]string, 0, 2)
 	if prof.Deinterlace {
-		args = append(args, "-vf", a.deinterlaceFilterForProfile(spec))
+		filters = append(filters, a.deinterlaceFilterForProfile(spec))
+	}
+	if prof.VideoMaxWidth > 0 {
+		filters = append(filters, softwareScaleWidthFilter(prof.VideoMaxWidth))
+	}
+	if len(filters) > 0 {
+		args = append(args, "-vf", strings.Join(filters, ","))
 	}
 
 	encoder := "h264_nvenc"
@@ -457,9 +474,15 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 		Bool("legacy_defaults", legacy).
 		Msg("pipeline video: cpu")
 
-	deinterlaceFilter := a.deinterlaceFilterForProfile(spec)
+	filters := make([]string, 0, 2)
 	if deinterlace {
-		args = append(args, "-vf", deinterlaceFilter)
+		filters = append(filters, a.deinterlaceFilterForProfile(spec))
+	}
+	if prof.VideoMaxWidth > 0 {
+		filters = append(filters, softwareScaleWidthFilter(prof.VideoMaxWidth))
+	}
+	if len(filters) > 0 {
+		args = append(args, "-vf", strings.Join(filters, ","))
 	}
 
 	args = append(args, "-c:v", codec)
@@ -493,6 +516,10 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 		"-profile:v", "main",
 	)
 	return args
+}
+
+func softwareScaleWidthFilter(width int) string {
+	return fmt.Sprintf("scale=w=%d:h=-2:flags=lanczos", width)
 }
 
 func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string {
