@@ -998,6 +998,7 @@ export function usePlaybackOrchestrator(
           requestCaps,
           gatherPlaybackClientContext(),
           networkProbe,
+
         );
         if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
         const requestProfile = resolvePlaybackRequestProfile(
@@ -1327,6 +1328,7 @@ export function usePlaybackOrchestrator(
           requestCaps,
           gatherPlaybackClientContext(),
           networkProbe,
+
         );
         if (isStalePlaybackEpoch(playbackEpoch)) return;
         const requestProfile = resolvePlaybackRequestProfile(

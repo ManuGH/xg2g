@@ -15,6 +15,31 @@ vi.mock('../src/client-ts', async () => {
   };
 });
 
+vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
+  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
+  measurePlaybackNetwork: () => Promise.resolve(undefined),
+}));
+
+vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
+  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
+  measurePlaybackNetwork: () => Promise.resolve(undefined),
+}));
+
+vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
+  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
+  measurePlaybackNetwork: () => Promise.resolve(undefined),
+}));
+
+vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
+  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
+  measurePlaybackNetwork: () => Promise.resolve(undefined),
+}));
+
+vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
+  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
+  measurePlaybackNetwork: () => Promise.resolve(undefined),
+}));
+
 describe('Telemetry Contract Consumption', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -15,12 +15,14 @@ type CachedPlaybackNetworkProbe = {
 const probeCache = new Map<string, CachedPlaybackNetworkProbe>();
 const probesInFlight = new Map<string, Promise<PlaybackNetworkProbe | undefined>>();
 
+
 export type PlaybackNetworkProbe =
   | { kind: 'lan' }
   | { kind: 'measured'; downlinkMbps: number }
   | { kind: 'constrained' };
 
 async function runPlaybackNetworkProbe(apiBase: string): Promise<PlaybackNetworkProbe | undefined> {
+
 	if (typeof window === 'undefined' || navigator.onLine === false) {
 		return undefined;
 	}
@@ -84,6 +86,7 @@ export function measurePlaybackNetwork(apiBase: string): Promise<PlaybackNetwork
 	probesInFlight.set(apiBase, probe);
 	return probe;
 }
+
 
 export function applyPlaybackNetworkProbe(
 	capabilities: CapabilitySnapshot,

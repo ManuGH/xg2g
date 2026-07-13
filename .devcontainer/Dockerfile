@@ -1,4 +1,4 @@
-FROM golang:1.25.11-bookworm
+FROM golang:1.25.12-bookworm
 
 ARG USERNAME=vscode
 ARG USER_UID=1000
@@ -38,6 +38,9 @@ RUN if ! getent group "${USER_GID}" >/dev/null 2>&1; then \
     usermod -aG docker,sudo "${USERNAME}" && \
     echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" && \
     chmod 0440 "/etc/sudoers.d/${USERNAME}"
+
+# Dev container has no long-running service; disable HEALTHCHECK to suppress Trivy DS-0026.
+HEALTHCHECK NONE
 
 USER ${USERNAME}
 WORKDIR /workspaces/xg2g

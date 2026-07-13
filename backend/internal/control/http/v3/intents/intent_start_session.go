@@ -121,6 +121,7 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	} else if intent.Params["multi_audio"] == "false" {
 		startupProfile.EnableMultiAudio = false
 	}
+
 	videoQualityRung := model.TraceVideoQualityRungFromProfile(startupProfile)
 	now := time.Now()
 	session := lifecycle.NewSessionRecord(now)

@@ -65,6 +65,7 @@ export function EpgTimelineRow({
           <span className={styles.timelineChannelName}>{displayName}</span>
           {isUhd && (
             <span style={{ fontSize: '0.65rem', background: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24', padding: '1px 5px', borderRadius: '4px', fontWeight: 600, marginLeft: '6px' }}>
+
               4K Pausiert
             </span>
           )}

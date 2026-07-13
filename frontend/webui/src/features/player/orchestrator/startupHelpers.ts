@@ -234,6 +234,7 @@ export function getStoredDvrWindowSec(): number | undefined {
     if (dvrSetting === '2h') return 7200;
     if (dvrSetting === '4h') return 14400;
   } catch {}
+
   return undefined;
 }
 
@@ -244,6 +245,7 @@ export function buildLiveIntentBody(
   liveMode: NonNullable<VodStreamMode>,
   dvrWindowSecOverride?: number,
   explicitProfile?: string,
+
 ): IntentRequest {
   const intentParams: Record<string, string> = {
     playback_mode: liveMode,
@@ -263,6 +265,7 @@ export function buildLiveIntentBody(
       intentParams.multi_audio = 'false';
     }
   } catch {}
+
 
   if (requestCaps.clientFamilyFallback) {
     intentParams.client_family = requestCaps.clientFamilyFallback;

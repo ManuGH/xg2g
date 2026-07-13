@@ -43,6 +43,7 @@ const (
 	avsyncPeekFirstProbe = 64 << 10 // start probing once this much head is buffered
 	avsyncPeekProbeStep  = 64 << 10 // re-probe after each additional step
 	avsyncPeekMaxBytes   = 6 << 20   // give up past here -> fall back to direct path
+
 )
 
 // shouldAvsyncAtrim reports whether the orphan-correction path applies to this

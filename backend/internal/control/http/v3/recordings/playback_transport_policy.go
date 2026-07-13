@@ -59,8 +59,6 @@ func applyPlaybackTransportPolicy(req PlaybackInfoRequest, resolvedCaps capabili
 	}
 }
 
-
-
 func clientWantsFMP4(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, _ *decision.Decision) bool {
 	return clientpolicy.WantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback)
 }

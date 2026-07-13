@@ -180,6 +180,12 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		if rel, relErr := filepath.Rel(baseDir, variantPath); relErr != nil || strings.HasPrefix(rel, "..") {
 			return false, "invalid variant playlist path", nil
 		}
+		// #nosec G304 — variantPath is validated above via filepath.Rel path traversal check
+		if resolvedVariantContent, readErr := os.ReadFile(variantPath); readErr == nil {
+			if strings.Contains(string(resolvedVariantContent), "#EXT-X-STREAM-INF") {
+				return false, "nested master playlists are not supported", nil
+			}
+		}
 		return o.checkPlaylistReadyAt(variantPath, vodMode, ttfpRecorded, profileID, startTime)
 	}
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {

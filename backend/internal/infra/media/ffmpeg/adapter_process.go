@@ -276,6 +276,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(sourceKey, spec.SessionID, spec.Profile.DVRWindowSec)
+
 	}
 
 	metrics.RecordPipelineSpawn("ffmpeg", "admitted")

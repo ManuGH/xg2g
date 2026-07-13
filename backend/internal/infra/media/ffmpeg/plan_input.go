@@ -83,6 +83,7 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 				} else {
 					probeSize = "5M"
 				}
+
 			}
 		}
 		// igndts discards healthy container DTS and forces a PTS-based

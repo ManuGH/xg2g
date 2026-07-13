@@ -197,6 +197,7 @@ function Settings() {
     } catch { /* ignore */ }
   }, []);
 
+
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const requestedSection = searchParams.get('section');
   const requestedTool = searchParams.get('tool');
@@ -1238,6 +1239,7 @@ function Settings() {
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+
                 ADAPTIVE ENGINE
               </span>
               <strong style={{ fontSize: '0.95rem' }}>CPU & GPU Transcoding</strong>
@@ -1252,6 +1254,7 @@ function Settings() {
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+
                 CODECS
               </span>
               <strong style={{ fontSize: '0.95rem' }}>AV1 · HEVC · H.264 · MPEG-2</strong>
@@ -1266,6 +1269,7 @@ function Settings() {
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+
                 CONTAINER
               </span>
               <strong style={{ fontSize: '0.95rem' }}>fMP4 · CMAF · MPEG-TS</strong>
@@ -1280,6 +1284,7 @@ function Settings() {
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+
                 DEINTERLACING
               </span>
               <strong style={{ fontSize: '0.95rem' }}>Interlaced vs. Progressive</strong>
@@ -1352,6 +1357,7 @@ function Settings() {
                 onChange={() => {
                   setDvrMode('live_only');
                   try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch {}
+
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1370,6 +1376,7 @@ function Settings() {
                 onChange={() => {
                   setDvrMode('1h');
                   try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch {}
+
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1388,6 +1395,7 @@ function Settings() {
                 onChange={() => {
                   setDvrMode('2h');
                   try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch {}
+
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1406,6 +1414,7 @@ function Settings() {
                 onChange={() => {
                   setDvrMode('4h');
                   try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch {}
+
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1457,6 +1466,7 @@ function Settings() {
             </label>
           </div>
         </div>
+
         </div>
       ) : null}
 

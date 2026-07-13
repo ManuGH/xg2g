@@ -224,6 +224,7 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 		} else {
 			// Instead of 15000000 (15s), use 5000000 (5s) so the probe finishes much faster!
 			analyzeDuration = "5000000"
+
 		}
 		if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
 			probeSize = v

@@ -3,6 +3,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 )
@@ -28,6 +29,7 @@ func LiveHLSRoot(hlsRoot string) string {
 				return "/dev/shm/xg2g"
 			}
 		}
+
 	}
 	return strings.TrimSpace(hlsRoot)
 }

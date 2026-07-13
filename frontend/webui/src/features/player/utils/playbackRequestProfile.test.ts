@@ -128,6 +128,7 @@ describe('resolvePlaybackRequestProfile', () => {
       }),
       'live'
     )).toBe('quality');
+
   });
 });
 

@@ -383,7 +383,11 @@ func adaptStartProfileForNetworkContext(intent Intent, spec model.ProfileSpec) m
 	budgetKbps := (downlinkKbps * 75) / 100
 	audioKbps := spec.AudioBitrateK
 	if audioKbps <= 0 {
-		audioKbps = 160
+		if downlinkKbps < 1000 {
+			audioKbps = 96
+		} else {
+			audioKbps = 160
+		}
 	}
 	videoRateK := budgetKbps - audioKbps
 	if videoRateK < 400 {

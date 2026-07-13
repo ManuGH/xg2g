@@ -16,7 +16,7 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-GOTOOLCHAIN ?= go1.25.11
+GOTOOLCHAIN ?= go1.25.12
 export GOTOOLCHAIN
 export GOWORK := off
 GO := go
@@ -49,7 +49,7 @@ DOCKER_IMAGE := xg2g
 DOCKER_REGISTRY ?=
 PLATFORMS := linux/amd64
 # Keep in sync with backend/scripts/build-ffmpeg.sh.
-FFMPEG_VERSION := 8.1.1
+FFMPEG_VERSION := 8.1.2
 FFMPEG_BASE_IMAGE ?= $(DOCKER_IMAGE)-ffmpeg
 FFMPEG_BASE_TAG := $(FFMPEG_BASE_IMAGE):$(FFMPEG_VERSION)
 
