@@ -147,6 +147,12 @@ func TestPlaybackPlan_HashIsDeterministic(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotEqual(t, hash1, hash3, "Different plans should produce different hashes")
+
+	plan4 := plan1
+	plan4.Startup.DVRWindowSeconds = 16200
+	hash4, err := plan4.Hash()
+	require.NoError(t, err)
+	assert.NotEqual(t, hash1, hash4, "Startup semantics must be bound by the plan hash")
 }
 
 func TestPlanningReceipt_Lifecycle(t *testing.T) {
@@ -202,5 +208,34 @@ func TestPlan_RejectsUnknownMediaTruth(t *testing.T) {
 	}
 
 	_, err := Plan(ev)
+	require.ErrorIs(t, err, ErrInvalidEvidence)
+}
+
+func TestPlanCarriesImmutableDVRStartupPolicy(t *testing.T) {
+	ev := PlaybackEvidence{
+		EvaluatedAt:    time.Now().UnixMilli(),
+		Scope:          "live",
+		SourceIdentity: "service:1",
+		SourceTruth: SourceTruth{
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "aac",
+		},
+		ClientEvidence: ClientEvidence{
+			SupportedVideoCodecs: []string{"h264"},
+			SupportedAudioCodecs: []string{"aac"},
+			SupportsHls:          true,
+		},
+		HostSnapshot:   HostSnapshot{AvailableEngines: []string{"hls"}},
+		OperatorPolicy: OperatorPolicy{DVRWindowSeconds: 16200},
+	}
+
+	result, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, DecisionAllow, result.Plan.Decision)
+	require.Equal(t, 16200, result.Plan.Startup.DVRWindowSeconds)
+
+	ev.OperatorPolicy.DVRWindowSeconds = -1
+	_, err = Plan(ev)
 	require.ErrorIs(t, err, ErrInvalidEvidence)
 }

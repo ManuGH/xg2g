@@ -77,6 +77,9 @@ func (s *Service) resolvePlannerStartProfile(intent Intent, hw startHardwareStat
 }
 
 func validatePlannerExecutionPlan(plan playbackplanner.PlaybackPlan) error {
+	if plan.Startup.DVRWindowSeconds < 0 {
+		return fmt.Errorf("planner DVR window cannot be negative")
+	}
 	if normalize.Token(plan.DeliveryEngine) != "hls" {
 		return fmt.Errorf("unsupported planner delivery engine %q", plan.DeliveryEngine)
 	}
@@ -138,6 +141,7 @@ func plannerExecutionProfileID(plan playbackplanner.PlaybackPlan) (string, error
 
 func applyPlannerPlanToProfile(spec model.ProfileSpec, plan playbackplanner.PlaybackPlan) model.ProfileSpec {
 	spec.PlannerBound = true
+	spec.DVRWindowSec = plan.Startup.DVRWindowSeconds
 	spec.TranscodeVideo = plan.Video.Mode == "transcode"
 	spec.AudioMode = plan.Audio.Mode
 	spec.AudioCodec = normalize.Token(plan.Audio.Codec)

@@ -658,6 +658,10 @@ func (s *Service) observePlannerShadow(
 	if req.SubjectKind == PlaybackSubjectLive {
 		scope = "live"
 	}
+	dvrWindowSeconds := 0
+	if scope == "live" {
+		dvrWindowSeconds = int(s.deps.Config().HLS.DVRWindow.Seconds())
+	}
 
 	clientFamily := req.ClientProfile
 	if strings.TrimSpace(resolvedCaps.ClientFamilyFallback) != "" {
@@ -751,6 +755,7 @@ func (s *Service) observePlannerShadow(
 		DisableTranscoding:      false,
 		MaxGlobalBitrate:        0,
 		StrictFreshness:         false,
+		DVRWindowSeconds:        dvrWindowSeconds,
 	}
 
 	ev, err := playbackshadow.BuildPlaybackEvidence(legacyInput)

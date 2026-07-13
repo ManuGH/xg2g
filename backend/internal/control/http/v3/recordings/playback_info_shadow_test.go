@@ -124,7 +124,7 @@ func TestResolvePlaybackInfo_ShadowObserver_Live(t *testing.T) {
 		},
 		cfg: config.AppConfig{
 			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
-			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls", DVRWindow: 45 * time.Minute},
 		},
 	}, WithPlannerShadowObserver(obs))
 
@@ -139,6 +139,10 @@ func TestResolvePlaybackInfo_ShadowObserver_Live(t *testing.T) {
 	require.NotNil(t, res.Decision)
 	assert.Equal(t, 1, len(obs.observations))
 	assert.Equal(t, "live_scan", obs.observations[0].Evidence.Provenance)
+	assert.Equal(t, 2700, obs.observations[0].Evidence.OperatorPolicy.DVRWindowSeconds)
+	plannerResult, planErr := playbackplanner.Plan(obs.observations[0].Evidence)
+	require.NoError(t, planErr)
+	assert.Equal(t, 2700, plannerResult.Plan.Startup.DVRWindowSeconds)
 
 	// Verify shadow OFF produces 0 observations and identical decision for live
 	obsOff := &mockShadowObserver{}

@@ -63,6 +63,7 @@ type LegacyPlanningInput struct {
 	DisableTranscoding bool
 	MaxGlobalBitrate   int
 	StrictFreshness    bool
+	DVRWindowSeconds   int
 }
 
 // BuildPlaybackEvidence maps the legacy HTTP boundary inputs into the new pure domain model.
@@ -141,6 +142,7 @@ func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackE
 			DisableTranscoding: input.DisableTranscoding,
 			MaxGlobalBitrate:   input.MaxGlobalBitrate,
 			StrictFreshness:    input.StrictFreshness,
+			DVRWindowSeconds:   input.DVRWindowSeconds,
 		},
 	}
 	return ev, nil

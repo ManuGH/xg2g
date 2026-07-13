@@ -30,6 +30,7 @@ type PlaybackPlan struct {
 	RateControl    RateControl
 	Filters        Filters
 	ProbeReqs      ProbeReqs
+	Startup        StartupPlan
 	Guardrails     Guardrails
 }
 
@@ -77,6 +78,12 @@ type Filters struct {
 // ProbeReqs defines requirements for media probing before starting.
 type ProbeReqs struct {
 	RequireFullProbe bool
+}
+
+// StartupPlan contains immutable session-start semantics that must survive the
+// playback-info to intent handoff without consulting mutable configuration.
+type StartupPlan struct {
+	DVRWindowSeconds int
 }
 
 // Guardrails defines static permitted runtime transitions for the session manager.

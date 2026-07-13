@@ -2,6 +2,9 @@ package playbackplanner
 
 // hasValidEvidence checks if the evidence is structurally sound.
 func hasValidEvidence(ev PlaybackEvidence) bool {
+	if ev.OperatorPolicy.DVRWindowSeconds < 0 {
+		return false
+	}
 	if ev.SourceIdentity == "" {
 		return false
 	}

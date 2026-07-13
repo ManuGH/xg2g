@@ -37,6 +37,9 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 		Decision: DecisionDeny,
 		Outcome:  "deny",
 		Mode:     "none", // Sentinel
+		Startup: StartupPlan{
+			DVRWindowSeconds: ev.OperatorPolicy.DVRWindowSeconds,
+		},
 	}
 
 	// Helper for structured logging

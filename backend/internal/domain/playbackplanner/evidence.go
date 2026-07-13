@@ -135,4 +135,5 @@ type OperatorPolicy struct {
 	DisableTranscoding bool   // Operator-level switch to block transcoding (e.g., peak load)
 	MaxGlobalBitrate   int    // Global bandwidth cap per session (kbps)
 	StrictFreshness    bool   // If true, stale evidence results in hard denial instead of fallback
+	DVRWindowSeconds   int    // Immutable live startup/DVR window snapshot
 }

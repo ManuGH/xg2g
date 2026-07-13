@@ -29,6 +29,7 @@ func TestResolvePlannerStartProfileConsumesExactTrackAndPackagingPlan(t *testing
 	require.Equal(t, "aac", resolution.profileSpec.AudioCodec)
 	require.Equal(t, 160, resolution.profileSpec.AudioBitrateK)
 	require.Equal(t, "fmp4", resolution.profileSpec.Container)
+	require.Equal(t, 16200, resolution.profileSpec.DVRWindowSec)
 	require.Empty(t, resolution.profileSpec.HWAccel)
 	require.NotEmpty(t, resolution.idempotencyKey)
 }
@@ -178,6 +179,7 @@ func plannerStartFixture(t *testing.T) (playbackplanner.PlaybackEvidence, playba
 		Video:          playbackplanner.TrackPlan{Mode: "copy", Codec: "h264"},
 		Audio:          playbackplanner.TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 160, Channels: 2, SampleRate: 48000},
 		Packaging:      playbackplanner.Packaging{Container: "fmp4"},
+		Startup:        playbackplanner.StartupPlan{DVRWindowSeconds: 16200},
 	}
 	evidenceHash, err := evidence.Hash()
 	require.NoError(t, err)
