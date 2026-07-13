@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import V3Player from '../src/features/player/components/V3Player';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import * as sdk from '../src/client-ts';
@@ -22,6 +22,7 @@ describe('Telemetry Contract Consumption', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
