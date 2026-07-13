@@ -19,7 +19,7 @@ type PlaybackEvidence struct {
 	Provenance      string // origin of the truth (e.g., "scan", "media_file")
 	Confidence      string // e.g., "ok", "partial", "stale"
 	ObservedAt      int64  // When the source truth was actually observed
-	Validity        int64  // How long this truth remains valid
+	ValidUntil      int64  // Unix milliseconds until this truth expires
 	NetworkCaptureTime int64 // When network conditions were captured
 	PolicyVersion   string
 
@@ -41,9 +41,10 @@ type PlaybackEvidence struct {
 
 // Hash returns a deterministic hash of the evidence.
 func (e PlaybackEvidence) Hash() (string, error) {
-	// Ensure set-like slices are sorted canonically before hashing
-	e.ClientEvidence.normalize()
-	e.HostSnapshot.normalize()
+	// e is a value copy, but its slices point to the original arrays.
+	// We must deep-clone, sort, and deduplicate to ensure pure hashing.
+	e.ClientEvidence = e.ClientEvidence.cloneNormalized()
+	e.HostSnapshot = e.HostSnapshot.cloneNormalized()
 
 	b, err := json.Marshal(e)
 	if err != nil {
@@ -54,17 +55,21 @@ func (e PlaybackEvidence) Hash() (string, error) {
 }
 
 type SourceTruth struct {
-	Container  string
-	VideoCodec string
-	AudioCodec string
-	Width      int
-	Height     int
-	FPS        int
-	Interlaced bool
+	Container         string
+	VideoCodec        string
+	AudioCodec        string
+	Width             int
+	Height            int
+	FPS               int
+	Interlaced        bool
+	BitrateKbps       int
+	BitrateConfidence string
 }
 
 type ClientEvidence struct {
 	Family               string
+	DeviceType           string
+	CapabilityVersion    string
 	AllowTranscode       bool
 	SupportedContainers  []string
 	SupportedVideoCodecs []string
@@ -77,18 +82,36 @@ type ClientEvidence struct {
 	PreferredEngine      string
 	SupportedEngines     []string
 	SupportsHls          bool
-	SupportsRange        bool
+	SupportsRange        *bool // Tri-state: true, false, nil (unknown)
 }
 
-func (c *ClientEvidence) normalize() {
-	sort.Strings(c.SupportedContainers)
-	sort.Strings(c.SupportedVideoCodecs)
-	sort.Strings(c.SupportedAudioCodecs)
-	sort.Strings(c.SupportedEngines)
+func cloneDeduplicateSort(input []string) []string {
+	if input == nil {
+		return nil
+	}
+	set := make(map[string]struct{}, len(input))
+	for _, v := range input {
+		set[v] = struct{}{}
+	}
+	var res []string
+	for v := range set {
+		res = append(res, v)
+	}
+	sort.Strings(res)
+	return res
 }
 
-func (h *HostSnapshot) normalize() {
-	sort.Strings(h.AvailableEngines)
+func (c ClientEvidence) cloneNormalized() ClientEvidence {
+	c.SupportedContainers = cloneDeduplicateSort(c.SupportedContainers)
+	c.SupportedVideoCodecs = cloneDeduplicateSort(c.SupportedVideoCodecs)
+	c.SupportedAudioCodecs = cloneDeduplicateSort(c.SupportedAudioCodecs)
+	c.SupportedEngines = cloneDeduplicateSort(c.SupportedEngines)
+	return c
+}
+
+func (h HostSnapshot) cloneNormalized() HostSnapshot {
+	h.AvailableEngines = cloneDeduplicateSort(h.AvailableEngines)
+	return h
 }
 
 type NetworkEvidence struct {
@@ -100,9 +123,13 @@ type NetworkEvidence struct {
 type HostSnapshot struct {
 	PressureBand     string // "relaxed", "constrained", "critical"
 	AvailableEngines []string
+	PerformanceClass string
+	BenchmarkClass   string
 }
 
 type OperatorPolicy struct {
+	ForceIntent        string
+	MaxQualityRung     string
 	DisableTranscoding bool
 	MaxGlobalBitrate   int
 }

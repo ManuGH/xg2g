@@ -24,6 +24,7 @@ type PlanningReceipt struct {
 
 // Hash returns a deterministic hash of the plan to be embedded in the receipt.
 func (p PlaybackPlan) Hash() (string, error) {
+	p = p.cloneNormalized()
 	b, err := json.Marshal(p)
 	if err != nil {
 		return "", err

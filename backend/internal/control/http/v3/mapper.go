@@ -13,21 +13,25 @@ type LegacyPlanningInput struct {
 	Provenance         string
 	Confidence         string
 	ObservedAt         int64
-	Validity           int64
+	ValidUntil         int64
 	NetworkCaptureTime int64
 	PolicyVersion      string
 
 	// Source Truth
-	Container  string
-	VideoCodec string
-	AudioCodec string
-	Width      int
-	Height     int
-	FPS        int
-	Interlaced bool
+	Container         string
+	VideoCodec        string
+	AudioCodec        string
+	Width             int
+	Height            int
+	FPS               int
+	Interlaced        bool
+	BitrateKbps       int
+	BitrateConfidence string
 
 	// Client Evidence
 	ClientFamily         string
+	DeviceType           string
+	CapabilityVersion    string
 	AllowTranscode       bool
 	SupportedContainers  []string
 	SupportedVideoCodecs []string
@@ -38,7 +42,7 @@ type LegacyPlanningInput struct {
 	PreferredEngine      string
 	SupportedEngines     []string
 	SupportsHls          bool
-	SupportsRange        bool
+	SupportsRange        *bool
 
 	// Network Evidence
 	DownlinkKbps      int
@@ -48,8 +52,12 @@ type LegacyPlanningInput struct {
 	// Host Snapshot
 	HostPressureBand string
 	AvailableEngines []string
+	PerformanceClass string
+	BenchmarkClass   string
 
 	// Operator Policy
+	ForceIntent        string
+	MaxQualityRung     string
 	DisableTranscoding bool
 	MaxGlobalBitrate   int
 }
@@ -64,20 +72,24 @@ func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackE
 		Provenance:         input.Provenance,
 		Confidence:         input.Confidence,
 		ObservedAt:         input.ObservedAt,
-		Validity:           input.Validity,
+		ValidUntil:         input.ValidUntil,
 		NetworkCaptureTime: input.NetworkCaptureTime,
 		PolicyVersion:      input.PolicyVersion,
 		SourceTruth: playbackplanner.SourceTruth{
-			Container:  input.Container,
-			VideoCodec: input.VideoCodec,
-			AudioCodec: input.AudioCodec,
-			Width:      input.Width,
-			Height:     input.Height,
-			FPS:        input.FPS,
-			Interlaced: input.Interlaced,
+			Container:         input.Container,
+			VideoCodec:        input.VideoCodec,
+			AudioCodec:        input.AudioCodec,
+			Width:             input.Width,
+			Height:            input.Height,
+			FPS:               input.FPS,
+			Interlaced:        input.Interlaced,
+			BitrateKbps:       input.BitrateKbps,
+			BitrateConfidence: input.BitrateConfidence,
 		},
 		ClientEvidence: playbackplanner.ClientEvidence{
 			Family:               input.ClientFamily,
+			DeviceType:           input.DeviceType,
+			CapabilityVersion:    input.CapabilityVersion,
 			AllowTranscode:       input.AllowTranscode,
 			SupportedContainers:  append([]string(nil), input.SupportedContainers...),
 			SupportedVideoCodecs: append([]string(nil), input.SupportedVideoCodecs...),
@@ -98,8 +110,12 @@ func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackE
 		HostSnapshot: playbackplanner.HostSnapshot{
 			PressureBand:     input.HostPressureBand,
 			AvailableEngines: append([]string(nil), input.AvailableEngines...),
+			PerformanceClass: input.PerformanceClass,
+			BenchmarkClass:   input.BenchmarkClass,
 		},
 		OperatorPolicy: playbackplanner.OperatorPolicy{
+			ForceIntent:        input.ForceIntent,
+			MaxQualityRung:     input.MaxQualityRung,
 			DisableTranscoding: input.DisableTranscoding,
 			MaxGlobalBitrate:   input.MaxGlobalBitrate,
 		},

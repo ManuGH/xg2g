@@ -62,6 +62,35 @@ func TestPlaybackEvidence_HashIsDeterministic(t *testing.T) {
 	hash3, err := ev3.Hash()
 	require.NoError(t, err)
 	assert.NotEqual(t, hash1, hash3, "Different EvaluatedAt should produce different hashes")
+
+	t.Run("Pure Hashing with Deduplication and Sorting", func(t *testing.T) {
+		e1 := PlaybackEvidence{
+			ClientEvidence: ClientEvidence{
+				SupportedContainers: []string{"mp4", "hls", "mp4"},
+			},
+		}
+		
+		// The original slice should NOT be changed after hashing
+		origContainerAddr := &e1.ClientEvidence.SupportedContainers[0]
+		
+		h1, err := e1.Hash()
+		require.NoError(t, err)
+		
+		// Original shouldn't be sorted/deduplicated (len should still be 3)
+		assert.Len(t, e1.ClientEvidence.SupportedContainers, 3)
+		assert.Equal(t, origContainerAddr, &e1.ClientEvidence.SupportedContainers[0])
+
+		e2 := PlaybackEvidence{
+			ClientEvidence: ClientEvidence{
+				SupportedContainers: []string{"hls", "mp4"},
+			},
+		}
+		
+		h2, err := e2.Hash()
+		require.NoError(t, err)
+		
+		assert.Equal(t, h1, h2, "Duplicates and order should not change the hash")
+	})
 }
 
 func TestPlaybackPlan_HashIsDeterministic(t *testing.T) {
@@ -69,9 +98,13 @@ func TestPlaybackPlan_HashIsDeterministic(t *testing.T) {
 		Outcome:        "allow",
 		Mode:           "transcode",
 		DeliveryEngine: "hls",
-		Codecs: Codecs{
-			Video: "h264",
-			Audio: "aac",
+		Video: TrackPlan{
+			Mode: "copy",
+			Codec: "h264",
+		},
+		Audio: TrackPlan{
+			Mode: "copy",
+			Codec: "aac",
 		},
 		Packaging: Packaging{
 			Container: "fmp4",

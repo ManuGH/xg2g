@@ -5,12 +5,18 @@ type PlaybackPlan struct {
 	Outcome        string // "allow", "deny"
 	Mode           string // "copy", "remux", "transcode"
 	DeliveryEngine string // "hls", "dash", etc.
-	Codecs         Codecs
+	Video          TrackPlan
+	Audio          TrackPlan
 	Packaging      Packaging
 	RateControl    RateControl
 	Filters        Filters
 	ProbeReqs      ProbeReqs
 	Guardrails     Guardrails
+}
+
+type TrackPlan struct {
+	Mode  string // "copy", "transcode", "disabled"
+	Codec string // e.g. "h264", "aac"
 }
 
 // PlanTrace records the sequence of rules and decisions that led to the plan.
@@ -23,16 +29,9 @@ type PlanTrace struct {
 
 // RuleHit represents a single policy evaluation outcome.
 type RuleHit struct {
-	RuleName  string
-	Condition string
-	Action    string
-	Message   string
-}
-
-// Codecs defines the chosen codecs for the playback session.
-type Codecs struct {
-	Video string // "copy" or specific codec like "h264"
-	Audio string // "copy" or specific codec like "aac"
+	Rule   string
+	Result string
+	Reason string
 }
 
 // Packaging defines how the media is segmented/muxed.
@@ -66,3 +65,9 @@ type Guardrails struct {
 	AllowProbeUp              bool
 	DecodeRisk                string // "soft", "hard"
 }
+
+func (p PlaybackPlan) cloneNormalized() PlaybackPlan {
+	p.Guardrails.PermittedAlternativePlans = cloneDeduplicateSort(p.Guardrails.PermittedAlternativePlans)
+	return p
+}
+

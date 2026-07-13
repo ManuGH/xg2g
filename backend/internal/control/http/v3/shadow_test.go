@@ -32,6 +32,7 @@ func TestComparableFromLegacy(t *testing.T) {
 	}
 	
 	comp := ComparableFromLegacy(dec)
+	assert.True(t, comp.IsValid)
 	assert.Equal(t, "allow", comp.Outcome)
 	assert.Equal(t, "transcode", comp.Mode)
 	assert.Equal(t, "hls", comp.Engine)
@@ -45,6 +46,7 @@ func TestComparableFromLegacy(t *testing.T) {
 
 func TestDiffComparablePlans(t *testing.T) {
 	legacy := ComparablePlaybackPlan{
+		IsValid: true,
 		Outcome: "allow",
 		Mode: "remux",
 		Engine: "hls",
@@ -54,6 +56,7 @@ func TestDiffComparablePlans(t *testing.T) {
 	}
 	
 	newPlan := ComparablePlaybackPlan{
+		IsValid: true,
 		Outcome: "allow",
 		Mode: "transcode", // mismatch
 		Engine: "hls",
@@ -78,9 +81,13 @@ func TestComparableFromPlanner(t *testing.T) {
 		Packaging: playbackplanner.Packaging{
 			Container: "ts",
 		},
-		Codecs: playbackplanner.Codecs{
-			Video: "h264",
-			Audio: "copy",
+		Video: playbackplanner.TrackPlan{
+			Mode: "transcode",
+			Codec: "h264",
+		},
+		Audio: playbackplanner.TrackPlan{
+			Mode: "copy",
+			Codec: "copy",
 		},
 		RateControl: playbackplanner.RateControl{
 			TargetVideoBitrateKbps: 3000,
@@ -88,6 +95,7 @@ func TestComparableFromPlanner(t *testing.T) {
 	}
 	
 	comp := ComparableFromPlanner(plan)
+	assert.True(t, comp.IsValid)
 	assert.Equal(t, "allow", comp.Outcome)
 	assert.Equal(t, "transcode", comp.Mode)
 	assert.Equal(t, "ts", comp.Container)

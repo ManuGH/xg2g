@@ -6,25 +6,27 @@ import (
 )
 
 type ComparablePlaybackPlan struct {
-	Outcome        string
-	Mode           string
-	Engine         string
-	Container      string
-	VideoMode      string
-	AudioMode      string
-	VideoCodec     string
-	AudioCodec     string
-	TargetBitrate  int
-	MaxBitrate     int
-	ScaleWidth     int
-	ScaleHeight    int
-	MinQualityRung string
-	MaxQualityRung string
+	IsValid          bool // false if legacy is nil
+	Outcome          string
+	Mode             string
+	Engine           string
+	Container        string
+	VideoMode        string
+	AudioMode        string
+	VideoCodec       string
+	AudioCodec       string
+	TargetBitrate    int
+	MaxBitrate       int
+	MaxBitrateKnown  bool
+	ScaleWidth       int
+	ScaleHeight      int
+	MinQualityRung   string
+	MaxQualityRung   string
 }
 
 func ComparableFromLegacy(dec *decision.Decision) ComparablePlaybackPlan {
 	if dec == nil {
-		return ComparablePlaybackPlan{Outcome: "deny"}
+		return ComparablePlaybackPlan{IsValid: false}
 	}
 
 	outcome := "allow"
@@ -45,6 +47,7 @@ func ComparableFromLegacy(dec *decision.Decision) ComparablePlaybackPlan {
 	}
 
 	c := ComparablePlaybackPlan{
+		IsValid:        true,
 		Outcome:        outcome,
 		Mode:           mode,
 		Engine:         engine,
@@ -59,11 +62,10 @@ func ComparableFromLegacy(dec *decision.Decision) ComparablePlaybackPlan {
 		c.VideoMode = string(dec.TargetProfile.Video.Mode)
 		c.AudioMode = string(dec.TargetProfile.Audio.Mode)
 		c.TargetBitrate = dec.TargetProfile.Video.BitrateKbps
-		c.MaxBitrate = dec.TargetProfile.Video.BitrateKbps // Legacy has no split max bitrate
+		c.MaxBitrateKnown = false // Legacy doesn't distinct Target vs Max correctly here or uses same. Unknown is safer.
 		c.ScaleWidth = dec.TargetProfile.Video.Width
 		c.ScaleHeight = dec.TargetProfile.Video.Height
 	} else {
-		// If copy mode, set mode implicitly
 		c.VideoMode = "copy"
 		c.AudioMode = "copy"
 	}
@@ -73,20 +75,22 @@ func ComparableFromLegacy(dec *decision.Decision) ComparablePlaybackPlan {
 
 func ComparableFromPlanner(plan playbackplanner.PlaybackPlan) ComparablePlaybackPlan {
 	return ComparablePlaybackPlan{
-		Outcome:        plan.Outcome,
-		Mode:           plan.Mode,
-		Engine:         plan.DeliveryEngine,
-		Container:      plan.Packaging.Container,
-		VideoMode:      plan.Codecs.Video,
-		AudioMode:      plan.Codecs.Audio,
-		VideoCodec:     plan.Codecs.Video,
-		AudioCodec:     plan.Codecs.Audio,
-		TargetBitrate:  plan.RateControl.TargetVideoBitrateKbps,
-		MaxBitrate:     plan.RateControl.MaxVideoBitrateKbps,
-		ScaleWidth:     plan.Filters.ScaleWidth,
-		ScaleHeight:    plan.Filters.ScaleHeight,
-		MinQualityRung: plan.Guardrails.MinQualityRung,
-		MaxQualityRung: plan.Guardrails.MaxQualityRung,
+		IsValid:         true,
+		Outcome:         plan.Outcome,
+		Mode:            plan.Mode,
+		Engine:          plan.DeliveryEngine,
+		Container:       plan.Packaging.Container,
+		VideoMode:       plan.Video.Mode,
+		AudioMode:       plan.Audio.Mode,
+		VideoCodec:      plan.Video.Codec,
+		AudioCodec:      plan.Audio.Codec,
+		TargetBitrate:   plan.RateControl.TargetVideoBitrateKbps,
+		MaxBitrate:      plan.RateControl.MaxVideoBitrateKbps,
+		MaxBitrateKnown: true,
+		ScaleWidth:      plan.Filters.ScaleWidth,
+		ScaleHeight:     plan.Filters.ScaleHeight,
+		MinQualityRung:  plan.Guardrails.MinQualityRung,
+		MaxQualityRung:  plan.Guardrails.MaxQualityRung,
 	}
 }
 
@@ -94,6 +98,10 @@ func ComparableFromPlanner(plan playbackplanner.PlaybackPlan) ComparablePlayback
 // e.g. "mode_mismatch", "packaging_mismatch", "target_bitrate_drift"
 func DiffComparablePlans(legacy, new ComparablePlaybackPlan) []string {
 	var diffs []string
+
+	if !legacy.IsValid {
+		return []string{"legacy_invalid"}
+	}
 
 	if legacy.Outcome != new.Outcome {
 		diffs = append(diffs, "outcome_mismatch")
@@ -122,7 +130,7 @@ func DiffComparablePlans(legacy, new ComparablePlaybackPlan) []string {
 	if legacy.TargetBitrate != new.TargetBitrate {
 		diffs = append(diffs, "target_bitrate_drift")
 	}
-	if legacy.MaxBitrate != new.MaxBitrate {
+	if legacy.MaxBitrateKnown && new.MaxBitrateKnown && legacy.MaxBitrate != new.MaxBitrate {
 		diffs = append(diffs, "max_bitrate_drift")
 	}
 	if legacy.ScaleWidth != new.ScaleWidth || legacy.ScaleHeight != new.ScaleHeight {
