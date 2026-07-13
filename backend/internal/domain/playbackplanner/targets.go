@@ -28,11 +28,14 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			plan.Packaging.Container = "fmp4"
 		}
 
-		if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && ev.SourceTruth.VideoCodec != "" {
+		if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" {
 			plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		} else {
 			if requiresInterlaceRepair(ev) {
 				plan.Filters.Deinterlace = true
+			}
+			if ev.ClientEvidence.MaxVideoWidth > 0 && ev.SourceTruth.Width > ev.ClientEvidence.MaxVideoWidth {
+				plan.Filters.ScaleWidth = ev.ClientEvidence.MaxVideoWidth
 			}
 
 			isChromium := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chromium") ||

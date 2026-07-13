@@ -545,6 +545,7 @@ verify_hw_transcode_gpu() {
     deviceType: "web",
     hlsEngines: ["hlsjs"],
     preferredHlsEngine: "hlsjs",
+    maxVideo: {width: 1280, height: 720, fps: 60},
     runtimeProbeUsed: true,
     runtimeProbeVersion: 1,
     clientFamilyFallback: "chrome"

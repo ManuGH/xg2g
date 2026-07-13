@@ -239,3 +239,36 @@ func TestPlanCarriesImmutableDVRStartupPolicy(t *testing.T) {
 	_, err = Plan(ev)
 	require.ErrorIs(t, err, ErrInvalidEvidence)
 }
+
+func TestPlanTranscodesVideoWhenClientDimensionsAreExceeded(t *testing.T) {
+	ev := PlaybackEvidence{
+		EvaluatedAt:    time.Now().UnixMilli(),
+		Scope:          "live",
+		SourceIdentity: "service:4k",
+		SourceTruth: SourceTruth{
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "aac",
+			Width:      3840,
+			Height:     2160,
+			FPS:        50,
+		},
+		ClientEvidence: ClientEvidence{
+			AllowTranscode:       true,
+			SupportedVideoCodecs: []string{"h264"},
+			SupportedAudioCodecs: []string{"aac"},
+			MaxVideoWidth:        1280,
+			MaxVideoHeight:       720,
+			MaxVideoFPS:          60,
+			SupportsHls:          true,
+		},
+		HostSnapshot: HostSnapshot{AvailableEngines: []string{"hls"}},
+	}
+
+	result, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "transcode", result.Plan.Mode)
+	require.Equal(t, "transcode", result.Plan.Video.Mode)
+	require.Equal(t, "h264", result.Plan.Video.Codec)
+	require.Equal(t, 1280, result.Plan.Filters.ScaleWidth)
+}
