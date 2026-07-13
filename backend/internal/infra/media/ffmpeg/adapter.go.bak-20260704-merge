@@ -82,7 +82,6 @@ type LocalAdapter struct {
 	FallbackTo8001             bool
 	PreflightTimeout           time.Duration
 	SegmentSeconds             int
-	ReadySegments              int
 	StartTimeout               time.Duration
 	StallTimeout               time.Duration
 	FPSProbeTimeout            time.Duration

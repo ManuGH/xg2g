@@ -358,11 +358,11 @@ func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, 
 	// each segment is independently decodable; it is a no-op when the parameter
 	// sets are already present. The allowlist still covers VOD/file copy.
 	//
-	// fMP4 is excluded: its codec config lives in the init segment (hvcC), so the
-	// parameter sets are already available to every segment. Forcing them in-band
-	// per keyframe contradicts the hvc1 sample entry and re-injects HEVC/HLG SEI
-	// on every keyframe, which makes the HDR decoder re-initialise -> a periodic
-	// flash. dump_extra is an Annex-B/MPEG-TS hardening only.
+	// fMP4 is excluded: its codec config lives in the init segment (avcC/hvcC), so
+	// the parameter sets are already available to every segment. Forcing them
+	// in-band contradicts avc1/hvc1; for HEVC it also re-injects HLG SEI on every
+	// keyframe and can make the HDR decoder re-initialise. dump_extra is an
+	// Annex-B/MPEG-TS hardening only.
 	isFMP4 := strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
 	hardenedBitstream := (liveCopy || shouldHardenSafariCopyBitstream(spec, inputURL)) && !isFMP4
 

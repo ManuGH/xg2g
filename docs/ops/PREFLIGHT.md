@@ -110,7 +110,7 @@ Run from the xg2g host (ensure no VLC/other clients are connected):
 
 ```bash
 sref="1:0:19:2B66:3F3:1:C00000:0:0:0:"
-url="http://192.168.1.100:17999/$sref"
+url="http://RECEIVER_IP:17999/$sref"
 
 rm -f /tmp/relay_a.bin /tmp/relay_b.bin
 
@@ -147,6 +147,6 @@ If you have executed manual `curl` tests in the background, ensure they are term
 pkill -9 curl
 
 # Optional: Find specific PIDs for connections to the receiver
-lsof -i @192.168.1.100
+lsof -i @RECEIVER_IP
 # Then kill the specific <PID>
 ```

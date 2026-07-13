@@ -24,8 +24,9 @@
   <br /><br />
   <a href="docs/guides/GETTING_STARTED.md"><strong>Getting Started</strong></a> ·
   <a href="#quickstart">Quickstart</a> ·
+  <a href="docs/ops/DEPLOYMENT.md"><strong>Deployment</strong></a> ·
+  <a href="docs/ops/SECURITY.md"><strong>Security</strong></a> ·
   <a href="https://manugh.github.io/xg2g/">API Docs</a> ·
-  <a href="docs/README.md">Documentation</a> ·
   <a href="docs/arch/CODEC_MATRIX.md">Codec Matrix</a> ·
   <a href="https://github.com/ManuGH/xg2g/releases">Releases</a>
 </div>
@@ -73,7 +74,7 @@ encoding to a GPU/iGPU — see Playback Pipeline above)
 
 ```bash
 docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \
-  -e XG2G_E2_HOST="http://192.168.1.10" \
+  -e XG2G_E2_HOST="http://RECEIVER_IP" \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
   -e XG2G_DECISION_SECRET="$(openssl rand -hex 32)" \
@@ -103,33 +104,11 @@ encoding.
 > exchange is rejected over plain HTTP for non-loopback clients.
 
 **Next steps:**
-[Documentation](docs/README.md) •
+[Getting Started](docs/guides/GETTING_STARTED.md) •
 [Configuration](docs/guides/CONFIGURATION.md) •
 [Deployment](docs/ops/DEPLOYMENT.md) •
 [Security](docs/ops/SECURITY.md) •
-[Architecture](docs/arch/README.md) •
-[ADRs](docs/ADR/)
-
-**Local development:**
-
-```bash
-make install
-make dev-tools
-make doctor
-make start
-```
-
-Optional host bootstrap: `mise install` uses [mise.toml](mise.toml) to install
-the pinned Go and Node versions. Optional containerized bootstrap: reopen the
-repo in [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json).
-
-Then switch to `make start-gpu`, `make start-nvidia`, or `make dev-ui` only
-when you explicitly need a hardware-specific container path or frontend HMR.
-
-If you are new to the repository layout, read the
-[Repository Map](docs/dev/REPO_MAP.md) before editing. Local runtime outputs
-such as `data/`, `logs/`, `artifacts/`, `test-results/`, `node_modules/`,
-`.venv/`, and `bin/` are intentionally ignored and should not be committed.
+[Codec Matrix](docs/arch/CODEC_MATRIX.md)
 
 ## Status
 
@@ -147,9 +126,8 @@ Docker health checks, and CI-backed release automation are built in.
 
 | | |
 | :--- | :--- |
-| **Get started** | [Documentation Portal](docs/README.md) · [10-Minute Intro](backend/NEW_HERE.md) · [Repository Map](docs/dev/REPO_MAP.md) · [API Reference](https://manugh.github.io/xg2g/) |
-| **Operate** | [Ops Index](docs/ops/README.md) · [Configuration](docs/guides/CONFIGURATION.md) · [Deployment](docs/ops/DEPLOYMENT.md) · [Client Profiles](docs/ops/CLIENT_PROFILES.md) · [Security](docs/ops/SECURITY.md) |
-| **Develop** | [Dev Index](docs/dev/README.md) · [Architecture Index](docs/arch/README.md) · [Codec Matrix](docs/arch/CODEC_MATRIX.md) · [WebUI Index](docs/webui/README.md) · [CI Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) |
+| **Get started** | [Getting Started](docs/guides/GETTING_STARTED.md) · [Configuration](docs/guides/CONFIGURATION.md) · [Troubleshooting](docs/guides/TROUBLESHOOTING.md) · [API Reference](https://manugh.github.io/xg2g/) |
+| **Operate** | [Deployment](docs/ops/DEPLOYMENT.md) · [Security](docs/ops/SECURITY.md) · [Runtime Contract](docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md) · [Runbook](docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md) |
 
 ## License
 

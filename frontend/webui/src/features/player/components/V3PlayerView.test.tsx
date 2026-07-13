@@ -1,6 +1,7 @@
 import { createRef } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { Service } from '../../../client-ts';
 import type {
   PlaybackOrchestratorActions,
   V3PlayerViewState,
@@ -247,5 +248,38 @@ describe('V3PlayerView', () => {
 
     // Channel name shown once, as the title (no separate eyebrow when there is no programme).
     expect(screen.getAllByText('ORF 1 HD')).toHaveLength(1);
+  });
+
+  it('opens the in-player channel panel and switches to the selected channel', () => {
+    const actions = createActions();
+    const onSelectChannel = vi.fn();
+    const channels: Service[] = [
+      { name: 'ORF 1 HD', number: '1', group: 'HD', serviceRef: '1:0:1:orf1' },
+      { name: 'ServusTV HD', number: '7', group: 'HD', serviceRef: '1:0:1:servus' },
+    ];
+
+    render(
+      <V3PlayerView
+        containerRef={createRef<HTMLDivElement>()}
+        videoRef={createRef<HTMLVideoElement>()}
+        resumePrimaryActionRef={createRef<HTMLButtonElement>()}
+        viewState={createViewState({ channelName: 'ORF 1 HD' })}
+        actions={actions}
+        channelList={channels}
+        currentChannel={channels[0]}
+        onSelectChannel={onSelectChannel}
+      />
+    );
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Senderliste öffnen' }));
+
+    expect(screen.getByRole('dialog', { name: 'Senderliste' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /ORF 1 HD/i })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.change(screen.getByPlaceholderText('Sender suchen'), { target: { value: 'servus' } });
+    fireEvent.click(screen.getByRole('option', { name: /ServusTV HD/i }));
+
+    expect(onSelectChannel).toHaveBeenCalledWith(channels[1]);
+    expect(screen.queryByRole('dialog', { name: 'Senderliste' })).not.toBeInTheDocument();
   });
 });

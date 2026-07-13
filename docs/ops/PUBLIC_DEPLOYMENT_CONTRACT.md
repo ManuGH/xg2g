@@ -177,7 +177,7 @@ connectivity:
       allowWeb: true
       allowNative: true
       advertiseReason: "cloudflare tunnel"
-    - url: "http://192.168.1.20:8088"
+    - url: "http://LAN_IP:8088"
       kind: local_http
       priority: 20
       allowPairing: true

@@ -15,7 +15,7 @@ Precedence: **Environment Variables** > **Configuration File** > **Defaults**.
 
 | Variable | Description | Example/Default |
 | :--- | :--- | :--- |
-| `XG2G_E2_HOST` | Base URL of receiver (required) | `http://192.168.1.50` |
+| `XG2G_E2_HOST` | Base URL of receiver (required) | `http://RECEIVER_IP` |
 | `XG2G_DATA` | Data directory for cache/logs | `/tmp` |
 | `XG2G_LOG_LEVEL` | Logging verbosity (debug, info, warn, error) | `info` |
 | `XG2G_API_TOKEN` | Primary admin bearer token | - |
@@ -84,7 +84,7 @@ Default location: `config.yaml`. Strict validation is enabled by default.
 
 ```yaml
 enigma2:
-  baseUrl: "http://192.168.1.50"
+  baseUrl: "http://RECEIVER_IP"
   authMode: "inherit"
 epg:
   enabled: true

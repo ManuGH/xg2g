@@ -299,7 +299,9 @@ func (a *LocalAdapter) evaluateProgressiveHardwareDeinterlaceHardening(ctx conte
 }
 
 func (a *LocalAdapter) evaluateSafariCopyBitstreamHardening(_ context.Context, spec ports.StreamSpec, inputURL string) runtimeHardeningDecision {
-	if spec.Profile.TranscodeVideo || !shouldHardenSafariCopyBitstream(spec, inputURL) {
+	if spec.Profile.TranscodeVideo ||
+		strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") ||
+		!shouldHardenSafariCopyBitstream(spec, inputURL) {
 		return noRuntimeHardeningDecision()
 	}
 	return runtimeHardeningDecision{
@@ -315,7 +317,8 @@ func buildSafariRuntimeRemuxProfile(current ports.ProfileSpec) ports.ProfileSpec
 	next := current
 	next.TranscodeVideo = false
 	next.Deinterlace = false
-	next.Container = "mpegts"
+	next.VideoCodec = "h264"
+	next.Container = "fmp4"
 	if next.AudioBitrateK <= 0 {
 		next.AudioBitrateK = 192
 	}

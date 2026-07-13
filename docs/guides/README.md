@@ -1,8 +1,7 @@
 # User Guides
 
 User-facing setup, configuration, and reference material for running xg2g.
-Operational incident response lives in [`docs/ops/`](../ops/README.md);
-contributor workflow lives in [`docs/dev/`](../dev/README.md).
+Operational incident response lives in [`docs/ops/`](../ops/README.md).
 
 ## Guides
 
@@ -24,5 +23,4 @@ contributor workflow lives in [`docs/dev/`](../dev/README.md).
 ## Maintenance Rule
 
 Guides explain the supported path for users. Historical failures, incidents, and
-host-specific notes belong in [`docs/ops/`](../ops/README.md); contributor and
-build workflow belongs in [`docs/dev/`](../dev/README.md).
+host-specific notes belong in [`docs/ops/`](../ops/README.md).

@@ -21,6 +21,7 @@ function V3Player(props: V3PlayerProps) {
 
   // `durationSeconds` remains the normative duration truth at the composition seam.
   void viewState.playback.durationSeconds;
+  const currentChannel = 'channel' in props ? props.channel : undefined;
 
   return (
     <V3PlayerView
@@ -29,6 +30,9 @@ function V3Player(props: V3PlayerProps) {
       resumePrimaryActionRef={resumePrimaryActionRef}
       viewState={viewState}
       actions={actions}
+      channelList={props.channelList}
+      currentChannel={currentChannel}
+      onSelectChannel={props.onSelectChannel}
     />
   );
 }

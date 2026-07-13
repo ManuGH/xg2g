@@ -32,7 +32,7 @@ forwards `X-Forwarded-Proto: https` (Caddy, nginx, Traefik). See the
 - Confirm the receiver answers OpenWebIF:
   `curl -fsS http://RECEIVER_IP/api/about`.
 - Check `XG2G_E2_HOST` points at the receiver (scheme + host, e.g.
-  `http://192.168.1.10`).
+  `http://RECEIVER_IP`).
 - If the receiver requires an OpenWebIF login, set `XG2G_E2_USER` and
   `XG2G_E2_PASS`.
 - Pick a bouquet with `XG2G_BOUQUET` (see

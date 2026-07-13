@@ -3,7 +3,6 @@ package ffmpeg
 import (
 	"context"
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"math"
@@ -66,17 +65,9 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 }
 
 func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegmentLayout, error) {
-	readySegs := a.ReadySegments
-	if readySegs <= 0 {
-		readySegs = config.DefaultHLSReadySegments
-	}
-	minSize := readySegs + 2
-	if minSize < 4 {
-		minSize = 4 // HLS safety floor for sliding windows
-	}
 	layout := liveSegmentLayout{
 		segmentDurationSec: a.SegmentSeconds,
-		listSize:           max(10, minSize),
+		listSize:           10,
 	}
 	if shouldUseShortFMP4StartupSegments(spec) && layout.segmentDurationSec > safariDirtyHLSTimeSec {
 		layout.segmentDurationSec = safariDirtyHLSTimeSec
@@ -86,8 +77,7 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		return liveSegmentLayout{}, fmt.Errorf("invalid hls segment seconds: %d", layout.segmentDurationSec)
 	}
 	if a.DVRWindow > 0 {
-		dvrSize := int(math.Ceil(a.DVRWindow.Seconds() / float64(layout.segmentDurationSec)))
-		layout.listSize = max(dvrSize, minSize)
+		layout.listSize = max(int(math.Ceil(a.DVRWindow.Seconds()/float64(layout.segmentDurationSec))), 3)
 	}
 	return layout, nil
 }
@@ -167,7 +157,7 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 	args = append(args,
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
 		"-hls_list_size", strconv.Itoa(layout.listSize),
-		"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time+temp_file",
+		"-hls_flags", "delete_segments+append_list+independent_segments+program_date_time",
 		"-hls_segment_type", segmentType,
 		"-hls_segment_filename", segmentFilename,
 	)

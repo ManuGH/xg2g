@@ -23,21 +23,30 @@ Before using any of the development paths below:
 make install
 make dev-tools
 make start
+# or:
+# make start-gpu
+# make start-nvidia
 ```
 
 - `make install` bootstraps `.env` and WebUI dependencies.
 - `make dev-tools` installs the pinned local CLI tools used by repo workflows.
 - `make doctor` verifies only the local workspace.
-- `make start` is the standard local entrypoint. It runs `make doctor`, checks
-  the Docker runtime, and then starts the default local Compose stack.
+- `make start`, `make start-gpu`, and `make start-nvidia` are the public local
+  start entrypoints. They run `make doctor`, check the Docker runtime, and then
+  start the matching local Compose stack.
 
-### Recommended Paths
+### Public Start Paths
 
-Pick one path and stay on it for the task at hand:
+Pick one start path and stay on it for the task at hand:
 
 - `make start` for the default local container path
 - `make start-gpu` for Linux `/dev/dri` hardware acceleration in containers
 - `make start-nvidia` for the NVIDIA / NVENC container path
+
+### Advanced Contributor Paths
+
+These are real, supported targets, but they are not the public start surface:
+
 - `make backend-dev` for backend-only work
 - `make dev-ui` for frontend-heavy work with Vite HMR
 - `make dev` only when you explicitly want the crash-restart loop

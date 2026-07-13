@@ -19,6 +19,7 @@ DIGEST_VERIFY="${REPO_ROOT}/backend/scripts/verify-digest-lock.sh"
 RELEASE_POLICY="${REPO_ROOT}/backend/scripts/verify-release-policy.sh"
 DOC_IMAGE_TAGS="${REPO_ROOT}/backend/scripts/verify-doc-image-tags.sh"
 RELEASE_INVARIANTS="${REPO_ROOT}/docs/ops/CONTRACT_INVARIANTS_RELEASE.md"
+GITATTRIBUTES="${REPO_ROOT}/.gitattributes"
 
 ALLOWED_GORELEASER_TOP_LEVEL_KEYS=(
   "version"
@@ -110,6 +111,50 @@ expected_archive_files() {
   expected_bundle_files "$1" | grep -v '^checksums.txt$'
 }
 
+expected_public_archive_entries() {
+  local os="$1"
+  case "${os}" in
+    windows)
+      cat <<'EOF'
+README.md
+LICENSE
+backend/VERSION
+docs/guides/GETTING_STARTED.md
+docs/guides/CONFIGURATION.md
+docs/guides/TROUBLESHOOTING.md
+docs/ops/DEPLOYMENT.md
+docs/ops/SECURITY.md
+docs/ops/INSTALLATION_CONTRACT.md
+docs/ops/OPERATIONAL_LIFECYCLE_CONTRACT.md
+docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md
+docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md
+docs/arch/CODEC_MATRIX.md
+docs/assets/github/xg2g-github-hero.svg
+xg2g.exe
+EOF
+      ;;
+    *)
+      cat <<'EOF'
+README.md
+LICENSE
+backend/VERSION
+docs/guides/GETTING_STARTED.md
+docs/guides/CONFIGURATION.md
+docs/guides/TROUBLESHOOTING.md
+docs/ops/DEPLOYMENT.md
+docs/ops/SECURITY.md
+docs/ops/INSTALLATION_CONTRACT.md
+docs/ops/OPERATIONAL_LIFECYCLE_CONTRACT.md
+docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md
+docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md
+docs/arch/CODEC_MATRIX.md
+docs/assets/github/xg2g-github-hero.svg
+xg2g
+EOF
+      ;;
+  esac
+}
+
 assert_allowed_goreleaser_keys() {
   local key
   local allowed
@@ -145,6 +190,26 @@ verify_doc_contract() {
   assert_contains "${DOC}" '.github/workflows/ffmpeg-base.yml' "release output doc truth input"
   assert_contains "${DOC}" 'Dockerfile.ffmpeg-base' "release output doc truth input"
   assert_contains "${DOC}" 'unexpected published output' "release output doc policy"
+  assert_contains "${GORELEASER_CFG}" 'docs/guides/GETTING_STARTED.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/guides/CONFIGURATION.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/guides/TROUBLESHOOTING.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/DEPLOYMENT.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/SECURITY.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/INSTALLATION_CONTRACT.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/OPERATIONAL_LIFECYCLE_CONTRACT.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/arch/CODEC_MATRIX.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/assets/github/xg2g-github-hero.svg' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'docs/README.md' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'docs/dev/' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'docs/webui/' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'docs/ADR/' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'backend/scripts/' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'test/' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'hack/' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" '.github/' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'docs/**' "goreleaser archive payload"
 }
 
 verify_release_workflow_contract() {
@@ -175,7 +240,21 @@ verify_goreleaser_contract() {
   assert_contains "${GORELEASER_CFG}" 'README.md' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'LICENSE' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'backend/VERSION' "goreleaser archive payload"
-  assert_contains "${GORELEASER_CFG}" 'docs/**' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/guides/GETTING_STARTED.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/guides/CONFIGURATION.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/guides/TROUBLESHOOTING.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/DEPLOYMENT.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/SECURITY.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/INSTALLATION_CONTRACT.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/OPERATIONAL_LIFECYCLE_CONTRACT.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/arch/CODEC_MATRIX.md' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'docs/assets/github/xg2g-github-hero.svg' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'docs/README.md' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'docs/dev/' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'docs/webui/' "goreleaser archive payload"
+  assert_not_contains "${GORELEASER_CFG}" 'docs/ADR/' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'name_template: "checksums.txt"' "goreleaser checksum naming"
   assert_contains "${GORELEASER_CFG}" 'dockers_v2:' "goreleaser dockers_v2 block"
   assert_contains "${GORELEASER_CFG}" '- "ghcr.io/manugh/xg2g"' "goreleaser dockers_v2 image"
@@ -216,6 +295,43 @@ verify_release_input_contract() {
   assert_contains "${RELEASE_INVARIANTS}" 'backend/VERSION' "release invariants version source"
 }
 
+verify_source_archive_hygiene() {
+  assert_file "${GITATTRIBUTES}"
+  assert_contains "${GITATTRIBUTES}" 'docs/dev/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'docs/dev/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'docs/release/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'docs/release/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'docs/webui/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'docs/webui/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'docs/ADR/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'docs/ADR/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'backend/scripts/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'backend/scripts/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'backend/test/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'backend/test/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'backend/testdata/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'backend/testdata/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'frontend/webui/tests/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'frontend/webui/tests/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'android/app/src/test/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'android/app/src/test/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'hack/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" 'hack/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '.github/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '.github/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '**/testdata/** export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '**/testdata/ export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '*_test.go export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '*.test.ts export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '*.test.tsx export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '*.test.js export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '*.test.jsx export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '*.spec.ts export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '*.spec.tsx export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '*.spec.js export-ignore' "source archive hygiene"
+  assert_contains "${GITATTRIBUTES}" '*.spec.jsx export-ignore' "source archive hygiene"
+}
+
 compare_exact_file_set() {
   local actual_file="$1"
   local expected_file="$2"
@@ -234,12 +350,32 @@ verify_archive_payload() {
   local version="$2"
   local os="$3"
   local entries
+  local normalized_entries
+  local expected_entries
+  local tmpdir
+  local actual_entries_file
+  local expected_entries_file
   local version_member
   local archived_version
   local expected_tag
 
   entries="$(tar -tzf "${archive}")" || fail "unable to list archive: ${archive}"
   expected_tag="$(normalize_tag_version "${version}")"
+  tmpdir="$(mktemp -d)"
+  actual_entries_file="${tmpdir}/actual-entries.txt"
+  expected_entries_file="${tmpdir}/expected-entries.txt"
+  normalized_entries="$(
+    printf '%s\n' "${entries}" \
+      | grep -v '/$' \
+      | sed 's#^[^/]*/##' \
+      | sed '/^$/d' \
+      | LC_ALL=C sort -u
+  )"
+  expected_entries="$(expected_public_archive_entries "${os}" | LC_ALL=C sort -u)"
+  printf '%s\n' "${normalized_entries}" > "${actual_entries_file}"
+  printf '%s\n' "${expected_entries}" > "${expected_entries_file}"
+  compare_exact_file_set "${actual_entries_file}" "${expected_entries_file}"
+  rm -rf "${tmpdir}"
 
   if [[ "${os}" == "windows" ]]; then
     printf '%s\n' "${entries}" | grep -Eq '(^|/)xg2g\.exe$' || fail "archive missing xg2g.exe: ${archive}"
@@ -247,10 +383,16 @@ verify_archive_payload() {
     printf '%s\n' "${entries}" | grep -Eq '(^|/)xg2g$' || fail "archive missing xg2g binary: ${archive}"
   fi
 
-  printf '%s\n' "${entries}" | grep -Eq '(^|/)README\.md$' || fail "archive missing README.md: ${archive}"
-  printf '%s\n' "${entries}" | grep -Eq '(^|/)LICENSE$' || fail "archive missing LICENSE: ${archive}"
-  printf '%s\n' "${entries}" | grep -Eq '(^|/)backend/VERSION$' || fail "archive missing backend/VERSION: ${archive}"
-  printf '%s\n' "${entries}" | grep -Eq '(^|/)docs/.+' || fail "archive missing docs payload: ${archive}"
+  printf '%s\n' "${normalized_entries}" | grep -Fxq 'README.md' || fail "archive missing README.md: ${archive}"
+  printf '%s\n' "${normalized_entries}" | grep -Fxq 'LICENSE' || fail "archive missing LICENSE: ${archive}"
+  printf '%s\n' "${normalized_entries}" | grep -Fxq 'backend/VERSION' || fail "archive missing backend/VERSION: ${archive}"
+  printf '%s\n' "${normalized_entries}" | grep -Fxq 'docs/guides/GETTING_STARTED.md' || fail "archive missing getting started guide: ${archive}"
+  printf '%s\n' "${normalized_entries}" | grep -Fxq 'docs/ops/DEPLOYMENT.md' || fail "archive missing deployment guide: ${archive}"
+  printf '%s\n' "${normalized_entries}" | grep -Fxq 'docs/ops/SECURITY.md' || fail "archive missing security guide: ${archive}"
+  printf '%s\n' "${normalized_entries}" | grep -Fxq 'docs/arch/CODEC_MATRIX.md' || fail "archive missing codec matrix: ${archive}"
+  if printf '%s\n' "${normalized_entries}" | grep -Eq '^(docs/dev/|docs/release/|docs/webui/|docs/ADR/|backend/scripts/|test/|hack/|\.github/)'; then
+    fail "archive contains excluded contributor/test material: ${archive}"
+  fi
 
   version_member="$(printf '%s\n' "${entries}" | grep -E '(^|/)backend/VERSION$' | head -n 1 || true)"
   [[ -n "${version_member}" ]] || fail "archive missing backend/VERSION member: ${archive}"
@@ -313,6 +455,22 @@ create_synthetic_bundle() {
   local binary_name
   local os
   local arch
+  local public_files=(
+    "README.md"
+    "LICENSE"
+    "backend/VERSION"
+    "docs/guides/GETTING_STARTED.md"
+    "docs/guides/CONFIGURATION.md"
+    "docs/guides/TROUBLESHOOTING.md"
+    "docs/ops/DEPLOYMENT.md"
+    "docs/ops/SECURITY.md"
+    "docs/ops/INSTALLATION_CONTRACT.md"
+    "docs/ops/OPERATIONAL_LIFECYCLE_CONTRACT.md"
+    "docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md"
+    "docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
+    "docs/arch/CODEC_MATRIX.md"
+    "docs/assets/github/xg2g-github-hero.svg"
+  )
 
   tag_version="$(normalize_tag_version "${version}")"
   plain_version="$(normalize_plain_version "${version}")"
@@ -322,11 +480,20 @@ create_synthetic_bundle() {
   while IFS=: read -r os arch; do
     archive_name="xg2g_${plain_version}_${os}_${arch}.tar.gz"
     payload_root="${bundle_dir}/payload-${os}-${arch}"
-    mkdir -p "${payload_root}/backend" "${payload_root}/docs/ops"
-    printf '%s\n' 'synthetic release readme' > "${payload_root}/README.md"
-    printf '%s\n' 'synthetic license' > "${payload_root}/LICENSE"
-    printf '%s\n' "${tag_version}" > "${payload_root}/backend/VERSION"
-    printf '%s\n' 'synthetic docs' > "${payload_root}/docs/ops/placeholder.md"
+    mkdir -p \
+      "${payload_root}/backend" \
+      "${payload_root}/docs/guides" \
+      "${payload_root}/docs/ops" \
+      "${payload_root}/docs/arch" \
+      "${payload_root}/docs/assets/github"
+    for file in "${public_files[@]}"; do
+      mkdir -p "${payload_root}/$(dirname "$file")"
+      if [[ "${file}" == "backend/VERSION" ]]; then
+        printf '%s\n' "${tag_version}" > "${payload_root}/${file}"
+      else
+        printf '%s\n' "synthetic ${file}" > "${payload_root}/${file}"
+      fi
+    done
 
     if [[ "${os}" == "windows" ]]; then
       binary_name="xg2g.exe"
@@ -400,6 +567,7 @@ main() {
   verify_goreleaser_contract
   verify_release_docker_contract
   verify_release_input_contract
+  verify_source_archive_hygiene
   verify_synthetic_bundle_guards
 
   echo "OK: release output contract holds."

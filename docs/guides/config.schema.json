@@ -307,7 +307,7 @@
           "description": "Base URL of the Enigma2 receiver",
           "examples": [
             "http://receiver.local",
-            "http://192.168.1.100",
+            "http://RECEIVER_IP",
             "https://enigma2.example.com"
           ],
           "format": "uri",

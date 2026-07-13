@@ -41,7 +41,30 @@ Every release archive must contain:
 - `README.md`
 - `LICENSE`
 - `backend/VERSION`
-- `docs/**`
+- public runtime documentation only:
+  - `docs/guides/GETTING_STARTED.md`
+  - `docs/guides/CONFIGURATION.md`
+  - `docs/guides/TROUBLESHOOTING.md`
+  - `docs/ops/DEPLOYMENT.md`
+  - `docs/ops/SECURITY.md`
+  - `docs/ops/INSTALLATION_CONTRACT.md`
+  - `docs/ops/OPERATIONAL_LIFECYCLE_CONTRACT.md`
+  - `docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md`
+  - `docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md`
+  - `docs/arch/CODEC_MATRIX.md`
+  - `docs/assets/github/xg2g-github-hero.svg`
+
+Contributor-only, release-history, and test materials are intentionally
+excluded from the archive. In particular, the bundle must not contain:
+
+- `docs/dev/**`
+- `docs/release/**`
+- `docs/webui/**`
+- `docs/ADR/**`
+- `backend/scripts/**`
+- `test/**`
+- `hack/**`
+- `.github/**`
 
 The verifier treats archive wrapper directories as implementation detail. The
 required payload entries may be nested, but they must be present.
@@ -72,6 +95,10 @@ they are not published release outputs:
 
 Those outputs may exist in CI or future release flows, but they are not part of
 the current external release guarantee unless this contract is updated.
+
+GitHub-generated source archives are trimmed separately through
+`.gitattributes export-ignore` rules. They are a convenience surface, not a
+normative release asset bundle.
 
 ## Truth Inputs
 

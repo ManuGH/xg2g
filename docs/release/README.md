@@ -1,14 +1,12 @@
 # Release Documentation Index
 
-Use this area for release preparation, behavioral change notes, and GitHub
-presentation copy.
+Use this area for release preparation and behavioral change notes.
 
 ## Release Work
 
 | Need | Document |
 | :--- | :--- |
 | Prepare release notes | [Release Template](RELEASE_TEMPLATE.md) |
-| Public GitHub copy | [GitHub Presence Copy](GITHUB_PRESENCE_COPY.md) |
 | v3.1.0 release notes | [v3.1.0 Release Notes](RELEASE_NOTES_v3.1.0.md) |
 
 ## Behavioral Change Logs

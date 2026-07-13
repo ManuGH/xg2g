@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFinalizePlan_SafariForceCopyAllowlistAppliesCopyHardenedMode(t *testing.T) {
+func TestFinalizePlan_SafariForceCopyAllowlistUsesFMP4CopyMode(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
 
 	adapter := NewLocalAdapter(
@@ -47,8 +47,9 @@ func TestFinalizePlan_SafariForceCopyAllowlistAppliesCopyHardenedMode(t *testing
 
 	finalized := adapter.FinalizePlan(context.Background(), spec, "http://127.0.0.1:17999/1:0:19:11:6:85:C00000:0:0:0:")
 	assert.False(t, finalized.Profile.TranscodeVideo)
-	assert.Equal(t, "mpegts", finalized.Profile.Container)
-	assert.Equal(t, ports.RuntimeModeCopyHardened, finalized.Profile.EffectiveRuntimeMode)
+	assert.Equal(t, "h264", finalized.Profile.VideoCodec)
+	assert.Equal(t, "fmp4", finalized.Profile.Container)
+	assert.Equal(t, ports.RuntimeModeCopy, finalized.Profile.EffectiveRuntimeMode)
 	assert.Equal(t, ports.RuntimeModeSourceEnvOverride, finalized.Profile.EffectiveModeSource)
 }
 

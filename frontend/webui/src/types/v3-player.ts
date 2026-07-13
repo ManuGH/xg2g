@@ -43,6 +43,8 @@ export interface V3PlayerBaseProps {
   token?: string;
   autoStart?: boolean;
   onClose?: () => void;
+  channelList?: Service[];
+  onSelectChannel?: (channel: Service) => void;
   duration?: number; // Duration in seconds (enables VOD mode)
   startPositionSeconds?: number;
   suppressResumePrompt?: boolean;

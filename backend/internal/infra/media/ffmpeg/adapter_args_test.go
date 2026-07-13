@@ -184,13 +184,16 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 	assert.NotContains(t, args, "yadif", "runtime-probed remux path must not inject deinterlace filters")
 	assert.Contains(t, args, "-c:a")
 	assert.Contains(t, args, "aac")
-	assert.Contains(t, args, "dump_extra=freq=keyframe", "live copy must repeat SPS/PPS on keyframes so each HLS segment is independently decodable (no frozen opening frame)")
+	assert.NotContains(t, args, "dump_extra=freq=keyframe", "fMP4 copy must keep codec configuration in the init segment")
 
 	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
 	require.True(t, ok)
-	assert.Equal(t, "mpegts", hlsSegmentType, "native safari remux path should stay on TS HLS")
+	assert.Equal(t, "fmp4", hlsSegmentType, "native safari H.264 remux should use fMP4 HLS")
 
-	assert.NotContains(t, args, "-hls_fmp4_init_filename", "native safari remux path must not emit fMP4 init segments")
+	initFilename, ok := valueAfter(args, "-hls_fmp4_init_filename")
+	require.True(t, ok)
+	assert.Equal(t, "init.mp4", initFilename)
+	assert.NotContains(t, args, "-tag:v", "H.264 fMP4 must use FFmpeg's native sample-entry selection")
 }
 
 func TestBuildArgsWithPlan_RecordsEffectiveRuntimeModeAfterRuntimeRemux(t *testing.T) {
@@ -282,7 +285,7 @@ func TestBuildArgs_SafariRuntimeProbeRetriesTransientStreamRelayStartup(t *testi
 
 	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
 	require.True(t, ok)
-	assert.Equal(t, "mpegts", hlsSegmentType, "recovered safari remux path should stay on TS HLS")
+	assert.Equal(t, "fmp4", hlsSegmentType, "recovered safari H.264 remux should use fMP4 HLS")
 }
 
 func TestBuildArgs_SafariRuntimeProbeRetryUsesFreshTimeoutPerAttempt(t *testing.T) {
@@ -371,13 +374,12 @@ func TestBuildArgs_SafariRuntimeProbeCanForceCopyForAllowlistedServiceRef(t *tes
 	assert.Contains(t, args, "copy", "allowlisted safari service ref should use video copy")
 	assert.NotContains(t, args, "libx264", "allowlisted safari service ref must not transcode video")
 	assert.NotContains(t, args, "yadif", "allowlisted safari service ref must not inject deinterlace filters")
-	bsf, ok := valueAfter(args, "-bsf:v")
-	require.True(t, ok)
-	assert.Equal(t, "dump_extra=freq=keyframe", bsf, "allowlisted safari copy path should harden H.264 SPS/PPS on keyframes")
+	assert.NotContains(t, args, "dump_extra=freq=keyframe", "fMP4 copy must use init-segment codec configuration")
 
 	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
 	require.True(t, ok)
-	assert.Equal(t, "mpegts", hlsSegmentType)
+	assert.Equal(t, "fmp4", hlsSegmentType)
+	assert.NotContains(t, args, "-tag:v", "H.264 fMP4 must use FFmpeg's native sample-entry selection")
 }
 
 func TestBuildArgs_SafariRuntimeProbeAllowlistMatchesCanonicalServiceRefWithoutTrailingColon(t *testing.T) {
@@ -416,13 +418,12 @@ func TestBuildArgs_SafariRuntimeProbeAllowlistMatchesCanonicalServiceRefWithoutT
 	assert.Contains(t, args, "copy", "canonical allowlisted safari service ref should use video copy")
 	assert.NotContains(t, args, "libx264", "canonical allowlisted safari service ref must not transcode video")
 	assert.NotContains(t, args, "yadif", "canonical allowlisted safari service ref must not inject deinterlace filters")
-	bsf, ok := valueAfter(args, "-bsf:v")
-	require.True(t, ok)
-	assert.Equal(t, "dump_extra=freq=keyframe", bsf, "canonical allowlisted safari copy path should harden H.264 SPS/PPS on keyframes")
+	assert.NotContains(t, args, "dump_extra=freq=keyframe", "fMP4 copy must use init-segment codec configuration")
 
 	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
 	require.True(t, ok)
-	assert.Equal(t, "mpegts", hlsSegmentType)
+	assert.Equal(t, "fmp4", hlsSegmentType)
+	assert.NotContains(t, args, "-tag:v", "H.264 fMP4 must use FFmpeg's native sample-entry selection")
 }
 
 func TestBuildArgs_SafariForceCopyAllowlistCanBeDisabledByProfile(t *testing.T) {
@@ -1045,7 +1046,7 @@ func TestBuildArgs_VaapiHEVCDeinterlaceFallsBackToH264UntilVerified(t *testing.T
 	assert.Contains(t, vf, "deinterlace_vaapi")
 	assert.Contains(t, args, "h264_vaapi")
 	assert.NotContains(t, args, "hevc_vaapi")
-	assert.NotContains(t, args, "-tag:v", "h264 fallback must not emit hvc1 tags")
+	assert.NotContains(t, args, "-tag:v", "H.264 fallback must not inherit the HEVC sample-entry override")
 }
 
 func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPathWhenVerified(t *testing.T) {
@@ -2495,6 +2496,8 @@ func TestBuildArgs_UsesFMP4SegmentsWhenContainerRequested(t *testing.T) {
 	hlsInitFilename, ok := valueAfter(args, "-hls_fmp4_init_filename")
 	require.True(t, ok)
 	assert.Equal(t, "init.mp4", hlsInitFilename)
+
+	assert.NotContains(t, args, "-tag:v", "H.264 fMP4 must use FFmpeg's native sample-entry selection")
 }
 
 func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {

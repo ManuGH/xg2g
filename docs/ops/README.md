@@ -1,8 +1,7 @@
 # Operations Index
 
 Use this area for running, deploying, verifying, and recovering xg2g in real
-environments. Architecture rationale belongs in `docs/arch/`; contributor
-workflow belongs in `docs/dev/`.
+environments. Architecture rationale belongs in `docs/arch/`.
 
 ## Core Runbooks
 

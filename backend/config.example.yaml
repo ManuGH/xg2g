@@ -24,7 +24,7 @@ dataDir: "/tmp"
 # Enigma2 (Receiver) Configuration [REQUIRED for streaming]
 # ------------------------------------------------------------------------------
 enigma2:
-  # Base URL of your Enigma2 receiver (e.g. http://192.168.1.50)
+  # Base URL of your Enigma2 receiver (e.g. http://RECEIVER_IP)
   baseUrl: "http://127.0.0.1"
   # Optional: HTTP Basic Auth
   # username: "root"
@@ -141,7 +141,7 @@ network: {}
   # ENV: XG2G_LAN_ALLOW_CIDRS
   # lan:
   #   allow:
-  #     cidrs: ["10.0.0.0/8", "192.168.0.0/16", "100.64.0.0/10"]
+  #     cidrs: ["LAN_SUBNET", "RFC1918_SUBNET", "CGNAT_SUBNET"]
 
   # Optional outbound HTTP(S) allowlist policy.
   # ENV: XG2G_OUTBOUND_ENABLED, XG2G_OUTBOUND_ALLOW_*
@@ -149,7 +149,7 @@ network: {}
   #   enabled: false
   #   allow:
   #     hosts: ["example.local"]
-  #     cidrs: ["10.10.55.0/24"]
+  #     cidrs: ["LAN_SUBNET"]
   #     ports: [80, 443]
   #     schemes: ["http", "https"]
 
@@ -183,7 +183,7 @@ picons:
 # Example 1: Minimal receiver configuration
 # ---
 # enigma2:
-#   baseUrl: "http://192.168.1.100"
+#   baseUrl: "http://RECEIVER_IP"
 
 # Example 2: Full EPG setup with authentication
 # ---
@@ -200,7 +200,7 @@ picons:
 # Example 3: Multiple bouquets with custom API token
 # ---
 # enigma2:
-#   baseUrl: "http://192.168.1.100"
+#   baseUrl: "http://RECEIVER_IP"
 # bouquets:
 #   - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"favorites.tv\" ORDER BY bouquet"
 #   - "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET \"sports.tv\" ORDER BY bouquet"
@@ -214,7 +214,7 @@ picons:
 # Example 4: High-performance EPG collection
 # ---
 # enigma2:
-#   baseUrl: "http://192.168.1.100"
+#   baseUrl: "http://RECEIVER_IP"
 #   timeout: "30s"
 #   retries: 5
 #   maxBackoff: "60s"
@@ -310,7 +310,7 @@ picons:
 #    ./xg2g-daemon --config config.yaml
 #
 # 2. Using environment variables only:
-#    XG2G_E2_HOST=http://192.168.1.100 \
+#    XG2G_E2_HOST=http://RECEIVER_IP \
 #    XG2G_EPG_ENABLED=true \
 #    ./xg2g-daemon
 #
@@ -325,10 +325,10 @@ picons:
 # ==============================================================================
 #
 # - If OpenWebIF connection fails, verify the baseUrl is accessible:
-#     curl http://192.168.1.100/api/statusinfo
+#     curl http://RECEIVER_IP/api/statusinfo
 #
 # - For EPG issues, check Enigma2 supports EPG API:
-#     curl http://192.168.1.100/api/epgservice?sRef=REFERENCE
+#     curl http://RECEIVER_IP/api/epgservice?sRef=REFERENCE
 #
 # - Streams: `useWebIFStreams: false` ist der empfohlene Default.
 #   `true` nur als Fallback/Debug-Option nutzen.

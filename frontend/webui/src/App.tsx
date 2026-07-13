@@ -117,8 +117,10 @@ function App() {
           <V3Player
             token={auth.token || ''}
             channel={playback.playingChannel}
+            channelList={filteredChannels}
             autoStart={true}
             onClose={handlePlayerClose}
+            onSelectChannel={ctx.handlePlay}
           />
         </Suspense>
       )}

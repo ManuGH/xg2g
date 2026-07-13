@@ -577,9 +577,9 @@ func configureSafariSpec(spec *model.ProfileSpec, cap *scan.Capability, isSafari
 	// Smart Profile Logic
 	if cap != nil && !cap.Interlaced {
 		// Progressive -> Direct Remux (Original Quality)
-		// Browser Safari stays on classic HLS-TS because copied broadcast H.264
-		// inside fMP4 caused black-video regressions there. Native clients that
-		// reuse the safari family (for example Android native_hls) prefer fMP4.
+		// Keep the family-level fallback here. The start policy promotes Apple
+		// native-HLS H.264/HEVC copy starts to fMP4 after client capabilities and
+		// the selected playback engine are known.
 		spec.TranscodeVideo = false
 		spec.PolicyModeHint = ports.RuntimeModeCopy
 		spec.Container = safariFamilyContainer(isSafari)

@@ -25,7 +25,7 @@ token="$(openssl rand -hex 32)"
 decision_secret="$(openssl rand -hex 32)"
 
 docker run -d --rm --name xg2g-smoke -p 8088:8088 \
-  -e XG2G_E2_HOST="http://192.168.1.50" \
+  -e XG2G_E2_HOST="http://RECEIVER_IP" \
   -e XG2G_API_TOKEN="$token" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
   -e XG2G_DECISION_SECRET="$decision_secret" \

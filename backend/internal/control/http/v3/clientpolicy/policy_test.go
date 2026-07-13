@@ -121,13 +121,46 @@ func TestApplyStartPackagingPolicy_HEVCCopyHlsjsKeepsMpegts(t *testing.T) {
 	}
 }
 
-// H.264 copy with native requested -> stays mpegts (HEVC-only gate).
-func TestApplyStartPackagingPolicy_H264CopyNativeKeepsMpegts(t *testing.T) {
+// H.264 copy follows the same native-WebKit fMP4 contract as HEVC, using avc1.
+func TestApplyStartPackagingPolicy_H264CopyNativeForcesFMP4(t *testing.T) {
 	spec := ApplyStartPackagingPolicy(
 		playbackprofile.ClientSafariNative,
 		profiles.ProfileSafari,
 		model.ProfileSpec{Container: "mpegts", TranscodeVideo: false},
 		"h264", "native",
+	)
+	if spec.Container != "fmp4" {
+		t.Fatalf("ApplyStartPackagingPolicy() container = %q, want %q", spec.Container, "fmp4")
+	}
+	if spec.VideoCodec != "h264" {
+		t.Fatalf("ApplyStartPackagingPolicy() videoCodec = %q, want %q", spec.VideoCodec, "h264")
+	}
+	if spec.TranscodeVideo {
+		t.Fatal("ApplyStartPackagingPolicy() must stay a copy (TranscodeVideo=false)")
+	}
+}
+
+func TestApplyStartPackagingPolicy_IOSNativeH264CopyAlreadyFMP4PinsH264(t *testing.T) {
+	spec := ApplyStartPackagingPolicy(
+		playbackprofile.ClientIOSSafariNative,
+		profiles.ProfileSafari,
+		model.ProfileSpec{Name: "safari", Container: "fmp4", TranscodeVideo: false},
+		"h264", "native",
+	)
+	if spec.Container != "fmp4" {
+		t.Fatalf("ApplyStartPackagingPolicy() container = %q, want %q", spec.Container, "fmp4")
+	}
+	if spec.VideoCodec != "h264" {
+		t.Fatalf("ApplyStartPackagingPolicy() videoCodec = %q, want %q", spec.VideoCodec, "h264")
+	}
+}
+
+func TestApplyStartPackagingPolicy_H264CopyHlsjsKeepsMpegts(t *testing.T) {
+	spec := ApplyStartPackagingPolicy(
+		playbackprofile.ClientSafariNative,
+		profiles.ProfileSafari,
+		model.ProfileSpec{Container: "mpegts", TranscodeVideo: false},
+		"h264", "hlsjs",
 	)
 	if spec.Container != "mpegts" {
 		t.Fatalf("ApplyStartPackagingPolicy() container = %q, want %q", spec.Container, "mpegts")
