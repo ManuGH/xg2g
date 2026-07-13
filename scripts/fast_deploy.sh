@@ -29,10 +29,12 @@ echo "🚚 4. Pushing binary to Staging/Prod LXC 110..."
 # Copy the compiled binary from the Proxmox host into the LXC container
 ssh "$PROXMOX_HOST" "pct push $LXC_ID $PROXMOX_DIR/bin/xg2g /srv/xg2g/xg2g"
 ssh "$PROXMOX_HOST" "pct push $LXC_ID $PROXMOX_DIR/bin/xg2g /srv/xg2g-staging/xg2g || true"
+ssh "$PROXMOX_HOST" "pct push $LXC_ID $PROXMOX_DIR/bin/xg2g /srv/xg2g-staging/xg2g-staging-binary || true"
 
 # Ensure binary is executable inside the LXC
 ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- chmod +x /srv/xg2g/xg2g"
 ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- chmod +x /srv/xg2g-staging/xg2g || true"
+ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- chmod +x /srv/xg2g-staging/xg2g-staging-binary || true"
 
 echo "✅ 5. Starting services on LXC 110..."
 ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- systemctl start xg2g"

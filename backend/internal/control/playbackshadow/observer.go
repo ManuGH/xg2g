@@ -3,6 +3,7 @@ package playbackshadow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -147,7 +148,11 @@ func NewWorker(config ObserverConfig, reg prometheus.Registerer, logger zerolog.
 func registerOrGet[T prometheus.Collector](reg prometheus.Registerer, c T, _ T) (T, error) {
 	if err := reg.Register(c); err != nil {
 		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
-			return are.ExistingCollector.(T), nil
+			if existing, ok := are.ExistingCollector.(T); ok {
+				return existing, nil
+			}
+			var zero T
+			return zero, fmt.Errorf("collector registered under different type: %T vs %T", are.ExistingCollector, zero)
 		}
 		var zero T
 		return zero, err
@@ -174,21 +179,26 @@ func (w *Worker) TryObserve(obs ShadowObservation) bool {
 	}
 }
 
-// Start begins processing observations in the background. It must be called exactly once.
+// Start begins processing observations in the background. If called after a previous context cancelled, it rebinds and restarts processing.
 func (w *Worker) Start(ctx context.Context) {
 	w.mu.Lock()
 	if w.closed {
 		w.mu.Unlock()
 		return
 	}
-	// If already started and context is not done, return.
+	// If already started and active context is not done, return.
 	if w.started && w.activeCtx != nil && w.activeCtx.Err() == nil {
 		w.mu.Unlock()
 		return
 	}
+	wasStarted := w.started
 	w.started = true
 	w.activeCtx = ctx
 	w.mu.Unlock()
+
+	if wasStarted {
+		w.wg.Wait()
+	}
 
 	w.wg.Add(1)
 	go func() {
@@ -197,10 +207,10 @@ func (w *Worker) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				// Context cancelled, exit without draining fully (as per current behavior)
+				// Context cancelled, exit immediately. Queued items waiting are dropped (not drained).
 				return
 			case <-w.done:
-				// Worker closed explicitly
+				// Worker closed explicitly. Queued items waiting are dropped (not drained).
 				return
 			case obs, ok := <-w.queue:
 				if !ok {
@@ -212,16 +222,22 @@ func (w *Worker) Start(ctx context.Context) {
 	}()
 }
 
-// Close gracefully stops the worker and waits for current processing to complete.
+// Close immediately stops the worker and waits for active processing of the current item to complete.
+// Note: pending observations waiting in the queue upon Close are dropped and not drained.
 func (w *Worker) Close(ctx context.Context) error {
 	w.mu.Lock()
-	if !w.started || w.closed {
+	if w.closed {
 		w.mu.Unlock()
 		return nil
 	}
 	w.closed = true
 	close(w.done)
+	started := w.started
 	w.mu.Unlock()
+
+	if !started {
+		return nil
+	}
 
 	// Wait for processing goroutine to finish or context to cancel
 	waitChan := make(chan struct{})

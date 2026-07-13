@@ -691,6 +691,8 @@ func (s *Service) observePlannerShadow(
 		availableEngines = append(availableEngines, "hls")
 	}
 
+	// Map network context exactly where provided by resolvedCaps.NetworkContext (DownlinkKbps and InternetValidated).
+	// RTTMillis, ThroughputKbps, and PacketLossRate are kept at 0 (unreported/unknown) as NetworkContext does not currently supply them.
 	var downlink, rtt int
 	var internetValidated bool
 	if resolvedCaps.NetworkContext != nil {
@@ -699,7 +701,7 @@ func (s *Service) observePlannerShadow(
 			internetValidated = *resolvedCaps.NetworkContext.InternetValidated
 		}
 	}
-	
+
 	legacyInput := playbackshadow.LegacyPlanningInput{
 		EvaluatedAt:          now.UnixMilli(),
 		Scope:                scope,
@@ -710,7 +712,7 @@ func (s *Service) observePlannerShadow(
 		ObservedAt:           0,
 		ValidUntil:           0,
 		NetworkCaptureTime:   0,
-		PolicyVersion:        req.APIVersion,
+		PolicyVersion:        "unknown",
 		Container:            truth.Container,
 		VideoCodec:           truth.VideoCodec,
 		AudioCodec:           truth.AudioCodec,

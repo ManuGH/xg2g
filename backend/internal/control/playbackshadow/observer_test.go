@@ -159,3 +159,83 @@ func TestObserver_TryObserveAfterShutdown(t *testing.T) {
 	// Should safely return false since the done channel is closed
 	assert.False(t, w.TryObserve(obs))
 }
+
+func TestObserver_CloseBeforeStart(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	cfg := ObserverConfig{Enabled: true, QueueCapacity: 10}
+	w, err := NewWorker(cfg, reg, zerolog.Nop())
+	require.NoError(t, err)
+
+	// Close immediately before Start
+	require.NoError(t, w.Close(context.Background()))
+
+	// TryObserve should return false immediately
+	obs := ShadowObservation{
+		Evidence: playbackplanner.PlaybackEvidence{Scope: "live"},
+		Legacy:   ComparablePlaybackPlan{IsValid: true, Outcome: "allow"},
+	}
+	assert.False(t, w.TryObserve(obs))
+
+	// Start after Close should not panic or start goroutines
+	w.Start(context.Background())
+}
+
+func TestObserver_ContextRebinding(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	cfg := ObserverConfig{Enabled: true, QueueCapacity: 10}
+	w, err := NewWorker(cfg, reg, zerolog.Nop())
+	require.NoError(t, err)
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	w.Start(ctx1)
+
+	// Cancel first context
+	cancel1()
+	// Allow goroutine to notice cancellation and terminate
+	w.wg.Wait()
+
+	processed := make(chan struct{})
+	w.planner = func(ev playbackplanner.PlaybackEvidence) (playbackplanner.PlanningResult, error) {
+		defer close(processed)
+		return playbackplanner.PlanningResult{
+			Plan: playbackplanner.PlaybackPlan{
+				Outcome: "allow",
+				Mode:    "copy",
+			},
+		}, nil
+	}
+
+	// Rebind with new context
+	ctx2 := context.Background()
+	w.Start(ctx2)
+
+	obs := ShadowObservation{
+		Evidence: playbackplanner.PlaybackEvidence{Scope: "vod"},
+		Legacy:   ComparablePlaybackPlan{IsValid: true, Outcome: "allow"},
+	}
+	assert.True(t, w.TryObserve(obs))
+	<-processed
+
+	require.NoError(t, w.Close(ctx2))
+	obsCount := testutil.ToFloat64(w.observationsTotal.WithLabelValues("allow", "allow", "vod"))
+	assert.Equal(t, float64(1), obsCount)
+}
+
+func TestObserver_RegisterOrGetMismatch(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	// Register a Counter directly with exact same descriptor as observationsTotal
+	counter := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_planner_shadow_queue_dropped_total",
+		Help: "Total number of playback shadow observations dropped due to full or closed queue.",
+	})
+	require.NoError(t, reg.Register(counter))
+
+	// Attempting to register OrGet with a Gauge of the exact same descriptor should hit AlreadyRegisteredError and fail the type assertion cleanly without panicking
+	gauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "xg2g_planner_shadow_queue_dropped_total",
+		Help: "Total number of playback shadow observations dropped due to full or closed queue.",
+	})
+	_, err := registerOrGet(reg, gauge, gauge)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "collector registered under different type")
+}
