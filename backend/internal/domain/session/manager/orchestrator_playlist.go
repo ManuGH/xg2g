@@ -175,7 +175,11 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		if len(segmentURIs) == 0 {
 			return false, "master playlist has no variants", nil
 		}
-		variantPath := filepath.Join(filepath.Dir(playlistPath), segmentURIs[0])
+		baseDir := filepath.Dir(playlistPath)
+		variantPath := filepath.Join(baseDir, segmentURIs[0])
+		if rel, relErr := filepath.Rel(baseDir, variantPath); relErr != nil || strings.HasPrefix(rel, "..") {
+			return false, "invalid variant playlist path", nil
+		}
 		return o.checkPlaylistReadyAt(variantPath, vodMode, ttfpRecorded, profileID, startTime)
 	}
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
