@@ -1911,9 +1911,8 @@ export function usePlaybackOrchestrator(
   // buffering/recovering overlays are already debounced by useBufferingOverlay.
   // Use the immediate flag directly so the waiting badge appears instantly
   // instead of flashing the player background on startup.
-  const delayedImmediateStartup = isImmediateStartupStatus;
   const showSpinnerCard =
-    delayedImmediateStartup ||
+    isImmediateStartupStatus ||
     isBufferingOverlayActive ||
     shouldHoldNativeVideo ||
     (isNativeEngine && showNativeVideoVeil);
