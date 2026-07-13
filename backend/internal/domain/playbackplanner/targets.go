@@ -16,11 +16,17 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 		plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		plan.Audio = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.AudioCodec}
 		plan.Packaging = Packaging{Container: "mpegts"}
+		if ev.ClientEvidence.PrefersFMP4 {
+			plan.Packaging.Container = "fmp4"
+		}
 
 	case "transcode":
 		plan.Video = TrackPlan{Mode: "transcode", Codec: "h264"} // Default
 		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac"}
 		plan.Packaging = Packaging{Container: "mpegts"}
+		if ev.ClientEvidence.PrefersFMP4 || ev.ClientEvidence.PrefersFMP4ForTranscode {
+			plan.Packaging.Container = "fmp4"
+		}
 
 		if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && ev.SourceTruth.VideoCodec != "" {
 			plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
@@ -59,18 +65,18 @@ func applyPolicyModifiers(plan *PlaybackPlan, ev PlaybackEvidence) {
 			maxRung = "compatible"
 		}
 	}
-	
+
 	plan.Guardrails.MaxQualityRung = maxRung
 
 	// Network caps: if network bandwidth is limited, apply it
 	targetKbps := 0
-	
+
 	if plan.Video.Mode == "transcode" {
 		// Default conservative limits for transcode
 		targetKbps = 8000
 		plan.RateControl.TargetVideoBitrateKbps = targetKbps
 		plan.RateControl.MaxVideoBitrateKbps = 16000
-		
+
 		// If we know network is constrained
 		if ev.NetworkEvidence.DownlinkKbps > 0 && ev.NetworkEvidence.DownlinkKbps < 5000 {
 			plan.RateControl.TargetVideoBitrateKbps = 3000
@@ -84,7 +90,7 @@ func applyPolicyModifiers(plan *PlaybackPlan, ev PlaybackEvidence) {
 			plan.RateControl.MaxVideoBitrateKbps = targetKbps
 		}
 	}
-	
+
 	// Operator overrides
 	if ev.OperatorPolicy.MaxGlobalBitrate > 0 {
 		if plan.RateControl.MaxVideoBitrateKbps == 0 || plan.RateControl.MaxVideoBitrateKbps > ev.OperatorPolicy.MaxGlobalBitrate {

@@ -29,20 +29,22 @@ type LegacyPlanningInput struct {
 	BitrateConfidence string
 
 	// Client Evidence
-	ClientFamily         string
-	DeviceType           string
-	CapabilityVersion    string
-	AllowTranscode       bool
-	SupportedContainers  []string
-	SupportedVideoCodecs []string
-	SupportedAudioCodecs []string
-	MaxVideoWidth        int
-	MaxVideoHeight       int
-	MaxVideoFPS          int
-	PreferredEngine      string
-	SupportedEngines     []string
-	SupportsHls          bool
-	SupportsRange        *bool
+	ClientFamily            string
+	DeviceType              string
+	CapabilityVersion       string
+	AllowTranscode          bool
+	SupportedContainers     []string
+	SupportedVideoCodecs    []string
+	SupportedAudioCodecs    []string
+	MaxVideoWidth           int
+	MaxVideoHeight          int
+	MaxVideoFPS             int
+	PreferredEngine         string
+	SupportedEngines        []string
+	PrefersFMP4             bool
+	PrefersFMP4ForTranscode bool
+	SupportsHls             bool
+	SupportsRange           *bool
 
 	// Network Evidence
 	DownlinkKbps      int
@@ -105,20 +107,22 @@ func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackE
 			BitrateConfidence: bitrateConfidence,
 		},
 		ClientEvidence: playbackplanner.ClientEvidence{
-			Family:               input.ClientFamily,
-			DeviceType:           input.DeviceType,
-			CapabilityVersion:    input.CapabilityVersion,
-			AllowTranscode:       input.AllowTranscode,
-			SupportedContainers:  append([]string(nil), input.SupportedContainers...),
-			SupportedVideoCodecs: append([]string(nil), input.SupportedVideoCodecs...),
-			SupportedAudioCodecs: append([]string(nil), input.SupportedAudioCodecs...),
-			MaxVideoWidth:        input.MaxVideoWidth,
-			MaxVideoHeight:       input.MaxVideoHeight,
-			MaxVideoFPS:          input.MaxVideoFPS,
-			PreferredEngine:      input.PreferredEngine,
-			SupportedEngines:     append([]string(nil), input.SupportedEngines...),
-			SupportsHls:          input.SupportsHls,
-			SupportsRange:        input.SupportsRange,
+			Family:                  input.ClientFamily,
+			DeviceType:              input.DeviceType,
+			CapabilityVersion:       input.CapabilityVersion,
+			AllowTranscode:          input.AllowTranscode,
+			SupportedContainers:     append([]string(nil), input.SupportedContainers...),
+			SupportedVideoCodecs:    append([]string(nil), input.SupportedVideoCodecs...),
+			SupportedAudioCodecs:    append([]string(nil), input.SupportedAudioCodecs...),
+			MaxVideoWidth:           input.MaxVideoWidth,
+			MaxVideoHeight:          input.MaxVideoHeight,
+			MaxVideoFPS:             input.MaxVideoFPS,
+			PreferredEngine:         input.PreferredEngine,
+			SupportedEngines:        append([]string(nil), input.SupportedEngines...),
+			PrefersFMP4:             input.PrefersFMP4,
+			PrefersFMP4ForTranscode: input.PrefersFMP4ForTranscode,
+			SupportsHls:             input.SupportsHls,
+			SupportsRange:           input.SupportsRange,
 		},
 		NetworkEvidence: playbackplanner.NetworkEvidence{
 			DownlinkKbps:      input.DownlinkKbps,

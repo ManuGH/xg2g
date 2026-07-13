@@ -136,7 +136,7 @@ func TestKnownPlannerDivergence_NoTranscode(t *testing.T) {
 
 	// Ensure Planner smartly denies it with the proper reason code
 	assert.Equal(t, playbackplanner.DecisionDeny, planRes.Plan.Decision)
-	assert.Equal(t, playbackplanner.ReasonVideoCodecUnsupportedForCopy, planRes.Plan.ReasonCode)
+	assert.Equal(t, playbackplanner.ReasonPolicyDeniesTranscode, planRes.Plan.ReasonCode)
 
 	newComp := playbackshadow.ComparableFromPlanner(planRes.Plan)
 	assert.Equal(t, "deny", newComp.Outcome)

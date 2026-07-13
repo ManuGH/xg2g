@@ -13,6 +13,8 @@ const (
 	ReasonInterlaceRepairRequired      = "interlace_repair_required"
 	ReasonExceedsClientLimits          = "exceeds_client_limits"
 	ReasonClientLacksHLSSupport        = "client_lacks_hls_support"
+	ReasonPolicyDeniesTranscode        = "policy_denies_transcode"
+	ReasonHLSNotSupported              = "hls_not_supported_by_client"
 )
 
 // PlaybackPlan represents an immutable playback decision.
@@ -87,4 +89,3 @@ func (p PlaybackPlan) cloneNormalized() PlaybackPlan {
 	p.Guardrails.PermittedAlternativePlans = cloneDeduplicateSort(p.Guardrails.PermittedAlternativePlans)
 	return p
 }
-

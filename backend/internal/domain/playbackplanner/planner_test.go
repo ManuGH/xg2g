@@ -46,19 +46,19 @@ func TestPlaybackEvidence_HashIsDeterministic(t *testing.T) {
 	}
 
 	ev2 := ev1 // Copy
-	
+
 	hash1, err := ev1.Hash()
 	require.NoError(t, err)
-	
+
 	hash2, err := ev2.Hash()
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, hash1, hash2, "Identical evidence should produce identical hashes")
-	
+
 	// Change something
 	ev3 := ev1
 	ev3.EvaluatedAt = 1672531200001
-	
+
 	hash3, err := ev3.Hash()
 	require.NoError(t, err)
 	assert.NotEqual(t, hash1, hash3, "Different EvaluatedAt should produce different hashes")
@@ -69,13 +69,13 @@ func TestPlaybackEvidence_HashIsDeterministic(t *testing.T) {
 				SupportedContainers: []string{"mp4", "hls", "mp4"},
 			},
 		}
-		
+
 		// The original slice should NOT be changed after hashing
 		origContainerAddr := &e1.ClientEvidence.SupportedContainers[0]
-		
+
 		h1, err := e1.Hash()
 		require.NoError(t, err)
-		
+
 		// Original shouldn't be sorted/deduplicated (len should still be 3)
 		assert.Len(t, e1.ClientEvidence.SupportedContainers, 3)
 		assert.Equal(t, origContainerAddr, &e1.ClientEvidence.SupportedContainers[0])
@@ -85,10 +85,10 @@ func TestPlaybackEvidence_HashIsDeterministic(t *testing.T) {
 				SupportedContainers: []string{"hls", "mp4"},
 			},
 		}
-		
+
 		h2, err := e2.Hash()
 		require.NoError(t, err)
-		
+
 		assert.Equal(t, h1, h2, "Duplicates and order should not change the hash")
 	})
 }
@@ -99,11 +99,11 @@ func TestPlaybackPlan_HashIsDeterministic(t *testing.T) {
 		Mode:           "transcode",
 		DeliveryEngine: "hls",
 		Video: TrackPlan{
-			Mode: "copy",
+			Mode:  "copy",
 			Codec: "h264",
 		},
 		Audio: TrackPlan{
-			Mode: "copy",
+			Mode:  "copy",
 			Codec: "aac",
 		},
 		Packaging: Packaging{
@@ -157,6 +157,50 @@ func TestPlanningReceipt_Lifecycle(t *testing.T) {
 		IssuedAt:     now,
 		ExpiresAt:    now + 60000,
 	}
-	
+
 	assert.True(t, receipt.ExpiresAt > receipt.IssuedAt, "Receipt must expire after issuance")
+}
+
+func TestPlan_DeniesTranscodeWithoutHLSSupport(t *testing.T) {
+	ev := PlaybackEvidence{
+		EvaluatedAt:    time.Now().UnixMilli(),
+		Scope:          "recording",
+		SourceIdentity: "test-rec-1",
+		SourceTruth: SourceTruth{
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "mp2", // audio incompatible with client -> requires transcode or deny
+		},
+		ClientEvidence: ClientEvidence{
+			AllowTranscode:       true,
+			SupportedContainers:  []string{"ts", "hls"},
+			SupportedVideoCodecs: []string{"h264"},
+			SupportedAudioCodecs: []string{"aac"},
+			SupportsHls:          false, // Client lacks HLS engine/support
+		},
+		HostSnapshot: HostSnapshot{
+			AvailableEngines: []string{"hls"},
+		},
+	}
+
+	res, err := Plan(ev)
+	require.NoError(t, err)
+	assert.Equal(t, DecisionDeny, res.Plan.Decision)
+	assert.Equal(t, "none", res.Plan.Mode)
+	assert.Equal(t, ReasonHLSNotSupported, res.Plan.ReasonCode)
+}
+
+func TestPlan_RejectsUnknownMediaTruth(t *testing.T) {
+	ev := PlaybackEvidence{
+		EvaluatedAt:    time.Now().UnixMilli(),
+		Scope:          "recording",
+		SourceIdentity: "test-rec-unknown",
+		SourceTruth: SourceTruth{
+			Container:  "unknown",
+			VideoCodec: "unknown",
+		},
+	}
+
+	_, err := Plan(ev)
+	require.ErrorIs(t, err, ErrInvalidEvidence)
 }

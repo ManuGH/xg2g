@@ -703,50 +703,52 @@ func (s *Service) observePlannerShadow(
 	}
 
 	legacyInput := playbackshadow.LegacyPlanningInput{
-		EvaluatedAt:          now.UnixMilli(),
-		Scope:                scope,
-		RequestedIntent:      req.RequestedProfile,
-		SourceIdentity:       sourceRef,
-		Provenance:           provenance,
-		Confidence:           confidence,
-		ObservedAt:           0,
-		ValidUntil:           0,
-		NetworkCaptureTime:   0,
-		PolicyVersion:        "unknown",
-		Container:            truth.Container,
-		VideoCodec:           truth.VideoCodec,
-		AudioCodec:           truth.AudioCodec,
-		Width:                truth.Width,
-		Height:               truth.Height,
-		FPS:                  int(truth.FPS),
-		Interlaced:           truth.Interlaced,
-		BitrateKbps:          truth.BitrateKbps,
-		BitrateConfidence:    string(truth.BitrateConfidence),
-		ClientFamily:         clientFamily,
-		DeviceType:           resolvedCaps.DeviceType,
-		CapabilityVersion:    strconv.Itoa(resolvedCaps.CapabilitiesVersion),
-		AllowTranscode:       allowTranscode,
-		SupportedContainers:  resolvedCaps.Containers,
-		SupportedVideoCodecs: resolvedCaps.VideoCodecs,
-		SupportedAudioCodecs: resolvedCaps.AudioCodecs,
-		MaxVideoWidth:        maxVideoW,
-		MaxVideoHeight:       maxVideoH,
-		MaxVideoFPS:          maxVideoFPS,
-		PreferredEngine:      resolvedCaps.PreferredHLSEngine,
-		SupportedEngines:     resolvedCaps.HLSEngines,
-		SupportsHls:          resolvedCaps.SupportsHLS,
-		SupportsRange:        resolvedCaps.SupportsRange,
-		DownlinkKbps:         downlink,
-		RTTMillis:            rtt,
-		InternetValidated:    internetValidated,
-		HostPressureBand:     string(hostPressure.EffectiveBand),
-		PerformanceClass:     hostContext.Snapshot.Runtime.PerformanceClass,
-		AvailableEngines:     availableEngines,
-		ForceIntent:          operatorPolicy.ForceIntent,
-		MaxQualityRung:       operatorPolicy.MaxQualityRung,
-		DisableTranscoding:   false,
-		MaxGlobalBitrate:     0,
-		StrictFreshness:      false,
+		EvaluatedAt:             now.UnixMilli(),
+		Scope:                   scope,
+		RequestedIntent:         req.RequestedProfile,
+		SourceIdentity:          sourceRef,
+		Provenance:              provenance,
+		Confidence:              confidence,
+		ObservedAt:              0,
+		ValidUntil:              0,
+		NetworkCaptureTime:      0,
+		PolicyVersion:           "unknown",
+		Container:               truth.Container,
+		VideoCodec:              truth.VideoCodec,
+		AudioCodec:              truth.AudioCodec,
+		Width:                   truth.Width,
+		Height:                  truth.Height,
+		FPS:                     int(truth.FPS),
+		Interlaced:              truth.Interlaced,
+		BitrateKbps:             truth.BitrateKbps,
+		BitrateConfidence:       string(truth.BitrateConfidence),
+		ClientFamily:            clientFamily,
+		DeviceType:              resolvedCaps.DeviceType,
+		CapabilityVersion:       strconv.Itoa(resolvedCaps.CapabilitiesVersion),
+		AllowTranscode:          allowTranscode,
+		SupportedContainers:     resolvedCaps.Containers,
+		SupportedVideoCodecs:    resolvedCaps.VideoCodecs,
+		SupportedAudioCodecs:    resolvedCaps.AudioCodecs,
+		MaxVideoWidth:           maxVideoW,
+		MaxVideoHeight:          maxVideoH,
+		MaxVideoFPS:             maxVideoFPS,
+		PreferredEngine:         resolvedCaps.PreferredHLSEngine,
+		SupportedEngines:        resolvedCaps.HLSEngines,
+		PrefersFMP4:             clientWantsFMP4(req, resolvedCaps, nil),
+		PrefersFMP4ForTranscode: plannerAutoTranscodePrefersFMP4(req, truth, resolvedCaps, hostContext.Snapshot.Runtime),
+		SupportsHls:             resolvedCaps.SupportsHLS,
+		SupportsRange:           resolvedCaps.SupportsRange,
+		DownlinkKbps:            downlink,
+		RTTMillis:               rtt,
+		InternetValidated:       internetValidated,
+		HostPressureBand:        string(hostPressure.EffectiveBand),
+		PerformanceClass:        hostContext.Snapshot.Runtime.PerformanceClass,
+		AvailableEngines:        availableEngines,
+		ForceIntent:             operatorPolicy.ForceIntent,
+		MaxQualityRung:          operatorPolicy.MaxQualityRung,
+		DisableTranscoding:      false,
+		MaxGlobalBitrate:        0,
+		StrictFreshness:         false,
 	}
 
 	ev, err := playbackshadow.BuildPlaybackEvidence(legacyInput)
@@ -760,4 +762,29 @@ func (s *Service) observePlannerShadow(
 		Legacy:   playbackshadow.ComparableFromLegacy(dec),
 	}
 	s.observer.TryObserve(obs)
+}
+
+func plannerAutoTranscodePrefersFMP4(req PlaybackInfoRequest, truth playback.MediaTruth, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot) bool {
+	if !shouldApplyAutoCodecDecision(req.RequestedProfile) {
+		return false
+	}
+	source := decision.Source{
+		Container:  truth.Container,
+		VideoCodec: truth.VideoCodec,
+		AudioCodec: truth.AudioCodec,
+		Width:      truth.Width,
+		Height:     truth.Height,
+		FPS:        truth.FPS,
+		Interlaced: truth.Interlaced,
+	}
+	if decision.CanKeepVideoCopy(source, decision.FromCapabilities(resolvedCaps)) {
+		return false
+	}
+	profileID := pickPlaybackInfoAutoProfile(resolvedCaps, hostRuntime)
+	if profileID == "" {
+		return false
+	}
+	profileSpec := profiles.Resolve(profileID, "", 0, nil, resolvePlaybackInfoGPUBackend(profileID), profiles.HWAccelAuto)
+	target := model.TraceTargetProfileFromProfile(profileSpec)
+	return target != nil && (target.Packaging == playbackprofile.PackagingFMP4 || target.HLS.SegmentContainer == "fmp4")
 }

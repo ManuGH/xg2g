@@ -69,6 +69,34 @@ func TestObserver_ProcessObservation(t *testing.T) {
 	// Verify diffs count (mode_mismatch)
 	diffCount := testutil.ToFloat64(w.diffsTotal.WithLabelValues("mode_mismatch", "live"))
 	assert.Equal(t, float64(1), diffCount)
+	unexplainedCount := testutil.ToFloat64(w.unexplainedDiffsTotal.WithLabelValues("mode_mismatch", "live"))
+	assert.Equal(t, float64(1), unexplainedCount)
+}
+
+func TestObserver_CountsAcceptedDiffSeparately(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	w, err := NewWorker(ObserverConfig{Enabled: true, QueueCapacity: 10}, reg, zerolog.Nop())
+	require.NoError(t, err)
+	w.planner = func(playbackplanner.PlaybackEvidence) (playbackplanner.PlanningResult, error) {
+		return playbackplanner.PlanningResult{Plan: playbackplanner.PlaybackPlan{
+			Outcome: "allow", Mode: "transcode", DeliveryEngine: "hls",
+			Video:     playbackplanner.TrackPlan{Mode: "transcode", Codec: "h264"},
+			Audio:     playbackplanner.TrackPlan{Mode: "copy", Codec: "aac"},
+			Packaging: playbackplanner.Packaging{Container: "fmp4"},
+		}}, nil
+	}
+	w.processOne(ShadowObservation{
+		Evidence: playbackplanner.PlaybackEvidence{Scope: "live"},
+		Legacy: ComparablePlaybackPlan{
+			IsValid: true, TerminalKind: "decision", Outcome: "allow", Mode: "transcode",
+			Engine: "hls", Container: "fmp4", VideoMode: "transcode", AudioMode: "transcode",
+			VideoCodec: "h264", AudioCodec: "aac",
+		},
+	})
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(w.diffsTotal.WithLabelValues("audio_mode_mismatch", "live")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(w.acceptedDiffsTotal.WithLabelValues("audio_mode_mismatch", "live")))
+	assert.Equal(t, float64(0), testutil.ToFloat64(w.unexplainedDiffsTotal.WithLabelValues("audio_mode_mismatch", "live")))
 }
 
 func TestObserver_ProcessError(t *testing.T) {
@@ -238,4 +266,12 @@ func TestObserver_RegisterOrGetMismatch(t *testing.T) {
 	_, err := registerOrGet(reg, gauge, gauge)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "collector registered under different type")
+}
+
+func TestObserver_ShouldLogDiffSampling(t *testing.T) {
+	w := &Worker{}
+	// First 5 should attempt to log (subject to rate limit)
+	assert.True(t, w.shouldLogDiff())
+	// Next rapid call within 500ms should rate limit
+	assert.False(t, w.shouldLogDiff())
 }

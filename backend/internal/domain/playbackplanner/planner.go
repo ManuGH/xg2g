@@ -93,6 +93,9 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 	if !supportsHLS(ev) {
 		logHit("remux_gate", "fail", "client_lacks_hls_support")
 		canRemux = false
+	} else if len(ev.HostSnapshot.AvailableEngines) > 0 && !contains(ev.HostSnapshot.AvailableEngines, "hls") {
+		logHit("remux_gate", "fail", "host_lacks_hls_engine")
+		canRemux = false
 	} else if !isVideoCodecCompatible(ev) || !isAudioCodecCompatible(ev) {
 		logHit("remux_gate", "fail", ReasonCodecIncompatible)
 		canRemux = false
@@ -119,8 +122,17 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 	if ev.OperatorPolicy.DisableTranscoding {
 		logHit("transcode_gate", "fail", "operator_disabled_transcoding")
 		canTranscode = false
+		plan.ReasonCode = ReasonPolicyDeniesTranscode
 	} else if !ev.ClientEvidence.AllowTranscode {
 		logHit("transcode_gate", "fail", "client_rejected_transcoding")
+		canTranscode = false
+		plan.ReasonCode = ReasonPolicyDeniesTranscode
+	} else if !supportsHLS(ev) {
+		logHit("transcode_gate", "fail", "client_lacks_hls_support")
+		canTranscode = false
+		plan.ReasonCode = ReasonHLSNotSupported
+	} else if len(ev.HostSnapshot.AvailableEngines) > 0 && !contains(ev.HostSnapshot.AvailableEngines, "hls") {
+		logHit("transcode_gate", "fail", "host_lacks_hls_engine")
 		canTranscode = false
 	}
 

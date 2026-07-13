@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
@@ -44,11 +45,16 @@ type Worker struct {
 	started bool
 	closed  bool
 
-	observationsTotal *prometheus.CounterVec
-	diffsTotal        *prometheus.CounterVec
-	errorsTotal       *prometheus.CounterVec
-	queueDroppedTotal prometheus.Counter
-	durationSeconds   prometheus.Histogram
+	diffLogCount    atomic.Uint64
+	lastDiffLogNano atomic.Int64
+
+	observationsTotal     *prometheus.CounterVec
+	diffsTotal            *prometheus.CounterVec
+	acceptedDiffsTotal    *prometheus.CounterVec
+	unexplainedDiffsTotal *prometheus.CounterVec
+	errorsTotal           *prometheus.CounterVec
+	queueDroppedTotal     prometheus.Counter
+	durationSeconds       prometheus.Histogram
 }
 
 // NoopObserver is used when shadow mode is disabled.
@@ -90,6 +96,24 @@ func NewWorker(config ObserverConfig, reg prometheus.Registerer, logger zerolog.
 			},
 			[]string{"diff_type", "scope"},
 		),
+		acceptedDiffsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "xg2g",
+				Subsystem: "planner_shadow",
+				Name:      "accepted_diffs_total",
+				Help:      "Total number of explicitly classified and accepted planner shadow differences.",
+			},
+			[]string{"diff_type", "scope"},
+		),
+		unexplainedDiffsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "xg2g",
+				Subsystem: "planner_shadow",
+				Name:      "unexplained_diffs_total",
+				Help:      "Total number of planner shadow differences that block cutover.",
+			},
+			[]string{"diff_type", "scope"},
+		),
 		errorsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "xg2g",
@@ -125,6 +149,14 @@ func NewWorker(config ObserverConfig, reg prometheus.Registerer, logger zerolog.
 			return nil, err
 		}
 		w.diffsTotal, err = registerOrGet(reg, w.diffsTotal, (*prometheus.CounterVec)(nil))
+		if err != nil {
+			return nil, err
+		}
+		w.acceptedDiffsTotal, err = registerOrGet(reg, w.acceptedDiffsTotal, (*prometheus.CounterVec)(nil))
+		if err != nil {
+			return nil, err
+		}
+		w.unexplainedDiffsTotal, err = registerOrGet(reg, w.unexplainedDiffsTotal, (*prometheus.CounterVec)(nil))
 		if err != nil {
 			return nil, err
 		}
@@ -290,8 +322,52 @@ func (w *Worker) processOne(obs ShadowObservation) {
 		return
 	}
 
-	diffs := DiffComparablePlans(obs.Legacy, plannerComp)
-	for _, diffType := range diffs {
-		w.diffsTotal.WithLabelValues(diffType, obs.Evidence.Scope).Inc()
+	classified := ClassifyComparableDiffs(obs.Legacy, plannerComp)
+	unexplained := make([]string, 0, len(classified))
+	for _, diff := range classified {
+		w.diffsTotal.WithLabelValues(diff.Code, obs.Evidence.Scope).Inc()
+		if diff.Disposition == DiffAccepted {
+			w.acceptedDiffsTotal.WithLabelValues(diff.Code, obs.Evidence.Scope).Inc()
+			continue
+		}
+		w.unexplainedDiffsTotal.WithLabelValues(diff.Code, obs.Evidence.Scope).Inc()
+		unexplained = append(unexplained, diff.Code)
+	}
+
+	if len(unexplained) > 0 && w.shouldLogDiff() {
+		evHash, _ := obs.Evidence.Hash()
+		w.logger.Warn().
+			Str("scope", obs.Evidence.Scope).
+			Strs("diff_codes", unexplained).
+			Str("legacy_outcome", obs.Legacy.Outcome).
+			Str("planner_outcome", plannerComp.Outcome).
+			Str("legacy_mode", obs.Legacy.Mode).
+			Str("planner_mode", plannerComp.Mode).
+			Str("legacy_engine", obs.Legacy.Engine).
+			Str("planner_engine", plannerComp.Engine).
+			Str("legacy_packaging", obs.Legacy.Container).
+			Str("planner_packaging", plannerComp.Container).
+			Str("planner_reason_code", res.Plan.ReasonCode).
+			Str("planner_version", res.Trace.PlannerVersion).
+			Str("policy_version", obs.Evidence.PolicyVersion).
+			Str("evidence_hash", evHash).
+			Msg("Planner shadow observation diff detected")
+	}
+}
+
+func (w *Worker) shouldLogDiff() bool {
+	count := w.diffLogCount.Add(1)
+	if count > 5 && count%10 != 0 {
+		return false
+	}
+	now := time.Now().UnixNano()
+	for {
+		last := w.lastDiffLogNano.Load()
+		if now-last < 500*1000*1000 {
+			return false // Rate limit: max 2 logs/sec across worker
+		}
+		if w.lastDiffLogNano.CompareAndSwap(last, now) {
+			return true
+		}
 	}
 }

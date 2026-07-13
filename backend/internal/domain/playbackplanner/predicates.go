@@ -5,7 +5,10 @@ func hasValidEvidence(ev PlaybackEvidence) bool {
 	if ev.SourceIdentity == "" {
 		return false
 	}
-	if ev.SourceTruth.Container == "" {
+	if ev.SourceTruth.Container == "" || ev.SourceTruth.Container == "unknown" {
+		return false
+	}
+	if ev.SourceTruth.VideoCodec == "unknown" || ev.SourceTruth.AudioCodec == "unknown" {
 		return false
 	}
 	return true
@@ -56,7 +59,7 @@ func isAudioCodecCompatible(ev PlaybackEvidence) bool {
 func exceedsMaxVideoLimits(ev PlaybackEvidence) bool {
 	ce := ev.ClientEvidence
 	st := ev.SourceTruth
-	
+
 	if st.Width > 0 && ce.MaxVideoWidth > 0 && st.Width > ce.MaxVideoWidth {
 		return true
 	}

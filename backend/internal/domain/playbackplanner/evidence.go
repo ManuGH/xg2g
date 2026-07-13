@@ -13,15 +13,15 @@ type PlaybackEvidence struct {
 	// Used for all freshness calculations to ensure Plan() remains pure.
 	EvaluatedAt int64
 
-	Scope           string // e.g., "live", "recording"
-	RequestedIntent string // e.g., "stream_start"
-	SourceIdentity  string // e.g., "1:0:1:...", recording ID
-	Provenance      string // origin of the truth (e.g., "scan", "media_file")
-	Confidence      string // e.g., "ok", "partial", "stale"
-	ObservedAt      int64  // When the source truth was actually observed
-	ValidUntil      int64  // Unix milliseconds until this truth expires
-	NetworkCaptureTime int64 // When network conditions were captured
-	PolicyVersion   string
+	Scope              string // e.g., "live", "recording"
+	RequestedIntent    string // e.g., "stream_start"
+	SourceIdentity     string // e.g., "1:0:1:...", recording ID
+	Provenance         string // origin of the truth (e.g., "scan", "media_file")
+	Confidence         string // e.g., "ok", "partial", "stale"
+	ObservedAt         int64  // When the source truth was actually observed
+	ValidUntil         int64  // Unix milliseconds until this truth expires
+	NetworkCaptureTime int64  // When network conditions were captured
+	PolicyVersion      string
 
 	// SourceTruth contains information about the media source.
 	SourceTruth SourceTruth
@@ -77,12 +77,14 @@ type ClientEvidence struct {
 	MaxVideoWidth        int
 	MaxVideoHeight       int
 	MaxVideoFPS          int
-	
+
 	// Added packaging and engine evidence
-	PreferredEngine      string
-	SupportedEngines     []string
-	SupportsHls          bool
-	SupportsRange        *bool // Tri-state: true, false, nil (unknown)
+	PreferredEngine         string
+	SupportedEngines        []string
+	PrefersFMP4             bool
+	PrefersFMP4ForTranscode bool
+	SupportsHls             bool
+	SupportsRange           *bool // Tri-state: true, false, nil (unknown)
 }
 
 func cloneDeduplicateSort(input []string) []string {

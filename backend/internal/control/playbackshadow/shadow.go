@@ -8,22 +8,24 @@ import (
 )
 
 type ComparablePlaybackPlan struct {
-	IsValid          bool // false if legacy is nil
-	Outcome          string
-	Mode             string
-	Engine           string
-	Container        string
-	VideoMode        string
-	AudioMode        string
-	VideoCodec       string
-	AudioCodec       string
-	TargetBitrate    int
-	MaxBitrate       int
-	MaxBitrateKnown  bool
-	ScaleWidth       int
-	ScaleHeight      int
-	MinQualityRung   string
-	MaxQualityRung   string
+	IsValid         bool   // false if legacy is nil
+	TerminalKind    string // "decision" or "problem"
+	Outcome         string
+	ReasonCode      string
+	Mode            string
+	Engine          string
+	Container       string
+	VideoMode       string
+	AudioMode       string
+	VideoCodec      string
+	AudioCodec      string
+	TargetBitrate   int
+	MaxBitrate      int
+	MaxBitrateKnown bool
+	ScaleWidth      int
+	ScaleHeight     int
+	MinQualityRung  string
+	MaxQualityRung  string
 }
 
 func ComparableFromLegacySession(trace *model.PlaybackTrace, prof *ports.ProfileSpec) ComparablePlaybackPlan {
@@ -42,6 +44,7 @@ func ComparableFromLegacySession(trace *model.PlaybackTrace, prof *ports.Profile
 
 	c := ComparablePlaybackPlan{
 		IsValid:        true,
+		TerminalKind:   "decision",
 		Outcome:        outcome,
 		Mode:           mode,
 		Engine:         "hls", // live legacy intents are always HLS in this context
@@ -57,7 +60,7 @@ func ComparableFromLegacySession(trace *model.PlaybackTrace, prof *ports.Profile
 			// Audio is somewhat hardcoded in legacy to transcode if video does, or copy if not
 			c.AudioMode = "transcode"
 		}
-		
+
 		c.VideoCodec = prof.VideoCodec
 		if c.VideoCodec == "" && trace.Source != nil {
 			c.VideoCodec = trace.Source.VideoCodec
@@ -101,22 +104,29 @@ func ComparableFromLegacy(dec *decision.Decision) ComparablePlaybackPlan {
 		mode = "transcode"
 	} else if dec.Mode == decision.ModeDirectStream {
 		mode = "remux"
+	} else if dec.Mode == decision.ModeDeny {
+		mode = "none"
 	}
 
 	engine := dec.SelectedOutputKind
 	if engine == "" {
 		engine = decision.ProtocolFrom(dec)
 	}
+	if engine == "file" {
+		engine = "direct"
+	}
 
 	c := ComparablePlaybackPlan{
 		IsValid:        true,
+		TerminalKind:   "decision",
 		Outcome:        outcome,
+		ReasonCode:     decision.ReasonPrimaryFrom(dec, nil),
 		Mode:           mode,
 		Engine:         engine,
 		Container:      dec.Selected.Container,
 		VideoCodec:     dec.Selected.VideoCodec,
 		AudioCodec:     dec.Selected.AudioCodec,
-		MinQualityRung: dec.Trace.QualityRung, // rough map
+		MinQualityRung: "", // Legacy does not have a MinQualityRung guardrail; dec.Trace.QualityRung is the selected profile rung.
 		MaxQualityRung: dec.Trace.MaxQualityRung,
 	}
 
@@ -134,14 +144,47 @@ func ComparableFromLegacy(dec *decision.Decision) ComparablePlaybackPlan {
 		c.VideoMode = "copy"
 		c.AudioMode = "copy"
 	}
+	if outcome == "deny" {
+		c.Mode = "none"
+		c.Engine = "none"
+		c.Container = "none"
+		c.VideoMode = "none"
+		c.AudioMode = "none"
+		c.VideoCodec = "none"
+		c.AudioCodec = "none"
+	}
 
 	return c
 }
 
-func ComparableFromPlanner(plan playbackplanner.PlaybackPlan) ComparablePlaybackPlan {
+// ComparableFromLegacyProblem preserves the distinction between an HTTP
+// contract problem and a valid deny decision. A problem must never compare as
+// equivalent to a planner deny merely because neither path can start playback.
+func ComparableFromLegacyProblem(prob *decision.Problem) ComparablePlaybackPlan {
+	if prob == nil {
+		return ComparablePlaybackPlan{IsValid: false}
+	}
 	return ComparablePlaybackPlan{
+		IsValid:      true,
+		TerminalKind: "problem",
+		Outcome:      "problem",
+		Mode:         "none",
+		Engine:       "none",
+		Container:    "none",
+		VideoMode:    "none",
+		AudioMode:    "none",
+		VideoCodec:   "none",
+		AudioCodec:   "none",
+		ReasonCode:   prob.Code,
+	}
+}
+
+func ComparableFromPlanner(plan playbackplanner.PlaybackPlan) ComparablePlaybackPlan {
+	comparable := ComparablePlaybackPlan{
 		IsValid:         true,
+		TerminalKind:    "decision",
 		Outcome:         plan.Outcome,
+		ReasonCode:      plan.ReasonCode,
 		Mode:            plan.Mode,
 		Engine:          plan.DeliveryEngine,
 		Container:       plan.Packaging.Container,
@@ -157,6 +200,16 @@ func ComparableFromPlanner(plan playbackplanner.PlaybackPlan) ComparablePlayback
 		MinQualityRung:  plan.Guardrails.MinQualityRung,
 		MaxQualityRung:  plan.Guardrails.MaxQualityRung,
 	}
+	if plan.Outcome == "deny" {
+		comparable.Mode = "none"
+		comparable.Engine = "none"
+		comparable.Container = "none"
+		comparable.VideoMode = "none"
+		comparable.AudioMode = "none"
+		comparable.VideoCodec = "none"
+		comparable.AudioCodec = "none"
+	}
+	return comparable
 }
 
 // DiffComparablePlans compares two plans and returns bounded mismatch codes.
@@ -167,10 +220,19 @@ func DiffComparablePlans(legacy, new ComparablePlaybackPlan) []string {
 	if !legacy.IsValid {
 		return []string{"legacy_invalid"}
 	}
-
+	if !new.IsValid {
+		return []string{"planner_invalid"}
+	}
+	if legacy.TerminalKind != new.TerminalKind {
+		diffs = append(diffs, "terminal_kind_mismatch")
+	}
 	if legacy.Outcome != new.Outcome {
 		diffs = append(diffs, "outcome_mismatch")
 	}
+	if (legacy.Outcome == "deny" || legacy.TerminalKind == "problem") && legacy.ReasonCode != new.ReasonCode {
+		diffs = append(diffs, "reason_mismatch")
+	}
+
 	if legacy.Mode != new.Mode {
 		diffs = append(diffs, "mode_mismatch")
 	}
@@ -192,7 +254,7 @@ func DiffComparablePlans(legacy, new ComparablePlaybackPlan) []string {
 	if legacy.AudioCodec != new.AudioCodec {
 		diffs = append(diffs, "audio_codec_mismatch")
 	}
-	if legacy.TargetBitrate != new.TargetBitrate {
+	if legacy.TargetBitrate > 0 && new.TargetBitrate > 0 && legacy.TargetBitrate != new.TargetBitrate {
 		diffs = append(diffs, "target_bitrate_drift")
 	}
 	if legacy.MaxBitrateKnown && new.MaxBitrateKnown && legacy.MaxBitrate != new.MaxBitrate {
@@ -201,11 +263,69 @@ func DiffComparablePlans(legacy, new ComparablePlaybackPlan) []string {
 	if legacy.ScaleWidth != new.ScaleWidth || legacy.ScaleHeight != new.ScaleHeight {
 		diffs = append(diffs, "scale_drift")
 	}
-	if legacy.MinQualityRung != new.MinQualityRung {
+	if legacy.MinQualityRung != "" && new.MinQualityRung != "" && legacy.MinQualityRung != new.MinQualityRung {
 		diffs = append(diffs, "guardrails_mismatch")
-	} else if legacy.MaxQualityRung != "" && legacy.MaxQualityRung != new.MaxQualityRung {
+	}
+	if legacy.MaxQualityRung != "" && new.MaxQualityRung != "" && legacy.MaxQualityRung != new.MaxQualityRung {
 		diffs = append(diffs, "guardrails_mismatch")
 	}
 
 	return diffs
+}
+
+type DiffDisposition string
+
+const (
+	DiffAccepted    DiffDisposition = "accepted"
+	DiffUnexplained DiffDisposition = "unexplained"
+)
+
+type ClassifiedDiff struct {
+	Code        string
+	Disposition DiffDisposition
+	Reason      string
+}
+
+// ClassifyComparableDiffs classifies strict raw differences. It never removes
+// information from DiffComparablePlans; accepted differences remain observable
+// and can be counted separately from unexplained cutover blockers.
+func ClassifyComparableDiffs(legacy, planner ComparablePlaybackPlan) []ClassifiedDiff {
+	raw := DiffComparablePlans(legacy, planner)
+	classified := make([]ClassifiedDiff, 0, len(raw))
+	for _, code := range raw {
+		item := ClassifiedDiff{Code: code, Disposition: DiffUnexplained}
+		switch code {
+		case "packaging_mismatch":
+			if legacy.Engine == "hls" && planner.Engine == "hls" &&
+				((legacy.Container == "hls" && isConcreteHLSSegmentContainer(planner.Container)) ||
+					(planner.Container == "hls" && isConcreteHLSSegmentContainer(legacy.Container))) {
+				item.Disposition = DiffAccepted
+				item.Reason = "generic_hls_wrapper_vs_known_segment_container"
+			}
+		case "audio_mode_mismatch":
+			if legacy.Mode == "transcode" && planner.Mode == "transcode" &&
+				legacy.AudioMode == "transcode" && planner.AudioMode == "copy" &&
+				legacy.AudioCodec != "" && legacy.AudioCodec == planner.AudioCodec {
+				item.Disposition = DiffAccepted
+				item.Reason = "compatible_audio_copy_avoids_reencode"
+			}
+		}
+		classified = append(classified, item)
+	}
+	return classified
+}
+
+func isConcreteHLSSegmentContainer(value string) bool {
+	return value == "fmp4" || value == "mpegts"
+}
+
+func UnexplainedDiffCodes(legacy, planner ComparablePlaybackPlan) []string {
+	classified := ClassifyComparableDiffs(legacy, planner)
+	out := make([]string, 0, len(classified))
+	for _, diff := range classified {
+		if diff.Disposition == DiffUnexplained {
+			out = append(out, diff.Code)
+		}
+	}
+	return out
 }
