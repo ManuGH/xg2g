@@ -1,4 +1,4 @@
-package v3
+package playbackshadow
 
 import (
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"

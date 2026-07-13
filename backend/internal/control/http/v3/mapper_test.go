@@ -4,13 +4,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBuildPlaybackEvidence_MapsCorrectly(t *testing.T) {
 	now := time.Now().UnixMilli()
-	input := LegacyPlanningInput{
+	input := playbackshadow.LegacyPlanningInput{
 		EvaluatedAt:        now,
 		Scope:              "live",
 		RequestedIntent:    "stream_start",
@@ -62,7 +63,7 @@ func TestBuildPlaybackEvidence_MapsCorrectly(t *testing.T) {
 		MaxGlobalBitrate:   8000,
 	}
 
-	ev, err := BuildPlaybackEvidence(input)
+	ev, err := playbackshadow.BuildPlaybackEvidence(input)
 	require.NoError(t, err)
 
 	assert.Equal(t, now, ev.EvaluatedAt)

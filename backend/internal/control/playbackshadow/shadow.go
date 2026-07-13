@@ -1,4 +1,4 @@
-package v3
+package playbackshadow
 
 import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
@@ -50,8 +50,8 @@ func ComparableFromLegacySession(trace *model.PlaybackTrace, prof *ports.Profile
 	}
 
 	if prof != nil {
-		c.VideoMode = "remux"
-		c.AudioMode = "remux"
+		c.VideoMode = "copy"
+		c.AudioMode = "copy"
 		if prof.TranscodeVideo {
 			c.VideoMode = "transcode"
 			// Audio is somewhat hardcoded in legacy to transcode if video does, or copy if not
@@ -70,8 +70,12 @@ func ComparableFromLegacySession(trace *model.PlaybackTrace, prof *ports.Profile
 		if c.Container == "" && trace.Source != nil {
 			c.Container = trace.Source.Container
 		}
+		if c.Container == "ts" {
+			c.Container = "mpegts" // Align with new planner nomenclature
+		}
 		c.TargetBitrate = prof.VideoMaxRateK
-		c.MaxBitrateKnown = false
+		c.MaxBitrate = prof.VideoMaxRateK
+		c.MaxBitrateKnown = true
 		c.ScaleWidth = prof.VideoMaxWidth
 		c.ScaleHeight = 0 // Legacy doesn't explicitly target height except via source matching
 	} else {

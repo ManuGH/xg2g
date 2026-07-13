@@ -8,7 +8,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
-	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/rs/zerolog"
 )
 
@@ -16,7 +16,7 @@ import (
 // Instead of defining the scenarios here, we use the shared testfixtures package
 // so that shadow_test.go can run equivalence checks without duplication.
 
-func runCharacterizationTest(t *testing.T, tc testfixtures.CharacterizationTest) (*model.PlaybackTrace, *playbackprofile.ProfileSpec) {
+func RunCharacterizationTest(t *testing.T, tc testfixtures.CharacterizationTest) (*model.PlaybackTrace, *ports.ProfileSpec) {
 	deps := newMockDeps()
 	deps.scanner = &mockChannelScanner{found: true, capability: tc.SourceCap}
 	deps.hostPressure = playbackprofile.HostPressureAssessment{EffectiveBand: tc.HostPressure}
@@ -38,8 +38,9 @@ func runCharacterizationTest(t *testing.T, tc testfixtures.CharacterizationTest)
 		UserAgent:     "unit-test",
 		ClientCaps: &capabilities.PlaybackCapabilities{
 			ClientFamilyFallback: tc.ClientFam,
-			ConnectionDownlink: float64(tc.NetworkKbps) / 1000.0,
-			ConnectionRTT: tc.NetworkRTT,
+			NetworkContext: &capabilities.NetworkContext{
+				DownlinkKbps: tc.NetworkKbps,
+			},
 		},
 		Logger: zerolog.Nop(),
 	}
@@ -84,7 +85,7 @@ func runCharacterizationTest(t *testing.T, tc testfixtures.CharacterizationTest)
 func TestPlaybackPlanner_Characterization(t *testing.T) {
 	for _, tc := range testfixtures.Cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			runCharacterizationTest(t, tc)
+			RunCharacterizationTest(t, tc)
 		})
 	}
 }
