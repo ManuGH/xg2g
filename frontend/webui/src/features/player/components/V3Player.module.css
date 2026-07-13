@@ -490,7 +490,10 @@
   );
   mask: radial-gradient(circle, transparent 58%, black 60%);
   -webkit-mask: radial-gradient(circle, transparent 58%, black 60%);
-  animation: startupRingSpin 1.4s linear infinite;
+  animation-name: startupRingSpin;
+  animation-duration: 1.4s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
 }
 
 .startupChannelLogo {
@@ -519,27 +522,13 @@
   margin: -5px 0 0 -5px;
   border-radius: 50%;
   background: var(--accent-action);
-  animation: startupCorePulse 1.6s ease-in-out infinite;
+  animation-name: startupCorePulse;
+  animation-duration: 1.6s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 
-@keyframes startupRingSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
-@keyframes startupCorePulse {
-  0%,
-  100% {
-    opacity: 0.45;
-    transform: scale(0.8);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scale(1.15);
-  }
-}
 
 /* Startup phase stepper: connect -> transcode -> buffer. Separates "the
    transcoder is spinning up" from "the player is buffering" visually. */
@@ -599,7 +588,10 @@
 .phaseStepActive .phaseDot {
   border-color: var(--accent-action);
   background: color-mix(in srgb, var(--accent-action) 26%, transparent);
-  animation: phaseDotPulse 1.5s ease-in-out infinite;
+  animation-name: phaseDotPulse;
+  animation-duration: 1.5s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 
 .phaseStepActive .phaseLabel {
@@ -615,23 +607,16 @@
   color: var(--text-secondary);
 }
 
-@keyframes phaseDotPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-action) 14%, transparent);
-  }
 
-  50% {
-    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent-action) 26%, transparent);
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .startupRingArc,
   .startupRingCore,
   .phaseStepActive .phaseDot,
-  .spinnerProgressFill::after {
-    animation: none;
+  .spinnerProgressFill::after,
+  .spinnerProgressIndeterminate {
+    animation-name: none;
+    animation-duration: 0.01ms;
   }
 }
 
@@ -682,7 +667,10 @@
   position: absolute;
   inset: 0;
   background: linear-gradient(90deg, transparent, rgb(255 255 255 / 35%), transparent);
-  animation: startupProgressShimmer 1.8s ease-in-out infinite;
+  animation-name: startupProgressShimmer;
+  animation-duration: 1.8s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 
 .spinnerProgressIndeterminate {
@@ -692,23 +680,13 @@
   width: 40%;
   border-radius: inherit;
   background: linear-gradient(90deg, transparent, var(--accent-action), var(--accent-live), transparent);
-  animation: startupProgressIndeterminate 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
+  animation-name: startupProgressIndeterminate;
+  animation-duration: 1.5s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-iteration-count: infinite;
 
-@keyframes startupProgressIndeterminate {
-  0% { left: -40%; }
-  100% { left: 100%; }
-}
 
-@keyframes startupProgressShimmer {
-  0% {
-    transform: translateX(-100%);
-  }
 
-  100% {
-    transform: translateX(100%);
-  }
-}
 
 .spinnerActions {
   display: flex;
