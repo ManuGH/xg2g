@@ -55,12 +55,12 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	if prof.Deinterlace {
 		filters = append(filters, "deinterlace_vaapi")
 	}
+	scaleFilter := "scale_vaapi=format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709"
 	if prof.VideoMaxWidth > 0 {
-		filters = append(filters, fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=nv12", prof.VideoMaxWidth))
+		scaleFilter = fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", prof.VideoMaxWidth)
 	}
-	if len(filters) > 0 {
-		args = append(args, "-vf", strings.Join(filters, ","))
-	}
+	filters = append(filters, scaleFilter)
+	args = append(args, "-vf", strings.Join(filters, ","))
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
 	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
@@ -73,7 +73,6 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	} else {
 		args = appendAV1VAAPILevelArgs(args)
 	}
-	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args
 }
 
