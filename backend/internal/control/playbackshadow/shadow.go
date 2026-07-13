@@ -294,6 +294,16 @@ type ClassifiedDiff struct {
 // information from DiffComparablePlans; accepted differences remain observable
 // and can be counted separately from unexplained cutover blockers.
 func ClassifyComparableDiffs(legacy, planner ComparablePlaybackPlan) []ClassifiedDiff {
+	return classifyComparableDiffs(legacy, planner, nil)
+}
+
+// ClassifyComparableDiffsWithEvidence permits only differences that can be
+// proven from the immutable evidence itself. The raw diff remains observable.
+func ClassifyComparableDiffsWithEvidence(legacy, planner ComparablePlaybackPlan, evidence playbackplanner.PlaybackEvidence) []ClassifiedDiff {
+	return classifyComparableDiffs(legacy, planner, &evidence)
+}
+
+func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *playbackplanner.PlaybackEvidence) []ClassifiedDiff {
 	raw := DiffComparablePlans(legacy, planner)
 	classified := make([]ClassifiedDiff, 0, len(raw))
 	for _, code := range raw {
@@ -321,6 +331,15 @@ func ClassifyComparableDiffs(legacy, planner ComparablePlaybackPlan) []Classifie
 				item.Disposition = DiffAccepted
 				item.Reason = "compatible_video_copy_avoids_reencode_during_audio_transcode"
 			}
+		case "scale_drift":
+			if evidence != nil && legacy.Mode == "transcode" && planner.Mode == "transcode" &&
+				legacy.ScaleWidth == 0 && legacy.ScaleHeight == 0 && planner.ScaleHeight == 0 &&
+				evidence.SourceTruth.Width > evidence.ClientEvidence.MaxVideoWidth &&
+				evidence.ClientEvidence.MaxVideoWidth > 0 &&
+				planner.ScaleWidth == evidence.ClientEvidence.MaxVideoWidth {
+				item.Disposition = DiffAccepted
+				item.Reason = "signed_client_width_limit_enforced"
+			}
 		}
 		classified = append(classified, item)
 	}
@@ -333,6 +352,15 @@ func isConcreteHLSSegmentContainer(value string) bool {
 
 func UnexplainedDiffCodes(legacy, planner ComparablePlaybackPlan) []string {
 	classified := ClassifyComparableDiffs(legacy, planner)
+	return unexplainedDiffCodes(classified)
+}
+
+func UnexplainedDiffCodesWithEvidence(legacy, planner ComparablePlaybackPlan, evidence playbackplanner.PlaybackEvidence) []string {
+	classified := ClassifyComparableDiffsWithEvidence(legacy, planner, evidence)
+	return unexplainedDiffCodes(classified)
+}
+
+func unexplainedDiffCodes(classified []ClassifiedDiff) []string {
 	out := make([]string, 0, len(classified))
 	for _, diff := range classified {
 		if diff.Disposition == DiffUnexplained {

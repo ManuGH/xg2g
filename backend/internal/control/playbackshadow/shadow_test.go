@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 )
 
 func TestDiffComparablePlans_RemainsStrict(t *testing.T) {
@@ -66,6 +68,23 @@ func TestClassifyComparableDiffs_VideoCopyDifferenceWithoutAudioTranscodeRemains
 	planner.VideoMode = "copy"
 
 	require.Equal(t, []string{"video_mode_mismatch"}, UnexplainedDiffCodes(legacy, planner))
+}
+
+func TestClassifyComparableDiffs_SignedClientWidthLimitIsAccepted(t *testing.T) {
+	legacy := ComparablePlaybackPlan{IsValid: true, TerminalKind: "decision", Outcome: "allow", Mode: "transcode"}
+	planner := legacy
+	planner.ScaleWidth = 640
+	evidence := playbackplanner.PlaybackEvidence{
+		SourceTruth:    playbackplanner.SourceTruth{Width: 1280},
+		ClientEvidence: playbackplanner.ClientEvidence{MaxVideoWidth: 640},
+	}
+
+	classified := ClassifyComparableDiffsWithEvidence(legacy, planner, evidence)
+	require.Equal(t, []ClassifiedDiff{{Code: "scale_drift", Disposition: DiffAccepted, Reason: "signed_client_width_limit_enforced"}}, classified)
+	require.Empty(t, UnexplainedDiffCodesWithEvidence(legacy, planner, evidence))
+
+	evidence.ClientEvidence.MaxVideoWidth = 800
+	require.Equal(t, []string{"scale_drift"}, UnexplainedDiffCodesWithEvidence(legacy, planner, evidence))
 }
 
 func TestDiffComparablePlans_DenyReasonMismatchBlocksCutover(t *testing.T) {

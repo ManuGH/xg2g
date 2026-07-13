@@ -93,7 +93,7 @@ func (s *PlanningHandoffStore) IssueEquivalent(evidence playbackplanner.Playback
 	}
 	legacy := playbackshadow.ComparableFromLegacy(legacyDecision)
 	planned := playbackshadow.ComparableFromPlanner(result.Plan)
-	if blockers := playbackshadow.UnexplainedDiffCodes(legacy, planned); len(blockers) > 0 {
+	if blockers := playbackshadow.UnexplainedDiffCodesWithEvidence(legacy, planned, evidence); len(blockers) > 0 {
 		return PlanningHandoff{}, fmt.Errorf("planner receipt blocked by unexplained diffs: %v", blockers)
 	}
 	if result.Plan.Decision != playbackplanner.DecisionAllow {

@@ -322,7 +322,7 @@ func (w *Worker) processOne(obs ShadowObservation) {
 		return
 	}
 
-	classified := ClassifyComparableDiffs(obs.Legacy, plannerComp)
+	classified := ClassifyComparableDiffsWithEvidence(obs.Legacy, plannerComp, obs.Evidence)
 	unexplained := make([]string, 0, len(classified))
 	for _, diff := range classified {
 		w.diffsTotal.WithLabelValues(diff.Code, obs.Evidence.Scope).Inc()
