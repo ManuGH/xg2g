@@ -1356,7 +1356,7 @@ function Settings() {
                 checked={dvrMode === 'live_only'}
                 onChange={() => {
                   setDvrMode('live_only');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch { /* localStorage may throw in private browsing */ }
 
                 }}
                 style={{ marginTop: '4px' }}
@@ -1375,7 +1375,7 @@ function Settings() {
                 checked={dvrMode === '1h'}
                 onChange={() => {
                   setDvrMode('1h');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch { /* localStorage may throw in private browsing */ }
 
                 }}
                 style={{ marginTop: '4px' }}
@@ -1394,7 +1394,7 @@ function Settings() {
                 checked={dvrMode === '2h'}
                 onChange={() => {
                   setDvrMode('2h');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch { /* localStorage may throw in private browsing */ }
 
                 }}
                 style={{ marginTop: '4px' }}
@@ -1413,7 +1413,7 @@ function Settings() {
                 checked={dvrMode === '4h'}
                 onChange={() => {
                   setDvrMode('4h');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch { /* localStorage may throw in private browsing */ }
 
                 }}
                 style={{ marginTop: '4px' }}
@@ -1437,7 +1437,7 @@ function Settings() {
                 checked={!multiAudioMode}
                 onChange={() => {
                   setMultiAudioMode(false);
-                  try { localStorage.setItem('xg2g.settings.multiAudio', 'false'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.multiAudio', 'false'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1455,7 +1455,7 @@ function Settings() {
                 checked={multiAudioMode}
                 onChange={() => {
                   setMultiAudioMode(true);
-                  try { localStorage.setItem('xg2g.settings.multiAudio', 'true'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.multiAudio', 'true'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 style={{ marginTop: '4px' }}
               />
