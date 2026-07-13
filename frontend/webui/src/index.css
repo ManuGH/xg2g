@@ -776,3 +776,58 @@ a:hover {
     transform: translateY(0) scale(1);
   }
 }
+
+/* --- PR #663 startup/player keyframes --- */
+
+@keyframes popupFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes startupRingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes startupCorePulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes phaseDotPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-action) 14%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent-action) 26%, transparent);
+  }
+}
+
+@keyframes startupProgressIndeterminate {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
+@keyframes startupProgressShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
