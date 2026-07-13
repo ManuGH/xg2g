@@ -5,7 +5,6 @@
 package manager
 
 import (
-	"os"
 	"context"
 	"errors"
 	"fmt"

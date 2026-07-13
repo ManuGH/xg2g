@@ -25,7 +25,7 @@ type fpsCacheEntry struct {
 	LearnedAt time.Time
 }
 
-func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string, dvrWindowSec int) {
+func (a *LocalAdapter) learnFPSFromOutput(ctx context.Context, sourceKey, sessionID string, dvrWindowSec int) {
 
 	if sourceKey == "" || sessionID == "" {
 		return

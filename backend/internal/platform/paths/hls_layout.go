@@ -3,7 +3,6 @@ package paths
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 )
