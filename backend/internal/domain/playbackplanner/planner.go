@@ -25,8 +25,9 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 	}
 
 	plan := PlaybackPlan{
-		Outcome: "deny",
-		Mode:    "none", // Sentinel
+		Decision: DecisionDeny,
+		Outcome:  "deny",
+		Mode:     "none", // Sentinel
 	}
 
 	// Helper for structured logging
@@ -37,6 +38,8 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 	if !isSourceTruthFresh(ev) {
 		logHit("freshness_gate", "fail", "stale_or_partial_truth")
 		if ev.OperatorPolicy.StrictFreshness {
+			plan.Decision = DecisionDeny
+			plan.ReasonCode = ReasonStaleOrPartialTruth
 			plan.Outcome = "deny"
 			return PlanningResult{Plan: plan, Trace: trace}, nil
 		}
@@ -59,8 +62,9 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 		logHit("direct_play_gate", "fail", "container_incompatible")
 		canDirectPlay = false
 	} else if !isVideoCodecCompatible(ev) || !isAudioCodecCompatible(ev) {
-		logHit("direct_play_gate", "fail", "codec_incompatible")
+		logHit("direct_play_gate", "fail", ReasonCodecIncompatible)
 		canDirectPlay = false
+		plan.ReasonCode = ReasonVideoCodecUnsupportedForCopy
 	} else if requiresInterlaceRepair(ev) {
 		logHit("direct_play_gate", "fail", "interlace_repair_required")
 		canDirectPlay = false
@@ -71,6 +75,8 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 
 	if canDirectPlay {
 		logHit("mode_decision", "allow", "direct_play_selected")
+		plan.Decision = DecisionAllow
+		plan.ReasonCode = ""
 		plan.Outcome = "allow"
 		plan.Mode = "copy"
 		plan.DeliveryEngine = "direct"
@@ -85,8 +91,9 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 		logHit("remux_gate", "fail", "client_lacks_hls_support")
 		canRemux = false
 	} else if !isVideoCodecCompatible(ev) || !isAudioCodecCompatible(ev) {
-		logHit("remux_gate", "fail", "codec_incompatible")
+		logHit("remux_gate", "fail", ReasonCodecIncompatible)
 		canRemux = false
+		plan.ReasonCode = ReasonVideoCodecUnsupportedForCopy
 	} else if exceedsMaxVideoLimits(ev) {
 		logHit("remux_gate", "fail", "exceeds_client_limits")
 		canRemux = false
@@ -94,6 +101,8 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 
 	if canRemux {
 		logHit("mode_decision", "allow", "remux_selected")
+		plan.Decision = DecisionAllow
+		plan.ReasonCode = ""
 		plan.Outcome = "allow"
 		plan.Mode = "remux"
 		plan.DeliveryEngine = "hls"
@@ -114,6 +123,8 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 
 	if canTranscode {
 		logHit("mode_decision", "allow", "transcode_selected")
+		plan.Decision = DecisionAllow
+		plan.ReasonCode = ""
 		plan.Outcome = "allow"
 		plan.Mode = "transcode"
 		plan.DeliveryEngine = "hls"
@@ -124,6 +135,10 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 
 	// 4. Deny
 	logHit("mode_decision", "deny", "no_compatible_mode_available")
+	plan.Decision = DecisionDeny
+	if plan.ReasonCode == "" {
+		plan.ReasonCode = "no_compatible_mode_available"
+	}
 	plan.Outcome = "deny"
 	plan.Mode = "none"
 

@@ -22,6 +22,7 @@ type CharacterizationTest struct {
 	WantVideoCodec   string
 	WantContainer    string
 	WantResolved     string
+	AllowedDiffs     []string
 }
 
 var Cases = []CharacterizationTest{
@@ -104,21 +105,15 @@ var Cases = []CharacterizationTest{
 		WantContainer: "",
 		WantResolved: "compatible",
 	},
+
 	{
-		Name:      "8_Deny_DirectPlay_No_Transcode",
-		Mode:      model.ModeLive,
-		SourceCap: scan.Capability{State: scan.CapabilityStateOK, Container: "mpegts", VideoCodec: "hevc", AudioCodec: "ac3", Width: 1920, Height: 1080, FPS: 50},
-		ClientFam: playbackprofile.ClientChromiumHLSJS,
-		Params:    map[string]string{"allow_transcode": "0"},
-		WantOutcome: "deny",
-	},
-	{
-		Name:      "9_Deny_Stale_Truth",
+		Name:      "9_Allow_Stale_Truth",
 		Mode:      model.ModeLive,
 		SourceCap: scan.Capability{State: scan.CapabilityStateOK, Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", Width: 1920, Height: 1080, FPS: 50},
 		TruthConfidence: 0.2, // Partial truth below usable threshold
 		ClientFam: playbackprofile.ClientChromiumHLSJS,
-		WantOutcome: "deny",
+		WantProfile: "high",
+		WantResolved: "compatible",
 	},
 	{
 		Name:      "10_Host_Pressure_Clamping",

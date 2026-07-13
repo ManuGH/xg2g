@@ -1,8 +1,25 @@
 package playbackplanner
 
+const (
+	DecisionAllow = "allow"
+	DecisionDeny  = "deny"
+
+	ReasonVideoCodecUnsupportedForCopy = "video_codec_unsupported_for_copy"
+	ReasonStaleOrPartialTruth          = "stale_or_partial_truth"
+	ReasonScopeNotSeekable             = "scope_not_seekable"
+	ReasonClientLacksRangeSupport      = "client_lacks_range_support"
+	ReasonContainerIncompatible        = "container_incompatible"
+	ReasonCodecIncompatible            = "codec_incompatible"
+	ReasonInterlaceRepairRequired      = "interlace_repair_required"
+	ReasonExceedsClientLimits          = "exceeds_client_limits"
+	ReasonClientLacksHLSSupport        = "client_lacks_hls_support"
+)
+
 // PlaybackPlan represents an immutable playback decision.
 type PlaybackPlan struct {
-	Outcome        string // "allow", "deny"
+	Decision       string // DecisionAllow, DecisionDeny
+	ReasonCode     string // E.g., ReasonVideoCodecUnsupportedForCopy
+	Outcome        string // "allow", "deny" (legacy compatible)
 	Mode           string // "copy", "remux", "transcode"
 	DeliveryEngine string // "hls", "dash", etc.
 	Video          TrackPlan
