@@ -109,7 +109,7 @@ export function V3PlayerView({
           >
             <div className={styles.spinnerBadge}>
               {viewState.channelLogoUrl ? (
-                <img className={styles.startupChannelLogo} src={viewState.channelLogoUrl} alt="" loading="lazy" />
+                <img className={styles.startupChannelLogo} src={viewState.channelLogoUrl} alt={viewState.channelName || ''} loading="lazy" />
               ) : viewState.channelName ? (
                 <div className={styles.startupChannelInitials} aria-hidden="true">
                   {viewState.channelName.substring(0, 2)}
