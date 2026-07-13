@@ -56,7 +56,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		filters = append(filters, "deinterlace_vaapi")
 	}
 	if prof.VideoMaxWidth > 0 {
-		filters = append(filters, fmt.Sprintf("scale_vaapi=w=%d:h=-2", prof.VideoMaxWidth))
+		filters = append(filters, fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=nv12", prof.VideoMaxWidth))
 	}
 	if len(filters) > 0 {
 		args = append(args, "-vf", strings.Join(filters, ","))

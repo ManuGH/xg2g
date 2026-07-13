@@ -100,7 +100,7 @@ func TestPlannerBoundScaleWidthReachesEveryEncoderPath(t *testing.T) {
 	fullVAAPI := adapter.buildVaapiVideoArgs(nil, spec, "h264", 50, 2)
 	filter, ok := valueAfter(fullVAAPI, "-vf")
 	require.True(t, ok)
-	require.Equal(t, "scale_vaapi=w=640:h=-2", filter)
+	require.Equal(t, "scale_vaapi=w=640:h=-2:format=nv12", filter)
 
 	encodeOnlyVAAPI := adapter.buildVaapiEncodeOnlyVideoArgs(nil, spec, "h264", 50, 2)
 	filter, ok = valueAfter(encodeOnlyVAAPI, "-vf")
