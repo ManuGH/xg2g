@@ -23,7 +23,7 @@ func updateConfigDoc(root string, entries []config.ConfigEntry) error {
 	if err != nil {
 		return fmt.Errorf("update config doc: %w", err)
 	}
-	//nolint:gosec // G304, G703: CLI tool, paths are deterministic and within repo
+	// #nosec G304 G703 //nolint:gosec // G304, G703: CLI tool, paths are deterministic and within repo
 	if err := os.WriteFile(path, []byte(out), 0600); err != nil {
 		return fmt.Errorf("write config doc: %w", err)
 	}

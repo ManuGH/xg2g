@@ -82,7 +82,7 @@ func (e *Executor) Start(ctx context.Context, spec vod.Spec) (vod.Handle, error)
 	}
 
 	// Start monitor
-	//nolint:gosec // G118: watchdog is explicitly bounded by internal runCtx or cmd.Wait
+	// #nosec G118 //nolint:gosec // G118: watchdog is explicitly bounded by internal runCtx or cmd.Wait
 	go h.monitor(stderr)
 
 	return h, nil

@@ -183,7 +183,7 @@ jobs:
           # CI CPUs cannot hold realtime software AV1; VAAPI speed is proven
           # on the staging host (see scripts/quality-gate.sh header).
           XG2G_QG_ENCODER=libx264 XG2G_QG_MIN_SPEED=1.02 scripts/quality-gate.sh
-          XG2G_QG_ENCODER=libsvtav1 XG2G_QG_ENFORCE_SPEED=0 scripts/quality-gate.sh
+          XG2G_QG_ENCODER=libsvtav1 XG2G_QG_ENFORCE_SPEED=0 XG2G_QG_MAX_DUP=1 scripts/quality-gate.sh
 
       - name: Transcode gate skipped by scope
         if: steps.scope.outputs.transcode_gate_needed != 'true'

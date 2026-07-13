@@ -233,8 +233,7 @@ export function getStoredDvrWindowSec(): number | undefined {
     if (dvrSetting === '1h') return 3600;
     if (dvrSetting === '2h') return 7200;
     if (dvrSetting === '4h') return 14400;
-  // eslint-disable-next-line no-empty
-  } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+  } catch { /* localStorage may throw in private browsing */ }
 
   return undefined;
 }
@@ -265,8 +264,7 @@ export function buildLiveIntentBody(
     } else {
       intentParams.multi_audio = 'false';
     }
-  // eslint-disable-next-line no-empty
-  } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+  } catch { /* localStorage may throw in private browsing */ }
 
 
   if (requestCaps.clientFamilyFallback) {

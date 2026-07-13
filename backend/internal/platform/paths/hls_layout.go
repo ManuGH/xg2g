@@ -23,7 +23,7 @@ func LiveHLSRoot(hlsRoot string) string {
 	if stat, err := os.Stat("/dev/shm"); err == nil && stat.IsDir() {
 		var st syscall.Statfs_t
 		if err := syscall.Statfs("/dev/shm", &st); err == nil {
-			freeBytes := uint64(st.Bavail) * uint64(st.Bsize) //nolint:gosec // G115: multiplication safe at known scale
+			freeBytes := uint64(st.Bavail) * uint64(st.Bsize) // #nosec G115 //nolint:gosec // G115: multiplication safe at known scale
 			if freeBytes >= minShmFreeBytes {
 				return "/dev/shm/xg2g"
 			}

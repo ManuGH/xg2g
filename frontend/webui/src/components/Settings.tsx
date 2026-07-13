@@ -1238,7 +1238,7 @@ function Settings() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginTop: '16px' }}>
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+              <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--status-info)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
 
                 ADAPTIVE ENGINE
               </span>
@@ -1253,7 +1253,7 @@ function Settings() {
 
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+              <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--status-success)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
 
                 CODECS
               </span>
@@ -1268,7 +1268,7 @@ function Settings() {
 
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+              <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-action)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
 
                 CONTAINER
               </span>
@@ -1283,7 +1283,7 @@ function Settings() {
 
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+              <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--status-warning)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
 
                 DEINTERLACING
               </span>
@@ -1308,7 +1308,7 @@ function Settings() {
                 checked={audioMode === 'stereo'}
                 onChange={() => {
                   setAudioMode('stereo');
-                  try { localStorage.setItem('xg2g.settings.audioMode', 'stereo'); } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+                  try { localStorage.setItem('xg2g.settings.audioMode', 'stereo'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1328,7 +1328,7 @@ function Settings() {
                 checked={audioMode === 'surround'}
                 onChange={() => {
                   setAudioMode('surround');
-                  try { localStorage.setItem('xg2g.settings.audioMode', 'surround'); } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+                  try { localStorage.setItem('xg2g.settings.audioMode', 'surround'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1356,7 +1356,7 @@ function Settings() {
                 checked={dvrMode === 'live_only'}
                 onChange={() => {
                   setDvrMode('live_only');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+                  try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch { /* localStorage may throw in private browsing */ }
 
                 }}
                 style={{ marginTop: '4px' }}
@@ -1375,7 +1375,7 @@ function Settings() {
                 checked={dvrMode === '1h'}
                 onChange={() => {
                   setDvrMode('1h');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch { /* localStorage may throw in private browsing */ }
 
                 }}
                 style={{ marginTop: '4px' }}
@@ -1394,7 +1394,7 @@ function Settings() {
                 checked={dvrMode === '2h'}
                 onChange={() => {
                   setDvrMode('2h');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch { /* localStorage may throw in private browsing */ }
 
                 }}
                 style={{ marginTop: '4px' }}
@@ -1413,7 +1413,7 @@ function Settings() {
                 checked={dvrMode === '4h'}
                 onChange={() => {
                   setDvrMode('4h');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch { /* localStorage may throw in private browsing */ }
 
                 }}
                 style={{ marginTop: '4px' }}
@@ -1437,7 +1437,7 @@ function Settings() {
                 checked={!multiAudioMode}
                 onChange={() => {
                   setMultiAudioMode(false);
-                  try { localStorage.setItem('xg2g.settings.multiAudio', 'false'); } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+                  try { localStorage.setItem('xg2g.settings.multiAudio', 'false'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1455,7 +1455,7 @@ function Settings() {
                 checked={multiAudioMode}
                 onChange={() => {
                   setMultiAudioMode(true);
-                  try { localStorage.setItem('xg2g.settings.multiAudio', 'true'); } catch { /* localStorage may throw in private browsing */ } // eslint-disable-line no-empty
+                  try { localStorage.setItem('xg2g.settings.multiAudio', 'true'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 style={{ marginTop: '4px' }}
               />
