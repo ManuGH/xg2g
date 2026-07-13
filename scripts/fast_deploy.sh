@@ -38,6 +38,6 @@ ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- chmod +x /srv/xg2g-staging/xg2g-staging
 
 echo "✅ 5. Starting services on LXC 110..."
 ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- systemctl start xg2g"
-ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- sh -c 'cd /srv/xg2g-staging && docker compose start || true'"
+ssh "$PROXMOX_HOST" "pct exec $LXC_ID -- sh -c 'cd /srv/xg2g-staging && docker compose up -d --force-recreate || true'"
 
 echo "🎉 Deployment complete!"
