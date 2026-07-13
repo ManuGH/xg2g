@@ -545,13 +545,13 @@ verify_hw_transcode_gpu() {
     deviceType: "web",
     hlsEngines: ["hlsjs"],
     preferredHlsEngine: "hlsjs",
-    maxVideo: {width: 1280, height: 720, fps: 60},
+    maxVideo: {width: 640, height: 360, fps: 60},
     runtimeProbeUsed: true,
     runtimeProbeVersion: 1,
     clientFamilyFallback: "chrome"
   }')"
   info_body="$(jq -nc --arg ref "${SERVICE_REF}" --argjson caps "${caps}" '{serviceRef:$ref,capabilities:$caps}')"
-  curl_json "POST" "${API_BASE}/live/stream-info?profile=repair" "${info_body}"
+  curl_json "POST" "${API_BASE}/live/stream-info" "${info_body}"
   [[ "${CURL_STATUS}" == "200" ]] || fail "transcode preflight stream-info failed: HTTP ${CURL_STATUS}: ${CURL_BODY}"
   token="$(printf '%s' "${CURL_BODY}" | jq -r '.playbackDecisionToken // empty')"
   [[ -n "${token}" ]] || fail "transcode preflight stream-info returned no playbackDecisionToken"

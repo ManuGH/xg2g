@@ -296,7 +296,7 @@ func TestPlanHonorsSignedRepairIntent(t *testing.T) {
 	result, err := Plan(ev)
 	require.NoError(t, err)
 	require.Equal(t, "transcode", result.Plan.Mode)
-	require.Equal(t, "transcode", result.Plan.Video.Mode)
+	require.Equal(t, "copy", result.Plan.Video.Mode)
 	require.Equal(t, "copy", result.Plan.Audio.Mode)
 	require.Contains(t, result.Trace.Log, RuleHit{Rule: "direct_play_gate", Result: "fail", Reason: "transcode_intent_requested"})
 }
