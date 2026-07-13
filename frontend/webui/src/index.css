@@ -182,7 +182,7 @@
   --nav-shell-width: calc(248px * var(--ui-density-scale));
   --nav-content-margin: calc(var(--nav-shell-width) + 34px);
   --nav-height: calc(60px * var(--ui-density-scale));
-  --nav-rail-width: calc(88px * var(--ui-density-scale));
+  --nav-rail-width: calc(64px * var(--ui-density-scale));
   --nav-rail-expanded: var(--nav-shell-width);
   --content-max-width: 1580px;
   --page-max-width-regular: 1180px;
@@ -231,7 +231,7 @@
 }
 
 :root[data-nav-collapsed='true'] {
-  --nav-content-margin: 20px;
+  --nav-content-margin: calc(var(--nav-rail-width) + 34px);
 }
 
 html {

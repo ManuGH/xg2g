@@ -479,11 +479,26 @@
     var(--accent-action) 78%,
     var(--accent-live) 100%
   );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4.5px), #000 calc(100% - 3.5px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 4.5px), #000 calc(100% - 3.5px));
-  animation: startupRingSpin 1.15s linear infinite;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent-action) 45%, transparent));
-  will-change: transform;
+  mask: radial-gradient(circle, transparent 58%, black 60%);
+  -webkit-mask: radial-gradient(circle, transparent 58%, black 60%);
+  animation: startupRingSpin 1.4s linear infinite;
+}
+
+.startupChannelLogo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 12px;
+  filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--bg-video) 40%, transparent));
+}
+
+.startupChannelInitials {
+  font-family: var(--font-heading);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .startupRingCore {
@@ -660,6 +675,21 @@
   inset: 0;
   background: linear-gradient(90deg, transparent, rgb(255 255 255 / 35%), transparent);
   animation: startupProgressShimmer 1.8s ease-in-out infinite;
+}
+
+.spinnerProgressIndeterminate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent-action), var(--accent-live), transparent);
+  animation: startupProgressIndeterminate 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes startupProgressIndeterminate {
+  0% { left: -40%; }
+  100% { left: 100%; }
 }
 
 @keyframes startupProgressShimmer {

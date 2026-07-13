@@ -111,10 +111,18 @@ export function V3PlayerView({
             aria-live="polite"
           >
             <div className={styles.spinnerBadge}>
-              <div className={styles.startupRing} aria-hidden="true">
-                <span className={styles.startupRingArc}></span>
-                <span className={styles.startupRingCore}></span>
-              </div>
+              {viewState.channelLogoUrl ? (
+                <img className={styles.startupChannelLogo} src={viewState.channelLogoUrl} alt="" loading="lazy" />
+              ) : viewState.channelName ? (
+                <div className={styles.startupChannelInitials} aria-hidden="true">
+                  {viewState.channelName.substring(0, 2)}
+                </div>
+              ) : (
+                <div className={styles.startupRing} aria-hidden="true">
+                  <span className={styles.startupRingArc}></span>
+                  <span className={styles.startupRingCore}></span>
+                </div>
+              )}
             </div>
             <div className={styles.spinnerContent}>
               <div className={styles.spinnerEyebrow}>{viewState.spinnerEyebrow}</div>
@@ -147,10 +155,7 @@ export function V3PlayerView({
               </div>
               <div className={styles.spinnerMeta}>
                 <div className={styles.spinnerProgressTrack} aria-hidden="true">
-                  <div
-                    className={styles.spinnerProgressFill}
-                    style={{ width: `${viewState.startupProgressPercent}%` }}
-                  ></div>
+                  <div className={styles.spinnerProgressIndeterminate}></div>
                 </div>
                 <div className={styles.spinnerElapsed}>{viewState.startupElapsedLabel}</div>
               </div>

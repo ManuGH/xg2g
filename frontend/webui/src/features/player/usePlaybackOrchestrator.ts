@@ -93,7 +93,7 @@ import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import { startResumePlaybackRecovery } from './orchestrator/resumePlaybackRecovery';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
-import { useDelayedFlag } from './orchestrator/useDelayedFlag';
+
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
 import { useLiveNowPlaying } from './useLiveNowPlaying';
@@ -142,6 +142,7 @@ export interface V3PlayerViewState {
   statusLabel: string;
   statusChipLabel: string;
   statusChipState: 'live' | 'error' | 'idle';
+  channelLogoUrl: string | null;
   statsRows: V3PlayerLabeledValue[];
   showNativeBufferingMask: boolean;
   hideVideoElement: boolean;
@@ -2086,7 +2087,9 @@ export function usePlaybackOrchestrator(
   // hideVideoElement) are derived separately and are NOT debounced, so delaying the
   // card can never expose a black frame. We only debounce immediate startup;
   // buffering/recovering overlays are already debounced by useBufferingOverlay.
-  const delayedImmediateStartup = useDelayedFlag(isImmediateStartupStatus, 500);
+  // Use the immediate flag directly so the waiting badge appears instantly
+  // instead of flashing the player background on startup.
+  const delayedImmediateStartup = isImmediateStartupStatus;
   const showSpinnerCard =
     delayedImmediateStartup ||
     isBufferingOverlayActive ||
@@ -2321,6 +2324,7 @@ export function usePlaybackOrchestrator(
     showStartupBackdrop: useMinimalStartupChrome,
     showStartupOverlay,
     showSpinnerCard,
+    channelLogoUrl: channel?.logoUrl ?? null,
     useNativeBufferingSafeOverlay,
     overlayStatusLabel: t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus }),
     overlayStatusState: overlayStatus === 'buffering' ? 'live' : 'idle',
