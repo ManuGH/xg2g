@@ -48,6 +48,10 @@ type Orchestrator struct {
 
 	PipelineStopTimeout time.Duration
 	OutboundPolicy      platformnet.OutboundPolicy
+	// RecoveryProfileResolver freezes the narrow profile-building capability
+	// needed by runtime recovery without coupling orchestration to a concrete
+	// configuration loader.
+	RecoveryProfileResolver RecoveryProfileResolver
 
 	// Concurrency Control
 	StartConcurrency int

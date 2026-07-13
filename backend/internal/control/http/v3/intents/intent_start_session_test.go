@@ -18,9 +18,9 @@ func TestBuildStartSession_DVRWindowOverrides(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		params   map[string]string
-		wantSec  int
+		name    string
+		params  map[string]string
+		wantSec int
 	}{
 		{
 			name:    "default zero",

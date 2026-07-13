@@ -267,8 +267,14 @@ func cloneRecord(in Record) Record {
 	out.Evidence.ClientEvidence.SupportedContainers = append([]string(nil), in.Evidence.ClientEvidence.SupportedContainers...)
 	out.Evidence.ClientEvidence.SupportedVideoCodecs = append([]string(nil), in.Evidence.ClientEvidence.SupportedVideoCodecs...)
 	out.Evidence.ClientEvidence.SupportedAudioCodecs = append([]string(nil), in.Evidence.ClientEvidence.SupportedAudioCodecs...)
+	out.Evidence.ClientEvidence.AutoTranscodeVideoCodecs = append([]string(nil), in.Evidence.ClientEvidence.AutoTranscodeVideoCodecs...)
 	out.Evidence.ClientEvidence.SupportedEngines = append([]string(nil), in.Evidence.ClientEvidence.SupportedEngines...)
+	if in.Evidence.ClientEvidence.SupportsRange != nil {
+		supportsRange := *in.Evidence.ClientEvidence.SupportsRange
+		out.Evidence.ClientEvidence.SupportsRange = &supportsRange
+	}
 	out.Evidence.HostSnapshot.AvailableEngines = append([]string(nil), in.Evidence.HostSnapshot.AvailableEngines...)
+	out.Evidence.HostSnapshot.EncoderCapabilities = append([]playbackplanner.HostEncoderCapability(nil), in.Evidence.HostSnapshot.EncoderCapabilities...)
 	out.Plan.Guardrails.PermittedAlternativePlans = append([]string(nil), in.Plan.Guardrails.PermittedAlternativePlans...)
 	out.Trace.Log = append([]playbackplanner.RuleHit(nil), in.Trace.Log...)
 	return out

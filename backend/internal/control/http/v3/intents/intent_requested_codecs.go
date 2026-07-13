@@ -13,26 +13,34 @@ func shouldTraceAutoCodecDecision(intent Intent, requestedCodecs string) bool {
 }
 
 func requestedCodecsForIntent(intent Intent, requestedPlaybackMode string) string {
+	return requestedCodecsForIntentWithPolicy(intent, requestedPlaybackMode, false)
+}
+
+func requestedCodecsForIntentWithPolicy(intent Intent, requestedPlaybackMode string, clientAV1Disabled bool) string {
 	if explicit := joinRequestedCodecs(autocodec.ParseCodecList(intent.Params["codecs"])); explicit != "" {
-		return clampRequestedCodecsForClient(intent, requestedPlaybackMode, explicit)
+		return clampRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, explicit, clientAV1Disabled)
 	}
-	if derived := clampRequestedCodecsForClient(intent, requestedPlaybackMode, requestedCodecsFromClientCaps(intent, requestedPlaybackMode)); derived != "" {
+	if derived := clampRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, requestedCodecsFromClientCapsWithPolicy(intent, requestedPlaybackMode, clientAV1Disabled), clientAV1Disabled); derived != "" {
 		return derived
 	}
-	return clampRequestedCodecsForClient(intent, requestedPlaybackMode, requestedCodecsFromClientMatrix(intent, requestedPlaybackMode))
+	return clampRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, requestedCodecsFromClientMatrix(intent, requestedPlaybackMode), clientAV1Disabled)
 }
 
 func requestedCodecsFromClientCaps(intent Intent, requestedPlaybackMode string) string {
+	return requestedCodecsFromClientCapsWithPolicy(intent, requestedPlaybackMode, false)
+}
+
+func requestedCodecsFromClientCapsWithPolicy(intent Intent, requestedPlaybackMode string, clientAV1Disabled bool) string {
 	clientCaps := intent.ClientCaps
 	if clientCaps == nil {
 		return ""
 	}
 
-	codecs := append([]string(nil), autocodec.ResolveAutoTranscodeCodecs(*clientCaps)...)
+	codecs := append([]string(nil), autocodec.ResolveAutoTranscodeCodecsWithPolicy(*clientCaps, clientAV1Disabled)...)
 	if requestedPlaybackMode == "native_hls" || requestedPlaybackMode == "" {
 		source := normalize.Token(clientCaps.ClientCapsSource)
 		if source == capabilities.ClientCapsSourceRuntime || source == capabilities.ClientCapsSourceRuntimePlusFam {
-			if autocodec.ClientAV1PlaybackAllowed(*clientCaps, clientFamilyForIntent(intent)) {
+			if autocodec.ClientAV1PlaybackAllowedWithPolicy(*clientCaps, clientFamilyForIntent(intent), clientAV1Disabled) {
 				codecs = append(codecs, "av1")
 			}
 		}
@@ -51,7 +59,11 @@ func requestedCodecsFromClientCaps(intent Intent, requestedPlaybackMode string) 
 }
 
 func clampRequestedCodecsForClient(intent Intent, requestedPlaybackMode, requestedCodecs string) string {
-	allowedCodecs := allowedRequestedCodecsForClient(intent, requestedPlaybackMode)
+	return clampRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, requestedCodecs, false)
+}
+
+func clampRequestedCodecsForClientWithPolicy(intent Intent, requestedPlaybackMode, requestedCodecs string, clientAV1Disabled bool) string {
+	allowedCodecs := allowedRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, clientAV1Disabled)
 	clientFamily := clientFamilyForIntent(intent)
 	if clientFamily == playbackprofile.ClientIOSSafariNative &&
 		startPlaybackPath(intent, requestedPlaybackMode) == "hlsjs" &&
@@ -66,10 +78,14 @@ func requestedCodecsFromClientMatrix(intent Intent, requestedPlaybackMode string
 }
 
 func allowedRequestedCodecsForClient(intent Intent, requestedPlaybackMode string) []string {
+	return allowedRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, false)
+}
+
+func allowedRequestedCodecsForClientWithPolicy(intent Intent, requestedPlaybackMode string, clientAV1Disabled bool) []string {
 	canonicalCaps := normalizedClientCaps(intent.ClientCaps)
 	if canonicalCaps != nil && len(canonicalCaps.VideoCodecs) > 0 {
 		codecs := preferredRequestedCodecOrder(canonicalCaps.VideoCodecs)
-		if !autocodec.ClientAV1PlaybackAllowed(*canonicalCaps, clientFamilyForIntent(intent)) {
+		if !autocodec.ClientAV1PlaybackAllowedWithPolicy(*canonicalCaps, clientFamilyForIntent(intent), clientAV1Disabled) {
 			codecs = removeRequestedCodec(codecs, "av1")
 		}
 		return mergeRequestedCodecLists(codecs, matrixFallbackVideoCodecs(intent, requestedPlaybackMode))

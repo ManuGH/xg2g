@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -174,6 +175,239 @@ func TestResolvePlaybackInfo_ShadowObserver_Live(t *testing.T) {
 	assert.Equal(t, 0, len(obsOff.observations))
 	assert.Equal(t, res.Decision.Mode, resOff.Decision.Mode)
 	assert.Equal(t, res.Decision.Selected, resOff.Decision.Selected)
+}
+
+func TestResolvePlaybackInfo_ShadowObserver_SkipsPassiveEpgBadge(t *testing.T) {
+	serviceRef := "1:0:1:2B66:3F3:1:C00000:0:0:0:"
+	obs := &mockShadowObserver{}
+	svc := NewService(stubDeps{
+		svc: &stubRecordingsService{},
+		truthSource: &stubChannelSource{
+			cap: scan.Capability{
+				ServiceRef: serviceRef,
+				Container:  "mpegts",
+				VideoCodec: "h264",
+				AudioCodec: "aac",
+				LastScan:   time.Now().UTC(),
+			},
+			found: true,
+		},
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+	}, WithPlannerShadowObserver(obs))
+
+	res, err := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   serviceRef,
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-epg-badge",
+		Headers: map[string]string{
+			PlaybackInfoContextHeader: PlaybackInfoContextEpgBadge,
+		},
+	})
+
+	require.Nil(t, err)
+	require.NotNil(t, res.Decision)
+	require.Nil(t, res.PlannerEvidence)
+	require.Empty(t, obs.observations)
+}
+
+func TestResolvePlaybackInfo_Shadow_InterlacedAutoProfileMatchesSignedPlan(t *testing.T) {
+	t.Setenv("XG2G_CLIENT_AV1_DISABLED", "false")
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 10 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 40 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	serviceRef := "1:0:19:11:6:85:C00000:0:0:0:"
+	obs := &mockShadowObserver{}
+	truthObservedAt := time.Now().UTC().Add(-time.Minute)
+	svc := NewService(stubDeps{
+		svc: &stubRecordingsService{},
+		truthSource: &stubChannelSource{
+			cap: scan.Capability{
+				State:      scan.CapabilityStateOK,
+				ServiceRef: serviceRef,
+				Container:  "ts",
+				VideoCodec: "h264",
+				AudioCodec: "ac3",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+				SignalFPS:  50,
+				Interlaced: true,
+				FieldOrder: "tt",
+				LastScan:   truthObservedAt,
+			},
+			found: true,
+		},
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+		hostRuntime: playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "high",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Codecs: []playbackprofile.HostCodecBenchmark{
+					{Codec: "h264", Class: "strong", ProbeElapsedMs: 10, AutoEligible: true},
+					{Codec: "hevc", Class: "strong", ProbeElapsedMs: 40, AutoEligible: true},
+					{Codec: "av1", Class: "strong", ProbeElapsedMs: 30, AutoEligible: true},
+				},
+			},
+		},
+	}, WithPlannerShadowObserver(obs))
+
+	supportsRange := true
+	smooth := true
+	efficient := true
+	internetValidated := true
+	res, resolveErr := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   serviceRef,
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-interlaced-auto",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion: 3,
+			Containers:          []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:         []string{"av1", "hevc", "h264"},
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &smooth, PowerEfficient: &efficient},
+				{Codec: "hevc", Supported: true, Smooth: &smooth, PowerEfficient: &efficient},
+				{Codec: "h264", Supported: true, Smooth: &smooth, PowerEfficient: &efficient},
+			},
+			AudioCodecs:          []string{"aac", "mp3", "ac3"},
+			MaxVideo:             &capabilities.MaxVideo{Width: 3840, Height: 2160, Fps: 60},
+			HLSEngines:           []string{"hlsjs", "native"},
+			PreferredHLSEngine:   "hlsjs",
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			SupportsRange:        &supportsRange,
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientFamilyFallback: playbackprofile.ClientSafariNative,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			DeviceType:           "web",
+			DeviceContext:        &capabilities.DeviceContext{Platform: "macintel", OSName: "macos", OSVersion: "15.0"},
+			NetworkContext:       &capabilities.NetworkContext{DownlinkKbps: 25000, InternetValidated: &internetValidated},
+		},
+	})
+
+	require.Nil(t, resolveErr)
+	require.Equal(t, decision.ModeTranscode, res.Decision.Mode)
+	require.Equal(t, "av1", res.Decision.TargetProfile.Video.Codec)
+	require.Len(t, obs.observations, 1)
+	require.Equal(t, []string{"av1", "hevc", "h264"}, obs.observations[0].Evidence.ClientEvidence.AutoTranscodeVideoCodecs)
+	require.Len(t, obs.observations[0].Evidence.HostSnapshot.EncoderCapabilities, 3)
+	require.Equal(t, truthObservedAt.UnixMilli(), obs.observations[0].Evidence.ObservedAt)
+	require.Greater(t, obs.observations[0].Evidence.ValidUntil, obs.observations[0].Evidence.ObservedAt)
+	require.Greater(t, obs.observations[0].Evidence.NetworkCaptureTime, int64(0))
+
+	plannerResult, planErr := playbackplanner.Plan(obs.observations[0].Evidence)
+	require.NoError(t, planErr)
+	require.Equal(t, "transcode", plannerResult.Plan.Mode)
+	require.Equal(t, "av1", plannerResult.Plan.Video.Codec)
+	require.Equal(t, "aac", plannerResult.Plan.Audio.Codec)
+	require.Equal(t, "fmp4", plannerResult.Plan.Packaging.Container)
+	require.Empty(t, playbackshadow.DiffComparablePlans(
+		obs.observations[0].Legacy,
+		playbackshadow.ComparableFromPlanner(plannerResult.Plan),
+	))
+}
+
+func TestResolvePlaybackInfo_Shadow_NativeSafariHEVCCPUFallbackMatchesSignedPlan(t *testing.T) {
+	hardware.SetVAAPIPreflightResult(true)
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 10 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIPreflightResult(false)
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	serviceRef := "1:0:19:11:6:85:C00000:0:0:0:"
+	obs := &mockShadowObserver{}
+	svc := NewService(stubDeps{
+		svc: &stubRecordingsService{},
+		truthSource: &stubChannelSource{
+			cap: scan.Capability{
+				State:      scan.CapabilityStateOK,
+				ServiceRef: serviceRef,
+				Container:  "ts",
+				VideoCodec: "h264",
+				AudioCodec: "ac3",
+				Width:      1920,
+				Height:     1080,
+				FPS:        25,
+				Interlaced: true,
+				LastScan:   time.Now().UTC().Add(-time.Minute),
+			},
+			found: true,
+		},
+		cfg: config.AppConfig{
+			FFmpeg: config.FFmpegConfig{Bin: "/usr/bin/ffmpeg"},
+			HLS:    config.HLSConfig{Root: "/tmp/hls"},
+		},
+		hostRuntime: playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "high",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Codecs: []playbackprofile.HostCodecBenchmark{
+					{Codec: "h264", Class: "strong", ProbeElapsedMs: 10, AutoEligible: true},
+					{Codec: "hevc", Class: "strong"},
+				},
+			},
+		},
+	}, WithPlannerShadowObserver(obs))
+
+	supportsRange := true
+	res, resolveErr := svc.ResolvePlaybackInfo(context.Background(), PlaybackInfoRequest{
+		SubjectID:   serviceRef,
+		SubjectKind: PlaybackSubjectLive,
+		APIVersion:  "v3.1",
+		SchemaType:  "live",
+		RequestID:   "req-native-hevc-cpu-fallback",
+		Capabilities: &capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"hevc", "h264"},
+			AudioCodecs:          []string{"aac", "ac3"},
+			HLSEngines:           []string{"native"},
+			PreferredHLSEngine:   "native",
+			SupportsHLS:          true,
+			SupportsHLSExplicit:  true,
+			SupportsRange:        &supportsRange,
+			RuntimeProbeUsed:     true,
+			ClientFamilyFallback: playbackprofile.ClientSafariNative,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			DeviceType:           "web",
+		},
+	})
+
+	require.Nil(t, resolveErr)
+	require.Equal(t, decision.ModeTranscode, res.Decision.Mode)
+	require.Equal(t, "hevc", res.Decision.TargetProfile.Video.Codec)
+	require.Len(t, obs.observations, 1)
+	require.Equal(t, []string{"hevc", "h264"}, obs.observations[0].Evidence.ClientEvidence.AutoTranscodeVideoCodecs)
+	require.Equal(t, "strong", obs.observations[0].Evidence.HostSnapshot.BenchmarkClass)
+	require.Len(t, obs.observations[0].Evidence.HostSnapshot.EncoderCapabilities, 1)
+	require.Equal(t, "h264", obs.observations[0].Evidence.HostSnapshot.EncoderCapabilities[0].Codec)
+
+	plannerResult, planErr := playbackplanner.Plan(obs.observations[0].Evidence)
+	require.NoError(t, planErr)
+	require.Equal(t, "hevc", plannerResult.Plan.Video.Codec)
+	require.Empty(t, playbackshadow.DiffComparablePlans(
+		obs.observations[0].Legacy,
+		playbackshadow.ComparableFromPlanner(plannerResult.Plan),
+	))
 }
 
 func TestResolvePlaybackInfo_Shadow_NoHLS_DeniesTranscodeParity(t *testing.T) {
@@ -512,9 +746,9 @@ func TestResolvePlaybackInfo_Shadow_RealScenarios_Matrix(t *testing.T) {
 			})
 	})
 
-	t.Run("Dirty_DVB_Stream_Remux", func(t *testing.T) {
+	t.Run("Dirty_DVB_Stream_Transcode", func(t *testing.T) {
 		allow := true
-		runCase(t, "Dirty_DVB_Stream_Remux", playbackprofile.ClientSafariNative, true,
+		runCase(t, "Dirty_DVB_Stream_Transcode", playbackprofile.ClientSafariNative, true,
 			scan.Capability{ServiceRef: serviceRef, Container: "mpegts", VideoCodec: "h264", AudioCodec: "mp2", BitrateKbps: 4000, Width: 1920, Height: 1080, FPS: 25, SignalFPS: 50, Interlaced: true, FieldOrder: "tff", LastScan: time.Now().UTC()},
 			capabilities.PlaybackCapabilities{
 				CapabilitiesVersion: 1,

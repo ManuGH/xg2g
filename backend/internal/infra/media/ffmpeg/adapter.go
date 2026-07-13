@@ -145,6 +145,18 @@ const maxCompletedProcessDetails = 128
 
 // NewLocalAdapter creates a new adapter instance.
 func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration, vaapiDevice string) *LocalAdapter {
+	return NewLocalAdapterWithConfig(
+		binPath, ffprobeBin, hlsRoot, e2, logger, analyzeDuration, probeSize,
+		dvrWindow, killTimeout, fallbackTo8001, preflightTimeout, segmentSeconds,
+		startTimeout, stallTimeout, vaapiDevice,
+		LoadAdapterConfig(analyzeDuration, probeSize),
+	)
+}
+
+// NewLocalAdapterWithConfig constructs an adapter from an immutable operator
+// snapshot. Production composition roots use this constructor so request-time
+// command planning never consults process environment.
+func NewLocalAdapterWithConfig(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration, vaapiDevice string, cfg AdapterConfig) *LocalAdapter {
 	analyzeDuration = strings.TrimSpace(analyzeDuration)
 	probeSize = strings.TrimSpace(probeSize)
 	if analyzeDuration == "" {
@@ -160,12 +172,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		segmentSeconds = config.DefaultHLSSegmentSeconds
 	}
 
-	// Every ENV-tunable ingest/FPS/Safari knob is resolved in one place
-	// (LoadAdapterConfig), keeping this constructor focused on wiring
-	// dependencies. The FPS probe falls back to the general analyze/probe depth
-	// when its own override is unset, so those already-defaulted values are
-	// passed in.
-	cfg := LoadAdapterConfig(analyzeDuration, probeSize)
+	cfg = cloneAdapterConfig(cfg)
 
 	httpClient := &http.Client{
 		Timeout: preflightTimeout,

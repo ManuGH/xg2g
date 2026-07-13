@@ -2,6 +2,8 @@ package playbackplanner
 
 import "errors"
 
+const PlannerVersion = "v5"
+
 // ErrRuleNotImplemented is returned when the planner has no valid rules for the evidence.
 var ErrRuleNotImplemented = errors.New("no planner rules implemented for this scenario")
 
@@ -27,7 +29,7 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 	}
 
 	trace := PlanTrace{
-		PlannerVersion: "v4",
+		PlannerVersion: PlannerVersion,
 		PolicyVersion:  ev.PolicyVersion,
 		EvidenceHash:   evidenceHash,
 		Log:            []RuleHit{},
@@ -115,6 +117,9 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 		logHit("remux_gate", "fail", ReasonCodecIncompatible)
 		canRemux = false
 		plan.ReasonCode = ReasonVideoCodecUnsupportedForCopy
+	} else if requiresInterlaceRepair(ev) {
+		logHit("remux_gate", "fail", "interlace_repair_required")
+		canRemux = false
 	} else if exceedsMaxVideoLimits(ev) {
 		logHit("remux_gate", "fail", "exceeds_client_limits")
 		canRemux = false

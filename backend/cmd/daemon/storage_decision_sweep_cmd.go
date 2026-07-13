@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/m3u"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	pipelineprofiles "github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"golang.org/x/time/rate"
@@ -249,7 +251,11 @@ func executeStorageDecisionSweep(opts storageDecisionSweepOptions) (storageDecis
 		cfg:          cfg,
 		truthSource:  truthSource,
 		decisionSink: storageDecisionSweepOriginSink{inner: auditStore},
-	})
+	},
+		v3recordings.WithProfileResolver(pipelineprofiles.LoadResolver()),
+		v3recordings.WithClientAV1Disabled(config.ParseBool("XG2G_CLIENT_AV1_DISABLED", false)),
+		v3recordings.WithIOSNativeHEVCHWMode(autocodec.ResolveIOSNativeHEVCHWMode()),
+	)
 
 	result := storageDecisionSweep{
 		GeneratedAt:      time.Now().UTC(),

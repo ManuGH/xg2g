@@ -121,6 +121,25 @@ func TestIssuePlannerReceiptRequiresStructuralEquivalence(t *testing.T) {
 	require.ErrorContains(t, err, "unexplained diffs")
 }
 
+func TestIssuePlannerReceiptSkipsPassiveEpgBadge(t *testing.T) {
+	server, _ := plannerReceiptServerFixture(t)
+
+	record, err := server.issuePlannerReceipt(v3recordings.PlaybackInfoResult{
+		SourceRef: "1:0:1:100:200:300:0:0:0:0:",
+		Decision:  &decision.Decision{Mode: decision.ModeDirectStream},
+		// Deliberately no PlannerEvidence: a required receipt must not turn a
+		// passive EPG preview into an error.
+	}, v3recordings.PlaybackInfoRequest{
+		PrincipalID: "alice",
+		Headers: map[string]string{
+			v3recordings.PlaybackInfoContextHeader: v3recordings.PlaybackInfoContextEpgBadge,
+		},
+	}, "live")
+
+	require.NoError(t, err)
+	require.Nil(t, record)
+}
+
 func plannerReceiptServerFixture(t *testing.T) (*Server, v3intents.PlanningHandoff) {
 	t.Helper()
 	store := v3intents.NewPlanningHandoffStore(v3intents.PlanningHandoffStoreConfig{TTL: time.Minute})
@@ -138,7 +157,7 @@ func plannerReceiptServerFixture(t *testing.T) (*Server, v3intents.PlanningHando
 		Evidence: evidence,
 		Result: playbackplanner.PlanningResult{
 			Plan:  plan,
-			Trace: playbackplanner.PlanTrace{PlannerVersion: "v4", PolicyVersion: "policy-v1"},
+			Trace: playbackplanner.PlanTrace{PlannerVersion: playbackplanner.PlannerVersion, PolicyVersion: "policy-v1"},
 		},
 		PrincipalID: "alice",
 		ServiceRef:  normalize.ServiceRef(evidence.SourceIdentity),

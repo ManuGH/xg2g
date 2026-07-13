@@ -12,8 +12,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
 	"github.com/ManuGH/xg2g/internal/infra/platform"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/google/uuid"
 )
@@ -40,6 +42,7 @@ func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orchest
 
 	host, _ := os.Hostname()
 	workerOwner := fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
+	profileResolver := profiles.LoadResolver()
 
 	orch := &worker.Orchestrator{
 		Store:               inputs.Store,
@@ -68,6 +71,9 @@ func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orchest
 				Ports:   append([]int(nil), cfg.Network.Outbound.Allow.Ports...),
 				Schemes: append([]string(nil), cfg.Network.Outbound.Allow.Schemes...),
 			},
+		},
+		RecoveryProfileResolver: func(profileID string, dvrWindowSec int) model.ProfileSpec {
+			return profileResolver.Resolve(profileID, "", dvrWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 		},
 	}
 	orch.Pipeline = inputs.Pipeline

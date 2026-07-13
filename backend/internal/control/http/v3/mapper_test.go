@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
+	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,20 +34,21 @@ func TestBuildPlaybackEvidence_MapsCorrectly(t *testing.T) {
 		BitrateKbps:       4000,
 		BitrateConfidence: "high",
 
-		ClientFamily:         "safari_native",
-		DeviceType:           "mobile",
-		CapabilityVersion:    "1.0",
-		AllowTranscode:       false,
-		SupportedContainers:  []string{"mp4", "hls"},
-		SupportedVideoCodecs: []string{"h264", "hevc"},
-		SupportedAudioCodecs: []string{"aac"},
-		MaxVideoWidth:        1920,
-		MaxVideoHeight:       1080,
-		MaxVideoFPS:          60,
-		PreferredEngine:      "native",
-		SupportedEngines:     []string{"native", "hlsjs"},
-		SupportsHls:          true,
-		SupportsRange:        nil,
+		ClientFamily:             "safari_native",
+		DeviceType:               "mobile",
+		CapabilityVersion:        "1.0",
+		AllowTranscode:           false,
+		SupportedContainers:      []string{"mp4", "hls"},
+		SupportedVideoCodecs:     []string{"h264", "hevc"},
+		SupportedAudioCodecs:     []string{"aac"},
+		AutoTranscodeVideoCodecs: []string{"hevc", "h264"},
+		MaxVideoWidth:            1920,
+		MaxVideoHeight:           1080,
+		MaxVideoFPS:              60,
+		PreferredEngine:          "native",
+		SupportedEngines:         []string{"native", "hlsjs"},
+		SupportsHls:              true,
+		SupportsRange:            nil,
 
 		DownlinkKbps:      5000,
 		RTTMillis:         50,
@@ -56,6 +58,9 @@ func TestBuildPlaybackEvidence_MapsCorrectly(t *testing.T) {
 		AvailableEngines: []string{"hls"},
 		PerformanceClass: "high",
 		BenchmarkClass:   "A",
+		HostEncoderCapabilities: []playbackplanner.HostEncoderCapability{
+			{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40, BenchmarkClass: "strong"},
+		},
 
 		ForceIntent:        "stream_start",
 		MaxQualityRung:     "high",
@@ -79,9 +84,12 @@ func TestBuildPlaybackEvidence_MapsCorrectly(t *testing.T) {
 	assert.False(t, ev.ClientEvidence.AllowTranscode)
 	assert.ElementsMatch(t, []string{"mp4", "hls"}, ev.ClientEvidence.SupportedContainers)
 	assert.Equal(t, "native", ev.ClientEvidence.PreferredEngine)
+	assert.Equal(t, []string{"hevc", "h264"}, ev.ClientEvidence.AutoTranscodeVideoCodecs)
 
 	assert.Equal(t, 5000, ev.NetworkEvidence.DownlinkKbps)
 	assert.Equal(t, "relaxed", ev.HostSnapshot.PressureBand)
+	require.Len(t, ev.HostSnapshot.EncoderCapabilities, 1)
+	assert.Equal(t, "hevc", ev.HostSnapshot.EncoderCapabilities[0].Codec)
 	assert.False(t, ev.OperatorPolicy.DisableTranscoding)
 
 	// Ensure hashing works without panic

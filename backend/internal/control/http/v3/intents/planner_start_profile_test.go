@@ -9,6 +9,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
 func TestResolvePlannerStartProfileConsumesExactTrackAndPackagingPlan(t *testing.T) {
@@ -94,6 +95,122 @@ func TestResolvePlannerStartProfileKeepsTargetAndMaximumBitrateDistinct(t *testi
 	require.Equal(t, 12000, resolution.profileSpec.VideoBufSizeK)
 	require.Zero(t, resolution.profileSpec.VideoCRF)
 	require.Zero(t, resolution.profileSpec.VideoQP)
+}
+
+func TestResolvePlannerStartProfilePreservesCodecQualityModeWhenTargetIsUnset(t *testing.T) {
+	service := NewService(newMockDeps(), WithProfileResolver(profiles.NewResolver(profiles.DefaultConfigSnapshot())))
+	evidence, plan, receipt := plannerStartFixture(t)
+	plan.Mode = "transcode"
+	plan.Video = playbackplanner.TrackPlan{Mode: "transcode", Codec: "hevc"}
+	plan.Audio = playbackplanner.TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
+	plan.Filters.Deinterlace = true
+	plan.RateControl = playbackplanner.RateControl{MaxVideoBitrateKbps: 5000}
+	planHash, err := plan.Hash()
+	require.NoError(t, err)
+	receipt.PlanHash = planHash
+	receipt.PlannerVersion = playbackplanner.PlannerVersion
+
+	resolution, intentErr := service.resolvePlannerStartProfile(Intent{
+		ServiceRef:      evidence.SourceIdentity,
+		PlannerPlan:     &plan,
+		PlanningReceipt: &receipt,
+		PlannerEvidence: &evidence,
+	}, startHardwareState{hasGPU: true, hevcBackend: profiles.GPUBackendVAAPI})
+	require.Nil(t, intentErr)
+	require.True(t, resolution.profileSpec.PlannerBound)
+	require.Equal(t, "hevc", resolution.profileSpec.VideoCodec)
+	require.Equal(t, 20, resolution.profileSpec.VideoQP)
+	require.Zero(t, resolution.profileSpec.VideoTargetRateK)
+	require.Equal(t, 5000, resolution.profileSpec.VideoMaxRateK)
+	require.Equal(t, 10000, resolution.profileSpec.VideoBufSizeK)
+}
+
+func TestResolvePlannerStartProfileAppliesIOSNativeHEVCExecutionPolicy(t *testing.T) {
+	tests := []struct {
+		name          string
+		mode          string
+		wantProfileID string
+		wantHWAccel   string
+	}{
+		{
+			name:          "encode only",
+			mode:          "encode_only",
+			wantProfileID: profiles.ProfileSafariHEVCHW,
+			wantHWAccel:   "vaapi_encode_only",
+		},
+		{
+			name:          "cpu",
+			mode:          "cpu",
+			wantProfileID: profiles.ProfileSafariHEVC,
+			wantHWAccel:   "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			service := NewService(
+				newMockDeps(),
+				WithProfileResolver(profiles.NewResolver(profiles.DefaultConfigSnapshot())),
+				WithIOSNativeHEVCHWMode(tc.mode),
+			)
+			evidence, plan, receipt := plannerStartFixture(t)
+			evidence.ClientEvidence.Family = "ios_safari_native"
+			plan.Mode = "transcode"
+			plan.Video = playbackplanner.TrackPlan{Mode: "transcode", Codec: "hevc"}
+			plan.Audio = playbackplanner.TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
+			plan.Filters.Deinterlace = true
+			plan.RateControl = playbackplanner.RateControl{MaxVideoBitrateKbps: 5000}
+			evidenceHash, err := evidence.Hash()
+			require.NoError(t, err)
+			planHash, err := plan.Hash()
+			require.NoError(t, err)
+			receipt.EvidenceHash = evidenceHash
+			receipt.PlanHash = planHash
+
+			resolution, intentErr := service.resolvePlannerStartProfile(Intent{
+				ServiceRef:      evidence.SourceIdentity,
+				PlannerPlan:     &plan,
+				PlanningReceipt: &receipt,
+				PlannerEvidence: &evidence,
+			}, startHardwareState{hasGPU: true, hevcBackend: profiles.GPUBackendVAAPI})
+			require.Nil(t, intentErr)
+			require.Equal(t, tc.wantProfileID, resolution.effectiveProfileID)
+			require.Equal(t, tc.wantHWAccel, resolution.profileSpec.HWAccel)
+			require.Equal(t, "hevc", resolution.profileSpec.VideoCodec)
+			require.True(t, resolution.profileSpec.PlannerBound)
+		})
+	}
+}
+
+func TestResolvePlannerStartProfileKeepsSignedExperimentalAV1Packaging(t *testing.T) {
+	consumerConfig := profiles.DefaultConfigSnapshot()
+	consumerConfig.ExperimentalAV1MPEGTS = false
+	service := NewService(newMockDeps(), WithProfileResolver(profiles.NewResolver(consumerConfig)))
+	evidence, plan, receipt := plannerStartFixture(t)
+	evidence.OperatorPolicy.ExperimentalAV1MPEGTS = true
+	plan.Mode = "transcode"
+	plan.Video = playbackplanner.TrackPlan{Mode: "transcode", Codec: "av1"}
+	plan.Audio = playbackplanner.TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
+	plan.Packaging.Container = "mpegts"
+	plan.RateControl = playbackplanner.RateControl{MaxVideoBitrateKbps: 6000}
+	evidenceHash, err := evidence.Hash()
+	require.NoError(t, err)
+	planHash, err := plan.Hash()
+	require.NoError(t, err)
+	receipt.EvidenceHash = evidenceHash
+	receipt.PlanHash = planHash
+	receipt.PlannerVersion = playbackplanner.PlannerVersion
+
+	resolution, intentErr := service.resolvePlannerStartProfile(Intent{
+		ServiceRef:      evidence.SourceIdentity,
+		PlannerPlan:     &plan,
+		PlanningReceipt: &receipt,
+		PlannerEvidence: &evidence,
+	}, startHardwareState{hasGPU: true, av1Backend: profiles.GPUBackendVAAPI})
+	require.Nil(t, intentErr)
+	require.Equal(t, "mpegts", resolution.profileSpec.Container)
+	require.Equal(t, 6000, resolution.profileSpec.VideoMaxRateK)
+	require.Equal(t, 12000, resolution.profileSpec.VideoBufSizeK)
 }
 
 func TestProcessIntentPersistsReceiptPlanWithoutLegacyReplanning(t *testing.T) {
@@ -189,7 +306,7 @@ func plannerStartFixture(t *testing.T) (playbackplanner.PlaybackEvidence, playba
 		ReceiptID:      "receipt-1",
 		EvidenceHash:   evidenceHash,
 		PlanHash:       planHash,
-		PlannerVersion: "v4",
+		PlannerVersion: playbackplanner.PlannerVersion,
 		PolicyVersion:  "policy-v1",
 	}
 	return evidence, plan, receipt

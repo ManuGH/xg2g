@@ -100,18 +100,33 @@ func TestStoreCopiesMutablePlannerData(t *testing.T) {
 	req := testIssueRequest()
 	record, err := store.Issue(req)
 	require.NoError(t, err)
+	binding := bindingFromRecord(record)
+
 	req.Evidence.ClientEvidence.SupportedVideoCodecs[0] = "mutated"
+	req.Evidence.ClientEvidence.AutoTranscodeVideoCodecs[0] = "mutated"
+	req.Evidence.HostSnapshot.EncoderCapabilities[0].Codec = "mutated"
+	*req.Evidence.ClientEvidence.SupportsRange = false
 	req.Result.Plan.Guardrails.PermittedAlternativePlans[0] = "mutated"
 	req.Result.Trace.Log[0].Rule = "mutated"
+	record.Evidence.ClientEvidence.AutoTranscodeVideoCodecs[0] = "mutated-return"
+	record.Evidence.HostSnapshot.EncoderCapabilities[0].Codec = "mutated-return"
+	*record.Evidence.ClientEvidence.SupportsRange = false
 
-	loaded, err := store.Resolve(bindingFromRecord(record))
+	loaded, err := store.Resolve(binding)
 	require.NoError(t, err)
 	require.Equal(t, "h264", loaded.Evidence.ClientEvidence.SupportedVideoCodecs[0])
+	require.Equal(t, "hevc", loaded.Evidence.ClientEvidence.AutoTranscodeVideoCodecs[0])
+	require.Equal(t, "hevc", loaded.Evidence.HostSnapshot.EncoderCapabilities[0].Codec)
+	require.True(t, *loaded.Evidence.ClientEvidence.SupportsRange)
 	require.Equal(t, "repair", loaded.Plan.Guardrails.PermittedAlternativePlans[0])
 	require.Equal(t, "mode", loaded.Trace.Log[0].Rule)
+	resolvedHash, err := loaded.Evidence.Hash()
+	require.NoError(t, err)
+	require.Equal(t, loaded.Receipt.EvidenceHash, resolvedHash)
 }
 
 func testIssueRequest() IssueRequest {
+	supportsRange := true
 	evidence := playbackplanner.PlaybackEvidence{
 		EvaluatedAt:    time.Now().UnixMilli(),
 		Scope:          "live",
@@ -123,14 +138,21 @@ func testIssueRequest() IssueRequest {
 			AudioCodec: "aac",
 		},
 		ClientEvidence: playbackplanner.ClientEvidence{
-			AllowTranscode:       true,
-			SupportedVideoCodecs: []string{"h264"},
-			SupportedAudioCodecs: []string{"aac"},
-			SupportedContainers:  []string{"fmp4"},
-			SupportedEngines:     []string{"hls"},
-			SupportsHls:          true,
+			AllowTranscode:           true,
+			SupportedVideoCodecs:     []string{"h264"},
+			SupportedAudioCodecs:     []string{"aac"},
+			SupportedContainers:      []string{"fmp4"},
+			AutoTranscodeVideoCodecs: []string{"hevc", "h264"},
+			SupportedEngines:         []string{"hls"},
+			SupportsHls:              true,
+			SupportsRange:            &supportsRange,
 		},
-		HostSnapshot: playbackplanner.HostSnapshot{AvailableEngines: []string{"hls"}},
+		HostSnapshot: playbackplanner.HostSnapshot{
+			AvailableEngines: []string{"hls"},
+			EncoderCapabilities: []playbackplanner.HostEncoderCapability{
+				{Codec: "hevc", Verified: true, AutoEligible: true},
+			},
+		},
 	}
 	plan := playbackplanner.PlaybackPlan{
 		Decision:       playbackplanner.DecisionAllow,

@@ -15,6 +15,13 @@ import (
 )
 
 func (s *Server) issuePlannerReceipt(playbackInfo v3recordings.PlaybackInfoResult, req v3recordings.PlaybackInfoRequest, schemaType string) (*v3intents.PlanningHandoff, error) {
+	// EPG badges are passive grid previews. They never proceed to /intents, so
+	// issuing a short-lived start receipt only creates fan-out pressure and can
+	// make an otherwise harmless preview fail when receipt enforcement is on.
+	if v3recordings.PlaybackInfoRequestContext(req) == v3recordings.PlaybackInfoContextEpgBadge {
+		return nil, nil
+	}
+
 	s.mu.RLock()
 	enabled := s.plannerReceiptEnabled
 	store := s.plannerReceiptStore

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -48,7 +49,17 @@ func (s *Service) resolvePlannerStartProfile(intent Intent, hw startHardwareStat
 		return startProfileResolution{}, plannerStartError(err.Error())
 	}
 	capability := plannerCapability(evidence)
-	profileSpec := s.resolveProfileSpec(profileID, "", capability, hw, profiles.HWAccelAuto)
+	resolveProfileSpec := func(candidateProfileID string) model.ProfileSpec {
+		return s.resolveProfileSpec(candidateProfileID, "", capability, hw, profiles.HWAccelAuto)
+	}
+	profileSpec := resolveProfileSpec(profileID)
+	profileID, profileSpec = autocodec.ApplyClientCompatibilityPolicyWithPolicy(
+		evidence.ClientEvidence.Family,
+		profileID,
+		profileSpec,
+		resolveProfileSpec,
+		s.iosNativeHEVCHWMode,
+	)
 	profileSpec = applyPlannerPlanToProfile(profileSpec, plan)
 
 	publicProfile := plannerPublicProfile(plan)

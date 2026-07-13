@@ -135,6 +135,18 @@ func (s *stubRecordingsService) GetMediaTruth(ctx context.Context, id string) (p
 	return s.getMediaTruthFn(ctx, id)
 }
 
+func TestNewServiceExplicitCodecPoliciesDoNotReReadEnvironment(t *testing.T) {
+	t.Setenv("XG2G_CLIENT_AV1_DISABLED", "true")
+	t.Setenv("XG2G_IOS_NATIVE_HEVC_HW_MODE", "cpu")
+	svc := NewService(
+		stubDeps{},
+		WithClientAV1Disabled(false),
+		WithIOSNativeHEVCHWMode("full"),
+	)
+	require.False(t, svc.clientAV1Disabled)
+	require.Equal(t, "full", svc.iosNativeHEVCHWMode)
+}
+
 func TestService_ResolveClientPlayback_Unavailable(t *testing.T) {
 	svc := NewService(stubDeps{})
 

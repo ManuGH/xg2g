@@ -110,6 +110,14 @@ type AdapterConfig struct {
 // probe depth; the FPS probe falls back to them when its own override is unset,
 // so they are passed in rather than re-read here.
 func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
+	analyzeDuration = strings.TrimSpace(analyzeDuration)
+	if analyzeDuration == "" {
+		analyzeDuration = "2000000"
+	}
+	probeSize = strings.TrimSpace(probeSize)
+	if probeSize == "" {
+		probeSize = "5M"
+	}
 	liveAnalyzeDuration := strings.TrimSpace(config.ParseString("XG2G_LIVE_ANALYZE_DURATION", ""))
 	if liveAnalyzeDuration == "" {
 		liveAnalyzeDuration = "1000000" // 1s for low-latency live ingest
@@ -279,6 +287,15 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		RuntimePathMinYAvg:    envFloatBounded("XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG", defaultRuntimePathCorrectnessMinYAvg, 1.0, 64.0),
 		RuntimePathLowChecks:  envIntBounded("XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS", defaultRuntimePathCorrectnessChecks, 1, 4),
 	}
+}
+
+func cloneAdapterConfig(cfg AdapterConfig) AdapterConfig {
+	cfg.ExperimentalInterlacedCodecs = append([]string(nil), cfg.ExperimentalInterlacedCodecs...)
+	cfg.SafariForceCopyServiceRefs = append([]string(nil), cfg.SafariForceCopyServiceRefs...)
+	cfg.SafariHQServiceRefs = append([]string(nil), cfg.SafariHQServiceRefs...)
+	cfg.SafariHQ25ServiceRefs = append([]string(nil), cfg.SafariHQ25ServiceRefs...)
+	cfg.SafariHQ50ServiceRefs = append([]string(nil), cfg.SafariHQ50ServiceRefs...)
+	return cfg
 }
 
 func envOptionalIntBounded(key string, minValue, maxValue int) int {

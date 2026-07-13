@@ -124,14 +124,16 @@ func (s *Service) resolveRequestedStartProfile(ctx context.Context, intent Inten
 		return profileID, "", nil
 	}
 
+	requestedCodecs := requestedCodecsForIntentWithPolicy(intent, requestedPlaybackMode, s.clientAV1Disabled)
 	profileID, err := resolveRequestedStartProfilePolicy(startProfilePolicyInput{
 		RequestedPlaybackMode: requestedPlaybackMode,
 		ClientFamily:          clientFamilyForIntent(intent),
-		RequestedCodecs:       requestedCodecsForIntent(intent, requestedPlaybackMode),
+		RequestedCodecs:       requestedCodecs,
 		ClientCaps:            intent.ClientCaps,
 		Capability:            capability,
 		HWAccelMode:           hwaccelMode,
 		HostRuntime:           s.deps.HostRuntime(ctx),
+		ClientAV1Disabled:     s.clientAV1Disabled,
 	})
 	if err != nil {
 		return "", "", &Error{Kind: ErrorInvalidInput, Message: err.Error()}
@@ -178,14 +180,16 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 		startSourceVideoCodec = capability.VideoCodec
 	}
 	resolution.profileSpec = clientpolicy.ApplyStartPackagingPolicy(clientFamily, resolution.effectiveProfileID, resolution.profileSpec, startSourceVideoCodec, preferredEngineForIntent(intent))
-	resolution.effectiveProfileID, resolution.profileSpec = autocodec.ApplyClientCompatibilityPolicy(
+	resolution.effectiveProfileID, resolution.profileSpec = autocodec.ApplyClientCompatibilityPolicyWithPolicy(
 		clientFamily,
 		resolution.effectiveProfileID,
 		resolution.profileSpec,
 		resolveProfileSpec,
+		s.iosNativeHEVCHWMode,
 	)
 	resolution.profileSpec = adaptStartProfileForNetworkContext(intent, resolution.profileSpec)
-	requestedCodecs := requestedCodecsForIntent(intent, requestedPlaybackMode)
+	requestedCodecs := requestedCodecsForIntentWithPolicy(intent, requestedPlaybackMode, s.clientAV1Disabled)
+	resolution.requestedCodecs = requestedCodecs
 	if shouldTraceAutoCodecDecision(intent, requestedCodecs) {
 		resolution.autoCodecTrace = autocodec.DescribeSelection(requestedCodecs, resolution.effectiveProfileID, s.deps.HostRuntime(ctx))
 	}
@@ -223,7 +227,7 @@ func (s *Service) resolveProfileSpec(profileID, userAgent string, capability *sc
 	case profiles.ProfileH264FMP4:
 		resolveBackend = hw.h264Backend
 	}
-	return profiles.Resolve(profileID, userAgent, int(s.deps.DVRWindow().Seconds()), capability, resolveBackend, hwaccelMode)
+	return s.profileResolver.Resolve(profileID, userAgent, int(s.deps.DVRWindow().Seconds()), capability, resolveBackend, hwaccelMode)
 }
 
 func deriveStartHWAccelSummary(profileSpec model.ProfileSpec, hwaccelMode profiles.HWAccelMode, hasGPU bool) (effective, reason, backend string) {

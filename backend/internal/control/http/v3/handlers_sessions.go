@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/config"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
@@ -134,6 +133,7 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Atomic Update via Store
+	profileResolver := s.profileResolver
 	var changed bool
 	updatedSess, err := store.UpdateSession(ctx, sessionId.String(), func(s *model.SessionRecord) error {
 		// If we are already in Repair profile, nothing more to do
@@ -160,7 +160,7 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 			fromHash = fromTarget.Hash()
 		}
 
-		fallbackPlan := nextPlaybackFeedbackPlan(s.Profile, s.ServiceRef)
+		fallbackPlan := nextPlaybackFeedbackPlanWithResolver(s.Profile, s.ServiceRef, profileResolver)
 		s.Profile = fallbackPlan.profile
 
 		s.FallbackReason = fmt.Sprintf("client_report:code=%d", derefInt(req.Code))
@@ -232,8 +232,17 @@ func (s *Server) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func shouldPreferSafariTSFallbackForServiceRef(serviceRef string) bool {
-	return serviceRefEnvContainsNormalized("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", serviceRef)
+func shouldPreferSafariTSFallbackForServiceRefWithSnapshot(serviceRef string, configuredRefs []string) bool {
+	targetRef := normalizeServiceRefForEnv(serviceRef)
+	if targetRef == "" {
+		return false
+	}
+	for _, candidate := range configuredRefs {
+		if normalizeServiceRefForEnv(candidate) == targetRef {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldTriggerPlaybackFallback(req PlaybackFeedbackRequest, sess *model.SessionRecord) bool {
@@ -316,23 +325,6 @@ func sessionTargetVideoCodecForFeedback(sess *model.SessionRecord) string {
 		}
 	}
 	return strings.TrimSpace(sess.Profile.VideoCodec)
-}
-
-func serviceRefEnvContainsNormalized(envKey, targetRef string) bool {
-	targetRef = normalizeServiceRefForEnv(targetRef)
-	if targetRef == "" {
-		return false
-	}
-	raw := strings.TrimSpace(config.ParseString(envKey, ""))
-	if raw == "" {
-		return false
-	}
-	for _, candidate := range strings.Split(raw, ",") {
-		if normalizeServiceRefForEnv(candidate) == targetRef {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeServiceRefForEnv(raw string) string {

@@ -1,9 +1,6 @@
 package container
 
-import (
-	"github.com/ManuGH/xg2g/internal/config"
-	"github.com/ManuGH/xg2g/internal/media/codec"
-)
+import "github.com/ManuGH/xg2g/internal/media/codec"
 
 // Format identifies a concrete media container or segment format.
 type Format uint8
@@ -29,11 +26,17 @@ const (
 // reason about. This is intentionally domain knowledge, not a theoretical muxing
 // matrix.
 func (f Format) CanCarry(id codec.ID) bool {
+	return f.CanCarryWithPolicy(id, false)
+}
+
+// CanCarryWithPolicy evaluates the practical muxing matrix against an immutable
+// packaging-policy snapshot.
+func (f Format) CanCarryWithPolicy(id codec.ID, experimentalAV1MPEGTS bool) bool {
 	switch f {
 	case MPEGTS:
 		switch id {
 		case codec.IDAV1:
-			return config.ParseBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", false)
+			return experimentalAV1MPEGTS
 		case codec.IDH264, codec.IDHEVC, codec.IDMPEG2, codec.IDAAC, codec.IDAC3, codec.IDEAC3, codec.IDMP2, codec.IDMP3:
 			return true
 		default:

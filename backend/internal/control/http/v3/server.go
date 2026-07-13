@@ -11,6 +11,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	v3deviceauth "github.com/ManuGH/xg2g/internal/control/http/v3/deviceauth"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
@@ -35,6 +36,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/receipts"
 	recinfra "github.com/ManuGH/xg2g/internal/recordings"
@@ -114,6 +116,9 @@ type Server struct {
 	plannerReceiptStore    *v3intents.PlanningHandoffStore
 	plannerReceiptEnabled  bool
 	plannerReceiptRequired bool
+	profileResolver        profiles.Resolver
+	clientAV1Disabled      bool
+	iosNativeHEVCHWMode    string
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -163,6 +168,9 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 	}
 	liveDecisionKeyring := resolveLiveDecisionKeyring(cfg, time.Now().UTC())
 	_, signingKey, _ := liveDecisionKeyring.signingKey()
+	profileResolver := profiles.LoadResolver()
+	clientAV1Disabled := config.ParseBool("XG2G_CLIENT_AV1_DISABLED", false)
+	iosNativeHEVCHWMode := autocodec.ResolveIOSNativeHEVCHWMode()
 
 	s := &Server{
 		cfg:                    cfg,
@@ -182,6 +190,9 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		authSessionTTL:         defaultAuthSessionTTL,
 		householdUnlockStore:   household.NewInMemoryUnlockStore(),
 		householdUnlockTTL:     cfg.Household.UnlockTTL,
+		profileResolver:        profileResolver,
+		clientAV1Disabled:      clientAV1Disabled,
+		iosNativeHEVCHWMode:    iosNativeHEVCHWMode,
 	}
 
 	// Phase 2c: Shadow Observer
@@ -222,8 +233,19 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 	// JWTSecret must be set explicitly via SetJWTSecret before serving requests (fail-closed).
 	// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 
-	s.intentService = v3intents.NewService(&serverIntentDeps{s: s})
-	s.recordingsV3Service = v3recordings.NewService(&serverRecordingsDeps{s: s}, v3recordings.WithPlannerShadowObserver(observer))
+	s.intentService = v3intents.NewService(
+		&serverIntentDeps{s: s},
+		v3intents.WithProfileResolver(profileResolver),
+		v3intents.WithClientAV1Disabled(clientAV1Disabled),
+		v3intents.WithIOSNativeHEVCHWMode(iosNativeHEVCHWMode),
+	)
+	s.recordingsV3Service = v3recordings.NewService(
+		&serverRecordingsDeps{s: s},
+		v3recordings.WithPlannerShadowObserver(observer),
+		v3recordings.WithProfileResolver(profileResolver),
+		v3recordings.WithClientAV1Disabled(clientAV1Disabled),
+		v3recordings.WithIOSNativeHEVCHWMode(iosNativeHEVCHWMode),
+	)
 	s.sessionsV3Service = v3sessions.NewService(&serverSessionDeps{s: s})
 	s.epgSource = &epgAdapter{s}
 	return s

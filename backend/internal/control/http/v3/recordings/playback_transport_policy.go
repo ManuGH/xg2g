@@ -32,7 +32,11 @@ type playbackTransportPlan struct {
 }
 
 func applyPlaybackTransportPolicy(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
-	plan := resolvePlaybackTransportPlan(req, resolvedCaps, dec)
+	applyPlaybackTransportPolicyWithPolicy(req, resolvedCaps, dec, false)
+}
+
+func applyPlaybackTransportPolicyWithPolicy(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision, experimentalAV1MPEGTS bool) {
+	plan := resolvePlaybackTransportPlanWithPolicy(req, resolvedCaps, dec, experimentalAV1MPEGTS)
 	if !plan.applied || dec == nil || dec.TargetProfile == nil {
 		return
 	}
@@ -64,9 +68,13 @@ func clientWantsFMP4(req PlaybackInfoRequest, resolvedCaps capabilities.Playback
 }
 
 func resolvePlaybackTransportPlan(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) playbackTransportPlan {
+	return resolvePlaybackTransportPlanWithPolicy(req, resolvedCaps, dec, false)
+}
+
+func resolvePlaybackTransportPlanWithPolicy(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision, experimentalAV1MPEGTS bool) playbackTransportPlan {
 	switch req.SubjectKind {
 	case PlaybackSubjectLive:
-		return resolveLiveNativeTransportPlan(req, resolvedCaps, dec)
+		return resolveLiveNativeTransportPlan(req, resolvedCaps, dec, experimentalAV1MPEGTS)
 	case PlaybackSubjectRecording:
 		return resolveRecordingNativeTransportPlan(req, resolvedCaps, dec)
 	default:
@@ -74,14 +82,14 @@ func resolvePlaybackTransportPlan(req PlaybackInfoRequest, resolvedCaps capabili
 	}
 }
 
-func resolveLiveNativeTransportPlan(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) playbackTransportPlan {
+func resolveLiveNativeTransportPlan(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision, experimentalAV1MPEGTS bool) playbackTransportPlan {
 	if dec == nil || dec.TargetProfile == nil {
 		return noPlaybackTransportPlan()
 	}
 	if !clientWantsFMP4(req, resolvedCaps, dec) {
 		return noPlaybackTransportPlan()
 	}
-	if clientpolicy.AllowExperimentalNativeAV1TransportStream(resolvedCaps, dec.Selected.VideoCodec, *dec.TargetProfile) {
+	if clientpolicy.AllowExperimentalNativeAV1TransportStreamWithPolicy(resolvedCaps, dec.Selected.VideoCodec, *dec.TargetProfile, experimentalAV1MPEGTS) {
 		return noPlaybackTransportPlan()
 	}
 

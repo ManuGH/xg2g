@@ -312,7 +312,12 @@ func (s *Server) intentProcessor() *v3intents.Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.intentService == nil {
-		s.intentService = v3intents.NewService(&serverIntentDeps{s: s})
+		s.intentService = v3intents.NewService(
+			&serverIntentDeps{s: s},
+			v3intents.WithProfileResolver(s.profileResolver),
+			v3intents.WithClientAV1Disabled(s.clientAV1Disabled),
+			v3intents.WithIOSNativeHEVCHWMode(s.iosNativeHEVCHWMode),
+		)
 	}
 	return s.intentService
 }

@@ -65,7 +65,7 @@ func buildStartRequestParams(intent Intent, resolution startProfileResolution) m
 	if deviceType := deviceTypeForIntent(intent); deviceType != "" {
 		requestParams[model.CtxKeyDeviceType] = deviceType
 	}
-	if requestedCodecs := requestedCodecsForIntent(intent, resolution.requestedPlaybackMode); requestedCodecs != "" {
+	if requestedCodecs := resolution.requestedCodecs; requestedCodecs != "" {
 		requestParams["codecs"] = requestedCodecs
 	}
 	if capHash := clientCapHashForIntent(intent); capHash != "" {

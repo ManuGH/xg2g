@@ -23,8 +23,9 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 	case "transcode":
 		plan.Video = TrackPlan{Mode: "transcode", Codec: "h264"} // Default
 		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
+		autoTranscodeProfile := false
 		plan.Packaging = Packaging{Container: "mpegts"}
-		if ev.ClientEvidence.PrefersFMP4 || ev.ClientEvidence.PrefersFMP4ForTranscode {
+		if ev.ClientEvidence.PrefersFMP4 {
 			plan.Packaging.Container = "fmp4"
 		}
 
@@ -38,22 +39,74 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 				plan.Filters.ScaleWidth = ev.ClientEvidence.MaxVideoWidth
 			}
 
-			isChromium := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chromium") ||
-				strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chrome")
+			if codec, ok := selectAutoTranscodeVideoCodec(ev); ok {
+				plan.Video.Codec = codec
+				autoTranscodeProfile = true
+				if codec == "av1" && ev.OperatorPolicy.ExperimentalAV1MPEGTS {
+					plan.Packaging.Container = "mpegts"
+				} else {
+					plan.Packaging.Container = "fmp4"
+				}
+			} else {
+				isChromium := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chromium") ||
+					strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chrome")
 
-			isSafari := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "safari") ||
-				strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "ios") ||
-				ev.ClientEvidence.Family == "safari_hevc" ||
-				ev.ClientEvidence.Family == "safari_hevc_hw"
+				isSafari := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "safari") ||
+					strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "ios") ||
+					ev.ClientEvidence.Family == "safari_hevc" ||
+					ev.ClientEvidence.Family == "safari_hevc_hw"
 
-			if isSafari && !isChromium && contains(ev.ClientEvidence.SupportedVideoCodecs, "hevc") {
-				plan.Video.Codec = "hevc"
+				if isSafari && !isChromium &&
+					explicitlyRequestsHEVCProfile(ev.RequestedIntent) &&
+					contains(ev.ClientEvidence.SupportedVideoCodecs, "hevc") {
+					plan.Video.Codec = "hevc"
+				}
 			}
 		}
 
-		if isAudioCodecCompatible(ev) && ev.SourceTruth.AudioCodec != "" {
+		// Legacy auto-codec profiles are complete execution profiles: when video
+		// is re-encoded they also normalize audio to AAC, even if source audio is
+		// independently copy-compatible. Explicit repair/copy paths retain the
+		// track-by-track behavior above.
+		if !autoTranscodeProfile && isAudioCodecCompatible(ev) && ev.SourceTruth.AudioCodec != "" {
 			plan.Audio = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.AudioCodec}
 		}
+		if requiresPlannedTranscode(ev) && plan.Video.Mode == "copy" && plan.Audio.Mode == "copy" {
+			// Legacy repair/forced-transcode mode is track-aware. Preserve a
+			// compatible video bitstream, but ensure the mode is not a no-op by
+			// normalizing audio to AAC when both tracks were otherwise copyable.
+			plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
+		}
+		if plan.Video.Mode == "transcode" {
+			plan.RateControl.MaxVideoBitrateKbps = transcodeMaxVideoBitrateKbps(plan.Video.Codec, ev)
+		}
+	}
+}
+
+func explicitlyRequestsHEVCProfile(requestedIntent string) bool {
+	switch strings.ToLower(strings.TrimSpace(requestedIntent)) {
+	case "safari_hevc", "safari_hevc_hw", "safari_hevc_hw_ll", "hevc":
+		return true
+	default:
+		return false
+	}
+}
+
+func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "av1":
+		return 6000
+	case "hevc", "h265":
+		return 5000
+	case "h264", "avc", "libx264":
+		for _, encoder := range ev.HostSnapshot.EncoderCapabilities {
+			if strings.EqualFold(strings.TrimSpace(encoder.Codec), "h264") && encoder.Verified && encoder.AutoEligible {
+				return 20000
+			}
+		}
+		return 8000
+	default:
+		return 8000
 	}
 }
 
@@ -72,25 +125,23 @@ func applyPolicyModifiers(plan *PlaybackPlan, ev PlaybackEvidence) {
 	plan.Guardrails.MaxQualityRung = maxRung
 
 	// Network caps: if network bandwidth is limited, apply it
-	targetKbps := 0
-
 	if plan.Video.Mode == "transcode" {
-		// Default conservative limits for transcode
-		targetKbps = 8000
-		plan.RateControl.TargetVideoBitrateKbps = targetKbps
-		plan.RateControl.MaxVideoBitrateKbps = 16000
+		if plan.RateControl.MaxVideoBitrateKbps <= 0 {
+			plan.RateControl.MaxVideoBitrateKbps = transcodeMaxVideoBitrateKbps(plan.Video.Codec, ev)
+		}
 
 		// If we know network is constrained
 		if ev.NetworkEvidence.DownlinkKbps > 0 && ev.NetworkEvidence.DownlinkKbps < 5000 {
 			plan.RateControl.TargetVideoBitrateKbps = 3000
-			plan.RateControl.MaxVideoBitrateKbps = 6000
+			if plan.RateControl.MaxVideoBitrateKbps == 0 || plan.RateControl.MaxVideoBitrateKbps > 6000 {
+				plan.RateControl.MaxVideoBitrateKbps = 6000
+			}
 		}
 	} else if plan.Video.Mode == "copy" {
 		// If we are copying, target bitrate matches source
 		if ev.SourceTruth.BitrateKbps > 0 {
-			targetKbps = ev.SourceTruth.BitrateKbps
-			plan.RateControl.TargetVideoBitrateKbps = targetKbps
-			plan.RateControl.MaxVideoBitrateKbps = targetKbps
+			plan.RateControl.TargetVideoBitrateKbps = ev.SourceTruth.BitrateKbps
+			plan.RateControl.MaxVideoBitrateKbps = ev.SourceTruth.BitrateKbps
 		}
 	}
 

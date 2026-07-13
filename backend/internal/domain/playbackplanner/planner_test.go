@@ -91,6 +91,35 @@ func TestPlaybackEvidence_HashIsDeterministic(t *testing.T) {
 
 		assert.Equal(t, h1, h2, "Duplicates and order should not change the hash")
 	})
+
+	t.Run("Auto codec preference order is semantic while host capacity order is not", func(t *testing.T) {
+		base := PlaybackEvidence{
+			ClientEvidence: ClientEvidence{
+				AutoTranscodeVideoCodecs: []string{"av1", "hevc", "h264", "hevc"},
+			},
+			HostSnapshot: HostSnapshot{EncoderCapabilities: []HostEncoderCapability{
+				{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40},
+				{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30},
+			}},
+		}
+		baseHash, err := base.Hash()
+		require.NoError(t, err)
+
+		reorderedHost := base
+		reorderedHost.HostSnapshot.EncoderCapabilities = []HostEncoderCapability{
+			{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30},
+			{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40},
+		}
+		reorderedHostHash, err := reorderedHost.Hash()
+		require.NoError(t, err)
+		assert.Equal(t, baseHash, reorderedHostHash)
+
+		reorderedPreference := base
+		reorderedPreference.ClientEvidence.AutoTranscodeVideoCodecs = []string{"hevc", "av1", "h264"}
+		reorderedPreferenceHash, err := reorderedPreference.Hash()
+		require.NoError(t, err)
+		assert.NotEqual(t, baseHash, reorderedPreferenceHash)
+	})
 }
 
 func TestPlaybackPlan_HashIsDeterministic(t *testing.T) {
@@ -267,10 +296,185 @@ func TestPlanTranscodesVideoWhenClientDimensionsAreExceeded(t *testing.T) {
 
 	result, err := Plan(ev)
 	require.NoError(t, err)
+	require.Equal(t, PlannerVersion, result.Trace.PlannerVersion)
 	require.Equal(t, "transcode", result.Plan.Mode)
 	require.Equal(t, "transcode", result.Plan.Video.Mode)
 	require.Equal(t, "h264", result.Plan.Video.Codec)
 	require.Equal(t, 1280, result.Plan.Filters.ScaleWidth)
+}
+
+func TestPlanRejectsDuplicateHostEncoderCapabilitiesBeforeHashResolution(t *testing.T) {
+	base := autoTranscodeEvidence("h264")
+	base.HostSnapshot.EncoderCapabilities = []HostEncoderCapability{
+		{Codec: "H264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10},
+		{Codec: " h264 ", Verified: false, AutoEligible: false},
+	}
+	reversed := base
+	reversed.HostSnapshot.EncoderCapabilities = []HostEncoderCapability{
+		base.HostSnapshot.EncoderCapabilities[1],
+		base.HostSnapshot.EncoderCapabilities[0],
+	}
+
+	baseHash, err := base.Hash()
+	require.NoError(t, err)
+	reversedHash, err := reversed.Hash()
+	require.NoError(t, err)
+	require.Equal(t, baseHash, reversedHash, "capability order is deliberately non-semantic")
+
+	_, err = Plan(base)
+	require.ErrorIs(t, err, ErrInvalidEvidence)
+	_, err = Plan(reversed)
+	require.ErrorIs(t, err, ErrInvalidEvidence)
+}
+
+func TestPlanAutoCodecRateControlMatchesExecutionProfiles(t *testing.T) {
+	tests := []struct {
+		name       string
+		codec      string
+		hostCodec  *HostEncoderCapability
+		downlink   int
+		wantTarget int
+		wantMax    int
+	}{
+		{name: "av1", codec: "av1", hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 6000},
+		{name: "hevc", codec: "hevc", hostCodec: &HostEncoderCapability{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40}, wantMax: 5000},
+		{name: "h264 cpu", codec: "h264", wantMax: 8000},
+		{name: "h264 hardware", codec: "h264", hostCodec: &HostEncoderCapability{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10}, wantMax: 20000},
+		{name: "constrained h264 hardware", codec: "h264", hostCodec: &HostEncoderCapability{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10}, downlink: 4000, wantTarget: 3000, wantMax: 6000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := autoTranscodeEvidence(tt.codec)
+			ev.NetworkEvidence.DownlinkKbps = tt.downlink
+			if tt.hostCodec != nil {
+				ev.HostSnapshot.EncoderCapabilities = []HostEncoderCapability{*tt.hostCodec}
+			}
+
+			result, err := Plan(ev)
+			require.NoError(t, err)
+			require.Equal(t, "transcode", result.Plan.Video.Mode)
+			require.Equal(t, tt.codec, result.Plan.Video.Codec)
+			require.Equal(t, tt.wantTarget, result.Plan.RateControl.TargetVideoBitrateKbps)
+			require.Equal(t, tt.wantMax, result.Plan.RateControl.MaxVideoBitrateKbps)
+		})
+	}
+}
+
+func TestPlanNativeSafariKeepsLegacyHEVCCPUFallback(t *testing.T) {
+	ev := autoTranscodeEvidence("hevc")
+	ev.ClientEvidence.AutoTranscodeVideoCodecs = []string{"hevc", "h264"}
+	ev.HostSnapshot = HostSnapshot{
+		AvailableEngines: []string{"hls"},
+		PerformanceClass: "high",
+		BenchmarkClass:   "strong",
+		EncoderCapabilities: []HostEncoderCapability{
+			{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10, BenchmarkClass: "strong"},
+		},
+	}
+
+	result, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "hevc", result.Plan.Video.Codec)
+	require.Equal(t, 5000, result.Plan.RateControl.MaxVideoBitrateKbps)
+
+	ev.ClientEvidence.Family = "chromium_hlsjs"
+	nonNative, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "h264", nonNative.Plan.Video.Codec, "CPU HEVC fallback is native-WebKit-only")
+}
+
+func TestPlanExperimentalAV1PackagingIsHashBound(t *testing.T) {
+	ev := autoTranscodeEvidence("av1")
+	ev.HostSnapshot.EncoderCapabilities = []HostEncoderCapability{
+		{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30},
+	}
+
+	stableHash, err := ev.Hash()
+	require.NoError(t, err)
+	stable, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "fmp4", stable.Plan.Packaging.Container)
+
+	ev.OperatorPolicy.ExperimentalAV1MPEGTS = true
+	experimentalHash, err := ev.Hash()
+	require.NoError(t, err)
+	require.NotEqual(t, stableHash, experimentalHash)
+	experimental, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "mpegts", experimental.Plan.Packaging.Container)
+}
+
+func autoTranscodeEvidence(codec string) PlaybackEvidence {
+	return PlaybackEvidence{
+		EvaluatedAt:     1,
+		Scope:           "live",
+		RequestedIntent: "quality",
+		SourceIdentity:  "service:auto-" + codec,
+		SourceTruth: SourceTruth{
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+			Width:      1920,
+			Height:     1080,
+			FPS:        25,
+			Interlaced: true,
+		},
+		ClientEvidence: ClientEvidence{
+			Family:                   "safari_native",
+			AllowTranscode:           true,
+			SupportedContainers:      []string{"mpegts", "fmp4"},
+			SupportedVideoCodecs:     []string{codec, "h264"},
+			SupportedAudioCodecs:     []string{"aac", "ac3"},
+			AutoTranscodeVideoCodecs: []string{codec},
+			SupportsHls:              true,
+		},
+		HostSnapshot: HostSnapshot{AvailableEngines: []string{"hls"}},
+	}
+}
+
+func TestPlanInterlacedAutoProfileUsesImmutableHostCodecCapacity(t *testing.T) {
+	ev := PlaybackEvidence{
+		EvaluatedAt:    time.Now().UnixMilli(),
+		Scope:          "live",
+		SourceIdentity: "service:interlaced-auto",
+		SourceTruth: SourceTruth{
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+			Width:      1920,
+			Height:     1080,
+			FPS:        25,
+			Interlaced: true,
+		},
+		ClientEvidence: ClientEvidence{
+			Family:                   "safari_native",
+			AllowTranscode:           true,
+			SupportedContainers:      []string{"mp4", "mpegts", "fmp4"},
+			SupportedVideoCodecs:     []string{"av1", "hevc", "h264"},
+			SupportedAudioCodecs:     []string{"aac", "ac3"},
+			AutoTranscodeVideoCodecs: []string{"av1", "hevc", "h264"},
+			SupportsHls:              true,
+		},
+		HostSnapshot: HostSnapshot{
+			AvailableEngines: []string{"hls"},
+			PerformanceClass: "high",
+			EncoderCapabilities: []HostEncoderCapability{
+				{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10, BenchmarkClass: "strong"},
+				{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40, BenchmarkClass: "strong"},
+				{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30, BenchmarkClass: "strong"},
+			},
+		},
+	}
+
+	result, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "transcode", result.Plan.Mode)
+	require.Equal(t, TrackPlan{Mode: "transcode", Codec: "av1"}, result.Plan.Video)
+	require.Equal(t, "transcode", result.Plan.Audio.Mode)
+	require.Equal(t, "aac", result.Plan.Audio.Codec)
+	require.Equal(t, "fmp4", result.Plan.Packaging.Container)
+	require.True(t, result.Plan.Filters.Deinterlace)
 }
 
 func TestPlanHonorsSignedRepairIntent(t *testing.T) {
@@ -297,6 +501,8 @@ func TestPlanHonorsSignedRepairIntent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "transcode", result.Plan.Mode)
 	require.Equal(t, "copy", result.Plan.Video.Mode)
-	require.Equal(t, "copy", result.Plan.Audio.Mode)
+	require.Equal(t, "h264", result.Plan.Video.Codec)
+	require.Equal(t, "transcode", result.Plan.Audio.Mode)
+	require.Equal(t, "aac", result.Plan.Audio.Codec)
 	require.Contains(t, result.Trace.Log, RuleHit{Rule: "direct_play_gate", Result: "fail", Reason: "transcode_intent_requested"})
 }

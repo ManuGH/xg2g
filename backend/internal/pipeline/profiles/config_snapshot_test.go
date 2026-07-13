@@ -19,3 +19,20 @@ func TestResolveWithConfig_DoesNotReadEnvironmentMidPlanning(t *testing.T) {
 	assert.Equal(t, "fast", fromSnapshot.Preset)
 	assert.Equal(t, "slow", fromNewEnvironment.Preset)
 }
+
+func TestResolverOwnsServiceRefPolicySnapshot(t *testing.T) {
+	cfg := DefaultConfigSnapshot()
+	cfg.SafariForceCopyServiceRefs = []string{"service:one"}
+	resolver := NewResolver(cfg)
+	cfg.SafariForceCopyServiceRefs[0] = "mutated"
+
+	first := resolver.ConfigSnapshot()
+	assert.Equal(t, []string{"service:one"}, first.SafariForceCopyServiceRefs)
+	first.SafariForceCopyServiceRefs[0] = "mutated-again"
+	assert.Equal(t, []string{"service:one"}, resolver.ConfigSnapshot().SafariForceCopyServiceRefs)
+}
+
+func TestResolverInitializationIsExplicit(t *testing.T) {
+	assert.False(t, (Resolver{}).IsInitialized())
+	assert.True(t, NewResolver(DefaultConfigSnapshot()).IsInitialized())
+}

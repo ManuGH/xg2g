@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -19,7 +20,39 @@ const startReplayRecoveryAttempts = 3
 
 // Service handles intent processing independent of HTTP transport.
 type Service struct {
-	deps Deps
+	deps                Deps
+	profileResolver     profiles.Resolver
+	profileResolverSet  bool
+	clientAV1Disabled   bool
+	clientAV1PolicySet  bool
+	iosNativeHEVCHWMode string
+	iosHEVCPolicySet    bool
+}
+
+func WithClientAV1Disabled(disabled bool) Option {
+	return func(s *Service) {
+		s.clientAV1Disabled = disabled
+		s.clientAV1PolicySet = true
+	}
+}
+
+func WithIOSNativeHEVCHWMode(mode string) Option {
+	return func(s *Service) {
+		s.iosNativeHEVCHWMode = mode
+		s.iosHEVCPolicySet = true
+	}
+}
+
+type Option func(*Service)
+
+func WithProfileResolver(resolver profiles.Resolver) Option {
+	return func(s *Service) {
+		if !resolver.IsInitialized() {
+			return
+		}
+		s.profileResolver = resolver
+		s.profileResolverSet = true
+	}
 }
 
 type startHardwareState struct {
@@ -44,10 +77,24 @@ type startProfileResolution struct {
 	resolvedIntent        string
 	degradedFrom          string
 	autoCodecTrace        autocodec.SelectionTrace
+	requestedCodecs       string
 }
 
-func NewService(deps Deps) *Service {
-	return &Service{deps: deps}
+func NewService(deps Deps, opts ...Option) *Service {
+	s := &Service{deps: deps}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if !s.profileResolverSet {
+		s.profileResolver = profiles.LoadResolver()
+	}
+	if !s.clientAV1PolicySet {
+		s.clientAV1Disabled = config.ParseBool("XG2G_CLIENT_AV1_DISABLED", false)
+	}
+	if !s.iosHEVCPolicySet {
+		s.iosNativeHEVCHWMode = autocodec.ResolveIOSNativeHEVCHWMode()
+	}
+	return s
 }
 
 func (s *Service) ProcessIntent(ctx context.Context, intent Intent) (*Result, *Error) {

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/http/v3/intents/testfixtures"
 	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
@@ -14,6 +15,29 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestKnownLegacyIntentAdapterDivergence_DirtyDVB(t *testing.T) {
+	var fixture *testfixtures.CharacterizationTest
+	for i := range testfixtures.Cases {
+		if testfixtures.Cases[i].Name == dirtyDVBLegacyIntentFixture {
+			fixture = &testfixtures.Cases[i]
+			break
+		}
+	}
+	if fixture == nil {
+		t.Fatal("dirty-DVB characterization fixture is missing")
+	}
+
+	_, _, diffs := runLegacyIntentAdapterDifferential(
+		t,
+		*fixture,
+		time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC),
+	)
+	want := []string{"mode_mismatch", "video_mode_mismatch", "max_bitrate_drift"}
+	if !equalStringSets(diffs, want) {
+		t.Fatalf("legacy intent interlace divergence changed: got %v want %v", diffs, want)
+	}
+}
 
 // TestKnownPlannerDivergence_NoTranscode explicitly tests that the Legacy Engine wrongfully allows the intent
 // while the new Planner correctly denies it (video_codec_unsupported_for_copy), halting the cutover until this

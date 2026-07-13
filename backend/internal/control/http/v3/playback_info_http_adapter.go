@@ -35,7 +35,7 @@ func (s *Server) buildPlaybackInfoHTTPResponse(ctx context.Context, deps recordi
 		}
 	}
 
-	return s.mapPlaybackInfoV2(
+	response := s.mapPlaybackInfoV2(
 		ctx,
 		recordingID,
 		playbackInfo.Decision,
@@ -57,7 +57,15 @@ func (s *Server) buildPlaybackInfoHTTPResponse(ctx context.Context, deps recordi
 		playbackInfo.RuntimeProbeSuccessStreak,
 		playbackInfo.RuntimeProbeFailureStreak,
 		plannerReceipt,
-	), nil
+	)
+	// The request-context header is client controlled. Passive EPG responses may
+	// skip planner work only because they are made non-authorizing here: without
+	// a decision token they cannot be replayed as a stream.start request even
+	// when planner receipts are configured as optional.
+	if v3recordings.PlaybackInfoRequestContext(serviceRequest) == v3recordings.PlaybackInfoContextEpgBadge {
+		response.PlaybackDecisionToken = nil
+	}
+	return response, nil
 }
 
 func logPlaybackTargetProfile(recordingID string, schemaType string, dec *decision.Decision) {

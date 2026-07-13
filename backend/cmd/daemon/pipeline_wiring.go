@@ -19,7 +19,8 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 		return stub.NewAdapter()
 	}
 
-	adapter := ffmpeg.NewLocalAdapter(
+	adapterConfig := ffmpeg.LoadAdapterConfig(cfg.Enigma2.AnalyzeDuration, cfg.Enigma2.ProbeSize)
+	adapter := ffmpeg.NewLocalAdapterWithConfig(
 		cfg.FFmpeg.Bin,
 		cfg.FFmpeg.FFprobeBin,
 		cfg.HLS.Root,
@@ -35,6 +36,7 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 		cfg.Timeouts.TranscodeStart,
 		cfg.Timeouts.TranscodeNoProgress,
 		cfg.FFmpeg.VaapiDevice,
+		adapterConfig,
 	)
 	adapter.LowLatencyHLS = cfg.HLS.LowLatency
 	adapter.ReadySegments = cfg.HLS.ReadySegments

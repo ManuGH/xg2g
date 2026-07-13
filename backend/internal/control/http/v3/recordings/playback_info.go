@@ -8,6 +8,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/clientpolicy"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
@@ -89,8 +90,8 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		}
 	}
 
-	alignAutoCodecDecision(req, resolvedCaps, hostContext.Snapshot.Runtime, dec)
-	applyPlaybackTransportPolicy(req, resolvedCaps, dec)
+	alignAutoCodecDecisionWithPolicy(req, resolvedCaps, hostContext.Snapshot.Runtime, s.profileResolver, s.clientAV1Disabled, s.iosNativeHEVCHWMode, dec)
+	applyPlaybackTransportPolicyWithPolicy(req, resolvedCaps, dec, s.profileResolver.ConfigSnapshot().ExperimentalAV1MPEGTS)
 	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, hostContext, sourceRef, req, truth, liveTruth, resolvedCaps)
 	s.recordDecisionAudit(ctx, hostContext, sourceRef, req, resolvedCaps, input, dec)
 	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint)
@@ -425,7 +426,11 @@ func (s *Service) recordDecisionAudit(ctx context.Context, hostContext requestHo
 	}
 }
 
-func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot, dec *decision.Decision) {
+func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot, profileResolver profiles.Resolver, dec *decision.Decision) {
+	alignAutoCodecDecisionWithPolicy(req, resolvedCaps, hostRuntime, profileResolver, false, autocodec.ResolveIOSNativeHEVCHWMode(), dec)
+}
+
+func alignAutoCodecDecisionWithPolicy(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot, profileResolver profiles.Resolver, clientAV1Disabled bool, iosNativeHEVCHWMode string, dec *decision.Decision) {
 	if req.Capabilities == nil || dec == nil || dec.Mode != decision.ModeTranscode || !shouldApplyAutoCodecDecision(req.RequestedProfile) {
 		return
 	}
@@ -452,12 +457,12 @@ func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.P
 		return
 	}
 
-	profileID := pickPlaybackInfoAutoProfile(resolvedCaps, hostRuntime)
+	profileID := pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, hostRuntime, clientAV1Disabled, iosNativeHEVCHWMode)
 	if profileID == "" {
 		return
 	}
 
-	profileSpec := profiles.Resolve(profileID, "", 0, nil, resolvePlaybackInfoGPUBackend(profileID), profiles.HWAccelAuto)
+	profileSpec := profileResolver.Resolve(profileID, "", 0, nil, resolvePlaybackInfoGPUBackend(profileID), profiles.HWAccelAuto)
 	target := model.TraceTargetProfileFromProfile(profileSpec)
 	if target != nil {
 		dec.TargetProfile = target
@@ -474,7 +479,7 @@ func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.P
 		dec.Trace.RequestedIntent = publicProfile
 		dec.Trace.ResolvedIntent = publicProfile
 	}
-	selectionTrace := autocodec.DescribeSelection(strings.Join(autocodec.ResolveAutoTranscodeCodecs(resolvedCaps), ","), profileID, hostRuntime)
+	selectionTrace := autocodec.DescribeSelection(strings.Join(autocodec.ResolveAutoTranscodeCodecsWithPolicy(resolvedCaps, clientAV1Disabled), ","), profileID, hostRuntime)
 	dec.Trace.AutoCodecPolicy = selectionTrace.Policy
 	dec.Trace.AutoCodecRequested = selectionTrace.RequestedCodecs
 	dec.Trace.AutoCodecSelected = selectionTrace.SelectedCodec
@@ -483,12 +488,17 @@ func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.P
 }
 
 func pickPlaybackInfoAutoProfile(resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
-	if profileID := autocodec.PickNativeHLSProfileForClientAndHost("", resolvedCaps.ClientFamilyFallback, &resolvedCaps, profiles.HWAccelAuto, hostRuntime); profileID != "" {
-		return autocodec.ApplyClientCompatibilityProfileID(resolvedCaps.ClientFamilyFallback, profileID)
+	return pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, hostRuntime, false, autocodec.ResolveIOSNativeHEVCHWMode())
+}
+
+func pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot, clientAV1Disabled bool, iosNativeHEVCHWMode string) string {
+	if profileID := autocodec.PickNativeHLSProfileForClientAndHostWithPolicy("", resolvedCaps.ClientFamilyFallback, &resolvedCaps, profiles.HWAccelAuto, hostRuntime, clientAV1Disabled); profileID != "" {
+		return autocodec.ApplyClientCompatibilityProfileIDWithPolicy(resolvedCaps.ClientFamilyFallback, profileID, iosNativeHEVCHWMode)
 	}
-	return autocodec.ApplyClientCompatibilityProfileID(
+	return autocodec.ApplyClientCompatibilityProfileIDWithPolicy(
 		resolvedCaps.ClientFamilyFallback,
-		autocodec.PickProfileForCapabilitiesForClientAndHost(resolvedCaps, resolvedCaps.ClientFamilyFallback, profiles.HWAccelAuto, hostRuntime),
+		autocodec.PickProfileForCapabilitiesForClientAndHostWithPolicy(resolvedCaps, resolvedCaps.ClientFamilyFallback, profiles.HWAccelAuto, hostRuntime, clientAV1Disabled),
+		iosNativeHEVCHWMode,
 	)
 }
 
@@ -650,7 +660,10 @@ func (s *Service) observePlannerShadow(
 	operatorPolicy config.PlaybackOperatorConfig,
 	dec *decision.Decision,
 ) *playbackplanner.PlaybackEvidence {
-	if s.observer == nil {
+	// EPG badges are passive fan-out requests and never start playback. Keeping
+	// them out of shadow mode prevents grid refreshes from dominating cutover
+	// metrics with plans that will never be consumed.
+	if s.observer == nil || PlaybackInfoRequestContext(req) == PlaybackInfoContextEpgBadge {
 		return nil
 	}
 
@@ -670,12 +683,19 @@ func (s *Service) observePlannerShadow(
 
 	provenance := "recordings"
 	confidence := "ok"
+	var observedAt, validUntil int64
 	if liveTruth != nil {
 		provenance = liveTruth.Origin
 		if liveTruth.Stale {
 			confidence = "stale"
 		} else {
 			confidence = string(liveTruth.State)
+		}
+		if !liveTruth.ObservedAt.IsZero() {
+			observedAt = liveTruth.ObservedAt.UnixMilli()
+		}
+		if !liveTruth.ValidUntil.IsZero() {
+			validUntil = liveTruth.ValidUntil.UnixMilli()
 		}
 	}
 
@@ -708,54 +728,72 @@ func (s *Service) observePlannerShadow(
 		}
 	}
 
+	autoTranscodeVideoCodecs := plannerAutoTranscodeVideoCodecs(req, resolvedCaps, s.clientAV1Disabled)
+	profilePolicy := s.profileResolver.ConfigSnapshot()
+	experimentalAV1MPEGTS := false
+	if dec != nil && dec.TargetProfile != nil {
+		experimentalAV1MPEGTS = clientpolicy.AllowExperimentalNativeAV1TransportStreamWithPolicy(
+			resolvedCaps,
+			dec.Selected.VideoCodec,
+			*dec.TargetProfile,
+			profilePolicy.ExperimentalAV1MPEGTS,
+		)
+	}
+	networkCaptureTime := int64(0)
+	if resolvedCaps.NetworkContext != nil {
+		networkCaptureTime = now.UnixMilli()
+	}
 	legacyInput := playbackshadow.LegacyPlanningInput{
-		EvaluatedAt:             now.UnixMilli(),
-		Scope:                   scope,
-		RequestedIntent:         req.RequestedProfile,
-		SourceIdentity:          sourceRef,
-		Provenance:              provenance,
-		Confidence:              confidence,
-		ObservedAt:              0,
-		ValidUntil:              0,
-		NetworkCaptureTime:      0,
-		PolicyVersion:           "unknown",
-		Container:               truth.Container,
-		VideoCodec:              truth.VideoCodec,
-		AudioCodec:              truth.AudioCodec,
-		Width:                   truth.Width,
-		Height:                  truth.Height,
-		FPS:                     int(truth.FPS),
-		Interlaced:              truth.Interlaced,
-		BitrateKbps:             truth.BitrateKbps,
-		BitrateConfidence:       string(truth.BitrateConfidence),
-		ClientFamily:            clientFamily,
-		DeviceType:              resolvedCaps.DeviceType,
-		CapabilityVersion:       strconv.Itoa(resolvedCaps.CapabilitiesVersion),
-		AllowTranscode:          allowTranscode,
-		SupportedContainers:     resolvedCaps.Containers,
-		SupportedVideoCodecs:    resolvedCaps.VideoCodecs,
-		SupportedAudioCodecs:    resolvedCaps.AudioCodecs,
-		MaxVideoWidth:           maxVideoW,
-		MaxVideoHeight:          maxVideoH,
-		MaxVideoFPS:             maxVideoFPS,
-		PreferredEngine:         resolvedCaps.PreferredHLSEngine,
-		SupportedEngines:        resolvedCaps.HLSEngines,
-		PrefersFMP4:             clientWantsFMP4(req, resolvedCaps, nil),
-		PrefersFMP4ForTranscode: plannerAutoTranscodePrefersFMP4(req, truth, resolvedCaps, hostContext.Snapshot.Runtime),
-		SupportsHls:             resolvedCaps.SupportsHLS,
-		SupportsRange:           resolvedCaps.SupportsRange,
-		DownlinkKbps:            downlink,
-		RTTMillis:               rtt,
-		InternetValidated:       internetValidated,
-		HostPressureBand:        string(hostPressure.EffectiveBand),
-		PerformanceClass:        hostContext.Snapshot.Runtime.PerformanceClass,
-		AvailableEngines:        availableEngines,
-		ForceIntent:             operatorPolicy.ForceIntent,
-		MaxQualityRung:          operatorPolicy.MaxQualityRung,
-		DisableTranscoding:      false,
-		MaxGlobalBitrate:        0,
-		StrictFreshness:         false,
-		DVRWindowSeconds:        dvrWindowSeconds,
+		EvaluatedAt:              now.UnixMilli(),
+		Scope:                    scope,
+		RequestedIntent:          req.RequestedProfile,
+		SourceIdentity:           sourceRef,
+		Provenance:               provenance,
+		Confidence:               confidence,
+		ObservedAt:               observedAt,
+		ValidUntil:               validUntil,
+		NetworkCaptureTime:       networkCaptureTime,
+		PolicyVersion:            "unknown",
+		Container:                truth.Container,
+		VideoCodec:               truth.VideoCodec,
+		AudioCodec:               truth.AudioCodec,
+		Width:                    truth.Width,
+		Height:                   truth.Height,
+		FPS:                      int(truth.FPS),
+		Interlaced:               truth.Interlaced,
+		BitrateKbps:              truth.BitrateKbps,
+		BitrateConfidence:        string(truth.BitrateConfidence),
+		ClientFamily:             clientFamily,
+		DeviceType:               resolvedCaps.DeviceType,
+		CapabilityVersion:        strconv.Itoa(resolvedCaps.CapabilitiesVersion),
+		AllowTranscode:           allowTranscode,
+		SupportedContainers:      resolvedCaps.Containers,
+		SupportedVideoCodecs:     resolvedCaps.VideoCodecs,
+		SupportedAudioCodecs:     resolvedCaps.AudioCodecs,
+		AutoTranscodeVideoCodecs: autoTranscodeVideoCodecs,
+		MaxVideoWidth:            maxVideoW,
+		MaxVideoHeight:           maxVideoH,
+		MaxVideoFPS:              maxVideoFPS,
+		PreferredEngine:          resolvedCaps.PreferredHLSEngine,
+		SupportedEngines:         resolvedCaps.HLSEngines,
+		PrefersFMP4:              clientWantsFMP4(req, resolvedCaps, nil),
+		SupportsHls:              resolvedCaps.SupportsHLS,
+		SupportsRange:            resolvedCaps.SupportsRange,
+		DownlinkKbps:             downlink,
+		RTTMillis:                rtt,
+		InternetValidated:        internetValidated,
+		HostPressureBand:         string(hostPressure.EffectiveBand),
+		PerformanceClass:         hostContext.Snapshot.Runtime.PerformanceClass,
+		BenchmarkClass:           playbackprofile.BenchmarkClassForCodec(hostContext.Snapshot.Runtime.Benchmark, "hevc"),
+		AvailableEngines:         availableEngines,
+		HostEncoderCapabilities:  plannerHostEncoderCapabilities(hostContext),
+		ForceIntent:              operatorPolicy.ForceIntent,
+		MaxQualityRung:           operatorPolicy.MaxQualityRung,
+		DisableTranscoding:       false,
+		MaxGlobalBitrate:         0,
+		StrictFreshness:          false,
+		DVRWindowSeconds:         dvrWindowSeconds,
+		ExperimentalAV1MPEGTS:    experimentalAV1MPEGTS,
 	}
 
 	ev, err := playbackshadow.BuildPlaybackEvidence(legacyInput)
@@ -772,27 +810,59 @@ func (s *Service) observePlannerShadow(
 	return &ev
 }
 
-func plannerAutoTranscodePrefersFMP4(req PlaybackInfoRequest, truth playback.MediaTruth, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot) bool {
-	if !shouldApplyAutoCodecDecision(req.RequestedProfile) {
-		return false
+func plannerAutoTranscodeVideoCodecs(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, clientAV1Disabled bool) []string {
+	// Legacy auto-codec selection is request opt-in: family fallback may fill
+	// compatibility fields, but it must not manufacture a codec negotiation for
+	// an older request that supplied no capabilities object at all.
+	if req.Capabilities == nil {
+		return nil
 	}
-	source := decision.Source{
-		Container:  truth.Container,
-		VideoCodec: truth.VideoCodec,
-		AudioCodec: truth.AudioCodec,
-		Width:      truth.Width,
-		Height:     truth.Height,
-		FPS:        truth.FPS,
-		Interlaced: truth.Interlaced,
+
+	codecs := autocodec.ResolveAutoTranscodeCodecsWithPolicy(resolvedCaps, clientAV1Disabled)
+	family := strings.ToLower(strings.TrimSpace(resolvedCaps.ClientFamilyFallback))
+	if family != playbackprofile.ClientSafariNative && family != playbackprofile.ClientIOSSafariNative {
+		return codecs
 	}
-	if decision.CanKeepVideoCopy(source, decision.FromCapabilities(resolvedCaps)) {
-		return false
+	if !stringSliceContainsFold(resolvedCaps.VideoCodecs, "hevc") || stringSliceContainsFold(codecs, "hevc") {
+		return codecs
 	}
-	profileID := pickPlaybackInfoAutoProfile(resolvedCaps, hostRuntime)
-	if profileID == "" {
-		return false
+
+	// Native WebKit can explicitly advertise HEVC without MediaCapabilities
+	// smooth/power signals. This is sufficient on the legacy native-HLS path;
+	// preserve the same evidence while keeping AV1 device-policy gated.
+	insertAt := len(codecs)
+	for i, codec := range codecs {
+		if strings.EqualFold(strings.TrimSpace(codec), "h264") {
+			insertAt = i
+			break
+		}
 	}
-	profileSpec := profiles.Resolve(profileID, "", 0, nil, resolvePlaybackInfoGPUBackend(profileID), profiles.HWAccelAuto)
-	target := model.TraceTargetProfileFromProfile(profileSpec)
-	return target != nil && (target.Packaging == playbackprofile.PackagingFMP4 || target.HLS.SegmentContainer == "fmp4")
+	codecs = append(codecs, "")
+	copy(codecs[insertAt+1:], codecs[insertAt:])
+	codecs[insertAt] = "hevc"
+	return codecs
+}
+
+func stringSliceContainsFold(values []string, want string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), want) {
+			return true
+		}
+	}
+	return false
+}
+
+func plannerHostEncoderCapabilities(hostContext requestHostContext) []playbackplanner.HostEncoderCapability {
+	encoders := hostContext.Snapshot.EncoderCapabilities
+	out := make([]playbackplanner.HostEncoderCapability, 0, len(encoders))
+	for _, encoder := range encoders {
+		out = append(out, playbackplanner.HostEncoderCapability{
+			Codec:          encoder.Codec,
+			Verified:       encoder.Verified,
+			AutoEligible:   encoder.AutoEligible,
+			ProbeElapsedMS: encoder.ProbeElapsedMS,
+			BenchmarkClass: playbackprofile.BenchmarkClassForCodec(hostContext.Snapshot.Runtime.Benchmark, encoder.Codec),
+		})
+	}
+	return out
 }

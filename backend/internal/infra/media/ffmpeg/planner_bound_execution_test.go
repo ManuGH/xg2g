@@ -89,6 +89,33 @@ func TestPlannerBoundRateControlPreservesTargetAndMaximum(t *testing.T) {
 	require.NotContains(t, cpu, "-crf")
 }
 
+func TestPlannerBoundUnsetTargetPreservesHEVCQualityModeAndCeiling(t *testing.T) {
+	profile := model.ProfileSpec{
+		PlannerBound:   true,
+		TranscodeVideo: true,
+		VideoCodec:     "hevc",
+		VideoQP:        20,
+		VideoMaxRateK:  5000,
+		VideoBufSizeK:  10000,
+	}
+
+	args := appendVaapiRateControlArgs(nil, profile, "hevc", LoadAdapterConfig("", ""))
+	value, ok := valueAfter(args, "-rc_mode")
+	require.True(t, ok)
+	require.Equal(t, "CQP", value)
+	value, ok = valueAfter(args, "-qp")
+	require.True(t, ok)
+	require.Equal(t, "20", value)
+	_, ok = valueAfter(args, "-b:v")
+	require.False(t, ok, "unset planner target must not replace CQP with bitrate mode")
+	value, ok = valueAfter(args, "-maxrate")
+	require.True(t, ok)
+	require.Equal(t, "5000k", value)
+	value, ok = valueAfter(args, "-bufsize")
+	require.True(t, ok)
+	require.Equal(t, "10000k", value)
+}
+
 func TestPlannerBoundScaleWidthReachesEveryEncoderPath(t *testing.T) {
 	adapter := &LocalAdapter{Logger: zerolog.Nop()}
 	spec := ports.StreamSpec{Profile: model.ProfileSpec{

@@ -29,22 +29,22 @@ type LegacyPlanningInput struct {
 	BitrateConfidence string
 
 	// Client Evidence
-	ClientFamily            string
-	DeviceType              string
-	CapabilityVersion       string
-	AllowTranscode          bool
-	SupportedContainers     []string
-	SupportedVideoCodecs    []string
-	SupportedAudioCodecs    []string
-	MaxVideoWidth           int
-	MaxVideoHeight          int
-	MaxVideoFPS             int
-	PreferredEngine         string
-	SupportedEngines        []string
-	PrefersFMP4             bool
-	PrefersFMP4ForTranscode bool
-	SupportsHls             bool
-	SupportsRange           *bool
+	ClientFamily             string
+	DeviceType               string
+	CapabilityVersion        string
+	AllowTranscode           bool
+	SupportedContainers      []string
+	SupportedVideoCodecs     []string
+	SupportedAudioCodecs     []string
+	AutoTranscodeVideoCodecs []string
+	MaxVideoWidth            int
+	MaxVideoHeight           int
+	MaxVideoFPS              int
+	PreferredEngine          string
+	SupportedEngines         []string
+	PrefersFMP4              bool
+	SupportsHls              bool
+	SupportsRange            *bool
 
 	// Network Evidence
 	DownlinkKbps      int
@@ -52,18 +52,20 @@ type LegacyPlanningInput struct {
 	InternetValidated bool
 
 	// Host Snapshot
-	HostPressureBand string
-	AvailableEngines []string
-	PerformanceClass string
-	BenchmarkClass   string
+	HostPressureBand        string
+	AvailableEngines        []string
+	PerformanceClass        string
+	BenchmarkClass          string
+	HostEncoderCapabilities []playbackplanner.HostEncoderCapability
 
 	// Operator Policy
-	ForceIntent        string
-	MaxQualityRung     string
-	DisableTranscoding bool
-	MaxGlobalBitrate   int
-	StrictFreshness    bool
-	DVRWindowSeconds   int
+	ForceIntent           string
+	MaxQualityRung        string
+	DisableTranscoding    bool
+	MaxGlobalBitrate      int
+	StrictFreshness       bool
+	DVRWindowSeconds      int
+	ExperimentalAV1MPEGTS bool
 }
 
 // BuildPlaybackEvidence maps the legacy HTTP boundary inputs into the new pure domain model.
@@ -108,22 +110,22 @@ func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackE
 			BitrateConfidence: bitrateConfidence,
 		},
 		ClientEvidence: playbackplanner.ClientEvidence{
-			Family:                  input.ClientFamily,
-			DeviceType:              input.DeviceType,
-			CapabilityVersion:       input.CapabilityVersion,
-			AllowTranscode:          input.AllowTranscode,
-			SupportedContainers:     append([]string(nil), input.SupportedContainers...),
-			SupportedVideoCodecs:    append([]string(nil), input.SupportedVideoCodecs...),
-			SupportedAudioCodecs:    append([]string(nil), input.SupportedAudioCodecs...),
-			MaxVideoWidth:           input.MaxVideoWidth,
-			MaxVideoHeight:          input.MaxVideoHeight,
-			MaxVideoFPS:             input.MaxVideoFPS,
-			PreferredEngine:         input.PreferredEngine,
-			SupportedEngines:        append([]string(nil), input.SupportedEngines...),
-			PrefersFMP4:             input.PrefersFMP4,
-			PrefersFMP4ForTranscode: input.PrefersFMP4ForTranscode,
-			SupportsHls:             input.SupportsHls,
-			SupportsRange:           input.SupportsRange,
+			Family:                   input.ClientFamily,
+			DeviceType:               input.DeviceType,
+			CapabilityVersion:        input.CapabilityVersion,
+			AllowTranscode:           input.AllowTranscode,
+			SupportedContainers:      append([]string(nil), input.SupportedContainers...),
+			SupportedVideoCodecs:     append([]string(nil), input.SupportedVideoCodecs...),
+			SupportedAudioCodecs:     append([]string(nil), input.SupportedAudioCodecs...),
+			AutoTranscodeVideoCodecs: append([]string(nil), input.AutoTranscodeVideoCodecs...),
+			MaxVideoWidth:            input.MaxVideoWidth,
+			MaxVideoHeight:           input.MaxVideoHeight,
+			MaxVideoFPS:              input.MaxVideoFPS,
+			PreferredEngine:          input.PreferredEngine,
+			SupportedEngines:         append([]string(nil), input.SupportedEngines...),
+			PrefersFMP4:              input.PrefersFMP4,
+			SupportsHls:              input.SupportsHls,
+			SupportsRange:            input.SupportsRange,
 		},
 		NetworkEvidence: playbackplanner.NetworkEvidence{
 			DownlinkKbps:      input.DownlinkKbps,
@@ -131,18 +133,20 @@ func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackE
 			InternetValidated: input.InternetValidated,
 		},
 		HostSnapshot: playbackplanner.HostSnapshot{
-			PressureBand:     hostPressureBand,
-			AvailableEngines: append([]string(nil), input.AvailableEngines...),
-			PerformanceClass: perfClass,
-			BenchmarkClass:   input.BenchmarkClass,
+			PressureBand:        hostPressureBand,
+			AvailableEngines:    append([]string(nil), input.AvailableEngines...),
+			PerformanceClass:    perfClass,
+			BenchmarkClass:      input.BenchmarkClass,
+			EncoderCapabilities: append([]playbackplanner.HostEncoderCapability(nil), input.HostEncoderCapabilities...),
 		},
 		OperatorPolicy: playbackplanner.OperatorPolicy{
-			ForceIntent:        input.ForceIntent,
-			MaxQualityRung:     input.MaxQualityRung,
-			DisableTranscoding: input.DisableTranscoding,
-			MaxGlobalBitrate:   input.MaxGlobalBitrate,
-			StrictFreshness:    input.StrictFreshness,
-			DVRWindowSeconds:   input.DVRWindowSeconds,
+			ForceIntent:           input.ForceIntent,
+			MaxQualityRung:        input.MaxQualityRung,
+			DisableTranscoding:    input.DisableTranscoding,
+			MaxGlobalBitrate:      input.MaxGlobalBitrate,
+			StrictFreshness:       input.StrictFreshness,
+			DVRWindowSeconds:      input.DVRWindowSeconds,
+			ExperimentalAV1MPEGTS: input.ExperimentalAV1MPEGTS,
 		},
 	}
 	return ev, nil

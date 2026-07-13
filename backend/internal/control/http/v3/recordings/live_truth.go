@@ -62,6 +62,8 @@ type liveTruthResolution struct {
 	State        liveTruthState
 	Reason       string
 	ProblemFlags []string
+	ObservedAt   time.Time
+	ValidUntil   time.Time
 	// Stale marks a verified resolution that was served from a scan-truth entry
 	// older than the freshness window (stale-while-revalidate). The caller is
 	// expected to trigger a detached background re-probe for interactive requests.
@@ -122,11 +124,13 @@ func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bo
 			}
 			evt.Msg("Serving stale scan truth for live playback; revalidating in background")
 			return liveTruthResolution{
-				Truth:  liveTruthFromCapability(normalized, playback.MediaStatusReady),
-				Origin: liveTruthOriginScan,
-				State:  liveTruthStateVerified,
-				Reason: "stale_cache_hit",
-				Stale:  true,
+				Truth:      liveTruthFromCapability(normalized, playback.MediaStatusReady),
+				Origin:     liveTruthOriginScan,
+				State:      liveTruthStateVerified,
+				Reason:     "stale_cache_hit",
+				Stale:      true,
+				ObservedAt: liveTruthObservedAt(normalized),
+				ValidUntil: liveTruthValidUntil(normalized),
 			}
 		}
 		metrics.IncLiveTruthSource("scan", "cache_hit")
@@ -145,10 +149,12 @@ func resolveLiveTruthCapability(serviceRef string, cap scan.Capability, found bo
 			evt.Msg("Using persisted scan truth for live playback")
 		}
 		return liveTruthResolution{
-			Truth:  liveTruthFromCapability(normalized, playback.MediaStatusReady),
-			Origin: liveTruthOriginScan,
-			State:  liveTruthStateVerified,
-			Reason: "cache_hit",
+			Truth:      liveTruthFromCapability(normalized, playback.MediaStatusReady),
+			Origin:     liveTruthOriginScan,
+			State:      liveTruthStateVerified,
+			Reason:     "cache_hit",
+			ObservedAt: liveTruthObservedAt(normalized),
+			ValidUntil: liveTruthValidUntil(normalized),
 		}
 	}
 
@@ -197,14 +203,26 @@ func liveTruthFromCapability(cap scan.Capability, status playback.MediaStatus) p
 }
 
 func liveTruthFreshEnough(cap scan.Capability, now time.Time) bool {
-	anchor := cap.LastSuccess
-	if anchor.IsZero() {
-		anchor = cap.LastScan
-	}
+	anchor := liveTruthObservedAt(cap)
 	if anchor.IsZero() {
 		return true
 	}
 	return now.Sub(anchor) <= time.Duration(liveTruthFreshnessWindow.Load())
+}
+
+func liveTruthObservedAt(cap scan.Capability) time.Time {
+	if !cap.LastSuccess.IsZero() {
+		return cap.LastSuccess.UTC()
+	}
+	return cap.LastScan.UTC()
+}
+
+func liveTruthValidUntil(cap scan.Capability) time.Time {
+	observedAt := liveTruthObservedAt(cap)
+	if observedAt.IsZero() {
+		return time.Time{}
+	}
+	return observedAt.Add(time.Duration(liveTruthFreshnessWindow.Load()))
 }
 
 func unverifiedLiveTruth(serviceRef string, state liveTruthState, reason string, cap scan.Capability, flags []string, requestContext string) liveTruthResolution {
@@ -234,5 +252,7 @@ func unverifiedLiveTruth(serviceRef string, state liveTruthState, reason string,
 		State:        state,
 		Reason:       reason,
 		ProblemFlags: append([]string(nil), flags...),
+		ObservedAt:   liveTruthObservedAt(cap),
+		ValidUntil:   liveTruthValidUntil(cap),
 	}
 }

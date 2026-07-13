@@ -25,8 +25,7 @@ func TestMPEGTSDeniesAV1(t *testing.T) {
 }
 
 func TestMPEGTSCanCarryAV1WhenExperimentalFlagEnabled(t *testing.T) {
-	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
-	if !MPEGTS.CanCarry(codec.IDAV1) {
+	if !MPEGTS.CanCarryWithPolicy(codec.IDAV1, true) {
 		t.Fatalf("expected MPEGTS to carry av1 when the experimental TS flag is enabled")
 	}
 }

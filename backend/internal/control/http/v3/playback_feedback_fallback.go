@@ -31,24 +31,29 @@ type playbackFeedbackFallbackPlan struct {
 }
 
 func nextPlaybackFeedbackPlan(current model.ProfileSpec, serviceRef string) playbackFeedbackFallbackPlan {
+	return nextPlaybackFeedbackPlanWithResolver(current, serviceRef, profiles.Resolver{})
+}
+
+func nextPlaybackFeedbackPlanWithResolver(current model.ProfileSpec, serviceRef string, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
 	switch current.Name {
 	case profiles.ProfileSafari:
-		return nextSafariFeedbackPlan(current, serviceRef)
+		return nextSafariFeedbackPlanWithResolver(current, serviceRef, profileResolver)
 	default:
 		return buildPlaybackFeedbackRepairPlan(current)
 	}
 }
 
-func nextSafariFeedbackPlan(current model.ProfileSpec, serviceRef string) playbackFeedbackFallbackPlan {
-	if shouldPreferSafariTSFallbackForServiceRef(serviceRef) && !current.DisableSafariForceCopy {
-		return buildSafariFeedbackBrowserTSPlan(current)
+func nextSafariFeedbackPlanWithResolver(current model.ProfileSpec, serviceRef string, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
+	preferTS := shouldPreferSafariTSFallbackForServiceRefWithSnapshot(serviceRef, profileResolver.ConfigSnapshot().SafariForceCopyServiceRefs)
+	if preferTS && !current.DisableSafariForceCopy {
+		return buildSafariFeedbackBrowserTSPlan(current, profileResolver)
 	}
 
-	if shouldPreferSafariTSFallbackForServiceRef(serviceRef) {
-		return buildSafariFeedbackRepairTSPlan(current)
+	if preferTS {
+		return buildSafariFeedbackRepairTSPlan(current, profileResolver)
 	}
 
-	return buildSafariFeedbackDirtyPlan(current)
+	return buildSafariFeedbackDirtyPlan(current, profileResolver)
 }
 
 func buildPlaybackFeedbackRepairPlan(current model.ProfileSpec) playbackFeedbackFallbackPlan {
@@ -71,8 +76,8 @@ func buildPlaybackFeedbackRepairPlan(current model.ProfileSpec) playbackFeedback
 	}
 }
 
-func buildSafariFeedbackBrowserTSPlan(current model.ProfileSpec) playbackFeedbackFallbackPlan {
-	next := resolvePlaybackFeedbackProfile(profiles.ProfileSafari, safariFallbackBrowserUA, current.DVRWindowSec)
+func buildSafariFeedbackBrowserTSPlan(current model.ProfileSpec, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
+	next := resolvePlaybackFeedbackProfile(profiles.ProfileSafari, safariFallbackBrowserUA, current.DVRWindowSec, profileResolver)
 	next.DisableSafariForceCopy = true
 	return playbackFeedbackFallbackPlan{
 		id:      playbackFeedbackFallbackPlanSafariBrowserTS,
@@ -81,8 +86,8 @@ func buildSafariFeedbackBrowserTSPlan(current model.ProfileSpec) playbackFeedbac
 	}
 }
 
-func buildSafariFeedbackRepairTSPlan(current model.ProfileSpec) playbackFeedbackFallbackPlan {
-	next := resolvePlaybackFeedbackProfile(profiles.ProfileRepair, safariFallbackBrowserUA, current.DVRWindowSec)
+func buildSafariFeedbackRepairTSPlan(current model.ProfileSpec, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
+	next := resolvePlaybackFeedbackProfile(profiles.ProfileRepair, safariFallbackBrowserUA, current.DVRWindowSec, profileResolver)
 	next.Container = "mpegts"
 	next.Deinterlace = true
 	next.HWAccel = ""
@@ -99,16 +104,16 @@ func buildSafariFeedbackRepairTSPlan(current model.ProfileSpec) playbackFeedback
 	}
 }
 
-func buildSafariFeedbackDirtyPlan(current model.ProfileSpec) playbackFeedbackFallbackPlan {
+func buildSafariFeedbackDirtyPlan(current model.ProfileSpec, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
 	return playbackFeedbackFallbackPlan{
 		id:      playbackFeedbackFallbackPlanSafariDirty,
 		reason:  playbackFeedbackFallbackReasonSafariGeneralFirstFailure,
-		profile: resolvePlaybackFeedbackProfile(profiles.ProfileSafariDirty, "", current.DVRWindowSec),
+		profile: resolvePlaybackFeedbackProfile(profiles.ProfileSafariDirty, "", current.DVRWindowSec, profileResolver),
 	}
 }
 
-func resolvePlaybackFeedbackProfile(profileID, userAgent string, dvrWindowSec int) model.ProfileSpec {
-	next := profiles.Resolve(profileID, userAgent, dvrWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
+func resolvePlaybackFeedbackProfile(profileID, userAgent string, dvrWindowSec int, profileResolver profiles.Resolver) model.ProfileSpec {
+	next := profileResolver.Resolve(profileID, userAgent, dvrWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 	next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
 	return next
 }

@@ -765,7 +765,12 @@ func TestReportPlaybackFeedback_SafariForceCopyAllowlistFallsBackToBrowserTSBefo
 
 	writeFirstFrameMarker(t, hlsRoot, sid)
 
-	s := &Server{cfg: config.AppConfig{HLS: config.HLSConfig{Root: hlsRoot}}, v3Store: store, v3Bus: eventBus}
+	s := &Server{
+		cfg:             config.AppConfig{HLS: config.HLSConfig{Root: hlsRoot}},
+		v3Store:         store,
+		v3Bus:           eventBus,
+		profileResolver: profiles.LoadResolver(),
+	}
 	runtimeCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	require.NoError(t, s.SetRuntimeContext(runtimeCtx))
@@ -849,7 +854,12 @@ func TestReportPlaybackFeedback_SafariForceCopyAllowlistEscalatesToRepairAfterTS
 
 	writeFirstFrameMarker(t, hlsRoot, sid)
 
-	s := &Server{cfg: config.AppConfig{HLS: config.HLSConfig{Root: hlsRoot}}, v3Store: store, v3Bus: eventBus}
+	s := &Server{
+		cfg:             config.AppConfig{HLS: config.HLSConfig{Root: hlsRoot}},
+		v3Store:         store,
+		v3Bus:           eventBus,
+		profileResolver: profiles.LoadResolver(),
+	}
 	runtimeCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	require.NoError(t, s.SetRuntimeContext(runtimeCtx))

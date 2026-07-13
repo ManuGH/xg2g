@@ -343,11 +343,47 @@ func PublicProfileName(profile string) string {
 	}
 }
 
-// Resolve maps a requested profile and user agent to a concrete ProfileSpec.
-// dvrWindowSec controls the DVR window for DVR profiles; <=0 disables DVR.
-// hwaccelMode allows explicit GPU/CPU override (default: auto).
+// Resolver binds all profile decisions to one immutable configuration snapshot.
+// Production code should construct it at a composition root and pass it down.
+type Resolver struct {
+	config      ConfigSnapshot
+	initialized bool
+}
+
+func NewResolver(config ConfigSnapshot) Resolver {
+	return Resolver{config: config.clone(), initialized: true}
+}
+
+func LoadResolver() Resolver {
+	return NewResolver(LoadConfigSnapshot())
+}
+
+// IsInitialized reports whether the resolver was bound to an explicit
+// immutable snapshot. Composition roots use this to reject accidental
+// zero-value injection instead of silently discarding operator policy.
+func (r Resolver) IsInitialized() bool {
+	return r.initialized
+}
+
+func (r Resolver) Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, gpuBackend GPUBackend, hwaccelMode HWAccelMode) model.ProfileSpec {
+	return ResolveWithConfig(requested, userAgent, dvrWindowSec, cap, gpuBackend, hwaccelMode, r.ConfigSnapshot())
+}
+
+// ConfigSnapshot returns the immutable profile-policy snapshot bound to the
+// resolver. The zero value deliberately exposes environment-independent
+// defaults, matching Resolve's compatibility behavior.
+func (r Resolver) ConfigSnapshot() ConfigSnapshot {
+	if !r.initialized {
+		return DefaultConfigSnapshot()
+	}
+	return r.config.clone()
+}
+
+// Resolve is the compatibility facade for tests and out-of-tree consumers.
+// Production call sites use an injected Resolver so planning never depends on
+// package-init environment state.
 func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, gpuBackend GPUBackend, hwaccelMode HWAccelMode) model.ProfileSpec {
-	return ResolveWithConfig(requested, userAgent, dvrWindowSec, cap, gpuBackend, hwaccelMode, processConfigSnapshot)
+	return Resolver{}.Resolve(requested, userAgent, dvrWindowSec, cap, gpuBackend, hwaccelMode)
 }
 
 // ResolveWithConfig maps a requested profile to a concrete ProfileSpec using

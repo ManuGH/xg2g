@@ -16,6 +16,20 @@ func hasValidEvidence(ev PlaybackEvidence) bool {
 	if ev.SourceTruth.VideoCodec == "unknown" || ev.SourceTruth.AudioCodec == "unknown" {
 		return false
 	}
+	seenEncoderCodecs := make(map[string]struct{}, len(ev.HostSnapshot.EncoderCapabilities))
+	for _, encoder := range ev.HostSnapshot.EncoderCapabilities {
+		codec := strings.ToLower(strings.TrimSpace(encoder.Codec))
+		if codec == "" {
+			return false
+		}
+		if _, duplicate := seenEncoderCodecs[codec]; duplicate {
+			// The evidence hash treats encoder-capability order as non-semantic.
+			// Reject duplicate codec rows so Plan() can never resolve contradictory
+			// last-wins values from two inputs with the same canonical hash.
+			return false
+		}
+		seenEncoderCodecs[codec] = struct{}{}
+	}
 	return true
 }
 

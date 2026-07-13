@@ -9,6 +9,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPickPlaybackInfoAutoProfile_UsesAV1OnlyOnHealthyHost(t *testing.T) {
@@ -108,7 +109,7 @@ func TestAlignAutoCodecDecision_PersistsNeutralSelectionTrace(t *testing.T) {
 	alignAutoCodecDecision(PlaybackInfoRequest{
 		RequestedProfile: "quality",
 		Capabilities:     &resolvedCaps,
-	}, resolvedCaps, hostRuntime, dec)
+	}, resolvedCaps, hostRuntime, profiles.Resolver{}, dec)
 
 	if dec.Trace.AutoCodecPolicy != "host_aware_bottleneck" {
 		t.Fatalf("expected host-aware policy, got %#v", dec.Trace)
@@ -125,6 +126,27 @@ func TestAlignAutoCodecDecision_PersistsNeutralSelectionTrace(t *testing.T) {
 	if dec.Trace.AutoCodecBenchClass != "strong" {
 		t.Fatalf("expected benchmark class strong, got %#v", dec.Trace)
 	}
+}
+
+func TestPlannerAutoTranscodeVideoCodecsRequiresExplicitRequestCapabilities(t *testing.T) {
+	resolved := capabilities.PlaybackCapabilities{
+		ClientFamilyFallback: playbackprofile.ClientSafariNative,
+		VideoCodecs:          []string{"hevc", "h264"},
+	}
+	require.Empty(t, plannerAutoTranscodeVideoCodecs(PlaybackInfoRequest{}, resolved, false))
+}
+
+func TestPlannerAutoTranscodeVideoCodecsKeepsNativeHEVCWithoutSmoothSignal(t *testing.T) {
+	requestCaps := capabilities.PlaybackCapabilities{VideoCodecs: []string{"hevc", "h264"}}
+	resolved := capabilities.PlaybackCapabilities{
+		ClientFamilyFallback: playbackprofile.ClientSafariNative,
+		VideoCodecs:          []string{"hevc", "h264"},
+	}
+
+	require.Equal(t,
+		[]string{"hevc", "h264"},
+		plannerAutoTranscodeVideoCodecs(PlaybackInfoRequest{Capabilities: &requestCaps}, resolved, false),
+	)
 }
 
 func boolPtr(v bool) *bool {

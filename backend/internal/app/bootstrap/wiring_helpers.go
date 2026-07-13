@@ -10,6 +10,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
+	sessionmodel "github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
@@ -17,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/infra/platform"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/google/uuid"
@@ -48,7 +50,8 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 		return stub.NewAdapter()
 	}
 
-	adapter := ffmpeg.NewLocalAdapter(
+	adapterConfig := ffmpeg.LoadAdapterConfig(cfg.Enigma2.AnalyzeDuration, cfg.Enigma2.ProbeSize)
+	adapter := ffmpeg.NewLocalAdapterWithConfig(
 		cfg.FFmpeg.Bin,
 		cfg.FFmpeg.FFprobeBin,
 		cfg.HLS.Root,
@@ -64,6 +67,7 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 		cfg.Timeouts.TranscodeStart,
 		cfg.Timeouts.TranscodeNoProgress,
 		cfg.FFmpeg.VaapiDevice,
+		adapterConfig,
 	)
 	adapter.LowLatencyHLS = cfg.HLS.LowLatency
 	adapter.ReadySegments = cfg.HLS.ReadySegments
@@ -105,6 +109,7 @@ func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orchest
 
 	host, _ := os.Hostname()
 	workerOwner := fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.New().String())
+	profileResolver := profiles.LoadResolver()
 
 	orch := &worker.Orchestrator{
 		Store:               inputs.Store,
@@ -133,6 +138,9 @@ func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orchest
 				Ports:   append([]int(nil), cfg.Network.Outbound.Allow.Ports...),
 				Schemes: append([]string(nil), cfg.Network.Outbound.Allow.Schemes...),
 			},
+		},
+		RecoveryProfileResolver: func(profileID string, dvrWindowSec int) sessionmodel.ProfileSpec {
+			return profileResolver.Resolve(profileID, "", dvrWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 		},
 	}
 	orch.Pipeline = inputs.Pipeline

@@ -42,7 +42,7 @@ func (s *Server) tickSessionRuntimePolicy(ctx context.Context, store SessionStat
 		transition = runtimepolicy.PlanSessionTransition(prev, next, decision)
 		storeSessionRuntimePolicyState(rec, next)
 		if !transition.IsZero() {
-			applied, applyErr := applySessionRuntimePolicyTransition(rec, transition, now.UTC())
+			applied, applyErr := applySessionRuntimePolicyTransition(rec, transition, now.UTC(), s.profileResolver)
 			if applyErr != nil {
 				return applyErr
 			}
