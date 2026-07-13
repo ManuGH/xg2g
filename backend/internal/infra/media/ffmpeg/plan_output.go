@@ -92,6 +92,11 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		segmentDurationSec: a.SegmentSeconds,
 		listSize:           30, // enforced minimum to prevent stuttering during network retries
 	}
+	if spec.Mode == ports.ModeLive && spec.Format == ports.FormatHLS &&
+		profiles.UsesQuickStartHLSSegments(spec.Profile.Name) &&
+		layout.segmentDurationSec > config.QuickStartHLSSegmentSeconds {
+		layout.segmentDurationSec = config.QuickStartHLSSegmentSeconds
+	}
 	if a.LowLatencyHLS && strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") && layout.segmentDurationSec > llhlsSegmentSeconds {
 		// LL-HLS: short segments keep the playlist window tight; parts are
 		// cut inside them via frag_duration (see appendLiveHLSArgs). GOP
@@ -99,8 +104,10 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		// aligned with segment boundaries.
 		layout.segmentDurationSec = llhlsSegmentSeconds
 	}
-	if shouldUseShortFMP4StartupSegments(spec) && layout.segmentDurationSec > safariDirtyHLSTimeSec {
-		layout.segmentDurationSec = safariDirtyHLSTimeSec
+	if shouldUseShortFMP4StartupSegments(spec) {
+		if layout.segmentDurationSec > safariDirtyHLSTimeSec {
+			layout.segmentDurationSec = safariDirtyHLSTimeSec
+		}
 		layout.initSegmentDurationSec = min(safariDirtyHLSInitTimeSec, layout.segmentDurationSec)
 	}
 	if layout.segmentDurationSec <= 0 {
@@ -174,7 +181,12 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 // copy sources with unknown GOPs fall back to the hls muxer (the HasParts
 // gate then keeps the playlist plain).
 func (a *LocalAdapter) useCMAFSegmenter(spec ports.StreamSpec) bool {
-	return false
+	return a.ExperimentalCMAFSegmenter &&
+		a.LowLatencyHLS &&
+		spec.Mode == ports.ModeLive &&
+		spec.Format == ports.FormatHLS &&
+		spec.Profile.TranscodeVideo &&
+		strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
 }
 
 // appendLiveCMAFStreamArgs emits a single fragmented-MP4 stream on stdout:

@@ -44,6 +44,7 @@ jobs:
             {
               echo "range=manual"
               echo "webui_gate_needed=true"
+              echo "transcode_gate_needed=true"
               echo "changed_count=manual"
               echo "skip_reason="
             } >> "$GITHUB_OUTPUT"
@@ -93,7 +94,14 @@ jobs:
             webui_gate_needed=true
           fi
 
-          if [ "$webui_gate_needed" = "false" ]; then
+          # Golden-sample transcode gate: pipeline invariants (speed, drops,
+          # DAR, 50p, BT.709, A/V sync) whenever the ffmpeg pipeline changes.
+          transcode_gate_needed=false
+          if printf '%s\n' "$changed_files" | grep -Eq '^(backend/internal/infra/media/ffmpeg/|scripts/quality-gate\.sh$|\.github/workflows/pr-required-gates\.yml$)'; then
+            transcode_gate_needed=true
+          fi
+
+          if [ "$webui_gate_needed" = "false" ] && [ "$transcode_gate_needed" = "false" ]; then
             if [ -z "$skip_reason" ]; then
               skip_reason="no_relevant_changes"
             fi
@@ -102,6 +110,7 @@ jobs:
           {
             echo "range=$RANGE"
             echo "webui_gate_needed=$webui_gate_needed"
+            echo "transcode_gate_needed=$transcode_gate_needed"
             echo "changed_count=${changed_count:-0}"
             echo "skip_reason=$skip_reason"
           } >> "$GITHUB_OUTPUT"
@@ -109,6 +118,7 @@ jobs:
           echo "Diff range: $RANGE"
           echo "PR changed files (GitHub): ${changed_count:-0}"
           echo "WebUI gate needed: $webui_gate_needed"
+          echo "Transcode gate needed: $transcode_gate_needed"
           if [ -n "$skip_reason" ]; then
             echo "skip_reason=$skip_reason"
           fi
@@ -160,3 +170,21 @@ jobs:
       - name: WebUI gate skipped by scope
         if: steps.scope.outputs.webui_gate_needed != 'true'
         run: echo "No WebUI/browser-gate-relevant changes; canonical WebUI PR gate skipped by scope."
+
+      - name: Transcode quality gate (golden sample)
+        if: steps.scope.outputs.transcode_gate_needed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          # h264: full gate incl. realtime speed. AV1: correctness only —
+          # CI CPUs cannot hold realtime software AV1; VAAPI speed is proven
+          # on the staging host (see scripts/quality-gate.sh header).
+          XG2G_QG_ENCODER=libx264 XG2G_QG_MIN_SPEED=1.02 scripts/quality-gate.sh
+          XG2G_QG_ENCODER=libsvtav1 XG2G_QG_ENFORCE_SPEED=0 XG2G_QG_MAX_DUP=1 scripts/quality-gate.sh
+
+      - name: Transcode gate skipped by scope
+        if: steps.scope.outputs.transcode_gate_needed != 'true'
+        run: echo "No transcode-pipeline changes; golden-sample gate skipped by scope."

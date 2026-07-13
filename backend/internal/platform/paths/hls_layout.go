@@ -3,8 +3,8 @@ package paths
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
+	"syscall"
 )
 
 const (
@@ -20,11 +20,15 @@ const minShmFreeBytes = 32 * 1024 * 1024
 // It prefers /dev/shm (tmpfs) on Linux if available and has sufficient free space,
 // otherwise falls back to hlsRoot on disk.
 func LiveHLSRoot(hlsRoot string) string {
-	if runtime.GOOS != "linux" {
-		return strings.TrimSpace(hlsRoot)
-	}
-	if shmFreeBytes() >= minShmFreeBytes {
-		return "/dev/shm/xg2g"
+	if stat, err := os.Stat("/dev/shm"); err == nil && stat.IsDir() {
+		var st syscall.Statfs_t
+		if err := syscall.Statfs("/dev/shm", &st); err == nil {
+			freeBytes := uint64(st.Bavail) * uint64(st.Bsize) // #nosec G115 //nolint:gosec // G115: multiplication safe at known scale
+			if freeBytes >= minShmFreeBytes {
+				return "/dev/shm/xg2g"
+			}
+		}
+
 	}
 	return strings.TrimSpace(hlsRoot)
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 )
 
-//nolint:gosec // G101: this is a configuration schema key mapping, not a hardcoded credential
+// #nosec G101 //nolint:gosec // G101: this is a configuration schema key mapping, not a hardcoded credential
 var openWebIFAliases = map[string]string{
 	"enigma2.baseUrl":         "openWebIF.baseUrl",
 	"enigma2.username":        "openWebIF.username",

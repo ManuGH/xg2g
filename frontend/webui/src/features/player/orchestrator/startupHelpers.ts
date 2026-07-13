@@ -233,7 +233,8 @@ export function getStoredDvrWindowSec(): number | undefined {
     if (dvrSetting === '1h') return 3600;
     if (dvrSetting === '2h') return 7200;
     if (dvrSetting === '4h') return 14400;
-  } catch { /* localStorage unavailable */ }
+  } catch { /* localStorage may throw in private browsing */ }
+
   return undefined;
 }
 
@@ -243,6 +244,8 @@ export function buildLiveIntentBody(
   requestCaps: CapabilitySnapshot,
   liveMode: NonNullable<VodStreamMode>,
   dvrWindowSecOverride?: number,
+  explicitProfile?: string,
+
 ): IntentRequest {
   const intentParams: Record<string, string> = {
     playback_mode: liveMode,
@@ -253,6 +256,17 @@ export function buildLiveIntentBody(
   if (typeof effectiveDvrWindowSec === 'number') {
     intentParams.dvr_window_sec = String(effectiveDvrWindowSec);
   }
+
+  try {
+    const multiAudio = window.localStorage.getItem('xg2g.settings.multiAudio');
+    if (multiAudio === 'true') {
+      intentParams.multi_audio = 'true';
+    } else {
+      intentParams.multi_audio = 'false';
+    }
+  } catch { /* localStorage may throw in private browsing */ }
+
+
   if (requestCaps.clientFamilyFallback) {
     intentParams.client_family = requestCaps.clientFamilyFallback;
   }
@@ -270,14 +284,19 @@ export function buildLiveIntentBody(
   if (capHash) {
     intentParams.capHash = capHash;
   }
+  if (explicitProfile && explicitProfile !== 'auto') {
+    intentParams.profile = explicitProfile;
+  }
 
-  return {
+  const req: IntentRequest = {
     type: 'stream.start',
     serviceRef,
     playbackDecisionToken: decisionToken,
     client: requestCaps,
     ...(Object.keys(intentParams).length > 0 ? { params: intentParams } : {}),
   };
+
+  return req;
 }
 
 export function resolveResumeStateFromContract(

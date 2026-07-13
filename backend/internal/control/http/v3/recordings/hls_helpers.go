@@ -54,7 +54,7 @@ func RecordingLivePlaylistReady(cacheDir string) (string, bool) {
 			continue
 		}
 
-		//nolint:gosec // G703: path is strictly bounded to cache directory by fs.ConfineRelPath
+		// #nosec G703 //nolint:gosec // G703: path is strictly bounded to cache directory by fs.ConfineRelPath
 		if _, err := os.Stat(safeSeg); err == nil {
 			hasSegment = true
 			break

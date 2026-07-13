@@ -116,6 +116,13 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	} else if intent.Params["dvr"] == "false" || intent.Params["dvr_window"] == "false" {
 		startupProfile.DVRWindowSec = 0
 	}
+	switch intent.Params["multi_audio"] {
+	case "true":
+		startupProfile.EnableMultiAudio = true
+	case "false":
+		startupProfile.EnableMultiAudio = false
+	}
+
 	videoQualityRung := model.TraceVideoQualityRungFromProfile(startupProfile)
 	now := time.Now()
 	session := lifecycle.NewSessionRecord(now)

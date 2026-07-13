@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, useReducer } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from './lib/hlsRuntime';
@@ -14,7 +14,8 @@ import type {
   PlayerStatus,
   V3SessionSnapshot,
   HlsInstanceRef,
-  VideoElementRef
+  VideoElementRef,
+  PlayerAudioTrack,
 } from '../../types/v3-player';
 import { useLiveSessionController } from './useLiveSessionController';
 import { usePlaybackEngine } from './usePlaybackEngine';
@@ -46,8 +47,10 @@ import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem'
 import { useTvInitialFocus } from '../../hooks/useTvInitialFocus';
 import {
   createInitialPlaybackDomainState,
-  playbackMachine,
 } from './orchestrator/playbackMachine';
+import { usePlaybackMachineRuntime } from './orchestrator/usePlaybackMachineRuntime';
+import type { PlaybackCommand } from './orchestrator/playbackTypes';
+import { sessionTimeline } from './orchestrator/sessionTimeline';
 import type { VodStreamMode } from './orchestrator/playbackTypes';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
 import {
@@ -90,7 +93,7 @@ import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
 import { startResumePlaybackRecovery } from './orchestrator/resumePlaybackRecovery';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
-import { useDelayedFlag } from './orchestrator/useDelayedFlag';
+
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
 import { useLiveNowPlaying } from './useLiveNowPlaying';
@@ -139,6 +142,7 @@ export interface V3PlayerViewState {
   statusLabel: string;
   statusChipLabel: string;
   statusChipState: 'live' | 'error' | 'idle';
+  channelLogoUrl: string | null;
   statsRows: V3PlayerLabeledValue[];
   showNativeBufferingMask: boolean;
   hideVideoElement: boolean;
@@ -151,6 +155,8 @@ export interface V3PlayerViewState {
   spinnerEyebrow: string;
   spinnerLabel: string;
   spinnerSupport: string;
+  startupPhaseSteps: Array<{ key: string; label: string; state: 'done' | 'active' | 'pending' }>;
+  startupProgressPercent: number;
   startupElapsedLabel: string;
   showOverlayStopAction: boolean;
   overlayStopLabel: string;
@@ -172,6 +178,8 @@ export interface V3PlayerViewState {
   seekForward15mLabel: string;
   playPauseLabel: string;
   playPauseIcon: string;
+  ttffBadgeLabel: string | null;
+  ttffTitle: string | null;
   seekableStart: number;
   seekableEnd: number;
   startTimeDisplay: string;
@@ -219,6 +227,9 @@ export interface V3PlayerViewState {
   resumeActionLabel: string;
   startOverLabel: string;
   resumePositionSeconds: number | null;
+  explicitProfile: string;
+  audioTracks: PlayerAudioTrack[];
+  activeAudioTrack: number;
   playback: {
     durationSeconds: number | null;
   };
@@ -228,6 +239,7 @@ export interface PlaybackOrchestratorActions {
   stopStream(skipClose?: boolean): Promise<void>;
   retry(): Promise<void>;
   seekBy(deltaSeconds: number): void;
+  changeAudioTrack(trackId: number): void;
   seekTo(positionSeconds: number): void;
   seekToLiveEdge(): void;
   togglePlayPause(): void;
@@ -244,6 +256,7 @@ export interface PlaybackOrchestratorActions {
   toggleErrorDetails(): void;
   resumeFrom(positionSeconds: number): void;
   startOver(): void;
+  changeProfile(profile: string): void;
 }
 
 export interface UsePlaybackOrchestratorResult {
@@ -273,11 +286,70 @@ export function usePlaybackOrchestrator(
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
   );
+  const [explicitProfile, setExplicitProfile] = useState<string>(() => {
+    try {
+      return localStorage.getItem('xg2g.player.explicitProfile') || 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+  const ttffStartT0Ref = useRef<number | null>(null);
+  const ttffManifestT1Ref = useRef<number | null>(null);
+  const [ttffMetrics, setTtffMetrics] = useState<{
+    ttffMs: number;
+    manifestMs: number;
+    bufferMs: number;
+  } | null>(null);
+
+  const [audioTracks, setAudioTracks] = useState<PlayerAudioTrack[]>([]);
+  const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
+
+  const handleAttemptStarted = useCallback(() => {
+    ttffStartT0Ref.current = performance.now();
+    ttffManifestT1Ref.current = null;
+    setTtffMetrics(null);
+  }, []);
+
+  const handlePlaybackMilestone = useCallback((milestone: 'manifest' | 'firstFrame') => {
+    const startT0 = ttffStartT0Ref.current;
+    if (startT0 === null) return;
+
+    const now = performance.now();
+    if (milestone === 'manifest') {
+      if (ttffManifestT1Ref.current === null) {
+        ttffManifestT1Ref.current = now;
+        debugLog(`[V3Player] TTFF Milestone: Manifest loaded in ${Math.round(now - startT0)}ms`);
+      }
+    } else if (milestone === 'firstFrame') {
+      const manifestT1 = ttffManifestT1Ref.current ?? now;
+      const ttffMs = Math.round(now - startT0);
+      const manifestMs = Math.round(manifestT1 - startT0);
+      const bufferMs = Math.round(now - manifestT1);
+
+      setTtffMetrics({ ttffMs, manifestMs, bufferMs });
+      ttffStartT0Ref.current = null;
+
+      telemetry.emit('ui.player.ttff', {
+        ttffMs,
+        manifestMs,
+        bufferMs,
+        playbackMode: playbackStateRef.current.playbackMode,
+        serviceRef: sRef,
+      });
+
+      debugLog(`[V3Player] TTFF Complete: ${ttffMs}ms (Manifest: ${manifestMs}ms, Buffer: ${bufferMs}ms)`);
+    }
+  }, [sRef]);
+
+  const executeCommandRef = useRef<((cmd: PlaybackCommand) => void) | null>(null);
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
-  const [playbackState, dispatchPlayback] = useReducer(
-    playbackMachine,
-    requestedDuration,
-    createInitialPlaybackDomainState,
+  const [playbackState, dispatchPlayback] = usePlaybackMachineRuntime(
+    () => createInitialPlaybackDomainState(requestedDuration),
+    useCallback((command) => {
+      if (executeCommandRef.current) {
+        executeCommandRef.current(command);
+      }
+    }, []),
   );
   const playbackStateRef = useRef(playbackState);
   const {
@@ -295,6 +367,7 @@ export function usePlaybackOrchestrator(
     trackedEpoch: playbackState.epoch,
     dispatchPlayback,
     requestedDuration,
+    onAttemptStarted: handleAttemptStarted,
   });
 
   const {
@@ -740,10 +813,14 @@ export function usePlaybackOrchestrator(
     reportError,
     waitForSessionReady,
     shouldPreferNativeHls: shouldPreferNativeWebKitHls,
+    revealHoldMs: props.revealHoldMs,
     setStats,
     setStatus,
     clearPlaybackFailure,
-    reportPlaybackFailure
+    reportPlaybackFailure,
+    onPlaybackMilestone: handlePlaybackMilestone,
+    onAudioTracksUpdated: setAudioTracks,
+    onAudioTrackSwitched: setActiveAudioTrack,
   });
 
   // --- Core Helpers & Wrappers (Memoized) ---
@@ -912,11 +989,16 @@ export function usePlaybackOrchestrator(
 
       try {
         const maxMetaRetries = 20;
-        requestCaps = await gatherPlaybackCapabilitiesForPlayer('recording');
+        const [capabilities, networkProbe] = await Promise.all([
+          gatherPlaybackCapabilitiesForPlayer('recording'),
+          measurePlaybackNetwork(apiBase),
+        ]);
+        requestCaps = capabilities;
         const requestContext = applyPlaybackNetworkProbe(
           requestCaps,
           gatherPlaybackClientContext(),
-          await measurePlaybackNetwork(apiBase),
+          networkProbe,
+
         );
         if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
         const requestProfile = resolvePlaybackRequestProfile(
@@ -1238,11 +1320,15 @@ export function usePlaybackOrchestrator(
         let liveMode: VodStreamMode = null;
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
 
-        const requestCaps = await gatherPlaybackCapabilitiesForPlayer('live');
+        const [requestCaps, networkProbe] = await Promise.all([
+          gatherPlaybackCapabilitiesForPlayer('live'),
+          measurePlaybackNetwork(apiBase),
+        ]);
         const requestContext = applyPlaybackNetworkProbe(
           requestCaps,
           gatherPlaybackClientContext(),
-          await measurePlaybackNetwork(apiBase),
+          networkProbe,
+
         );
         if (isStalePlaybackEpoch(playbackEpoch)) return;
         const requestProfile = resolvePlaybackRequestProfile(
@@ -1380,7 +1466,7 @@ export function usePlaybackOrchestrator(
         }
         liveEngine = engineDecision.engine;
 
-        const intentBody = buildLiveIntentBody(ref, liveDecisionToken, requestCaps, liveMode);
+        const intentBody = buildLiveIntentBody(ref, liveDecisionToken, requestCaps, liveMode, undefined, explicitProfile);
         sessionEpoch = allocateSessionEpoch(playbackEpoch);
 
         // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
@@ -1508,6 +1594,10 @@ export function usePlaybackOrchestrator(
           phase: 'starting',
           requestId: intentRequestId ?? null,
         });
+        // From here the backend is tuning + spinning up the transcoder; surface
+        // that as its own startup phase ('priming') so the overlay can separate
+        // "connecting" from "transcoder starting" from "buffering".
+        setStatus('priming');
         const session = await waitForSessionReady(newSessionId);
         if (isStaleSessionEpoch(playbackEpoch, sessionEpoch)) {
           await sendStopIntent(newSessionId);
@@ -1587,6 +1677,55 @@ export function usePlaybackOrchestrator(
     }
   }, [stopStream, startStream]);
   // --- Effects ---
+  executeCommandRef.current = useCallback((command: PlaybackCommand) => {
+    switch (command.type) {
+      case 'command.timeline.record':
+        sessionTimeline.record(command.kind as any, command.detail);
+        break;
+      case 'command.timeline.begin_attempt':
+        sessionTimeline.beginAttempt(command.epoch);
+        break;
+      case 'command.timeline.end_attempt':
+        sessionTimeline.endAttempt(command.reason);
+        break;
+      case 'command.timeline.report':
+        telemetry.emit('ui.player.timeline', { reason: command.reason, events: sessionTimeline.describe() });
+        break;
+      case 'command.playback.start':
+        void startStream(command.serviceRef);
+        break;
+      case 'command.playback.stop':
+        void stopStream(!command.notifyClose);
+        break;
+      case 'command.telemetry.emit':
+        telemetry.emit(command.eventName as any, command.payload);
+        break;
+      case 'command.playback.schedule_auto_fallback':
+        setTimeout(() => {
+          if (!isStalePlaybackEpoch(command.epoch)) {
+            dispatchPlayback({
+              type: 'intent.start.requested',
+              epoch: command.epoch,
+              kind: src ? 'src' : (playbackStateRef.current.playbackMode === 'VOD' ? 'vod' : 'live'),
+              serviceRef: sRef,
+              recordingId: recordingId || undefined,
+              srcUrl: src || undefined,
+              explicitProfile: command.profile,
+            });
+          }
+        }, command.delayMs);
+        break;
+    }
+  }, [
+    startStream,
+    stopStream,
+    dispatchPlayback,
+    isStalePlaybackEpoch,
+    sRef,
+    recordingId,
+    src,
+  ]);
+
   // Update sRef on channel change
   useEffect(() => {
     if (channel) {
@@ -1602,9 +1741,17 @@ export function usePlaybackOrchestrator(
     const hasSource = !!(src || recordingId || normalizedRef);
     if (hasSource) {
       mounted.current = true;
-      startStream(normalizedRef || undefined);
+      dispatchPlayback({
+        type: 'intent.start.requested',
+        epoch: allocatePlaybackEpoch(),
+        kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+        serviceRef: normalizedRef || undefined,
+        recordingId: recordingId || undefined,
+        srcUrl: src || undefined,
+        explicitProfile: explicitProfile,
+      });
     }
-  }, [autoStart, src, recordingId, sRef, startStream]);
+  }, [autoStart, src, recordingId, sRef, explicitProfile, allocatePlaybackEpoch, dispatchPlayback]);
 
   useEffect(() => {
     dispatchPlayback({
@@ -1759,6 +1906,10 @@ export function usePlaybackOrchestrator(
           debugWarn('[V3Player] Browser resume play blocked', err);
         }
       },
+      onFailed: () => {
+        debugWarn('[V3Player] Browser resume play failed to advance, retrying session');
+        void handleRetry();
+      },
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
 
@@ -1836,6 +1987,10 @@ export function usePlaybackOrchestrator(
           debugWarn('[V3Player] Reconnect resume play blocked', err);
         }
       },
+      onFailed: () => {
+        debugWarn('[V3Player] Reconnect resume play failed to advance, retrying session');
+        void handleRetry();
+      },
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, setStatus, videoRef]);
 
@@ -1894,6 +2049,32 @@ export function usePlaybackOrchestrator(
     isOverlayStartupStatus
       ? resolveStartupOverlaySupport(sessionProfileReason, t, overlayStatus)
       : '';
+  // Startup phase stepper: map the coarse player status onto the three
+  // user-facing startup stages so the overlay can show WHERE the start
+  // currently is instead of a generic indeterminate spinner.
+  //   connect   -> intent/tuner handshake ('starting')
+  //   transcode -> backend session spin-up ('priming' | 'building')
+  //   buffer    -> first segments arriving ('buffering' | 'recovering')
+  const startupPhaseIndex =
+    overlayStatus === 'buffering' || overlayStatus === 'recovering'
+      ? 2
+      : overlayStatus === 'priming' || overlayStatus === 'building'
+        ? 1
+        : 0;
+  const startupPhaseSteps = [
+    { key: 'connect', label: t('player.startupPhases.connect', { defaultValue: 'Connect' }) },
+    { key: 'transcode', label: t('player.startupPhases.transcode', { defaultValue: 'Transcode' }) },
+    { key: 'buffer', label: t('player.startupPhases.buffer', { defaultValue: 'Buffer' }) },
+  ].map((step, index) => ({
+    ...step,
+    state:
+      index < startupPhaseIndex
+        ? ('done' as const)
+        : index === startupPhaseIndex
+          ? ('active' as const)
+          : ('pending' as const),
+  }));
+  const startupProgressPercent = [22, 58, 86][startupPhaseIndex] ?? 22;
   const isBufferingOverlayActive =
     (status === 'buffering' || status === 'recovering') && showBufferingOverlay;
   const showStartupOverlay =
@@ -1908,7 +2089,9 @@ export function usePlaybackOrchestrator(
   // hideVideoElement) are derived separately and are NOT debounced, so delaying the
   // card can never expose a black frame. We only debounce immediate startup;
   // buffering/recovering overlays are already debounced by useBufferingOverlay.
-  const delayedImmediateStartup = useDelayedFlag(isImmediateStartupStatus, 500);
+  // Use the immediate flag directly so the waiting badge appears instantly
+  // instead of flashing the player background on startup.
+  const delayedImmediateStartup = isImmediateStartupStatus;
   const showSpinnerCard =
     delayedImmediateStartup ||
     isBufferingOverlayActive ||
@@ -2037,7 +2220,14 @@ export function usePlaybackOrchestrator(
   // Stage 0 capability gate readout for the Stats panel (paste-free device check).
   const mseAv1Readout = useMemo(() => formatManagedMseAv1(getManagedMseAv1Support()), []);
 
+  const ttffReadout = ttffMetrics
+    ? `${(ttffMetrics.ttffMs / 1000).toFixed(2)}s (${ttffMetrics.manifestMs}ms manifest + ${ttffMetrics.bufferMs}ms buffer)`
+    : status === 'starting' || status === 'buffering'
+      ? t('player.measuring', { defaultValue: 'Messen…' })
+      : '-';
+
   const statsRows: V3PlayerLabeledValue[] = [
+    { label: t('player.ttff', { defaultValue: 'Startzeit (TTFF)' }), value: ttffReadout },
     { label: t('player.av1Mms', { defaultValue: 'AV1/MMS' }), value: mseAv1Readout },
     { label: t('common.session', { defaultValue: 'Session' }), value: effectiveSessionId || '-' },
     { label: t('common.requestId', { defaultValue: 'Request ID' }), value: sessionPlaybackTrace?.requestId || traceId },
@@ -2136,12 +2326,15 @@ export function usePlaybackOrchestrator(
     showStartupBackdrop: useMinimalStartupChrome,
     showStartupOverlay,
     showSpinnerCard,
+    channelLogoUrl: channel?.logoUrl ?? null,
     useNativeBufferingSafeOverlay,
     overlayStatusLabel: t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus }),
     overlayStatusState: overlayStatus === 'buffering' ? 'live' : 'idle',
     spinnerEyebrow: t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' }),
     spinnerLabel,
     spinnerSupport,
+    startupPhaseSteps,
+    startupProgressPercent,
     startupElapsedLabel: t('player.startupElapsed', {
       defaultValue: 'Wait {{seconds}}s',
       seconds: startupElapsedSeconds,
@@ -2166,6 +2359,10 @@ export function usePlaybackOrchestrator(
     seekForward15mLabel: t('player.seekForward15m'),
     playPauseLabel: isPlaying ? t('player.pause') : t('player.play'),
     playPauseIcon: isPlaying ? '⏸' : '▶',
+    ttffBadgeLabel: ttffMetrics ? `${(ttffMetrics.ttffMs / 1000).toFixed(2)}s` : null,
+    ttffTitle: ttffMetrics
+      ? `TTFF: ${ttffMetrics.ttffMs}ms (${ttffMetrics.manifestMs}ms manifest + ${ttffMetrics.bufferMs}ms decode)`
+      : null,
     seekableStart,
     seekableEnd,
     startTimeDisplay,
@@ -2217,6 +2414,9 @@ export function usePlaybackOrchestrator(
     resumeActionLabel: t('player.resumeAction'),
     startOverLabel: t('player.startOver'),
     resumePositionSeconds: resumeState?.posSeconds ?? null,
+    explicitProfile,
+    audioTracks,
+    activeAudioTrack,
     playback: {
       durationSeconds,
     },
@@ -2226,6 +2426,18 @@ export function usePlaybackOrchestrator(
     retry: handleRetry,
     seekBy,
     seekTo,
+    changeAudioTrack(trackId: number) {
+      if (hlsRef.current) {
+        hlsRef.current.audioTrack = trackId;
+      } else if (videoRef.current && 'audioTracks' in videoRef.current) {
+        const tracks = (videoRef.current as any).audioTracks;
+        if (tracks) {
+          for (let i = 0; i < tracks.length; i++) {
+            tracks[i].enabled = (i === trackId);
+          }
+        }
+      }
+    },
     seekToLiveEdge,
     togglePlayPause,
     updateServiceRef: setSRef,
@@ -2252,6 +2464,25 @@ export function usePlaybackOrchestrator(
     startOver() {
       seekWhenReady(0);
       setShowResumeOverlay(false);
+    },
+    changeProfile(profile: string) {
+      setExplicitProfile(profile);
+      try {
+        localStorage.setItem('xg2g.player.explicitProfile', profile);
+      } catch {
+        // ignore
+      }
+      if (hasActivePlayback()) {
+        dispatchPlayback({
+          type: 'intent.start.requested',
+          epoch: allocatePlaybackEpoch(),
+          kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+          serviceRef: sRef || undefined,
+          recordingId: recordingId || undefined,
+          srcUrl: src || undefined,
+          explicitProfile: profile,
+        });
+      }
     },
   };
 

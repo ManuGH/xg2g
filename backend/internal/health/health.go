@@ -389,7 +389,7 @@ func (c *FileChecker) Check(ctx context.Context) CheckResult {
 		}
 	}
 
-	//nolint:gosec // G703: path is statically configured by admin
+	// #nosec G703 //nolint:gosec // G703: path is statically configured by admin
 	info, err := os.Stat(c.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -496,19 +496,19 @@ func probeWritableDir(path string, createIfMissing bool) (bool, error) {
 	}
 
 	created := false
-	//nolint:gosec // G703: path is statically configured by admin
+	// #nosec G703 //nolint:gosec // G703: path is statically configured by admin
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			if !createIfMissing {
 				return false, fmt.Errorf("directory does not exist")
 			}
-			//nolint:gosec // G703: path is statically configured by admin
+			// #nosec G703 //nolint:gosec // G703: path is statically configured by admin
 			if err := os.MkdirAll(path, 0750); err != nil {
 				return false, fmt.Errorf("failed to create directory: %w", err)
 			}
 			created = true
-			//nolint:gosec // G703: path is statically configured by admin
+			// #nosec G703 //nolint:gosec // G703: path is statically configured by admin
 			info, err = os.Stat(path)
 			if err != nil {
 				return created, fmt.Errorf("failed to stat created directory: %w", err)
@@ -528,7 +528,7 @@ func probeWritableDir(path string, createIfMissing bool) (bool, error) {
 	}
 	probeFile := f.Name()
 	_ = f.Close()
-	//nolint:gosec // G703: path is statically configured by admin
+	// #nosec G703 //nolint:gosec // G703: path is statically configured by admin
 	_ = os.Remove(probeFile)
 	return created, nil
 }

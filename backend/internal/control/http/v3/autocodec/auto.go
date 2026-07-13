@@ -8,6 +8,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
@@ -91,7 +92,7 @@ func DescribeSelection(raw, profileID string, hostRuntime playbackprofile.HostRu
 		RequestedCodecs:     requested,
 		SelectedCodec:       selectedCodec,
 		PerformanceClass:    normalize.Token(hostRuntime.PerformanceClass),
-		CodecBenchmarkClass: normalize.Token(playbackprofile.BenchmarkClassForCodec(hostRuntime.Benchmark, selectedCodec)),
+		CodecBenchmarkClass: normalize.Token(benchmarkClassForCodecPath(hostRuntime.Benchmark, selectedCodec)),
 	}
 }
 
@@ -316,14 +317,14 @@ func PickProfileForCodecsWithCapabilitiesAndHost(raw string, hwaccelMode profile
 	}
 
 	if hwAllowed {
-		if _, ok := requested["hevc"]; ok {
-			if cap, exists := capabilityForRequestedCodec(encoderCaps, "hevc"); exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
-				candidates = append(candidates, newCandidate(profiles.ProfileSafariHEVCHW, "hevc", cap.ProbeElapsed, 1))
-			}
-		}
 		if _, ok := requested["av1"]; ok {
 			if cap, exists := capabilityForRequestedCodec(encoderCaps, "av1"); exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
-				candidates = append(candidates, newCandidate(profiles.ProfileAV1HW, "av1", cap.ProbeElapsed, 2))
+				candidates = append(candidates, newCandidate(profiles.ProfileAV1HW, "av1", cap.ProbeElapsed, 1))
+			}
+		}
+		if _, ok := requested["hevc"]; ok {
+			if cap, exists := capabilityForRequestedCodec(encoderCaps, "hevc"); exists && cap.Verified && cap.AutoEligible && cap.ProbeElapsed > 0 {
+				candidates = append(candidates, newCandidate(profiles.ProfileSafariHEVCHW, "hevc", cap.ProbeElapsed, 2))
 			}
 		}
 	}
@@ -399,7 +400,7 @@ func candidateAllowedForHost(candidate candidate, hostRuntime playbackprofile.Ho
 	if perfTier := hostPerformanceTier(hostRuntime.PerformanceClass); perfTier >= 0 && perfTier < minimumPerformanceTierForCodec(candidate.codec) {
 		return false
 	}
-	if benchmarkTier := hostBenchmarkTier(playbackprofile.BenchmarkClassForCodec(hostRuntime.Benchmark, candidate.codec)); benchmarkTier >= 0 && benchmarkTier < minimumBenchmarkTierForCodec(candidate.codec) {
+	if benchmarkTier := hostBenchmarkTier(benchmarkClassForCodecPath(hostRuntime.Benchmark, candidate.codec)); benchmarkTier >= 0 && benchmarkTier < minimumBenchmarkTierForCodec(candidate.codec) {
 		return false
 	}
 	return true
@@ -407,7 +408,7 @@ func candidateAllowedForHost(candidate candidate, hostRuntime playbackprofile.Ho
 
 func candidateHostStrength(candidate candidate, hostRuntime playbackprofile.HostRuntimeSnapshot) int {
 	perfTier := hostPerformanceTier(hostRuntime.PerformanceClass)
-	benchmarkTier := hostBenchmarkTier(playbackprofile.BenchmarkClassForCodec(hostRuntime.Benchmark, candidate.codec))
+	benchmarkTier := hostBenchmarkTier(benchmarkClassForCodecPath(hostRuntime.Benchmark, candidate.codec))
 	switch {
 	case perfTier >= 0 && benchmarkTier >= 0:
 		if perfTier < benchmarkTier {
@@ -421,6 +422,22 @@ func candidateHostStrength(candidate candidate, hostRuntime playbackprofile.Host
 	default:
 		return -1
 	}
+}
+
+func benchmarkClassForCodecPath(snapshot playbackprofile.HostBenchmarkSnapshot, codec string) string {
+	codec = normalize.Token(codec)
+	if codec == "av1" {
+		for _, benchmark := range snapshot.Profiles {
+			if normalize.Token(benchmark.ProfileID) != playbackports.BenchmarkProfileVideoAV11080I50 {
+				continue
+			}
+			if class := normalize.Token(benchmark.Class); class != "" {
+				return class
+			}
+			break
+		}
+	}
+	return playbackprofile.BenchmarkClassForCodec(snapshot, codec)
 }
 
 func hostPerformanceTier(raw string) int {

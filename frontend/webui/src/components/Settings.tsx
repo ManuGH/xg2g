@@ -179,17 +179,25 @@ function Settings() {
       return 'stereo';
     }
   });
-  const [dvrMode, setDvrMode] = useState<'live_only' | '1h' | '2h' | '4h'>(() => {
+  const [dvrMode, setDvrMode] = useState<'live_only' | '1h' | '2h' | '4h'>('live_only');
+  const [multiAudioMode, setMultiAudioMode] = useState<boolean>(false);
+
+  useEffect(() => {
     try {
-      const stored = localStorage.getItem('xg2g.settings.dvrMode');
-      if (stored === 'live_only' || stored === '1h' || stored === '2h' || stored === '4h') {
-        return stored;
+      const storedDvr = localStorage.getItem('xg2g.settings.dvrMode');
+      if (storedDvr === 'live_only' || storedDvr === '1h' || storedDvr === '2h' || storedDvr === '4h') {
+        setDvrMode(storedDvr);
       }
-      return '2h';
-    } catch {
-      return '2h';
-    }
-  });
+      const storedMultiAudio = localStorage.getItem('xg2g.settings.multiAudio');
+      if (storedMultiAudio === 'true') {
+        setMultiAudioMode(true);
+      } else {
+        setMultiAudioMode(false);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const requestedSection = searchParams.get('section');
   const requestedTool = searchParams.get('tool');
@@ -1230,7 +1238,8 @@ function Settings() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginTop: '16px' }}>
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'var(--status-info-subtle)', color: 'var(--status-info)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+              <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--status-info)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+
                 ADAPTIVE ENGINE
               </span>
               <strong style={{ fontSize: '0.95rem' }}>CPU & GPU Transcoding</strong>
@@ -1244,7 +1253,8 @@ function Settings() {
 
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'var(--status-success-subtle)', color: 'var(--status-success)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+              <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--status-success)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+
                 CODECS
               </span>
               <strong style={{ fontSize: '0.95rem' }}>AV1 · HEVC · H.264 · MPEG-2</strong>
@@ -1258,7 +1268,8 @@ function Settings() {
 
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'var(--status-info-subtle)', color: 'var(--status-info)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+              <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-action)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+
                 CONTAINER
               </span>
               <strong style={{ fontSize: '0.95rem' }}>fMP4 · CMAF · MPEG-TS</strong>
@@ -1272,7 +1283,8 @@ function Settings() {
 
           <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'var(--status-warning-subtle)', color: 'var(--status-warning)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+              <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--status-warning)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+
                 DEINTERLACING
               </span>
               <strong style={{ fontSize: '0.95rem' }}>Interlaced vs. Progressive</strong>
@@ -1344,7 +1356,8 @@ function Settings() {
                 checked={dvrMode === 'live_only'}
                 onChange={() => {
                   setDvrMode('live_only');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch { /* localStorage unavailable */ }
+                  try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch { /* localStorage may throw in private browsing */ }
+
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1362,7 +1375,8 @@ function Settings() {
                 checked={dvrMode === '1h'}
                 onChange={() => {
                   setDvrMode('1h');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch { /* localStorage unavailable */ }
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch { /* localStorage may throw in private browsing */ }
+
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1380,7 +1394,8 @@ function Settings() {
                 checked={dvrMode === '2h'}
                 onChange={() => {
                   setDvrMode('2h');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch { /* localStorage unavailable */ }
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch { /* localStorage may throw in private browsing */ }
+
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1398,7 +1413,8 @@ function Settings() {
                 checked={dvrMode === '4h'}
                 onChange={() => {
                   setDvrMode('4h');
-                  try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch { /* localStorage unavailable */ }
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch { /* localStorage may throw in private browsing */ }
+
                 }}
                 style={{ marginTop: '4px' }}
               />
@@ -1409,6 +1425,48 @@ function Settings() {
             </label>
           </div>
         </div>
+
+        <div className={styles.group} style={{ marginTop: '24px' }}>
+          <label style={{ fontWeight: 600, fontSize: '1.05rem' }}>{t('settings.streaming.multiAudio.title', { defaultValue: 'Mehrsprachiger Ton / Tonspur-Auswahl' })}</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="multiAudioMode"
+                value="false"
+                checked={!multiAudioMode}
+                onChange={() => {
+                  setMultiAudioMode(false);
+                  try { localStorage.setItem('xg2g.settings.multiAudio', 'false'); } catch { /* localStorage may throw in private browsing */ }
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.multiAudio.instant.label', { defaultValue: 'Instant Start (Nur Hauptspur)' })}</div>
+                <div className={styles.hint}>{t('settings.streaming.multiAudio.instant.hint', { defaultValue: 'Deaktiviert die Audio-Analyse vor dem Start. Streams starten dadurch sofort ohne Verzögerung (0 ms), es wird jedoch immer nur die erste gefundene Tonspur übertragen (meistens Deutsch).' })}</div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="multiAudioMode"
+                value="true"
+                checked={multiAudioMode}
+                onChange={() => {
+                  setMultiAudioMode(true);
+                  try { localStorage.setItem('xg2g.settings.multiAudio', 'true'); } catch { /* localStorage may throw in private browsing */ }
+                }}
+                style={{ marginTop: '4px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 600 }}>{t('settings.streaming.multiAudio.multi.label', { defaultValue: 'Multi-Audio (Verzögerter Start)' })}</div>
+                <div className={styles.hint}>{t('settings.streaming.multiAudio.multi.hint', { defaultValue: 'Ermöglicht den Sprachwechsel (z.B. Englisch / Dolby Digital) im Player. Der Startvorgang verzögert sich um 1-4 Sekunden, da der Stream vorab analysiert werden muss, um Apple alle verfügbaren Spuren zu präsentieren.' })}</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         </div>
       ) : null}
 

@@ -1,5 +1,14 @@
 import '@testing-library/jest-dom';
-import { vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach, vi } from 'vitest';
+
+// Global cleanup: ensure every test unmounts rendered React trees to prevent
+// V8 heap OOM (~4GB) on CI when many test files render <V3Player> without
+// individual afterEach cleanup. This covers all files, even those that forget
+// to call cleanup() locally.
+afterEach(() => {
+  cleanup();
+});
 
 // Node 26 ships native experimental Web Storage globals (localStorage,
 // sessionStorage, Storage). Because vitest's jsdom environment makes

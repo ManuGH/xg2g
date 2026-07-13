@@ -14,7 +14,7 @@ import (
 
 // shmFreeBytes returns the number of free bytes in /dev/shm if it exists and
 // is writable. Returns 0 on any error so callers fall back to disk.
-func shmFreeBytes() uint64 {
+func shmFreeBytes() uint64 { //nolint:unused
 	if stat, err := os.Stat("/dev/shm"); err != nil || !stat.IsDir() {
 		return 0
 	}

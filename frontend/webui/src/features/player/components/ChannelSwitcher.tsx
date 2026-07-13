@@ -103,7 +103,8 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose }: 
                   <span className={styles.logoFallback}>{initials(c.name)}</span>
                 )}
                 {c.number ? <span className={styles.num}>{c.number}</span> : null}
-                <span className={styles.name}>{c.name ?? ref}</span> {isUhd ? <span style={{ fontSize: "0.7rem", background: "var(--status-warning-subtle)", color: "var(--status-warning)", padding: "1px 5px", borderRadius: "4px", fontWeight: 600 }}>4K Pausiert</span> : null}
+                <span className={styles.name}>{c.name ?? ref}</span> {isUhd ? <span style={{ fontSize: "0.7rem", background: "rgba(251, 191, 36, 0.2)", color: "var(--status-warning)", padding: "1px 5px", borderRadius: "4px", fontWeight: 600 }}>4K Pausiert</span> : null}
+
                 {active ? <span className={styles.live}>● live</span> : null}
               </button>
             );

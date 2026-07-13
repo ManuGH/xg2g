@@ -89,6 +89,7 @@ func NewWithDeps(cfg config.AppConfig, cfgMgr *config.Manager, constructorDeps C
 	s.WireV3Runtime(s.v3RuntimeDeps, adm)
 
 	s.initHDHR(cfg, deps.channelManager)
+	s.restoreCachedRefreshStatus(cfg)
 	s.registerHealthCheckers(cfg)
 
 	return s, nil

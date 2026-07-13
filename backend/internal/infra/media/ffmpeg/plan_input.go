@@ -59,15 +59,31 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		// Keep that only for video-transcode paths; passthrough/remux sessions
 		// already know enough about the stream and pay a visible startup penalty.
 		if isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner {
-			if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
-				analyzeDuration = v
+			fastProbe := !spec.Profile.TranscodeVideo && a.consumeFastProbeEligibility(
+				fpsCacheKey(spec.Source, inputURL),
+				spec.Profile.SourceTruthVerified,
+			)
+			if fastProbe {
+				analyzeDuration = strings.TrimSpace(a.CachedRelayAnalyzeDuration)
+				probeSize = strings.TrimSpace(a.CachedRelayProbeSize)
+				a.Logger.Info().
+					Str("session_id", spec.SessionID).
+					Str("startup_phase", "streamrelay_cached_probe").
+					Str("analyze_duration", analyzeDuration).
+					Str("probe_size", probeSize).
+					Msg("using one-shot fast probe for previously successful channel")
 			} else {
-				analyzeDuration = "15000000" // 15s for OSCam decryption & DVB PMT discovery
-			}
-			if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
-				probeSize = v
-			} else {
-				probeSize = "20M"
+				if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
+					analyzeDuration = v
+				} else {
+					analyzeDuration = "3000000" // 3s for fast tuner start
+				}
+				if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
+					probeSize = v
+				} else {
+					probeSize = "5M"
+				}
+
 			}
 		}
 		// igndts discards healthy container DTS and forces a PTS-based

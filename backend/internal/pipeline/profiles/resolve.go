@@ -269,6 +269,26 @@ func NormalizeRequestedProfileID(requested string) string {
 	return requested
 }
 
+// UsesQuickStartHLSSegments reports whether a live profile should trade the
+// standard six-second HLS cadence for two-second startup segments. These are
+// the native Safari profiles (including their recovery/runtime variants) plus
+// the constrained-link profile selected by the public playback probe.
+func UsesQuickStartHLSSegments(profile string) bool {
+	switch NormalizeRequestedProfileID(profile) {
+	case ProfileLow,
+		ProfileSafari,
+		ProfileSafariDirty,
+		ProfileSafariDVR,
+		ProfileSafariHEVC,
+		ProfileSafariHEVCHW,
+		ProfileSafariHEVCHWLL,
+		ProfileSafariRuntimeHQ:
+		return true
+	default:
+		return false
+	}
+}
+
 // PrefersNativeFMP4Packaging reports whether the requested internal/public
 // profile carries an explicit native HLS fMP4 packaging bias. Client-family
 // fallback belongs in higher-level policy layers.
@@ -386,8 +406,14 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.AudioBitrateK = 160
 	case ProfileHigh:
 		spec.PolicyModeHint = ports.RuntimeModeCopy
-		spec.TranscodeVideo = false // Default to copy (passthrough) for original quality
-		spec.AudioBitrateK = 192    // FORCE AAC: Browsers cannot decode MP2/AC3 natively
+		if cap != nil && cap.Interlaced {
+			spec.TranscodeVideo = true
+			spec.Deinterlace = true
+			applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentCompatible))
+		} else {
+			spec.TranscodeVideo = false // Default to copy (passthrough) for original quality
+		}
+		spec.AudioBitrateK = 192 // FORCE AAC: Browsers cannot decode MP2/AC3 natively
 		applyDVRWindow(&spec, dvrWindowSec)
 	case ProfileAndroid:
 		spec.PolicyModeHint = ports.RuntimeModeCopy
@@ -540,7 +566,8 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.PolicyModeHint = ports.RuntimeModeSafe
 		// RESCUE MODE: Force Transcode to repair timestamps/GOP
 		spec.TranscodeVideo = true
-		spec.Deinterlace = false // Keep simple unless needed
+		spec.Deinterlace = true   // Deinterlace for browser compatibility
+		spec.Container = "mpegts" // Use universal MPEG-TS segments
 		applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentRepair))
 		spec.VideoMaxWidth = 1280
 		spec.AudioBitrateK = 192 // Ensure audio is clean too

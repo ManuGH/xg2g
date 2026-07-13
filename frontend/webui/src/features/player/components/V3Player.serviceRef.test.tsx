@@ -1079,7 +1079,7 @@ describe('V3Player ServiceRef Input', () => {
 
     await screen.findByText(/Invalid Request/i);
     fireEvent.click(screen.getByRole('button', { name: /Show Details/i }));
-    await screen.findByText(/INVALID_INPUT/i);
+    await screen.findByText(/code=INVALID_INPUT/i);
     await screen.findByText(/req-400-1/i);
   });
 
@@ -1131,7 +1131,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1139,12 +1139,16 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
-    const video = container.querySelector('video');
+    const video = container.querySelector('video') as HTMLVideoElement;
     expect(video).toBeTruthy();
-    fireEvent.pause(video as HTMLVideoElement);
+    fireEvent.playing(video);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
+    fireEvent.pause(video);
 
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent(/paused/i);
@@ -1201,7 +1205,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1209,11 +1213,15 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement | null;
     expect(video).toBeTruthy();
+    fireEvent.playing(video as HTMLVideoElement);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
     Object.defineProperty(video as HTMLVideoElement, 'webkitDisplayingFullscreen', {
       configurable: true,
       value: true
@@ -1276,7 +1284,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1284,7 +1292,7 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement | null;
@@ -1348,7 +1356,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1356,11 +1364,16 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement;
     expect(video).toBeTruthy();
+
+    fireEvent.playing(video);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
 
     // Element is genuinely decoding: not paused, has future data.
     Object.defineProperty(video, 'paused', { value: false, configurable: true });
@@ -1426,7 +1439,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1434,7 +1447,7 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement;
@@ -1511,7 +1524,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1519,11 +1532,16 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement | null;
     expect(video).toBeTruthy();
+
+    fireEvent.playing(video as HTMLVideoElement);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
 
     fireEvent.stalled(video as HTMLVideoElement);
     await waitFor(() => {

@@ -60,5 +60,16 @@ export default defineConfig({
     setupFiles: './tests/setupTests.ts',
     css: true,
     exclude: [...configDefaults.exclude, '**/._*'],
+    // Run all tests sequentially in a single worker fork to avoid OOM from
+    // multiple workers each loading jsdom + React + all modules independently
+    // on memory-constrained CI runners (4 GB heap limit). With a single fork
+    // the global afterEach(cleanup) in setupTests.ts keeps per-file garbage
+    // collection manageable.
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        singleFork: true,
+      },
+    },
   },
 })

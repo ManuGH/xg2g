@@ -46,6 +46,22 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		return defaultSel
 	}
 
+	// Native Apple HLS needs separate video and audio renditions for fMP4. Keep
+	// that layout even when the optional multi-audio probe is disabled, but do
+	// not force variant playlists on MPEG-TS, copy, VOD, or non-HLS outputs.
+	fmp4Fallback := defaultSel
+	fmp4Fallback.IsMultiAudio = true
+	fmp4Fallback.VarStreamMap = "v:0,agroup:audio a:0,agroup:audio,default:yes,language:deu"
+
+	if !spec.Profile.EnableMultiAudio {
+		a.Logger.Info().
+			Str("session_id", spec.SessionID).
+			Str("startup_phase", "live_audio_probe_skipped").
+			Msg("multi-audio disabled via settings; bypassing ffprobe latency entirely")
+		return fmp4Fallback
+	}
+
+	var err error
 	streams, err := a.probeLiveAudioStreams(ctx, spec, inputURL)
 	if err != nil {
 		a.Logger.Debug().
@@ -55,7 +71,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 			Str("input_url", sanitizeURLForLog(inputURL)).
 			Str("fallback_map", defaultLiveAudioMap).
 			Msg("live audio stream probe failed; using first audio stream")
-		return defaultSel
+		return fmp4Fallback
 	}
 
 	var audioStreams []liveAudioStream
@@ -65,30 +81,13 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		}
 	}
 	if len(audioStreams) == 0 {
-		return defaultSel
+		return fmp4Fallback
 	}
-	if len(audioStreams) == 1 {
-		selected := audioStreams[0]
-		mapArg := fmt.Sprintf("0:%d?", selected.Index)
-		codecName := strings.ToLower(strings.TrimSpace(selected.CodecName))
-		audioArgs := appendLiveAudioArgs(nil, spec, selected.Channels)
-
-		a.Logger.Info().
-			Str("session_id", spec.SessionID).
-			Str("startup_phase", "live_audio_stream_selected").
-			Str("audio_map", mapArg).
-			Str("audio_action", "transcode_aac").
-			Int("input_stream_index", selected.Index).
-			Int("input_audio_channels", selected.Channels).
-			Str("input_audio_layout", strings.TrimSpace(selected.ChannelLayout)).
-			Str("input_audio_codec", codecName).
-			Msg("selected single live audio stream for synchronized AAC transcode")
-
-		return liveAudioSelection{
-			Maps:      []string{mapArg},
-			AudioArgs: audioArgs,
-		}
-	}
+	// Apple HLS strictly requires audio and video to be separated in fMP4, even
+	// if there is only one audio track. Multiplexing them into a single .m4s causes
+	// a black screen with audio on Safari/iOS.
+	// Therefore, we ALWAYS use the VarStreamMap logic below to separate the tracks,
+	// generating a Master Playlist and independent audio/video media playlists.
 
 	// Preserve original Enigma2 stream order so the primary track sent by Enigma2 is DEFAULT=YES
 	ordered := audioStreams
@@ -162,8 +161,9 @@ func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.Str
 		return a.liveAudioProbeFn(ctx, inputURL)
 	}
 
-	timeout := 5 * time.Second
+	timeout := 8 * time.Second
 	if isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner {
+		// DVB streams (Vu+) take a few seconds to tune. Give the context 10 seconds.
 		timeout = 10 * time.Second
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -222,7 +222,9 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 		if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
 			analyzeDuration = v
 		} else {
-			analyzeDuration = "15000000"
+			// Instead of 15000000 (15s), use 5000000 (5s) so the probe finishes much faster!
+			analyzeDuration = "5000000"
+
 		}
 		if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
 			probeSize = v
@@ -233,6 +235,7 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 
 	args := []string{
 		"-v", "error",
+		"-fflags", "+discardcorrupt",
 		"-headers", headers,
 	}
 	if whitelist, ok := infraffmpeg.InputProtocolWhitelist(inputURL); ok {

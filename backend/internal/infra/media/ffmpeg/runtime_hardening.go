@@ -224,7 +224,11 @@ func (a *LocalAdapter) evaluateAdaptiveTranscodeQualityHardening(_ context.Conte
 	// load. Moderate/strong (and unmeasured/empty) hosts still promote: a
 	// "moderate" host (~95ms 1080i50, e.g. our VAAPI staging box) plays 50p
 	// cleanly, so the gate is "not weak" rather than the stricter "strong".
-	if a.hostBenchmarkClass(playbackports.BenchmarkProfileVideoH2641080I50) == "weak" {
+	benchmarkProfileID := playbackports.BenchmarkProfileVideoH2641080I50
+	if budget.codec == "av1" {
+		benchmarkProfileID = playbackports.BenchmarkProfileVideoAV11080I50
+	}
+	if a.hostBenchmarkClass(benchmarkProfileID) == "weak" {
 		a.Logger.Info().
 			Str("sessionId", spec.SessionID).
 			Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).

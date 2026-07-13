@@ -60,13 +60,14 @@ edit/verify loops):
 
 1. Build on the host that has the real working copy (not a laptop clone):
    `make build-with-ui` produces `bin/xg2g`.
-2. Push the binary into the running container's bind mount (e.g.
-   `pct push <ctid> bin/xg2g /srv/xg2g/xg2g-dev-binary.new && pct exec <ctid> -- mv /srv/xg2g/xg2g-dev-binary.new /srv/xg2g/xg2g-dev-binary` into place —
-   never overwrite the in-use file directly, some container runtimes return
-   success on a busy-file write while leaving the old binary running).
-3. Restart the service (`systemctl restart xg2g`, or
-   `docker compose up -d --force-recreate` for containers that only read env
-   at recreate time, not at `docker restart`).
+2. Keep staging and production on separate bind-mounted artifacts:
+   `/srv/xg2g-staging/xg2g-staging-binary` and
+   `/srv/xg2g/xg2g-production-binary`. They must never share one mutable
+   `xg2g-dev-binary`, otherwise staging cannot be a promotion gate.
+3. Run `scripts/deploy-fast-iteration.sh`. It atomically deploys and recreates
+   staging first, waits for its healthcheck, and only then promotes the exact
+   same binary to production. Never overwrite an in-use file directly; some
+   container runtimes report success while the old inode remains mounted.
 4. Verify the deployed commit before considering this done: compare
    `curl <host>/healthz` (`version` field, a `git describe` string) against
    `git log origin/<branch>..HEAD` on the host that built it.

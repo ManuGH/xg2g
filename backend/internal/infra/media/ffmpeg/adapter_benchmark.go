@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
+	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg/capability"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"os"
@@ -12,11 +13,22 @@ import (
 	"time"
 )
 
-func profileBenchmarksForBackend(backend string) []string {
+func profileBenchmarksForBackend(backend, encoder string) []string {
 	switch backend {
 	case "cpu":
 		return startupProfilesToBenchmark
-	case "vaapi", "nvenc":
+	case "vaapi":
+		if normalizeRequestedCodec(encoder) == "av1" {
+			return []string{playbackports.BenchmarkProfileVideoAV11080I50}
+		}
+		return []string{
+			playbackports.BenchmarkProfileVideoH2641080P,
+			playbackports.BenchmarkProfileVideoH2641080I,
+			playbackports.BenchmarkProfileVideoH2641080I50,
+			playbackports.BenchmarkProfileVideoH2642160P,
+			playbackports.BenchmarkProfileVideoH2642160P50,
+		}
+	case "nvenc":
 		return []string{
 			playbackports.BenchmarkProfileVideoH2641080P,
 			playbackports.BenchmarkProfileVideoH2641080I,
@@ -88,6 +100,25 @@ func vaapiProfileBenchmarkFilter(profileID string) (string, error) {
 		return "format=nv12,hwupload", nil
 	case playbackports.BenchmarkProfileVideoH2641080I:
 		return "format=nv12,setfield=tff,hwupload,deinterlace_vaapi", nil
+	case playbackports.BenchmarkProfileVideoAV11080I50:
+		profile := sessionports.ProfileSpec{VideoSourceHeight: 1080}
+		parts := []string{
+			"setfield=tff",
+			"bwdif=mode=send_field:parity=auto:deint=all",
+			av1VAAPIGeometryPadFilter(),
+		}
+		if filter := transcodeDenoiseFilterForProfile(profile); filter != "" {
+			parts = append(parts, filter)
+		}
+		if filter := transcodeDebandFilterForProfile(profile); filter != "" {
+			parts = append(parts, filter)
+		}
+		if filter := transcodeSharpenFilterForProfile(profile); filter != "" {
+			parts = append(parts, filter)
+		}
+		parts = append(parts, "setparams=field_mode=prog:range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709:chroma_location=left")
+		parts = append(parts, "format=p010le", "hwupload")
+		return strings.Join(parts, ","), nil
 	default:
 		return "", fmt.Errorf("unsupported vaapi benchmark profile %q", profileID)
 	}
@@ -104,6 +135,8 @@ func nvencProfileBenchmarkFilter(profileID string) string {
 
 func profileBenchmarkInput(profileID string) string {
 	switch strings.ToLower(strings.TrimSpace(profileID)) {
+	case playbackports.BenchmarkProfileVideoAV11080I50:
+		return "testsrc2=duration=1:size=1920x1080:rate=25"
 	case playbackports.BenchmarkProfileVideoH2642160P50:
 		return "testsrc=duration=0.2:size=3840x2160:rate=50"
 	case playbackports.BenchmarkProfileVideoH2642160P:
@@ -121,7 +154,7 @@ func profileBenchmarkTimeout(profileID string) time.Duration {
 		return 22 * time.Second
 	case playbackports.BenchmarkProfileVideoH2642160P:
 		return 18 * time.Second
-	case playbackports.BenchmarkProfileVideoH2641080I50:
+	case playbackports.BenchmarkProfileVideoH2641080I50, playbackports.BenchmarkProfileVideoAV11080I50:
 		return 15 * time.Second
 	default:
 		return 12 * time.Second
