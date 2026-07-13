@@ -1,5 +1,7 @@
 package playbackplanner
 
+import "strings"
+
 // hasValidEvidence checks if the evidence is structurally sound.
 func hasValidEvidence(ev PlaybackEvidence) bool {
 	if ev.OperatorPolicy.DVRWindowSeconds < 0 {
@@ -91,4 +93,17 @@ func supportsRange(ev PlaybackEvidence) bool {
 		return *ev.ClientEvidence.SupportsRange
 	}
 	return false // conservative fallback
+}
+
+func requiresPlannedTranscode(ev PlaybackEvidence) bool {
+	requested := strings.ToLower(strings.TrimSpace(ev.OperatorPolicy.ForceIntent))
+	if requested == "" {
+		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
+	}
+	switch requested {
+	case "transcode", "repair":
+		return true
+	default:
+		return false
+	}
 }

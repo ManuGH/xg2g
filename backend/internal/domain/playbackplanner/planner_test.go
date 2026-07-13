@@ -272,3 +272,31 @@ func TestPlanTranscodesVideoWhenClientDimensionsAreExceeded(t *testing.T) {
 	require.Equal(t, "h264", result.Plan.Video.Codec)
 	require.Equal(t, 1280, result.Plan.Filters.ScaleWidth)
 }
+
+func TestPlanHonorsSignedRepairIntent(t *testing.T) {
+	ev := PlaybackEvidence{
+		EvaluatedAt:     time.Now().UnixMilli(),
+		Scope:           "live",
+		RequestedIntent: "repair",
+		SourceIdentity:  "service:repair",
+		SourceTruth: SourceTruth{
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "aac",
+		},
+		ClientEvidence: ClientEvidence{
+			AllowTranscode:       true,
+			SupportedVideoCodecs: []string{"h264"},
+			SupportedAudioCodecs: []string{"aac"},
+			SupportsHls:          true,
+		},
+		HostSnapshot: HostSnapshot{AvailableEngines: []string{"hls"}},
+	}
+
+	result, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "transcode", result.Plan.Mode)
+	require.Equal(t, "transcode", result.Plan.Video.Mode)
+	require.Equal(t, "copy", result.Plan.Audio.Mode)
+	require.Contains(t, result.Trace.Log, RuleHit{Rule: "direct_play_gate", Result: "fail", Reason: "transcode_intent_requested"})
+}

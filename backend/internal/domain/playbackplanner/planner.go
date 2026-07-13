@@ -64,7 +64,10 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 
 	// 1. Direct Play (Copy + Direct engine)
 	canDirectPlay := true
-	if ev.Scope != "recording" && ev.Scope != "media" {
+	if requiresPlannedTranscode(ev) {
+		logHit("direct_play_gate", "fail", "transcode_intent_requested")
+		canDirectPlay = false
+	} else if ev.Scope != "recording" && ev.Scope != "media" {
 		logHit("direct_play_gate", "fail", "scope_not_seekable")
 		canDirectPlay = false
 	} else if !supportsRange(ev) {
@@ -99,7 +102,10 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 
 	// 2. Direct Stream / Remux
 	canRemux := true
-	if !supportsHLS(ev) {
+	if requiresPlannedTranscode(ev) {
+		logHit("remux_gate", "fail", "transcode_intent_requested")
+		canRemux = false
+	} else if !supportsHLS(ev) {
 		logHit("remux_gate", "fail", "client_lacks_hls_support")
 		canRemux = false
 	} else if len(ev.HostSnapshot.AvailableEngines) > 0 && !contains(ev.HostSnapshot.AvailableEngines, "hls") {

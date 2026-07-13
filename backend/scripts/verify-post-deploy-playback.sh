@@ -551,7 +551,7 @@ verify_hw_transcode_gpu() {
     clientFamilyFallback: "chrome"
   }')"
   info_body="$(jq -nc --arg ref "${SERVICE_REF}" --argjson caps "${caps}" '{serviceRef:$ref,capabilities:$caps}')"
-  curl_json "POST" "${API_BASE}/live/stream-info" "${info_body}"
+  curl_json "POST" "${API_BASE}/live/stream-info?profile=repair" "${info_body}"
   [[ "${CURL_STATUS}" == "200" ]] || fail "transcode preflight stream-info failed: HTTP ${CURL_STATUS}: ${CURL_BODY}"
   token="$(printf '%s' "${CURL_BODY}" | jq -r '.playbackDecisionToken // empty')"
   [[ -n "${token}" ]] || fail "transcode preflight stream-info returned no playbackDecisionToken"

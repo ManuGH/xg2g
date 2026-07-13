@@ -28,7 +28,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			plan.Packaging.Container = "fmp4"
 		}
 
-		if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" {
+		if isVideoCodecCompatible(ev) && !requiresPlannedTranscode(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" {
 			plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		} else {
 			if requiresInterlaceRepair(ev) {
