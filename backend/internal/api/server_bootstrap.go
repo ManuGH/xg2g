@@ -55,6 +55,11 @@ func preflightOutboundPolicyFromConfig(cfg config.AppConfig) platformnet.Outboun
 
 func (s *Server) wireV3Subsystem(cfg config.AppConfig, cfgMgr *config.Manager) error {
 	s.v3Handler = s.v3Factory(cfg, cfgMgr, s.rootCancel)
+	if s.rootCtx != nil {
+		if err := s.v3Handler.SetRuntimeContext(s.rootCtx); err != nil {
+			return fmt.Errorf("set v3 runtime context: %w", err)
+		}
+	}
 	// Ensure runtime values are visible before the first request.
 	s.v3Handler.UpdateConfig(cfg, s.snap)
 

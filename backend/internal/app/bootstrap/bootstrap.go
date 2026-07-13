@@ -602,6 +602,10 @@ func (c *Container) Start(ctx context.Context) error {
 			c.scanManager.AttachLifecycle(ctx)
 		}
 
+		if err := c.Server.SetRootContext(ctx); err != nil {
+			c.Logger.Warn().Err(err).Msg("failed to set root context on API server during container start")
+		}
+
 		go c.Server.StartRecordingCacheEvicter(ctx)
 
 		if c.verificationWork != nil {
