@@ -158,7 +158,7 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 // default — and was verified clean on 1080i wide shots up to ~1.5; chroma is left
 // untouched to avoid colour fringing. It adds perceived crispness on edges/lines
 // but cannot restore fine detail the source or the re-encode already discarded.
-func transcodeSharpenFilter() string {
+func transcodeSharpenFilter() string { //nolint:unused
 	amount := envFloatBounded("XG2G_TRANSCODE_SHARPEN", 1.5, 0.0, 3.0)
 	return transcodeSharpenFilterWithAmount(amount)
 }
@@ -444,9 +444,7 @@ func useConservativeHEVCVAAPILivePreset(spec ports.StreamSpec, outputCodec strin
 	if normalizeRequestedCodec(outputCodec) != "hevc" {
 		return false
 	}
-	if effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeUnknown {
-		// allow any mode, keep going
-	}
+	// RuntimeModeUnknown: allow any container (no filtering applied)
 	return strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
 }
 

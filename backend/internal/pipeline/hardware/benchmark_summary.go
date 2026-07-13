@@ -165,11 +165,14 @@ func snapshotProfileBenchmarks(codecs []playbackprofile.HostCodecBenchmark) []pl
 			continue
 		}
 		seen[profileID] = struct{}{}
-		codec := "h264"
-		if profileID == playbackprofile.BenchmarkProfileAudioAACStereo {
+		var codec string
+		switch profileID {
+		case playbackprofile.BenchmarkProfileAudioAACStereo:
 			codec = "aac"
-		} else if profileID == playbackprofile.BenchmarkProfileVideoAV11080I50 {
+		case playbackprofile.BenchmarkProfileVideoAV11080I50:
 			codec = "av1"
+		default:
+			codec = "h264"
 		}
 		actual = append(actual, playbackprofile.HostProfileBenchmark{
 			ProfileID:      profileID,

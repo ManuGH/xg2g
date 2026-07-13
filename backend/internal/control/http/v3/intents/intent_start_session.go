@@ -116,9 +116,10 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	} else if intent.Params["dvr"] == "false" || intent.Params["dvr_window"] == "false" {
 		startupProfile.DVRWindowSec = 0
 	}
-	if intent.Params["multi_audio"] == "true" {
+	switch intent.Params["multi_audio"] {
+	case "true":
 		startupProfile.EnableMultiAudio = true
-	} else if intent.Params["multi_audio"] == "false" {
+	case "false":
 		startupProfile.EnableMultiAudio = false
 	}
 
