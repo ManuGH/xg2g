@@ -2,7 +2,8 @@ package playbackplanner
 
 // PlaybackPlan represents an immutable playback decision.
 type PlaybackPlan struct {
-	Mode           string // "direct_stream", "transcode", "deny"
+	Outcome        string // "allow", "deny"
+	Mode           string // "copy", "remux", "transcode"
 	DeliveryEngine string // "hls", "dash", etc.
 	Codecs         Codecs
 	Packaging      Packaging
@@ -17,7 +18,15 @@ type PlanTrace struct {
 	PlannerVersion string
 	PolicyVersion  string
 	EvidenceHash   string
-	Log            []string
+	Log            []RuleHit
+}
+
+// RuleHit represents a single policy evaluation outcome.
+type RuleHit struct {
+	RuleName  string
+	Condition string
+	Action    string
+	Message   string
 }
 
 // Codecs defines the chosen codecs for the playback session.

@@ -66,6 +66,7 @@ func TestPlaybackEvidence_HashIsDeterministic(t *testing.T) {
 
 func TestPlaybackPlan_HashIsDeterministic(t *testing.T) {
 	plan1 := PlaybackPlan{
+		Outcome:        "allow",
 		Mode:           "transcode",
 		DeliveryEngine: "hls",
 		Codecs: Codecs{

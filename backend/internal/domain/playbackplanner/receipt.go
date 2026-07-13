@@ -9,10 +9,17 @@ import (
 // PlanningReceipt is a domain entity representing a binding promise from the planner.
 // Lifecycle: issued -> consumed(sessionID) -> expired.
 type PlanningReceipt struct {
-	EvidenceHash string
-	PlanHash     string
-	IssuedAt     int64
-	ExpiresAt    int64
+	ReceiptID      string
+	EvidenceHash   string
+	PlanHash       string
+	IssuedAt       int64
+	ExpiresAt      int64
+	PlannerVersion string
+	PolicyVersion  string
+	PrincipalBind  string
+	ServiceRefBind string
+	ScopeBind      string
+	LifecycleState string // e.g., "issued", "consumed", "expired"
 }
 
 // Hash returns a deterministic hash of the plan to be embedded in the receipt.
