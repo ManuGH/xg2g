@@ -25,16 +25,20 @@ type fpsCacheEntry struct {
 	LearnedAt time.Time
 }
 
-func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string, dvrWindowSec int) {
+func (a *LocalAdapter) learnFPSFromOutput(ctx context.Context, sourceKey, sessionID string, dvrWindowSec int) {
 	if sourceKey == "" || sessionID == "" {
 		return
 	}
 	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec)
 	deadline := time.Now().Add(25 * time.Second)
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		segment, ok := findFirstOutputSegment(sessionDir)
 		if ok {
-			a.markFastProbeEligible(sourceKey)
 			fps, basis, err := a.probeOutputFPS(segment)
 			if err != nil {
 				a.Logger.Debug().
@@ -68,53 +72,6 @@ func (a *LocalAdapter) learnFPSFromOutput(sourceKey, sessionID string, dvrWindow
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-}
-
-func (a *LocalAdapter) markFastProbeEligible(sourceKey string) {
-	if sourceKey == "" {
-		return
-	}
-	a.fastProbeMu.Lock()
-	if a.fastProbeReady == nil {
-		a.fastProbeReady = make(map[string]time.Time)
-	}
-	a.fastProbeReady[sourceKey] = time.Now()
-	delete(a.fastProbeUsed, sourceKey)
-	a.fastProbeMu.Unlock()
-}
-
-// consumeFastProbeEligibility is deliberately one-shot. A channel earns the
-// fast probe only after producing a real HLS segment. If that next fast start
-// fails, the orchestrator retry falls back to the deep 5s/20M probe; another
-// successful segment earns the optimization again.
-func (a *LocalAdapter) consumeFastProbeEligibility(sourceKey string, persistentTruth bool) bool {
-	if sourceKey == "" {
-		return false
-	}
-	ttl := a.FPSCacheTTL
-	if ttl <= 0 {
-		ttl = 24 * time.Hour
-	}
-	a.fastProbeMu.Lock()
-	defer a.fastProbeMu.Unlock()
-	if a.fastProbeUsed == nil {
-		a.fastProbeUsed = make(map[string]time.Time)
-	}
-	if learnedAt, ok := a.fastProbeReady[sourceKey]; ok {
-		delete(a.fastProbeReady, sourceKey)
-		if !learnedAt.IsZero() && time.Since(learnedAt) <= ttl {
-			a.fastProbeUsed[sourceKey] = time.Now()
-			return true
-		}
-	}
-	if !persistentTruth {
-		return false
-	}
-	if usedAt, ok := a.fastProbeUsed[sourceKey]; ok && !usedAt.IsZero() && time.Since(usedAt) <= ttl {
-		return false
-	}
-	a.fastProbeUsed[sourceKey] = time.Now()
-	return true
 }
 
 func findFirstOutputSegment(sessionDir string) (string, bool) {

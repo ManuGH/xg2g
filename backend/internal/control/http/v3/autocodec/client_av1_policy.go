@@ -103,6 +103,9 @@ func androidOrGenericAV1Allowed(caps capabilities.PlaybackCapabilities) bool {
 		if androidSDK(caps.DeviceContext) >= 34 || majorVersion(caps.DeviceContext.OSVersion) >= 14 {
 			return av1SignalIsAtLeastSmooth(caps)
 		}
+		// Android 10+ can expose AV1, but on Android 10-13 it is too device
+		// specific to trust a plain "supported" bit. Require the browser/native
+		// probe to report a smooth or power-efficient decode path.
 		return av1SignalIsPowerEfficientOrSmooth(caps)
 	}
 	return av1SignalIsPowerEfficientOrSmooth(caps)
@@ -327,14 +330,6 @@ var knownTVAV1ModelMarkers = []string{
 	"mitvstick4k",
 	"mdz27aa",
 	"mitvayfr0",
-
-	// Google TV / Chromecast / MediaTek AV1 models.
-	"sabrina",
-	"kirkwood",
-	"googletv",
-	"chromecast",
-	"bravia",
-	"philips",
 }
 
 var knownTVNoAV1ModelMarkers = []string{

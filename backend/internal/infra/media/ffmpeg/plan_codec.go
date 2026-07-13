@@ -148,11 +148,11 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			}
 			preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
 			fullVAAPI = profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
-			if normalizeRequestedCodec(resolvedCodec) == "av1" || spec.Profile.Deinterlace {
-				// Keep AV1 and interlaced streams on the encode-only path even when
-				// a caller requested full VAAPI. On AMD VCN4 / Mesa stacks,
-				// deinterlace_vaapi surface negotiation conflicts with auto_scale_0,
-				// whereas software bwdif + hwupload is verified rock-solid.
+			if normalizeRequestedCodec(resolvedCodec) == "av1" {
+				// Keep AV1 on the encode-only path even when a caller requested
+				// full VAAPI. This preserves a software-domain normalization step
+				// before hwupload, which is required to avoid malformed 1080p AV1
+				// output on current AMD VAAPI stacks.
 				fullVAAPI = false
 			}
 			if spec.Profile.Deinterlace {

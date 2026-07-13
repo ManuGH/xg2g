@@ -11,7 +11,7 @@ import (
 func TestNextPlaybackFeedbackPlan_NonSafariEscalatesToRepairFMP4(t *testing.T) {
 	got := nextPlaybackFeedbackPlan(model.ProfileSpec{
 		Name:         profiles.ProfileAV1HW,
-		Container:    "mpegts",
+		Container:    "fmp4",
 		DVRWindowSec: 2700,
 		VideoCodec:   "av1",
 	}, "")
@@ -25,8 +25,8 @@ func TestNextPlaybackFeedbackPlan_NonSafariEscalatesToRepairFMP4(t *testing.T) {
 	if got.profile.Name != profiles.ProfileRepair {
 		t.Fatalf("nextPlaybackFeedbackPlan() name = %q, want %q", got.profile.Name, profiles.ProfileRepair)
 	}
-	if got.profile.Container != "mpegts" {
-		t.Fatalf("nextPlaybackFeedbackPlan() container = %q, want %q", got.profile.Container, "mpegts")
+	if got.profile.Container != "fmp4" {
+		t.Fatalf("nextPlaybackFeedbackPlan() container = %q, want %q", got.profile.Container, "fmp4")
 	}
 	if got.profile.VideoCodec != "libx264" {
 		t.Fatalf("nextPlaybackFeedbackPlan() codec = %q, want %q", got.profile.VideoCodec, "libx264")
@@ -47,7 +47,7 @@ func TestNextSafariFeedbackPlan_AllowlistedFirstFailureUsesBrowserTSProfile(t *t
 
 	got := nextSafariFeedbackPlan(model.ProfileSpec{
 		Name:         profiles.ProfileSafari,
-		Container:    "mpegts",
+		Container:    "fmp4",
 		DVRWindowSec: 2700,
 	}, "1:0:19:11:6:85:C00000:0:0:0:")
 

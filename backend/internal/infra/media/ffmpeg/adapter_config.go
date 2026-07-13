@@ -27,8 +27,6 @@ type AdapterConfig struct {
 	LiveUserAgent              string
 	StreamRelayAnalyzeDuration string
 	StreamRelayProbeSize       string
-	CachedRelayAnalyzeDuration string
-	CachedRelayProbeSize       string
 
 	// Ingest resilience (FFmpeg -fflags / -err_detect / -max_error_rate / -flags2).
 	IngestFFlags       string
@@ -41,7 +39,6 @@ type AdapterConfig struct {
 	ForceIgnDTS          bool
 	LiveAvsyncAtrim      bool
 	LiveAvsyncPipeNoTrim bool
-	ExperimentalCMAF     bool
 
 	// Safari dirty-source deinterlace + x264 tune.
 	SafariDirtyFilter   string
@@ -104,19 +101,10 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 	if streamRelayProbeSize == "" {
 		streamRelayProbeSize = "20M"
 	}
-	cachedRelayAnalyzeDuration := strings.TrimSpace(config.ParseString("XG2G_STREAMRELAY_CACHED_ANALYZE_DURATION", ""))
-	if cachedRelayAnalyzeDuration == "" {
-		cachedRelayAnalyzeDuration = "2500000" // 2.5s after this channel produced a valid HLS segment
-	}
-	cachedRelayProbeSize := strings.TrimSpace(config.ParseString("XG2G_STREAMRELAY_CACHED_PROBE_SIZE", ""))
-	if cachedRelayProbeSize == "" {
-		cachedRelayProbeSize = "10M"
-	}
 	liveNoBuffer := envBool("XG2G_LIVE_NOBUFFER", false)
 	forceIgnDTS := envBool("XG2G_FORCE_IGNDTS", false)
 	liveAvsyncAtrim := envBool("XG2G_LIVE_AVSYNC_ATRIM", false)
 	liveAvsyncPipeNoTrim := envBool("XG2G_LIVE_AVSYNC_PIPE_NO_TRIM", false)
-	experimentalCMAF := envBool("XG2G_EXPERIMENTAL_CMAF_SEGMENTER", false)
 	fpsProbeTimeoutMs := envIntBounded("XG2G_FPS_PROBE_TIMEOUT_MS", 1500, 300, 5000)
 	fpsMin := envIntBounded("XG2G_FPS_MIN", 15, 10, 240)
 	fpsMax := envIntBounded("XG2G_FPS_MAX", 120, fpsMin, 240)
@@ -194,8 +182,6 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		LiveUserAgent:              liveUserAgent,
 		StreamRelayAnalyzeDuration: streamRelayAnalyzeDuration,
 		StreamRelayProbeSize:       streamRelayProbeSize,
-		CachedRelayAnalyzeDuration: cachedRelayAnalyzeDuration,
-		CachedRelayProbeSize:       cachedRelayProbeSize,
 		IngestFFlags:               ingestFFlags,
 		IngestErrDetect:            ingestErrDetect,
 		IngestMaxErrorRate:         ingestMaxErrorRate,
@@ -204,7 +190,6 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		ForceIgnDTS:                forceIgnDTS,
 		LiveAvsyncAtrim:            liveAvsyncAtrim,
 		LiveAvsyncPipeNoTrim:       liveAvsyncPipeNoTrim,
-		ExperimentalCMAF:           experimentalCMAF,
 		SafariDirtyFilter:          safariDirtyFilter,
 		SafariDirtyX264Tune:        safariDirtyTune,
 		FPSProbeTimeout:            time.Duration(fpsProbeTimeoutMs) * time.Millisecond,

@@ -161,8 +161,8 @@ func TestShouldAvsyncAtrimOnlyAllowsLiveFMP4(t *testing.T) {
 	}
 
 	spec.Profile.TranscodeVideo = true
-	if adapter.shouldAvsyncAtrim(spec) {
-		t.Fatal("expected live fMP4 transcode to skip orphan correction pipe")
+	if !adapter.shouldAvsyncAtrim(spec) {
+		t.Fatal("expected live fMP4 transcode to enable orphan correction")
 	}
 	spec.Profile.TranscodeVideo = false
 	spec.Profile.Container = "mpegts"

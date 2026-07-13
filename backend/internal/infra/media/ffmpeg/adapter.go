@@ -67,13 +67,10 @@ type LocalAdapter struct {
 	LiveUserAgent              string
 	StreamRelayAnalyzeDuration string
 	StreamRelayProbeSize       string
-	CachedRelayAnalyzeDuration string
-	CachedRelayProbeSize       string
 	LiveNoBuffer               bool
 	ForceIgnDTS                bool
 	LiveAvsyncAtrim            bool
 	LiveAvsyncPipeNoTrim       bool
-	ExperimentalCMAFSegmenter  bool
 	IngestFFlags               string
 	IngestErrDetect            string
 	IngestMaxErrorRate         string
@@ -124,9 +121,6 @@ type LocalAdapter struct {
 	lastKnownFPS   map[string]fpsCacheEntry
 	FPSCacheTTL    time.Duration
 	fpsCacheMu     sync.RWMutex
-	fastProbeMu    sync.Mutex
-	fastProbeReady map[string]time.Time
-	fastProbeUsed  map[string]time.Time
 	mu             sync.Mutex
 	inMemoryIngest bool
 	ingestPort     int
@@ -197,13 +191,10 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		LiveUserAgent:              cfg.LiveUserAgent,
 		StreamRelayAnalyzeDuration: cfg.StreamRelayAnalyzeDuration,
 		StreamRelayProbeSize:       cfg.StreamRelayProbeSize,
-		CachedRelayAnalyzeDuration: cfg.CachedRelayAnalyzeDuration,
-		CachedRelayProbeSize:       cfg.CachedRelayProbeSize,
 		LiveNoBuffer:               cfg.LiveNoBuffer,
 		ForceIgnDTS:                cfg.ForceIgnDTS,
 		LiveAvsyncAtrim:            cfg.LiveAvsyncAtrim,
 		LiveAvsyncPipeNoTrim:       cfg.LiveAvsyncPipeNoTrim,
-		ExperimentalCMAFSegmenter:  cfg.ExperimentalCMAF,
 		IngestFFlags:               cfg.IngestFFlags,
 		IngestErrDetect:            cfg.IngestErrDetect,
 		IngestMaxErrorRate:         cfg.IngestMaxErrorRate,
@@ -236,8 +227,6 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		SafariRuntimeProbeTimeout:  cfg.SafariRuntimeProbeTimeout,
 		VaapiDevice:                strings.TrimSpace(vaapiDevice),
 		lastKnownFPS:               make(map[string]fpsCacheEntry),
-		fastProbeReady:             make(map[string]time.Time),
-		fastProbeUsed:              make(map[string]time.Time),
 		FPSCacheTTL:                cfg.FPSCacheTTL,
 		activeProcs:                make(map[ports.RunHandle]*exec.Cmd),
 		finalizedProfiles:          make(map[ports.RunHandle]ports.ProfileSpec),

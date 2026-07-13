@@ -2,7 +2,6 @@ package ffmpeg
 
 import (
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"strconv"
 	"strings"
@@ -66,7 +65,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	} else {
 		args = appendAV1VAAPILevelArgs(args)
 	}
-	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv", "-chroma_sample_location", "left")
+	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args
 }
 
@@ -106,7 +105,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	} else {
 		args = appendAV1VAAPILevelArgs(args)
 	}
-	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv", "-chroma_sample_location", "left")
+	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args
 }
 
@@ -133,16 +132,15 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	// sports — still real-time for one session, thinner for concurrent ones), so
 	// they default conservatively and are env-tunable. Only transcode paths reach
 	// here — copy passthrough stays bit-exact and untouched.
-	if f := transcodeDenoiseFilterForProfile(spec.Profile); f != "" {
+	if f := transcodeDenoiseFilter(); f != "" {
 		parts = append(parts, f)
 	}
-	if f := transcodeDebandFilterForProfile(spec.Profile); f != "" {
+	if f := transcodeDebandFilter(); f != "" {
 		parts = append(parts, f)
 	}
-	if f := transcodeSharpenFilterForProfile(spec.Profile); f != "" {
+	if f := transcodeSharpenFilter(); f != "" {
 		parts = append(parts, f)
 	}
-	parts = append(parts, "setparams=field_mode=prog:range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709:chroma_location=left")
 	uploadFormat := "nv12"
 	if isAV1 {
 		uploadFormat = "p010le"
@@ -160,18 +158,6 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 // but cannot restore fine detail the source or the re-encode already discarded.
 func transcodeSharpenFilter() string {
 	amount := envFloatBounded("XG2G_TRANSCODE_SHARPEN", 1.5, 0.0, 3.0)
-	return transcodeSharpenFilterWithAmount(amount)
-}
-
-func transcodeSharpenFilterForProfile(profile ports.ProfileSpec) string {
-	amount, explicitlyConfigured := configuredFilterStrength("XG2G_TRANSCODE_SHARPEN", 0.0, 3.0)
-	if !explicitlyConfigured {
-		amount = defaultTranscodeSharpenStrength(profile.VideoSourceHeight)
-	}
-	return transcodeSharpenFilterWithAmount(amount)
-}
-
-func transcodeSharpenFilterWithAmount(amount float64) string {
 	if amount <= 0 {
 		return ""
 	}
@@ -185,18 +171,6 @@ func transcodeSharpenFilterWithAmount(amount float64) string {
 // pure quality knob (lower = gentler, preserves more fine detail).
 func transcodeDenoiseFilter() string {
 	s := envFloatBounded("XG2G_TRANSCODE_DENOISE", 0.6, 0.0, 1.5)
-	return transcodeDenoiseFilterWithStrength(s)
-}
-
-func transcodeDenoiseFilterForProfile(profile ports.ProfileSpec) string {
-	strength, explicitlyConfigured := configuredFilterStrength("XG2G_TRANSCODE_DENOISE", 0.0, 1.5)
-	if !explicitlyConfigured {
-		strength = defaultTranscodeDenoiseStrength(profile.VideoSourceHeight)
-	}
-	return transcodeDenoiseFilterWithStrength(strength)
-}
-
-func transcodeDenoiseFilterWithStrength(s float64) string {
 	if s <= 0 {
 		return ""
 	}
@@ -210,67 +184,6 @@ func transcodeDebandFilter() string {
 		return ""
 	}
 	return "deband"
-}
-
-func transcodeDebandFilterForProfile(profile ports.ProfileSpec) string {
-	raw := strings.TrimSpace(config.ParseString("XG2G_TRANSCODE_DEBAND", ""))
-	if raw != "" {
-		if !config.ParseBool("XG2G_TRANSCODE_DEBAND", true) {
-			return ""
-		}
-		return "deband"
-	}
-	// Debanding is useful for low-bitrate SD and unknown sources. On known HD
-	// sources the 10-bit AV1 output already protects newly introduced gradients;
-	// a global software deband pass costs detail and CPU headroom.
-	if profile.VideoSourceHeight > 576 {
-		return ""
-	}
-	return "deband"
-}
-
-func configuredFilterStrength(key string, minValue, maxValue float64) (float64, bool) {
-	raw := strings.TrimSpace(config.ParseString(key, ""))
-	if raw == "" {
-		return 0, false
-	}
-	value, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return 0, false
-	}
-	if value < minValue {
-		value = minValue
-	}
-	if value > maxValue {
-		value = maxValue
-	}
-	return value, true
-}
-
-func defaultTranscodeDenoiseStrength(sourceHeight int) float64 {
-	switch {
-	case sourceHeight <= 0:
-		return 0.6 // Preserve the established safe default when scan truth is absent.
-	case sourceHeight <= 576:
-		return 0.6
-	case sourceHeight <= 720:
-		return 0.3
-	default:
-		return 0 // Preserve native HD texture and motion detail.
-	}
-}
-
-func defaultTranscodeSharpenStrength(sourceHeight int) float64 {
-	switch {
-	case sourceHeight <= 0:
-		return 1.5 // Preserve the established safe default when scan truth is absent.
-	case sourceHeight <= 576:
-		return 1.0
-	case sourceHeight <= 720:
-		return 0.75
-	default:
-		return 0.35
-	}
 }
 
 func av1VAAPIGeometryPadFilter() string {
@@ -291,7 +204,7 @@ func av1VAAPIGeometryPadFilter() string {
 	//     1082-line frames. Padding to a 16-line height keeps the decoded
 	//     geometry stable for native HLS clients; SAR is adjusted before padding
 	//     so the display aspect ratio is unchanged after 1088p.
-	return "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=lanczos+accurate_rnd+full_chroma_int," +
+	return "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=lanczos," +
 		"setsar=sar=sar*ceil(h/16)*16/h:max=1000," +
 		"pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
@@ -310,7 +223,7 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
 		}
 		if isAV1 {
-			args = append(args, "-async_depth", "2")
+			args = append(args, "-async_depth", "1")
 		}
 		return args
 	}
@@ -348,13 +261,13 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			args = append(args, "-global_quality", strconv.Itoa(envIntBounded("XG2G_AV1_QVBR_QUALITY", 90, 1, 255)))
 		}
 		if isAV1 {
-			args = append(args, "-async_depth", "2")
+			args = append(args, "-async_depth", "1")
 		}
 		return args
 	}
 
 	if isAV1 {
-		args = append(args, "-rc_mode", "CQP", "-global_quality", "28", "-async_depth", "2")
+		args = append(args, "-rc_mode", "CQP", "-global_quality", "28", "-async_depth", "1")
 		return args
 	}
 	return append(args, "-global_quality", "23")
@@ -433,7 +346,7 @@ func appendConservativeHEVCVAAPIArgs(args []string, spec ports.StreamSpec, outpu
 		"-bf", "0",
 		"-aud", "1",
 		"-idr_interval", "1",
-		"-tier", "high", "-level", "153",
+		"-tier", "main",
 	)
 }
 
@@ -444,8 +357,8 @@ func useConservativeHEVCVAAPILivePreset(spec ports.StreamSpec, outputCodec strin
 	if normalizeRequestedCodec(outputCodec) != "hevc" {
 		return false
 	}
-	if effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeUnknown {
-		// allow any mode, keep going
+	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {
+		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
 }

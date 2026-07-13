@@ -13,7 +13,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"strings"
-	"time"
 )
 
 func (s *Service) lookupStartCapability(serviceRef string) *scan.Capability {
@@ -224,25 +223,7 @@ func (s *Service) resolveProfileSpec(profileID, userAgent string, capability *sc
 	case profiles.ProfileH264FMP4:
 		resolveBackend = hw.h264Backend
 	}
-	spec := profiles.Resolve(profileID, userAgent, int(s.deps.DVRWindow().Seconds()), capability, resolveBackend, hwaccelMode)
-	if capabilityTrustedForFastStart(capability, time.Now()) {
-		normalized := capability.Normalized()
-		spec.SourceTruthVerified = true
-		spec.SourceVideoCodec = normalized.VideoCodec
-		spec.SourceAudioCodec = normalized.AudioCodec
-		spec.SourceFPS = normalized.FPS
-	}
-	return spec
-}
-
-func capabilityTrustedForFastStart(capability *scan.Capability, now time.Time) bool {
-	if capability == nil {
-		return false
-	}
-	normalized := capability.Normalized()
-	return normalized.State == scan.CapabilityStateOK &&
-		normalized.HasMediaTruth() &&
-		!normalized.RetryDue(now)
+	return profiles.Resolve(profileID, userAgent, int(s.deps.DVRWindow().Seconds()), capability, resolveBackend, hwaccelMode)
 }
 
 func deriveStartHWAccelSummary(profileSpec model.ProfileSpec, hwaccelMode profiles.HWAccelMode, hasGPU bool) (effective, reason, backend string) {
@@ -383,7 +364,11 @@ func adaptStartProfileForNetworkContext(intent Intent, spec model.ProfileSpec) m
 	budgetKbps := (downlinkKbps * 75) / 100
 	audioKbps := spec.AudioBitrateK
 	if audioKbps <= 0 {
-		audioKbps = 160
+		if downlinkKbps < 1000 {
+			audioKbps = 96
+		} else {
+			audioKbps = 160
+		}
 	}
 	videoRateK := budgetKbps - audioKbps
 	if videoRateK < 400 {

@@ -17,30 +17,24 @@ import (
 // rotation), as does mpegts.
 func TestUseCMAFSegmenter(t *testing.T) {
 	cases := []struct {
-		name         string
-		lowLatency   bool
-		experimental bool
-		transcode    bool
-		container    string
-		want         bool
+		name       string
+		lowLatency bool
+		transcode  bool
+		container  string
+		want       bool
 	}{
-		{"ll transcode fmp4 stays on stable muxer by default", true, false, true, "fmp4", false},
-		{"experimental ll transcode fmp4", true, true, true, "fmp4", true},
-		{"ll copy fmp4", true, true, false, "fmp4", false},
-		{"ll transcode ts", true, true, true, "ts", false},
-		{"standard transcode fmp4", false, true, true, "fmp4", false},
+		{"ll transcode fmp4", true, true, "fmp4", false},
+		{"ll copy fmp4", true, false, "fmp4", false},
+		{"ll transcode ts", true, true, "ts", false},
+		{"standard transcode fmp4", false, true, "fmp4", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			a := &LocalAdapter{LowLatencyHLS: tc.lowLatency, ExperimentalCMAFSegmenter: tc.experimental}
-			spec := ports.StreamSpec{
-				Mode:   ports.ModeLive,
-				Format: ports.FormatHLS,
-				Profile: ports.ProfileSpec{
-					TranscodeVideo: tc.transcode,
-					Container:      tc.container,
-				},
-			}
+			a := &LocalAdapter{LowLatencyHLS: tc.lowLatency}
+			spec := ports.StreamSpec{Profile: ports.ProfileSpec{
+				TranscodeVideo: tc.transcode,
+				Container:      tc.container,
+			}}
 			if got := a.useCMAFSegmenter(spec); got != tc.want {
 				t.Errorf("useCMAFSegmenter = %v, want %v", got, tc.want)
 			}

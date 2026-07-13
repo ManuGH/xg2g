@@ -50,7 +50,7 @@ func (o *Orchestrator) waitForReady(
 			return false, model.RProcessEnded, "process died during startup: " + status.Message
 		}
 
-		ready, notReadyReason, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, currentProfileSpec.Name, startTime)
+		ready, notReadyReason, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, e.ProfileID, startTime)
 		if err == nil && ready {
 			return true, "", ""
 		}
@@ -175,7 +175,17 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		if len(segmentURIs) == 0 {
 			return false, "master playlist has no variants", nil
 		}
-		variantPath := filepath.Join(filepath.Dir(playlistPath), segmentURIs[0])
+		baseDir := filepath.Dir(playlistPath)
+		variantPath := filepath.Join(baseDir, segmentURIs[0])
+		if rel, relErr := filepath.Rel(baseDir, variantPath); relErr != nil || strings.HasPrefix(rel, "..") {
+			return false, "invalid variant playlist path", nil
+		}
+		// #nosec G304 — variantPath is validated above via filepath.Rel path traversal check
+		if resolvedVariantContent, readErr := os.ReadFile(variantPath); readErr == nil {
+			if strings.Contains(string(resolvedVariantContent), "#EXT-X-STREAM-INF") {
+				return false, "nested master playlists are not supported", nil
+			}
+		}
 		return o.checkPlaylistReadyAt(variantPath, vodMode, ttfpRecorded, profileID, startTime)
 	}
 	if vodMode && !strings.Contains(contentText, "#EXT-X-ENDLIST") {
@@ -207,7 +217,7 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 		return false, "vod last segment missing or empty: " + lastSegment, nil
 	}
 
-	requiredSegments := o.liveReadySegments(profileID)
+	requiredSegments := o.liveReadySegments()
 	if len(segmentURIs) < requiredSegments {
 		return false, fmt.Sprintf("not enough segments: %d < %d required", len(segmentURIs), requiredSegments), nil
 	}
@@ -230,18 +240,11 @@ func (o *Orchestrator) checkPlaylistReadyAt(
 	return true, "", nil
 }
 
-func (o *Orchestrator) liveReadySegments(profileID string) int {
-	required := o.LiveReadySegments
-	if required <= 0 {
-		required = 3
+func (o *Orchestrator) liveReadySegments() int {
+	if o.LiveReadySegments > 0 {
+		return o.LiveReadySegments
 	}
-	// Two-second Safari startup needs three completed segments. Honouring a
-	// global two-segment override here would expose only four seconds of media,
-	// leaving native HLS too close to the live edge for normal network jitter.
-	if profiles.UsesQuickStartHLSSegments(profileID) && required < 3 {
-		return 3
-	}
-	return required
+	return 3
 }
 
 func playlistSegments(content []byte) []string {

@@ -573,7 +573,6 @@ func (s *Server) logPlaybackFeedback(sessionID string, sess *model.SessionRecord
 		Bool("decodeError", decodeError)
 
 	appendPlaybackContextFields(event, req.Context)
-	appendPlaybackFeedbackDetails(event, req.Details)
 
 	if sess == nil {
 		event.Msg("playback feedback received")
@@ -632,25 +631,6 @@ func (s *Server) logPlaybackFeedback(sessionID string, sess *model.SessionRecord
 	}
 
 	event.Msg("playback feedback received")
-}
-
-// appendPlaybackFeedbackDetails logs the free-form details blob (e.g. the
-// client session timeline) so it lands next to the session's server logs.
-// Bounded so a hostile or buggy client cannot blow up the log line.
-func appendPlaybackFeedbackDetails(event *zerolog.Event, details *map[string]interface{}) {
-	if details == nil || len(*details) == 0 {
-		return
-	}
-	const maxDetailsLogBytes = 8192
-	raw, err := json.Marshal(*details)
-	if err != nil {
-		return
-	}
-	if len(raw) > maxDetailsLogBytes {
-		event.Bool("detailsTruncated", true).Str("details", string(raw[:maxDetailsLogBytes]))
-		return
-	}
-	event.RawJSON("details", raw)
 }
 
 func appendPlaybackContextFields(event *zerolog.Event, ctx *PlaybackEngineErrorContext) {

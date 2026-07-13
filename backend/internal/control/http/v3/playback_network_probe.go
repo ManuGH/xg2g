@@ -17,6 +17,10 @@ const (
 	playbackProbeMeasured   = "measured"
 )
 
+// zeroChunk is a shared read-only zero-filled buffer reused across all probe requests.
+// w.Write only reads from the slice, so sharing it is thread-safe.
+var zeroChunk = make([]byte, playbackProbeChunkBytes)
+
 // servePlaybackNetworkProbe provides a small, cache-free transfer over the
 // exact route used for media. It intentionally returns no body for direct LAN
 // clients: a private client address is only honoured when it is the peer or
@@ -38,7 +42,6 @@ func (s *Server) servePlaybackNetworkProbe(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Length", "524288")
 	w.WriteHeader(http.StatusOK)
 
-	chunk := make([]byte, playbackProbeChunkBytes)
 	for remaining := playbackProbeBytes; remaining > 0; {
 		select {
 		case <-r.Context().Done():
@@ -46,11 +49,11 @@ func (s *Server) servePlaybackNetworkProbe(w http.ResponseWriter, r *http.Reques
 		default:
 		}
 
-		size := len(chunk)
+		size := playbackProbeChunkBytes
 		if remaining < size {
 			size = remaining
 		}
-		n, err := w.Write(chunk[:size])
+		n, err := w.Write(zeroChunk[:size])
 		if err != nil || n != size {
 			return
 		}

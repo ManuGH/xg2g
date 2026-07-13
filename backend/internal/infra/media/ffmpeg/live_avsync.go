@@ -39,10 +39,10 @@ const (
 	// buffered - the relay delivers the tune-in head slowly, so every byte we don't
 	// over-read shortens the startup window (during which the client has no playlist
 	// yet and briefly shows a transient network error).
-	avsyncPeekReadChunk  = 64 << 10  // relay read granularity
+	avsyncPeekReadChunk  = 64 << 10 // relay read granularity
 	avsyncPeekFirstProbe = 64 << 10 // start probing once this much head is buffered
 	avsyncPeekProbeStep  = 64 << 10 // re-probe after each additional step
-	avsyncPeekMaxBytes   = 6 << 20   // give up past here -> fall back to direct path
+	avsyncPeekMaxBytes   = 6 << 20  // give up past here -> fall back to direct path
 )
 
 // shouldAvsyncAtrim reports whether the orphan-correction path applies to this
@@ -53,9 +53,6 @@ const (
 // as a 1-frame segment followed by a ~2s video hole while audio runs on).
 func (a *LocalAdapter) shouldAvsyncAtrim(spec ports.StreamSpec) bool {
 	if !a.LiveAvsyncAtrim {
-		return false
-	}
-	if spec.Profile.TranscodeVideo {
 		return false
 	}
 	if spec.Mode != ports.ModeLive {

@@ -85,22 +85,6 @@ func classifyHostBenchmarkClass(elapsed time.Duration) string {
 	}
 }
 
-func classifyProfileBenchmarkClass(profileID string, elapsed time.Duration) string {
-	if profileID == playbackprofile.BenchmarkProfileVideoAV11080I50 {
-		switch {
-		case elapsed > 0 && elapsed <= 500*time.Millisecond:
-			return hostBenchmarkClassStrong // At least 2x realtime for the one-second clip.
-		case elapsed > 0 && elapsed <= time.Second:
-			return hostBenchmarkClassModerate
-		case elapsed > 0:
-			return hostBenchmarkClassWeak
-		default:
-			return ""
-		}
-	}
-	return classifyHostBenchmarkClass(elapsed)
-}
-
 func deriveProfileBenchmarks(codecs []playbackprofile.HostCodecBenchmark) []playbackprofile.HostProfileBenchmark {
 	h264, ok := codecBenchmark(codecs, "h264")
 	if !ok {
@@ -149,8 +133,8 @@ func deriveProfileBenchmarks(codecs []playbackprofile.HostCodecBenchmark) []play
 }
 
 func snapshotProfileBenchmarks(codecs []playbackprofile.HostCodecBenchmark) []playbackprofile.HostProfileBenchmark {
-	actual := make([]playbackprofile.HostProfileBenchmark, 0, 7)
-	seen := make(map[string]struct{}, 7)
+	actual := make([]playbackprofile.HostProfileBenchmark, 0, 6)
+	seen := make(map[string]struct{}, 6)
 	for _, profileID := range []string{
 		playbackprofile.BenchmarkProfileAudioAACStereo,
 		playbackprofile.BenchmarkProfileVideoH2641080P,
@@ -158,7 +142,6 @@ func snapshotProfileBenchmarks(codecs []playbackprofile.HostCodecBenchmark) []pl
 		playbackprofile.BenchmarkProfileVideoH2641080I50,
 		playbackprofile.BenchmarkProfileVideoH2642160P,
 		playbackprofile.BenchmarkProfileVideoH2642160P50,
-		playbackprofile.BenchmarkProfileVideoAV11080I50,
 	} {
 		capability, backend, ok := HardwareProfileCapabilityFor(profileID)
 		if !ok || !capability.Verified || capability.ProbeElapsed <= 0 {
@@ -168,13 +151,11 @@ func snapshotProfileBenchmarks(codecs []playbackprofile.HostCodecBenchmark) []pl
 		codec := "h264"
 		if profileID == playbackprofile.BenchmarkProfileAudioAACStereo {
 			codec = "aac"
-		} else if profileID == playbackprofile.BenchmarkProfileVideoAV11080I50 {
-			codec = "av1"
 		}
 		actual = append(actual, playbackprofile.HostProfileBenchmark{
 			ProfileID:      profileID,
 			Codec:          codec,
-			Class:          classifyProfileBenchmarkClass(profileID, capability.ProbeElapsed),
+			Class:          classifyHostBenchmarkClass(capability.ProbeElapsed),
 			Backend:        backend,
 			ProbeElapsedMs: capability.ProbeElapsed.Milliseconds(),
 		})

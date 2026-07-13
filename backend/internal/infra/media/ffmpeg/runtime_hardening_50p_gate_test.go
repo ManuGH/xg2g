@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/rs/zerolog"
@@ -75,17 +74,4 @@ func TestFinalizePlan_AdaptiveHQ50_UnmeasuredHostPromotes(t *testing.T) {
 	finalized := a.FinalizePlan(context.Background(), adaptiveHQ50Spec(), adaptive50pURL)
 	assert.Equal(t, ports.RuntimeModeHQ50, finalized.Profile.EffectiveRuntimeMode,
 		"unmeasured host should fail-open to 50p")
-}
-
-func TestFinalizePlan_AdaptiveAV1HQ50_UsesFullChainBenchmark(t *testing.T) {
-	a := newAdaptive50pAdapter(t, "moderate")
-	var benchmarkProfileID string
-	a.hostBenchmarkClassFn = func(profileID string) string {
-		benchmarkProfileID = profileID
-		return "moderate"
-	}
-
-	finalized := a.FinalizePlan(context.Background(), adaptiveHQ50Spec(), adaptive50pURL)
-	assert.Equal(t, ports.RuntimeModeHQ50, finalized.Profile.EffectiveRuntimeMode)
-	assert.Equal(t, playbackports.BenchmarkProfileVideoAV11080I50, benchmarkProfileID)
 }

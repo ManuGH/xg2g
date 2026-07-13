@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/domain/vod"
@@ -76,7 +75,7 @@ func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 	assert.Contains(t, args, "0:a:0?", "audio map should remain optional")
 }
 
-func TestBuildArgs_LiveAudioProbePreservesAvailableTracks(t *testing.T) {
+func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
 		"ffprobe",
@@ -107,12 +106,11 @@ func TestBuildArgs_LiveAudioProbePreservesAvailableTracks(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:             "av1_hw",
-			Container:        "fmp4",
-			VideoCodec:       "av1",
-			TranscodeVideo:   true,
-			AudioBitrateK:    192,
-			EnableMultiAudio: true,
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			VideoCodec:     "av1",
+			TranscodeVideo: true,
+			AudioBitrateK:  192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0",
@@ -122,10 +120,9 @@ func TestBuildArgs_LiveAudioProbePreservesAvailableTracks(t *testing.T) {
 
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
-	assert.Contains(t, args, "0:2?", "multi-audio selection should preserve the first AC3 source track")
-	assert.Contains(t, args, "0:3?", "multi-audio selection should preserve the stereo AC3 source track")
-	assert.NotContains(t, args, "0:a:0?", "probe results should replace blind first-audio mapping")
-	assert.Contains(t, args, "aac", "AC3 tracks should be transcoded to AAC to maintain PTS sync")
+	assert.Contains(t, args, "0:3?", "live audio selection should prefer the stereo AC3 source track")
+	assert.NotContains(t, args, "0:a:0?", "stereo probe result should replace blind first-audio mapping")
+	assert.Contains(t, args, "aac", "stereo AC3 track should be transcoded to AAC when transcoding video to maintain PTS sync")
 
 }
 
@@ -155,8 +152,8 @@ func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
 	assert.Equal(t, "copy", videoCodec, "zero-valued profile now defaults to copy instead of legacy CPU transcode")
 
 	audioCodec, ok := valueAfter(args, "-c:a")
-	require.True(t, ok, "live HLS path should emit an audio codec decision")
-	assert.Equal(t, "copy", audioCodec, "passthrough should preserve source audio")
+	require.True(t, ok, "live HLS path should still emit an audio codec")
+	assert.Equal(t, "copy", audioCodec, "live HLS path now copies audio for native compatibility")
 
 	assert.NotContains(t, args, "libx264", "default copy path must not force legacy CPU transcode")
 	assert.NotContains(t, args, "bwdif=mode=send_field:parity=auto:deint=all", "default copy path must not inject deinterlace filters")
@@ -194,9 +191,8 @@ func TestBuildArgs_HighProfileUsesVideoCopy(t *testing.T) {
 	assert.Contains(t, args, "copy", "explicit passthrough profiles must use video copy")
 	assert.NotContains(t, args, "libx264", "explicit passthrough profiles must not fall back to legacy CPU transcode")
 	assert.NotContains(t, args, "yadif", "explicit passthrough profiles must not inject deinterlace filters")
-	audioCodec, ok := valueAfter(args, "-c:a")
-	require.True(t, ok)
-	assert.Equal(t, "copy", audioCodec)
+	assert.Contains(t, args, "-c:a")
+	assert.Contains(t, args, "copy")
 }
 
 func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
@@ -237,9 +233,8 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 	assert.Contains(t, args, "copy", "runtime-probed progressive h264 safari streams should use video copy")
 	assert.NotContains(t, args, "libx264", "runtime-probed remux path must not transcode video")
 	assert.NotContains(t, args, "yadif", "runtime-probed remux path must not inject deinterlace filters")
-	audioCodec, ok := valueAfter(args, "-c:a")
-	require.True(t, ok)
-	assert.Equal(t, "copy", audioCodec)
+	assert.Contains(t, args, "-c:a")
+	assert.Contains(t, args, "copy")
 	assert.Contains(t, args, "dump_extra=freq=keyframe", "live copy must repeat SPS/PPS on keyframes so each HLS segment is independently decodable (no frozen opening frame)")
 
 	hlsSegmentType, ok := valueAfter(args, "-hls_segment_type")
@@ -572,7 +567,7 @@ func TestBuildArgs_SafariHQAllowlistUsesHighBitrate25pTranscode(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "256k", audioBitrate)
 
-	expectedGOP := strconv.Itoa(config.QuickStartHLSSegmentSeconds * 25)
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "hq safari path should keep the 25fps live GOP for corrupt relay inputs")
@@ -646,7 +641,7 @@ func TestBuildArgs_SafariHQAllowlistKeepsProgressive50fpsSourcesProgressive(t *t
 	require.True(t, ok)
 	assert.Equal(t, "256k", audioBitrate)
 
-	expectedGOP := strconv.Itoa(config.QuickStartHLSSegmentSeconds * 50)
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 50)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "progressive HQ safari path should preserve 50fps GOP cadence")
@@ -701,7 +696,7 @@ func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.
 
 	assert.NotContains(t, args, "yadif", "progressive HQ25 fallback must stay progressive")
 
-	expectedGOP := strconv.Itoa(config.QuickStartHLSSegmentSeconds * 25)
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop, "forced HQ25 should clamp progressive sources to 25fps GOP cadence")
@@ -752,7 +747,7 @@ func TestBuildArgs_SafariHQ25AllowlistStartsProgressiveSourcesDirectlyInHQ25(t *
 
 	assert.NotContains(t, args, "yadif", "progressive HQ25 env override must stay progressive")
 
-	expectedGOP := strconv.Itoa(config.QuickStartHLSSegmentSeconds * 25)
+	expectedGOP := strconv.Itoa(adapter.SegmentSeconds * 25)
 	gop, ok := valueAfter(args, "-g")
 	require.True(t, ok)
 	assert.Equal(t, expectedGOP, gop)
@@ -829,10 +824,7 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 
 	tier, ok := valueAfter(args, "-tier")
 	require.True(t, ok)
-	assert.Equal(t, "high", tier)
-	level, ok := valueAfter(args, "-level")
-	require.True(t, ok)
-	assert.Equal(t, "153", level)
+	assert.Equal(t, "main", tier)
 
 	assert.Contains(t, args, "hevc_vaapi")
 	qp, ok := valueAfter(args, "-qp")
@@ -895,13 +887,14 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 	require.True(t, vaapiDevIdx >= 0 && vaapiDevIdx < iIdx, "vaapi_device must come before -i")
 	assert.Equal(t, "/dev/dri/renderD128", args[vaapiDevIdx+1])
 
-	assert.NotContains(t, args, "-hwaccel")
-	assert.NotContains(t, args, "-hwaccel_output_format")
+	assert.Contains(t, args, "-hwaccel")
+	assert.Contains(t, args, "-hwaccel_output_format")
 
 	// Encoder
 	assert.Contains(t, args, "h264_vaapi")
 
-	// Deinterlace via stable encode-only path
+	// Deinterlace in GPU memory (NOT CPU yadif)
+	assert.Contains(t, args, "deinterlace_vaapi")
 	assert.NotContains(t, args, "yadif")
 
 	// CQP with an explicit QP becomes the primary quality knob.
@@ -1096,11 +1089,11 @@ func TestBuildArgs_VaapiHEVCDeinterlaceFallsBackToH264UntilVerified(t *testing.T
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 	assert.Contains(t, args, "-vaapi_device")
-	assert.NotContains(t, args, "-hwaccel", "safe h264 fallback uses stable encode-only path")
-	assert.NotContains(t, args, "-hwaccel_output_format", "safe h264 fallback uses stable encode-only path")
+	assert.Contains(t, args, "-hwaccel", "safe h264 fallback may still use the verified full VAAPI path")
+	assert.Contains(t, args, "-hwaccel_output_format", "safe h264 fallback may still use the verified full VAAPI path")
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Contains(t, vf, "bwdif=")
+	assert.Contains(t, vf, "deinterlace_vaapi")
 	assert.Contains(t, args, "h264_vaapi")
 	assert.NotContains(t, args, "hevc_vaapi")
 	assert.NotContains(t, args, "-tag:v", "h264 fallback must not emit hvc1 tags")
@@ -1204,12 +1197,12 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 	assert.Contains(t, args, "-vaapi_device")
-	assert.NotContains(t, args, "-hwaccel")
-	assert.NotContains(t, args, "-hwaccel_output_format")
+	assert.Contains(t, args, "-hwaccel")
+	assert.Contains(t, args, "-hwaccel_output_format")
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Contains(t, vf, "bwdif=")
-	assert.NotContains(t, vf, "deinterlace_vaapi")
+	assert.Contains(t, vf, "deinterlace_vaapi")
+	assert.NotContains(t, vf, "bwdif=")
 	assert.Contains(t, args, "hevc_vaapi")
 }
 
@@ -2032,7 +2025,7 @@ func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T
 	require.NoError(t, err)
 	assert.Contains(t, args, "h264_vaapi")
 	assert.NotContains(t, args, "av1_vaapi")
-	assert.NotContains(t, args, "-hwaccel", "safe h264 fallback uses stable encode-only path")
+	assert.Contains(t, args, "-hwaccel", "safe h264 fallback may still use the verified full VAAPI path")
 }
 
 func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
@@ -2087,7 +2080,6 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, vf, "bwdif=mode=send_frame:parity=auto:deint=all")
 	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
-	assert.Contains(t, vf, "setparams=field_mode=prog:range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709:chroma_location=left")
 	assert.Contains(t, vf, "format=p010le,hwupload")
 	outputFPS, ok := valueAfter(args, "-r")
 	require.True(t, ok)
@@ -2097,75 +2089,7 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 	assert.Equal(t, "50", gop)
 	assert.Contains(t, args, "av1_vaapi")
 	assert.NotContains(t, args, "h264_vaapi")
-	assert.Contains(t, args, "-color_range")
-	assert.Contains(t, args, "tv")
-	assert.Contains(t, args, "-chroma_sample_location")
-	assert.Contains(t, args, "left")
-	assert.Contains(t, args, "-async_depth")
-	assert.Contains(t, args, "2")
 }
-
-func TestBuildArgs_HDSDRProfile_ColorAndQualityParameters(t *testing.T) {
-	t.Setenv("XG2G_ADAPTIVE_QUALITY_ENABLED", "false")
-	hardware.SetPathCapabilities(map[string]hardware.HardwarePathCapability{
-		hardware.PathVAAPIEncodeOnlyInterlacedAV1: {
-			Verified: true,
-			Status:   hardware.PathStatusVerified,
-			Reason:   "synthetic verified",
-		},
-	})
-	t.Cleanup(func() {
-		hardware.SetPathCapabilities(nil)
-	})
-
-	adapter := NewLocalAdapter(
-		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
-		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
-	)
-	adapter.detector.vaapiEncoders = map[string]bool{
-		"av1_vaapi": true,
-	}
-
-	spec := ports.StreamSpec{
-		SessionID: "hd-sdr-high-quality-test",
-		Mode:      ports.ModeLive,
-		Format:    ports.FormatHLS,
-		Quality:   ports.QualityStandard,
-		Profile: model.ProfileSpec{
-			Name:              "av1_hw",
-			Container:         "fmp4",
-			TranscodeVideo:    true,
-			HWAccel:           "vaapi",
-			VideoCodec:        "av1",
-			VideoSourceHeight: 1080,
-			Deinterlace:       true,
-			VideoMaxRateK:     60000,
-			VideoBufSizeK:     120000,
-		},
-		Source: ports.StreamSource{
-			ID:   "http://example.com/stream",
-			Type: ports.SourceURL,
-		},
-	}
-
-	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
-	require.NoError(t, err)
-
-	vf, ok := valueAfter(args, "-vf")
-	require.True(t, ok)
-	assert.Contains(t, vf, "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=lanczos+accurate_rnd+full_chroma_int")
-	assert.Contains(t, vf, "unsharp=5:5:0.35:5:5:0.0")
-	assert.Contains(t, vf, "setparams=field_mode=prog:range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709:chroma_location=left")
-	assert.Contains(t, vf, "format=p010le,hwupload")
-
-	assert.Contains(t, args, "-color_range")
-	assert.Contains(t, args, "tv")
-	assert.Contains(t, args, "-chroma_sample_location")
-	assert.Contains(t, args, "left")
-	assert.Contains(t, args, "-async_depth")
-	assert.Contains(t, args, "2")
-}
-
 
 func TestBuildArgs_AV1HWHQ50ServiceRefPreserves50fpsMotion(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_HQ50_SERVICE_REFS", "1:0:19:91:4:85:C00000:0:0:0:")
@@ -2564,11 +2488,11 @@ func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
 
 	hlsSegmentFilename, ok := valueAfter(args, "-hls_segment_filename")
 	require.True(t, ok)
-	assert.Contains(t, hlsSegmentFilename, "seg_%v_%06d.m4s")
+	assert.Contains(t, hlsSegmentFilename, "seg_%06d.m4s")
 
 	hlsInitFilename, ok := valueAfter(args, "-hls_fmp4_init_filename")
 	require.True(t, ok)
-	assert.Equal(t, "init_%v.mp4", hlsInitFilename)
+	assert.Equal(t, "init.mp4", hlsInitFilename)
 
 	x264Params, ok := valueAfter(args, "-x264-params")
 	require.True(t, ok)
@@ -2617,11 +2541,11 @@ func TestBuildArgs_UsesFMP4SegmentsWhenContainerRequested(t *testing.T) {
 
 	hlsSegmentFilename, ok := valueAfter(args, "-hls_segment_filename")
 	require.True(t, ok)
-	assert.Contains(t, hlsSegmentFilename, "seg_%v_%06d.m4s")
+	assert.Contains(t, hlsSegmentFilename, "seg_%06d.m4s")
 
 	hlsInitFilename, ok := valueAfter(args, "-hls_fmp4_init_filename")
 	require.True(t, ok)
-	assert.Equal(t, "init_%v.mp4", hlsInitFilename)
+	assert.Equal(t, "init.mp4", hlsInitFilename)
 }
 
 func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
@@ -2772,12 +2696,11 @@ func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:             "av1_hw",
-			Container:        "fmp4",
-			VideoCodec:       "av1",
-			TranscodeVideo:   true,
-			AudioBitrateK:    192,
-			EnableMultiAudio: true,
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			VideoCodec:     "av1",
+			TranscodeVideo: true,
+			AudioBitrateK:  192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0",
