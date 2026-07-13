@@ -2,12 +2,14 @@ package recordings
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	"github.com/ManuGH/xg2g/internal/control/playback"
+	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
@@ -91,6 +93,9 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, hostContext, sourceRef, req, truth, liveTruth, resolvedCaps)
 	s.recordDecisionAudit(ctx, hostContext, sourceRef, req, resolvedCaps, input, dec)
 	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint)
+
+	// Phase 2c: Shadow Observer
+	s.observePlannerShadow(req, sourceRef, truth, liveTruth, resolvedCaps, hostContext, hostPressure, operatorPolicy, dec)
 
 	return PlaybackInfoResult{
 		SourceRef:                 sourceRef,
@@ -630,4 +635,127 @@ func benchmarkProfileForTruth(truth playback.MediaTruth) string {
 
 func benchmarkProfileIsAudioOnly(source decision.Source, caps decision.Capabilities) bool {
 	return decision.CanKeepVideoCopy(source, caps) && !decision.CanKeepAudioCopy(source, caps)
+}
+
+func (s *Service) observePlannerShadow(
+	req PlaybackInfoRequest,
+	sourceRef string,
+	truth playback.MediaTruth,
+	liveTruth *liveTruthResolution,
+	resolvedCaps capabilities.PlaybackCapabilities,
+	hostContext requestHostContext,
+	hostPressure playbackprofile.HostPressureAssessment,
+	operatorPolicy config.PlaybackOperatorConfig,
+	dec *decision.Decision,
+) {
+	if s.observer == nil {
+		return
+	}
+
+	scope := "recording"
+	if req.SubjectKind == PlaybackSubjectLive {
+		scope = "live"
+	}
+
+	clientFamily := req.ClientProfile
+	if strings.TrimSpace(resolvedCaps.ClientFamilyFallback) != "" {
+		clientFamily = resolvedCaps.ClientFamilyFallback
+	}
+
+	provenance := "recordings"
+	confidence := "ok"
+	if liveTruth != nil {
+		provenance = liveTruth.Origin
+		if liveTruth.Stale {
+			confidence = "stale"
+		} else {
+			confidence = string(liveTruth.State)
+		}
+	}
+
+	allowTranscode := true
+	if resolvedCaps.AllowTranscode != nil {
+		allowTranscode = *resolvedCaps.AllowTranscode
+	}
+
+	maxVideoW, maxVideoH, maxVideoFPS := 0, 0, 0
+	if resolvedCaps.MaxVideo != nil {
+		maxVideoW = resolvedCaps.MaxVideo.Width
+		maxVideoH = resolvedCaps.MaxVideo.Height
+		maxVideoFPS = resolvedCaps.MaxVideo.Fps
+	}
+
+	now := time.Now()
+	var availableEngines []string
+	if hostContext.Snapshot.Runtime.Capabilities.HLSAvailable {
+		availableEngines = append(availableEngines, "hls")
+	}
+
+	var downlink, rtt int
+	var internetValidated bool
+	if resolvedCaps.NetworkContext != nil {
+		downlink = resolvedCaps.NetworkContext.DownlinkKbps
+		if resolvedCaps.NetworkContext.InternetValidated != nil {
+			internetValidated = *resolvedCaps.NetworkContext.InternetValidated
+		}
+	}
+	
+	legacyInput := playbackshadow.LegacyPlanningInput{
+		EvaluatedAt:          now.UnixMilli(),
+		Scope:                scope,
+		RequestedIntent:      req.RequestedProfile,
+		SourceIdentity:       sourceRef,
+		Provenance:           provenance,
+		Confidence:           confidence,
+		ObservedAt:           0,
+		ValidUntil:           0,
+		NetworkCaptureTime:   0,
+		PolicyVersion:        req.APIVersion,
+		Container:            truth.Container,
+		VideoCodec:           truth.VideoCodec,
+		AudioCodec:           truth.AudioCodec,
+		Width:                truth.Width,
+		Height:               truth.Height,
+		FPS:                  int(truth.FPS),
+		Interlaced:           truth.Interlaced,
+		BitrateKbps:          truth.BitrateKbps,
+		BitrateConfidence:    string(truth.BitrateConfidence),
+		ClientFamily:         clientFamily,
+		DeviceType:           resolvedCaps.DeviceType,
+		CapabilityVersion:    strconv.Itoa(resolvedCaps.CapabilitiesVersion),
+		AllowTranscode:       allowTranscode,
+		SupportedContainers:  resolvedCaps.Containers,
+		SupportedVideoCodecs: resolvedCaps.VideoCodecs,
+		SupportedAudioCodecs: resolvedCaps.AudioCodecs,
+		MaxVideoWidth:        maxVideoW,
+		MaxVideoHeight:       maxVideoH,
+		MaxVideoFPS:          maxVideoFPS,
+		PreferredEngine:      resolvedCaps.PreferredHLSEngine,
+		SupportedEngines:     resolvedCaps.HLSEngines,
+		SupportsHls:          resolvedCaps.SupportsHLS,
+		SupportsRange:        resolvedCaps.SupportsRange,
+		DownlinkKbps:         downlink,
+		RTTMillis:            rtt,
+		InternetValidated:    internetValidated,
+		HostPressureBand:     string(hostPressure.EffectiveBand),
+		PerformanceClass:     hostContext.Snapshot.Runtime.PerformanceClass,
+		AvailableEngines:     availableEngines,
+		ForceIntent:          operatorPolicy.ForceIntent,
+		MaxQualityRung:       operatorPolicy.MaxQualityRung,
+		DisableTranscoding:   false,
+		MaxGlobalBitrate:     0,
+		StrictFreshness:      false,
+	}
+
+	ev, err := playbackshadow.BuildPlaybackEvidence(legacyInput)
+	if err != nil {
+		log.L().Debug().Err(err).Msg("failed to build playback evidence for shadow observer")
+		return
+	}
+
+	obs := playbackshadow.ShadowObservation{
+		Evidence: ev,
+		Legacy:   playbackshadow.ComparableFromLegacy(dec),
+	}
+	s.observer.TryObserve(obs)
 }

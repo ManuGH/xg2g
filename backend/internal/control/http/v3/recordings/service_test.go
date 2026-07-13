@@ -8,6 +8,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/clientplayback"
 	"github.com/ManuGH/xg2g/internal/control/playback"
+	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
@@ -58,6 +59,10 @@ func (d stubDeps) HostRuntime(context.Context) playbackprofile.HostRuntimeSnapsh
 
 func (d stubDeps) ReceiverContext(context.Context) *capreg.ReceiverContext {
 	return d.receiver
+}
+
+func (d stubDeps) PlannerShadowObserver() playbackshadow.PlannerShadowObserver {
+	return nil
 }
 
 type stubTruthSource struct {

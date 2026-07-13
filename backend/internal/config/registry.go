@@ -222,6 +222,11 @@ func buildRegistry() (*Registry, error) {
 		{Path: "playback.operator.max_quality_rung", Env: "XG2G_PLAYBACK_MAX_QUALITY_RUNG", FieldPath: "Playback.Operator.MaxQualityRung", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 		{Path: "playback.operator.disable_client_fallback", Env: "XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", FieldPath: "Playback.Operator.DisableClientFallback", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "playback.operator.source_rules", Env: "", FieldPath: "Playback.Operator.SourceRules", Profile: ProfileAdvanced, Status: StatusActive, Default: []PlaybackOperatorRuleConfig{}},
+
+		// --- PLANNER SHADOW ---
+		{Path: "plannerShadow.enabled", Env: "XG2G_PLANNER_SHADOW", FieldPath: "PlannerShadow.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "plannerShadow.queueCapacity", Env: "XG2G_PLANNER_SHADOW_QUEUE_CAPACITY", FieldPath: "PlannerShadow.QueueCapacity", Profile: ProfileAdvanced, Status: StatusActive, Default: 512},
+
 		{Path: "monetization.enabled", Env: "XG2G_MONETIZATION_ENABLED", FieldPath: "Monetization.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "monetization.model", Env: "XG2G_MONETIZATION_MODEL", FieldPath: "Monetization.Model", Profile: ProfileAdvanced, Status: StatusActive, Default: MonetizationModelFree},
 		{Path: "monetization.productName", Env: "XG2G_MONETIZATION_PRODUCT_NAME", FieldPath: "Monetization.ProductName", Profile: ProfileAdvanced, Status: StatusActive, Default: "xg2g Unlock"},

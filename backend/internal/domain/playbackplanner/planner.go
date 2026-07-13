@@ -5,6 +5,9 @@ import "errors"
 // ErrRuleNotImplemented is returned when the planner has no valid rules for the evidence.
 var ErrRuleNotImplemented = errors.New("no planner rules implemented for this scenario")
 
+// ErrInvalidEvidence is returned when the evidence cannot be planned.
+var ErrInvalidEvidence = errors.New("invalid or incomplete evidence")
+
 // PlanningResult encapsulates the outcome of the planning process.
 type PlanningResult struct {
 	Plan  PlaybackPlan
@@ -16,7 +19,7 @@ type PlanningResult struct {
 // Errors are only returned if the evidence itself is invalid/malformed or if no rules apply.
 func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 	if !hasValidEvidence(ev) {
-		return PlanningResult{}, errors.New("invalid or incomplete evidence")
+		return PlanningResult{}, ErrInvalidEvidence
 	}
 
 	trace := PlanTrace{

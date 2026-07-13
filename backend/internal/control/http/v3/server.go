@@ -17,6 +17,8 @@ import (
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
+	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
@@ -107,6 +109,8 @@ type Server struct {
 	recordingsV3Service    *v3recordings.Service
 	sessionsV3Service      *v3sessions.Service
 	deviceAuthStateStore   deviceauthstore.StateStore
+	plannerShadowWorker    *playbackshadow.Worker
+	plannerShadowObserver  playbackshadow.PlannerShadowObserver
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -175,11 +179,31 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		authSessionTTL:         defaultAuthSessionTTL,
 		householdUnlockStore:   household.NewInMemoryUnlockStore(),
 		householdUnlockTTL:     cfg.Household.UnlockTTL,
-		// JWTSecret must be set explicitly via SetJWTSecret before serving requests (fail-closed).
-		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
 	}
+
+	// Phase 2c: Shadow Observer
+	var observer playbackshadow.PlannerShadowObserver = playbackshadow.NoopObserver{}
+	obsConfig := playbackshadow.ObserverConfig{
+		Enabled:       cfg.PlannerShadow.Enabled,
+		QueueCapacity: cfg.PlannerShadow.QueueCapacity,
+	}
+	if obsConfig.Enabled {
+		worker, err := playbackshadow.NewWorker(obsConfig, prometheus.DefaultRegisterer, *log.L())
+		if err != nil {
+			log.L().Error().Err(err).Msg("failed to initialize planner shadow worker, falling back to NoopObserver")
+		} else {
+			s.plannerShadowWorker = worker
+			observer = worker
+			// Started later with runtimeCtx
+		}
+	}
+	s.plannerShadowObserver = observer
+
+	// JWTSecret must be set explicitly via SetJWTSecret before serving requests (fail-closed).
+	// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
+
 	s.intentService = v3intents.NewService(&serverIntentDeps{s: s})
-	s.recordingsV3Service = v3recordings.NewService(&serverRecordingsDeps{s: s})
+	s.recordingsV3Service = v3recordings.NewService(&serverRecordingsDeps{s: s}, v3recordings.WithPlannerShadowObserver(observer))
 	s.sessionsV3Service = v3sessions.NewService(&serverSessionDeps{s: s})
 	s.epgSource = &epgAdapter{s}
 	return s

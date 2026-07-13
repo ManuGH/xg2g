@@ -65,13 +65,30 @@ type LegacyPlanningInput struct {
 
 // BuildPlaybackEvidence maps the legacy HTTP boundary inputs into the new pure domain model.
 func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackEvidence, error) {
+	confidence := input.Confidence
+	if confidence == "" {
+		confidence = "unknown"
+	}
+	bitrateConfidence := input.BitrateConfidence
+	if bitrateConfidence == "" {
+		bitrateConfidence = "unknown"
+	}
+	hostPressureBand := input.HostPressureBand
+	if hostPressureBand == "" {
+		hostPressureBand = "unknown"
+	}
+	perfClass := input.PerformanceClass
+	if perfClass == "" {
+		perfClass = "unknown"
+	}
+
 	ev := playbackplanner.PlaybackEvidence{
 		EvaluatedAt:        input.EvaluatedAt,
 		Scope:              input.Scope,
 		RequestedIntent:    input.RequestedIntent,
 		SourceIdentity:     input.SourceIdentity,
 		Provenance:         input.Provenance,
-		Confidence:         input.Confidence,
+		Confidence:         confidence,
 		ObservedAt:         input.ObservedAt,
 		ValidUntil:         input.ValidUntil,
 		NetworkCaptureTime: input.NetworkCaptureTime,
@@ -85,7 +102,7 @@ func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackE
 			FPS:               input.FPS,
 			Interlaced:        input.Interlaced,
 			BitrateKbps:       input.BitrateKbps,
-			BitrateConfidence: input.BitrateConfidence,
+			BitrateConfidence: bitrateConfidence,
 		},
 		ClientEvidence: playbackplanner.ClientEvidence{
 			Family:               input.ClientFamily,
@@ -109,9 +126,9 @@ func BuildPlaybackEvidence(input LegacyPlanningInput) (playbackplanner.PlaybackE
 			InternetValidated: input.InternetValidated,
 		},
 		HostSnapshot: playbackplanner.HostSnapshot{
-			PressureBand:     input.HostPressureBand,
+			PressureBand:     hostPressureBand,
 			AvailableEngines: append([]string(nil), input.AvailableEngines...),
-			PerformanceClass: input.PerformanceClass,
+			PerformanceClass: perfClass,
 			BenchmarkClass:   input.BenchmarkClass,
 		},
 		OperatorPolicy: playbackplanner.OperatorPolicy{

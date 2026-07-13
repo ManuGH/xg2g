@@ -608,13 +608,20 @@ type AppConfig struct {
 	// Sprint 1: Resilience Core
 	Limits   LimitsConfig
 	Timeouts TimeoutsConfig
-	Breaker  BreakerConfig
 
+	// Playback Planner Shadow
+	PlannerShadow PlannerShadowConfig
+	Breaker       BreakerConfig
 	// Library Configuration (Phase 0 per ADR-ENG-002)
 	Library LibraryConfig
 
 	// Verification (Drift Detection)
 	Verification VerificationSettings
+}
+
+type PlannerShadowConfig struct {
+	Enabled       bool
+	QueueCapacity int
 }
 
 // VerificationSettings holds runtime verification settings

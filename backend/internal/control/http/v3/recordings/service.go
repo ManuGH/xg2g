@@ -8,6 +8,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/clientplayback"
 	"github.com/ManuGH/xg2g/internal/control/playback"
+	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
@@ -18,12 +19,29 @@ import (
 type Service struct {
 	deps Deps
 	// liveProbeGroup collapses concurrent interactive capability probes for the same
-	// serviceRef into a single relay probe (see probeLiveTruthBounded).
 	liveProbeGroup singleflight.Group
+	observer       playbackshadow.PlannerShadowObserver
 }
 
-func NewService(deps Deps) *Service {
-	return &Service{deps: deps}
+type Option func(*Service)
+
+func WithPlannerShadowObserver(observer playbackshadow.PlannerShadowObserver) Option {
+	return func(s *Service) {
+		if observer != nil {
+			s.observer = observer
+		}
+	}
+}
+
+func NewService(deps Deps, opts ...Option) *Service {
+	s := &Service{
+		deps:     deps,
+		observer: playbackshadow.NoopObserver{},
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // defaultLiveInteractiveProbeBudget bounds how long an interactive live playback
