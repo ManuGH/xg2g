@@ -61,6 +61,9 @@ func ComparableFromLegacy(dec *decision.Decision) ComparablePlaybackPlan {
 	if dec.TargetProfile != nil {
 		c.VideoMode = string(dec.TargetProfile.Video.Mode)
 		c.AudioMode = string(dec.TargetProfile.Audio.Mode)
+		c.VideoCodec = dec.TargetProfile.Video.Codec
+		c.AudioCodec = dec.TargetProfile.Audio.Codec
+		c.Container = dec.TargetProfile.Container
 		c.TargetBitrate = dec.TargetProfile.Video.BitrateKbps
 		c.MaxBitrateKnown = false // Legacy doesn't distinct Target vs Max correctly here or uses same. Unknown is safer.
 		c.ScaleWidth = dec.TargetProfile.Video.Width

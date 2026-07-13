@@ -19,14 +19,17 @@ func TestComparableFromLegacy(t *testing.T) {
 			AudioCodec: "aac",
 		},
 		TargetProfile: &playbackprofile.TargetPlaybackProfile{
+			Container: "ts",
 			Video: playbackprofile.VideoTarget{
 				Mode: "transcode",
+				Codec: "h264",
 				BitrateKbps: 4000,
 				Width: 1280,
 				Height: 720,
 			},
 			Audio: playbackprofile.AudioTarget{
 				Mode: "copy",
+				Codec: "aac",
 			},
 		},
 	}
