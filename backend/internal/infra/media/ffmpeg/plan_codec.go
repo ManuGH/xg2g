@@ -2,7 +2,6 @@ package ffmpeg
 
 import (
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/config"
 	codecdecision "github.com/ManuGH/xg2g/internal/decision"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -117,7 +116,7 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 		switch hwBackend {
 		case profiles.GPUBackendVAAPI:
 			if spec.Profile.Deinterlace && !vaapiInterlacedCodecIsSafe(resolvedCodec) {
-				if experimentalAllowUnverifiedInterlacedVAAPICodec(resolvedCodec) {
+				if experimentalAllowUnverifiedInterlacedVAAPICodec(resolvedCodec, a.Config.ExperimentalInterlacedCodecs) {
 					a.Logger.Warn().
 						Str("requested_codec", resolvedCodec).
 						Str("override_env", experimentalInterlacedVAAPICodecsEnv).
@@ -278,18 +277,12 @@ func (a *LocalAdapter) anyVerifiedVAAPIInterlacedPathForCodec(codec string, full
 	return false
 }
 
-func experimentalAllowUnverifiedInterlacedVAAPICodec(codec string) bool {
+func experimentalAllowUnverifiedInterlacedVAAPICodec(codec string, allowedCodecs []string) bool {
 	codec = normalizeRequestedCodec(codec)
 	if codec != "hevc" && codec != "av1" {
 		return false
 	}
-	raw := strings.TrimSpace(config.ParseString(experimentalInterlacedVAAPICodecsEnv, ""))
-	if raw == "" {
-		return false
-	}
-	for _, item := range strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
-	}) {
+	for _, item := range allowedCodecs {
 		if normalizeRequestedCodec(item) == codec {
 			return true
 		}

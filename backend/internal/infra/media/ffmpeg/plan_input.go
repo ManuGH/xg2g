@@ -341,7 +341,7 @@ func (a *LocalAdapter) isValidFPS(fps int) bool {
 }
 
 func (a *LocalAdapter) adjustLiveFPSForRuntimeServiceOverride(spec ports.StreamSpec, inputURL string, fps int) int {
-	if !shouldForce25FPSForLiveProfile(spec, inputURL) {
+	if !shouldForce25FPSForLiveProfile(spec, inputURL, a.Config) {
 		return fps
 	}
 
@@ -362,14 +362,14 @@ func (a *LocalAdapter) adjustLiveFPSForRuntimeServiceOverride(spec ports.StreamS
 	return targetFPS
 }
 
-func shouldForce25FPSForLiveProfile(spec ports.StreamSpec, inputURL string) bool {
-	if shouldForceSafariHQ25ForServiceRef(spec, inputURL) {
+func shouldForce25FPSForLiveProfile(spec ports.StreamSpec, inputURL string, cfg AdapterConfig) bool {
+	if shouldForceSafariHQ25ForServiceRef(spec, inputURL, cfg) {
 		return true
 	}
-	if shouldForceSafariHQ50ForServiceRef(spec, inputURL) {
+	if shouldForceSafariHQ50ForServiceRef(spec, inputURL, cfg) {
 		return false
 	}
-	if shouldForceSafariHQForServiceRef(spec, inputURL) {
+	if shouldForceSafariHQForServiceRef(spec, inputURL, cfg) {
 		return shouldForce25FPSForSafariHQ(spec.Profile)
 	}
 	if effectiveLiveRuntimeMode(spec.Profile) != ports.RuntimeModeHQ25 {

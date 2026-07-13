@@ -943,7 +943,6 @@ func TestService_ProcessIntent_StartDerivesRequestedCodecsFromClientCapsWhenMiss
 }
 
 func TestService_ProcessIntent_StartUsesProgressiveScanTruthForAV1HW(t *testing.T) {
-	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
 	hardware.SetVAAPIEncoderPreflight(map[string]bool{"av1_vaapi": true})
 	hardware.SetVAAPIPreflightResult(true)
 	t.Cleanup(func() {
@@ -983,8 +982,8 @@ func TestService_ProcessIntent_StartUsesProgressiveScanTruthForAV1HW(t *testing.
 	if deps.store.putSession.Profile.VideoCodec != "av1" {
 		t.Fatalf("expected av1 codec, got %#v", deps.store.putSession.Profile)
 	}
-	if deps.store.putSession.Profile.Container != "mpegts" {
-		t.Fatalf("expected mpegts container, got %#v", deps.store.putSession.Profile)
+	if deps.store.putSession.Profile.Container != "fmp4" {
+		t.Fatalf("expected default fmp4 container, got %#v", deps.store.putSession.Profile)
 	}
 	if deps.store.putSession.Profile.Deinterlace {
 		t.Fatalf("expected progressive scan truth to disable deinterlace, got %#v", deps.store.putSession.Profile)

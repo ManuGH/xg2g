@@ -51,7 +51,7 @@ func TestAdaptiveTranscodeQualityBudget_UsesSourceHeight(t *testing.T) {
 	budget, ok := adaptiveTranscodeQualityBudgetFor(ports.ProfileSpec{
 		VideoCodec:        "av1",
 		VideoSourceHeight: 576,
-	})
+	}, LoadAdapterConfig("", ""))
 	assert.True(t, ok)
 	assert.Equal(t, 5000, budget.maxRateK)
 
@@ -59,7 +59,7 @@ func TestAdaptiveTranscodeQualityBudget_UsesSourceHeight(t *testing.T) {
 	hd, ok := adaptiveTranscodeQualityBudgetFor(ports.ProfileSpec{
 		VideoCodec:        "av1",
 		VideoSourceHeight: 1080,
-	})
+	}, LoadAdapterConfig("", ""))
 	assert.True(t, ok)
 	assert.Equal(t, 14000, hd.maxRateK)
 }

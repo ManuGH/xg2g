@@ -5,10 +5,12 @@
 package ffmpeg
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg/capability"
 )
 
 // AdapterConfig holds the ENV-tunable knobs that shape FFmpeg live ingest, FPS
@@ -64,6 +66,42 @@ type AdapterConfig struct {
 
 	// Safari runtime path-correctness probe budget.
 	SafariRuntimeProbeTimeout time.Duration
+
+	// Command-planning and runtime-hardening tuning. These values are captured
+	// once with the adapter and must not be re-read from process environment
+	// while an FFmpeg plan is being constructed.
+	SafariCPUStartTimeoutOverride time.Duration
+	TranscodeSharpen              float64
+	TranscodeDenoise              float64
+	TranscodeDeband               bool
+	AV1QVBR                       bool
+	AV1QVBRQuality                int
+	ExperimentalInterlacedCodecs  []string
+
+	SafariForceCopyServiceRefs []string
+	SafariHQServiceRefs        []string
+	SafariHQ25ServiceRefs      []string
+	SafariHQ50ServiceRefs      []string
+	SafariHQ50MaxRateKOverride int
+	SafariHQ50BufSizeKOverride int
+
+	AdaptiveQualityEnabled     bool
+	AdaptiveAV1QualityEnabled  bool
+	AdaptiveHEVCQualityEnabled bool
+	AdaptiveH264QualityEnabled bool
+	AdaptiveAV1MaxRateK        int
+	AdaptiveAV1BufSizeK        int
+	AdaptiveHEVCMaxRateK       int
+	AdaptiveHEVCBufSizeK       int
+	AdaptiveH264MaxRateK       int
+	AdaptiveH264BufSizeK       int
+
+	HEVCVAAPIAutoRatioMax float64
+	AV1VAAPIAutoRatioMax  float64
+	HEVCNVENCAutoRatioMax float64
+	AV1NVENCAutoRatioMax  float64
+	RuntimePathMinYAvg    float64
+	RuntimePathLowChecks  int
 }
 
 // LoadAdapterConfig resolves every ENV-tunable media-pipeline knob: defaults,
@@ -175,37 +213,143 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 	if fpsCacheTTL <= 0 {
 		fpsCacheTTL = 24 * time.Hour
 	}
+	safariCPUStartTimeoutMs := envOptionalIntBounded("XG2G_SAFARI_CPU_START_TIMEOUT_MS", 1, 120000)
 
 	return AdapterConfig{
-		LiveAnalyzeDuration:        liveAnalyzeDuration,
-		LiveProbeSize:              liveProbeSize,
-		LiveUserAgent:              liveUserAgent,
-		StreamRelayAnalyzeDuration: streamRelayAnalyzeDuration,
-		StreamRelayProbeSize:       streamRelayProbeSize,
-		IngestFFlags:               ingestFFlags,
-		IngestErrDetect:            ingestErrDetect,
-		IngestMaxErrorRate:         ingestMaxErrorRate,
-		IngestFlags2:               ingestFlags2,
-		LiveNoBuffer:               liveNoBuffer,
-		ForceIgnDTS:                forceIgnDTS,
-		LiveAvsyncAtrim:            liveAvsyncAtrim,
-		LiveAvsyncPipeNoTrim:       liveAvsyncPipeNoTrim,
-		SafariDirtyFilter:          safariDirtyFilter,
-		SafariDirtyX264Tune:        safariDirtyTune,
-		FPSProbeTimeout:            time.Duration(fpsProbeTimeoutMs) * time.Millisecond,
-		FPSMin:                     fpsMin,
-		FPSMax:                     fpsMax,
-		FPSFallback:                fpsFallback,
-		FPSFallbackInter:           fpsFallbackInter,
-		FPSProbeFFlags:             fpsProbeFFlags,
-		FPSProbeErrDetect:          fpsProbeErrDetect,
-		FPSProbeAnalyze:            fpsProbeAnalyze,
-		FPSProbeSize:               fpsProbeSize,
-		FPSProbeRetryAn:            fpsProbeRetryAnalyze,
-		FPSProbeRetrySize:          fpsProbeRetrySize,
-		SkipFPSProbeOnCache:        skipFPSProbeOnCache,
-		SkipFPSProbeWarmup:         skipFPSProbeWarmup,
-		FPSCacheTTL:                fpsCacheTTL,
-		SafariRuntimeProbeTimeout:  time.Duration(safariRuntimeProbeTimeoutMs) * time.Millisecond,
+		LiveAnalyzeDuration:           liveAnalyzeDuration,
+		LiveProbeSize:                 liveProbeSize,
+		LiveUserAgent:                 liveUserAgent,
+		StreamRelayAnalyzeDuration:    streamRelayAnalyzeDuration,
+		StreamRelayProbeSize:          streamRelayProbeSize,
+		IngestFFlags:                  ingestFFlags,
+		IngestErrDetect:               ingestErrDetect,
+		IngestMaxErrorRate:            ingestMaxErrorRate,
+		IngestFlags2:                  ingestFlags2,
+		LiveNoBuffer:                  liveNoBuffer,
+		ForceIgnDTS:                   forceIgnDTS,
+		LiveAvsyncAtrim:               liveAvsyncAtrim,
+		LiveAvsyncPipeNoTrim:          liveAvsyncPipeNoTrim,
+		SafariDirtyFilter:             safariDirtyFilter,
+		SafariDirtyX264Tune:           safariDirtyTune,
+		FPSProbeTimeout:               time.Duration(fpsProbeTimeoutMs) * time.Millisecond,
+		FPSMin:                        fpsMin,
+		FPSMax:                        fpsMax,
+		FPSFallback:                   fpsFallback,
+		FPSFallbackInter:              fpsFallbackInter,
+		FPSProbeFFlags:                fpsProbeFFlags,
+		FPSProbeErrDetect:             fpsProbeErrDetect,
+		FPSProbeAnalyze:               fpsProbeAnalyze,
+		FPSProbeSize:                  fpsProbeSize,
+		FPSProbeRetryAn:               fpsProbeRetryAnalyze,
+		FPSProbeRetrySize:             fpsProbeRetrySize,
+		SkipFPSProbeOnCache:           skipFPSProbeOnCache,
+		SkipFPSProbeWarmup:            skipFPSProbeWarmup,
+		FPSCacheTTL:                   fpsCacheTTL,
+		SafariRuntimeProbeTimeout:     time.Duration(safariRuntimeProbeTimeoutMs) * time.Millisecond,
+		SafariCPUStartTimeoutOverride: time.Duration(safariCPUStartTimeoutMs) * time.Millisecond,
+		TranscodeSharpen:              envFloatBounded("XG2G_TRANSCODE_SHARPEN", 1.5, 0.0, 3.0),
+		TranscodeDenoise:              envFloatBounded("XG2G_TRANSCODE_DENOISE", 0.6, 0.0, 1.5),
+		TranscodeDeband:               envBool("XG2G_TRANSCODE_DEBAND", true),
+		AV1QVBR:                       envBool("XG2G_AV1_QVBR", true),
+		AV1QVBRQuality:                envIntBounded("XG2G_AV1_QVBR_QUALITY", 90, 1, 255),
+		ExperimentalInterlacedCodecs:  parseSnapshotList(config.ParseString(experimentalInterlacedVAAPICodecsEnv, ""), true),
+
+		SafariForceCopyServiceRefs: parseSnapshotList(config.ParseString("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", ""), false),
+		SafariHQServiceRefs:        parseSnapshotList(config.ParseString("XG2G_SAFARI_HQ_SERVICE_REFS", ""), false),
+		SafariHQ25ServiceRefs:      parseSnapshotList(config.ParseString("XG2G_SAFARI_HQ25_SERVICE_REFS", ""), false),
+		SafariHQ50ServiceRefs:      parseSnapshotList(config.ParseString("XG2G_SAFARI_HQ50_SERVICE_REFS", ""), false),
+		SafariHQ50MaxRateKOverride: envOptionalIntBounded("XG2G_SAFARI_HQ50_MAXRATE_K", 4000, 60000),
+		SafariHQ50BufSizeKOverride: envOptionalIntBounded("XG2G_SAFARI_HQ50_BUFSIZE_K", 8000, 120000),
+
+		AdaptiveQualityEnabled:     envBool("XG2G_ADAPTIVE_QUALITY_ENABLED", true),
+		AdaptiveAV1QualityEnabled:  envBool("XG2G_ADAPTIVE_AV1_QUALITY_ENABLED", true),
+		AdaptiveHEVCQualityEnabled: envBool("XG2G_ADAPTIVE_HEVC_QUALITY_ENABLED", true),
+		AdaptiveH264QualityEnabled: envBool("XG2G_ADAPTIVE_H264_QUALITY_ENABLED", true),
+		AdaptiveAV1MaxRateK:        envOptionalIntBounded("XG2G_ADAPTIVE_AV1_MAXRATE_K", 4000, 60000),
+		AdaptiveAV1BufSizeK:        envOptionalIntBounded("XG2G_ADAPTIVE_AV1_BUFSIZE_K", 8000, 120000),
+		AdaptiveHEVCMaxRateK:       envOptionalIntBounded("XG2G_ADAPTIVE_HEVC_MAXRATE_K", 4000, 60000),
+		AdaptiveHEVCBufSizeK:       envOptionalIntBounded("XG2G_ADAPTIVE_HEVC_BUFSIZE_K", 8000, 120000),
+		AdaptiveH264MaxRateK:       envOptionalIntBounded("XG2G_ADAPTIVE_H264_MAXRATE_K", 4000, 60000),
+		AdaptiveH264BufSizeK:       envOptionalIntBounded("XG2G_ADAPTIVE_H264_BUFSIZE_K", 8000, 120000),
+
+		HEVCVAAPIAutoRatioMax: envFloatBounded("XG2G_HEVC_VAAPI_AUTO_RATIO_MAX", capability.DefaultHEVCVAAPIAutoRatioMax, 1.0, 10.0),
+		AV1VAAPIAutoRatioMax:  envFloatBounded("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", capability.DefaultAV1VAAPIAutoRatioMax, 1.0, 10.0),
+		HEVCNVENCAutoRatioMax: envFloatBounded("XG2G_HEVC_NVENC_AUTO_RATIO_MAX", capability.DefaultHEVCNVENCAutoRatioMax, 1.0, 10.0),
+		AV1NVENCAutoRatioMax:  envFloatBounded("XG2G_AV1_NVENC_AUTO_RATIO_MAX", capability.DefaultAV1NVENCAutoRatioMax, 1.0, 10.0),
+		RuntimePathMinYAvg:    envFloatBounded("XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG", defaultRuntimePathCorrectnessMinYAvg, 1.0, 64.0),
+		RuntimePathLowChecks:  envIntBounded("XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS", defaultRuntimePathCorrectnessChecks, 1, 4),
 	}
+}
+
+func envOptionalIntBounded(key string, minValue, maxValue int) int {
+	raw := strings.TrimSpace(config.ParseString(key, ""))
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	if n < minValue {
+		return minValue
+	}
+	if n > maxValue {
+		return maxValue
+	}
+	return n
+}
+
+func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
+	value := envOptionalIntBounded(key, minValue, maxValue)
+	if value == 0 {
+		return defaultValue
+	}
+	return value
+}
+
+func envFloatBounded(key string, defaultValue, minValue, maxValue float64) float64 {
+	raw := strings.TrimSpace(config.ParseString(key, ""))
+	if raw == "" {
+		return defaultValue
+	}
+	n, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return defaultValue
+	}
+	if n < minValue {
+		return minValue
+	}
+	if n > maxValue {
+		return maxValue
+	}
+	return n
+}
+
+func envBool(key string, defaultValue bool) bool {
+	return config.ParseBool(key, defaultValue)
+}
+
+func parseSnapshotList(raw string, splitWhitespace bool) []string {
+	items := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || (splitWhitespace && (r == ' ' || r == '\t' || r == '\n' || r == '\r'))
+	})
+	out := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if splitWhitespace {
+			item = normalizeRequestedCodec(item)
+		} else if normalized := normalizeServiceRef(item); normalized != "" {
+			item = normalized
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }

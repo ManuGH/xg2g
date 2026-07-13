@@ -55,7 +55,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	}
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
-	args = appendVaapiRateControlArgs(args, prof, outputCodec)
+	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = appendVideoGOPArgs(args, gop, segmentSec)
@@ -96,7 +96,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	args = append(args, "-vf", filter)
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
-	args = appendVaapiRateControlArgs(args, prof, outputCodec)
+	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = appendVideoGOPArgs(args, gop, segmentSec)
@@ -132,13 +132,13 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	// sports — still real-time for one session, thinner for concurrent ones), so
 	// they default conservatively and are env-tunable. Only transcode paths reach
 	// here — copy passthrough stays bit-exact and untouched.
-	if f := transcodeDenoiseFilter(); f != "" {
+	if f := transcodeDenoiseFilter(a.Config.TranscodeDenoise); f != "" {
 		parts = append(parts, f)
 	}
-	if f := transcodeDebandFilter(); f != "" {
+	if f := transcodeDebandFilter(a.Config.TranscodeDeband); f != "" {
 		parts = append(parts, f)
 	}
-	if f := transcodeSharpenFilter(); f != "" {
+	if f := transcodeSharpenFilter(a.Config.TranscodeSharpen); f != "" {
 		parts = append(parts, f)
 	}
 	uploadFormat := "nv12"
@@ -156,8 +156,7 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 // default — and was verified clean on 1080i wide shots up to ~1.5; chroma is left
 // untouched to avoid colour fringing. It adds perceived crispness on edges/lines
 // but cannot restore fine detail the source or the re-encode already discarded.
-func transcodeSharpenFilter() string {
-	amount := envFloatBounded("XG2G_TRANSCODE_SHARPEN", 1.5, 0.0, 3.0)
+func transcodeSharpenFilter(amount float64) string {
 	if amount <= 0 {
 		return ""
 	}
@@ -169,8 +168,7 @@ func transcodeSharpenFilter() string {
 // (0 disables, default 0.6, capped at 1.5); spatial and temporal strengths scale
 // together. Encoder cost is fixed regardless of strength, so the strength is a
 // pure quality knob (lower = gentler, preserves more fine detail).
-func transcodeDenoiseFilter() string {
-	s := envFloatBounded("XG2G_TRANSCODE_DENOISE", 0.6, 0.0, 1.5)
+func transcodeDenoiseFilter(s float64) string {
 	if s <= 0 {
 		return ""
 	}
@@ -179,8 +177,8 @@ func transcodeDenoiseFilter() string {
 
 // transcodeDebandFilter returns a deband expression for the transcode chain, or
 // "" when disabled via XG2G_TRANSCODE_DEBAND=false (default on; deband is gentle).
-func transcodeDebandFilter() string {
-	if !envBool("XG2G_TRANSCODE_DEBAND", true) {
+func transcodeDebandFilter(enabled bool) string {
+	if !enabled {
 		return ""
 	}
 	return "deband"
@@ -209,7 +207,7 @@ func av1VAAPIGeometryPadFilter() string {
 		"pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
 
-func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCodec string) []string {
+func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCodec string, cfg AdapterConfig) []string {
 	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
 	if prof.VideoQP > 0 {
 		args = append(args,
@@ -242,7 +240,7 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 		// QVBR RC mode"), which is set above. Disable with XG2G_AV1_QVBR=false to
 		// fall back to implicit VBR; tune the quality target with
 		// XG2G_AV1_QVBR_QUALITY (AV1 scale 0-255, lower = higher quality).
-		av1QVBR := isAV1 && envBool("XG2G_AV1_QVBR", true)
+		av1QVBR := isAV1 && cfg.AV1QVBR
 		if av1QVBR {
 			args = append(args, "-rc_mode", "QVBR")
 		}
@@ -258,7 +256,7 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			// the VideoMaxRateK ceiling still bounds, so it spends the available
 			// bitrate on visibly cleaner motion. Lower XG2G_AV1_QVBR_QUALITY for
 			// even higher quality (more bitrate); raise it to save bandwidth.
-			args = append(args, "-global_quality", strconv.Itoa(envIntBounded("XG2G_AV1_QVBR_QUALITY", 90, 1, 255)))
+			args = append(args, "-global_quality", strconv.Itoa(cfg.AV1QVBRQuality))
 		}
 		if isAV1 {
 			args = append(args, "-async_depth", "1")
@@ -380,7 +378,7 @@ func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, 
 	// on every keyframe, which makes the HDR decoder re-initialise -> a periodic
 	// flash. dump_extra is an Annex-B/MPEG-TS hardening only.
 	isFMP4 := strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
-	hardenedBitstream := (liveCopy || shouldHardenSafariCopyBitstream(spec, inputURL)) && !isFMP4
+	hardenedBitstream := (liveCopy || shouldHardenSafariCopyBitstream(spec, inputURL, a.Config)) && !isFMP4
 
 	a.Logger.Info().
 		Str("sessionId", spec.SessionID).

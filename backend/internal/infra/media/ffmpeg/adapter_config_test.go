@@ -45,6 +45,56 @@ var adapterEnvKeys = []string{
 	"XG2G_SKIP_FPS_PROBE_WARMUP",
 	"XG2G_SAFARI_RUNTIME_PROBE_TIMEOUT_MS",
 	"XG2G_FPS_CACHE_TTL",
+	"XG2G_SAFARI_CPU_START_TIMEOUT_MS",
+	"XG2G_TRANSCODE_SHARPEN",
+	"XG2G_TRANSCODE_DENOISE",
+	"XG2G_TRANSCODE_DEBAND",
+	"XG2G_AV1_QVBR",
+	"XG2G_AV1_QVBR_QUALITY",
+	experimentalInterlacedVAAPICodecsEnv,
+	"XG2G_SAFARI_FORCE_COPY_SERVICE_REFS",
+	"XG2G_SAFARI_HQ_SERVICE_REFS",
+	"XG2G_SAFARI_HQ25_SERVICE_REFS",
+	"XG2G_SAFARI_HQ50_SERVICE_REFS",
+	"XG2G_SAFARI_HQ50_MAXRATE_K",
+	"XG2G_SAFARI_HQ50_BUFSIZE_K",
+	"XG2G_ADAPTIVE_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_AV1_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_HEVC_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_H264_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_AV1_MAXRATE_K",
+	"XG2G_ADAPTIVE_AV1_BUFSIZE_K",
+	"XG2G_ADAPTIVE_HEVC_MAXRATE_K",
+	"XG2G_ADAPTIVE_HEVC_BUFSIZE_K",
+	"XG2G_ADAPTIVE_H264_MAXRATE_K",
+	"XG2G_ADAPTIVE_H264_BUFSIZE_K",
+	"XG2G_HEVC_VAAPI_AUTO_RATIO_MAX",
+	"XG2G_AV1_VAAPI_AUTO_RATIO_MAX",
+	"XG2G_HEVC_NVENC_AUTO_RATIO_MAX",
+	"XG2G_AV1_NVENC_AUTO_RATIO_MAX",
+	"XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG",
+	"XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS",
+}
+
+func TestAdapterConfigSnapshot_DoesNotReadEnvironmentMidPlanning(t *testing.T) {
+	clearAdapterEnv(t)
+	t.Setenv("XG2G_TRANSCODE_SHARPEN", "0.7")
+	t.Setenv("XG2G_AV1_QVBR_QUALITY", "77")
+	snapshot := LoadAdapterConfig("2000000", "5M")
+
+	t.Setenv("XG2G_TRANSCODE_SHARPEN", "2.5")
+	t.Setenv("XG2G_AV1_QVBR_QUALITY", "111")
+
+	if got := transcodeSharpenFilter(snapshot.TranscodeSharpen); got != "unsharp=5:5:0.70:5:5:0.0" {
+		t.Fatalf("snapshot sharpen filter = %q", got)
+	}
+	if snapshot.AV1QVBRQuality != 77 {
+		t.Fatalf("snapshot AV1 QVBR quality = %d, want 77", snapshot.AV1QVBRQuality)
+	}
+	refreshed := LoadAdapterConfig("2000000", "5M")
+	if refreshed.TranscodeSharpen != 2.5 || refreshed.AV1QVBRQuality != 111 {
+		t.Fatalf("fresh snapshot did not observe updated environment: %+v", refreshed)
+	}
 }
 
 func clearAdapterEnv(t *testing.T) {

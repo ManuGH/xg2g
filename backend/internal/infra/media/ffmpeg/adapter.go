@@ -57,6 +57,7 @@ type pathProbeRequest struct {
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
+	Config                     AdapterConfig
 	BinPath                    string
 	FFprobeBin                 string
 	HLSRoot                    string
@@ -181,6 +182,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		},
 	}
 	adapter := &LocalAdapter{
+		Config:                     cfg,
 		BinPath:                    binPath,
 		FFprobeBin:                 strings.TrimSpace(ffprobeBin),
 		HLSRoot:                    hlsRoot,
@@ -235,7 +237,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		processDetails:             make(map[ports.RunHandle]string),
 		completedProcessDetails:    make(map[ports.RunHandle]string),
 	}
-	adapter.detector = newDetector(binPath, logger, strings.TrimSpace(vaapiDevice), hlsRoot)
+	adapter.detector = newDetector(binPath, logger, strings.TrimSpace(vaapiDevice), hlsRoot, cfg)
 	adapter.detector.recordProcessDetail = adapter.recordProcessDetail
 	adapter.detector.terminateProcessGroup = adapter.terminateProcessGroup
 	return adapter

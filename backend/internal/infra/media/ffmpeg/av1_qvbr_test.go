@@ -14,7 +14,7 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 	prof := ports.ProfileSpec{VideoMaxRateK: 8000, VideoBufSizeK: 16000}
 
 	t.Run("default: AV1 emits QVBR with b:v + maxrate cap + quality target", func(t *testing.T) {
-		args := appendVaapiRateControlArgs(nil, prof, "av1")
+		args := appendVaapiRateControlArgs(nil, prof, "av1", LoadAdapterConfig("", ""))
 
 		rc, ok := valueAfter(args, "-rc_mode")
 		assert.True(t, ok)
@@ -37,7 +37,7 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 
 	t.Run("XG2G_AV1_QVBR=false falls back to implicit VBR", func(t *testing.T) {
 		t.Setenv("XG2G_AV1_QVBR", "false")
-		args := appendVaapiRateControlArgs(nil, prof, "av1")
+		args := appendVaapiRateControlArgs(nil, prof, "av1", LoadAdapterConfig("", ""))
 
 		assert.NotContains(t, args, "-rc_mode", "disabled QVBR must not set an explicit rc_mode")
 		assert.NotContains(t, args, "-global_quality")
@@ -49,13 +49,13 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 
 	t.Run("XG2G_AV1_QVBR_QUALITY tunes the quality target", func(t *testing.T) {
 		t.Setenv("XG2G_AV1_QVBR_QUALITY", "90")
-		args := appendVaapiRateControlArgs(nil, prof, "av1")
+		args := appendVaapiRateControlArgs(nil, prof, "av1", LoadAdapterConfig("", ""))
 		gq, _ := valueAfter(args, "-global_quality")
 		assert.Equal(t, "90", gq)
 	})
 
 	t.Run("non-AV1 (h264) is unaffected — no QVBR, no quality target", func(t *testing.T) {
-		args := appendVaapiRateControlArgs(nil, prof, "h264")
+		args := appendVaapiRateControlArgs(nil, prof, "h264", LoadAdapterConfig("", ""))
 		assert.NotContains(t, args, "-rc_mode")
 		assert.NotContains(t, args, "-global_quality")
 		bv, _ := valueAfter(args, "-b:v")
@@ -64,7 +64,7 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 
 	t.Run("explicit VideoQP keeps the CQP branch (QVBR not applied)", func(t *testing.T) {
 		cqp := ports.ProfileSpec{VideoQP: 110, VideoMaxRateK: 8000}
-		args := appendVaapiRateControlArgs(nil, cqp, "av1")
+		args := appendVaapiRateControlArgs(nil, cqp, "av1", LoadAdapterConfig("", ""))
 		rc, _ := valueAfter(args, "-rc_mode")
 		assert.Equal(t, "CQP", rc)
 		assert.NotContains(t, args, "-b:v", "CQP branch does not emit -b:v")

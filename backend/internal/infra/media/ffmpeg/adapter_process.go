@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/hls/cmaf"
 	"github.com/ManuGH/xg2g/internal/infra/ffmpeg/watchdog"
@@ -21,7 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -565,13 +563,16 @@ func (a *LocalAdapter) startTimeoutForProfile(sourceType ports.SourceType, profi
 		}
 	}
 
-	overrideMs := envIntBounded(
-		"XG2G_SAFARI_CPU_START_TIMEOUT_MS",
-		int(overrideFloor/time.Millisecond),
-		int(timeout/time.Millisecond),
-		120000,
-	)
-	override := time.Duration(overrideMs) * time.Millisecond
+	override := a.Config.SafariCPUStartTimeoutOverride
+	if override <= 0 {
+		override = overrideFloor
+	}
+	if override < timeout {
+		override = timeout
+	}
+	if override > 120*time.Second {
+		override = 120 * time.Second
+	}
 	if override > timeout {
 		return override
 	}
@@ -693,46 +694,6 @@ func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports
 		LastCheck:   time.Now(),
 		Diagnostics: diagnostics,
 	}
-}
-
-func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
-	raw := strings.TrimSpace(config.ParseString(key, ""))
-	if raw == "" {
-		return defaultValue
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return defaultValue
-	}
-	if n < minValue {
-		return minValue
-	}
-	if n > maxValue {
-		return maxValue
-	}
-	return n
-}
-
-func envFloatBounded(key string, defaultValue, minValue, maxValue float64) float64 {
-	raw := strings.TrimSpace(config.ParseString(key, ""))
-	if raw == "" {
-		return defaultValue
-	}
-	n, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return defaultValue
-	}
-	if n < minValue {
-		return minValue
-	}
-	if n > maxValue {
-		return maxValue
-	}
-	return n
-}
-
-func envBool(key string, defaultValue bool) bool {
-	return config.ParseBool(key, defaultValue)
 }
 
 func (a *LocalAdapter) recordProcessDetail(handle ports.RunHandle, detail string) {
