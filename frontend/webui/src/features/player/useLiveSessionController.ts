@@ -22,6 +22,10 @@ import {
   timeoutSignal,
 } from './utils/requestTimeout';
 
+// Info code for client session-timeline snapshots on the feedback channel
+// (namespace: 2xx info codes in usePlaybackEngine; never triggers fallback).
+const PLAYBACK_INFO_CODE_SESSION_TIMELINE = 230;
+
 const SESSION_READY_TIMEOUT_MS = 60_000;
 const SESSION_READY_POLL_MS = 250;
 const SESSION_READY_MAX_ATTEMPTS = Math.ceil(SESSION_READY_TIMEOUT_MS / SESSION_READY_POLL_MS);
@@ -50,6 +54,7 @@ interface LiveSessionController {
   sessionIdRef: MutableRefObject<string | null>;
   authHeaders: (contentType?: boolean) => HeadersInit;
   reportError: (event: 'error' | 'warning' | 'info', code: number, msg?: string) => Promise<void>;
+  reportSessionTimeline: (reason: string, timeline: string[]) => Promise<void>;
   ensureSessionCookie: () => Promise<void>;
   recoverSessionCookie: (source: string) => Promise<boolean>;
   primePlaybackAuth: (playbackUrl: string, source: string) => Promise<void>;
@@ -59,6 +64,8 @@ interface LiveSessionController {
   refreshSessionSnapshot: (sessionId?: string | null) => Promise<V3SessionStatusResponse | null>;
   waitForSessionReady: (sessionId: string, maxAttempts?: number) => Promise<V3SessionStatusResponse>;
 }
+
+const SESSION_TIMELINE_REPORT_TIMEOUT_MS = 500;
 
 type SessionRequestResult = {
   response: Response;
@@ -137,6 +144,38 @@ export function useLiveSessionController({
       });
     } catch (err) {
       debugWarn('Failed to send feedback', err);
+    }
+  }, [apiBase, authHeaders]);
+
+  // Ships the client-side session timeline to the session's server log via the
+  // existing feedback channel (event=info never triggers backend fallback).
+  // keepalive lets the final snapshot survive teardown/page navigation.
+  const reportSessionTimeline = useCallback(async (reason: string, timeline: string[]): Promise<void> => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId || timeline.length === 0) return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), SESSION_TIMELINE_REPORT_TIMEOUT_MS);
+    try {
+      // raw-fetch-justified: session feedback reporting
+      await fetch(`${apiBase}/sessions/${sessionId}/feedback`, {
+        method: 'POST',
+        headers: authHeaders(true),
+        keepalive: true,
+        signal: controller.signal,
+        body: JSON.stringify({
+          event: 'info',
+          code: PLAYBACK_INFO_CODE_SESSION_TIMELINE,
+          message: 'session_timeline',
+          details: {
+            reason,
+            timeline: timeline.slice(-40),
+          },
+        })
+      });
+    } catch (err) {
+      debugWarn('Failed to send session timeline', err);
+    } finally {
+      window.clearTimeout(timeout);
     }
   }, [apiBase, authHeaders]);
 
@@ -750,6 +789,7 @@ export function useLiveSessionController({
     sessionIdRef,
       authHeaders,
     reportError,
+    reportSessionTimeline,
     ensureSessionCookie,
     recoverSessionCookie,
     primePlaybackAuth,

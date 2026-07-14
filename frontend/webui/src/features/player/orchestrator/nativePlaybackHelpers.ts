@@ -58,7 +58,11 @@ export function shouldForceRevealNativeVideo(args: {
   minAdvanceSeconds?: number;
 }): boolean {
   const minAdvance = args.minAdvanceSeconds ?? NATIVE_VIDEO_WATCHDOG_MIN_ADVANCE_SECONDS;
-  return !args.paused && args.readyState >= 3 && args.advancedSeconds >= minAdvance;
+  // Safari native AV1 HLS can fail to advance readyState >= 3 even when
+  // frames are successfully decoding and currentTime is advancing.
+  // If the playhead has solidly advanced, we trust it over the readyState API.
+  const hasAdvanced = args.advancedSeconds >= minAdvance;
+  return !args.paused && hasAdvanced;
 }
 
 // isInMemorySeekTarget decides whether a just-issued seek landed on data that is

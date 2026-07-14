@@ -775,11 +775,20 @@ a:hover {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
 
-/* ========================================
-   V3 PLAYER STARTUP KEYFRAMES
-   Moved here per motion contract — no @keyframes in *.module.css
-   ======================================== */
+/* --- PR #663 startup/player keyframes --- */
+
+@keyframes popupFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
 
 @keyframes startupRingSpin {
   to {
@@ -793,7 +802,6 @@ a:hover {
     opacity: 0.45;
     transform: scale(0.8);
   }
-
   50% {
     opacity: 1;
     transform: scale(1.15);
@@ -805,7 +813,6 @@ a:hover {
   100% {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-action) 14%, transparent);
   }
-
   50% {
     box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent-action) 26%, transparent);
   }
@@ -820,7 +827,6 @@ a:hover {
   0% {
     transform: translateX(-100%);
   }
-
   100% {
     transform: translateX(100%);
   }

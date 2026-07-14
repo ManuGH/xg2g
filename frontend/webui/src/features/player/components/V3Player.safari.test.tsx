@@ -103,7 +103,7 @@ describe('V3Player Safari Logic', () => {
     expect(Hls).not.toHaveBeenCalled();
   });
 
-  it('should initialize HLS.js on Chrome (Non-Safari)', () => {
+  it('should initialize HLS.js on Chrome (Non-Safari)', async () => {
     // Simulate Chrome
     userAgentGetter.mockReturnValue('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36');
 
@@ -120,7 +120,9 @@ describe('V3Player Safari Logic', () => {
     render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
 
     // HLS.js SHOULD be instantiated
-    expect(Hls).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(Hls).toHaveBeenCalled();
+    });
   });
 
   it('falls back to native HLS on desktop Safari when hls.js is unsupported', () => {

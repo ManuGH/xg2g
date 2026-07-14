@@ -13,6 +13,7 @@ class PlaybackJsonCodecTest {
             serviceRef = "1:0:1:AA",
             playbackDecisionToken = "decision-123",
             hwaccel = "auto",
+            profile = "repair",
             params = mapOf("playback_mode" to "native_hls"),
             title = "Das Erste HD",
             correlationId = "corr-1",

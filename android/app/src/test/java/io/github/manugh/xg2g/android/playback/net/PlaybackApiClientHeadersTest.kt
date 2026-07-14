@@ -9,6 +9,21 @@ import org.junit.Test
 
 class PlaybackApiClientHeadersTest {
     @Test
+    fun `planner profile header is bound only when explicitly selected`() {
+        val explicit = Request.Builder()
+            .url("http://127.0.0.1:8080/api/v3/live/stream-info")
+            .withPlaybackProfile(" repair ")
+            .build()
+        val automatic = Request.Builder()
+            .url("http://127.0.0.1:8080/api/v3/live/stream-info")
+            .withPlaybackProfile(null)
+            .build()
+
+        assertEquals("repair", explicit.header("X-XG2G-Profile"))
+        assertEquals(null, automatic.header("X-XG2G-Profile"))
+    }
+
+    @Test
     fun `same origin headers use ui base origin and referer`() {
         val request = Request.Builder()
             .url("http://127.0.0.1:8080/api/v3/auth/session")

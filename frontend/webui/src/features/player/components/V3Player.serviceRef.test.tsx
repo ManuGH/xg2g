@@ -1,10 +1,12 @@
 /// <reference types="@testing-library/jest-dom" />
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import V3Player from './V3Player';
 import type { V3PlayerProps } from '../../../types/v3-player';
 import { resetCachedCodecs } from '../utils/codecDetection';
+import { sessionTimeline } from '../orchestrator/sessionTimeline';
 
 const { createSessionMock, postRecordingPlaybackInfoMock } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
@@ -151,6 +153,213 @@ describe('V3Player ServiceRef Input', () => {
     expect(body.client?.capabilitiesVersion).toBe(3);
     expect(body.params?.playback_decision_token).toBeUndefined();
     expect(body.params?.playback_decision_id).toBeUndefined();
+  });
+
+  it('binds an explicit planner profile to stream-info before consuming the receipt', async () => {
+    localStorage.setItem('xg2g.player.explicitProfile', 'repair');
+    try {
+      const props = { autoStart: false } as unknown as V3PlayerProps;
+      render(<V3Player {...props} />);
+
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: '1:0:1:5555:666:777:0:0:0:0:' } });
+      fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+      await waitFor(() => {
+        expect(globalThis.fetch).toHaveBeenCalled();
+      });
+
+      const streamInfoCall = (globalThis.fetch as any).mock.calls.find(
+        (call: any[]) => String(call[0]).includes('/live/stream-info')
+      );
+      expect(streamInfoCall).toBeDefined();
+      expect(streamInfoCall[1].headers['X-XG2G-Profile']).toBe('repair');
+
+      const intentCall = (globalThis.fetch as any).mock.calls.find(
+        (call: any[]) => String(call[0]).includes('/intents')
+      );
+      expect(intentCall).toBeDefined();
+      const intentBody = JSON.parse(intentCall[1].body);
+      expect(intentBody.playbackDecisionToken).toBe('live-token-1');
+      expect(intentBody.params?.profile).toBeUndefined();
+    } finally {
+      localStorage.removeItem('xg2g.player.explicitProfile');
+    }
+  });
+
+  it('applies the latest profile chosen while a preflight is still in flight', async () => {
+    if (sessionTimeline.hasActiveAttempt()) {
+      sessionTimeline.endAttempt('test_cleanup');
+    }
+    const endAttemptSpy = vi.spyOn(sessionTimeline, 'endAttempt');
+    const response = (token: string) => ({
+      ok: true,
+      status: 200,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
+      text: vi.fn().mockResolvedValue(JSON.stringify({
+        mode: 'direct_stream',
+        requestId: `live-decision-${token}`,
+        playbackDecisionToken: `live-token-${token}`,
+        decision: { reasons: ['direct_stream_match'] },
+      })),
+    });
+    let resolveFirstPreflight: (value: ReturnType<typeof response>) => void = () => {
+      throw new Error('first preflight resolver was not initialized');
+    };
+    const firstPreflight = new Promise<ReturnType<typeof response>>((resolve) => {
+      resolveFirstPreflight = resolve;
+    });
+    let streamInfoCount = 0;
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        streamInfoCount += 1;
+        return streamInfoCount === 1
+          ? firstPreflight
+          : Promise.resolve(response(String(streamInfoCount)));
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          status: 503,
+          ok: false,
+          headers: { get: vi.fn().mockReturnValue('application/problem+json') },
+          json: vi.fn().mockResolvedValue({
+            type: '/problems/admission/state-unknown',
+            title: 'Unavailable',
+            status: 503,
+            code: 'ADMISSION_STATE_UNKNOWN',
+            requestId: 'test-latest-profile',
+          }),
+        });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({}),
+      });
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    render(<V3Player {...props} />);
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '1:0:1:5555:666:777:0:0:0:0:' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    await waitFor(() => {
+      expect(streamInfoCount).toBe(1);
+    });
+    endAttemptSpy.mockClear();
+    expect(sessionTimeline.getSnapshot()[0]).toMatchObject({
+      kind: 'attempt_started',
+    });
+
+    fireEvent.click(screen.getByTitle('Profil'));
+    fireEvent.click(screen.getByRole('button', { name: 'Repair' }));
+    resolveFirstPreflight(response('1'));
+
+    await waitFor(() => {
+      expect(streamInfoCount).toBe(2);
+    });
+
+    const streamInfoCalls = (globalThis.fetch as any).mock.calls.filter(
+      (call: any[]) => String(call[0]).includes('/live/stream-info')
+    );
+    expect(streamInfoCalls).toHaveLength(2);
+    expect(streamInfoCalls[1][1].headers['X-XG2G-Profile']).toBe('repair');
+    expect(endAttemptSpy).toHaveBeenCalledWith('attempt_replaced');
+  });
+
+  it('does not start a backend session from queued work after unmount', async () => {
+    let resolveFirstPreflight: (value: {
+      ok: boolean;
+      status: number;
+      headers: { get: ReturnType<typeof vi.fn> };
+      text: ReturnType<typeof vi.fn>;
+    }) => void = () => {
+      throw new Error('first preflight resolver was not initialized');
+    };
+    const firstPreflight = new Promise<{
+      ok: boolean;
+      status: number;
+      headers: { get: ReturnType<typeof vi.fn> };
+      text: ReturnType<typeof vi.fn>;
+    }>((resolve) => {
+      resolveFirstPreflight = resolve;
+    });
+    let markBodyRead: () => void = () => {
+      throw new Error('body read resolver was not initialized');
+    };
+    const bodyRead = new Promise<void>((resolve) => {
+      markBodyRead = resolve;
+    });
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/live/stream-info')) {
+        return firstPreflight;
+      }
+      if (url.includes('/intents')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: vi.fn().mockReturnValue('application/json') },
+          json: vi.fn().mockResolvedValue({ sessionId: 'ghost-session' }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: vi.fn().mockReturnValue(null) },
+        json: vi.fn().mockResolvedValue({}),
+      });
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const { unmount } = render(
+      <StrictMode>
+        <V3Player {...props} />
+      </StrictMode>
+    );
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '1:0:1:5555:666:777:0:0:0:0:' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    await waitFor(() => {
+      expect(
+        (globalThis.fetch as any).mock.calls.filter(
+          (call: any[]) => String(call[0]).includes('/live/stream-info')
+        )
+      ).toHaveLength(1);
+    });
+
+    // Queue a latest-wins restart while the first preflight is unresolved.
+    fireEvent.click(screen.getByTitle('Profil'));
+    fireEvent.click(screen.getByRole('button', { name: 'Repair' }));
+    unmount();
+
+    resolveFirstPreflight({
+      ok: true,
+      status: 200,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
+      text: vi.fn().mockImplementation(async () => {
+        markBodyRead();
+        return JSON.stringify({
+          mode: 'direct_stream',
+          requestId: 'disposed-preflight',
+          playbackDecisionToken: 'disposed-token',
+          decision: { reasons: ['direct_stream_match'] },
+        });
+      }),
+    });
+    await bodyRead;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const fetchCalls = (globalThis.fetch as any).mock.calls as any[][];
+    expect(fetchCalls.filter((call) => String(call[0]).includes('/live/stream-info'))).toHaveLength(1);
+    expect(fetchCalls.some((call) => String(call[0]).includes('/intents'))).toBe(false);
   });
 
   it('prefers native HLS for desktop Safari live playback when runtime capabilities prefer native', async () => {
@@ -595,6 +804,7 @@ describe('V3Player ServiceRef Input', () => {
       requestInputFocus: vi.fn(),
       getNativePlaybackStateJson: vi.fn().mockReturnValue('null'),
     };
+    localStorage.setItem('xg2g.player.explicitProfile', 'compatible');
 
     try {
       const props = { autoStart: false, token: 'dev-token' } as unknown as V3PlayerProps;
@@ -614,7 +824,8 @@ describe('V3Player ServiceRef Input', () => {
       expect(JSON.parse(String(payload))).toMatchObject({
         kind: 'live',
         serviceRef: '1:0:1:123:456:789:0:0:0:0:',
-        authToken: 'dev-token'
+        authToken: 'dev-token',
+        profile: 'compatible',
       });
       // The refactored player does not make web fetch calls for native playback;
       // playback is fully managed through the host bridge.
@@ -624,6 +835,7 @@ describe('V3Player ServiceRef Input', () => {
         )
       ).toBe(false);
     } finally {
+      localStorage.removeItem('xg2g.player.explicitProfile');
       window.__XG2G_HOST__ = originalHost;
       window.Xg2gHost = originalBridge;
     }
@@ -1079,7 +1291,7 @@ describe('V3Player ServiceRef Input', () => {
 
     await screen.findByText(/Invalid Request/i);
     fireEvent.click(screen.getByRole('button', { name: /Show Details/i }));
-    await screen.findByText(/INVALID_INPUT/i);
+    await screen.findByText(/code=INVALID_INPUT/i);
     await screen.findByText(/req-400-1/i);
   });
 
@@ -1131,7 +1343,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1139,12 +1351,16 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
-    const video = container.querySelector('video');
+    const video = container.querySelector('video') as HTMLVideoElement;
     expect(video).toBeTruthy();
-    fireEvent.pause(video as HTMLVideoElement);
+    fireEvent.playing(video);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
+    fireEvent.pause(video);
 
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent(/paused/i);
@@ -1201,7 +1417,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1209,11 +1425,15 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement | null;
     expect(video).toBeTruthy();
+    fireEvent.playing(video as HTMLVideoElement);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
     Object.defineProperty(video as HTMLVideoElement, 'webkitDisplayingFullscreen', {
       configurable: true,
       value: true
@@ -1276,7 +1496,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1284,7 +1504,7 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement | null;
@@ -1348,7 +1568,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1356,11 +1576,16 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement;
     expect(video).toBeTruthy();
+
+    fireEvent.playing(video);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
 
     // Element is genuinely decoding: not paused, has future data.
     Object.defineProperty(video, 'paused', { value: false, configurable: true });
@@ -1426,7 +1651,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1434,7 +1659,7 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement;
@@ -1511,7 +1736,7 @@ describe('V3Player ServiceRef Input', () => {
       });
     });
 
-    const props = { autoStart: false } as unknown as V3PlayerProps;
+    const props = { autoStart: false, revealHoldMs: 0 } as unknown as V3PlayerProps;
     const { container, unmount } = render(<V3Player {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: /Stats/i }));
@@ -1519,11 +1744,16 @@ describe('V3Player ServiceRef Input', () => {
     fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/ready/i);
+      expect(screen.getByRole('status')).toHaveTextContent(/buffering|ready/i);
     });
 
     const video = container.querySelector('video') as HTMLVideoElement | null;
     expect(video).toBeTruthy();
+
+    fireEvent.playing(video as HTMLVideoElement);
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/playing/i);
+    });
 
     fireEvent.stalled(video as HTMLVideoElement);
     await waitFor(() => {

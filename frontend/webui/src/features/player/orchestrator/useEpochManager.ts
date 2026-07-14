@@ -11,6 +11,7 @@ interface UseEpochManagerArgs {
   trackedEpoch: PlaybackEpochState;
   dispatchPlayback: Dispatch<PlaybackMachineEvent>;
   requestedDuration: number | null;
+  onAttemptStarted?: (epoch: number) => void;
 }
 
 export interface EpochManager {
@@ -23,6 +24,8 @@ export interface EpochManager {
     epoch: number,
     nextPlaybackMode: 'LIVE' | 'VOD' | 'UNKNOWN',
     nextStatus: PlayerStatus,
+    hasSessionIntent?: boolean,
+    explicitProfilePinned?: boolean,
   ) => void;
   markPlaybackStopped: (epoch: number) => void;
   allocateSessionEpoch: (playbackEpoch: number) => number;
@@ -35,6 +38,7 @@ export function useEpochManager({
   trackedEpoch,
   dispatchPlayback,
   requestedDuration,
+  onAttemptStarted,
 }: UseEpochManagerArgs): EpochManager {
   const playbackEpochRef = useRef(initialEpoch.playback);
   const sessionEpochRef = useRef(initialEpoch.session);
@@ -56,7 +60,10 @@ export function useEpochManager({
     epoch: number,
     nextPlaybackMode: 'LIVE' | 'VOD' | 'UNKNOWN',
     nextStatus: PlayerStatus,
+    hasSessionIntent = true,
+    explicitProfilePinned = false,
   ) => {
+    onAttemptStarted?.(epoch);
     acceptedPlaybackEpochRef.current = epoch;
     acceptedSessionEpochRef.current = 0;
     dispatchPlayback({
@@ -65,8 +72,10 @@ export function useEpochManager({
       playbackMode: nextPlaybackMode,
       status: nextStatus,
       requestedDuration,
+      hasSessionIntent,
+      explicitProfilePinned,
     });
-  }, [dispatchPlayback, requestedDuration]);
+  }, [dispatchPlayback, onAttemptStarted, requestedDuration]);
 
   const markPlaybackStopped = useCallback((epoch: number) => {
     acceptedPlaybackEpochRef.current = epoch;

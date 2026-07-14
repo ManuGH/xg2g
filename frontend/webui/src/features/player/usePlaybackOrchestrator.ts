@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, useReducer } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import Hls from './lib/hlsRuntime';
@@ -14,7 +14,8 @@ import type {
   PlayerStatus,
   V3SessionSnapshot,
   HlsInstanceRef,
-  VideoElementRef
+  VideoElementRef,
+  PlayerAudioTrack,
 } from '../../types/v3-player';
 import { useLiveSessionController } from './useLiveSessionController';
 import { usePlaybackEngine } from './usePlaybackEngine';
@@ -35,7 +36,10 @@ import { gatherPlaybackCapabilities, type CapabilitySnapshot } from './utils/pla
 import {
   buildPlaybackProfileHeaders,
   gatherPlaybackClientContext,
+  normalizePlaybackProfileSelection,
+  resolvePlaybackProfileForPreflight,
   resolvePlaybackRequestProfile,
+  type PlaybackProfileSelection,
 } from './utils/playbackRequestProfile';
 import {
   applyPlaybackNetworkProbe,
@@ -46,8 +50,10 @@ import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem'
 import { useTvInitialFocus } from '../../hooks/useTvInitialFocus';
 import {
   createInitialPlaybackDomainState,
-  playbackMachine,
 } from './orchestrator/playbackMachine';
+import { usePlaybackMachineRuntime } from './orchestrator/usePlaybackMachineRuntime';
+import type { PlaybackCommand, PlaybackStopReason } from './orchestrator/playbackTypes';
+import { sessionTimeline } from './orchestrator/sessionTimeline';
 import type { VodStreamMode } from './orchestrator/playbackTypes';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
 import {
@@ -152,6 +158,8 @@ export interface V3PlayerViewState {
   spinnerEyebrow: string;
   spinnerLabel: string;
   spinnerSupport: string;
+  startupPhaseSteps: Array<{ key: string; label: string; state: 'done' | 'active' | 'pending' }>;
+  startupProgressPercent: number;
   startupElapsedLabel: string;
   showOverlayStopAction: boolean;
   overlayStopLabel: string;
@@ -173,6 +181,8 @@ export interface V3PlayerViewState {
   seekForward15mLabel: string;
   playPauseLabel: string;
   playPauseIcon: string;
+  ttffBadgeLabel: string | null;
+  ttffTitle: string | null;
   seekableStart: number;
   seekableEnd: number;
   startTimeDisplay: string;
@@ -220,6 +230,9 @@ export interface V3PlayerViewState {
   resumeActionLabel: string;
   startOverLabel: string;
   resumePositionSeconds: number | null;
+  explicitProfile: string;
+  audioTracks: PlayerAudioTrack[];
+  activeAudioTrack: number;
   playback: {
     durationSeconds: number | null;
   };
@@ -229,6 +242,7 @@ export interface PlaybackOrchestratorActions {
   stopStream(skipClose?: boolean): Promise<void>;
   retry(): Promise<void>;
   seekBy(deltaSeconds: number): void;
+  changeAudioTrack(trackId: number): void;
   seekTo(positionSeconds: number): void;
   seekToLiveEdge(): void;
   togglePlayPause(): void;
@@ -245,11 +259,27 @@ export interface PlaybackOrchestratorActions {
   toggleErrorDetails(): void;
   resumeFrom(positionSeconds: number): void;
   startOver(): void;
+  changeProfile(profile: string): void;
 }
 
 export interface UsePlaybackOrchestratorResult {
   viewState: V3PlayerViewState;
   actions: PlaybackOrchestratorActions;
+}
+
+function areAudioTrackListsEqual(current: PlayerAudioTrack[], next: PlayerAudioTrack[]): boolean {
+  return current.length === next.length && current.every((track, index) => {
+    const candidate = next[index];
+    return candidate !== undefined
+      && track.key === candidate.key
+      && track.engineIndex === candidate.engineIndex
+      && track.nativeId === candidate.nativeId
+      && track.language === candidate.language
+      && track.label === candidate.label
+      && track.kind === candidate.kind
+      && track.id === candidate.id
+      && track.name === candidate.name;
+  });
 }
 
 export function usePlaybackOrchestrator(
@@ -274,11 +304,76 @@ export function usePlaybackOrchestrator(
   const [sRef, setSRef] = useState<string>(
     (channel?.serviceRef || channel?.id || '').trim()
   );
+  const [explicitProfile, setExplicitProfile] = useState<PlaybackProfileSelection>(() => {
+    try {
+      return normalizePlaybackProfileSelection(localStorage.getItem('xg2g.player.explicitProfile'));
+    } catch {
+      return 'auto';
+    }
+  });
+  const ttffStartT0Ref = useRef<number | null>(null);
+  const ttffManifestT1Ref = useRef<number | null>(null);
+  const [ttffMetrics, setTtffMetrics] = useState<{
+    ttffMs: number;
+    manifestMs: number;
+    bufferMs: number;
+  } | null>(null);
+
+  const [audioTracks, setAudioTracks] = useState<PlayerAudioTrack[]>([]);
+  const [activeAudioTrack, setActiveAudioTrack] = useState<number>(-1);
+  const handleAudioTracksUpdated = useCallback((nextTracks: PlayerAudioTrack[]) => {
+    setAudioTracks((currentTracks) => (
+      areAudioTrackListsEqual(currentTracks, nextTracks) ? currentTracks : nextTracks
+    ));
+  }, []);
+
+  const handleAttemptStarted = useCallback((epoch: number) => {
+    sessionTimeline.beginAttempt(epoch);
+    ttffStartT0Ref.current = performance.now();
+    ttffManifestT1Ref.current = null;
+    setTtffMetrics(null);
+  }, []);
+
+  const handlePlaybackMilestone = useCallback((milestone: 'manifest' | 'firstFrame') => {
+    const startT0 = ttffStartT0Ref.current;
+    if (startT0 === null) return;
+
+    const now = performance.now();
+    if (milestone === 'manifest') {
+      if (ttffManifestT1Ref.current === null) {
+        ttffManifestT1Ref.current = now;
+        debugLog(`[V3Player] TTFF Milestone: Manifest loaded in ${Math.round(now - startT0)}ms`);
+      }
+    } else if (milestone === 'firstFrame') {
+      const manifestT1 = ttffManifestT1Ref.current ?? now;
+      const ttffMs = Math.round(now - startT0);
+      const manifestMs = Math.round(manifestT1 - startT0);
+      const bufferMs = Math.round(now - manifestT1);
+
+      setTtffMetrics({ ttffMs, manifestMs, bufferMs });
+      ttffStartT0Ref.current = null;
+
+      telemetry.emit('ui.player.ttff', {
+        ttffMs,
+        manifestMs,
+        bufferMs,
+        playbackMode: playbackStateRef.current.playbackMode,
+        serviceRef: sRef,
+      });
+
+      debugLog(`[V3Player] TTFF Complete: ${ttffMs}ms (Manifest: ${manifestMs}ms, Buffer: ${bufferMs}ms)`);
+    }
+  }, [sRef]);
+
+  const executeCommandRef = useRef<((cmd: PlaybackCommand) => void) | null>(null);
   const requestedDuration = useMemo(() => (duration && duration > 0 ? duration : null), [duration]);
-  const [playbackState, dispatchPlayback] = useReducer(
-    playbackMachine,
-    requestedDuration,
-    createInitialPlaybackDomainState,
+  const [playbackState, dispatchPlayback] = usePlaybackMachineRuntime(
+    () => createInitialPlaybackDomainState(requestedDuration),
+    useCallback((command) => {
+      if (executeCommandRef.current) {
+        executeCommandRef.current(command);
+      }
+    }, []),
   );
   const playbackStateRef = useRef(playbackState);
   const {
@@ -296,6 +391,7 @@ export function usePlaybackOrchestrator(
     trackedEpoch: playbackState.epoch,
     dispatchPlayback,
     requestedDuration,
+    onAttemptStarted: handleAttemptStarted,
   });
 
   const {
@@ -333,7 +429,19 @@ export function usePlaybackOrchestrator(
   } = usePlaybackResourceCleanup();
   const activeRecordingRef = useRef<string | null>(null);
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
+  const disposedRef = useRef(false);
+  const lifecycleGenerationRef = useRef(0);
+  const autoFallbackTimersRef = useRef<Set<number>>(new Set());
   const startIntentInFlight = useRef<boolean>(false);
+  const pendingStartRef = useRef<{
+    refToUse?: string;
+    profileOverride?: string;
+    lifecycleGeneration: number;
+  } | null>(null);
+  const startStreamRef = useRef<(refToUse?: string, profileOverride?: string) => Promise<void>>(async () => {});
+  const retryInFlightRef = useRef(false);
+  const stopCommandCompletionRef = useRef<Promise<void>>(Promise.resolve());
+  const timelineReportCompletionRef = useRef<Promise<void>>(Promise.resolve());
   // ADR-00X: Profile-related refs removed (universal policy only)
   const isTeardownRef = useRef<boolean>(false);
   const userPauseIntentRef = useRef<boolean>(false);
@@ -343,6 +451,26 @@ export function usePlaybackOrchestrator(
   const wasOfflineRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
+
+  const isLifecycleActive = useCallback((generation: number): boolean => (
+    !disposedRef.current && lifecycleGenerationRef.current === generation
+  ), []);
+
+  useEffect(() => {
+    disposedRef.current = false;
+    const autoFallbackTimers = autoFallbackTimersRef.current;
+
+    return () => {
+      disposedRef.current = true;
+      lifecycleGenerationRef.current += 1;
+      // React StrictMode replays effects as setup -> cleanup -> setup. Allow the
+      // second setup to issue the real autostart while the old generation drains.
+      mounted.current = false;
+      pendingStartRef.current = null;
+      autoFallbackTimers.forEach((timerId) => window.clearTimeout(timerId));
+      autoFallbackTimers.clear();
+    };
+  }, []);
 
   const lastDecodedRef = useRef<number>(0);
 
@@ -500,6 +628,7 @@ export function usePlaybackOrchestrator(
     sessionIdRef,
     authHeaders,
     reportError,
+    reportSessionTimeline,
     ensureSessionCookie,
     setActiveSessionId: setActiveSessionIdBase,
     clearSessionLeaseState: clearSessionLeaseStateBase,
@@ -519,6 +648,19 @@ export function usePlaybackOrchestrator(
     createPlayerError: (message, details) => new PlayerError(message, details),
     onSessionSnapshot: handleSessionSnapshot,
   });
+
+  const reportTimelineSnapshot = useCallback((reason: string, events: string[]): Promise<void> => {
+    telemetry.emit('ui.player.timeline', { reason, events });
+    const completion = reportSessionTimeline(reason, events);
+    timelineReportCompletionRef.current = completion;
+    return completion;
+  }, [reportSessionTimeline]);
+
+  const finalizeTimelineForReplacement = useCallback(async (): Promise<void> => {
+    if (!sessionTimeline.hasActiveAttempt()) return;
+    sessionTimeline.endAttempt('attempt_replaced');
+    await reportTimelineSnapshot('attempt_replaced', sessionTimeline.describe());
+  }, [reportTimelineSnapshot]);
 
   const setActiveSessionId = useCallback((nextSessionId: string | null) => {
     activeLiveSessionIdRef.current = nextSessionId;
@@ -741,10 +883,14 @@ export function usePlaybackOrchestrator(
     reportError,
     waitForSessionReady,
     shouldPreferNativeHls: shouldPreferNativeWebKitHls,
+    revealHoldMs: props.revealHoldMs,
     setStats,
     setStatus,
     clearPlaybackFailure,
-    reportPlaybackFailure
+    reportPlaybackFailure,
+    onPlaybackMilestone: handlePlaybackMilestone,
+    onAudioTracksUpdated: handleAudioTracksUpdated,
+    onAudioTrackSwitched: setActiveAudioTrack,
   });
 
   // --- Core Helpers & Wrappers (Memoized) ---
@@ -794,6 +940,8 @@ export function usePlaybackOrchestrator(
     setPlaybackObservability(null);
     setSessionPlaybackTrace(null);
     setSessionProfileReason(null);
+    setAudioTracks([]);
+    setActiveAudioTrack(-1);
   }, [resetBridgeState, resetNativeVideoState, setActiveHlsEngine, setVodStreamMode]);
 
   const clearPlaybackState = useCallback(() => {
@@ -885,18 +1033,35 @@ export function usePlaybackOrchestrator(
     nativePlaybackState,
   ]);
 
+  const prepareForNextPlaybackAttempt = useCallback(async (
+    hasActiveNativeRequest: boolean = false,
+  ): Promise<void> => {
+    await finalizeTimelineForReplacement();
+    const teardown = prepareForPlaybackAttempt({
+      hasActivePlayback,
+      teardownActivePlayback,
+      clearPlaybackState,
+      hasActiveNativeRequest,
+    });
+    if (teardown) await teardown;
+  }, [clearPlaybackState, finalizeTimelineForReplacement, hasActivePlayback, teardownActivePlayback]);
+
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
     return gatherPlaybackCapabilities(scope, video);
   }, []);
 
-  const startRecordingPlayback = useCallback(async (id: string): Promise<void> => {
+  const startRecordingPlayback = useCallback(async (
+    id: string,
+    profileOverride?: string,
+  ): Promise<void> => {
+    const lifecycleGeneration = lifecycleGenerationRef.current;
+    if (!isLifecycleActive(lifecycleGeneration)) return;
+    const profileForAttempt = normalizePlaybackProfileSelection(profileOverride ?? explicitProfile);
     const playbackEpoch = allocatePlaybackEpoch();
-    {
-      const teardown = prepareForPlaybackAttempt({ hasActivePlayback, teardownActivePlayback, clearPlaybackState });
-      if (teardown) await teardown;
-    }
-    beginPlaybackAttempt(playbackEpoch, 'VOD', 'building');
+    await prepareForNextPlaybackAttempt();
+    if (!isLifecycleActive(lifecycleGeneration)) return;
+    beginPlaybackAttempt(playbackEpoch, 'VOD', 'building', true, profileForAttempt !== 'auto');
     activeRecordingRef.current = id;
     setActiveRecordingId(id);
     clearPlayerError();
@@ -906,30 +1071,39 @@ export function usePlaybackOrchestrator(
 
     try {
       await ensureSessionCookie();
-      if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+      if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
 
       let streamUrl = '';
       let mode: VodStreamMode = null;
 
       try {
         const maxMetaRetries = 20;
-        requestCaps = await gatherPlaybackCapabilitiesForPlayer('recording');
+        const [capabilities, networkProbe] = await Promise.all([
+          gatherPlaybackCapabilitiesForPlayer('recording'),
+          measurePlaybackNetwork(apiBase),
+        ]);
+        requestCaps = capabilities;
         const requestContext = applyPlaybackNetworkProbe(
           requestCaps,
           gatherPlaybackClientContext(),
-          await measurePlaybackNetwork(apiBase),
+          networkProbe,
+
         );
-        if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
-        const requestProfile = resolvePlaybackRequestProfile(
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+        const automaticRequestProfile = resolvePlaybackRequestProfile(
           requestContext,
           requestCaps,
           'recording'
+        );
+        const requestProfile = resolvePlaybackProfileForPreflight(
+          profileForAttempt,
+          automaticRequestProfile,
         );
         setCapabilitySnapshot(requestCaps);
         let rawContract: unknown = null;
 
         for (let i = 0; i < maxMetaRetries; i++) {
-          if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+          if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
 
           const { data, error, response } = await postRecordingPlaybackInfo({
             path: { recordingId: id },
@@ -995,7 +1169,7 @@ export function usePlaybackOrchestrator(
         if (!rawContract) {
           throw new Error("PlaybackInfo timeout");
         }
-        if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
 
         const preferredHlsEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
         const normalizedContract = normalizePlaybackInfo(rawContract, {
@@ -1061,7 +1235,7 @@ export function usePlaybackOrchestrator(
           setShowResumeOverlay(true);
         }
       } catch (e: unknown) {
-        if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
         setStatus('error');
         mergeSessionPlaybackTrace(extractPlaybackTrace(e));
         reportPlaybackFailure(normalizeRuntimePlaybackError(e, t('player.serverError')), {
@@ -1102,14 +1276,16 @@ export function usePlaybackOrchestrator(
               const delay = parseInt(retryAfter, 10) * 1000;
               setStatus('building');
               vodRetryRef.current = window.setTimeout(() => {
-                if (activeRecordingRef.current === id) startRecordingPlayback(id);
+                if (isLifecycleActive(lifecycleGeneration) && activeRecordingRef.current === id) {
+                  startRecordingPlayback(id, profileForAttempt);
+                }
               }, delay);
               return;
             }
             throw new Error('503 Service Unavailable (No Retry-After)');
           }
 
-          if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+          if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
           setStatus('buffering');
           const engine: 'native' | 'hlsjs' = mode === 'native_hls'
             ? 'native'
@@ -1121,7 +1297,7 @@ export function usePlaybackOrchestrator(
         }
       }
     } catch (err: unknown) {
-      if (isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
+      if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
       debugError(err);
       mergeSessionPlaybackTrace(extractPlaybackTrace(err));
       reportPlaybackFailure(normalizeRuntimePlaybackError(err, t('player.serverError')), {
@@ -1134,26 +1310,35 @@ export function usePlaybackOrchestrator(
   }, [
     allocatePlaybackEpoch,
     beginPlaybackAttempt,
-    clearPlaybackState,
     clearPlayerError,
     ensureSessionCookie,
+    explicitProfile,
     gatherPlaybackCapabilitiesForPlayer,
-    hasActivePlayback,
     isStalePlaybackEpoch,
+    isLifecycleActive,
     mergeSessionPlaybackTrace,
     playDirectMp4,
     playHls,
+    prepareForNextPlaybackAttempt,
     reportPlaybackFailure,
     resolvePreferredHlsEngineForCapabilities,
     sleep,
     t,
-    teardownActivePlayback,
     vodFetchRef,
     vodRetryRef,
   ]);
 
-  const startStream = useCallback(async (refToUse?: string): Promise<void> => {
-    if (startIntentInFlight.current) return;
+  const startStream = useCallback(async (
+    refToUse?: string,
+    profileOverride?: string,
+  ): Promise<void> => {
+    const lifecycleGeneration = lifecycleGenerationRef.current;
+    if (!isLifecycleActive(lifecycleGeneration)) return;
+    if (startIntentInFlight.current) {
+      pendingStartRef.current = { refToUse, profileOverride, lifecycleGeneration };
+      return;
+    }
+    const profileForAttempt = normalizePlaybackProfileSelection(profileOverride ?? explicitProfile);
     startIntentInFlight.current = true;
     userPauseIntentRef.current = false;
     applyAutoplayMute();
@@ -1169,35 +1354,29 @@ export function usePlaybackOrchestrator(
         }
         if (nativeHost) {
           const playbackEpoch = allocatePlaybackEpoch();
-          const teardown = prepareForPlaybackAttempt({
-            hasActivePlayback,
-            teardownActivePlayback,
-            clearPlaybackState,
-            hasActiveNativeRequest: Boolean(nativePlaybackState?.activeRequest),
-          });
-          if (teardown) await teardown;
-          beginPlaybackAttempt(playbackEpoch, 'VOD', 'starting');
+          await prepareForNextPlaybackAttempt(Boolean(nativePlaybackState?.activeRequest));
+          if (!isLifecycleActive(lifecycleGeneration)) return;
+          beginPlaybackAttempt(playbackEpoch, 'VOD', 'starting', true, profileForAttempt !== 'auto');
           beginNativePlayback({
             kind: 'recording',
             recordingId,
+            profile: profileForAttempt === 'auto' ? undefined : profileForAttempt,
             authToken: token || undefined,
             startPositionMs: 0,
             title: channel?.name ?? recordingId,
           });
           return;
         }
-        await startRecordingPlayback(recordingId);
+        await startRecordingPlayback(recordingId, profileForAttempt);
         return;
       }
 
       if (src) {
         debugLog('[V3Player] startStream: src path', { hasSrc: true });
         const playbackEpoch = allocatePlaybackEpoch();
-        {
-      const teardown = prepareForPlaybackAttempt({ hasActivePlayback, teardownActivePlayback, clearPlaybackState });
-      if (teardown) await teardown;
-    }
-        beginPlaybackAttempt(playbackEpoch, requestedDuration ? 'VOD' : 'LIVE', 'buffering');
+        await prepareForNextPlaybackAttempt();
+        if (!isLifecycleActive(lifecycleGeneration)) return;
+        beginPlaybackAttempt(playbackEpoch, requestedDuration ? 'VOD' : 'LIVE', 'buffering', false, false);
         const srcEngine = resolvePreferredHlsEngine();
         playHls(src, srcEngine);
         setActiveHlsEngine(srcEngine);
@@ -1212,11 +1391,9 @@ export function usePlaybackOrchestrator(
         return;
       }
       const playbackEpoch = allocatePlaybackEpoch();
-      {
-      const teardown = prepareForPlaybackAttempt({ hasActivePlayback, teardownActivePlayback, clearPlaybackState });
-      if (teardown) await teardown;
-    }
-      beginPlaybackAttempt(playbackEpoch, 'LIVE', 'starting');
+      await prepareForNextPlaybackAttempt();
+      if (!isLifecycleActive(lifecycleGeneration)) return;
+      beginPlaybackAttempt(playbackEpoch, 'LIVE', 'starting', true, profileForAttempt !== 'auto');
       let newSessionId: string | null = null;
       let sessionEpoch = 0;
       clearPlayerError();
@@ -1225,6 +1402,7 @@ export function usePlaybackOrchestrator(
         beginNativePlayback({
           kind: 'live',
           serviceRef: ref,
+          profile: profileForAttempt === 'auto' ? undefined : profileForAttempt,
           authToken: token || undefined,
           title: channel?.name ?? ref,
           logoUrl: channel?.logoUrl || undefined,
@@ -1234,22 +1412,30 @@ export function usePlaybackOrchestrator(
 
       try {
         await ensureSessionCookie();
-        if (isStalePlaybackEpoch(playbackEpoch)) return;
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch)) return;
 
         let liveMode: VodStreamMode = null;
         let liveEngine: 'native' | 'hlsjs' = 'hlsjs';
 
-        const requestCaps = await gatherPlaybackCapabilitiesForPlayer('live');
+        const [requestCaps, networkProbe] = await Promise.all([
+          gatherPlaybackCapabilitiesForPlayer('live'),
+          measurePlaybackNetwork(apiBase),
+        ]);
         const requestContext = applyPlaybackNetworkProbe(
           requestCaps,
           gatherPlaybackClientContext(),
-          await measurePlaybackNetwork(apiBase),
+          networkProbe,
+
         );
-        if (isStalePlaybackEpoch(playbackEpoch)) return;
-        const requestProfile = resolvePlaybackRequestProfile(
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch)) return;
+        const automaticRequestProfile = resolvePlaybackRequestProfile(
           requestContext,
           requestCaps,
           'live'
+        );
+        const requestProfile = resolvePlaybackProfileForPreflight(
+          profileForAttempt,
+          automaticRequestProfile,
         );
         const preferredHlsEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
         setCapabilitySnapshot(requestCaps);
@@ -1273,7 +1459,7 @@ export function usePlaybackOrchestrator(
             : undefined) ||
           liveResponse.headers.get('X-Request-ID') ||
           undefined;
-        if (isStalePlaybackEpoch(playbackEpoch)) return;
+        if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch)) return;
         if (liveRequestId) {
           setTraceId(liveRequestId);
         }
@@ -1384,12 +1570,33 @@ export function usePlaybackOrchestrator(
         const intentBody = buildLiveIntentBody(ref, liveDecisionToken, requestCaps, liveMode);
         sessionEpoch = allocateSessionEpoch(playbackEpoch);
 
+        if (!isLifecycleActive(lifecycleGeneration)) return;
+
         // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
         const res = await fetch(`${apiBase}/intents`, {
           method: 'POST',
           headers: authHeaders(true),
           body: JSON.stringify(intentBody)
         });
+        if (!isLifecycleActive(lifecycleGeneration)) {
+          // The request may already have created a backend session while React was
+          // unmounting us. Consume the accepted response only to reap that session;
+          // never publish it into the disposed player state.
+          if (res.ok) {
+            try {
+              const disposedIntentJson: unknown = await res.json();
+              const disposedSessionId =
+                disposedIntentJson && typeof disposedIntentJson === 'object'
+                  && typeof (disposedIntentJson as { sessionId?: unknown }).sessionId === 'string'
+                  ? (disposedIntentJson as { sessionId: string }).sessionId.trim()
+                  : '';
+              if (disposedSessionId) await sendStopIntent(disposedSessionId);
+            } catch {
+              // Best effort only: lifecycle cleanup must not revive UI state.
+            }
+          }
+          return;
+        }
         if (isStaleSessionEpoch(playbackEpoch, sessionEpoch)) return;
 
         if (res.status === 401 || res.status === 403) {
@@ -1494,6 +1701,10 @@ export function usePlaybackOrchestrator(
           (res.headers?.get ? res.headers.get('X-Request-ID') : undefined) ??
           undefined;
         newSessionId = typeof intentRecord?.sessionId === 'string' ? intentRecord.sessionId.trim() || null : null;
+        if (!isLifecycleActive(lifecycleGeneration)) {
+          if (newSessionId) await sendStopIntent(newSessionId);
+          return;
+        }
         if (!newSessionId) {
           throw normalizePlayerError(
             { title: t('player.sessionFailed'), detail: 'Intent response missing or invalid sessionId.', requestId: intentRequestId },
@@ -1509,8 +1720,12 @@ export function usePlaybackOrchestrator(
           phase: 'starting',
           requestId: intentRequestId ?? null,
         });
+        // From here the backend is tuning + spinning up the transcoder; surface
+        // that as its own startup phase ('priming') so the overlay can separate
+        // "connecting" from "transcoder starting" from "buffering".
+        setStatus('priming');
         const session = await waitForSessionReady(newSessionId);
-        if (isStaleSessionEpoch(playbackEpoch, sessionEpoch)) {
+        if (!isLifecycleActive(lifecycleGeneration) || isStaleSessionEpoch(playbackEpoch, sessionEpoch)) {
           await sendStopIntent(newSessionId);
           return;
         }
@@ -1531,6 +1746,10 @@ export function usePlaybackOrchestrator(
         setActiveHlsEngine(liveEngine);
 
       } catch (err) {
+        if (!isLifecycleActive(lifecycleGeneration)) {
+          if (newSessionId) await sendStopIntent(newSessionId);
+          return;
+        }
         const stalePlayback = isStalePlaybackEpoch(playbackEpoch);
         const staleSession = sessionEpoch > 0 && isStaleSessionEpoch(playbackEpoch, sessionEpoch);
         if (stalePlayback || staleSession) {
@@ -1553,6 +1772,7 @@ export function usePlaybackOrchestrator(
         setStatus('error');
       }
     } catch (err) {
+      if (!isLifecycleActive(lifecycleGeneration)) return;
       // Safety net for synchronous throws on the paths that run inside this outer try but
       // outside the live-session try above: the native-host bridge (beginNativePlayback)
       // throws "Native playback bridge unavailable" when the host shell lacks
@@ -1568,26 +1788,126 @@ export function usePlaybackOrchestrator(
       setStatus('error');
     } finally {
       startIntentInFlight.current = false;
+      const pendingStart = pendingStartRef.current;
+      pendingStartRef.current = null;
+      if (pendingStart && isLifecycleActive(pendingStart.lifecycleGeneration)) {
+        queueMicrotask(() => {
+          if (isLifecycleActive(pendingStart.lifecycleGeneration)) {
+            void startStreamRef.current(pendingStart.refToUse, pendingStart.profileOverride);
+          }
+        });
+      }
     }
-  }, [src, recordingId, sRef, apiBase, authHeaders, clearPlaybackState, clearPlayerError, ensureSessionCookie, waitForSessionReady, hasActivePlayback, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, requestedDuration, teardownActivePlayback, beginNativePlayback, channel?.name, nativePlaybackState, allocatePlaybackEpoch, beginPlaybackAttempt, isStalePlaybackEpoch, allocateSessionEpoch, isStaleSessionEpoch, sessionIdRef]);
+  }, [src, recordingId, sRef, explicitProfile, apiBase, authHeaders, clearPlayerError, ensureSessionCookie, waitForSessionReady, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, prepareForNextPlaybackAttempt, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, requestedDuration, beginNativePlayback, channel?.name, nativePlaybackState, allocatePlaybackEpoch, beginPlaybackAttempt, isLifecycleActive, isStalePlaybackEpoch, allocateSessionEpoch, isStaleSessionEpoch, sessionIdRef]);
 
-  const stopStream = useCallback(async (skipClose: boolean = false): Promise<void> => {
+  startStreamRef.current = startStream;
+
+  const performStopStream = useCallback(async (
+    skipClose: boolean,
+    stopEpoch: number,
+    reason: PlaybackStopReason,
+  ): Promise<void> => {
+    if (reason === 'user_stop') {
+      pendingStartRef.current = null;
+    }
     userPauseIntentRef.current = true;
-    const stopEpoch = allocatePlaybackEpoch();
+    await timelineReportCompletionRef.current;
     await teardownActivePlayback();
     markPlaybackStopped(stopEpoch);
     if (onClose && !skipClose) onClose();
-  }, [allocatePlaybackEpoch, markPlaybackStopped, onClose, teardownActivePlayback]);
+  }, [markPlaybackStopped, onClose, teardownActivePlayback]);
+
+  const stopStream = useCallback(async (
+    skipClose: boolean = false,
+    reason: PlaybackStopReason = 'user_stop',
+  ): Promise<void> => {
+    const stopEpoch = allocatePlaybackEpoch();
+    dispatchPlayback({
+      type: 'intent.stop.requested',
+      epoch: stopEpoch,
+      reason,
+      notifyClose: !skipClose,
+    });
+    await stopCommandCompletionRef.current;
+  }, [allocatePlaybackEpoch, dispatchPlayback]);
 
   const handleRetry = useCallback(async () => {
+    if (disposedRef.current) return;
+    if (retryInFlightRef.current) {
+      return;
+    }
+    retryInFlightRef.current = true;
     try {
-      await stopStream(true);
+      await stopStream(true, 'auto_recovery_restart');
+      if (disposedRef.current) return;
+      const pendingStart = pendingStartRef.current;
+      pendingStartRef.current = null;
+      await startStream(pendingStart?.refToUse, pendingStart?.profileOverride);
     } finally {
-      startIntentInFlight.current = false;
-      void startStream();
+      retryInFlightRef.current = false;
     }
   }, [stopStream, startStream]);
   // --- Effects ---
+  executeCommandRef.current = useCallback((command: PlaybackCommand) => {
+    switch (command.type) {
+      case 'command.timeline.record':
+        sessionTimeline.record(command.kind as any, command.detail);
+        break;
+      case 'command.timeline.end_attempt':
+        sessionTimeline.endAttempt(command.reason);
+        break;
+      case 'command.timeline.report':
+        {
+          const events = sessionTimeline.describe();
+          void reportTimelineSnapshot(command.reason, events);
+        }
+        break;
+      case 'command.playback.start':
+        void startStream(command.serviceRef, command.explicitProfile);
+        break;
+      case 'command.playback.stop':
+        stopCommandCompletionRef.current = performStopStream(
+          !command.notifyClose,
+          command.epoch,
+          command.reason,
+        );
+        break;
+      case 'command.telemetry.emit':
+        telemetry.emit(command.eventName as any, command.payload);
+        break;
+      case 'command.playback.schedule_auto_fallback':
+        {
+          const lifecycleGeneration = lifecycleGenerationRef.current;
+          const timerId = window.setTimeout(() => {
+            autoFallbackTimersRef.current.delete(timerId);
+            if (isLifecycleActive(lifecycleGeneration) && !isStalePlaybackEpoch(command.epoch)) {
+              dispatchPlayback({
+                type: 'intent.start.requested',
+                epoch: command.epoch,
+                kind: src ? 'src' : (playbackStateRef.current.playbackMode === 'VOD' ? 'vod' : 'live'),
+                serviceRef: sRef,
+                recordingId: recordingId || undefined,
+                srcUrl: src || undefined,
+                explicitProfile: command.profile,
+              });
+            }
+          }, command.delayMs);
+          autoFallbackTimersRef.current.add(timerId);
+        }
+        break;
+    }
+  }, [
+    startStream,
+    performStopStream,
+    reportTimelineSnapshot,
+    dispatchPlayback,
+    isLifecycleActive,
+    isStalePlaybackEpoch,
+    sRef,
+    recordingId,
+    src,
+  ]);
+
   // Update sRef on channel change
   useEffect(() => {
     if (channel) {
@@ -1603,9 +1923,17 @@ export function usePlaybackOrchestrator(
     const hasSource = !!(src || recordingId || normalizedRef);
     if (hasSource) {
       mounted.current = true;
-      startStream(normalizedRef || undefined);
+      dispatchPlayback({
+        type: 'intent.start.requested',
+        epoch: allocatePlaybackEpoch(),
+        kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+        serviceRef: normalizedRef || undefined,
+        recordingId: recordingId || undefined,
+        srcUrl: src || undefined,
+        explicitProfile: explicitProfile,
+      });
     }
-  }, [autoStart, src, recordingId, sRef, startStream]);
+  }, [autoStart, src, recordingId, sRef, explicitProfile, allocatePlaybackEpoch, dispatchPlayback]);
 
   useEffect(() => {
     dispatchPlayback({
@@ -1760,6 +2088,10 @@ export function usePlaybackOrchestrator(
           debugWarn('[V3Player] Browser resume play blocked', err);
         }
       },
+      onFailed: () => {
+        debugWarn('[V3Player] Browser resume play failed to advance, retrying session');
+        void handleRetry();
+      },
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isDocumentVisible, isNativePlaybackHost, nativePlaybackState, setStatus, videoRef]);
 
@@ -1837,6 +2169,10 @@ export function usePlaybackOrchestrator(
           debugWarn('[V3Player] Reconnect resume play blocked', err);
         }
       },
+      onFailed: () => {
+        debugWarn('[V3Player] Reconnect resume play failed to advance, retrying session');
+        void handleRetry();
+      },
     });
   }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, setStatus, videoRef]);
 
@@ -1895,6 +2231,32 @@ export function usePlaybackOrchestrator(
     isOverlayStartupStatus
       ? resolveStartupOverlaySupport(sessionProfileReason, t, overlayStatus)
       : '';
+  // Startup phase stepper: map the coarse player status onto the three
+  // user-facing startup stages so the overlay can show WHERE the start
+  // currently is instead of a generic indeterminate spinner.
+  //   connect   -> intent/tuner handshake ('starting')
+  //   transcode -> backend session spin-up ('priming' | 'building')
+  //   buffer    -> first segments arriving ('buffering' | 'recovering')
+  const startupPhaseIndex =
+    overlayStatus === 'buffering' || overlayStatus === 'recovering'
+      ? 2
+      : overlayStatus === 'priming' || overlayStatus === 'building'
+        ? 1
+        : 0;
+  const startupPhaseSteps = [
+    { key: 'connect', label: t('player.startupPhases.connect', { defaultValue: 'Connect' }) },
+    { key: 'transcode', label: t('player.startupPhases.transcode', { defaultValue: 'Transcode' }) },
+    { key: 'buffer', label: t('player.startupPhases.buffer', { defaultValue: 'Buffer' }) },
+  ].map((step, index) => ({
+    ...step,
+    state:
+      index < startupPhaseIndex
+        ? ('done' as const)
+        : index === startupPhaseIndex
+          ? ('active' as const)
+          : ('pending' as const),
+  }));
+  const startupProgressPercent = [22, 58, 86][startupPhaseIndex] ?? 22;
   const isBufferingOverlayActive =
     (status === 'buffering' || status === 'recovering') && showBufferingOverlay;
   const showStartupOverlay =
@@ -2039,7 +2401,14 @@ export function usePlaybackOrchestrator(
   // Stage 0 capability gate readout for the Stats panel (paste-free device check).
   const mseAv1Readout = useMemo(() => formatManagedMseAv1(getManagedMseAv1Support()), []);
 
+  const ttffReadout = ttffMetrics
+    ? `${(ttffMetrics.ttffMs / 1000).toFixed(2)}s (${ttffMetrics.manifestMs}ms manifest + ${ttffMetrics.bufferMs}ms buffer)`
+    : status === 'starting' || status === 'buffering'
+      ? t('player.measuring', { defaultValue: 'Messen…' })
+      : '-';
+
   const statsRows: V3PlayerLabeledValue[] = [
+    { label: t('player.ttff', { defaultValue: 'Startzeit (TTFF)' }), value: ttffReadout },
     { label: t('player.av1Mms', { defaultValue: 'AV1/MMS' }), value: mseAv1Readout },
     { label: t('common.session', { defaultValue: 'Session' }), value: effectiveSessionId || '-' },
     { label: t('common.requestId', { defaultValue: 'Request ID' }), value: sessionPlaybackTrace?.requestId || traceId },
@@ -2145,6 +2514,8 @@ export function usePlaybackOrchestrator(
     spinnerEyebrow: t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' }),
     spinnerLabel,
     spinnerSupport,
+    startupPhaseSteps,
+    startupProgressPercent,
     startupElapsedLabel: t('player.startupElapsed', {
       defaultValue: 'Wait {{seconds}}s',
       seconds: startupElapsedSeconds,
@@ -2169,6 +2540,10 @@ export function usePlaybackOrchestrator(
     seekForward15mLabel: t('player.seekForward15m'),
     playPauseLabel: isPlaying ? t('player.pause') : t('player.play'),
     playPauseIcon: isPlaying ? '⏸' : '▶',
+    ttffBadgeLabel: ttffMetrics ? `${(ttffMetrics.ttffMs / 1000).toFixed(2)}s` : null,
+    ttffTitle: ttffMetrics
+      ? `TTFF: ${ttffMetrics.ttffMs}ms (${ttffMetrics.manifestMs}ms manifest + ${ttffMetrics.bufferMs}ms decode)`
+      : null,
     seekableStart,
     seekableEnd,
     startTimeDisplay,
@@ -2220,6 +2595,9 @@ export function usePlaybackOrchestrator(
     resumeActionLabel: t('player.resumeAction'),
     startOverLabel: t('player.startOver'),
     resumePositionSeconds: resumeState?.posSeconds ?? null,
+    explicitProfile,
+    audioTracks,
+    activeAudioTrack,
     playback: {
       durationSeconds,
     },
@@ -2229,6 +2607,18 @@ export function usePlaybackOrchestrator(
     retry: handleRetry,
     seekBy,
     seekTo,
+    changeAudioTrack(trackId: number) {
+      if (hlsRef.current) {
+        hlsRef.current.audioTrack = trackId;
+      } else if (videoRef.current && 'audioTracks' in videoRef.current) {
+        const tracks = (videoRef.current as any).audioTracks;
+        if (tracks) {
+          for (let i = 0; i < tracks.length; i++) {
+            tracks[i].enabled = (i === trackId);
+          }
+        }
+      }
+    },
     seekToLiveEdge,
     togglePlayPause,
     updateServiceRef: setSRef,
@@ -2255,6 +2645,26 @@ export function usePlaybackOrchestrator(
     startOver() {
       seekWhenReady(0);
       setShowResumeOverlay(false);
+    },
+    changeProfile(profile: string) {
+      const normalizedProfile = normalizePlaybackProfileSelection(profile);
+      setExplicitProfile(normalizedProfile);
+      try {
+        localStorage.setItem('xg2g.player.explicitProfile', normalizedProfile);
+      } catch {
+        // ignore
+      }
+      if (hasActivePlayback() || startIntentInFlight.current) {
+        dispatchPlayback({
+          type: 'intent.start.requested',
+          epoch: allocatePlaybackEpoch(),
+          kind: src ? 'src' : (recordingId ? 'vod' : 'live'),
+          serviceRef: sRef || undefined,
+          recordingId: recordingId || undefined,
+          srcUrl: src || undefined,
+          explicitProfile: normalizedProfile,
+        });
+      }
     },
   };
 

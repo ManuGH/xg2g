@@ -1,13 +1,16 @@
 import type { AppError } from '../../../types/errors';
 import type { PlayerStatus } from '../../../types/v3-player';
 import type {
+  PlaybackCommand,
   PlaybackDomainState,
   PlaybackMachineEvent,
+  PlaybackMachineResult,
   PlaybackFailure,
   PlaybackFailureSource,
   MediaPhase,
 } from './playbackTypes';
 import { classifyPlaybackFailure } from '../semantics/playbackFailureSemantics';
+import { decideRecoveryEscalation } from './recoveryLadder';
 
 function statusToMediaPhase(status: PlayerStatus): MediaPhase {
   switch (status) {
@@ -92,6 +95,11 @@ export function createInitialPlaybackDomainState(requestedDuration: number | nul
     contract: null,
     failure: null,
     lastAdvisory: null,
+    explicitProfilePinned: false,
+    hasSessionIntent: false,
+    recovery: {
+      autoFallbackUsed: false,
+    },
   };
 }
 
@@ -134,6 +142,11 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         contract: null,
         failure: null,
         lastAdvisory: null,
+        explicitProfilePinned: event.explicitProfilePinned ?? false,
+        hasSessionIntent: event.hasSessionIntent ?? false,
+        recovery: {
+          autoFallbackUsed: false,
+        },
       };
 
     case 'normative.playback.stopped':
@@ -154,6 +167,11 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         sessionPhase: 'stopped',
         mediaPhase: 'stopped',
         contract: null,
+        explicitProfilePinned: false,
+        hasSessionIntent: false,
+        recovery: {
+          autoFallbackUsed: false,
+        },
       };
 
     case 'normative.playback.mode.changed':
@@ -301,4 +319,90 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
     default:
       return state;
   }
+}
+
+export function runPlaybackMachine(
+  state: PlaybackDomainState,
+  event: PlaybackMachineEvent,
+): PlaybackMachineResult {
+  const commands: PlaybackCommand[] = [];
+
+  if (event.type === 'intent.stop.requested') {
+    if (event.epoch < state.epoch.playback) {
+      return { state, commands: [] };
+    }
+    return {
+      state,
+      commands: [
+        { type: 'command.timeline.end_attempt', reason: event.reason },
+        { type: 'command.timeline.report', reason: event.reason },
+        { type: 'command.playback.stop', epoch: event.epoch, reason: event.reason, notifyClose: event.notifyClose },
+      ],
+    };
+  }
+
+  if (event.type === 'intent.start.requested') {
+    if (event.epoch < state.epoch.playback) {
+      return { state, commands: [] };
+    }
+    return {
+      state,
+      commands: [
+        {
+          type: 'command.playback.start',
+          epoch: event.epoch,
+          kind: event.kind,
+          serviceRef: event.serviceRef,
+          recordingId: event.recordingId,
+          srcUrl: event.srcUrl,
+          explicitProfile: event.explicitProfile,
+        },
+      ],
+    };
+  }
+
+  const nextState = playbackMachine(state, event);
+  if (nextState === state) {
+    return { state, commands: [] };
+  }
+
+  if (event.type === 'normative.playback.failure.raised') {
+    const escalation = decideRecoveryEscalation({
+      failure: event.failure,
+      explicitProfilePinned: event.explicitProfilePinned ?? state.explicitProfilePinned,
+      hasActiveIntent: state.hasSessionIntent,
+      state: state.recovery,
+    });
+    if (escalation === 'restart_with_fallback_profile') {
+      return {
+        state: {
+          ...nextState,
+          status: 'recovering',
+          mediaPhase: 'recovering',
+          failure: null,
+          recovery: {
+            autoFallbackUsed: true,
+          },
+        },
+        commands: [{
+          type: 'command.playback.schedule_auto_fallback',
+          epoch: event.epoch,
+          delayMs: 250,
+          profile: 'repair',
+          failureCode: event.failure.code,
+          failureClass: event.failure.class,
+        }],
+      };
+    }
+  }
+
+  if (nextState.sessionPhase !== state.sessionPhase) {
+    commands.push({
+      type: 'command.timeline.record',
+      kind: 'session_phase',
+      detail: nextState.sessionPhase,
+    });
+  }
+
+  return { state: nextState, commands };
 }

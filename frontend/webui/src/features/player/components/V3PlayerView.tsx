@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { Fragment, type RefObject } from 'react';
 import { Button, Card, StatusChip } from '../../../components/ui';
 import { useUiSurface } from '../../../context/UiSurfaceContext';
 import type { VideoElementRef } from '../../../types/v3-player';
@@ -8,7 +8,8 @@ import type {
 } from '../usePlaybackOrchestrator';
 import styles from './V3Player.module.css';
 import { DvrScrubSlider } from './DvrScrubSlider';
-import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph } from './playerControlGlyphs';
+import { DropdownMenu } from './DropdownMenu';
+import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph } from './playerControlGlyphs';
 
 interface V3PlayerViewProps {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -18,6 +19,7 @@ interface V3PlayerViewProps {
   actions: PlaybackOrchestratorActions;
   /** Live-only: opens the in-player channel list. Absent => no Sender button. */
   onOpenChannels?: () => void;
+  children?: React.ReactNode;
 }
 
 export function V3PlayerView({
@@ -27,6 +29,7 @@ export function V3PlayerView({
   viewState,
   actions,
   onOpenChannels,
+  children,
 }: V3PlayerViewProps) {
   // On phone-sized surfaces apply the compact mobile player layout (full-bleed
   // video, repositioned chrome). The styles existed in V3Player.module.css but
@@ -109,7 +112,12 @@ export function V3PlayerView({
           >
             <div className={styles.spinnerBadge}>
               {viewState.channelLogoUrl ? (
-                <img className={styles.startupChannelLogo} src={viewState.channelLogoUrl} alt={viewState.channelName || ''} loading="lazy" />
+                <img
+                  className={styles.startupChannelLogo}
+                  src={viewState.channelLogoUrl}
+                  alt={viewState.channelName || ''}
+                  loading="lazy"
+                />
               ) : viewState.channelName ? (
                 <div className={styles.startupChannelInitials} aria-hidden="true">
                   {viewState.channelName.substring(0, 2)}
@@ -124,11 +132,32 @@ export function V3PlayerView({
             <div className={styles.spinnerContent}>
               <div className={styles.spinnerEyebrow}>{viewState.spinnerEyebrow}</div>
               {viewState.channelName && <h2 className={styles.spinnerTitle}>{viewState.channelName}</h2>}
-              <div className={styles.spinnerStatusRow}>
-                <StatusChip state={viewState.overlayStatusState} label={viewState.overlayStatusLabel} />
-              </div>
               <div className={styles.spinnerLabel}>{viewState.spinnerLabel}</div>
               <div className={styles.spinnerSupport}>{viewState.spinnerSupport}</div>
+              <div className={styles.phaseTrack}>
+                {viewState.startupPhaseSteps.map((step, index) => (
+                  <Fragment key={step.key}>
+                    {index > 0 && (
+                      <span
+                        className={[
+                          styles.phaseConnector,
+                          step.state !== 'pending' ? styles.phaseConnectorDone : null,
+                        ].filter(Boolean).join(' ')}
+                      ></span>
+                    )}
+                    <span
+                      className={[
+                        styles.phaseStep,
+                        step.state === 'active' ? styles.phaseStepActive : null,
+                        step.state === 'done' ? styles.phaseStepDone : null,
+                      ].filter(Boolean).join(' ')}
+                    >
+                      <span className={styles.phaseDot}>{step.state === 'done' ? '✓' : ''}</span>
+                      <span className={styles.phaseLabel}>{step.label}</span>
+                    </span>
+                  </Fragment>
+                ))}
+              </div>
               <div className={styles.spinnerMeta}>
                 <div className={styles.spinnerProgressTrack} aria-hidden="true">
                   <div className={styles.spinnerProgressIndeterminate}></div>
@@ -315,6 +344,33 @@ export function V3PlayerView({
               </Button>
             )}
 
+            {viewState.audioTracks && viewState.audioTracks.length > 1 && (
+              <DropdownMenu
+                icon={<AudioTracksGlyph />}
+                title="Tonspur"
+                activeId={viewState.activeAudioTrack}
+                onSelect={(id) => actions.changeAudioTrack(id as number)}
+                options={viewState.audioTracks.map((t) => ({
+                  id: t.engineIndex !== undefined ? t.engineIndex : t.id,
+                  label: t.label || t.name || t.language || `Track ${t.engineIndex !== undefined ? t.engineIndex : t.id}`,
+                }))}
+              />
+            )}
+
+            <DropdownMenu
+              icon={<SettingsGlyph />}
+              title="Profil"
+              activeId={viewState.explicitProfile}
+              onSelect={(id) => actions.changeProfile(id as string)}
+              options={[
+                { id: 'auto', label: 'Auto (Smart)' },
+                { id: 'direct', label: 'Direct Play' },
+                { id: 'quality', label: 'Quality' },
+                { id: 'compatible', label: 'Compatible' },
+                { id: 'repair', label: 'Repair' },
+              ]}
+            />
+
             {viewState.showNativeFullscreenButton && (
               <Button
                 variant="ghost"
@@ -333,9 +389,10 @@ export function V3PlayerView({
                 active={viewState.fullscreenActive}
                 onClick={() => void actions.toggleFullscreen()}
                 title={viewState.fullscreenLabel}
+                aria-label={viewState.fullscreenLabel}
               >
                 <FullscreenGlyph />
-                <span>{viewState.fullscreenLabel}</span>
+                <span className="sr-only">Vollbild</span>
               </Button>
             )}
 
@@ -353,7 +410,6 @@ export function V3PlayerView({
                   <span className={styles.audioToggleIcon} aria-hidden="true">
                     <VolumeGlyph muted={!viewState.audioToggleActive} />
                   </span>
-                  <span>{viewState.audioToggleLabel}</span>
                 </Button>
                 {viewState.canAdjustVolume ? (
                   <input
@@ -375,32 +431,39 @@ export function V3PlayerView({
               <Button
                 variant="ghost"
                 size="sm"
-                active={viewState.pipActive}
                 onClick={() => void actions.togglePiP()}
                 title={viewState.pipTitle}
+                aria-label={viewState.pipLabel}
               >
                 <PipGlyph />
-                <span>{viewState.pipLabel}</span>
+                <span>PiP</span>
               </Button>
             )}
 
             <Button
               variant="ghost"
               size="sm"
-              active={viewState.statsActive}
+              active={viewState.showStatsOverlay}
               onClick={actions.toggleStats}
               title={viewState.statsTitle}
+              aria-label={viewState.statsLabel}
+              className={viewState.ttffTitle ? styles.statsButtonHasTTFF : ''}
             >
+              {viewState.ttffBadgeLabel && (
+                <span className={styles.ttffBadge} title={viewState.ttffTitle ?? undefined}>
+                  ⚡ {viewState.ttffBadgeLabel}
+                </span>
+              )}
               <StatsGlyph />
-              <span>{viewState.statsLabel}</span>
+              <span className="sr-only">{viewState.statsLabel}</span>
             </Button>
-
-            {viewState.showStopButton && (
-              <Button variant="danger" onClick={() => void actions.stopStream()}>
-                ⏹ {viewState.stopLabel}
-              </Button>
-            )}
           </div>
+
+          {viewState.showStopButton && (
+            <Button variant="danger" onClick={() => void actions.stopStream()}>
+              ⏹ {viewState.stopLabel}
+            </Button>
+          )}
         </div>
       )}
 
@@ -424,6 +487,8 @@ export function V3PlayerView({
           </div>
         </div>
       )}
+      {/* Render children inside container to allow proper overlays (like ChannelSwitcher) */}
+      {children}
     </div>
   );
 }

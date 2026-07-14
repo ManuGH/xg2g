@@ -28,6 +28,8 @@ function createActions(): PlaybackOrchestratorActions {
     toggleErrorDetails: vi.fn(),
     resumeFrom: vi.fn(),
     startOver: vi.fn(),
+    changeProfile: vi.fn(),
+    changeAudioTrack: vi.fn(),
   };
 }
 
@@ -40,6 +42,9 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     userIdle: false,
     showCloseButton: false,
     closeButtonLabel: 'Close player',
+    explicitProfile: 'auto',
+    audioTracks: [],
+    activeAudioTrack: -1,
     showStatsOverlay: false,
     statsTitle: 'Technical Stats',
     statusLabel: 'Status',
@@ -58,6 +63,12 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     spinnerEyebrow: 'Live startup',
     spinnerLabel: 'Preparing stream',
     spinnerSupport: 'This can take a moment.',
+    startupPhaseSteps: [
+      { key: 'connect', label: 'Connect', state: 'done' as const },
+      { key: 'transcode', label: 'Transcode', state: 'active' as const },
+      { key: 'buffer', label: 'Buffer', state: 'pending' as const },
+    ],
+    startupProgressPercent: 58,
     startupElapsedLabel: 'Wait 1s',
     showOverlayStopAction: false,
     overlayStopLabel: 'Stop',
@@ -79,6 +90,8 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     seekForward15mLabel: 'Forward 15m',
     playPauseLabel: 'Play',
     playPauseIcon: '▶',
+    ttffBadgeLabel: null,
+    ttffTitle: null,
     seekableStart: 0,
     seekableEnd: 0,
     startTimeDisplay: '00:00',
