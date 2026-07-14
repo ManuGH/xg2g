@@ -23,6 +23,11 @@ import (
 // the resilient-ingest coupling several FFmpeg flag defaults share)
 // independently unit-testable without constructing a full adapter.
 type AdapterConfig struct {
+	ShadowStoreEnabled       bool
+	ShadowStoreMaxBytes      int64
+	ShadowStoreQueueMaxBytes int64
+	ShadowStoreMaxObjects    int
+
 	// Live + stream-relay ingest probe depth.
 	LiveAnalyzeDuration        string
 	LiveProbeSize              string
@@ -279,6 +284,11 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		AdaptiveHEVCBufSizeK:       envOptionalIntBounded("XG2G_ADAPTIVE_HEVC_BUFSIZE_K", 8000, 120000),
 		AdaptiveH264MaxRateK:       envOptionalIntBounded("XG2G_ADAPTIVE_H264_MAXRATE_K", 4000, 60000),
 		AdaptiveH264BufSizeK:       envOptionalIntBounded("XG2G_ADAPTIVE_H264_BUFSIZE_K", 8000, 120000),
+
+		ShadowStoreEnabled:       envBool("XG2G_SHADOW_STORE_ENABLED", false),
+		ShadowStoreMaxBytes:      int64(envOptionalIntBounded("XG2G_SHADOW_STORE_MAX_BYTES", 1024*1024, 1024*1024*1024)), // min 1MB, max 1GB
+		ShadowStoreQueueMaxBytes: int64(envOptionalIntBounded("XG2G_SHADOW_STORE_QUEUE_MAX_BYTES", 1024*1024, 256*1024*1024)), // min 1MB, max 256MB
+		ShadowStoreMaxObjects:    envOptionalIntBounded("XG2G_SHADOW_STORE_MAX_OBJECTS", 1, 1024),
 
 		HEVCVAAPIAutoRatioMax: envFloatBounded("XG2G_HEVC_VAAPI_AUTO_RATIO_MAX", capability.DefaultHEVCVAAPIAutoRatioMax, 1.0, 10.0),
 		AV1VAAPIAutoRatioMax:  envFloatBounded("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", capability.DefaultAV1VAAPIAutoRatioMax, 1.0, 10.0),

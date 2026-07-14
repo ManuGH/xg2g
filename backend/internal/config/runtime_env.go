@@ -175,6 +175,12 @@ var runtimeEnvKeys = []string{
 	"XG2G_LIVE_AVSYNC_PIPE_NO_TRIM",
 	"XG2G_INITIAL_REFRESH",
 	"XG2G_RATE_LIMIT_ENABLED",
+
+	// ShadowStore limits
+	"XG2G_SHADOW_STORE_ENABLED",
+	"XG2G_SHADOW_STORE_MAX_BYTES",
+	"XG2G_SHADOW_STORE_QUEUE_MAX_BYTES",
+	"XG2G_SHADOW_STORE_MAX_OBJECTS",
 }
 
 // KnownRuntimeEnvKeys returns every env key recognized at runtime: those read by
@@ -214,6 +220,7 @@ func ReadEnv(getenv func(string) string) (Env, error) {
 	rt.OpenWebIF = readOpenWebIFRuntime(getenv)
 	rt.Transcoder = readTranscoderRuntime(getenv)
 	rt.HLS = readHLSRuntime(getenv)
+	rt.ShadowStore = readShadowStoreRuntime(getenv)
 
 	return Env{Runtime: rt}, nil
 }
@@ -338,6 +345,29 @@ func readTranscoderRuntime(getenv func(string) string) TranscoderRuntime {
 		VideoCodec:        getString(getenv, "XG2G_VIDEO_CODEC", ""),
 		VAAPIDevice:       getString(getenv, "XG2G_VAAPI_DEVICE", ""),
 	}
+}
+
+func readShadowStoreRuntime(getenv func(string) string) ShadowStoreRuntime {
+	rt := ShadowStoreRuntime{
+		Enabled:       getBool(getenv, "XG2G_SHADOW_STORE_ENABLED", false),
+		MaxBytes:      268435456, // 256MB
+		QueueMaxBytes: 67108864,  // 64MB
+		MaxObjects:    512,
+	}
+	
+	if raw := readTrimmedEnv(getenv, "XG2G_SHADOW_STORE_MAX_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n >= 0 {
+			rt.MaxBytes = n
+		}
+	}
+	if raw := readTrimmedEnv(getenv, "XG2G_SHADOW_STORE_QUEUE_MAX_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n >= 0 {
+			rt.QueueMaxBytes = n
+		}
+	}
+	applyPositiveInt(getenv, "XG2G_SHADOW_STORE_MAX_OBJECTS", &rt.MaxObjects)
+	
+	return rt
 }
 
 func getString(getenv func(string) string, key, defaultValue string) string {

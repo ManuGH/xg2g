@@ -4,18 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/domain/session/ports"
-	"github.com/ManuGH/xg2g/internal/hls/cmaf"
-	"github.com/ManuGH/xg2g/internal/infra/ffmpeg/watchdog"
-	"github.com/ManuGH/xg2g/internal/metrics"
-	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
-	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
-	"github.com/ManuGH/xg2g/internal/procgroup"
-	"github.com/ManuGH/xg2g/internal/telemetry"
-	"github.com/rs/zerolog"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"io"
 	"os"
 	"os/exec"
@@ -24,6 +12,20 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/hls/cmaf"
+	"github.com/ManuGH/xg2g/internal/infra/ffmpeg/watchdog"
+	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/procgroup"
+	"github.com/ManuGH/xg2g/internal/telemetry"
+	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Start initiates the media process.
@@ -226,10 +228,12 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 			Str("session_id", spec.SessionID).
 			Logger()
 		segCfg := cmaf.Config{
+			StreamID:          store.StreamID(spec.SessionID),
 			Dir:               ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec),
 			TargetDurationSec: plan.cmafTargetDurSec,
 			ListSize:          plan.listSize,
 			Logger:            segLogger,
+			ShadowPublisher:   injectTestShadowStore(ctx, segLogger, a.Config),
 		}
 		go func(r *os.File) {
 			defer func() { _ = r.Close() }()

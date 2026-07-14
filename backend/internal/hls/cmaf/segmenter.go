@@ -32,6 +32,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/ManuGH/xg2g/internal/hls/llhls"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
 )
 
 // maxBoxSize bounds a single top-level box. 500ms of video at even absurd
@@ -54,6 +55,9 @@ type Config struct {
 	// Now returns the wall clock for EXT-X-PROGRAM-DATE-TIME stamps.
 	// Defaults to time.Now when nil.
 	Now func() time.Time
+
+	ShadowPublisher *store.ShadowPublisher
+	StreamID        store.StreamID
 
 	Logger zerolog.Logger
 }
@@ -110,13 +114,23 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 	if err := atomicWriteFile(filepath.Join(cfg.Dir, "init.mp4"), initBytes); err != nil {
 		return fmt.Errorf("write init: %w", err)
 	}
+	if cfg.ShadowPublisher != nil {
+		cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{
+			Name:        "init.mp4",
+			Kind:        store.ObjectInit,
+			ContentType: "video/mp4",
+			Data:        initBytes,
+			PublishedAt: now(),
+		})
+	}
+
 	cfg.Logger.Info().
 		Uint32("video_track_id", videoTrackID).
 		Uint32("timescale", timescale).
 		Int("init_bytes", len(initBytes)).
 		Msg("cmaf init published")
 
-	pl, err := newPlaylistWriter(cfg.Dir, cfg.TargetDurationSec, cfg.ListSize)
+	pl, err := newPlaylistWriter(ctx, cfg.Dir, cfg.TargetDurationSec, cfg.ListSize, cfg.ShadowPublisher, cfg.StreamID)
 	if err != nil {
 		return fmt.Errorf("playlist init: %w", err)
 	}
@@ -169,7 +183,22 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 			if err := seg.rotate(); err != nil {
 				return err
 			}
-			if err := pl.appendSegment(seg.lastClosedName(), dur, seg.lastStartWall); err != nil {
+			lastClosed := seg.lastClosedName()
+			if cfg.ShadowPublisher != nil {
+				segPath := filepath.Join(cfg.Dir, lastClosed)
+				if data, err := os.ReadFile(segPath); err == nil {
+					cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{
+						Name:        lastClosed,
+						Kind:        store.ObjectSegment,
+						ContentType: "video/iso.segment",
+						Data:        data,
+						PublishedAt: now(),
+					})
+				} else {
+					cfg.Logger.Warn().Err(err).Str("segment", lastClosed).Msg("failed to read segment for shadow store")
+				}
+			}
+			if err := pl.appendSegment(lastClosed, dur, seg.lastStartWall); err != nil {
 				return err
 			}
 		}
@@ -534,17 +563,23 @@ type playlistWriter struct {
 	// an over-long segment (e.g. a startup GOP overshoot) bumps the published
 	// target instead of violating the invariant and confusing native players.
 	maxDuration float64
+	shadow      *store.ShadowPublisher
+	streamID    store.StreamID
+	ctx         context.Context
 }
 
 // newPlaylistWriter continues an existing session playlist when one is on
 // disk (worker restart into the same session dir): prior media entries are
 // preserved, a DISCONTINUITY separates the new encode, and numbering
 // resumes after the highest existing segment.
-func newPlaylistWriter(dir string, targetDuration int, listSize int) (*playlistWriter, error) {
+func newPlaylistWriter(ctx context.Context, dir string, targetDuration int, listSize int, shadow *store.ShadowPublisher, streamID store.StreamID) (*playlistWriter, error) {
 	pl := &playlistWriter{
 		path:           filepath.Join(dir, "index.m3u8"),
 		targetDuration: targetDuration,
 		listSize:       listSize,
+		shadow:         shadow,
+		streamID:       streamID,
+		ctx:            ctx,
 	}
 	raw, err := os.ReadFile(pl.path) // #nosec G304 -- session-confined path
 	if err != nil {
@@ -633,6 +668,9 @@ func (p *playlistWriter) appendSegment(name string, duration float64, start time
 					p.mediaSequence++
 					segmentsCount--
 					_ = os.Remove(filepath.Join(filepath.Dir(p.path), line))
+					if p.shadow != nil {
+						p.shadow.Delete(p.ctx, p.streamID, line)
+					}
 					break
 				}
 			}
@@ -667,7 +705,20 @@ func (p *playlistWriter) publish(end bool) error {
 	if end {
 		b.WriteString("#EXT-X-ENDLIST\n")
 	}
-	return atomicWriteFile(p.path, []byte(b.String()))
+	playlistBytes := []byte(b.String())
+	if err := atomicWriteFile(p.path, playlistBytes); err != nil {
+		return err
+	}
+	if p.shadow != nil {
+		p.shadow.Publish(p.ctx, p.streamID, store.Object{
+			Name:        "index.m3u8",
+			Kind:        store.ObjectPlaylist,
+			ContentType: "application/vnd.apple.mpegurl",
+			Data:        playlistBytes,
+			PublishedAt: time.Now(),
+		})
+	}
+	return nil
 }
 
 func atomicWriteFile(path string, data []byte) error {
