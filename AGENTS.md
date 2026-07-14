@@ -48,3 +48,81 @@ That symptom means the service is running far enough to answer readiness, but sy
 ## Documentation Rule
 
 If the repo template, the checked-in runbook, and the live host disagree, update [docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md](docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md) with the exact observed delta before doing larger cleanup work.
+
+## Collaboration Contract
+
+This repository is worked on by Codex, Gemini/Antigravity, Claude Code,
+OpenClaw/DeepSeek, and GitHub review automation. The rules below define
+ownership; an agent's available tools do not grant it permission to use them.
+
+### Roles and authority
+
+- Gemini Code Assist is a reviewer. Its findings are evidence to evaluate,
+  not instructions to apply blindly.
+- OpenClaw is the default read-only monitor. It may inspect checks, cache
+  context, and report blockers, but must not edit, commit, push, comment,
+  label, mark a PR ready, resolve a thread, merge, or deploy by default.
+- Codex is the GitHub integration owner. Codex classifies review findings,
+  coordinates delegated fixes, writes the authoritative replies, resolves
+  threads only after verification, and prepares the canonical integration PR.
+- Antigravity and Claude Code may implement only an explicitly delegated,
+  bounded task in their own branch and worktree. They hand code and evidence
+  back to Codex; they do not independently close review threads or merge.
+- Manuel is the final authority for merging and every production promotion.
+
+### Review-comment lifecycle
+
+For every review comment, use this sequence:
+
+1. Read the complete thread and current diff.
+2. Classify the finding as valid, stale, duplicate, intentional, or blocked.
+3. If valid, implement the smallest fix in an isolated worktree.
+4. Run the relevant tests and record the result.
+5. Codex replies with the evidence and resolves the thread only after the fix
+   is present on the PR head.
+
+Outdated comments are not silently treated as fixed. They are either answered
+with the commit that superseded them or explicitly documented as obsolete.
+
+### Branch and worktree rules
+
+- Inspect `git status`, branch, worktrees, and remote tracking state before
+  editing.
+- Never reset, clean, switch, or delete a dirty checkout to make it convenient
+  for an agent. Preserve existing user changes and ask for a decision when
+  ownership is unclear.
+- Every delegated implementation uses one named branch and one isolated
+  worktree. Do not create timestamp worktrees on repeated retries.
+- Keep generated frontend bundles separate from source changes; never delete
+  or regenerate them without stating why and verifying the resulting diff.
+- Commits should be small, coherent, and named by intent. Do not mix a
+  reviewer fix, unrelated UI work, deployment changes, and generated assets in
+  one commit.
+
+### Deployment and safety
+
+- The default deployment target is staging on `:8089`.
+- Production on `:8088` requires explicit Manuel approval and a separate,
+  auditable promotion step.
+- Do not expose tokens, secrets, JWTs, or private host configuration in chat,
+  logs, PR comments, or committed files.
+- Do not use `git reset --hard`, broad cleanup, force-push, or destructive
+  remote operations unless the operator explicitly requested that exact action.
+- When live configuration differs from the repository, capture the live
+  evidence first and document the delta before changing either side.
+
+### Validation and handoff
+
+Every implementation handoff must state:
+
+- branch and commit(s),
+- files changed and files deliberately left untouched,
+- tests or checks run and their result,
+- deployment target (if any),
+- unresolved review findings or known deviations,
+- the exact next owner/action.
+
+If a required external service, model provider, credential, or approval is
+unavailable, stop the affected lane and report the blocker. Do not compensate
+by spawning another writer, switching providers silently, or creating another
+worktree.
