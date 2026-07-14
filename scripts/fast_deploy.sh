@@ -12,6 +12,12 @@ die() {
   exit 1
 }
 
+if [[ "${1:-}" != "--confirm-staging" ]]; then
+  die "staging deployment requires explicit confirmation: ./scripts/fast_deploy.sh --confirm-staging"
+fi
+shift
+[[ "$#" -eq 0 ]] || die "unknown arguments: $*"
+
 if [[ "${XG2G_PROMOTE_PRODUCTION:-0}" =~ ^(1|true|yes|on)$ ]]; then
   die "fast_deploy.sh is staging-only; use scripts/promote_production.sh --confirm-production"
 fi

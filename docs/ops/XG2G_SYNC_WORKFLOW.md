@@ -62,7 +62,7 @@ den geschützten `/root/xg2g`-Checkout noch den LXC.
 Für Staging folgt danach:
 
 ```bash
-scripts/fast_deploy.sh
+scripts/fast_deploy.sh --confirm-staging
 ```
 
 `fast_deploy.sh` verlangt einen sauberen Mac-Checkout und dass `HEAD` exakt dem
