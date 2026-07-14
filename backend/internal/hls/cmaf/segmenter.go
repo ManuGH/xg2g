@@ -68,6 +68,9 @@ type Config struct {
 func Run(ctx context.Context, r io.Reader, cfg Config) error {
 	defer func() {
 		_, _ = io.Copy(io.Discard, r)
+		if cfg.ShadowPublisher != nil {
+			_ = cfg.ShadowPublisher.Close(context.Background())
+		}
 	}()
 	err := run(ctx, r, cfg)
 	if err != nil && ctx.Err() == nil {

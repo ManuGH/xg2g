@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -61,7 +62,7 @@ type ShadowPublisher struct {
 	logger zerolog.Logger
 
 	startOnce sync.Once
-	
+
 	enqueueMu sync.Mutex
 	closed    bool
 
@@ -284,6 +285,18 @@ func (p *ShadowPublisher) process(req storeCommand) {
 				Str("stream_id", string(req.streamID)).
 				Str("name", req.object.Name).
 				Msg("shadow publish failed")
+		} else {
+			// TEMPORARY SPRINT 1 VERIFIER
+			diskHash := sha256.Sum256(req.object.Data)
+			ramObject, err := p.store.Get(bgCtx, req.streamID, req.object.Name)
+			if err == nil {
+				ramHash := sha256.Sum256(ramObject.Data)
+				if diskHash != ramHash {
+					p.logger.Error().
+						Str("filename", req.object.Name).
+						Msg("shadow object hash mismatch")
+				}
+			}
 		}
 	case cmdDelete:
 		if err := p.store.Delete(bgCtx, req.streamID, req.name); err != nil {
