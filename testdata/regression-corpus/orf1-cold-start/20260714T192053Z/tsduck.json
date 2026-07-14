@@ -1,0 +1,3815 @@
+{
+  "pids": [
+    {
+      "audio": false,
+      "bitrate": 3182,
+      "bitrate-204": 3453,
+      "description": "PAT",
+      "ecm": false,
+      "emm": false,
+      "global": true,
+      "id": 0,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 188,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 188
+      },
+      "pmt": false,
+      "service-count": 0,
+      "t2mi": false,
+      "unit-start": 188,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 431077,
+      "bitrate-204": 467764,
+      "description": "EIT",
+      "ecm": false,
+      "emm": false,
+      "global": true,
+      "id": 18,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 25471,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 25471
+      },
+      "pmt": false,
+      "service-count": 0,
+      "t2mi": false,
+      "unit-start": 7168,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 102,
+      "bitrate-204": 110,
+      "description": "TDT/TOT",
+      "ecm": false,
+      "emm": false,
+      "global": true,
+      "id": 20,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 6,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 6
+      },
+      "pmt": false,
+      "service-count": 0,
+      "t2mi": false,
+      "unit-start": 6,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 6330,
+      "bitrate-204": 6868,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 107,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 374,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 374
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 187,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 108,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4912
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 109,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4913
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 110,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4914
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 116,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4916
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 117,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4917
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "cas": 1608,
+      "description": "Irdeto ECM",
+      "ecm": true,
+      "emm": false,
+      "global": false,
+      "id": 120,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 2,
+      "services": [
+        4911,
+        4920
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "cas": 1616,
+      "description": "Irdeto ECM",
+      "ecm": true,
+      "emm": false,
+      "global": false,
+      "id": 122,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 130,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4930
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 133,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4933
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 140,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4940
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 141,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4941
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 142,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4942
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 143,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4943
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 144,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4944
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 145,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4945
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 146,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4946
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 147,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4947
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 148,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4948
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 149,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4949
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 150,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4950
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "PMT",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 151,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": true,
+      "service-count": 1,
+      "services": [
+        4951
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "cas": 3477,
+      "description": "CryptoWorks (Irdeto) ECM",
+      "ecm": true,
+      "emm": false,
+      "global": false,
+      "id": 270,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "cas": 3480,
+      "description": "CryptoWorks (Irdeto) ECM",
+      "ecm": true,
+      "emm": false,
+      "global": false,
+      "id": 272,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "cas": 1762,
+      "description": "Irdeto ECM",
+      "ecm": true,
+      "emm": false,
+      "global": false,
+      "id": 320,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "cas": 1280,
+      "description": "Viaccess ECM for SOID 334080 (0x051900)",
+      "ecm": true,
+      "emm": false,
+      "global": false,
+      "id": 461,
+      "iip": false,
+      "is-scrambled": false,
+      "operators": [
+        334080
+      ],
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "cas": 2445,
+      "description": "NDS ECM",
+      "ecm": true,
+      "emm": false,
+      "global": false,
+      "id": 470,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "cas": 2544,
+      "description": "NDS ECM",
+      "ecm": true,
+      "emm": false,
+      "global": false,
+      "id": 480,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "cas": 2444,
+      "description": "NDS ECM",
+      "ecm": true,
+      "emm": false,
+      "global": false,
+      "id": 490,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 9565064,
+      "bitrate-204": 10379112,
+      "description": "AVC video (1280x720, high profile, level 4.0, 4:2:0)",
+      "ecm": false,
+      "emm": false,
+      "first-dts": 3219397192,
+      "first-pcr": 965791457325,
+      "first-pts": 3219402592,
+      "global": false,
+      "id": 1920,
+      "iip": false,
+      "invalid-pes-prefix": 0,
+      "is-scrambled": false,
+      "last-dts": 3227423392,
+      "last-pcr": 968196344655,
+      "last-pts": 3227435992,
+      "packets": {
+        "af": 8127,
+        "clear": 565170,
+        "discontinuities": 0,
+        "dts": 2937,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 3114,
+        "pcr-leap": 0,
+        "pts": 4460,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 565170
+      },
+      "pes": 4460,
+      "pes-stream-id": 224,
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unreferenced": false,
+      "video": true
+    },
+    {
+      "audio": true,
+      "bitrate": 471187,
+      "bitrate-204": 511288,
+      "description": "AC-3 Audio (deu, clean effects, AC-3, 3/2 (L,C,R,SL,SR), @48,000 Hz, complete main, bsid 6)",
+      "ecm": false,
+      "emm": false,
+      "first-pts": 3219309261,
+      "global": false,
+      "id": 1921,
+      "iip": false,
+      "invalid-pes-prefix": 0,
+      "is-scrambled": false,
+      "language": "deu",
+      "languages": [
+        "deu"
+      ],
+      "last-pts": 3227315661,
+      "packets": {
+        "af": 697,
+        "clear": 27841,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 696,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 27841
+      },
+      "pes": 696,
+      "pes-stream-id": 189,
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": true,
+      "bitrate": 172762,
+      "bitrate-204": 187466,
+      "description": "MPEG-1 Audio (mis, clean effects, Audio layer II, 160 kb/s, @48,000 Hz, subbands 12-31 in intensity stereo, Audio layer II, 160 kb/s, @48,000 Hz, subbands 4-31 in intensity stereo, Audio layer II, 160 kb/s, @48,000 Hz, subbands 8-31 in intensity stereo, Audio layer II, 160 kb/s, @48,000 Hz, subbands 16-31 in intensity stereo)",
+      "ecm": false,
+      "emm": false,
+      "first-pts": 3219317298,
+      "global": false,
+      "id": 1922,
+      "iip": false,
+      "invalid-pes-prefix": 0,
+      "is-scrambled": false,
+      "language": "mis",
+      "languages": [
+        "mis"
+      ],
+      "last-pts": 3227326578,
+      "packets": {
+        "af": 928,
+        "clear": 10208,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 928,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 10208
+      },
+      "pes": 928,
+      "pes-stream-id": 192,
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 301556,
+      "bitrate-204": 327220,
+      "description": "Teletext (deu, Initial Teletext page, Teletext subtitles for hearing impaired)",
+      "ecm": false,
+      "emm": false,
+      "first-pts": 3219308992,
+      "global": false,
+      "id": 1925,
+      "iip": false,
+      "invalid-pes-prefix": 0,
+      "is-scrambled": false,
+      "language": "deu",
+      "languages": [
+        "deu"
+      ],
+      "last-pts": 3227324392,
+      "packets": {
+        "af": 0,
+        "clear": 17818,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 4454,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 17818
+      },
+      "pes": 4454,
+      "pes-stream-id": 189,
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 1557,
+      "bitrate-204": 1690,
+      "description": "MPEG-2 Private sections (AIT)",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 7310,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 92,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 92
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 92,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "DSM-CC U-N (HbbTV)",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 7311,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    },
+    {
+      "audio": false,
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "description": "DSM-CC Stream Descriptors",
+      "ecm": false,
+      "emm": false,
+      "global": false,
+      "id": 7312,
+      "iip": false,
+      "is-scrambled": false,
+      "packets": {
+        "af": 0,
+        "clear": 0,
+        "discontinuities": 0,
+        "dts": 0,
+        "dts-leap": 0,
+        "duplicated": 0,
+        "invalid-scrambling": 0,
+        "pcr": 0,
+        "pcr-leap": 0,
+        "pts": 0,
+        "pts-leap": 0,
+        "scrambled": 0,
+        "total": 0
+      },
+      "pmt": false,
+      "service-count": 1,
+      "services": [
+        4911
+      ],
+      "t2mi": false,
+      "unit-start": 0,
+      "unreferenced": false,
+      "video": false
+    }
+  ],
+  "services": [
+    {
+      "bitrate": 10518456,
+      "bitrate-204": 11413644,
+      "components": {
+        "clear": 17,
+        "scrambled": 0,
+        "total": 17
+      },
+      "hidden": false,
+      "id": 4911,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 621503,
+      "pcr-pid": 1920,
+      "pids": [
+        107,
+        120,
+        122,
+        270,
+        272,
+        320,
+        461,
+        470,
+        480,
+        490,
+        1920,
+        1921,
+        1922,
+        1925,
+        7310,
+        7311,
+        7312
+      ],
+      "pmt-pid": 107,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4912,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        108
+      ],
+      "pmt-pid": 108,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4913,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        109
+      ],
+      "pmt-pid": 109,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4914,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        110
+      ],
+      "pmt-pid": 110,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4916,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        116
+      ],
+      "pmt-pid": 116,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4917,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        117
+      ],
+      "pmt-pid": 117,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4920,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        120
+      ],
+      "pmt-pid": 120,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4930,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        130
+      ],
+      "pmt-pid": 130,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4933,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        133
+      ],
+      "pmt-pid": 133,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4940,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        140
+      ],
+      "pmt-pid": 140,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4941,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        141
+      ],
+      "pmt-pid": 141,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4942,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        142
+      ],
+      "pmt-pid": 142,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4943,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        143
+      ],
+      "pmt-pid": 143,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4944,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        144
+      ],
+      "pmt-pid": 144,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4945,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        145
+      ],
+      "pmt-pid": 145,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4946,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        146
+      ],
+      "pmt-pid": 146,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4947,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        147
+      ],
+      "pmt-pid": 147,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4948,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        148
+      ],
+      "pmt-pid": 148,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4949,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        149
+      ],
+      "pmt-pid": 149,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4950,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        150
+      ],
+      "pmt-pid": 150,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    },
+    {
+      "bitrate": 0,
+      "bitrate-204": 0,
+      "components": {
+        "clear": 1,
+        "scrambled": 0,
+        "total": 1
+      },
+      "hidden": false,
+      "id": 4951,
+      "is-scrambled": false,
+      "name": "(unknown)",
+      "packets": 0,
+      "pids": [
+        151
+      ],
+      "pmt-pid": 151,
+      "provider": "(unknown)",
+      "ssu": false,
+      "t2mi": false,
+      "tsid": 1007,
+      "type": 0,
+      "type-name": "Undefined"
+    }
+  ],
+  "tables": [
+    {
+      "first-version": 21,
+      "last-version": 21,
+      "max-repetition-ms": 588,
+      "max-repetition-pkt": 4281,
+      "min-repetition-ms": 293,
+      "min-repetition-pkt": 2134,
+      "pid": 0,
+      "repetition-ms": 474,
+      "repetition-pkt": 3451,
+      "sections": 188,
+      "tables": 188,
+      "tid": 0,
+      "tid-ext": 1007,
+      "versions": [
+        21
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 2900,
+      "max-repetition-pkt": 21117,
+      "min-repetition-ms": 1562,
+      "min-repetition-pkt": 11377,
+      "pid": 18,
+      "repetition-ms": 2150,
+      "repetition-pkt": 15655,
+      "sections": 83,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4911,
+      "versions": [
+        0
+      ]
+    },
+    {
+      "first-version": 14,
+      "last-version": 14,
+      "max-repetition-ms": 2992,
+      "max-repetition-pkt": 21786,
+      "min-repetition-ms": 1727,
+      "min-repetition-pkt": 12578,
+      "pid": 18,
+      "repetition-ms": 2149,
+      "repetition-pkt": 15653,
+      "sections": 83,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4912,
+      "versions": [
+        14
+      ]
+    },
+    {
+      "first-version": 7,
+      "last-version": 7,
+      "max-repetition-ms": 2926,
+      "max-repetition-pkt": 21312,
+      "min-repetition-ms": 1610,
+      "min-repetition-pkt": 11724,
+      "pid": 18,
+      "repetition-ms": 2149,
+      "repetition-pkt": 15648,
+      "sections": 83,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4913,
+      "versions": [
+        7
+      ]
+    },
+    {
+      "first-version": 18,
+      "last-version": 18,
+      "max-repetition-ms": 2929,
+      "max-repetition-pkt": 21331,
+      "min-repetition-ms": 1704,
+      "min-repetition-pkt": 12410,
+      "pid": 18,
+      "repetition-ms": 2149,
+      "repetition-pkt": 15647,
+      "sections": 83,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4914,
+      "versions": [
+        18
+      ]
+    },
+    {
+      "first-version": 16,
+      "last-version": 16,
+      "max-repetition-ms": 2893,
+      "max-repetition-pkt": 21067,
+      "min-repetition-ms": 1681,
+      "min-repetition-pkt": 12239,
+      "pid": 18,
+      "repetition-ms": 2150,
+      "repetition-pkt": 15657,
+      "sections": 82,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4916,
+      "versions": [
+        16
+      ]
+    },
+    {
+      "first-version": 4,
+      "last-version": 4,
+      "max-repetition-ms": 2963,
+      "max-repetition-pkt": 21579,
+      "min-repetition-ms": 1670,
+      "min-repetition-pkt": 12160,
+      "pid": 18,
+      "repetition-ms": 2148,
+      "repetition-pkt": 15646,
+      "sections": 82,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4917,
+      "versions": [
+        4
+      ]
+    },
+    {
+      "first-version": 4,
+      "last-version": 4,
+      "max-repetition-ms": 2853,
+      "max-repetition-pkt": 20779,
+      "min-repetition-ms": 1574,
+      "min-repetition-pkt": 11466,
+      "pid": 18,
+      "repetition-ms": 2150,
+      "repetition-pkt": 15654,
+      "sections": 82,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4920,
+      "versions": [
+        4
+      ]
+    },
+    {
+      "first-version": 7,
+      "last-version": 7,
+      "max-repetition-ms": 2913,
+      "max-repetition-pkt": 21215,
+      "min-repetition-ms": 1500,
+      "min-repetition-pkt": 10924,
+      "pid": 18,
+      "repetition-ms": 2150,
+      "repetition-pkt": 15657,
+      "sections": 82,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4930,
+      "versions": [
+        7
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 2890,
+      "max-repetition-pkt": 21046,
+      "min-repetition-ms": 1497,
+      "min-repetition-pkt": 10902,
+      "pid": 18,
+      "repetition-ms": 2149,
+      "repetition-pkt": 15651,
+      "sections": 82,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4932,
+      "versions": [
+        0
+      ]
+    },
+    {
+      "first-version": 2,
+      "last-version": 2,
+      "max-repetition-ms": 2835,
+      "max-repetition-pkt": 20647,
+      "min-repetition-ms": 1462,
+      "min-repetition-pkt": 10649,
+      "pid": 18,
+      "repetition-ms": 2151,
+      "repetition-pkt": 15667,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4940,
+      "versions": [
+        2
+      ]
+    },
+    {
+      "first-version": 31,
+      "last-version": 31,
+      "max-repetition-ms": 2890,
+      "max-repetition-pkt": 21044,
+      "min-repetition-ms": 1507,
+      "min-repetition-pkt": 10974,
+      "pid": 18,
+      "repetition-ms": 2149,
+      "repetition-pkt": 15651,
+      "sections": 82,
+      "tables": 41,
+      "tid": 78,
+      "tid-ext": 4941,
+      "versions": [
+        31
+      ]
+    },
+    {
+      "first-version": 25,
+      "last-version": 25,
+      "max-repetition-ms": 2792,
+      "max-repetition-pkt": 20329,
+      "min-repetition-ms": 1383,
+      "min-repetition-pkt": 10072,
+      "pid": 18,
+      "repetition-ms": 2150,
+      "repetition-pkt": 15658,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4942,
+      "versions": [
+        25
+      ]
+    },
+    {
+      "first-version": 24,
+      "last-version": 24,
+      "max-repetition-ms": 2795,
+      "max-repetition-pkt": 20358,
+      "min-repetition-ms": 1454,
+      "min-repetition-pkt": 10587,
+      "pid": 18,
+      "repetition-ms": 2151,
+      "repetition-pkt": 15661,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4943,
+      "versions": [
+        24
+      ]
+    },
+    {
+      "first-version": 28,
+      "last-version": 28,
+      "max-repetition-ms": 2820,
+      "max-repetition-pkt": 20537,
+      "min-repetition-ms": 1450,
+      "min-repetition-pkt": 10556,
+      "pid": 18,
+      "repetition-ms": 2150,
+      "repetition-pkt": 15658,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4944,
+      "versions": [
+        28
+      ]
+    },
+    {
+      "first-version": 3,
+      "last-version": 3,
+      "max-repetition-ms": 2820,
+      "max-repetition-pkt": 20537,
+      "min-repetition-ms": 1450,
+      "min-repetition-pkt": 10561,
+      "pid": 18,
+      "repetition-ms": 2151,
+      "repetition-pkt": 15663,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4945,
+      "versions": [
+        3
+      ]
+    },
+    {
+      "first-version": 12,
+      "last-version": 12,
+      "max-repetition-ms": 2803,
+      "max-repetition-pkt": 20411,
+      "min-repetition-ms": 1449,
+      "min-repetition-pkt": 10549,
+      "pid": 18,
+      "repetition-ms": 2149,
+      "repetition-pkt": 15651,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4946,
+      "versions": [
+        12
+      ]
+    },
+    {
+      "first-version": 1,
+      "last-version": 1,
+      "max-repetition-ms": 2817,
+      "max-repetition-pkt": 20512,
+      "min-repetition-ms": 1449,
+      "min-repetition-pkt": 10552,
+      "pid": 18,
+      "repetition-ms": 2150,
+      "repetition-pkt": 15658,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4947,
+      "versions": [
+        1
+      ]
+    },
+    {
+      "first-version": 29,
+      "last-version": 29,
+      "max-repetition-ms": 2784,
+      "max-repetition-pkt": 20273,
+      "min-repetition-ms": 1408,
+      "min-repetition-pkt": 10255,
+      "pid": 18,
+      "repetition-ms": 2151,
+      "repetition-pkt": 15664,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4948,
+      "versions": [
+        29
+      ]
+    },
+    {
+      "first-version": 29,
+      "last-version": 29,
+      "max-repetition-ms": 2784,
+      "max-repetition-pkt": 20273,
+      "min-repetition-ms": 1448,
+      "min-repetition-pkt": 10544,
+      "pid": 18,
+      "repetition-ms": 2151,
+      "repetition-pkt": 15664,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4949,
+      "versions": [
+        29
+      ]
+    },
+    {
+      "first-version": 5,
+      "last-version": 5,
+      "max-repetition-ms": 2823,
+      "max-repetition-pkt": 20558,
+      "min-repetition-ms": 1382,
+      "min-repetition-pkt": 10063,
+      "pid": 18,
+      "repetition-ms": 2151,
+      "repetition-pkt": 15663,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4950,
+      "versions": [
+        5
+      ]
+    },
+    {
+      "first-version": 2,
+      "last-version": 2,
+      "max-repetition-ms": 2887,
+      "max-repetition-pkt": 21026,
+      "min-repetition-ms": 1454,
+      "min-repetition-pkt": 10588,
+      "pid": 18,
+      "repetition-ms": 2151,
+      "repetition-pkt": 15661,
+      "sections": 83,
+      "tables": 42,
+      "tid": 78,
+      "tid-ext": 4951,
+      "versions": [
+        2
+      ]
+    },
+    {
+      "first-version": 12,
+      "last-version": 12,
+      "max-repetition-ms": 12139,
+      "max-repetition-pkt": 88403,
+      "min-repetition-ms": 10048,
+      "min-repetition-pkt": 73177,
+      "pid": 18,
+      "repetition-ms": 11050,
+      "repetition-pkt": 80473,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13301,
+      "versions": [
+        12
+      ]
+    },
+    {
+      "first-version": 12,
+      "last-version": 12,
+      "max-repetition-ms": 12494,
+      "max-repetition-pkt": 90984,
+      "min-repetition-ms": 10061,
+      "min-repetition-pkt": 73269,
+      "pid": 18,
+      "repetition-ms": 11035,
+      "repetition-pkt": 80360,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13302,
+      "versions": [
+        12
+      ]
+    },
+    {
+      "first-version": 12,
+      "last-version": 12,
+      "max-repetition-ms": 12511,
+      "max-repetition-pkt": 91112,
+      "min-repetition-ms": 10066,
+      "min-repetition-pkt": 73302,
+      "pid": 18,
+      "repetition-ms": 11038,
+      "repetition-pkt": 80387,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13303,
+      "versions": [
+        12
+      ]
+    },
+    {
+      "first-version": 11,
+      "last-version": 11,
+      "max-repetition-ms": 12414,
+      "max-repetition-pkt": 90407,
+      "min-repetition-ms": 9945,
+      "min-repetition-pkt": 72422,
+      "pid": 18,
+      "repetition-ms": 11021,
+      "repetition-pkt": 80257,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13304,
+      "versions": [
+        11
+      ]
+    },
+    {
+      "first-version": 11,
+      "last-version": 11,
+      "max-repetition-ms": 12075,
+      "max-repetition-pkt": 87936,
+      "min-repetition-ms": 10211,
+      "min-repetition-pkt": 74361,
+      "pid": 18,
+      "repetition-ms": 11053,
+      "repetition-pkt": 80493,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13305,
+      "versions": [
+        11
+      ]
+    },
+    {
+      "first-version": 12,
+      "last-version": 12,
+      "max-repetition-ms": 12045,
+      "max-repetition-pkt": 87714,
+      "min-repetition-ms": 10055,
+      "min-repetition-pkt": 73226,
+      "pid": 18,
+      "repetition-ms": 11050,
+      "repetition-pkt": 80471,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13306,
+      "versions": [
+        12
+      ]
+    },
+    {
+      "first-version": 11,
+      "last-version": 11,
+      "max-repetition-ms": 12005,
+      "max-repetition-pkt": 87423,
+      "min-repetition-ms": 10004,
+      "min-repetition-pkt": 72855,
+      "pid": 18,
+      "repetition-ms": 11065,
+      "repetition-pkt": 80580,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13307,
+      "versions": [
+        11
+      ]
+    },
+    {
+      "first-version": 12,
+      "last-version": 12,
+      "max-repetition-ms": 11990,
+      "max-repetition-pkt": 87315,
+      "min-repetition-ms": 9931,
+      "min-repetition-pkt": 72321,
+      "pid": 18,
+      "repetition-ms": 11074,
+      "repetition-pkt": 80647,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13308,
+      "versions": [
+        12
+      ]
+    },
+    {
+      "first-version": 7,
+      "last-version": 7,
+      "max-repetition-ms": 11999,
+      "max-repetition-pkt": 87379,
+      "min-repetition-ms": 9783,
+      "min-repetition-pkt": 71246,
+      "pid": 18,
+      "repetition-ms": 11070,
+      "repetition-pkt": 80619,
+      "sections": 15,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13309,
+      "versions": [
+        7
+      ]
+    },
+    {
+      "first-version": 8,
+      "last-version": 8,
+      "max-repetition-ms": 12000,
+      "max-repetition-pkt": 87390,
+      "min-repetition-ms": 9777,
+      "min-repetition-pkt": 71202,
+      "pid": 18,
+      "repetition-ms": 11070,
+      "repetition-pkt": 80616,
+      "sections": 15,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13310,
+      "versions": [
+        8
+      ]
+    },
+    {
+      "first-version": 27,
+      "last-version": 27,
+      "max-repetition-ms": 11966,
+      "max-repetition-pkt": 87145,
+      "min-repetition-ms": 9694,
+      "min-repetition-pkt": 70593,
+      "pid": 18,
+      "repetition-ms": 11057,
+      "repetition-pkt": 80525,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13311,
+      "versions": [
+        27
+      ]
+    },
+    {
+      "first-version": 5,
+      "last-version": 5,
+      "max-repetition-ms": 12062,
+      "max-repetition-pkt": 87844,
+      "min-repetition-ms": 9605,
+      "min-repetition-pkt": 69946,
+      "pid": 18,
+      "repetition-ms": 11053,
+      "repetition-pkt": 80490,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13312,
+      "versions": [
+        5
+      ]
+    },
+    {
+      "first-version": 28,
+      "last-version": 28,
+      "max-repetition-ms": 12092,
+      "max-repetition-pkt": 88061,
+      "min-repetition-ms": 9663,
+      "min-repetition-pkt": 70368,
+      "pid": 18,
+      "repetition-ms": 11055,
+      "repetition-pkt": 80506,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13313,
+      "versions": [
+        28
+      ]
+    },
+    {
+      "first-version": 9,
+      "last-version": 9,
+      "max-repetition-ms": 12110,
+      "max-repetition-pkt": 88192,
+      "min-repetition-ms": 9651,
+      "min-repetition-pkt": 70286,
+      "pid": 18,
+      "repetition-ms": 11045,
+      "repetition-pkt": 80434,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13314,
+      "versions": [
+        9
+      ]
+    },
+    {
+      "first-version": 16,
+      "last-version": 16,
+      "max-repetition-ms": 12104,
+      "max-repetition-pkt": 88145,
+      "min-repetition-ms": 9677,
+      "min-repetition-pkt": 70469,
+      "pid": 18,
+      "repetition-ms": 11035,
+      "repetition-pkt": 80362,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13316,
+      "versions": [
+        16
+      ]
+    },
+    {
+      "first-version": 3,
+      "last-version": 3,
+      "max-repetition-ms": 12044,
+      "max-repetition-pkt": 87707,
+      "min-repetition-ms": 9715,
+      "min-repetition-pkt": 70752,
+      "pid": 18,
+      "repetition-ms": 11041,
+      "repetition-pkt": 80408,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13317,
+      "versions": [
+        3
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 12009,
+      "max-repetition-pkt": 87454,
+      "min-repetition-ms": 9734,
+      "min-repetition-pkt": 70890,
+      "pid": 18,
+      "repetition-ms": 11037,
+      "repetition-pkt": 80373,
+      "sections": 16,
+      "tables": 8,
+      "tid": 79,
+      "tid-ext": 13321,
+      "versions": [
+        0
+      ]
+    },
+    {
+      "first-version": 15,
+      "last-version": 15,
+      "max-repetition-ms": 13732,
+      "max-repetition-pkt": 100001,
+      "min-repetition-ms": 8480,
+      "min-repetition-pkt": 61758,
+      "pid": 18,
+      "repetition-ms": 11064,
+      "repetition-pkt": 80576,
+      "sections": 129,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4911,
+      "versions": [
+        15
+      ]
+    },
+    {
+      "first-version": 30,
+      "last-version": 30,
+      "max-repetition-ms": 13482,
+      "max-repetition-pkt": 98180,
+      "min-repetition-ms": 8562,
+      "min-repetition-pkt": 62355,
+      "pid": 18,
+      "repetition-ms": 11090,
+      "repetition-pkt": 80763,
+      "sections": 129,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4912,
+      "versions": [
+        30
+      ]
+    },
+    {
+      "first-version": 26,
+      "last-version": 26,
+      "max-repetition-ms": 13482,
+      "max-repetition-pkt": 98180,
+      "min-repetition-ms": 8563,
+      "min-repetition-pkt": 62363,
+      "pid": 18,
+      "repetition-ms": 11090,
+      "repetition-pkt": 80763,
+      "sections": 173,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4913,
+      "versions": [
+        26
+      ]
+    },
+    {
+      "first-version": 25,
+      "last-version": 25,
+      "max-repetition-ms": 13482,
+      "max-repetition-pkt": 98181,
+      "min-repetition-ms": 8562,
+      "min-repetition-pkt": 62349,
+      "pid": 18,
+      "repetition-ms": 11090,
+      "repetition-pkt": 80764,
+      "sections": 126,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4914,
+      "versions": [
+        25
+      ]
+    },
+    {
+      "first-version": 30,
+      "last-version": 30,
+      "max-repetition-ms": 13482,
+      "max-repetition-pkt": 98180,
+      "min-repetition-ms": 8560,
+      "min-repetition-pkt": 62335,
+      "pid": 18,
+      "repetition-ms": 11090,
+      "repetition-pkt": 80765,
+      "sections": 129,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4916,
+      "versions": [
+        30
+      ]
+    },
+    {
+      "first-version": 20,
+      "last-version": 20,
+      "max-repetition-ms": 13482,
+      "max-repetition-pkt": 98179,
+      "min-repetition-ms": 8561,
+      "min-repetition-pkt": 62343,
+      "pid": 18,
+      "repetition-ms": 11090,
+      "repetition-pkt": 80764,
+      "sections": 126,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4917,
+      "versions": [
+        20
+      ]
+    },
+    {
+      "first-version": 20,
+      "last-version": 20,
+      "max-repetition-ms": 13481,
+      "max-repetition-pkt": 98178,
+      "min-repetition-ms": 8559,
+      "min-repetition-pkt": 62329,
+      "pid": 18,
+      "repetition-ms": 11090,
+      "repetition-pkt": 80766,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4920,
+      "versions": [
+        20
+      ]
+    },
+    {
+      "first-version": 17,
+      "last-version": 17,
+      "max-repetition-ms": 13481,
+      "max-repetition-pkt": 98176,
+      "min-repetition-ms": 8558,
+      "min-repetition-pkt": 62323,
+      "pid": 18,
+      "repetition-ms": 11090,
+      "repetition-pkt": 80766,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4930,
+      "versions": [
+        17
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 13481,
+      "max-repetition-pkt": 98173,
+      "min-repetition-ms": 8556,
+      "min-repetition-pkt": 62311,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80767,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4940,
+      "versions": [
+        0
+      ]
+    },
+    {
+      "first-version": 2,
+      "last-version": 2,
+      "max-repetition-ms": 13481,
+      "max-repetition-pkt": 98173,
+      "min-repetition-ms": 8557,
+      "min-repetition-pkt": 62317,
+      "pid": 18,
+      "repetition-ms": 11090,
+      "repetition-pkt": 80766,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4941,
+      "versions": [
+        2
+      ]
+    },
+    {
+      "first-version": 15,
+      "last-version": 15,
+      "max-repetition-ms": 13480,
+      "max-repetition-pkt": 98170,
+      "min-repetition-ms": 8554,
+      "min-repetition-pkt": 62296,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80768,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4942,
+      "versions": [
+        15
+      ]
+    },
+    {
+      "first-version": 14,
+      "last-version": 14,
+      "max-repetition-ms": 13481,
+      "max-repetition-pkt": 98172,
+      "min-repetition-ms": 8555,
+      "min-repetition-pkt": 62304,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80767,
+      "sections": 124,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4943,
+      "versions": [
+        14
+      ]
+    },
+    {
+      "first-version": 16,
+      "last-version": 16,
+      "max-repetition-ms": 13480,
+      "max-repetition-pkt": 98169,
+      "min-repetition-ms": 8552,
+      "min-repetition-pkt": 62281,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80769,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4944,
+      "versions": [
+        16
+      ]
+    },
+    {
+      "first-version": 20,
+      "last-version": 20,
+      "max-repetition-ms": 13480,
+      "max-repetition-pkt": 98170,
+      "min-repetition-ms": 8553,
+      "min-repetition-pkt": 62288,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80768,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4945,
+      "versions": [
+        20
+      ]
+    },
+    {
+      "first-version": 26,
+      "last-version": 26,
+      "max-repetition-ms": 13480,
+      "max-repetition-pkt": 98167,
+      "min-repetition-ms": 8550,
+      "min-repetition-pkt": 62267,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80770,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4946,
+      "versions": [
+        26
+      ]
+    },
+    {
+      "first-version": 21,
+      "last-version": 21,
+      "max-repetition-ms": 13480,
+      "max-repetition-pkt": 98167,
+      "min-repetition-ms": 8551,
+      "min-repetition-pkt": 62275,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80769,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4947,
+      "versions": [
+        21
+      ]
+    },
+    {
+      "first-version": 2,
+      "last-version": 2,
+      "max-repetition-ms": 13463,
+      "max-repetition-pkt": 98046,
+      "min-repetition-ms": 8550,
+      "min-repetition-pkt": 62263,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80771,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4948,
+      "versions": [
+        2
+      ]
+    },
+    {
+      "first-version": 17,
+      "last-version": 17,
+      "max-repetition-ms": 13480,
+      "max-repetition-pkt": 98164,
+      "min-repetition-ms": 8549,
+      "min-repetition-pkt": 62261,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80770,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4949,
+      "versions": [
+        17
+      ]
+    },
+    {
+      "first-version": 20,
+      "last-version": 20,
+      "max-repetition-ms": 13461,
+      "max-repetition-pkt": 98027,
+      "min-repetition-ms": 8551,
+      "min-repetition-pkt": 62271,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80772,
+      "sections": 123,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4950,
+      "versions": [
+        20
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 13462,
+      "max-repetition-pkt": 98039,
+      "min-repetition-ms": 8550,
+      "min-repetition-pkt": 62266,
+      "pid": 18,
+      "repetition-ms": 11091,
+      "repetition-pkt": 80771,
+      "sections": 127,
+      "tables": 8,
+      "tid": 80,
+      "tid-ext": 4951,
+      "versions": [
+        0
+      ]
+    },
+    {
+      "first-version": 9,
+      "last-version": 9,
+      "max-repetition-ms": 35735,
+      "max-repetition-pkt": 260239,
+      "min-repetition-ms": 32268,
+      "min-repetition-pkt": 234988,
+      "pid": 18,
+      "repetition-ms": 34001,
+      "repetition-pkt": 247614,
+      "sections": 84,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4911,
+      "versions": [
+        9
+      ]
+    },
+    {
+      "first-version": 1,
+      "last-version": 1,
+      "max-repetition-ms": 35694,
+      "max-repetition-pkt": 259943,
+      "min-repetition-ms": 32295,
+      "min-repetition-pkt": 235186,
+      "pid": 18,
+      "repetition-ms": 33995,
+      "repetition-pkt": 247565,
+      "sections": 82,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4912,
+      "versions": [
+        1
+      ]
+    },
+    {
+      "first-version": 1,
+      "last-version": 1,
+      "max-repetition-ms": 35827,
+      "max-repetition-pkt": 260910,
+      "min-repetition-ms": 32204,
+      "min-repetition-pkt": 234526,
+      "pid": 18,
+      "repetition-ms": 34016,
+      "repetition-pkt": 247718,
+      "sections": 129,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4913,
+      "versions": [
+        1
+      ]
+    },
+    {
+      "first-version": 21,
+      "last-version": 21,
+      "max-repetition-ms": 35678,
+      "max-repetition-pkt": 259823,
+      "min-repetition-ms": 32340,
+      "min-repetition-pkt": 235513,
+      "pid": 18,
+      "repetition-ms": 34009,
+      "repetition-pkt": 247668,
+      "sections": 82,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4914,
+      "versions": [
+        21
+      ]
+    },
+    {
+      "first-version": 1,
+      "last-version": 1,
+      "max-repetition-ms": 35656,
+      "max-repetition-pkt": 259661,
+      "min-repetition-ms": 32381,
+      "min-repetition-pkt": 235812,
+      "pid": 18,
+      "repetition-ms": 34018,
+      "repetition-pkt": 247737,
+      "sections": 81,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4916,
+      "versions": [
+        1
+      ]
+    },
+    {
+      "first-version": 17,
+      "last-version": 17,
+      "max-repetition-ms": 35611,
+      "max-repetition-pkt": 259337,
+      "min-repetition-ms": 32381,
+      "min-repetition-pkt": 235813,
+      "pid": 18,
+      "repetition-ms": 33996,
+      "repetition-pkt": 247575,
+      "sections": 66,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4917,
+      "versions": [
+        17
+      ]
+    },
+    {
+      "first-version": 17,
+      "last-version": 17,
+      "max-repetition-ms": 35611,
+      "max-repetition-pkt": 259339,
+      "min-repetition-ms": 32390,
+      "min-repetition-pkt": 235881,
+      "pid": 18,
+      "repetition-ms": 34001,
+      "repetition-pkt": 247610,
+      "sections": 66,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4920,
+      "versions": [
+        17
+      ]
+    },
+    {
+      "first-version": 17,
+      "last-version": 17,
+      "max-repetition-ms": 35422,
+      "max-repetition-pkt": 257957,
+      "min-repetition-ms": 32578,
+      "min-repetition-pkt": 237246,
+      "pid": 18,
+      "repetition-ms": 34000,
+      "repetition-pkt": 247602,
+      "sections": 42,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4930,
+      "versions": [
+        17
+      ]
+    },
+    {
+      "first-version": 20,
+      "last-version": 20,
+      "max-repetition-ms": 35609,
+      "max-repetition-pkt": 259320,
+      "min-repetition-ms": 32393,
+      "min-repetition-pkt": 235898,
+      "pid": 18,
+      "repetition-ms": 34001,
+      "repetition-pkt": 247609,
+      "sections": 66,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4940,
+      "versions": [
+        20
+      ]
+    },
+    {
+      "first-version": 19,
+      "last-version": 19,
+      "max-repetition-ms": 35610,
+      "max-repetition-pkt": 259329,
+      "min-repetition-ms": 32391,
+      "min-repetition-pkt": 235889,
+      "pid": 18,
+      "repetition-ms": 34001,
+      "repetition-pkt": 247609,
+      "sections": 66,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4941,
+      "versions": [
+        19
+      ]
+    },
+    {
+      "first-version": 10,
+      "last-version": 10,
+      "max-repetition-ms": 35597,
+      "max-repetition-pkt": 259231,
+      "min-repetition-ms": 32417,
+      "min-repetition-pkt": 236075,
+      "pid": 18,
+      "repetition-ms": 34007,
+      "repetition-pkt": 247653,
+      "sections": 63,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4942,
+      "versions": [
+        10
+      ]
+    },
+    {
+      "first-version": 10,
+      "last-version": 10,
+      "max-repetition-ms": 35593,
+      "max-repetition-pkt": 259208,
+      "min-repetition-ms": 32425,
+      "min-repetition-pkt": 236133,
+      "pid": 18,
+      "repetition-ms": 34009,
+      "repetition-pkt": 247671,
+      "sections": 60,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4943,
+      "versions": [
+        10
+      ]
+    },
+    {
+      "first-version": 10,
+      "last-version": 10,
+      "max-repetition-ms": 35594,
+      "max-repetition-pkt": 259213,
+      "min-repetition-ms": 32419,
+      "min-repetition-pkt": 236092,
+      "pid": 18,
+      "repetition-ms": 34007,
+      "repetition-pkt": 247653,
+      "sections": 63,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4944,
+      "versions": [
+        10
+      ]
+    },
+    {
+      "first-version": 10,
+      "last-version": 10,
+      "max-repetition-ms": 35595,
+      "max-repetition-pkt": 259221,
+      "min-repetition-ms": 32418,
+      "min-repetition-pkt": 236084,
+      "pid": 18,
+      "repetition-ms": 34007,
+      "repetition-pkt": 247653,
+      "sections": 63,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4945,
+      "versions": [
+        10
+      ]
+    },
+    {
+      "first-version": 10,
+      "last-version": 10,
+      "max-repetition-ms": 35592,
+      "max-repetition-pkt": 259199,
+      "min-repetition-ms": 32422,
+      "min-repetition-pkt": 236110,
+      "pid": 18,
+      "repetition-ms": 34007,
+      "repetition-pkt": 247655,
+      "sections": 63,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4946,
+      "versions": [
+        10
+      ]
+    },
+    {
+      "first-version": 10,
+      "last-version": 10,
+      "max-repetition-ms": 35593,
+      "max-repetition-pkt": 259206,
+      "min-repetition-ms": 32420,
+      "min-repetition-pkt": 236100,
+      "pid": 18,
+      "repetition-ms": 34007,
+      "repetition-pkt": 247653,
+      "sections": 63,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4947,
+      "versions": [
+        10
+      ]
+    },
+    {
+      "first-version": 25,
+      "last-version": 25,
+      "max-repetition-ms": 35607,
+      "max-repetition-pkt": 259304,
+      "min-repetition-ms": 32394,
+      "min-repetition-pkt": 235911,
+      "pid": 18,
+      "repetition-ms": 34001,
+      "repetition-pkt": 247608,
+      "sections": 66,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4948,
+      "versions": [
+        25
+      ]
+    },
+    {
+      "first-version": 10,
+      "last-version": 10,
+      "max-repetition-ms": 35593,
+      "max-repetition-pkt": 259207,
+      "min-repetition-ms": 32425,
+      "min-repetition-pkt": 236136,
+      "pid": 18,
+      "repetition-ms": 34009,
+      "repetition-pkt": 247672,
+      "sections": 60,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4949,
+      "versions": [
+        10
+      ]
+    },
+    {
+      "first-version": 10,
+      "last-version": 10,
+      "max-repetition-ms": 35593,
+      "max-repetition-pkt": 259206,
+      "min-repetition-ms": 32426,
+      "min-repetition-pkt": 236138,
+      "pid": 18,
+      "repetition-ms": 34009,
+      "repetition-pkt": 247672,
+      "sections": 60,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4950,
+      "versions": [
+        10
+      ]
+    },
+    {
+      "first-version": 20,
+      "last-version": 20,
+      "max-repetition-ms": 35606,
+      "max-repetition-pkt": 259299,
+      "min-repetition-ms": 32395,
+      "min-repetition-pkt": 235916,
+      "pid": 18,
+      "repetition-ms": 34001,
+      "repetition-pkt": 247608,
+      "sections": 66,
+      "tables": 3,
+      "tid": 81,
+      "tid-ext": 4951,
+      "versions": [
+        20
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 18567,
+      "max-repetition-pkt": 135214,
+      "min-repetition-ms": 7549,
+      "min-repetition-pkt": 54973,
+      "pid": 18,
+      "repetition-ms": 11338,
+      "repetition-pkt": 82571,
+      "sections": 75,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13301,
+      "versions": [
+        0
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 19209,
+      "max-repetition-pkt": 139889,
+      "min-repetition-ms": 7061,
+      "min-repetition-pkt": 51422,
+      "pid": 18,
+      "repetition-ms": 11338,
+      "repetition-pkt": 82571,
+      "sections": 75,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13302,
+      "versions": [
+        0
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 19208,
+      "max-repetition-pkt": 139884,
+      "min-repetition-ms": 7062,
+      "min-repetition-pkt": 51430,
+      "pid": 18,
+      "repetition-ms": 11338,
+      "repetition-pkt": 82571,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13303,
+      "versions": [
+        0
+      ]
+    },
+    {
+      "first-version": 31,
+      "last-version": 31,
+      "max-repetition-ms": 19208,
+      "max-repetition-pkt": 139879,
+      "min-repetition-ms": 7063,
+      "min-repetition-pkt": 51438,
+      "pid": 18,
+      "repetition-ms": 11338,
+      "repetition-pkt": 82572,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13304,
+      "versions": [
+        31
+      ]
+    },
+    {
+      "first-version": 31,
+      "last-version": 31,
+      "max-repetition-ms": 19208,
+      "max-repetition-pkt": 139878,
+      "min-repetition-ms": 7064,
+      "min-repetition-pkt": 51446,
+      "pid": 18,
+      "repetition-ms": 11338,
+      "repetition-pkt": 82572,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13305,
+      "versions": [
+        31
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 19207,
+      "max-repetition-pkt": 139873,
+      "min-repetition-ms": 7065,
+      "min-repetition-pkt": 51453,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82573,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13306,
+      "versions": [
+        0
+      ]
+    },
+    {
+      "first-version": 31,
+      "last-version": 31,
+      "max-repetition-ms": 19206,
+      "max-repetition-pkt": 139866,
+      "min-repetition-ms": 7067,
+      "min-repetition-pkt": 51462,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82573,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13307,
+      "versions": [
+        31
+      ]
+    },
+    {
+      "first-version": 1,
+      "last-version": 1,
+      "max-repetition-ms": 19205,
+      "max-repetition-pkt": 139863,
+      "min-repetition-ms": 7068,
+      "min-repetition-pkt": 51470,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82573,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13308,
+      "versions": [
+        1
+      ]
+    },
+    {
+      "first-version": 26,
+      "last-version": 26,
+      "max-repetition-ms": 19205,
+      "max-repetition-pkt": 139859,
+      "min-repetition-ms": 7069,
+      "min-repetition-pkt": 51477,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82573,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13309,
+      "versions": [
+        26
+      ]
+    },
+    {
+      "first-version": 18,
+      "last-version": 18,
+      "max-repetition-ms": 19205,
+      "max-repetition-pkt": 139856,
+      "min-repetition-ms": 7069,
+      "min-repetition-pkt": 51483,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82574,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13310,
+      "versions": [
+        18
+      ]
+    },
+    {
+      "first-version": 8,
+      "last-version": 8,
+      "max-repetition-ms": 19204,
+      "max-repetition-pkt": 139851,
+      "min-repetition-ms": 7070,
+      "min-repetition-pkt": 51490,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82574,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13311,
+      "versions": [
+        8
+      ]
+    },
+    {
+      "first-version": 12,
+      "last-version": 12,
+      "max-repetition-ms": 19203,
+      "max-repetition-pkt": 139845,
+      "min-repetition-ms": 7072,
+      "min-repetition-pkt": 51499,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82574,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13312,
+      "versions": [
+        12
+      ]
+    },
+    {
+      "first-version": 21,
+      "last-version": 21,
+      "max-repetition-ms": 19202,
+      "max-repetition-pkt": 139841,
+      "min-repetition-ms": 7073,
+      "min-repetition-pkt": 51506,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82574,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13313,
+      "versions": [
+        21
+      ]
+    },
+    {
+      "first-version": 3,
+      "last-version": 3,
+      "max-repetition-ms": 19202,
+      "max-repetition-pkt": 139836,
+      "min-repetition-ms": 7073,
+      "min-repetition-pkt": 51512,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82575,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13314,
+      "versions": [
+        3
+      ]
+    },
+    {
+      "first-version": 3,
+      "last-version": 3,
+      "max-repetition-ms": 19201,
+      "max-repetition-pkt": 139832,
+      "min-repetition-ms": 7478,
+      "min-repetition-pkt": 54461,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82575,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13316,
+      "versions": [
+        3
+      ]
+    },
+    {
+      "first-version": 28,
+      "last-version": 28,
+      "max-repetition-ms": 19757,
+      "max-repetition-pkt": 143880,
+      "min-repetition-ms": 7046,
+      "min-repetition-pkt": 51313,
+      "pid": 18,
+      "repetition-ms": 11339,
+      "repetition-pkt": 82575,
+      "sections": 74,
+      "tables": 7,
+      "tid": 96,
+      "tid-ext": 13317,
+      "versions": [
+        28
+      ]
+    },
+    {
+      "max-repetition-ms": 31525,
+      "max-repetition-pkt": 229578,
+      "min-repetition-ms": 26985,
+      "min-repetition-pkt": 196515,
+      "pid": 20,
+      "repetition-ms": 29255,
+      "repetition-pkt": 213047,
+      "sections": 3,
+      "tables": 3,
+      "tid": 112
+    },
+    {
+      "max-repetition-ms": 29049,
+      "max-repetition-pkt": 211547,
+      "min-repetition-ms": 28742,
+      "min-repetition-pkt": 209310,
+      "pid": 20,
+      "repetition-ms": 28895,
+      "repetition-pkt": 210429,
+      "sections": 3,
+      "tables": 3,
+      "tid": 115
+    },
+    {
+      "first-version": 4,
+      "last-version": 4,
+      "max-repetition-ms": 601,
+      "max-repetition-pkt": 4376,
+      "min-repetition-ms": 286,
+      "min-repetition-pkt": 2081,
+      "pid": 107,
+      "repetition-ms": 474,
+      "repetition-pkt": 3449,
+      "sections": 187,
+      "tables": 187,
+      "tid": 2,
+      "tid-ext": 4911,
+      "versions": [
+        4
+      ]
+    },
+    {
+      "first-version": 0,
+      "last-version": 0,
+      "max-repetition-ms": 1197,
+      "max-repetition-pkt": 8719,
+      "min-repetition-ms": 594,
+      "min-repetition-pkt": 4324,
+      "pid": 7310,
+      "repetition-ms": 972,
+      "repetition-pkt": 7076,
+      "sections": 91,
+      "tables": 91,
+      "tid": 116,
+      "tid-ext": 16,
+      "versions": [
+        0
+      ]
+    }
+  ],
+  "time": {
+    "local": {
+      "tot": {
+        "first": {
+          "country": "AUT",
+          "date": "2026/07/14",
+          "seconds-since-2000": 837379272,
+          "time": "21:21:12.000"
+        },
+        "last": {
+          "country": "AUT",
+          "date": "2026/07/14",
+          "seconds-since-2000": 837379332,
+          "time": "21:22:12.000"
+        }
+      }
+    },
+    "utc": {
+      "tdt": {
+        "first": {
+          "date": "2026/07/14",
+          "seconds-since-2000": 837372057,
+          "time": "19:20:57.000"
+        },
+        "last": {
+          "date": "2026/07/14",
+          "seconds-since-2000": 837372117,
+          "time": "19:21:57.000"
+        }
+      }
+    }
+  },
+  "ts": {
+    "bitrate": 10952816,
+    "bitrate-204": 11884971,
+    "bytes": 121667584,
+    "country": "AUT",
+    "duration": 88,
+    "id": 1007,
+    "packets": {
+      "invalid-syncs": 0,
+      "suspect-ignored": 0,
+      "total": 647168,
+      "transport-errors": 0
+    },
+    "pcr-bitrate": 10952816,
+    "pcr-bitrate-204": 11884971,
+    "pids": {
+      "clear": 9,
+      "global": {
+        "bitrate": 434360,
+        "bitrate-204": 471327,
+        "clear": 3,
+        "is-scrambled": false,
+        "packets": 25665,
+        "pids": [
+          0,
+          18,
+          20
+        ],
+        "scrambled": 0,
+        "total": 3
+      },
+      "pcr": 1,
+      "scrambled": 0,
+      "total": 9,
+      "unreferenced": 0
+    },
+    "services": {
+      "clear": 21,
+      "scrambled": 0,
+      "total": 21
+    },
+    "user-bitrate": 0,
+    "user-bitrate-204": 0
+  }
+}

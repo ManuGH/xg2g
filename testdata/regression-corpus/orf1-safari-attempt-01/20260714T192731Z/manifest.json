@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "fixture_name": "orf1-safari-attempt-01",
+  "captured_at_utc": "20260714T192731Z",
+  "started_at": "2026-07-14T19:27:31Z",
+  "ended_at": "2026-07-14T19:29:29Z",
+  "requested_duration_seconds": 600,
+  "actual_duration_seconds": 118,
+  "completed_requested_duration": false,
+  "source_url_redacted": "http://10.10.55.64:8001/1:0:19:132F:3EF:1:C00000:0:0:0:",
+  "capture": {
+    "tool": "curl",
+    "termination": {
+      "mode": "manual_stop",
+      "signal": "SIGTERM",
+      "exit_code": null
+    },
+    "bytes": 165945344,
+    "complete_ts_packets": 882688,
+    "trailing_bytes": 0,
+    "sha256": "4430e38aeb59a11a2f64f434cdd5948f98ec84b39b5635f7ba1a09d6f3c1d9b3",
+    "transformed": false
+  }
+}
