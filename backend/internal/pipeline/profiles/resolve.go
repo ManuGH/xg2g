@@ -407,6 +407,7 @@ func ResolveWithConfig(requested, userAgent string, dvrWindowSec int, cap *scan.
 	switch canonical {
 	case ProfileCopy:
 		spec.PolicyModeHint = ports.RuntimeModeCopy
+		spec.Container = "mpegts"
 		return spec
 	case ProfileLow:
 		spec.PolicyModeHint = ports.RuntimeModeHQ25
