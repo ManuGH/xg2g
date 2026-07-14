@@ -32,8 +32,9 @@ Ein Git-Commit bedeutet nicht automatisch „fertig“:
    automatisch gepusht.
 2. **Review-Kandidat** – bewusst auf einen Feature-Branch gepusht; noch keine
    Freigabe und kein Deployment.
-3. **Staging-Kandidat** – nach relevanten Tests ausdrücklich für LXC 110
-   ausgewählt; wird auf `:8089` getestet.
+3. **Staging-Test** – ein gepushter Feature- oder Main-Commit wird ausdrücklich
+   für LXC 110 ausgewählt und auf `:8089` getestet. Dieser Schritt dient gerade
+   dazu, Tests und Playback-Verhalten vor der Produktionsfreigabe zu prüfen.
 4. **Produktionsfreigabe** – ausschließlich nach Manuel-Freigabe und separatem
    Promote-Schritt auf `:8088`.
 
@@ -59,15 +60,16 @@ scripts/reconcile_xg2g.sh sync-build --commit <sha>
 Dieser Schritt verändert ausschließlich `/root/xg2g-build`. Er verändert weder
 den geschützten `/root/xg2g`-Checkout noch den LXC.
 
-Für Staging folgt danach:
+Für den Test in LXC 110 folgt danach:
 
 ```bash
 scripts/fast_deploy.sh --confirm-staging
 ```
 
 `fast_deploy.sh` verlangt einen sauberen Mac-Checkout und dass `HEAD` exakt dem
-gepushten Remote-Branch entspricht. Es deployt ausschließlich Staging auf
-`:8089`; Produktion `:8088` bleibt unberührt.
+gepushten Remote-Branch entspricht. Es deployt ausschließlich den Teststand
+auf `:8089`; Produktion `:8088` bleibt unberührt. `--confirm-staging` bestätigt
+nur den Start dieses Testdeployments, nicht die Produktionsreife.
 
 ## Statusprüfung
 
