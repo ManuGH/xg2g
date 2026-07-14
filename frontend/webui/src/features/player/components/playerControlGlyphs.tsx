@@ -80,3 +80,29 @@ export function SettingsGlyph() {
     </svg>
   );
 }
+
+export function StopGlyph() {
+  return (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function SeekBackGlyph() {
+  return (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 3v5h5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function SeekForwardGlyph() {
+  return (
+    <svg className={styles.controlIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M21 3v5h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

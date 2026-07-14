@@ -9,7 +9,7 @@ import type {
 import styles from './V3Player.module.css';
 import { DvrScrubSlider } from './DvrScrubSlider';
 import { DropdownMenu } from './DropdownMenu';
-import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph } from './playerControlGlyphs';
+import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph } from './playerControlGlyphs';
 
 interface V3PlayerViewProps {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -252,13 +252,13 @@ export function V3PlayerView({
               <div className={styles.transportControls}>
                 <div className={styles.seekButtons}>
                   <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-900)} title={viewState.seekBack15mLabel} aria-label={viewState.seekBack15mLabel}>
-                    ↺ 15m
+                    <SeekBackGlyph /> 15m
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-60)} title={viewState.seekBack60sLabel} aria-label={viewState.seekBack60sLabel}>
-                    ↺ 60s
+                    <SeekBackGlyph /> 60s
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-15)} title={viewState.seekBack15sLabel} aria-label={viewState.seekBack15sLabel}>
-                    ↺ 15s
+                    <SeekBackGlyph /> 15s
                   </Button>
                 </div>
 
@@ -270,18 +270,18 @@ export function V3PlayerView({
                   title={viewState.playPauseLabel}
                   aria-label={viewState.playPauseLabel}
                 >
-                  {viewState.playPauseIcon}
+                  {viewState.playPauseIcon === '⏸' ? <PauseGlyph /> : <PlayGlyph />}
                 </Button>
 
                 <div className={styles.seekButtons}>
                   <Button variant="ghost" size="sm" onClick={() => actions.seekBy(15)} title={viewState.seekForward15sLabel} aria-label={viewState.seekForward15sLabel}>
-                    ↻ 15s
+                    <SeekForwardGlyph /> 15s
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => actions.seekBy(60)} title={viewState.seekForward60sLabel} aria-label={viewState.seekForward60sLabel}>
-                    ↻ 60s
+                    <SeekForwardGlyph /> 60s
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => actions.seekBy(900)} title={viewState.seekForward15mLabel} aria-label={viewState.seekForward15mLabel}>
-                    ↻ 15m
+                    <SeekForwardGlyph /> 15m
                   </Button>
                 </div>
 
@@ -319,13 +319,13 @@ export function V3PlayerView({
               onClick={() => actions.startStream()}
               disabled={viewState.manualStartDisabled}
             >
-              ▶ {viewState.manualStartLabel}
+              <PlayGlyph /> {viewState.manualStartLabel}
             </Button>
           )}
 
           {viewState.showDvrModeButton && (
             <Button onClick={actions.enterDVRMode} title={viewState.dvrModeLabel}>
-              DVR
+              <PipGlyph /> DVR
             </Button>
           )}
 
@@ -378,7 +378,7 @@ export function V3PlayerView({
                 onClick={actions.enterNativeFullscreen}
                 title={viewState.nativeFullscreenTitle}
               >
-                TV {viewState.nativeFullscreenLabel}
+                <FullscreenGlyph /> {viewState.nativeFullscreenLabel}
               </Button>
             )}
 
@@ -461,7 +461,7 @@ export function V3PlayerView({
 
           {viewState.showStopButton && (
             <Button variant="danger" onClick={() => void actions.stopStream()}>
-              ⏹ {viewState.stopLabel}
+              <StopGlyph /> {viewState.stopLabel}
             </Button>
           )}
         </div>
