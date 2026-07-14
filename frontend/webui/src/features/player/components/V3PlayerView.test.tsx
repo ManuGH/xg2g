@@ -203,13 +203,13 @@ describe('V3PlayerView', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back 60s' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back 15s' }));
     fireEvent.change(screen.getByRole('slider'), { target: { value: '15' } });
     fireEvent.click(screen.getByRole('button', { name: 'Go live' }));
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
     fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
 
-    expect(actions.seekBy).toHaveBeenCalledWith(-60);
+    expect(actions.seekBy).toHaveBeenCalledWith(-15);
     expect(actions.seekTo).toHaveBeenNthCalledWith(1, 115);
     // The LIVE button now goes through seekToLiveEdge (lands behind the edge),
     // not a raw seekTo(seekableEnd) which stalled on the un-decodable boundary.
@@ -218,7 +218,7 @@ describe('V3PlayerView', () => {
     expect(actions.startOver).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the now-playing programme title + synopsis with the channel as eyebrow', () => {
+  it('renders the now-playing programme title with the channel as eyebrow', () => {
     const actions = createActions();
     const viewState = createViewState({
       showPlaybackChrome: true,
@@ -238,7 +238,6 @@ describe('V3PlayerView', () => {
     );
 
     expect(screen.getByText('Servus am Abend')).toBeInTheDocument();
-    expect(screen.getByText('Hintergründig und informativ. Das bewegt Österreich heute.')).toBeInTheDocument();
     expect(screen.getByText('ServusTV HD')).toBeInTheDocument();
   });
 
