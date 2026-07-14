@@ -1520,6 +1520,7 @@ export function usePlaybackEngine({
         return;
       }
       if (revealHoldRef.current) {
+        onPlaying();
         return;
       }
       clearNativeStallRecovery();
