@@ -24,6 +24,21 @@ Mac-Pfade als Arbeitsverzeichnis annehmen.
 
 ## Standardablauf
 
+### Zustandsmodell
+
+Ein Git-Commit bedeutet nicht automatisch „fertig“:
+
+1. **Lokaler Checkpoint** – Commit auf dem Mac; kann WIP sein und wird nicht
+   automatisch gepusht.
+2. **Review-Kandidat** – bewusst auf einen Feature-Branch gepusht; noch keine
+   Freigabe und kein Deployment.
+3. **Staging-Kandidat** – nach relevanten Tests ausdrücklich für LXC 110
+   ausgewählt; wird auf `:8089` getestet.
+4. **Produktionsfreigabe** – ausschließlich nach Manuel-Freigabe und separatem
+   Promote-Schritt auf `:8088`.
+
+Kein Agent darf einen Zustand stillschweigend in den nächsten überführen.
+
 Auf dem Mac:
 
 ```bash

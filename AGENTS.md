@@ -101,6 +101,15 @@ with the commit that superseded them or explicitly documented as obsolete.
 
 ### Deployment and safety
 
+- A commit is a checkpoint, not a completion, test result, release, or Manuel
+  approval. A branch may contain work in progress.
+- A push to a feature branch is a review handoff, not a deployment or release.
+  Never push or open a PR for unfinished work unless the task explicitly calls
+  for that handoff.
+- Staging on LXC 110 requires an explicit operator decision after the relevant
+  tests pass. It is a test run, not an approval of production readiness.
+- Production promotion is a separate action and always requires Manuel's
+  explicit approval after staging evidence is reviewed.
 - The default deployment target is staging on `:8089`.
 - Production on `:8088` requires explicit Manuel approval and a separate,
   auditable promotion step.
