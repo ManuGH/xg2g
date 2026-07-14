@@ -2645,3 +2645,4 @@
   gap: 12px;
   width: 100%;
 }
+@keyframes startupProgressIndeterminate { 0% { left: -40%; } 100% { left: 100%; } }
