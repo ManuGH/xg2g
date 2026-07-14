@@ -198,7 +198,7 @@
 }
 
 .videoElementHidden {
-  opacity: 0;
+  opacity: 0.01;
 }
 
 .nativeBufferingMask {
@@ -220,6 +220,8 @@
   background:
     radial-gradient(circle at center, color-mix(in srgb, var(--surface-shell-safe) 12%, transparent), transparent 38%),
     linear-gradient(180deg, color-mix(in srgb, var(--bg-video) 24%, transparent), color-mix(in srgb, var(--bg-video) 68%, transparent));
+  backdrop-filter: blur(10px) saturate(110%);
+  -webkit-backdrop-filter: blur(10px) saturate(110%);
 }
 
 .overlayTitle {
