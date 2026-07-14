@@ -126,3 +126,24 @@ If a required external service, model provider, credential, or approval is
 unavailable, stop the affected lane and report the blocker. Do not compensate
 by spawning another writer, switching providers silently, or creating another
 worktree.
+
+## Linux-first Repository Topology
+
+`xg2g` is a Linux/Go/Docker application. The Mac checkout is a development
+client, not the runtime host and not the OpenClaw workspace.
+
+- GitHub is the canonical source for committed code.
+- The Mac `StudioProjects` checkout is where Manuel/Codex develop and review.
+- Proxmox runs OpenClaw and owns Linux-side automation and build verification.
+- Proxmox `/root/xg2g` is a preserved, potentially dirty reconciliation
+  checkout. OpenClaw must never reset, clean, switch, or use it as a build
+  source while it is dirty.
+- Proxmox `/root/xg2g-build` is the clean, detached build checkout. It may be
+  advanced only to a commit that exists on GitHub.
+- LXC 110 `/srv/xg2g` and `/srv/xg2g-staging` are runtime/deployment surfaces,
+  not authoring checkouts. Staging is verified on `:8089`.
+
+Use [docs/ops/XG2G_SYNC_WORKFLOW.md](docs/ops/XG2G_SYNC_WORKFLOW.md) and
+`scripts/reconcile_xg2g.sh status` to compare Mac, GitHub, Proxmox build, and
+staging evidence. A clean GitHub commit may be propagated one-way; no tool may
+silently synchronize uncommitted files between hosts.
