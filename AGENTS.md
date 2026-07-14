@@ -62,12 +62,17 @@ ownership; an agent's available tools do not grant it permission to use them.
 - OpenClaw is the default read-only monitor. It may inspect checks, cache
   context, and report blockers, but must not edit, commit, push, comment,
   label, mark a PR ready, resolve a thread, merge, or deploy by default.
-- Codex is the GitHub integration owner. Codex classifies review findings,
+- Codex is the primary GitHub integration owner. Codex classifies review findings,
   coordinates delegated fixes, writes the authoritative replies, resolves
   threads only after verification, and prepares the canonical integration PR.
-- Antigravity and Claude Code may implement only an explicitly delegated,
-  bounded task in their own branch and worktree. They hand code and evidence
-  back to Codex; they do not independently close review threads or merge.
+- Antigravity and Claude Code normally implement only explicitly delegated,
+  bounded tasks in their own branch and worktree, handing code and evidence
+  back to Codex.
+- **Dynamic Fallback (Token Exhaustion):** If Codex is unavailable (e.g., due to
+  token limits), Antigravity or Claude Code may dynamically assume the role of
+  the integration owner. In this mode, they are authorized to handle tasks
+  end-to-end: writing code, testing via fast-deploy, committing, pushing 
+  branches, and preparing PRs, handing over directly to Manuel.
 - Manuel is the final authority for merging and every production promotion.
 
 ### Review-comment lifecycle

@@ -1516,7 +1516,7 @@ export function usePlaybackEngine({
       // Device-confirmed 2026-06-01: audio plays, currentTime advances,
       // readyState 4, but the element stayed veiled because status stuck at
       // 'buffering'.
-      if (isTeardownRef.current || videoEl.paused || videoEl.readyState < 3) {
+      if (isTeardownRef.current || videoEl.paused) {
         return;
       }
       if (revealHoldRef.current) {
@@ -1525,7 +1525,7 @@ export function usePlaybackEngine({
       clearNativeStallRecovery();
       clearHlsStallRecovery();
       setStatus((prev) => {
-        if (prev === 'buffering') return 'playing';
+        if (prev === 'starting' || prev === 'priming' || prev === 'building' || prev === 'buffering') return 'playing';
         // Also un-stick the in-place recoveries (hls.js recoverMediaError /
         // startLoad) which can leave status pinned at 'recovering' while the
         // element decodes again. Do NOT touch the async session-reattach path

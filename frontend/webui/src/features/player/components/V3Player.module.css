@@ -491,8 +491,10 @@
   width: 56px;
   height: 56px;
   object-fit: contain;
+  background: white;
+  padding: 4px;
   border-radius: 12px;
-  filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--bg-video) 40%, transparent));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--bg-video) 40%, transparent);
 }
 
 .startupChannelInitials {
