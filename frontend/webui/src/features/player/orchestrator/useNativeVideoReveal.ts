@@ -247,6 +247,41 @@ export function useNativeVideoReveal({
       return;
     }
 
+    // Modern RVFC approach: Trigger veil drop exactly when the video renders a new frame.
+    // Completely bypasses buggy DOM state tracking and Safari `readyState` issues.
+    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+      const videoWithRvfc = video as HTMLVideoElement & {
+        requestVideoFrameCallback(callback: (now: number, metadata: unknown) => void): number;
+        cancelVideoFrameCallback(handle: number): void;
+      };
+
+      let callbackId: number;
+      const rvfcCallback = () => {
+        const current = videoRef.current;
+        if (!current) return;
+
+        if (current.paused) {
+          callbackId = videoWithRvfc.requestVideoFrameCallback(rvfcCallback);
+          return;
+        }
+
+        nativeVideoShownRef.current = true;
+        nativeVideoHoldPositionRef.current = null;
+        clearNativeVideoRevealTimer();
+        clearNativeVideoVeilTimers();
+        setShowNativeVideo(true);
+        setShowNativeVideoVeil(false);
+        setNativeVeilResumeArmed(false);
+        onPlaybackConfirmed?.();
+      };
+
+      callbackId = videoWithRvfc.requestVideoFrameCallback(rvfcCallback);
+      return () => {
+        videoWithRvfc.cancelVideoFrameCallback(callbackId);
+      };
+    }
+
+    // Fallback for older browsers (e.g., Safari < 15.4)
     let lastSampledTime = video.currentTime;
     const intervalId = window.setInterval(() => {
       const current = videoRef.current;
