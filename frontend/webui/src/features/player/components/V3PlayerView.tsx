@@ -120,6 +120,13 @@ export function V3PlayerView({
             </div>
             <div className={styles.spinnerContent}>
               {viewState.channelName && <h2 className={styles.spinnerTitle}>{viewState.channelName}</h2>}
+              
+              <div className={styles.spinnerMeta}>
+                <div className={styles.spinnerProgressTrack} aria-hidden="true">
+                  <div className={styles.spinnerProgressIndeterminate}></div>
+                </div>
+              </div>
+
               {viewState.showOverlayStopAction && (
                 <div className={styles.spinnerActions}>
                   <Button variant="danger" size="sm" onClick={() => void actions.stopStream()}>
