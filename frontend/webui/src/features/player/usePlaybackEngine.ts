@@ -1301,8 +1301,8 @@ export function usePlaybackEngine({
         }
       }
 
-      if (bufferHealth > 1.0) {
-        debugLog(`[V3Player] Event: stalled (ignored, buffer=${bufferHealth.toFixed(1)}s)`);
+      if (bufferHealth > 0.5 || (!videoEl.paused && videoEl.readyState >= 3)) {
+        debugLog(`[V3Player] Event: stalled (ignored, buffer=${bufferHealth.toFixed(1)}s, playing=${!videoEl.paused})`);
         clearNativeStallRecovery();
         clearHlsStallRecovery();
         return;
