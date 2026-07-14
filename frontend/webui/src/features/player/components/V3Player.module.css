@@ -97,12 +97,12 @@
   left: 0;
   right: 0;
   margin: 0;
-  padding: 28px 20px calc(20px + var(--sab));
+  padding: 24px 24px calc(24px + var(--sab));
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  gap: 12px;
   z-index: 50;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: stretch;
   opacity: 0;
   transition:
     opacity var(--motion-standard) var(--ease-standard),
@@ -2588,4 +2588,60 @@
     background: rgba(255, 255, 255, 0.28);
     border-color: rgba(255, 255, 255, 0.35);
   }
+}
+
+/* --- Premium Bottom Controls Layout --- */
+.controlsBottomRow {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.controlsLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.inlineTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.inlineProgrammeTitle {
+  font-weight: 600;
+  font-size: 1.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inlineChannelEyebrow {
+  font-weight: 500;
+  font-size: 0.95rem;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.seekSliderGroup {
+  width: 100%;
+  padding: 0 8px;
+}
+
+.seekSliderRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
 }
