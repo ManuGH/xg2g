@@ -116,6 +116,38 @@ function parseBrowserOs(userAgent: string, platform: string | undefined): Playba
   return {};
 }
 
+function estimateBandwidthFromResources(): number | undefined {
+  if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') {
+    return undefined;
+  }
+  
+  try {
+    const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+    let totalBytes = 0;
+    let totalTimeMs = 0;
+    
+    for (const r of resources) {
+      if (r.transferSize && r.transferSize > 0 && r.responseEnd > r.responseStart) {
+        const duration = r.responseEnd - r.responseStart;
+        if (duration > 10) {
+          totalBytes += r.transferSize;
+          totalTimeMs += duration;
+        }
+      }
+    }
+
+    if (totalBytes > 50000 && totalTimeMs > 50) {
+      const bytesPerMs = totalBytes / totalTimeMs;
+      const bitsPerSec = bytesPerMs * 1000 * 8;
+      return bitsPerSec / 1000000;
+    }
+  } catch {
+    // Ignore errors
+  }
+  
+  return undefined;
+}
+
 function gatherBrowserNetworkContext(): PlaybackClientNetworkContext | undefined {
   if (typeof navigator === 'undefined') {
     return undefined;
@@ -124,14 +156,22 @@ function gatherBrowserNetworkContext(): PlaybackClientNetworkContext | undefined
   const nav = navigator as NavigatorWithNetwork;
   const connection = nav.connection;
   const isOnline = navigator.onLine !== false;
+  
+  let downlinkMbps: number | undefined = undefined;
+  if (connection && typeof connection.downlink === 'number') {
+    downlinkMbps = connection.downlink;
+  } else {
+    downlinkMbps = estimateBandwidthFromResources();
+  }
+
   if (!connection) {
-    return isOnline ? undefined : { kind: 'offline' };
+    return isOnline ? { kind: 'browser', downlinkMbps: sanitizeNumber(downlinkMbps) } : { kind: 'offline' };
   }
 
   return {
     kind: isOnline ? 'browser' : 'offline',
     effectiveType: sanitizeString(connection.effectiveType),
-    downlinkMbps: sanitizeNumber(connection.downlink),
+    downlinkMbps: sanitizeNumber(downlinkMbps),
     rttMs: sanitizeNumber(connection.rtt),
     saveData: connection.saveData === true,
   };
