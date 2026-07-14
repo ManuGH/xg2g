@@ -1251,6 +1251,9 @@ export function usePlaybackEngine({
         debugLog('[V3Player] Event: waiting ignored during decode recovery');
         return;
       }
+      if (revealHoldRef.current) {
+        return;
+      }
 
       let bufferHealth = 0;
       if (videoEl.buffered.length > 0) {
@@ -1284,6 +1287,9 @@ export function usePlaybackEngine({
         debugLog('[V3Player] Event: stalled ignored during decode recovery');
         return;
       }
+      if (revealHoldRef.current) {
+        return;
+      }
 
       let bufferHealth = 0;
       if (videoEl.buffered.length > 0) {
@@ -1315,6 +1321,9 @@ export function usePlaybackEngine({
     const onSeeking = () => {
       if (decodeRecoveryInFlightRef.current) {
         debugLog('[V3Player] Event: seeking ignored during decode recovery');
+        return;
+      }
+      if (revealHoldRef.current) {
         return;
       }
 
