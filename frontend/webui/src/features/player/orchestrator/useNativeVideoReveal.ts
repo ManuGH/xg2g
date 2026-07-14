@@ -20,6 +20,7 @@ interface UseNativeVideoRevealArgs {
   nativeVideoVeilClearTimerRef: MutableRefObject<number | null>;
   clearNativeVideoRevealTimer: () => void;
   clearNativeVideoVeilTimers: () => void;
+  onPlaybackConfirmed?: () => void;
 }
 
 export interface NativeVideoReveal {
@@ -39,6 +40,7 @@ export function useNativeVideoReveal({
   nativeVideoVeilClearTimerRef,
   clearNativeVideoRevealTimer,
   clearNativeVideoVeilTimers,
+  onPlaybackConfirmed,
 }: UseNativeVideoRevealArgs): NativeVideoReveal {
   const [showNativeVideo, setShowNativeVideo] = useState(true);
   const [showNativeVideoVeil, setShowNativeVideoVeil] = useState(false);
@@ -137,6 +139,9 @@ export function useNativeVideoReveal({
         nativeVideoHoldPositionRef.current = null;
         setShowNativeVideo(true);
         clearNativeVideoVeilTimers();
+        if (!video.paused) {
+          onPlaybackConfirmed?.();
+        }
         if (isRebufferReveal) {
           setShowNativeVideoVeil(true);
           setNativeVeilResumeArmed(false);
@@ -168,6 +173,7 @@ export function useNativeVideoReveal({
     isNativeEngine,
     nativeVideoRevealTimerRef,
     nativeVideoVeilRevealTimerRef,
+    onPlaybackConfirmed,
     showNativeVideo,
     status,
     videoRef,
@@ -264,6 +270,7 @@ export function useNativeVideoReveal({
         setShowNativeVideo(true);
         setShowNativeVideoVeil(false);
         setNativeVeilResumeArmed(false);
+        onPlaybackConfirmed?.();
       }
     }, NATIVE_VIDEO_WATCHDOG_INTERVAL_MS);
 
@@ -274,6 +281,7 @@ export function useNativeVideoReveal({
     clearNativeVideoRevealTimer,
     clearNativeVideoVeilTimers,
     isNativeEngine,
+    onPlaybackConfirmed,
     showNativeVideo,
     videoRef,
   ]);

@@ -505,6 +505,18 @@ export function usePlaybackOrchestrator(
     setShowErrorDetails,
   });
 
+  const onNativePlaybackConfirmed = useCallback(() => {
+    setStatus((previous) => (
+      previous === 'starting' ||
+      previous === 'priming' ||
+      previous === 'building' ||
+      previous === 'buffering' ||
+      previous === 'recovering'
+        ? 'playing'
+        : previous
+    ));
+  }, [setStatus]);
+
   useEffect(() => {
     if (!error?.detail) {
       setShowErrorDetails(false);
@@ -927,6 +939,7 @@ export function usePlaybackOrchestrator(
     nativeVideoVeilClearTimerRef,
     clearNativeVideoRevealTimer,
     clearNativeVideoVeilTimers,
+    onPlaybackConfirmed: onNativePlaybackConfirmed,
   });
 
   const clearPlaybackSelection = useCallback(() => {
