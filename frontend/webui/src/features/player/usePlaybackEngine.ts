@@ -1529,7 +1529,13 @@ export function usePlaybackEngine({
         return;
       }
       if (revealHoldRef.current) {
-        onPlaying();
+        // The video is demonstrably advancing, break the hold immediately
+        if (revealTimerRef.current !== null) {
+          window.clearTimeout(revealTimerRef.current);
+          revealTimerRef.current = null;
+        }
+        revealHoldRef.current = false;
+        setStatus('playing');
         return;
       }
       clearNativeStallRecovery();
