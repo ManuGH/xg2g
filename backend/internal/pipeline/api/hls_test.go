@@ -914,8 +914,8 @@ func TestServeHLS_StoreRegistry_RAMDelivery(t *testing.T) {
 		Name: "seg_000001.m4s",
 		Data: []byte("registry-ram-segment-data"),
 	})
+	_, err = registry.Register(sessionID, ramStore)
 	require.NoError(t, err)
-	require.NoError(t, registry.Register(sessionID, ramStore))
 
 	// Request Segment from RAM
 	reqSeg := httptest.NewRequest("GET", "/seg_000001.m4s", nil)

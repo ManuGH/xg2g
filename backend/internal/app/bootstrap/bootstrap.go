@@ -32,6 +32,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/ManuGH/xg2g/internal/receipts"
 	receiptamazon "github.com/ManuGH/xg2g/internal/receipts/amazon"
@@ -163,11 +164,13 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath, e2Client)
 	v3Scan.ActivePlaybackFn = newBackgroundScanPlaybackDetector(v3Store, owiClient)
-	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger)
+	storeRegistry := pipelinestore.NewMemoryStoreRegistry()
+	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger, storeRegistry)
 
 	s.WireV3Runtime(v3.Dependencies{
 		Bus:                v3Bus,
 		Store:              v3Store,
+		StoreRegistry:      storeRegistry,
 		DeviceAuthStore:    deviceAuthStore,
 		ResumeStore:        resumeStore,
 		Scan:               v3Scan,

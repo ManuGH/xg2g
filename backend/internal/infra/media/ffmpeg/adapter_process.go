@@ -234,7 +234,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 			TargetDurationSec: plan.cmafTargetDurSec,
 			ListSize:          plan.listSize,
 			Logger:            segLogger,
-			ShadowPublisher:   injectTestShadowStore(ctx, segLogger, a.Config, a.StoreRegistry, spec.SessionID),
+			ShadowPublisher:   nil, // Shadow runtime is managed natively below
 		}
 		go func(r *os.File) {
 			defer func() {
@@ -261,11 +261,18 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	a.finalizedProfiles[handle] = plan.effectiveProfile
 	// Execution truth: capture the plan parsed from the REAL argv we just handed
 	// to the process, so observers report what ffmpeg runs, not a prediction.
-	a.executedPlans[handle] = executedFFmpegPlanFromArgs(args)
+	executedPlan := executedFFmpegPlanFromArgs(args)
+	a.executedPlans[handle] = executedPlan
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
+	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec)
+	shadowRuntime, err := a.attachShadowStore(ctx, spec.SessionID, executedPlan, sessionDir)
+	if err != nil {
+		a.Logger.Warn().Err(err).Str("session_id", spec.SessionID).Msg("failed to attach shadow store, proceeding with disk only")
+	}
+
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt, shadowRuntime) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(ctx, sourceKey, spec.SessionID, spec.Profile.DVRWindowSec)
 	}
@@ -380,11 +387,14 @@ func awaitProcessExit(
 	return out
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time, shadowRuntime *ShadowRuntime) {
 	defer func() {
 		a.mu.Lock()
 		a.removeActiveProcessLocked(handle, true)
 		a.mu.Unlock()
+		if shadowRuntime != nil {
+			shadowRuntime.Close()
+		}
 		hls.EvictRAPCache(sessionID)
 		if a.HLSRoot != "" && sessionID != "" {
 			hls.EvictRAPCache(ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec))

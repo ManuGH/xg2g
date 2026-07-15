@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/infra/platform"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/google/uuid"
@@ -45,7 +46,7 @@ func buildAPIConstructorDeps(cfg config.AppConfig, snap config.Snapshot, logger 
 	}
 }
 
-func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger) sessionports.MediaPipeline {
+func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger, storeRegistry pipelinestore.StoreRegistry) sessionports.MediaPipeline {
 	if cfg.Engine.Mode == "virtual" {
 		return stub.NewAdapter()
 	}
@@ -87,6 +88,7 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 		adapter.PreflightPathCorrectness()
 	}
 
+	adapter.StoreRegistry = storeRegistry
 	return adapter
 }
 

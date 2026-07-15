@@ -10,11 +10,12 @@ import (
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/rs/zerolog"
 )
 
 //nolint:unused // retained for focused daemon wiring tests.
-func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger) sessionports.MediaPipeline {
+func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger, storeRegistry pipelinestore.StoreRegistry) sessionports.MediaPipeline {
 	if cfg.Engine.Mode == "virtual" {
 		return stub.NewAdapter()
 	}
@@ -40,6 +41,7 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 	)
 	adapter.LowLatencyHLS = cfg.HLS.LowLatency
 	adapter.ReadySegments = cfg.HLS.ReadySegments
+	adapter.StoreRegistry = storeRegistry
 
 	if cfg.FFmpeg.VaapiDevice != "" {
 		if err := adapter.PreflightVAAPI(); err != nil {
@@ -51,6 +53,7 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 		logger.Warn().Err(err).
 			Msg("NVENC preflight failed; NVIDIA GPU transcoding will be unavailable for sessions requesting it")
 	}
+	adapter.PreflightTranscodeProfiles()
 
 	return adapter
 }
