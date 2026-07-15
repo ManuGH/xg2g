@@ -233,10 +233,15 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 			TargetDurationSec: plan.cmafTargetDurSec,
 			ListSize:          plan.listSize,
 			Logger:            segLogger,
-			ShadowPublisher:   injectTestShadowStore(ctx, segLogger, a.Config),
+			ShadowPublisher:   injectTestShadowStore(ctx, segLogger, a.Config, a.StoreRegistry, spec.SessionID),
 		}
 		go func(r *os.File) {
-			defer func() { _ = r.Close() }()
+			defer func() {
+				_ = r.Close()
+				if a.StoreRegistry != nil {
+					a.StoreRegistry.Unregister(spec.SessionID)
+				}
+			}()
 			_ = cmaf.Run(ctx, r, segCfg)
 		}(cmafRead)
 	}

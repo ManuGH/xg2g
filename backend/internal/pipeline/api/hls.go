@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/log"
+	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 
 	"github.com/ManuGH/xg2g/internal/platform/httpx"
 	platformpaths "github.com/ManuGH/xg2g/internal/platform/paths"
@@ -569,6 +570,7 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 }
 
 func serveArtifact(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, info os.FileInfo, filePath string, logger zerolog.Logger) {
+	w.Header().Set("X-XG2G-Source", "disk")
 	f, err := os.Open(filePath) // #nosec G304 -- filePath constructed from safe session dir + validated filename
 	if err != nil {
 		http.Error(w, "failed to open file", http.StatusInternalServerError)
@@ -604,7 +606,7 @@ func setHLSMissingArtifactHintHeader(w http.ResponseWriter, req hlsRequest, rec 
 // It enforces strict session validity and path security.
 var lkgPlaylists sync.Map
 
-func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, sessionID, filename string) {
+func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegistry pipelinestore.StoreRegistry, hlsRoot, sessionID, filename string) {
 	req, ok := validateRequest(w, sessionID, filename)
 	if !ok {
 		return
@@ -652,11 +654,28 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, hlsRoot, s
 
 	logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("path", filePath).Str("state", string(rec.State)).Logger()
 
+	if storeRegistry != nil && !req.isPlaylist {
+		if reader, ok := storeRegistry.Lookup(req.sessionID); ok {
+			obj, err := reader.Get(r.Context(), pipelinestore.StreamID(req.sessionID), req.filename)
+			if err == nil && len(obj.Data) > 0 {
+				switch obj.Kind {
+				case pipelinestore.ObjectInit, pipelinestore.ObjectSegment:
+					logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("state", string(rec.State)).Bool("in_memory", true).Str("source", "ram").Logger()
+					touchSegmentAccessTime(r.Context(), store, req, rec)
+					w.Header().Set("X-XG2G-Source", "ram")
+					serveStreamContent(w, r, store, req, rec, bytes.NewReader(obj.Data), obj.PublishedAt, logger)
+					return
+				}
+			}
+		}
+	}
+
 	if buf, ok := ringbuffer.DefaultRegistry.Get(req.sessionID); ok {
 		logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("state", string(rec.State)).Bool("in_memory", true).Logger()
 		art, err := awaitInMemoryArtifact(r.Context(), buf, req, rec, logger)
 		if err == nil && art != nil {
 			touchSegmentAccessTime(r.Context(), store, req, rec)
+			w.Header().Set("X-XG2G-Source", "ram")
 			serveStreamContent(w, r, store, req, rec, bytes.NewReader(art.Data), art.ModTime, logger)
 			return
 		}

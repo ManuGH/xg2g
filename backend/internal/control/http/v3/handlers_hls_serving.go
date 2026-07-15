@@ -97,7 +97,7 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Serve via HLS helper
 	wrapped, tracker := wrapResponseWriter(w)
-	v3api.ServeHLS(wrapped, r, store, deps.cfg.HLS.Root, sessionID, filename)
+	v3api.ServeHLS(wrapped, r, store, deps.storeRegistry, deps.cfg.HLS.Root, sessionID, filename)
 
 	status := http.StatusOK
 	if st, ok := tracker.(StatusTracker); ok {

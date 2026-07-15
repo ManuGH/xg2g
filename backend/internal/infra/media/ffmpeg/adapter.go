@@ -8,6 +8,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/rs/zerolog"
 	"net"
 	"net/http"
@@ -61,6 +62,7 @@ type LocalAdapter struct {
 	BinPath                    string
 	FFprobeBin                 string
 	HLSRoot                    string
+	StoreRegistry              store.StoreRegistry
 	AnalyzeDuration            string
 	ProbeSize                  string
 	LiveAnalyzeDuration        string

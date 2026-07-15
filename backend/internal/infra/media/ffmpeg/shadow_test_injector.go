@@ -9,8 +9,9 @@ import (
 )
 
 // injectTestShadowStore creates a per-session ShadowStore for Sprint 1 testing
-// if ShadowStoreEnabled=true. It also spawns a stats logging goroutine.
-func injectTestShadowStore(ctx context.Context, logger zerolog.Logger, cfg AdapterConfig) *store.ShadowPublisher {
+// if ShadowStoreEnabled=true. It also registers the RAM store in StoreRegistry
+// and spawns a stats logging goroutine.
+func injectTestShadowStore(ctx context.Context, logger zerolog.Logger, cfg AdapterConfig, registry store.StoreRegistry, sessionID string) *store.ShadowPublisher {
 	if !cfg.ShadowStoreEnabled {
 		return nil
 	}
@@ -36,8 +37,18 @@ func injectTestShadowStore(ctx context.Context, logger zerolog.Logger, cfg Adapt
 		return nil
 	}
 
+	if registry != nil && sessionID != "" {
+		if regErr := registry.Register(sessionID, ram); regErr != nil {
+			logger.Warn().Err(regErr).Str("session_id", sessionID).Msg("failed to register RAM shadow store in registry, aborting RAM path setup")
+			return nil
+		}
+	}
+
 	pub, err := store.NewShadowPublisher(ram, maxObjects, queueBytes, logger)
 	if err != nil {
+		if registry != nil && sessionID != "" {
+			registry.Unregister(sessionID)
+		}
 		logger.Error().Err(err).Msg("failed to create shadow publisher for session")
 		return nil
 	}

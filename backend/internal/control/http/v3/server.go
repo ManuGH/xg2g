@@ -38,6 +38,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/ManuGH/xg2g/internal/receipts"
 	recinfra "github.com/ManuGH/xg2g/internal/recordings"
 	"github.com/prometheus/client_golang/prometheus"
@@ -65,6 +66,7 @@ type Server struct {
 	// Core Components
 	v3Bus                  bus.Bus
 	v3Store                SessionStateStore
+	storeRegistry          store.StoreRegistry
 	resumeStore            resume.Store
 	v3Scan                 ChannelScanner
 	decisionAudit          decisionaudit.EventSink
@@ -332,6 +334,7 @@ func (s *Server) SetPreflightCheck(fn PreflightProvider) {
 type Dependencies struct {
 	Bus                bus.Bus
 	Store              SessionStateStore
+	StoreRegistry      store.StoreRegistry
 	DeviceAuthStore    deviceauthstore.StateStore
 	ResumeStore        resume.Store
 	Scan               ChannelScanner
@@ -392,6 +395,12 @@ func (s *Server) applyServiceDependencies(deps Dependencies) {
 		s.v3Store = deps.Store
 	} else {
 		s.v3Store = nil
+	}
+
+	if !isNil(deps.StoreRegistry) {
+		s.storeRegistry = deps.StoreRegistry
+	} else {
+		s.storeRegistry = nil
 	}
 
 	if !isNil(deps.ResumeStore) {
