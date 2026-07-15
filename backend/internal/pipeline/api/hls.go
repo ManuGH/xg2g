@@ -571,6 +571,11 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 				_, _ = w.Write(lkgBytes)
 				return
 			}
+			if isStartupHLSState(rec.State) {
+				w.Header().Set("Retry-After", "1")
+				http.Error(w, "stream starting: playlist not yet decodable", http.StatusServiceUnavailable)
+				return
+			}
 			log.L().Error().Err(rewriteErr).Msg("failed to process playlist")
 			http.Error(w, "failed to process file", http.StatusInternalServerError)
 			return
@@ -700,6 +705,11 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 		if os.IsNotExist(err) {
 			logger.Warn().Err(err).Msg("in-memory artifact not found (final)")
 			setHLSMissingArtifactHintHeader(w, req, rec)
+			if isStartupHLSState(rec.State) && (req.isPlaylist || req.isSegment || req.isLegacySegment || req.isInit) {
+				w.Header().Set("Retry-After", "1")
+				http.Error(w, "stream starting: artifact not yet available", http.StatusServiceUnavailable)
+				return
+			}
 			http.Error(w, "file not found", http.StatusNotFound)
 			return
 		}
@@ -723,6 +733,11 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 		logger.Warn().Err(err).Msg("file not found (final)")
 		// Normal during startup for segments or if playlist not yet promoted
 		setHLSMissingArtifactHintHeader(w, req, rec)
+		if isStartupHLSState(rec.State) && (req.isPlaylist || req.isSegment || req.isLegacySegment || req.isInit) {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "stream starting: artifact not yet available", http.StatusServiceUnavailable)
+			return
+		}
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}

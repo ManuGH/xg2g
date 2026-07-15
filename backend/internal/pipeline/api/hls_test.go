@@ -1082,3 +1082,66 @@ func TestValidateRequest_MasterPlaylistVariants(t *testing.T) {
 	assert.True(t, ok2)
 	assert.True(t, req2.isInit)
 }
+
+func TestServeHLS_StartupMissingArtifactReturns503(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "startup-missing-test-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
+
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionPriming,
+			Profile: model.ProfileSpec{
+				Name: "safari",
+			},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest("GET", "/index.m3u8", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "1", w.Header().Get("Retry-After"))
+}
+
+func TestServeHLS_StartupRewriteErrorReturns503(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "startup-rewrite-err-test-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
+
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), []byte("not a valid mpegts"), 0o600))
+	playlistContent := `#EXTM3U
+#EXT-X-VERSION:3
+#EXTINF:2.000,
+seg_000000.ts
+`
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), []byte(playlistContent), 0o600))
+
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionStarting,
+			Profile: model.ProfileSpec{
+				Name:         "safari",
+				DVRWindowSec: 60,
+				Container:    "ts",
+			},
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/index.m3u8", nil)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "1", w.Header().Get("Retry-After"))
+}
+
