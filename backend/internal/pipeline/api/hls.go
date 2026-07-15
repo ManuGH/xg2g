@@ -23,7 +23,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/hls"
-	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/log"
 	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 
@@ -393,37 +392,6 @@ func awaitArtifact(ctx context.Context, filePath string, req hlsRequest, rec *mo
 	return info, err
 }
 
-func awaitInMemoryArtifact(ctx context.Context, buf *ringbuffer.Buffer, req hlsRequest, rec *model.SessionRecord, logger zerolog.Logger) (*ringbuffer.Artifact, error) {
-	art, found := buf.Get(req.filename)
-	if found && art != nil {
-		return art, nil
-	}
-	if shouldPollMissingArtifact(req, rec) {
-		logger.Info().Str("artifact", artifactKind(req)).Msg("in-memory artifact missing during start, polling")
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
-		timeout := time.NewTimer(hlsStartupArtifactWaitTimeout)
-		defer timeout.Stop()
-	PollLoop:
-		for {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-timeout.C:
-				break PollLoop
-			case <-ticker.C:
-				art, found = buf.Get(req.filename)
-				if found && art != nil {
-					logger.Info().Str("artifact", artifactKind(req)).Msg("in-memory artifact appeared during polling")
-					return art, nil
-				}
-			}
-		}
-	} else if req.isPlaylist && rec != nil {
-		logger.Info().Str("state", string(rec.State)).Msg("in-memory playlist missing, not polling (state mismatch)")
-	}
-	return nil, os.ErrNotExist
-}
 
 func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir string, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, bool, error) {
 	forcePlaylistType := ""
@@ -693,29 +661,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 		}
 	}
 
-	if buf, ok := ringbuffer.DefaultRegistry.Get(req.sessionID); ok {
-		logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("state", string(rec.State)).Bool("in_memory", true).Logger()
-		art, err := awaitInMemoryArtifact(r.Context(), buf, req, rec, logger)
-		if err == nil && art != nil {
-			touchSegmentAccessTime(r.Context(), store, req, rec)
-			w.Header().Set("X-XG2G-Source", "ram")
-			serveStreamContent(w, r, store, req, rec, filepath.Dir(filePath), bytes.NewReader(art.Data), art.ModTime, logger)
-			return
-		}
-		if os.IsNotExist(err) {
-			logger.Warn().Err(err).Msg("in-memory artifact not found (final)")
-			setHLSMissingArtifactHintHeader(w, req, rec)
-			if isStartupHLSState(rec.State) && (req.isPlaylist || req.isSegment || req.isLegacySegment || req.isInit) {
-				w.Header().Set("Retry-After", "1")
-				http.Error(w, "stream starting: artifact not yet available", http.StatusServiceUnavailable)
-				return
-			}
-			http.Error(w, "file not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "internal check failed", http.StatusInternalServerError)
-		return
-	}
+
 
 	info, err := awaitArtifact(r.Context(), filePath, req, rec, logger)
 

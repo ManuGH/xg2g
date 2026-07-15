@@ -72,6 +72,7 @@ func (s *Server) syncV3HandlerDependencies() {
 		Entitlements:       deps.runtimeDeps.Entitlements,
 		Households:         deps.runtimeDeps.Households,
 		Receipts:           deps.runtimeDeps.Receipts,
+		StoreRegistry:      deps.runtimeDeps.StoreRegistry,
 		PathMapper:         deps.recordingPathMapper,
 		ChannelManager:     deps.channelManager,
 		SeriesManager:      deps.seriesManager,
