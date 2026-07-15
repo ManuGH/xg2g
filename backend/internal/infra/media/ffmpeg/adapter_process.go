@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/hls/cmaf"
 	"github.com/ManuGH/xg2g/internal/infra/ffmpeg/watchdog"
 	"github.com/ManuGH/xg2g/internal/metrics"
@@ -241,6 +242,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 				if a.StoreRegistry != nil {
 					a.StoreRegistry.Unregister(spec.SessionID)
 				}
+				hls.EvictRAPCache(spec.SessionID)
 			}()
 			_ = cmaf.Run(ctx, r, segCfg)
 		}(cmafRead)
@@ -383,6 +385,10 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		a.mu.Lock()
 		a.removeActiveProcessLocked(handle, true)
 		a.mu.Unlock()
+		hls.EvictRAPCache(sessionID)
+		if a.HLSRoot != "" && sessionID != "" {
+			hls.EvictRAPCache(ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec))
+		}
 	}()
 
 	// End the startup span exactly once: success is recorded on first segment;

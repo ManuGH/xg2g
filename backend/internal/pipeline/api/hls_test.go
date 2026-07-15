@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/rs/zerolog"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"github.com/rs/zerolog"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
@@ -419,6 +420,7 @@ seg_000005.ts
 `
 	manifestPath := filepath.Join(sessionDir, "index.m3u8")
 	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0600))
+	createMockSafeTSSegment(t, filepath.Join(sessionDir, "seg_000001.ts"))
 
 	// Mock store with DVR profile
 	store := &MockStore{
@@ -489,6 +491,7 @@ seg_001351.ts
 `
 	manifestPath := filepath.Join(sessionDir, "index.m3u8")
 	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0600))
+	createMockSafeTSSegment(t, filepath.Join(sessionDir, "seg_001350.ts"))
 
 	store := &MockStore{
 		Session: &model.SessionRecord{
@@ -942,11 +945,131 @@ stream_0.m3u8
 `
 	rec := &model.SessionRecord{}
 	rec.Profile.Container = "fmp4"
-	rdr, _, valid, err := rewritePlaylist(strings.NewReader(masterContent), rec, zerolog.Logger{})
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(masterContent), rec, "", zerolog.Logger{})
 	assert.NoError(t, err)
 	assert.True(t, valid, "master playlist should be valid even without EXT-X-MAP")
 	out, _ := io.ReadAll(rdr)
 	assert.Contains(t, string(out), "#EXT-X-STREAM-INF")
+}
+
+func buildTestTSPacket(pid int, pusi bool, payload []byte) []byte {
+	pkt := make([]byte, 188)
+	pkt[0] = 0x47
+	pkt[1] = byte(pid >> 8)
+	if pusi {
+		pkt[1] |= 0x40
+	}
+	pkt[2] = byte(pid & 0xFF)
+	pkt[3] = 0x10
+
+	if len(payload) < 184 {
+		pkt[3] = 0x30
+		padLen := 184 - len(payload) - 1
+		pkt[4] = byte(padLen)
+		if padLen > 0 {
+			pkt[5] = 0x00
+			for j := 1; j < padLen; j++ {
+				pkt[5+j] = 0xFF
+			}
+		}
+		copy(pkt[5+padLen:], payload)
+	} else {
+		copy(pkt[4:], payload[:184])
+	}
+	return pkt
+}
+
+func createMockSafeTSSegment(t *testing.T, path string) {
+	annexB := []byte{
+		0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E,
+		0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x3C, 0x80,
+		0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00,
+	}
+	videoPID := 0x0100
+	var tsData bytes.Buffer
+	tsData.Write(buildTestPATPMT(videoPID))
+	tsData.Write(buildTestTSPacket(videoPID, true, buildTestPESPacket(annexB)))
+	require.NoError(t, os.WriteFile(path, tsData.Bytes(), 0644))
+}
+
+func buildTestPATPMT(videoPID int) []byte {
+	var buf bytes.Buffer
+	patPayload := []byte{
+		0x00,
+		0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00,
+		0x00, 0x01, 0xE0, 0x20,
+		0x2C, 0x80, 0xB8, 0x3A,
+	}
+	buf.Write(buildTestTSPacket(0x0000, true, patPayload))
+
+	pmtPayload := []byte{
+		0x00,
+		0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00,
+		0xE1, 0x00,
+		0xF0, 0x00,
+		0x1B, byte(videoPID >> 8), byte(videoPID & 0xFF), 0xF0, 0x00,
+		0x4E, 0x59, 0x3D, 0x1E,
+	}
+	buf.Write(buildTestTSPacket(0x0020, true, pmtPayload))
+	return buf.Bytes()
+}
+
+func buildTestPESPacket(annexBPayload []byte) []byte {
+	var buf bytes.Buffer
+	buf.Write([]byte{0x00, 0x00, 0x01, 0xE0, 0x00, 0x00})
+	buf.Write([]byte{0x80, 0x80, 0x05})
+	buf.Write([]byte{0x21, 0x00, 0x01, 0x00, 0x01})
+	buf.Write(annexBPayload)
+	return buf.Bytes()
+}
+
+func TestRewritePlaylist_FilterRAP(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "session_rap_filter"
+	sessionDir := filepath.Join(tmpDir, sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+
+	// Create seg_000000.ts (dummy file, non-IDR/unsafe)
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), []byte{0x47, 0x00, 0x00, 0x10}, 0644))
+
+	// Create seg_000001.ts with valid PAT/PMT + SPS(7), PPS(8), IDR(5) -> safe RAP
+	annexB := []byte{
+		0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E,
+		0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x3C, 0x80,
+		0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00,
+	}
+	videoPID := 0x0100
+	var tsData bytes.Buffer
+	tsData.Write(buildTestPATPMT(videoPID))
+	tsData.Write(buildTestTSPacket(videoPID, true, buildTestPESPacket(annexB)))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000001.ts"), tsData.Bytes(), 0644))
+
+	playlistContent := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:2.000,
+seg_000000.ts
+#EXTINF:2.000,
+seg_000001.ts
+`
+	rec := &model.SessionRecord{
+		State: model.SessionReady,
+		Profile: model.ProfileSpec{
+			DVRWindowSec: 60,
+			Container:    "ts",
+		},
+	}
+
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(playlistContent), rec, sessionDir, zerolog.Logger{})
+	require.NoError(t, err)
+	require.True(t, valid)
+
+	out, _ := io.ReadAll(rdr)
+	outStr := string(out)
+	assert.Contains(t, outStr, "#EXT-X-MEDIA-SEQUENCE:1")
+	assert.NotContains(t, outStr, "seg_000000.ts")
+	assert.Contains(t, outStr, "seg_000001.ts")
 }
 
 func TestValidateRequest_MasterPlaylistVariants(t *testing.T) {

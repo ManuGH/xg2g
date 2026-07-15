@@ -237,7 +237,10 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 			segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.ts", a.ingestPort, spec.SessionID)
 		}
 	}
-	hlsFlags := "delete_segments+append_list+independent_segments+program_date_time"
+	hlsFlags := "delete_segments+append_list+program_date_time"
+	if spec.Profile.TranscodeVideo {
+		hlsFlags += "+independent_segments"
+	}
 	if !a.LowLatencyHLS || segmentType != "fmp4" {
 		// temp_file hides the growing segment behind a .tmp rename. The LL-HLS
 		// packager (internal/hls/llhls) must scan exactly that open segment to

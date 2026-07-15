@@ -112,16 +112,57 @@ func TestAppendLiveHLSArgs_TempFileFlag(t *testing.T) {
 			if hasTempFile != tc.wantTempFile {
 				t.Errorf("temp_file in hls_flags = %v, want %v (flags: %q)", hasTempFile, tc.wantTempFile, flags)
 			}
-			for _, required := range []string{"delete_segments", "append_list", "independent_segments", "program_date_time"} {
+			for _, required := range []string{"delete_segments", "append_list", "program_date_time"} {
 				if !strings.Contains(flags, required) {
 					t.Errorf("hls_flags missing %q (flags: %q)", required, flags)
 				}
+			}
+			if strings.Contains(flags, "independent_segments") {
+				t.Errorf("hls_flags unexpectedly contains independent_segments in copy mode (flags: %q)", flags)
 			}
 
 			argStr := strings.Join(args, " ")
 			wantFrag := tc.lowLatency && tc.container == "fmp4"
 			if hasFrag := strings.Contains(argStr, "frag_duration"); hasFrag != wantFrag {
 				t.Errorf("frag_duration present = %v, want %v (args: %s)", hasFrag, wantFrag, argStr)
+			}
+		})
+	}
+}
+
+func TestAppendLiveHLSArgs_IndependentSegmentsFlag(t *testing.T) {
+	adapter := &LocalAdapter{
+		HLSRoot: t.TempDir(),
+		Logger:  zerolog.Nop(),
+	}
+	cases := []struct {
+		name           string
+		transcodeVideo bool
+		wantFlag       bool
+	}{
+		{"copy mode omits independent_segments", false, false},
+		{"transcode mode includes independent_segments", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := ports.StreamSpec{
+				SessionID: "test-sess-indep",
+				Profile: ports.ProfileSpec{
+					TranscodeVideo: tc.transcodeVideo,
+					Container:      "ts",
+				},
+			}
+			args := adapter.appendLiveHLSArgs(nil, spec, liveSegmentLayout{segmentDurationSec: 2, listSize: 6})
+			var flags string
+			for i, a := range args {
+				if a == "-hls_flags" && i+1 < len(args) {
+					flags = args[i+1]
+					break
+				}
+			}
+			gotFlag := strings.Contains(flags, "independent_segments")
+			if gotFlag != tc.wantFlag {
+				t.Errorf("independent_segments present = %v, want %v (flags: %q)", gotFlag, tc.wantFlag, flags)
 			}
 		})
 	}

@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/log"
 	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
@@ -423,7 +425,7 @@ func awaitInMemoryArtifact(ctx context.Context, buf *ringbuffer.Buffer, req hlsR
 	return nil, os.ErrNotExist
 }
 
-func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, bool, error) {
+func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir string, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, bool, error) {
 	forcePlaylistType := ""
 	insertStartTag := ""
 	var startupPolicy *hlsStartupPolicy
@@ -445,6 +447,19 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 		return nil, nil, false, fmt.Errorf("read playlist: %w", err)
 	}
 	isMaster := bytes.Contains(raw, []byte("#EXT-X-STREAM-INF:"))
+	isMPEGTS := rec != nil && (strings.EqualFold(rec.Profile.Container, "ts") || (rec.Profile.Container == "" && bytes.Contains(raw, []byte(".ts")) && !bytes.Contains(raw, []byte(".m4s"))))
+	if isLive && !isMaster && rec != nil && !rec.Profile.TranscodeVideo && isMPEGTS && sessionDir != "" {
+		filteredRaw, droppedCount, filterErr := hls.FilterPlaylistRAP(raw, sessionDir)
+		if filterErr != nil {
+			return nil, nil, false, filterErr
+		}
+		if droppedCount > 0 {
+			logger.Debug().
+				Int("dropped_unsafe_segments", droppedCount).
+				Msg("filtered unsafe non-RAP segments from live playlist")
+			raw = filteredRaw
+		}
+	}
 	if isLive {
 		// Start clients with explicit headroom behind the live edge instead of at
 		// the very head (EXT-X-START is valid for live playlists too). The reserve
@@ -520,7 +535,7 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, logger zerolog.
 	return bytes.NewReader(b.Bytes()), startupPolicy, valid, nil
 }
 
-func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, content io.ReadSeeker, modTime time.Time, logger zerolog.Logger) {
+func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, sessionDir string, content io.ReadSeeker, modTime time.Time, logger zerolog.Logger) {
 	if req.isPlaylist {
 		w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
 		w.Header().Set("Cache-Control", "no-store")
@@ -543,8 +558,13 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 	}
 
 	if req.isPlaylist {
-		playlist, startupPolicy, valid, rewriteErr := rewritePlaylist(content, rec, logger)
+		playlist, startupPolicy, valid, rewriteErr := rewritePlaylist(content, rec, sessionDir, logger)
 		if rewriteErr != nil || !valid {
+			if errors.Is(rewriteErr, hls.ErrNoSafeSegmentAvailable) {
+				w.Header().Set("Retry-After", "1")
+				http.Error(w, "stream starting: waiting for first decodable RAP segment", http.StatusServiceUnavailable)
+				return
+			}
 			if lkgRaw, ok := lkgPlaylists.Load(req.sessionID); ok {
 				lkgBytes := lkgRaw.([]byte)
 				w.Header().Set("Content-Length", strconv.Itoa(len(lkgBytes)))
@@ -577,7 +597,7 @@ func serveArtifact(w http.ResponseWriter, r *http.Request, store HLSStore, req h
 		return
 	}
 	defer func() { _ = f.Close() }()
-	serveStreamContent(w, r, store, req, rec, f, info.ModTime(), logger)
+	serveStreamContent(w, r, store, req, rec, filepath.Dir(filePath), f, info.ModTime(), logger)
 }
 
 func setHLSFailureHintHeader(w http.ResponseWriter, rec *model.SessionRecord) {
@@ -624,11 +644,9 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 		return
 	}
 
-	validState := rec.State == model.SessionReady ||
-		rec.State == model.SessionDraining ||
-		rec.State == model.SessionStarting ||
-		rec.State == model.SessionNew ||
-		rec.State == model.SessionPriming
+	validState := isStartupHLSState(rec.State) ||
+		rec.State == model.SessionReady ||
+		rec.State == model.SessionDraining
 
 	if !validState {
 		statusCode := http.StatusNotFound
@@ -663,7 +681,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 					logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("state", string(rec.State)).Bool("in_memory", true).Str("source", "ram").Logger()
 					touchSegmentAccessTime(r.Context(), store, req, rec)
 					w.Header().Set("X-XG2G-Source", "ram")
-					serveStreamContent(w, r, store, req, rec, bytes.NewReader(obj.Data), obj.PublishedAt, logger)
+					serveStreamContent(w, r, store, req, rec, filepath.Dir(filePath), bytes.NewReader(obj.Data), obj.PublishedAt, logger)
 					return
 				}
 			}
@@ -676,7 +694,7 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 		if err == nil && art != nil {
 			touchSegmentAccessTime(r.Context(), store, req, rec)
 			w.Header().Set("X-XG2G-Source", "ram")
-			serveStreamContent(w, r, store, req, rec, bytes.NewReader(art.Data), art.ModTime, logger)
+			serveStreamContent(w, r, store, req, rec, filepath.Dir(filePath), bytes.NewReader(art.Data), art.ModTime, logger)
 			return
 		}
 		if os.IsNotExist(err) {
