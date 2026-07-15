@@ -77,7 +77,7 @@ func TestAppendLiveHLSArgs_TempFileFlag(t *testing.T) {
 		container    string
 		wantTempFile bool
 	}{
-		{name: "llhls fmp4 drops temp_file", lowLatency: true, container: "fmp4", wantTempFile: false},
+		{name: "llhls fmp4 drops temp_file", lowLatency: true, container: "fmp4", wantTempFile: true}, // Changed: temp_file is now always true to fix fmp4 partial reads on Safari
 		{name: "standard fmp4 keeps temp_file", lowLatency: false, container: "fmp4", wantTempFile: true},
 		{name: "llhls mpegts keeps temp_file", lowLatency: true, container: "ts", wantTempFile: true},
 	}
