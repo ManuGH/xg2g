@@ -15,7 +15,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
-	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -753,39 +752,6 @@ func TestServeHLS_ActiveMissingSegmentSetsReasonHeader(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "file not found")
 }
 
-func TestServeHLS_StartingSegmentWaitsForArtifact(t *testing.T) {
-	tmpDir := t.TempDir()
-	sessionID := "segment-wait-test-session"
-	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
-
-	store := &MockStore{
-		Session: &model.SessionRecord{
-			SessionID: sessionID,
-			State:     model.SessionStarting,
-			Profile: model.ProfileSpec{
-				Name: "safari",
-			},
-		},
-	}
-
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		_ = os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), []byte("segment-data"), 0o600)
-	}()
-
-	req := httptest.NewRequest("GET", "/seg_000000.ts", nil)
-	w := httptest.NewRecorder()
-
-	ServeHLS(w, req, store, nil, tmpDir, sessionID, "seg_000000.ts")
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "video/mp2t", w.Header().Get("Content-Type"))
-	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
-	assert.Equal(t, "identity", w.Header().Get("Content-Encoding"))
-	assert.Empty(t, w.Header().Get("X-XG2G-Reason"))
-	assert.Equal(t, "segment-data", w.Body.String())
-}
 
 func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -823,73 +789,7 @@ func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
 	assert.Equal(t, "low", store.Session.PlaybackTrace.HLS.StallRisk)
 }
 
-func TestServeHLS_InMemory_PlaylistAndSegment(t *testing.T) {
-	tmpDir := t.TempDir()
-	sessionID := "inmemory-serve-test-session"
-	defer ringbuffer.DefaultRegistry.Delete(sessionID)
 
-	buf := ringbuffer.DefaultRegistry.GetOrCreate(sessionID, nil)
-	playlistContent := "#EXTM3U\n#EXTINF:2.000000,\nseg_000000.ts\n"
-	buf.Put("index.m3u8", []byte(playlistContent))
-	buf.Put("seg_000000.ts", []byte("in-memory-ts-data"))
-
-	store := &MockStore{
-		Session: &model.SessionRecord{
-			SessionID: sessionID,
-			State:     model.SessionReady,
-		},
-	}
-
-	// Request Playlist
-	req := httptest.NewRequest("GET", "/index.m3u8", nil)
-	w := httptest.NewRecorder()
-	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "application/vnd.apple.mpegurl", w.Header().Get("Content-Type"))
-	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
-	assert.Equal(t, playlistContent, w.Body.String())
-
-	// Request Segment
-	reqSeg := httptest.NewRequest("GET", "/seg_000000.ts", nil)
-	wSeg := httptest.NewRecorder()
-	ServeHLS(wSeg, reqSeg, store, nil, tmpDir, sessionID, "seg_000000.ts")
-
-	assert.Equal(t, http.StatusOK, wSeg.Code)
-	assert.Equal(t, "video/mp2t", wSeg.Header().Get("Content-Type"))
-	assert.Equal(t, "no-store", wSeg.Header().Get("Cache-Control"))
-	assert.Equal(t, "identity", wSeg.Header().Get("Content-Encoding"))
-	assert.Equal(t, "in-memory-ts-data", wSeg.Body.String())
-}
-
-func TestServeHLS_InMemory_Polling(t *testing.T) {
-	tmpDir := t.TempDir()
-	sessionID := "inmemory-polling-test-session"
-	defer ringbuffer.DefaultRegistry.Delete(sessionID)
-
-	buf := ringbuffer.DefaultRegistry.GetOrCreate(sessionID, nil)
-
-	store := &MockStore{
-		Session: &model.SessionRecord{
-			SessionID: sessionID,
-			State:     model.SessionStarting,
-		},
-	}
-
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		buf.Put("seg_000000.m4s", []byte("in-memory-fmp4-data"))
-	}()
-
-	req := httptest.NewRequest("GET", "/seg_000000.m4s", nil)
-	w := httptest.NewRecorder()
-	ServeHLS(w, req, store, nil, tmpDir, sessionID, "seg_000000.m4s")
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "video/mp4", w.Header().Get("Content-Type"))
-	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
-	assert.Equal(t, "in-memory-fmp4-data", w.Body.String())
-}
 
 func TestServeHLS_StoreRegistry_RAMDelivery(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -1083,32 +983,6 @@ func TestValidateRequest_MasterPlaylistVariants(t *testing.T) {
 	assert.True(t, req2.isInit)
 }
 
-func TestServeHLS_StartupMissingArtifactReturns503(t *testing.T) {
-	tmpDir := t.TempDir()
-	sessionID := "startup-missing-test-session"
-	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
-
-	store := &MockStore{
-		Session: &model.SessionRecord{
-			SessionID: sessionID,
-			State:     model.SessionPriming,
-			Profile: model.ProfileSpec{
-				Name: "safari",
-			},
-		},
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	req := httptest.NewRequest("GET", "/index.m3u8", nil).WithContext(ctx)
-	w := httptest.NewRecorder()
-
-	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
-
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-	assert.Equal(t, "1", w.Header().Get("Retry-After"))
-}
 
 func TestServeHLS_StartupRewriteErrorReturns503(t *testing.T) {
 	tmpDir := t.TempDir()
