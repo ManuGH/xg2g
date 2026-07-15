@@ -135,6 +135,9 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 					} else {
 						continue
 					}
+					if _, ok := seen[name]; ok {
+						continue
+					}
 
 					info, err := entry.Info()
 					if err != nil || info.Size() == 0 {
@@ -142,9 +145,6 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 					}
 
 					modTime := info.ModTime()
-					if prev, ok := seen[name]; ok && !modTime.After(prev) {
-						continue
-					}
 
 					filePath := filepath.Join(sessionDir, name)
 					data, err := os.ReadFile(filePath)
