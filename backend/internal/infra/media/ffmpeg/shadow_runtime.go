@@ -10,6 +10,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/fsnotify/fsnotify"
 	"github.com/rs/zerolog"
 )
 
@@ -98,72 +99,123 @@ func (a *LocalAdapter) attachShadowStore(ctx context.Context, sessionID string, 
 }
 
 func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		sr.logger.Error().Err(err).Msg("failed to create fsnotify watcher, falling back to pure polling")
+	} else {
+		err = watcher.Add(sessionDir)
+		if err != nil {
+			sr.logger.Error().Err(err).Msg("failed to add session directory to watcher")
+			watcher.Close()
+			watcher = nil
+		}
+	}
+
 	go func() {
 		defer close(sr.done)
-		ticker := time.NewTicker(50 * time.Millisecond)
-		defer ticker.Stop()
+		var watcherEvents <-chan fsnotify.Event
+		var watcherErrors <-chan error
+		if watcher != nil {
+			defer watcher.Close()
+			watcherEvents = watcher.Events
+			watcherErrors = watcher.Errors
+		}
+
+		fallbackTicker := time.NewTicker(500 * time.Millisecond)
+		defer fallbackTicker.Stop()
 
 		seen := make(map[string]time.Time)
+
+		processFile := func(name string) {
+			if strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".m3u8") || strings.HasSuffix(name, ".ts") {
+				return
+			}
+
+			var kind store.ObjectKind
+			var contentType string
+			if strings.HasPrefix(name, "init") && strings.HasSuffix(name, ".mp4") {
+				kind = store.ObjectInit
+				contentType = "video/mp4"
+			} else if strings.HasPrefix(name, "seg_") && strings.HasSuffix(name, ".m4s") {
+				kind = store.ObjectSegment
+				contentType = "video/iso.segment"
+			} else {
+				return
+			}
+			
+			if _, ok := seen[name]; ok {
+				return
+			}
+
+			filePath := filepath.Join(sessionDir, name)
+			info, err := os.Stat(filePath)
+			if err != nil || info.Size() == 0 {
+				return
+			}
+
+			modTime := info.ModTime()
+			data, err := os.ReadFile(filePath)
+			if err != nil || len(data) == 0 || int64(len(data)) != info.Size() {
+				return
+			}
+
+			seen[name] = modTime
+			err = sr.Pub.Publish(sr.ctx, store.StreamID(sr.sessionID), store.Object{
+				Name:        name,
+				Kind:        kind,
+				ContentType: contentType,
+				Data:        data,
+				PublishedAt: modTime,
+			})
+			if err == nil {
+				sr.logger.Debug().Str("file", name).Int("bytes", len(data)).Msg("mirrored finalized file to shadow store")
+			} else {
+				sr.logger.Warn().Err(err).Str("file", name).Msg("failed to publish mirrored file to shadow store")
+			}
+		}
 
 		for {
 			select {
 			case <-sr.ctx.Done():
 				return
-			case <-ticker.C:
+			case err, ok := <-watcherErrors:
+				if !ok {
+					watcherErrors = nil
+				} else if err != nil {
+					sr.logger.Warn().Err(err).Msg("fsnotify watcher error")
+				}
+			case event, ok := <-watcherEvents:
+				if !ok {
+					watcherEvents = nil
+					continue
+				}
+				name := filepath.Base(event.Name)
+				if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+					delete(seen, name)
+				}
+				if event.Has(fsnotify.Create) || event.Has(fsnotify.Write) {
+					processFile(name)
+				}
+			case <-fallbackTicker.C:
 				entries, err := os.ReadDir(sessionDir)
 				if err != nil {
 					continue
 				}
+				
+				currentFiles := make(map[string]bool, len(entries))
 				for _, entry := range entries {
 					if entry.IsDir() {
 						continue
 					}
 					name := entry.Name()
-					// Never publish temporary files, playlists, or MPEG-TS files.
-					if strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".m3u8") || strings.HasSuffix(name, ".ts") {
-						continue
-					}
+					currentFiles[name] = true
+					processFile(name)
+				}
 
-					var kind store.ObjectKind
-					var contentType string
-					if strings.HasPrefix(name, "init") && strings.HasSuffix(name, ".mp4") {
-						kind = store.ObjectInit
-						contentType = "video/mp4"
-					} else if strings.HasPrefix(name, "seg_") && strings.HasSuffix(name, ".m4s") {
-						kind = store.ObjectSegment
-						contentType = "video/iso.segment"
-					} else {
-						continue
-					}
-					if _, ok := seen[name]; ok {
-						continue
-					}
-
-					info, err := entry.Info()
-					if err != nil || info.Size() == 0 {
-						continue
-					}
-
-					modTime := info.ModTime()
-
-					filePath := filepath.Join(sessionDir, name)
-					data, err := os.ReadFile(filePath)
-					if err != nil || len(data) == 0 || int64(len(data)) != info.Size() {
-						continue
-					}
-
-					seen[name] = modTime
-					err = sr.Pub.Publish(sr.ctx, store.StreamID(sr.sessionID), store.Object{
-						Name:        name,
-						Kind:        kind,
-						ContentType: contentType,
-						Data:        data,
-						PublishedAt: modTime,
-					})
-					if err == nil {
-						sr.logger.Debug().Str("file", name).Int("bytes", len(data)).Msg("mirrored finalized file to shadow store")
-					} else {
-						sr.logger.Warn().Err(err).Str("file", name).Msg("failed to publish mirrored file to shadow store")
+				// Garbage collection for seen map
+				for name := range seen {
+					if !currentFiles[name] {
+						delete(seen, name)
 					}
 				}
 			}
