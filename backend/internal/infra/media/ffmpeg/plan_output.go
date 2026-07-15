@@ -241,14 +241,11 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 	if spec.Profile.TranscodeVideo {
 		hlsFlags += "+independent_segments"
 	}
-	if !a.LowLatencyHLS || segmentType != "fmp4" {
-		// temp_file hides the growing segment behind a .tmp rename. The LL-HLS
-		// packager (internal/hls/llhls) must scan exactly that open segment to
-		// cut EXT-X-PART entries, so the flag stays off on the LL path;
-		// playlist consistency there is covered by the atomic playlist
-		// publication guard instead.
-		hlsFlags += "+temp_file"
-	}
+	// Always use temp_file to ensure atomic segment creation,
+	// since the internal LL-HLS packager is currently disabled.
+	// This prevents Safari from downloading partially written segments.
+	hlsFlags += "+temp_file"
+
 	args = append(args,
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
 		"-hls_list_size", strconv.Itoa(layout.listSize),
