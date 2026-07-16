@@ -81,6 +81,27 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			plan.RateControl.MaxVideoBitrateKbps = transcodeMaxVideoBitrateKbps(plan.Video.Codec, ev)
 		}
 	}
+
+	// fMP4 guard for copied broadcast video: DVB H.264 uses open GOPs, and
+	// ffmpeg's HLS fMP4 muxer clamps the leading B-frame's negative CTS offset
+	// at every segment boundary — producing a duplicate PTS plus a 40ms hole
+	// per segment, which players render as a periodic visible judder (verified
+	// against a raw capture: source PTS were perfect, segments were not).
+	// MPEG-TS segments carry the source timestamps faithfully, and every HLS
+	// client that copies H.264 also plays TS. HEVC/AV1 keep fMP4: they require
+	// it (hvc1/av01 sample entries) and their pipelines always transcode.
+	if plan.Video.Mode == "copy" && plan.Packaging.Container == "fmp4" && !copyCodecRequiresFMP4(plan.Video.Codec) {
+		plan.Packaging.Container = "mpegts"
+	}
+}
+
+func copyCodecRequiresFMP4(codec string) bool {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "hevc", "h265", "av1":
+		return true
+	default:
+		return false
+	}
 }
 
 func explicitlyRequestsHEVCProfile(requestedIntent string) bool {
