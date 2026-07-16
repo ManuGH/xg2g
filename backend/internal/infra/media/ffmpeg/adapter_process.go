@@ -122,11 +122,16 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	avsyncSpec.Profile = plan.effectiveProfile
 	var usingPipe bool
 	if a.shouldAvsyncAtrim(avsyncSpec) {
-		if orphan, stdin, ok := a.prepareAvsyncPipe(ctx, inputURL, spec.SessionID); ok {
-			args = transformArgsForAvsyncPipeMode(args, orphan, !a.LiveAvsyncPipeNoTrim, avsyncSpec.Profile.TranscodeVideo)
+		if orphan, stdin, useAtrim := a.prepareAvsyncPipe(ctx, inputURL, spec.SessionID); stdin != nil {
+			args = transformArgsForAvsyncPipeMode(args, orphan, useAtrim && !a.LiveAvsyncPipeNoTrim, avsyncSpec.Profile.TranscodeVideo)
 			avsyncStdin = stdin
 			usingPipe = true
-			if a.LiveAvsyncPipeNoTrim {
+			if !useAtrim {
+				a.Logger.Warn().
+					Str("session_id", spec.SessionID).
+					Str("startup_phase", "avsync_pipe_diagnostic").
+					Msg("live-copy avsync fallback: stdin pipe active without atrim correction")
+			} else if a.LiveAvsyncPipeNoTrim {
 				a.Logger.Warn().
 					Str("session_id", spec.SessionID).
 					Str("startup_phase", "avsync_pipe_diagnostic").
