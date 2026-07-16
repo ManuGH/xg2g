@@ -332,13 +332,19 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 				item.Reason = "compatible_video_copy_avoids_reencode_during_audio_transcode"
 			}
 		case "scale_drift":
-			if evidence != nil && legacy.Mode == "transcode" && planner.Mode == "transcode" &&
-				legacy.ScaleWidth == 0 && legacy.ScaleHeight == 0 && planner.ScaleHeight == 0 &&
-				evidence.SourceTruth.Width > evidence.ClientEvidence.MaxVideoWidth &&
-				evidence.ClientEvidence.MaxVideoWidth > 0 &&
-				planner.ScaleWidth == evidence.ClientEvidence.MaxVideoWidth {
-				item.Disposition = DiffAccepted
-				item.Reason = "signed_client_width_limit_enforced"
+			if evidence != nil && legacy.Mode == "transcode" && planner.Mode == "transcode" {
+				if legacy.ScaleWidth == 0 && legacy.ScaleHeight == 0 && planner.ScaleHeight == 0 &&
+					evidence.SourceTruth.Width > evidence.ClientEvidence.MaxVideoWidth &&
+					evidence.ClientEvidence.MaxVideoWidth > 0 &&
+					planner.ScaleWidth == evidence.ClientEvidence.MaxVideoWidth {
+					item.Disposition = DiffAccepted
+					item.Reason = "signed_client_width_limit_enforced"
+				} else if planner.ScaleWidth == 0 && planner.ScaleHeight == 0 &&
+					legacy.ScaleWidth == evidence.SourceTruth.Width &&
+					legacy.ScaleHeight == evidence.SourceTruth.Height {
+					item.Disposition = DiffAccepted
+					item.Reason = "planner_omits_legacy_fixed_scaling"
+				}
 			}
 		}
 		classified = append(classified, item)
