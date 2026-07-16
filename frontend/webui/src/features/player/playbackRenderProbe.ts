@@ -13,6 +13,7 @@ export interface HlsRenderProbeSnapshot extends PlaybackFrameCounters {
   videoHeight: number;
   paused: boolean;
   bufferedAhead: number;
+  playbackRate: number;
 }
 
 export function readPlaybackFrameCounters(videoEl: NonNullable<VideoElementRef>): PlaybackFrameCounters {
@@ -68,6 +69,7 @@ export function describeHlsRenderProbe(
     `paused=${snapshot.paused ? 1 : 0}`,
     `dims=${snapshot.videoWidth}x${snapshot.videoHeight}`,
     `buf=${formatProbeFloat(snapshot.bufferedAhead)}`,
+    `rate=${formatProbeFloat(snapshot.playbackRate)}`,
     `frames=${formatProbeInt(snapshot.totalFrames)}`,
     `drop=${formatProbeInt(snapshot.droppedFrames)}`,
     baseline ? `dt=${formatProbeFloat(deltaTime)}` : null,
