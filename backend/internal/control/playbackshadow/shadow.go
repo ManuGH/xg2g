@@ -315,6 +315,14 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 					(planner.Container == "hls" && isConcreteHLSSegmentContainer(legacy.Container))) {
 				item.Disposition = DiffAccepted
 				item.Reason = "generic_hls_wrapper_vs_known_segment_container"
+			} else if legacy.Engine == "hls" && planner.Engine == "hls" &&
+				legacy.Container == "fmp4" && planner.Container == "mpegts" &&
+				planner.VideoMode == "copy" {
+				// Intended divergence: ffmpeg's HLS fMP4 muxer corrupts the
+				// leading B-frame at every segment cut on open-GOP broadcast
+				// sources, so the planner keeps copied video on MPEG-TS.
+				item.Disposition = DiffAccepted
+				item.Reason = "copied_video_avoids_fmp4_open_gop_defect"
 			}
 		case "audio_mode_mismatch":
 			if legacy.Mode == "transcode" && planner.Mode == "transcode" &&
