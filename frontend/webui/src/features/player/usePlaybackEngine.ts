@@ -55,8 +55,14 @@ const PLAYBACK_INFO_CODE_PROBE_WINDOW_CONFIRMED = 221;
 const PLAYBACK_INFO_CODE_HLSJS_RENDER_PLAYING = 240;
 const PLAYBACK_INFO_CODE_HLSJS_RENDER_STABLE = 241;
 const PLAYBACK_INFO_CODE_HLSJS_RENDER_BLACK = 242;
+const PLAYBACK_INFO_CODE_HLSJS_RENDER_HEARTBEAT = 243;
 const PROBE_CONFIRMATION_MS = 10_000;
 const HLSJS_RENDER_PROBE_MS = 2_500;
+const HLSJS_RENDER_HEARTBEAT_MS = 30_000;
+// Stall-class warnings repeat throughout a live session (each stutter is one
+// event); a strict once-per-session dedup hides all but the first, so allow
+// re-reporting after a cooldown instead.
+const PLAYBACK_WARNING_REPEAT_MS = 10_000;
 
 interface UsePlaybackEngineProps {
   videoRef: RefObject<VideoElementRef>;
@@ -145,7 +151,7 @@ export function usePlaybackEngine({
   const hlsStallRecoveryTimerRef = useRef<number | null>(null);
   const hlsStallRecoveryAttemptsRef = useRef(0);
   const reportedPlayingSessionRef = useRef<string | null>(null);
-  const reportedWarningKeysRef = useRef<Set<string>>(new Set());
+  const reportedWarningKeysRef = useRef<Map<string, number>>(new Map());
   const pendingWarningRecoveryRef = useRef<{ code: number; message: string } | null>(null);
   const reportedProbeStartedSessionRef = useRef<string | null>(null);
   const reportedProbeConfirmedSessionRef = useRef<string | null>(null);
@@ -153,6 +159,8 @@ export function usePlaybackEngine({
   const activeHlsRenderProbeSessionRef = useRef<string | null>(null);
   const completedHlsRenderProbeSessionRef = useRef<string | null>(null);
   const hlsRenderProbeTimerRef = useRef<number | null>(null);
+  const hlsRenderHeartbeatTimerRef = useRef<number | null>(null);
+  const lastHlsRenderSnapshotRef = useRef<HlsRenderProbeSnapshot | null>(null);
   const networkRetryTimerRef = useRef<number | null>(null);
 
   const reportMediaFailure = useCallback((error: AppError, options: PlaybackFailureReportOptions = {}) => {
@@ -274,6 +282,11 @@ export function usePlaybackEngine({
       window.clearTimeout(hlsRenderProbeTimerRef.current);
       hlsRenderProbeTimerRef.current = null;
     }
+    if (hlsRenderHeartbeatTimerRef.current !== null) {
+      window.clearInterval(hlsRenderHeartbeatTimerRef.current);
+      hlsRenderHeartbeatTimerRef.current = null;
+    }
+    lastHlsRenderSnapshotRef.current = null;
     activeHlsRenderProbeSessionRef.current = null;
     if (resetCompleted) {
       completedHlsRenderProbeSessionRef.current = null;
@@ -383,6 +396,33 @@ export function usePlaybackEngine({
         describeHlsRenderProbe(blackSuspect ? 'black_suspect' : 'stable', settled, started),
         playbackEngineContext('decode', { engine: 'hlsjs' }),
       );
+
+      // Periodic heartbeat for the rest of the session: dt/df against the
+      // previous beat expose buffer drain, frame drops, and playhead stalls
+      // that the one-shot startup probe cannot see.
+      lastHlsRenderSnapshotRef.current = settled;
+      hlsRenderHeartbeatTimerRef.current = window.setInterval(() => {
+        if (
+          isTeardownRef.current ||
+          sessionIdRef.current !== trackedSessionId ||
+          lastHlsEngineRef.current !== 'hlsjs'
+        ) {
+          if (hlsRenderHeartbeatTimerRef.current !== null) {
+            window.clearInterval(hlsRenderHeartbeatTimerRef.current);
+            hlsRenderHeartbeatTimerRef.current = null;
+          }
+          lastHlsRenderSnapshotRef.current = null;
+          return;
+        }
+        const beat = captureHlsRenderProbeSnapshot(videoEl);
+        void reportError(
+          'info',
+          PLAYBACK_INFO_CODE_HLSJS_RENDER_HEARTBEAT,
+          describeHlsRenderProbe('heartbeat', beat, lastHlsRenderSnapshotRef.current ?? undefined),
+          playbackEngineContext('decode', { engine: 'hlsjs' }),
+        );
+        lastHlsRenderSnapshotRef.current = beat;
+      }, HLSJS_RENDER_HEARTBEAT_MS);
     }, HLSJS_RENDER_PROBE_MS);
   }, [captureHlsRenderProbeSnapshot, clearHlsRenderProbe, isTeardownRef, playbackEngineContext, reportError, sessionIdRef]);
 
@@ -391,16 +431,20 @@ export function usePlaybackEngine({
     message: string,
     phase: NonNullable<PlaybackEngineErrorContext['phase']>,
     recoveryAttempt?: number,
+    repeatable?: boolean,
   ) => {
     const trackedSessionId = sessionIdRef.current;
     if (!trackedSessionId) {
       return;
     }
     const key = `${trackedSessionId}:${code}`;
-    if (reportedWarningKeysRef.current.has(key)) {
-      return;
+    const lastReportedAt = reportedWarningKeysRef.current.get(key);
+    if (lastReportedAt !== undefined) {
+      if (!repeatable || Date.now() - lastReportedAt < PLAYBACK_WARNING_REPEAT_MS) {
+        return;
+      }
     }
-    reportedWarningKeysRef.current.add(key);
+    reportedWarningKeysRef.current.set(key, Date.now());
     pendingWarningRecoveryRef.current = playbackRecoveryInfoForWarning(code);
     void reportError('warning', code, message, playbackEngineContext(
       phase,
@@ -1000,6 +1044,8 @@ export function usePlaybackEngine({
               PLAYBACK_WARNING_CODE_HLS_NONFATAL,
               `hls_nonfatal:${data.details} ct=${sct.toFixed(2)} rs=${srs} buffered=[${sranges}]`,
               'decode',
+              undefined,
+              true,
             );
             // Cold-start leading-gap unstick: when the first playable (audio+video)
             // data begins a beat after video (cold tune - the audio transcode starts

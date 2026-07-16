@@ -51,7 +51,7 @@ function formatProbeInt(value: number | null | undefined): string {
 }
 
 export function describeHlsRenderProbe(
-  stage: 'playing' | 'stable' | 'black_suspect',
+  stage: 'playing' | 'stable' | 'black_suspect' | 'heartbeat',
   snapshot: HlsRenderProbeSnapshot,
   baseline?: HlsRenderProbeSnapshot
 ): string {
