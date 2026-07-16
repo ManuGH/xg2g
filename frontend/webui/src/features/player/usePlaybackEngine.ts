@@ -160,6 +160,7 @@ export function usePlaybackEngine({
   const completedHlsRenderProbeSessionRef = useRef<string | null>(null);
   const hlsRenderProbeTimerRef = useRef<number | null>(null);
   const hlsRenderHeartbeatTimerRef = useRef<number | null>(null);
+  const hlsRenderHeartbeatSessionRef = useRef<string | null>(null);
   const lastHlsRenderSnapshotRef = useRef<HlsRenderProbeSnapshot | null>(null);
   const networkRetryTimerRef = useRef<number | null>(null);
 
@@ -282,11 +283,18 @@ export function usePlaybackEngine({
       window.clearTimeout(hlsRenderProbeTimerRef.current);
       hlsRenderProbeTimerRef.current = null;
     }
-    if (hlsRenderHeartbeatTimerRef.current !== null) {
-      window.clearInterval(hlsRenderHeartbeatTimerRef.current);
-      hlsRenderHeartbeatTimerRef.current = null;
+    // The heartbeat must survive transient events (waiting/stalled/seeking
+    // clear the probe with resetCompleted=false) — it is the instrument that
+    // observes exactly those stalls. Only a real teardown/session switch
+    // (resetCompleted=true) stops it.
+    if (resetCompleted) {
+      if (hlsRenderHeartbeatTimerRef.current !== null) {
+        window.clearInterval(hlsRenderHeartbeatTimerRef.current);
+        hlsRenderHeartbeatTimerRef.current = null;
+      }
+      hlsRenderHeartbeatSessionRef.current = null;
+      lastHlsRenderSnapshotRef.current = null;
     }
-    lastHlsRenderSnapshotRef.current = null;
     activeHlsRenderProbeSessionRef.current = null;
     if (resetCompleted) {
       completedHlsRenderProbeSessionRef.current = null;
@@ -359,6 +367,43 @@ export function usePlaybackEngine({
       clearHlsRenderProbe(false);
       return;
     }
+
+    // Session-long heartbeat, started on the first 'playing' event and
+    // independent of the one-shot startup probe below (an early seek/waiting
+    // cancels that probe and 'playing' may never fire again, so the heartbeat
+    // must not depend on the probe completing). dt/df against the previous
+    // beat expose buffer drain, frame drops, and playhead stalls.
+    if (hlsRenderHeartbeatSessionRef.current !== trackedSessionId) {
+      if (hlsRenderHeartbeatTimerRef.current !== null) {
+        window.clearInterval(hlsRenderHeartbeatTimerRef.current);
+      }
+      hlsRenderHeartbeatSessionRef.current = trackedSessionId;
+      lastHlsRenderSnapshotRef.current = captureHlsRenderProbeSnapshot(videoEl);
+      hlsRenderHeartbeatTimerRef.current = window.setInterval(() => {
+        if (
+          isTeardownRef.current ||
+          sessionIdRef.current !== trackedSessionId ||
+          lastHlsEngineRef.current !== 'hlsjs'
+        ) {
+          if (hlsRenderHeartbeatTimerRef.current !== null) {
+            window.clearInterval(hlsRenderHeartbeatTimerRef.current);
+            hlsRenderHeartbeatTimerRef.current = null;
+          }
+          hlsRenderHeartbeatSessionRef.current = null;
+          lastHlsRenderSnapshotRef.current = null;
+          return;
+        }
+        const beat = captureHlsRenderProbeSnapshot(videoEl);
+        void reportError(
+          'info',
+          PLAYBACK_INFO_CODE_HLSJS_RENDER_HEARTBEAT,
+          describeHlsRenderProbe('heartbeat', beat, lastHlsRenderSnapshotRef.current ?? undefined),
+          playbackEngineContext('decode', { engine: 'hlsjs' }),
+        );
+        lastHlsRenderSnapshotRef.current = beat;
+      }, HLSJS_RENDER_HEARTBEAT_MS);
+    }
+
     if (
       completedHlsRenderProbeSessionRef.current === trackedSessionId ||
       activeHlsRenderProbeSessionRef.current === trackedSessionId
@@ -396,33 +441,6 @@ export function usePlaybackEngine({
         describeHlsRenderProbe(blackSuspect ? 'black_suspect' : 'stable', settled, started),
         playbackEngineContext('decode', { engine: 'hlsjs' }),
       );
-
-      // Periodic heartbeat for the rest of the session: dt/df against the
-      // previous beat expose buffer drain, frame drops, and playhead stalls
-      // that the one-shot startup probe cannot see.
-      lastHlsRenderSnapshotRef.current = settled;
-      hlsRenderHeartbeatTimerRef.current = window.setInterval(() => {
-        if (
-          isTeardownRef.current ||
-          sessionIdRef.current !== trackedSessionId ||
-          lastHlsEngineRef.current !== 'hlsjs'
-        ) {
-          if (hlsRenderHeartbeatTimerRef.current !== null) {
-            window.clearInterval(hlsRenderHeartbeatTimerRef.current);
-            hlsRenderHeartbeatTimerRef.current = null;
-          }
-          lastHlsRenderSnapshotRef.current = null;
-          return;
-        }
-        const beat = captureHlsRenderProbeSnapshot(videoEl);
-        void reportError(
-          'info',
-          PLAYBACK_INFO_CODE_HLSJS_RENDER_HEARTBEAT,
-          describeHlsRenderProbe('heartbeat', beat, lastHlsRenderSnapshotRef.current ?? undefined),
-          playbackEngineContext('decode', { engine: 'hlsjs' }),
-        );
-        lastHlsRenderSnapshotRef.current = beat;
-      }, HLSJS_RENDER_HEARTBEAT_MS);
     }, HLSJS_RENDER_PROBE_MS);
   }, [captureHlsRenderProbeSnapshot, clearHlsRenderProbe, isTeardownRef, playbackEngineContext, reportError, sessionIdRef]);
 
