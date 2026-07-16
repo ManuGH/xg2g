@@ -108,7 +108,7 @@ func TestRAMShadowStore_DeterministicEviction(t *testing.T) {
 }
 
 func TestRAMShadowStore_RepeatedPlaylistReplacementIsBounded(t *testing.T) {
-	store, _ := NewRAMShadowStore(1024 * 1024, 1000)
+	store, _ := NewRAMShadowStore(1024*1024, 1000)
 
 	for i := 0; i < 100_000; i++ {
 		err := store.Publish(
@@ -137,10 +137,10 @@ func TestRAMShadowStore_RepeatedPlaylistReplacementIsBounded(t *testing.T) {
 func TestRAMShadowStore_DataOwnership(t *testing.T) {
 	s, _ := NewRAMShadowStore(100, 1000)
 	buf := []byte("original")
-	
+
 	s.Publish(context.Background(), "s1", Object{Name: "x", Data: buf})
 	buf[0] = 'X'
-	
+
 	obj, _ := s.Get(context.Background(), "s1", "x")
 	if string(obj.Data) != "original" {
 		t.Errorf("expected original, got %s", string(obj.Data))

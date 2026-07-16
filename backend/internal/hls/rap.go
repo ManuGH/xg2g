@@ -18,7 +18,6 @@ import (
 	"time"
 )
 
-
 // AccessPointType identifies the classification of the starting access point of a segment.
 type AccessPointType string
 
@@ -752,5 +751,3 @@ func VerifyBatchSegmentRAPs(sessionDir string, segFiles []string) (*BatchRAPRepo
 	report.AllSafeAfterFirst = report.FirstSafeIndex != -1 && report.UnsafeAfterFirst == 0
 	return report, nil
 }
-
-

@@ -33,9 +33,9 @@ func makeValidSegment(size int) []byte {
 
 func setupTestEnvironment(t *testing.T) (string, *LocalAdapter, *ShadowRuntime) {
 	tempDir := t.TempDir()
-	
+
 	registry := store.NewMemoryStoreRegistry()
-	
+
 	adapter := &LocalAdapter{
 		StoreRegistry: registry,
 		Config: AdapterConfig{
@@ -48,7 +48,7 @@ func setupTestEnvironment(t *testing.T) (string, *LocalAdapter, *ShadowRuntime) 
 	}
 
 	plan := ports.ExecutedFFmpegPlan{Container: "fmp4"}
-	
+
 	sr, err := adapter.attachShadowStore(context.Background(), "test-session", plan, tempDir)
 	if err != nil {
 		t.Fatalf("Failed to attach shadow store: %v", err)
@@ -119,12 +119,12 @@ func TestShadowRuntime_IncompleteSegmentRejected(t *testing.T) {
 
 	// Write incomplete segment directly
 	finalPath := filepath.Join(tempDir, "seg_0003.m4s")
-	
+
 	// Create a valid moof but missing mdat
 	moof := make([]byte, 8)
 	binary.BigEndian.PutUint32(moof[0:4], 8)
 	copy(moof[4:8], "moof")
-	
+
 	err := os.WriteFile(finalPath, moof, 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -143,9 +143,9 @@ func TestShadowRuntime_FallbackScanRepairsDroppedEvent(t *testing.T) {
 	defer sr.Close()
 
 	finalPath := filepath.Join(tempDir, "seg_0004.m4s")
-	
+
 	// Create file without triggering fsnotify or simulating a dropped event.
-	// Since fsnotify is active, it WILL trigger Create/Write. But we can sleep 
+	// Since fsnotify is active, it WILL trigger Create/Write. But we can sleep
 	// long enough for the fallback ticker to pick it up if fsnotify fails.
 	// We'll just rely on the regular pipeline which is picked up by Create.
 	data := makeValidSegment(150)

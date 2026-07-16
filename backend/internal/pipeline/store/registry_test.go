@@ -88,4 +88,3 @@ func TestMemoryStoreRegistry_RaceSafeHandleClose(t *testing.T) {
 
 	_ = handle2.Close()
 }
-

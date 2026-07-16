@@ -543,6 +543,7 @@ func (o *Orchestrator) cleanupFiles(sid string) {
 		log.L().Warn().Str("sid", sid).Msg("refusing to cleanup unsafe session ID")
 		return
 	}
+	telemetry.RemoveStartupTracer(sid)
 	ringbuffer.DefaultRegistry.Delete(sid)
 	if o.HLSRoot == "" {
 		return

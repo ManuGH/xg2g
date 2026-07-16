@@ -133,6 +133,10 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 		debounceChan := make(chan string, 100)
 
 		processFile := func(name string) {
+			if name == "index.m3u8" {
+				return
+			}
+
 			if strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".m3u8") || strings.HasSuffix(name, ".ts") {
 				return
 			}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -119,16 +120,26 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	var avsyncStdin io.Reader
 	avsyncSpec := spec
 	avsyncSpec.Profile = plan.effectiveProfile
+	var usingPipe bool
 	if a.shouldAvsyncAtrim(avsyncSpec) {
 		if orphan, stdin, ok := a.prepareAvsyncPipe(ctx, inputURL, spec.SessionID); ok {
 			args = transformArgsForAvsyncPipeMode(args, orphan, !a.LiveAvsyncPipeNoTrim, avsyncSpec.Profile.TranscodeVideo)
 			avsyncStdin = stdin
+			usingPipe = true
 			if a.LiveAvsyncPipeNoTrim {
 				a.Logger.Warn().
 					Str("session_id", spec.SessionID).
 					Str("startup_phase", "avsync_pipe_diagnostic").
 					Msg("live-copy avsync diagnostic: stdin pipe active without audio trim")
 			}
+		}
+	}
+
+	if !usingPipe && spec.Source.Type == ports.SourceTuner {
+		if stdin, ok := a.prepareTelemetryPipe(ctx, inputURL, spec.SessionID); ok {
+			args = transformArgsForTelemetryPipeMode(args)
+			avsyncStdin = stdin
+			usingPipe = true
 		}
 	}
 
@@ -273,7 +284,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		a.Logger.Warn().Err(err).Str("session_id", spec.SessionID).Msg("failed to attach shadow store, proceeding with disk only")
 	}
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt, shadowRuntime) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(ctx, sourceKey, spec.SessionID, spec.Profile.DVRWindowSec)
 	}
@@ -388,7 +399,7 @@ func awaitProcessExit(
 	return out
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time, shadowRuntime *ShadowRuntime) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time, shadowRuntime *ShadowRuntime, transcodeVideo bool) {
 	defer func() {
 		a.mu.Lock()
 		a.removeActiveProcessLocked(handle, true)
@@ -460,7 +471,9 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			if !firstFrameLogged {
 				if frame, ok := parseFFmpegFrameCount(line); ok && frame > 0 {
 					firstFrameLogged = true
-					telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneT4, "first_usable_video_au")
+					if transcodeVideo {
+						telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneT4, "first_usable_video_au")
+					}
 					wd.ObserveProgress()
 					a.writeFirstFrameMarker(sessionID, dvrWindowSec)
 					a.Logger.Info().
@@ -781,4 +794,111 @@ func processDetailPriority(detail string) int {
 	default:
 		return 0
 	}
+}
+
+type telemetryReader struct {
+	source   io.Reader
+	tracer   telemetry.StartupTracer
+	buf      []byte
+	e2Marked bool
+	t2Marked bool
+}
+
+func (r *telemetryReader) Read(p []byte) (n int, err error) {
+	n, err = r.source.Read(p)
+	if n > 0 && !r.e2Marked {
+		r.e2Marked = true
+		r.tracer.MarkOnce(telemetry.MilestoneE2, "first_body_byte")
+	}
+	if n > 0 && !r.t2Marked {
+		r.buf = append(r.buf, p[:n]...)
+		if len(r.buf) > 1500 {
+			r.buf = r.buf[len(r.buf)-1500:]
+		}
+		for i := 0; i <= len(r.buf)-377; i++ {
+			if r.buf[i] == 0x47 && r.buf[i+188] == 0x47 && r.buf[i+376] == 0x47 {
+				r.t2Marked = true
+				r.tracer.MarkOnce(telemetry.MilestoneT2, "first_valid_ts_packet")
+				r.buf = nil // free memory
+				break
+			}
+		}
+	}
+	return n, err
+}
+
+func (a *LocalAdapter) prepareTelemetryPipe(ctx context.Context, rawURL, sessionID string) (io.Reader, bool) {
+	if !a.Config.StartupIngestProxy {
+		return nil, false
+	}
+	if !isHTTPInputURL(rawURL) {
+		return nil, false
+	}
+	req, _, err := buildAuthenticatedRequest(ctx, http.MethodGet, rawURL)
+	if err != nil {
+		return nil, false
+	}
+	req.Header.Set("Icy-MetaData", "1")
+
+	if a.httpClient == nil {
+		return nil, false
+	}
+	streamClient := *a.httpClient
+	streamClient.Timeout = 0
+
+	tracer := telemetry.GetStartupTracer(sessionID)
+	tracer.MarkOnce(telemetry.MilestoneE0, "http_request_started")
+
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return nil, false
+	}
+
+	tracer.MarkOnce(telemetry.MilestoneT1, "input_connected")
+	tracer.MarkOnce(telemetry.MilestoneE1, "http_response_headers_received")
+
+	go func() {
+		<-ctx.Done()
+		_ = resp.Body.Close()
+	}()
+
+	tr := &telemetryReader{
+		source: resp.Body,
+		tracer: tracer,
+	}
+
+	return tr, true
+}
+
+func transformArgsForTelemetryPipeMode(args []string) []string {
+	stripValueFlag := map[string]bool{
+		"-headers":                    true,
+		"-user_agent":                 true,
+		"-protocol_whitelist":         true,
+		"-reconnect":                  true,
+		"-reconnect_at_eof":           true,
+		"-reconnect_streamed":         true,
+		"-reconnect_delay_max":        true,
+		"-reconnect_on_network_error": true,
+		"-reconnect_on_http_error":    true,
+	}
+	out := make([]string, 0, len(args)+2)
+	for i := 0; i < len(args); i++ {
+		tok := args[i]
+		if tok == "-i" && i+1 < len(args) {
+			out = append(out, "-i", "pipe:0")
+			i++ // skip the URL value
+			continue
+		}
+		if stripValueFlag[tok] && i+1 < len(args) {
+			i++ // skip the option value
+			continue
+		}
+		out = append(out, tok)
+	}
+	return out
 }

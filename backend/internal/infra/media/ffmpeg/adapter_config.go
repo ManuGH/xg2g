@@ -107,6 +107,7 @@ type AdapterConfig struct {
 	AV1NVENCAutoRatioMax  float64
 	RuntimePathMinYAvg    float64
 	RuntimePathLowChecks  int
+	StartupIngestProxy    bool
 }
 
 // LoadAdapterConfig resolves every ENV-tunable media-pipeline knob: defaults,
@@ -286,7 +287,7 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		AdaptiveH264BufSizeK:       envOptionalIntBounded("XG2G_ADAPTIVE_H264_BUFSIZE_K", 8000, 120000),
 
 		ShadowStoreEnabled:       envBool("XG2G_SHADOW_STORE_ENABLED", false),
-		ShadowStoreMaxBytes:      int64(envOptionalIntBounded("XG2G_SHADOW_STORE_MAX_BYTES", 1024*1024, 1024*1024*1024)), // min 1MB, max 1GB
+		ShadowStoreMaxBytes:      int64(envOptionalIntBounded("XG2G_SHADOW_STORE_MAX_BYTES", 1024*1024, 1024*1024*1024)),      // min 1MB, max 1GB
 		ShadowStoreQueueMaxBytes: int64(envOptionalIntBounded("XG2G_SHADOW_STORE_QUEUE_MAX_BYTES", 1024*1024, 256*1024*1024)), // min 1MB, max 256MB
 		ShadowStoreMaxObjects:    envOptionalIntBounded("XG2G_SHADOW_STORE_MAX_OBJECTS", 1, 1024),
 
@@ -296,6 +297,7 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		AV1NVENCAutoRatioMax:  envFloatBounded("XG2G_AV1_NVENC_AUTO_RATIO_MAX", capability.DefaultAV1NVENCAutoRatioMax, 1.0, 10.0),
 		RuntimePathMinYAvg:    envFloatBounded("XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG", defaultRuntimePathCorrectnessMinYAvg, 1.0, 64.0),
 		RuntimePathLowChecks:  envIntBounded("XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS", defaultRuntimePathCorrectnessChecks, 1, 4),
+		StartupIngestProxy:    envBool("XG2G_STARTUP_INGEST_PROXY", false),
 	}
 }
 

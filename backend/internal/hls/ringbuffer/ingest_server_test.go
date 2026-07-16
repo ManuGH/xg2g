@@ -4,10 +4,10 @@
 package ringbuffer
 
 import (
-	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"net/http"
 	"os"
 	"path/filepath"

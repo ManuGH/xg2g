@@ -28,9 +28,9 @@ type RuntimeSnapshot struct {
 	ProxyBaseURL     string
 	UseHashTvgID     bool
 
-	OpenWebIF  OpenWebIFRuntime
-	Transcoder TranscoderRuntime
-	HLS        HLSRuntime
+	OpenWebIF   OpenWebIFRuntime
+	Transcoder  TranscoderRuntime
+	HLS         HLSRuntime
 	ShadowStore ShadowStoreRuntime
 
 	FFmpegLogLevel string

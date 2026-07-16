@@ -117,4 +117,3 @@ func (r *MemoryStoreRegistry) unregisterToken(sessionID string, token uint64) {
 
 // ErrRegistryConflict is returned when attempting to register a session ID that is already registered.
 var ErrRegistryConflict = errors.New("store registry conflict: session ID already registered")
-

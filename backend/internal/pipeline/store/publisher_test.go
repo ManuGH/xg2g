@@ -27,7 +27,7 @@ func TestShadowPublisher_PublishAndClose(t *testing.T) {
 	if ram.currentBytes != 8 {
 		t.Errorf("expected 8 bytes in store, got %d", ram.currentBytes)
 	}
-	
+
 	// Post-close publish should fail
 	err = pub.Publish(context.Background(), "s1", Object{Name: "3", Data: []byte("xxx")})
 	if err != ErrPublisherClosed {
@@ -78,7 +78,7 @@ func TestShadowPublisher_QueueSaturation(t *testing.T) {
 
 	err1 := pub.Publish(context.Background(), "s1", Object{Name: "1", Data: []byte("1234")})
 	err2 := pub.Publish(context.Background(), "s1", Object{Name: "2", Data: []byte("5678")})
-	
+
 	if err1 != nil || err2 != nil {
 		t.Fatalf("expected nil errors, got %v, %v", err1, err2)
 	}

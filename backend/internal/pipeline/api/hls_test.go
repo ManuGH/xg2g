@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/rs/zerolog"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"github.com/rs/zerolog"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
@@ -752,7 +752,6 @@ func TestServeHLS_ActiveMissingSegmentSetsReasonHeader(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "file not found")
 }
 
-
 func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "segment-trace-test-session"
@@ -788,8 +787,6 @@ func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
 	assert.Equal(t, "seg_000123.ts", store.Session.PlaybackTrace.HLS.LastSegmentName)
 	assert.Equal(t, "low", store.Session.PlaybackTrace.HLS.StallRisk)
 }
-
-
 
 func TestServeHLS_StoreRegistry_RAMDelivery(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -985,7 +982,6 @@ func TestValidateRequest_MasterPlaylistVariants(t *testing.T) {
 	assert.True(t, req2.isInit)
 }
 
-
 func TestServeHLS_StartupRewriteErrorReturns503(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionID := "startup-rewrite-err-test-session"
@@ -1020,4 +1016,3 @@ seg_000000.ts
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.Equal(t, "1", w.Header().Get("Retry-After"))
 }
-

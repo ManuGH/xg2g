@@ -8,6 +8,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/rs/zerolog"
 	"os"
 	"path/filepath"
@@ -52,6 +53,7 @@ func (o *Orchestrator) waitForReady(
 
 		ready, notReadyReason, err := o.checkPlaylistReady(playlistPath, vodMode, ttfpRecorded, e.ProfileID, startTime)
 		if err == nil && ready {
+			telemetry.GetStartupTracer(e.SessionID).MarkOnce(telemetry.MilestoneT7, "secure_playlist_available")
 			return true, "", ""
 		}
 		if notReadyReason != "" && notReadyReason != lastNotReadyReason {

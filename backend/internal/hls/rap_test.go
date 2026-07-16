@@ -30,10 +30,10 @@ func TestBitReader_ReadUE(t *testing.T) {
 		bits     []byte // raw bitstream bytes
 		expected uint64
 	}{
-		{"ue(0) -> 1", []byte{0x80}, 0},              // 1 (in binary 1) -> value 0
-		{"ue(1) -> 010", []byte{0x40}, 1},            // 010 -> value 1
-		{"ue(2) -> 011", []byte{0x60}, 2},            // 011 -> value 2
-		{"ue(132) -> 132", []byte{0x01, 0x0A}, 132},  // 000000010000101 -> 7 zeros + 1 + 0000101 (5) -> 127 + 5 = 132
+		{"ue(0) -> 1", []byte{0x80}, 0},             // 1 (in binary 1) -> value 0
+		{"ue(1) -> 010", []byte{0x40}, 1},           // 010 -> value 1
+		{"ue(2) -> 011", []byte{0x60}, 2},           // 011 -> value 2
+		{"ue(132) -> 132", []byte{0x01, 0x0A}, 132}, // 000000010000101 -> 7 zeros + 1 + 0000101 (5) -> 127 + 5 = 132
 	}
 
 	for _, tc := range cases {
@@ -89,7 +89,7 @@ func buildMockPATPMT(videoPID int) []byte {
 	var buf bytes.Buffer
 	// PAT PID 0x0000 pointing to PMT PID 0x0020
 	patPayload := []byte{
-		0x00,                               // pointer
+		0x00,                                     // pointer
 		0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, // table header
 		0x00, 0x01, 0xE0, 0x20, // program 1 -> PMT PID 0x0020
 		0x2C, 0x80, 0xB8, 0x3A, // CRC
@@ -443,4 +443,3 @@ func TestVerifyBatchSegmentRAPs_100Segments(t *testing.T) {
 		t.Errorf("expected AllSafeAfterFirst=true and UnsafeAfterFirst=0, got %+v", report)
 	}
 }
-

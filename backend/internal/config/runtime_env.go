@@ -181,6 +181,7 @@ var runtimeEnvKeys = []string{
 	"XG2G_SHADOW_STORE_MAX_BYTES",
 	"XG2G_SHADOW_STORE_QUEUE_MAX_BYTES",
 	"XG2G_SHADOW_STORE_MAX_OBJECTS",
+	"XG2G_STARTUP_INGEST_PROXY",
 }
 
 // KnownRuntimeEnvKeys returns every env key recognized at runtime: those read by
@@ -354,7 +355,7 @@ func readShadowStoreRuntime(getenv func(string) string) ShadowStoreRuntime {
 		QueueMaxBytes: 67108864,  // 64MB
 		MaxObjects:    512,
 	}
-	
+
 	if raw := readTrimmedEnv(getenv, "XG2G_SHADOW_STORE_MAX_BYTES"); raw != "" {
 		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n >= 0 {
 			rt.MaxBytes = n
@@ -366,7 +367,7 @@ func readShadowStoreRuntime(getenv func(string) string) ShadowStoreRuntime {
 		}
 	}
 	applyPositiveInt(getenv, "XG2G_SHADOW_STORE_MAX_OBJECTS", &rt.MaxObjects)
-	
+
 	return rt
 }
 

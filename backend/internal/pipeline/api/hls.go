@@ -392,7 +392,6 @@ func awaitArtifact(ctx context.Context, filePath string, req hlsRequest, rec *mo
 	return info, err
 }
 
-
 func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir string, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, bool, error) {
 	forcePlaylistType := ""
 	insertStartTag := ""
@@ -680,8 +679,6 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 			}
 		}
 	}
-
-
 
 	info, err := awaitArtifact(r.Context(), filePath, req, rec, logger)
 
