@@ -165,7 +165,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	v3Scan := scan.NewManager(v3ScanStore, playlistPath, e2Client)
 	v3Scan.ActivePlaybackFn = newBackgroundScanPlaybackDetector(v3Store, owiClient)
 	storeRegistry := pipelinestore.NewMemoryStoreRegistry()
-	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger, storeRegistry)
+	mediaPipeline := buildMediaPipeline(cfg, e2Client, logger, storeRegistry, v3Store)
 
 	s.WireV3Runtime(v3.Dependencies{
 		Bus:                v3Bus,

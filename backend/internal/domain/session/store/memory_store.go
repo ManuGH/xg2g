@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 )
 
 // MemoryStore is an in-memory StateStore intended for tests and local iteration.
@@ -307,6 +308,19 @@ func (m *MemoryStore) GetSession(ctx context.Context, sessionID string) (*model.
 		return nil, nil
 	}
 	return cloneSessionRecord(rec), nil
+}
+
+func (m *MemoryStore) GetDiagnosticMetadata(ctx context.Context, sessionID string) (ports.DiagnosticMetadata, bool) {
+	rec, err := m.GetSession(ctx, sessionID)
+	if err != nil || rec == nil {
+		return ports.DiagnosticMetadata{}, false
+	}
+	return ports.DiagnosticMetadata{
+		GenerationID:          rec.GenerationID,
+		CorrelationID:         rec.CorrelationID,
+		Reason:                string(rec.Reason),
+		StopRequestedAtUnixMs: rec.StopRequestedAtUnixMs,
+	}, true
 }
 
 func (m *MemoryStore) DeleteSession(ctx context.Context, id string) error {

@@ -12,6 +12,7 @@ import (
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	sessionmodel "github.com/ManuGH/xg2g/internal/domain/session/model"
 	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
+	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
@@ -46,7 +47,7 @@ func buildAPIConstructorDeps(cfg config.AppConfig, snap config.Snapshot, logger 
 	}
 }
 
-func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger, storeRegistry pipelinestore.StoreRegistry) sessionports.MediaPipeline {
+func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger, storeRegistry pipelinestore.StoreRegistry, sessionLookupStore sessionstore.SessionLookupStore) sessionports.MediaPipeline {
 	if cfg.Engine.Mode == "virtual" {
 		return stub.NewAdapter()
 	}
@@ -89,6 +90,7 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 	}
 
 	adapter.StoreRegistry = storeRegistry
+	adapter.DiagnosticLookup = sessionLookupStore
 	return adapter
 }
 

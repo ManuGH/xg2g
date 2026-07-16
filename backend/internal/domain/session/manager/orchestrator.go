@@ -431,6 +431,11 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 }
 
 func (o *Orchestrator) handleStop(ctx context.Context, e model.StopSessionEvent) error {
+	log.L().Info().
+		Str("session_id", e.SessionID).
+		Str("reason", string(e.Reason)).
+		Msg("session_stop_requested")
+
 	var shortCircuitCleanup bool
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() {
@@ -483,6 +488,10 @@ func (o *Orchestrator) handleStop(ctx context.Context, e model.StopSessionEvent)
 	o.mu.Unlock()
 
 	if ok {
+		log.L().Info().
+			Str("session_id", e.SessionID).
+			Str("reason", string(e.Reason)).
+			Msg("context_cancelled")
 		cancel()
 	}
 
@@ -498,6 +507,7 @@ func (o *Orchestrator) registerActive(id string, cancel context.CancelFunc) {
 	// PR-P9-2-3: Call the old cancel before overwriting to prevent resource leaks
 	// (goroutines, timers) associated with the previous context.
 	if oldCancel, exists := o.active[id]; exists && oldCancel != nil {
+		log.L().Info().Str("session_id", id).Msg("context_cancelled")
 		oldCancel()
 	}
 	o.active[id] = cancel
@@ -507,8 +517,12 @@ func (o *Orchestrator) registerActive(id string, cancel context.CancelFunc) {
 func (o *Orchestrator) unregisterActive(id string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if _, exists := o.active[id]; !exists {
+		return
+	}
 	delete(o.active, id)
 	setSessionsActive(len(o.active))
+	log.L().Info().Str("session_id", id).Msg("session_removed")
 }
 
 func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, ok bool, err error) {

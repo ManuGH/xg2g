@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -68,6 +69,12 @@ func (i *instrumentedStore) GetSession(ctx context.Context, id string) (rec *mod
 	start := time.Now()
 	defer func() { i.observe("get_session", start, err) }()
 	return i.inner.GetSession(ctx, id)
+}
+
+func (i *instrumentedStore) GetDiagnosticMetadata(ctx context.Context, id string) (ports.DiagnosticMetadata, bool) {
+	start := time.Now()
+	defer func() { i.observe("get_diagnostic_metadata", start, nil) }()
+	return i.inner.GetDiagnosticMetadata(ctx, id)
 }
 
 func (i *instrumentedStore) UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (rec *model.SessionRecord, err error) {

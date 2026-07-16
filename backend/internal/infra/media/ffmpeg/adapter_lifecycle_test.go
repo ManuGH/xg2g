@@ -455,7 +455,7 @@ func TestMonitorProcess_RuntimePathCorrectnessMarksBrokenAndStopsProcess(t *test
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-broken", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false)
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-broken", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false)
 		close(done)
 	}()
 
@@ -522,7 +522,7 @@ func TestMonitorProcess_RuntimePathCorrectnessMarksVerified(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-verified", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false)
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-verified", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false)
 		close(done)
 	}()
 
@@ -671,7 +671,7 @@ func TestMonitorProcess_RecordsNVENCRuntimeFailureForNVENCError(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-nvenc-runtime", 0, profiles.GPUBackendNVENC, "", adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false)
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-nvenc-runtime", 0, profiles.GPUBackendNVENC, "", adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false)
 		close(done)
 	}()
 

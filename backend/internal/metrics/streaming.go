@@ -124,7 +124,43 @@ var (
 		Name: "xg2g_session_heartbeat_terminal_total",
 		Help: "Total number of heartbeats rejected because session was terminal",
 	})
+
+	// ActiveFFmpegProcesses tracks current active FFmpeg processes in the pipeline.
+	ActiveFFmpegProcesses = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "xg2g_active_ffmpeg_processes",
+		Help: "Current number of active FFmpeg processes in the pipeline",
+	})
+
+	// ActiveAvsyncSpools tracks current active AV-sync bounded startup spools.
+	ActiveAvsyncSpools = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "xg2g_active_avsync_spools",
+		Help: "Current number of active AV-sync bounded startup spools",
+	})
+
+	// ActiveEnigma2Connections tracks current active Go-managed HTTP connections to Enigma2 receiver.
+	ActiveEnigma2Connections = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "xg2g_active_enigma2_connections",
+		Help: "Current number of active Go-managed HTTP connections to Enigma2 receiver (avsync spool / ingest proxy)",
+	}, []string{"mode"})
 )
+
+// IncActiveFFmpegProcesses increments the active FFmpeg processes gauge.
+func IncActiveFFmpegProcesses() { ActiveFFmpegProcesses.Inc() }
+
+// DecActiveFFmpegProcesses decrements the active FFmpeg processes gauge.
+func DecActiveFFmpegProcesses() { ActiveFFmpegProcesses.Dec() }
+
+// IncActiveAvsyncSpools increments the active AV-sync spools gauge.
+func IncActiveAvsyncSpools() { ActiveAvsyncSpools.Inc() }
+
+// DecActiveAvsyncSpools decrements the active AV-sync spools gauge.
+func DecActiveAvsyncSpools() { ActiveAvsyncSpools.Dec() }
+
+// IncActiveEnigma2Connections increments the active Enigma2 connections gauge for the given mode.
+func IncActiveEnigma2Connections(mode string) { ActiveEnigma2Connections.WithLabelValues(mode).Inc() }
+
+// DecActiveEnigma2Connections decrements the active Enigma2 connections gauge for the given mode.
+func DecActiveEnigma2Connections(mode string) { ActiveEnigma2Connections.WithLabelValues(mode).Dec() }
 
 // ObservePreflightLatency records the preflight latency.
 func ObservePreflightLatency(port int, duration time.Duration) {

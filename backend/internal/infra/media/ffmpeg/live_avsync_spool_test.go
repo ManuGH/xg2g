@@ -48,7 +48,7 @@ func TestBoundedStartupSpool_ByteForByteIntegrity(t *testing.T) {
 		delay: 2 * time.Millisecond,
 	}
 
-	spool := newBoundedStartupSpool(reader)
+	spool := newBoundedStartupSpool(reader, "", nil)
 	go spool.run(1 << 20)
 
 	var wg sync.WaitGroup
@@ -89,7 +89,7 @@ func TestBoundedStartupSpool_LimitReachedFallback(t *testing.T) {
 	reader := bytes.NewReader(inputData)
 	spoolLimit := 32 << 10
 
-	spool := newBoundedStartupSpool(reader)
+	spool := newBoundedStartupSpool(reader, "", nil)
 	go spool.run(spoolLimit)
 
 	time.Sleep(50 * time.Millisecond)
@@ -126,7 +126,7 @@ func TestBoundedStartupSpool_StreamingBackpressure(t *testing.T) {
 	reader := bytes.NewReader(inputData)
 	spoolLimit := 32 << 10
 
-	spool := newBoundedStartupSpool(reader)
+	spool := newBoundedStartupSpool(reader, "", nil)
 	go spool.run(spoolLimit)
 
 	spool.markDecided()

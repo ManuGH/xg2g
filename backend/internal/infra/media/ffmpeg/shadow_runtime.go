@@ -22,6 +22,7 @@ type ShadowRuntime struct {
 	Pub       *store.ShadowPublisher
 	Handle    store.RegistrationHandle
 	sessionID string
+	adapter   *LocalAdapter
 	ctx       context.Context
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -88,6 +89,7 @@ func (a *LocalAdapter) attachShadowStore(ctx context.Context, sessionID string, 
 		Pub:       pub,
 		Handle:    regHandle,
 		sessionID: sessionID,
+		adapter:   a,
 		ctx:       runCtx,
 		cancel:    cancel,
 		done:      make(chan struct{}),
@@ -319,6 +321,15 @@ func (sr *ShadowRuntime) Close() {
 		_ = sr.Store.DeleteStream(context.Background(), store.StreamID(sr.sessionID))
 		if sr.Handle != nil {
 			_ = sr.Handle.Close()
+			if sr.adapter != nil {
+				dc := sr.adapter.GetDiagnosticContext(sr.sessionID)
+				sr.adapter.Logger.Info().
+					Str("session_id", dc.SessionID).
+					Str("generation_id", dc.GenerationID).
+					Str("reason", dc.Reason).
+					Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+					Msg("shadow_store_unregistered")
+			}
 		}
 	})
 }

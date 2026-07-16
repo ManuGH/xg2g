@@ -237,6 +237,8 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		startupSpan.End()
 		return "", fmt.Errorf("ffmpeg start failed: %w", err)
 	}
+	metrics.IncActiveFFmpegProcesses()
+	isDirectHTTP := avsyncStdin == nil && isHTTPInputURL(inputURL)
 	if cmafRead != nil {
 		// The child holds its own copy of the write end; closing ours makes
 		// EOF reach the segmenter when ffmpeg exits.
@@ -275,6 +277,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, pid))
 	a.mu.Lock()
 	a.activeProcs[handle] = cmd
+	a.handleSessions[handle] = spec.SessionID
 	a.finalizedProfiles[handle] = plan.effectiveProfile
 	// Execution truth: capture the plan parsed from the REAL argv we just handed
 	// to the process, so observers report what ffmpeg runs, not a prediction.
@@ -289,7 +292,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		a.Logger.Warn().Err(err).Str("session_id", spec.SessionID).Msg("failed to attach shadow store, proceeding with disk only")
 	}
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo, isDirectHTTP) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(ctx, sourceKey, spec.SessionID, spec.Profile.DVRWindowSec)
 	}
@@ -404,7 +407,7 @@ func awaitProcessExit(
 	return out
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time, shadowRuntime *ShadowRuntime, transcodeVideo bool) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time, shadowRuntime *ShadowRuntime, transcodeVideo bool, _ bool) {
 	defer func() {
 		a.mu.Lock()
 		a.removeActiveProcessLocked(handle, true)
@@ -416,6 +419,14 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		if a.HLSRoot != "" && sessionID != "" {
 			hls.EvictRAPCache(ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec))
 		}
+		dc := a.GetDiagnosticContext(sessionID)
+		a.Logger.Info().
+			Str("session_id", dc.SessionID).
+			Str("generation_id", dc.GenerationID).
+			Str("reason", dc.Reason).
+			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+			Msg("ffmpeg_process_exited")
+		metrics.DecActiveFFmpegProcesses()
 	}()
 
 	// End the startup span exactly once: success is recorded on first segment;
@@ -662,6 +673,7 @@ func (a *LocalAdapter) writeFirstFrameMarker(sessionID string, dvrWindowSec int)
 func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	a.mu.Lock()
 	cmd, exists := a.activeProcs[handle]
+	sessionID := a.handleSessions[handle]
 	if exists {
 		a.removeActiveProcessLocked(handle, false)
 	}
@@ -672,7 +684,8 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	}
 
 	if cmd.Process != nil {
-		return a.killProcessGroup(cmd)
+		a.terminateProcessGroup(cmd, sessionID)
+		return nil
 	}
 
 	return nil
@@ -680,6 +693,7 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 
 func (a *LocalAdapter) removeActiveProcessLocked(handle ports.RunHandle, archiveDetail bool) {
 	delete(a.activeProcs, handle)
+	delete(a.handleSessions, handle)
 	delete(a.finalizedProfiles, handle)
 	delete(a.executedPlans, handle)
 	delete(a.runtimeDiagnostics, handle)
@@ -709,7 +723,17 @@ func (a *LocalAdapter) archiveProcessDetailLocked(handle ports.RunHandle) {
 }
 
 func (a *LocalAdapter) terminateProcessGroup(cmd *exec.Cmd, sessionID string) {
-	if err := a.killProcessGroup(cmd); err != nil {
+	if cmd != nil {
+		dc := a.GetDiagnosticContext(sessionID)
+		a.Logger.Info().
+			Str("session_id", dc.SessionID).
+			Str("generation_id", dc.GenerationID).
+			Str("reason", dc.Reason).
+			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+			Msg("ffmpeg_termination_requested")
+	}
+	err := a.killProcessGroup(cmd)
+	if err != nil {
 		a.Logger.Warn().Err(err).Str("sessionId", sessionID).Msg("failed to terminate ffmpeg process group")
 	}
 }
@@ -865,10 +889,19 @@ func (a *LocalAdapter) prepareTelemetryPipe(ctx context.Context, rawURL, session
 
 	tracer.MarkOnce(telemetry.MilestoneT1, "input_connected")
 	tracer.MarkOnce(telemetry.MilestoneE1, "http_response_headers_received")
+	metrics.IncActiveEnigma2Connections("proxy")
 
 	go func() {
 		<-ctx.Done()
 		_ = resp.Body.Close()
+		dc := a.GetDiagnosticContext(sessionID)
+		a.Logger.Info().
+			Str("session_id", dc.SessionID).
+			Str("generation_id", dc.GenerationID).
+			Str("reason", dc.Reason).
+			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+			Msg("http_body_closed")
+		metrics.DecActiveEnigma2Connections("proxy")
 	}()
 
 	tr := &telemetryReader{

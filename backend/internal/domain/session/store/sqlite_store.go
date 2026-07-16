@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
 )
 
@@ -278,6 +279,19 @@ func (s *SqliteStore) GetSession(ctx context.Context, id string) (*model.Session
 	query := "SELECT " + sessionColumns + " FROM sessions WHERE session_id = ?"
 	row := s.DB.QueryRowContext(ctx, query, id)
 	return scanSession(row)
+}
+
+func (s *SqliteStore) GetDiagnosticMetadata(ctx context.Context, id string) (ports.DiagnosticMetadata, bool) {
+	rec, err := s.GetSession(ctx, id)
+	if err != nil || rec == nil {
+		return ports.DiagnosticMetadata{}, false
+	}
+	return ports.DiagnosticMetadata{
+		GenerationID:          rec.GenerationID,
+		CorrelationID:         rec.CorrelationID,
+		Reason:                string(rec.Reason),
+		StopRequestedAtUnixMs: rec.StopRequestedAtUnixMs,
+	}, true
 }
 
 func (s *SqliteStore) QuerySessions(ctx context.Context, filter SessionFilter) ([]*model.SessionRecord, error) {

@@ -169,6 +169,7 @@ type SessionRecord struct {
 	FallbackReason    string           `json:"fallbackReason,omitempty"`
 	FallbackAtUnix    int64            `json:"fallbackAtUnix,omitempty"`
 	CorrelationID     string           `json:"correlationId"`
+	GenerationID      string           `json:"generationId,omitempty"`
 	CreatedAtUnix     int64            `json:"createdAtUnix"`
 	UpdatedAtUnix     int64            `json:"updatedAtUnix"`
 	LastAccessUnix    int64            `json:"lastAccessUnix,omitempty"`
@@ -178,6 +179,7 @@ type SessionRecord struct {
 	HeartbeatInterval  int    `json:"heartbeatInterval"`
 	LastHeartbeatUnix  int64  `json:"lastHeartbeatUnix,omitempty"`
 	StopReason         string `json:"stopReason,omitempty"` // USER_STOPPED, LEASE_EXPIRED, FAILED, etc.
+	StopRequestedAtUnixMs int64 `json:"stopRequestedAtUnixMs,omitempty"`
 
 	// PR-P3-2: Deterministic Lifecycle Fields
 	LatestSegmentAt      time.Time `json:"latestSegmentAt,omitempty"`

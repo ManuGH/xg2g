@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 // Live-copy A/V-sync ("orphan atrim"). DVB/OSCam stream-relay sources deliver
@@ -82,6 +83,8 @@ const (
 // for GC, and if totalBytes exceeds maxBytes, run() blocks waiting for consumer backpressure.
 type boundedStartupSpool struct {
 	body       io.Reader
+	sessionID  string
+	adapter    *LocalAdapter
 	mu         sync.Mutex
 	cond       *sync.Cond
 	chunks     [][]byte
@@ -91,15 +94,30 @@ type boundedStartupSpool struct {
 	err        error
 }
 
-func newBoundedStartupSpool(body io.Reader) *boundedStartupSpool {
+func newBoundedStartupSpool(body io.Reader, sessionID string, adapter *LocalAdapter) *boundedStartupSpool {
 	s := &boundedStartupSpool{
-		body: body,
+		body:      body,
+		sessionID: sessionID,
+		adapter:   adapter,
 	}
 	s.cond = sync.NewCond(&s.mu)
 	return s
 }
 
 func (s *boundedStartupSpool) run(maxBytes int) {
+	metrics.IncActiveAvsyncSpools()
+	defer func() {
+		metrics.DecActiveAvsyncSpools()
+		if s.adapter != nil {
+			dc := s.adapter.GetDiagnosticContext(s.sessionID)
+			s.adapter.Logger.Info().
+				Str("session_id", dc.SessionID).
+				Str("generation_id", dc.GenerationID).
+				Str("reason", dc.Reason).
+				Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+				Msg("avsync_spool_producer_exited")
+		}
+	}()
 	for {
 		chunk := make([]byte, 32<<10)
 		n, err := s.body.Read(chunk)
@@ -160,11 +178,22 @@ func (s *boundedStartupSpool) markDecided() {
 
 func (s *boundedStartupSpool) close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.state != stateClosed {
 		s.state = stateClosed
 		s.cond.Broadcast()
+		s.mu.Unlock()
+		if s.adapter != nil {
+			dc := s.adapter.GetDiagnosticContext(s.sessionID)
+			s.adapter.Logger.Info().
+				Str("session_id", dc.SessionID).
+				Str("generation_id", dc.GenerationID).
+				Str("reason", dc.Reason).
+				Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+				Msg("avsync_spool_closing")
+		}
+		return
 	}
+	s.mu.Unlock()
 }
 
 func (s *boundedStartupSpool) snapshot() []byte {
@@ -256,7 +285,8 @@ func (a *LocalAdapter) prepareAvsyncPipe(ctx context.Context, rawURL, sessionID 
 		return 0, nil, false
 	}
 
-	spool := newBoundedStartupSpool(resp.Body)
+	metrics.IncActiveEnigma2Connections("spool")
+	spool := newBoundedStartupSpool(resp.Body, sessionID, a)
 	go spool.run(avsyncPeekMaxBytes)
 
 	// Close the spool and relay body when the session context ends
@@ -264,6 +294,14 @@ func (a *LocalAdapter) prepareAvsyncPipe(ctx context.Context, rawURL, sessionID 
 		<-ctx.Done()
 		spool.close()
 		_ = resp.Body.Close()
+		dc := a.GetDiagnosticContext(sessionID)
+		a.Logger.Info().
+			Str("session_id", dc.SessionID).
+			Str("generation_id", dc.GenerationID).
+			Str("reason", dc.Reason).
+			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+			Msg("http_body_closed")
+		metrics.DecActiveEnigma2Connections("spool")
 	}()
 
 	peekCtx, cancel := context.WithTimeout(ctx, avsyncPeekTimeout)

@@ -7,6 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 var (
@@ -102,6 +103,7 @@ func observeTTFP(profile string, start time.Time) {
 // setSessionsActive publishes the current live session count to the gauge.
 func setSessionsActive(n int) {
 	sessionsActive.Set(float64(n))
+	metrics.SetActiveSessions("all", float64(n))
 }
 
 func recordSessionStartOutcome(result string, reason model.ReasonCode, profile string) {

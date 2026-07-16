@@ -136,6 +136,7 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	session.ServiceRef = intent.ServiceRef
 	session.Profile = startupProfile
 	session.CorrelationID = intent.CorrelationID
+	session.GenerationID = fmt.Sprintf("gen_%d", now.UnixNano())
 	session.LeaseExpiresAtUnix = now.Add(s.deps.SessionLeaseTTL()).Unix()
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
 	session.ContextData = buildStartRequestParams(intent, resolution)

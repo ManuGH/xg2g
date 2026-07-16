@@ -63,6 +63,7 @@ type LocalAdapter struct {
 	FFprobeBin                 string
 	HLSRoot                    string
 	StoreRegistry              store.StoreRegistry
+	DiagnosticLookup           ports.DiagnosticLookup
 	AnalyzeDuration            string
 	ProbeSize                  string
 	LiveAnalyzeDuration        string
@@ -130,6 +131,8 @@ type LocalAdapter struct {
 	ingestServer   *ringbuffer.IngestServer
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
+	// handleSessions maps run handles to session IDs for diagnostics
+	handleSessions map[ports.RunHandle]string
 	// finalizedProfiles keeps the finalized profile that actually launched for a handle.
 	finalizedProfiles map[ports.RunHandle]ports.ProfileSpec
 	// executedPlans keeps the execution-truth plan parsed from the real argv that launched for a handle.
@@ -240,6 +243,7 @@ func NewLocalAdapterWithConfig(binPath string, ffprobeBin string, hlsRoot string
 		lastKnownFPS:               make(map[string]fpsCacheEntry),
 		FPSCacheTTL:                cfg.FPSCacheTTL,
 		activeProcs:                make(map[ports.RunHandle]*exec.Cmd),
+		handleSessions:             make(map[ports.RunHandle]string),
 		finalizedProfiles:          make(map[ports.RunHandle]ports.ProfileSpec),
 		executedPlans:              make(map[ports.RunHandle]ports.ExecutedFFmpegPlan),
 		runtimeDiagnostics:         make(map[ports.RunHandle]ports.RuntimeDiagnostics),
@@ -250,4 +254,37 @@ func NewLocalAdapterWithConfig(binPath string, ffprobeBin string, hlsRoot string
 	adapter.detector.recordProcessDetail = adapter.recordProcessDetail
 	adapter.detector.terminateProcessGroup = adapter.terminateProcessGroup
 	return adapter
+}
+
+// DiagnosticContext holds context fields for passive lifecycle diagnostics.
+type DiagnosticContext struct {
+	SessionID          string
+	GenerationID       string
+	Reason             string
+	ElapsedSinceStopMs int64
+}
+
+// GetDiagnosticContext queries DiagnosticLookup for diagnostic session metadata.
+func (a *LocalAdapter) GetDiagnosticContext(sessionID string) DiagnosticContext {
+	dc := DiagnosticContext{
+		SessionID:    sessionID,
+		GenerationID: "unknown",
+		Reason:       "none",
+	}
+	if a != nil && a.DiagnosticLookup != nil && sessionID != "" {
+		if meta, ok := a.DiagnosticLookup.GetDiagnosticMetadata(context.Background(), sessionID); ok {
+			if meta.GenerationID != "" {
+				dc.GenerationID = meta.GenerationID
+			} else if meta.CorrelationID != "" {
+				dc.GenerationID = meta.CorrelationID
+			}
+			if meta.Reason != "" {
+				dc.Reason = meta.Reason
+			}
+			if meta.StopRequestedAtUnixMs > 0 {
+				dc.ElapsedSinceStopMs = time.Now().UnixMilli() - meta.StopRequestedAtUnixMs
+			}
+		}
+	}
+	return dc
 }
