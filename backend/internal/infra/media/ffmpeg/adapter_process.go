@@ -39,6 +39,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		if err := tuner.Tune(ctx, spec.Source.ID); err != nil {
 			return "", fmt.Errorf("tuning failed: %w", err)
 		}
+		telemetry.GetStartupTracer(spec.SessionID).MarkOnce("E_LOCK", "tuner_locked")
 		a.Logger.Info().
 			Str("session_id", spec.SessionID).
 			Str("startup_phase", "tuner_tuned").
@@ -450,9 +451,16 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 
 		for scanner.Scan() {
 			line := scanner.Text()
+			if strings.HasPrefix(line, "Opening '") && strings.Contains(line, "' for reading") {
+				telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneT1, "input_opened")
+			}
+			if strings.Contains(line, "Stream mapping:") {
+				telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneT3, "probe_completed")
+			}
 			if !firstFrameLogged {
 				if frame, ok := parseFFmpegFrameCount(line); ok && frame > 0 {
 					firstFrameLogged = true
+					telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneT4, "first_usable_video_au")
 					wd.ObserveProgress()
 					a.writeFirstFrameMarker(sessionID, dvrWindowSec)
 					a.Logger.Info().

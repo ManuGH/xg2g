@@ -10,6 +10,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/store"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/fsnotify/fsnotify"
 	"github.com/rs/zerolog"
 )
@@ -183,6 +184,12 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 				Complete:    true,
 			})
 			if err == nil {
+				if kind == store.ObjectInit {
+					telemetry.GetStartupTracer(sr.sessionID).MarkOnce(telemetry.MilestoneR1, "init_in_ram")
+				} else if kind == store.ObjectSegment {
+					telemetry.GetStartupTracer(sr.sessionID).MarkOnce(telemetry.MilestoneT6, "segment_finalized")
+					telemetry.GetStartupTracer(sr.sessionID).MarkOnce(telemetry.MilestoneR2, "segment_in_ram")
+				}
 				sr.logger.Debug().Str("file", name).Int("bytes", len(data)).Msg("mirrored finalized file to shadow store")
 			} else {
 				sr.logger.Warn().Err(err).Str("file", name).Msg("failed to publish mirrored file to shadow store")
@@ -221,6 +228,9 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 					delete(seen, name)
 				}
 				if event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) {
+					if strings.HasSuffix(name, ".tmp") {
+						telemetry.GetStartupTracer(sr.sessionID).MarkOnce(telemetry.MilestoneT5, "segment_tmp_created")
+					}
 					go func(n string) {
 						timer := time.NewTimer(30 * time.Millisecond)
 						defer timer.Stop()

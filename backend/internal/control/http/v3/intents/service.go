@@ -10,6 +10,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 	"strings"
 	"time"
 )
@@ -140,7 +141,15 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 		if err != nil {
 			return nil, err
 		}
+		telemetry.GetStartupTracer(intent.SessionID).MarkOnce(telemetry.MilestoneP1, "legacy_planner_resolved")
 	}
+
+	tracer := telemetry.GetStartupTracer(intent.SessionID)
+	if intent.PlannerPlan != nil || intent.PlanningReceipt != nil {
+		tracer.MarkOnce(telemetry.MilestoneP1, "planner_preflight_resolved")
+	}
+	tracer.UpdateMetadata("", string(resolution.profileSpec.Container), fmt.Sprintf("%v", resolution.profileSpec.TranscodeVideo), "")
+
 	if err := s.checkStartAdmission(ctx, intent, resolution.profileSpec); err != nil {
 		return nil, err
 	}
@@ -158,8 +167,10 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	if replay, err := s.persistStartSession(ctx, intent, store, session, resolution.idempotencyKey, phaseLabel); err != nil {
 		return nil, err
 	} else if replay != nil {
+		tracer.MarkOnce(telemetry.MilestoneP2, "session_replayed")
 		return replay, nil
 	}
+	tracer.MarkOnce(telemetry.MilestoneP2, "session_created")
 	if err := s.publishStartSession(ctx, intent, bus, resolution.effectiveProfileID, phaseLabel); err != nil {
 		// The session and idempotency key were already persisted; the event never
 		// reached the orchestrator. Roll both back so the session does not linger in

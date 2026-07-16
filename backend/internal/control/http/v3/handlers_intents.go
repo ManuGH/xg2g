@@ -22,6 +22,7 @@ import (
 	pipelineapi "github.com/ManuGH/xg2g/internal/pipeline/api"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/problemcode"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 )
 
 // Responsibility: Handles Intent creation (Start/Stop stream signals).
@@ -74,6 +75,10 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	sessionID, correlationID, done := resolveIntentSession(w, r, store, intentType, req, correlationID)
 	if done {
 		return
+	}
+
+	if intentType == model.IntentTypeStreamStart {
+		telemetry.NewStartupTracer(sessionID)
 	}
 
 	if !correlationProvided && correlationID != "" {

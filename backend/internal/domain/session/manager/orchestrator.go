@@ -22,6 +22,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 )
 
 // Orchestrator consumes intents and drives pipelines.
@@ -220,12 +221,14 @@ func (o *Orchestrator) Run(ctx context.Context) (runErr error) {
 				// stops could never run, no slot could ever free, and the control
 				// plane wedged permanently. Dispatching first keeps the loop live.
 				if !o.goSessionWorker(func() {
+					telemetry.GetStartupTracer(evt.SessionID).MarkOnce(telemetry.MilestoneP3, "worker_acquire_started")
 					select {
 					case o.startSem <- struct{}{}:
 					case <-ctx.Done():
 						return
 					}
 					defer func() { <-o.startSem }()
+					telemetry.GetStartupTracer(evt.SessionID).MarkOnce(telemetry.MilestoneP4, "worker_acquired")
 					if err := o.handleStart(ctx, evt); err != nil {
 						log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start failed")
 					}
@@ -417,6 +420,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	if err := o.transitionReady(ctx, e); err != nil {
 		return err
 	}
+	telemetry.GetStartupTracer(e.SessionID).MarkOnce(telemetry.MilestoneT8, "session_ready")
 	recordStart("success", model.RNone)
 
 	leases.ReleaseDedup()
