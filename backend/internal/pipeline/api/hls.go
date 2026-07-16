@@ -570,6 +570,14 @@ func serveArtifact(w http.ResponseWriter, r *http.Request, store HLSStore, req h
 		return
 	}
 	defer func() { _ = f.Close() }()
+
+	logger.Info().
+		Str("source", "disk").
+		Int64("content_length", info.Size()).
+		Str("object_name", req.filename).
+		Int64("disk_file_size", info.Size()).
+		Msg("serve_hls_artifact")
+
 	serveStreamContent(w, r, store, req, rec, filepath.Dir(filePath), f, info.ModTime(), logger)
 }
 
@@ -649,13 +657,25 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 		if reader, ok := storeRegistry.Lookup(req.sessionID); ok {
 			obj, err := reader.Get(r.Context(), pipelinestore.StreamID(req.sessionID), req.filename)
 			if err == nil && len(obj.Data) > 0 {
-				switch obj.Kind {
-				case pipelinestore.ObjectInit, pipelinestore.ObjectSegment:
-					logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("state", string(rec.State)).Bool("in_memory", true).Str("source", "ram").Logger()
-					touchSegmentAccessTime(r.Context(), store, req, rec)
-					w.Header().Set("X-XG2G-Source", "ram")
-					serveStreamContent(w, r, store, req, rec, filepath.Dir(filePath), bytes.NewReader(obj.Data), obj.PublishedAt, logger)
-					return
+				if !obj.Complete {
+					logger.Warn().Str("source", "ram").Str("object_name", req.filename).Msg("ram object incomplete, falling back to disk")
+				} else {
+					switch obj.Kind {
+					case pipelinestore.ObjectInit, pipelinestore.ObjectSegment:
+						logger := log.L().With().Str("sid", req.sessionID).Str("file", req.filename).Str("state", string(rec.State)).Bool("in_memory", true).Str("source", "ram").Logger()
+						touchSegmentAccessTime(r.Context(), store, req, rec)
+						w.Header().Set("X-XG2G-Source", "ram")
+
+						logger.Info().
+							Str("source", "ram").
+							Int("content_length", len(obj.Data)).
+							Str("object_name", req.filename).
+							Int("shadow_object_size", len(obj.Data)).
+							Msg("serve_hls_artifact")
+
+						serveStreamContent(w, r, store, req, rec, filepath.Dir(filePath), bytes.NewReader(obj.Data), obj.PublishedAt, logger)
+						return
+					}
 				}
 			}
 		}

@@ -21,13 +21,13 @@ const (
 	ObjectPlaylist
 )
 
-// Object represents a single media artifact (Init Segment, Media Segment, or Playlist).
 type Object struct {
 	Name        string
 	Kind        ObjectKind
 	ContentType string
 	Data        []byte
 	PublishedAt time.Time
+	Complete    bool
 }
 
 // ShadowStore defines the interface for the passive RAM ringbuffer.

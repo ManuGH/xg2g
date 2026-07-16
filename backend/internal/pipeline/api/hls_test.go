@@ -811,8 +811,10 @@ func TestServeHLS_StoreRegistry_RAMDelivery(t *testing.T) {
 	ramStore, err := pipelinestore.NewRAMShadowStore(1024*1024, 10)
 	require.NoError(t, err)
 	err = ramStore.Publish(context.Background(), pipelinestore.StreamID(sessionID), pipelinestore.Object{
-		Name: "seg_000001.m4s",
-		Data: []byte("registry-ram-segment-data"),
+		Name:     "seg_000001.m4s",
+		Kind:     pipelinestore.ObjectSegment,
+		Data:     []byte("registry-ram-segment-data"),
+		Complete: true,
 	})
 	_, err = registry.Register(sessionID, ramStore)
 	require.NoError(t, err)

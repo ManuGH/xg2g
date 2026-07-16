@@ -118,7 +118,7 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 		return fmt.Errorf("write init: %w", err)
 	}
 	if cfg.ShadowPublisher != nil {
-		cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{
+		cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{Complete: true,
 			Name:        "init.mp4",
 			Kind:        store.ObjectInit,
 			ContentType: "video/mp4",
@@ -190,7 +190,7 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 			if cfg.ShadowPublisher != nil {
 				segPath := filepath.Join(cfg.Dir, lastClosed)
 				if data, err := os.ReadFile(segPath); err == nil {
-					cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{
+					cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{Complete: true,
 						Name:        lastClosed,
 						Kind:        store.ObjectSegment,
 						ContentType: "video/iso.segment",
@@ -713,7 +713,7 @@ func (p *playlistWriter) publish(end bool) error {
 		return err
 	}
 	if p.shadow != nil {
-		p.shadow.Publish(p.ctx, p.streamID, store.Object{
+		p.shadow.Publish(p.ctx, p.streamID, store.Object{Complete: true,
 			Name:        "index.m3u8",
 			Kind:        store.ObjectPlaylist,
 			ContentType: "application/vnd.apple.mpegurl",

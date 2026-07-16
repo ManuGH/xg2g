@@ -124,7 +124,12 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 		fallbackTicker := time.NewTicker(500 * time.Millisecond)
 		defer fallbackTicker.Stop()
 
-		seen := make(map[string]time.Time)
+		type fileFingerprint struct {
+			Size    int64
+			ModTime int64
+		}
+		seen := make(map[string]fileFingerprint)
+		debounceChan := make(chan string, 100)
 
 		processFile := func(name string) {
 			if strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".m3u8") || strings.HasSuffix(name, ".ts") {
@@ -142,30 +147,40 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 			} else {
 				return
 			}
-			
-			if _, ok := seen[name]; ok {
-				return
-			}
 
 			filePath := filepath.Join(sessionDir, name)
-			info, err := os.Stat(filePath)
-			if err != nil || info.Size() == 0 {
+			before, err := os.Stat(filePath)
+			if err != nil || before.Size() == 0 {
 				return
 			}
 
-			modTime := info.ModTime()
 			data, err := os.ReadFile(filePath)
-			if err != nil || len(data) == 0 || int64(len(data)) != info.Size() {
+			if err != nil || len(data) == 0 || int64(len(data)) != before.Size() {
 				return
 			}
 
-			seen[name] = modTime
+			after, err := os.Stat(filePath)
+			if err != nil || before.Size() != after.Size() || before.ModTime() != after.ModTime() {
+				return // file is still changing
+			}
+
+			if !validCompleteFMP4(data, kind) {
+				return // incomplete fMP4
+			}
+
+			fp := fileFingerprint{Size: after.Size(), ModTime: after.ModTime().UnixNano()}
+			if oldFp, ok := seen[name]; ok && oldFp == fp {
+				return
+			}
+
+			seen[name] = fp
 			err = sr.Pub.Publish(sr.ctx, store.StreamID(sr.sessionID), store.Object{
 				Name:        name,
 				Kind:        kind,
 				ContentType: contentType,
 				Data:        data,
-				PublishedAt: modTime,
+				PublishedAt: after.ModTime(),
+				Complete:    true,
 			})
 			if err == nil {
 				sr.logger.Debug().Str("file", name).Int("bytes", len(data)).Msg("mirrored finalized file to shadow store")
@@ -178,11 +193,23 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 			select {
 			case <-sr.ctx.Done():
 				return
+			case name := <-debounceChan:
+				processFile(name)
 			case err, ok := <-watcherErrors:
 				if !ok {
 					watcherErrors = nil
 				} else if err != nil {
 					sr.logger.Warn().Err(err).Msg("fsnotify watcher error")
+					// Full rescan to heal dropped events
+					entries, _ := os.ReadDir(sessionDir)
+					for _, entry := range entries {
+						if !entry.IsDir() {
+							select {
+							case debounceChan <- entry.Name():
+							case <-sr.ctx.Done():
+							}
+						}
+					}
 				}
 			case event, ok := <-watcherEvents:
 				if !ok {
@@ -190,18 +217,32 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 					continue
 				}
 				name := filepath.Base(event.Name)
-				if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+				if event.Has(fsnotify.Remove) {
 					delete(seen, name)
 				}
-				if event.Has(fsnotify.Create) || event.Has(fsnotify.Write) {
-					processFile(name)
+				if event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) {
+					go func(n string) {
+						timer := time.NewTimer(30 * time.Millisecond)
+						defer timer.Stop()
+
+						select {
+						case <-sr.ctx.Done():
+							return
+						case <-timer.C:
+						}
+
+						select {
+						case <-sr.ctx.Done():
+						case debounceChan <- n:
+						}
+					}(name)
 				}
+				// event.Has(fsnotify.Write) is explicitly ignored to avoid partial reads.
 			case <-fallbackTicker.C:
 				entries, err := os.ReadDir(sessionDir)
 				if err != nil {
 					continue
 				}
-				
 				currentFiles := make(map[string]bool, len(entries))
 				for _, entry := range entries {
 					if entry.IsDir() {
