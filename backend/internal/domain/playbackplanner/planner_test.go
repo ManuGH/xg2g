@@ -386,6 +386,7 @@ func TestPlanNativeSafariKeepsLegacyHEVCCPUFallback(t *testing.T) {
 
 func TestPlanExperimentalAV1PackagingIsHashBound(t *testing.T) {
 	ev := autoTranscodeEvidence("av1")
+	ev.ClientEvidence.Family = "chromium_hlsjs"
 	ev.HostSnapshot.EncoderCapabilities = []HostEncoderCapability{
 		{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30},
 	}

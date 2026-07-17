@@ -716,7 +716,7 @@ func TestService_ProcessIntent_RejectsExplicitHWProfileWhenHwaccelOff(t *testing
 	}
 }
 
-func TestService_ProcessIntent_StartUsesEncodeOnlyForIOSNativeHEVC(t *testing.T) {
+func TestService_ProcessIntent_StartUsesEncodeOnlyForIOSSafariNativeHEVC(t *testing.T) {
 	hardware.SetVAAPIEncoderPreflight(map[string]bool{"hevc_vaapi": true})
 	hardware.SetVAAPIPreflightResult(true)
 	t.Cleanup(func() {
@@ -760,7 +760,7 @@ func TestService_ProcessIntent_StartUsesEncodeOnlyForIOSNativeHEVC(t *testing.T)
 	}
 }
 
-func TestService_ProcessIntent_StartAllowsFullVAAPIForIOSNativeHEVCWhenConfigured(t *testing.T) {
+func TestService_ProcessIntent_StartAllowsFullVAAPIForIOSSafariNativeHEVCWhenConfigured(t *testing.T) {
 	t.Setenv("XG2G_IOS_NATIVE_HEVC_HW_MODE", "full")
 
 	hardware.SetVAAPIEncoderPreflight(map[string]bool{"hevc_vaapi": true})

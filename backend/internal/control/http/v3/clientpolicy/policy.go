@@ -162,6 +162,33 @@ func AllowExperimentalNativeAV1TransportStreamWithPolicy(
 	return true
 }
 
+// AllowPlannerExperimentalAV1MPEGTS evaluates whether the client capabilities
+// support experimental AV1 in MPEG-TS without inspecting legacy target profiles.
+func AllowPlannerExperimentalAV1MPEGTS(
+	resolvedCaps capabilities.PlaybackCapabilities,
+	enabled bool,
+) bool {
+	if normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientSafariNative ||
+		normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientIOSSafariNative {
+		return false
+	}
+	if !enabled {
+		return false
+	}
+	switch normalize.Token(resolvedCaps.ClientCapsSource) {
+	case capabilities.ClientCapsSourceRuntime, capabilities.ClientCapsSourceRuntimePlusFam:
+	default:
+		return false
+	}
+	if !hasToken(resolvedCaps.VideoCodecs, "av1") {
+		return false
+	}
+	if !hasToken(resolvedCaps.Containers, "ts") && !hasToken(resolvedCaps.Containers, "mpegts") {
+		return false
+	}
+	return true
+}
+
 func hasToken(values []string, want string) bool {
 	want = normalize.Token(want)
 	if want == "" {

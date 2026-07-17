@@ -42,7 +42,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			if codec, ok := selectAutoTranscodeVideoCodec(ev); ok {
 				plan.Video.Codec = codec
 				autoTranscodeProfile = true
-				if codec == "av1" && ev.OperatorPolicy.ExperimentalAV1MPEGTS {
+				if codec == "av1" && ev.OperatorPolicy.ExperimentalAV1MPEGTS && !nativeWebKitClient(ev.ClientEvidence.Family) {
 					plan.Packaging.Container = "mpegts"
 				} else {
 					plan.Packaging.Container = "fmp4"

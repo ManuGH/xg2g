@@ -59,6 +59,12 @@ type PlaybackInfoRequest struct {
 	Capabilities     *capabilities.PlaybackCapabilities
 }
 
+// PlannerEvaluation holds the paired evidence snapshot and resulting plan.
+type PlannerEvaluation struct {
+	Evidence playbackplanner.PlaybackEvidence
+	Result   playbackplanner.PlanningResult
+}
+
 // PlaybackInfoResult holds the domain-level inputs and outputs needed by the HTTP adapter.
 type PlaybackInfoResult struct {
 	SourceRef                 string
@@ -75,9 +81,8 @@ type PlaybackInfoResult struct {
 	RuntimePolicyConstraints  []string
 	RuntimeProbeSuccessStreak int
 	RuntimeProbeFailureStreak int
-	// PlannerEvidence is the immutable snapshot evaluated by shadow mode. The
-	// HTTP adapter may synchronously plan it when receipt handoff is enabled.
-	PlannerEvidence *playbackplanner.PlaybackEvidence
+	// PlannerEvaluation holds the immutable evidence and plan evaluated by the new planner.
+	PlannerEvaluation *PlannerEvaluation
 }
 
 type PlaybackInfoProblem struct {

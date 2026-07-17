@@ -5,9 +5,8 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/playbackreceipt"
-	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
-	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
 var (
@@ -72,7 +71,36 @@ func NewPlanningHandoffStore(cfg PlanningHandoffStoreConfig) *PlanningHandoffSto
 	})}
 }
 
-func (s *PlanningHandoffStore) Issue(req PlanningHandoffIssue) (PlanningHandoff, error) {
+func (s *PlanningHandoffStore) IssuePlanned(req PlanningHandoffIssue) (PlanningHandoff, error) {
+	if req.Result.Plan.Decision != playbackplanner.DecisionAllow || req.Result.Plan.Outcome != playbackplanner.DecisionAllow {
+		return PlanningHandoff{}, fmt.Errorf("planner receipt cannot authorize decision %q outcome %q: %w", req.Result.Plan.Decision, req.Result.Plan.Outcome, ErrInvalidPlanningHandoff)
+	}
+	if req.Result.Trace.PlannerVersion != playbackplanner.PlannerVersion {
+		return PlanningHandoff{}, fmt.Errorf("planner version mismatch %q vs %q: %w", req.Result.Trace.PlannerVersion, playbackplanner.PlannerVersion, ErrPlanningVersionMismatch)
+	}
+	evHash, err := req.Evidence.Hash()
+	if err != nil {
+		return PlanningHandoff{}, fmt.Errorf("hash evidence: %w", err)
+	}
+	if evHash != req.Result.Trace.EvidenceHash {
+		return PlanningHandoff{}, fmt.Errorf("evidence hash mismatch: %w", ErrPlanningHashMismatch)
+	}
+	if req.PolicyVersion != req.Evidence.PolicyVersion || req.PolicyVersion != req.Result.Trace.PolicyVersion {
+		return PlanningHandoff{}, fmt.Errorf("policy version mismatch across issue (%q), evidence (%q), and trace (%q): %w", req.PolicyVersion, req.Evidence.PolicyVersion, req.Result.Trace.PolicyVersion, ErrPlanningVersionMismatch)
+	}
+	if normalize.ServiceRef(req.Evidence.SourceIdentity) != normalize.ServiceRef(req.ServiceRef) {
+		return PlanningHandoff{}, fmt.Errorf("service ref mismatch %q vs %q: %w", req.Evidence.SourceIdentity, req.ServiceRef, ErrPlanningBindingMismatch)
+	}
+	if req.Evidence.Scope != req.Scope {
+		return PlanningHandoff{}, fmt.Errorf("scope mismatch %q vs %q: %w", req.Evidence.Scope, req.Scope, ErrPlanningBindingMismatch)
+	}
+	if err := validatePlannerExecutionPlan(req.Result.Plan); err != nil {
+		return PlanningHandoff{}, fmt.Errorf("invalid execution plan: %w", err)
+	}
+	return s.issue(req)
+}
+
+func (s *PlanningHandoffStore) issue(req PlanningHandoffIssue) (PlanningHandoff, error) {
 	record, err := s.store.Issue(playbackreceipt.IssueRequest{
 		Evidence:      req.Evidence,
 		Result:        req.Result,
@@ -82,31 +110,6 @@ func (s *PlanningHandoffStore) Issue(req PlanningHandoffIssue) (PlanningHandoff,
 		PolicyVersion: req.PolicyVersion,
 	})
 	return planningHandoffFromRecord(record), err
-}
-
-// IssueEquivalent evaluates the immutable evidence and issues a handoff only
-// when the planner agrees with the fully resolved legacy decision.
-func (s *PlanningHandoffStore) IssueEquivalent(evidence playbackplanner.PlaybackEvidence, legacyDecision *decision.Decision, principalID, serviceRef, scope string) (PlanningHandoff, error) {
-	result, err := playbackplanner.Plan(evidence)
-	if err != nil {
-		return PlanningHandoff{}, fmt.Errorf("plan playback evidence: %w", err)
-	}
-	legacy := playbackshadow.ComparableFromLegacy(legacyDecision)
-	planned := playbackshadow.ComparableFromPlanner(result.Plan)
-	if blockers := playbackshadow.UnexplainedDiffCodesWithEvidence(legacy, planned, evidence); len(blockers) > 0 {
-		return PlanningHandoff{}, fmt.Errorf("planner receipt blocked by unexplained diffs: %v", blockers)
-	}
-	if result.Plan.Decision != playbackplanner.DecisionAllow {
-		return PlanningHandoff{}, fmt.Errorf("planner receipt cannot authorize outcome %q", result.Plan.Decision)
-	}
-	return s.Issue(PlanningHandoffIssue{
-		Evidence:      evidence,
-		Result:        result,
-		PrincipalID:   principalID,
-		ServiceRef:    serviceRef,
-		Scope:         scope,
-		PolicyVersion: result.Trace.PolicyVersion,
-	})
 }
 
 func (s *PlanningHandoffStore) Resolve(binding PlanningHandoffBinding) (PlanningHandoff, error) {

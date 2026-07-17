@@ -103,14 +103,23 @@ func selectAutoTranscodeVideoCodec(ev PlaybackEvidence) (string, bool) {
 		})
 	} else {
 		sort.SliceStable(candidates, func(i, j int) bool {
-			// Legacy native-HLS selection deliberately keeps a CPU HEVC path
-			// ahead of the generic H.264 fallback when HEVC hardware is absent.
-			// AV1 hardware candidates still compete by measured probe time.
-			if candidates[i].nativeCPUFallback && candidates[j].codec == "h264" {
-				return true
-			}
-			if candidates[j].nativeCPUFallback && candidates[i].codec == "h264" {
-				return false
+			if nativeWebKitClient(ev.ClientEvidence.Family) {
+				if candidates[i].codec != "h264" && candidates[j].codec == "h264" {
+					return true
+				}
+				if candidates[j].codec != "h264" && candidates[i].codec == "h264" {
+					return false
+				}
+			} else {
+				// Legacy native-HLS selection deliberately keeps a CPU HEVC path
+				// ahead of the generic H.264 fallback when HEVC hardware is absent.
+				// AV1 hardware candidates still compete by measured probe time.
+				if candidates[i].nativeCPUFallback && candidates[j].codec == "h264" {
+					return true
+				}
+				if candidates[j].nativeCPUFallback && candidates[i].codec == "h264" {
+					return false
+				}
 			}
 			if candidates[i].probeElapsedMS != candidates[j].probeElapsedMS {
 				return candidates[i].probeElapsedMS < candidates[j].probeElapsedMS

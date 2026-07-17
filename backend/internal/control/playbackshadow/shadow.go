@@ -335,20 +335,20 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 			} else if legacy.AudioMode == "copy" && planner.AudioMode == "transcode" &&
 				plannerTranscodesDolbyForBrowser(planner, evidence) {
 				item.Disposition = DiffAccepted
-				item.Reason = "browser_cannot_decode_copied_dolby_audio"
+				item.Reason = playbackplanner.ReasonBrowserCannotDecodeDolby
 			}
 		case "audio_codec_mismatch":
 			if legacy.AudioMode == "copy" && planner.AudioMode == "transcode" &&
 				plannerTranscodesDolbyForBrowser(planner, evidence) {
 				item.Disposition = DiffAccepted
-				item.Reason = "browser_cannot_decode_copied_dolby_audio"
+				item.Reason = playbackplanner.ReasonBrowserCannotDecodeDolby
 			}
 		case "mode_mismatch":
 			if legacy.Mode == "remux" && planner.Mode == "transcode" &&
 				planner.VideoMode == "copy" && planner.AudioMode == "transcode" &&
 				plannerTranscodesDolbyForBrowser(planner, evidence) {
 				item.Disposition = DiffAccepted
-				item.Reason = "browser_cannot_decode_copied_dolby_audio"
+				item.Reason = playbackplanner.ReasonBrowserCannotDecodeDolby
 			}
 		case "video_mode_mismatch":
 			if legacy.Mode == "transcode" && planner.Mode == "transcode" &&
@@ -383,33 +383,19 @@ func isConcreteHLSSegmentContainer(value string) bool {
 	return value == "fmp4" || value == "mpegts"
 }
 
-// plannerTranscodesDolbyForBrowser mirrors the planner's rule that browser
-// clients cannot decode copied AC-3/E-AC-3 (WebKit's canPlayType over-reports
-// Dolby): the planner deliberately diverges from legacy by transcoding that
-// audio to AAC, which is an intended, explained difference.
+// plannerTranscodesDolbyForBrowser asks the planner's capability truth table
+// (the single source of the veto) whether the source audio claim was
+// overridden for this client — the planner then deliberately diverges from
+// legacy by transcoding to AAC, which is an intended, explained difference.
 func plannerTranscodesDolbyForBrowser(planner ComparablePlaybackPlan, evidence *playbackplanner.PlaybackEvidence) bool {
 	if evidence == nil {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(evidence.SourceTruth.AudioCodec)) {
-	case "ac3", "ac-3", "eac3", "ec-3":
-	default:
 		return false
 	}
 	if !strings.EqualFold(strings.TrimSpace(planner.AudioCodec), "aac") {
 		return false
 	}
-	ce := evidence.ClientEvidence
-	if strings.EqualFold(strings.TrimSpace(ce.PreferredEngine), "hlsjs") {
-		return true
-	}
-	family := strings.ToLower(ce.Family)
-	for _, marker := range []string{"safari", "chrom", "firefox", "webkit", "ios"} {
-		if strings.Contains(family, marker) {
-			return true
-		}
-	}
-	return false
+	reason, vetoed := playbackplanner.VetoedCapability("audio", evidence.SourceTruth.AudioCodec, evidence.ClientEvidence)
+	return vetoed && reason == playbackplanner.ReasonBrowserCannotDecodeDolby
 }
 
 func UnexplainedDiffCodes(legacy, planner ComparablePlaybackPlan) []string {

@@ -4,45 +4,53 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	controlauth "github.com/ManuGH/xg2g/internal/control/auth"
 	v3auth "github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
-	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
-func (s *Server) issuePlannerReceipt(playbackInfo v3recordings.PlaybackInfoResult, req v3recordings.PlaybackInfoRequest, schemaType string) (*v3intents.PlanningHandoff, error) {
-	// EPG badges are passive grid previews. They never proceed to /intents, so
-	// issuing a short-lived start receipt only creates fan-out pressure and can
-	// make an otherwise harmless preview fail when receipt enforcement is on.
+func (s *Server) issuePlannerReceipt(playbackInfo v3recordings.PlaybackInfoResult, req v3recordings.PlaybackInfoRequest, schemaType string, reqID string) (*v3intents.PlanningHandoff, error) {
 	if v3recordings.PlaybackInfoRequestContext(req) == v3recordings.PlaybackInfoContextEpgBadge {
 		return nil, nil
 	}
-
-	s.mu.RLock()
-	enabled := s.plannerReceiptEnabled
-	store := s.plannerReceiptStore
-	s.mu.RUnlock()
-	if !enabled || schemaType != "live" || playbackInfo.Decision == nil || playbackInfo.Decision.Mode == decision.ModeDeny {
+	if schemaType != "live" {
 		return nil, nil
 	}
+	s.mu.RLock()
+	store := s.plannerReceiptStore
+	s.mu.RUnlock()
 	if store == nil {
-		return nil, fmt.Errorf("planner receipt store is not initialized")
+		s.mu.Lock()
+		if s.plannerReceiptStore == nil {
+			s.plannerReceiptStore = v3intents.NewPlanningHandoffStore(v3intents.PlanningHandoffStoreConfig{
+				Capacity: 2048,
+				TTL:      60 * time.Second,
+			})
+		}
+		store = s.plannerReceiptStore
+		s.mu.Unlock()
 	}
-	if playbackInfo.PlannerEvidence == nil {
-		return nil, fmt.Errorf("planner evidence is unavailable")
+	if playbackInfo.PlannerEvaluation == nil {
+		return nil, fmt.Errorf("planner evaluation is unavailable")
+	}
+	if playbackInfo.PlannerEvaluation.Result.Plan.Decision != playbackplanner.DecisionAllow {
+		return nil, nil
 	}
 
-	record, err := store.IssueEquivalent(
-		*playbackInfo.PlannerEvidence,
-		playbackInfo.Decision,
-		req.PrincipalID,
-		normalize.ServiceRef(playbackInfo.SourceRef),
-		"live",
-	)
+	record, err := store.IssuePlanned(v3intents.PlanningHandoffIssue{
+		Evidence:      playbackInfo.PlannerEvaluation.Evidence,
+		Result:        playbackInfo.PlannerEvaluation.Result,
+		PrincipalID:   req.PrincipalID,
+		ServiceRef:    normalize.ServiceRef(playbackInfo.SourceRef),
+		Scope:         "live",
+		PolicyVersion: playbackInfo.PlannerEvaluation.Result.Trace.PolicyVersion,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +59,6 @@ func (s *Server) issuePlannerReceipt(playbackInfo v3recordings.PlaybackInfoResul
 
 func (s *Server) resolvePlannerReceipt(w http.ResponseWriter, r *http.Request, claims *v3auth.TokenClaims, serviceRef string) (*v3intents.PlanningHandoff, bool) {
 	s.mu.RLock()
-	enabled := s.plannerReceiptEnabled
 	required := s.plannerReceiptRequired
 	store := s.plannerReceiptStore
 	s.mu.RUnlock()
@@ -68,7 +75,7 @@ func (s *Server) resolvePlannerReceipt(w http.ResponseWriter, r *http.Request, c
 		writeRegisteredProblem(w, r, http.StatusConflict, "intent/planner-receipt-invalid", "Playback Info Refresh Required", problemcode.CodePlannerReceiptInvalid, "The decision token contains an incomplete planner receipt; refresh playback info", nil)
 		return nil, true
 	}
-	if !enabled || store == nil {
+	if store == nil {
 		writeRegisteredProblem(w, r, http.StatusConflict, "intent/planner-receipt-unavailable", "Playback Info Refresh Required", problemcode.CodePlannerReceiptInvalid, "The planner receipt is no longer available; refresh playback info", nil)
 		return nil, true
 	}

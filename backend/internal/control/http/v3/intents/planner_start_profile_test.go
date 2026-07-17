@@ -125,7 +125,7 @@ func TestResolvePlannerStartProfilePreservesCodecQualityModeWhenTargetIsUnset(t 
 	require.Equal(t, 10000, resolution.profileSpec.VideoBufSizeK)
 }
 
-func TestResolvePlannerStartProfileAppliesIOSNativeHEVCExecutionPolicy(t *testing.T) {
+func TestResolvePlannerStartProfileAppliesIOSSafariNativeHEVCExecutionPolicy(t *testing.T) {
 	tests := []struct {
 		name          string
 		mode          string

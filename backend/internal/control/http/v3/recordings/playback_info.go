@@ -2,6 +2,7 @@ package recordings
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -65,6 +66,34 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	hostPressure := s.deps.HostPressure(ctx)
 	operatorPolicy, runtimeFeedbackPolicy := s.applyPlaybackFeedbackPolicy(ctx, sourceRef, req, truth, resolvedCaps, hostContext, hostPressure, operatorPolicy)
 
+	if req.SchemaType == "live" {
+		plannerEval, err := s.buildPlannerEvaluation(req, sourceRef, truth, liveTruth, resolvedCaps, hostContext, hostPressure, operatorPolicy)
+		if err != nil {
+			return PlaybackInfoResult{}, classifyPlannerError(err)
+		}
+		hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, hostContext, sourceRef, req, truth, liveTruth, resolvedCaps)
+
+		s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, nil, hostFingerprint, deviceFingerprint, sourceFingerprint, plannerEval)
+
+		return PlaybackInfoResult{
+			SourceRef:                 sourceRef,
+			Truth:                     truth,
+			ResolvedCapabilities:      resolvedCaps,
+			Decision:                  nil,
+			ClientProfile:             req.ClientProfile,
+			OperatorRuleName:          operatorRuleName,
+			OperatorRuleScope:         operatorRuleScope,
+			RuntimePolicyAction:       playbackPolicyActionName(runtimeFeedbackPolicy),
+			RuntimePolicyPhase:        playbackPolicyPhaseName(runtimeFeedbackPolicy),
+			RuntimeProbeCandidate:     playbackPolicyProbeCandidateName(runtimeFeedbackPolicy),
+			RuntimePolicyReasons:      playbackPolicyReasonNames(runtimeFeedbackPolicy),
+			RuntimePolicyConstraints:  playbackPolicyConstraintNames(runtimeFeedbackPolicy),
+			RuntimeProbeSuccessStreak: playbackPolicyProbeSuccessStreak(runtimeFeedbackPolicy),
+			RuntimeProbeFailureStreak: playbackPolicyProbeFailureStreak(runtimeFeedbackPolicy),
+			PlannerEvaluation:         plannerEval,
+		}, nil
+	}
+
 	input := buildDecisionInput(
 		req,
 		truth,
@@ -79,7 +108,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	_, dec, prob := decision.Decide(ctx, input, req.SchemaType)
 	if prob != nil {
 		return PlaybackInfoResult{}, &PlaybackInfoError{
-			Kind: PlaybackInfoErrorProblem,
+			Kind:    PlaybackInfoErrorProblem,
 			Problem: &PlaybackInfoProblem{
 				Status: prob.Status,
 				Type:   prob.Type,
@@ -94,10 +123,15 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	applyPlaybackTransportPolicyWithPolicy(req, resolvedCaps, dec, s.profileResolver.ConfigSnapshot().ExperimentalAV1MPEGTS)
 	hostFingerprint, deviceFingerprint, sourceFingerprint := s.rememberCapabilitySnapshots(ctx, hostContext, sourceRef, req, truth, liveTruth, resolvedCaps)
 	s.recordDecisionAudit(ctx, hostContext, sourceRef, req, resolvedCaps, input, dec)
-	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint)
 
-	// Phase 2c: Shadow Observer
-	plannerEvidence := s.observePlannerShadow(req, sourceRef, truth, liveTruth, resolvedCaps, hostContext, hostPressure, operatorPolicy, dec)
+	var plannerEval *PlannerEvaluation
+	if s.observer != nil && PlaybackInfoRequestContext(req) != PlaybackInfoContextEpgBadge {
+		plannerEval, _ = s.buildPlannerEvaluation(req, sourceRef, truth, liveTruth, resolvedCaps, hostContext, hostPressure, operatorPolicy)
+		if plannerEval != nil {
+			s.submitPlannerShadowObservation(plannerEval.Evidence, dec, req)
+		}
+	}
+	s.recordCapabilityObservation(ctx, sourceRef, req, truth, resolvedCaps, dec, hostFingerprint, deviceFingerprint, sourceFingerprint, plannerEval)
 
 	return PlaybackInfoResult{
 		SourceRef:                 sourceRef,
@@ -114,8 +148,21 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		RuntimePolicyConstraints:  playbackPolicyConstraintNames(runtimeFeedbackPolicy),
 		RuntimeProbeSuccessStreak: playbackPolicyProbeSuccessStreak(runtimeFeedbackPolicy),
 		RuntimeProbeFailureStreak: playbackPolicyProbeFailureStreak(runtimeFeedbackPolicy),
-		PlannerEvidence:           plannerEvidence,
+		PlannerEvaluation:         plannerEval,
 	}, nil
+}
+
+func classifyPlannerError(err error) *PlaybackInfoError {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, playbackplanner.ErrRuleNotImplemented) {
+		return &PlaybackInfoError{Kind: PlaybackInfoErrorUnsupported, Message: err.Error(), Cause: err}
+	}
+	if errors.Is(err, playbackplanner.ErrInvalidEvidence) {
+		return &PlaybackInfoError{Kind: PlaybackInfoErrorUnverified, Message: err.Error(), Cause: err}
+	}
+	return &PlaybackInfoError{Kind: PlaybackInfoErrorInternal, Message: err.Error(), Cause: err}
 }
 
 func playbackPolicyActionName(policy *playbackFeedbackPolicy) string {
@@ -251,9 +298,6 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 		requestContext := PlaybackInfoRequestContext(req)
 		truthResolution := resolveLiveTruthState(subjectID, source, requestContext)
 		if truthResolution.Verified() && truthResolution.Stale && probeAllowedForContext(requestContext) {
-			// Stale-while-revalidate: the cached truth is being served, so only
-			// kick a detached background probe to re-verify it. epg_badge fan-out
-			// stays excluded (probeAllowedForContext) to avoid relay probe storms.
 			if probeSource, ok := source.(channelTruthProbeSource); ok {
 				s.refreshLiveTruthAsync(ctx, probeSource, subjectID)
 			}
@@ -264,8 +308,6 @@ func (s *Service) resolveSubjectTruth(ctx context.Context, req PlaybackInfoReque
 				probedCap, found, completed, probeErr := s.probeLiveTruthBounded(ctx, probeSource, subjectID)
 				switch {
 				case !completed:
-					// The probe exceeded the interactive budget (cold relay / descrambler
-					// not yet locked). It keeps running in the background to populate the
 					// persistent truth cache, so the client's retry is served from cache
 					// instead of freezing here for ~20-33s.
 					evt := log.L().Info().
@@ -649,7 +691,7 @@ func benchmarkProfileIsAudioOnly(source decision.Source, caps decision.Capabilit
 	return decision.CanKeepVideoCopy(source, caps) && !decision.CanKeepAudioCopy(source, caps)
 }
 
-func (s *Service) observePlannerShadow(
+func (s *Service) buildPlannerEvaluation(
 	req PlaybackInfoRequest,
 	sourceRef string,
 	truth playback.MediaTruth,
@@ -658,15 +700,7 @@ func (s *Service) observePlannerShadow(
 	hostContext requestHostContext,
 	hostPressure playbackprofile.HostPressureAssessment,
 	operatorPolicy config.PlaybackOperatorConfig,
-	dec *decision.Decision,
-) *playbackplanner.PlaybackEvidence {
-	// EPG badges are passive fan-out requests and never start playback. Keeping
-	// them out of shadow mode prevents grid refreshes from dominating cutover
-	// metrics with plans that will never be consumed.
-	if s.observer == nil || PlaybackInfoRequestContext(req) == PlaybackInfoContextEpgBadge {
-		return nil
-	}
-
+) (*PlannerEvaluation, error) {
 	scope := "recording"
 	if req.SubjectKind == PlaybackSubjectLive {
 		scope = "live"
@@ -717,8 +751,6 @@ func (s *Service) observePlannerShadow(
 		availableEngines = append(availableEngines, "hls")
 	}
 
-	// Map network context exactly where provided by resolvedCaps.NetworkContext (DownlinkKbps and InternetValidated).
-	// RTTMillis, ThroughputKbps, and PacketLossRate are kept at 0 (unreported/unknown) as NetworkContext does not currently supply them.
 	var downlink, rtt int
 	var internetValidated bool
 	if resolvedCaps.NetworkContext != nil {
@@ -730,15 +762,10 @@ func (s *Service) observePlannerShadow(
 
 	autoTranscodeVideoCodecs := plannerAutoTranscodeVideoCodecs(req, resolvedCaps, s.clientAV1Disabled)
 	profilePolicy := s.profileResolver.ConfigSnapshot()
-	experimentalAV1MPEGTS := false
-	if dec != nil && dec.TargetProfile != nil {
-		experimentalAV1MPEGTS = clientpolicy.AllowExperimentalNativeAV1TransportStreamWithPolicy(
-			resolvedCaps,
-			dec.Selected.VideoCodec,
-			*dec.TargetProfile,
-			profilePolicy.ExperimentalAV1MPEGTS,
-		)
-	}
+	experimentalAV1MPEGTS := clientpolicy.AllowPlannerExperimentalAV1MPEGTS(
+		resolvedCaps,
+		profilePolicy.ExperimentalAV1MPEGTS,
+	)
 	networkCaptureTime := int64(0)
 	if resolvedCaps.NetworkContext != nil {
 		networkCaptureTime = now.UnixMilli()
@@ -798,16 +825,29 @@ func (s *Service) observePlannerShadow(
 
 	ev, err := playbackshadow.BuildPlaybackEvidence(legacyInput)
 	if err != nil {
-		log.L().Debug().Err(err).Msg("failed to build playback evidence for shadow observer")
-		return nil
+		log.L().Debug().Err(err).Msg("failed to build playback evidence for planner")
+		return nil, err
 	}
+	res, err := playbackplanner.Plan(ev)
+	if err != nil {
+		log.L().Debug().Err(err).Msg("failed to evaluate playback planner")
+		return nil, err
+	}
+	return &PlannerEvaluation{
+		Evidence: ev,
+		Result:   res,
+	}, nil
+}
 
+func (s *Service) submitPlannerShadowObservation(ev playbackplanner.PlaybackEvidence, dec *decision.Decision, req PlaybackInfoRequest) {
+	if s.observer == nil || dec == nil || PlaybackInfoRequestContext(req) == PlaybackInfoContextEpgBadge {
+		return
+	}
 	obs := playbackshadow.ShadowObservation{
 		Evidence: ev,
 		Legacy:   playbackshadow.ComparableFromLegacy(dec),
 	}
 	s.observer.TryObserve(obs)
-	return &ev
 }
 
 func plannerAutoTranscodeVideoCodecs(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, clientAV1Disabled bool) []string {

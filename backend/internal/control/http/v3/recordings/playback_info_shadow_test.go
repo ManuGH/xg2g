@@ -210,8 +210,8 @@ func TestResolvePlaybackInfo_ShadowObserver_SkipsPassiveEpgBadge(t *testing.T) {
 	})
 
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
-	require.Nil(t, res.PlannerEvidence)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
 	require.Empty(t, obs.observations)
 }
 
@@ -274,7 +274,7 @@ func TestResolvePlaybackInfo_Shadow_InterlacedAutoProfileMatchesSignedPlan(t *te
 		SubjectID:   serviceRef,
 		SubjectKind: PlaybackSubjectLive,
 		APIVersion:  "v3.1",
-		SchemaType:  "live",
+		SchemaType:  "compact",
 		RequestID:   "req-interlaced-auto",
 		Capabilities: &capabilities.PlaybackCapabilities{
 			CapabilitiesVersion: 3,
@@ -373,7 +373,7 @@ func TestResolvePlaybackInfo_Shadow_NativeSafariHEVCCPUFallbackMatchesSignedPlan
 		SubjectID:   serviceRef,
 		SubjectKind: PlaybackSubjectLive,
 		APIVersion:  "v3.1",
-		SchemaType:  "live",
+		SchemaType:  "compact",
 		RequestID:   "req-native-hevc-cpu-fallback",
 		Capabilities: &capabilities.PlaybackCapabilities{
 			CapabilitiesVersion:  3,

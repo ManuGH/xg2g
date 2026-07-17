@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/playback"
+	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
@@ -99,33 +100,62 @@ func (s *Service) rememberCapabilitySnapshots(ctx context.Context, hostContext r
 	return hostFingerprint, deviceFingerprint, sourceFingerprint
 }
 
-func (s *Service) recordCapabilityObservation(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, resolved capabilities.PlaybackCapabilities, dec *decision.Decision, hostFingerprint string, deviceFingerprint string, sourceFingerprint string) {
+func (s *Service) recordCapabilityObservation(ctx context.Context, sourceRef string, req PlaybackInfoRequest, truth playback.MediaTruth, resolved capabilities.PlaybackCapabilities, dec *decision.Decision, hostFingerprint string, deviceFingerprint string, sourceFingerprint string, plannerEval *PlannerEvaluation) {
 	registry := s.deps.CapabilityRegistry()
-	if registry == nil || dec == nil {
+	if registry == nil {
 		return
 	}
 
-	observation := capreg.PlaybackObservation{
-		ObservedAt:         time.Now().UTC(),
-		RequestID:          req.RequestID,
-		ObservationKind:    "decision",
-		Outcome:            "predicted",
-		SourceRef:          strings.TrimSpace(sourceRef),
-		SourceFingerprint:  strings.TrimSpace(sourceFingerprint),
-		SubjectKind:        string(req.SubjectKind),
-		RequestedIntent:    dec.Trace.RequestedIntent,
-		ResolvedIntent:     dec.Trace.ResolvedIntent,
-		Mode:               string(dec.Mode),
-		SelectedContainer:  dec.Selected.Container,
-		SelectedVideoCodec: dec.Selected.VideoCodec,
-		SelectedAudioCodec: dec.Selected.AudioCodec,
-		SourceWidth:        truth.Width,
-		SourceHeight:       truth.Height,
-		SourceFPS:          truth.FPS,
-		HostFingerprint:    hostFingerprint,
-		DeviceFingerprint:  deviceFingerprint,
-		ClientCapsHash:     capreg.HashCapabilitiesSnapshot(resolved),
-		Network:            cloneNetworkContext(resolveNetworkContext(req, resolved)),
+	var observation capreg.PlaybackObservation
+	if dec != nil {
+		observation = capreg.PlaybackObservation{
+			ObservedAt:         time.Now().UTC(),
+			RequestID:          req.RequestID,
+			ObservationKind:    "decision",
+			Outcome:            "predicted",
+			SourceRef:          strings.TrimSpace(sourceRef),
+			SourceFingerprint:  strings.TrimSpace(sourceFingerprint),
+			SubjectKind:        string(req.SubjectKind),
+			RequestedIntent:    dec.Trace.RequestedIntent,
+			ResolvedIntent:     dec.Trace.ResolvedIntent,
+			Mode:               string(dec.Mode),
+			SelectedContainer:  dec.Selected.Container,
+			SelectedVideoCodec: dec.Selected.VideoCodec,
+			SelectedAudioCodec: dec.Selected.AudioCodec,
+			SourceWidth:        truth.Width,
+			SourceHeight:       truth.Height,
+			SourceFPS:          truth.FPS,
+			HostFingerprint:    hostFingerprint,
+			DeviceFingerprint:  deviceFingerprint,
+			ClientCapsHash:     capreg.HashCapabilitiesSnapshot(resolved),
+			Network:            cloneNetworkContext(resolveNetworkContext(req, resolved)),
+		}
+	} else if plannerEval != nil {
+		comparable := playbackshadow.ComparableFromPlanner(plannerEval.Result.Plan)
+		observation = capreg.PlaybackObservation{
+			ObservedAt:         time.Now().UTC(),
+			RequestID:          req.RequestID,
+			ObservationKind:    "decision",
+			Outcome:            "predicted",
+			SourceRef:          strings.TrimSpace(sourceRef),
+			SourceFingerprint:  strings.TrimSpace(sourceFingerprint),
+			SubjectKind:        string(req.SubjectKind),
+			RequestedIntent:    plannerEval.Evidence.RequestedIntent,
+			ResolvedIntent:     comparable.Engine,
+			Mode:               comparable.Mode,
+			SelectedContainer:  comparable.Container,
+			SelectedVideoCodec: comparable.VideoCodec,
+			SelectedAudioCodec: comparable.AudioCodec,
+			SourceWidth:        truth.Width,
+			SourceHeight:       truth.Height,
+			SourceFPS:          truth.FPS,
+			HostFingerprint:    hostFingerprint,
+			DeviceFingerprint:  deviceFingerprint,
+			ClientCapsHash:     capreg.HashCapabilitiesSnapshot(resolved),
+			Network:            cloneNetworkContext(resolveNetworkContext(req, resolved)),
+		}
+	} else {
+		return
 	}
 
 	if err := registry.RecordObservation(ctx, observation); err != nil {
@@ -373,11 +403,15 @@ func hostEncoderCapabilities() []capreg.EncoderCapability {
 		if !ok {
 			continue
 		}
+		probeMS := capability.ProbeElapsed.Milliseconds()
+		if capability.ProbeElapsed > 0 && probeMS == 0 {
+			probeMS = int64(capability.ProbeElapsed)
+		}
 		out = append(out, capreg.EncoderCapability{
 			Codec:          codec,
 			Verified:       capability.Verified,
 			AutoEligible:   capability.AutoEligible,
-			ProbeElapsedMS: capability.ProbeElapsed.Milliseconds(),
+			ProbeElapsedMS: probeMS,
 		})
 	}
 	return out

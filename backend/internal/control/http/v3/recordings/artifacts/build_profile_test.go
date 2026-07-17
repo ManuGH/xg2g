@@ -34,7 +34,7 @@ func TestRecordingTargetProfile_SafariUsesCompatibleFMP4Packaging(t *testing.T) 
 	}
 }
 
-func TestRecordingTargetProfile_AndroidNativeUsesCompatibleFMP4Packaging(t *testing.T) {
+func TestRecordingTargetProfile_AndroidTVNativeUsesCompatibleFMP4Packaging(t *testing.T) {
 	target := recordingTargetProfile("android_native")
 	if target == nil {
 		t.Fatal("expected target profile")

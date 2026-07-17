@@ -62,7 +62,7 @@ func TestHLS_ProfilePropagation(t *testing.T) {
 			expectedProfile: "generic",
 		},
 		{
-			name:            "Explicit_AndroidNative_Query",
+			name:            "Explicit_AndroidTVNative_Query",
 			requestPath:     "/api/v3/recordings/rec1/playlist.m3u8?profile=android_native",
 			userAgent:       "Mozilla/5.0 (Linux; Android 15; sdk_gphone64_arm64 Build/AE3A.240806.005) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36",
 			expectedProfile: "android_native",

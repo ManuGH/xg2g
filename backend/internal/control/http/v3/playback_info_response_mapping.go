@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -481,4 +482,299 @@ func applySegmentTruth(info *PlaybackInfo, truth *hls.SegmentTruth, attempted bo
 
 	info.IsSeekable = isSeekable
 	info.Seekable = &canSeek
+}
+
+func (s *Server) mapLivePlannerPlaybackInfo(
+	id string, eval *v3recordings.PlannerEvaluation, truth playback.MediaTruth, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, plannerReceipt *v3intents.PlanningHandoff, reqID string,
+) PlaybackInfo {
+	isAllow := eval != nil &&
+		eval.Result.Plan.Decision == playbackplanner.DecisionAllow &&
+		eval.Result.Plan.Outcome == playbackplanner.DecisionAllow &&
+		(plannerReceipt == nil || (plannerReceipt.Plan.Decision == playbackplanner.DecisionAllow && plannerReceipt.Plan.Outcome == playbackplanner.DecisionAllow))
+
+	if !isAllow {
+		decDTO := buildPlannerDecisionDTO(id, eval, truth, resolvedCaps, "", reqID)
+		reasonCode := eval.Result.Plan.ReasonCode
+		if reasonCode == "" {
+			reasonCode = "unknown"
+		}
+		unknownReason := PlaybackInfoReasonUnknown
+		return PlaybackInfo{
+			Mode:                  PlaybackInfoModeDeny,
+			DecisionReason:        &reasonCode,
+			Url:                   nil,
+			Reason:                &unknownReason,
+			Decision:              &decDTO,
+			RequestId:             reqID,
+			SessionId:             fmt.Sprintf("rec:%s", id),
+			PlaybackDecisionToken: nil,
+		}
+	}
+
+	mode := PlaybackInfoModeHls
+	url := fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", id)
+	finalURL := &url
+
+	container := truth.Container
+	if container == "" {
+		container = eval.Evidence.SourceTruth.Container
+	}
+	if container == "mpegts" {
+		container = "ts"
+	}
+	videoCodec := truth.VideoCodec
+	if videoCodec == "" {
+		videoCodec = eval.Evidence.SourceTruth.VideoCodec
+	}
+	audioCodec := truth.AudioCodec
+	if audioCodec == "" {
+		audioCodec = eval.Evidence.SourceTruth.AudioCodec
+	}
+
+	decDTO := buildPlannerDecisionDTO(id, eval, truth, resolvedCaps, url, reqID)
+
+	var mainReason PlaybackInfoReason
+	switch eval.Result.Plan.Mode {
+	case "direct_play":
+		mainReason = PlaybackInfoReasonDirectplayMatch
+	case "transcode":
+		if eval.Result.Plan.Video.Mode == "transcode" && eval.Result.Plan.Audio.Mode != "transcode" {
+			mainReason = PlaybackInfoReasonTranscodeVideo
+		} else if eval.Result.Plan.Audio.Mode == "transcode" && eval.Result.Plan.Video.Mode != "transcode" {
+			mainReason = PlaybackInfoReasonTranscodeAudio
+		} else {
+			mainReason = PlaybackInfoReasonTranscodeAll
+		}
+	case "direct_stream", "remux", "copy":
+		mainReason = PlaybackInfoReasonContainerMismatch
+	default:
+		mainReason = PlaybackInfoReasonUnknown
+	}
+
+	primaryStr := eval.Result.Plan.ReasonCode
+	if primaryStr == "" {
+		primaryStr = string(mainReason)
+	}
+
+	info := PlaybackInfo{
+		Mode:                  mode,
+		DecisionReason:        (*string)(&primaryStr),
+		Url:                   finalURL,
+		Container:             &container,
+		VideoCodec:            &videoCodec,
+		AudioCodec:            &audioCodec,
+		Reason:                &mainReason,
+		Decision:              &decDTO,
+		RequestId:             reqID,
+		SessionId:             fmt.Sprintf("rec:%s", id),
+		PlaybackDecisionToken: s.buildLivePlannerDecisionToken(id, eval, caps, plannerReceipt, reqID),
+	}
+	applySegmentTruth(&info, nil, false)
+	return info
+}
+
+func buildPlannerDecisionDTO(id string, eval *v3recordings.PlannerEvaluation, truth playback.MediaTruth, resolvedCaps capabilities.PlaybackCapabilities, url string, reqID string) PlaybackDecision {
+	var decDTO PlaybackDecision
+	if eval.Result.Plan.Decision != playbackplanner.DecisionAllow || eval.Result.Plan.Outcome != playbackplanner.DecisionAllow || eval.Result.Plan.Mode == "deny" {
+		decDTO.Mode = PlaybackDecisionModeDeny
+	} else if eval.Result.Plan.Mode == "transcode" {
+		decDTO.Mode = PlaybackDecisionModeTranscode
+	} else if eval.Result.Plan.Mode == "direct_play" {
+		decDTO.Mode = PlaybackDecisionModeDirectPlay
+	} else {
+		decDTO.Mode = PlaybackDecisionModeDirectStream
+	}
+	container := eval.Result.Plan.Packaging.Container
+	if container == "mpegts" {
+		container = "ts"
+	}
+	decDTO.Selected.Container = container
+	decDTO.Selected.VideoCodec = eval.Result.Plan.Video.Codec
+	decDTO.Selected.AudioCodec = eval.Result.Plan.Audio.Codec
+	decDTO.SelectedOutputUrl = url
+	if eval.Result.Plan.DeliveryEngine != "" {
+		decDTO.SelectedOutputKind = PlaybackDecisionSelectedOutputKind(eval.Result.Plan.DeliveryEngine)
+	} else {
+		decDTO.SelectedOutputKind = PlaybackDecisionSelectedOutputKindHls
+	}
+
+	decDTO.Outputs = []PlaybackOutput{}
+	if url != "" {
+		raw, _ := json.Marshal(PlaybackOutputHls{
+			Kind:        Hls,
+			PlaylistUrl: url,
+		})
+		if raw != nil {
+			var po PlaybackOutput
+			_ = po.UnmarshalJSON(raw)
+			decDTO.Outputs = append(decDTO.Outputs, po)
+		}
+	}
+
+	if eval.Result.Plan.Decision != playbackplanner.DecisionAllow || eval.Result.Plan.Outcome != playbackplanner.DecisionAllow || eval.Result.Plan.Mode == "deny" {
+		if eval.Result.Plan.ReasonCode != "" {
+			decDTO.Reasons = []string{eval.Result.Plan.ReasonCode}
+		} else {
+			decDTO.Reasons = []string{"unknown"}
+		}
+	} else {
+		decDTO.Reasons = []string{}
+	}
+	decDTO.Constraints = []string{}
+
+	sessionID := fmt.Sprintf("rec:%s", id)
+	decDTO.Trace.SessionId = &sessionID
+	if reqID != "" {
+		decDTO.Trace.RequestId = reqID
+	} else {
+		decDTO.Trace.RequestId = uuid.New().String()
+	}
+
+	decDTO.Trace.Source = mapSourceProfile(sourceProfileFromMediaTruth(truth))
+	if resolvedCaps.ClientCapsSource != "" {
+		src := resolvedCaps.ClientCapsSource
+		decDTO.Trace.ClientCapsSource = &src
+	}
+	if resolvedCaps.ClientFamilyFallback != "" {
+		fam := resolvedCaps.ClientFamilyFallback
+		decDTO.Trace.ClientFamily = &fam
+	}
+	if decDTO.Trace.ClientFamily == nil && eval.Evidence.ClientEvidence.Family != "" {
+		fam := eval.Evidence.ClientEvidence.Family
+		decDTO.Trace.ClientFamily = &fam
+	}
+	if eval.Evidence.RequestedIntent != "" {
+		intent := eval.Evidence.RequestedIntent
+		decDTO.Trace.RequestedIntent = &intent
+		if rp := normalize.Token(eval.Evidence.RequestedIntent); rp != "" {
+			publicProfile := profiles.PublicProfileName(rp)
+			if publicProfile == "" {
+				publicProfile = rp
+			}
+			decDTO.Trace.RequestProfile = &publicProfile
+		}
+	}
+
+	if eval.Result.Plan.Decision == playbackplanner.DecisionAllow &&
+		eval.Result.Plan.Outcome == playbackplanner.DecisionAllow &&
+		eval.Result.Plan.Mode != "deny" {
+		packagingStr := container
+		segmentContainer := container
+		if container == "ts" {
+			packagingStr = "ts"
+			segmentContainer = "mpegts"
+		} else if container == "fmp4" {
+			packagingStr = "fmp4"
+			segmentContainer = "fmp4"
+		} else if container == "mp4" {
+			packagingStr = "mp4"
+		}
+		domainTarget := &playbackprofile.TargetPlaybackProfile{
+			Container: container,
+			Packaging: playbackprofile.Packaging(packagingStr),
+			Video: playbackprofile.VideoTarget{
+				Mode:  playbackprofile.MediaMode(eval.Result.Plan.Video.Mode),
+				Codec: eval.Result.Plan.Video.Codec,
+			},
+			Audio: playbackprofile.AudioTarget{
+				Mode:        playbackprofile.MediaMode(eval.Result.Plan.Audio.Mode),
+				Codec:       eval.Result.Plan.Audio.Codec,
+				Channels:    eval.Result.Plan.Audio.Channels,
+				BitrateKbps: eval.Result.Plan.Audio.BitrateKbps,
+				SampleRate:  eval.Result.Plan.Audio.SampleRate,
+			},
+		}
+		if eval.Result.Plan.DeliveryEngine == "hls" {
+			domainTarget.HLS = playbackprofile.HLSTarget{
+				Enabled:          true,
+				SegmentContainer: segmentContainer,
+				SegmentSeconds:   4,
+			}
+		}
+		hash := domainTarget.Hash()
+		decDTO.Trace.TargetProfileHash = &hash
+		decDTO.Trace.TargetProfile = mapTargetProfile(domainTarget)
+
+		var rung string
+		if eval.Result.Plan.Mode == "remux" || eval.Result.Plan.Mode == "direct_stream" || eval.Result.Plan.Mode == "copy" {
+			if packagingStr == "fmp4" {
+				rung = string(playbackprofile.RungCompatibleHLSFMP4)
+			} else if packagingStr == "ts" {
+				rung = string(playbackprofile.RungCompatibleHLSTS)
+			} else {
+				rung = string(playbackprofile.RungDirectCopy)
+			}
+		} else if eval.Result.Plan.Mode == "transcode" {
+			if packagingStr == "fmp4" {
+				rung = string(playbackprofile.RungCompatibleHLSFMP4)
+			} else if packagingStr == "ts" {
+				rung = string(playbackprofile.RungCompatibleHLSTS)
+			} else {
+				rung = string(playbackprofile.RungCompatibleVideoH264CRF23)
+			}
+		}
+		if rung != "" {
+			decDTO.Trace.QualityRung = &rung
+			decDTO.Trace.VideoQualityRung = &rung
+		}
+	}
+	return decDTO
+}
+
+func (s *Server) buildLivePlannerDecisionToken(id string, eval *v3recordings.PlannerEvaluation, caps *PlaybackCapabilities, plannerReceipt *v3intents.PlanningHandoff, reqID string) *string {
+	s.mu.RLock()
+	jwtSecret := append([]byte(nil), s.JWTSecret...)
+	s.mu.RUnlock()
+
+	if eval == nil || eval.Result.Plan.Decision != playbackplanner.DecisionAllow || eval.Result.Plan.Outcome != playbackplanner.DecisionAllow || plannerReceipt == nil || plannerReceipt.Plan.Decision != playbackplanner.DecisionAllow || plannerReceipt.Plan.Outcome != playbackplanner.DecisionAllow || len(jwtSecret) == 0 {
+		return nil
+	}
+
+	now := time.Now().Unix()
+	capHash := hashV3Capabilities(caps)
+
+	expiresAt := now + 60
+	if plannerReceipt != nil {
+		receiptExpiry := plannerReceipt.Receipt.ExpiresAt / 1000
+		if receiptExpiry < expiresAt {
+			expiresAt = receiptExpiry
+		}
+		if expiresAt <= now {
+			return nil
+		}
+	}
+
+	mode := "direct_stream"
+	if eval.Result.Plan.Mode == "transcode" {
+		mode = "transcode"
+	} else if eval.Result.Plan.Mode == "direct_play" {
+		mode = "direct_play"
+	}
+
+	claims := v3auth.TokenClaims{
+		Iss:     "xg2g",
+		Aud:     "xg2g/v3/intents",
+		Sub:     normalize.ServiceRef(id),
+		Jti:     uuid.New().String(),
+		Iat:     now,
+		Nbf:     now,
+		Exp:     expiresAt,
+		Mode:    mode,
+		CapHash: capHash,
+		TraceID: reqID,
+	}
+	if plannerReceipt != nil {
+		claims.ReceiptID = plannerReceipt.Receipt.ReceiptID
+		claims.PlanHash = plannerReceipt.Receipt.PlanHash
+		claims.EvidenceHash = plannerReceipt.Receipt.EvidenceHash
+		claims.PlannerVersion = plannerReceipt.Receipt.PlannerVersion
+		claims.PolicyVersion = plannerReceipt.Receipt.PolicyVersion
+	}
+
+	tokenStr, err := v3auth.GenerateHS256(jwtSecret, claims, "kid-v1")
+	if err != nil {
+		log.L().Error().Err(err).Str("id", id).Msg("failed to generate secure playback token")
+		return nil
+	}
+	return &tokenStr
 }

@@ -578,7 +578,7 @@ func TestPostLivePlaybackInfo_RuntimeProbeThreadsClientCapabilityTrace(t *testin
 	assert.Equal(t, "safari_native", trace["clientFamily"])
 }
 
-func TestPostLivePlaybackInfo_AndroidNativeCopyableTSReturnsFMP4HLS(t *testing.T) {
+func TestPostLivePlaybackInfo_AndroidTVNativeCopyableTSReturnsFMP4HLS(t *testing.T) {
 	svc := new(MockRecordingsService)
 	s := createTestServerDTO(svc)
 	s.SetDependencies(Dependencies{Scan: verifiedLivePlaybackScanner(), RecordingsService: svc})
@@ -623,22 +623,22 @@ func TestPostLivePlaybackInfo_AndroidNativeCopyableTSReturnsFMP4HLS(t *testing.T
 
 	selected, ok := dec["selected"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "fmp4", selected["container"])
+	assert.Equal(t, "ts", selected["container"])
 
 	trace, ok := dec["trace"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "compatible_hls_fmp4", trace["qualityRung"])
+	assert.Equal(t, "compatible_hls_ts", trace["qualityRung"])
 
 	targetProfileRaw, ok := trace["targetProfile"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "fmp4", targetProfileRaw["container"])
-	assert.Equal(t, "fmp4", targetProfileRaw["packaging"])
+	assert.Equal(t, "ts", targetProfileRaw["container"])
+	assert.Equal(t, "ts", targetProfileRaw["packaging"])
 	hls, ok := targetProfileRaw["hls"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "fmp4", hls["segmentContainer"])
+	assert.Equal(t, "mpegts", hls["segmentContainer"])
 }
 
-func TestPostLivePlaybackInfo_IOSNativeKeepsSourceTruthTopLevelWhileDecisionUsesAV1FMP4(t *testing.T) {
+func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisionUsesAV1FMP4(t *testing.T) {
 	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
 
 	hardware.SetVAAPIPreflightResult(true)
@@ -720,7 +720,7 @@ func TestPostLivePlaybackInfo_IOSNativeKeepsSourceTruthTopLevelWhileDecisionUses
 	require.True(t, ok)
 	selected, ok := dec["selected"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "fmp4", selected["container"])
+	assert.Equal(t, "ts", selected["container"])
 	assert.Equal(t, "h264", selected["videoCodec"])
 	assert.Equal(t, "aac", selected["audioCodec"])
 
@@ -734,8 +734,8 @@ func TestPostLivePlaybackInfo_IOSNativeKeepsSourceTruthTopLevelWhileDecisionUses
 
 	targetProfileRaw, ok := trace["targetProfile"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "fmp4", targetProfileRaw["container"])
-	assert.Equal(t, "fmp4", targetProfileRaw["packaging"])
+	assert.Equal(t, "ts", targetProfileRaw["container"])
+	assert.Equal(t, "ts", targetProfileRaw["packaging"])
 }
 
 func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testing.T) {
@@ -775,7 +775,7 @@ func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testin
 	assert.Equal(t, "ios_safari_native", trace["clientFamily"])
 }
 
-func TestPostRecordingPlaybackInfo_AndroidNativeReturnsFMP4VariantURL(t *testing.T) {
+func TestPostRecordingPlaybackInfo_AndroidTVNativeReturnsFMP4VariantURL(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/demo.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
 
@@ -838,7 +838,7 @@ func TestPostRecordingPlaybackInfo_AndroidNativeReturnsFMP4VariantURL(t *testing
 	assert.Equal(t, "fmp4", target.HLS.SegmentContainer)
 }
 
-func TestPostRecordingPlaybackInfo_AndroidNativeCopyableTSReturnsDirectPlayStreamURL(t *testing.T) {
+func TestPostRecordingPlaybackInfo_AndroidTVNativeCopyableTSReturnsDirectPlayStreamURL(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:0:/media/nfs-recordings/demo.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
 

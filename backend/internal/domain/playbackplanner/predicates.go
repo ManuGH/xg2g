@@ -58,47 +58,29 @@ func isContainerCompatible(ev PlaybackEvidence) bool {
 	return contains(ev.ClientEvidence.SupportedContainers, ev.SourceTruth.Container)
 }
 
-// isVideoCodecCompatible checks if the client explicitly supports the source video codec.
+// isVideoCodecCompatible checks if the client supports the source video codec:
+// the client's claim, vetoed by the server-side capability truth table.
 func isVideoCodecCompatible(ev PlaybackEvidence) bool {
 	if ev.SourceTruth.VideoCodec == "" {
 		return true // No video
 	}
+	if _, vetoed := VetoedCapability("video", ev.SourceTruth.VideoCodec, ev.ClientEvidence); vetoed {
+		return false
+	}
 	return contains(ev.ClientEvidence.SupportedVideoCodecs, ev.SourceTruth.VideoCodec)
 }
 
-// isAudioCodecCompatible checks if the client explicitly supports the source audio codec.
+// isAudioCodecCompatible checks if the client supports the source audio codec:
+// the client's claim, vetoed by the server-side capability truth table
+// (see capability_truth.go — browser media APIs over-report codec support).
 func isAudioCodecCompatible(ev PlaybackEvidence) bool {
 	if ev.SourceTruth.AudioCodec == "" {
 		return true // No audio
 	}
-	// Browser audio caps over-report Dolby: WebKit's canPlayType/isTypeSupported
-	// answers "maybe" for ac-3 while neither Safari MSE nor hls.js can actually
-	// decode it — copied AC-3 plays back as silence (observed on ORF2, whose
-	// first audio track is AC-3 5.1). Never copy AC-3/E-AC-3 for browser
-	// clients; the AAC transcode path is the audible one.
-	switch strings.ToLower(strings.TrimSpace(ev.SourceTruth.AudioCodec)) {
-	case "ac3", "ac-3", "eac3", "ec-3":
-		if isBrowserClient(ev.ClientEvidence) {
-			return false
-		}
+	if _, vetoed := VetoedCapability("audio", ev.SourceTruth.AudioCodec, ev.ClientEvidence); vetoed {
+		return false
 	}
 	return contains(ev.ClientEvidence.SupportedAudioCodecs, ev.SourceTruth.AudioCodec)
-}
-
-// isBrowserClient reports whether the evidence describes a browser-hosted
-// player (MSE/hls.js or native WebKit HLS) as opposed to a native app player
-// (e.g. ExoPlayer) that owns its own decoders.
-func isBrowserClient(ce ClientEvidence) bool {
-	if strings.EqualFold(strings.TrimSpace(ce.PreferredEngine), "hlsjs") {
-		return true
-	}
-	family := strings.ToLower(ce.Family)
-	for _, marker := range []string{"safari", "chrom", "firefox", "webkit", "ios"} {
-		if strings.Contains(family, marker) {
-			return true
-		}
-	}
-	return false
 }
 
 // exceedsMaxVideoLimits returns true if the source resolution/framerate exceeds client caps.
