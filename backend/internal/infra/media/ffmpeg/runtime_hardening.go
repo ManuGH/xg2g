@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/config"
 	playbackports "github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
@@ -41,6 +40,9 @@ type runtimeHardeningDecision struct {
 
 func (a *LocalAdapter) FinalizePlan(ctx context.Context, spec ports.StreamSpec, inputURL string) ports.StreamSpec {
 	spec = seedRuntimeMode(spec)
+	if spec.Profile.PlannerBound {
+		return spec
+	}
 	spec = a.applyRuntimeHardeningPlan(ctx, spec, inputURL)
 	if spec.Profile.EffectiveRuntimeMode == "" || spec.Profile.EffectiveRuntimeMode == ports.RuntimeModeUnknown {
 		spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
@@ -113,10 +115,10 @@ func (a *LocalAdapter) evaluateSafariRuntimeRemuxHardening(ctx context.Context, 
 	if strings.TrimSpace(inputURL) == "" {
 		return noRuntimeHardeningDecision()
 	}
-	if shouldForceAnySafariHQForServiceRef(spec, inputURL) {
+	if shouldForceAnySafariHQForServiceRef(spec, inputURL, a.Config) {
 		return noRuntimeHardeningDecision()
 	}
-	if shouldForceSafariCopyForServiceRef(spec, inputURL) {
+	if shouldForceSafariCopyForServiceRef(spec, inputURL, a.Config) {
 		a.Logger.Warn().
 			Str("sessionId", spec.SessionID).
 			Str("service_ref", safariRuntimeServiceRef(spec, inputURL)).
@@ -164,13 +166,13 @@ func (a *LocalAdapter) evaluateSafariRuntimeRemuxHardening(ctx context.Context, 
 }
 
 func (a *LocalAdapter) evaluateSafariRuntimeHQHardening(_ context.Context, spec ports.StreamSpec, inputURL string) runtimeHardeningDecision {
-	if !shouldForceAnySafariHQForServiceRef(spec, inputURL) {
+	if !shouldForceAnySafariHQForServiceRef(spec, inputURL, a.Config) {
 		return noRuntimeHardeningDecision()
 	}
 
-	forceHQ25 := shouldForceSafariHQ25ForServiceRef(spec, inputURL)
-	forceHQ50 := shouldForceSafariHQ50ForServiceRef(spec, inputURL)
-	forceSafariHQProfile := shouldForceSafariHQForServiceRef(spec, inputURL)
+	forceHQ25 := shouldForceSafariHQ25ForServiceRef(spec, inputURL, a.Config)
+	forceHQ50 := shouldForceSafariHQ50ForServiceRef(spec, inputURL, a.Config)
+	forceSafariHQProfile := shouldForceSafariHQForServiceRef(spec, inputURL, a.Config)
 	if forceHQ50 && !forceHQ25 && !forceSafariHQProfile && spec.Profile.TranscodeVideo {
 		a.Logger.Warn().
 			Str("sessionId", spec.SessionID).
@@ -179,7 +181,7 @@ func (a *LocalAdapter) evaluateSafariRuntimeHQHardening(_ context.Context, spec 
 		profile := spec.Profile
 		profile.PolicyModeHint = ports.RuntimeModeHQ50
 		profile.ForceSafariHQ25 = false
-		profile = applySafariHQ50BitrateBudget(profile)
+		profile = applySafariHQ50BitrateBudget(profile, a.Config)
 		return runtimeHardeningDecision{
 			id:            runtimeHardeningPlanRuntimeHQ50Override,
 			source:        ports.RuntimeModeSourceEnvOverride,
@@ -214,8 +216,8 @@ func (a *LocalAdapter) hostBenchmarkClass(profileID string) string {
 }
 
 func (a *LocalAdapter) evaluateAdaptiveTranscodeQualityHardening(_ context.Context, spec ports.StreamSpec, inputURL string) runtimeHardeningDecision {
-	budget, ok := adaptiveTranscodeQualityBudgetFor(spec.Profile)
-	if !ok || !shouldPromoteAdaptiveTranscodeQuality(spec, inputURL, budget) {
+	budget, ok := adaptiveTranscodeQualityBudgetFor(spec.Profile, a.Config)
+	if !ok || !shouldPromoteAdaptiveTranscodeQuality(spec, inputURL, budget, a.Config) {
 		return noRuntimeHardeningDecision()
 	}
 
@@ -299,7 +301,7 @@ func (a *LocalAdapter) evaluateProgressiveHardwareDeinterlaceHardening(ctx conte
 }
 
 func (a *LocalAdapter) evaluateSafariCopyBitstreamHardening(_ context.Context, spec ports.StreamSpec, inputURL string) runtimeHardeningDecision {
-	if spec.Profile.TranscodeVideo || !shouldHardenSafariCopyBitstream(spec, inputURL) {
+	if spec.Profile.TranscodeVideo || !shouldHardenSafariCopyBitstream(spec, inputURL, a.Config) {
 		return noRuntimeHardeningDecision()
 	}
 	return runtimeHardeningDecision{
@@ -351,12 +353,18 @@ func buildSafariRuntimeHQProfile(current ports.ProfileSpec, forceHQ25 bool, forc
 	return next
 }
 
-func applySafariHQ50BitrateBudget(current ports.ProfileSpec) ports.ProfileSpec {
+func applySafariHQ50BitrateBudget(current ports.ProfileSpec, cfg AdapterConfig) ports.ProfileSpec {
 	next := current
 	defaultMaxRateK := maxInt(next.VideoMaxRateK, 12000)
-	next.VideoMaxRateK = envIntBounded("XG2G_SAFARI_HQ50_MAXRATE_K", defaultMaxRateK, 4000, 60000)
+	next.VideoMaxRateK = defaultMaxRateK
+	if cfg.SafariHQ50MaxRateKOverride > 0 {
+		next.VideoMaxRateK = cfg.SafariHQ50MaxRateKOverride
+	}
 	defaultBufSizeK := maxInt(next.VideoBufSizeK, next.VideoMaxRateK*2)
-	next.VideoBufSizeK = envIntBounded("XG2G_SAFARI_HQ50_BUFSIZE_K", defaultBufSizeK, 8000, 120000)
+	next.VideoBufSizeK = defaultBufSizeK
+	if cfg.SafariHQ50BufSizeKOverride > 0 {
+		next.VideoBufSizeK = cfg.SafariHQ50BufSizeKOverride
+	}
 	return next
 }
 
@@ -369,8 +377,8 @@ func applyAdaptiveTranscodeQualityBudget(current ports.ProfileSpec, budget adapt
 	return next
 }
 
-func shouldPromoteAdaptiveTranscodeQuality(spec ports.StreamSpec, inputURL string, budget adaptiveTranscodeQualityBudget) bool {
-	if !config.ParseBool("XG2G_ADAPTIVE_QUALITY_ENABLED", true) {
+func shouldPromoteAdaptiveTranscodeQuality(spec ports.StreamSpec, inputURL string, budget adaptiveTranscodeQualityBudget, cfg AdapterConfig) bool {
+	if !cfg.AdaptiveQualityEnabled {
 		return false
 	}
 	if spec.Mode != ports.ModeLive || !spec.Profile.TranscodeVideo {
@@ -385,7 +393,7 @@ func shouldPromoteAdaptiveTranscodeQuality(spec ports.StreamSpec, inputURL strin
 	if spec.Profile.ForceSafariHQ25 || spec.Profile.EffectiveRuntimeMode == ports.RuntimeModeHQ50 {
 		return false
 	}
-	if shouldForceSafariHQ25ForServiceRef(spec, inputURL) {
+	if shouldForceSafariHQ25ForServiceRef(spec, inputURL, cfg) {
 		return false
 	}
 	if !adaptiveTranscodeQualityContainerAllowed(budget.codec, spec.Profile.Container) {
@@ -397,18 +405,18 @@ func shouldPromoteAdaptiveTranscodeQuality(spec ports.StreamSpec, inputURL strin
 	return true
 }
 
-func adaptiveTranscodeQualityBudgetFor(profile ports.ProfileSpec) (adaptiveTranscodeQualityBudget, bool) {
+func adaptiveTranscodeQualityBudgetFor(profile ports.ProfileSpec, cfg AdapterConfig) (adaptiveTranscodeQualityBudget, bool) {
 	codec := normalizeRequestedCodec(profile.VideoCodec)
 	switch codec {
 	case "av1", "hevc", "h264":
 	default:
 		return adaptiveTranscodeQualityBudget{}, false
 	}
-	if !config.ParseBool("XG2G_ADAPTIVE_"+strings.ToUpper(codec)+"_QUALITY_ENABLED", true) {
+	if !adaptiveCodecQualityEnabled(codec, cfg) {
 		return adaptiveTranscodeQualityBudget{}, false
 	}
 	defaultMaxRateK, defaultBufSizeK := adaptiveQualityLadder(codec, profile.VideoSourceHeight)
-	return adaptiveCodecQualityBudget(codec, defaultMaxRateK, defaultBufSizeK), true
+	return adaptiveCodecQualityBudget(codec, defaultMaxRateK, defaultBufSizeK, cfg), true
 }
 
 // adaptiveQualityLadder returns the resolution-aware quality ceiling (maxrate,
@@ -445,18 +453,50 @@ func adaptiveQualityLadder(codec string, sourceHeight int) (maxRateK, bufSizeK i
 	return maxRateK, maxRateK * 2
 }
 
-func adaptiveCodecQualityBudget(codec string, defaultMaxRateK int, defaultBufSizeK int) adaptiveTranscodeQualityBudget {
-	codecEnv := strings.ToUpper(codec)
-	maxRateK := envIntBounded("XG2G_ADAPTIVE_"+codecEnv+"_MAXRATE_K", defaultMaxRateK, 4000, 60000)
+func adaptiveCodecQualityBudget(codec string, defaultMaxRateK int, defaultBufSizeK int, cfg AdapterConfig) adaptiveTranscodeQualityBudget {
+	maxRateOverride, bufSizeOverride := adaptiveCodecQualityOverrides(codec, cfg)
+	maxRateK := defaultMaxRateK
+	if maxRateOverride > 0 {
+		maxRateK = maxRateOverride
+	}
 	defaultBufSizeK = maxInt(defaultBufSizeK, defaultMaxRateK*2)
 	if maxRateK != defaultMaxRateK {
 		defaultBufSizeK = maxRateK * 2
 	}
-	bufSizeK := envIntBounded("XG2G_ADAPTIVE_"+codecEnv+"_BUFSIZE_K", defaultBufSizeK, 8000, 120000)
+	bufSizeK := defaultBufSizeK
+	if bufSizeOverride > 0 {
+		bufSizeK = bufSizeOverride
+	}
 	return adaptiveTranscodeQualityBudget{
 		codec:    codec,
 		maxRateK: maxRateK,
 		bufSizeK: bufSizeK,
+	}
+}
+
+func adaptiveCodecQualityEnabled(codec string, cfg AdapterConfig) bool {
+	switch codec {
+	case "av1":
+		return cfg.AdaptiveAV1QualityEnabled
+	case "hevc":
+		return cfg.AdaptiveHEVCQualityEnabled
+	case "h264":
+		return cfg.AdaptiveH264QualityEnabled
+	default:
+		return false
+	}
+}
+
+func adaptiveCodecQualityOverrides(codec string, cfg AdapterConfig) (maxRateK, bufSizeK int) {
+	switch codec {
+	case "av1":
+		return cfg.AdaptiveAV1MaxRateK, cfg.AdaptiveAV1BufSizeK
+	case "hevc":
+		return cfg.AdaptiveHEVCMaxRateK, cfg.AdaptiveHEVCBufSizeK
+	case "h264":
+		return cfg.AdaptiveH264MaxRateK, cfg.AdaptiveH264BufSizeK
+	default:
+		return 0, 0
 	}
 }
 

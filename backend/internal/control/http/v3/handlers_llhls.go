@@ -65,6 +65,7 @@ func (s *Server) serveLLHLSPlaylist(w http.ResponseWriter, r *http.Request, deps
 	}
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("X-XG2G-Source", "disk")
 	// Blocking-reload responses are inherently per-request; never cache.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Encoding", "identity")

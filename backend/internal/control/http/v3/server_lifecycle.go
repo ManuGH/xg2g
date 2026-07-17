@@ -135,7 +135,12 @@ func (s *Server) SetRuntimeContext(ctx context.Context) error {
 	s.runtimeCtx, s.runtimeCancel = runtimeCtx, runtimeCancel
 	hostPressureMonitor := s.hostPressureMonitor
 	librarySvc := s.libraryService
+	worker := s.plannerShadowWorker
 	s.mu.Unlock()
+
+	if worker != nil {
+		worker.Start(runtimeCtx)
+	}
 
 	if librarySvc != nil {
 		if err := librarySvc.InitializeRoots(runtimeCtx); err != nil {
@@ -163,6 +168,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.runtimeCtx = nil
 	vodMgr := s.vodManager
 	librarySvc := s.libraryService
+	worker := s.plannerShadowWorker
 	s.mu.Unlock()
 
 	if runtimeCancel != nil {
@@ -170,6 +176,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	var errs []error
+	if worker != nil {
+		if err := worker.Close(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("planner shadow worker close: %w", err))
+		}
+	}
 	if vodMgr != nil {
 		if err := vodMgr.ShutdownContext(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("vod manager shutdown: %w", err))

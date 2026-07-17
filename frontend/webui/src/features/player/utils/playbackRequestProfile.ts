@@ -1,7 +1,34 @@
 import { getNativePlaybackCapabilities, resolveHostEnvironment } from '../../../lib/hostBridge';
 import type { CapabilitySnapshot } from './playbackCapabilities';
 
-export type PlaybackRequestProfile = 'quality' | 'compatible' | 'repair' | 'bandwidth';
+export type PlaybackRequestProfile = 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
+export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair';
+
+export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfileSelection {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  switch (normalized) {
+    case 'direct':
+    case 'copy':
+    case 'passthrough':
+      return 'direct';
+    case 'quality':
+    case 'compatible':
+    case 'repair':
+      return normalized;
+    default:
+      // Internal encoder-profile ids from older UI builds are intentionally
+      // discarded. The planner accepts public playback intents only.
+      return 'auto';
+  }
+}
+
+export function resolvePlaybackProfileForPreflight(
+  selection: unknown,
+  automaticProfile?: PlaybackRequestProfile,
+): PlaybackRequestProfile | undefined {
+  const normalized = normalizePlaybackProfileSelection(selection);
+  return normalized === 'auto' ? automaticProfile : normalized;
+}
 
 export type PlaybackClientDeviceContext = {
   brand?: string;
@@ -89,6 +116,38 @@ function parseBrowserOs(userAgent: string, platform: string | undefined): Playba
   return {};
 }
 
+function estimateBandwidthFromResources(): number | undefined {
+  if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') {
+    return undefined;
+  }
+  
+  try {
+    const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+    let totalBytes = 0;
+    let totalTimeMs = 0;
+    
+    for (const r of resources) {
+      if (r.transferSize && r.transferSize > 0 && r.responseEnd > r.responseStart) {
+        const duration = r.responseEnd - r.responseStart;
+        if (duration > 10) {
+          totalBytes += r.transferSize;
+          totalTimeMs += duration;
+        }
+      }
+    }
+
+    if (totalBytes > 50000 && totalTimeMs > 50) {
+      const bytesPerMs = totalBytes / totalTimeMs;
+      const bitsPerSec = bytesPerMs * 1000 * 8;
+      return bitsPerSec / 1000000;
+    }
+  } catch {
+    // Ignore errors
+  }
+  
+  return undefined;
+}
+
 function gatherBrowserNetworkContext(): PlaybackClientNetworkContext | undefined {
   if (typeof navigator === 'undefined') {
     return undefined;
@@ -97,14 +156,19 @@ function gatherBrowserNetworkContext(): PlaybackClientNetworkContext | undefined
   const nav = navigator as NavigatorWithNetwork;
   const connection = nav.connection;
   const isOnline = navigator.onLine !== false;
+  
+  const downlinkMbps = connection && typeof connection.downlink === 'number'
+    ? connection.downlink
+    : estimateBandwidthFromResources();
+
   if (!connection) {
-    return isOnline ? undefined : { kind: 'offline' };
+    return isOnline ? { kind: 'browser', downlinkMbps: sanitizeNumber(downlinkMbps) } : { kind: 'offline' };
   }
 
   return {
     kind: isOnline ? 'browser' : 'offline',
     effectiveType: sanitizeString(connection.effectiveType),
-    downlinkMbps: sanitizeNumber(connection.downlink),
+    downlinkMbps: sanitizeNumber(downlinkMbps),
     rttMs: sanitizeNumber(connection.rtt),
     saveData: connection.saveData === true,
   };
@@ -169,10 +233,25 @@ export function gatherPlaybackClientContext(): PlaybackClientContext {
   };
 }
 
+const MODERN_VIDEO_CODECS = ['av1', 'hevc', 'h264'] as const;
+
 function supportsHighQualityPlayback(capabilities: CapabilitySnapshot): boolean {
-  const hasModernVideoPath = capabilities.videoCodecs.includes('h264') || capabilities.videoCodecs.includes('hevc');
-  if (!hasModernVideoPath) {
+  const modernCodecs = MODERN_VIDEO_CODECS.filter((codec) => capabilities.videoCodecs.includes(codec));
+  if (modernCodecs.length === 0) {
     return false;
+  }
+
+  // Media Capabilities verdicts (decodingInfo) beat static codec lists: when
+  // every modern codec the client offers carries an explicit smooth=false
+  // signal, the device decodes but cannot keep up — don't request quality.
+  const signals = capabilities.videoCodecSignals;
+  if (signals && signals.length > 0) {
+    const verdicts = modernCodecs
+      .map((codec) => signals.find((signal) => signal.codec === codec))
+      .filter((signal): signal is NonNullable<typeof signal> => signal != null && signal.smooth !== undefined);
+    if (verdicts.length > 0 && verdicts.every((signal) => signal.smooth === false)) {
+      return false;
+    }
   }
 
   if (!capabilities.maxVideo) {

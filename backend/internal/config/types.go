@@ -54,20 +54,22 @@ type FileConfig struct {
 	RecordingPathMappings []RecordingPathMapping  `yaml:"recordingPathMappings,omitempty"`
 
 	// Advanced/internal configuration (Registry-exposed)
-	FFmpeg       *FFmpegConfig           `yaml:"ffmpeg,omitempty"`
-	HLS          *HLSConfig              `yaml:"hls,omitempty"`
-	VOD          *VODConfig              `yaml:"vod,omitempty"`
-	RateLimit    *RateLimitConfig        `yaml:"rateLimit,omitempty"`
-	Sessions     *SessionsConfig         `yaml:"sessions,omitempty"`
-	Store        *StoreConfig            `yaml:"store,omitempty"`
-	Streaming    *StreamingConfig        `yaml:"streaming,omitempty"`
-	Playback     *PlaybackFileConfig     `yaml:"playback,omitempty"`
-	Monetization *MonetizationFileConfig `yaml:"monetization,omitempty"`
-	Household    *HouseholdFileConfig    `yaml:"household,omitempty"`
-	Limits       *LimitsConfig           `yaml:"limits,omitempty"`
-	Timeouts     *TimeoutsConfig         `yaml:"timeouts,omitempty"`
-	Breaker      *BreakerConfig          `yaml:"breaker,omitempty"`
-	Verification *VerificationConfig     `yaml:"verification,omitempty"`
+	FFmpeg         *FFmpegConfig             `yaml:"ffmpeg,omitempty"`
+	HLS            *HLSConfig                `yaml:"hls,omitempty"`
+	VOD            *VODConfig                `yaml:"vod,omitempty"`
+	RateLimit      *RateLimitConfig          `yaml:"rateLimit,omitempty"`
+	Sessions       *SessionsConfig           `yaml:"sessions,omitempty"`
+	Store          *StoreConfig              `yaml:"store,omitempty"`
+	Streaming      *StreamingConfig          `yaml:"streaming,omitempty"`
+	Playback       *PlaybackFileConfig       `yaml:"playback,omitempty"`
+	PlannerShadow  *PlannerShadowFileConfig  `yaml:"plannerShadow,omitempty"`
+	PlannerReceipt *PlannerReceiptFileConfig `yaml:"plannerReceipt,omitempty"`
+	Monetization   *MonetizationFileConfig   `yaml:"monetization,omitempty"`
+	Household      *HouseholdFileConfig      `yaml:"household,omitempty"`
+	Limits         *LimitsConfig             `yaml:"limits,omitempty"`
+	Timeouts       *TimeoutsConfig           `yaml:"timeouts,omitempty"`
+	Breaker        *BreakerConfig            `yaml:"breaker,omitempty"`
+	Verification   *VerificationConfig       `yaml:"verification,omitempty"`
 }
 
 // VerificationConfig holds drift verification settings
@@ -608,13 +610,43 @@ type AppConfig struct {
 	// Sprint 1: Resilience Core
 	Limits   LimitsConfig
 	Timeouts TimeoutsConfig
-	Breaker  BreakerConfig
 
+	// Playback Planner Shadow
+	PlannerShadow  PlannerShadowConfig
+	PlannerReceipt PlannerReceiptConfig
+	Breaker        BreakerConfig
 	// Library Configuration (Phase 0 per ADR-ENG-002)
 	Library LibraryConfig
 
 	// Verification (Drift Detection)
 	Verification VerificationSettings
+}
+
+type PlannerShadowConfig struct {
+	Enabled       bool
+	QueueCapacity int
+}
+
+type PlannerShadowFileConfig struct {
+	Enabled       *bool `yaml:"enabled,omitempty"`
+	QueueCapacity *int  `yaml:"queueCapacity,omitempty"`
+}
+
+// PlannerReceiptConfig controls the short-lived handoff contract between
+// stream-info and stream.start. It is disabled by default while shadow
+// equivalence is being observed.
+type PlannerReceiptConfig struct {
+	Enabled  bool
+	Required bool
+	Capacity int
+	TTL      time.Duration
+}
+
+type PlannerReceiptFileConfig struct {
+	Enabled  *bool          `yaml:"enabled,omitempty"`
+	Required *bool          `yaml:"required,omitempty"`
+	Capacity *int           `yaml:"capacity,omitempty"`
+	TTL      *time.Duration `yaml:"ttl,omitempty"`
 }
 
 // VerificationSettings holds runtime verification settings

@@ -3,7 +3,6 @@ package clientpolicy
 import (
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -125,11 +124,20 @@ func AllowExperimentalNativeAV1TransportStream(
 	selectedVideoCodec string,
 	target playbackprofile.TargetPlaybackProfile,
 ) bool {
+	return AllowExperimentalNativeAV1TransportStreamWithPolicy(resolvedCaps, selectedVideoCodec, target, false)
+}
+
+func AllowExperimentalNativeAV1TransportStreamWithPolicy(
+	resolvedCaps capabilities.PlaybackCapabilities,
+	selectedVideoCodec string,
+	target playbackprofile.TargetPlaybackProfile,
+	enabled bool,
+) bool {
 	if normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientSafariNative ||
 		normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientIOSSafariNative {
 		return false
 	}
-	if !config.ParseBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", false) {
+	if !enabled {
 		return false
 	}
 	switch normalize.Token(resolvedCaps.ClientCapsSource) {
@@ -149,6 +157,33 @@ func AllowExperimentalNativeAV1TransportStream(
 	if normalize.Token(target.Container) != "mpegts" &&
 		target.Packaging != playbackprofile.PackagingTS &&
 		normalize.Token(target.HLS.SegmentContainer) != "mpegts" {
+		return false
+	}
+	return true
+}
+
+// AllowPlannerExperimentalAV1MPEGTS evaluates whether the client capabilities
+// support experimental AV1 in MPEG-TS without inspecting legacy target profiles.
+func AllowPlannerExperimentalAV1MPEGTS(
+	resolvedCaps capabilities.PlaybackCapabilities,
+	enabled bool,
+) bool {
+	if normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientSafariNative ||
+		normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientIOSSafariNative {
+		return false
+	}
+	if !enabled {
+		return false
+	}
+	switch normalize.Token(resolvedCaps.ClientCapsSource) {
+	case capabilities.ClientCapsSourceRuntime, capabilities.ClientCapsSourceRuntimePlusFam:
+	default:
+		return false
+	}
+	if !hasToken(resolvedCaps.VideoCodecs, "av1") {
+		return false
+	}
+	if !hasToken(resolvedCaps.Containers, "ts") && !hasToken(resolvedCaps.Containers, "mpegts") {
 		return false
 	}
 	return true

@@ -9,12 +9,12 @@ import (
 )
 
 func TestNextPlaybackFeedbackPlan_NonSafariEscalatesToRepairFMP4(t *testing.T) {
-	got := nextPlaybackFeedbackPlan(model.ProfileSpec{
+	got := nextPlaybackFeedbackPlanWithResolver(model.ProfileSpec{
 		Name:         profiles.ProfileAV1HW,
 		Container:    "fmp4",
 		DVRWindowSec: 2700,
 		VideoCodec:   "av1",
-	}, "")
+	}, "", profiles.Resolver{})
 
 	if got.id != playbackFeedbackFallbackPlanRepairFMP4 {
 		t.Fatalf("nextPlaybackFeedbackPlan() id = %q, want %q", got.id, playbackFeedbackFallbackPlanRepairFMP4)
@@ -45,11 +45,11 @@ func TestNextPlaybackFeedbackPlan_NonSafariEscalatesToRepairFMP4(t *testing.T) {
 func TestNextSafariFeedbackPlan_AllowlistedFirstFailureUsesBrowserTSProfile(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
 
-	got := nextSafariFeedbackPlan(model.ProfileSpec{
+	got := nextSafariFeedbackPlanWithResolver(model.ProfileSpec{
 		Name:         profiles.ProfileSafari,
 		Container:    "fmp4",
 		DVRWindowSec: 2700,
-	}, "1:0:19:11:6:85:C00000:0:0:0:")
+	}, "1:0:19:11:6:85:C00000:0:0:0:", profiles.LoadResolver())
 
 	if got.id != playbackFeedbackFallbackPlanSafariBrowserTS {
 		t.Fatalf("nextSafariFeedbackPlan() id = %q, want %q", got.id, playbackFeedbackFallbackPlanSafariBrowserTS)
@@ -74,12 +74,12 @@ func TestNextSafariFeedbackPlan_AllowlistedFirstFailureUsesBrowserTSProfile(t *t
 func TestNextSafariFeedbackPlan_AllowlistedRefailureUsesRepairTSProfile(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", "1:0:19:11:6:85:C00000:0:0:0:")
 
-	got := nextSafariFeedbackPlan(model.ProfileSpec{
+	got := nextSafariFeedbackPlanWithResolver(model.ProfileSpec{
 		Name:                   profiles.ProfileSafari,
 		Container:              "mpegts",
 		DVRWindowSec:           2700,
 		DisableSafariForceCopy: true,
-	}, "1:0:19:11:6:85:C00000:0:0:0:")
+	}, "1:0:19:11:6:85:C00000:0:0:0:", profiles.LoadResolver())
 
 	if got.id != playbackFeedbackFallbackPlanSafariRepairTS {
 		t.Fatalf("nextSafariFeedbackPlan() id = %q, want %q", got.id, playbackFeedbackFallbackPlanSafariRepairTS)

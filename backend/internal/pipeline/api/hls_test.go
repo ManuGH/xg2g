@@ -1,9 +1,10 @@
 package api
 
 import (
-	"github.com/rs/zerolog"
+	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/rs/zerolog"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +15,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
-	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
+	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -418,6 +419,7 @@ seg_000005.ts
 `
 	manifestPath := filepath.Join(sessionDir, "index.m3u8")
 	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0600))
+	createMockSafeTSSegment(t, filepath.Join(sessionDir, "seg_000001.ts"))
 
 	// Mock store with DVR profile
 	store := &MockStore{
@@ -437,7 +439,7 @@ seg_000005.ts
 	w := httptest.NewRecorder()
 
 	// Serve HLS
-	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 
 	resp := w.Result()
 	body, err := io.ReadAll(resp.Body)
@@ -488,6 +490,7 @@ seg_001351.ts
 `
 	manifestPath := filepath.Join(sessionDir, "index.m3u8")
 	require.NoError(t, os.WriteFile(manifestPath, []byte(rawManifest), 0600))
+	createMockSafeTSSegment(t, filepath.Join(sessionDir, "seg_001350.ts"))
 
 	store := &MockStore{
 		Session: &model.SessionRecord{
@@ -502,7 +505,7 @@ seg_001351.ts
 
 	req := httptest.NewRequest("GET", "/index.m3u8", nil)
 	w := httptest.NewRecorder()
-	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 
 	resp := w.Result()
 	body, err := io.ReadAll(resp.Body)
@@ -591,7 +594,7 @@ seg_000000.ts
 	req := httptest.NewRequest("GET", "/index.m3u8", nil)
 	w := httptest.NewRecorder()
 
-	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 
 	resp := w.Result()
 	body, err := io.ReadAll(resp.Body)
@@ -636,7 +639,7 @@ seg_000100.ts
 	req := httptest.NewRequest("GET", "/index.m3u8", nil)
 	w := httptest.NewRecorder()
 
-	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 
 	resp := w.Result()
 	body, err := io.ReadAll(resp.Body)
@@ -689,7 +692,7 @@ func TestServeHLS_NegativePreparingJSON(t *testing.T) {
 	// Case 1: File Missing (404)
 	req := httptest.NewRequest("GET", "/index.m3u8", nil)
 	w := httptest.NewRecorder()
-	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Equal(t, "playlist_missing", w.Header().Get("X-XG2G-Reason"))
 	assertHardIsolation(t, w)
@@ -697,7 +700,7 @@ func TestServeHLS_NegativePreparingJSON(t *testing.T) {
 	// Case 2: Session Not Ready (Terminal State - 410 Gone)
 	store.Session.State = model.SessionFailed
 	w = httptest.NewRecorder()
-	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 	assert.Equal(t, http.StatusGone, w.Code)
 	assertHardIsolation(t, w)
 }
@@ -718,7 +721,7 @@ func TestServeHLS_TerminalTranscodeStalledSetsReasonHeader(t *testing.T) {
 	req := httptest.NewRequest("GET", "/index.m3u8", nil)
 	w := httptest.NewRecorder()
 
-	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 
 	assert.Equal(t, http.StatusGone, w.Code)
 	assert.Equal(t, "transcode_stalled", w.Header().Get("X-XG2G-Reason"))
@@ -742,45 +745,11 @@ func TestServeHLS_ActiveMissingSegmentSetsReasonHeader(t *testing.T) {
 	req := httptest.NewRequest("GET", "/seg_000000.ts", nil)
 	w := httptest.NewRecorder()
 
-	ServeHLS(w, req, store, tmpDir, sessionID, "seg_000000.ts")
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "seg_000000.ts")
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Equal(t, "segment_missing", w.Header().Get("X-XG2G-Reason"))
 	assert.Contains(t, w.Body.String(), "file not found")
-}
-
-func TestServeHLS_StartingSegmentWaitsForArtifact(t *testing.T) {
-	tmpDir := t.TempDir()
-	sessionID := "segment-wait-test-session"
-	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
-	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
-
-	store := &MockStore{
-		Session: &model.SessionRecord{
-			SessionID: sessionID,
-			State:     model.SessionStarting,
-			Profile: model.ProfileSpec{
-				Name: "safari",
-			},
-		},
-	}
-
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		_ = os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), []byte("segment-data"), 0o600)
-	}()
-
-	req := httptest.NewRequest("GET", "/seg_000000.ts", nil)
-	w := httptest.NewRecorder()
-
-	ServeHLS(w, req, store, tmpDir, sessionID, "seg_000000.ts")
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "video/mp2t", w.Header().Get("Content-Type"))
-	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
-	assert.Equal(t, "identity", w.Header().Get("Content-Encoding"))
-	assert.Empty(t, w.Header().Get("X-XG2G-Reason"))
-	assert.Equal(t, "segment-data", w.Body.String())
 }
 
 func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
@@ -809,7 +778,7 @@ func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
 	req := httptest.NewRequest("GET", "/seg_000123.ts", nil)
 	w := httptest.NewRecorder()
 
-	ServeHLS(w, req, store, tmpDir, sessionID, "seg_000123.ts")
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "seg_000123.ts")
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.NotNil(t, store.Session.PlaybackTrace)
@@ -819,72 +788,52 @@ func TestServeHLS_SegmentAccessUpdatesPlaybackTrace(t *testing.T) {
 	assert.Equal(t, "low", store.Session.PlaybackTrace.HLS.StallRisk)
 }
 
-func TestServeHLS_InMemory_PlaylistAndSegment(t *testing.T) {
+func TestServeHLS_StoreRegistry_RAMDelivery(t *testing.T) {
 	tmpDir := t.TempDir()
-	sessionID := "inmemory-serve-test-session"
-	defer ringbuffer.DefaultRegistry.Delete(sessionID)
+	sessionID := "registry-ram-test-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
 
-	buf := ringbuffer.DefaultRegistry.GetOrCreate(sessionID, nil)
-	playlistContent := "#EXTM3U\n#EXTINF:2.000000,\nseg_000000.ts\n"
-	buf.Put("index.m3u8", []byte(playlistContent))
-	buf.Put("seg_000000.ts", []byte("in-memory-ts-data"))
+	playlistContent := "#EXTM3U\n#EXTINF:2.000000,\nseg_000001.m4s\n"
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), []byte(playlistContent), 0o600))
 
-	store := &MockStore{
+	mockStore := &MockStore{
 		Session: &model.SessionRecord{
 			SessionID: sessionID,
 			State:     model.SessionReady,
 		},
 	}
 
-	// Request Playlist
-	req := httptest.NewRequest("GET", "/index.m3u8", nil)
-	w := httptest.NewRecorder()
-	ServeHLS(w, req, store, tmpDir, sessionID, "index.m3u8")
+	registry := pipelinestore.NewMemoryStoreRegistry()
+	ramStore, err := pipelinestore.NewRAMShadowStore(1024*1024, 10)
+	require.NoError(t, err)
+	err = ramStore.Publish(context.Background(), pipelinestore.StreamID(sessionID), pipelinestore.Object{
+		Name:     "seg_000001.m4s",
+		Kind:     pipelinestore.ObjectSegment,
+		Data:     []byte("registry-ram-segment-data"),
+		Complete: true,
+	})
+	_, err = registry.Register(sessionID, ramStore)
+	require.NoError(t, err)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "application/vnd.apple.mpegurl", w.Header().Get("Content-Type"))
-	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
-	assert.Equal(t, playlistContent, w.Body.String())
-
-	// Request Segment
-	reqSeg := httptest.NewRequest("GET", "/seg_000000.ts", nil)
+	// Request Segment from RAM
+	reqSeg := httptest.NewRequest("GET", "/seg_000001.m4s", nil)
 	wSeg := httptest.NewRecorder()
-	ServeHLS(wSeg, reqSeg, store, tmpDir, sessionID, "seg_000000.ts")
+	ServeHLS(wSeg, reqSeg, mockStore, registry, tmpDir, sessionID, "seg_000001.m4s")
 
 	assert.Equal(t, http.StatusOK, wSeg.Code)
-	assert.Equal(t, "video/mp2t", wSeg.Header().Get("Content-Type"))
-	assert.Equal(t, "no-store", wSeg.Header().Get("Cache-Control"))
-	assert.Equal(t, "identity", wSeg.Header().Get("Content-Encoding"))
-	assert.Equal(t, "in-memory-ts-data", wSeg.Body.String())
-}
+	assert.Equal(t, "ram", wSeg.Header().Get("X-XG2G-Source"))
+	assert.Equal(t, "video/mp4", wSeg.Header().Get("Content-Type"))
+	assert.Equal(t, "registry-ram-segment-data", wSeg.Body.String())
 
-func TestServeHLS_InMemory_Polling(t *testing.T) {
-	tmpDir := t.TempDir()
-	sessionID := "inmemory-polling-test-session"
-	defer ringbuffer.DefaultRegistry.Delete(sessionID)
+	// Request Playlist from Disk
+	reqPlay := httptest.NewRequest("GET", "/index.m3u8", nil)
+	wPlay := httptest.NewRecorder()
+	ServeHLS(wPlay, reqPlay, mockStore, registry, tmpDir, sessionID, "index.m3u8")
 
-	buf := ringbuffer.DefaultRegistry.GetOrCreate(sessionID, nil)
-
-	store := &MockStore{
-		Session: &model.SessionRecord{
-			SessionID: sessionID,
-			State:     model.SessionStarting,
-		},
-	}
-
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		buf.Put("seg_000000.m4s", []byte("in-memory-fmp4-data"))
-	}()
-
-	req := httptest.NewRequest("GET", "/seg_000000.m4s", nil)
-	w := httptest.NewRecorder()
-	ServeHLS(w, req, store, tmpDir, sessionID, "seg_000000.m4s")
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "video/mp4", w.Header().Get("Content-Type"))
-	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
-	assert.Equal(t, "in-memory-fmp4-data", w.Body.String())
+	assert.Equal(t, http.StatusOK, wPlay.Code)
+	assert.Equal(t, "disk", wPlay.Header().Get("X-XG2G-Source"))
+	assert.Equal(t, playlistContent, wPlay.Body.String())
 }
 
 func TestRewritePlaylist_MasterPlaylistFMP4(t *testing.T) {
@@ -895,11 +844,131 @@ stream_0.m3u8
 `
 	rec := &model.SessionRecord{}
 	rec.Profile.Container = "fmp4"
-	rdr, _, valid, err := rewritePlaylist(strings.NewReader(masterContent), rec, zerolog.Logger{})
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(masterContent), rec, "", zerolog.Logger{})
 	assert.NoError(t, err)
 	assert.True(t, valid, "master playlist should be valid even without EXT-X-MAP")
 	out, _ := io.ReadAll(rdr)
 	assert.Contains(t, string(out), "#EXT-X-STREAM-INF")
+}
+
+func buildTestTSPacket(pid int, pusi bool, payload []byte) []byte {
+	pkt := make([]byte, 188)
+	pkt[0] = 0x47
+	pkt[1] = byte(pid >> 8)
+	if pusi {
+		pkt[1] |= 0x40
+	}
+	pkt[2] = byte(pid & 0xFF)
+	pkt[3] = 0x10
+
+	if len(payload) < 184 {
+		pkt[3] = 0x30
+		padLen := 184 - len(payload) - 1
+		pkt[4] = byte(padLen)
+		if padLen > 0 {
+			pkt[5] = 0x00
+			for j := 1; j < padLen; j++ {
+				pkt[5+j] = 0xFF
+			}
+		}
+		copy(pkt[5+padLen:], payload)
+	} else {
+		copy(pkt[4:], payload[:184])
+	}
+	return pkt
+}
+
+func createMockSafeTSSegment(t *testing.T, path string) {
+	annexB := []byte{
+		0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E,
+		0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x3C, 0x80,
+		0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00,
+	}
+	videoPID := 0x0100
+	var tsData bytes.Buffer
+	tsData.Write(buildTestPATPMT(videoPID))
+	tsData.Write(buildTestTSPacket(videoPID, true, buildTestPESPacket(annexB)))
+	require.NoError(t, os.WriteFile(path, tsData.Bytes(), 0644))
+}
+
+func buildTestPATPMT(videoPID int) []byte {
+	var buf bytes.Buffer
+	patPayload := []byte{
+		0x00,
+		0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00,
+		0x00, 0x01, 0xE0, 0x20,
+		0x2C, 0x80, 0xB8, 0x3A,
+	}
+	buf.Write(buildTestTSPacket(0x0000, true, patPayload))
+
+	pmtPayload := []byte{
+		0x00,
+		0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00,
+		0xE1, 0x00,
+		0xF0, 0x00,
+		0x1B, byte(videoPID >> 8), byte(videoPID & 0xFF), 0xF0, 0x00,
+		0x4E, 0x59, 0x3D, 0x1E,
+	}
+	buf.Write(buildTestTSPacket(0x0020, true, pmtPayload))
+	return buf.Bytes()
+}
+
+func buildTestPESPacket(annexBPayload []byte) []byte {
+	var buf bytes.Buffer
+	buf.Write([]byte{0x00, 0x00, 0x01, 0xE0, 0x00, 0x00})
+	buf.Write([]byte{0x80, 0x80, 0x05})
+	buf.Write([]byte{0x21, 0x00, 0x01, 0x00, 0x01})
+	buf.Write(annexBPayload)
+	return buf.Bytes()
+}
+
+func TestRewritePlaylist_FilterRAP(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "session_rap_filter"
+	sessionDir := filepath.Join(tmpDir, sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+
+	// Create seg_000000.ts (dummy file, non-IDR/unsafe)
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), []byte{0x47, 0x00, 0x00, 0x10}, 0644))
+
+	// Create seg_000001.ts with valid PAT/PMT + SPS(7), PPS(8), IDR(5) -> safe RAP
+	annexB := []byte{
+		0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E,
+		0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x3C, 0x80,
+		0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00,
+	}
+	videoPID := 0x0100
+	var tsData bytes.Buffer
+	tsData.Write(buildTestPATPMT(videoPID))
+	tsData.Write(buildTestTSPacket(videoPID, true, buildTestPESPacket(annexB)))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000001.ts"), tsData.Bytes(), 0644))
+
+	playlistContent := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:2.000,
+seg_000000.ts
+#EXTINF:2.000,
+seg_000001.ts
+`
+	rec := &model.SessionRecord{
+		State: model.SessionReady,
+		Profile: model.ProfileSpec{
+			DVRWindowSec: 60,
+			Container:    "ts",
+		},
+	}
+
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(playlistContent), rec, sessionDir, zerolog.Logger{})
+	require.NoError(t, err)
+	require.True(t, valid)
+
+	out, _ := io.ReadAll(rdr)
+	outStr := string(out)
+	assert.Contains(t, outStr, "#EXT-X-MEDIA-SEQUENCE:1")
+	assert.NotContains(t, outStr, "seg_000000.ts")
+	assert.Contains(t, outStr, "seg_000001.ts")
 }
 
 func TestValidateRequest_MasterPlaylistVariants(t *testing.T) {
@@ -911,4 +980,39 @@ func TestValidateRequest_MasterPlaylistVariants(t *testing.T) {
 	req2, ok2 := validateRequest(w, "session123", "init_0.mp4")
 	assert.True(t, ok2)
 	assert.True(t, req2.isInit)
+}
+
+func TestServeHLS_StartupRewriteErrorReturns503(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "startup-rewrite-err-test-session"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
+
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000000.ts"), []byte("not a valid mpegts"), 0o600))
+	playlistContent := `#EXTM3U
+#EXT-X-VERSION:3
+#EXTINF:2.000,
+seg_000000.ts
+`
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), []byte(playlistContent), 0o600))
+
+	store := &MockStore{
+		Session: &model.SessionRecord{
+			SessionID: sessionID,
+			State:     model.SessionStarting,
+			Profile: model.ProfileSpec{
+				Name:         "safari",
+				DVRWindowSec: 60,
+				Container:    "ts",
+			},
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/index.m3u8", nil)
+	w := httptest.NewRecorder()
+
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "1", w.Header().Get("Retry-After"))
 }

@@ -37,6 +37,8 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 		wantVideoCodecs  []string
 		wantAudioCodecs  []string
 		wantHLSPackaging []string
+		wantMaxWidth     int
+		wantMaxHeight    int
 	}{
 		{
 			id:               ClientSafariNative,
@@ -45,6 +47,8 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 			wantVideoCodecs:  []string{"h264", "hevc"},
 			wantAudioCodecs:  []string{"aac", "ac3", "mp3"},
 			wantHLSPackaging: []string{"fmp4", "ts"},
+			wantMaxWidth:     3840,
+			wantMaxHeight:    2160,
 		},
 		{
 			id:               ClientIOSSafariNative,
@@ -53,6 +57,8 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 			wantVideoCodecs:  []string{"h264", "hevc"},
 			wantAudioCodecs:  []string{"aac", "ac3", "mp3"},
 			wantHLSPackaging: []string{"fmp4", "ts"},
+			wantMaxWidth:     3840,
+			wantMaxHeight:    2160,
 		},
 		{
 			id:               ClientFirefoxHLSJS,
@@ -61,6 +67,8 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 			wantVideoCodecs:  []string{"h264"},
 			wantAudioCodecs:  []string{"aac", "mp3"},
 			wantHLSPackaging: []string{"fmp4", "ts"},
+			wantMaxWidth:     1920,
+			wantMaxHeight:    1080,
 		},
 		{
 			id:               ClientAndroidTVBrowser,
@@ -69,6 +77,8 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 			wantVideoCodecs:  []string{"h264"},
 			wantAudioCodecs:  []string{"aac", "mp3"},
 			wantHLSPackaging: []string{"fmp4", "ts"},
+			wantMaxWidth:     1920,
+			wantMaxHeight:    1080,
 		},
 		{
 			id:               ClientChromiumHLSJS,
@@ -77,6 +87,8 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 			wantVideoCodecs:  []string{"h264"},
 			wantAudioCodecs:  []string{"aac", "mp3"},
 			wantHLSPackaging: []string{"fmp4", "ts"},
+			wantMaxWidth:     1920,
+			wantMaxHeight:    1080,
 		},
 	}
 
@@ -103,6 +115,15 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got.HLSPackaging, tc.wantHLSPackaging) {
 				t.Fatalf("unexpected hls packaging: got=%#v want=%#v", got.HLSPackaging, tc.wantHLSPackaging)
+			}
+			if got.MaxVideo == nil {
+				t.Fatalf("expected MaxVideo to be set")
+			}
+			if got.MaxVideo.Width != tc.wantMaxWidth {
+				t.Fatalf("unexpected max video width: got=%d want=%d", got.MaxVideo.Width, tc.wantMaxWidth)
+			}
+			if got.MaxVideo.Height != tc.wantMaxHeight {
+				t.Fatalf("unexpected max video height: got=%d want=%d", got.MaxVideo.Height, tc.wantMaxHeight)
 			}
 		})
 	}

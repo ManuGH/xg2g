@@ -22,6 +22,7 @@ type startProfilePolicyInput struct {
 	Capability            *scan.Capability
 	HWAccelMode           profiles.HWAccelMode
 	HostRuntime           playbackprofile.HostRuntimeSnapshot
+	ClientAV1Disabled     bool
 }
 
 func resolveRequestedStartProfilePolicy(input startProfilePolicyInput) (string, error) {
@@ -65,11 +66,11 @@ func resolveRequestedStartProfilePolicy(input startProfilePolicyInput) (string, 
 			// then the host-aware fallback. Keeps stream.start aligned with
 			// /live/stream-info when the source genuinely must transcode.
 			if shouldPreferRuntimeNativeHLSProfile(input.ClientCaps) {
-				if picked := pickNativeHLSProfileWithHost(input.RequestedCodecs, input.ClientFamily, input.ClientCaps, input.HWAccelMode, input.HostRuntime); picked != "" {
+				if picked := pickNativeHLSProfileWithHostAndPolicy(input.RequestedCodecs, input.ClientFamily, input.ClientCaps, input.HWAccelMode, input.HostRuntime, input.ClientAV1Disabled); picked != "" {
 					return picked, nil
 				}
 			}
-			if picked := pickNativeHLSProfileWithHost(input.RequestedCodecs, input.ClientFamily, input.ClientCaps, input.HWAccelMode, input.HostRuntime); picked != "" &&
+			if picked := pickNativeHLSProfileWithHostAndPolicy(input.RequestedCodecs, input.ClientFamily, input.ClientCaps, input.HWAccelMode, input.HostRuntime, input.ClientAV1Disabled); picked != "" &&
 				!shouldPreferRuntimeNativeHLSProfile(input.ClientCaps) {
 				return picked, nil
 			}
@@ -203,8 +204,8 @@ func pickProfileForCodecsWithHost(raw, clientFamily string, hwaccelMode profiles
 	return autocodec.PickProfileForCodecsForClientAndHost(raw, clientFamily, hwaccelMode, hostRuntime)
 }
 
-func pickNativeHLSProfileWithHost(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
-	return autocodec.PickNativeHLSProfileForClientAndHost(raw, clientFamily, clientCaps, hwaccelMode, hostRuntime)
+func pickNativeHLSProfileWithHostAndPolicy(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot, clientAV1Disabled bool) string {
+	return autocodec.PickNativeHLSProfileForClientAndHostWithPolicy(raw, clientFamily, clientCaps, hwaccelMode, hostRuntime, clientAV1Disabled)
 }
 
 func shouldPreferRuntimeNativeHLSProfile(clientCaps *capabilities.PlaybackCapabilities) bool {

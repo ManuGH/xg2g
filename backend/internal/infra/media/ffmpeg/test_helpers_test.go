@@ -30,7 +30,7 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 	if usesVAAPI {
 		backend = profiles.GPUBackendVAAPI
 	}
-	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, 0, backend, "", a.StartTimeout, noopStartupSpan(), time.Now())
+	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, 0, backend, "", a.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false)
 }
 
 func (a *LocalAdapter) startTimeoutForSpec(spec ports.StreamSpec) time.Duration {

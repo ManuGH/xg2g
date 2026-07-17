@@ -45,17 +45,25 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 		Str("vaapi.device", a.VaapiDevice).
 		Str("video.codec", outputCodec).
 		Int("video.qp", prof.VideoQP).
+		Int("video.targetRateK", prof.VideoTargetRateK).
 		Int("video.maxRateK", prof.VideoMaxRateK).
 		Int("video.bufSizeK", prof.VideoBufSizeK).
 		Bool("deinterlace", prof.Deinterlace).
 		Msg("pipeline video: vaapi")
 
+	filters := make([]string, 0, 2)
 	if prof.Deinterlace {
-		args = append(args, "-vf", "deinterlace_vaapi")
+		filters = append(filters, "deinterlace_vaapi")
 	}
+	scaleFilter := "scale_vaapi=format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709"
+	if prof.VideoMaxWidth > 0 {
+		scaleFilter = fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", prof.VideoMaxWidth)
+	}
+	filters = append(filters, scaleFilter)
+	args = append(args, "-vf", strings.Join(filters, ","))
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
-	args = appendVaapiRateControlArgs(args, prof, outputCodec)
+	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = appendVideoGOPArgs(args, gop, segmentSec)
@@ -65,7 +73,6 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	} else {
 		args = appendAV1VAAPILevelArgs(args)
 	}
-	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args
 }
 
@@ -96,7 +103,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	args = append(args, "-vf", filter)
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
-	args = appendVaapiRateControlArgs(args, prof, outputCodec)
+	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = appendVideoGOPArgs(args, gop, segmentSec)
@@ -113,6 +120,9 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	parts := make([]string, 0, 4)
 	if spec.Profile.Deinterlace {
 		parts = append(parts, a.deinterlaceFilterForProfile(spec))
+	}
+	if spec.Profile.VideoMaxWidth > 0 {
+		parts = append(parts, softwareScaleWidthFilter(spec.Profile.VideoMaxWidth))
 	}
 	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
 	if isAV1 {
@@ -132,13 +142,13 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	// sports — still real-time for one session, thinner for concurrent ones), so
 	// they default conservatively and are env-tunable. Only transcode paths reach
 	// here — copy passthrough stays bit-exact and untouched.
-	if f := transcodeDenoiseFilter(); f != "" {
+	if f := transcodeDenoiseFilter(a.Config.TranscodeDenoise); f != "" {
 		parts = append(parts, f)
 	}
-	if f := transcodeDebandFilter(); f != "" {
+	if f := transcodeDebandFilter(a.Config.TranscodeDeband); f != "" {
 		parts = append(parts, f)
 	}
-	if f := transcodeSharpenFilter(); f != "" {
+	if f := transcodeSharpenFilter(a.Config.TranscodeSharpen); f != "" {
 		parts = append(parts, f)
 	}
 	uploadFormat := "nv12"
@@ -156,8 +166,7 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 // default — and was verified clean on 1080i wide shots up to ~1.5; chroma is left
 // untouched to avoid colour fringing. It adds perceived crispness on edges/lines
 // but cannot restore fine detail the source or the re-encode already discarded.
-func transcodeSharpenFilter() string {
-	amount := envFloatBounded("XG2G_TRANSCODE_SHARPEN", 1.5, 0.0, 3.0)
+func transcodeSharpenFilter(amount float64) string {
 	if amount <= 0 {
 		return ""
 	}
@@ -169,8 +178,7 @@ func transcodeSharpenFilter() string {
 // (0 disables, default 0.6, capped at 1.5); spatial and temporal strengths scale
 // together. Encoder cost is fixed regardless of strength, so the strength is a
 // pure quality knob (lower = gentler, preserves more fine detail).
-func transcodeDenoiseFilter() string {
-	s := envFloatBounded("XG2G_TRANSCODE_DENOISE", 0.6, 0.0, 1.5)
+func transcodeDenoiseFilter(s float64) string {
 	if s <= 0 {
 		return ""
 	}
@@ -179,8 +187,8 @@ func transcodeDenoiseFilter() string {
 
 // transcodeDebandFilter returns a deband expression for the transcode chain, or
 // "" when disabled via XG2G_TRANSCODE_DEBAND=false (default on; deband is gentle).
-func transcodeDebandFilter() string {
-	if !envBool("XG2G_TRANSCODE_DEBAND", true) {
+func transcodeDebandFilter(enabled bool) string {
+	if !enabled {
 		return ""
 	}
 	return "deband"
@@ -209,7 +217,7 @@ func av1VAAPIGeometryPadFilter() string {
 		"pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
 
-func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCodec string) []string {
+func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCodec string, cfg AdapterConfig) []string {
 	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
 	if prof.VideoQP > 0 {
 		args = append(args,
@@ -231,8 +239,11 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 	if prof.VideoMaxRateK > 0 {
 		// AMD VAAPI AV1 (Phoenix3 / VCN4) stalls the VCN ring when -b:v == -maxrate.
 		// Use a 25% target headroom (-b:v = 75% of -maxrate) to keep the ring stable.
-		bV := prof.VideoMaxRateK
-		if isAV1 {
+		bV := prof.VideoTargetRateK
+		if bV <= 0 {
+			bV = prof.VideoMaxRateK
+		}
+		if isAV1 && prof.VideoTargetRateK <= 0 {
 			bV = max((prof.VideoMaxRateK*3)/4, 1)
 		}
 		// AV1 QVBR: quality-targeted encode that still honours -maxrate as a hard
@@ -242,7 +253,7 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 		// QVBR RC mode"), which is set above. Disable with XG2G_AV1_QVBR=false to
 		// fall back to implicit VBR; tune the quality target with
 		// XG2G_AV1_QVBR_QUALITY (AV1 scale 0-255, lower = higher quality).
-		av1QVBR := isAV1 && envBool("XG2G_AV1_QVBR", true)
+		av1QVBR := isAV1 && cfg.AV1QVBR
 		if av1QVBR {
 			args = append(args, "-rc_mode", "QVBR")
 		}
@@ -258,7 +269,7 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			// the VideoMaxRateK ceiling still bounds, so it spends the available
 			// bitrate on visibly cleaner motion. Lower XG2G_AV1_QVBR_QUALITY for
 			// even higher quality (more bitrate); raise it to save bandwidth.
-			args = append(args, "-global_quality", strconv.Itoa(envIntBounded("XG2G_AV1_QVBR_QUALITY", 90, 1, 255)))
+			args = append(args, "-global_quality", strconv.Itoa(cfg.AV1QVBRQuality))
 		}
 		if isAV1 {
 			args = append(args, "-async_depth", "1")
@@ -280,13 +291,21 @@ func (a *LocalAdapter) buildNVENCVideoArgs(args []string, spec ports.StreamSpec,
 		Str("transcode.mode", "nvenc").
 		Str("video.codec", outputCodec).
 		Int("video.qp", prof.VideoQP).
+		Int("video.targetRateK", prof.VideoTargetRateK).
 		Int("video.maxRateK", prof.VideoMaxRateK).
 		Int("video.bufSizeK", prof.VideoBufSizeK).
 		Bool("deinterlace", prof.Deinterlace).
 		Msg("pipeline video: nvenc")
 
+	filters := make([]string, 0, 2)
 	if prof.Deinterlace {
-		args = append(args, "-vf", a.deinterlaceFilterForProfile(spec))
+		filters = append(filters, a.deinterlaceFilterForProfile(spec))
+	}
+	if prof.VideoMaxWidth > 0 {
+		filters = append(filters, softwareScaleWidthFilter(prof.VideoMaxWidth))
+	}
+	if len(filters) > 0 {
+		args = append(args, "-vf", strings.Join(filters, ","))
 	}
 
 	encoder := "h264_nvenc"
@@ -321,8 +340,12 @@ func appendNVENCRateControlArgs(args []string, prof ports.ProfileSpec) []string 
 	}
 
 	if prof.VideoMaxRateK > 0 {
+		bV := prof.VideoTargetRateK
+		if bV <= 0 {
+			bV = prof.VideoMaxRateK
+		}
 		args = append(args,
-			"-b:v", fmt.Sprintf("%dk", prof.VideoMaxRateK),
+			"-b:v", fmt.Sprintf("%dk", bV),
 			"-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK),
 		)
 		if prof.VideoBufSizeK > 0 {
@@ -380,7 +403,7 @@ func (a *LocalAdapter) buildCopyVideoArgs(args []string, spec ports.StreamSpec, 
 	// on every keyframe, which makes the HDR decoder re-initialise -> a periodic
 	// flash. dump_extra is an Annex-B/MPEG-TS hardening only.
 	isFMP4 := strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4")
-	hardenedBitstream := (liveCopy || shouldHardenSafariCopyBitstream(spec, inputURL)) && !isFMP4
+	hardenedBitstream := (liveCopy || shouldHardenSafariCopyBitstream(spec, inputURL, a.Config)) && !isFMP4
 
 	a.Logger.Info().
 		Str("sessionId", spec.SessionID).
@@ -450,9 +473,15 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 		Bool("legacy_defaults", legacy).
 		Msg("pipeline video: cpu")
 
-	deinterlaceFilter := a.deinterlaceFilterForProfile(spec)
+	filters := make([]string, 0, 2)
 	if deinterlace {
-		args = append(args, "-vf", deinterlaceFilter)
+		filters = append(filters, a.deinterlaceFilterForProfile(spec))
+	}
+	if prof.VideoMaxWidth > 0 {
+		filters = append(filters, softwareScaleWidthFilter(prof.VideoMaxWidth))
+	}
+	if len(filters) > 0 {
+		args = append(args, "-vf", strings.Join(filters, ","))
 	}
 
 	args = append(args, "-c:v", codec)
@@ -464,7 +493,11 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 	if tune != "" {
 		args = append(args, "-tune", tune)
 	}
-	args = append(args, "-crf", strconv.Itoa(crf))
+	if prof.PlannerBound && prof.VideoTargetRateK > 0 {
+		args = append(args, "-b:v", fmt.Sprintf("%dk", prof.VideoTargetRateK))
+	} else {
+		args = append(args, "-crf", strconv.Itoa(crf))
+	}
 
 	if !legacy && prof.VideoMaxRateK > 0 {
 		args = append(args, "-maxrate", fmt.Sprintf("%dk", prof.VideoMaxRateK))
@@ -482,6 +515,10 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 		"-profile:v", "main",
 	)
 	return args
+}
+
+func softwareScaleWidthFilter(width int) string {
+	return fmt.Sprintf("scale=w=%d:h=-2:flags=lanczos", width)
 }
 
 func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string {

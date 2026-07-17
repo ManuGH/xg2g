@@ -36,6 +36,7 @@ type intentRoutes interface {
 
 type livePlaybackRoutes interface {
 	PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request)
+	PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 }
 
 type logRoutes interface {
@@ -96,6 +97,7 @@ type streamRoutes interface {
 	GetStreams(w http.ResponseWriter, r *http.Request)
 	DeleteStreamsId(w http.ResponseWriter, r *http.Request)
 	PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request)
+	PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 }
 
 type configRoutes interface {

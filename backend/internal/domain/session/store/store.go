@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 )
 
 var (
@@ -34,6 +35,7 @@ type Lease interface {
 // SessionLookupStore exposes read access for a single session.
 type SessionLookupStore interface {
 	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
+	ports.DiagnosticLookup
 }
 
 // SessionExpiryStore exposes only the operations required by lease-expiry workers.
@@ -68,13 +70,11 @@ type IntentStore interface {
 // - Single-writer leases prevent stampedes.
 type StateStore interface {
 	// --- Session CRUD ---
+	SessionLookupStore
 	PutSession(ctx context.Context, s *model.SessionRecord) error
 	// PutSessionWithIdempotency writes a session and an idempotency key atomicity/transactionally.
 	// If the idempotency key already exists, it returns the existing sessionID, exists=true, and no error.
 	PutSessionWithIdempotency(ctx context.Context, s *model.SessionRecord, idemKey string, ttl time.Duration) (existingID string, exists bool, err error)
-	// GetSession returns the session record. If not found, it returns (nil, nil).
-	// Callers must check for nil record before using it.
-	GetSession(ctx context.Context, id string) (*model.SessionRecord, error)
 	// ADR-009: QuerySessions returns sessions matching filter criteria (efficient, no full scan).
 	// Results are ordered by UpdatedAtUnix DESC, then CreatedAtUnix DESC, then SessionID ASC.
 	// CTO Patch 2: For lease expiry - filter by state + lease_expires_at

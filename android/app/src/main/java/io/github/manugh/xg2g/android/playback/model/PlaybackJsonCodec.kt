@@ -13,6 +13,7 @@ internal object PlaybackJsonCodec {
         is NativePlaybackRequest.Live -> JSONObject()
             .put("kind", "live")
             .put("serviceRef", request.serviceRef)
+            .put("profile", request.profile)
             .put("playbackDecisionToken", request.playbackDecisionToken)
             .put("hwaccel", request.hwaccel)
             .put("title", request.title)
@@ -24,6 +25,7 @@ internal object PlaybackJsonCodec {
         is NativePlaybackRequest.Recording -> JSONObject()
             .put("kind", "recording")
             .put("recordingId", request.recordingId)
+            .put("profile", request.profile)
             .put("startPositionMs", request.startPositionMs)
             .put("title", request.title)
             .put("logoUrl", request.logoUrl)
@@ -38,6 +40,7 @@ internal object PlaybackJsonCodec {
                 serviceRef = obj.optString("serviceRef")
                     .takeIf { it.isNotBlank() }
                     ?: throw IllegalArgumentException("Missing serviceRef"),
+                profile = obj.optNullableString("profile"),
                 playbackDecisionToken = obj.optNullableString("playbackDecisionToken"),
                 hwaccel = obj.optNullableString("hwaccel"),
                 params = obj.optJSONObject("params")
@@ -53,6 +56,7 @@ internal object PlaybackJsonCodec {
                 recordingId = obj.optString("recordingId")
                     .takeIf { it.isNotBlank() }
                     ?: throw IllegalArgumentException("Missing recordingId"),
+                profile = obj.optNullableString("profile"),
                 startPositionMs = obj.optLong("startPositionMs", 0L),
                 title = obj.optNullableString("title"),
                 logoUrl = obj.optNullableString("logoUrl"),

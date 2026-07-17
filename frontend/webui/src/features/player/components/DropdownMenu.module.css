@@ -1,0 +1,126 @@
+.container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trigger {
+  background: transparent;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trigger:hover {
+  background: var(--surface-highlight);
+  color: var(--text-primary);
+}
+
+.trigger.active {
+  color: var(--accent-action);
+  background: var(--accent-action-subtle);
+}
+
+.trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.popup {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  right: 0;
+  background: var(--surface-shell-safe);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  min-width: 160px;
+  padding: 8px 0;
+  box-shadow: var(--shadow-stage);
+  z-index: 100;
+  animation-name: popupFadeIn;
+  animation-duration: 0.2s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: forwards;
+  transform-origin: bottom right;
+}
+
+.popupTitle {
+  padding: 4px 16px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-base);
+  margin-bottom: 4px;
+}
+
+.optionsList {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.optionsList::-webkit-scrollbar {
+  width: 4px;
+}
+
+.optionsList::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-primary) 20%, transparent);
+  border-radius: 4px;
+}
+
+.optionItem {
+  background: transparent;
+  border: none;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  transition: background 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.optionItem:hover {
+  background: var(--surface-highlight);
+}
+
+.optionItem.selected {
+  background: var(--accent-action-subtle);
+  color: var(--accent-action);
+  font-weight: 500;
+}
+
+.optionCheckIndicator {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.optionCheckIndicator svg {
+  width: 100%;
+  height: 100%;
+}
+
+.optionLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

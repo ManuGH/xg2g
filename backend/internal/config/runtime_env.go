@@ -127,6 +127,13 @@ var runtimeEnvKeys = []string{
 	"XG2G_ADAPTIVE_H264_BUFSIZE_K",
 
 	// Safari "dirty"/HQ rate control + runtime probe (runtime_hardening / profiles).
+	"XG2G_SAFARI_CPU_PRESET",
+	"XG2G_SAFARI_CPU_START_TIMEOUT_MS",
+	"XG2G_SAFARI_DIRTY_VAAPI_QP",
+	"XG2G_SAFARI_DIRTY_X264_TUNE",
+	"XG2G_SAFARI_VAAPI_QP",
+	"XG2G_SAFARI_VAAPI_MAXRATE_K",
+	"XG2G_SAFARI_VAAPI_BUFSIZE_K",
 	"XG2G_SAFARI_DIRTY_MAXRATE_K",
 	"XG2G_SAFARI_DIRTY_BUFSIZE_K",
 	"XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K",
@@ -134,12 +141,25 @@ var runtimeEnvKeys = []string{
 	"XG2G_SAFARI_RUNTIME_PROBE_TIMEOUT_MS",
 
 	// FPS probing (pipeline/profiles).
+	"XG2G_FPS_PROBE_FFLAGS",
+	"XG2G_FPS_PROBE_ERR_DETECT",
+	"XG2G_FPS_PROBE_ANALYZE_DURATION",
+	"XG2G_FPS_PROBE_SIZE",
+	"XG2G_FPS_PROBE_RETRY_ANALYZE_DURATION",
+	"XG2G_FPS_PROBE_RETRY_SIZE",
 	"XG2G_FPS_MIN",
 	"XG2G_FPS_MAX",
 	"XG2G_FPS_FALLBACK",
 	"XG2G_FPS_PROBE_TIMEOUT_MS",
 
 	// Stream-relay probe depth overrides (ffmpeg/adapter.go).
+	"XG2G_LIVE_ANALYZE_DURATION",
+	"XG2G_LIVE_PROBE_SIZE",
+	"XG2G_LIVE_USER_AGENT",
+	"XG2G_INGEST_FFLAGS",
+	"XG2G_INGEST_ERR_DETECT",
+	"XG2G_INGEST_MAX_ERROR_RATE",
+	"XG2G_INGEST_FLAGS2",
 	"XG2G_STREAMRELAY_ANALYZE_DURATION",
 	"XG2G_STREAMRELAY_PROBE_SIZE",
 
@@ -155,6 +175,13 @@ var runtimeEnvKeys = []string{
 	"XG2G_LIVE_AVSYNC_PIPE_NO_TRIM",
 	"XG2G_INITIAL_REFRESH",
 	"XG2G_RATE_LIMIT_ENABLED",
+
+	// ShadowStore limits
+	"XG2G_SHADOW_STORE_ENABLED",
+	"XG2G_SHADOW_STORE_MAX_BYTES",
+	"XG2G_SHADOW_STORE_QUEUE_MAX_BYTES",
+	"XG2G_SHADOW_STORE_MAX_OBJECTS",
+	"XG2G_STARTUP_INGEST_PROXY",
 }
 
 // KnownRuntimeEnvKeys returns every env key recognized at runtime: those read by
@@ -194,6 +221,7 @@ func ReadEnv(getenv func(string) string) (Env, error) {
 	rt.OpenWebIF = readOpenWebIFRuntime(getenv)
 	rt.Transcoder = readTranscoderRuntime(getenv)
 	rt.HLS = readHLSRuntime(getenv)
+	rt.ShadowStore = readShadowStoreRuntime(getenv)
 
 	return Env{Runtime: rt}, nil
 }
@@ -318,6 +346,29 @@ func readTranscoderRuntime(getenv func(string) string) TranscoderRuntime {
 		VideoCodec:        getString(getenv, "XG2G_VIDEO_CODEC", ""),
 		VAAPIDevice:       getString(getenv, "XG2G_VAAPI_DEVICE", ""),
 	}
+}
+
+func readShadowStoreRuntime(getenv func(string) string) ShadowStoreRuntime {
+	rt := ShadowStoreRuntime{
+		Enabled:       getBool(getenv, "XG2G_SHADOW_STORE_ENABLED", false),
+		MaxBytes:      268435456, // 256MB
+		QueueMaxBytes: 67108864,  // 64MB
+		MaxObjects:    512,
+	}
+
+	if raw := readTrimmedEnv(getenv, "XG2G_SHADOW_STORE_MAX_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n >= 0 {
+			rt.MaxBytes = n
+		}
+	}
+	if raw := readTrimmedEnv(getenv, "XG2G_SHADOW_STORE_QUEUE_MAX_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n >= 0 {
+			rt.QueueMaxBytes = n
+		}
+	}
+	applyPositiveInt(getenv, "XG2G_SHADOW_STORE_MAX_OBJECTS", &rt.MaxObjects)
+
+	return rt
 }
 
 func getString(getenv func(string) string, key, defaultValue string) string {

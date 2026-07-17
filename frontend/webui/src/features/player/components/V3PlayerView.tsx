@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { type RefObject } from 'react';
 import { Button, Card, StatusChip } from '../../../components/ui';
 import { useUiSurface } from '../../../context/UiSurfaceContext';
 import type { VideoElementRef } from '../../../types/v3-player';
@@ -8,7 +8,8 @@ import type {
 } from '../usePlaybackOrchestrator';
 import styles from './V3Player.module.css';
 import { DvrScrubSlider } from './DvrScrubSlider';
-import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph } from './playerControlGlyphs';
+import { DropdownMenu } from './DropdownMenu';
+import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph } from './playerControlGlyphs';
 
 interface V3PlayerViewProps {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -18,6 +19,7 @@ interface V3PlayerViewProps {
   actions: PlaybackOrchestratorActions;
   /** Live-only: opens the in-player channel list. Absent => no Sender button. */
   onOpenChannels?: () => void;
+  children?: React.ReactNode;
 }
 
 export function V3PlayerView({
@@ -27,6 +29,7 @@ export function V3PlayerView({
   viewState,
   actions,
   onOpenChannels,
+  children,
 }: V3PlayerViewProps) {
   // On phone-sized surfaces apply the compact mobile player layout (full-bleed
   // video, repositioned chrome). The styles existed in V3Player.module.css but
@@ -82,17 +85,6 @@ export function V3PlayerView({
           viewState.showNativeBufferingMask ? styles.videoWrapperMasked : null,
         ].filter(Boolean).join(' ')}
       >
-        {viewState.showPlaybackChrome && (viewState.programmeTitle || viewState.channelName) && (
-          <div className={styles.overlayTitle}>
-            {viewState.channelName && viewState.programmeTitle && viewState.programmeTitle !== viewState.channelName && (
-              <span className={styles.overlayChannelEyebrow}>{viewState.channelName}</span>
-            )}
-            <span className={styles.overlayProgrammeTitle}>{viewState.programmeTitle ?? viewState.channelName}</span>
-            {viewState.programmeDesc && (
-              <span className={styles.overlayProgrammeDesc}>{viewState.programmeDesc}</span>
-            )}
-          </div>
-        )}
         {viewState.showNativeBufferingMask && (
           <div className={styles.nativeBufferingMask} aria-hidden="true"></div>
         )}
@@ -108,22 +100,35 @@ export function V3PlayerView({
             aria-live="polite"
           >
             <div className={styles.spinnerBadge}>
-              <div className={`${styles.spinner} spinner-base`}></div>
+              {viewState.channelLogoUrl ? (
+                <img
+                  className={styles.startupChannelLogo}
+                  src={viewState.channelLogoUrl}
+                  alt={viewState.channelName || ''}
+                  loading="lazy"
+                />
+              ) : viewState.channelName ? (
+                <div className={styles.startupChannelInitials} aria-hidden="true">
+                  {viewState.channelName.substring(0, 2)}
+                </div>
+              ) : (
+                <div className={styles.startupRing} aria-hidden="true">
+                  <span className={styles.startupRingArc}></span>
+                  <span className={styles.startupRingCore}></span>
+                </div>
+              )}
             </div>
             <div className={styles.spinnerContent}>
-              <div className={styles.spinnerEyebrow}>{viewState.spinnerEyebrow}</div>
               {viewState.channelName && <h2 className={styles.spinnerTitle}>{viewState.channelName}</h2>}
-              <div className={styles.spinnerStatusRow}>
-                <StatusChip state={viewState.overlayStatusState} label={viewState.overlayStatusLabel} />
-              </div>
               <div className={styles.spinnerLabel}>{viewState.spinnerLabel}</div>
               <div className={styles.spinnerSupport}>{viewState.spinnerSupport}</div>
+
               <div className={styles.spinnerMeta}>
                 <div className={styles.spinnerProgressTrack} aria-hidden="true">
-                  <div className={`${styles.spinnerProgressFill} animate-startup-progress`}></div>
+                  <div className={styles.spinnerProgressIndeterminate}></div>
                 </div>
-                <div className={styles.spinnerElapsed}>{viewState.startupElapsedLabel}</div>
               </div>
+
               {viewState.showOverlayStopAction && (
                 <div className={styles.spinnerActions}>
                   <Button variant="danger" size="sm" onClick={() => void actions.stopStream()}>
@@ -190,205 +195,235 @@ export function V3PlayerView({
 
       {viewState.showPlaybackChrome && (
         <div className={styles.controlsHeader}>
-          {viewState.showSeekControls ? (
-            <div className={[styles.vodControls, styles.seekControls].join(' ')}>
-              <div className={styles.seekSliderGroup}>
-                <span className={styles.currentPositionLabel}>{viewState.currentPositionDisplay}</span>
-                <div className={styles.seekSliderRow}>
-                  <span className={styles.vodTime}>{viewState.startTimeDisplay}</span>
-                  <DvrScrubSlider
-                    value={viewState.relativePosition}
-                    max={viewState.windowDuration}
-                    sliderClassName={styles.vodSlider}
-                    onSeek={(offset) => actions.seekTo(viewState.seekableStart + offset)}
-                    previewBaseUrl={viewState.dvrPreviewBaseUrl}
-                    windowStartUnix={viewState.dvrPreviewWindowStartUnix}
-                    segmentSeconds={viewState.dvrPreviewSegmentSeconds}
-                  />
-                  <span className={styles.vodTimeTotal}>{viewState.endTimeDisplay}</span>
-                </div>
-              </div>
-
-              <div className={styles.transportControls}>
-                <div className={styles.seekButtons}>
-                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-900)} title={viewState.seekBack15mLabel} aria-label={viewState.seekBack15mLabel}>
-                    ↺ 15m
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-60)} title={viewState.seekBack60sLabel} aria-label={viewState.seekBack60sLabel}>
-                    ↺ 60s
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-15)} title={viewState.seekBack15sLabel} aria-label={viewState.seekBack15sLabel}>
-                    ↺ 15s
-                  </Button>
-                </div>
-
-                <Button
-                  variant="primary"
-                  size="icon"
-                  className={styles.playPauseButton}
-                  onClick={actions.togglePlayPause}
-                  title={viewState.playPauseLabel}
-                  aria-label={viewState.playPauseLabel}
-                >
-                  {viewState.playPauseIcon}
-                </Button>
-
-                <div className={styles.seekButtons}>
-                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(15)} title={viewState.seekForward15sLabel} aria-label={viewState.seekForward15sLabel}>
-                    ↻ 15s
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(60)} title={viewState.seekForward60sLabel} aria-label={viewState.seekForward60sLabel}>
-                    ↻ 60s
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(900)} title={viewState.seekForward15mLabel} aria-label={viewState.seekForward15mLabel}>
-                    ↻ 15m
-                  </Button>
-                </div>
-
-                {viewState.isLiveMode && (
-                  <button
-                    className={[styles.liveButton, viewState.isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
-                    onClick={() => actions.seekToLiveEdge()}
-                    title={viewState.liveButtonLabel}
-                    aria-label={viewState.liveButtonLabel}
-                  >
-                    LIVE
-                  </button>
-                )}
+          {viewState.showSeekControls && (
+            <div className={styles.seekSliderGroup}>
+              <div className={styles.seekSliderRow}>
+                <span className={styles.vodTime}>{viewState.startTimeDisplay}</span>
+                <DvrScrubSlider
+                  value={viewState.relativePosition}
+                  max={viewState.windowDuration}
+                  sliderClassName={styles.vodSlider}
+                  onSeek={(offset) => actions.seekTo(viewState.seekableStart + offset)}
+                  previewBaseUrl={viewState.dvrPreviewBaseUrl}
+                  windowStartUnix={viewState.dvrPreviewWindowStartUnix}
+                  segmentSeconds={viewState.dvrPreviewSegmentSeconds}
+                />
+                <span className={styles.vodTimeTotal}>{viewState.endTimeDisplay}</span>
               </div>
             </div>
-          ) : (
-            viewState.showServiceInput && (
-              <input
-                type="text"
-                className={styles.serviceInput}
-                value={viewState.serviceRef}
-                onChange={(e) => actions.updateServiceRef(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    actions.submitServiceRef(e.currentTarget.value);
-                  }
-                }}
-              />
-            )
           )}
 
-          {viewState.showManualStartButton && (
-            <Button
-              onClick={() => actions.startStream()}
-              disabled={viewState.manualStartDisabled}
-            >
-              ▶ {viewState.manualStartLabel}
-            </Button>
-          )}
+          <div className={styles.controlsBottomRow}>
+            <div className={styles.controlsLeft}>
+              {viewState.showSeekControls && (
+                <div className={styles.transportControls}>
+                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(-15)} title={viewState.seekBack15sLabel} aria-label={viewState.seekBack15sLabel}>
+                    <SeekBackGlyph /> 15s
+                  </Button>
 
-          {viewState.showDvrModeButton && (
-            <Button onClick={actions.enterDVRMode} title={viewState.dvrModeLabel}>
-              DVR
-            </Button>
-          )}
+                  <Button
+                    variant="primary"
+                    size="icon"
+                    className={styles.playPauseButton}
+                    onClick={actions.togglePlayPause}
+                    title={viewState.playPauseLabel}
+                    aria-label={viewState.playPauseLabel}
+                  >
+                    {viewState.playPauseIcon === '⏸' ? <PauseGlyph /> : <PlayGlyph />}
+                  </Button>
 
-          <div className={styles.utilityControls}>
-            {onOpenChannels && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className={styles.channelsButton}
-                onClick={onOpenChannels}
-                title="Sender wechseln"
-                aria-label="Sender wechseln"
-              >
-                <ChannelsGlyph />
-                <span>Sender</span>
-              </Button>
-            )}
+                  <Button variant="ghost" size="sm" onClick={() => actions.seekBy(60)} title={viewState.seekForward60sLabel} aria-label={viewState.seekForward60sLabel}>
+                    <SeekForwardGlyph /> 60s
+                  </Button>
 
-            {viewState.showNativeFullscreenButton && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={actions.enterNativeFullscreen}
-                title={viewState.nativeFullscreenTitle}
-              >
-                TV {viewState.nativeFullscreenLabel}
-              </Button>
-            )}
+                  {viewState.isLiveMode && (
+                    <button
+                      className={[styles.liveButton, viewState.isAtLiveEdge ? styles.liveButtonActive : null].filter(Boolean).join(' ')}
+                      onClick={() => actions.seekToLiveEdge()}
+                      title={viewState.liveButtonLabel}
+                      aria-label={viewState.liveButtonLabel}
+                    >
+                      LIVE
+                    </button>
+                  )}
+                </div>
+              )}
 
-            {viewState.showFullscreenButton && (
-              <Button
-                variant="ghost"
-                size="sm"
-                active={viewState.fullscreenActive}
-                onClick={() => void actions.toggleFullscreen()}
-                title={viewState.fullscreenLabel}
-              >
-                <FullscreenGlyph />
-                <span>{viewState.fullscreenLabel}</span>
-              </Button>
-            )}
+              {!viewState.showSeekControls && viewState.showServiceInput && (
+                <input
+                  type="text"
+                  className={styles.serviceInput}
+                  value={viewState.serviceRef}
+                  onChange={(e) => actions.updateServiceRef(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      actions.submitServiceRef(e.currentTarget.value);
+                    }
+                  }}
+                />
+              )}
 
-            {viewState.showVolumeControls && (
-              <div className={styles.volumeControl}>
+              {viewState.showManualStartButton && (
+                <Button
+                  onClick={() => actions.startStream()}
+                  disabled={viewState.manualStartDisabled}
+                >
+                  <PlayGlyph /> {viewState.manualStartLabel}
+                </Button>
+              )}
+
+              {viewState.showDvrModeButton && (
+                <Button onClick={actions.enterDVRMode} title={viewState.dvrModeLabel}>
+                  <PipGlyph /> DVR
+                </Button>
+              )}
+
+              {/* Inlined Title */}
+              {(viewState.programmeTitle || viewState.channelName) && (
+                <div className={styles.inlineTitleGroup}>
+                  {viewState.channelName && viewState.programmeTitle && viewState.programmeTitle !== viewState.channelName && (
+                    <span className={styles.inlineChannelEyebrow}>{viewState.channelName}</span>
+                  )}
+                  <span className={styles.inlineProgrammeTitle}>{viewState.programmeTitle ?? viewState.channelName}</span>
+                </div>
+              )}
+            </div>
+
+            <div className={styles.utilityControls}>
+              {onOpenChannels && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className={[styles.audioToggleButton, viewState.audioToggleActive ? null : styles.audioMuted].filter(Boolean).join(' ')}
-                  onClick={actions.toggleMute}
-                  title={viewState.audioToggleLabel}
-                  aria-label={viewState.audioToggleLabel}
-                  aria-pressed={viewState.audioToggleActive}
+                  className={styles.channelsButton}
+                  onClick={onOpenChannels}
+                  title="Sender wechseln"
+                  aria-label="Sender wechseln"
                 >
-                  <span className={styles.audioToggleIcon} aria-hidden="true">
-                    <VolumeGlyph muted={!viewState.audioToggleActive} />
-                  </span>
-                  <span>{viewState.audioToggleLabel}</span>
+                  <ChannelsGlyph />
+                  <span className="sr-only">Sender</span>
                 </Button>
-                {viewState.canAdjustVolume ? (
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    className={styles.volumeSlider}
-                    value={viewState.volume}
-                    onChange={(e) => actions.changeVolume(parseFloat(e.target.value))}
-                  />
-                ) : (
-                  <span className={styles.deviceVolumeHint}>{viewState.deviceVolumeHint}</span>
-                )}
-              </div>
-            )}
+              )}
 
-            {viewState.showPipButton && (
+              {viewState.audioTracks && viewState.audioTracks.length > 1 && (
+                <DropdownMenu
+                  icon={<AudioTracksGlyph />}
+                  title="Tonspur"
+                  activeId={viewState.activeAudioTrack}
+                  onSelect={(id) => actions.changeAudioTrack(id as number)}
+                  options={viewState.audioTracks.map((t) => ({
+                    id: t.engineIndex !== undefined ? t.engineIndex : t.id,
+                    label: t.label || t.name || t.language || `Track ${t.engineIndex !== undefined ? t.engineIndex : t.id}`,
+                  }))}
+                />
+              )}
+
+              <DropdownMenu
+                icon={<SettingsGlyph />}
+                title="Profil"
+                activeId={viewState.explicitProfile}
+                onSelect={(id) => actions.changeProfile(id as string)}
+                options={[
+                  { id: 'auto', label: 'Auto (Smart)' },
+                  { id: 'direct', label: 'Direct Play' },
+                  { id: 'quality', label: 'Quality' },
+                  { id: 'compatible', label: 'Compatible' },
+                  { id: 'repair', label: 'Repair' },
+                ]}
+              />
+
+              {viewState.showNativeFullscreenButton && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={actions.enterNativeFullscreen}
+                  title={viewState.nativeFullscreenTitle}
+                >
+                  <FullscreenGlyph /> {viewState.nativeFullscreenLabel}
+                </Button>
+              )}
+
+              {viewState.showFullscreenButton && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  active={viewState.fullscreenActive}
+                  onClick={() => void actions.toggleFullscreen()}
+                  title={viewState.fullscreenLabel}
+                  aria-label={viewState.fullscreenLabel}
+                >
+                  <FullscreenGlyph />
+                  <span className="sr-only">Vollbild</span>
+                </Button>
+              )}
+
+              {viewState.showVolumeControls && (
+                <div className={styles.volumeControl}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={[styles.audioToggleButton, viewState.audioToggleActive ? null : styles.audioMuted].filter(Boolean).join(' ')}
+                    onClick={actions.toggleMute}
+                    title={viewState.audioToggleLabel}
+                    aria-label={viewState.audioToggleLabel}
+                    aria-pressed={viewState.audioToggleActive}
+                  >
+                    <span className={styles.audioToggleIcon} aria-hidden="true">
+                      <VolumeGlyph muted={!viewState.audioToggleActive} />
+                    </span>
+                  </Button>
+                  {viewState.canAdjustVolume ? (
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      className={styles.volumeSlider}
+                      value={viewState.volume}
+                      onChange={(e) => actions.changeVolume(parseFloat(e.target.value))}
+                    />
+                  ) : (
+                    <span className={styles.deviceVolumeHint}>{viewState.deviceVolumeHint}</span>
+                  )}
+                </div>
+              )}
+
+              {viewState.showPipButton && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void actions.togglePiP()}
+                  title={viewState.pipTitle}
+                  aria-label={viewState.pipLabel}
+                >
+                  <PipGlyph />
+                  <span className="sr-only">PiP</span>
+                </Button>
+              )}
+
               <Button
                 variant="ghost"
                 size="sm"
-                active={viewState.pipActive}
-                onClick={() => void actions.togglePiP()}
-                title={viewState.pipTitle}
+                active={viewState.statsActive}
+                onClick={actions.toggleStats}
+                title={viewState.statsTitle}
+                aria-label={viewState.statsLabel}
               >
-                <PipGlyph />
-                <span>{viewState.pipLabel}</span>
+                {viewState.ttffBadgeLabel && (
+                  <span className={styles.ttffBadge} title={viewState.ttffTitle ?? undefined}>
+                    ⚡ {viewState.ttffBadgeLabel}
+                  </span>
+                )}
+                <StatsGlyph />
+                <span className="sr-only">{viewState.statsLabel}</span>
               </Button>
-            )}
 
-            <Button
-              variant="ghost"
-              size="sm"
-              active={viewState.statsActive}
-              onClick={actions.toggleStats}
-              title={viewState.statsTitle}
-            >
-              <StatsGlyph />
-              <span>{viewState.statsLabel}</span>
-            </Button>
-
-            {viewState.showStopButton && (
-              <Button variant="danger" onClick={() => void actions.stopStream()}>
-                ⏹ {viewState.stopLabel}
-              </Button>
-            )}
+              {viewState.showStopButton && (
+                <Button variant="danger" onClick={() => void actions.stopStream()}>
+                  <StopGlyph /> {viewState.stopLabel}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -413,6 +448,8 @@ export function V3PlayerView({
           </div>
         </div>
       )}
+      {/* Render children inside container to allow proper overlays (like ChannelSwitcher) */}
+      {children}
     </div>
   );
 }

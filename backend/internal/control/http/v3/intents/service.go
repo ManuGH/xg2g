@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 	"strings"
 	"time"
 )
@@ -19,7 +21,39 @@ const startReplayRecoveryAttempts = 3
 
 // Service handles intent processing independent of HTTP transport.
 type Service struct {
-	deps Deps
+	deps                Deps
+	profileResolver     profiles.Resolver
+	profileResolverSet  bool
+	clientAV1Disabled   bool
+	clientAV1PolicySet  bool
+	iosNativeHEVCHWMode string
+	iosHEVCPolicySet    bool
+}
+
+func WithClientAV1Disabled(disabled bool) Option {
+	return func(s *Service) {
+		s.clientAV1Disabled = disabled
+		s.clientAV1PolicySet = true
+	}
+}
+
+func WithIOSNativeHEVCHWMode(mode string) Option {
+	return func(s *Service) {
+		s.iosNativeHEVCHWMode = mode
+		s.iosHEVCPolicySet = true
+	}
+}
+
+type Option func(*Service)
+
+func WithProfileResolver(resolver profiles.Resolver) Option {
+	return func(s *Service) {
+		if !resolver.IsInitialized() {
+			return
+		}
+		s.profileResolver = resolver
+		s.profileResolverSet = true
+	}
 }
 
 type startHardwareState struct {
@@ -44,10 +78,24 @@ type startProfileResolution struct {
 	resolvedIntent        string
 	degradedFrom          string
 	autoCodecTrace        autocodec.SelectionTrace
+	requestedCodecs       string
 }
 
-func NewService(deps Deps) *Service {
-	return &Service{deps: deps}
+func NewService(deps Deps, opts ...Option) *Service {
+	s := &Service{deps: deps}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if !s.profileResolverSet {
+		s.profileResolver = profiles.LoadResolver()
+	}
+	if !s.clientAV1PolicySet {
+		s.clientAV1Disabled = config.ParseBool("XG2G_CLIENT_AV1_DISABLED", false)
+	}
+	if !s.iosHEVCPolicySet {
+		s.iosNativeHEVCHWMode = autocodec.ResolveIOSNativeHEVCHWMode()
+	}
+	return s
 }
 
 func (s *Service) ProcessIntent(ctx context.Context, intent Intent) (*Result, *Error) {
@@ -71,18 +119,37 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	// branching must go through the live truth resolver used by /live/stream-info.
 	capability := s.lookupStartCapability(intent.ServiceRef)
 	hardwareState := detectStartHardwareState()
-	hwaccelMode, err := s.resolveStartHWAccelMode(intent, hardwareState)
-	if err != nil {
-		return nil, err
+	hwaccelMode := profiles.HWAccelAuto
+	var resolution startProfileResolution
+	if intent.PlannerPlan != nil || intent.PlanningReceipt != nil {
+		var err *Error
+		resolution, err = s.resolvePlannerStartProfile(intent, hardwareState)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err *Error
+		hwaccelMode, err = s.resolveStartHWAccelMode(intent, hardwareState)
+		if err != nil {
+			return nil, err
+		}
+		reqProfileID, requestedPlaybackMode, err := s.resolveRequestedStartProfile(ctx, intent, hwaccelMode, capability)
+		if err != nil {
+			return nil, err
+		}
+		resolution, err = s.resolveStartProfile(ctx, intent, capability, hardwareState, hwaccelMode, reqProfileID, requestedPlaybackMode)
+		if err != nil {
+			return nil, err
+		}
+		telemetry.GetStartupTracer(intent.SessionID).MarkOnce(telemetry.MilestoneP1, "legacy_planner_resolved")
 	}
-	reqProfileID, requestedPlaybackMode, err := s.resolveRequestedStartProfile(ctx, intent, hwaccelMode, capability)
-	if err != nil {
-		return nil, err
+
+	tracer := telemetry.GetStartupTracer(intent.SessionID)
+	if intent.PlannerPlan != nil || intent.PlanningReceipt != nil {
+		tracer.MarkOnce(telemetry.MilestoneP1, "planner_preflight_resolved")
 	}
-	resolution, err := s.resolveStartProfile(ctx, intent, capability, hardwareState, hwaccelMode, reqProfileID, requestedPlaybackMode)
-	if err != nil {
-		return nil, err
-	}
+	tracer.UpdateMetadata("", string(resolution.profileSpec.Container), fmt.Sprintf("%v", resolution.profileSpec.TranscodeVideo), "")
+
 	if err := s.checkStartAdmission(ctx, intent, resolution.profileSpec); err != nil {
 		return nil, err
 	}
@@ -100,8 +167,10 @@ func (s *Service) processStart(ctx context.Context, intent Intent) (*Result, *Er
 	if replay, err := s.persistStartSession(ctx, intent, store, session, resolution.idempotencyKey, phaseLabel); err != nil {
 		return nil, err
 	} else if replay != nil {
+		tracer.MarkOnce(telemetry.MilestoneP2, "session_replayed")
 		return replay, nil
 	}
+	tracer.MarkOnce(telemetry.MilestoneP2, "session_created")
 	if err := s.publishStartSession(ctx, intent, bus, resolution.effectiveProfileID, phaseLabel); err != nil {
 		// The session and idempotency key were already persisted; the event never
 		// reached the orchestrator. Roll both back so the session does not linger in

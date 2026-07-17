@@ -37,6 +37,12 @@ const (
 )
 
 func ResolveAutoTranscodeCodecs(caps capabilities.PlaybackCapabilities) []string {
+	return ResolveAutoTranscodeCodecsWithPolicy(caps, false)
+}
+
+// ResolveAutoTranscodeCodecsWithPolicy is deterministic with respect to the
+// supplied client evidence and immutable AV1 policy snapshot.
+func ResolveAutoTranscodeCodecsWithPolicy(caps capabilities.PlaybackCapabilities, clientAV1Disabled bool) []string {
 	out := make([]string, 0, 3)
 	signals := caps.VideoCodecSignals
 	signalFor := func(codec string) *capabilities.VideoCodecSignal {
@@ -48,7 +54,7 @@ func ResolveAutoTranscodeCodecs(caps capabilities.PlaybackCapabilities) []string
 		return nil
 	}
 
-	if av1 := signalFor("av1"); av1 != nil && av1.Supported && ClientAV1PlaybackAllowed(caps, caps.ClientFamilyFallback) {
+	if av1 := signalFor("av1"); av1 != nil && av1.Supported && ClientAV1PlaybackAllowedWithPolicy(caps, caps.ClientFamilyFallback, clientAV1Disabled) {
 		out = append(out, "av1")
 	}
 
@@ -100,7 +106,11 @@ func PickProfileForCapabilitiesForClient(caps capabilities.PlaybackCapabilities,
 }
 
 func PickProfileForCapabilitiesForClientAndHost(caps capabilities.PlaybackCapabilities, clientFamily string, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
-	codecs := ResolveAutoTranscodeCodecs(caps)
+	return PickProfileForCapabilitiesForClientAndHostWithPolicy(caps, clientFamily, hwaccelMode, hostRuntime, false)
+}
+
+func PickProfileForCapabilitiesForClientAndHostWithPolicy(caps capabilities.PlaybackCapabilities, clientFamily string, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot, clientAV1Disabled bool) string {
+	codecs := ResolveAutoTranscodeCodecsWithPolicy(caps, clientAV1Disabled)
 	if len(codecs) == 0 {
 		return ""
 	}
@@ -112,13 +122,17 @@ func PickNativeHLSProfile(raw, clientFamily string, clientCaps *capabilities.Pla
 }
 
 func PickNativeHLSProfileForClientAndHost(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
-	if clientCaps != nil && !ClientAV1PlaybackAllowed(*clientCaps, clientFamily) {
+	return PickNativeHLSProfileForClientAndHostWithPolicy(raw, clientFamily, clientCaps, hwaccelMode, hostRuntime, false)
+}
+
+func PickNativeHLSProfileForClientAndHostWithPolicy(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot, clientAV1Disabled bool) string {
+	if clientCaps != nil && !ClientAV1PlaybackAllowedWithPolicy(*clientCaps, clientFamily, clientAV1Disabled) {
 		raw = joinCodecsWithout(raw, "av1")
 	}
 	if picked := PickNativeHLSProfileForCodecsAndHost(raw, clientFamily, hwaccelMode, hostRuntime); picked != "" {
 		return picked
 	}
-	return PickNativeHLSProfileForCapabilitiesAndHost(clientFamily, clientCaps, hwaccelMode, hostRuntime)
+	return PickNativeHLSProfileForCapabilitiesAndHostWithPolicy(clientFamily, clientCaps, hwaccelMode, hostRuntime, clientAV1Disabled)
 }
 
 func PickNativeHLSProfileForCodecs(raw, clientFamily string, hwaccelMode profiles.HWAccelMode) string {
@@ -145,6 +159,10 @@ func PickNativeHLSProfileForCapabilities(clientFamily string, clientCaps *capabi
 }
 
 func PickNativeHLSProfileForCapabilitiesAndHost(clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
+	return PickNativeHLSProfileForCapabilitiesAndHostWithPolicy(clientFamily, clientCaps, hwaccelMode, hostRuntime, false)
+}
+
+func PickNativeHLSProfileForCapabilitiesAndHostWithPolicy(clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot, clientAV1Disabled bool) string {
 	if hwaccelMode == profiles.HWAccelOff {
 		return ""
 	}
@@ -171,7 +189,7 @@ func PickNativeHLSProfileForCapabilitiesAndHost(clientFamily string, clientCaps 
 	candidates := make([]candidate, 0, 2)
 	if clientCaps != nil &&
 		playbackCapabilitiesHaveCodec(clientCaps.VideoCodecs, "av1") &&
-		ClientAV1PlaybackAllowed(*clientCaps, family) {
+		ClientAV1PlaybackAllowedWithPolicy(*clientCaps, family, clientAV1Disabled) {
 		if requiredCodec, ok := requiredVerifiedHardwareCodecForProfile(profiles.ProfileAV1HW); ok && hardware.IsHardwareEncoderReady(requiredCodec) {
 			candidates = append(candidates, newCandidate(profiles.ProfileAV1HW, "av1", measuredProbeElapsedForCodec("av1"), 2))
 		}
@@ -214,13 +232,17 @@ func PickProfileForCodecsForClientAndHost(raw, clientFamily string, hwaccelMode 
 }
 
 func ApplyClientCompatibilityProfileID(clientFamily, effectiveProfileID string) string {
+	return ApplyClientCompatibilityProfileIDWithPolicy(clientFamily, effectiveProfileID, ResolveIOSNativeHEVCHWMode())
+}
+
+func ApplyClientCompatibilityProfileIDWithPolicy(clientFamily, effectiveProfileID, iosNativeHEVCHWMode string) string {
 	if normalize.Token(clientFamily) != playbackprofile.ClientIOSSafariNative {
 		return effectiveProfileID
 	}
 
 	switch profiles.NormalizeRequestedProfileID(effectiveProfileID) {
 	case profiles.ProfileSafariHEVCHW:
-		if resolveIOSNativeHEVCHWMode() == iosNativeHEVCHWModeCPU {
+		if normalizeIOSNativeHEVCHWMode(iosNativeHEVCHWMode) == iosNativeHEVCHWModeCPU {
 			return profiles.ProfileSafariHEVC
 		}
 	default:
@@ -234,7 +256,16 @@ func ApplyClientCompatibilityPolicy(
 	profileSpec model.ProfileSpec,
 	resolveProfileSpec func(string) model.ProfileSpec,
 ) (string, model.ProfileSpec) {
-	compatibleProfileID := ApplyClientCompatibilityProfileID(clientFamily, effectiveProfileID)
+	return ApplyClientCompatibilityPolicyWithPolicy(clientFamily, effectiveProfileID, profileSpec, resolveProfileSpec, ResolveIOSNativeHEVCHWMode())
+}
+
+func ApplyClientCompatibilityPolicyWithPolicy(
+	clientFamily, effectiveProfileID string,
+	profileSpec model.ProfileSpec,
+	resolveProfileSpec func(string) model.ProfileSpec,
+	iosNativeHEVCHWMode string,
+) (string, model.ProfileSpec) {
+	compatibleProfileID := ApplyClientCompatibilityProfileIDWithPolicy(clientFamily, effectiveProfileID, iosNativeHEVCHWMode)
 	if compatibleProfileID != effectiveProfileID {
 		return compatibleProfileID, resolveProfileSpec(compatibleProfileID)
 	}
@@ -247,7 +278,7 @@ func ApplyClientCompatibilityPolicy(
 		return effectiveProfileID, profileSpec
 	}
 
-	hevcMode := resolveIOSNativeHEVCHWMode()
+	hevcMode := normalizeIOSNativeHEVCHWMode(iosNativeHEVCHWMode)
 	switch profiles.NormalizeRequestedProfileID(effectiveProfileID) {
 	case profiles.ProfileSafariHEVCHW:
 		switch hevcMode {
@@ -279,8 +310,12 @@ func ApplyClientCompatibilityPolicy(
 	}
 }
 
-func resolveIOSNativeHEVCHWMode() string {
-	mode := normalize.Token(config.ParseString("XG2G_IOS_NATIVE_HEVC_HW_MODE", ""))
+func ResolveIOSNativeHEVCHWMode() string {
+	return normalizeIOSNativeHEVCHWMode(config.ParseString("XG2G_IOS_NATIVE_HEVC_HW_MODE", ""))
+}
+
+func normalizeIOSNativeHEVCHWMode(raw string) string {
+	mode := normalize.Token(raw)
 	switch mode {
 	case iosNativeHEVCHWModeCPU, iosNativeHEVCHWModeEncodeOnly, iosNativeHEVCHWModeFull:
 		return mode

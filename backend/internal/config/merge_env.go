@@ -37,6 +37,8 @@ func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
 	l.mergeEnvTrustedProxies(cfg)
 	l.mergeEnvStreaming(cfg)
 	l.mergeEnvPlayback(cfg)
+	l.mergeEnvPlannerShadow(cfg)
+	l.mergeEnvPlannerReceipt(cfg)
 	l.mergeEnvMonetization(cfg)
 	l.mergeEnvRecordings(cfg)
 	l.mergeEnvVerification(cfg)
@@ -306,6 +308,18 @@ func (l *Loader) mergeEnvPlayback(cfg *AppConfig) {
 	cfg.Playback.Operator.ForceIntent = l.envString("XG2G_PLAYBACK_FORCE_INTENT", cfg.Playback.Operator.ForceIntent)
 	cfg.Playback.Operator.MaxQualityRung = l.envString("XG2G_PLAYBACK_MAX_QUALITY_RUNG", cfg.Playback.Operator.MaxQualityRung)
 	cfg.Playback.Operator.DisableClientFallback = l.envBool("XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", cfg.Playback.Operator.DisableClientFallback)
+}
+
+func (l *Loader) mergeEnvPlannerShadow(cfg *AppConfig) {
+	cfg.PlannerShadow.Enabled = l.envBool("XG2G_PLANNER_SHADOW", cfg.PlannerShadow.Enabled)
+	cfg.PlannerShadow.QueueCapacity = l.envInt("XG2G_PLANNER_SHADOW_QUEUE_CAPACITY", cfg.PlannerShadow.QueueCapacity)
+}
+
+func (l *Loader) mergeEnvPlannerReceipt(cfg *AppConfig) {
+	cfg.PlannerReceipt.Enabled = l.envBool("XG2G_PLANNER_RECEIPT_ENABLED", cfg.PlannerReceipt.Enabled)
+	cfg.PlannerReceipt.Required = l.envBool("XG2G_PLANNER_RECEIPT_REQUIRED", cfg.PlannerReceipt.Required)
+	cfg.PlannerReceipt.Capacity = l.envInt("XG2G_PLANNER_RECEIPT_CAPACITY", cfg.PlannerReceipt.Capacity)
+	cfg.PlannerReceipt.TTL = l.envDuration("XG2G_PLANNER_RECEIPT_TTL", cfg.PlannerReceipt.TTL)
 }
 
 func (l *Loader) mergeEnvMonetization(cfg *AppConfig) {

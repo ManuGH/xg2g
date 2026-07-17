@@ -19,14 +19,19 @@ var secret = TestSecret()
 func TestGenerateAndVerifyStrict(t *testing.T) {
 	now := time.Now().Unix()
 	claims := TokenClaims{
-		Iss:  "xg2g",
-		Aud:  "xg2g/v3/intents",
-		Sub:  "1:0:19:283D:3FB:1:C00000:0:0:0:",
-		Jti:  "test-uuid-1",
-		Iat:  now,
-		Nbf:  now - 10,
-		Exp:  now + 60, // 60s TTL
-		Mode: "hlsjs",
+		Iss:            "xg2g",
+		Aud:            "xg2g/v3/intents",
+		Sub:            "1:0:19:283D:3FB:1:C00000:0:0:0:",
+		Jti:            "test-uuid-1",
+		Iat:            now,
+		Nbf:            now - 10,
+		Exp:            now + 60, // 60s TTL
+		Mode:           "hlsjs",
+		ReceiptID:      "receipt-1",
+		PlanHash:       "plan-hash",
+		EvidenceHash:   "evidence-hash",
+		PlannerVersion: "planner-v1",
+		PolicyVersion:  "policy-v1",
 	}
 
 	token, err := GenerateHS256(secret, claims, "kid-v1")
@@ -40,6 +45,13 @@ func TestGenerateAndVerifyStrict(t *testing.T) {
 	}
 	if verifiedClaims.Mode != "hlsjs" {
 		t.Errorf("Expected mode 'hlsjs', got '%s'", verifiedClaims.Mode)
+	}
+	if verifiedClaims.ReceiptID != claims.ReceiptID ||
+		verifiedClaims.PlanHash != claims.PlanHash ||
+		verifiedClaims.EvidenceHash != claims.EvidenceHash ||
+		verifiedClaims.PlannerVersion != claims.PlannerVersion ||
+		verifiedClaims.PolicyVersion != claims.PolicyVersion {
+		t.Fatalf("receipt claims did not round-trip: %#v", verifiedClaims)
 	}
 }
 

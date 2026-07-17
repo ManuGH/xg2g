@@ -5,49 +5,27 @@ set -e
 # Ensures that openapi/v3.normative.snapshot.yaml is in sync with api/openapi.yaml
 # and that no forbidden fields have leaked into the normative surface.
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKEND_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$BACKEND_ROOT/.." && pwd)"
 SNAPSHOT_FILE="$REPO_ROOT/openapi/v3.normative.snapshot.yaml"
-CURRENT_API="$REPO_ROOT/api/openapi.yaml"
-MANIFEST_FILE="$REPO_ROOT/contracts/ui_consumption.manifest.json"
+MANIFEST_FILE="$BACKEND_ROOT/contracts/ui_consumption.manifest.json"
 
 echo "--- Verifying OpenAPI Drift ---"
 
 # 1. Structural Equality Check
-# We generate a FRESH snapshot from the current API and see if it matches the COMMITTED snapshot.
-
-GENERATE_SCRIPT="$REPO_ROOT/scripts/generate-normative-snapshot.sh"
+# Generate through the same code path that owns the committed snapshot. Keeping
+# a second filter implementation here previously omitted the generated-file
+# header and made this gate report drift even for a freshly generated snapshot.
+GENERATE_SCRIPT="$BACKEND_ROOT/scripts/generate-normative-snapshot.sh"
 TEMP_SNAPSHOT=$(mktemp)
+trap 'rm -f "$TEMP_SNAPSHOT"' EXIT
+"$GENERATE_SCRIPT" "$TEMP_SNAPSHOT" >/dev/null
 
-# Run generation to temp file (hack: modifying script slightly to output to location?
-# Or just let it overwrite and revert? No, side effects bad.)
-# Let's rely on the generate script modifying the file in place,
-# so we copy the committed one to a safe place, run generate on the repo file, compare, then restore?
-# Better: Make generate script accept output path.
-
-# Assume generate-normative-snapshot.sh takes output path, or we modify it to do so.
-# Since I just wrote it, let's modify it to take 1 arg.
-
-# Wait, let's just do a diff of content.
-# Manually run the filter logic here on a temp copy of api.yaml
-TEMP_API=$(mktemp)
-cp "$CURRENT_API" "$TEMP_API"
-
-if command -v jq &> /dev/null; then
-    FORBIDDEN_FIELDS=$(jq -r '.entries[] | select(.category=="forbidden") | .fieldPath' "$MANIFEST_FILE")
-    for FIELD in $FORBIDDEN_FIELDS; do
-        FIELD_KEY="${FIELD##*.}"
-        sed -i.bak "/^[[:space:]]*$FIELD_KEY:/d" "$TEMP_API"
-        rm -f "${TEMP_API}.bak"
-    done
-fi
-
-if ! cmp -s "$SNAPSHOT_FILE" "$TEMP_API"; then
+if ! cmp -s "$SNAPSHOT_FILE" "$TEMP_SNAPSHOT"; then
     echo "❌ Drift detected! Committed snapshot does not match current API state."
     echo "   Run './scripts/generate-normative-snapshot.sh' and commit the result."
-    rm "$TEMP_API"
     exit 1
 fi
-rm "$TEMP_API"
 
 echo "✅ Snapshot is up-to-date."
 
@@ -70,7 +48,7 @@ for FIELD in $FORBIDDEN_FIELDS; do
     # We look for "  field:" or " field:" to avoid matching substrings.
     FIELD_KEY="${FIELD##*.}" # Get last part (e.g. 'outputs' from 'decision.outputs')
 
-    if grep -q "$FIELD_KEY:" "$SNAPSHOT_FILE"; then
+    if grep -Eq "^[[:space:]]*$FIELD_KEY:" "$SNAPSHOT_FILE"; then
          # Only fail if it's NOT marked as forbidden/legacy in the snapshot itself (if we had markers).
          # For now, if the manifest says forbidden, it SHOULD NOT be in our normative snapshot
          # (if the snapshot was truly filtered).

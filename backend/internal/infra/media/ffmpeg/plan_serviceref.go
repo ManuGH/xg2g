@@ -1,7 +1,6 @@
 package ffmpeg
 
 import (
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"net/url"
@@ -67,7 +66,7 @@ func safariRuntimeServiceRef(spec ports.StreamSpec, inputURL string) string {
 	return extractServiceRefFromURL(inputURL)
 }
 
-func shouldForceSafariCopyForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+func shouldForceSafariCopyForServiceRef(spec ports.StreamSpec, inputURL string, cfg AdapterConfig) bool {
 	if spec.Profile.DisableSafariForceCopy {
 		return false
 	}
@@ -76,37 +75,37 @@ func shouldForceSafariCopyForServiceRef(spec ports.StreamSpec, inputURL string) 
 		return false
 	}
 
-	return serviceRefEnvContains("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", targetRef)
+	return serviceRefSnapshotContains(cfg.SafariForceCopyServiceRefs, targetRef)
 }
 
-func shouldForceSafariHQForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+func shouldForceSafariHQForServiceRef(spec ports.StreamSpec, inputURL string, cfg AdapterConfig) bool {
 	targetRef := safariRuntimeServiceRef(spec, inputURL)
 	if targetRef == "" {
 		return false
 	}
-	return serviceRefEnvContains("XG2G_SAFARI_HQ_SERVICE_REFS", targetRef)
+	return serviceRefSnapshotContains(cfg.SafariHQServiceRefs, targetRef)
 }
 
-func shouldForceAnySafariHQForServiceRef(spec ports.StreamSpec, inputURL string) bool {
-	return shouldForceSafariHQForServiceRef(spec, inputURL) ||
-		shouldForceSafariHQ25ForServiceRef(spec, inputURL) ||
-		shouldForceSafariHQ50ForServiceRef(spec, inputURL)
+func shouldForceAnySafariHQForServiceRef(spec ports.StreamSpec, inputURL string, cfg AdapterConfig) bool {
+	return shouldForceSafariHQForServiceRef(spec, inputURL, cfg) ||
+		shouldForceSafariHQ25ForServiceRef(spec, inputURL, cfg) ||
+		shouldForceSafariHQ50ForServiceRef(spec, inputURL, cfg)
 }
 
-func shouldForceSafariHQ25ForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+func shouldForceSafariHQ25ForServiceRef(spec ports.StreamSpec, inputURL string, cfg AdapterConfig) bool {
 	targetRef := safariRuntimeServiceRef(spec, inputURL)
 	if targetRef == "" {
 		return false
 	}
-	return serviceRefEnvContains("XG2G_SAFARI_HQ25_SERVICE_REFS", targetRef)
+	return serviceRefSnapshotContains(cfg.SafariHQ25ServiceRefs, targetRef)
 }
 
-func shouldForceSafariHQ50ForServiceRef(spec ports.StreamSpec, inputURL string) bool {
+func shouldForceSafariHQ50ForServiceRef(spec ports.StreamSpec, inputURL string, cfg AdapterConfig) bool {
 	targetRef := safariRuntimeServiceRef(spec, inputURL)
 	if targetRef == "" {
 		return false
 	}
-	return serviceRefEnvContains("XG2G_SAFARI_HQ50_SERVICE_REFS", targetRef)
+	return serviceRefSnapshotContains(cfg.SafariHQ50ServiceRefs, targetRef)
 }
 
 func safariHQRuntimeMode(profile ports.ProfileSpec) ports.RuntimeMode {
@@ -134,16 +133,15 @@ func shouldForce25FPSForSafariHQ(profile ports.ProfileSpec) bool {
 	return !shouldUseProgressiveSafariHQ(profile)
 }
 
-func shouldHardenSafariCopyBitstream(spec ports.StreamSpec, inputURL string) bool {
-	return shouldForceSafariCopyForServiceRef(spec, inputURL)
+func shouldHardenSafariCopyBitstream(spec ports.StreamSpec, inputURL string, cfg AdapterConfig) bool {
+	return shouldForceSafariCopyForServiceRef(spec, inputURL, cfg)
 }
 
-func serviceRefEnvContains(envKey, targetRef string) bool {
-	raw := strings.TrimSpace(config.ParseString(envKey, ""))
-	if raw == "" || targetRef == "" {
+func serviceRefSnapshotContains(refs []string, targetRef string) bool {
+	if len(refs) == 0 || targetRef == "" {
 		return false
 	}
-	for _, candidate := range strings.Split(raw, ",") {
+	for _, candidate := range refs {
 		if normalizeServiceRef(candidate) == targetRef {
 			return true
 		}

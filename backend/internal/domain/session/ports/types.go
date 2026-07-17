@@ -94,20 +94,50 @@ type ProfileSpec struct {
 	VOD                    bool              `json:"vod,omitempty"`
 	DisableSafariForceCopy bool              `json:"disableSafariForceCopy,omitempty"`
 	ForceSafariHQ25        bool              `json:"forceSafariHq25,omitempty"`
-	TranscodeVideo         bool              `json:"transcodeVideo"`
-	VideoCodec             string            `json:"videoCodec,omitempty"` // "h264" (default) or "hevc"
-	HWAccel                string            `json:"hwAccel,omitempty"`    // "vaapi", "vaapi_encode_only", "qsv", "nvenc", etc.
-	Deinterlace            bool              `json:"deinterlace,omitempty"`
-	VideoCRF               int               `json:"videoCrf,omitempty"`
-	VideoQP                int               `json:"videoQp,omitempty"`
-	VideoMaxWidth          int               `json:"videoMaxWidth,omitempty"`
-	VideoSourceHeight      int               `json:"videoSourceHeight,omitempty"` // scanned source height; drives resolution-aware bitrate budgeting
-	VideoMaxRateK          int               `json:"videoMaxRateK,omitempty"`
-	VideoBufSizeK          int               `json:"videoBufSizeK,omitempty"`
-	BFrames                int               `json:"bframes,omitempty"`
-	AudioBitrateK          int               `json:"audioBitrateK,omitempty"`
-	Preset                 string            `json:"preset,omitempty"`
-	Container              string            `json:"container,omitempty"` // "ts" (default) or "fmp4"
+	// PlannerBound marks profiles materialized from a verified immutable
+	// PlaybackPlan. Execution may translate them into encoder arguments but must
+	// not run legacy profile-selection or runtime-hardening policy again.
+	PlannerBound   bool   `json:"plannerBound,omitempty"`
+	TranscodeVideo bool   `json:"transcodeVideo"`
+	VideoCodec     string `json:"videoCodec,omitempty"` // "h264" (default) or "hevc"
+	// AudioMode is explicit for planner-issued profiles. Empty preserves the
+	// legacy rule: audio transcodes whenever video transcodes, otherwise copies.
+	AudioMode         string `json:"audioMode,omitempty"`  // "copy" or "transcode"
+	AudioCodec        string `json:"audioCodec,omitempty"` // target codec when AudioMode=transcode
+	HWAccel           string `json:"hwAccel,omitempty"`    // "vaapi", "vaapi_encode_only", "qsv", "nvenc", etc.
+	Deinterlace       bool   `json:"deinterlace,omitempty"`
+	VideoCRF          int    `json:"videoCrf,omitempty"`
+	VideoQP           int    `json:"videoQp,omitempty"`
+	VideoMaxWidth     int    `json:"videoMaxWidth,omitempty"`
+	VideoSourceHeight int    `json:"videoSourceHeight,omitempty"` // scanned source height; drives resolution-aware bitrate budgeting
+	VideoTargetRateK  int    `json:"videoTargetRateK,omitempty"`
+	VideoMaxRateK     int    `json:"videoMaxRateK,omitempty"`
+	VideoBufSizeK     int    `json:"videoBufSizeK,omitempty"`
+	BFrames           int    `json:"bframes,omitempty"`
+	AudioBitrateK     int    `json:"audioBitrateK,omitempty"`
+	Preset            string `json:"preset,omitempty"`
+	Container         string `json:"container,omitempty"` // "ts" (default) or "fmp4"
+}
+
+func (p ProfileSpec) TranscodesAudio() bool {
+	switch p.AudioMode {
+	case "transcode":
+		return true
+	case "copy":
+		return false
+	default:
+		return p.TranscodeVideo
+	}
+}
+
+func (p ProfileSpec) ResolvedAudioCodec() string {
+	if !p.TranscodesAudio() {
+		return ""
+	}
+	if p.AudioCodec != "" {
+		return p.AudioCodec
+	}
+	return "aac"
 }
 
 // RunHandle is an opaque token for a running pipeline.

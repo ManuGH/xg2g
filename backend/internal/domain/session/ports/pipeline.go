@@ -41,3 +41,16 @@ type ExecutedFFmpegPlan struct {
 type ExecutedFFmpegPlanProvider interface {
 	ExecutedFFmpegPlan(handle RunHandle) (ExecutedFFmpegPlan, bool)
 }
+
+// DiagnosticMetadata holds essential read-only fields for diagnostic logging during session lifecycle events.
+type DiagnosticMetadata struct {
+	GenerationID          string
+	CorrelationID         string
+	Reason                string
+	StopRequestedAtUnixMs int64
+}
+
+// DiagnosticLookup exposes session metadata needed for diagnostic contexts without coupling to store models.
+type DiagnosticLookup interface {
+	GetDiagnosticMetadata(ctx context.Context, sessionID string) (DiagnosticMetadata, bool)
+}

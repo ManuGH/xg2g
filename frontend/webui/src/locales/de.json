@@ -205,6 +205,11 @@
       "transcodeStartup": "Der Stream wird für dieses Gerät vorbereitet und startet danach automatisch.",
       "recovering": "Der Stream hatte einen Aussetzer und wird automatisch wiederhergestellt."
     },
+    "startupPhases": {
+      "connect": "Verbinden",
+      "transcode": "Transcodieren",
+      "buffer": "Puffern"
+    },
     "startupElapsed": "Wartezeit {{seconds}}s",
     "startupSurfaceEyebrow": "Live-Start",
     "playlistNotReady": "Playlist noch nicht bereit",
@@ -312,7 +317,8 @@
     "liveWindowState": "Live-Fenster",
     "liveWindowReady": "Fenster bereit",
     "liveWindowAtEdge": "Am Live-Rand",
-    "liveWindowBehindEdge": "{{seconds}}s hinter Live"
+    "liveWindowBehindEdge": "{{seconds}}s hinter Live",
+    "timeline": "Timeline"
   },
   "dashboard": {
     "controlSummary": "Kontrollübersicht",

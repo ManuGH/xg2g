@@ -10,12 +10,14 @@ sealed interface NativePlaybackRequest {
     val logoUrl: String?
     val correlationId: String?
     val authToken: String?
+    val profile: String?
 
     data class Live(
         val serviceRef: String,
         val playbackDecisionToken: String? = null,
         val hwaccel: String? = null,
         val params: Map<String, String> = emptyMap(),
+        override val profile: String? = null,
         override val title: String? = null,
         override val logoUrl: String? = null,
         override val correlationId: String? = null,
@@ -25,6 +27,7 @@ sealed interface NativePlaybackRequest {
     data class Recording(
         val recordingId: String,
         val startPositionMs: Long = 0L,
+        override val profile: String? = null,
         override val title: String? = null,
         override val logoUrl: String? = null,
         override val correlationId: String? = null,

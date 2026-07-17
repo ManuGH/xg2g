@@ -4,6 +4,48 @@
 
 Describe what changed and why.
 
+## Change Contract
+
+Use `None` where a category does not apply. Do not label intended behavior
+changes as a pure refactor.
+
+### Fixed
+
+-
+
+### Improved
+
+-
+
+### New
+
+-
+
+### Removed
+
+-
+
+### Explicitly Unchanged
+
+-
+
+### Risks
+
+-
+
+### Acceptance Criteria
+
+- [ ]
+
+### Migration Exit Condition
+
+State how and when temporary or parallel paths are removed, including the next
+owner/action. Use `None` when this is not a migration.
+
+### Deviations From the Agreed Scope
+
+- None
+
 ## Scope
 
 - In scope:

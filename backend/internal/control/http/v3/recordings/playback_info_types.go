@@ -6,6 +6,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 )
 
 type PlaybackSubjectKind string
@@ -58,6 +59,12 @@ type PlaybackInfoRequest struct {
 	Capabilities     *capabilities.PlaybackCapabilities
 }
 
+// PlannerEvaluation holds the paired evidence snapshot and resulting plan.
+type PlannerEvaluation struct {
+	Evidence playbackplanner.PlaybackEvidence
+	Result   playbackplanner.PlanningResult
+}
+
 // PlaybackInfoResult holds the domain-level inputs and outputs needed by the HTTP adapter.
 type PlaybackInfoResult struct {
 	SourceRef                 string
@@ -74,6 +81,8 @@ type PlaybackInfoResult struct {
 	RuntimePolicyConstraints  []string
 	RuntimeProbeSuccessStreak int
 	RuntimeProbeFailureStreak int
+	// PlannerEvaluation holds the immutable evidence and plan evaluated by the new planner.
+	PlannerEvaluation *PlannerEvaluation
 }
 
 type PlaybackInfoProblem struct {

@@ -1,8 +1,8 @@
 package ffmpeg
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,9 +10,11 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/metrics"
 )
 
 // Live-copy A/V-sync ("orphan atrim"). DVB/OSCam stream-relay sources deliver
@@ -64,9 +66,200 @@ func (a *LocalAdapter) shouldAvsyncAtrim(spec ports.StreamSpec) bool {
 	return spec.Source.Type != ports.SourceFile
 }
 
+var errSpoolLimit = errors.New("spool limit reached")
+
+type spoolState int
+
+const (
+	stateBuffering spoolState = iota
+	stateDecided
+	stateClosed
+)
+
+// boundedStartupSpool continuously reads from body into a chunk queue in the background.
+// Only the single producer goroutine (run) ever reads from resp.Body over the entire session.
+// During startup (stateBuffering), chunks accumulate in RAM without discarding any so ffprobe
+// can take a snapshot. Once decided (stateDecided), Read() drains chunks and drops consumed ones
+// for GC, and if totalBytes exceeds maxBytes, run() blocks waiting for consumer backpressure.
+type boundedStartupSpool struct {
+	body       io.Reader
+	sessionID  string
+	adapter    *LocalAdapter
+	mu         sync.Mutex
+	cond       *sync.Cond
+	chunks     [][]byte
+	totalBytes int
+	readOffset int
+	state      spoolState
+	err        error
+}
+
+func newBoundedStartupSpool(body io.Reader, sessionID string, adapter *LocalAdapter) *boundedStartupSpool {
+	s := &boundedStartupSpool{
+		body:      body,
+		sessionID: sessionID,
+		adapter:   adapter,
+	}
+	s.cond = sync.NewCond(&s.mu)
+	return s
+}
+
+func (s *boundedStartupSpool) run(maxBytes int) {
+	metrics.IncActiveAvsyncSpools()
+	defer func() {
+		metrics.DecActiveAvsyncSpools()
+		if s.adapter != nil {
+			dc := s.adapter.GetDiagnosticContext(s.sessionID)
+			s.adapter.Logger.Info().
+				Str("session_id", dc.SessionID).
+				Str("generation_id", dc.GenerationID).
+				Str("reason", dc.Reason).
+				Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+				Msg("avsync_spool_producer_exited")
+		}
+	}()
+	for {
+		chunk := make([]byte, 32<<10)
+		n, err := s.body.Read(chunk)
+		s.mu.Lock()
+		if s.state == stateClosed {
+			s.mu.Unlock()
+			return
+		}
+		if n > 0 {
+			ch := make([]byte, n)
+			copy(ch, chunk[:n])
+			s.chunks = append(s.chunks, ch)
+			s.totalBytes += n
+			s.cond.Broadcast()
+		}
+		if err != nil {
+			s.err = err
+			s.cond.Broadcast()
+			s.mu.Unlock()
+			return
+		}
+		// If we reach max limit while still buffering, force decision to unblock analyzer immediately
+		if s.state == stateBuffering && s.totalBytes >= maxBytes {
+			s.err = errSpoolLimit
+			s.cond.Broadcast()
+		}
+		// If we hit limit during buffering, wait until decision transitions us out of stateBuffering
+		for s.state == stateBuffering && s.totalBytes >= maxBytes && s.err == errSpoolLimit {
+			s.cond.Wait()
+			if s.state == stateClosed {
+				s.mu.Unlock()
+				return
+			}
+		}
+		// If we are decided and the buffer is full, wait for consumer (Read) to drain before reading more
+		for s.state == stateDecided && s.totalBytes >= maxBytes && s.err == nil {
+			s.cond.Wait()
+			if s.state == stateClosed {
+				s.mu.Unlock()
+				return
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
+func (s *boundedStartupSpool) markDecided() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state == stateBuffering {
+		s.state = stateDecided
+		if s.err == errSpoolLimit {
+			s.err = nil
+		}
+		s.cond.Broadcast()
+	}
+}
+
+func (s *boundedStartupSpool) close() {
+	s.mu.Lock()
+	if s.state != stateClosed {
+		s.state = stateClosed
+		s.cond.Broadcast()
+		s.mu.Unlock()
+		if s.adapter != nil {
+			dc := s.adapter.GetDiagnosticContext(s.sessionID)
+			s.adapter.Logger.Info().
+				Str("session_id", dc.SessionID).
+				Str("generation_id", dc.GenerationID).
+				Str("reason", dc.Reason).
+				Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+				Msg("avsync_spool_closing")
+		}
+		return
+	}
+	s.mu.Unlock()
+}
+
+func (s *boundedStartupSpool) snapshot() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]byte, s.totalBytes)
+	off := 0
+	for _, ch := range s.chunks {
+		copy(out[off:], ch)
+		off += len(ch)
+	}
+	return out
+}
+
+func (s *boundedStartupSpool) Read(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for len(s.chunks) == 0 && s.err == nil && s.state != stateClosed {
+		s.cond.Wait()
+	}
+	if s.state == stateClosed {
+		return 0, io.ErrClosedPipe
+	}
+	if len(s.chunks) == 0 && s.err != nil {
+		if s.err == errSpoolLimit {
+			// Limit reached during buffering, but reader now needs data to drain.
+			// Clear errSpoolLimit once drained so the producer loop can resume reading.
+			s.err = nil
+			if s.state == stateBuffering {
+				s.state = stateDecided
+			}
+			s.cond.Broadcast()
+			for len(s.chunks) == 0 && s.err == nil && s.state != stateClosed {
+				s.cond.Wait()
+			}
+			if s.state == stateClosed {
+				return 0, io.ErrClosedPipe
+			}
+			if len(s.chunks) == 0 && s.err != nil {
+				return 0, s.err
+			}
+		} else {
+			return 0, s.err
+		}
+	}
+
+	first := s.chunks[0]
+	n := copy(p, first[s.readOffset:])
+	s.readOffset += n
+	s.totalBytes -= n
+
+	if s.readOffset >= len(first) {
+		s.chunks[0] = nil // allow GC
+		s.chunks = s.chunks[1:]
+		s.readOffset = 0
+	}
+
+	s.cond.Broadcast() // wake up producer if it was blocked waiting on maxBytes
+	return n, nil
+}
+
 // prepareAvsyncPipe opens the relay over a single connection, peeks the head,
 // measures the orphan, and returns a stdin reader (buffered head + live tail)
-// plus the measured orphan. ok=false means the caller must use the normal path.
+// plus the measured orphan. ok=false means measurement failed, but stdin IS STILL
+// returned so data is not lost (fallback to untrimmed stream).
 func (a *LocalAdapter) prepareAvsyncPipe(ctx context.Context, rawURL, sessionID string) (float64, io.Reader, bool) {
 	if !isHTTPInputURL(rawURL) {
 		return 0, nil, false
@@ -76,17 +269,8 @@ func (a *LocalAdapter) prepareAvsyncPipe(ctx context.Context, rawURL, sessionID 
 	if err != nil {
 		return 0, nil, false
 	}
-	// Default user-agent (Go/Lavf-style) - the OSCam stream-relay honors the Host
-	// header for non-"VLC" UAs, which is all the peek needs. No dependency on any
-	// configurable UA override here, so this stays self-contained.
 	req.Header.Set("Icy-MetaData", "1")
 
-	// The shared adapter client carries a short overall Timeout meant for probes.
-	// http.Client.Timeout also bounds the body read, which would kill this
-	// long-lived stream mid-session (observed: ffmpeg dies ~10s in with "context
-	// deadline exceeded while reading body"). Reuse its Transport (the CIDR
-	// allowlist dialer) but drop the overall timeout - the session context, plus
-	// the body-close goroutine below, govern the stream's lifetime instead.
 	if a.httpClient == nil {
 		return 0, nil, false
 	}
@@ -101,89 +285,113 @@ func (a *LocalAdapter) prepareAvsyncPipe(ctx context.Context, rawURL, sessionID 
 		return 0, nil, false
 	}
 
+	metrics.IncActiveEnigma2Connections("spool")
+	spool := newBoundedStartupSpool(resp.Body, sessionID, a)
+	go spool.run(avsyncPeekMaxBytes)
+
+	// Close the spool and relay body when the session context ends
+	go func() {
+		<-ctx.Done()
+		spool.close()
+		_ = resp.Body.Close()
+		dc := a.GetDiagnosticContext(sessionID)
+		a.Logger.Info().
+			Str("session_id", dc.SessionID).
+			Str("generation_id", dc.GenerationID).
+			Str("reason", dc.Reason).
+			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+			Msg("http_body_closed")
+		metrics.DecActiveEnigma2Connections("spool")
+	}()
+
 	peekCtx, cancel := context.WithTimeout(ctx, avsyncPeekTimeout)
 	defer cancel()
 
-	// Close body on peek timeout to unblock any in-flight ReadFull; without this
-	// a stalled relay hangs the peek for the full timeout even though the context
-	// is cancelled. Use a channel to only apply during the peek phase - after a
-	// successful peek the session-context closer takes over.
-	peekDone := make(chan struct{})
-	go func() {
-		select {
-		case <-peekCtx.Done():
-			_ = resp.Body.Close()
-		case <-peekDone:
-		}
-	}()
+	orphan, ok := a.peekMeasure(peekCtx, spool)
+	spool.markDecided() // transition from stateBuffering to stateDecided
 
-	head, orphan, ok := a.peekMeasure(peekCtx, resp.Body)
-	close(peekDone) // peek phase done — close-on-peek-timeout goroutine exits
 	if !ok {
-		_ = resp.Body.Close()
-		a.Logger.Info().
+		a.Logger.Warn().
 			Str("session_id", sessionID).
 			Str("startup_phase", "avsync_atrim_skipped").
 			Int64("peek_ms", time.Since(start).Milliseconds()).
-			Msg("live-copy avsync: orphan not measurable, using direct copy path")
-		return 0, nil, false
+			Msg("live-copy avsync: orphan not measurable, falling back to untrimmed spool")
+		return 0, spool, false
 	}
-	// Close the relay body when the session context ends (CommandContext also
-	// kills ffmpeg), so the connection never outlives the process.
-	go func() {
-		<-ctx.Done()
-		_ = resp.Body.Close()
-	}()
+
 	a.Logger.Info().
 		Str("session_id", sessionID).
 		Str("startup_phase", "avsync_atrim_armed").
 		Float64("orphan_seconds", orphan).
-		Int("peek_bytes", len(head)).
+		Int("peek_bytes", len(spool.snapshot())).
 		Int64("peek_ms", time.Since(start).Milliseconds()).
 		Msg("live-copy avsync atrim armed")
-	return orphan, io.MultiReader(bytes.NewReader(head), resp.Body), true
+	return orphan, spool, true
 }
 
-// peekMeasure reads the head in growing checkpoints, measuring the orphan as soon
-// as the first video keyframe is buffered.
-func (a *LocalAdapter) peekMeasure(ctx context.Context, body io.Reader) ([]byte, float64, bool) {
+// peekMeasure repeatedly probes snapshots from the continuous spool.
+func (a *LocalAdapter) peekMeasure(ctx context.Context, spool *boundedStartupSpool) (float64, bool) {
 	tmp, err := os.CreateTemp("", "xg2g-avsync-head-*.ts")
 	if err != nil {
-		return nil, 0, false
+		return 0, false
 	}
 	tmpName := tmp.Name()
 	_ = tmp.Close()
 	defer func() { _ = os.Remove(tmpName) }()
 
-	buf := make([]byte, 0, avsyncPeekMaxBytes)
-	chunk := make([]byte, avsyncPeekReadChunk)
+	stopWatch := make(chan struct{})
+	defer close(stopWatch)
+	go func() {
+		select {
+		case <-ctx.Done():
+			spool.mu.Lock()
+			spool.cond.Broadcast()
+			spool.mu.Unlock()
+		case <-stopWatch:
+		}
+	}()
+
 	nextProbe := avsyncPeekFirstProbe
-	for len(buf) < avsyncPeekMaxBytes {
+	for {
 		if ctx.Err() != nil {
-			return nil, 0, false
+			return 0, false
 		}
-		n, rerr := io.ReadFull(body, chunk)
-		if n > 0 {
-			buf = append(buf, chunk[:n]...)
+
+		spool.mu.Lock()
+		for spool.totalBytes < nextProbe && spool.err == nil && ctx.Err() == nil && spool.state != stateClosed {
+			spool.cond.Wait()
 		}
-		if len(buf) >= nextProbe {
-			if orphan, ok := a.measureOrphan(ctx, tmpName, buf); ok {
-				return buf, orphan, true
+
+		snapshot := make([]byte, spool.totalBytes)
+		off := 0
+		for _, ch := range spool.chunks {
+			copy(snapshot[off:], ch)
+			off += len(ch)
+		}
+		spoolErr := spool.err
+		spool.mu.Unlock()
+
+		if ctx.Err() != nil {
+			return 0, false
+		}
+
+		if len(snapshot) >= nextProbe {
+			if orphan, ok := a.measureOrphan(ctx, tmpName, snapshot); ok {
+				return orphan, true
 			}
-			nextProbe = len(buf) + avsyncPeekProbeStep
-			// Probe failed at this buffer size and we hit EOF — no more data
-			// arriving, so don't re-probe unchanged buf.
-			if rerr != nil {
-				return nil, 0, false
+			nextProbe = len(snapshot) + avsyncPeekProbeStep
+		}
+
+		if spoolErr != nil {
+			// Stream ended or spool limit reached before we could measure it
+			if len(snapshot) > 0 {
+				if orphan, ok := a.measureOrphan(ctx, tmpName, snapshot); ok {
+					return orphan, true
+				}
 			}
-		} else if rerr != nil { // EOF / short read before any probe threshold — try once
-			if orphan, ok := a.measureOrphan(ctx, tmpName, buf); ok {
-				return buf, orphan, true
-			}
-			return nil, 0, false
+			return 0, false
 		}
 	}
-	return nil, 0, false
 }
 
 // measureOrphan writes the buffered head to tmpName and derives the orphan as the

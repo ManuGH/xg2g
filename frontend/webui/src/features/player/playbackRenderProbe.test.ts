@@ -10,6 +10,7 @@ function snapshot(overrides: Partial<HlsRenderProbeSnapshot> = {}): HlsRenderPro
     videoHeight: 720,
     paused: false,
     bufferedAhead: 18,
+    playbackRate: 1,
     totalFrames: 0,
     droppedFrames: 0,
     ...overrides,

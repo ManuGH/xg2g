@@ -254,4 +254,45 @@ describe('V3Player live DVR semantics', () => {
     });
   });
 
+  it('reports the completed timeline before releasing the live session', async () => {
+    const defaultFetch = globalThis.fetch;
+    let feedbackStarted = false;
+    let stopIntentStarted = false;
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      if (url.includes('/sessions/sid-live-dvr-1/feedback')) {
+        feedbackStarted = true;
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Timeline feedback timed out', 'AbortError'));
+          }, { once: true });
+        });
+      }
+      if (url.includes('/intents') && typeof init?.body === 'string') {
+        const body = JSON.parse(init.body);
+        if (body.type === 'stream.stop') {
+          stopIntentStarted = true;
+          return Promise.resolve({ ok: true, status: 200 });
+        }
+      }
+      return defaultFetch(input, init);
+    });
+
+    const props = { autoStart: false } as unknown as V3PlayerProps;
+    render(<V3Player {...props} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '1:0:1:777:666:55AA:0:0:0:0:' } });
+    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Stop/i }));
+
+    await waitFor(() => expect(feedbackStarted).toBe(true));
+    expect(stopIntentStarted).toBe(false);
+    await waitFor(() => expect(stopIntentStarted).toBe(true), { timeout: 1500 });
+  });
+
 });

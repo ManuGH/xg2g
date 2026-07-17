@@ -4,11 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPickPlaybackInfoAutoProfile_UsesAV1OnlyOnHealthyHost(t *testing.T) {
@@ -48,13 +50,13 @@ func TestPickPlaybackInfoAutoProfile_UsesAV1OnlyOnHealthyHost(t *testing.T) {
 		},
 	}
 
-	if got := pickPlaybackInfoAutoProfile(resolvedCaps, healthyHost); got != profiles.ProfileAV1HW {
+	if got := pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, healthyHost, false, autocodec.ResolveIOSNativeHEVCHWMode()); got != profiles.ProfileAV1HW {
 		t.Fatalf("pickPlaybackInfoAutoProfile() = %q, want %q", got, profiles.ProfileAV1HW)
 	}
 
 	mediumHost := healthyHost
 	mediumHost.PerformanceClass = "medium"
-	if got := pickPlaybackInfoAutoProfile(resolvedCaps, mediumHost); got != profiles.ProfileSafariHEVCHW {
+	if got := pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, mediumHost, false, autocodec.ResolveIOSNativeHEVCHWMode()); got != profiles.ProfileSafariHEVCHW {
 		t.Fatalf("pickPlaybackInfoAutoProfile() on medium host = %q, want %q", got, profiles.ProfileSafariHEVCHW)
 	}
 }
@@ -105,10 +107,10 @@ func TestAlignAutoCodecDecision_PersistsNeutralSelectionTrace(t *testing.T) {
 		},
 	}
 
-	alignAutoCodecDecision(PlaybackInfoRequest{
+	alignAutoCodecDecisionWithPolicy(PlaybackInfoRequest{
 		RequestedProfile: "quality",
 		Capabilities:     &resolvedCaps,
-	}, resolvedCaps, hostRuntime, dec)
+	}, resolvedCaps, hostRuntime, profiles.Resolver{}, false, autocodec.ResolveIOSNativeHEVCHWMode(), dec)
 
 	if dec.Trace.AutoCodecPolicy != "host_aware_bottleneck" {
 		t.Fatalf("expected host-aware policy, got %#v", dec.Trace)
@@ -125,6 +127,27 @@ func TestAlignAutoCodecDecision_PersistsNeutralSelectionTrace(t *testing.T) {
 	if dec.Trace.AutoCodecBenchClass != "strong" {
 		t.Fatalf("expected benchmark class strong, got %#v", dec.Trace)
 	}
+}
+
+func TestPlannerAutoTranscodeVideoCodecsRequiresExplicitRequestCapabilities(t *testing.T) {
+	resolved := capabilities.PlaybackCapabilities{
+		ClientFamilyFallback: playbackprofile.ClientSafariNative,
+		VideoCodecs:          []string{"hevc", "h264"},
+	}
+	require.Empty(t, plannerAutoTranscodeVideoCodecs(PlaybackInfoRequest{}, resolved, false))
+}
+
+func TestPlannerAutoTranscodeVideoCodecsKeepsNativeHEVCWithoutSmoothSignal(t *testing.T) {
+	requestCaps := capabilities.PlaybackCapabilities{VideoCodecs: []string{"hevc", "h264"}}
+	resolved := capabilities.PlaybackCapabilities{
+		ClientFamilyFallback: playbackprofile.ClientSafariNative,
+		VideoCodecs:          []string{"hevc", "h264"},
+	}
+
+	require.Equal(t,
+		[]string{"hevc", "h264"},
+		plannerAutoTranscodeVideoCodecs(PlaybackInfoRequest{Capabilities: &requestCaps}, resolved, false),
+	)
 }
 
 func boolPtr(v bool) *bool {

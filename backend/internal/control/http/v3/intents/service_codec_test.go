@@ -88,13 +88,13 @@ func TestPickProfileForCodecs_AutoUsesMeasuredHostRanking(t *testing.T) {
 }
 
 func TestRequestedCodecsForIntent_AndroidTVBrowserFamilyFallbackIsH264Only(t *testing.T) {
-	got := requestedCodecsForIntent(Intent{
+	got := requestedCodecsForIntentWithPolicy(Intent{
 		Params: map[string]string{
 			"playback_mode":          "hlsjs",
 			"codecs":                 "av1,hevc,h264",
 			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
 		},
-	}, "hlsjs")
+	}, "hlsjs", false)
 	if got != "h264" {
 		t.Fatalf("requestedCodecsForIntent() = %q, want h264", got)
 	}
@@ -102,7 +102,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserFamilyFallbackIsH264Only(t *te
 
 func TestRequestedCodecsForIntent_AndroidTVBrowserRuntimeHEVCStaysOptIn(t *testing.T) {
 	smooth := true
-	got := requestedCodecsForIntent(Intent{
+	got := requestedCodecsForIntentWithPolicy(Intent{
 		Params: map[string]string{
 			"playback_mode":          "hlsjs",
 			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
@@ -121,7 +121,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserRuntimeHEVCStaysOptIn(t *testi
 				{Codec: "hevc", Supported: true, Smooth: &smooth},
 			},
 		},
-	}, "hlsjs")
+	}, "hlsjs", false)
 	if got != "hevc,h264" {
 		t.Fatalf("requestedCodecsForIntent() = %q, want hevc,h264", got)
 	}
@@ -129,7 +129,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserRuntimeHEVCStaysOptIn(t *testi
 
 func TestRequestedCodecsForIntent_AndroidTVBrowserKnownAV1DeviceCanOptIntoAV1(t *testing.T) {
 	smooth := true
-	got := requestedCodecsForIntent(Intent{
+	got := requestedCodecsForIntentWithPolicy(Intent{
 		Params: map[string]string{
 			"playback_mode":          "hlsjs",
 			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
@@ -151,7 +151,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserKnownAV1DeviceCanOptIntoAV1(t 
 				{Codec: "hevc", Supported: true, Smooth: &smooth},
 			},
 		},
-	}, "hlsjs")
+	}, "hlsjs", false)
 	if got != "av1,hevc,h264" {
 		t.Fatalf("requestedCodecsForIntent() = %q, want av1,hevc,h264", got)
 	}
@@ -159,7 +159,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserKnownAV1DeviceCanOptIntoAV1(t 
 
 func TestRequestedCodecsForIntent_AndroidTVBrowserShieldCannotOptIntoAV1(t *testing.T) {
 	smooth := true
-	got := requestedCodecsForIntent(Intent{
+	got := requestedCodecsForIntentWithPolicy(Intent{
 		Params: map[string]string{
 			"playback_mode":          "hlsjs",
 			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
@@ -180,7 +180,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserShieldCannotOptIntoAV1(t *test
 				{Codec: "av1", Supported: true, Smooth: &smooth},
 			},
 		},
-	}, "hlsjs")
+	}, "hlsjs", false)
 	if got != "h264" {
 		t.Fatalf("requestedCodecsForIntent() = %q, want h264", got)
 	}
@@ -204,7 +204,7 @@ func TestPickNativeHLSProfileForCodecs_PrefersAV1HWOnSafariNative(t *testing.T) 
 	}
 }
 
-func TestPickProfileForCodecsForClient_IOSNativeHEVCSelectionStaysOnHWProfile(t *testing.T) {
+func TestPickProfileForCodecsForClient_IOSSafariNativeHEVCSelectionStaysOnHWProfile(t *testing.T) {
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"hevc_vaapi": {
 			Verified:     true,
@@ -282,7 +282,7 @@ func TestPickProfileForCodecsWithCapabilitiesAndHost_DemotesWeakAV1BenchmarkToHE
 	}
 }
 
-func TestPickProfileForCodecsForClient_IOSNativeHEVCSelectionStillPrefersHEVCOverH264WhenRequested(t *testing.T) {
+func TestPickProfileForCodecsForClient_IOSSafariNativeHEVCSelectionStillPrefersHEVCOverH264WhenRequested(t *testing.T) {
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"h264_vaapi": {
 			Verified:     true,
@@ -300,7 +300,7 @@ func TestPickProfileForCodecsForClient_IOSNativeHEVCSelectionStillPrefersHEVCOve
 	}
 }
 
-func TestPickProfileForCapabilitiesForClient_IOSNativeHEVCSelectionStaysOnHWProfile(t *testing.T) {
+func TestPickProfileForCapabilitiesForClient_IOSSafariNativeHEVCSelectionStaysOnHWProfile(t *testing.T) {
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"hevc_vaapi": {
 			Verified:     true,
@@ -431,7 +431,7 @@ func TestPickNativeHLSProfileForCapabilitiesAndHost_DemotesAV1ToHEVCOnMediumHost
 	}
 }
 
-func TestPickNativeHLSProfileForCodecs_IOSNativeHEVCSelectionStaysOnHWProfile(t *testing.T) {
+func TestPickNativeHLSProfileForCodecs_IOSSafariNativeHEVCSelectionStaysOnHWProfile(t *testing.T) {
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"hevc_vaapi": {
 			Verified:     true,
@@ -449,7 +449,7 @@ func TestPickNativeHLSProfileForCodecs_IOSNativeHEVCSelectionStaysOnHWProfile(t 
 	}
 }
 
-func TestApplyClientCompatibilityPolicy_IOSNativeHEVCDemotesToEncodeOnly(t *testing.T) {
+func TestApplyClientCompatibilityPolicy_IOSSafariNativeHEVCDemotesToEncodeOnly(t *testing.T) {
 	profileID, spec := autocodec.ApplyClientCompatibilityPolicy(
 		playbackprofile.ClientIOSSafariNative,
 		profiles.ProfileSafariHEVCHW,
@@ -472,7 +472,7 @@ func TestApplyClientCompatibilityPolicy_IOSNativeHEVCDemotesToEncodeOnly(t *test
 	}
 }
 
-func TestApplyClientCompatibilityPolicy_IOSNativeHEVCKeepsFullVAAPIWhenConfigured(t *testing.T) {
+func TestApplyClientCompatibilityPolicy_IOSSafariNativeHEVCKeepsFullVAAPIWhenConfigured(t *testing.T) {
 	t.Setenv("XG2G_IOS_NATIVE_HEVC_HW_MODE", "full")
 
 	profileID, spec := autocodec.ApplyClientCompatibilityPolicy(
@@ -497,7 +497,7 @@ func TestApplyClientCompatibilityPolicy_IOSNativeHEVCKeepsFullVAAPIWhenConfigure
 	}
 }
 
-func TestApplyClientCompatibilityPolicy_IOSNativeHEVCFallsBackToCPUWhenConfigured(t *testing.T) {
+func TestApplyClientCompatibilityPolicy_IOSSafariNativeHEVCFallsBackToCPUWhenConfigured(t *testing.T) {
 	t.Setenv("XG2G_IOS_NATIVE_HEVC_HW_MODE", "cpu")
 
 	profileID, spec := autocodec.ApplyClientCompatibilityPolicy(
@@ -706,7 +706,7 @@ func TestResolveRequestedStartProfile_DesktopSafariNativeH264SourceKeepsSafariPr
 // client can play natively must stay on the copy/remux path. Re-encoding a
 // directly-playable source to AV1 only loses quality; AV1/HEVC are reserved for
 // sources that genuinely cannot be copied (interlaced or unsupported codecs).
-func TestResolveRequestedStartProfile_IOSNativeRuntimeAV1HEVCProgressiveH264SourcePrefersCopy(t *testing.T) {
+func TestResolveRequestedStartProfile_IOSSafariNativeRuntimeAV1HEVCProgressiveH264SourcePrefersCopy(t *testing.T) {
 	hardware.SetVAAPIPreflightResult(true)
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90 * time.Millisecond},

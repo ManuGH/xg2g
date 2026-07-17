@@ -49,6 +49,7 @@ export interface ResumePlaybackRecoveryOptions {
   // !userPauseIntentRef.current. (The first entry is already gated upstream by
   // decideForegroundResume; this protects against a pause DURING the ~2s window.)
   shouldContinue?: () => boolean;
+  onFailed?: () => void;
 }
 
 // startResumePlaybackRecovery observes first, then nudges play() until the stream
@@ -80,6 +81,9 @@ export function startResumePlaybackRecovery(
       }
       attempts += 1;
       if (resumeRecoverySettled(startTime, video.currentTime, video.ended, attempts, maxAttempts)) {
+        if (!resumeStreamRecovered(startTime, video.currentTime, video.ended)) {
+          options.onFailed?.();
+        }
         return;
       }
       nudge();

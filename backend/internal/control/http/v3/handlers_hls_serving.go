@@ -17,6 +17,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/metrics"
 	v3api "github.com/ManuGH/xg2g/internal/pipeline/api"
 	"github.com/ManuGH/xg2g/internal/problemcode"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 )
 
 var safeHLSSessionIDRouteRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -95,13 +96,25 @@ func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 
 	stage := playbackStageLabelFromLiveFilename(filename)
 
+	if strings.HasPrefix(filename, "seg_") && (strings.HasSuffix(filename, ".m4s") || strings.HasSuffix(filename, ".ts")) {
+		telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneH3Req, "first_segment_requested")
+	}
+
 	// 3. Serve via HLS helper
 	wrapped, tracker := wrapResponseWriter(w)
-	v3api.ServeHLS(wrapped, r, store, deps.cfg.HLS.Root, sessionID, filename)
+	v3api.ServeHLS(wrapped, r, store, deps.storeRegistry, deps.cfg.HLS.Root, sessionID, filename)
 
 	status := http.StatusOK
+	bytesWritten := int64(0)
 	if st, ok := tracker.(StatusTracker); ok {
 		status = st.StatusCode()
+		bytesWritten = st.BytesWritten()
+	}
+
+	if r.Method == http.MethodGet && (status == http.StatusOK || status == http.StatusPartialContent) && bytesWritten > 0 {
+		if strings.HasPrefix(filename, "seg_") && (strings.HasSuffix(filename, ".m4s") || strings.HasSuffix(filename, ".ts")) {
+			telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneH3, "first_segment_served")
+		}
 	}
 
 	if status >= 400 {

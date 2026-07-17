@@ -5,9 +5,12 @@
 package ffmpeg
 
 import (
+	"io"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 // adapterEnvKeys are every XG2G_* var LoadAdapterConfig reads. The defaults test
@@ -45,6 +48,109 @@ var adapterEnvKeys = []string{
 	"XG2G_SKIP_FPS_PROBE_WARMUP",
 	"XG2G_SAFARI_RUNTIME_PROBE_TIMEOUT_MS",
 	"XG2G_FPS_CACHE_TTL",
+	"XG2G_SAFARI_CPU_START_TIMEOUT_MS",
+	"XG2G_TRANSCODE_SHARPEN",
+	"XG2G_TRANSCODE_DENOISE",
+	"XG2G_TRANSCODE_DEBAND",
+	"XG2G_AV1_QVBR",
+	"XG2G_AV1_QVBR_QUALITY",
+	experimentalInterlacedVAAPICodecsEnv,
+	"XG2G_SAFARI_FORCE_COPY_SERVICE_REFS",
+	"XG2G_SAFARI_HQ_SERVICE_REFS",
+	"XG2G_SAFARI_HQ25_SERVICE_REFS",
+	"XG2G_SAFARI_HQ50_SERVICE_REFS",
+	"XG2G_SAFARI_HQ50_MAXRATE_K",
+	"XG2G_SAFARI_HQ50_BUFSIZE_K",
+	"XG2G_ADAPTIVE_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_AV1_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_HEVC_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_H264_QUALITY_ENABLED",
+	"XG2G_ADAPTIVE_AV1_MAXRATE_K",
+	"XG2G_ADAPTIVE_AV1_BUFSIZE_K",
+	"XG2G_ADAPTIVE_HEVC_MAXRATE_K",
+	"XG2G_ADAPTIVE_HEVC_BUFSIZE_K",
+	"XG2G_ADAPTIVE_H264_MAXRATE_K",
+	"XG2G_ADAPTIVE_H264_BUFSIZE_K",
+	"XG2G_HEVC_VAAPI_AUTO_RATIO_MAX",
+	"XG2G_AV1_VAAPI_AUTO_RATIO_MAX",
+	"XG2G_HEVC_NVENC_AUTO_RATIO_MAX",
+	"XG2G_AV1_NVENC_AUTO_RATIO_MAX",
+	"XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG",
+	"XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS",
+}
+
+func TestLoadAdapterConfigEmptyProbeInputsUseStableFPSFallbacks(t *testing.T) {
+	clearAdapterEnv(t)
+	cfg := LoadAdapterConfig("", "")
+	if cfg.FPSProbeAnalyze != "2000000" {
+		t.Fatalf("FPSProbeAnalyze = %q, want 2000000", cfg.FPSProbeAnalyze)
+	}
+	if cfg.FPSProbeSize != "5M" {
+		t.Fatalf("FPSProbeSize = %q, want 5M", cfg.FPSProbeSize)
+	}
+}
+
+func TestNewLocalAdapterWithConfigOwnsImmutableSnapshot(t *testing.T) {
+	clearAdapterEnv(t)
+	cfg := LoadAdapterConfig("", "")
+	cfg.TranscodeSharpen = 0.75
+	cfg.ExperimentalInterlacedCodecs = []string{"av1"}
+	cfg.SafariForceCopyServiceRefs = []string{"service:one"}
+	cfg.SafariHQServiceRefs = []string{"service:two"}
+	cfg.SafariHQ25ServiceRefs = []string{"service:three"}
+	cfg.SafariHQ50ServiceRefs = []string{"service:four"}
+
+	adapter := NewLocalAdapterWithConfig(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, time.Second, 2, 0, 0, "", cfg,
+	)
+
+	// Neither later environment changes nor caller-owned slice mutations may
+	// alter the adapter's immutable command-planning snapshot.
+	t.Setenv("XG2G_TRANSCODE_SHARPEN", "3.0")
+	cfg.ExperimentalInterlacedCodecs[0] = "h264"
+	cfg.SafariForceCopyServiceRefs[0] = "mutated"
+	cfg.SafariHQServiceRefs[0] = "mutated"
+	cfg.SafariHQ25ServiceRefs[0] = "mutated"
+	cfg.SafariHQ50ServiceRefs[0] = "mutated"
+
+	if adapter.Config.TranscodeSharpen != 0.75 {
+		t.Fatalf("TranscodeSharpen = %v, want immutable 0.75", adapter.Config.TranscodeSharpen)
+	}
+	if got := adapter.Config.ExperimentalInterlacedCodecs[0]; got != "av1" {
+		t.Fatalf("ExperimentalInterlacedCodecs[0] = %q, want av1", got)
+	}
+	for name, got := range map[string]string{
+		"force_copy": adapter.Config.SafariForceCopyServiceRefs[0],
+		"hq":         adapter.Config.SafariHQServiceRefs[0],
+		"hq25":       adapter.Config.SafariHQ25ServiceRefs[0],
+		"hq50":       adapter.Config.SafariHQ50ServiceRefs[0],
+	} {
+		if got == "mutated" {
+			t.Fatalf("%s service-ref slice aliases caller memory", name)
+		}
+	}
+}
+
+func TestAdapterConfigSnapshot_DoesNotReadEnvironmentMidPlanning(t *testing.T) {
+	clearAdapterEnv(t)
+	t.Setenv("XG2G_TRANSCODE_SHARPEN", "0.7")
+	t.Setenv("XG2G_AV1_QVBR_QUALITY", "77")
+	snapshot := LoadAdapterConfig("2000000", "5M")
+
+	t.Setenv("XG2G_TRANSCODE_SHARPEN", "2.5")
+	t.Setenv("XG2G_AV1_QVBR_QUALITY", "111")
+
+	if got := transcodeSharpenFilter(snapshot.TranscodeSharpen); got != "unsharp=5:5:0.70:5:5:0.0" {
+		t.Fatalf("snapshot sharpen filter = %q", got)
+	}
+	if snapshot.AV1QVBRQuality != 77 {
+		t.Fatalf("snapshot AV1 QVBR quality = %d, want 77", snapshot.AV1QVBRQuality)
+	}
+	refreshed := LoadAdapterConfig("2000000", "5M")
+	if refreshed.TranscodeSharpen != 2.5 || refreshed.AV1QVBRQuality != 111 {
+		t.Fatalf("fresh snapshot did not observe updated environment: %+v", refreshed)
+	}
 }
 
 func clearAdapterEnv(t *testing.T) {

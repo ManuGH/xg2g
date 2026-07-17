@@ -22,6 +22,7 @@ import (
 	pipelineapi "github.com/ManuGH/xg2g/internal/pipeline/api"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/problemcode"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 )
 
 // Responsibility: Handles Intent creation (Start/Stop stream signals).
@@ -76,6 +77,10 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if intentType == model.IntentTypeStreamStart {
+		telemetry.NewStartupTracer(sessionID)
+	}
+
 	if !correlationProvided && correlationID != "" {
 		logger = logger.With().Str("correlationId", correlationID).Logger()
 	}
@@ -84,6 +89,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	modeRecording := normalize.Token(model.ModeRecording)
 	modeLive := normalize.Token(model.ModeLive)
 	decisionTraceID := ""
+	var verifiedReceipt *v3intents.PlanningHandoff
 	clientCaps := normalizeIntentClientCaps(req.Client)
 	clientCapHash := hashV3Capabilities(req.Client)
 	params := normalizeIntentParams(req.Params, clientCaps, clientCapHash)
@@ -99,13 +105,24 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if intentType == model.IntentTypeStreamStart {
-		traceID, tokenDone := s.verifyDecisionToken(w, r, deps, serviceRef, rawPlaybackDecisionToken, params, clientCapHash)
+		verified, tokenDone := s.verifyDecisionToken(w, r, deps, serviceRef, rawPlaybackDecisionToken, params, clientCapHash)
 		if tokenDone {
 			return
 		}
-		if traceID != "" {
-			decisionTraceID = traceID
-			logger = logger.With().Str("traceId", traceID).Logger()
+		verifiedReceipt = verified.Receipt
+		if verifiedReceipt != nil {
+			if boundSessionID := verifiedReceipt.Receipt.ConsumedSessionID; boundSessionID != "" {
+				sessionID = boundSessionID
+			}
+			consumed, consumeDone := s.consumePlannerReceipt(w, r, verifiedReceipt.Receipt.ReceiptID, sessionID)
+			if consumeDone {
+				return
+			}
+			verifiedReceipt = consumed
+		}
+		if verified.TraceID != "" {
+			decisionTraceID = verified.TraceID
+			logger = logger.With().Str("traceId", verified.TraceID).Logger()
 		}
 	}
 
@@ -114,7 +131,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		principalID = principal.ID
 	}
 
-	result, intentErr := s.intentProcessor().ProcessIntent(r.Context(), v3intents.Intent{
+	intent := v3intents.Intent{
 		Type:                  intentType,
 		SessionID:             sessionID,
 		ServiceRef:            serviceRef,
@@ -129,7 +146,9 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 		ClientCaps:            clientCaps,
 		ClientCapHash:         clientCapHash,
 		Logger:                logger,
-	})
+	}
+	verifiedReceipt.ApplyTo(&intent)
+	result, intentErr := s.intentProcessor().ProcessIntent(r.Context(), intent)
 	if intentErr != nil {
 		writeIntentProcessingError(w, r, intentErr)
 		return
@@ -205,10 +224,15 @@ func resolveIntentSession(w http.ResponseWriter, r *http.Request, store SessionS
 // gate. It returns the decision trace ID extracted from the token (if any) and
 // done=true when it has already written a problem response and the caller must
 // return.
-func (s *Server) verifyDecisionToken(w http.ResponseWriter, r *http.Request, deps sessionsModuleDeps, serviceRef, rawPlaybackDecisionToken string, params map[string]string, clientCapHash string) (decisionTraceID string, done bool) {
+type verifiedDecisionToken struct {
+	TraceID string
+	Receipt *v3intents.PlanningHandoff
+}
+
+func (s *Server) verifyDecisionToken(w http.ResponseWriter, r *http.Request, deps sessionsModuleDeps, serviceRef, rawPlaybackDecisionToken string, params map[string]string, clientCapHash string) (verified verifiedDecisionToken, done bool) {
 	if strings.TrimSpace(rawPlaybackDecisionToken) == "" {
 		writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/token-missing", "Missing Decision Token", problemcode.CodeTokenMissing, "A valid playbackDecisionToken is required to start a live stream", nil)
-		return "", true
+		return verifiedDecisionToken{}, true
 	}
 
 	s.mu.RLock()
@@ -216,30 +240,30 @@ func (s *Server) verifyDecisionToken(w http.ResponseWriter, r *http.Request, dep
 	s.mu.RUnlock()
 	if len(jwtSecret) == 0 {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "intent/security-unavailable", "Security Unavailable", problemcode.CodeSecurityUnavailable, "Decision token verification is not configured", nil)
-		return "", true
+		return verifiedDecisionToken{}, true
 	}
 
 	claims, err := auth.VerifyStrict(rawPlaybackDecisionToken, jwtSecret, "xg2g/v3/intents", "xg2g")
 	if err != nil {
 		code := auth.ClassifyError(err)
 		writeRegisteredProblem(w, r, http.StatusUnauthorized, "intent/unauthorized", "Unauthorized Intent", code, err.Error(), nil)
-		return "", true
+		return verifiedDecisionToken{}, true
 	}
 	if claims.TraceID != "" {
-		decisionTraceID = claims.TraceID
+		verified.TraceID = claims.TraceID
 	}
 
 	normRef := normalize.ServiceRef(serviceRef)
 	normTokenSub := normalize.ServiceRef(claims.Sub)
 	if normRef != normTokenSub {
 		writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this service_ref", nil)
-		return "", true
+		return verifiedDecisionToken{}, true
 	}
 
 	reqMode := params["mode"]
 	if raw := normalize.Token(reqMode); raw != "" && raw != claims.Mode {
 		writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for this playback mode", nil)
-		return "", true
+		return verifiedDecisionToken{}, true
 	}
 
 	expectedHash := clientCapHash
@@ -260,14 +284,19 @@ func (s *Server) verifyDecisionToken(w http.ResponseWriter, r *http.Request, dep
 	}
 	if claims.CapHash != "" && claims.CapHash != expectedHash {
 		writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for these playback capabilities", nil)
-		return "", true
+		return verifiedDecisionToken{}, true
 	}
+	receipt, receiptDone := s.resolvePlannerReceipt(w, r, claims, serviceRef)
+	if receiptDone {
+		return verifiedDecisionToken{}, true
+	}
+	verified.Receipt = receipt
 
 	if enforcePreflight(r.Context(), w, r, deps, serviceRef) {
-		return "", true
+		return verifiedDecisionToken{}, true
 	}
 
-	return decisionTraceID, false
+	return verified, false
 }
 
 func derefStringIntentType(value *IntentRequestType) string {
@@ -288,7 +317,12 @@ func (s *Server) intentProcessor() *v3intents.Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.intentService == nil {
-		s.intentService = v3intents.NewService(&serverIntentDeps{s: s})
+		s.intentService = v3intents.NewService(
+			&serverIntentDeps{s: s},
+			v3intents.WithProfileResolver(s.profileResolver),
+			v3intents.WithClientAV1Disabled(s.clientAV1Disabled),
+			v3intents.WithIOSNativeHEVCHWMode(s.iosNativeHEVCHWMode),
+		)
 	}
 	return s.intentService
 }

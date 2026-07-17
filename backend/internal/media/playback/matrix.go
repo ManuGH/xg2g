@@ -40,6 +40,13 @@ type StreamRequest struct {
 	Delivery  container.DeliveryMethod
 }
 
+// PackagingPolicy is the immutable operator-policy input for practical
+// container compatibility. Keeping it separate from StreamRequest preserves
+// the distinction between media facts and policy decisions.
+type PackagingPolicy struct {
+	ExperimentalAV1MPEGTS bool
+}
+
 type CompatibilityReason string
 
 const (
@@ -93,6 +100,12 @@ func (m ClientPlaybackMatrix) HasAudio(id codec.ID) bool {
 // does not decide whether Uncertain media properties should fail closed; that
 // policy remains in the decision layer.
 func EvaluatePackagingCompatibility(matrix ClientPlaybackMatrix, request StreamRequest) CompatibilityResult {
+	return EvaluatePackagingCompatibilityWithPolicy(matrix, request, PackagingPolicy{})
+}
+
+// EvaluatePackagingCompatibilityWithPolicy reports transport/package
+// mismatches using the exact policy snapshot attached to the planning request.
+func EvaluatePackagingCompatibilityWithPolicy(matrix ClientPlaybackMatrix, request StreamRequest, policy PackagingPolicy) CompatibilityResult {
 	var result CompatibilityResult
 
 	for _, capability := range matrix.Packaging {
@@ -100,7 +113,8 @@ func EvaluatePackagingCompatibility(matrix ClientPlaybackMatrix, request StreamR
 			continue
 		}
 
-		if !request.Container.CanCarry(request.Video) || !request.Container.CanCarry(request.Audio) {
+		if !request.Container.CanCarryWithPolicy(request.Video, policy.ExperimentalAV1MPEGTS) ||
+			!request.Container.CanCarryWithPolicy(request.Audio, policy.ExperimentalAV1MPEGTS) {
 			result.Add(ReasonContainerCannotCarry)
 		}
 		if !containsCodec(capability.VideoCodecs, request.Video) {

@@ -4,28 +4,30 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/config"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/hls/cmaf"
 	"github.com/ManuGH/xg2g/internal/infra/ffmpeg/watchdog"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/ManuGH/xg2g/internal/procgroup"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 // Start initiates the media process.
@@ -38,6 +40,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		if err := tuner.Tune(ctx, spec.Source.ID); err != nil {
 			return "", fmt.Errorf("tuning failed: %w", err)
 		}
+		telemetry.GetStartupTracer(spec.SessionID).MarkOnce("E_LOCK", "tuner_locked")
 		a.Logger.Info().
 			Str("session_id", spec.SessionID).
 			Str("startup_phase", "tuner_tuned").
@@ -117,16 +120,30 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	var avsyncStdin io.Reader
 	avsyncSpec := spec
 	avsyncSpec.Profile = plan.effectiveProfile
+	var usingPipe bool
 	if a.shouldAvsyncAtrim(avsyncSpec) {
-		if orphan, stdin, ok := a.prepareAvsyncPipe(ctx, inputURL, spec.SessionID); ok {
-			args = transformArgsForAvsyncPipeMode(args, orphan, !a.LiveAvsyncPipeNoTrim, avsyncSpec.Profile.TranscodeVideo)
+		if orphan, stdin, useAtrim := a.prepareAvsyncPipe(ctx, inputURL, spec.SessionID); stdin != nil {
+			args = transformArgsForAvsyncPipeMode(args, orphan, useAtrim && !a.LiveAvsyncPipeNoTrim, avsyncSpec.Profile.TranscodeVideo)
 			avsyncStdin = stdin
-			if a.LiveAvsyncPipeNoTrim {
+			usingPipe = true
+			if !useAtrim {
+				a.Logger.Warn().
+					Str("session_id", spec.SessionID).
+					Str("startup_phase", "avsync_pipe_diagnostic").
+					Msg("live-copy avsync fallback: stdin pipe active without atrim correction")
+			} else if a.LiveAvsyncPipeNoTrim {
 				a.Logger.Warn().
 					Str("session_id", spec.SessionID).
 					Str("startup_phase", "avsync_pipe_diagnostic").
 					Msg("live-copy avsync diagnostic: stdin pipe active without audio trim")
 			}
+		}
+	}
+
+	if !usingPipe && spec.Source.Type == ports.SourceTuner {
+		if stdin, ok := a.prepareTelemetryPipe(ctx, inputURL, spec.SessionID); ok {
+			args = transformArgsForTelemetryPipeMode(args)
+			avsyncStdin = stdin
 		}
 	}
 
@@ -219,6 +236,8 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		startupSpan.End()
 		return "", fmt.Errorf("ffmpeg start failed: %w", err)
 	}
+	metrics.IncActiveFFmpegProcesses()
+	isDirectHTTP := avsyncStdin == nil && isHTTPInputURL(inputURL)
 	if cmafRead != nil {
 		// The child holds its own copy of the write end; closing ours makes
 		// EOF reach the segmenter when ffmpeg exits.
@@ -228,13 +247,21 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 			Str("session_id", spec.SessionID).
 			Logger()
 		segCfg := cmaf.Config{
+			StreamID:          store.StreamID(spec.SessionID),
 			Dir:               ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec),
 			TargetDurationSec: plan.cmafTargetDurSec,
 			ListSize:          plan.listSize,
 			Logger:            segLogger,
+			ShadowPublisher:   nil, // Shadow runtime is managed natively below
 		}
 		go func(r *os.File) {
-			defer func() { _ = r.Close() }()
+			defer func() {
+				_ = r.Close()
+				if a.StoreRegistry != nil {
+					a.StoreRegistry.Unregister(spec.SessionID)
+				}
+				hls.EvictRAPCache(spec.SessionID)
+			}()
 			_ = cmaf.Run(ctx, r, segCfg)
 		}(cmafRead)
 	}
@@ -249,14 +276,22 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, pid))
 	a.mu.Lock()
 	a.activeProcs[handle] = cmd
+	a.handleSessions[handle] = spec.SessionID
 	a.finalizedProfiles[handle] = plan.effectiveProfile
 	// Execution truth: capture the plan parsed from the REAL argv we just handed
 	// to the process, so observers report what ffmpeg runs, not a prediction.
-	a.executedPlans[handle] = executedFFmpegPlanFromArgs(args)
+	executedPlan := executedFFmpegPlanFromArgs(args)
+	a.executedPlans[handle] = executedPlan
 	delete(a.processDetails, handle)
 	a.mu.Unlock()
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
+	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec)
+	shadowRuntime, err := a.attachShadowStore(ctx, spec.SessionID, executedPlan, sessionDir)
+	if err != nil {
+		a.Logger.Warn().Err(err).Str("session_id", spec.SessionID).Msg("failed to attach shadow store, proceeding with disk only")
+	}
+
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo, isDirectHTTP) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(ctx, sourceKey, spec.SessionID, spec.Profile.DVRWindowSec)
 	}
@@ -371,11 +406,26 @@ func awaitProcessExit(
 	return out
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time, shadowRuntime *ShadowRuntime, transcodeVideo bool, _ bool) {
 	defer func() {
 		a.mu.Lock()
 		a.removeActiveProcessLocked(handle, true)
 		a.mu.Unlock()
+		if shadowRuntime != nil {
+			shadowRuntime.Close()
+		}
+		hls.EvictRAPCache(sessionID)
+		if a.HLSRoot != "" && sessionID != "" {
+			hls.EvictRAPCache(ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec))
+		}
+		dc := a.GetDiagnosticContext(sessionID)
+		a.Logger.Info().
+			Str("session_id", dc.SessionID).
+			Str("generation_id", dc.GenerationID).
+			Str("reason", dc.Reason).
+			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+			Msg("ffmpeg_process_exited")
+		metrics.DecActiveFFmpegProcesses()
 	}()
 
 	// End the startup span exactly once: success is recorded on first segment;
@@ -427,9 +477,18 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 
 		for scanner.Scan() {
 			line := scanner.Text()
+			if strings.HasPrefix(line, "Opening '") && strings.Contains(line, "' for reading") {
+				telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneT1, "input_opened")
+			}
+			if strings.Contains(line, "Stream mapping:") {
+				telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneT3, "probe_completed")
+			}
 			if !firstFrameLogged {
 				if frame, ok := parseFFmpegFrameCount(line); ok && frame > 0 {
 					firstFrameLogged = true
+					if transcodeVideo {
+						telemetry.GetStartupTracer(sessionID).MarkOnce(telemetry.MilestoneT4, "first_usable_video_au")
+					}
 					wd.ObserveProgress()
 					a.writeFirstFrameMarker(sessionID, dvrWindowSec)
 					a.Logger.Info().
@@ -565,13 +624,16 @@ func (a *LocalAdapter) startTimeoutForProfile(sourceType ports.SourceType, profi
 		}
 	}
 
-	overrideMs := envIntBounded(
-		"XG2G_SAFARI_CPU_START_TIMEOUT_MS",
-		int(overrideFloor/time.Millisecond),
-		int(timeout/time.Millisecond),
-		120000,
-	)
-	override := time.Duration(overrideMs) * time.Millisecond
+	override := a.Config.SafariCPUStartTimeoutOverride
+	if override <= 0 {
+		override = overrideFloor
+	}
+	if override < timeout {
+		override = timeout
+	}
+	if override > 120*time.Second {
+		override = 120 * time.Second
+	}
 	if override > timeout {
 		return override
 	}
@@ -610,6 +672,7 @@ func (a *LocalAdapter) writeFirstFrameMarker(sessionID string, dvrWindowSec int)
 func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	a.mu.Lock()
 	cmd, exists := a.activeProcs[handle]
+	sessionID := a.handleSessions[handle]
 	if exists {
 		a.removeActiveProcessLocked(handle, false)
 	}
@@ -620,7 +683,8 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 	}
 
 	if cmd.Process != nil {
-		return a.killProcessGroup(cmd)
+		a.terminateProcessGroup(cmd, sessionID)
+		return nil
 	}
 
 	return nil
@@ -628,6 +692,7 @@ func (a *LocalAdapter) Stop(ctx context.Context, handle ports.RunHandle) error {
 
 func (a *LocalAdapter) removeActiveProcessLocked(handle ports.RunHandle, archiveDetail bool) {
 	delete(a.activeProcs, handle)
+	delete(a.handleSessions, handle)
 	delete(a.finalizedProfiles, handle)
 	delete(a.executedPlans, handle)
 	delete(a.runtimeDiagnostics, handle)
@@ -657,7 +722,17 @@ func (a *LocalAdapter) archiveProcessDetailLocked(handle ports.RunHandle) {
 }
 
 func (a *LocalAdapter) terminateProcessGroup(cmd *exec.Cmd, sessionID string) {
-	if err := a.killProcessGroup(cmd); err != nil {
+	if cmd != nil {
+		dc := a.GetDiagnosticContext(sessionID)
+		a.Logger.Info().
+			Str("session_id", dc.SessionID).
+			Str("generation_id", dc.GenerationID).
+			Str("reason", dc.Reason).
+			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+			Msg("ffmpeg_termination_requested")
+	}
+	err := a.killProcessGroup(cmd)
+	if err != nil {
 		a.Logger.Warn().Err(err).Str("sessionId", sessionID).Msg("failed to terminate ffmpeg process group")
 	}
 }
@@ -693,46 +768,6 @@ func (a *LocalAdapter) Health(ctx context.Context, handle ports.RunHandle) ports
 		LastCheck:   time.Now(),
 		Diagnostics: diagnostics,
 	}
-}
-
-func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
-	raw := strings.TrimSpace(config.ParseString(key, ""))
-	if raw == "" {
-		return defaultValue
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return defaultValue
-	}
-	if n < minValue {
-		return minValue
-	}
-	if n > maxValue {
-		return maxValue
-	}
-	return n
-}
-
-func envFloatBounded(key string, defaultValue, minValue, maxValue float64) float64 {
-	raw := strings.TrimSpace(config.ParseString(key, ""))
-	if raw == "" {
-		return defaultValue
-	}
-	n, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return defaultValue
-	}
-	if n < minValue {
-		return minValue
-	}
-	if n > maxValue {
-		return maxValue
-	}
-	return n
-}
-
-func envBool(key string, defaultValue bool) bool {
-	return config.ParseBool(key, defaultValue)
 }
 
 func (a *LocalAdapter) recordProcessDetail(handle ports.RunHandle, detail string) {
@@ -787,4 +822,120 @@ func processDetailPriority(detail string) int {
 	default:
 		return 0
 	}
+}
+
+type telemetryReader struct {
+	source   io.Reader
+	tracer   telemetry.StartupTracer
+	buf      []byte
+	e2Marked bool
+	t2Marked bool
+}
+
+func (r *telemetryReader) Read(p []byte) (n int, err error) {
+	n, err = r.source.Read(p)
+	if n > 0 && !r.e2Marked {
+		r.e2Marked = true
+		r.tracer.MarkOnce(telemetry.MilestoneE2, "first_body_byte")
+	}
+	if n > 0 && !r.t2Marked {
+		r.buf = append(r.buf, p[:n]...)
+		if len(r.buf) > 1500 {
+			r.buf = r.buf[len(r.buf)-1500:]
+		}
+		for i := 0; i <= len(r.buf)-377; i++ {
+			if r.buf[i] == 0x47 && r.buf[i+188] == 0x47 && r.buf[i+376] == 0x47 {
+				r.t2Marked = true
+				r.tracer.MarkOnce(telemetry.MilestoneT2, "first_valid_ts_packet")
+				r.buf = nil // free memory
+				break
+			}
+		}
+	}
+	return n, err
+}
+
+func (a *LocalAdapter) prepareTelemetryPipe(ctx context.Context, rawURL, sessionID string) (io.Reader, bool) {
+	if !a.Config.StartupIngestProxy {
+		return nil, false
+	}
+	if !isHTTPInputURL(rawURL) {
+		return nil, false
+	}
+	req, _, err := buildAuthenticatedRequest(ctx, http.MethodGet, rawURL)
+	if err != nil {
+		return nil, false
+	}
+	req.Header.Set("Icy-MetaData", "1")
+
+	if a.httpClient == nil {
+		return nil, false
+	}
+	streamClient := *a.httpClient
+	streamClient.Timeout = 0
+
+	tracer := telemetry.GetStartupTracer(sessionID)
+	tracer.MarkOnce(telemetry.MilestoneE0, "http_request_started")
+
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return nil, false
+	}
+
+	tracer.MarkOnce(telemetry.MilestoneT1, "input_connected")
+	tracer.MarkOnce(telemetry.MilestoneE1, "http_response_headers_received")
+	metrics.IncActiveEnigma2Connections("proxy")
+
+	go func() {
+		<-ctx.Done()
+		_ = resp.Body.Close()
+		dc := a.GetDiagnosticContext(sessionID)
+		a.Logger.Info().
+			Str("session_id", dc.SessionID).
+			Str("generation_id", dc.GenerationID).
+			Str("reason", dc.Reason).
+			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
+			Msg("http_body_closed")
+		metrics.DecActiveEnigma2Connections("proxy")
+	}()
+
+	tr := &telemetryReader{
+		source: resp.Body,
+		tracer: tracer,
+	}
+
+	return tr, true
+}
+
+func transformArgsForTelemetryPipeMode(args []string) []string {
+	stripValueFlag := map[string]bool{
+		"-headers":                    true,
+		"-user_agent":                 true,
+		"-protocol_whitelist":         true,
+		"-reconnect":                  true,
+		"-reconnect_at_eof":           true,
+		"-reconnect_streamed":         true,
+		"-reconnect_delay_max":        true,
+		"-reconnect_on_network_error": true,
+		"-reconnect_on_http_error":    true,
+	}
+	out := make([]string, 0, len(args)+2)
+	for i := 0; i < len(args); i++ {
+		tok := args[i]
+		if tok == "-i" && i+1 < len(args) {
+			out = append(out, "-i", "pipe:0")
+			i++ // skip the URL value
+			continue
+		}
+		if stripValueFlag[tok] && i+1 < len(args) {
+			i++ // skip the option value
+			continue
+		}
+		out = append(out, tok)
+	}
+	return out
 }

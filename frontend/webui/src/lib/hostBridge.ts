@@ -20,6 +20,7 @@ export type HostMediaKeyAction =
 export interface NativePlaybackRequestLive {
   kind: 'live';
   serviceRef: string;
+  profile?: string;
   playbackDecisionToken?: string;
   authToken?: string;
   hwaccel?: 'auto' | 'force' | 'off';
@@ -32,6 +33,7 @@ export interface NativePlaybackRequestLive {
 export interface NativePlaybackRequestRecording {
   kind: 'recording';
   recordingId: string;
+  profile?: string;
   startPositionMs?: number;
   authToken?: string;
   correlationId?: string;

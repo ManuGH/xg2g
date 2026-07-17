@@ -5,7 +5,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -15,10 +14,14 @@ import (
 // AV1 must be proven by a runtime/native probe and by device/OS policy; family
 // fixtures alone are not enough because mobile AV1 support is device-specific.
 func ClientAV1PlaybackAllowed(caps capabilities.PlaybackCapabilities, clientFamily string) bool {
-	// Operational kill switch: steer every auto-codec decision away from AV1
-	// (clients then get their next candidate, typically HEVC). Lets defects in
-	// client-side AV1 playback be isolated without a rebuild.
-	if config.ParseBool("XG2G_CLIENT_AV1_DISABLED", false) {
+	return ClientAV1PlaybackAllowedWithPolicy(caps, clientFamily, false)
+}
+
+// ClientAV1PlaybackAllowedWithPolicy is the pure form used by snapshot-bound
+// planning adapters. The operational kill switch is captured before the
+// request and supplied explicitly.
+func ClientAV1PlaybackAllowedWithPolicy(caps capabilities.PlaybackCapabilities, clientFamily string, disabled bool) bool {
+	if disabled {
 		return false
 	}
 	canonical := capabilities.CanonicalizeCapabilities(caps)

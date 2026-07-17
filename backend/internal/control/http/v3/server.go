@@ -11,12 +11,14 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	v3deviceauth "github.com/ManuGH/xg2g/internal/control/http/v3/deviceauth"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
+	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
@@ -34,9 +36,12 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/ManuGH/xg2g/internal/receipts"
 	recinfra "github.com/ManuGH/xg2g/internal/recordings"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -61,6 +66,7 @@ type Server struct {
 	// Core Components
 	v3Bus                  bus.Bus
 	v3Store                SessionStateStore
+	storeRegistry          store.StoreRegistry
 	resumeStore            resume.Store
 	v3Scan                 ChannelScanner
 	decisionAudit          decisionaudit.EventSink
@@ -107,6 +113,14 @@ type Server struct {
 	recordingsV3Service    *v3recordings.Service
 	sessionsV3Service      *v3sessions.Service
 	deviceAuthStateStore   deviceauthstore.StateStore
+	plannerShadowWorker    *playbackshadow.Worker
+	plannerShadowObserver  playbackshadow.PlannerShadowObserver
+	plannerReceiptStore    *v3intents.PlanningHandoffStore
+	plannerReceiptEnabled  bool
+	plannerReceiptRequired bool
+	profileResolver        profiles.Resolver
+	clientAV1Disabled      bool
+	iosNativeHEVCHWMode    string
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -156,6 +170,9 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 	}
 	liveDecisionKeyring := resolveLiveDecisionKeyring(cfg, time.Now().UTC())
 	_, signingKey, _ := liveDecisionKeyring.signingKey()
+	profileResolver := profiles.LoadResolver()
+	clientAV1Disabled := config.ParseBool("XG2G_CLIENT_AV1_DISABLED", false)
+	iosNativeHEVCHWMode := autocodec.ResolveIOSNativeHEVCHWMode()
 
 	s := &Server{
 		cfg:                    cfg,
@@ -175,11 +192,62 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		authSessionTTL:         defaultAuthSessionTTL,
 		householdUnlockStore:   household.NewInMemoryUnlockStore(),
 		householdUnlockTTL:     cfg.Household.UnlockTTL,
-		// JWTSecret must be set explicitly via SetJWTSecret before serving requests (fail-closed).
-		// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
+		profileResolver:        profileResolver,
+		clientAV1Disabled:      clientAV1Disabled,
+		iosNativeHEVCHWMode:    iosNativeHEVCHWMode,
 	}
-	s.intentService = v3intents.NewService(&serverIntentDeps{s: s})
-	s.recordingsV3Service = v3recordings.NewService(&serverRecordingsDeps{s: s})
+
+	// Phase 2c: Shadow Observer
+	var observer playbackshadow.PlannerShadowObserver = playbackshadow.NoopObserver{}
+	obsConfig := playbackshadow.ObserverConfig{
+		Enabled:       cfg.PlannerShadow.Enabled,
+		QueueCapacity: cfg.PlannerShadow.QueueCapacity,
+	}
+	if obsConfig.Enabled {
+		worker, err := playbackshadow.NewWorker(obsConfig, prometheus.DefaultRegisterer, *log.L())
+		if err != nil {
+			log.L().Error().Err(err).Msg("failed to initialize planner shadow worker, falling back to NoopObserver")
+		} else {
+			s.plannerShadowWorker = worker
+			observer = worker
+			// Started later with runtimeCtx
+		}
+	}
+	s.plannerShadowObserver = observer
+	receiptEnabled := cfg.PlannerReceipt.Enabled || cfg.PlannerReceipt.Required
+	if cfg.PlannerReceipt.Required && !cfg.PlannerReceipt.Enabled {
+		log.L().Warn().Msg("planner receipt required implies enabled")
+	}
+	if receiptEnabled {
+		receiptTTL := cfg.PlannerReceipt.TTL
+		if receiptTTL > 2*time.Minute {
+			log.L().Warn().Dur("configuredTTL", receiptTTL).Msg("planner receipt TTL clamped to decision token maximum")
+			receiptTTL = 2 * time.Minute
+		}
+		s.plannerReceiptStore = v3intents.NewPlanningHandoffStore(v3intents.PlanningHandoffStoreConfig{
+			Capacity: cfg.PlannerReceipt.Capacity,
+			TTL:      receiptTTL,
+		})
+	}
+	s.plannerReceiptEnabled = receiptEnabled
+	s.plannerReceiptRequired = cfg.PlannerReceipt.Required
+
+	// JWTSecret must be set explicitly via SetJWTSecret before serving requests (fail-closed).
+	// owiFactory defaults to nil (uses newOpenWebIFClient in prod)
+
+	s.intentService = v3intents.NewService(
+		&serverIntentDeps{s: s},
+		v3intents.WithProfileResolver(profileResolver),
+		v3intents.WithClientAV1Disabled(clientAV1Disabled),
+		v3intents.WithIOSNativeHEVCHWMode(iosNativeHEVCHWMode),
+	)
+	s.recordingsV3Service = v3recordings.NewService(
+		&serverRecordingsDeps{s: s},
+		v3recordings.WithPlannerShadowObserver(observer),
+		v3recordings.WithProfileResolver(profileResolver),
+		v3recordings.WithClientAV1Disabled(clientAV1Disabled),
+		v3recordings.WithIOSNativeHEVCHWMode(iosNativeHEVCHWMode),
+	)
 	s.sessionsV3Service = v3sessions.NewService(&serverSessionDeps{s: s})
 	s.epgSource = &epgAdapter{s}
 	return s
@@ -266,6 +334,7 @@ func (s *Server) SetPreflightCheck(fn PreflightProvider) {
 type Dependencies struct {
 	Bus                bus.Bus
 	Store              SessionStateStore
+	StoreRegistry      store.StoreRegistry
 	DeviceAuthStore    deviceauthstore.StateStore
 	ResumeStore        resume.Store
 	Scan               ChannelScanner
@@ -326,6 +395,12 @@ func (s *Server) applyServiceDependencies(deps Dependencies) {
 		s.v3Store = deps.Store
 	} else {
 		s.v3Store = nil
+	}
+
+	if !isNil(deps.StoreRegistry) {
+		s.storeRegistry = deps.StoreRegistry
+	} else {
+		s.storeRegistry = nil
 	}
 
 	if !isNil(deps.ResumeStore) {

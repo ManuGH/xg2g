@@ -216,7 +216,7 @@ func (o *Orchestrator) runExecutionLoop(
 			return handle, currentProfileSpec, nil
 		}
 
-		nextProfileSpec, promoteProfile := startupRecoveryProfile(currentProfileSpec, failReason, failDetail)
+		nextProfileSpec, promoteProfile := startupRecoveryProfileWithResolver(currentProfileSpec, failReason, failDetail, o.RecoveryProfileResolver)
 		if attempt < defaultStartupProcessRetryLimit && (shouldRetryStartupWaitFailure(failReason, failDetail, attempt) || promoteProfile) {
 			if promoteProfile {
 				if err := o.persistStartupRecoveryProfile(ctx, e.SessionID, currentProfileSpec, nextProfileSpec); err != nil {

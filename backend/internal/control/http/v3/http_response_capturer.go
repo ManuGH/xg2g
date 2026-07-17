@@ -12,9 +12,10 @@ type HeaderTracker interface {
 	WroteHeader() bool
 }
 
-// StatusTracker provides a read-only view of the final HTTP status code.
+// StatusTracker provides a read-only view of the final HTTP status code and bytes written.
 type StatusTracker interface {
 	StatusCode() int
+	BytesWritten() int64
 }
 
 // baseResponseWriter is the core wrapper that tracks if headers were written.
@@ -22,6 +23,7 @@ type baseResponseWriter struct {
 	http.ResponseWriter
 	wrote  atomic.Bool
 	status atomic.Int64
+	bytes  atomic.Int64
 }
 
 func (b *baseResponseWriter) WroteHeader() bool {
@@ -34,6 +36,10 @@ func (b *baseResponseWriter) StatusCode() int {
 		return v
 	}
 	return http.StatusOK
+}
+
+func (b *baseResponseWriter) BytesWritten() int64 {
+	return b.bytes.Load()
 }
 
 func (b *baseResponseWriter) markWrite() {
@@ -49,8 +55,11 @@ func (b *baseResponseWriter) WriteHeader(code int) {
 	b.ResponseWriter.WriteHeader(code)
 }
 
-func (b *baseResponseWriter) Write(p []byte) (int, error) {
+func (b *baseResponseWriter) Write(p []byte) (n int, err error) {
 	b.markWrite()
+	defer func() {
+		b.bytes.Add(int64(n))
+	}()
 	// codeql[go/reflected-xss] Wrapper does not dictate content-type, upstream handlers do
 	return b.ResponseWriter.Write(p)
 }
@@ -71,7 +80,9 @@ type bwRF struct {
 
 func (b *bwRF) ReadFrom(r io.Reader) (int64, error) {
 	b.markWrite()
-	return b.ReaderFrom.ReadFrom(r)
+	n, err := b.ReaderFrom.ReadFrom(r)
+	b.bytes.Add(n)
+	return n, err
 }
 
 type bwH struct {
@@ -97,7 +108,9 @@ type bwRF_H struct {
 
 func (b *bwRF_H) ReadFrom(r io.Reader) (int64, error) {
 	b.markWrite()
-	return b.ReaderFrom.ReadFrom(r)
+	n, err := b.ReaderFrom.ReadFrom(r)
+	b.bytes.Add(n)
+	return n, err
 }
 
 type bwRF_F struct {
@@ -108,7 +121,9 @@ type bwRF_F struct {
 
 func (b *bwRF_F) ReadFrom(r io.Reader) (int64, error) {
 	b.markWrite()
-	return b.ReaderFrom.ReadFrom(r)
+	n, err := b.ReaderFrom.ReadFrom(r)
+	b.bytes.Add(n)
+	return n, err
 }
 
 type bwRF_P struct {
@@ -119,7 +134,9 @@ type bwRF_P struct {
 
 func (b *bwRF_P) ReadFrom(r io.Reader) (int64, error) {
 	b.markWrite()
-	return b.ReaderFrom.ReadFrom(r)
+	n, err := b.ReaderFrom.ReadFrom(r)
+	b.bytes.Add(n)
+	return n, err
 }
 
 type bwH_F struct {
@@ -149,7 +166,9 @@ type bwRF_H_F struct {
 
 func (b *bwRF_H_F) ReadFrom(r io.Reader) (int64, error) {
 	b.markWrite()
-	return b.ReaderFrom.ReadFrom(r)
+	n, err := b.ReaderFrom.ReadFrom(r)
+	b.bytes.Add(n)
+	return n, err
 }
 
 type bwRF_H_P struct {
@@ -161,7 +180,9 @@ type bwRF_H_P struct {
 
 func (b *bwRF_H_P) ReadFrom(r io.Reader) (int64, error) {
 	b.markWrite()
-	return b.ReaderFrom.ReadFrom(r)
+	n, err := b.ReaderFrom.ReadFrom(r)
+	b.bytes.Add(n)
+	return n, err
 }
 
 type bwRF_F_P struct {
@@ -173,7 +194,9 @@ type bwRF_F_P struct {
 
 func (b *bwRF_F_P) ReadFrom(r io.Reader) (int64, error) {
 	b.markWrite()
-	return b.ReaderFrom.ReadFrom(r)
+	n, err := b.ReaderFrom.ReadFrom(r)
+	b.bytes.Add(n)
+	return n, err
 }
 
 type bwH_F_P struct {
@@ -193,7 +216,9 @@ type bwRF_H_F_P struct {
 
 func (b *bwRF_H_F_P) ReadFrom(r io.Reader) (int64, error) {
 	b.markWrite()
-	return b.ReaderFrom.ReadFrom(r)
+	n, err := b.ReaderFrom.ReadFrom(r)
+	b.bytes.Add(n)
+	return n, err
 }
 
 // wrapResponseWriter detects capabilities of w and returns a truthful wrapper.

@@ -57,6 +57,7 @@ type Detector struct {
 	Logger      zerolog.Logger
 	VaapiDevice string
 	HLSRoot     string
+	Config      AdapterConfig
 
 	pathCorrectnessChecked bool
 	pathProbeFn            func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
@@ -84,8 +85,8 @@ type Detector struct {
 	decodersAvail     map[string]bool
 }
 
-func newDetector(binPath string, logger zerolog.Logger, vaapiDevice, hlsRoot string) *Detector {
-	return &Detector{BinPath: binPath, Logger: logger, VaapiDevice: vaapiDevice, HLSRoot: hlsRoot}
+func newDetector(binPath string, logger zerolog.Logger, vaapiDevice, hlsRoot string, cfg AdapterConfig) *Detector {
+	return &Detector{BinPath: binPath, Logger: logger, VaapiDevice: vaapiDevice, HLSRoot: hlsRoot, Config: cfg}
 }
 
 // PreflightVAAPI validates that the configured VAAPI device is functional.
@@ -224,8 +225,8 @@ func (d *Detector) PreflightVAAPI() error {
 
 	d.vaapiEncoderCaps = capability.DeriveVAAPIEncoderCapabilities(
 		verifiedElapsed,
-		envFloatBounded("XG2G_HEVC_VAAPI_AUTO_RATIO_MAX", capability.DefaultHEVCVAAPIAutoRatioMax, 1.0, 10.0),
-		envFloatBounded("XG2G_AV1_VAAPI_AUTO_RATIO_MAX", capability.DefaultAV1VAAPIAutoRatioMax, 1.0, 10.0),
+		d.Config.HEVCVAAPIAutoRatioMax,
+		d.Config.AV1VAAPIAutoRatioMax,
 	)
 	if d.vaapiEncoderCaps == nil {
 		d.vaapiEncoderCaps = make(map[string]hardware.VAAPIEncoderCapability, len(vaapiEncodersToTest))
@@ -314,8 +315,8 @@ func (d *Detector) PreflightNVENC() error {
 
 	d.nvencEncoderCaps = capability.DeriveNVENCEncoderCapabilities(
 		verifiedElapsed,
-		envFloatBounded("XG2G_HEVC_NVENC_AUTO_RATIO_MAX", capability.DefaultHEVCNVENCAutoRatioMax, 1.0, 10.0),
-		envFloatBounded("XG2G_AV1_NVENC_AUTO_RATIO_MAX", capability.DefaultAV1NVENCAutoRatioMax, 1.0, 10.0),
+		d.Config.HEVCNVENCAutoRatioMax,
+		d.Config.AV1NVENCAutoRatioMax,
 	)
 	// Fail-closed: NVENC has no decode-verify (testNVENCEncoder trusts exit 0 on a
 	// discarded "-f null -" output), so av1_nvenc must not be admitted on an
@@ -1005,8 +1006,8 @@ func (d *Detector) observeRuntimePathCorrectness(ctx context.Context, handle por
 
 	playlistPath := filepath.Join(ports.SessionHLSDir(d.HLSRoot, sessionID), "index.m3u8")
 	deadline := time.Now().Add(20 * time.Second)
-	minYAvg := envFloatBounded("XG2G_RUNTIME_PATH_CORRECTNESS_MIN_YAVG", defaultRuntimePathCorrectnessMinYAvg, 1.0, 64.0)
-	requiredLowObservations := envIntBounded("XG2G_RUNTIME_PATH_CORRECTNESS_LOW_OBS", defaultRuntimePathCorrectnessChecks, 1, 4)
+	minYAvg := d.Config.RuntimePathMinYAvg
+	requiredLowObservations := d.Config.RuntimePathLowChecks
 	lowObservations := 0
 
 	for time.Now().Before(deadline) {

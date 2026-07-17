@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import V3Player from '../src/features/player/components/V3Player';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import * as sdk from '../src/client-ts';
@@ -15,31 +15,6 @@ vi.mock('../src/client-ts', async () => {
   };
 });
 
-vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
-  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
-  measurePlaybackNetwork: () => Promise.resolve(undefined),
-}));
-
-vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
-  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
-  measurePlaybackNetwork: () => Promise.resolve(undefined),
-}));
-
-vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
-  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
-  measurePlaybackNetwork: () => Promise.resolve(undefined),
-}));
-
-vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
-  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
-  measurePlaybackNetwork: () => Promise.resolve(undefined),
-}));
-
-vi.mock('../src/features/player/utils/playbackNetworkProbe', () => ({
-  applyPlaybackNetworkProbe: (caps, ctx, _probe) => ctx,
-  measurePlaybackNetwork: () => Promise.resolve(undefined),
-}));
-
 describe('Telemetry Contract Consumption', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -47,6 +22,7 @@ describe('Telemetry Contract Consumption', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
@@ -83,7 +59,8 @@ describe('Telemetry Contract Consumption', () => {
       expect(consumed?.payload.fields).toContain('playback.outputUrl');
     });
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/v3/system/healthz?playbackProbe=1');
   });
 
   it('emits failclosed when backend omits decision selection', async () => {
@@ -134,6 +111,7 @@ describe('Telemetry Contract Consumption', () => {
       expect(consumed?.payload.kind).toBe('playable');
     });
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/v3/system/healthz?playbackProbe=1');
   });
 });

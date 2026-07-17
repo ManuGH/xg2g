@@ -93,7 +93,7 @@ func TestApplyStartPackagingPolicy_SafariNativeHEVCCopyForcesFMP4(t *testing.T) 
 
 // iOS Safari native resolves to fMP4 already; the HEVC copy must still get
 // VideoCodec=hevc so the hvc1 tag engages (else hev1 + per-keyframe flash).
-func TestApplyStartPackagingPolicy_IOSNativeHEVCCopyAlreadyFMP4PinsHevc(t *testing.T) {
+func TestApplyStartPackagingPolicy_IOSSafariNativeHEVCCopyAlreadyFMP4PinsHevc(t *testing.T) {
 	spec := ApplyStartPackagingPolicy(
 		playbackprofile.ClientIOSSafariNative,
 		profiles.ProfileSafari,

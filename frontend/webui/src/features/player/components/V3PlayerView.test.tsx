@@ -28,6 +28,8 @@ function createActions(): PlaybackOrchestratorActions {
     toggleErrorDetails: vi.fn(),
     resumeFrom: vi.fn(),
     startOver: vi.fn(),
+    changeProfile: vi.fn(),
+    changeAudioTrack: vi.fn(),
   };
 }
 
@@ -40,6 +42,9 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     userIdle: false,
     showCloseButton: false,
     closeButtonLabel: 'Close player',
+    explicitProfile: 'auto',
+    audioTracks: [],
+    activeAudioTrack: -1,
     showStatsOverlay: false,
     statsTitle: 'Technical Stats',
     statusLabel: 'Status',
@@ -50,13 +55,20 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     hideVideoElement: false,
     showStartupBackdrop: false,
     showStartupOverlay: false,
-    showSpinnerCard: false,
+    channelLogoUrl: null,
+  showSpinnerCard: false,
     useNativeBufferingSafeOverlay: false,
     overlayStatusLabel: 'Buffering',
     overlayStatusState: 'live',
     spinnerEyebrow: 'Live startup',
     spinnerLabel: 'Preparing stream',
     spinnerSupport: 'This can take a moment.',
+    startupPhaseSteps: [
+      { key: 'connect', label: 'Connect', state: 'done' as const },
+      { key: 'transcode', label: 'Transcode', state: 'active' as const },
+      { key: 'buffer', label: 'Buffer', state: 'pending' as const },
+    ],
+    startupProgressPercent: 58,
     startupElapsedLabel: 'Wait 1s',
     showOverlayStopAction: false,
     overlayStopLabel: 'Stop',
@@ -78,6 +90,8 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     seekForward15mLabel: 'Forward 15m',
     playPauseLabel: 'Play',
     playPauseIcon: '▶',
+    ttffBadgeLabel: null,
+    ttffTitle: null,
     seekableStart: 0,
     seekableEnd: 0,
     startTimeDisplay: '00:00',
@@ -189,13 +203,13 @@ describe('V3PlayerView', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back 60s' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back 15s' }));
     fireEvent.change(screen.getByRole('slider'), { target: { value: '15' } });
     fireEvent.click(screen.getByRole('button', { name: 'Go live' }));
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
     fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
 
-    expect(actions.seekBy).toHaveBeenCalledWith(-60);
+    expect(actions.seekBy).toHaveBeenCalledWith(-15);
     expect(actions.seekTo).toHaveBeenNthCalledWith(1, 115);
     // The LIVE button now goes through seekToLiveEdge (lands behind the edge),
     // not a raw seekTo(seekableEnd) which stalled on the un-decodable boundary.
@@ -204,7 +218,7 @@ describe('V3PlayerView', () => {
     expect(actions.startOver).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the now-playing programme title + synopsis with the channel as eyebrow', () => {
+  it('renders the now-playing programme title with the channel as eyebrow', () => {
     const actions = createActions();
     const viewState = createViewState({
       showPlaybackChrome: true,
@@ -224,7 +238,6 @@ describe('V3PlayerView', () => {
     );
 
     expect(screen.getByText('Servus am Abend')).toBeInTheDocument();
-    expect(screen.getByText('Hintergründig und informativ. Das bewegt Österreich heute.')).toBeInTheDocument();
     expect(screen.getByText('ServusTV HD')).toBeInTheDocument();
   });
 

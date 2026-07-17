@@ -95,6 +95,10 @@ const (
 	CodeTokenCapMismatch         = "TOKEN_CAP_MISMATCH"  // #nosec G101 -- public problem-code identifier, not a credential.
 	CodeTokenTTLExceeded         = "TOKEN_TTL_EXCEEDED"  // #nosec G101 -- public problem-code identifier, not a credential.
 	CodeTokenError               = "TOKEN_ERROR"         // #nosec G101 -- public problem-code identifier, not a credential.
+	CodePlannerReceiptMissing    = "PLANNER_RECEIPT_MISSING"
+	CodePlannerReceiptInvalid    = "PLANNER_RECEIPT_INVALID"
+	CodePlannerReceiptExpired    = "PLANNER_RECEIPT_EXPIRED"
+	CodePlannerReceiptConflict   = "PLANNER_RECEIPT_CONFLICT"
 	CodeSecurityUnavailable      = "SECURITY_UNAVAILABLE"
 	CodeClaimMismatch            = "CLAIM_MISMATCH"
 	CodeAdmissionUnavailable     = "ADMISSION_UNAVAILABLE"
@@ -297,6 +301,10 @@ var registry = map[string]Spec{
 	CodeTokenCapMismatch:         newRegisteredSpec(CodeTokenCapMismatch, "Token Capabilities Mismatch"),
 	CodeTokenTTLExceeded:         newRegisteredSpec(CodeTokenTTLExceeded, "Token TTL Exceeded"),
 	CodeTokenError:               newRegisteredSpec(CodeTokenError, "Token Error"),
+	CodePlannerReceiptMissing:    specWithRetryable(specWithSeverity(newRegisteredSpec(CodePlannerReceiptMissing, "Planner receipt missing; refresh playback info"), SeverityWarning), true),
+	CodePlannerReceiptInvalid:    specWithRetryable(specWithSeverity(newRegisteredSpec(CodePlannerReceiptInvalid, "Planner receipt invalid; refresh playback info"), SeverityWarning), true),
+	CodePlannerReceiptExpired:    specWithRetryable(specWithSeverity(newRegisteredSpec(CodePlannerReceiptExpired, "Planner receipt expired; refresh playback info"), SeverityInfo), true),
+	CodePlannerReceiptConflict:   specWithRetryable(specWithSeverity(newRegisteredSpec(CodePlannerReceiptConflict, "Planner receipt conflict; refresh playback info"), SeverityWarning), true),
 	CodeSecurityUnavailable:      newRegisteredSpec(CodeSecurityUnavailable, "Security Unavailable"),
 	CodeClaimMismatch:            newRegisteredSpec(CodeClaimMismatch, "Claim Mismatch"),
 	CodeAdmissionUnavailable:     newRegisteredSpec(CodeAdmissionUnavailable, "Admission Unavailable"),

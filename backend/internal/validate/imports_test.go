@@ -6,6 +6,7 @@ package validate
 
 import (
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -13,6 +14,128 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestProductionDoesNotUseGlobalProfileResolverFacade(t *testing.T) {
+	projectRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := findGoFiles(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, file := range files {
+		if filepath.Clean(file) == filepath.Join(projectRoot, "internal", "pipeline", "profiles", "resolve.go") {
+			continue
+		}
+		fset := token.NewFileSet()
+		parsed, parseErr := parser.ParseFile(fset, file, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", file, parseErr)
+		}
+		profileAliases := map[string]struct{}{}
+		for _, imp := range parsed.Imports {
+			if strings.Trim(imp.Path.Value, `"`) != "github.com/ManuGH/xg2g/internal/pipeline/profiles" {
+				continue
+			}
+			alias := "profiles"
+			if imp.Name != nil {
+				alias = imp.Name.Name
+			}
+			profileAliases[alias] = struct{}{}
+		}
+		if len(profileAliases) == 0 {
+			continue
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "Resolve" {
+				return true
+			}
+			ident, ok := selector.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if _, forbidden := profileAliases[ident.Name]; forbidden {
+				position := fset.Position(call.Pos())
+				rel, _ := filepath.Rel(projectRoot, file)
+				t.Errorf("%s:%d calls profiles.Resolve; inject profiles.Resolver instead", rel, position.Line)
+			}
+			return true
+		})
+	}
+}
+
+func TestProfileResolverEnvironmentBoundaryIsRestricted(t *testing.T) {
+	projectRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := findGoFiles(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := map[string]struct{}{
+		"cmd/daemon/storage_decision_sweep_cmd.go":       {},
+		"cmd/daemon/v3_orchestrator_factory.go":          {},
+		"internal/app/bootstrap/wiring_helpers.go":       {},
+		"internal/control/http/v3/intents/service.go":    {},
+		"internal/control/http/v3/recordings/service.go": {},
+		"internal/control/http/v3/server.go":             {},
+		"internal/pipeline/profiles/resolve.go":          {},
+	}
+
+	for _, file := range files {
+		rel, relErr := filepath.Rel(projectRoot, file)
+		if relErr != nil {
+			t.Fatal(relErr)
+		}
+		rel = filepath.ToSlash(rel)
+		fset := token.NewFileSet()
+		parsed, parseErr := parser.ParseFile(fset, file, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", file, parseErr)
+		}
+		profileAliases := map[string]struct{}{}
+		for _, imp := range parsed.Imports {
+			if strings.Trim(imp.Path.Value, `"`) != "github.com/ManuGH/xg2g/internal/pipeline/profiles" {
+				continue
+			}
+			alias := "profiles"
+			if imp.Name != nil {
+				alias = imp.Name.Name
+			}
+			profileAliases[alias] = struct{}{}
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "LoadResolver" {
+				return true
+			}
+			ident, ok := selector.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if _, imported := profileAliases[ident.Name]; !imported {
+				return true
+			}
+			if _, boundary := allowed[rel]; !boundary {
+				position := fset.Position(call.Pos())
+				t.Errorf("%s:%d calls profiles.LoadResolver outside an approved composition/compatibility boundary", rel, position.Line)
+			}
+			return true
+		})
+	}
+}
 
 // TestLayeringRules enforces architectural layering rules.
 // See docs/arch/PACKAGE_LAYOUT.md for policy details.

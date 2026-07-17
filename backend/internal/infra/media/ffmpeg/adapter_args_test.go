@@ -894,7 +894,10 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 	assert.Contains(t, args, "h264_vaapi")
 
 	// Deinterlace in GPU memory (NOT CPU yadif)
-	assert.Contains(t, args, "deinterlace_vaapi")
+	vf, ok := valueAfter(args, "-vf")
+	require.True(t, ok)
+	assert.Contains(t, vf, "deinterlace_vaapi")
+	assert.Contains(t, vf, "scale_vaapi=format=nv12")
 	assert.NotContains(t, args, "yadif")
 
 	// CQP with an explicit QP becomes the primary quality knob.

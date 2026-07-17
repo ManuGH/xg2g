@@ -249,7 +249,9 @@ describe('V3Player Mobile Controls', () => {
       expect(Hls).not.toHaveBeenCalled();
     });
 
-    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+    });
     expect(await screen.findByRole('button', { name: /unmute|mute/i })).toBeInTheDocument();
     expect(screen.getByText(/use device buttons/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /player\.pipLabel/i })).not.toBeInTheDocument();

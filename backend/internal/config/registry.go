@@ -222,6 +222,15 @@ func buildRegistry() (*Registry, error) {
 		{Path: "playback.operator.max_quality_rung", Env: "XG2G_PLAYBACK_MAX_QUALITY_RUNG", FieldPath: "Playback.Operator.MaxQualityRung", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 		{Path: "playback.operator.disable_client_fallback", Env: "XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", FieldPath: "Playback.Operator.DisableClientFallback", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "playback.operator.source_rules", Env: "", FieldPath: "Playback.Operator.SourceRules", Profile: ProfileAdvanced, Status: StatusActive, Default: []PlaybackOperatorRuleConfig{}},
+
+		// --- PLANNER SHADOW ---
+		{Path: "plannerShadow.enabled", Env: "XG2G_PLANNER_SHADOW", FieldPath: "PlannerShadow.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "plannerShadow.queueCapacity", Env: "XG2G_PLANNER_SHADOW_QUEUE_CAPACITY", FieldPath: "PlannerShadow.QueueCapacity", Profile: ProfileAdvanced, Status: StatusActive, Default: 512},
+		{Path: "plannerReceipt.enabled", Env: "XG2G_PLANNER_RECEIPT_ENABLED", FieldPath: "PlannerReceipt.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "plannerReceipt.required", Env: "XG2G_PLANNER_RECEIPT_REQUIRED", FieldPath: "PlannerReceipt.Required", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "plannerReceipt.capacity", Env: "XG2G_PLANNER_RECEIPT_CAPACITY", FieldPath: "PlannerReceipt.Capacity", Profile: ProfileAdvanced, Status: StatusActive, Default: 2048},
+		{Path: "plannerReceipt.ttl", Env: "XG2G_PLANNER_RECEIPT_TTL", FieldPath: "PlannerReceipt.TTL", Profile: ProfileAdvanced, Status: StatusActive, Default: 60 * time.Second},
+
 		{Path: "monetization.enabled", Env: "XG2G_MONETIZATION_ENABLED", FieldPath: "Monetization.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "monetization.model", Env: "XG2G_MONETIZATION_MODEL", FieldPath: "Monetization.Model", Profile: ProfileAdvanced, Status: StatusActive, Default: MonetizationModelFree},
 		{Path: "monetization.productName", Env: "XG2G_MONETIZATION_PRODUCT_NAME", FieldPath: "Monetization.ProductName", Profile: ProfileAdvanced, Status: StatusActive, Default: "xg2g Unlock"},

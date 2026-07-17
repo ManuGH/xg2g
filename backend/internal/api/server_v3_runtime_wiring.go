@@ -38,6 +38,7 @@ func sanitizeV3RuntimeDependencies(deps v3.Dependencies) v3.Dependencies {
 	return v3.Dependencies{
 		Bus:                deps.Bus,
 		Store:              deps.Store,
+		StoreRegistry:      deps.StoreRegistry,
 		DeviceAuthStore:    deps.DeviceAuthStore,
 		ResumeStore:        deps.ResumeStore,
 		Scan:               deps.Scan,
@@ -71,6 +72,7 @@ func (s *Server) syncV3HandlerDependencies() {
 		Entitlements:       deps.runtimeDeps.Entitlements,
 		Households:         deps.runtimeDeps.Households,
 		Receipts:           deps.runtimeDeps.Receipts,
+		StoreRegistry:      deps.runtimeDeps.StoreRegistry,
 		PathMapper:         deps.recordingPathMapper,
 		ChannelManager:     deps.channelManager,
 		SeriesManager:      deps.seriesManager,

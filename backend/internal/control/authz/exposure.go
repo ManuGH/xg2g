@@ -120,6 +120,7 @@ var operationExposurePolicies = map[string]ExposurePolicy{
 	),
 	"PostRecordingPlaybackInfo":        policy(ExposureClassRead, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
 	"PostLivePlaybackInfo":             policy(ExposureClassRead, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
+	"PostLivePlaybackSummary":          policy(ExposureClassRead, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
 	"StreamRecordingDirect":            policy(ExposureClassSession, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustNotBrowser, false),
 	"ProbeRecordingMp4":                policy(ExposureClassRead, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustSameOrigin, false),
 	"GetRecordingHLSPlaylist":          policy(ExposureClassSession, ExposureAuthBearerScope, ExposureRateLimitGlobal, ExposureBrowserTrustNotBrowser, false),

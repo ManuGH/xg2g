@@ -104,6 +104,7 @@ internal class PlaybackApiClient(
     override suspend fun getRecordingPlaybackInfo(request: NativePlaybackRequest.Recording): NativeRecordingPlaybackInfo? = withContext(Dispatchers.IO) {
         val httpRequest = Request.Builder()
             .url(apiUrl("recordings", request.recordingId, "stream-info"))
+            .withPlaybackProfile(request.profile)
             .post(
                 PlaybackApiJsonCodec.recordingPlaybackInfoRequestBody(
                     capabilities = nativeCapabilities
@@ -261,6 +262,7 @@ internal class PlaybackApiClient(
     private fun requestLiveDecision(request: NativePlaybackRequest.Live): NativeLiveDecision {
         val httpRequest = Request.Builder()
             .url(apiUrl("live", "stream-info"))
+            .withPlaybackProfile(request.profile)
             .post(
                 PlaybackApiJsonCodec.liveDecisionRequestBody(
                     request = request,
@@ -336,6 +338,12 @@ internal class PlaybackApiClient(
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         const val SESSION_COOKIE_NAME = "xg2g_session"
         const val ANDROID_RECORDING_PROFILE = "android_native"
+    }
+}
+
+internal fun Request.Builder.withPlaybackProfile(profile: String?): Request.Builder = apply {
+    profile?.trim()?.takeIf { it.isNotEmpty() }?.let {
+        header("X-XG2G-Profile", it)
     }
 }
 

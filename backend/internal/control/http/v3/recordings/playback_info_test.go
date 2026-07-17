@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
+	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
@@ -2261,7 +2262,8 @@ func TestService_ResolvePlaybackInfo_LiveUsesScanTruthWhenAvailable(t *testing.T
 		RequestID:   "req-live-scan",
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "hevc", res.Truth.VideoCodec)
 	assert.Equal(t, "ac3", res.Truth.AudioCodec)
@@ -2337,16 +2339,17 @@ func TestService_ResolvePlaybackInfo_LiveInterlacedTruthRepairsVideoInsteadOfPas
 		},
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
-	require.NotNil(t, res.Decision.TargetProfile)
-	assert.Equal(t, decision.ModeTranscode, res.Decision.Mode)
-	assert.Equal(t, playbackprofile.MediaModeTranscode, res.Decision.TargetProfile.Video.Mode)
-	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
-	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Audio.Mode)
-	assert.Equal(t, "aac", res.Decision.TargetProfile.Audio.Codec)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
+	assert.Equal(t, playbackplanner.DecisionAllow, res.PlannerEvaluation.Result.Plan.Decision)
+	assert.Equal(t, "transcode", res.PlannerEvaluation.Result.Plan.Mode)
+	assert.Equal(t, "transcode", res.PlannerEvaluation.Result.Plan.Video.Mode)
+	assert.Equal(t, "h264", res.PlannerEvaluation.Result.Plan.Video.Codec)
+	assert.Equal(t, "copy", res.PlannerEvaluation.Result.Plan.Audio.Mode)
+	assert.Equal(t, "aac", res.PlannerEvaluation.Result.Plan.Audio.Codec)
 }
 
-func TestService_ResolvePlaybackInfo_LiveAndroidNativeCopyableTSReturnsFMP4DirectStream(t *testing.T) {
+func TestService_ResolvePlaybackInfo_LiveAndroidTVNativeCopyableTSReturnsFMP4DirectStream(t *testing.T) {
 	recSvc := &stubRecordingsService{
 		getMediaTruthFn: func(context.Context, string) (playback.MediaTruth, error) {
 			t.Fatal("GetMediaTruth must not be called for live playback")
@@ -2402,21 +2405,16 @@ func TestService_ResolvePlaybackInfo_LiveAndroidNativeCopyableTSReturnsFMP4Direc
 		},
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
-	require.NotNil(t, res.Decision.TargetProfile)
-	assert.Equal(t, decision.ModeDirectStream, res.Decision.Mode)
-	assert.Equal(t, "hls", res.Decision.SelectedOutputKind)
-	assert.Equal(t, []decision.ReasonCode{decision.ReasonDirectStreamMatch}, res.Decision.Reasons)
-	assert.Equal(t, "fmp4", res.Decision.Selected.Container)
-	assert.Equal(t, playbackprofile.PackagingFMP4, res.Decision.TargetProfile.Packaging)
-	assert.Equal(t, "fmp4", res.Decision.TargetProfile.Container)
-	assert.Equal(t, "fmp4", res.Decision.TargetProfile.HLS.SegmentContainer)
-	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Video.Mode)
-	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
-	assert.Equal(t, playbackprofile.MediaModeCopy, res.Decision.TargetProfile.Audio.Mode)
-	assert.Equal(t, "ac3", res.Decision.TargetProfile.Audio.Codec)
-	assert.Equal(t, string(playbackprofile.RungCompatibleHLSFMP4), res.Decision.Trace.QualityRung)
-	assert.Equal(t, string(playbackprofile.IntentCompatible), res.Decision.Trace.ResolvedIntent)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
+	assert.Equal(t, playbackplanner.DecisionAllow, res.PlannerEvaluation.Result.Plan.Decision)
+	assert.Equal(t, "remux", res.PlannerEvaluation.Result.Plan.Mode)
+	assert.Equal(t, "hls", res.PlannerEvaluation.Result.Plan.DeliveryEngine)
+	assert.Equal(t, "mpegts", res.PlannerEvaluation.Result.Plan.Packaging.Container, "copied DVB H.264 uses MPEG-TS to prevent open-GOP fMP4 judder")
+	assert.Equal(t, "copy", res.PlannerEvaluation.Result.Plan.Video.Mode)
+	assert.Equal(t, "h264", res.PlannerEvaluation.Result.Plan.Video.Codec)
+	assert.Equal(t, "copy", res.PlannerEvaluation.Result.Plan.Audio.Mode)
+	assert.Equal(t, "ac3", res.PlannerEvaluation.Result.Plan.Audio.Codec)
 }
 
 func TestService_ResolvePlaybackInfo_LiveMissingScanTruthFailsClosed(t *testing.T) {
@@ -2506,7 +2504,8 @@ func TestService_ResolvePlaybackInfo_LiveMissingScanTruthUsesTargetedProbe(t *te
 		RequestID:   "req-live-targeted-probe",
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "h264", res.Truth.VideoCodec)
 	assert.Equal(t, "aac", res.Truth.AudioCodec)
@@ -2570,7 +2569,8 @@ func TestService_ResolvePlaybackInfo_LiveIncompleteScanTruthUsesTargetedProbe(t 
 		RequestID:   "req-live-incomplete-targeted-probe",
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "h264", res.Truth.VideoCodec)
 	assert.Equal(t, "ac3", res.Truth.AudioCodec)
@@ -2688,7 +2688,8 @@ func TestService_ResolvePlaybackInfo_LiveStaleScanTruthServedFromCacheAndRevalid
 		RequestID:   "req-live-stale-swr",
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "h264", res.Truth.VideoCodec)
 	// The CACHED truth is served, not the probe result — the probe runs detached.
@@ -2746,7 +2747,8 @@ func TestService_ResolvePlaybackInfo_LiveStaleScanTruthServedWhenProbeFindsNothi
 		RequestID:   "req-live-stale-probe-empty",
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "aac", res.Truth.AudioCodec)
 
@@ -2800,7 +2802,8 @@ func TestService_ResolvePlaybackInfo_LiveStaleScanTruthEpgBadgeDoesNotProbe(t *t
 		Headers:     map[string]string{PlaybackInfoContextHeader: PlaybackInfoContextEpgBadge},
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "aac", res.Truth.AudioCodec)
 
@@ -2939,15 +2942,13 @@ func TestService_ResolvePlaybackInfo_LiveTranscodeUsesMeasuredAutoCodecProfile(t
 		},
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
-	require.NotNil(t, res.Decision.TargetProfile)
-	assert.Equal(t, "fmp4", res.Decision.Selected.Container)
-	assert.Equal(t, "hevc", res.Decision.Selected.VideoCodec)
-	assert.Equal(t, "aac", res.Decision.Selected.AudioCodec)
-	assert.Equal(t, "quality", res.Decision.Trace.RequestedIntent)
-	assert.Equal(t, "quality", res.Decision.Trace.ResolvedIntent)
-	assert.Equal(t, "hevc", res.Decision.TargetProfile.Video.Codec)
-	assert.Equal(t, "fmp4", res.Decision.TargetProfile.Container)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
+	assert.Equal(t, playbackplanner.DecisionAllow, res.PlannerEvaluation.Result.Plan.Decision)
+	assert.Equal(t, "transcode", res.PlannerEvaluation.Result.Plan.Mode)
+	assert.Equal(t, "fmp4", res.PlannerEvaluation.Result.Plan.Packaging.Container)
+	assert.Equal(t, "hevc", res.PlannerEvaluation.Result.Plan.Video.Codec)
+	assert.Equal(t, "aac", res.PlannerEvaluation.Result.Plan.Audio.Codec)
 }
 
 func TestService_ResolvePlaybackInfo_LiveNativeAV1OnIOSUsesFMP4AndIgnoresMeasuredH264Preference(t *testing.T) {
@@ -3012,16 +3013,13 @@ func TestService_ResolvePlaybackInfo_LiveNativeAV1OnIOSUsesFMP4AndIgnoresMeasure
 		},
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
-	require.NotNil(t, res.Decision.TargetProfile)
-	assert.Equal(t, decision.ModeTranscode, res.Decision.Mode)
-	assert.Equal(t, "hls", res.Decision.SelectedOutputKind)
-	assert.Equal(t, "h264", res.Decision.Selected.VideoCodec)
-	assert.Equal(t, "fmp4", res.Decision.Selected.Container)
-	assert.Equal(t, "fmp4", res.Decision.TargetProfile.Container)
-	assert.Equal(t, playbackprofile.PackagingFMP4, res.Decision.TargetProfile.Packaging)
-	assert.Equal(t, "fmp4", res.Decision.TargetProfile.HLS.SegmentContainer)
-	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
+	assert.Equal(t, playbackplanner.DecisionAllow, res.PlannerEvaluation.Result.Plan.Decision)
+	assert.Equal(t, "transcode", res.PlannerEvaluation.Result.Plan.Mode)
+	assert.Equal(t, "hls", res.PlannerEvaluation.Result.Plan.DeliveryEngine)
+	assert.Equal(t, "h264", res.PlannerEvaluation.Result.Plan.Video.Codec)
+	assert.Equal(t, "mpegts", res.PlannerEvaluation.Result.Plan.Packaging.Container, "copied DVB H.264 uses MPEG-TS to prevent open-GOP fMP4 judder")
 }
 
 func TestService_ResolvePlaybackInfo_LiveRepairIntentSkipsAutoCodecUpgrade(t *testing.T) {
@@ -3076,16 +3074,15 @@ func TestService_ResolvePlaybackInfo_LiveRepairIntentSkipsAutoCodecUpgrade(t *te
 		},
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
-	require.NotNil(t, res.Decision.TargetProfile)
-	assert.Equal(t, decision.ModeTranscode, res.Decision.Mode)
-	assert.Equal(t, "repair", res.Decision.Trace.RequestedIntent)
-	assert.Equal(t, "repair", res.Decision.Trace.ResolvedIntent)
-	assert.Equal(t, "h264", res.Decision.TargetProfile.Video.Codec)
-	assert.NotEqual(t, "hevc", res.Decision.Selected.VideoCodec)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
+	assert.Equal(t, playbackplanner.DecisionAllow, res.PlannerEvaluation.Result.Plan.Decision)
+	assert.Equal(t, "transcode", res.PlannerEvaluation.Result.Plan.Mode)
+	assert.Equal(t, "h264", res.PlannerEvaluation.Result.Plan.Video.Codec)
+	assert.NotEqual(t, "hevc", res.PlannerEvaluation.Result.Plan.Video.Codec)
 }
 
-func TestService_ResolvePlaybackInfo_RecordsDecisionAuditAfterFinalAlignment(t *testing.T) {
+func TestService_ResolvePlaybackInfo_LiveSkipsLegacyDecisionAudit(t *testing.T) {
 	hardware.SetVAAPIPreflightResult(true)
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 90},
@@ -3141,17 +3138,9 @@ func TestService_ResolvePlaybackInfo_RecordsDecisionAuditAfterFinalAlignment(t *
 		},
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
-	require.Equal(t, 1, auditSink.callCount)
-	require.Equal(t, decision.OriginRuntime, auditSink.lastEvent.Origin)
-	require.Equal(t, "safari", auditSink.lastEvent.ClientFamily)
-	require.Equal(t, "quality", auditSink.lastEvent.RequestedIntent)
-	require.Equal(t, res.Decision.Trace.InputHash, auditSink.lastEvent.BasisHash)
-	require.Equal(t, decision.ModeTranscode, auditSink.lastEvent.Mode)
-	require.NotNil(t, auditSink.lastEvent.TargetProfile)
-	require.Equal(t, "fmp4", auditSink.lastEvent.TargetProfile.Container)
-	require.Equal(t, "hevc", auditSink.lastEvent.TargetProfile.Video.Codec)
-	require.Equal(t, "aac", auditSink.lastEvent.TargetProfile.Audio.Codec)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
+	require.Equal(t, 0, auditSink.callCount)
 }
 
 func TestService_ResolvePlaybackInfo_RecordsShadowDecisionAuditPerRequest(t *testing.T) {
@@ -3414,7 +3403,8 @@ func TestService_ResolvePlaybackInfo_LiveAgedTruthWithinWindowServedWithoutProbe
 		RequestID:   "req-live-aged-within-window",
 	})
 	require.Nil(t, err)
-	require.NotNil(t, res.Decision)
+	require.Nil(t, res.Decision)
+	require.NotNil(t, res.PlannerEvaluation)
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "h264", res.Truth.VideoCodec)
 	assert.Equal(t, "aac", res.Truth.AudioCodec)

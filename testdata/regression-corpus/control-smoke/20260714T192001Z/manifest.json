@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "fixture_name": "control-smoke",
+  "captured_at_utc": "20260714T192001Z",
+  "requested_duration_seconds": 10,
+  "source_url_redacted": "http://10.10.55.64:8001/1:0:19:33AC:3EB:1:C00000:0:0:0:",
+  "capture": {
+    "tool": "curl",
+    "exit_code": 28,
+    "bytes": 7315456,
+    "complete_ts_packets": 38912,
+    "trailing_bytes": 0,
+    "sha256": "72418a5c573e46e14cd8e84a411b6da15da862bf415dcbffab519c9dce6421e8",
+    "transformed": false
+  }
+}

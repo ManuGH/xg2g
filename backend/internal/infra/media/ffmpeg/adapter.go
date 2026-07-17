@@ -8,6 +8,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/rs/zerolog"
 	"net"
 	"net/http"
@@ -57,9 +58,12 @@ type pathProbeRequest struct {
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
+	Config                     AdapterConfig
 	BinPath                    string
 	FFprobeBin                 string
 	HLSRoot                    string
+	StoreRegistry              store.StoreRegistry
+	DiagnosticLookup           ports.DiagnosticLookup
 	AnalyzeDuration            string
 	ProbeSize                  string
 	LiveAnalyzeDuration        string
@@ -127,6 +131,8 @@ type LocalAdapter struct {
 	ingestServer   *ringbuffer.IngestServer
 	// activeProcs maps run handles to running commands
 	activeProcs map[ports.RunHandle]*exec.Cmd
+	// handleSessions maps run handles to session IDs for diagnostics
+	handleSessions map[ports.RunHandle]string
 	// finalizedProfiles keeps the finalized profile that actually launched for a handle.
 	finalizedProfiles map[ports.RunHandle]ports.ProfileSpec
 	// executedPlans keeps the execution-truth plan parsed from the real argv that launched for a handle.
@@ -144,6 +150,18 @@ const maxCompletedProcessDetails = 128
 
 // NewLocalAdapter creates a new adapter instance.
 func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration, vaapiDevice string) *LocalAdapter {
+	return NewLocalAdapterWithConfig(
+		binPath, ffprobeBin, hlsRoot, e2, logger, analyzeDuration, probeSize,
+		dvrWindow, killTimeout, fallbackTo8001, preflightTimeout, segmentSeconds,
+		startTimeout, stallTimeout, vaapiDevice,
+		LoadAdapterConfig(analyzeDuration, probeSize),
+	)
+}
+
+// NewLocalAdapterWithConfig constructs an adapter from an immutable operator
+// snapshot. Production composition roots use this constructor so request-time
+// command planning never consults process environment.
+func NewLocalAdapterWithConfig(binPath string, ffprobeBin string, hlsRoot string, e2 *enigma2.Client, logger zerolog.Logger, analyzeDuration string, probeSize string, dvrWindow time.Duration, killTimeout time.Duration, fallbackTo8001 bool, preflightTimeout time.Duration, segmentSeconds int, startTimeout, stallTimeout time.Duration, vaapiDevice string, cfg AdapterConfig) *LocalAdapter {
 	analyzeDuration = strings.TrimSpace(analyzeDuration)
 	probeSize = strings.TrimSpace(probeSize)
 	if analyzeDuration == "" {
@@ -159,12 +177,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		segmentSeconds = config.DefaultHLSSegmentSeconds
 	}
 
-	// Every ENV-tunable ingest/FPS/Safari knob is resolved in one place
-	// (LoadAdapterConfig), keeping this constructor focused on wiring
-	// dependencies. The FPS probe falls back to the general analyze/probe depth
-	// when its own override is unset, so those already-defaulted values are
-	// passed in.
-	cfg := LoadAdapterConfig(analyzeDuration, probeSize)
+	cfg = cloneAdapterConfig(cfg)
 
 	httpClient := &http.Client{
 		Timeout: preflightTimeout,
@@ -181,6 +194,7 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		},
 	}
 	adapter := &LocalAdapter{
+		Config:                     cfg,
 		BinPath:                    binPath,
 		FFprobeBin:                 strings.TrimSpace(ffprobeBin),
 		HLSRoot:                    hlsRoot,
@@ -229,14 +243,48 @@ func NewLocalAdapter(binPath string, ffprobeBin string, hlsRoot string, e2 *enig
 		lastKnownFPS:               make(map[string]fpsCacheEntry),
 		FPSCacheTTL:                cfg.FPSCacheTTL,
 		activeProcs:                make(map[ports.RunHandle]*exec.Cmd),
+		handleSessions:             make(map[ports.RunHandle]string),
 		finalizedProfiles:          make(map[ports.RunHandle]ports.ProfileSpec),
 		executedPlans:              make(map[ports.RunHandle]ports.ExecutedFFmpegPlan),
 		runtimeDiagnostics:         make(map[ports.RunHandle]ports.RuntimeDiagnostics),
 		processDetails:             make(map[ports.RunHandle]string),
 		completedProcessDetails:    make(map[ports.RunHandle]string),
 	}
-	adapter.detector = newDetector(binPath, logger, strings.TrimSpace(vaapiDevice), hlsRoot)
+	adapter.detector = newDetector(binPath, logger, strings.TrimSpace(vaapiDevice), hlsRoot, cfg)
 	adapter.detector.recordProcessDetail = adapter.recordProcessDetail
 	adapter.detector.terminateProcessGroup = adapter.terminateProcessGroup
 	return adapter
+}
+
+// DiagnosticContext holds context fields for passive lifecycle diagnostics.
+type DiagnosticContext struct {
+	SessionID          string
+	GenerationID       string
+	Reason             string
+	ElapsedSinceStopMs int64
+}
+
+// GetDiagnosticContext queries DiagnosticLookup for diagnostic session metadata.
+func (a *LocalAdapter) GetDiagnosticContext(sessionID string) DiagnosticContext {
+	dc := DiagnosticContext{
+		SessionID:    sessionID,
+		GenerationID: "unknown",
+		Reason:       "none",
+	}
+	if a != nil && a.DiagnosticLookup != nil && sessionID != "" {
+		if meta, ok := a.DiagnosticLookup.GetDiagnosticMetadata(context.Background(), sessionID); ok {
+			if meta.GenerationID != "" {
+				dc.GenerationID = meta.GenerationID
+			} else if meta.CorrelationID != "" {
+				dc.GenerationID = meta.CorrelationID
+			}
+			if meta.Reason != "" {
+				dc.Reason = meta.Reason
+			}
+			if meta.StopRequestedAtUnixMs > 0 {
+				dc.ElapsedSinceStopMs = time.Now().UnixMilli() - meta.StopRequestedAtUnixMs
+			}
+		}
+	}
+	return dc
 }

@@ -28,9 +28,10 @@ type RuntimeSnapshot struct {
 	ProxyBaseURL     string
 	UseHashTvgID     bool
 
-	OpenWebIF  OpenWebIFRuntime
-	Transcoder TranscoderRuntime
-	HLS        HLSRuntime
+	OpenWebIF   OpenWebIFRuntime
+	Transcoder  TranscoderRuntime
+	HLS         HLSRuntime
+	ShadowStore ShadowStoreRuntime
 
 	FFmpegLogLevel string
 
@@ -66,6 +67,13 @@ type HLSRuntime struct {
 	Generic streamprofile.GenericHLSConfig
 	Safari  streamprofile.SafariDVRConfig
 	LLHLS   streamprofile.LLHLSConfig
+}
+
+type ShadowStoreRuntime struct {
+	Enabled       bool
+	MaxBytes      int64
+	QueueMaxBytes int64
+	MaxObjects    int
 }
 
 // BuildSnapshot builds an effective, immutable runtime snapshot from an already validated AppConfig

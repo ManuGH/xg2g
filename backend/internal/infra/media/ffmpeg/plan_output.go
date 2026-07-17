@@ -153,15 +153,16 @@ func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.Stream
 }
 
 func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []string {
-	if !spec.Profile.TranscodeVideo {
+	if !spec.Profile.TranscodesAudio() {
 		return append(args, "-c:a", "copy", "-sn")
 	}
+	audioCodec := spec.Profile.ResolvedAudioCodec()
 	audioBitrate := "192k"
 	if spec.Profile.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
 	}
 	return append(args,
-		"-c:a", "aac",
+		"-c:a", audioCodec,
 		"-b:a", audioBitrate,
 		"-ac", "2",
 		"-ar", "48000",
@@ -236,15 +237,15 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 			segmentFilename = fmt.Sprintf("http://127.0.0.1:%d/ingest/%s/seg_%%06d.ts", a.ingestPort, spec.SessionID)
 		}
 	}
-	hlsFlags := "delete_segments+append_list+independent_segments+program_date_time"
-	if !a.LowLatencyHLS || segmentType != "fmp4" {
-		// temp_file hides the growing segment behind a .tmp rename. The LL-HLS
-		// packager (internal/hls/llhls) must scan exactly that open segment to
-		// cut EXT-X-PART entries, so the flag stays off on the LL path;
-		// playlist consistency there is covered by the atomic playlist
-		// publication guard instead.
-		hlsFlags += "+temp_file"
+	hlsFlags := "delete_segments+append_list+program_date_time"
+	if spec.Profile.TranscodeVideo {
+		hlsFlags += "+independent_segments"
 	}
+	// Always use temp_file to ensure atomic segment creation,
+	// since the internal LL-HLS packager is currently disabled.
+	// This prevents Safari from downloading partially written segments.
+	hlsFlags += "+temp_file"
+
 	args = append(args,
 		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
 		"-hls_list_size", strconv.Itoa(layout.listSize),

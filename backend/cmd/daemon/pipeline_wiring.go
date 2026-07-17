@@ -7,19 +7,22 @@ package main
 import (
 	"github.com/ManuGH/xg2g/internal/config"
 	sessionports "github.com/ManuGH/xg2g/internal/domain/session/ports"
+	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/rs/zerolog"
 )
 
 //nolint:unused // retained for focused daemon wiring tests.
-func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger) sessionports.MediaPipeline {
+func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger zerolog.Logger, storeRegistry pipelinestore.StoreRegistry, sessionLookupStore sessionstore.SessionLookupStore) sessionports.MediaPipeline {
 	if cfg.Engine.Mode == "virtual" {
 		return stub.NewAdapter()
 	}
 
-	adapter := ffmpeg.NewLocalAdapter(
+	adapterConfig := ffmpeg.LoadAdapterConfig(cfg.Enigma2.AnalyzeDuration, cfg.Enigma2.ProbeSize)
+	adapter := ffmpeg.NewLocalAdapterWithConfig(
 		cfg.FFmpeg.Bin,
 		cfg.FFmpeg.FFprobeBin,
 		cfg.HLS.Root,
@@ -35,9 +38,11 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 		cfg.Timeouts.TranscodeStart,
 		cfg.Timeouts.TranscodeNoProgress,
 		cfg.FFmpeg.VaapiDevice,
+		adapterConfig,
 	)
 	adapter.LowLatencyHLS = cfg.HLS.LowLatency
 	adapter.ReadySegments = cfg.HLS.ReadySegments
+	adapter.StoreRegistry = storeRegistry
 
 	if cfg.FFmpeg.VaapiDevice != "" {
 		if err := adapter.PreflightVAAPI(); err != nil {
@@ -49,6 +54,9 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 		logger.Warn().Err(err).
 			Msg("NVENC preflight failed; NVIDIA GPU transcoding will be unavailable for sessions requesting it")
 	}
+	adapter.PreflightTranscodeProfiles()
 
+	adapter.StoreRegistry = storeRegistry
+	adapter.DiagnosticLookup = sessionLookupStore
 	return adapter
 }

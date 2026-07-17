@@ -190,7 +190,14 @@ resolve_api_origin() {
   printf 'http://%s:%s' "${host}" "${port}"
 }
 
-API_ORIGIN="$(resolve_api_origin "${XG2G_LISTEN:-127.0.0.1:8088}")"
+if [[ -n "${XG2G_POST_DEPLOY_API_ORIGIN:-}" ]]; then
+  case "${XG2G_POST_DEPLOY_API_ORIGIN}" in
+    http://*|https://*) API_ORIGIN="${XG2G_POST_DEPLOY_API_ORIGIN%/}" ;;
+    *) fail "XG2G_POST_DEPLOY_API_ORIGIN must use http:// or https://" ;;
+  esac
+else
+  API_ORIGIN="$(resolve_api_origin "${XG2G_LISTEN:-127.0.0.1:8088}")"
+fi
 API_BASE="${API_ORIGIN}/api/v3"
 REFERER="${API_ORIGIN}/"
 
@@ -376,6 +383,24 @@ create_session_cookie_jar() {
     "${MEDIA_API_BASE}/auth/session"
 
   status="$(awk '/^HTTP/{code=$2} END{print code}' "${header_file}")"
+  if [[ "${status}" != "200" ]] \
+    && grep -q '"code":"HTTPS_REQUIRED"' "${body_file}" \
+    && [[ "${MEDIA_ORIGIN}" == http://127.0.0.1:* || "${MEDIA_ORIGIN}" == http://localhost:* ]]; then
+    # Docker publishes the port on the LXC host, so the request reaches the
+    # application from the bridge address rather than loopback. Retry only the
+    # security-sensitive cookie exchange from inside the named container. The
+    # resulting cookie jar remains bound to the same loopback media origin.
+    if docker exec "${CONTAINER_NAME}" curl -fsS -D /dev/null \
+      -o /dev/null \
+      -X POST \
+      -H "Authorization: Bearer ${API_TOKEN}" \
+      -H "Origin: ${MEDIA_ORIGIN}" \
+      -H "Referer: ${MEDIA_REFERER}" \
+      -c - \
+      "${MEDIA_API_BASE}/auth/session" >"${cookie_jar}"; then
+      status="200"
+    fi
+  fi
   [[ "${status}" == "200" ]] || fail "auth/session failed via ${MEDIA_API_BASE}: HTTP ${status}: $(cat "${body_file}")"
   grep -q $'\txg2g_session\t' "${cookie_jar}" || fail "auth/session did not mint xg2g_session cookie"
   printf '%s' "${cookie_jar}"
@@ -469,7 +494,9 @@ verify_direct_live_hls() {
   [[ "${MANIFEST_STATUS}" == "200" ]] || fail "manifest fetch with session cookie failed: HTTP ${MANIFEST_STATUS}"
 
   if [[ -n "${HLS_DVR_WINDOW}" ]]; then
-    printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-PLAYLIST-TYPE:EVENT$' || fail "live DVR manifest missing EXT-X-PLAYLIST-TYPE:EVENT"
+    if printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-PLAYLIST-TYPE:'; then
+      fail "sliding live DVR manifest must not emit an append-only EXT-X-PLAYLIST-TYPE"
+    fi
     printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-START:' || fail "live DVR manifest missing EXT-X-START"
   else
     if printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-PLAYLIST-TYPE:'; then
@@ -518,6 +545,7 @@ verify_hw_transcode_gpu() {
     deviceType: "web",
     hlsEngines: ["hlsjs"],
     preferredHlsEngine: "hlsjs",
+    maxVideo: {width: 640, height: 360, fps: 60},
     runtimeProbeUsed: true,
     runtimeProbeVersion: 1,
     clientFamilyFallback: "chrome"

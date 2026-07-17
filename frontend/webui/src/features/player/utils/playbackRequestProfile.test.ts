@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPlaybackProfileHeaders,
+  normalizePlaybackProfileSelection,
+  resolvePlaybackProfileForPreflight,
   resolvePlaybackRequestProfile,
   type PlaybackClientContext,
 } from './playbackRequestProfile';
@@ -81,6 +83,55 @@ describe('resolvePlaybackRequestProfile', () => {
       'recording'
     )).toBe('bandwidth');
   });
+
+  it('treats an AV1-only client as a modern quality path', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext(),
+      buildCapabilities({ videoCodecs: ['av1'] }),
+      'live'
+    )).toBe('quality');
+  });
+
+  it('withholds quality when Media Capabilities reports no smooth modern codec', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext(),
+      buildCapabilities({
+        videoCodecs: ['h264', 'hevc'],
+        videoCodecSignals: [
+          { codec: 'h264', supported: true, smooth: false },
+          { codec: 'hevc', supported: true, smooth: false },
+        ],
+      }),
+      'live'
+    )).toBeUndefined();
+  });
+
+  it('keeps quality when at least one modern codec is reported smooth', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext(),
+      buildCapabilities({
+        videoCodecs: ['h264', 'av1'],
+        videoCodecSignals: [
+          { codec: 'h264', supported: true, smooth: false },
+          { codec: 'av1', supported: true, smooth: true, powerEfficient: true },
+        ],
+      }),
+      'live'
+    )).toBe('quality');
+  });
+
+  it('ignores signals without a smooth verdict instead of demoting', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext(),
+      buildCapabilities({
+        videoCodecSignals: [
+          { codec: 'h264', supported: true },
+        ],
+      }),
+      'live'
+    )).toBe('quality');
+
+  });
 });
 
 describe('buildPlaybackProfileHeaders', () => {
@@ -92,5 +143,29 @@ describe('buildPlaybackProfileHeaders', () => {
     expect(buildPlaybackProfileHeaders('bandwidth')).toEqual({
       'X-XG2G-Profile': 'bandwidth',
     });
+    expect(buildPlaybackProfileHeaders('direct')).toEqual({
+      'X-XG2G-Profile': 'direct',
+    });
+  });
+});
+
+describe('planner-bound profile selection', () => {
+  it('keeps only public playback intents and migrates copy aliases', () => {
+    expect(normalizePlaybackProfileSelection('copy')).toBe('direct');
+    expect(normalizePlaybackProfileSelection('quality')).toBe('quality');
+    expect(normalizePlaybackProfileSelection('compatible')).toBe('compatible');
+    expect(normalizePlaybackProfileSelection('repair')).toBe('repair');
+  });
+
+  it('drops legacy encoder profile ids instead of bypassing the planner', () => {
+    expect(normalizePlaybackProfileSelection('av1_hw')).toBe('auto');
+    expect(normalizePlaybackProfileSelection('hevc_hw')).toBe('auto');
+    expect(normalizePlaybackProfileSelection('h264_fmp4')).toBe('auto');
+  });
+
+  it('binds an explicit profile before preflight and preserves automatic policy for auto', () => {
+    expect(resolvePlaybackProfileForPreflight('repair', 'quality')).toBe('repair');
+    expect(resolvePlaybackProfileForPreflight('auto', 'bandwidth')).toBe('bandwidth');
+    expect(resolvePlaybackProfileForPreflight('auto')).toBeUndefined();
   });
 });

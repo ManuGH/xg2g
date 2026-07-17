@@ -18,7 +18,7 @@ func TestSessionRuntimeProfileForStep_AV1UsesFMP4AndGPU(t *testing.T) {
 		Deinterlace:    true,
 	}
 
-	next, ok := sessionRuntimeProfileForStep(current, runtimepolicy.PlaybackStepAV11080p)
+	next, ok := sessionRuntimeProfileForStepWithResolver(current, runtimepolicy.PlaybackStepAV11080p, profiles.Resolver{})
 	require.True(t, ok)
 	require.Equal(t, profiles.ProfileAV1HW, next.Name)
 	require.True(t, next.TranscodeVideo)

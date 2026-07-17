@@ -98,7 +98,7 @@ func TestSafariHLSSmoke(t *testing.T) {
 		sid := parts[4]
 		fname := parts[6]
 		// simple mapping for test
-		api.ServeHLS(w, r, store, tmpDir, sid, fname)
+		api.ServeHLS(w, r, store, nil, tmpDir, sid, fname)
 	})
 
 	server := httptest.NewServer(handler)

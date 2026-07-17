@@ -6,10 +6,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/clientplayback"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	"github.com/ManuGH/xg2g/internal/control/playback"
+	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"golang.org/x/sync/singleflight"
 )
@@ -18,12 +22,65 @@ import (
 type Service struct {
 	deps Deps
 	// liveProbeGroup collapses concurrent interactive capability probes for the same
-	// serviceRef into a single relay probe (see probeLiveTruthBounded).
-	liveProbeGroup singleflight.Group
+	liveProbeGroup      singleflight.Group
+	observer            playbackshadow.PlannerShadowObserver
+	profileResolver     profiles.Resolver
+	profileResolverSet  bool
+	clientAV1Disabled   bool
+	clientAV1PolicySet  bool
+	iosNativeHEVCHWMode string
+	iosHEVCPolicySet    bool
 }
 
-func NewService(deps Deps) *Service {
-	return &Service{deps: deps}
+type Option func(*Service)
+
+func WithPlannerShadowObserver(observer playbackshadow.PlannerShadowObserver) Option {
+	return func(s *Service) {
+		if observer != nil {
+			s.observer = observer
+		}
+	}
+}
+
+func WithProfileResolver(resolver profiles.Resolver) Option {
+	return func(s *Service) {
+		if !resolver.IsInitialized() {
+			return
+		}
+		s.profileResolver = resolver
+		s.profileResolverSet = true
+	}
+}
+
+func WithClientAV1Disabled(disabled bool) Option {
+	return func(s *Service) {
+		s.clientAV1Disabled = disabled
+		s.clientAV1PolicySet = true
+	}
+}
+
+func WithIOSNativeHEVCHWMode(mode string) Option {
+	return func(s *Service) {
+		s.iosNativeHEVCHWMode = mode
+		s.iosHEVCPolicySet = true
+	}
+}
+
+func NewService(deps Deps, opts ...Option) *Service {
+	s := &Service{deps: deps, observer: playbackshadow.NoopObserver{}}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if !s.profileResolverSet {
+		s.profileResolver = profiles.LoadResolver()
+	}
+	if !s.clientAV1PolicySet {
+		s.clientAV1Disabled = config.ParseBool("XG2G_CLIENT_AV1_DISABLED", false)
+	}
+	if !s.iosHEVCPolicySet {
+		s.iosNativeHEVCHWMode = autocodec.ResolveIOSNativeHEVCHWMode()
+	}
+	return s
 }
 
 // defaultLiveInteractiveProbeBudget bounds how long an interactive live playback

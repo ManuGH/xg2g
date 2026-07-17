@@ -36,6 +36,8 @@ type IntentHandler struct {
 	LeaseTTL time.Duration
 	// TunerSlots is the admission capacity set; empty means no capacity configured.
 	TunerSlots []int
+	// ProfileResolver binds intent planning to one immutable operator snapshot.
+	ProfileResolver profiles.Resolver
 }
 
 func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +126,7 @@ func (h IntentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	policyID := "universal"
 
 	// Resolve profile (universal)
-	prof := profiles.Resolve(policyID, r.UserAgent(), dvrWindowSec, nil, hardware.PreferredGPUBackend(), profiles.HWAccelAuto)
+	prof := h.ProfileResolver.Resolve(policyID, r.UserAgent(), dvrWindowSec, nil, hardware.PreferredGPUBackend(), profiles.HWAccelAuto)
 
 	var acquiredLeases []store.Lease
 	releaseLeases := func() {

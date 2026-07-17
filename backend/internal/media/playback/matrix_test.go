@@ -148,6 +148,32 @@ func TestEvaluatePackagingCompatibilityHonorsContainerPracticalMatrix(t *testing
 	}
 }
 
+func TestEvaluatePackagingCompatibilityUsesExplicitExperimentalAV1MPEGTSPolicy(t *testing.T) {
+	matrix := ClientPlaybackMatrix{
+		Packaging: []PackagingCapability{
+			{
+				Container:   container.MPEGTS,
+				Delivery:    container.HLS,
+				VideoCodecs: []codec.ID{codec.IDAV1},
+				AudioCodecs: []codec.ID{codec.IDAAC},
+			},
+		},
+	}
+	request := StreamRequest{
+		Video:     codec.IDAV1,
+		Audio:     codec.IDAAC,
+		Container: container.MPEGTS,
+		Delivery:  container.HLS,
+	}
+
+	result := EvaluatePackagingCompatibilityWithPolicy(matrix, request, PackagingPolicy{
+		ExperimentalAV1MPEGTS: true,
+	})
+	if !result.Compatible() {
+		t.Fatalf("expected signed experimental av1-in-ts policy to be honored, got %+v", result.Reasons)
+	}
+}
+
 func TestClientPlaybackMatrixFinders(t *testing.T) {
 	matrix := ClientPlaybackMatrix{
 		Video: []codec.VideoCapability{{Codec: codec.IDHEVC}},

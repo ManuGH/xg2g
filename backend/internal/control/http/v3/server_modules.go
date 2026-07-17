@@ -20,6 +20,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
+	"github.com/ManuGH/xg2g/internal/pipeline/store"
 	recinfra "github.com/ManuGH/xg2g/internal/recordings"
 )
 
@@ -28,6 +29,7 @@ type sessionsModuleDeps struct {
 	cfg            config.AppConfig
 	snap           config.Snapshot
 	store          SessionStateStore
+	storeRegistry  store.StoreRegistry
 	bus            bus.Bus
 	resumeStore    resume.Store
 	scanSource     ScanSource
@@ -56,6 +58,7 @@ func (s *Server) sessionsModuleDeps() sessionsModuleDeps {
 		cfg:            s.cfg,
 		snap:           s.snap,
 		store:          s.v3Store,
+		storeRegistry:  s.storeRegistry,
 		bus:            s.v3Bus,
 		resumeStore:    s.resumeStore,
 		scanSource:     s.scanSource,

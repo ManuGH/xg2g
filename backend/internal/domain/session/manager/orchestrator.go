@@ -22,6 +22,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/telemetry"
 )
 
 // Orchestrator consumes intents and drives pipelines.
@@ -48,6 +49,10 @@ type Orchestrator struct {
 
 	PipelineStopTimeout time.Duration
 	OutboundPolicy      platformnet.OutboundPolicy
+	// RecoveryProfileResolver freezes the narrow profile-building capability
+	// needed by runtime recovery without coupling orchestration to a concrete
+	// configuration loader.
+	RecoveryProfileResolver RecoveryProfileResolver
 
 	// Concurrency Control
 	StartConcurrency int
@@ -216,12 +221,14 @@ func (o *Orchestrator) Run(ctx context.Context) (runErr error) {
 				// stops could never run, no slot could ever free, and the control
 				// plane wedged permanently. Dispatching first keeps the loop live.
 				if !o.goSessionWorker(func() {
+					telemetry.GetStartupTracer(evt.SessionID).MarkOnce(telemetry.MilestoneP3, "worker_acquire_started")
 					select {
 					case o.startSem <- struct{}{}:
 					case <-ctx.Done():
 						return
 					}
 					defer func() { <-o.startSem }()
+					telemetry.GetStartupTracer(evt.SessionID).MarkOnce(telemetry.MilestoneP4, "worker_acquired")
 					if err := o.handleStart(ctx, evt); err != nil {
 						log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start failed")
 					}
@@ -413,6 +420,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 	if err := o.transitionReady(ctx, e); err != nil {
 		return err
 	}
+	telemetry.GetStartupTracer(e.SessionID).MarkOnce(telemetry.MilestoneT8, "session_ready")
 	recordStart("success", model.RNone)
 
 	leases.ReleaseDedup()
@@ -423,6 +431,11 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 }
 
 func (o *Orchestrator) handleStop(ctx context.Context, e model.StopSessionEvent) error {
+	log.L().Info().
+		Str("session_id", e.SessionID).
+		Str("reason", string(e.Reason)).
+		Msg("session_stop_requested")
+
 	var shortCircuitCleanup bool
 	_, err := o.Store.UpdateSession(ctx, e.SessionID, func(r *model.SessionRecord) error {
 		if r.State.IsTerminal() {
@@ -475,6 +488,10 @@ func (o *Orchestrator) handleStop(ctx context.Context, e model.StopSessionEvent)
 	o.mu.Unlock()
 
 	if ok {
+		log.L().Info().
+			Str("session_id", e.SessionID).
+			Str("reason", string(e.Reason)).
+			Msg("context_cancelled")
 		cancel()
 	}
 
@@ -490,6 +507,7 @@ func (o *Orchestrator) registerActive(id string, cancel context.CancelFunc) {
 	// PR-P9-2-3: Call the old cancel before overwriting to prevent resource leaks
 	// (goroutines, timers) associated with the previous context.
 	if oldCancel, exists := o.active[id]; exists && oldCancel != nil {
+		log.L().Info().Str("session_id", id).Msg("context_cancelled")
 		oldCancel()
 	}
 	o.active[id] = cancel
@@ -499,8 +517,12 @@ func (o *Orchestrator) registerActive(id string, cancel context.CancelFunc) {
 func (o *Orchestrator) unregisterActive(id string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if _, exists := o.active[id]; !exists {
+		return
+	}
 	delete(o.active, id)
 	setSessionsActive(len(o.active))
+	log.L().Info().Str("session_id", id).Msg("session_removed")
 }
 
 func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, ok bool, err error) {
@@ -535,6 +557,7 @@ func (o *Orchestrator) cleanupFiles(sid string) {
 		log.L().Warn().Str("sid", sid).Msg("refusing to cleanup unsafe session ID")
 		return
 	}
+	telemetry.RemoveStartupTracer(sid)
 	ringbuffer.DefaultRegistry.Delete(sid)
 	if o.HLSRoot == "" {
 		return

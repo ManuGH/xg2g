@@ -255,6 +255,22 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | --- | --- | --- | --- | --- |
 | `picons.baseUrl` | `XG2G_PICON_BASE` | - | Active | Simple |
 
+### plannerReceipt
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `plannerReceipt.capacity` | `XG2G_PLANNER_RECEIPT_CAPACITY` | `2048` | Active | Advanced |
+| `plannerReceipt.enabled` | `XG2G_PLANNER_RECEIPT_ENABLED` | `false` | Active | Advanced |
+| `plannerReceipt.required` | `XG2G_PLANNER_RECEIPT_REQUIRED` | `false` | Active | Advanced |
+| `plannerReceipt.ttl` | `XG2G_PLANNER_RECEIPT_TTL` | `1m` | Active | Advanced |
+
+### plannerShadow
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `plannerShadow.enabled` | `XG2G_PLANNER_SHADOW` | `false` | Active | Advanced |
+| `plannerShadow.queueCapacity` | `XG2G_PLANNER_SHADOW_QUEUE_CAPACITY` | `512` | Active | Advanced |
+
 ### playback
 
 | Path | Env | Default | Status | Profile |

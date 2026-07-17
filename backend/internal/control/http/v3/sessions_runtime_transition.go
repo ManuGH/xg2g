@@ -19,7 +19,7 @@ type sessionRuntimeTransitionResult struct {
 	Blockers []string
 }
 
-func applySessionRuntimePolicyTransition(rec *model.SessionRecord, transition runtimepolicy.SessionTransition, now time.Time) (sessionRuntimeTransitionResult, error) {
+func applySessionRuntimePolicyTransition(rec *model.SessionRecord, transition runtimepolicy.SessionTransition, now time.Time, profileResolver profiles.Resolver) (sessionRuntimeTransitionResult, error) {
 	if rec == nil || transition.IsZero() {
 		return sessionRuntimeTransitionResult{}, nil
 	}
@@ -29,7 +29,7 @@ func applySessionRuntimePolicyTransition(rec *model.SessionRecord, transition ru
 
 	switch transition.Kind {
 	case runtimepolicy.SessionTransitionScheduleStepDown:
-		nextProfile, ok := sessionRuntimeProfileForStep(rec.Profile, transition.ToStep)
+		nextProfile, ok := sessionRuntimeProfileForStepWithResolver(rec.Profile, transition.ToStep, profileResolver)
 		if !ok {
 			return sessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerProfileUnmapped}}, nil
 		}
@@ -41,7 +41,7 @@ func applySessionRuntimePolicyTransition(rec *model.SessionRecord, transition ru
 		applyRuntimeTransitionProfile(rec, nextProfile, transition, now)
 		return sessionRuntimeTransitionResult{Executed: true, Restart: true}, nil
 	case runtimepolicy.SessionTransitionScheduleProbeUp, runtimepolicy.SessionTransitionRevertProbe:
-		nextProfile, ok := sessionRuntimeProfileForStep(rec.Profile, transition.ToStep)
+		nextProfile, ok := sessionRuntimeProfileForStepWithResolver(rec.Profile, transition.ToStep, profileResolver)
 		if !ok {
 			return sessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerProfileUnmapped}}, nil
 		}
@@ -110,9 +110,9 @@ func applyRuntimeTransitionProfile(rec *model.SessionRecord, nextProfile model.P
 	})
 }
 
-func sessionRuntimeProfileForStep(current model.ProfileSpec, step runtimepolicy.PlaybackLadderStep) (model.ProfileSpec, bool) {
+func sessionRuntimeProfileForStepWithResolver(current model.ProfileSpec, step runtimepolicy.PlaybackLadderStep, profileResolver profiles.Resolver) (model.ProfileSpec, bool) {
 	build := func(profileID string) model.ProfileSpec {
-		next := profiles.Resolve(profileID, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
+		next := profileResolver.Resolve(profileID, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 		next.DVRWindowSec = current.DVRWindowSec
 		next.VOD = current.VOD
 		next.DisableSafariForceCopy = current.DisableSafariForceCopy
@@ -137,7 +137,7 @@ func sessionRuntimeProfileForStep(current model.ProfileSpec, step runtimepolicy.
 	case runtimepolicy.PlaybackStepVideoCopyAudioAAC:
 		return build(profiles.ProfileHigh), true
 	case runtimepolicy.PlaybackStepAV11080p:
-		next := profiles.Resolve(profiles.ProfileAV1HW, "", current.DVRWindowSec, nil, profiles.GPUBackendVAAPI, profiles.HWAccelForce)
+		next := profileResolver.Resolve(profiles.ProfileAV1HW, "", current.DVRWindowSec, nil, profiles.GPUBackendVAAPI, profiles.HWAccelForce)
 		next.DVRWindowSec = current.DVRWindowSec
 		next.VOD = current.VOD
 		next.DisableSafariForceCopy = current.DisableSafariForceCopy

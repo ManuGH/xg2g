@@ -57,7 +57,13 @@ func (s *Server) recordingsProcessor() *v3recordings.Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.recordingsV3Service == nil {
-		s.recordingsV3Service = v3recordings.NewService(&serverRecordingsDeps{s: s})
+		s.recordingsV3Service = v3recordings.NewService(
+			&serverRecordingsDeps{s: s},
+			v3recordings.WithPlannerShadowObserver(s.plannerShadowObserver),
+			v3recordings.WithProfileResolver(s.profileResolver),
+			v3recordings.WithClientAV1Disabled(s.clientAV1Disabled),
+			v3recordings.WithIOSNativeHEVCHWMode(s.iosNativeHEVCHWMode),
+		)
 	}
 	return s.recordingsV3Service
 }

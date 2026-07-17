@@ -5,10 +5,8 @@
 package profiles
 
 import (
-	"strconv"
 	"strings"
 
-	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -130,7 +128,7 @@ func IsFullVAAPIProfile(hwaccel string) bool {
 	return strings.TrimSpace(hwaccel) == profileHWAccelVAAPI
 }
 
-func resolveSafariDirtyHWMode(backend GPUBackend, hwaccelMode HWAccelMode) string {
+func resolveSafariDirtyHWMode(backend GPUBackend, hwaccelMode HWAccelMode, cfg ConfigSnapshot) string {
 	switch hwaccelMode {
 	case HWAccelOff:
 		return safariDirtyHWModeNone
@@ -138,7 +136,7 @@ func resolveSafariDirtyHWMode(backend GPUBackend, hwaccelMode HWAccelMode) strin
 		return safariDirtyHWModeFull
 	}
 
-	mode := normalize.Token(config.ParseString("XG2G_SAFARI_DIRTY_HWACCEL_MODE", ""))
+	mode := cfg.SafariDirtyHWAccelMode
 	switch mode {
 	case safariDirtyHWModeNone, safariDirtyHWModeEncodeOnly, safariDirtyHWModeFull:
 		if backend != GPUBackendNone {
@@ -146,7 +144,7 @@ func resolveSafariDirtyHWMode(backend GPUBackend, hwaccelMode HWAccelMode) strin
 		}
 		return safariDirtyHWModeNone
 	case "":
-		if backend != GPUBackendNone && envBool("XG2G_SAFARI_DIRTY_USE_GPU", false) {
+		if backend != GPUBackendNone && cfg.SafariDirtyUseGPU {
 			return safariDirtyHWModeFull
 		}
 		return safariDirtyHWModeNone
@@ -242,21 +240,18 @@ func isLikelyPALSDInterlaced(cap *scan.Capability) bool {
 	return fps > 24.5 && fps < 25.5
 }
 
-func applyEnvH264GPUSettings(
+func applyH264GPUSettings(
 	spec *model.ProfileSpec,
 	hwaccel string,
-	qpKey string,
-	maxRateKey string,
-	bufSizeKey string,
-	defaultQP int,
-	defaultMaxRateK int,
-	defaultBufSizeK int,
+	qp int,
+	maxRateK int,
+	bufSizeK int,
 ) {
 	spec.HWAccel = hwaccel
 	spec.VideoCodec = "h264"
-	spec.VideoQP = envIntBounded(qpKey, defaultQP, 10, 40)
-	spec.VideoMaxRateK = envIntBounded(maxRateKey, defaultMaxRateK, 4000, 60000)
-	spec.VideoBufSizeK = envIntBounded(bufSizeKey, defaultBufSizeK, 8000, 120000)
+	spec.VideoQP = qp
+	spec.VideoMaxRateK = maxRateK
+	spec.VideoBufSizeK = bufSizeK
 }
 
 // NormalizeRequestedProfileID maps known aliases to the stable internal profile IDs
@@ -348,16 +343,54 @@ func PublicProfileName(profile string) string {
 	}
 }
 
-// Resolve maps a requested profile and user agent to a concrete ProfileSpec.
-// dvrWindowSec controls the DVR window for DVR profiles; <=0 disables DVR.
-// hwaccelMode allows explicit GPU/CPU override (default: auto).
+// Resolver binds all profile decisions to one immutable configuration snapshot.
+// Production code should construct it at a composition root and pass it down.
+type Resolver struct {
+	config      ConfigSnapshot
+	initialized bool
+}
+
+func NewResolver(config ConfigSnapshot) Resolver {
+	return Resolver{config: config.clone(), initialized: true}
+}
+
+func LoadResolver() Resolver {
+	return NewResolver(LoadConfigSnapshot())
+}
+
+// IsInitialized reports whether the resolver was bound to an explicit
+// immutable snapshot. Composition roots use this to reject accidental
+// zero-value injection instead of silently discarding operator policy.
+func (r Resolver) IsInitialized() bool {
+	return r.initialized
+}
+
+func (r Resolver) Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, gpuBackend GPUBackend, hwaccelMode HWAccelMode) model.ProfileSpec {
+	return ResolveWithConfig(requested, userAgent, dvrWindowSec, cap, gpuBackend, hwaccelMode, r.ConfigSnapshot())
+}
+
+// ConfigSnapshot returns the immutable profile-policy snapshot bound to the
+// resolver. The zero value deliberately exposes environment-independent
+// defaults, matching Resolve's compatibility behavior.
+func (r Resolver) ConfigSnapshot() ConfigSnapshot {
+	if !r.initialized {
+		return DefaultConfigSnapshot()
+	}
+	return r.config.clone()
+}
+
+// Resolve is the compatibility facade for tests and out-of-tree consumers.
+// Production call sites use an injected Resolver so planning never depends on
+// package-init environment state.
 func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, gpuBackend GPUBackend, hwaccelMode HWAccelMode) model.ProfileSpec {
+	return Resolver{}.Resolve(requested, userAgent, dvrWindowSec, cap, gpuBackend, hwaccelMode)
+}
+
+// ResolveWithConfig maps a requested profile to a concrete ProfileSpec using
+// only the supplied immutable configuration snapshot.
+func ResolveWithConfig(requested, userAgent string, dvrWindowSec int, cap *scan.Capability, gpuBackend GPUBackend, hwaccelMode HWAccelMode, cfg ConfigSnapshot) model.ProfileSpec {
 	isSafari := isSafariUA(userAgent)
 	canonical := resolveCanonicalProfile(requested, isSafari)
-
-	// REMOVED: Server-side Safari profile override
-	// Frontend now controls profile switching explicitly based on fullscreen state
-	// This ensures inline playback uses custom controls, fullscreen uses native DVR
 
 	spec := newResolvedSpec(canonical)
 
@@ -367,188 +400,24 @@ func Resolve(requested, userAgent string, dvrWindowSec int, cap *scan.Capability
 		spec.VideoSourceHeight = cap.Height
 	}
 
-	switch canonical {
-	case ProfileCopy:
-		spec.PolicyModeHint = ports.RuntimeModeCopy
-		return spec
-	case ProfileLow:
-		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		spec.TranscodeVideo = true
-		spec.VideoCRF = 26
-		spec.VideoMaxWidth = 1280
-		// This profile is selected for measured constrained links. A CRF-only
-		// encode may briefly exceed the line rate on scene changes, which makes a
-		// live HLS buffer drain even though its average bitrate looks acceptable.
-		// Keep a hard ceiling below the 5 Mbit/s class after AAC and transport
-		// overhead, rather than using the quality-profile 12/16 Mbit/s limits.
-		spec.VideoMaxRateK = 3000
-		spec.VideoBufSizeK = 6000
-		spec.AudioBitrateK = 160
-	case ProfileHigh:
-		spec.PolicyModeHint = ports.RuntimeModeCopy
-		spec.TranscodeVideo = false // Default to copy (passthrough) for original quality
-		spec.AudioBitrateK = 192    // FORCE AAC: Browsers cannot decode MP2/AC3 natively
-		applyDVRWindow(&spec, dvrWindowSec)
-	case ProfileAndroid:
-		spec.PolicyModeHint = ports.RuntimeModeCopy
-		// Android native player (ExoPlayer): video copy + AAC transcode.
-		// Always use mpegts — fMP4 copy fails when SPS/PPS arrive late.
-		spec.TranscodeVideo = false
-		spec.Container = "mpegts"
-		spec.AudioBitrateK = 192
-		applyDVRWindow(&spec, dvrWindowSec)
-	case ProfileSafari:
-		configureSafariSpec(&spec, cap, isSafari, gpuBackend, hwaccelMode)
-		applyDVRWindow(&spec, dvrWindowSec)
-	case ProfileSafariDirty:
-		configureSafariDirtySpec(&spec, isSafari, gpuBackend, hwaccelMode)
-		applyDVRWindow(&spec, dvrWindowSec)
-	case ProfileSafariDVR:
-		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		spec.TranscodeVideo = true
-		spec.Deinterlace = true
-		spec.LLHLS = false // classic HLS is served; the ffmpeg layer does not emit LL-HLS partials
-		applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentCompatible))
-		spec.AudioBitrateK = 192
-		applyDVRWindow(&spec, dvrWindowSec)
-	case ProfileH264FMP4:
-		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		// Always transcode to H.264 with fMP4 segments.
-		// Useful for explicit client capability negotiation: "h264" means "make it H.264".
-		spec.TranscodeVideo = true
-		spec.Container = "fmp4"
-		spec.AudioBitrateK = 192
+	// 1. Resolve base orthogonal axes (Video copy/transcode, Audio copy/transcode, Container ts/fmp4, Policy mode)
+	axes := resolveProfileAxes(canonical, isSafari, cap, cfg)
+	spec.PolicyModeHint = axes.PolicyModeHint
+	spec.Container = axes.Container
+	spec.AudioBitrateK = axes.AudioBitrateK
+	spec.TranscodeVideo = (axes.Video != VideoActionCopy)
 
-		if interlacedOrUnknown(cap) {
-			spec.Deinterlace = true
-		}
+	// 2. Apply video codec & quality/hardware overlays
+	applyVideoQualityOverlay(&spec, axes, canonical, cap, gpuBackend, hwaccelMode, cfg)
 
-		// HWAccel Decision (respects override)
-		useGPU := shouldUseGPU(gpuBackend, hwaccelMode)
-		if useGPU {
-			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
-			spec.VideoCodec = "h264"
-			spec.VideoCRF = 16
-			spec.VideoMaxRateK = 20000
-			spec.VideoBufSizeK = 40000
-		} else {
-			spec.VideoCodec = "libx264"
-			applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentRepair))
-			spec.VideoMaxRateK = 8000
-			spec.VideoBufSizeK = 16000
-		}
-
-		applyDVRWindow(&spec, dvrWindowSec)
-	case ProfileDVR:
-		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		spec.TranscodeVideo = true
-		spec.Deinterlace = true
-		applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentCompatible))
-		applyDVRWindow(&spec, dvrWindowSec)
-	case ProfileSafariHEVC:
-		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		// HEVC live output must use fMP4/CMAF packaging for native WebKit HLS.
-		// HEVC in MPEG-TS is a fragile path and can surface as black video while
-		// the playlist and segments are still delivered successfully.
-		spec.TranscodeVideo = true
-		spec.VideoCodec = "hevc"
-		spec.Container = "fmp4"
-		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoCRF = 22        // Conservative start for x265
-		spec.VideoMaxRateK = 5000 // Strict VBV Cap
-		spec.VideoBufSizeK = 10000
-		spec.AudioBitrateK = 192
-	case ProfileSafariHEVCHW:
-		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		// GPU-Accelerated HEVC (VAAPI) - Recommended for multi-stream
-		// 10x faster than CPU, ~10% CPU usage per stream
-		// Keep WebKit on fMP4/CMAF; HEVC in MPEG-TS can be served successfully
-		// by the backend but still fail to present video in native Safari.
-		spec.TranscodeVideo = true
-		spec.VideoCodec = "hevc"
-		spec.Container = "fmp4"
-		// Respect existing scan truth so progressive HEVC candidates do not enter
-		// the conservative interlaced path and get downgraded to H.264 before launch.
-		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoQP = envIntBounded("XG2G_SAFARI_HEVC_VAAPI_QP", 20, 10, 40)
-		spec.VideoMaxRateK = 5000 // VBV Cap
-		spec.VideoBufSizeK = 10000
-		spec.AudioBitrateK = 192
-		// Note: VAAPI doesn't use CRF, uses constant quality mode instead
-
-		// HWAccel Decision (respects override)
-		if shouldUseGPU(gpuBackend, hwaccelMode) {
-			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
-		} else {
-			// CPU Fallback: x265
-			spec.VideoCodec = "hevc"
-			spec.VideoCRF = 22
-		}
-
-	case ProfileSafariHEVCHWLL:
-		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		// GPU-Accelerated HEVC with LL-HLS - Ultra-low latency streaming
-		// Combines GPU encoding (~10% CPU) with LL-HLS (<3s latency)
-		spec.TranscodeVideo = true
-		spec.VideoCodec = "hevc"
-		spec.Container = "fmp4"
-		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.LLHLS = false // LL-HLS part-segments are not emitted yet; do not advertise what we do not serve
-		spec.VideoQP = envIntBounded("XG2G_SAFARI_HEVC_VAAPI_QP", 20, 10, 40)
-		spec.VideoMaxRateK = 5000
-		spec.VideoBufSizeK = 10000
-		spec.AudioBitrateK = 192
-
-		// HWAccel Decision (respects override)
-		if shouldUseGPU(gpuBackend, hwaccelMode) {
-			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
-		} else {
-			// CPU Fallback: x265 with LL-HLS
-			spec.VideoCodec = "hevc"
-			spec.VideoCRF = 22
-		}
-
-		applyDVRWindow(&spec, dvrWindowSec)
-	case ProfileAV1HW:
-		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		// GPU-Accelerated AV1 (VAAPI).
-		// Default to fMP4. MPEG-TS is available only as an explicit experimental opt-in.
-		spec.TranscodeVideo = true
-		spec.VideoCodec = "av1"
-		if config.ParseBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", false) {
-			spec.Container = "mpegts"
-		} else {
-			spec.Container = "fmp4"
-		}
-		// Respect existing scan truth so progressive services do not enter the
-		// conservative interlaced startup path and get downgraded before launch.
-		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoMaxRateK = 6000
-		spec.VideoBufSizeK = 12000
-		spec.AudioBitrateK = 192
-
-		if shouldUseGPU(gpuBackend, hwaccelMode) {
-			// Keep AV1 on the VAAPI encode-only path for live playback. This leaves
-			// frame geometry in system memory long enough to normalize the input
-			// before hwupload, which avoids malformed 1080p AV1 output on current
-			// AMD VAAPI stacks.
-			spec.HWAccel = requestedEncodeOnlyHWAccelProfile(gpuBackend, hwaccelMode)
-		}
-
-		applyDVRWindow(&spec, dvrWindowSec)
-	case ProfileRepair:
-		spec.PolicyModeHint = ports.RuntimeModeSafe
-		// RESCUE MODE: Force Transcode to repair timestamps/GOP
-		spec.TranscodeVideo = true
-		spec.Deinterlace = false // Keep simple unless needed
-		applyH264VideoLadder(&spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentRepair))
-		spec.VideoMaxWidth = 1280
-		spec.AudioBitrateK = 192 // Ensure audio is clean too
-	}
-
+	// 3. Apply global post-resolution constraints
+	spec.LLHLS = false
 	if spec.PolicyModeHint == ports.RuntimeModeUnknown {
 		spec.PolicyModeHint = RuntimeModeHintFromProfile(spec)
 	}
+
+	// 4. Apply DVR window semantics
+	applyDVROverlay(&spec, canonical, dvrWindowSec)
 
 	return spec
 }
@@ -577,121 +446,6 @@ func resolveCanonicalProfile(requested string, isSafari bool) string {
 	return canonical
 }
 
-// configureSafariSpec applies the Safari ("smart") profile settings, choosing
-// between a direct progressive remux and an interlaced transcode (with GPU/CPU
-// fallback). The DVR window is applied by the caller.
-func configureSafariSpec(spec *model.ProfileSpec, cap *scan.Capability, isSafari bool, gpuBackend GPUBackend, hwaccelMode HWAccelMode) {
-	// Smart Profile Logic
-	if cap != nil && !cap.Interlaced {
-		// Progressive -> Direct Remux (Original Quality)
-		// Browser Safari stays on classic HLS-TS because copied broadcast H.264
-		// inside fMP4 caused black-video regressions there. Native clients that
-		// reuse the safari family (for example Android native_hls) prefer fMP4.
-		spec.TranscodeVideo = false
-		spec.PolicyModeHint = ports.RuntimeModeCopy
-		spec.Container = safariFamilyContainer(isSafari)
-		spec.AudioBitrateK = 192
-		// HWAccel disabled for passthrough
-	} else {
-		// Interlaced or Unknown -> Transcode + Deinterlace
-		spec.PolicyModeHint = ports.RuntimeModeHQ25
-		spec.TranscodeVideo = true
-		spec.Deinterlace = true
-		// Browser Safari has also shown black-video failures on live fMP4
-		// transcode output. Keep classic MPEG-TS HLS there as the safer
-		// browser-native HLS path; app-native or non-Safari clients that
-		// resolve through the safari family can stay on fMP4.
-		spec.Container = safariFamilyContainer(isSafari)
-		spec.AudioBitrateK = 192
-
-		// HWAccel Decision (respects override)
-		useGPU := shouldUseGPU(gpuBackend, hwaccelMode)
-
-		if useGPU {
-			// GPU acceleration uses an explicit VAAPI QP target as the primary
-			// quality knob. The bitrate fields remain available as optional
-			// safety ceilings in the FFmpeg builder.
-			applyEnvH264GPUSettings(
-				spec,
-				requestedHWAccelProfile(gpuBackend, hwaccelMode),
-				"XG2G_SAFARI_VAAPI_QP",
-				"XG2G_SAFARI_VAAPI_MAXRATE_K",
-				"XG2G_SAFARI_VAAPI_BUFSIZE_K",
-				20,
-				20000,
-				40000,
-			)
-		} else {
-			// CPU fallback keeps the Safari-compatible H.264 live path, while
-			// retaining the quality rung's CRF and overriding the preset to a
-			// live-safe default. The old "slow" preset can stall startup on
-			// 1080i relay inputs before HLS emits meaningful progress.
-			spec.VideoCodec = "libx264"
-			applyH264VideoLadder(spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentQuality))
-			spec.Preset = envPreset("XG2G_SAFARI_CPU_PRESET", "veryfast")
-			spec.VideoMaxRateK = 8000
-			spec.VideoBufSizeK = 16000
-		}
-	}
-
-	spec.LLHLS = false
-}
-
-// configureSafariDirtySpec applies the Safari "dirty" recovery profile for
-// degraded DVB inputs, selecting among full-VAAPI, encode-only-VAAPI and CPU
-// fallback paths. The DVR window is applied by the caller.
-func configureSafariDirtySpec(spec *model.ProfileSpec, isSafari bool, gpuBackend GPUBackend, hwaccelMode HWAccelMode) {
-	spec.PolicyModeHint = ports.RuntimeModeSafe
-	// Robust recovery profile for dirty DVB inputs.
-	spec.TranscodeVideo = true
-	spec.Deinterlace = true
-	// Browser Safari has shown black-video / freeze regressions on dirty live
-	// transcodes packaged as fMP4. Keep TS HLS there; other MSE clients can
-	// stay on fMP4.
-	spec.Container = safariFamilyContainer(isSafari)
-	spec.AudioBitrateK = envIntBounded("XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K", 192, 96, 384)
-
-	// Dirty DVB sources need finer-grained control than a simple CPU/GPU split.
-	// none        -> CPU decode + CPU deinterlace + CPU encode
-	// encode_only -> CPU decode + CPU deinterlace + VAAPI encode
-	// full        -> full VAAPI decode/deinterlace/encode path
-	switch resolveSafariDirtyHWMode(gpuBackend, hwaccelMode) {
-	case safariDirtyHWModeFull:
-		applyEnvH264GPUSettings(
-			spec,
-			requestedHWAccelProfile(gpuBackend, hwaccelMode),
-			"XG2G_SAFARI_DIRTY_VAAPI_QP",
-			"XG2G_SAFARI_DIRTY_MAXRATE_K",
-			"XG2G_SAFARI_DIRTY_BUFSIZE_K",
-			20,
-			20000,
-			40000,
-		)
-	case safariDirtyHWModeEncodeOnly:
-		applyEnvH264GPUSettings(
-			spec,
-			requestedEncodeOnlyHWAccelProfile(gpuBackend, hwaccelMode),
-			"XG2G_SAFARI_DIRTY_VAAPI_QP",
-			"XG2G_SAFARI_DIRTY_MAXRATE_K",
-			"XG2G_SAFARI_DIRTY_BUFSIZE_K",
-			20,
-			20000,
-			40000,
-		)
-	default:
-		// CPU fallback prioritizes startup stability and sustained playback over
-		// "best quality" defaults. Dirty 1080i feeds can stall badly on hosts
-		// without GPU acceleration when we keep the older CRF16/fast/14M ladder.
-		spec.VideoCodec = "libx264"
-		spec.VideoCRF = envIntBounded("XG2G_SAFARI_DIRTY_CRF", 18, 12, 30)
-		spec.VideoMaxRateK = envIntBounded("XG2G_SAFARI_DIRTY_MAXRATE_K", 8000, 4000, 60000)
-		spec.VideoBufSizeK = envIntBounded("XG2G_SAFARI_DIRTY_BUFSIZE_K", 16000, 8000, 120000)
-		spec.Preset = envPreset("XG2G_SAFARI_DIRTY_PRESET", "veryfast")
-	}
-
-	spec.LLHLS = false
-}
-
 func isSafariUA(ua string) bool {
 	if ua == "" {
 		return false
@@ -707,49 +461,6 @@ func isSafariUA(ua string) bool {
 		!strings.Contains(ua, "crios") &&
 		!strings.Contains(ua, "fxios") &&
 		!strings.Contains(ua, "edgios")
-}
-
-func envBool(key string, defaultValue bool) bool {
-	raw := strings.TrimSpace(strings.ToLower(config.ParseString(key, "")))
-	switch raw {
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	default:
-		return defaultValue
-	}
-}
-
-func envIntBounded(key string, defaultValue, minValue, maxValue int) int {
-	raw := strings.TrimSpace(config.ParseString(key, ""))
-	if raw == "" {
-		return defaultValue
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil {
-		return defaultValue
-	}
-	if n < minValue {
-		return minValue
-	}
-	if n > maxValue {
-		return maxValue
-	}
-	return n
-}
-
-func envPreset(key, defaultValue string) string {
-	raw := strings.ToLower(strings.TrimSpace(config.ParseString(key, "")))
-	if raw == "" {
-		return defaultValue
-	}
-	switch raw {
-	case "slow", "medium", "fast", "veryfast", "faster", "superfast", "ultrafast":
-		return raw
-	default:
-		return defaultValue
-	}
 }
 
 func applyH264VideoLadder(spec *model.ProfileSpec, rung playbackprofile.QualityRung) {
