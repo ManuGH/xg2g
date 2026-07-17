@@ -8,4 +8,5 @@ import "net/http"
 
 func registerLivePlaybackRoutes(register routeRegistrar, handler livePlaybackRoutes) {
 	register.add(http.MethodPost, "/live/stream-info", "PostLivePlaybackInfo", handler.PostLivePlaybackInfo)
+	register.add(http.MethodPost, "/live/playback-summary", "PostLivePlaybackSummary", handler.PostLivePlaybackSummary)
 }

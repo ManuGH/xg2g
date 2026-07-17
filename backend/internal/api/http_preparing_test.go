@@ -37,6 +37,8 @@ func (m *MockPreparingServer) PutHouseholdProfile(w http.ResponseWriter, r *http
 }
 func (m *MockPreparingServer) CreateIntent(w http.ResponseWriter, r *http.Request)         {}
 func (m *MockPreparingServer) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {}
+
+func (m *MockPreparingServer) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request) {}
 func (m *MockPreparingServer) GetLogs(w http.ResponseWriter, r *http.Request, params v3.GetLogsParams) {
 }
 func (m *MockPreparingServer) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {}

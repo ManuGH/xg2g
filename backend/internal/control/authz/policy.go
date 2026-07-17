@@ -34,6 +34,7 @@ var operationScopes = map[string][]string{
 	"GetRecordingPlaybackInfo":         {"v3:read"},
 	"PostRecordingPlaybackInfo":        {"v3:read"},
 	"PostLivePlaybackInfo":             {"v3:read"},
+	"PostLivePlaybackSummary":          {"v3:read"},
 	"StreamRecordingDirect":            {"v3:read"},
 	"ProbeRecordingMp4":                {"v3:read"},
 	"GetRecordingHLSTimeshift":         {"v3:read"},
