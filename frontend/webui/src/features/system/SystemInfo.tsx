@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type SystemInfoData as ApiSystemInfoData } from '../../client-ts';
 import { useSystemInfo } from '../../hooks/useServerQueries';
@@ -177,7 +178,7 @@ export function SystemInfo() {
               <div className={styles.progressBarContainer}>
                 <div 
                   className={styles.progressBarFill} 
-                  style={{ width: `${calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}%` }} 
+                  style={{ '--xg2g-progress-width': `${calculateMemoryPercent(info.resource.memoryUsed, info.resource.memoryTotal)}%` } as CSSProperties}
                 />
               </div>
               <div className={styles.storageTags}>

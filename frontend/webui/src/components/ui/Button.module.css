@@ -86,7 +86,7 @@
 
 .button[data-variant="ghost"]:hover:not(:disabled) {
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent-action-subtle) 48%, transparent), transparent 78%),
+    var(--gradient-button-ghost-hover),
     var(--bg-hover);
   border-color: color-mix(in srgb, var(--accent-action) 26%, var(--border-elevated) 74%);
 }

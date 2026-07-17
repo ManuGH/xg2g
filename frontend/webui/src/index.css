@@ -101,7 +101,49 @@
   --border-strong: rgba(255, 255, 255, 0.14);
   --border-focus: var(--accent-action);
 
+  /* Player chrome surfaces */
+  --player-control-plate: rgba(15, 15, 18, 0.4);
+  --player-control-plate-strong: rgba(15, 15, 18, 0.6);
+  --player-control-border: rgba(255, 255, 255, 0.08);
+  --player-control-border-strong: rgba(255, 255, 255, 0.15);
+  --player-dvr-label-bg: rgba(0, 0, 0, 0.62);
+  --player-vod-control-bg: rgba(20, 20, 22, 0.75);
+  --player-vod-control-border: rgba(255, 255, 255, 0.1);
+  --player-touch-control-bg: rgba(255, 255, 255, 0.16);
+  --player-touch-control-bg-active: rgba(255, 255, 255, 0.28);
+  --player-touch-control-border: rgba(255, 255, 255, 0.18);
+  --player-touch-control-border-active: rgba(255, 255, 255, 0.35);
+  --channel-switcher-scrim: rgba(0, 0, 0, 0.28);
+  --channel-switcher-sheet: rgba(14, 15, 22, 0.62);
+  --channel-switcher-border: rgba(255, 255, 255, 0.12);
+  --channel-switcher-border-subtle: rgba(255, 255, 255, 0.08);
+  --channel-switcher-input-border: rgba(255, 255, 255, 0.14);
+  --channel-switcher-input: rgba(255, 255, 255, 0.07);
+  --channel-switcher-input-strong: rgba(255, 255, 255, 0.1);
+  --channel-switcher-focus-border: rgba(120, 150, 255, 0.6);
+  --channel-switcher-placeholder: rgba(255, 255, 255, 0.45);
+  --channel-switcher-text-muted: rgba(255, 255, 255, 0.5);
+  --channel-switcher-text-secondary: rgba(255, 255, 255, 0.7);
+  --channel-switcher-row-hover: rgba(255, 255, 255, 0.09);
+  --channel-switcher-row-active: rgba(92, 132, 255, 0.24);
+  --channel-switcher-row-active-border: rgba(125, 155, 255, 0.45);
+  --navigation-hover: rgba(255, 255, 255, 0.08);
+
   /* Shadow System */
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-form-inset: inset 0 2px 4px rgba(0, 0, 0, 0.12);
+  --shadow-player-controls: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --shadow-player-mobile: 0 16px 48px rgba(0, 0, 0, 0.45);
+  --shadow-player-touch: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-app-content-mobile: 0 10px 32px rgba(0, 0, 0, 0.3);
+  --shadow-channel-switcher-sheet: -24px 0 70px rgba(0, 0, 0, 0.45);
+  --shadow-channel-switcher-active: inset 0 0 0 1px rgba(125, 155, 255, 0.45);
+  --shadow-channel-switcher-mobile: 0 -24px 70px rgba(0, 0, 0, 0.5);
+  --shadow-navigation-desktop: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.04), var(--shadow-shell-safe);
+  --shadow-navigation-mobile: 0 16px 44px rgba(0, 0, 0, 0.48), 0 1px 0 rgba(255, 255, 255, 0.16) inset;
+  --shadow-dashboard-hero: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  --shadow-dashboard-shortcut: inset 0 1px 1px rgba(255, 255, 255, 0.06);
+  --shadow-dashboard-health: inset 0 1px 1px rgba(255, 255, 255, 0.04);
   --shadow-card: 0 26px 64px rgba(0, 0, 0, 0.34);
   --shadow-hover: 0 34px 76px rgba(0, 0, 0, 0.42);
   --shadow-shell: 0 34px 86px rgba(0, 0, 0, 0.38);
@@ -115,6 +157,19 @@
   --shadow-status-info: 0 0 6px rgba(96, 165, 250, 0.4);
   --shadow-status-error: 0 0 10px rgba(248, 113, 113, 0.5);
   --shadow-status-error-strong: 0 0 20px rgba(248, 113, 113, 0.8);
+  --shadow-status-dot-success: 0 0 8px var(--status-success-subtle);
+  --shadow-status-dot-error: 0 0 8px var(--status-error-subtle);
+  --shadow-status-dot-warning: 0 0 8px var(--status-warning-subtle);
+  --shadow-epg-record: 0 0 6px var(--status-error-subtle);
+  --shadow-epg-progress: 0 0 10px color-mix(in srgb, var(--status-success) 40%, transparent);
+  --shadow-epg-current-time: 0 0 10px var(--status-error-subtle);
+  --shadow-epg-event: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-epg-event-active: 0 0 15px color-mix(in srgb, var(--accent-action) 30%, transparent);
+  --shadow-epg-toolbar: 0 4px 16px rgba(0, 0, 0, 0.22);
+  --shadow-epg-action-active: 0 0 14px color-mix(in srgb, var(--accent-action) 35%, transparent);
+  --shadow-epg-focus: 0 0 0 3px color-mix(in srgb, var(--accent-action) 20%, transparent);
+  --shadow-epg-time-pill: 0 2px 6px rgba(0, 0, 0, 0.28);
+  --shadow-epg-dialog: 0 24px 60px rgba(0, 0, 0, 0.4);
   --shadow-none: none;
   --shadow-recordings-media-preview: 0 14px 28px color-mix(in srgb, var(--bg-video) 18%, transparent);
   --shadow-recordings-selection-indicator: 0 10px 24px color-mix(in srgb, black 24%, transparent);
@@ -137,6 +192,23 @@
   --gradient-recordings-preplay-stage-overlay:
     linear-gradient(180deg, color-mix(in srgb, black 8%, transparent), transparent 26%),
     linear-gradient(180deg, transparent 44%, color-mix(in srgb, black 58%, transparent) 100%);
+  --gradient-epg-toolbar-accent:
+    radial-gradient(60% 60% at 0% 0%, color-mix(in srgb, var(--accent-action-subtle) 72%, transparent), transparent 72%);
+  --gradient-epg-event-active:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 25%, var(--surface-panel)), color-mix(in srgb, var(--accent-action) 10%, var(--surface-panel)));
+  --gradient-epg-dialog-accent:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-action-subtle) 40%, transparent), transparent);
+  --gradient-button-ghost-hover:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-action-subtle) 48%, transparent), transparent 78%);
+  --gradient-card-surface:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-highlight) 32%, transparent), transparent 14%);
+  --gradient-navigation-rail:
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent-action) 28%, transparent), transparent);
+  --gradient-navigation-scale:
+    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent);
+  --gradient-navigation-scale-active:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-action-subtle) 92%, transparent), color-mix(in srgb, var(--surface-shell) 88%, transparent));
+  --gradient-navigation-mobile: linear-gradient(180deg, rgba(32, 34, 40, 0.78) 0%, rgba(18, 20, 26, 0.86) 100%);
   --gradient-app-stage:
     linear-gradient(145deg, color-mix(in srgb, var(--bg-base) 94%, var(--accent-action) 6%), var(--bg-video));
   --gradient-surface-hero:
@@ -355,7 +427,7 @@ textarea {
   max-width: 100%;
   background: var(--bg-input);
   border: 1px solid var(--border-base);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-form-inset);
   color: var(--text-primary);
   border-radius: var(--radius-md);
   padding: 10px 14px;

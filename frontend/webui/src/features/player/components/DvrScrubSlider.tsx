@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import styles from './V3Player.module.css';
 import {
   previewOffsetForFraction,
@@ -78,7 +78,7 @@ export function DvrScrubSlider({
       {previewBaseUrl && hover.visible && (
         <div
           className={styles.dvrPreview}
-          style={{ left: `${hover.leftPx}px`, backgroundImage: `url("${hover.url}")` }}
+          style={{ '--xg2g-dvr-preview-left': `${hover.leftPx}px`, '--xg2g-dvr-preview-image': `url("${hover.url}")` } as CSSProperties}
           aria-hidden="true"
         >
           <span className={styles.dvrPreviewLabel}>{hover.label}</span>
@@ -90,7 +90,7 @@ export function DvrScrubSlider({
         max={max}
         step="0.1"
         className={sliderClassName}
-        style={{ '--dvr-fill': `${fillPct}%` } as React.CSSProperties}
+        style={{ '--xg2g-dvr-fill': `${fillPct}%` } as CSSProperties}
         value={value}
         onChange={(e) => onSeek(parseFloat(e.target.value))}
         onMouseMove={handleMove}

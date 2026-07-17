@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import type { EpgChannel, EpgEvent } from '../types';
 import { EpgTimelineEvent } from './EpgTimelineEvent';
 import styles from '../EPG.module.css';
@@ -39,7 +40,7 @@ export function EpgTimelineRow({
   const isUhd = Boolean(channel?.name?.toUpperCase().includes('UHD') || channel?.name?.toUpperCase().includes('4K'));
 
   return (
-    <div className={styles.timelineRow} style={{ minWidth: timelineWidth + 320 }}>
+    <div className={styles.timelineRow} style={{ '--xg2g-timeline-row-width': `${timelineWidth + 320}px` } as CSSProperties}>
       {/* Sticky Channel Card */}
       <div 
         className={styles.timelineChannelCard} 
@@ -64,7 +65,7 @@ export function EpgTimelineRow({
           )}
           <span className={styles.timelineChannelName}>{displayName}</span>
           {isUhd && (
-            <span style={{ fontSize: '0.65rem', background: 'var(--status-warning-subtle)', color: 'var(--status-warning)', padding: '1px 5px', borderRadius: '4px', fontWeight: 600, marginLeft: '6px' }}>
+            <span className={styles.timelineUhdBadge}>
               4K Pausiert
             </span>
           )}
@@ -72,7 +73,7 @@ export function EpgTimelineRow({
       </div>
 
       {/* Events Container */}
-      <div className={styles.timelineEventsContainer} style={{ width: timelineWidth }}>
+      <div className={styles.timelineEventsContainer} style={{ '--xg2g-timeline-width': `${timelineWidth}px` } as CSSProperties}>
         {events.map((event, idx) => {
           const eventStartMs = event.start * 1000;
           const eventEndMs = event.end * 1000;

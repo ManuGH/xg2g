@@ -3,7 +3,7 @@
 
 .card {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-highlight) 32%, transparent), transparent 14%),
+    var(--gradient-card-surface),
     color-mix(in srgb, var(--surface-panel) 70%, transparent);
   border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
   border-radius: var(--radius-lg);

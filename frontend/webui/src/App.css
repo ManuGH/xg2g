@@ -97,6 +97,6 @@
     border-radius: 24px;
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-app-content-mobile);
   }
 }

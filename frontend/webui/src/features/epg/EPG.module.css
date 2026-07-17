@@ -45,6 +45,16 @@
   background: color-mix(in srgb, var(--surface-panel-strong) 88%, var(--accent-action-subtle) 12%);
 }
 
+.sidebarToggle {
+  padding: 0 12px;
+}
+
+.sidebarToggleIcon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 .toolbar {
   position: relative;
   display: flex;
@@ -63,11 +73,7 @@
   inset: -26% auto auto -4%;
   width: 40%;
   height: 56%;
-  background: radial-gradient(
-    60% 60% at 0% 0%,
-    color-mix(in srgb, var(--accent-action-subtle) 72%, transparent),
-    transparent 72%
-  );
+  background: var(--gradient-epg-toolbar-accent);
   pointer-events: none;
 }
 
@@ -604,7 +610,7 @@
   height: 12px;
   border-radius: 50%;
   background: var(--status-error);
-  box-shadow: 0 0 6px var(--status-error-subtle);
+  box-shadow: var(--shadow-epg-record);
   display: inline-block;
   flex-shrink: 0;
 }
@@ -694,7 +700,7 @@
 .progressBar {
   height: 100%;
   background: var(--status-success);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--status-success) 40%, transparent);
+  box-shadow: var(--shadow-epg-progress);
   border-radius: 999px;
   width: var(--xg2g-progress, 0%);
   transition: width 0.3s ease;
@@ -1178,6 +1184,7 @@
 }
 
 .timelineHeader {
+  min-width: var(--xg2g-timeline-header-width);
   display: flex;
   position: sticky;
   top: 0;
@@ -1200,12 +1207,14 @@
 }
 
 .timelineTimeAxis {
+  width: var(--xg2g-timeline-width);
   display: flex;
   position: relative;
   height: 36px;
 }
 
 .timelineTimeTick {
+  left: var(--xg2g-timeline-left);
   position: absolute;
   padding-left: 10px;
   font-size: 13px;
@@ -1219,6 +1228,7 @@
 }
 
 .timelineCurrentTimeIndicator {
+  left: var(--xg2g-timeline-left);
   position: absolute;
   top: 0;
   bottom: -2000px; /* extends down into the body */
@@ -1226,7 +1236,7 @@
   background: var(--status-error);
   z-index: 10;
   pointer-events: none;
-  box-shadow: 0 0 10px var(--status-error-subtle);
+  box-shadow: var(--shadow-epg-current-time);
 }
 
 .timelineBody {
@@ -1235,8 +1245,8 @@
 }
 
 .timelineRow {
+  min-width: var(--xg2g-timeline-row-width);
   display: flex;
-  min-width: max-content;
   border-bottom: 1px solid var(--border-base);
 }
 
@@ -1292,6 +1302,7 @@
 }
 
 .timelineEventsContainer {
+  width: var(--xg2g-timeline-width);
   position: relative;
   flex-grow: 1;
   background: var(--surface-muted);
@@ -1300,13 +1311,15 @@
 }
 
 .timelineEventBlock {
+  left: var(--xg2g-timeline-left);
+  width: var(--xg2g-timeline-event-width);
   position: absolute;
   top: 4px;
   bottom: 4px;
   border: 1px solid var(--border-elevated);
   border-radius: 8px;
   background: var(--surface-panel);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: var(--shadow-epg-event);
   box-sizing: border-box;
   /* Use clip-path to hide overflow without breaking sticky */
   clip-path: inset(0 round 8px);
@@ -1316,15 +1329,25 @@
   outline: none;
 }
 
+.timelineUhdBadge {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--status-warning-subtle);
+  color: var(--status-warning);
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
 .timelineEventBlock:hover,
 .timelineEventBlock:focus-visible {
   background: var(--surface-panel-strong);
 }
 
 .timelineEventBlockActive {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-action) 25%, var(--surface-panel)), color-mix(in srgb, var(--accent-action) 10%, var(--surface-panel)));
+  background: var(--gradient-epg-event-active);
   border: 1px solid var(--accent-action);
-  box-shadow: 0 0 15px color-mix(in srgb, var(--accent-action) 30%, transparent);
+  box-shadow: var(--shadow-epg-event-active);
 }
 
 .timelineEventBlockPast {
@@ -1393,7 +1416,7 @@
   border-radius: 20px;
   background: color-mix(in srgb, var(--surface-card) 78%, transparent);
   border: 1px solid var(--border-base);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-epg-toolbar);
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
 }
@@ -1499,7 +1522,7 @@
   background: color-mix(in srgb, var(--accent-action) 24%, var(--surface-card) 76%);
   border-color: var(--accent-action);
   color: var(--text-primary);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--accent-action) 35%, transparent);
+  box-shadow: var(--shadow-epg-action-active);
 }
 
 /* Row 2: Unified Frosted Glass Filter & Search Strip */
@@ -1529,7 +1552,7 @@
 
 .filterSearchBox:focus-within {
   border-color: var(--accent-action);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-action) 20%, transparent);
+  box-shadow: var(--shadow-epg-focus);
   background: var(--surface-card);
 }
 
@@ -1631,5 +1654,5 @@
 .timePillActive {
   background: var(--surface-card);
   color: var(--text-primary);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--shadow-epg-time-pill);
 }
