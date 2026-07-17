@@ -881,6 +881,38 @@ export function EpgChannelList({
     primePlaybackBadges(indices);
   }, [focusedChannelIndex, mode, primePlaybackBadges, sortedChannels.length]);
 
+  // Scroll-driven badge loading: the initial prefetch covers only the first
+  // CHANNEL_BADGE_INITIAL_PREFETCH channels and the focus effect only follows
+  // keyboard focus — scrolling with mouse/touch never primed badges, so
+  // channels further down showed no playback mode. Observe card visibility
+  // and prime badges as rows enter the viewport.
+  React.useEffect(() => {
+    const root = listRef.current;
+    if (!root || typeof IntersectionObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      const indices: number[] = [];
+      for (const entry of entries) {
+        if (!entry.isIntersecting) {
+          continue;
+        }
+        const raw = (entry.target as HTMLElement).getAttribute('data-xg2g-channel-index');
+        const index = raw === null ? NaN : Number(raw);
+        if (Number.isInteger(index)) {
+          indices.push(index);
+        }
+      }
+      if (indices.length > 0) {
+        primePlaybackBadges(indices);
+      }
+    }, { root: null, rootMargin: '200px 0px' });
+
+    root.querySelectorAll('[data-xg2g-channel-index]').forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [primePlaybackBadges, sortedChannels.length]);
+
   React.useEffect(() => {
     const root = listRef.current;
     if (!root) {
