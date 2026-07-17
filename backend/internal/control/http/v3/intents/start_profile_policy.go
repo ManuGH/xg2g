@@ -204,10 +204,6 @@ func pickProfileForCodecsWithHost(raw, clientFamily string, hwaccelMode profiles
 	return autocodec.PickProfileForCodecsForClientAndHost(raw, clientFamily, hwaccelMode, hostRuntime)
 }
 
-func pickNativeHLSProfileWithHost(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
-	return pickNativeHLSProfileWithHostAndPolicy(raw, clientFamily, clientCaps, hwaccelMode, hostRuntime, false)
-}
-
 func pickNativeHLSProfileWithHostAndPolicy(raw, clientFamily string, clientCaps *capabilities.PlaybackCapabilities, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot, clientAV1Disabled bool) string {
 	return autocodec.PickNativeHLSProfileForClientAndHostWithPolicy(raw, clientFamily, clientCaps, hwaccelMode, hostRuntime, clientAV1Disabled)
 }

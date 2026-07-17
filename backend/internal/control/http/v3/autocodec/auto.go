@@ -314,10 +314,6 @@ func ResolveIOSNativeHEVCHWMode() string {
 	return normalizeIOSNativeHEVCHWMode(config.ParseString("XG2G_IOS_NATIVE_HEVC_HW_MODE", ""))
 }
 
-func resolveIOSNativeHEVCHWMode() string {
-	return ResolveIOSNativeHEVCHWMode()
-}
-
 func normalizeIOSNativeHEVCHWMode(raw string) string {
 	mode := normalize.Token(raw)
 	switch mode {

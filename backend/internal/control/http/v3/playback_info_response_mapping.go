@@ -660,13 +660,14 @@ func buildPlannerDecisionDTO(id string, eval *v3recordings.PlannerEvaluation, tr
 		eval.Result.Plan.Mode != "deny" {
 		packagingStr := container
 		segmentContainer := container
-		if container == "ts" {
+		switch container {
+		case "ts":
 			packagingStr = "ts"
 			segmentContainer = "mpegts"
-		} else if container == "fmp4" {
+		case "fmp4":
 			packagingStr = "fmp4"
 			segmentContainer = "fmp4"
-		} else if container == "mp4" {
+		case "mp4":
 			packagingStr = "mp4"
 		}
 		domainTarget := &playbackprofile.TargetPlaybackProfile{
@@ -696,20 +697,23 @@ func buildPlannerDecisionDTO(id string, eval *v3recordings.PlannerEvaluation, tr
 		decDTO.Trace.TargetProfile = mapTargetProfile(domainTarget)
 
 		var rung string
-		if eval.Result.Plan.Mode == "remux" || eval.Result.Plan.Mode == "direct_stream" || eval.Result.Plan.Mode == "copy" {
-			if packagingStr == "fmp4" {
+		switch eval.Result.Plan.Mode {
+		case "remux", "direct_stream", "copy":
+			switch packagingStr {
+			case "fmp4":
 				rung = string(playbackprofile.RungCompatibleHLSFMP4)
-			} else if packagingStr == "ts" {
+			case "ts":
 				rung = string(playbackprofile.RungCompatibleHLSTS)
-			} else {
+			default:
 				rung = string(playbackprofile.RungDirectCopy)
 			}
-		} else if eval.Result.Plan.Mode == "transcode" {
-			if packagingStr == "fmp4" {
+		case "transcode":
+			switch packagingStr {
+			case "fmp4":
 				rung = string(playbackprofile.RungCompatibleHLSFMP4)
-			} else if packagingStr == "ts" {
+			case "ts":
 				rung = string(playbackprofile.RungCompatibleHLSTS)
-			} else {
+			default:
 				rung = string(playbackprofile.RungCompatibleVideoH264CRF23)
 			}
 		}
@@ -745,9 +749,10 @@ func (s *Server) buildLivePlannerDecisionToken(id string, eval *v3recordings.Pla
 	}
 
 	mode := "direct_stream"
-	if eval.Result.Plan.Mode == "transcode" {
+	switch eval.Result.Plan.Mode {
+	case "transcode":
 		mode = "transcode"
-	} else if eval.Result.Plan.Mode == "direct_play" {
+	case "direct_play":
 		mode = "direct_play"
 	}
 

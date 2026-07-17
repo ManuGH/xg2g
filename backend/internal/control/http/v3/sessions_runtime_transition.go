@@ -110,10 +110,6 @@ func applyRuntimeTransitionProfile(rec *model.SessionRecord, nextProfile model.P
 	})
 }
 
-func sessionRuntimeProfileForStep(current model.ProfileSpec, step runtimepolicy.PlaybackLadderStep) (model.ProfileSpec, bool) {
-	return sessionRuntimeProfileForStepWithResolver(current, step, profiles.Resolver{})
-}
-
 func sessionRuntimeProfileForStepWithResolver(current model.ProfileSpec, step runtimepolicy.PlaybackLadderStep, profileResolver profiles.Resolver) (model.ProfileSpec, bool) {
 	build := func(profileID string) model.ProfileSpec {
 		next := profileResolver.Resolve(profileID, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)

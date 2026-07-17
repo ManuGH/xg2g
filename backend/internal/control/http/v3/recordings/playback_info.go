@@ -108,7 +108,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	_, dec, prob := decision.Decide(ctx, input, req.SchemaType)
 	if prob != nil {
 		return PlaybackInfoResult{}, &PlaybackInfoError{
-			Kind:    PlaybackInfoErrorProblem,
+			Kind: PlaybackInfoErrorProblem,
 			Problem: &PlaybackInfoProblem{
 				Status: prob.Status,
 				Type:   prob.Type,
@@ -468,10 +468,6 @@ func (s *Service) recordDecisionAudit(ctx context.Context, hostContext requestHo
 	}
 }
 
-func alignAutoCodecDecision(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot, profileResolver profiles.Resolver, dec *decision.Decision) {
-	alignAutoCodecDecisionWithPolicy(req, resolvedCaps, hostRuntime, profileResolver, false, autocodec.ResolveIOSNativeHEVCHWMode(), dec)
-}
-
 func alignAutoCodecDecisionWithPolicy(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot, profileResolver profiles.Resolver, clientAV1Disabled bool, iosNativeHEVCHWMode string, dec *decision.Decision) {
 	if req.Capabilities == nil || dec == nil || dec.Mode != decision.ModeTranscode || !shouldApplyAutoCodecDecision(req.RequestedProfile) {
 		return
@@ -527,10 +523,6 @@ func alignAutoCodecDecisionWithPolicy(req PlaybackInfoRequest, resolvedCaps capa
 	dec.Trace.AutoCodecSelected = selectionTrace.SelectedCodec
 	dec.Trace.AutoCodecHostClass = selectionTrace.PerformanceClass
 	dec.Trace.AutoCodecBenchClass = selectionTrace.CodecBenchmarkClass
-}
-
-func pickPlaybackInfoAutoProfile(resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
-	return pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, hostRuntime, false, autocodec.ResolveIOSNativeHEVCHWMode())
 }
 
 func pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps capabilities.PlaybackCapabilities, hostRuntime playbackprofile.HostRuntimeSnapshot, clientAV1Disabled bool, iosNativeHEVCHWMode string) string {

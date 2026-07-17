@@ -118,13 +118,15 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 		return fmt.Errorf("write init: %w", err)
 	}
 	if cfg.ShadowPublisher != nil {
-		cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{Complete: true,
+		if err := cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{Complete: true,
 			Name:        "init.mp4",
 			Kind:        store.ObjectInit,
 			ContentType: "video/mp4",
 			Data:        initBytes,
 			PublishedAt: now(),
-		})
+		}); err != nil {
+			cfg.Logger.Warn().Err(err).Msg("failed to publish init segment to shadow store")
+		}
 	}
 
 	cfg.Logger.Info().
@@ -188,15 +190,21 @@ func run(ctx context.Context, r io.Reader, cfg Config) error {
 			}
 			lastClosed := seg.lastClosedName()
 			if cfg.ShadowPublisher != nil {
+				if filepath.Base(lastClosed) != lastClosed {
+					return fmt.Errorf("invalid generated segment name %q", lastClosed)
+				}
 				segPath := filepath.Join(cfg.Dir, lastClosed)
+				// #nosec G304 -- lastClosed is generated internally and constrained to a base name above.
 				if data, err := os.ReadFile(segPath); err == nil {
-					cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{Complete: true,
+					if err := cfg.ShadowPublisher.Publish(ctx, cfg.StreamID, store.Object{Complete: true,
 						Name:        lastClosed,
 						Kind:        store.ObjectSegment,
 						ContentType: "video/iso.segment",
 						Data:        data,
 						PublishedAt: now(),
-					})
+					}); err != nil {
+						cfg.Logger.Warn().Err(err).Str("segment", lastClosed).Msg("failed to publish segment to shadow store")
+					}
 				} else {
 					cfg.Logger.Warn().Err(err).Str("segment", lastClosed).Msg("failed to read segment for shadow store")
 				}
@@ -672,7 +680,7 @@ func (p *playlistWriter) appendSegment(name string, duration float64, start time
 					segmentsCount--
 					_ = os.Remove(filepath.Join(filepath.Dir(p.path), line))
 					if p.shadow != nil {
-						p.shadow.Delete(p.ctx, p.streamID, line)
+						_ = p.shadow.Delete(p.ctx, p.streamID, line) // Best-effort mirror cleanup; disk playlist remains authoritative.
 					}
 					break
 				}
@@ -713,13 +721,13 @@ func (p *playlistWriter) publish(end bool) error {
 		return err
 	}
 	if p.shadow != nil {
-		p.shadow.Publish(p.ctx, p.streamID, store.Object{Complete: true,
+		_ = p.shadow.Publish(p.ctx, p.streamID, store.Object{Complete: true,
 			Name:        "index.m3u8",
 			Kind:        store.ObjectPlaylist,
 			ContentType: "application/vnd.apple.mpegurl",
 			Data:        playlistBytes,
 			PublishedAt: time.Now(),
-		})
+		}) // Best-effort mirror publication; the atomic disk playlist is authoritative.
 	}
 	return nil
 }

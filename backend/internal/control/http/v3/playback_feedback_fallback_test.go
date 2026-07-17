@@ -9,12 +9,12 @@ import (
 )
 
 func TestNextPlaybackFeedbackPlan_NonSafariEscalatesToRepairFMP4(t *testing.T) {
-	got := nextPlaybackFeedbackPlan(model.ProfileSpec{
+	got := nextPlaybackFeedbackPlanWithResolver(model.ProfileSpec{
 		Name:         profiles.ProfileAV1HW,
 		Container:    "fmp4",
 		DVRWindowSec: 2700,
 		VideoCodec:   "av1",
-	}, "")
+	}, "", profiles.Resolver{})
 
 	if got.id != playbackFeedbackFallbackPlanRepairFMP4 {
 		t.Fatalf("nextPlaybackFeedbackPlan() id = %q, want %q", got.id, playbackFeedbackFallbackPlanRepairFMP4)

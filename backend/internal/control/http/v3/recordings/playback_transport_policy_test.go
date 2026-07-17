@@ -9,7 +9,7 @@ import (
 )
 
 func TestResolveLiveNativeTransportPlan_DirectPlayTSPrefersDirectStreamFMP4(t *testing.T) {
-	plan := resolvePlaybackTransportPlan(
+	plan := resolvePlaybackTransportPlanWithPolicy(
 		PlaybackInfoRequest{SubjectKind: PlaybackSubjectLive},
 		capabilities.PlaybackCapabilities{
 			ClientFamilyFallback: "ios_safari_native",
@@ -29,6 +29,7 @@ func TestResolveLiveNativeTransportPlan_DirectPlayTSPrefersDirectStreamFMP4(t *t
 				},
 			},
 		},
+		false,
 	)
 
 	if !plan.applied {
@@ -49,7 +50,7 @@ func TestResolveLiveNativeTransportPlan_DirectPlayTSPrefersDirectStreamFMP4(t *t
 }
 
 func TestResolveRecordingNativeTransportPlan_AndroidTVDirectPlayTSKeepsExistingTransport(t *testing.T) {
-	plan := resolvePlaybackTransportPlan(
+	plan := resolvePlaybackTransportPlanWithPolicy(
 		PlaybackInfoRequest{SubjectKind: PlaybackSubjectRecording},
 		capabilities.PlaybackCapabilities{
 			ClientFamilyFallback: "android_tv_native",
@@ -69,6 +70,7 @@ func TestResolveRecordingNativeTransportPlan_AndroidTVDirectPlayTSKeepsExistingT
 				},
 			},
 		},
+		false,
 	)
 
 	if plan.applied {
@@ -79,7 +81,7 @@ func TestResolveRecordingNativeTransportPlan_AndroidTVDirectPlayTSKeepsExistingT
 func TestResolveLiveNativeTransportPlan_DesktopSafariAV1TSRewritesToFMP4(t *testing.T) {
 	t.Setenv("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", "true")
 
-	plan := resolvePlaybackTransportPlan(
+	plan := resolvePlaybackTransportPlanWithPolicy(
 		PlaybackInfoRequest{SubjectKind: PlaybackSubjectLive},
 		capabilities.PlaybackCapabilities{
 			ClientFamilyFallback: playbackprofile.ClientSafariNative,
@@ -110,6 +112,7 @@ func TestResolveLiveNativeTransportPlan_DesktopSafariAV1TSRewritesToFMP4(t *test
 				},
 			},
 		},
+		false,
 	)
 
 	if !plan.applied {
@@ -141,12 +144,13 @@ func TestApplyPlaybackTransportPolicy_RecordingDirectStreamFMP4Rewrite(t *testin
 		},
 	}
 
-	applyPlaybackTransportPolicy(
+	applyPlaybackTransportPolicyWithPolicy(
 		PlaybackInfoRequest{SubjectKind: PlaybackSubjectRecording},
 		capabilities.PlaybackCapabilities{
 			ClientFamilyFallback: playbackprofile.ClientSafariNative,
 		},
 		dec,
+		false,
 	)
 
 	if dec.Mode != decision.ModeDirectStream {

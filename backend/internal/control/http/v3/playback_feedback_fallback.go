@@ -30,10 +30,6 @@ type playbackFeedbackFallbackPlan struct {
 	profile model.ProfileSpec
 }
 
-func nextPlaybackFeedbackPlan(current model.ProfileSpec, serviceRef string) playbackFeedbackFallbackPlan {
-	return nextPlaybackFeedbackPlanWithResolver(current, serviceRef, profiles.Resolver{})
-}
-
 func nextPlaybackFeedbackPlanWithResolver(current model.ProfileSpec, serviceRef string, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
 	switch current.Name {
 	case profiles.ProfileSafari:

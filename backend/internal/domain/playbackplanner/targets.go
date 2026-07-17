@@ -146,7 +146,8 @@ func applyPolicyModifiers(plan *PlaybackPlan, ev PlaybackEvidence) {
 	plan.Guardrails.MaxQualityRung = maxRung
 
 	// Network caps: if network bandwidth is limited, apply it
-	if plan.Video.Mode == "transcode" {
+	switch plan.Video.Mode {
+	case "transcode":
 		if plan.RateControl.MaxVideoBitrateKbps <= 0 {
 			plan.RateControl.MaxVideoBitrateKbps = transcodeMaxVideoBitrateKbps(plan.Video.Codec, ev)
 		}
@@ -158,7 +159,7 @@ func applyPolicyModifiers(plan *PlaybackPlan, ev PlaybackEvidence) {
 				plan.RateControl.MaxVideoBitrateKbps = 6000
 			}
 		}
-	} else if plan.Video.Mode == "copy" {
+	case "copy":
 		// If we are copying, target bitrate matches source
 		if ev.SourceTruth.BitrateKbps > 0 {
 			plan.RateControl.TargetVideoBitrateKbps = ev.SourceTruth.BitrateKbps

@@ -88,13 +88,13 @@ func TestPickProfileForCodecs_AutoUsesMeasuredHostRanking(t *testing.T) {
 }
 
 func TestRequestedCodecsForIntent_AndroidTVBrowserFamilyFallbackIsH264Only(t *testing.T) {
-	got := requestedCodecsForIntent(Intent{
+	got := requestedCodecsForIntentWithPolicy(Intent{
 		Params: map[string]string{
 			"playback_mode":          "hlsjs",
 			"codecs":                 "av1,hevc,h264",
 			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
 		},
-	}, "hlsjs")
+	}, "hlsjs", false)
 	if got != "h264" {
 		t.Fatalf("requestedCodecsForIntent() = %q, want h264", got)
 	}
@@ -102,7 +102,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserFamilyFallbackIsH264Only(t *te
 
 func TestRequestedCodecsForIntent_AndroidTVBrowserRuntimeHEVCStaysOptIn(t *testing.T) {
 	smooth := true
-	got := requestedCodecsForIntent(Intent{
+	got := requestedCodecsForIntentWithPolicy(Intent{
 		Params: map[string]string{
 			"playback_mode":          "hlsjs",
 			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
@@ -121,7 +121,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserRuntimeHEVCStaysOptIn(t *testi
 				{Codec: "hevc", Supported: true, Smooth: &smooth},
 			},
 		},
-	}, "hlsjs")
+	}, "hlsjs", false)
 	if got != "hevc,h264" {
 		t.Fatalf("requestedCodecsForIntent() = %q, want hevc,h264", got)
 	}
@@ -129,7 +129,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserRuntimeHEVCStaysOptIn(t *testi
 
 func TestRequestedCodecsForIntent_AndroidTVBrowserKnownAV1DeviceCanOptIntoAV1(t *testing.T) {
 	smooth := true
-	got := requestedCodecsForIntent(Intent{
+	got := requestedCodecsForIntentWithPolicy(Intent{
 		Params: map[string]string{
 			"playback_mode":          "hlsjs",
 			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
@@ -151,7 +151,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserKnownAV1DeviceCanOptIntoAV1(t 
 				{Codec: "hevc", Supported: true, Smooth: &smooth},
 			},
 		},
-	}, "hlsjs")
+	}, "hlsjs", false)
 	if got != "av1,hevc,h264" {
 		t.Fatalf("requestedCodecsForIntent() = %q, want av1,hevc,h264", got)
 	}
@@ -159,7 +159,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserKnownAV1DeviceCanOptIntoAV1(t 
 
 func TestRequestedCodecsForIntent_AndroidTVBrowserShieldCannotOptIntoAV1(t *testing.T) {
 	smooth := true
-	got := requestedCodecsForIntent(Intent{
+	got := requestedCodecsForIntentWithPolicy(Intent{
 		Params: map[string]string{
 			"playback_mode":          "hlsjs",
 			model.CtxKeyClientFamily: playbackprofile.ClientAndroidTVBrowser,
@@ -180,7 +180,7 @@ func TestRequestedCodecsForIntent_AndroidTVBrowserShieldCannotOptIntoAV1(t *test
 				{Codec: "av1", Supported: true, Smooth: &smooth},
 			},
 		},
-	}, "hlsjs")
+	}, "hlsjs", false)
 	if got != "h264" {
 		t.Fatalf("requestedCodecsForIntent() = %q, want h264", got)
 	}

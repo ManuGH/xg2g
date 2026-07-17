@@ -53,7 +53,7 @@ func TestRequestedCodecsForIntent_AppleAV1DecodeGate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := requestedCodecsForIntent(tc.intent, "native_hls")
+			got := requestedCodecsForIntentWithPolicy(tc.intent, "native_hls", false)
 			hasAV1 := strings.Contains(got, "av1")
 			t.Logf("%s -> requested codecs %q", tc.name, got)
 			if hasAV1 != tc.wantAV1 {

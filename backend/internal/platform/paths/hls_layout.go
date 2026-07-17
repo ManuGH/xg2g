@@ -1,7 +1,6 @@
 package paths
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -10,10 +9,6 @@ const (
 	LiveSessionsDirName       = "sessions"
 	RecordingArtifactsDirName = "recordings"
 )
-
-// minShmFreeBytes was historically used for tmpfs checks.
-// It is kept for backwards compatibility but unused.
-const minShmFreeBytes = 32 * 1024 * 1024
 
 // LiveHLSRoot returns the base directory for live HLS streams.
 // xg2g now utilizes an internal RAM Shadow Store to buffer the latest segments
@@ -35,28 +30,6 @@ func LiveSessionsRoot(hlsRoot string) string {
 		return ""
 	}
 	return filepath.Join(root, LiveSessionsDirName)
-}
-
-// hasHLSArtifacts returns true if dir contains actual HLS session artifacts.
-func hasHLSArtifacts(dir string) bool {
-	if dir == "" {
-		return false
-	}
-	for _, name := range []string{"index.m3u8", "index.m3u8.tmp", ".first_frame", "init.mp4"} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-			return true
-		}
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".m4s") || strings.HasSuffix(entry.Name(), ".ts") || strings.HasSuffix(entry.Name(), ".m3u8")) {
-			return true
-		}
-	}
-	return false
 }
 
 // LiveSessionDir returns the canonical directory for one live session's HLS artifacts.

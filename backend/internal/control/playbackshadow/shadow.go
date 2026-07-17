@@ -106,11 +106,12 @@ func ComparableFromLegacy(dec *decision.Decision) ComparablePlaybackPlan {
 	}
 
 	mode := "copy"
-	if dec.Mode == decision.ModeTranscode {
+	switch dec.Mode {
+	case decision.ModeTranscode:
 		mode = "transcode"
-	} else if dec.Mode == decision.ModeDirectStream {
+	case decision.ModeDirectStream:
 		mode = "remux"
-	} else if dec.Mode == decision.ModeDeny {
+	case decision.ModeDeny:
 		mode = "none"
 	}
 

@@ -144,7 +144,6 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		if stdin, ok := a.prepareTelemetryPipe(ctx, inputURL, spec.SessionID); ok {
 			args = transformArgsForTelemetryPipeMode(args)
 			avsyncStdin = stdin
-			usingPipe = true
 		}
 	}
 

@@ -175,11 +175,11 @@ type SessionRecord struct {
 	LastAccessUnix    int64            `json:"lastAccessUnix,omitempty"`
 	ExpiresAtUnix     int64            `json:"expiresAtUnix"` // TTL for garbage collection.
 	// ADR-009: Session Lease Semantics
-	LeaseExpiresAtUnix int64  `json:"leaseExpiresAtUnix"`
-	HeartbeatInterval  int    `json:"heartbeatInterval"`
-	LastHeartbeatUnix  int64  `json:"lastHeartbeatUnix,omitempty"`
-	StopReason         string `json:"stopReason,omitempty"` // USER_STOPPED, LEASE_EXPIRED, FAILED, etc.
-	StopRequestedAtUnixMs int64 `json:"stopRequestedAtUnixMs,omitempty"`
+	LeaseExpiresAtUnix    int64  `json:"leaseExpiresAtUnix"`
+	HeartbeatInterval     int    `json:"heartbeatInterval"`
+	LastHeartbeatUnix     int64  `json:"lastHeartbeatUnix,omitempty"`
+	StopReason            string `json:"stopReason,omitempty"` // USER_STOPPED, LEASE_EXPIRED, FAILED, etc.
+	StopRequestedAtUnixMs int64  `json:"stopRequestedAtUnixMs,omitempty"`
 
 	// PR-P3-2: Deterministic Lifecycle Fields
 	LatestSegmentAt      time.Time `json:"latestSegmentAt,omitempty"`

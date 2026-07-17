@@ -77,25 +77,27 @@ func TestShouldRetryStartupWaitFailure(t *testing.T) {
 }
 
 func TestStartupRecoveryProfile(t *testing.T) {
-	next, ok := startupRecoveryProfile(
+	next, ok := startupRecoveryProfileWithResolver(
 		model.ProfileSpec{Name: profiles.ProfileSafari, DVRWindowSec: 2700},
 		model.RProcessEnded,
 		"process died during startup: copy output missing codec parameters",
+		nil,
 	)
 	require.True(t, ok)
 	assert.Equal(t, profiles.ProfileSafariDirty, next.Name)
 	assert.Equal(t, 2700, next.DVRWindowSec)
 
-	next, ok = startupRecoveryProfile(
+	next, ok = startupRecoveryProfileWithResolver(
 		model.ProfileSpec{Name: profiles.ProfileSafariDirty, DVRWindowSec: 900},
 		model.RProcessEnded,
 		"process died during startup: copy output missing codec parameters",
+		nil,
 	)
 	require.True(t, ok)
 	assert.Equal(t, profiles.ProfileRepair, next.Name)
 	assert.Equal(t, 900, next.DVRWindowSec)
 
-	next, ok = startupRecoveryProfile(
+	next, ok = startupRecoveryProfileWithResolver(
 		model.ProfileSpec{
 			Name:                 profiles.ProfileSafariRuntimeHQ,
 			DVRWindowSec:         2700,
@@ -103,6 +105,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 		},
 		model.RPackagerFailed,
 		"playlist not ready timeout",
+		nil,
 	)
 	require.True(t, ok)
 	assert.True(t, next.ForceSafariHQ25)
@@ -110,7 +113,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, next.EffectiveModeSource)
 	assert.Equal(t, 2700, next.DVRWindowSec)
 
-	next, ok = startupRecoveryProfile(
+	next, ok = startupRecoveryProfileWithResolver(
 		model.ProfileSpec{
 			Name:                 profiles.ProfileSafariRuntimeHQ,
 			DVRWindowSec:         1800,
@@ -118,6 +121,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 		},
 		model.RProcessEnded,
 		"process died during startup: transcode stalled - no progress detected",
+		nil,
 	)
 	require.True(t, ok)
 	assert.True(t, next.ForceSafariHQ25)
@@ -125,7 +129,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, next.EffectiveModeSource)
 	assert.Equal(t, 1800, next.DVRWindowSec)
 
-	next, ok = startupRecoveryProfile(
+	next, ok = startupRecoveryProfileWithResolver(
 		model.ProfileSpec{
 			Name:                 profiles.ProfileSafariRuntimeHQ,
 			DVRWindowSec:         1200,
@@ -133,6 +137,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 		},
 		model.RProcessEnded,
 		"process died during startup: transcode stalled - no progress detected",
+		nil,
 	)
 	require.True(t, ok)
 	assert.Equal(t, profiles.ProfileRepair, next.Name)
@@ -140,7 +145,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 	assert.Equal(t, 1200, next.DVRWindowSec)
 	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, next.EffectiveModeSource)
 
-	next, ok = startupRecoveryProfile(
+	next, ok = startupRecoveryProfileWithResolver(
 		model.ProfileSpec{
 			Name:                 profiles.ProfileSafariRuntimeHQ,
 			DVRWindowSec:         600,
@@ -148,6 +153,7 @@ func TestStartupRecoveryProfile(t *testing.T) {
 		},
 		model.RPackagerFailed,
 		"playlist not ready timeout",
+		nil,
 	)
 	require.True(t, ok)
 	assert.Equal(t, profiles.ProfileRepair, next.Name)
@@ -155,10 +161,11 @@ func TestStartupRecoveryProfile(t *testing.T) {
 	assert.Equal(t, 600, next.DVRWindowSec)
 	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, next.EffectiveModeSource)
 
-	_, ok = startupRecoveryProfile(
+	_, ok = startupRecoveryProfileWithResolver(
 		model.ProfileSpec{Name: profiles.ProfileHigh},
 		model.RProcessEnded,
 		"process died during startup: copy output missing codec parameters",
+		nil,
 	)
 	assert.False(t, ok)
 }

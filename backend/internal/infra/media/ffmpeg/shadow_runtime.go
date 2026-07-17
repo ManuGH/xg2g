@@ -109,7 +109,9 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 		err = watcher.Add(sessionDir)
 		if err != nil {
 			sr.logger.Error().Err(err).Msg("failed to add session directory to watcher")
-			watcher.Close()
+			if closeErr := watcher.Close(); closeErr != nil {
+				sr.logger.Warn().Err(closeErr).Msg("failed to close unusable fsnotify watcher")
+			}
 			watcher = nil
 		}
 	}
@@ -119,7 +121,11 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 		var watcherEvents <-chan fsnotify.Event
 		var watcherErrors <-chan error
 		if watcher != nil {
-			defer watcher.Close()
+			defer func() {
+				if err := watcher.Close(); err != nil {
+					sr.logger.Warn().Err(err).Msg("failed to close fsnotify watcher")
+				}
+			}()
 			watcherEvents = watcher.Events
 			watcherErrors = watcher.Errors
 		}
@@ -135,6 +141,9 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 		debounceChan := make(chan string, 100)
 
 		processFile := func(name string) {
+			if filepath.Base(name) != name {
+				return
+			}
 			if name == "index.m3u8" {
 				return
 			}
@@ -161,6 +170,7 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 				return
 			}
 
+			// #nosec G304 -- name is restricted to a base name and accepted init/segment patterns above.
 			data, err := os.ReadFile(filePath)
 			if err != nil || len(data) == 0 || int64(len(data)) != before.Size() {
 				return
@@ -190,9 +200,10 @@ func (sr *ShadowRuntime) startMonitoring(sessionDir string) {
 				Complete:    true,
 			})
 			if err == nil {
-				if kind == store.ObjectInit {
+				switch kind {
+				case store.ObjectInit:
 					telemetry.GetStartupTracer(sr.sessionID).MarkOnce(telemetry.MilestoneR1, "init_in_ram")
-				} else if kind == store.ObjectSegment {
+				case store.ObjectSegment:
 					telemetry.GetStartupTracer(sr.sessionID).MarkOnce(telemetry.MilestoneT6, "segment_finalized")
 					telemetry.GetStartupTracer(sr.sessionID).MarkOnce(telemetry.MilestoneR2, "segment_in_ram")
 				}

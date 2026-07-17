@@ -2,8 +2,23 @@ package ffmpeg
 
 import (
 	"encoding/binary"
+
 	"github.com/ManuGH/xg2g/internal/pipeline/store"
 )
+
+func checkedFMP4BoxSize(raw uint64, remaining int) (int, bool) {
+	if remaining < 0 {
+		return 0, false
+	}
+	size := int(raw) // #nosec G115 -- the round-trip and remaining-length checks below reject overflow.
+	if size < 0 {
+		return 0, false
+	}
+	if uint64(size) != raw || size > remaining { // #nosec G115 -- size is non-negative before conversion.
+		return 0, false
+	}
+	return size, true
+}
 
 // validCompleteFMP4 structurally parses an fMP4 byte slice to ensure it is fully complete and not truncated.
 // It checks that box sizes align exactly with the file size and that the required boxes for the given kind are present.
@@ -20,22 +35,34 @@ func validCompleteFMP4(data []byte, kind store.ObjectKind) bool {
 			return false // truncated box header
 		}
 
-		boxSize := uint64(binary.BigEndian.Uint32(data[offset : offset+4]))
+		rawBoxSize := uint64(binary.BigEndian.Uint32(data[offset : offset+4]))
 		boxType := string(data[offset+4 : offset+8])
 
 		headerSize := 8
-		if boxSize == 1 {
+		var boxSize int
+		switch rawBoxSize {
+		case 1:
 			if offset+16 > len(data) {
 				return false // truncated 64-bit size
 			}
-			boxSize = binary.BigEndian.Uint64(data[offset+8 : offset+16])
 			headerSize = 16
-		} else if boxSize == 0 {
+			var ok bool
+			boxSize, ok = checkedFMP4BoxSize(binary.BigEndian.Uint64(data[offset+8:offset+16]), len(data)-offset)
+			if !ok {
+				return false
+			}
+		case 0:
 			// Box extends to end of file
-			boxSize = uint64(len(data) - offset)
+			boxSize = len(data) - offset
+		default:
+			var ok bool
+			boxSize, ok = checkedFMP4BoxSize(rawBoxSize, len(data)-offset)
+			if !ok {
+				return false
+			}
 		}
 
-		if boxSize < uint64(headerSize) || uint64(offset)+boxSize > uint64(len(data)) {
+		if boxSize < headerSize || boxSize > len(data)-offset {
 			return false // box is truncated or claims size larger than file
 		}
 
@@ -50,16 +77,17 @@ func validCompleteFMP4(data []byte, kind store.ObjectKind) bool {
 			hasMoov = true
 		}
 
-		offset += int(boxSize)
+		offset += boxSize
 	}
 
 	if offset != len(data) {
 		return false // trailing garbage or misalignment
 	}
 
-	if kind == store.ObjectSegment {
+	switch kind {
+	case store.ObjectSegment:
 		return hasMoof && hasMdat
-	} else if kind == store.ObjectInit {
+	case store.ObjectInit:
 		return hasFtyp && hasMoov
 	}
 

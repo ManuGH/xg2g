@@ -12,10 +12,6 @@ func shouldTraceAutoCodecDecision(intent Intent, requestedCodecs string) bool {
 	return strings.TrimSpace(intent.Params["profile"]) == "" && strings.TrimSpace(requestedCodecs) != ""
 }
 
-func requestedCodecsForIntent(intent Intent, requestedPlaybackMode string) string {
-	return requestedCodecsForIntentWithPolicy(intent, requestedPlaybackMode, false)
-}
-
 func requestedCodecsForIntentWithPolicy(intent Intent, requestedPlaybackMode string, clientAV1Disabled bool) string {
 	if explicit := joinRequestedCodecs(autocodec.ParseCodecList(intent.Params["codecs"])); explicit != "" {
 		return clampRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, explicit, clientAV1Disabled)
@@ -24,10 +20,6 @@ func requestedCodecsForIntentWithPolicy(intent Intent, requestedPlaybackMode str
 		return derived
 	}
 	return clampRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, requestedCodecsFromClientMatrix(intent, requestedPlaybackMode), clientAV1Disabled)
-}
-
-func requestedCodecsFromClientCaps(intent Intent, requestedPlaybackMode string) string {
-	return requestedCodecsFromClientCapsWithPolicy(intent, requestedPlaybackMode, false)
 }
 
 func requestedCodecsFromClientCapsWithPolicy(intent Intent, requestedPlaybackMode string, clientAV1Disabled bool) string {
@@ -58,10 +50,6 @@ func requestedCodecsFromClientCapsWithPolicy(intent Intent, requestedPlaybackMod
 	return joinRequestedCodecs(mergeRequestedCodecLists(codecs, matrixFallbackVideoCodecs(intent, requestedPlaybackMode)))
 }
 
-func clampRequestedCodecsForClient(intent Intent, requestedPlaybackMode, requestedCodecs string) string {
-	return clampRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, requestedCodecs, false)
-}
-
 func clampRequestedCodecsForClientWithPolicy(intent Intent, requestedPlaybackMode, requestedCodecs string, clientAV1Disabled bool) string {
 	allowedCodecs := allowedRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, clientAV1Disabled)
 	clientFamily := clientFamilyForIntent(intent)
@@ -75,10 +63,6 @@ func clampRequestedCodecsForClientWithPolicy(intent Intent, requestedPlaybackMod
 
 func requestedCodecsFromClientMatrix(intent Intent, requestedPlaybackMode string) string {
 	return joinRequestedCodecs(matrixFallbackVideoCodecs(intent, requestedPlaybackMode))
-}
-
-func allowedRequestedCodecsForClient(intent Intent, requestedPlaybackMode string) []string {
-	return allowedRequestedCodecsForClientWithPolicy(intent, requestedPlaybackMode, false)
 }
 
 func allowedRequestedCodecsForClientWithPolicy(intent Intent, requestedPlaybackMode string, clientAV1Disabled bool) []string {

@@ -31,10 +31,6 @@ type playbackTransportPlan struct {
 	applied             bool
 }
 
-func applyPlaybackTransportPolicy(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) {
-	applyPlaybackTransportPolicyWithPolicy(req, resolvedCaps, dec, false)
-}
-
 func applyPlaybackTransportPolicyWithPolicy(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision, experimentalAV1MPEGTS bool) {
 	plan := resolvePlaybackTransportPlanWithPolicy(req, resolvedCaps, dec, experimentalAV1MPEGTS)
 	if !plan.applied || dec == nil || dec.TargetProfile == nil {
@@ -65,10 +61,6 @@ func applyPlaybackTransportPolicyWithPolicy(req PlaybackInfoRequest, resolvedCap
 
 func clientWantsFMP4(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, _ *decision.Decision) bool {
 	return clientpolicy.WantsFMP4Packaging(req.RequestedProfile, resolvedCaps.ClientFamilyFallback)
-}
-
-func resolvePlaybackTransportPlan(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision) playbackTransportPlan {
-	return resolvePlaybackTransportPlanWithPolicy(req, resolvedCaps, dec, false)
 }
 
 func resolvePlaybackTransportPlanWithPolicy(req PlaybackInfoRequest, resolvedCaps capabilities.PlaybackCapabilities, dec *decision.Decision, experimentalAV1MPEGTS bool) playbackTransportPlan {

@@ -45,10 +45,6 @@ func shouldRetryStartupWaitFailure(reason model.ReasonCode, detail string, attem
 	}
 }
 
-func startupRecoveryProfile(current model.ProfileSpec, reason model.ReasonCode, detail string) (model.ProfileSpec, bool) {
-	return startupRecoveryProfileWithResolver(current, reason, detail, nil)
-}
-
 func startupRecoveryProfileWithResolver(current model.ProfileSpec, reason model.ReasonCode, detail string, profileResolver RecoveryProfileResolver) (model.ProfileSpec, bool) {
 	resolveProfile := profileResolver
 	if resolveProfile == nil {
