@@ -157,12 +157,9 @@ function gatherBrowserNetworkContext(): PlaybackClientNetworkContext | undefined
   const connection = nav.connection;
   const isOnline = navigator.onLine !== false;
   
-  let downlinkMbps: number | undefined = undefined;
-  if (connection && typeof connection.downlink === 'number') {
-    downlinkMbps = connection.downlink;
-  } else {
-    downlinkMbps = estimateBandwidthFromResources();
-  }
+  const downlinkMbps = connection && typeof connection.downlink === 'number'
+    ? connection.downlink
+    : estimateBandwidthFromResources();
 
   if (!connection) {
     return isOnline ? { kind: 'browser', downlinkMbps: sanitizeNumber(downlinkMbps) } : { kind: 'offline' };

@@ -389,7 +389,13 @@ describe('V3Player hls.js decode recovery', () => {
       return jsonResponse(url, 200, {});
     }) as unknown as typeof globalThis.fetch);
 
-    const { container } = render(<V3Player autoStart={true} channel={{ id: 'ch-hls-stall', serviceRef: '1:0:1:stall...' } as any} />);
+    const { container } = render(
+      <V3Player
+        autoStart={true}
+        revealHoldMs={0}
+        channel={{ id: 'ch-hls-stall', serviceRef: '1:0:1:stall...' } as any}
+      />,
+    );
 
     await act(async () => {
       await Promise.resolve();

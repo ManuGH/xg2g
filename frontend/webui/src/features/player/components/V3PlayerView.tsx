@@ -9,7 +9,7 @@ import type {
 import styles from './V3Player.module.css';
 import { DvrScrubSlider } from './DvrScrubSlider';
 import { DropdownMenu } from './DropdownMenu';
-import { ChannelsGlyph, FullscreenGlyph, PipGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph } from './playerControlGlyphs';
+import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph } from './playerControlGlyphs';
 
 interface V3PlayerViewProps {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -120,7 +120,9 @@ export function V3PlayerView({
             </div>
             <div className={styles.spinnerContent}>
               {viewState.channelName && <h2 className={styles.spinnerTitle}>{viewState.channelName}</h2>}
-              
+              <div className={styles.spinnerLabel}>{viewState.spinnerLabel}</div>
+              <div className={styles.spinnerSupport}>{viewState.spinnerSupport}</div>
+
               <div className={styles.spinnerMeta}>
                 <div className={styles.spinnerProgressTrack} aria-hidden="true">
                   <div className={styles.spinnerProgressIndeterminate}></div>
@@ -399,8 +401,23 @@ export function V3PlayerView({
                 </Button>
               )}
 
-              {/* Removed the stats button from the main UI for cleaner look */}
-              
+              <Button
+                variant="ghost"
+                size="sm"
+                active={viewState.statsActive}
+                onClick={actions.toggleStats}
+                title={viewState.statsTitle}
+                aria-label={viewState.statsLabel}
+              >
+                {viewState.ttffBadgeLabel && (
+                  <span className={styles.ttffBadge} title={viewState.ttffTitle ?? undefined}>
+                    ⚡ {viewState.ttffBadgeLabel}
+                  </span>
+                )}
+                <StatsGlyph />
+                <span className="sr-only">{viewState.statsLabel}</span>
+              </Button>
+
               {viewState.showStopButton && (
                 <Button variant="danger" onClick={() => void actions.stopStream()}>
                   <StopGlyph /> {viewState.stopLabel}
