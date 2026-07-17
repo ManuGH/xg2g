@@ -26,7 +26,7 @@ vi.mock('../../../client-ts', async () => {
   const actual = await vi.importActual<typeof import('../../../client-ts')>('../../../client-ts');
   return {
     ...actual,
-    postLivePlaybackInfo: vi.fn(),
+    postLivePlaybackSummary: vi.fn(),
   };
 });
 
@@ -85,52 +85,58 @@ async function renderChannelList(props: ComponentProps<typeof EpgChannelList>) {
 }
 
 describe('EpgChannelList playback affordance', () => {
-  const mockedPostLivePlaybackInfo = vi.mocked(sdk.postLivePlaybackInfo);
+  const mockedPostLivePlaybackSummary = vi.mocked(sdk.postLivePlaybackSummary);
 
-  beforeEach(() => {
-    mockedPostLivePlaybackInfo.mockResolvedValue({
-      data: {
-        videoCodec: 'h264',
-        audioCodec: 'ac3',
-        decision: {
-          mode: 'direct_stream',
-          trace: {
-            source: {
-              width: 1920,
-              height: 1080,
-              videoCodec: 'h264',
-              audioCodec: 'ac3',
-            },
-            targetProfile: {
-              container: 'mpegts',
-              packaging: 'ts',
-              video: {
-                mode: 'copy',
-                codec: 'h264',
-                width: 1920,
-                height: 1080,
-                fps: 50,
-              },
-              audio: {
-                mode: 'transcode',
-                codec: 'aac',
-                channels: 2,
-                bitrateKbps: 128,
-                sampleRate: 48000,
-              },
-              hls: {
-                enabled: true,
-                segmentContainer: 'mpegts',
-                segmentSeconds: 4,
-              },
-              hwAccel: 'none',
-            },
+  const defaultPlaybackInfo = {
+    videoCodec: 'h264',
+    audioCodec: 'ac3',
+    decision: {
+      mode: 'direct_stream',
+      trace: {
+        source: {
+          width: 1920,
+          height: 1080,
+          videoCodec: 'h264',
+          audioCodec: 'ac3',
+        },
+        targetProfile: {
+          container: 'mpegts',
+          packaging: 'ts',
+          video: {
+            mode: 'copy',
+            codec: 'h264',
+            width: 1920,
+            height: 1080,
+            fps: 50,
           },
+          audio: {
+            mode: 'transcode',
+            codec: 'aac',
+            channels: 2,
+            bitrateKbps: 128,
+            sampleRate: 48000,
+          },
+          hls: {
+            enabled: true,
+            segmentContainer: 'mpegts',
+            segmentSeconds: 4,
+          },
+          hwAccel: 'none',
         },
       },
-      error: undefined,
-      response: { status: 200 } as Response,
-    } as Awaited<ReturnType<typeof sdk.postLivePlaybackInfo>>);
+    },
+  };
+
+  beforeEach(() => {
+    mockedPostLivePlaybackSummary.mockImplementation((async (options: { body?: { serviceRefs?: string[] } }) => {
+      const refs = options.body?.serviceRefs || [];
+      const items = Object.fromEntries(refs.map((ref) => [ref, defaultPlaybackInfo]));
+      return {
+        data: { items },
+        error: undefined,
+        response: { status: 200 } as Response,
+      };
+    }) as unknown as typeof sdk.postLivePlaybackSummary);
   });
 
   afterEach(() => {
@@ -203,29 +209,33 @@ describe('EpgChannelList playback affordance', () => {
 
     expect(await screen.findByText('Remux')).toBeTruthy();
     expect(screen.getByText('1080p · v:copy/h264 · a:encode/aac')).toBeTruthy();
-    expect(mockedPostLivePlaybackInfo).toHaveBeenCalledWith(
+    expect(mockedPostLivePlaybackSummary).toHaveBeenCalledWith(
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer dev-token',
           'X-XG2G-Playback-Info-Context': 'epg_badge',
         }),
         body: expect.objectContaining({
-          serviceRef: 'svc-badge-auth',
+          serviceRefs: expect.arrayContaining(['svc-badge-auth']),
         }),
       })
     );
   });
 
   it('fails closed when live playback info omits decision.mode', async () => {
-    mockedPostLivePlaybackInfo.mockResolvedValueOnce({
+    mockedPostLivePlaybackSummary.mockResolvedValueOnce({
       data: {
-        mode: 'direct_stream',
-        videoCodec: 'h264',
-        audioCodec: 'ac3',
+        items: {
+          'svc-badge-failclosed': {
+            mode: 'direct_stream',
+            videoCodec: 'h264',
+            audioCodec: 'ac3',
+          },
+        },
       },
       error: undefined,
       response: { status: 200 } as Response,
-    } as unknown as Awaited<ReturnType<typeof sdk.postLivePlaybackInfo>>);
+    } as unknown as Awaited<ReturnType<typeof sdk.postLivePlaybackSummary>>);
 
     await renderChannelList({
       mode: 'main',

@@ -4,7 +4,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
-import { postLivePlaybackInfo, type PlaybackInfo, type PlaybackTargetProfile } from '../../../client-ts';
+import { postLivePlaybackSummary, type PlaybackInfo, type PlaybackTargetProfile } from '../../../client-ts';
 import { isEventVisible } from '../epgModel';
 import { EpgEventRow } from './EpgEventList';
 import { Button } from '../../../components/ui';
@@ -40,8 +40,21 @@ type ChannelPlaybackBadge = {
   title: string;
 };
 
-const channelPlaybackBadgeCache = new Map<string, ChannelPlaybackBadge>();
-const channelPlaybackBadgeInflight = new Map<string, Promise<ChannelPlaybackBadge | null>>();
+// Resolved badges (and resolved-to-nothing markers) per `${capabilityKey}::${serviceRef}`.
+// Bounded: badge payloads are tiny, but the key space grows with capability
+// changes (login switches, probe upgrades), so evict oldest entries FIFO.
+const CHANNEL_BADGE_CACHE_MAX = 1000;
+const channelPlaybackBadgeCache = new Map<string, ChannelPlaybackBadge | null>();
+
+function cacheChannelPlaybackBadge(cacheKey: string, badge: ChannelPlaybackBadge | null): void {
+  if (channelPlaybackBadgeCache.size >= CHANNEL_BADGE_CACHE_MAX) {
+    const oldest = channelPlaybackBadgeCache.keys().next().value;
+    if (oldest !== undefined) {
+      channelPlaybackBadgeCache.delete(oldest);
+    }
+  }
+  channelPlaybackBadgeCache.set(cacheKey, badge);
+}
 
 function buildCapabilityCacheKey(capabilities: CapabilitySnapshot, requestProfile?: PlaybackRequestProfile): string {
   return JSON.stringify({
@@ -155,63 +168,115 @@ function buildChannelPlaybackBadge(channel: EpgChannel, info: PlaybackInfo): Cha
   }
 }
 
-async function fetchChannelPlaybackBadge(
+// Batch badge loading: individual per-channel stream-info calls made every
+// scroll a request salvo (one full planner resolution per channel). Requests
+// are instead collected for a short window and resolved through one
+// POST /live/playback-summary call (bounded at the API's 100-ref batch max).
+const CHANNEL_BADGE_BATCH_DELAY_MS = 60;
+const CHANNEL_BADGE_BATCH_MAX = 100;
+
+type BadgeBatchState = {
+  channelsByRef: Map<string, EpgChannel>;
+  callbacks: Set<(serviceRef: string, badge: ChannelPlaybackBadge) => void>;
+  capabilities: CapabilitySnapshot;
+  requestProfile?: PlaybackRequestProfile;
+  timer: number | null;
+};
+
+const badgeBatchByCapabilityKey = new Map<string, BadgeBatchState>();
+
+function queueChannelPlaybackBadge(
   channel: EpgChannel,
   capabilities: CapabilitySnapshot,
   capabilityCacheKey: string,
-  requestProfile?: PlaybackRequestProfile
-): Promise<ChannelPlaybackBadge | null> {
+  requestProfile: PlaybackRequestProfile | undefined,
+  onBadge: (serviceRef: string, badge: ChannelPlaybackBadge) => void
+): void {
   const serviceRef = channel.serviceRef || channel.id || '';
   if (!serviceRef) {
-    return null;
+    return;
   }
 
-  const cacheKey = `${capabilityCacheKey}::${serviceRef}`;
-  const cached = channelPlaybackBadgeCache.get(cacheKey);
-  if (cached) {
-    return cached;
+  let state = badgeBatchByCapabilityKey.get(capabilityCacheKey);
+  if (!state) {
+    state = {
+      channelsByRef: new Map(),
+      callbacks: new Set(),
+      capabilities,
+      requestProfile,
+      timer: null,
+    };
+    badgeBatchByCapabilityKey.set(capabilityCacheKey, state);
+  }
+  state.channelsByRef.set(serviceRef, channel);
+  state.callbacks.add(onBadge);
+
+  if (state.timer === null) {
+    state.timer = window.setTimeout(() => {
+      void flushBadgeBatch(capabilityCacheKey);
+    }, CHANNEL_BADGE_BATCH_DELAY_MS);
+  } else if (state.channelsByRef.size >= CHANNEL_BADGE_BATCH_MAX) {
+    window.clearTimeout(state.timer);
+    state.timer = null;
+    void flushBadgeBatch(capabilityCacheKey);
+  }
+}
+
+async function flushBadgeBatch(capabilityCacheKey: string): Promise<void> {
+  const state = badgeBatchByCapabilityKey.get(capabilityCacheKey);
+  if (!state) {
+    return;
+  }
+  badgeBatchByCapabilityKey.delete(capabilityCacheKey);
+  if (state.timer !== null) {
+    window.clearTimeout(state.timer);
   }
 
-  const inflight = channelPlaybackBadgeInflight.get(cacheKey);
-  if (inflight) {
-    return inflight;
+  const refs = Array.from(state.channelsByRef.keys()).slice(0, CHANNEL_BADGE_BATCH_MAX);
+  if (refs.length === 0) {
+    return;
   }
 
-  const request = (async () => {
-    const authToken = getStoredToken().trim();
-    const result = await postLivePlaybackInfo({
-      headers: {
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        ...buildPlaybackProfileHeaders(requestProfile),
-        [PLAYBACK_INFO_CONTEXT_HEADER]: PLAYBACK_INFO_CONTEXT_EPG_BADGE,
-      },
-      body: {
-        serviceRef,
-        capabilities,
-      },
-    });
+  const authToken = getStoredToken().trim();
+  const result = await postLivePlaybackSummary({
+    headers: {
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...buildPlaybackProfileHeaders(state.requestProfile),
+      [PLAYBACK_INFO_CONTEXT_HEADER]: PLAYBACK_INFO_CONTEXT_EPG_BADGE,
+    },
+    body: {
+      serviceRefs: refs,
+      capabilities: state.capabilities,
+    },
+  }).catch(() => null);
 
-    if (result.response?.status === 401) {
-      requestAuthRequired({ source: 'EPG.channelPlaybackBadge', status: 401 });
-      return null;
+  if (!result) {
+    return;
+  }
+  if (result.response?.status === 401) {
+    requestAuthRequired({ source: 'EPG.channelPlaybackBadge', status: 401 });
+    return;
+  }
+  if (result.error || !result.data) {
+    return;
+  }
+
+  const items = (result.data as { items?: Record<string, PlaybackInfo> }).items || {};
+  for (const serviceRef of refs) {
+    const channel = state.channelsByRef.get(serviceRef);
+    if (!channel) {
+      continue;
     }
-
-    if (result.error || !result.data) {
-      return null;
-    }
-
-    const badge = buildChannelPlaybackBadge(channel, result.data);
+    const info = items[serviceRef];
+    const badge = info ? buildChannelPlaybackBadge(channel, info) : null;
+    // Negative results are cached too so scrolling does not re-request
+    // services the backend cannot resolve (e.g. missing scan truth).
+    cacheChannelPlaybackBadge(`${capabilityCacheKey}::${serviceRef}`, badge);
     if (badge) {
-      channelPlaybackBadgeCache.set(cacheKey, badge);
+      for (const callback of state.callbacks) {
+        callback(serviceRef, badge);
+      }
     }
-    return badge;
-  })();
-
-  channelPlaybackBadgeInflight.set(cacheKey, request);
-  try {
-    return await request;
-  } finally {
-    channelPlaybackBadgeInflight.delete(cacheKey);
   }
 }
 
@@ -822,6 +887,12 @@ export function EpgChannelList({
     const uniqueIndices = Array.from(new Set(indices))
       .filter((index) => index >= 0 && index < orderedDisplayChannels.length);
 
+    const applyBadge = (serviceRef: string, badge: ChannelPlaybackBadge) => {
+      setPlaybackBadges((current) =>
+        current[serviceRef] === badge ? current : { ...current, [serviceRef]: badge }
+      );
+    };
+
     uniqueIndices.forEach((index) => {
       const channel = orderedDisplayChannels[index];
       const serviceRef = channel?.serviceRef || channel?.id || '';
@@ -830,24 +901,15 @@ export function EpgChannelList({
       }
 
       const cacheKey = `${capabilityCacheKey}::${serviceRef}`;
-      const cached = channelPlaybackBadgeCache.get(cacheKey);
-      if (cached) {
-        setPlaybackBadges((current) =>
-          current[serviceRef] === cached ? current : { ...current, [serviceRef]: cached }
-        );
-        return;
+      if (channelPlaybackBadgeCache.has(cacheKey)) {
+        const cached = channelPlaybackBadgeCache.get(cacheKey);
+        if (cached) {
+          applyBadge(serviceRef, cached);
+        }
+        return; // cached negative result: do not re-request
       }
 
-      void fetchChannelPlaybackBadge(channel, capabilitySnapshot, capabilityCacheKey, playbackRequestProfile)
-        .then((badge) => {
-          if (!badge) {
-            return;
-          }
-          setPlaybackBadges((current) =>
-            current[serviceRef] === badge ? current : { ...current, [serviceRef]: badge }
-          );
-        })
-        .catch(() => {});
+      queueChannelPlaybackBadge(channel, capabilitySnapshot, capabilityCacheKey, playbackRequestProfile, applyBadge);
     });
   }, [capabilityCacheKey, capabilitySnapshot, orderedDisplayChannels, playbackRequestProfile]);
 

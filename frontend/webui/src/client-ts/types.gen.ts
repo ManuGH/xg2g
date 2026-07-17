@@ -2590,6 +2590,53 @@ export type PostLivePlaybackInfoResponses = {
 
 export type PostLivePlaybackInfoResponse = PostLivePlaybackInfoResponses[keyof PostLivePlaybackInfoResponses];
 
+export type PostLivePlaybackSummaryData = {
+    /**
+     * Client capabilities and the service references to resolve
+     */
+    body: {
+        /**
+         * Enigma2 service references to resolve
+         */
+        serviceRefs: Array<string>;
+        capabilities: PlaybackCapabilities;
+    };
+    path?: never;
+    query?: never;
+    url: '/live/playback-summary';
+};
+
+export type PostLivePlaybackSummaryErrors = {
+    /**
+     * Invalid capabilities or service references
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PostLivePlaybackSummaryError = PostLivePlaybackSummaryErrors[keyof PostLivePlaybackSummaryErrors];
+
+export type PostLivePlaybackSummaryResponses = {
+    /**
+     * Playback info per service reference. Services that could not be resolved are absent from `items`.
+     *
+     */
+    200: {
+        items: {
+            [key: string]: PlaybackInfo;
+        };
+    };
+};
+
+export type PostLivePlaybackSummaryResponse = PostLivePlaybackSummaryResponses[keyof PostLivePlaybackSummaryResponses];
+
 export type GetRecordingsData = {
     body?: never;
     headers?: {
