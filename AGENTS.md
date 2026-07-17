@@ -126,6 +126,43 @@ with the commit that superseded them or explicitly documented as obsolete.
 - When live configuration differs from the repository, capture the live
   evidence first and document the delta before changing either side.
 
+### Change contract
+
+Before implementing a refactor, fix, feature, migration, or architectural
+cleanup, write down a concise change contract. Small changes may use one line
+per item; larger changes need explicit acceptance criteria. The contract must
+state:
+
+- **Fixed**: concrete incorrect behavior being corrected,
+- **Improved**: existing behavior or structure being made better,
+- **New**: new behavior, capability, abstraction, or public contract,
+- **Removed**: code paths, flags, compatibility layers, or behavior deleted,
+- **Unchanged**: behavior and interfaces that must deliberately remain stable,
+- **Risks**: plausible regressions and affected boundaries,
+- **Acceptance criteria**: observable evidence that proves completion,
+- **Exit condition**: for migrations or parallel implementations, the exact
+  condition and owner/action for removing the temporary path.
+
+Do not describe a behavior change as a pure refactor. Use these categories
+consistently:
+
+- `fix`: corrects wrong behavior,
+- `refactor`: changes structure without an intended behavior change,
+- `feat`: introduces new behavior,
+- `migration`: temporarily operates old and new paths,
+- `cleanup`: removes a transition or code proven obsolete.
+
+If work spans several categories, split it into coherent commits or document
+the combined scope explicitly. During implementation, update the contract when
+the actual scope changes instead of allowing silent scope drift.
+
+At handoff, compare the result with the original contract and record:
+
+- what was actually fixed, improved, introduced, and removed,
+- deviations from the agreed scope and why they were necessary,
+- acceptance criteria satisfied and the evidence for each,
+- remaining temporary paths, debt, risks, and their next owner/action.
+
 ### Validation and handoff
 
 Every implementation handoff must state:
