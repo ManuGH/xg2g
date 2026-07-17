@@ -22,7 +22,7 @@
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-epg-dialog);
   overflow: hidden;
   position: relative;
 }
@@ -34,7 +34,7 @@
   left: 0;
   right: 0;
   height: 120px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-action-subtle) 40%, transparent), transparent);
+  background: var(--gradient-epg-dialog-accent);
   pointer-events: none;
 }
 
@@ -86,5 +86,4 @@
   flex-shrink: 0;
   background: color-mix(in srgb, var(--surface-muted) 30%, transparent);
 }
-
 

@@ -1227,57 +1227,57 @@ function Settings() {
           })}
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginTop: '16px' }}>
-          <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'var(--status-info-subtle)', color: 'var(--status-info)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+        <div className={styles.capabilityGrid}>
+          <div className={styles.capabilityCard}>
+            <div className={styles.capabilityCardHeader}>
+              <span className={[styles.capabilityBadge, styles.capabilityBadgeInfo].join(' ')}>
                 ADAPTIVE ENGINE
               </span>
-              <strong style={{ fontSize: '0.95rem' }}>CPU & GPU Transcoding</strong>
+              <strong className={styles.capabilityCardTitle}>CPU & GPU Transcoding</strong>
             </div>
-            <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
+            <p className={styles.capabilityCardCopy}>
               {t('settings.streaming.cardEngineText', {
                 defaultValue: 'Erkennt automatisch Hardware-Beschleunigung (GPU: VAAPI, NVENC, QSV, VideoToolbox) auf dem Server und greift bei Bedarf nahtlos auf optimiertes CPU-Encoding zurück. Passt Bitrate und Auflösung dynamisch an (strikte 720p-Untergrenze bis hin zu nativem 1080p. Hinweis: 4K/UHD ist aktuell vorübergehend pausiert – wir arbeiten bereits daran!).'
               })}
             </p>
           </div>
 
-          <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'var(--status-success-subtle)', color: 'var(--status-success)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+          <div className={styles.capabilityCard}>
+            <div className={styles.capabilityCardHeader}>
+              <span className={[styles.capabilityBadge, styles.capabilityBadgeSuccess].join(' ')}>
                 CODECS
               </span>
-              <strong style={{ fontSize: '0.95rem' }}>AV1 · HEVC · H.264 · MPEG-2</strong>
+              <strong className={styles.capabilityCardTitle}>AV1 · HEVC · H.264 · MPEG-2</strong>
             </div>
-            <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
+            <p className={styles.capabilityCardCopy}>
               {t('settings.streaming.cardCodecsText', {
                 defaultValue: 'Dynamische Aushandlung der besten Codecs: AV1 & HEVC (H.265) für maximale Qualität bei kleinstem Datenvolumen, H.264 für universelle Kompatibilität und MPEG-2 für verlustfreies Direct Play im LAN.'
               })}
             </p>
           </div>
 
-          <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'var(--status-info-subtle)', color: 'var(--status-info)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+          <div className={styles.capabilityCard}>
+            <div className={styles.capabilityCardHeader}>
+              <span className={[styles.capabilityBadge, styles.capabilityBadgeInfo].join(' ')}>
                 CONTAINER
               </span>
-              <strong style={{ fontSize: '0.95rem' }}>fMP4 · CMAF · MPEG-TS</strong>
+              <strong className={styles.capabilityCardTitle}>fMP4 · CMAF · MPEG-TS</strong>
             </div>
-            <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
+            <p className={styles.capabilityCardCopy}>
               {t('settings.streaming.cardContainersText', {
                 defaultValue: 'Modernes Low-Latency HLS (fMP4 / CMAF) für blitzschnelles Umschalten bei HD-Sendern. Schutz bei 4K-Sendern: Da 4K/UHD-Streams in fMP4 im Browser häufig zu Pufferstaus/Rucklern führen, sind 4K/UHD-Sender momentan vorübergehend pausiert, bis die Pipeline dafür vollständig optimiert ist (wir arbeiten daran!).'
               })}
             </p>
           </div>
 
-          <div style={{ background: 'var(--surface-card, rgba(255,255,255,0.04))', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '12px', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ background: 'var(--status-warning-subtle)', color: 'var(--status-warning)', padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600 }}>
+          <div className={styles.capabilityCard}>
+            <div className={styles.capabilityCardHeader}>
+              <span className={[styles.capabilityBadge, styles.capabilityBadgeWarning].join(' ')}>
                 DEINTERLACING
               </span>
-              <strong style={{ fontSize: '0.95rem' }}>Interlaced vs. Progressive</strong>
+              <strong className={styles.capabilityCardTitle}>Interlaced vs. Progressive</strong>
             </div>
-            <p style={{ fontSize: '0.85rem', lineHeight: 1.5, opacity: 0.85, margin: 0 }}>
+            <p className={styles.capabilityCardCopy}>
               {t('settings.streaming.cardInterlacedText', {
                 defaultValue: 'Progressive Sender (720p, 1080p) können 1:1 durchgereicht werden (4K/UHD in Vorbereitung – wir arbeiten daran!). Interlaced Sender (z. B. 1080i / 576i) werden von Browsern/Smartphones nicht nativ unterstützt (Zeilenflimmern) und daher von xg2g immer automatisch in flüssiges 50-fps-Progressive-Video konvertiert.'
               })}
@@ -1285,10 +1285,10 @@ function Settings() {
           </div>
         </div>
 
-        <div className={styles.group} style={{ marginTop: '24px' }}>
-          <label style={{ fontWeight: 600, fontSize: '1.05rem' }}>{t('settings.streaming.audioMode.title')}</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+        <div className={[styles.group, styles.optionGroup].join(' ')}>
+          <label className={styles.optionGroupTitle}>{t('settings.streaming.audioMode.title')}</label>
+          <div className={styles.optionList}>
+            <label className={styles.optionChoice}>
               <input
                 type="radio"
                 name="audioMode"
@@ -1298,17 +1298,17 @@ function Settings() {
                   setAudioMode('stereo');
                   try { localStorage.setItem('xg2g.settings.audioMode', 'stereo'); } catch { /* localStorage may throw in private browsing */ }
                 }}
-                style={{ marginTop: '4px' }}
+                className={styles.optionInput}
               />
               <div>
-                <div style={{ fontWeight: 600 }}>{t('settings.streaming.audioMode.stereo.label')}</div>
+                <div className={styles.optionLabel}>{t('settings.streaming.audioMode.stereo.label')}</div>
                 <div className={styles.hint}>
                   {t('settings.streaming.audioMode.stereo.hint')}
                 </div>
               </div>
             </label>
 
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+            <label className={styles.optionChoice}>
               <input
                 type="radio"
                 name="audioMode"
@@ -1318,10 +1318,10 @@ function Settings() {
                   setAudioMode('surround');
                   try { localStorage.setItem('xg2g.settings.audioMode', 'surround'); } catch { /* localStorage may throw in private browsing */ }
                 }}
-                style={{ marginTop: '4px' }}
+                className={styles.optionInput}
               />
               <div>
-                <div style={{ fontWeight: 600 }}>{t('settings.streaming.audioMode.surround.label')}</div>
+                <div className={styles.optionLabel}>{t('settings.streaming.audioMode.surround.label')}</div>
                 <div className={styles.hint}>
                   {t('settings.streaming.audioMode.surround.hint')}
                   <div className={styles.warningHint}>
@@ -1333,10 +1333,10 @@ function Settings() {
           </div>
         </div>
 
-        <div className={styles.group} style={{ marginTop: '24px' }}>
-          <label style={{ fontWeight: 600, fontSize: '1.05rem' }}>{t('settings.streaming.dvrMode.title')}</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+        <div className={[styles.group, styles.optionGroup].join(' ')}>
+          <label className={styles.optionGroupTitle}>{t('settings.streaming.dvrMode.title')}</label>
+          <div className={styles.optionList}>
+            <label className={styles.optionChoice}>
               <input
                 type="radio"
                 name="dvrMode"
@@ -1346,15 +1346,15 @@ function Settings() {
                   setDvrMode('live_only');
                   try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch { /* localStorage unavailable */ }
                 }}
-                style={{ marginTop: '4px' }}
+                className={styles.optionInput}
               />
               <div>
-                <div style={{ fontWeight: 600 }}>{t('settings.streaming.dvrMode.liveOnly.label')}</div>
+                <div className={styles.optionLabel}>{t('settings.streaming.dvrMode.liveOnly.label')}</div>
                 <div className={styles.hint}>{t('settings.streaming.dvrMode.liveOnly.hint')}</div>
               </div>
             </label>
 
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+            <label className={styles.optionChoice}>
               <input
                 type="radio"
                 name="dvrMode"
@@ -1364,15 +1364,15 @@ function Settings() {
                   setDvrMode('1h');
                   try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch { /* localStorage unavailable */ }
                 }}
-                style={{ marginTop: '4px' }}
+                className={styles.optionInput}
               />
               <div>
-                <div style={{ fontWeight: 600 }}>{t('settings.streaming.dvrMode.dvr1h.label')}</div>
+                <div className={styles.optionLabel}>{t('settings.streaming.dvrMode.dvr1h.label')}</div>
                 <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr1h.hint')}</div>
               </div>
             </label>
 
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+            <label className={styles.optionChoice}>
               <input
                 type="radio"
                 name="dvrMode"
@@ -1382,15 +1382,15 @@ function Settings() {
                   setDvrMode('2h');
                   try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch { /* localStorage unavailable */ }
                 }}
-                style={{ marginTop: '4px' }}
+                className={styles.optionInput}
               />
               <div>
-                <div style={{ fontWeight: 600 }}>{t('settings.streaming.dvrMode.dvr2h.label')}</div>
+                <div className={styles.optionLabel}>{t('settings.streaming.dvrMode.dvr2h.label')}</div>
                 <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr2h.hint')}</div>
               </div>
             </label>
 
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'pointer' }}>
+            <label className={styles.optionChoice}>
               <input
                 type="radio"
                 name="dvrMode"
@@ -1400,10 +1400,10 @@ function Settings() {
                   setDvrMode('4h');
                   try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch { /* localStorage unavailable */ }
                 }}
-                style={{ marginTop: '4px' }}
+                className={styles.optionInput}
               />
               <div>
-                <div style={{ fontWeight: 600 }}>{t('settings.streaming.dvrMode.dvr4h.label')}</div>
+                <div className={styles.optionLabel}>{t('settings.streaming.dvrMode.dvr4h.label')}</div>
                 <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr4h.hint')}</div>
               </div>
             </label>

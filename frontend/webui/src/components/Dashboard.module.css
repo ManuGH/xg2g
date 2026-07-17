@@ -21,7 +21,7 @@
   border-radius: var(--radius-xl);
   border: none;
   background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow-dashboard-hero);
   padding: clamp(16px, 2vw, 24px) clamp(22px, 3vw, 32px);
   min-height: 0;
 }
@@ -126,7 +126,7 @@
   border-radius: var(--radius-xl);
   border: none;
   background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow-dashboard-hero);
   padding: 40px;
   display: flex;
   align-items: center;
@@ -168,7 +168,7 @@
 
 .shortcutButton {
   min-width: 0;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06) !important;
+  box-shadow: var(--shadow-dashboard-shortcut) !important;
 }
 
 .healthGrid {
@@ -185,7 +185,7 @@
   border-radius: var(--radius-lg);
   border: none;
   background: color-mix(in srgb, var(--surface-muted) 50%, transparent);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.04);
+  box-shadow: var(--shadow-dashboard-health);
 }
 
 .healthLabel {

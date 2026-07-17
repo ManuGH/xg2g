@@ -156,9 +156,9 @@
   flex-shrink: 0;
 }
 
-.dotOk { background: var(--status-success); box-shadow: 0 0 8px var(--status-success-subtle); }
-.dotError { background: var(--status-error); box-shadow: 0 0 8px var(--status-error-subtle); }
-.dotTimeout { background: var(--status-warning); box-shadow: 0 0 8px var(--status-warning-subtle); }
+.dotOk { background: var(--status-success); box-shadow: var(--shadow-status-dot-success); }
+.dotError { background: var(--status-error); box-shadow: var(--shadow-status-dot-error); }
+.dotTimeout { background: var(--status-warning); box-shadow: var(--shadow-status-dot-warning); }
 .dotUnknown { background: var(--text-muted); }
 
 .storageTags {
@@ -189,6 +189,7 @@
 }
 
 .progressBarFill {
+  width: var(--xg2g-progress-width, 0%);
   height: 100%;
   background: var(--brand-primary);
   border-radius: 3px;

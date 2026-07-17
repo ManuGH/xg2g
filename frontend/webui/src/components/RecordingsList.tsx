@@ -775,7 +775,7 @@ export default function RecordingsList() {
             </div>
             {progressPercent !== null && (
               <div className={styles.mediaProgressTrack} aria-hidden="true">
-                <div className={styles.mediaProgressFill} style={{ width: `${progressPercent}%` }}></div>
+                <div className={styles.mediaProgressFill} style={{ '--xg2g-progress-width': `${progressPercent}%` } as CSSProperties}></div>
               </div>
             )}
             {selectionMode && canManageDvr && (
@@ -862,7 +862,7 @@ export default function RecordingsList() {
                   <div className={styles.preplayStageProgress}>
                     <div
                       className={styles.preplayStageProgressFill}
-                      style={{ width: `${playingProgressPercent}%` }}
+                      style={{ '--xg2g-progress-width': `${playingProgressPercent}%` } as CSSProperties}
                     ></div>
                   </div>
                 )}
@@ -1135,7 +1135,7 @@ export default function RecordingsList() {
                 <div className={styles.preplayStageProgress}>
                   <div
                     className={styles.preplayStageProgressFill}
-                    style={{ width: `${preplayProgressPercent}%` }}
+                    style={{ '--xg2g-progress-width': `${preplayProgressPercent}%` } as CSSProperties}
                   ></div>
                 </div>
               )}

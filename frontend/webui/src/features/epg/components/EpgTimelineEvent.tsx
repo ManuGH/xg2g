@@ -1,4 +1,5 @@
 
+import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
@@ -46,7 +47,7 @@ export function EpgTimelineEvent({
         inProgress ? styles.timelineEventBlockActive : null,
         isPast ? styles.timelineEventBlockPast : null,
       ].filter(Boolean).join(' ')}
-      style={{ left: leftPx, width: widthPx }}
+      style={{ '--xg2g-timeline-left': `${leftPx}px`, '--xg2g-timeline-event-width': `${widthPx}px` } as CSSProperties}
       role="button"
       tabIndex={0}
       title={event.desc ? normalizeEpgText(event.desc) : event.title}

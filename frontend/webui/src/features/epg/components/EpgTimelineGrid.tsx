@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, type CSSProperties } from 'react';
 import type { EpgChannel, EpgEvent } from '../types';
 import { EpgTimelineRow } from './EpgTimelineRow';
 import styles from '../EPG.module.css';
@@ -48,17 +48,17 @@ export function EpgTimelineGrid({
 
   return (
     <div className={styles.timelineContainer} ref={containerRef} role="grid" aria-label="EPG Timeline">
-      <div className={styles.timelineHeader} style={{ minWidth: timelineWidth + 250 }}>
+      <div className={styles.timelineHeader} style={{ '--xg2g-timeline-header-width': `${timelineWidth + 250}px` } as CSSProperties}>
         <div className={styles.timelineCorner}></div>
-        <div className={styles.timelineTimeAxis} style={{ width: timelineWidth }}>
+        <div className={styles.timelineTimeAxis} style={{ '--xg2g-timeline-width': `${timelineWidth}px` } as CSSProperties}>
           {ticks.map((tick, i) => (
-            <div key={i} className={styles.timelineTimeTick} style={{ left: tick.leftPx }}>
+            <div key={i} className={styles.timelineTimeTick} style={{ '--xg2g-timeline-left': `${tick.leftPx}px` } as CSSProperties}>
               {tick.label}
             </div>
           ))}
           {/* Current Time Indicator Line */}
           {nowLeftPx >= 0 && nowLeftPx <= timelineWidth && (
-            <div className={styles.timelineCurrentTimeIndicator} style={{ left: nowLeftPx }} />
+            <div className={styles.timelineCurrentTimeIndicator} style={{ '--xg2g-timeline-left': `${nowLeftPx}px` } as CSSProperties} />
           )}
         </div>
       </div>

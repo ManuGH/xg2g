@@ -18,7 +18,7 @@
   background: color-mix(in srgb, var(--surface-shell-strong) 40%, transparent);
   backdrop-filter: blur(48px) saturate(200%);
   -webkit-backdrop-filter: blur(48px) saturate(200%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.04), var(--shadow-shell-safe);
+  box-shadow: var(--shadow-navigation-desktop);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -68,7 +68,7 @@
   right: 12px;
   bottom: 24px;
   width: 1px;
-  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent-action) 28%, transparent), transparent);
+  background: var(--gradient-navigation-rail);
   pointer-events: none;
 }
 
@@ -102,7 +102,7 @@
   border-radius: 999px;
   background: var(--bg-video);
   border: 3px solid var(--text-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bg-video) 40%, transparent);
+  box-shadow: var(--shadow-ring-action);
 }
 
 .brandCopy,
@@ -134,8 +134,8 @@
 }
 
 .headerToggleBtn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--navigation-hover);
+  border-color: var(--border-strong);
   color: var(--text-primary);
 }
 
@@ -240,7 +240,7 @@
   border-radius: 17px;
   border: 1px solid var(--border-base);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--text-primary) 3%, transparent), transparent),
+    var(--gradient-navigation-scale),
     color-mix(in srgb, var(--surface-muted) 72%, transparent);
   color: var(--text-secondary);
   display: flex;
@@ -262,8 +262,7 @@
 }
 
 .scaleButtonActive {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent-action-subtle) 92%, transparent), color-mix(in srgb, var(--surface-shell) 88%, transparent));
+  background: var(--gradient-navigation-scale-active);
   border-color: color-mix(in srgb, var(--accent-action) 42%, transparent);
   color: var(--text-primary);
   box-shadow: var(--shadow-ring-action);
@@ -405,11 +404,11 @@
     margin: 0 14px calc(12px + var(--sab));
     padding: 8px;
     border-radius: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: linear-gradient(180deg, rgba(32, 34, 40, 0.78) 0%, rgba(18, 20, 26, 0.86) 100%);
+    border: 1px solid var(--border-strong);
+    background: var(--gradient-navigation-mobile);
     backdrop-filter: blur(32px) saturate(200%);
     -webkit-backdrop-filter: blur(32px) saturate(200%);
-    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48), 0 1px 0 rgba(255, 255, 255, 0.16) inset;
+    box-shadow: var(--shadow-navigation-mobile);
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
@@ -586,7 +585,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-elevated);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   transition: transform 0.16s ease, background 0.16s ease;

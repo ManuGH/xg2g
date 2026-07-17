@@ -30,11 +30,16 @@ const sectionLabel: React.CSSProperties = {
   letterSpacing: '0.12em',
 };
 
+const title: React.CSSProperties = {
+  margin: 0,
+  fontFamily: 'var(--font-heading)',
+};
+
 export default function EmptyStatePlayground() {
   return (
     <div style={wrap}>
       <div style={inner}>
-      <h1 style={{ fontFamily: 'var(--font-heading)', margin: 0 }}>EmptyState Playground</h1>
+      <h1 style={title}>EmptyState Playground</h1>
 
       <section>
         <p style={sectionLabel}>variant=panel · Timers (no data)</p>

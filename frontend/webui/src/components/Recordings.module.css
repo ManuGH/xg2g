@@ -326,12 +326,9 @@
   border-radius: 14px;
   overflow: hidden;
   isolation: isolate;
-  background:
-    radial-gradient(circle at 16% 18%, color-mix(in srgb, var(--recording-accent) 28%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 38%),
-    linear-gradient(135deg, color-mix(in srgb, var(--recording-accent) 10%, var(--bg-video) 90%), color-mix(in srgb, var(--bg-video) 92%, black 8%));
+  background: var(--gradient-recordings-media-preview);
   border: 1px solid color-mix(in srgb, var(--border-base) 88%, transparent);
-  box-shadow: 0 14px 28px color-mix(in srgb, var(--bg-video) 18%, transparent);
+  box-shadow: var(--shadow-recordings-media-preview);
 }
 
 .mediaPreview::after {
@@ -339,9 +336,7 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, black 6%, transparent), transparent 28%),
-    linear-gradient(180deg, transparent 45%, color-mix(in srgb, black 46%, transparent) 100%);
+  background: var(--gradient-recordings-media-preview-overlay);
   pointer-events: none;
 }
 
@@ -486,8 +481,9 @@
 }
 
 .mediaProgressFill {
+  width: var(--xg2g-progress-width, 0%);
   height: 100%;
-  background: linear-gradient(90deg, var(--accent-action), var(--accent-live));
+  background: var(--gradient-recordings-progress-fill);
 }
 
 .selectionMode {}
@@ -509,7 +505,7 @@
   align-items: center;
   justify-content: center;
   z-index: 3;
-  box-shadow: 0 10px 24px color-mix(in srgb, black 24%, transparent);
+  box-shadow: var(--shadow-recordings-selection-indicator);
 }
 
 .selectionMode .selected .selectionIndicator {
@@ -531,7 +527,7 @@
   justify-content: center;
   opacity: 0;
   pointer-events: none;
-  background: radial-gradient(circle at center, color-mix(in srgb, black 22%, transparent), transparent 48%);
+  background: var(--gradient-recordings-play-overlay);
   transition:
     opacity var(--motion-standard) var(--ease-standard),
     transform var(--motion-standard) var(--ease-standard);
@@ -745,22 +741,15 @@
   aspect-ratio: 16 / 9;
   border-radius: 14px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 24% 16%, color-mix(in srgb, var(--accent-action) 14%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 36%),
-    var(--bg-video);
-  box-shadow:
-    0 16px 36px color-mix(in srgb, var(--bg-video) 30%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--border-base) 88%, transparent);
+  background: var(--gradient-recordings-preplay-stage);
+  box-shadow: var(--shadow-recordings-preplay-stage);
 }
 
 .preplayStage::after {
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, black 8%, transparent), transparent 26%),
-    linear-gradient(180deg, transparent 44%, color-mix(in srgb, black 58%, transparent) 100%);
+  background: var(--gradient-recordings-preplay-stage-overlay);
   pointer-events: none;
 }
 
@@ -816,8 +805,9 @@
 }
 
 .preplayStageProgressFill {
+  width: var(--xg2g-progress-width, 0%);
   height: 100%;
-  background: linear-gradient(90deg, var(--accent-action), var(--accent-live));
+  background: var(--gradient-recordings-progress-fill);
 }
 
 .preplayBody {
@@ -1004,7 +994,7 @@
   .watchPageFallbackStage,
   .preplayStage {
     border-radius: 0;
-    box-shadow: none;
+    box-shadow: var(--shadow-none);
   }
 
   .preplayStageDock {

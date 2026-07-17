@@ -90,8 +90,7 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose }: 
                 key={ref}
                 data-ref={ref}
                 disabled={isUhd}
-                style={isUhd ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
-                className={`${styles.row} ${active ? styles.active : ''}`}
+                className={`${styles.row} ${active ? styles.active : ''} ${isUhd ? styles.rowUnavailable : ''}`}
                 onClick={() => {
                   if (isUhd) return; if (!active) onSwitch(c);
                   onClose();
@@ -103,7 +102,7 @@ export function ChannelSwitcher({ channels, current, onSwitch, open, onClose }: 
                   <span className={styles.logoFallback}>{initials(c.name)}</span>
                 )}
                 {c.number ? <span className={styles.num}>{c.number}</span> : null}
-                <span className={styles.name}>{c.name ?? ref}</span> {isUhd ? <span style={{ fontSize: "0.7rem", background: "var(--status-warning-subtle)", color: "var(--status-warning)", padding: "1px 5px", borderRadius: "4px", fontWeight: 600 }}>4K Pausiert</span> : null}
+                <span className={styles.name}>{c.name ?? ref}</span> {isUhd ? <span className={styles.uhdBadge}>4K Pausiert</span> : null}
                 {active ? <span className={styles.live}>● live</span> : null}
               </button>
             );

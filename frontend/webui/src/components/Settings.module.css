@@ -46,7 +46,7 @@
   border-radius: 16px;
   border: 1px solid var(--border-base);
   background: color-mix(in srgb, var(--surface-muted) 40%, transparent);
-  box-shadow: inset 0 2px 4px color-mix(in srgb, var(--color-bg-base) 10%, transparent);
+  box-shadow: var(--shadow-form-inset);
 }
 
 .sectionTabs {
@@ -860,4 +860,89 @@
     padding: 16px 16px 14px;
     border-radius: 20px;
   }
+}
+/* Streaming capability overview and radio option groups. */
+.capabilityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.capabilityCard {
+  padding: 16px;
+  border: 1px solid var(--border-base);
+  border-radius: 12px;
+  background: var(--surface-panel);
+}
+
+.capabilityCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.capabilityBadge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.capabilityBadgeInfo {
+  background: var(--status-info-subtle);
+  color: var(--status-info);
+}
+
+.capabilityBadgeSuccess {
+  background: var(--status-success-subtle);
+  color: var(--status-success);
+}
+
+.capabilityBadgeWarning {
+  background: var(--status-warning-subtle);
+  color: var(--status-warning);
+}
+
+.capabilityCardTitle {
+  font-size: 0.95rem;
+}
+
+.capabilityCardCopy {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+.optionGroup {
+  margin-top: 24px;
+}
+
+.optionGroupTitle {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.optionList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.optionChoice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.optionInput {
+  margin-top: 4px;
+}
+
+.optionLabel {
+  font-weight: 600;
 }
