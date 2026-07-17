@@ -199,9 +199,11 @@ if [ "$IS_SCOPED" = true ]; then
     if [[ "$file" == *.tsx ]]; then
       clean_file="${file#frontend/webui/src/}"
       
-      # Step 1: Check for multi-line style props (FAIL immediately)
+      # Step 1: Check for multi-line style props (FAIL immediately).
+      # TypeScript custom-property objects commonly close as
+      # `} as CSSProperties}`; that is still a single-line style prop.
       multiline_check=$(grep -n "style={{" "$clean_file" | while read -r line; do
-         if [[ ! "$line" =~ \}\} ]]; then
+         if [[ ! "$line" =~ \}[[:space:]]*(as[[:space:]]+[[:alnum:]_.]+)?[[:space:]]*\} ]]; then
             echo "$line"
          fi
       done || true)
