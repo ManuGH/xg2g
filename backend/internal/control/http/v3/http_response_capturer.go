@@ -55,12 +55,13 @@ func (b *baseResponseWriter) WriteHeader(code int) {
 	b.ResponseWriter.WriteHeader(code)
 }
 
-func (b *baseResponseWriter) Write(p []byte) (int, error) {
+func (b *baseResponseWriter) Write(p []byte) (n int, err error) {
 	b.markWrite()
+	defer func() {
+		b.bytes.Add(int64(n))
+	}()
 	// codeql[go/reflected-xss] Wrapper does not dictate content-type, upstream handlers do
-	n, err := b.ResponseWriter.Write(p)
-	b.bytes.Add(int64(n))
-	return n, err
+	return b.ResponseWriter.Write(p)
 }
 
 func (b *baseResponseWriter) Unwrap() http.ResponseWriter {

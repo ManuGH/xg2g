@@ -21,7 +21,7 @@ type mRF struct {
 	baseW
 }
 
-func (m mRF) ReadFrom(r io.Reader) (int64, error) { return 0, nil }
+func (m mRF) ReadFrom(r io.Reader) (int64, error) { return io.Copy(m.baseW, r) }
 
 type mH struct {
 	baseW
@@ -182,8 +182,10 @@ func TestWriterTransparent_StatusTracking(t *testing.T) {
 	t.Run("Write", func(t *testing.T) {
 		w, tracker := wrapResponseWriter(httptest.NewRecorder())
 		assert.False(t, tracker.WroteHeader())
-		w.Write([]byte("hello"))
+		_, err := w.Write([]byte("hello"))
+		require.NoError(t, err)
 		assert.True(t, tracker.WroteHeader())
+		assert.Equal(t, int64(5), tracker.(StatusTracker).BytesWritten())
 	})
 
 	t.Run("ReadFrom", func(t *testing.T) {
@@ -192,8 +194,10 @@ func TestWriterTransparent_StatusTracking(t *testing.T) {
 		assert.False(t, tracker.WroteHeader())
 
 		rf := w.(io.ReaderFrom)
-		rf.ReadFrom(strings.NewReader("bulk data"))
+		_, err := rf.ReadFrom(strings.NewReader("bulk data"))
+		require.NoError(t, err)
 		assert.True(t, tracker.WroteHeader())
+		assert.Equal(t, int64(9), tracker.(StatusTracker).BytesWritten())
 	})
 
 	t.Run("Unwrap", func(t *testing.T) {
