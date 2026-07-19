@@ -315,13 +315,12 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 	// 3. Ensure Spec
 	finalPath := filepath.Join(cacheDir, "index.m3u8")
 
-	buildProfile := vod.ProfileDefault
 	if targetProfile == nil {
 		targetProfile = recordingTargetProfile(profile)
 	}
 
 	// Using EnsureSpec to start/resume build
-	_, err = r.vodManager.EnsureSpecWithTargetProfile(ctx, cacheDir, metaID, srcURL, cacheDir, "index.live.m3u8", finalPath, buildProfile, targetProfile)
+	_, err = r.vodManager.EnsureSpec(ctx, cacheDir, metaID, srcURL, cacheDir, "index.live.m3u8", finalPath, targetProfile)
 	_ = srcType // Unused for now
 	return err
 }

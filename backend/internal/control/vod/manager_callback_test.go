@@ -9,8 +9,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/stretchr/testify/require"
 )
+
+// TestEnsureSpecMissingTarget verifies that EnsureSpec returns ErrMissingTarget when targetProfile is nil.
+func TestEnsureSpecMissingTarget(t *testing.T) {
+	manager := &Manager{
+		jobs:     make(map[string]*BuildMonitor),
+		metadata: make(map[string]Metadata),
+	}
+
+	_, err := manager.EnsureSpec(context.Background(), "job-1", "meta-1", "input.ts", "/tmp", "out.m3u8", "final.m3u8", nil)
+	require.ErrorIs(t, err, ErrMissingTarget)
+}
 
 // TestCallbackExecution verifies that BuildMonitor calls Manager callbacks on success/failure.
 func TestCallbackExecution(t *testing.T) {
@@ -37,7 +49,10 @@ func TestCallbackExecution(t *testing.T) {
 			t.Fatalf("failed to create output temp: %v", err)
 		}
 
-		mon, err := manager.StartBuild(context.Background(), id, id, input, workDir, outputTemp, finalPath, ProfileDefault)
+		dummyTarget := &playbackprofile.TargetPlaybackProfile{
+			Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+		}
+		mon, err := manager.StartBuild(context.Background(), id, id, input, workDir, outputTemp, finalPath, dummyTarget)
 		if err != nil {
 			t.Fatalf("StartBuild failed: %v", err)
 		}
@@ -97,7 +112,10 @@ func TestCallbackExecution(t *testing.T) {
 			t.Fatalf("failed to create output temp: %v", err)
 		}
 
-		_, err = manager.StartBuild(context.Background(), id, id, input, workDir, outputTemp, finalPath, ProfileDefault)
+		dummyTarget := &playbackprofile.TargetPlaybackProfile{
+			Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+		}
+		_, err = manager.StartBuild(context.Background(), id, id, input, workDir, outputTemp, finalPath, dummyTarget)
 		if err != nil {
 			t.Fatalf("StartBuild failed: %v", err)
 		}

@@ -92,11 +92,6 @@ func (m *mockMetadataManager) Probe(ctx context.Context, path string) (*vod.Stre
 	return nil, args.Error(1)
 }
 
-func (m *mockMetadataManager) EnsureSpec(ctx context.Context, workDir, recordingID, source, cacheDir, name, finalPath string, profile vod.Profile) (vod.Spec, error) {
-	args := m.Called(ctx, workDir, recordingID, source, cacheDir, name, finalPath, profile)
-	return args.Get(0).(vod.Spec), args.Error(1)
-}
-
 // --- Tests ---
 
 func TestDurationTruth_Read_StoreWins(t *testing.T) {
