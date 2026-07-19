@@ -1,7 +1,9 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +45,18 @@ func TestValidatePolicyRejectsSecurityMismatch(t *testing.T) {
 	policy.Auth = "bearer_scope"
 	if err := validatePolicy("Example", nil, policy); err == nil {
 		t.Fatal("expected bearer policy without scopes to fail")
+	}
+}
+
+func TestLoadCatalogRejectsDocumentWithoutPaths(t *testing.T) {
+	specPath := filepath.Join(t.TempDir(), "openapi.yaml")
+	if err := os.WriteFile(specPath, []byte("openapi: 3.0.3\ninfo:\n  title: invalid\n  version: 1.0.0\n"), 0o600); err != nil {
+		t.Fatalf("write test OpenAPI: %v", err)
+	}
+
+	_, err := loadCatalog(specPath)
+	if err == nil || !strings.Contains(err.Error(), "missing paths") {
+		t.Fatalf("loadCatalog() error = %v, want missing paths", err)
 	}
 }
 

@@ -60,6 +60,9 @@ func loadCatalog(specPath string) ([]operationEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load OpenAPI: %w", err)
 	}
+	if doc.Paths == nil {
+		return nil, fmt.Errorf("OpenAPI document is missing paths")
+	}
 	if err := doc.Validate(loader.Context); err != nil {
 		return nil, fmt.Errorf("validate OpenAPI: %w", err)
 	}
