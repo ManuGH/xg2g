@@ -47,26 +47,6 @@ vi.mock("./playbackClientFamily", () => ({
         return undefined;
     }
   },
-  fallbackPlaybackCapabilitiesForClientFamily: (family: string) => {
-    if (family === "android_tv_browser") {
-      return {
-        deviceType: "android_tv",
-        container: ["mp4", "ts", "fmp4"],
-        videoCodecs: ["h264"],
-        audioCodecs: ["aac", "mp3"],
-        hlsEngines: ["hlsjs"],
-        preferredHlsEngine: "hlsjs",
-      };
-    }
-    return {
-      deviceType: "chromium",
-      container: ["mp4", "ts", "fmp4"],
-      videoCodecs: ["h264"],
-      audioCodecs: ["aac", "mp3"],
-      hlsEngines: ["hlsjs"],
-      preferredHlsEngine: "hlsjs",
-    };
-  },
 }));
 
 describe("gatherPlaybackCapabilities", () => {

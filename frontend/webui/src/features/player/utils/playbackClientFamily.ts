@@ -1,4 +1,3 @@
-import type { RuntimePlaybackProbeScope } from './playbackProbe';
 import { hasTouchInput, shouldForceNativeMobileHls } from './playerHelpers';
 
 export type PlaybackClientFamily =
@@ -35,111 +34,6 @@ export function normalizePlaybackClientFamily(
       return undefined;
   }
 }
-
-type PlaybackClientFamilyCapabilities = {
-  deviceType: 'safari' | 'ios_safari' | 'firefox' | 'android_tv' | 'chromium';
-  container: string[];
-  videoCodecs: string[];
-  audioCodecs: string[];
-  hlsEngines: Array<'native' | 'hlsjs'>;
-  preferredHlsEngine: 'native' | 'hlsjs';
-};
-
-const PLAYBACK_CLIENT_FAMILY_CAPABILITIES: Record<
-  PlaybackClientFamily,
-  Record<RuntimePlaybackProbeScope, PlaybackClientFamilyCapabilities>
-> = {
-  safari_native: {
-    live: {
-      deviceType: 'safari',
-      container: ['mp4', 'ts'],
-      videoCodecs: ['hevc', 'h264'],
-      audioCodecs: ['aac', 'mp3', 'ac3'],
-      hlsEngines: ['native'],
-      preferredHlsEngine: 'native',
-    },
-    recording: {
-      deviceType: 'safari',
-      container: ['mp4', 'ts'],
-      videoCodecs: ['hevc', 'h264'],
-      audioCodecs: ['aac', 'mp3'],
-      hlsEngines: ['native'],
-      preferredHlsEngine: 'native',
-    },
-  },
-  ios_safari_native: {
-    live: {
-      deviceType: 'ios_safari',
-      container: ['mp4', 'ts'],
-      videoCodecs: ['hevc', 'h264'],
-      audioCodecs: ['aac', 'mp3', 'ac3'],
-      hlsEngines: ['native'],
-      preferredHlsEngine: 'native',
-    },
-    recording: {
-      deviceType: 'ios_safari',
-      container: ['mp4', 'ts'],
-      videoCodecs: ['hevc', 'h264'],
-      audioCodecs: ['aac', 'mp3'],
-      hlsEngines: ['native'],
-      preferredHlsEngine: 'native',
-    },
-  },
-  firefox_hlsjs: {
-    live: {
-      deviceType: 'firefox',
-      container: ['mp4', 'ts', 'fmp4'],
-      videoCodecs: ['h264'],
-      audioCodecs: ['aac', 'mp3'],
-      hlsEngines: ['hlsjs'],
-      preferredHlsEngine: 'hlsjs',
-    },
-    recording: {
-      deviceType: 'firefox',
-      container: ['mp4', 'ts', 'fmp4'],
-      videoCodecs: ['h264'],
-      audioCodecs: ['aac', 'mp3'],
-      hlsEngines: ['hlsjs'],
-      preferredHlsEngine: 'hlsjs',
-    },
-  },
-  android_tv_browser: {
-    live: {
-      deviceType: 'android_tv',
-      container: ['mp4', 'ts', 'fmp4'],
-      videoCodecs: ['h264'],
-      audioCodecs: ['aac', 'mp3'],
-      hlsEngines: ['hlsjs'],
-      preferredHlsEngine: 'hlsjs',
-    },
-    recording: {
-      deviceType: 'android_tv',
-      container: ['mp4', 'ts', 'fmp4'],
-      videoCodecs: ['h264'],
-      audioCodecs: ['aac', 'mp3'],
-      hlsEngines: ['hlsjs'],
-      preferredHlsEngine: 'hlsjs',
-    },
-  },
-  chromium_hlsjs: {
-    live: {
-      deviceType: 'chromium',
-      container: ['mp4', 'ts', 'fmp4'],
-      videoCodecs: ['h264'],
-      audioCodecs: ['aac', 'mp3'],
-      hlsEngines: ['hlsjs'],
-      preferredHlsEngine: 'hlsjs',
-    },
-    recording: {
-      deviceType: 'chromium',
-      container: ['mp4', 'ts', 'fmp4'],
-      videoCodecs: ['h264'],
-      audioCodecs: ['aac', 'mp3'],
-      hlsEngines: ['hlsjs'],
-      preferredHlsEngine: 'hlsjs',
-    },
-  },
-};
 
 function currentUserAgent(): string {
   try {
@@ -189,19 +83,4 @@ export function detectPlaybackClientFamily(
   }
 
   return isFirefoxUserAgent() ? 'firefox_hlsjs' : 'chromium_hlsjs';
-}
-
-export function fallbackPlaybackCapabilitiesForClientFamily(
-  family: PlaybackClientFamily,
-  scope: RuntimePlaybackProbeScope
-): PlaybackClientFamilyCapabilities {
-  const capabilitySet = PLAYBACK_CLIENT_FAMILY_CAPABILITIES[family][scope];
-  return {
-    deviceType: capabilitySet.deviceType,
-    container: [...capabilitySet.container],
-    videoCodecs: [...capabilitySet.videoCodecs],
-    audioCodecs: [...capabilitySet.audioCodecs],
-    hlsEngines: [...capabilitySet.hlsEngines],
-    preferredHlsEngine: capabilitySet.preferredHlsEngine,
-  };
 }
