@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var ErrMissingTarget = errors.New("missing target playback profile")
+
 // markReadyFromBuild updates metadata to READY on successful build completion.
 // Must be fast and must not do I/O.
 func (m *Manager) markReadyFromBuild(jobID string, metaID string, spec Spec, finalPath string) {
@@ -66,25 +68,24 @@ func (m *Manager) markFailedFromBuild(jobID string, metaID string, reason string
 	log.Debug().Str("jobId", jobID).Msg("VOD manager: job removed from jobs map")
 }
 
-// StartBuild initiates a VOD build.
+// StartBuild initiates a VOD build with a concrete playback target profile.
 // jobID identifies the build workspace (e.g., cacheDir), metaID identifies the recording (serviceRef).
 // finalPath: the final destination for atomic publish.
-func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, profile Profile) (*BuildMonitor, error) {
-	return m.startBuildWithSpec(ctx, jobID, metaID, finalPath, Spec{
-		Input:      input,
-		WorkDir:    workDir,
-		OutputTemp: outputTemp,
-		Profile:    profile,
-	})
-}
+func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, targetProfile *playbackprofile.TargetPlaybackProfile) (*BuildMonitor, error) {
+	if targetProfile == nil {
+		return nil, ErrMissingTarget
+	}
 
-// StartBuildWithTargetProfile initiates a VOD build with a concrete playback target profile.
-func (m *Manager) StartBuildWithTargetProfile(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, profile Profile, targetProfile *playbackprofile.TargetPlaybackProfile) (*BuildMonitor, error) {
+	internalProfile := ProfileDefault
+	if targetProfile.Video.Mode == playbackprofile.MediaModeTranscode {
+		internalProfile = ProfileHigh
+	}
+
 	return m.startBuildWithSpec(ctx, jobID, metaID, finalPath, Spec{
 		Input:         input,
 		WorkDir:       workDir,
 		OutputTemp:    outputTemp,
-		Profile:       profile,
+		Profile:       internalProfile,
 		TargetProfile: cloneTargetProfile(targetProfile),
 	})
 }
@@ -164,28 +165,22 @@ func (m *Manager) Get(ctx context.Context, id string) (*JobStatus, bool) {
 	return status, true
 }
 
-// EnsureSpec validates context and prepares a Spec, serving as a gateway.
-func (m *Manager) EnsureSpec(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, profile Profile) (Spec, error) {
-	spec := Spec{
-		Input:      input,
-		WorkDir:    workDir,
-		OutputTemp: outputTemp,
-		Profile:    profile,
+// EnsureSpec validates context and prepares a Spec with a concrete target playback profile, serving as a gateway.
+func (m *Manager) EnsureSpec(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, targetProfile *playbackprofile.TargetPlaybackProfile) (Spec, error) {
+	if targetProfile == nil {
+		return Spec{}, ErrMissingTarget
 	}
-	_, err := m.startBuildWithSpec(ctx, jobID, metaID, finalPath, spec)
-	if err != nil {
-		return Spec{}, err
-	}
-	return spec, nil
-}
 
-// EnsureSpecWithTargetProfile validates context and prepares a Spec with a concrete target playback profile.
-func (m *Manager) EnsureSpecWithTargetProfile(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, profile Profile, targetProfile *playbackprofile.TargetPlaybackProfile) (Spec, error) {
+	internalProfile := ProfileDefault
+	if targetProfile.Video.Mode == playbackprofile.MediaModeTranscode {
+		internalProfile = ProfileHigh
+	}
+
 	spec := Spec{
 		Input:         input,
 		WorkDir:       workDir,
 		OutputTemp:    outputTemp,
-		Profile:       profile,
+		Profile:       internalProfile,
 		TargetProfile: cloneTargetProfile(targetProfile),
 	}
 	_, err := m.startBuildWithSpec(ctx, jobID, metaID, finalPath, spec)

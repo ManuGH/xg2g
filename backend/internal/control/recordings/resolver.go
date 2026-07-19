@@ -28,7 +28,6 @@ type MetadataManager interface {
 	MarkFailed(serviceRef string, reason string)
 	MarkProbed(serviceRef string, resolvedPath string, info *vod.StreamInfo, fp *vod.Fingerprint)
 	Probe(ctx context.Context, path string) (*vod.StreamInfo, error)
-	EnsureSpec(ctx context.Context, workDir, recordingID, source, cacheDir, name, finalPath string, profile vod.Profile) (vod.Spec, error)
 }
 
 // DurationPersistor is an orchestrator-level interface for persisting probe results.

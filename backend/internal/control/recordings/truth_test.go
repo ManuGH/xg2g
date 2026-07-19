@@ -439,6 +439,3 @@ func (m *mockManager) Probe(ctx context.Context, path string) (*vod.StreamInfo, 
 	}
 	return nil, errors.New("local probe mock not impl")
 }
-func (m *mockManager) EnsureSpec(ctx context.Context, workDir, recordingID, source, cacheDir, name, finalPath string, profile vod.Profile) (vod.Spec, error) {
-	return vod.Spec{}, nil
-}
