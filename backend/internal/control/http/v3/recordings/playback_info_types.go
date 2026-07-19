@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/playback"
+	domainrecordings "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
@@ -69,6 +70,7 @@ type PlannerEvaluation struct {
 type PlaybackInfoResult struct {
 	SourceRef                 string
 	Truth                     playback.MediaTruth
+	CapabilityContract        domainrecordings.CapabilityContract
 	ResolvedCapabilities      capabilities.PlaybackCapabilities
 	Decision                  *decision.Decision
 	ClientProfile             string

@@ -28,7 +28,10 @@ var clientFixtures = map[string]ClientPlaybackProfile{
 		PlaybackEngine: "native_hls",
 		Containers:     []string{"mp4", "mpegts"},
 		VideoCodecs:    []string{"h264", "hevc"},
-		AudioCodecs:    []string{"aac", "ac3", "mp3"},
+		// Browser capability probes are claims, not verified decoder truth.
+		// Dolby audio remains excluded until a family/device route has an
+		// explicit verified rule in playbackcompat.
+		AudioCodecs:    []string{"aac", "mp3"},
 		HLSPackaging:   []string{"fmp4", "ts"},
 		SupportsHLS:    true,
 		SupportsRange:  true,
@@ -44,7 +47,7 @@ var clientFixtures = map[string]ClientPlaybackProfile{
 		PlaybackEngine: "native_hls",
 		Containers:     []string{"mp4", "mpegts"},
 		VideoCodecs:    []string{"h264", "hevc"},
-		AudioCodecs:    []string{"aac", "ac3", "mp3"},
+		AudioCodecs:    []string{"aac", "mp3"},
 		HLSPackaging:   []string{"fmp4", "ts"},
 		SupportsHLS:    true,
 		SupportsRange:  true,

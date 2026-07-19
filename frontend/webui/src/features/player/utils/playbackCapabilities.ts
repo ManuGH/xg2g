@@ -5,7 +5,6 @@ import {
 } from "../../../lib/hostBridge";
 import {
   detectPlaybackClientFamily,
-  fallbackPlaybackCapabilitiesForClientFamily,
   normalizePlaybackClientFamily,
 } from "./playbackClientFamily";
 import {
@@ -377,7 +376,6 @@ export async function gatherPlaybackCapabilities(
 
   const probe = await probeRuntimePlaybackCapabilities(videoEl, scope);
   const clientFamilyFallback = detectPlaybackClientFamily(videoEl);
-  const familyFallback = fallbackPlaybackCapabilitiesForClientFamily(clientFamilyFallback, scope);
 
   return {
     capabilitiesVersion: 3,
@@ -391,7 +389,7 @@ export async function gatherPlaybackCapabilities(
     supportsHls: probe.hlsEngines.length > 0,
     supportsRange: probe.supportsRange,
     allowTranscode: true,
-    deviceType: familyFallback.deviceType === "android_tv" ? "android_tv" : "web",
+    deviceType: clientFamilyFallback === "android_tv_browser" ? "android_tv" : "web",
     deviceContext: inferBrowserDeviceContext(),
     networkContext: inferBrowserNetworkContext(),
     runtimeProbeUsed: probe.usedRuntimeProbe,

@@ -13,6 +13,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
+	"github.com/ManuGH/xg2g/internal/domain/playbackcompat"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
@@ -2264,6 +2265,9 @@ func TestService_ResolvePlaybackInfo_LiveUsesScanTruthWhenAvailable(t *testing.T
 	require.Nil(t, err)
 	require.Nil(t, res.Decision)
 	require.NotNil(t, res.PlannerEvaluation)
+	assert.Equal(t, playbackcompat.PolicyVersion, res.CapabilityContract.PolicyVersion)
+	assert.Equal(t, playbackcompat.PolicyVersion, res.PlannerEvaluation.Evidence.PolicyVersion)
+	assert.Equal(t, playbackcompat.PolicyVersion, res.PlannerEvaluation.Result.Trace.PolicyVersion)
 	assert.Equal(t, "ts", res.Truth.Container)
 	assert.Equal(t, "hevc", res.Truth.VideoCodec)
 	assert.Equal(t, "ac3", res.Truth.AudioCodec)

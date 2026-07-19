@@ -54,20 +54,23 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		}
 	}
 
-	resolvedCaps := domainrecordings.ResolveCapabilities(
+	capabilityContract := domainrecordings.ResolveCapabilityContract(
 		ctx,
 		req.PrincipalID,
 		req.APIVersion,
 		req.RequestedProfile,
 		req.Headers,
 		req.Capabilities,
+		string(req.SubjectKind),
+		req.ClientProfile,
 	)
+	resolvedCaps := capabilityContract.Effective
 	hostContext := s.buildRequestHostContext(ctx)
 	hostPressure := s.deps.HostPressure(ctx)
 	operatorPolicy, runtimeFeedbackPolicy := s.applyPlaybackFeedbackPolicy(ctx, sourceRef, req, truth, resolvedCaps, hostContext, hostPressure, operatorPolicy)
 
 	if req.SchemaType == "live" {
-		plannerEval, err := s.buildPlannerEvaluation(req, sourceRef, truth, liveTruth, resolvedCaps, hostContext, hostPressure, operatorPolicy)
+		plannerEval, err := s.buildPlannerEvaluation(req, sourceRef, truth, liveTruth, resolvedCaps, capabilityContract.PolicyVersion, hostContext, hostPressure, operatorPolicy)
 		if err != nil {
 			return PlaybackInfoResult{}, classifyPlannerError(err)
 		}
@@ -78,6 +81,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		return PlaybackInfoResult{
 			SourceRef:                 sourceRef,
 			Truth:                     truth,
+			CapabilityContract:        capabilityContract,
 			ResolvedCapabilities:      resolvedCaps,
 			Decision:                  nil,
 			ClientProfile:             req.ClientProfile,
@@ -126,7 +130,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 
 	var plannerEval *PlannerEvaluation
 	if s.observer != nil && PlaybackInfoRequestContext(req) != PlaybackInfoContextEpgBadge {
-		plannerEval, _ = s.buildPlannerEvaluation(req, sourceRef, truth, liveTruth, resolvedCaps, hostContext, hostPressure, operatorPolicy)
+		plannerEval, _ = s.buildPlannerEvaluation(req, sourceRef, truth, liveTruth, resolvedCaps, capabilityContract.PolicyVersion, hostContext, hostPressure, operatorPolicy)
 		if plannerEval != nil {
 			s.submitPlannerShadowObservation(plannerEval.Evidence, dec, req)
 		}
@@ -136,6 +140,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 	return PlaybackInfoResult{
 		SourceRef:                 sourceRef,
 		Truth:                     truth,
+		CapabilityContract:        capabilityContract,
 		ResolvedCapabilities:      resolvedCaps,
 		Decision:                  dec,
 		ClientProfile:             req.ClientProfile,
@@ -689,6 +694,7 @@ func (s *Service) buildPlannerEvaluation(
 	truth playback.MediaTruth,
 	liveTruth *liveTruthResolution,
 	resolvedCaps capabilities.PlaybackCapabilities,
+	capabilityPolicyVersion string,
 	hostContext requestHostContext,
 	hostPressure playbackprofile.HostPressureAssessment,
 	operatorPolicy config.PlaybackOperatorConfig,
@@ -772,7 +778,7 @@ func (s *Service) buildPlannerEvaluation(
 		ObservedAt:               observedAt,
 		ValidUntil:               validUntil,
 		NetworkCaptureTime:       networkCaptureTime,
-		PolicyVersion:            "unknown",
+		PolicyVersion:            capabilityPolicyVersion,
 		Container:                truth.Container,
 		VideoCodec:               truth.VideoCodec,
 		AudioCodec:               truth.AudioCodec,

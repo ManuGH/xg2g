@@ -18,6 +18,7 @@ ADRs are stable reference points for maintainers.
 | [ADR-025](025-playback-confidence-policy.md) | Playback Confidence and Runtime Policy Layer | ✅ ACTIVE |
 | [ADR-026](026-native-webkit-hls-hevc-copy.md) | Native WebKit HLS for HEVC Live Sources | ✅ ACTIVE |
 | [ADR-027](027-openapi-operation-catalog.md) | OpenAPI Operation Catalog | ✅ ACTIVE |
+| [ADR-028](028-playback-capability-claims.md) | Playback Capability Claims and Verified Truth | ✅ ACTIVE |
 
 ## Decision Rules
 

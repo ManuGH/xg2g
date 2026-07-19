@@ -2,6 +2,7 @@ package recordings
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
@@ -38,6 +39,71 @@ func TestResolveCapabilities_RuntimeProbeUsesFamilyForIdentityOnly(t *testing.T)
 	}
 	if len(got.VideoCodecs) != 2 || got.VideoCodecs[0] != "h264" || got.VideoCodecs[1] != "hevc" {
 		t.Fatalf("expected runtime video codecs to stay intact, got %#v", got.VideoCodecs)
+	}
+	if slices.Contains(got.AudioCodecs, "ac3") {
+		t.Fatalf("browser AC-3 claim must not become effective truth: %#v", got.AudioCodecs)
+	}
+}
+
+func TestResolveCapabilityContract_PreservesRawAndNarrowsBrowserClaims(t *testing.T) {
+	in := capabilities.PlaybackCapabilities{
+		CapabilitiesVersion:  3,
+		Containers:           []string{"mp4", "ts"},
+		VideoCodecs:          []string{"h264", "hevc"},
+		AudioCodecs:          []string{"aac", "ac3"},
+		SupportsHLS:          true,
+		SupportsHLSExplicit:  true,
+		HLSEngines:           []string{"native"},
+		PreferredHLSEngine:   "native",
+		RuntimeProbeUsed:     true,
+		RuntimeProbeVersion:  1,
+		ClientFamilyFallback: "safari_native",
+	}
+
+	contract := ResolveCapabilityContract(context.Background(), "", "v3.1", "", nil, &in, "live", "")
+	if !slices.Contains(contract.Raw.AudioCodecs, "ac3") {
+		t.Fatalf("raw client claim was lost: %#v", contract.Raw.AudioCodecs)
+	}
+	if slices.Contains(contract.Verified.AudioCodecs, "ac3") || slices.Contains(contract.Effective.AudioCodecs, "ac3") {
+		t.Fatalf("unverified browser AC-3 claim leaked into decision truth: verified=%#v effective=%#v", contract.Verified.AudioCodecs, contract.Effective.AudioCodecs)
+	}
+	if contract.PolicyVersion == "" {
+		t.Fatal("compatibility policy version must be recorded")
+	}
+	if len(contract.Adjustments) != 1 || contract.Adjustments[0].Value != "ac3" {
+		t.Fatalf("expected auditable AC-3 adjustment, got %#v", contract.Adjustments)
+	}
+}
+
+func TestResolveCapabilityContract_DoesNotNarrowNativeAppDolby(t *testing.T) {
+	in := capabilities.PlaybackCapabilities{
+		CapabilitiesVersion:  3,
+		AudioCodecs:          []string{"aac", "ac3"},
+		PreferredHLSEngine:   "exoplayer",
+		ClientFamilyFallback: "android_native",
+		RuntimeProbeUsed:     true,
+	}
+
+	contract := ResolveCapabilityContract(context.Background(), "", "v3.1", "", nil, &in, "live", "")
+	if !slices.Contains(contract.Effective.AudioCodecs, "ac3") {
+		t.Fatalf("native app decoder claim was incorrectly narrowed: %#v", contract.Effective.AudioCodecs)
+	}
+	if len(contract.Adjustments) != 0 {
+		t.Fatalf("unexpected native app adjustments: %#v", contract.Adjustments)
+	}
+}
+
+func TestResolveCapabilityContract_UsesRequestFamilyWhenClaimOmitsFamily(t *testing.T) {
+	in := capabilities.PlaybackCapabilities{
+		CapabilitiesVersion: 3,
+		AudioCodecs:         []string{"aac", "ac3"},
+		PreferredHLSEngine:  "native",
+		RuntimeProbeUsed:    true,
+	}
+
+	contract := ResolveCapabilityContract(context.Background(), "", "v3.1", "", nil, &in, "recording", "safari_native")
+	if slices.Contains(contract.Effective.AudioCodecs, "ac3") {
+		t.Fatalf("request family was ignored while verifying claims: %#v", contract.Effective.AudioCodecs)
 	}
 }
 

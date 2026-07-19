@@ -1,5 +1,10 @@
 # ADR-P7: Capability Resolution & Profile Selection
 
+> **Partial supersession (2026-07-19):** ADR-028 supersedes section 2's
+> treatment of client codec/container lists as immutable truth. They are now
+> preserved as Raw claims and may be narrowed by the versioned compatibility
+> policy before becoming Effective decision input.
+
 ## Context
 
 Capability drift (specifically AC3 support) and layering violations in truthful
