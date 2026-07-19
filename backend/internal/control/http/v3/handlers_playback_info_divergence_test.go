@@ -147,6 +147,7 @@ func TestPlaybackInfoDivergenceMatrix_FourWayCombinations(t *testing.T) {
 			cfg := config.AppConfig{}
 			cfg.FFmpeg.Bin = "/usr/bin/ffmpeg"
 			cfg.HLS.Root = "/tmp/hls"
+			cfg.HLS.DVRWindow = 20 * time.Second
 			store := v3intents.NewPlanningHandoffStore(v3intents.PlanningHandoffStoreConfig{TTL: time.Minute})
 			s := &Server{
 				cfg:                    cfg,
@@ -174,6 +175,8 @@ func TestPlaybackInfoDivergenceMatrix_FourWayCombinations(t *testing.T) {
 			assert.Equal(t, tc.wantMode, info.Mode)
 			if tc.wantToken {
 				require.NotNil(t, info.PlaybackDecisionToken)
+				require.NotNil(t, info.DvrWindowSeconds)
+				assert.Equal(t, int64(20), *info.DvrWindowSeconds)
 				claims, err := v3auth.VerifyStrict(*info.PlaybackDecisionToken, s.JWTSecret, "xg2g/v3/intents", "xg2g")
 				require.NoError(t, err)
 				assert.NotEmpty(t, claims.ReceiptID)

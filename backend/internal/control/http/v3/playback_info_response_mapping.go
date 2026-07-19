@@ -570,6 +570,10 @@ func (s *Server) mapLivePlannerPlaybackInfo(
 		PlaybackDecisionToken: s.buildLivePlannerDecisionToken(id, eval, caps, plannerReceipt, reqID),
 	}
 	applySegmentTruth(&info, nil, false)
+	if eval.Result.Plan.Startup.DVRWindowSeconds > 0 {
+		dvrWindowSeconds := int64(eval.Result.Plan.Startup.DVRWindowSeconds)
+		info.DvrWindowSeconds = &dvrWindowSeconds
+	}
 	return info
 }
 

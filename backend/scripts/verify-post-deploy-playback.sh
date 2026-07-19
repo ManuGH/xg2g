@@ -130,9 +130,6 @@ if [[ -f "${ENV_FILE}" ]]; then
   if listen_from_file="$(read_env_value "${ENV_FILE}" XG2G_LISTEN 2>/dev/null)"; then
     XG2G_LISTEN="${listen_from_file}"
   fi
-  if hls_dvr_window_from_file="$(read_env_value "${ENV_FILE}" XG2G_HLS_DVR_WINDOW 2>/dev/null)"; then
-    XG2G_HLS_DVR_WINDOW="${hls_dvr_window_from_file}"
-  fi
   if public_url_from_file="$(read_env_value "${ENV_FILE}" XG2G_PUBLIC_URL 2>/dev/null)"; then
     XG2G_PUBLIC_URL="${public_url_from_file}"
   fi
@@ -240,7 +237,6 @@ resolve_media_origin() {
 MEDIA_ORIGIN="$(resolve_media_origin "${API_ORIGIN}")"
 MEDIA_API_BASE="${MEDIA_ORIGIN}/api/v3"
 MEDIA_REFERER="${MEDIA_ORIGIN}/"
-HLS_DVR_WINDOW="${XG2G_HLS_DVR_WINDOW:-}"
 
 join_url() {
   local base="$1"
@@ -371,6 +367,7 @@ create_session_cookie_jar() {
   local cookie_jar="${TMPDIR_ROOT}/cookies.$RANDOM.jar"
   local header_file="${TMPDIR_ROOT}/auth-session.$RANDOM.headers"
   local body_file="${TMPDIR_ROOT}/auth-session.$RANDOM.body"
+  local container_pid=""
   local status
 
   curl -sS -D "${header_file}" -o "${body_file}" \
@@ -388,9 +385,13 @@ create_session_cookie_jar() {
     && [[ "${MEDIA_ORIGIN}" == http://127.0.0.1:* || "${MEDIA_ORIGIN}" == http://localhost:* ]]; then
     # Docker publishes the port on the LXC host, so the request reaches the
     # application from the bridge address rather than loopback. Retry only the
-    # security-sensitive cookie exchange from inside the named container. The
-    # resulting cookie jar remains bound to the same loopback media origin.
-    if docker exec "${CONTAINER_NAME}" curl -fsS -D /dev/null \
+    # security-sensitive cookie exchange in the container's network namespace.
+    # Keep using the host curl because the production image is intentionally
+    # minimal and does not ship a second HTTP client.
+    container_pid="$(docker inspect --format '{{.State.Pid}}' "${CONTAINER_NAME}" 2>/dev/null || true)"
+    if [[ "${container_pid}" =~ ^[1-9][0-9]*$ ]] \
+      && command -v nsenter >/dev/null 2>&1 \
+      && nsenter -t "${container_pid}" -n curl -fsS -D /dev/null \
       -o /dev/null \
       -X POST \
       -H "Authorization: Bearer ${API_TOKEN}" \
@@ -426,7 +427,7 @@ fetch_manifest() {
 }
 
 verify_direct_live_hls() {
-  local caps info_body token mode cap_hash playback_mode start_body sid session_json playback_url manifest_url cookie_jar first_media_uri media_url media_header_file media_body_file media_status
+  local caps info_body token mode cap_hash dvr_window_seconds playback_mode start_body sid session_json playback_url manifest_url cookie_jar first_media_uri media_url media_header_file media_body_file media_status
 
   caps="$(jq -nc '{
     capabilitiesVersion: 2,
@@ -448,7 +449,9 @@ verify_direct_live_hls() {
 
   token="$(printf '%s' "${CURL_BODY}" | jq -r '.playbackDecisionToken // empty')"
   mode="$(printf '%s' "${CURL_BODY}" | jq -r '.mode // empty')"
+  dvr_window_seconds="$(printf '%s' "${CURL_BODY}" | jq -r '.dvrWindowSeconds // 0')"
   [[ -n "${token}" ]] || fail "live/stream-info returned no playbackDecisionToken"
+  [[ "${dvr_window_seconds}" =~ ^[0-9]+$ ]] || fail "live/stream-info returned invalid dvrWindowSeconds: ${dvr_window_seconds}"
 
   cap_hash="$(jwt_payload_json "${token}" | jq -r '.capHash // empty')"
   case "${mode}" in
@@ -493,7 +496,7 @@ verify_direct_live_hls() {
   fetch_manifest "${manifest_url}" "${cookie_jar}"
   [[ "${MANIFEST_STATUS}" == "200" ]] || fail "manifest fetch with session cookie failed: HTTP ${MANIFEST_STATUS}"
 
-  if [[ -n "${HLS_DVR_WINDOW}" ]]; then
+  if (( dvr_window_seconds > 0 )); then
     if printf '%s\n' "${MANIFEST_BODY}" | grep -q '^#EXT-X-PLAYLIST-TYPE:'; then
       fail "sliding live DVR manifest must not emit an append-only EXT-X-PLAYLIST-TYPE"
     fi
