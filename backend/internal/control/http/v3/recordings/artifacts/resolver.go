@@ -318,6 +318,11 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 	if targetProfile == nil {
 		targetProfile = recordingTargetProfile(profile)
 	}
+	if targetProfile == nil {
+		targetProfile = &playbackprofile.TargetPlaybackProfile{
+			Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+		}
+	}
 
 	// Using EnsureSpec to start/resume build
 	_, err = r.vodManager.EnsureSpec(ctx, cacheDir, metaID, srcURL, cacheDir, "index.live.m3u8", finalPath, targetProfile)
