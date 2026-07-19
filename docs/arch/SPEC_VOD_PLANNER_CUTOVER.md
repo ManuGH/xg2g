@@ -142,7 +142,8 @@ client tamper-proof. This closes L3 and aligns with PR #679 on the live path.
   The signature MUST cover exactly those bytes — sign after canonicalization,
   verify before unmarshal.
 - Key: server-side secret from config (`recordings.target_signing_key`),
-  loaded at bootstrap. Support an optional secondary key
+  loaded at bootstrap. The server MUST fail to start if the primary target signing
+  key is missing to avoid security vulnerabilities. Support an optional secondary key
   (`target_signing_key_previous`) accepted for verification only, to allow
   rotation without invalidating in-flight URLs.
 - Issuance: `EncodeTargetProfileQuery()` signs. Verification:
@@ -168,7 +169,7 @@ client tamper-proof. This closes L3 and aligns with PR #679 on the live path.
 
 ---
 
-## 6. Step 4 — `BuildIntent` with `SourceTruth` and the tolerance contract
+## 6. Step 4 — `BuildIntent` with `SourceProfile` and the tolerance contract
 
 **Goal:** The builder validates reality against the planner's assumption and
 fails closed with a typed, machine-actionable error that triggers upstream
@@ -178,33 +179,21 @@ self-healing.
 aliased like `TargetPlaybackProfile`):
 
 ```go
-// SourceTruth captures what the planner believed about the source media
-// when it issued the intent. The builder validates probe reality against it.
-type SourceTruth struct {
-    Container  string  `json:"container,omitempty"`
-    VideoCodec string  `json:"videoCodec,omitempty"`
-    AudioCodec string  `json:"audioCodec,omitempty"`
-    Width      int     `json:"width,omitempty"`
-    Height     int     `json:"height,omitempty"`
-    BitDepth   int     `json:"bitDepth,omitempty"`
-    DurationS  float64 `json:"durationS,omitempty"`
-}
-
 // BuildIntent is the complete, planner-issued execution order for one build.
 type BuildIntent struct {
-    IntentHash  string                // == RecordingTargetVariantHash(Target)
-    SourceTruth SourceTruth
-    Target      TargetPlaybackProfile
+    IntentHash    string                // == RecordingTargetVariantHash(Target)
+    SourceProfile SourceProfile         // Reuses existing domain model
+    Target        TargetPlaybackProfile
 }
 ```
 
 The builder API from Step 1 changes to accept `BuildIntent` instead of a bare
-`*TargetPlaybackProfile`. `SourceTruth` zero-value means "planner had no probe
+`*TargetPlaybackProfile`. A zero-value `SourceProfile` means "planner had no probe
 truth" and skips validation (bootstrap case: first-ever access before any
 probe ran).
 
 **Tolerance contract** (implemented as a pure function with table tests,
-e.g. `func ValidateSourceTruth(truth SourceTruth, probed StreamInfo) *TruthMismatch`):
+e.g. `func ValidateSourceProfile(truth SourceProfile, probed StreamInfo) *TruthMismatch`):
 
 | Dimension | Rule |
 |-----------|------|
@@ -212,7 +201,7 @@ e.g. `func ValidateSourceTruth(truth SourceTruth, probed StreamInfo) *TruthMisma
 | Audio codec | HARD — exact match required |
 | Container | HARD — exact match required |
 | Bit depth | HARD — exact match required |
-| Resolution | HARD on class boundary (SD/HD/FHD/UHD), SOFT within class |
+| Resolution | HARD on class boundary (SD < 720p ≤ HD < 1080p ≤ FHD < 2160p ≤ UHD), SOFT within class |
 | Duration | SOFT — tolerate ±2.0 s or ±0.5 %, whichever is larger |
 | Bitrate, FPS | SOFT — never a mismatch |
 
