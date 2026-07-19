@@ -9,6 +9,8 @@ import (
 )
 
 func TestRouteRegistrar_AddPanicsWhenScopePolicyMissing(t *testing.T) {
+	operationRoutes["UnknownPolicyOperation"] = operationRoute{Method: http.MethodGet, Path: "/__test__"}
+	t.Cleanup(func() { delete(operationRoutes, "UnknownPolicyOperation") })
 	register := routeRegistrar{
 		baseURL: V3BaseURL,
 		router:  chi.NewRouter(),
@@ -28,5 +30,5 @@ func TestRouteRegistrar_AddPanicsWhenScopePolicyMissing(t *testing.T) {
 		}
 	}()
 
-	register.add(http.MethodGet, "/__test__", "UnknownPolicyOperation", func(http.ResponseWriter, *http.Request) {})
+	register.add("UnknownPolicyOperation", func(http.ResponseWriter, *http.Request) {})
 }

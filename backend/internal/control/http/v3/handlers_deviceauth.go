@@ -14,8 +14,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
-const webBootstrapHeaderName = "X-XG2G-Web-Bootstrap"
-
 type createDeviceSessionRequest struct {
 	DeviceGrantID string `json:"deviceGrantId"`
 	DeviceGrant   string `json:"deviceGrant"`

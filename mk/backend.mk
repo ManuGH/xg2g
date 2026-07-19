@@ -35,12 +35,15 @@ generate: ## Generate Go code from OpenAPI spec (v3 only)
 	@mkdir -p $(BACKEND_DIR)/internal/control/http/v3
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-api.yaml -o internal/api/server_gen.go api/openapi.yaml
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-v3.yaml -o internal/control/http/v3/server_gen.go api/openapi.yaml
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run -mod=vendor ./cmd/gen-operation-catalog
 	@echo "✅ Code generation complete (single source: api/openapi.yaml):"
+	@echo "   - $(BACKEND_DIR)/internal/control/authz/operation_catalog_gen.go"
+	@echo "   - $(BACKEND_DIR)/internal/control/http/v3/operation_routes_gen.go"
 	@echo "   - $(BACKEND_DIR)/internal/control/http/v3/server_gen.go"
 
 verify-generate: generate ## Verify that generated code is up-to-date
 	@echo "Verifying generated code..."
-	@cd $(BACKEND_DIR) && git diff --exit-code internal/api/server_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
+	@cd $(BACKEND_DIR) && git diff --exit-code internal/api/server_gen.go internal/control/authz/operation_catalog_gen.go internal/control/http/v3/operation_routes_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
 	@echo "✅ Generated code is up-to-date"
 
 gen-openapi-hard: ## Generate OpenAPI hard-mode artifacts (snapshot + TS client + consumption types)
