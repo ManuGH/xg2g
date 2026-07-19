@@ -15,11 +15,21 @@ ssh "${REMOTE_HOST}" bash -s -- "${CTID}" <<'REMOTE'
 set -euo pipefail
 ctid="$1"
 staging_binary="/srv/xg2g-staging/xg2g-staging-binary"
-production_binary="/srv/xg2g/xg2g"
-rollback_binary="/srv/xg2g/xg2g.rollback"
-next_binary="/srv/xg2g/xg2g.next"
 rollback_armed=0
 old_sha=""
+
+production_binary="$(
+  pct exec "${ctid}" -- docker inspect --format '{{range .Mounts}}{{if eq .Destination "/usr/local/bin/xg2g"}}{{println .Source}}{{end}}{{end}}' xg2g |
+    awk 'NF'
+)"
+[[ "${production_binary}" =~ ^/srv/xg2g/xg2g([A-Za-z0-9._-]*)$ ]] || {
+  echo "ERROR: production container has no trusted /usr/local/bin/xg2g host mount: ${production_binary:-missing}" >&2
+  exit 1
+}
+pct exec "${ctid}" -- test -f "${production_binary}"
+rollback_binary="${production_binary}.rollback"
+next_binary="${production_binary}.next"
+echo "Production binary mount resolved: ${production_binary}"
 
 wait_ready() {
   local port="$1" container="$2" i status
