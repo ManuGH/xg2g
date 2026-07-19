@@ -18,6 +18,8 @@ import (
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
 )
 
+const webBootstrapHeaderName = "X-XG2G-Web-Bootstrap"
+
 func TestDeviceSessionRoute_RefreshIssuesAccessTokenAndRotatesGrant(t *testing.T) {
 	currentNow := time.Now().UTC().Truncate(time.Second)
 	store := deviceauthstore.NewMemoryStateStore()

@@ -3186,6 +3186,568 @@ components:
 security:
   - BearerAuth: [v3:read]
 
+x-xg2g-operation-policies:
+  AddTimer:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  ApprovePairing:
+    class: pairing
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: true
+  CompleteWebBootstrap:
+    class: device
+    auth: bootstrap_token
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: web_bootstrap
+    audit: true
+    redactErrors: true
+  CreateDeviceSession:
+    class: device
+    auth: device_grant
+    browserTrust: not_browser
+    rateLimit: device_grant
+    audit: true
+    redactErrors: true
+  CreateIntent:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  CreateSeriesRule:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  CreateSession:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  CreateWebBootstrap:
+    class: device
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: web_bootstrap
+    audit: true
+    redactErrors: true
+  DeleteHouseholdProfile:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  DeleteHouseholdUnlock:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  DeleteRecording:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  DeleteSeriesRule:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  DeleteSession:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  DeleteStreamsId:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  DeleteSystemEntitlementOverride:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  DeleteTimer:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  ExchangePairing:
+    class: pairing
+    auth: pairing_secret
+    browserTrust: not_browser
+    rateLimit: pairing_secret
+    audit: true
+    redactErrors: true
+  GetDvrCapabilities:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetDvrStatus:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetEpg:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetErrors:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetHouseholdProfiles:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetHouseholdUnlock:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetLogs:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  GetPairingStatus:
+    class: pairing
+    auth: pairing_secret
+    browserTrust: not_browser
+    rateLimit: pairing_poll
+    audit: true
+    redactErrors: true
+  GetReceiverCurrent:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingHLSCustomSegment:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingHLSCustomSegmentHead:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingHLSPlaylist:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingHLSPlaylistHead:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingHLSTimeshift:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingHLSTimeshiftHead:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingPlaybackInfo:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingScrubFrame:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingThumbnail:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordings:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetRecordingsRecordingIdStatus:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetSeriesRules:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetServices:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetServicesBouquets:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetSessionEvents:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetSessionState:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetStreams:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  GetSystemConfig:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetSystemConnectivity:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  GetSystemEntitlements:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetSystemHealth:
+    class: health
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetSystemHealthz:
+    class: health
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetSystemInfo:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetSystemScanStatus:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  GetTimer:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  GetTimers:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  ListSessions:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  PostHouseholdProfiles:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  PostHouseholdUnlock:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  PostLivePlaybackInfo:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PostLivePlaybackSummary:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PostRecordingDelete:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  PostRecordingPlaybackInfo:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PostRecordingRename:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  PostServicesIdToggle:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  PostServicesNowNext:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PostSessionHeartbeat:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PostSystemEntitlementOverride:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  PostSystemEntitlementReceipt:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  PostSystemRefresh:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  PreviewConflicts:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  ProbeRecordingMp4:
+    class: read
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  PutHouseholdProfile:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  PutSystemConfig:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  ReportPlaybackFeedback:
+    class: session
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  RunAllSeriesRules:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  RunSeriesRule:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  ServeHLS:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  ServeHLSHead:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  StartPairing:
+    class: pairing
+    auth: none
+    browserTrust: not_browser
+    rateLimit: pairing_start
+    audit: true
+    redactErrors: true
+  StreamRecordingDirect:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  TriggerSystemScan:
+    class: admin
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: false
+  UpdateSeriesRule:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+  UpdateTimer:
+    class: write
+    auth: bearer_scope
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: global
+    audit: true
+    redactErrors: false
+
 paths:
   /errors:
     get:
@@ -3221,7 +3783,6 @@ paths:
       operationId: getSystemHealthz
       tags:
         - system
-      security: []
       responses:
         "200":
           description: Health status
@@ -3242,6 +3803,8 @@ paths:
       operationId: getSystemConnectivity
       tags:
         - system
+      security:
+        - BearerAuth: [v3:admin]
       responses:
         "200":
           description: Connectivity contract diagnostics
@@ -3413,7 +3976,7 @@ paths:
       tags:
         - system
       security:
-        - BearerAuth: [v3:admin]
+        - BearerAuth: [v3:read]
       responses:
         "200":
           description: Configuration
@@ -5431,7 +5994,7 @@ paths:
       tags:
         - system
       security:
-        - BearerAuth: []
+        - BearerAuth: [v3:admin]
       responses:
         "202":
           description: Scan initiated
@@ -5467,7 +6030,7 @@ paths:
       tags:
         - system
       security:
-        - BearerAuth: []
+        - BearerAuth: [v3:admin]
       responses:
         "200":
           description: Current scan status

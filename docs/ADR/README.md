@@ -16,6 +16,8 @@ ADRs are stable reference points for maintainers.
 | [ADR-023](023-device-enrollment-session-model.md) | Device Enrollment and Session Model | ✅ ACTIVE |
 | [ADR-024](024-published-endpoint-connectivity-truth.md) | Published Endpoint Connectivity Truth | ✅ ACTIVE |
 | [ADR-025](025-playback-confidence-policy.md) | Playback Confidence and Runtime Policy Layer | ✅ ACTIVE |
+| [ADR-026](026-native-webkit-hls-hevc-copy.md) | Native WebKit HLS for HEVC Live Sources | ✅ ACTIVE |
+| [ADR-027](027-openapi-operation-catalog.md) | OpenAPI Operation Catalog | ✅ ACTIVE |
 
 ## Decision Rules
 

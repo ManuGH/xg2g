@@ -39,7 +39,11 @@ export const getSystemHealth = <ThrowOnError extends boolean = false>(options?: 
 /**
  * Get minimal system health
  */
-export const getSystemHealthz = <ThrowOnError extends boolean = false>(options?: Options<GetSystemHealthzData, ThrowOnError>): RequestResult<GetSystemHealthzResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetSystemHealthzResponses, unknown, ThrowOnError>({ url: '/system/healthz', ...options });
+export const getSystemHealthz = <ThrowOnError extends boolean = false>(options?: Options<GetSystemHealthzData, ThrowOnError>): RequestResult<GetSystemHealthzResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetSystemHealthzResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/system/healthz',
+    ...options
+});
 
 /**
  * Get effective public deployment contract diagnostics

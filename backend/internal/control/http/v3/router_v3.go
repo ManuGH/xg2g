@@ -16,7 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// RouterOptions configures the handwritten v3 router.
+// RouterOptions configures the policy-aware v3 router.
 type RouterOptions struct {
 	BaseURL          string
 	BaseRouter       chi.Router
@@ -31,7 +31,16 @@ type routeRegistrar struct {
 	missingExposurePolicies map[string]struct{}
 }
 
-func (r routeRegistrar) add(method, path, operationID string, handler http.HandlerFunc) {
+type operationRoute struct {
+	Method string
+	Path   string
+}
+
+func (r routeRegistrar) add(operationID string, handler http.HandlerFunc) {
+	route, ok := operationRoutes[operationID]
+	if !ok {
+		panic(fmt.Sprintf("missing generated route for operation %s", operationID))
+	}
 	scopes, ok := authz.RequiredScopes(operationID)
 	if !ok {
 		if r.missingScopePolicies != nil {
@@ -61,7 +70,7 @@ func (r routeRegistrar) add(method, path, operationID string, handler http.Handl
 		}
 		return
 	}
-	if err := authz.ValidateExposurePolicy(operationID, method, scopes, exposure); err != nil {
+	if err := authz.ValidateExposurePolicy(operationID, route.Method, scopes, exposure); err != nil {
 		if r.router != nil {
 			panic(err.Error())
 		}
@@ -73,11 +82,10 @@ func (r routeRegistrar) add(method, path, operationID string, handler http.Handl
 	if r.router == nil {
 		return
 	}
-	r.router.Method(method, r.baseURL+path, withRoutePolicy(operationID, scopes, exposure, handler))
+	r.router.Method(route.Method, r.baseURL+route.Path, withRoutePolicy(operationID, scopes, exposure, handler))
 }
 
-// NewRouter registers v3 routes and injects scope policy per operation.
-// This replaces generated routing to keep server_gen.go transport-only.
+// NewRouter mounts the generated operation catalog and injects its policy per route.
 func NewRouter(si ServerInterface, options RouterOptions) http.Handler {
 	if missing := missingRouteScopePolicies(); len(missing) > 0 {
 		panic("missing scope policy for operations: " + strings.Join(missing, ", "))
@@ -100,15 +108,7 @@ func NewRouter(si ServerInterface, options RouterOptions) http.Handler {
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	register := routeRegistrar{baseURL: options.BaseURL, router: r}
-	registerAllRoutes(register, &wrapper)
-	registerOptionalRoutes(register, &pairingRoutesWrapper{
-		Handler:            resolvePairingRoutes(si),
-		HandlerMiddlewares: options.Middlewares,
-	}, &deviceAuthRoutesWrapper{
-		Handler:            resolveDeviceAuthRoutes(si),
-		HandlerMiddlewares: options.Middlewares,
-	})
+	registerGeneratedRoutes(routeRegistrar{baseURL: options.BaseURL, router: r}, &wrapper)
 
 	return r
 }
@@ -122,25 +122,9 @@ func withRoutePolicy(operationID string, scopes []string, exposure authz.Exposur
 	})
 }
 
-func registerAllRoutes(register routeRegistrar, wrapper *ServerInterfaceWrapper) {
-	registerSessionsModuleRoutes(register, wrapper)
-	registerRecordingsModuleRoutes(register, wrapper)
-	registerDVRModuleRoutes(register, wrapper)
-	registerHouseholdModuleRoutes(register, wrapper)
-	registerConfigModuleRoutes(register, wrapper)
-	registerSystemModuleRoutes(register, wrapper)
-}
-
-func registerOptionalRoutes(register routeRegistrar, pairing pairingRoutes, deviceAuth deviceAuthRoutes) {
-	registerPairingRoutes(register, pairing)
-	registerDeviceAuthRoutes(register, deviceAuth)
-}
-
 func missingRouteScopePolicies() []string {
 	missing := make(map[string]struct{})
-	register := routeRegistrar{missingScopePolicies: missing}
-	registerAllRoutes(register, &ServerInterfaceWrapper{})
-	registerOptionalRoutes(register, noopPairingRoutes{}, noopDeviceAuthRoutes{})
+	registerGeneratedRoutes(routeRegistrar{missingScopePolicies: missing}, &ServerInterfaceWrapper{})
 
 	out := make([]string, 0, len(missing))
 	for operationID := range missing {
@@ -152,9 +136,7 @@ func missingRouteScopePolicies() []string {
 
 func missingRouteExposurePolicies() []string {
 	missing := make(map[string]struct{})
-	register := routeRegistrar{missingExposurePolicies: missing}
-	registerAllRoutes(register, &ServerInterfaceWrapper{})
-	registerOptionalRoutes(register, noopPairingRoutes{}, noopDeviceAuthRoutes{})
+	registerGeneratedRoutes(routeRegistrar{missingExposurePolicies: missing}, &ServerInterfaceWrapper{})
 
 	out := make([]string, 0, len(missing))
 	for operationID := range missing {
@@ -162,52 +144,6 @@ func missingRouteExposurePolicies() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func resolvePairingRoutes(handler ServerInterface) pairingRoutes {
-	return serverInterfacePairingAdapter{handler: handler}
-}
-
-func resolveDeviceAuthRoutes(handler ServerInterface) deviceAuthRoutes {
-	return serverInterfaceDeviceAuthAdapter{handler: handler}
-}
-
-type serverInterfacePairingAdapter struct {
-	handler ServerInterface
-}
-
-func (a serverInterfacePairingAdapter) StartPairing(w http.ResponseWriter, r *http.Request) {
-	a.handler.StartPairing(w, r)
-}
-
-func (a serverInterfacePairingAdapter) GetPairingStatus(w http.ResponseWriter, r *http.Request) {
-	a.handler.GetPairingStatus(w, r, chi.URLParam(r, "pairingId"))
-}
-
-func (a serverInterfacePairingAdapter) ApprovePairing(w http.ResponseWriter, r *http.Request) {
-	a.handler.ApprovePairing(w, r, chi.URLParam(r, "pairingId"))
-}
-
-func (a serverInterfacePairingAdapter) ExchangePairing(w http.ResponseWriter, r *http.Request) {
-	a.handler.ExchangePairing(w, r, chi.URLParam(r, "pairingId"))
-}
-
-type serverInterfaceDeviceAuthAdapter struct {
-	handler ServerInterface
-}
-
-func (a serverInterfaceDeviceAuthAdapter) CreateDeviceSession(w http.ResponseWriter, r *http.Request) {
-	a.handler.CreateDeviceSession(w, r)
-}
-
-func (a serverInterfaceDeviceAuthAdapter) CreateWebBootstrap(w http.ResponseWriter, r *http.Request) {
-	a.handler.CreateWebBootstrap(w, r)
-}
-
-func (a serverInterfaceDeviceAuthAdapter) CompleteWebBootstrap(w http.ResponseWriter, r *http.Request) {
-	a.handler.CompleteWebBootstrap(w, r, chi.URLParam(r, "bootstrapId"), CompleteWebBootstrapParams{
-		XXG2GWebBootstrap: r.Header.Get(webBootstrapHeaderName),
-	})
 }
 
 func defaultBindErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
