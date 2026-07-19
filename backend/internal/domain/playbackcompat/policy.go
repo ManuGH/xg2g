@@ -103,7 +103,6 @@ func VetoReason(kind, codec string, claims Claims) (string, bool) {
 	if codec == "" {
 		return "", false
 	}
-	claims = canonicalClaims(claims)
 	for _, candidate := range rules {
 		if candidate.Kind != kind || !candidate.Applies(claims) {
 			continue
