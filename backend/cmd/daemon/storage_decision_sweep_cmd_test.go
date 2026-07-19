@@ -131,7 +131,7 @@ func TestStorageDecisionSweepFamilyCaps_UsesSSOTFixtureFallback(t *testing.T) {
 	assert.False(t, caps.RuntimeProbeUsed)
 	assert.Equal(t, []string{"mp4", "ts"}, caps.Containers)
 	assert.Equal(t, []string{"h264", "hevc"}, caps.VideoCodecs)
-	assert.Equal(t, []string{"aac", "ac3", "mp3"}, caps.AudioCodecs)
+	assert.Equal(t, []string{"aac", "mp3"}, caps.AudioCodecs)
 	assert.Equal(t, "ios_safari", caps.DeviceType)
 	assert.Equal(t, []string{"native"}, caps.HLSEngines)
 	assert.Equal(t, "native", caps.PreferredHLSEngine)
