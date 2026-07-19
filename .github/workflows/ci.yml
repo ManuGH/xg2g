@@ -23,6 +23,7 @@ on:
       - "docker-compose*.yml"
       - "README.md"
       - "backend/scripts/**"
+      - "scripts/**"
       - "Makefile"
       - "backend/templates/**"
       - "frontend/webui/**"
