@@ -286,7 +286,7 @@ func TestArtifactResolver_StrictTargetEnforcement_Fails(t *testing.T) {
 
 func TestArtifactResolver_LegacyFallback_Metrics(t *testing.T) {
 	cfg := &config.AppConfig{
-		HLS: config.HLSConfig{Root: t.TempDir()},
+		HLS:                           config.HLSConfig{Root: t.TempDir()},
 		RecordingStrictTargetRequired: false,
 	}
 	runner := &captureRunner{}
