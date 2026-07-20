@@ -12,6 +12,17 @@ Capture and compare these three files before patching anything:
 
 The checked-in canonical unit is [deploy/xg2g.service](deploy/xg2g.service), rendered from [backend/templates/docs/ops/xg2g.service.tmpl](backend/templates/docs/ops/xg2g.service.tmpl). The live unit may drift from both the repo truth and the deployed host copy under `/srv/xg2g/docs/ops/xg2g.service`.
 
+## Env Reload Rule (LXC 110)
+
+`docker compose restart` does NOT reload changed env files — containers keep
+the environment they were created with. After editing `/etc/xg2g/xg2g.env` or
+`/etc/xg2g/xg2g-staging.env`, always run
+`docker compose up -d --force-recreate` in the corresponding compose directory
+and verify the running container actually sees the new value
+(`docker exec <container> printenv <VAR>`), never trust the file alone.
+Confirmed incident 2026-07-20: staging kept running with a rotated-away
+signing key after a plain `restart`.
+
 ## Restart Failure Order
 
 Run these first:
