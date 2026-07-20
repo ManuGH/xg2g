@@ -54,13 +54,14 @@ func EncodeTargetProfileQuery(intent *ports.BuildIntent, signingKey string) (str
 		return "", fmt.Errorf("intent cannot be nil")
 	}
 
-	intent.Target = playbackprofile.CanonicalizeTarget(intent.Target)
-	if intent.IntentHash == "" {
-		intent.IntentHash = TargetVariantHash(&intent.Target)
+	intentCopy := *intent
+	intentCopy.Target = playbackprofile.CanonicalizeTarget(intentCopy.Target)
+	if intentCopy.IntentHash == "" {
+		intentCopy.IntentHash = TargetVariantHash(&intentCopy.Target)
 	}
 	// Do NOT canonicalize the SourceProfile, we pass it exactly as probed.
 
-	b, err := json.Marshal(intent)
+	b, err := json.Marshal(&intentCopy)
 	if err != nil {
 		return "", fmt.Errorf("marshal intent: %w", err)
 	}
@@ -144,8 +145,8 @@ func DecodeTargetProfileQuery(raw, primaryKey, previousKey string, strictTargetR
 	}
 	canonical := playbackprofile.CanonicalizeTarget(target)
 	return &ports.BuildIntent{
-		IntentHash:  TargetVariantHash(&canonical),
-		Target:      canonical,
+		IntentHash: TargetVariantHash(&canonical),
+		Target:     canonical,
 	}, nil
 }
 

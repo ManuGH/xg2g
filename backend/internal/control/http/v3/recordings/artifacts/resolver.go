@@ -337,21 +337,25 @@ func (r *DefaultResolver) recordingTarget(profile, variant string, intent *ports
 		}
 		log.L().Warn().Str("profile", profile).Str("variant", variant).Msg("VOD target fallback triggered")
 		metrics.IncTargetFallback("missing_target")
-		
+
 		target := recordingTargetProfile(profile)
 		if target == nil {
 			target = &playbackprofile.TargetPlaybackProfile{
 				Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
 			}
 		}
-		intent = &ports.BuildIntent{Target: *target}
+		if intent == nil {
+			intent = &ports.BuildIntent{Target: *target}
+		} else {
+			intent.Target = *target
+		}
 	}
 	canonical := playbackprofile.CanonicalizeTarget(intent.Target)
 	resolvedVariant := canonical.Hash()
 	if variant != "" && resolvedVariant != variant {
 		return nil, "", &ArtifactError{Code: CodeInvalid, Detail: "playback variant mismatch"}
 	}
-	
+
 	intent.Target = canonical
 	return intent, resolvedVariant, nil
 }

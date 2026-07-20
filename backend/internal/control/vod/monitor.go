@@ -111,8 +111,8 @@ func (m *BuildMonitor) Run(ctx context.Context) {
 	// Phase 4: Probe and enforce tolerance before starting the build
 	if m.prober != nil && m.spec.Intent != nil && m.spec.Input != "" {
 		probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
 		info, err := m.prober.Probe(probeCtx, m.spec.Input)
+		cancel()
 		if err != nil {
 			log.Error().Err(err).Str("jobId", m.jobID).Msg("VOD build failed to probe input")
 			m.setState(StateFailed, ReasonProbeFail)
