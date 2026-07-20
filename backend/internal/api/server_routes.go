@@ -11,6 +11,7 @@ import (
 
 func (s *Server) routes() http.Handler {
 	r := s.newRouter()
+	r.Use(s.legacyAPIMiddleware)
 	s.registerPublicRoutes(r)
 
 	rAuth, rRead, rWrite, rAdmin, rStatus := s.scopedRouters(r)
