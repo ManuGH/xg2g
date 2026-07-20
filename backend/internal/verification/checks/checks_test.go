@@ -24,6 +24,8 @@ enigma2:
   baseUrl: http://receiver.local
 epg:
   enabled: true
+recordings:
+  targetSigningKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
 `
 }
 

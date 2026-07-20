@@ -11,3 +11,5 @@ bouquets:
 epg:
   enabled: true
   days: 7
+recordings:
+  targetSigningKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
