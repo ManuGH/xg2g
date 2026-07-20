@@ -115,6 +115,11 @@ thread before the thread is resolved — never a silent resolve.
   merging over pending or failing checks is prohibited.
 - Before any merge, confirm there are no unresolved review threads that lack
   a fix or a written reply (see lifecycle above).
+- Delegated merges (decided by Manuel, 2026-07-20): agents may merge a PR —
+  prefer `gh pr merge --auto` so branch protection stays the enforcer — once
+  every required check is green and every review thread is fixed or answered.
+  Manuel remains the escalation point and can revoke this delegation at any
+  time. Production promotion is never delegated.
 
 ### Branch and worktree rules
 
