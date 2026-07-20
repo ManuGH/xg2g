@@ -357,10 +357,22 @@ func (r *DefaultResolver) ResolvePlaylistState(ctx context.Context, recordingID,
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
 	}
 
-	variant = v3recordings.NormalizeVariantHash(variant)
+	if variant == "" {
+		target := recordingTargetProfile("")
+		if target == nil {
+			target = &playbackprofile.TargetPlaybackProfile{
+				Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+			}
+		}
+		canonical := playbackprofile.CanonicalizeTarget(*target)
+		variant = canonical.Hash()
+	} else {
+		variant = v3recordings.NormalizeVariantHash(variant)
+	}
+
 	cacheDir, err := v3recordings.RecordingVariantCacheDir(r.cfg.HLS.Root, ref, variant)
 	if err != nil {
-		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Detail: "failed to determine cache dir"}
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err, Detail: "failed to determine cache dir"}
 	}
 	playlistPath := filepath.Join(cacheDir, "index.m3u8")
 	// #nosec G304 - playlistPath is confined to cacheDir
@@ -372,11 +384,11 @@ func (r *DefaultResolver) ResolvePlaylistState(ctx context.Context, recordingID,
 
 	info, err := f.Stat()
 	if err != nil {
-		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err, Detail: "failed to stat playlist"}
 	}
 	data, err := io.ReadAll(f)
 	if err != nil {
-		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err, Detail: "failed to read playlist"}
 	}
 
 	rewritten := v3recordings.RewritePlaylist(string(data), "EVENT", variant)
