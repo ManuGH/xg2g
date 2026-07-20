@@ -192,6 +192,12 @@ At handoff, compare the result with the original contract and record:
 
 ### Validation and handoff
 
+Run `make pre-push` before every push (or install the hook once via
+`make hooks-install`). A push that fails on gofmt, vet, or build wastes a
+full CI round-trip — this happened repeatedly during the VOD cutover.
+"Tests pass locally" is not a valid claim unless the exact CI target ran;
+for the PR gate that is `make ci-pr`.
+
 Every implementation handoff must state:
 
 - branch and commit(s),

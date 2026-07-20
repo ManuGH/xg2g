@@ -33,7 +33,7 @@ func TestLoadAutoDetectsVAAPIDeviceWhenUnset(t *testing.T) {
 		"XG2G_RECORDINGS_TARGET_SIGNING_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	}
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	setRequiredTestSecrets(t)
 	loader := NewLoaderWithEnv("", "test-version", vaapiLookup(env), vaapiEnviron(env))
 	cfg, err := loader.Load()
 	if err != nil {
@@ -62,7 +62,7 @@ func TestLoadSkipsVAAPIAutoDetectWhenEnvExplicitlyEmpty(t *testing.T) {
 		"XG2G_RECORDINGS_TARGET_SIGNING_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	}
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	setRequiredTestSecrets(t)
 	loader := NewLoaderWithEnv("", "test-version", vaapiLookup(env), vaapiEnviron(env))
 	cfg, err := loader.Load()
 	if err != nil {
@@ -94,7 +94,7 @@ func TestLoadPreservesExplicitVAAPIDeviceOverride(t *testing.T) {
 		"XG2G_RECORDINGS_TARGET_SIGNING_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	}
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	setRequiredTestSecrets(t)
 	loader := NewLoaderWithEnv("", "test-version", vaapiLookup(env), vaapiEnviron(env))
 	cfg, err := loader.Load()
 	if err != nil {

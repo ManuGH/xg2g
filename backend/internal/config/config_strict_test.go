@@ -18,11 +18,11 @@ func TestLoad_ValidMinimal(t *testing.T) {
 	// Ensure test directory exists (validation checks this)
 	// Ensure test directory exists (validation checks this)
 	testDir := t.TempDir()
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	setRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DATA", testDir)
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	setRequiredTestSecrets(t)
 	loader := NewLoader(filepath.Join("testdata", "valid-minimal.yaml"), "test")
 	cfg, err := loader.Load()
 	if err != nil {
@@ -40,7 +40,7 @@ func TestLoad_ValidMinimal(t *testing.T) {
 
 // TestLoad_UnknownKeyFails tests that strict parsing rejects unknown fields.
 func TestLoad_UnknownKeyFails(t *testing.T) {
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	setRequiredTestSecrets(t)
 	loader := NewLoader(filepath.Join("testdata", "invalid-unknown-key.yaml"), "test")
 	_, err := loader.Load()
 
@@ -60,7 +60,7 @@ func TestLoad_UnknownKeyFails(t *testing.T) {
 
 // TestLoad_InvalidTypeFails tests that type mismatches are caught.
 func TestLoad_InvalidTypeFails(t *testing.T) {
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	setRequiredTestSecrets(t)
 	loader := NewLoader(filepath.Join("testdata", "invalid-type.yaml"), "test")
 	_, err := loader.Load()
 
@@ -77,7 +77,7 @@ func TestLoad_InvalidTypeFails(t *testing.T) {
 
 // TestLoad_ValidationFails tests that validation catches logical errors.
 func TestLoad_ValidationFails(t *testing.T) {
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	setRequiredTestSecrets(t)
 	loader := NewLoader(filepath.Join("testdata", "invalid-validation.yaml"), "test")
 	_, err := loader.Load()
 
