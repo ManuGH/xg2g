@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 )
 
 // Spec defines the immutable configuration for a VOD build job.
@@ -27,8 +27,8 @@ type Spec struct {
 	// Profile defines the transcoding/remuxing profile invariant.
 	Profile Profile
 
-	// TargetProfile, when set, is the concrete playback build target and overrides coarse profile defaults.
-	TargetProfile *playbackprofile.TargetPlaybackProfile
+	// Intent, when set, is the concrete playback build intent carrying both Target and expected Truth.
+	Intent *ports.BuildIntent
 }
 
 // Profile represents a strict configuration set for FFmpeg.

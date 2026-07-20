@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -24,14 +24,14 @@ type MockArtifactResolver struct {
 	mock.Mock
 }
 
-func (m *MockArtifactResolver) ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
-	args := m.Called(ctx, recordingID, profile, variant, target)
+func (m *MockArtifactResolver) ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, intent *ports.BuildIntent) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+	args := m.Called(ctx, recordingID, profile, variant, intent)
 	err, _ := args.Get(1).(*artifacts.ArtifactError)
 	return args.Get(0).(artifacts.ArtifactOK), err
 }
 
-func (m *MockArtifactResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
-	args := m.Called(ctx, recordingID, profile, variant, target)
+func (m *MockArtifactResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, intent *ports.BuildIntent) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+	args := m.Called(ctx, recordingID, profile, variant, intent)
 	err, _ := args.Get(1).(*artifacts.ArtifactError)
 	return args.Get(0).(artifacts.ArtifactOK), err
 }

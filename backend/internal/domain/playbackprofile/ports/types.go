@@ -53,6 +53,22 @@ type SourceProfile struct {
 	Interlaced       bool    `json:"interlaced,omitempty"`
 	AudioChannels    int     `json:"audioChannels,omitempty"`
 	AudioBitrateKbps int     `json:"audioBitrateKbps,omitempty"`
+	Duration         float64 `json:"duration,omitempty"`
+	BitDepth         int     `json:"bitDepth,omitempty"`
+}
+
+// TruthMismatch represents a dimension where the real media deviates from the planner's assumption.
+type TruthMismatch struct {
+	Field    string      `json:"field"`
+	Expected interface{} `json:"expected"`
+	Actual   interface{} `json:"actual"`
+}
+
+// BuildIntent is the complete, planner-issued execution order for one build.
+type BuildIntent struct {
+	IntentHash  string                `json:"intentHash,omitempty"`
+	SourceTruth SourceProfile         `json:"sourceTruth,omitempty"`
+	Target      TargetPlaybackProfile `json:"target"`
 }
 
 // ClientPlaybackProfile describes the effective playback path on the client.

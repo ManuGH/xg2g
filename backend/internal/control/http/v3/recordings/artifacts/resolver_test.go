@@ -15,6 +15,7 @@ import (
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 )
 
 func TestArtifactResolver_ResolveSegment(t *testing.T) {
@@ -133,19 +134,19 @@ func TestArtifactResolver_ResolvePlaylist_UsesConcreteTargetProfile(t *testing.T
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		spec = runner.LastSpec()
-		if spec.TargetProfile != nil {
+		if spec.Intent != nil {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if spec.TargetProfile == nil {
+	if spec.Intent == nil {
 		t.Fatal("expected concrete target profile in VOD spec")
 	}
-	if spec.TargetProfile.Video.Mode != "transcode" || spec.TargetProfile.Video.CRF != 23 || spec.TargetProfile.Video.Preset != "fast" || spec.TargetProfile.Audio.BitrateKbps != 256 {
-		t.Fatalf("unexpected target profile passed to runner: %#v", spec.TargetProfile)
+	if spec.Intent.Target.Video.Mode != "transcode" || spec.Intent.Target.Video.CRF != 23 || spec.Intent.Target.Video.Preset != "fast" || spec.Intent.Target.Audio.BitrateKbps != 256 {
+		t.Fatalf("unexpected target profile passed to runner: %#v", spec.Intent.Target)
 	}
-	if spec.TargetProfile.Packaging != playbackprofile.PackagingFMP4 || spec.TargetProfile.HLS.SegmentContainer != "fmp4" {
-		t.Fatalf("expected safari fallback to use fmp4 packaging, got %#v", spec.TargetProfile)
+	if spec.Intent.Target.Packaging != ports.PackagingFMP4 || spec.Intent.Target.HLS.SegmentContainer != "fmp4" {
+		t.Fatalf("expected safari fallback to use fmp4 packaging, got %#v", spec.Intent.Target)
 	}
 }
 
@@ -189,7 +190,7 @@ func TestArtifactResolver_ResolvePlaylist_DerivesVariantFromTargetProfile(t *tes
 		HWAccel: playbackprofile.HWAccelNone,
 	})
 
-	_, artifactErr := r.ResolvePlaylist(context.Background(), validID, "", "", &target)
+	_, artifactErr := r.ResolvePlaylist(context.Background(), validID, "", "", &ports.BuildIntent{Target: target})
 	if artifactErr == nil || artifactErr.Code != CodePreparing {
 		t.Fatalf("expected preparing artifact error, got %#v", artifactErr)
 	}
@@ -247,7 +248,7 @@ func TestArtifactResolver_ResolvePlaylist_RejectsVariantMismatch(t *testing.T) {
 		HWAccel: playbackprofile.HWAccelNone,
 	})
 
-	_, artifactErr := r.ResolvePlaylist(context.Background(), validID, "", "wrong-variant", &target)
+	_, artifactErr := r.ResolvePlaylist(context.Background(), validID, "", "wrong-variant", &ports.BuildIntent{Target: target})
 	if artifactErr == nil {
 		t.Fatal("expected invalid artifact error")
 	}

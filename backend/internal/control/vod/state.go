@@ -43,7 +43,9 @@ type FailureReason string
 const (
 	ReasonStall     FailureReason = "STALL"
 	ReasonCrash     FailureReason = "CRASH"
-	ReasonStartFail FailureReason = "START_FAIL"
+	ReasonStartFail     FailureReason = "START_FAIL"
+	ReasonProbeFail     FailureReason = "PROBE_FAIL"
+	ReasonTruthMismatch FailureReason = "TruthMismatch"
 	ReasonInternal  FailureReason = "INTERNAL"
 	ReasonCanceled  FailureReason = "CANCELED"
 	ReasonContract  FailureReason = "RUNNER_CONTRACT"

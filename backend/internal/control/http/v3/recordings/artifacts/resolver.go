@@ -16,6 +16,7 @@ import (
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
@@ -23,8 +24,8 @@ import (
 )
 
 type Resolver interface {
-	ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError)
-	ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError)
+	ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, intent *ports.BuildIntent) (ArtifactOK, *ArtifactError)
+	ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, intent *ports.BuildIntent) (ArtifactOK, *ArtifactError)
 	ResolveSegment(ctx context.Context, recordingID string, segment string, variant string) (ArtifactOK, *ArtifactError)
 	ResolvePlaylistState(ctx context.Context, recordingID, variant string) (ArtifactOK, *ArtifactError)
 }
@@ -44,14 +45,14 @@ func New(cfg *config.AppConfig, manager *vod.Manager, mapper *recordings.PathMap
 }
 
 // ResolvePlaylist resolves the HLS playlist (index.m3u8), triggering builds if needed.
-func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError) {
+func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, intent *ports.BuildIntent) (ArtifactOK, *ArtifactError) {
 	// 1. Validate ID
 	ref, ok := decodeRef(recordingID)
 	if !ok {
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
 	}
 	variant = v3recordings.NormalizeVariantHash(variant)
-	targetProfile, resolvedVariant, artErr := r.recordingTarget(profile, variant, target)
+	intent, resolvedVariant, artErr := r.recordingTarget(profile, variant, intent)
 	if artErr != nil {
 		return ArtifactOK{}, artErr
 	}
@@ -75,7 +76,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	}
 	if !exists {
 		// First access: Start pipeline via EnsureSpec
-		if err := r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile); err != nil {
+		if err := r.triggerBuild(ctx, ref, profile, variant, metaID, intent); err != nil {
 			// If build trigger fails (e.g. source not found), kick off a probe so the
 			// pipeline can resolve the real input path. Pass "" — NOT the error string:
 			// TriggerProbe stores a non-empty input verbatim as meta.ResolvedPath, so
@@ -95,7 +96,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	if meta.State == vod.ArtifactStateFailed {
 		// Attempt reconcile
 		if _, transitioned := r.vodManager.MarkPreparingIfState(metaID, vod.ArtifactStateFailed, "reconcile: retrying build"); transitioned {
-			_ = r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile)
+			_ = r.triggerBuild(ctx, ref, profile, variant, metaID, intent)
 			return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing (reconciling)"}
 		}
 
@@ -118,7 +119,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 		}
 		// Metadata is ready, but we lack an HLS artifact.
 		// Trigger/Resume build instead of re-probing to avoid stuck StatePreparing loops.
-		_ = r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile)
+		_ = r.triggerBuild(ctx, ref, profile, variant, metaID, intent)
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist building"}
 	}
 
@@ -128,7 +129,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 	if err != nil {
 		r.vodManager.DemoteOnOpenFailure(metaID, err)
 		// Trigger build immediately to recover
-		_ = r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile)
+		_ = r.triggerBuild(ctx, ref, profile, variant, metaID, intent)
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "playlist open failed (reconciling)"}
 	}
 	defer func() { _ = f.Close() }()
@@ -183,13 +184,13 @@ func (r *DefaultResolver) resolveLivePlaylistArtifact(ref, variant string) (Arti
 	}, true
 }
 
-func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError) {
+func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, intent *ports.BuildIntent) (ArtifactOK, *ArtifactError) {
 	ref, ok := decodeRef(recordingID)
 	if !ok {
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
 	}
 	variant = v3recordings.NormalizeVariantHash(variant)
-	targetProfile, resolvedVariant, artErr := r.recordingTarget(profile, variant, target)
+	intent, resolvedVariant, artErr := r.recordingTarget(profile, variant, intent)
 	if artErr != nil {
 		return ArtifactOK{}, artErr
 	}
@@ -207,7 +208,7 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, pro
 	if !exists || meta.State != vod.ArtifactStateReady {
 		// Timeshift piggybacks on VOD build.
 		if !exists || meta.State == vod.ArtifactStateFailed {
-			_ = r.triggerBuild(ctx, ref, profile, variant, metaID, targetProfile)
+			_ = r.triggerBuild(ctx, ref, profile, variant, metaID, intent)
 		}
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 2 * time.Second, Detail: "preparing"}
 	}
@@ -302,7 +303,7 @@ func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string
 
 // Internal Logic
 
-func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, variant, metaID string, targetProfile *playbackprofile.TargetPlaybackProfile) error {
+func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, variant, metaID string, intent *ports.BuildIntent) error {
 	// 1. Resolve Source
 	srcType, srcURL, _, err := r.resolveSource(ref)
 	if err != nil {
@@ -318,37 +319,41 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 	// 3. Ensure Spec
 	finalPath := filepath.Join(cacheDir, "index.m3u8")
 
-	if targetProfile == nil {
-		return errors.New("target profile is required but was nil")
+	if intent == nil {
+		return errors.New("build intent is required but was nil")
 	}
 
 	// Using EnsureSpec to start/resume build
-	_, err = r.vodManager.EnsureSpec(ctx, cacheDir, metaID, srcURL, cacheDir, "index.live.m3u8", finalPath, targetProfile)
+	_, err = r.vodManager.EnsureSpec(ctx, cacheDir, metaID, srcURL, cacheDir, "index.live.m3u8", finalPath, intent)
 	_ = srcType // Unused for now
 	return err
 }
 
-func (r *DefaultResolver) recordingTarget(profile, variant string, target *playbackprofile.TargetPlaybackProfile) (*playbackprofile.TargetPlaybackProfile, string, *ArtifactError) {
+func (r *DefaultResolver) recordingTarget(profile, variant string, intent *ports.BuildIntent) (*ports.BuildIntent, string, *ArtifactError) {
 	variant = v3recordings.NormalizeVariantHash(variant)
-	if target == nil {
+	if intent == nil || intent.Target.Container == "" {
 		if r.cfg.RecordingStrictTargetRequired {
 			return nil, "", &ArtifactError{Code: CodeInvalid, Detail: "playback-info handshake required"}
 		}
 		log.L().Warn().Str("profile", profile).Str("variant", variant).Msg("VOD target fallback triggered")
 		metrics.IncTargetFallback("missing_target")
-		target = recordingTargetProfile(profile)
-	}
-	if target == nil {
-		target = &playbackprofile.TargetPlaybackProfile{
-			Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+		
+		target := recordingTargetProfile(profile)
+		if target == nil {
+			target = &playbackprofile.TargetPlaybackProfile{
+				Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+			}
 		}
+		intent = &ports.BuildIntent{Target: *target}
 	}
-	canonical := playbackprofile.CanonicalizeTarget(*target)
+	canonical := playbackprofile.CanonicalizeTarget(intent.Target)
 	resolvedVariant := canonical.Hash()
 	if variant != "" && resolvedVariant != variant {
 		return nil, "", &ArtifactError{Code: CodeInvalid, Detail: "playback variant mismatch"}
 	}
-	return &canonical, resolvedVariant, nil
+	
+	intent.Target = canonical
+	return intent, resolvedVariant, nil
 }
 
 func (r *DefaultResolver) ResolvePlaylistState(ctx context.Context, recordingID, variant string) (ArtifactOK, *ArtifactError) {

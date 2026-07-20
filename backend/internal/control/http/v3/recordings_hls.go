@@ -39,7 +39,7 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 		return
 	}
 	variant := v3recordings.NormalizeVariantHash(r.URL.Query().Get("variant"))
-	target, err := v3recordings.DecodeTargetProfileQuery(
+	intent, err := v3recordings.DecodeTargetProfileQuery(
 		r.URL.Query().Get("target"),
 		s.cfg.RecordingTargetSigningKey,
 		s.cfg.RecordingTargetSigningKeyPrevious,
@@ -50,8 +50,8 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 		return
 	}
 
-	if target != nil {
-		expectedVariant := v3recordings.TargetVariantHash(target)
+	if intent != nil {
+		expectedVariant := v3recordings.TargetVariantHash(&intent.Target)
 		if expectedVariant != "" && expectedVariant != variant {
 			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "target profile variant hash mismatch")
 			return
@@ -62,9 +62,9 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 	var artErr *artifacts.ArtifactError
 
 	if isTimeshift {
-		artifact, artErr = s.artifacts.ResolveTimeshift(r.Context(), recordingId, "", variant, target)
+		artifact, artErr = s.artifacts.ResolveTimeshift(r.Context(), recordingId, "", variant, intent)
 	} else {
-		artifact, artErr = s.artifacts.ResolvePlaylist(r.Context(), recordingId, "", variant, target)
+		artifact, artErr = s.artifacts.ResolvePlaylist(r.Context(), recordingId, "", variant, intent)
 	}
 
 	if artErr != nil {

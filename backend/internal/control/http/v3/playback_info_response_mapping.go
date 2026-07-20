@@ -21,6 +21,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/hls"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -46,7 +47,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 		if schemaType == "live" {
 			url = fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", id)
 		} else {
-			url = v3recordings.RecordingPlaylistURL(id, requestProfile, dec.TargetProfile, s.cfg.RecordingTargetSigningKey)
+			url = v3recordings.RecordingPlaylistURL(id, requestProfile, &ports.BuildIntent{Target: *dec.TargetProfile}, s.cfg.RecordingTargetSigningKey)
 		}
 	case "none":
 		mode = PlaybackInfoModeDirectMp4
