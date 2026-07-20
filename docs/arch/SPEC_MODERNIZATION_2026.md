@@ -25,7 +25,7 @@ Evidence lines cite those incidents so the motivation stays checkable.
   mechanism runs old and new in parallel with a divergence metric before
   the old path is deleted (the pattern that made the planner cutover safe).
 - **G5 — One PR per step, auto-merge (`gh pr merge --auto`), all gates
-  green, review threads fixed-or-answered.** Per AGENTS.md merge policy.
+  green, review threads fixed-or-answered.** Per `AGENTS.md` merge policy.
 
 ## R0 — Prerequisite: finish the cutover (not part of this program)
 
@@ -108,8 +108,8 @@ never exists), and multiple reconcile special cases in the resolver.
   heuristics.
 
 **Acceptance:** `grep` finds no code path that derives artifact state from
-`os.Stat`/file existence; `PromoteFailedToReadyIfPlaylist` is deleted; kill
--9 during a build leaves the system able to resume from the store alone
+`os.Stat`/file existence; `PromoteFailedToReadyIfPlaylist` is deleted; `kill -9`
+during a build leaves the system able to resume from the store alone
 (test exists).
 
 ---
@@ -171,7 +171,7 @@ previous-key mechanism).
 
 ## R5 — Guardrail completions (small, may run anytime after R0.1)
 
-Mostly done during the cutover (pre-push hook, AGENTS.md merge policy,
+Mostly done during the cutover (pre-push hook, `AGENTS.md` merge policy,
 enforce_admins, test-secrets helper). Remaining:
 
 - **Decision-literal linter:** extend `lint-invariants` with a grep gate
@@ -209,7 +209,7 @@ cutover and cost a CI round-trip or a review escalation:
    intentional.
 3. Never amend or force-push a branch that has an open PR.
 4. Review threads: fix or answer in the thread FIRST, resolve second
-   (AGENTS.md lifecycle). Never resolve silently.
+   (`AGENTS.md` lifecycle). Never resolve silently.
 5. Move-only PRs must not contain behavior changes. If you spot a bug
    while moving code, note it in the PR description and (if independently
    valuable) flag it for a separate task — do not fix it in the move PR.
