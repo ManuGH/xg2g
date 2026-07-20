@@ -298,6 +298,12 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `recording_playback.playback_policy` | `XG2G_RECORDING_PLAYBACK_POLICY` | `auto` | Active | Advanced |
 | `recording_playback.stable_window` | `XG2G_RECORDING_STABLE_WINDOW` | `10s` | Active | Advanced |
 
+### recordings
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `recordings.strict_target_required` | `XG2G_RECORDINGS_STRICT_TARGET_REQUIRED` | `false` | Active | Advanced |
+
 ### root
 
 | Path | Env | Default | Status | Profile |

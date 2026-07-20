@@ -150,6 +150,8 @@ recording_playback:
   playback_policy: auto
   stable_window: 10s
 recording_roots: {}
+recordings:
+  strict_target_required: false
 server:
   idleTimeout: 2m
   maxHeaderBytes: 1048576

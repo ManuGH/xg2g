@@ -2,10 +2,13 @@ package artifacts
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -251,4 +254,84 @@ func TestArtifactResolver_ResolvePlaylist_RejectsVariantMismatch(t *testing.T) {
 	if artifactErr.Code != CodeInvalid {
 		t.Fatalf("expected invalid artifact error, got %#v", artifactErr)
 	}
+}
+
+func getFallbackMetricValue() float64 {
+	mfs, _ := prometheus.DefaultGatherer.Gather()
+	for _, mf := range mfs {
+		if mf.GetName() == "xg2g_recordings_target_fallback_total" {
+			if len(mf.GetMetric()) > 0 {
+				return mf.GetMetric()[0].GetCounter().GetValue()
+			}
+		}
+	}
+	return 0
+}
+
+func TestArtifactResolver_StrictTargetEnforcement_Fails(t *testing.T) {
+	cfg := &config.AppConfig{
+		RecordingStrictTargetRequired: true,
+	}
+	mgr, _ := vod.NewManager(&dummyRunner{}, &dummyProber{}, nil)
+	r := New(cfg, mgr, nil)
+
+	validID := "MTowOjE6MDowOjA6MDowOjA6MDovZm9vLnRz"
+	_, err := r.ResolvePlaylist(context.Background(), validID, "safari", "", nil)
+
+	assert.NotNil(t, err)
+	assert.Equal(t, CodeInvalid, err.Code)
+	assert.Contains(t, err.Detail, "handshake required")
+	assert.Empty(t, mgr.ActiveJobIDs(), "no build job should be triggered when target is missing in strict mode")
+}
+
+func TestArtifactResolver_LegacyFallback_Metrics(t *testing.T) {
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{Root: t.TempDir()},
+		RecordingStrictTargetRequired: false,
+	}
+	runner := &captureRunner{}
+	mgr, _ := vod.NewManager(runner, &dummyProber{}, nil)
+	r := New(cfg, mgr, nil)
+
+	validID := "MTowOjE6MDowOjA6MDowOjA6MDovZm9vLnRz"
+
+	before := getFallbackMetricValue()
+
+	_, err := r.ResolvePlaylist(context.Background(), validID, "safari", "", nil)
+	assert.NotNil(t, err)
+	assert.Equal(t, CodePreparing, err.Code)
+
+	after := getFallbackMetricValue()
+	assert.Equal(t, float64(1), after-before, "fallback metric should increment by 1")
+}
+
+func TestArtifactResolver_ResolvePlaylistState(t *testing.T) {
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{Root: t.TempDir()},
+	}
+	mgr, _ := vod.NewManager(&dummyRunner{}, &dummyProber{}, nil)
+	r := New(cfg, mgr, nil)
+
+	ref := "1:0:1:0:0:0:0:0:0:0:/foo.ts"
+	validID := "MTowOjE6MDowOjA6MDowOjA6MDovZm9vLnRz"
+	variant := "v1"
+
+	t.Run("Missing Playlist -> CodeNotFound", func(t *testing.T) {
+		_, err := r.ResolvePlaylistState(context.Background(), validID, variant)
+		assert.NotNil(t, err)
+		assert.Equal(t, CodeNotFound, err.Code)
+		assert.Empty(t, mgr.ActiveJobIDs(), "state query should not trigger a build job")
+	})
+
+	t.Run("Existing Playlist -> Returns Content", func(t *testing.T) {
+		dir, _ := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, ref, variant)
+		os.MkdirAll(dir, 0755)
+		os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0644)
+
+		res, err := r.ResolvePlaylistState(context.Background(), validID, variant)
+		assert.Nil(t, err)
+		assert.Equal(t, ArtifactKindPlaylist, res.Kind)
+		assert.Equal(t, []byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT"), res.Data)
+		assert.Empty(t, mgr.ActiveJobIDs(), "state query should not trigger a build job")
+	})
 }

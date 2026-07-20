@@ -57,7 +57,7 @@ func resolvePlaybackSegmentTruth(ctx context.Context, resolver artifacts.Resolve
 		return nil, false
 	}
 
-	artifact, artifactErr := resolver.ResolvePlaylist(ctx, recordingID, "", "", nil)
+	artifact, artifactErr := resolver.ResolvePlaylistState(ctx, recordingID, "")
 	if artifactErr != nil {
 		return nil, false
 	}

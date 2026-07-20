@@ -41,6 +41,14 @@ func (m *MockArtifactsResolver) ResolveTimeshift(ctx context.Context, recordingI
 	return artifacts.ArtifactOK{}, nil
 }
 
+func (m *MockArtifactsResolver) ResolvePlaylistState(ctx context.Context, recordingID, variant string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+	args := m.Called(ctx, recordingID, variant)
+	if args.Get(1) != nil {
+		return artifacts.ArtifactOK{}, args.Get(1).(*artifacts.ArtifactError)
+	}
+	return args.Get(0).(artifacts.ArtifactOK), nil
+}
+
 func createTestServerP34(svc recservice.Service, art artifacts.Resolver) *Server {
 	cfg := config.AppConfig{}
 	cfg.FFmpeg.Bin = "/usr/bin/ffmpeg"
@@ -109,7 +117,7 @@ func TestGetRecordingPlaybackInfo_P3_4_SegmentTruth(t *testing.T) {
 seg1.ts`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "", "", mock.Anything).Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylistState", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
@@ -146,7 +154,7 @@ seg1.ts
 seg2.ts`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "", "", mock.Anything).Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylistState", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
@@ -184,7 +192,7 @@ seg2.ts
 #EXT-X-ENDLIST`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "", "", mock.Anything).Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylistState", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 
@@ -227,7 +235,7 @@ seg1.ts
 seg2.ts`
 
 		art := new(MockArtifactsResolver)
-		art.On("ResolvePlaylist", mock.Anything, recordingID, "", "", mock.Anything).Return(artifacts.ArtifactOK{
+		art.On("ResolvePlaylistState", mock.Anything, recordingID, "").Return(artifacts.ArtifactOK{
 			Data: []byte(playlist),
 		}, nil)
 

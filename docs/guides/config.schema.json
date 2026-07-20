@@ -983,6 +983,15 @@
     "recording_roots": {
       "type": "object"
     },
+    "recordings": {
+      "properties": {
+        "strict_target_required": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "server": {
       "properties": {
         "idleTimeout": {

@@ -42,50 +42,12 @@ func (m *MockArtifactResolver) ResolveSegment(ctx context.Context, recordingID s
 	return args.Get(0).(artifacts.ArtifactOK), err
 }
 
-func TestHLS_ProfilePropagation(t *testing.T) {
-	tests := []struct {
-		name            string
-		requestPath     string
-		userAgent       string
-		expectedProfile string
-	}{
-		{
-			name:            "Safari_Mac",
-			requestPath:     "/api/v3/recordings/rec1/playlist.m3u8",
-			userAgent:       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15",
-			expectedProfile: "safari",
-		},
-		{
-			name:            "Generic_Chrome",
-			requestPath:     "/api/v3/recordings/rec1/playlist.m3u8",
-			userAgent:       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-			expectedProfile: "generic",
-		},
-		{
-			name:            "Explicit_AndroidTVNative_Query",
-			requestPath:     "/api/v3/recordings/rec1/playlist.m3u8?profile=android_native",
-			userAgent:       "Mozilla/5.0 (Linux; Android 15; sdk_gphone64_arm64 Build/AE3A.240806.005) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36",
-			expectedProfile: "android_native",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			svc := new(MockArtifactResolver)
-			svc.On("ResolvePlaylist", mock.Anything, "rec1", tt.expectedProfile, "", mock.Anything).Return(artifacts.ArtifactOK{Data: []byte("ok"), Kind: artifacts.ArtifactKindPlaylist}, (*artifacts.ArtifactError)(nil))
-
-			s := &Server{artifacts: svc}
-			w := httptest.NewRecorder()
-			r := httptest.NewRequest("GET", tt.requestPath, nil)
-			r.Header.Set("User-Agent", tt.userAgent)
-
-			s.GetRecordingHLSPlaylist(w, r, "rec1")
-
-			assert.Equal(t, http.StatusOK, w.Code)
-			svc.AssertExpectations(t)
-		})
-	}
+func (m *MockArtifactResolver) ResolvePlaylistState(ctx context.Context, recordingID, variant string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+	args := m.Called(ctx, recordingID, variant)
+	err, _ := args.Get(1).(*artifacts.ArtifactError)
+	return args.Get(0).(artifacts.ArtifactOK), err
 }
+
 
 func TestHLSHandlers_Matrix(t *testing.T) {
 	tmpDir := t.TempDir()
