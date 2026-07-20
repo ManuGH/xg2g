@@ -279,6 +279,12 @@ func validateAuthAndPlaybackDecision(v *validate.Validator, cfg AppConfig) {
 	if secret := strings.TrimSpace(cfg.PlaybackDecisionSecret); secret != "" && len(secret) < 32 {
 		v.AddError("PlaybackDecisionSecret", "must be at least 32 characters", "")
 	}
+	if secret := strings.TrimSpace(cfg.RecordingTargetSigningKey); secret == "" || len(secret) < 32 {
+		v.AddError("RecordingTargetSigningKey", "must be configured and at least 32 characters", "")
+	}
+	if prev := strings.TrimSpace(cfg.RecordingTargetSigningKeyPrevious); prev != "" && len(prev) < 32 {
+		v.AddError("RecordingTargetSigningKeyPrevious", "must be at least 32 characters", "")
+	}
 	if kid := normalizePlaybackDecisionKeyID(cfg.PlaybackDecisionKeyID); strings.TrimSpace(cfg.PlaybackDecisionKeyID) != "" && kid == "" {
 		v.AddError("PlaybackDecisionKeyID", "must match [a-z0-9._-]+", cfg.PlaybackDecisionKeyID)
 	}

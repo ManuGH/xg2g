@@ -51,6 +51,7 @@ func baseV3Config(t *testing.T) AppConfig {
 			DeliveryPolicy: "universal",
 		},
 		VODCacheMaxEntries: 256,
+		RecordingTargetSigningKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	}
 }
 

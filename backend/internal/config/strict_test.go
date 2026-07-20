@@ -31,6 +31,7 @@ enigma2:
 	}
 
 	// Load with default settings (should imply strict mode for v3.0.0)
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader(configPath, "")
 	_, err := loader.Load()
 

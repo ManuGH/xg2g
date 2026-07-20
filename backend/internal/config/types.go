@@ -147,7 +147,9 @@ type RecordingPlaybackConfig struct {
 }
 
 type RecordingsFileConfig struct {
-	StrictTargetRequired *bool `yaml:"strict_target_required,omitempty"`
+	StrictTargetRequired     *bool   `yaml:"strict_target_required,omitempty"`
+	TargetSigningKey         *string `yaml:"target_signing_key,omitempty"`
+	TargetSigningKeyPrevious *string `yaml:"target_signing_key_previous,omitempty"`
 }
 
 // RecordingPathMapping defines Receiver→Local path mapping
@@ -588,7 +590,9 @@ type AppConfig struct {
 	RecordingPlaybackPolicy       string                 // "auto" (default), "local_only", "receiver_only"
 	RecordingStableWindow         time.Duration          // File stability check duration (default: 2s)
 	RecordingPathMappings         []RecordingPathMapping // Receiver→Local path mappings
-	RecordingStrictTargetRequired bool                   // Phase 2 target rollout guard
+	RecordingStrictTargetRequired       bool                   // Phase 2 target rollout guard
+	RecordingTargetSigningKey           string
+	RecordingTargetSigningKeyPrevious   string
 
 	// VOD Optimization (Legacy flat fields - kept for backwards compatibility)
 	VODProbeSize       string        // ffmpeg probesize (e.g. "50M")

@@ -45,7 +45,8 @@ func TestConfigAudit_StrictLoadingFailsOnUnknownKey(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	configPath := filepath.Join(tmpDir, "invalid.yaml")
 	content := `
@@ -57,6 +58,7 @@ unknownKeyAtRoot: "should-fail"
 	require.NoError(t, err)
 
 	// 2. Use the productive Loader path
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader(configPath, "test-version")
 	_, err = loader.Load()
 
@@ -70,7 +72,8 @@ func TestConfigAudit_StrictLoadingFailsOnNestedUnknownKey(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	configPath := filepath.Join(tmpDir, "invalid-nested.yaml")
 	content := `
@@ -82,6 +85,7 @@ api:
 	err = os.WriteFile(configPath, []byte(content), 0600)
 	require.NoError(t, err)
 
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader(configPath, "test-version")
 	_, err = loader.Load()
 
@@ -94,7 +98,8 @@ func TestConfigGovernance_ForbiddenCombination_ProxyAware(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	configPath := filepath.Join(tmpDir, "forbidden.yaml")
 	// Case 1: ForceHTTPS=true, TLSEnabled=false, TrustedProxies=empty -> FAIL
@@ -110,6 +115,7 @@ tls:
 	err = os.WriteFile(configPath, []byte(content), 0600)
 	require.NoError(t, err)
 
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader(configPath, "test-version")
 	_, err = loader.Load()
 	require.Error(t, err, "Should fail without TrustedProxies")
@@ -174,10 +180,12 @@ func getFieldValue(t *testing.T, v reflect.Value, path string) (reflect.Value, b
 
 // Gate: Ensure Registry Defaults are the Single Source of Truth for runtime configuration
 func TestConfigAudit_RegistryTruth_Defaults(t *testing.T) {
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_VAAPI_DEVICE", "")
 
 	// 1. Load config only with defaults (no file, no env)
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader("", "vTest")
 	cfg, err := loader.Load()
 	// Validation might fail because defaults alone might not be valid (e.g. missing required URLs)
@@ -202,7 +210,7 @@ func TestConfigAudit_RegistryTruth_Defaults(t *testing.T) {
 		val, found := getFieldValue(t, cfgVal, entry.FieldPath)
 		require.True(t, found, "Field %s not found in AppConfig", entry.FieldPath)
 
-		if entry.FieldPath == "Store.Path" {
+		if entry.FieldPath == "Store.Path" || entry.FieldPath == "RecordingTargetSigningKey" || entry.FieldPath == "RecordingTargetSigningKeyPrevious" {
 			continue
 		}
 
@@ -228,7 +236,8 @@ func TestConfigAudit_RegistryTruth_EnvKeys(t *testing.T) {
 	// We need to set these to avoid "no tuner slots" critical error or other blockers
 	os.Setenv("XG2G_ENGINE_ENABLED", "false") // Disable engine to skip auto-discovery
 	defer os.Unsetenv("XG2G_ENGINE_ENABLED")
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	// 2. Load Config
 	l := NewLoader("", "vTest")
@@ -326,8 +335,10 @@ func TestConfigGovernance_RemovedEnvWarnOnly(t *testing.T) {
 	// Provide minimal valid config to avoid unrelated validation errors. Loader must not fail.
 	os.Setenv("XG2G_E2_HOST", "http://localhost")
 	defer os.Unsetenv("XG2G_E2_HOST")
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader("", "test-version")
 	_, err := loader.Load()
 
@@ -340,8 +351,10 @@ func TestConfigGovernance_DeprecationFailStart(t *testing.T) {
 
 	os.Setenv("XG2G_E2_HOST", "http://localhost")
 	defer os.Unsetenv("XG2G_E2_HOST")
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader("", "test-version")
 	_, err := loader.Load()
 

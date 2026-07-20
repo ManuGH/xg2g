@@ -22,6 +22,7 @@ import (
 func TestPutSystemConfigRejectsInvalid(t *testing.T) {
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "12345678901234567890123456789012")
 	cfg, err := config.NewLoader("", "test").Load()
 	require.NoError(t, err)
 	cfg.DataDir = t.TempDir()
@@ -49,6 +50,7 @@ func TestPutSystemConfigRejectsInvalid(t *testing.T) {
 func TestPutSystemConfigTriggersShutdown(t *testing.T) {
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "12345678901234567890123456789012")
 	cfg, err := config.NewLoader("", "test").Load()
 	require.NoError(t, err)
 	cfg.DataDir = t.TempDir()
@@ -83,6 +85,7 @@ func TestPutSystemConfigTriggersShutdown(t *testing.T) {
 func TestPutSystemConfigDoesNotAliasCurrent(t *testing.T) {
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "12345678901234567890123456789012")
 	cfg, err := config.NewLoader("", "test").Load()
 	require.NoError(t, err)
 

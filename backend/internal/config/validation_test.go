@@ -5,11 +5,16 @@
 package config
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func init() {
+	os.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+}
 
 func baseValidationConfig() AppConfig {
 	return AppConfig{
@@ -34,7 +39,8 @@ func baseValidationConfig() AppConfig {
 		Streaming: StreamingConfig{
 			DeliveryPolicy: "universal",
 		},
-		VODCacheMaxEntries: 256,
+		VODCacheMaxEntries:        256,
+		RecordingTargetSigningKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	}
 }
 

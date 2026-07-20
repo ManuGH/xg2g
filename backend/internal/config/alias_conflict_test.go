@@ -40,13 +40,15 @@ enigma2:
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("XG2G_STORE_PATH", t.TempDir())
+			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 			path := filepath.Join(t.TempDir(), "config.yaml")
 			if err := os.WriteFile(path, []byte(strings.TrimSpace(tc.yaml)), 0644); err != nil {
 				t.Fatalf("write temp config: %v", err)
 			}
 
-			loader := NewLoader(path, "dev")
+			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	loader := NewLoader(path, "dev")
 			_, err := loader.Load()
 			if err == nil {
 				t.Fatalf("expected error, got nil")
@@ -62,7 +64,8 @@ enigma2:
 }
 
 func TestCanonicalEnigma2YAMLPasses(t *testing.T) {
-	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := `
 enigma2:
@@ -72,6 +75,7 @@ enigma2:
 		t.Fatalf("write temp config: %v", err)
 	}
 
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader(path, "dev")
 	if _, err := loader.Load(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -80,6 +84,7 @@ enigma2:
 
 func TestAliasConflictYamlVsEnv(t *testing.T) {
 	t.Run("yaml openWebIF fails before env conflict resolution", func(t *testing.T) {
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 		t.Setenv("XG2G_E2_TIMEOUT", "5s")
 		path := filepath.Join(t.TempDir(), "config.yaml")
@@ -91,7 +96,8 @@ openWebIF:
 		if err := os.WriteFile(path, []byte(strings.TrimSpace(cfg)), 0644); err != nil {
 			t.Fatalf("write temp config: %v", err)
 		}
-		loader := NewLoader(path, "dev")
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	loader := NewLoader(path, "dev")
 		_, err := loader.Load()
 		if err == nil {
 			t.Fatalf("expected error, got nil")
@@ -105,6 +111,7 @@ openWebIF:
 	})
 
 	t.Run("yaml enigma2 vs env openWebIF mismatch", func(t *testing.T) {
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 		t.Setenv("XG2G_OWI_TIMEOUT_MS", "5000")
 		path := filepath.Join(t.TempDir(), "config.yaml")
@@ -116,7 +123,8 @@ enigma2:
 		if err := os.WriteFile(path, []byte(strings.TrimSpace(cfg)), 0644); err != nil {
 			t.Fatalf("write temp config: %v", err)
 		}
-		loader := NewLoader(path, "dev")
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	loader := NewLoader(path, "dev")
 		_, err := loader.Load()
 		if err == nil {
 			t.Fatalf("expected error, got nil")
@@ -132,12 +140,15 @@ enigma2:
 
 func TestLegacyEnvRejectedBeforeEnvAliasResolution(t *testing.T) {
 	t.Run("env mismatch fails with migration hint", func(t *testing.T) {
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 		t.Setenv("XG2G_OWI_TIMEOUT_MS", "10000")
 		t.Setenv("XG2G_E2_TIMEOUT", "5s")
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 		t.Setenv("XG2G_E2_HOST", "http://example.com")
 
-		loader := NewLoader("", "dev")
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	loader := NewLoader("", "dev")
 		_, err := loader.Load()
 		if err == nil {
 			t.Fatalf("expected error, got nil")
@@ -151,12 +162,15 @@ func TestLegacyEnvRejectedBeforeEnvAliasResolution(t *testing.T) {
 	})
 
 	t.Run("env match still fails because legacy env is forbidden", func(t *testing.T) {
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 		t.Setenv("XG2G_STORE_PATH", t.TempDir())
 		t.Setenv("XG2G_OWI_TIMEOUT_MS", "10000")
 		t.Setenv("XG2G_E2_TIMEOUT", "10s")
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 		t.Setenv("XG2G_E2_HOST", "http://example.com")
 
-		loader := NewLoader("", "dev")
+		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	loader := NewLoader("", "dev")
 		_, err := loader.Load()
 		if err == nil {
 			t.Fatal("expected legacy env error, got nil")

@@ -46,7 +46,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 		if schemaType == "live" {
 			url = fmt.Sprintf("/api/v3/streams/%s/playlist.m3u8", id)
 		} else {
-			url = v3recordings.RecordingPlaylistURL(id, requestProfile, dec.TargetProfile)
+			url = v3recordings.RecordingPlaylistURL(id, requestProfile, dec.TargetProfile, s.cfg.RecordingTargetSigningKey)
 		}
 	case "none":
 		mode = PlaybackInfoModeDirectMp4
