@@ -17,6 +17,9 @@ func mustNewServer(t testing.TB, cfg config.AppConfig, cfgMgr *config.Manager, o
 	if cfgMgr == nil {
 		cfgMgr = config.NewManager("")
 	}
+	if cfg.ConfigVersion == "" && !cfg.APILegacyEnabled {
+		cfg.APILegacyEnabled = true
+	}
 	s, err := New(cfg, cfgMgr, opts...)
 	if err != nil {
 		t.Fatalf("failed to initialize api server: %v", err)

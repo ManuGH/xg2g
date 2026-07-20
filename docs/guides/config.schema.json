@@ -55,6 +55,10 @@
           "default": true,
           "type": "boolean"
         },
+        "legacy_enabled": {
+          "default": true,
+          "type": "boolean"
+        },
         "listenAddr": {
           "default": "127.0.0.1:8088",
           "description": "API server listen address (host:port)",

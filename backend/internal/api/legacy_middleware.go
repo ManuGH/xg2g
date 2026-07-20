@@ -5,15 +5,18 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
-// legacyAPIMiddleware records metrics and warnings for non-v3 API endpoints per SPEC_MODERNIZATION_2026.md §A1.1.
+// legacyAPIMiddleware records metrics and warnings for non-v3 API endpoints per SPEC_MODERNIZATION_2026.md §A1.1
+// and gates access when api.legacy_enabled is false per §A1.2.
 // It intercepts any request starting with "/api/" that is not part of canonical "/api/v3/" routes,
-// increments xg2g_legacy_api_requests_total{path,client}, and logs a WARN message without altering behavior.
+// increments xg2g_legacy_api_requests_total{path,client}, and logs a WARN message.
+// If APILegacyEnabled is false, it returns 410 Gone with a problem+json body.
 func (s *Server) legacyAPIMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
@@ -25,6 +28,18 @@ func (s *Server) legacyAPIMiddleware(next http.Handler) http.Handler {
 				Str("client", client).
 				Str("remote_addr", r.RemoteAddr).
 				Msg("legacy API endpoint accessed (deprecated, migrate to /api/v3)")
+
+			if !s.GetConfig().APILegacyEnabled {
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusGone)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"type":   "https://xg2g.example.invalid/problems/legacy-api-gone",
+					"title":  "Legacy API Retired",
+					"status": http.StatusGone,
+					"detail": "This legacy API endpoint has been retired and disabled by configuration. Please migrate to the /api/v3 endpoints.",
+				})
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

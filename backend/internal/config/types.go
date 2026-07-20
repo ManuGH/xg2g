@@ -171,6 +171,7 @@ type APIConfig struct {
 	TokenScopes                    []string        `yaml:"tokenScopes,omitempty"`
 	Tokens                         []ScopedToken   `yaml:"tokens,omitempty"`
 	DisableLegacyTokenSources      *bool           `yaml:"disableLegacyTokenSources,omitempty"`
+	LegacyEnabled                  *bool           `yaml:"legacy_enabled,omitempty"`
 	PlaybackDecisionSecret         string          `yaml:"playbackDecisionSecret,omitempty"`
 	PlaybackDecisionKeyID          string          `yaml:"playbackDecisionKeyId,omitempty"`
 	PlaybackDecisionPreviousKeys   []string        `yaml:"playbackDecisionPreviousKeys,omitempty"`
@@ -532,6 +533,7 @@ type AppConfig struct {
 	APITokenScopes                 []string
 	APITokens                      []ScopedToken
 	APIDisableLegacyTokenSources   bool
+	APILegacyEnabled               bool
 	PlaybackDecisionSecret         string
 	PlaybackDecisionKeyID          string
 	PlaybackDecisionPreviousKeys   []string

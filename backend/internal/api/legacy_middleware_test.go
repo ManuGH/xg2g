@@ -5,18 +5,20 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestLegacyAPIMiddleware(t *testing.T) {
-	s := &Server{}
+	s := &Server{cfg: config.AppConfig{APILegacyEnabled: true}}
 	dummyHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -125,4 +127,40 @@ func TestGetClientLabel(t *testing.T) {
 			require.Equal(t, tt.expected, getClientLabel(req))
 		})
 	}
+}
+
+func TestLegacyAPIMiddleware_Gate(t *testing.T) {
+	s := &Server{cfg: config.AppConfig{APILegacyEnabled: false}}
+	dummyHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	handler := s.legacyAPIMiddleware(dummyHandler)
+
+	t.Run("canonical v3 request passes through even when APILegacyEnabled is false", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings", nil)
+		rr := httptest.NewRecorder()
+
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+		assert.Equal(t, "ok", rr.Body.String())
+	})
+
+	t.Run("legacy v2 request returns 410 Gone with problem+json when APILegacyEnabled is false", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v2/system/health", nil)
+		rr := httptest.NewRecorder()
+
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusGone, rr.Code)
+		assert.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+
+		var resp map[string]interface{}
+		err := json.Unmarshal(rr.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Equal(t, "Legacy API Retired", resp["title"])
+		assert.Equal(t, float64(http.StatusGone), resp["status"])
+	})
 }
