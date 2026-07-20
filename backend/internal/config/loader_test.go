@@ -18,7 +18,7 @@ func TestLoadDefaults(t *testing.T) {
 	// Set receiver base URL to keep defaults deterministic for this test.
 	_ = os.Setenv("XG2G_E2_HOST", "http://example.com")
 	_ = os.Setenv("XG2G_STORE_PATH", t.TempDir())
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	defer func() {
 		_ = os.Unsetenv("XG2G_E2_HOST")
 		_ = os.Unsetenv("XG2G_STORE_PATH")
@@ -71,7 +71,7 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadFromYAML(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	customDataDir := filepath.Join(tmpDir, "custom-data")
@@ -123,7 +123,7 @@ picons:
 
 func TestLoadHouseholdPinAndUnlockTTLFromYAML(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -155,7 +155,7 @@ household:
 
 func TestLoadRejectsInvalidHouseholdUnlockTTL(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -178,7 +178,7 @@ household:
 
 func TestLoadFromYAMLHLSReadySegments(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -206,7 +206,7 @@ hls:
 
 func TestLoadPlaybackOperatorFromYAML(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -243,7 +243,7 @@ playback:
 
 func TestENVOverridesFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	fileDataDir := filepath.Join(tmpDir, "file-data")
@@ -261,7 +261,7 @@ enigma2:
 	}
 
 	t.Setenv("XG2G_DATA", envDataDir)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://env.local")
 	t.Setenv("XG2G_E2_STREAM_PORT", "7001")
 
@@ -283,9 +283,9 @@ enigma2:
 }
 
 func TestEnvRecordingPlaybackOverrides(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDING_PLAYBACK_POLICY", "local_only")
 	t.Setenv("XG2G_RECORDING_STABLE_WINDOW", "250ms")
@@ -315,9 +315,9 @@ func TestEnvRecordingPlaybackOverrides(t *testing.T) {
 }
 
 func TestENVCanonicalStreamPortUsedWhenSet(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
 
@@ -334,7 +334,7 @@ func TestENVCanonicalStreamPortUsedWhenSet(t *testing.T) {
 
 func TestENVOverridesPlaybackOperatorFileConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -378,7 +378,7 @@ playback:
 
 func TestLoadPlaybackOperatorSourceRulesFromFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -437,9 +437,9 @@ playback:
 }
 
 func TestENVLegacyStreamPortFailsStart(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_STREAM_PORT", "7001")
 
@@ -458,7 +458,7 @@ func TestENVLegacyStreamPortFailsStart(t *testing.T) {
 
 func TestPrecedenceOrder(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	fileDataDir := filepath.Join(tmpDir, "file-data")
@@ -503,7 +503,7 @@ epg:
 
 func TestValidateEPGBounds(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	baseCfg := func() AppConfig {
 		return AppConfig{
@@ -658,9 +658,9 @@ func TestE2MaxBackoffDefaultAndCanonicalEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Unsetenv("XG2G_E2_MAX_BACKOFF")
-			setRequiredTestSecrets(t)
+			SetRequiredTestSecrets(t)
 			t.Setenv("XG2G_E2_HOST", "http://example.com")
-			setRequiredTestSecrets(t)
+			SetRequiredTestSecrets(t)
 			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 			if tt.envValue != "" {
@@ -682,9 +682,9 @@ func TestE2MaxBackoffDefaultAndCanonicalEnv(t *testing.T) {
 }
 
 func TestE2MaxBackoffFromENV(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_E2_MAX_BACKOFF", "9s")
 
@@ -701,7 +701,7 @@ func TestE2MaxBackoffFromENV(t *testing.T) {
 
 // TestE2MaxBackoffFromFile tests that maxBackoff from canonical YAML config is read correctly.
 func TestE2MaxBackoffFromFile(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	tests := []struct {
 		name            string
@@ -774,7 +774,7 @@ enigma2:
 // TestE2MaxBackoffENVOverridesFile tests precedence: ENV > File > Default.
 func TestE2MaxBackoffENVOverridesFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -814,7 +814,7 @@ enigma2:
 // TestE2BackoffConfigConsistency tests that canonical Enigma2 timing config works together.
 func TestE2BackoffConfigConsistency(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -854,7 +854,7 @@ enigma2:
 }
 
 func TestE2MaxBackoffInvalidValues(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	tests := []struct {
 		name          string
@@ -893,9 +893,9 @@ func TestE2MaxBackoffInvalidValues(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Unsetenv("XG2G_E2_MAX_BACKOFF")
-			setRequiredTestSecrets(t)
+			SetRequiredTestSecrets(t)
 			t.Setenv("XG2G_E2_HOST", "http://example.com")
-			setRequiredTestSecrets(t)
+			SetRequiredTestSecrets(t)
 			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 			if tt.envValue != "" {
@@ -935,7 +935,7 @@ func TestE2MaxBackoffInvalidValues(t *testing.T) {
 // This test ensures that YAML can explicitly disable features and set zero values.
 func TestYAMLCanDisableFeatures(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	dataDir := filepath.Join(tmpDir, "data")
@@ -980,9 +980,9 @@ epg:
 }
 
 func TestParseScopedTokensFromEnv(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	t.Run("json_format", func(t *testing.T) {
@@ -1047,7 +1047,7 @@ func TestParseScopedTokensFromEnv(t *testing.T) {
 
 func TestAPITokenRequiresScopes(t *testing.T) {
 	t.Setenv("XG2G_API_TOKEN", "token-only")
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	loader := NewLoader("", "test")
@@ -1059,7 +1059,7 @@ func TestAPITokenRequiresScopes(t *testing.T) {
 
 func TestYAMLRejectsMissingTokenScopes(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
@@ -1081,7 +1081,7 @@ api:
 
 func TestYAMLRejectsTokenWithoutScopes(t *testing.T) {
 	tmpDir := t.TempDir()
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 

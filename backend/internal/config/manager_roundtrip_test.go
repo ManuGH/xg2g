@@ -17,9 +17,9 @@ import (
 // openWebIF, so a single config save through the API made the file unloadable —
 // bricking hot-reload and the next daemon restart.
 func TestSaveLoadRoundTrip(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 
 	// 1. Start from a valid canonical (enigma2.*) config with non-default
 	// receiver settings that must survive a Save -> Load round-trip.

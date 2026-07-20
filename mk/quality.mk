@@ -6,7 +6,7 @@
 
 pre-push: ## Fast local guard against the PR gate's cheapest failures (gofmt, vet, build) — seconds, not minutes
 	@echo "Checking gofmt..."
-	@UNFMT=$$(cd $(BACKEND_DIR) && git ls-files '*.go' | grep -v '^vendor/' | xargs gofmt -l 2>/dev/null); if [ -n "$$UNFMT" ]; then \
+	@UNFMT=$$(cd $(BACKEND_DIR) && git ls-files -- '*.go' ':(exclude)vendor/**' | xargs gofmt -l 2>/dev/null); if [ -n "$$UNFMT" ]; then \
 		echo "❌ Not gofmt'd (run: cd $(BACKEND_DIR) && gofmt -w <files>):"; echo "$$UNFMT"; exit 1; fi
 	@echo "Running go vet..."
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" vet ./...

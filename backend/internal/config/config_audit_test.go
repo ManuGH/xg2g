@@ -45,7 +45,7 @@ func TestConfigAudit_StrictLoadingFailsOnUnknownKey(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	configPath := filepath.Join(tmpDir, "invalid.yaml")
@@ -58,7 +58,7 @@ unknownKeyAtRoot: "should-fail"
 	require.NoError(t, err)
 
 	// 2. Use the productive Loader path
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test-version")
 	_, err = loader.Load()
 
@@ -72,7 +72,7 @@ func TestConfigAudit_StrictLoadingFailsOnNestedUnknownKey(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	configPath := filepath.Join(tmpDir, "invalid-nested.yaml")
@@ -85,7 +85,7 @@ api:
 	err = os.WriteFile(configPath, []byte(content), 0600)
 	require.NoError(t, err)
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test-version")
 	_, err = loader.Load()
 
@@ -98,7 +98,7 @@ func TestConfigGovernance_ForbiddenCombination_ProxyAware(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	configPath := filepath.Join(tmpDir, "forbidden.yaml")
@@ -115,7 +115,7 @@ tls:
 	err = os.WriteFile(configPath, []byte(content), 0600)
 	require.NoError(t, err)
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test-version")
 	_, err = loader.Load()
 	require.Error(t, err, "Should fail without TrustedProxies")
@@ -180,12 +180,12 @@ func getFieldValue(t *testing.T, v reflect.Value, path string) (reflect.Value, b
 
 // Gate: Ensure Registry Defaults are the Single Source of Truth for runtime configuration
 func TestConfigAudit_RegistryTruth_Defaults(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_VAAPI_DEVICE", "")
 
 	// 1. Load config only with defaults (no file, no env)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "vTest")
 	cfg, err := loader.Load()
 	// Validation might fail because defaults alone might not be valid (e.g. missing required URLs)
@@ -236,7 +236,7 @@ func TestConfigAudit_RegistryTruth_EnvKeys(t *testing.T) {
 	// We need to set these to avoid "no tuner slots" critical error or other blockers
 	os.Setenv("XG2G_ENGINE_ENABLED", "false") // Disable engine to skip auto-discovery
 	defer os.Unsetenv("XG2G_ENGINE_ENABLED")
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	// 2. Load Config
@@ -335,10 +335,10 @@ func TestConfigGovernance_RemovedEnvWarnOnly(t *testing.T) {
 	// Provide minimal valid config to avoid unrelated validation errors. Loader must not fail.
 	os.Setenv("XG2G_E2_HOST", "http://localhost")
 	defer os.Unsetenv("XG2G_E2_HOST")
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test-version")
 	_, err := loader.Load()
 
@@ -351,10 +351,10 @@ func TestConfigGovernance_DeprecationFailStart(t *testing.T) {
 
 	os.Setenv("XG2G_E2_HOST", "http://localhost")
 	defer os.Unsetenv("XG2G_E2_HOST")
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test-version")
 	_, err := loader.Load()
 

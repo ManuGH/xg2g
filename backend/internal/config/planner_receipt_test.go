@@ -8,10 +8,10 @@ import (
 )
 
 func TestPlannerReceiptEnvironmentOverrides(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
-	setRequiredTestSecrets(t)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_PLANNER_RECEIPT_ENABLED", "true")
 	t.Setenv("XG2G_PLANNER_RECEIPT_REQUIRED", "true")
@@ -34,10 +34,10 @@ func TestPlannerReceiptEnvironmentOverrides(t *testing.T) {
 }
 
 func TestPlannerConfigurationLoadsFromStrictYAML(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
-	setRequiredTestSecrets(t)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	err := os.WriteFile(path, []byte(`

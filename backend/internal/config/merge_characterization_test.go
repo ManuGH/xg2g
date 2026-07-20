@@ -10,7 +10,7 @@ import (
 )
 
 func TestMergeFileConfig_RejectsLegacyOpenWebIF(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {
@@ -35,7 +35,7 @@ func TestMergeFileConfig_RejectsLegacyOpenWebIF(t *testing.T) {
 }
 
 func TestMergeFileConfig_AppliesCanonicalEnigma2(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {
@@ -74,7 +74,7 @@ func TestMergeEnvConfig_AppliesCanonicalEnigma2Env(t *testing.T) {
 	unsetEnv(t, "XG2G_E2_BACKOFF")
 	unsetEnv(t, "XG2G_E2_STREAM_PORT")
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://canonical.local")
 	t.Setenv("XG2G_E2_USER", "canonical-user")
 	t.Setenv("XG2G_E2_PASS", "canonical-pass")
@@ -83,7 +83,7 @@ func TestMergeEnvConfig_AppliesCanonicalEnigma2Env(t *testing.T) {
 	t.Setenv("XG2G_E2_BACKOFF", "700ms")
 	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {
@@ -120,7 +120,7 @@ func TestMergeEnvConfig_AppliesCanonicalMaxBackoffEnv(t *testing.T) {
 
 	t.Setenv("XG2G_E2_MAX_BACKOFF", "9s")
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {
@@ -138,7 +138,7 @@ func TestMergeEnvConfig_AppliesCanonicalMaxBackoffEnv(t *testing.T) {
 // store:/streaming: sections that FileConfig declared but mergeFileConfig
 // previously dropped silently (despite being documented in the schema/example).
 func TestMergeFileConfig_AppliesStoreAndStreaming(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {

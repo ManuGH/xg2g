@@ -31,7 +31,7 @@ enigma2:
 	}
 
 	// Load with default settings (should imply strict mode for v3.0.0)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "")
 	_, err := loader.Load()
 

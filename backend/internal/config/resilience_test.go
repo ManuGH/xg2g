@@ -16,10 +16,10 @@ func setupConfigTest(t *testing.T) (*Loader, func(*AppConfig)) {
 	l := NewLoader("", "v3")
 
 	// satisfy strict validation
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://mock")
-	setRequiredTestSecrets(t)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", "/tmp/store")
 	t.Setenv("XG2G_HLS_ROOT", "/tmp/hls")
 
@@ -74,10 +74,10 @@ func TestResilienceZeroOverrides(t *testing.T) {
 	l := NewLoader("", "v3")
 
 	// satisfy strict validation
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://mock")
-	setRequiredTestSecrets(t)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", "/tmp/store")
 	t.Setenv("XG2G_HLS_ROOT", "/tmp/hls")
 
@@ -236,10 +236,10 @@ func TestResilienceValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// satisfy strict validation
-			setRequiredTestSecrets(t)
+			SetRequiredTestSecrets(t)
 			t.Setenv("XG2G_E2_HOST", "http://mock")
-			setRequiredTestSecrets(t)
-			setRequiredTestSecrets(t)
+			SetRequiredTestSecrets(t)
+			SetRequiredTestSecrets(t)
 			t.Setenv("XG2G_STORE_PATH", "/tmp/store")
 			t.Setenv("XG2G_HLS_ROOT", "/tmp/hls")
 

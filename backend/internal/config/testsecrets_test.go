@@ -8,7 +8,7 @@ import "testing"
 // inline t.Setenv calls across individual tests. A test that asserts the
 // absence of a specific secret must unset that variable explicitly after
 // calling this helper.
-func setRequiredTestSecrets(tb testing.TB) {
+func SetRequiredTestSecrets(tb testing.TB) {
 	tb.Helper()
 	tb.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 }

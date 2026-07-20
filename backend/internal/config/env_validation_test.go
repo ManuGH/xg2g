@@ -11,7 +11,7 @@ func TestValidateEnvUsage_UnknownSecurityKeyFails(t *testing.T) {
 		"XG2G_TLS_ENFORCE_ALL": "1",
 	}
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoaderWithEnv(
 		"",
 		"test",
@@ -36,7 +36,7 @@ func TestValidateEnvUsage_UnknownNonSecurityKeyWarnOnly(t *testing.T) {
 		"XG2G_EXPERIMENTAL_WIDGET": "on",
 	}
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoaderWithEnv(
 		"",
 		"test",
@@ -58,7 +58,7 @@ func TestValidateEnvUsage_RuntimeKeyAllowed(t *testing.T) {
 		"XG2G_DECISION_SECRET":   "12345678901234567890123456789012",
 	}
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoaderWithEnv(
 		"",
 		"test",

@@ -10,13 +10,13 @@ import (
 
 func TestVerification_Defaults(t *testing.T) {
 	// Use t.Setenv for automatic cleanup and isolation
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://localhost")
-	setRequiredTestSecrets(t)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg, err := loader.Load()
 	require.NoError(t, err)
@@ -26,14 +26,14 @@ func TestVerification_Defaults(t *testing.T) {
 }
 
 func TestVerification_EnvOverride_Disabled(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://localhost")
-	setRequiredTestSecrets(t)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_VERIFY_ENABLED", "false")
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg, err := loader.Load()
 	require.NoError(t, err)
@@ -42,14 +42,14 @@ func TestVerification_EnvOverride_Disabled(t *testing.T) {
 }
 
 func TestVerification_EnvOverride_Interval(t *testing.T) {
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://localhost")
-	setRequiredTestSecrets(t)
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_VERIFY_INTERVAL", "30s")
 
-	setRequiredTestSecrets(t)
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg, err := loader.Load()
 	require.NoError(t, err)
