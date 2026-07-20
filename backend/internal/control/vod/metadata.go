@@ -178,7 +178,11 @@ func (m *Manager) PromoteFailedToReadyIfPlaylist(id string) (Metadata, bool) {
 	defer m.mu.Unlock()
 
 	meta, ok := m.metadata[id]
-	if !ok || meta.State != ArtifactStateFailed || !meta.HasPlaylist() {
+	if !ok || meta.State != ArtifactStateFailed || !meta.HasPlaylist() ||
+		meta.Error == string(ReasonTruthMismatch) ||
+		meta.Error == string(ReasonContract) ||
+		meta.Error == string(ReasonProbeFail) ||
+		meta.Error == string(ReasonStartFail) {
 		return Metadata{}, false
 	}
 
@@ -296,6 +300,28 @@ func (m *Manager) MarkFailure(id string, state ArtifactState, reason string, res
 	if fp != nil {
 		meta.Fingerprint = *fp
 	}
+	m.touch(&meta)
+	m.metadata[id] = meta
+}
+
+// InvalidateTruth clears cached probe truth (codecs, container) to force re-planning.
+// This is used for self-healing when a build detects a truth mismatch.
+func (m *Manager) InvalidateTruth(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, ok := m.metadata[id]
+	if !ok {
+		return
+	}
+
+	meta.Container = ""
+	meta.VideoCodec = ""
+	meta.AudioCodec = ""
+	meta.Width = 0
+	meta.Height = 0
+	meta.FPS = 0
+	meta.Interlaced = false
 	m.touch(&meta)
 	m.metadata[id] = meta
 }

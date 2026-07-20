@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,8 +49,10 @@ func TestCallbackExecution(t *testing.T) {
 			t.Fatalf("failed to create output temp: %v", err)
 		}
 
-		dummyTarget := &playbackprofile.TargetPlaybackProfile{
-			Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+		dummyTarget := &ports.BuildIntent{
+			Target: ports.TargetPlaybackProfile{
+				Video: ports.VideoTarget{Mode: ports.MediaModeCopy},
+			},
 		}
 		mon, err := manager.StartBuild(context.Background(), id, id, input, workDir, outputTemp, finalPath, dummyTarget)
 		if err != nil {
@@ -112,8 +114,10 @@ func TestCallbackExecution(t *testing.T) {
 			t.Fatalf("failed to create output temp: %v", err)
 		}
 
-		dummyTarget := &playbackprofile.TargetPlaybackProfile{
-			Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+		dummyTarget := &ports.BuildIntent{
+			Target: ports.TargetPlaybackProfile{
+				Video: ports.VideoTarget{Mode: ports.MediaModeCopy},
+			},
 		}
 		_, err = manager.StartBuild(context.Background(), id, id, input, workDir, outputTemp, finalPath, dummyTarget)
 		if err != nil {

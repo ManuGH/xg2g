@@ -14,6 +14,10 @@ type recordingArtifactManager interface {
 	MarkProbed(id string, resolvedPath string, info *vod.StreamInfo, fp *vod.Fingerprint)
 }
 
+type recordingArtifactSelfHealer interface {
+	InvalidateTruth(id string)
+}
+
 type recordingArtifactFailurePromoter interface {
 	PromoteFailedToReadyIfPlaylist(id string) (vod.Metadata, bool)
 }
@@ -59,7 +63,17 @@ func LoadRecordingBuildState(ctx context.Context, hlsRoot string, manager record
 	metaID := RecordingVariantMetadataKey(serviceRef, variant)
 	meta, metaOk := manager.GetMetadata(metaID)
 
-	if metaOk && meta.State == vod.ArtifactStateFailed && meta.HasPlaylist() {
+	isTruthMismatch := (jobOk && job.State == vod.JobStateFailed && job.Reason == string(vod.ReasonTruthMismatch)) ||
+		(metaOk && meta.State == vod.ArtifactStateFailed && meta.Error == string(vod.ReasonTruthMismatch))
+	if isTruthMismatch {
+		if healer, ok := manager.(recordingArtifactSelfHealer); ok {
+			healer.InvalidateTruth(metaID)
+			// Re-fetch metadata after invalidation to reflect the cleared truth
+			meta, metaOk = manager.GetMetadata(metaID)
+		}
+	}
+
+	if metaOk && meta.State == vod.ArtifactStateFailed && meta.HasPlaylist() && !isTruthMismatch {
 		if promoter, ok := manager.(recordingArtifactFailurePromoter); ok {
 			if promoted, changed := promoter.PromoteFailedToReadyIfPlaylist(metaID); changed {
 				meta = promoted

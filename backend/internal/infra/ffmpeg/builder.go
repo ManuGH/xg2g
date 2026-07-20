@@ -44,8 +44,8 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 		"-i", inputPath,
 	}
 
-	if spec.TargetProfile != nil {
-		targetArgs, err := mapTargetProfileToArgs(*spec.TargetProfile)
+	if spec.Intent != nil {
+		targetArgs, err := mapTargetProfileToArgs(spec.Intent.Target)
 		if err != nil {
 			return nil, err
 		}
@@ -58,7 +58,11 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 	// multi-audio TS outputs that some TV/WebView demuxers reject.
 	args = append(args, "-map", "0:v:0?", "-map", "0:a:0?")
 
-	args = append(args, hlsOutputArgs(spec.WorkDir, outputPath, spec.TargetProfile)...)
+	var target *ports.TargetPlaybackProfile
+	if spec.Intent != nil {
+		target = &spec.Intent.Target
+	}
+	args = append(args, hlsOutputArgs(spec.WorkDir, outputPath, target)...)
 	return args, nil
 }
 
