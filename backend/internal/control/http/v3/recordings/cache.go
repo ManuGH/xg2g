@@ -10,6 +10,7 @@ import (
 
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -48,14 +49,21 @@ func TargetVariantHash(target *playbackprofile.TargetPlaybackProfile) string {
 }
 
 // EncodeTargetProfileQuery encodes a canonical target playback profile for URL transport with an HMAC signature.
-func EncodeTargetProfileQuery(target *playbackprofile.TargetPlaybackProfile, signingKey string) (string, error) {
-	if target == nil {
-		return "", nil
+func EncodeTargetProfileQuery(intent *ports.BuildIntent, signingKey string) (string, error) {
+	if intent == nil {
+		return "", fmt.Errorf("intent cannot be nil")
 	}
-	canonical := playbackprofile.CanonicalizeTarget(*target)
-	b, err := canonical.CanonicalJSON()
+
+	intentCopy := *intent
+	intentCopy.Target = playbackprofile.CanonicalizeTarget(intentCopy.Target)
+	if intentCopy.IntentHash == "" {
+		intentCopy.IntentHash = TargetVariantHash(&intentCopy.Target)
+	}
+	// Do NOT canonicalize the SourceProfile, we pass it exactly as probed.
+
+	b, err := json.Marshal(&intentCopy)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal intent: %w", err)
 	}
 	payload := base64.RawURLEncoding.EncodeToString(b)
 
@@ -71,7 +79,7 @@ func EncodeTargetProfileQuery(target *playbackprofile.TargetPlaybackProfile, sig
 }
 
 // DecodeTargetProfileQuery decodes a target playback profile from the URL-safe query representation and verifies its HMAC signature.
-func DecodeTargetProfileQuery(raw, primaryKey, previousKey string, strictTargetRequired bool) (*playbackprofile.TargetPlaybackProfile, error) {
+func DecodeTargetProfileQuery(raw, primaryKey, previousKey string, strictTargetRequired bool) (*ports.BuildIntent, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
@@ -111,12 +119,35 @@ func DecodeTargetProfileQuery(raw, primaryKey, previousKey string, strictTargetR
 	if err != nil {
 		return nil, fmt.Errorf("decode target profile: %w", err)
 	}
+	var intent struct {
+		Target      *playbackprofile.TargetPlaybackProfile `json:"target"`
+		SourceTruth *ports.SourceProfile                   `json:"sourceTruth"`
+	}
+
+	if err := json.Unmarshal(b, &intent); err == nil && intent.Target != nil {
+		canonical := playbackprofile.CanonicalizeTarget(*intent.Target)
+		source := ports.SourceProfile{}
+		if intent.SourceTruth != nil {
+			source = *intent.SourceTruth
+		}
+		return &ports.BuildIntent{
+			IntentHash:  TargetVariantHash(&canonical),
+			SourceTruth: source,
+			Target:      canonical,
+		}, nil
+	}
+
+	// TODO(Spec: Payload-Migration): Remove legacy bare TargetPlaybackProfile fallback after a full deploy cycle.
+	// Legacy unsigned/nackte Target-JSON fallback
 	var target playbackprofile.TargetPlaybackProfile
 	if err := json.Unmarshal(b, &target); err != nil {
 		return nil, fmt.Errorf("unmarshal target profile: %w", err)
 	}
 	canonical := playbackprofile.CanonicalizeTarget(target)
-	return &canonical, nil
+	return &ports.BuildIntent{
+		IntentHash: TargetVariantHash(&canonical),
+		Target:     canonical,
+	}, nil
 }
 
 func checkHMAC(payload, signature, key string) bool {
@@ -135,16 +166,19 @@ func checkHMAC(payload, signature, key string) bool {
 }
 
 // RecordingPlaylistURL returns the variant-aware playlist URL for a recording.
-func RecordingPlaylistURL(recordingID, profile string, target *playbackprofile.TargetPlaybackProfile, signingKey string) string {
+func RecordingPlaylistURL(recordingID, profile string, intent *ports.BuildIntent, signingKey string) string {
 	base := fmt.Sprintf("/api/v3/recordings/%s/playlist.m3u8", recordingID)
 	params := make([]string, 0, 3)
 	if p := normalize.Token(profile); p != "" {
 		params = append(params, "profile="+p)
 	}
-	if variant := TargetVariantHash(target); variant != "" {
-		params = append(params, "variant="+variant)
-		if encoded, err := EncodeTargetProfileQuery(target, signingKey); err == nil && encoded != "" {
-			params = append(params, "target="+encoded)
+	if intent != nil {
+		variant := TargetVariantHash(&intent.Target)
+		if variant != "" {
+			params = append(params, "variant="+variant)
+			if encoded, err := EncodeTargetProfileQuery(intent, signingKey); err == nil && encoded != "" {
+				params = append(params, "target="+encoded)
+			}
 		}
 	}
 	if len(params) == 0 {

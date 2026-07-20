@@ -20,6 +20,7 @@ type BuildMonitorConfig struct {
 	Runner    Runner
 	Clock     Clock
 	FS        FS // Filesystem operations (injectable for tests)
+	Prober    Prober
 
 	// Completion callbacks (optional). Must be fast, no I/O, and non-blocking.
 	// Called exactly once per Run() execution path.
@@ -36,6 +37,7 @@ type BuildMonitor struct {
 	runner    Runner
 	clock     Clock
 	fs        FS
+	prober    Prober
 
 	state  State
 	reason FailureReason
@@ -61,6 +63,7 @@ func NewBuildMonitor(cfg BuildMonitorConfig) *BuildMonitor {
 		runner:      cfg.Runner,
 		clock:       cfg.Clock,
 		fs:          fs,
+		prober:      cfg.Prober,
 		state:       StateIdle,
 		onSucceeded: cfg.OnSucceeded,
 		onFailed:    cfg.OnFailed,
@@ -102,6 +105,28 @@ func (m *BuildMonitor) Run(ctx context.Context) {
 			m.setState(StateFailed, "MKDIR_FAIL")
 			m.notifyFailure("MKDIR_FAIL")
 			return
+		}
+	}
+
+	// Phase 4: Probe and enforce tolerance before starting the build
+	if m.prober != nil && m.spec.Intent != nil && m.spec.Input != "" {
+		probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		info, err := m.prober.Probe(probeCtx, m.spec.Input)
+		cancel()
+		if err != nil {
+			log.Error().Err(err).Str("jobId", m.jobID).Msg("VOD build failed to probe input")
+			m.setState(StateFailed, ReasonProbeFail)
+			m.notifyFailure(string(ReasonProbeFail))
+			return
+		}
+
+		if info != nil {
+			if mismatch := ValidateSourceTruth(m.spec.Intent.SourceTruth, *info); mismatch != nil {
+				log.Warn().Str("jobId", m.jobID).Interface("mismatch", mismatch).Msg("VOD build input violates truth tolerance")
+				m.setState(StateFailed, ReasonTruthMismatch)
+				m.notifyFailure(string(ReasonTruthMismatch))
+				return
+			}
 		}
 	}
 

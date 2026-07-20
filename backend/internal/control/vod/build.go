@@ -3,7 +3,7 @@ package vod
 import (
 	"context"
 	"errors"
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	xlog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/rs/zerolog/log"
 	"strings"
@@ -71,22 +71,22 @@ func (m *Manager) markFailedFromBuild(jobID string, metaID string, reason string
 // StartBuild initiates a VOD build with a concrete playback target profile.
 // jobID identifies the build workspace (e.g., cacheDir), metaID identifies the recording (serviceRef).
 // finalPath: the final destination for atomic publish.
-func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, targetProfile *playbackprofile.TargetPlaybackProfile) (*BuildMonitor, error) {
-	if targetProfile == nil {
+func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, intent *ports.BuildIntent) (*BuildMonitor, error) {
+	if intent == nil {
 		return nil, ErrMissingTarget
 	}
 
 	internalProfile := ProfileDefault
-	if targetProfile.Video.Mode == playbackprofile.MediaModeTranscode {
+	if intent.Target.Video.Mode == ports.MediaModeTranscode {
 		internalProfile = ProfileHigh
 	}
 
 	return m.startBuildWithSpec(ctx, jobID, metaID, finalPath, Spec{
-		Input:         input,
-		WorkDir:       workDir,
-		OutputTemp:    outputTemp,
-		Profile:       internalProfile,
-		TargetProfile: cloneTargetProfile(targetProfile),
+		Input:      input,
+		WorkDir:    workDir,
+		OutputTemp: outputTemp,
+		Profile:    internalProfile,
+		Intent:     intent,
 	})
 }
 
@@ -107,6 +107,7 @@ func (m *Manager) startBuildWithSpec(ctx context.Context, jobID, metaID, finalPa
 		FinalPath: finalPath,
 		Runner:    m.runner,
 		Clock:     RealClock{},
+		Prober:    m.prober,
 		OnSucceeded: func(jobID string, spec Spec, finalPath string) {
 			m.markReadyFromBuild(jobID, metaID, spec, finalPath)
 		},
@@ -166,34 +167,26 @@ func (m *Manager) Get(ctx context.Context, id string) (*JobStatus, bool) {
 }
 
 // EnsureSpec validates context and prepares a Spec with a concrete target playback profile, serving as a gateway.
-func (m *Manager) EnsureSpec(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, targetProfile *playbackprofile.TargetPlaybackProfile) (Spec, error) {
-	if targetProfile == nil {
+func (m *Manager) EnsureSpec(ctx context.Context, jobID, metaID, input, workDir, outputTemp, finalPath string, intent *ports.BuildIntent) (Spec, error) {
+	if intent == nil {
 		return Spec{}, ErrMissingTarget
 	}
 
 	internalProfile := ProfileDefault
-	if targetProfile.Video.Mode == playbackprofile.MediaModeTranscode {
+	if intent.Target.Video.Mode == ports.MediaModeTranscode {
 		internalProfile = ProfileHigh
 	}
 
 	spec := Spec{
-		Input:         input,
-		WorkDir:       workDir,
-		OutputTemp:    outputTemp,
-		Profile:       internalProfile,
-		TargetProfile: cloneTargetProfile(targetProfile),
+		Input:      input,
+		WorkDir:    workDir,
+		OutputTemp: outputTemp,
+		Profile:    internalProfile,
+		Intent:     intent,
 	}
 	_, err := m.startBuildWithSpec(ctx, jobID, metaID, finalPath, spec)
 	if err != nil {
 		return Spec{}, err
 	}
 	return spec, nil
-}
-
-func cloneTargetProfile(target *playbackprofile.TargetPlaybackProfile) *playbackprofile.TargetPlaybackProfile {
-	if target == nil {
-		return nil
-	}
-	cloned := playbackprofile.CanonicalizeTarget(*target)
-	return &cloned
 }

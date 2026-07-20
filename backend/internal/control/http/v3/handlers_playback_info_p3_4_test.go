@@ -12,7 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -26,8 +26,8 @@ type MockArtifactsResolver struct {
 	mock.Mock
 }
 
-func (m *MockArtifactsResolver) ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
-	args := m.Called(ctx, recordingID, profile, variant, target)
+func (m *MockArtifactsResolver) ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, intent *ports.BuildIntent) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+	args := m.Called(ctx, recordingID, profile, variant, intent)
 	if args.Get(1) != nil {
 		return artifacts.ArtifactOK{}, args.Get(1).(*artifacts.ArtifactError)
 	}
@@ -37,7 +37,7 @@ func (m *MockArtifactsResolver) ResolvePlaylist(ctx context.Context, recordingID
 func (m *MockArtifactsResolver) ResolveSegment(ctx context.Context, recordingID, segment, variant string) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
 	return artifacts.ArtifactOK{}, nil
 }
-func (m *MockArtifactsResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
+func (m *MockArtifactsResolver) ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, intent *ports.BuildIntent) (artifacts.ArtifactOK, *artifacts.ArtifactError) {
 	return artifacts.ArtifactOK{}, nil
 }
 

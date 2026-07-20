@@ -15,6 +15,7 @@ import (
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 )
 
 func TestArtifactResolver_ResolveSegment(t *testing.T) {
@@ -133,19 +134,19 @@ func TestArtifactResolver_ResolvePlaylist_UsesConcreteTargetProfile(t *testing.T
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		spec = runner.LastSpec()
-		if spec.TargetProfile != nil {
+		if spec.Intent != nil {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if spec.TargetProfile == nil {
+	if spec.Intent == nil {
 		t.Fatal("expected concrete target profile in VOD spec")
 	}
-	if spec.TargetProfile.Video.Mode != "transcode" || spec.TargetProfile.Video.CRF != 23 || spec.TargetProfile.Video.Preset != "fast" || spec.TargetProfile.Audio.BitrateKbps != 256 {
-		t.Fatalf("unexpected target profile passed to runner: %#v", spec.TargetProfile)
+	if spec.Intent.Target.Video.Mode != "transcode" || spec.Intent.Target.Video.CRF != 23 || spec.Intent.Target.Video.Preset != "fast" || spec.Intent.Target.Audio.BitrateKbps != 256 {
+		t.Fatalf("unexpected target profile passed to runner: %#v", spec.Intent.Target)
 	}
-	if spec.TargetProfile.Packaging != playbackprofile.PackagingFMP4 || spec.TargetProfile.HLS.SegmentContainer != "fmp4" {
-		t.Fatalf("expected safari fallback to use fmp4 packaging, got %#v", spec.TargetProfile)
+	if spec.Intent.Target.Packaging != ports.PackagingFMP4 || spec.Intent.Target.HLS.SegmentContainer != "fmp4" {
+		t.Fatalf("expected safari fallback to use fmp4 packaging, got %#v", spec.Intent.Target)
 	}
 }
 
@@ -189,7 +190,7 @@ func TestArtifactResolver_ResolvePlaylist_DerivesVariantFromTargetProfile(t *tes
 		HWAccel: playbackprofile.HWAccelNone,
 	})
 
-	_, artifactErr := r.ResolvePlaylist(context.Background(), validID, "", "", &target)
+	_, artifactErr := r.ResolvePlaylist(context.Background(), validID, "", "", &ports.BuildIntent{Target: target})
 	if artifactErr == nil || artifactErr.Code != CodePreparing {
 		t.Fatalf("expected preparing artifact error, got %#v", artifactErr)
 	}
@@ -247,7 +248,7 @@ func TestArtifactResolver_ResolvePlaylist_RejectsVariantMismatch(t *testing.T) {
 		HWAccel: playbackprofile.HWAccelNone,
 	})
 
-	_, artifactErr := r.ResolvePlaylist(context.Background(), validID, "", "wrong-variant", &target)
+	_, artifactErr := r.ResolvePlaylist(context.Background(), validID, "", "wrong-variant", &ports.BuildIntent{Target: target})
 	if artifactErr == nil {
 		t.Fatal("expected invalid artifact error")
 	}
@@ -324,14 +325,39 @@ func TestArtifactResolver_ResolvePlaylistState(t *testing.T) {
 	})
 
 	t.Run("Existing Playlist -> Returns Content", func(t *testing.T) {
-		dir, _ := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, ref, variant)
-		os.MkdirAll(dir, 0755)
-		os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0644)
+		dir, err := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, ref, variant)
+		assert.NoError(t, err)
+		assert.NoError(t, os.MkdirAll(dir, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0644))
 
 		res, err := r.ResolvePlaylistState(context.Background(), validID, variant)
 		assert.Nil(t, err)
 		assert.Equal(t, ArtifactKindPlaylist, res.Kind)
 		assert.Equal(t, []byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT"), res.Data)
 		assert.Empty(t, mgr.ActiveJobIDs(), "state query should not trigger a build job")
+	})
+
+	t.Run("Empty Variant -> Resolves to Default Copy Profile", func(t *testing.T) {
+		// Construct the expected default hash, mirroring the nil fallback in
+		// ResolvePlaylistState.
+		target := recordingTargetProfile("")
+		if target == nil {
+			target = &playbackprofile.TargetPlaybackProfile{
+				Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+			}
+		}
+		canonical := playbackprofile.CanonicalizeTarget(*target)
+		expectedVariant := canonical.Hash()
+
+		dir, err := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, ref, expectedVariant)
+		assert.NoError(t, err)
+		assert.NoError(t, os.MkdirAll(dir, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0644))
+
+		// Call with empty variant
+		res, err := r.ResolvePlaylistState(context.Background(), validID, "")
+		assert.Nil(t, err)
+		assert.Equal(t, ArtifactKindPlaylist, res.Kind)
+		assert.Equal(t, []byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT"), res.Data)
 	})
 }
