@@ -75,7 +75,7 @@ func TestMergeEnvConfig_AppliesCanonicalEnigma2Env(t *testing.T) {
 	unsetEnv(t, "XG2G_E2_STREAM_PORT")
 
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://canonical.local")
+	t.Setenv("XG2G_E2_HOST", "http://canonical.local")
 	t.Setenv("XG2G_E2_USER", "canonical-user")
 	t.Setenv("XG2G_E2_PASS", "canonical-pass")
 	t.Setenv("XG2G_E2_TIMEOUT", "3s")

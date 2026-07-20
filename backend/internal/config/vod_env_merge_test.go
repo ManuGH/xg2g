@@ -35,7 +35,7 @@ func writeVODTestConfig(t *testing.T, vodBlock string) string {
 // RED if mergeEnvVOD is missing / merges the wrong key (cfg.VODCacheTTL would stay 0).
 func TestVODEnvMerge_EnvOnlyCacheTTLReachesRuntimeField(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_VOD_CACHE_TTL", "12h")
 
@@ -54,7 +54,7 @@ func TestVODEnvMerge_EnvOnlyCacheTTLReachesRuntimeField(t *testing.T) {
 // anything at runtime.
 func TestVODEnvMerge_ProbeSizeMergeContractOnly(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_VOD_PROBE_SIZE", "99M")
 
@@ -70,7 +70,7 @@ func TestVODEnvMerge_ProbeSizeMergeContractOnly(t *testing.T) {
 // Governance: two EFFECTIVE sources that differ must fail-closed (not silently let env win).
 func TestVODEnvMerge_ConflictWhenBothSetAndDiffer(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_VOD_CACHE_TTL", "12h")
 
@@ -83,7 +83,7 @@ func TestVODEnvMerge_ConflictWhenBothSetAndDiffer(t *testing.T) {
 // Equal values are not a conflict; the (identical) effective value applies.
 func TestVODEnvMerge_NoConflictWhenEqual(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_VOD_CACHE_TTL", "12h")
 
@@ -102,7 +102,7 @@ func TestVODEnvMerge_NoConflictWhenEqual(t *testing.T) {
 // stops sharing envPresent and reintroduces an `ok`-based (empty==set) presence test.
 func TestVODEnvMerge_EmptyEnvDoesNotPhantomConflict(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_VOD_PROBE_SIZE", "") // explicitly empty
 
@@ -119,7 +119,7 @@ func TestVODEnvMerge_EmptyEnvDoesNotPhantomConflict(t *testing.T) {
 // conflict. Pins that empty counts as unset on the file side too, not just the env side.
 func TestVODEnvMerge_BothEmptyNoConflict(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_VOD_PROBE_SIZE", "")
 
@@ -133,7 +133,7 @@ func TestVODEnvMerge_BothEmptyNoConflict(t *testing.T) {
 // conflict (the file side has nothing effective). Guards that the empty check is symmetric.
 func TestVODEnvMerge_EnvSetYAMLEmptyEnvWins(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_VOD_CACHE_TTL", "12h")
 

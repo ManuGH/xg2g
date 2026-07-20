@@ -118,13 +118,13 @@ func TestTargetProfileHMAC_Rotation(t *testing.T) {
 func TestTargetProfileHMAC_CanonicalizationStability(t *testing.T) {
 	target := playbackprofile.TargetPlaybackProfile{
 		Container: "mpegts",
-		Video: playbackprofile.VideoTarget{Codec: "h264"},
+		Video:     playbackprofile.VideoTarget{Codec: "h264"},
 	}
 	key1 := "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
 	encoded1, _ := EncodeTargetProfileQuery(&target, key1)
-	
+
 	decoded, _ := DecodeTargetProfileQuery(encoded1, key1, "", true)
 	encoded2, _ := EncodeTargetProfileQuery(decoded, key1)
-	
+
 	assert.Equal(t, encoded1, encoded2)
 }

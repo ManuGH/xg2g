@@ -11,10 +11,10 @@ import (
 func TestVerification_Defaults(t *testing.T) {
 	// Use t.Setenv for automatic cleanup and isolation
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://localhost")
+	t.Setenv("XG2G_E2_HOST", "http://localhost")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader("", "test")
@@ -27,10 +27,10 @@ func TestVerification_Defaults(t *testing.T) {
 
 func TestVerification_EnvOverride_Disabled(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://localhost")
+	t.Setenv("XG2G_E2_HOST", "http://localhost")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_VERIFY_ENABLED", "false")
 
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
@@ -43,10 +43,10 @@ func TestVerification_EnvOverride_Disabled(t *testing.T) {
 
 func TestVerification_EnvOverride_Interval(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://localhost")
+	t.Setenv("XG2G_E2_HOST", "http://localhost")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_VERIFY_INTERVAL", "30s")
 
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")

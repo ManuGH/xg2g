@@ -19,7 +19,7 @@ func TestLoad_ValidMinimal(t *testing.T) {
 	// Ensure test directory exists (validation checks this)
 	testDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DATA", testDir)
 
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")

@@ -8,9 +8,9 @@ import (
 
 func TestPlaybackDecisionRotationEnvOverrides(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_DECISION_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_PLAYBACK_DECISION_KID", "kid-env")
 	t.Setenv("XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS", "kid-old:abcdefghijklmnopqrstuvwxyz0123456789ABCDE2")
@@ -42,9 +42,9 @@ func TestPlaybackDecisionRotationEnvOverrides(t *testing.T) {
 
 func TestPlaybackDecisionSecretLegacyEnvFallback(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_PLAYBACK_DECISION_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
@@ -84,9 +84,9 @@ func TestPlaybackDecisionKeyIDValidation(t *testing.T) {
 func mustLoadConfigForPlaybackDecisionValidation(t *testing.T) AppConfig {
 	t.Helper()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader("", "test")

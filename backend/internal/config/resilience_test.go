@@ -17,10 +17,10 @@ func setupConfigTest(t *testing.T) (*Loader, func(*AppConfig)) {
 
 	// satisfy strict validation
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://mock")
+	t.Setenv("XG2G_E2_HOST", "http://mock")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", "/tmp/store")
+	t.Setenv("XG2G_STORE_PATH", "/tmp/store")
 	t.Setenv("XG2G_HLS_ROOT", "/tmp/hls")
 
 	// Helper to make config valid for strict mode
@@ -75,10 +75,10 @@ func TestResilienceZeroOverrides(t *testing.T) {
 
 	// satisfy strict validation
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://mock")
+	t.Setenv("XG2G_E2_HOST", "http://mock")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", "/tmp/store")
+	t.Setenv("XG2G_STORE_PATH", "/tmp/store")
 	t.Setenv("XG2G_HLS_ROOT", "/tmp/hls")
 
 	// WHEN explicitly disabling transcodes via ENV
@@ -237,10 +237,10 @@ func TestResilienceValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// satisfy strict validation
 			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://mock")
+			t.Setenv("XG2G_E2_HOST", "http://mock")
 			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", "/tmp/store")
+			t.Setenv("XG2G_STORE_PATH", "/tmp/store")
 			t.Setenv("XG2G_HLS_ROOT", "/tmp/hls")
 
 			// Start with valid config

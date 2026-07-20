@@ -41,14 +41,14 @@ enigma2:
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 			path := filepath.Join(t.TempDir(), "config.yaml")
 			if err := os.WriteFile(path, []byte(strings.TrimSpace(tc.yaml)), 0644); err != nil {
 				t.Fatalf("write temp config: %v", err)
 			}
 
 			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-	loader := NewLoader(path, "dev")
+			loader := NewLoader(path, "dev")
 			_, err := loader.Load()
 			if err == nil {
 				t.Fatalf("expected error, got nil")
@@ -65,7 +65,7 @@ enigma2:
 
 func TestCanonicalEnigma2YAMLPasses(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := `
 enigma2:
@@ -97,7 +97,7 @@ openWebIF:
 			t.Fatalf("write temp config: %v", err)
 		}
 		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-	loader := NewLoader(path, "dev")
+		loader := NewLoader(path, "dev")
 		_, err := loader.Load()
 		if err == nil {
 			t.Fatalf("expected error, got nil")
@@ -124,7 +124,7 @@ enigma2:
 			t.Fatalf("write temp config: %v", err)
 		}
 		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-	loader := NewLoader(path, "dev")
+		loader := NewLoader(path, "dev")
 		_, err := loader.Load()
 		if err == nil {
 			t.Fatalf("expected error, got nil")
@@ -148,7 +148,7 @@ func TestLegacyEnvRejectedBeforeEnvAliasResolution(t *testing.T) {
 		t.Setenv("XG2G_E2_HOST", "http://example.com")
 
 		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-	loader := NewLoader("", "dev")
+		loader := NewLoader("", "dev")
 		_, err := loader.Load()
 		if err == nil {
 			t.Fatalf("expected error, got nil")
@@ -170,7 +170,7 @@ func TestLegacyEnvRejectedBeforeEnvAliasResolution(t *testing.T) {
 		t.Setenv("XG2G_E2_HOST", "http://example.com")
 
 		t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-	loader := NewLoader("", "dev")
+		loader := NewLoader("", "dev")
 		_, err := loader.Load()
 		if err == nil {
 			t.Fatal("expected legacy env error, got nil")

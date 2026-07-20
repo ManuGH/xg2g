@@ -587,12 +587,12 @@ type AppConfig struct {
 	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
 
 	// Recording Playback Configuration
-	RecordingPlaybackPolicy       string                 // "auto" (default), "local_only", "receiver_only"
-	RecordingStableWindow         time.Duration          // File stability check duration (default: 2s)
-	RecordingPathMappings         []RecordingPathMapping // Receiver→Local path mappings
-	RecordingStrictTargetRequired       bool                   // Phase 2 target rollout guard
-	RecordingTargetSigningKey           string
-	RecordingTargetSigningKeyPrevious   string
+	RecordingPlaybackPolicy           string                 // "auto" (default), "local_only", "receiver_only"
+	RecordingStableWindow             time.Duration          // File stability check duration (default: 2s)
+	RecordingPathMappings             []RecordingPathMapping // Receiver→Local path mappings
+	RecordingStrictTargetRequired     bool                   // Phase 2 target rollout guard
+	RecordingTargetSigningKey         string
+	RecordingTargetSigningKeyPrevious string
 
 	// VOD Optimization (Legacy flat fields - kept for backwards compatibility)
 	VODProbeSize       string        // ffmpeg probesize (e.g. "50M")

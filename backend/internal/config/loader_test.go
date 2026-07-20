@@ -73,7 +73,7 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadFromYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	customDataDir := filepath.Join(tmpDir, "custom-data")
 
@@ -125,7 +125,7 @@ picons:
 func TestLoadHouseholdPinAndUnlockTTLFromYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
@@ -157,7 +157,7 @@ household:
 func TestLoadRejectsInvalidHouseholdUnlockTTL(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
@@ -180,7 +180,7 @@ household:
 func TestLoadFromYAMLHLSReadySegments(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
@@ -208,7 +208,7 @@ hls:
 func TestLoadPlaybackOperatorFromYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
@@ -245,7 +245,7 @@ playback:
 func TestENVOverridesFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	fileDataDir := filepath.Join(tmpDir, "file-data")
 	envDataDir := filepath.Join(tmpDir, "env-data")
@@ -263,7 +263,7 @@ enigma2:
 
 	t.Setenv("XG2G_DATA", envDataDir)
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://env.local")
+	t.Setenv("XG2G_E2_HOST", "http://env.local")
 	t.Setenv("XG2G_E2_STREAM_PORT", "7001")
 
 	loader := NewLoader(configPath, "1.0.0")
@@ -285,9 +285,9 @@ enigma2:
 
 func TestEnvRecordingPlaybackOverrides(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDING_PLAYBACK_POLICY", "local_only")
 	t.Setenv("XG2G_RECORDING_STABLE_WINDOW", "250ms")
 	t.Setenv("XG2G_RECORDINGS_MAP", "/media/nfs-recordings=/Volumes/enigma2-recordings")
@@ -317,9 +317,9 @@ func TestEnvRecordingPlaybackOverrides(t *testing.T) {
 
 func TestENVCanonicalStreamPortUsedWhenSet(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_E2_STREAM_PORT", "7101")
 
 	loader := NewLoader("", "test-version")
@@ -336,7 +336,7 @@ func TestENVCanonicalStreamPortUsedWhenSet(t *testing.T) {
 func TestENVOverridesPlaybackOperatorFileConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
@@ -380,7 +380,7 @@ playback:
 func TestLoadPlaybackOperatorSourceRulesFromFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
@@ -439,9 +439,9 @@ playback:
 
 func TestENVLegacyStreamPortFailsStart(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_STREAM_PORT", "7001")
 
 	loader := NewLoader("", "test-version")
@@ -460,7 +460,7 @@ func TestENVLegacyStreamPortFailsStart(t *testing.T) {
 func TestPrecedenceOrder(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	fileDataDir := filepath.Join(tmpDir, "file-data")
 
@@ -505,7 +505,7 @@ epg:
 func TestValidateEPGBounds(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	baseCfg := func() AppConfig {
 		return AppConfig{
 			DataDir: tmpDir,
@@ -530,12 +530,12 @@ func TestValidateEPGBounds(t *testing.T) {
 			Streaming: StreamingConfig{
 				DeliveryPolicy: "universal",
 			},
-			Bouquet:            "test",
-			EPGEnabled:         true,
-			EPGDays:            7,
-			EPGMaxConcurrency:  5,
-			EPGTimeoutMS:       5000,
-			EPGRetries:         2,
+			Bouquet:                   "test",
+			EPGEnabled:                true,
+			EPGDays:                   7,
+			EPGMaxConcurrency:         5,
+			EPGTimeoutMS:              5000,
+			EPGRetries:                2,
 			FuzzyMax:                  2,
 			VODCacheMaxEntries:        256,
 			RecordingTargetSigningKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
@@ -660,9 +660,9 @@ func TestE2MaxBackoffDefaultAndCanonicalEnv(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Unsetenv("XG2G_E2_MAX_BACKOFF")
 			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+			t.Setenv("XG2G_E2_HOST", "http://example.com")
 			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 			if tt.envValue != "" {
 				t.Setenv("XG2G_E2_MAX_BACKOFF", tt.envValue)
@@ -684,9 +684,9 @@ func TestE2MaxBackoffDefaultAndCanonicalEnv(t *testing.T) {
 
 func TestE2MaxBackoffFromENV(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_E2_MAX_BACKOFF", "9s")
 
 	loader := NewLoader("", "test-version")
@@ -703,7 +703,7 @@ func TestE2MaxBackoffFromENV(t *testing.T) {
 // TestE2MaxBackoffFromFile tests that maxBackoff from canonical YAML config is read correctly.
 func TestE2MaxBackoffFromFile(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	tests := []struct {
 		name            string
 		yamlBackoff     string
@@ -776,7 +776,7 @@ enigma2:
 func TestE2MaxBackoffENVOverridesFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	// File config: 5s maxBackoff
@@ -816,7 +816,7 @@ enigma2:
 func TestE2BackoffConfigConsistency(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := fmt.Sprintf(`
@@ -856,7 +856,7 @@ enigma2:
 
 func TestE2MaxBackoffInvalidValues(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	tests := []struct {
 		name          string
 		envValue      string
@@ -895,9 +895,9 @@ func TestE2MaxBackoffInvalidValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Unsetenv("XG2G_E2_MAX_BACKOFF")
 			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+			t.Setenv("XG2G_E2_HOST", "http://example.com")
 			t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+			t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 			if tt.envValue != "" {
 				t.Setenv("XG2G_E2_MAX_BACKOFF", tt.envValue)
@@ -937,7 +937,7 @@ func TestE2MaxBackoffInvalidValues(t *testing.T) {
 func TestYAMLCanDisableFeatures(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	dataDir := filepath.Join(tmpDir, "data")
 
@@ -982,9 +982,9 @@ epg:
 
 func TestParseScopedTokensFromEnv(t *testing.T) {
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	t.Run("json_format", func(t *testing.T) {
 		t.Setenv("XG2G_API_TOKENS", `[{"token":"read","scopes":["v3:read"]},{"token":"ops","scopes":["v3:read","v3:write"]}]`)
@@ -1049,7 +1049,7 @@ func TestParseScopedTokensFromEnv(t *testing.T) {
 func TestAPITokenRequiresScopes(t *testing.T) {
 	t.Setenv("XG2G_API_TOKEN", "token-only")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 
 	loader := NewLoader("", "test")
 	_, err := loader.Load()
@@ -1061,7 +1061,7 @@ func TestAPITokenRequiresScopes(t *testing.T) {
 func TestYAMLRejectsMissingTokenScopes(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
@@ -1083,7 +1083,7 @@ api:
 func TestYAMLRejectsTokenWithoutScopes(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
-		t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	yamlContent := `
