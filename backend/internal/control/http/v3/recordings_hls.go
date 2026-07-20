@@ -38,7 +38,6 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 	if _, ok := s.requireHouseholdRecordingAccess(w, r, recordingId); !ok {
 		return
 	}
-	profile := detectClientProfile(r)
 	variant := v3recordings.NormalizeVariantHash(r.URL.Query().Get("variant"))
 	target, err := v3recordings.DecodeTargetProfileQuery(r.URL.Query().Get("target"))
 	if err != nil {
@@ -50,9 +49,9 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 	var artErr *artifacts.ArtifactError
 
 	if isTimeshift {
-		artifact, artErr = s.artifacts.ResolveTimeshift(r.Context(), recordingId, string(profile), variant, target)
+		artifact, artErr = s.artifacts.ResolveTimeshift(r.Context(), recordingId, "", variant, target)
 	} else {
-		artifact, artErr = s.artifacts.ResolvePlaylist(r.Context(), recordingId, string(profile), variant, target)
+		artifact, artErr = s.artifacts.ResolvePlaylist(r.Context(), recordingId, "", variant, target)
 	}
 
 	if artErr != nil {

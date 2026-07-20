@@ -60,6 +60,7 @@ type FileConfig struct {
 	RateLimit      *RateLimitConfig          `yaml:"rateLimit,omitempty"`
 	Sessions       *SessionsConfig           `yaml:"sessions,omitempty"`
 	Store          *StoreConfig              `yaml:"store,omitempty"`
+	Recordings     *RecordingsFileConfig     `yaml:"recordings,omitempty"`
 	Streaming      *StreamingConfig          `yaml:"streaming,omitempty"`
 	Playback       *PlaybackFileConfig       `yaml:"playback,omitempty"`
 	PlannerShadow  *PlannerShadowFileConfig  `yaml:"plannerShadow,omitempty"`
@@ -143,6 +144,10 @@ type RecordingPlaybackConfig struct {
 	PlaybackPolicy string                 `yaml:"playback_policy,omitempty"` // "auto" (default), "local_only", "receiver_only"
 	StableWindow   string                 `yaml:"stable_window,omitempty"`   // Duration string (e.g., "2s")
 	Mappings       []RecordingPathMapping `yaml:"mappings,omitempty"`
+}
+
+type RecordingsFileConfig struct {
+	StrictTargetRequired *bool `yaml:"strict_target_required,omitempty"`
 }
 
 // RecordingPathMapping defines Receiver→Local path mapping
@@ -580,9 +585,10 @@ type AppConfig struct {
 	RecordingRoots map[string]string // ID -> Absolute Path (e.g. "hdd" -> "/media/hdd/movie")
 
 	// Recording Playback Configuration
-	RecordingPlaybackPolicy string                 // "auto" (default), "local_only", "receiver_only"
-	RecordingStableWindow   time.Duration          // File stability check duration (default: 2s)
-	RecordingPathMappings   []RecordingPathMapping // Receiver→Local path mappings
+	RecordingPlaybackPolicy       string                 // "auto" (default), "local_only", "receiver_only"
+	RecordingStableWindow         time.Duration          // File stability check duration (default: 2s)
+	RecordingPathMappings         []RecordingPathMapping // Receiver→Local path mappings
+	RecordingStrictTargetRequired bool                   // Phase 2 target rollout guard
 
 	// VOD Optimization (Legacy flat fields - kept for backwards compatibility)
 	VODProbeSize       string        // ffmpeg probesize (e.g. "50M")

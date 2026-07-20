@@ -16,6 +16,8 @@ import (
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/platform/fs"
 	"github.com/ManuGH/xg2g/internal/recordings"
 )
@@ -24,6 +26,7 @@ type Resolver interface {
 	ResolvePlaylist(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError)
 	ResolveTimeshift(ctx context.Context, recordingID, profile, variant string, target *playbackprofile.TargetPlaybackProfile) (ArtifactOK, *ArtifactError)
 	ResolveSegment(ctx context.Context, recordingID string, segment string, variant string) (ArtifactOK, *ArtifactError)
+	ResolvePlaylistState(ctx context.Context, recordingID, variant string) (ArtifactOK, *ArtifactError)
 }
 
 type DefaultResolver struct {
@@ -48,7 +51,7 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
 	}
 	variant = v3recordings.NormalizeVariantHash(variant)
-	targetProfile, resolvedVariant, artErr := recordingTarget(profile, variant, target)
+	targetProfile, resolvedVariant, artErr := r.recordingTarget(profile, variant, target)
 	if artErr != nil {
 		return ArtifactOK{}, artErr
 	}
@@ -186,7 +189,7 @@ func (r *DefaultResolver) ResolveTimeshift(ctx context.Context, recordingID, pro
 		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
 	}
 	variant = v3recordings.NormalizeVariantHash(variant)
-	targetProfile, resolvedVariant, artErr := recordingTarget(profile, variant, target)
+	targetProfile, resolvedVariant, artErr := r.recordingTarget(profile, variant, target)
 	if artErr != nil {
 		return ArtifactOK{}, artErr
 	}
@@ -316,12 +319,7 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 	finalPath := filepath.Join(cacheDir, "index.m3u8")
 
 	if targetProfile == nil {
-		targetProfile = recordingTargetProfile(profile)
-	}
-	if targetProfile == nil {
-		targetProfile = &playbackprofile.TargetPlaybackProfile{
-			Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
-		}
+		return errors.New("target profile is required but was nil")
 	}
 
 	// Using EnsureSpec to start/resume build
@@ -330,13 +328,20 @@ func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, varian
 	return err
 }
 
-func recordingTarget(profile, variant string, target *playbackprofile.TargetPlaybackProfile) (*playbackprofile.TargetPlaybackProfile, string, *ArtifactError) {
+func (r *DefaultResolver) recordingTarget(profile, variant string, target *playbackprofile.TargetPlaybackProfile) (*playbackprofile.TargetPlaybackProfile, string, *ArtifactError) {
 	variant = v3recordings.NormalizeVariantHash(variant)
 	if target == nil {
+		if r.cfg.RecordingStrictTargetRequired {
+			return nil, "", &ArtifactError{Code: CodeInvalid, Detail: "playback-info handshake required"}
+		}
+		log.L().Warn().Str("profile", profile).Str("variant", variant).Msg("VOD target fallback triggered")
+		metrics.IncTargetFallback()
 		target = recordingTargetProfile(profile)
 	}
 	if target == nil {
-		return nil, variant, nil
+		target = &playbackprofile.TargetPlaybackProfile{
+			Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+		}
 	}
 	canonical := playbackprofile.CanonicalizeTarget(*target)
 	resolvedVariant := canonical.Hash()
@@ -344,6 +349,42 @@ func recordingTarget(profile, variant string, target *playbackprofile.TargetPlay
 		return nil, "", &ArtifactError{Code: CodeInvalid, Detail: "playback variant mismatch"}
 	}
 	return &canonical, resolvedVariant, nil
+}
+
+func (r *DefaultResolver) ResolvePlaylistState(ctx context.Context, recordingID, variant string) (ArtifactOK, *ArtifactError) {
+	ref, ok := decodeRef(recordingID)
+	if !ok {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInvalid, Detail: "invalid recording id"}
+	}
+
+	variant = v3recordings.NormalizeVariantHash(variant)
+	cacheDir, err := v3recordings.RecordingVariantCacheDir(r.cfg.HLS.Root, ref, variant)
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Detail: "failed to determine cache dir"}
+	}
+	playlistPath := filepath.Join(cacheDir, "index.m3u8")
+	// #nosec G304 - playlistPath is confined to cacheDir
+	f, err := os.Open(playlistPath)
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeNotFound, Detail: "playlist not found"}
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err}
+	}
+
+	rewritten := v3recordings.RewritePlaylist(string(data), "EVENT", variant)
+	return ArtifactOK{
+		Data:    []byte(rewritten),
+		ModTime: info.ModTime(),
+		Kind:    ArtifactKindPlaylist,
+	}, nil
 }
 
 func (r *DefaultResolver) resolveSource(serviceRef string) (string, string, string, error) {

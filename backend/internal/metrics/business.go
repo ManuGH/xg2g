@@ -347,6 +347,11 @@ var (
 		Help: "Total number of VOD metadata entries pruned",
 	}, []string{"reason"}) // reason=ttl|max_entries
 
+	recordingsTargetFallbackTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "xg2g_recordings_target_fallback_total",
+		Help: "Total number of recording requests requiring legacy target fallback",
+	})
+
 	vodBuildDurationSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "xg2g_vod_build_duration_seconds",
 		Help:    "Duration of VOD build attempts",
@@ -453,4 +458,8 @@ func ObserveVODBuildDuration(result string, duration float64) {
 
 func IncVODRemuxStall(strategy string) {
 	vodRemuxStallsTotal.WithLabelValues(strategy).Inc()
+}
+
+func IncTargetFallback() {
+	recordingsTargetFallbackTotal.Inc()
 }

@@ -351,6 +351,7 @@ func (l *Loader) mergeEnvRecordings(cfg *AppConfig) {
 		l.envString("XG2G_RECORDINGS_MAP", ""),
 		cfg.RecordingPathMappings,
 	)
+	cfg.RecordingStrictTargetRequired = l.envBool("XG2G_RECORDINGS_STRICT_TARGET_REQUIRED", cfg.RecordingStrictTargetRequired)
 }
 
 func (l *Loader) mergeEnvVerification(cfg *AppConfig) {
