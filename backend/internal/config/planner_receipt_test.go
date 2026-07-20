@@ -8,7 +8,10 @@ import (
 )
 
 func TestPlannerReceiptEnvironmentOverrides(t *testing.T) {
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_PLANNER_RECEIPT_ENABLED", "true")
 	t.Setenv("XG2G_PLANNER_RECEIPT_REQUIRED", "true")
@@ -31,7 +34,10 @@ func TestPlannerReceiptEnvironmentOverrides(t *testing.T) {
 }
 
 func TestPlannerConfigurationLoadsFromStrictYAML(t *testing.T) {
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	err := os.WriteFile(path, []byte(`

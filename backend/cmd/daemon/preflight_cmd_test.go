@@ -24,7 +24,10 @@ func TestRunPreflightCLIRunsAgainstExplicitConfig(t *testing.T) {
 		"engine:\n" +
 		"  enabled: false\n" +
 		"store:\n" +
-		"  backend: memory\n"
+		"  backend: memory\n" +
+		"recordings:\n" +
+		"  target_signing_key: abcdefghijklmnopqrstuvwxyz0123456789ABCDE1\n"
+
 	if err := os.WriteFile(configPath, []byte(configYAML), 0o600); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
@@ -49,7 +52,10 @@ func TestRunPreflightCLIIncludesRuntimeSnapshotJSON(t *testing.T) {
 		"engine:\n" +
 		"  enabled: false\n" +
 		"store:\n" +
-		"  backend: memory\n"
+		"  backend: memory\n" +
+		"recordings:\n" +
+		"  target_signing_key: abcdefghijklmnopqrstuvwxyz0123456789ABCDE1\n"
+
 	if err := os.WriteFile(configPath, []byte(configYAML), 0o600); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
@@ -95,7 +101,10 @@ func TestRunPreflightCLIRestoreIncludesAssessmentJSON(t *testing.T) {
 		"  enabled: false\n" +
 		"store:\n" +
 		"  backend: sqlite\n" +
-		"  path: " + filepath.Join(dataDir, "store") + "\n"
+		"  path: " + filepath.Join(dataDir, "store") + "\n" +
+		"recordings:\n" +
+		"  target_signing_key: abcdefghijklmnopqrstuvwxyz0123456789ABCDE1\n"
+
 	if err := os.WriteFile(configPath, []byte(configYAML), 0o600); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}

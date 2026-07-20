@@ -16,6 +16,7 @@ func TestBuildWireConfigState_EnvOnlyReloadSucceeds(t *testing.T) {
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 	t.Setenv("XG2G_E2_HOST", "http://mock-receiver") // Validate requires a non-empty Enigma2.BaseURL
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	tmpDir := t.TempDir()
 	t.Setenv("XG2G_DATA", tmpDir)
 

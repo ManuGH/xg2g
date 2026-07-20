@@ -24,6 +24,8 @@ enigma2:
   baseUrl: http://receiver.local
 epg:
   enabled: true
+recordings:
+  target_signing_key: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
 `
 }
 
@@ -32,6 +34,8 @@ func pinConfigEnv(t *testing.T, dataDir string) {
 	t.Setenv("XG2G_DATA", dataDir)
 	t.Setenv("XG2G_DATA_DIR", dataDir)
 	t.Setenv("XG2G_STORE_PATH", filepath.Join(dataDir, "store"))
+	t.Setenv("XG2G_DECISION_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE2")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 }
 
 func TestConfigChecker_Drift(t *testing.T) {

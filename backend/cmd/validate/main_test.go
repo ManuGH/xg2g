@@ -19,6 +19,8 @@ func setCISafeEnv(cmd *exec.Cmd, tmpDir string) {
 	cmd.Env = append(os.Environ(),
 		"XG2G_STORE_PATH="+tmpDir,
 		"XG2G_DATA="+tmpDir,
+		"XG2G_DECISION_SECRET=abcdefghijklmnopqrstuvwxyz0123456789ABCDE2",
+		"XG2G_RECORDINGS_TARGET_SIGNING_KEY=abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	)
 }
 

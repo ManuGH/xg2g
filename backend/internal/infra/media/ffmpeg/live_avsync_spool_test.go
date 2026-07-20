@@ -11,9 +11,9 @@ import (
 
 // slowReader simulates a live stream that delivers chunks with small delays.
 type slowReader struct {
-	data []byte
-	off  int
-	step int
+	data  []byte
+	off   int
+	step  int
 	delay time.Duration
 }
 

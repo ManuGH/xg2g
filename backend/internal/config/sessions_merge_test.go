@@ -13,6 +13,7 @@ import (
 // client extends its session-record expiry by sessions.lease_ttl (sessions_heartbeat.go),
 // so the old 2h default pinned a tuner/pipeline slot for 2h. Default must now be 120s.
 func TestSessionsConfigDefaultLowered(t *testing.T) {
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {
@@ -34,6 +35,7 @@ func TestSessionsConfigDefaultLowered(t *testing.T) {
 // TestSessionsConfigFileOverride proves sessions.* YAML is honoured (mergeFileSessions);
 // before this it was a dead no-op.
 func TestSessionsConfigFileOverride(t *testing.T) {
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {
@@ -56,6 +58,7 @@ func TestSessionsConfigFileOverride(t *testing.T) {
 
 // TestSessionsConfigEnvOverride proves XG2G_SESSION_* env wins over file/default.
 func TestSessionsConfigEnvOverride(t *testing.T) {
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {

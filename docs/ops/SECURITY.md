@@ -173,8 +173,9 @@ server. The signing key is a shared secret that **must** be configured before th
 | Variable | Required | Min Length | Description |
 | :--- | :--- | :--- | :--- |
 | `XG2G_DECISION_SECRET` | **Yes** | 32 ASCII bytes | HMAC-SHA256 signing key for playback decision tokens. |
+| `XG2G_RECORDINGS_TARGET_SIGNING_KEY` | **Yes** | 32 ASCII bytes | HMAC-SHA256 signing key for recording target profiles (protects HLS variant mappings). |
 
-The service **refuses to start** if this variable is missing, empty, or whitespace-only.
+The service **refuses to start** if either of these variables is missing, empty, or whitespace-only.
 The systemd `ExecStartPre` gate enforces the 32-byte minimum before any container is started.
 
 > **Byte-count clarification:** The length check uses `wc -c` (raw byte count). For pure ASCII
@@ -193,12 +194,15 @@ openssl rand -base64 32 | tr -d '=' | tr '+/' '-_'
 Add to `/etc/xg2g/xg2g.env` (`root:root`, mode `0600`):
 ```
 XG2G_DECISION_SECRET=<openssl-output>
+XG2G_RECORDINGS_TARGET_SIGNING_KEY=<openssl-output>
 ```
 
-**Verify length before deploy:**
 ```bash
 secret="$(grep XG2G_DECISION_SECRET /etc/xg2g/xg2g.env | cut -d= -f2)"
 printf '%s' "$secret" | wc -c   # must be >= 32
+
+rec_secret="$(grep XG2G_RECORDINGS_TARGET_SIGNING_KEY /etc/xg2g/xg2g.env | cut -d= -f2)"
+printf '%s' "$rec_secret" | wc -c   # must be >= 32
 ```
 
 ### Secret Rotation
@@ -209,8 +213,8 @@ JWT tokens are short-lived (≤ 120 s). This means the rotation window is at mos
 acceptable for a single-instance deployment. No dual-key scheme is implemented.
 
 **Rotation procedure:**
-1. Generate a new secret: `openssl rand -hex 32`
-2. Update `XG2G_DECISION_SECRET` in `/etc/xg2g/xg2g.env`
+1. Generate new secrets: `openssl rand -hex 32`
+2. Update `XG2G_DECISION_SECRET` and `XG2G_RECORDINGS_TARGET_SIGNING_KEY` in `/etc/xg2g/xg2g.env`
 3. Restart the service: `systemctl restart xg2g`
 4. **Expected transient behaviour during restart:** clients holding a token signed by the old key
    will receive a `401 TOKEN_INVALID_SIG` on their next intent request for up to one token TTL

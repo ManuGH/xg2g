@@ -988,6 +988,14 @@
         "strict_target_required": {
           "default": false,
           "type": "boolean"
+        },
+        "target_signing_key": {
+          "default": "",
+          "type": "string"
+        },
+        "target_signing_key_previous": {
+          "default": "",
+          "type": "string"
         }
       },
       "type": "object"

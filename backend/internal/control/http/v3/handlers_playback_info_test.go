@@ -109,10 +109,12 @@ func requireVariantAwareRecordingURL(t *testing.T, rawURL, recordingID string) {
 	assert.NotEmpty(t, query.Get("variant"))
 	assert.NotEmpty(t, query.Get("target"))
 
-	target, err := v3recordings.DecodeTargetProfileQuery(query.Get("target"))
-	require.NoError(t, err)
-	require.NotNil(t, target)
-	assert.Equal(t, query.Get("variant"), v3recordings.TargetVariantHash(target))
+	if targetParam := query.Get("target"); targetParam != "" {
+		decodedTarget, err := v3recordings.DecodeTargetProfileQuery(targetParam, "", "", false)
+		require.NoError(t, err)
+		assert.Equal(t, "mpegts", decodedTarget.Container)
+		assert.Equal(t, query.Get("variant"), v3recordings.TargetVariantHash(decodedTarget))
+	}
 }
 
 func TestGetRecordingPlaybackInfo_StrictTruthfulness(t *testing.T) {
@@ -830,7 +832,7 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeReturnsFMP4VariantURL(t *testi
 	assert.NotEmpty(t, parsed.Query().Get("variant"))
 	assert.NotEmpty(t, parsed.Query().Get("target"))
 
-	target, err := v3recordings.DecodeTargetProfileQuery(parsed.Query().Get("target"))
+	target, err := v3recordings.DecodeTargetProfileQuery(parsed.Query().Get("target"), "", "", false)
 	require.NoError(t, err)
 	require.NotNil(t, target)
 	assert.Equal(t, playbackprofile.PackagingFMP4, target.Packaging)

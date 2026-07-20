@@ -57,9 +57,10 @@ func createTestConfig(t *testing.T) config.AppConfig {
 	}
 
 	return config.AppConfig{
-		LogLevel:           "info",
-		DataDir:            dataDir,
-		VODCacheMaxEntries: 100,
+		LogLevel:                  "info",
+		DataDir:                   dataDir,
+		VODCacheMaxEntries:        100,
+		RecordingTargetSigningKey: "12345678901234567890123456789012",
 		HLS: config.HLSConfig{
 			Root: hlsRoot,
 		},

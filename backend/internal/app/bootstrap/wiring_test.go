@@ -26,6 +26,7 @@ func TestWiring_BootsMinimalStack(t *testing.T) {
 	t.Setenv("XG2G_INITIAL_REFRESH", "false") // Disable background refresh to prevent network hangs
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-wiring-*")
 	require.NoError(t, err)
@@ -43,6 +44,8 @@ enigma2:
   baseUrl: http://mock-receiver
   username: root
   password: "dummy-password"
+recordings:
+  target_signing_key: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
 `
 	err = os.WriteFile(configPath, []byte(content), 0600)
 	require.NoError(t, err)
@@ -89,6 +92,7 @@ func TestWiring_MetricsDefaultBindsLocalhost(t *testing.T) {
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-metrics-*")
 	require.NoError(t, err)
@@ -122,6 +126,7 @@ func TestWiring_TLSEnabledForcesHTTPSByDefault(t *testing.T) {
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-tls-forcehttps-*")
 	require.NoError(t, err)

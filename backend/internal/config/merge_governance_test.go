@@ -16,7 +16,9 @@ import (
 // applied. They were parsed into FileConfig but never merged, so file values were
 // silently ignored.
 func TestMergeFileGovernance(t *testing.T) {
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	// Ensure no ENV override leaks in (ENV > File).
 	for _, k := range []string{"XG2G_CONFIG_STRICT", "XG2G_READY_STRICT", "XG2G_LOG_SERVICE", "XG2G_TRUSTED_PROXIES"} {
 		t.Setenv(k, "")

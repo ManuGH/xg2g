@@ -39,10 +39,23 @@ func (s *Server) serveHLSPlaylist(w http.ResponseWriter, r *http.Request, record
 		return
 	}
 	variant := v3recordings.NormalizeVariantHash(r.URL.Query().Get("variant"))
-	target, err := v3recordings.DecodeTargetProfileQuery(r.URL.Query().Get("target"))
+	target, err := v3recordings.DecodeTargetProfileQuery(
+		r.URL.Query().Get("target"),
+		s.cfg.RecordingTargetSigningKey,
+		s.cfg.RecordingTargetSigningKeyPrevious,
+		s.cfg.RecordingStrictTargetRequired,
+	)
 	if err != nil {
-		RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "invalid target profile")
+		RespondError(w, r, http.StatusForbidden, ErrInvalidInput, "invalid target profile: "+err.Error())
 		return
+	}
+
+	if target != nil {
+		expectedVariant := v3recordings.TargetVariantHash(target)
+		if expectedVariant != "" && expectedVariant != variant {
+			RespondError(w, r, http.StatusBadRequest, ErrInvalidInput, "target profile variant hash mismatch")
+			return
+		}
 	}
 
 	var artifact artifacts.ArtifactOK

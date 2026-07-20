@@ -28,10 +28,12 @@ func TestLoadAutoDetectsVAAPIDeviceWhenUnset(t *testing.T) {
 	t.Cleanup(func() { processReadDir = origReadDir })
 
 	env := map[string]string{
-		"XG2G_E2_HOST":    "http://example.com",
-		"XG2G_STORE_PATH": t.TempDir(),
+		"XG2G_E2_HOST":                       "http://example.com",
+		"XG2G_STORE_PATH":                    t.TempDir(),
+		"XG2G_RECORDINGS_TARGET_SIGNING_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	}
 
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoaderWithEnv("", "test-version", vaapiLookup(env), vaapiEnviron(env))
 	cfg, err := loader.Load()
 	if err != nil {
@@ -54,11 +56,13 @@ func TestLoadSkipsVAAPIAutoDetectWhenEnvExplicitlyEmpty(t *testing.T) {
 	t.Cleanup(func() { processReadDir = origReadDir })
 
 	env := map[string]string{
-		"XG2G_E2_HOST":      "http://example.com",
-		"XG2G_STORE_PATH":   t.TempDir(),
-		"XG2G_VAAPI_DEVICE": "",
+		"XG2G_E2_HOST":                       "http://example.com",
+		"XG2G_STORE_PATH":                    t.TempDir(),
+		"XG2G_VAAPI_DEVICE":                  "",
+		"XG2G_RECORDINGS_TARGET_SIGNING_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	}
 
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoaderWithEnv("", "test-version", vaapiLookup(env), vaapiEnviron(env))
 	cfg, err := loader.Load()
 	if err != nil {
@@ -84,11 +88,13 @@ func TestLoadPreservesExplicitVAAPIDeviceOverride(t *testing.T) {
 	t.Cleanup(func() { processReadDir = origReadDir })
 
 	env := map[string]string{
-		"XG2G_E2_HOST":      "http://example.com",
-		"XG2G_STORE_PATH":   t.TempDir(),
-		"XG2G_VAAPI_DEVICE": "/dev/dri/renderD129",
+		"XG2G_E2_HOST":                       "http://example.com",
+		"XG2G_STORE_PATH":                    t.TempDir(),
+		"XG2G_VAAPI_DEVICE":                  "/dev/dri/renderD129",
+		"XG2G_RECORDINGS_TARGET_SIGNING_KEY": "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	}
 
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
 	loader := NewLoaderWithEnv("", "test-version", vaapiLookup(env), vaapiEnviron(env))
 	cfg, err := loader.Load()
 	if err != nil {

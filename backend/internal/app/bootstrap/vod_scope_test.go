@@ -49,6 +49,8 @@ enigma2:
   baseUrl: http://mock-receiver
   username: root
   password: "dummy-password"
+recordings:
+  target_signing_key: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
 `
 	err = os.WriteFile(configPath, []byte(content), 0600)
 	require.NoError(t, err)

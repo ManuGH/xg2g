@@ -1,6 +1,8 @@
 package recordings
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -8,6 +10,8 @@ import (
 
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
@@ -43,8 +47,8 @@ func TargetVariantHash(target *playbackprofile.TargetPlaybackProfile) string {
 	return recservice.RecordingTargetVariantHash(target)
 }
 
-// EncodeTargetProfileQuery encodes a canonical target playback profile for URL transport.
-func EncodeTargetProfileQuery(target *playbackprofile.TargetPlaybackProfile) (string, error) {
+// EncodeTargetProfileQuery encodes a canonical target playback profile for URL transport with an HMAC signature.
+func EncodeTargetProfileQuery(target *playbackprofile.TargetPlaybackProfile, signingKey string) (string, error) {
 	if target == nil {
 		return "", nil
 	}
@@ -53,16 +57,57 @@ func EncodeTargetProfileQuery(target *playbackprofile.TargetPlaybackProfile) (st
 	if err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	payload := base64.RawURLEncoding.EncodeToString(b)
+
+	if signingKey == "" {
+		return payload, nil
+	}
+
+	mac := hmac.New(sha256.New, []byte(signingKey))
+	mac.Write([]byte(payload))
+	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+
+	return payload + "." + signature, nil
 }
 
-// DecodeTargetProfileQuery decodes a target playback profile from the URL-safe query representation.
-func DecodeTargetProfileQuery(raw string) (*playbackprofile.TargetPlaybackProfile, error) {
+// DecodeTargetProfileQuery decodes a target playback profile from the URL-safe query representation and verifies its HMAC signature.
+func DecodeTargetProfileQuery(raw, primaryKey, previousKey string, strictTargetRequired bool) (*playbackprofile.TargetPlaybackProfile, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
 	}
-	b, err := base64.RawURLEncoding.DecodeString(raw)
+
+	parts := strings.Split(raw, ".")
+	if len(parts) > 2 {
+		return nil, fmt.Errorf("invalid target profile format")
+	}
+
+	payload := parts[0]
+	var signature string
+	if len(parts) == 2 {
+		signature = parts[1]
+	}
+
+	if signature == "" {
+		if strictTargetRequired {
+			return nil, fmt.Errorf("missing target profile signature (strict mode)")
+		}
+		log.L().Warn().Msg("unsigned target profile received; accepting in legacy mode")
+		metrics.IncTargetFallback("unsigned")
+	} else {
+		valid := false
+		if checkHMAC(payload, signature, primaryKey) {
+			valid = true
+		} else if previousKey != "" && checkHMAC(payload, signature, previousKey) {
+			valid = true
+		}
+
+		if !valid {
+			return nil, fmt.Errorf("invalid target profile signature")
+		}
+	}
+
+	b, err := base64.RawURLEncoding.DecodeString(payload)
 	if err != nil {
 		return nil, fmt.Errorf("decode target profile: %w", err)
 	}
@@ -74,8 +119,23 @@ func DecodeTargetProfileQuery(raw string) (*playbackprofile.TargetPlaybackProfil
 	return &canonical, nil
 }
 
+func checkHMAC(payload, signature, key string) bool {
+	if key == "" {
+		return false
+	}
+	expectedMAC := hmac.New(sha256.New, []byte(key))
+	expectedMAC.Write([]byte(payload))
+
+	decodedSig, err := base64.RawURLEncoding.DecodeString(signature)
+	if err != nil {
+		return false
+	}
+
+	return hmac.Equal(decodedSig, expectedMAC.Sum(nil))
+}
+
 // RecordingPlaylistURL returns the variant-aware playlist URL for a recording.
-func RecordingPlaylistURL(recordingID, profile string, target *playbackprofile.TargetPlaybackProfile) string {
+func RecordingPlaylistURL(recordingID, profile string, target *playbackprofile.TargetPlaybackProfile, signingKey string) string {
 	base := fmt.Sprintf("/api/v3/recordings/%s/playlist.m3u8", recordingID)
 	params := make([]string, 0, 3)
 	if p := normalize.Token(profile); p != "" {
@@ -83,7 +143,7 @@ func RecordingPlaylistURL(recordingID, profile string, target *playbackprofile.T
 	}
 	if variant := TargetVariantHash(target); variant != "" {
 		params = append(params, "variant="+variant)
-		if encoded, err := EncodeTargetProfileQuery(target); err == nil && encoded != "" {
+		if encoded, err := EncodeTargetProfileQuery(target, signingKey); err == nil && encoded != "" {
 			params = append(params, "target="+encoded)
 		}
 	}

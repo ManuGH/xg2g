@@ -50,7 +50,8 @@ func baseV3Config(t *testing.T) AppConfig {
 		Streaming: StreamingConfig{
 			DeliveryPolicy: "universal",
 		},
-		VODCacheMaxEntries: 256,
+		VODCacheMaxEntries:        256,
+		RecordingTargetSigningKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1",
 	}
 }
 

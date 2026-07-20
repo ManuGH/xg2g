@@ -152,6 +152,8 @@ recording_playback:
 recording_roots: {}
 recordings:
   strict_target_required: false
+  target_signing_key: ""
+  target_signing_key_previous: ""
 server:
   idleTimeout: 2m
   maxHeaderBytes: 1048576

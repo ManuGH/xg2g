@@ -335,7 +335,7 @@ func (r *DefaultResolver) recordingTarget(profile, variant string, target *playb
 			return nil, "", &ArtifactError{Code: CodeInvalid, Detail: "playback-info handshake required"}
 		}
 		log.L().Warn().Str("profile", profile).Str("variant", variant).Msg("VOD target fallback triggered")
-		metrics.IncTargetFallback()
+		metrics.IncTargetFallback("missing_target")
 		target = recordingTargetProfile(profile)
 	}
 	if target == nil {

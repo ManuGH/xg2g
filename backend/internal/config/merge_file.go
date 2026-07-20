@@ -69,8 +69,24 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		return err
 	}
 	l.mergeFileVOD(dst, src)
+	l.mergeFileRecordings(dst, src)
 
 	return nil
+}
+
+func (l *Loader) mergeFileRecordings(dst *AppConfig, src *FileConfig) {
+	if src.Recordings == nil {
+		return
+	}
+	if src.Recordings.StrictTargetRequired != nil {
+		dst.RecordingStrictTargetRequired = *src.Recordings.StrictTargetRequired
+	}
+	if src.Recordings.TargetSigningKey != nil {
+		dst.RecordingTargetSigningKey = *src.Recordings.TargetSigningKey
+	}
+	if src.Recordings.TargetSigningKeyPrevious != nil {
+		dst.RecordingTargetSigningKeyPrevious = *src.Recordings.TargetSigningKeyPrevious
+	}
 }
 
 func (l *Loader) mergeFilePlanner(dst *AppConfig, src *FileConfig) {
