@@ -324,9 +324,10 @@ func TestArtifactResolver_ResolvePlaylistState(t *testing.T) {
 	})
 
 	t.Run("Existing Playlist -> Returns Content", func(t *testing.T) {
-		dir, _ := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, ref, variant)
-		os.MkdirAll(dir, 0755)
-		os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0644)
+		dir, err := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, ref, variant)
+		assert.NoError(t, err)
+		assert.NoError(t, os.MkdirAll(dir, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0644))
 
 		res, err := r.ResolvePlaylistState(context.Background(), validID, variant)
 		assert.Nil(t, err)
@@ -336,13 +337,21 @@ func TestArtifactResolver_ResolvePlaylistState(t *testing.T) {
 	})
 
 	t.Run("Empty Variant -> Resolves to Default Copy Profile", func(t *testing.T) {
-		// Construct the expected default hash
+		// Construct the expected default hash, mirroring the nil fallback in
+		// ResolvePlaylistState.
 		target := recordingTargetProfile("")
-		expectedVariant := target.Hash()
+		if target == nil {
+			target = &playbackprofile.TargetPlaybackProfile{
+				Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+			}
+		}
+		canonical := playbackprofile.CanonicalizeTarget(*target)
+		expectedVariant := canonical.Hash()
 
-		dir, _ := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, ref, expectedVariant)
-		os.MkdirAll(dir, 0755)
-		os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0644)
+		dir, err := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, ref, expectedVariant)
+		assert.NoError(t, err)
+		assert.NoError(t, os.MkdirAll(dir, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0644))
 
 		// Call with empty variant
 		res, err := r.ResolvePlaylistState(context.Background(), validID, "")
