@@ -187,6 +187,140 @@ enforce_admins, test-secrets helper). Remaining:
 
 ---
 
+## A-Epics — Application-wide refactor findings (audit 2026-07-20)
+
+Findings from the whole-app refactor pass. Unlike the R-epics these are
+mostly mechanical and low-risk, so the bar to start is lower: **any A-epic
+may start once cutover Phase 4 (#687) is merged** — no purge required.
+Ground rules G1–G5 apply. Every A-epic is sliced so that each PR is small,
+reviewable, and independently green.
+
+### Execution rules for the implementing agent (binding, read first)
+
+These exist because each rule was violated at least once during the
+cutover and cost a CI round-trip or a review escalation:
+
+1. Before EVERY push: run `make pre-push`. Before claiming "tests green":
+   run the exact CI target (`make ci-pr`) and paste its final lines into
+   the handoff. "It passed locally" without naming the command is not a
+   claim.
+2. NEVER `git add .` / `git add -A`. Stage files by explicit path. Before
+   every commit: `git status --short` and confirm every listed file is
+   intentional.
+3. Never amend or force-push a branch that has an open PR.
+4. Review threads: fix or answer in the thread FIRST, resolve second
+   (AGENTS.md lifecycle). Never resolve silently.
+5. Move-only PRs must not contain behavior changes. If you spot a bug
+   while moving code, note it in the PR description and (if independently
+   valuable) flag it for a separate task — do not fix it in the move PR.
+6. When a step says "measure first", the measurement result goes to Manuel
+   for a go/no-go BEFORE the removal step starts.
+
+### A1 — Retire the legacy API surface (`internal/api`)
+
+**Finding:** Two complete generated API layers exist:
+`internal/api/server_gen.go` (3,290 lines, plus ~20 handler/wiring files,
+wired in `internal/app/bootstrap` and `internal/daemon`) and the current
+`internal/control/http/v3/server_gen.go` (6,540 lines). The legacy layer
+is the single largest deletion candidate in the repo.
+
+**Steps (one PR each):**
+
+1. **A1.1 Measure.** Add a counting middleware to the legacy router only:
+   metric `xg2g_legacy_api_requests_total{path,client}` + WARN log. No
+   behavior change. Deploy staging + production. Observation window:
+   ≥ 7 days. Also verify statically which spec the WebUI client is
+   generated from: `grep -rn "servers\|basePath\|/api/v" frontend/webui/src/client-ts/ | head`
+   and check the Android app's base paths the same way.
+2. **A1.2 Gate.** Config flag `api.legacy_enabled` (default `true`),
+   registered per the current config process. When `false`, legacy routes
+   return 410 Gone with a JSON body pointing to the v3 equivalent.
+   (Same pattern as `recordings.strict_target_required`.)
+3. **A1.3 Flip.** After the window shows zero legitimate traffic and
+   Manuel gives go: default `false`, one-line PR.
+4. **A1.4 Delete.** Remove `internal/api` entirely plus its wiring in
+   `bootstrap`/`daemon`/`cmd`. Acceptance:
+   `grep -rn "internal/api" backend --include="*.go" | grep -v _test` → 0
+   matches; full suite green; binary size recorded before/after.
+
+**Do NOT** start A1.4 before A1.3 has been deployed for one cycle.
+
+### A2 — Split the `internal/control/http/v3` god-package
+
+**Finding:** 103 non-test files flat in one package (plus the largest
+hand-written files in the repo: `playback_info_response_mapping.go` 794
+lines, `handlers_sessions.go` 785). Everything can reach everything;
+every feature change churns the same package.
+
+**Method (strictly mechanical, one subpackage per PR):**
+
+1. Record the route table before starting (the generated `server_gen.go`
+   route registrations) — it must be byte-identical after every PR.
+2. Extract in this order (dependency-light first): `tokens` →
+   `sessions` → `playbackinfo` → `hls`. The existing `recordings/` and
+   `artifacts/` subpackages are the template.
+3. Per PR: move files, fix imports, export only what cross-package
+   callers need (prefer keeping helpers unexported and moving them with
+   their only caller). `go build ./...`, full test suite, `make pre-push`.
+4. No renames, no signature changes, no "cleanup while here" (rule 5).
+
+**Acceptance:** package `v3` root retains only server glue (generated
+server, router wiring, shared middleware); no file > 500 lines moves
+without being split at a natural seam noted in the PR description.
+
+### A3 — Decompose the frontend playback orchestrator
+
+**Finding:** `frontend/webui/src/features/player/usePlaybackOrchestrator.ts`
+is 2,689 lines — a single React hook holding the entire player logic.
+This is the frontend twin of the deleted `DecideProfile`: client-side
+playback decisions the planner already makes authoritatively.
+
+**Steps:**
+
+1. **A3.1 Inventory (no code change).** Produce a table of every decision
+   the hook makes (codec/container checks, retry policy, fallback
+   selection, …) with a column "duplicated from `/playback-info`? y/n".
+   Deliverable goes to Manuel — deletions are decided there, not
+   unilaterally (some client fallbacks may be deliberate resilience).
+2. **A3.2 Extract the pure state machine** into its own module with unit
+   tests (existing player tests keep passing untouched).
+3. **A3.3 Extract transport adapters** (hls.js glue, native video, error
+   mapping).
+4. **A3.4 Delete duplicated decisions** approved in A3.1; the hook shrinks
+   to orchestration glue.
+
+**Per PR:** `cd frontend/webui && npm run lint && npm run test` — paste
+final lines in the handoff.
+
+### A4 — Mechanical file splits (low priority)
+
+`internal/pipeline/scan/manager.go` (1,376 lines) and
+`internal/infra/media/ffmpeg/detector.go` (1,089 lines). Split along the
+natural seams (scan: discovery vs. reconcile vs. persistence; detector:
+probe execution vs. capability mapping). Move-only rules apply. Do these
+last or as filler between review waits.
+
+### A5 — Make transitional debt visible in code (do this FIRST — small)
+
+**Finding:** The backend contains exactly 2 TODO markers while the specs
+document at least four live transitional mechanisms. Debt invisible at
+the code site will be missed by every future agent session.
+
+**Step (single small PR):** Add `// TODO(SPEC_VOD_PLANNER_CUTOVER §…)` /
+`// TODO(SPEC_MODERNIZATION_2026 §…)` comments at exactly these sites:
+
+1. Legacy bare-target payload acceptance in
+   `internal/control/http/v3/recordings/cache.go` (dual-format decode —
+   removal is a cutover cleanup step).
+2. The copy-default fallback in `recordingTarget()`
+   (`artifacts/resolver.go`) — dies with the strict-flag flip.
+3. The empty-variant default in `ResolvePlaylistState`
+   (`artifacts/resolver.go`) — legacy semantics, revisit in R2.
+4. The TS packaging path (superseded by R3).
+
+Plus one `lint-invariants` addition: a naked `TODO`/`FIXME` without a
+`(...)` reference fails the gate — keeps future debt findable.
+
 ## Sequencing summary
 
 ```
@@ -196,6 +330,11 @@ R0 (cutover done) ──▶ R1 (config codegen)      [independent, may start aft
         │
         └──▶ R4 (one intent envelope)          [after purge]
 R5 anytime after #687.
+
+A-epics (need only #687, not the purge):
+A5 (debt markers, do first) ──▶ A1.1 (measure legacy API) ──▶ A1.2–A1.4
+A2 (v3 split) and A3 (frontend orchestrator) in parallel lanes.
+A4 as filler. Recommended overall entry order: A5 → A1.1 → A2 → A3.
 ```
 
 M3 (ABR ladder) remains REJECTED per cutover spec Section 10.
