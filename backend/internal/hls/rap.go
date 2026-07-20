@@ -692,10 +692,10 @@ func FilterPlaylistRAP(playlistContent []byte, sessionDir string) ([]byte, int, 
 		buf.WriteByte('\n')
 	}
 	if hasDiscontinuitySeq || droppedDiscontinuities > 0 {
-		buf.WriteString(fmt.Sprintf("#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", discontinuitySeq+droppedDiscontinuities))
+		fmt.Fprintf(&buf, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", discontinuitySeq+droppedDiscontinuities)
 	}
 	if hasMediaSeq || droppedCount > 0 {
-		buf.WriteString(fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d\n", newMediaSeq))
+		fmt.Fprintf(&buf, "#EXT-X-MEDIA-SEQUENCE:%d\n", newMediaSeq)
 	}
 	for _, t := range preservedStatefulTags {
 		buf.WriteString(t)

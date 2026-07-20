@@ -59,9 +59,9 @@ type SourceProfile struct {
 
 // TruthMismatch represents a dimension where the real media deviates from the planner's assumption.
 type TruthMismatch struct {
-	Field    string      `json:"field"`
-	Expected interface{} `json:"expected"`
-	Actual   interface{} `json:"actual"`
+	Field    string `json:"field"`
+	Expected any    `json:"expected"`
+	Actual   any    `json:"actual"`
 }
 
 // BuildIntent is the complete, planner-issued execution order for one build.
