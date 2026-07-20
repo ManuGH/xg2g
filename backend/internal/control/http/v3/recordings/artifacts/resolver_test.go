@@ -334,4 +334,20 @@ func TestArtifactResolver_ResolvePlaylistState(t *testing.T) {
 		assert.Equal(t, []byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT"), res.Data)
 		assert.Empty(t, mgr.ActiveJobIDs(), "state query should not trigger a build job")
 	})
+
+	t.Run("Empty Variant -> Resolves to Default Copy Profile", func(t *testing.T) {
+		// Construct the expected default hash
+		target := recordingTargetProfile("")
+		expectedVariant := target.Hash()
+
+		dir, _ := v3recordings.RecordingVariantCacheDir(cfg.HLS.Root, ref, expectedVariant)
+		os.MkdirAll(dir, 0755)
+		os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U"), 0644)
+
+		// Call with empty variant
+		res, err := r.ResolvePlaylistState(context.Background(), validID, "")
+		assert.Nil(t, err)
+		assert.Equal(t, ArtifactKindPlaylist, res.Kind)
+		assert.Equal(t, []byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT"), res.Data)
+	})
 }
