@@ -214,6 +214,7 @@ func hlsOutputArgs(workDir, outputPath string, target *ports.TargetPlaybackProfi
 			"-hls_segment_filename", filepath.Join(workDir, "seg_%05d.m4s"),
 		)
 	default:
+		// TODO(SPEC_MODERNIZATION_2026 §R3): TS packaging path is superseded by R3 CMAF/fMP4 delivery.
 		args = append(args, "-hls_segment_filename", filepath.Join(workDir, "seg_%05d.ts"))
 	}
 

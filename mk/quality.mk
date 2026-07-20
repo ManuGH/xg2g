@@ -26,6 +26,13 @@ lint-invariants: ## Run repository lint invariants enforced in CI
 		echo "$$VIOLATIONS"; \
 		exit 1; \
 	fi
+	@echo "Scanning for naked TODO/FIXME comments without (reference)..."
+	@VIOLATIONS=$$(grep -RIn --include='*.go' --include='*.ts' --include='*.tsx' -E '^[[:space:]]*//[[:space:]]*(TODO|FIXME)([^a-zA-Z0-9(]|$$)' $(BACKEND_DIR)/ $(FRONTEND_DIR)/webui/src/ | grep -vE '(\.gen\.ts|_gen\.go|vendor/|node_modules/|\.spec\.|\_test\.go)' || true); \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo "❌ Naked TODO/FIXME detected without reference parentheses (e.g. // TODO(reference): ...):"; \
+		echo "$$VIOLATIONS"; \
+		exit 1; \
+	fi
 	@$(PYTHON) $(BACKEND_DIR)/scripts/check_deprecations.py
 	@cd $(FRONTEND_DIR)/webui && npm run lint
 	@echo "✅ Lint invariants passed"
