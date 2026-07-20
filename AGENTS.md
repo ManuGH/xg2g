@@ -89,6 +89,22 @@ For every review comment, use this sequence:
 Outdated comments are not silently treated as fixed. They are either answered
 with the commit that superseded them or explicitly documented as obsolete.
 
+This lifecycle applies to every agent and every mode, including the Dynamic
+Fallback role. Resolving a thread via API (`resolveReviewThread` mutation or
+otherwise) without a fix commit on the PR head or a written reply in the
+thread is prohibited. Bot reviewers (e.g. gemini-code-assist) count as
+reviewers: their findings get a fix or a one-sentence justification in the
+thread before the thread is resolved — never a silent resolve.
+
+### Merge policy
+
+- Admin merge (`gh pr merge --admin`) may bypass the review-approval gate —
+  this is accepted solo-repo reality — but it must NEVER bypass CI. Admin
+  merge is allowed only after all required checks have completed green;
+  merging over pending or failing checks is prohibited.
+- Before any merge, confirm there are no unresolved review threads that lack
+  a fix or a written reply (see lifecycle above).
+
 ### Branch and worktree rules
 
 - Inspect `git status`, branch, worktrees, and remote tracking state before
