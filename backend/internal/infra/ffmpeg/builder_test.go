@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
-	"github.com/ManuGH/xg2g/internal/domain/vod"
+	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 )
 
 func TestMapProfileToArgs_ProfileDefaultEnsuresAACAudio(t *testing.T) {
@@ -91,27 +91,27 @@ func TestMapProfileToArgs_TargetProfileOverridesLegacyProfile(t *testing.T) {
 		WorkDir:    "/tmp/work",
 		OutputTemp: "index.live.m3u8",
 		Profile:    vod.ProfileLow,
-		TargetProfile: &playbackprofile.TargetPlaybackProfile{
+		Intent: &ports.BuildIntent{Target: ports.TargetPlaybackProfile{
 			Container: "mpegts",
-			Packaging: playbackprofile.PackagingTS,
-			Video: playbackprofile.VideoTarget{
-				Mode:  playbackprofile.MediaModeCopy,
+			Packaging: ports.PackagingTS,
+			Video: ports.VideoTarget{
+				Mode:  ports.MediaModeCopy,
 				Codec: "h264",
 			},
-			Audio: playbackprofile.AudioTarget{
-				Mode:        playbackprofile.MediaModeTranscode,
+			Audio: ports.AudioTarget{
+				Mode:        ports.MediaModeTranscode,
 				Codec:       "aac",
 				Channels:    2,
 				BitrateKbps: 256,
 				SampleRate:  48000,
 			},
-			HLS: playbackprofile.HLSTarget{
+			HLS: ports.HLSTarget{
 				Enabled:          true,
 				SegmentContainer: "mpegts",
 				SegmentSeconds:   2,
 			},
-			HWAccel: playbackprofile.HWAccelNone,
-		},
+			HWAccel: ports.HWAccelNone,
+		}},
 	}
 
 	args, err := mapProfileToArgs(spec)
@@ -155,22 +155,22 @@ func TestMapProfileToArgs_TargetProfileCanTranscodeVideoAndCopyAudio(t *testing.
 		Input:      "file:///tmp/input.ts",
 		WorkDir:    "/tmp/work",
 		OutputTemp: "index.live.m3u8",
-		TargetProfile: &playbackprofile.TargetPlaybackProfile{
+		Intent: &ports.BuildIntent{Target: ports.TargetPlaybackProfile{
 			Container: "mpegts",
-			Packaging: playbackprofile.PackagingTS,
-			Video: playbackprofile.VideoTarget{
-				Mode:  playbackprofile.MediaModeTranscode,
+			Packaging: ports.PackagingTS,
+			Video: ports.VideoTarget{
+				Mode:  ports.MediaModeTranscode,
 				Codec: "h264",
 			},
-			Audio: playbackprofile.AudioTarget{
-				Mode:  playbackprofile.MediaModeCopy,
+			Audio: ports.AudioTarget{
+				Mode:  ports.MediaModeCopy,
 				Codec: "aac",
 			},
-			HLS: playbackprofile.HLSTarget{
+			HLS: ports.HLSTarget{
 				Enabled:          true,
 				SegmentContainer: "mpegts",
 			},
-		},
+		}},
 	}
 
 	args, err := mapProfileToArgs(spec)
@@ -205,24 +205,24 @@ func TestMapProfileToArgs_TargetProfileUsesExplicitVideoLadderValues(t *testing.
 		Input:      "file:///tmp/input.ts",
 		WorkDir:    "/tmp/work",
 		OutputTemp: "index.live.m3u8",
-		TargetProfile: &playbackprofile.TargetPlaybackProfile{
+		Intent: &ports.BuildIntent{Target: ports.TargetPlaybackProfile{
 			Container: "mpegts",
-			Packaging: playbackprofile.PackagingTS,
-			Video: playbackprofile.VideoTarget{
-				Mode:   playbackprofile.MediaModeTranscode,
+			Packaging: ports.PackagingTS,
+			Video: ports.VideoTarget{
+				Mode:   ports.MediaModeTranscode,
 				Codec:  "h264",
 				CRF:    20,
 				Preset: "slow",
 			},
-			Audio: playbackprofile.AudioTarget{
-				Mode:  playbackprofile.MediaModeCopy,
+			Audio: ports.AudioTarget{
+				Mode:  ports.MediaModeCopy,
 				Codec: "aac",
 			},
-			HLS: playbackprofile.HLSTarget{
+			HLS: ports.HLSTarget{
 				Enabled:          true,
 				SegmentContainer: "mpegts",
 			},
-		},
+		}},
 	}
 
 	args, err := mapProfileToArgs(spec)
@@ -257,24 +257,24 @@ func TestMapProfileToArgs_TargetProfilePackagingFMP4DefaultsSegmentType(t *testi
 		Input:      "file:///tmp/input.ts",
 		WorkDir:    "/tmp/work",
 		OutputTemp: "index.live.m3u8",
-		TargetProfile: &playbackprofile.TargetPlaybackProfile{
+		Intent: &ports.BuildIntent{Target: ports.TargetPlaybackProfile{
 			Container: "mp4",
-			Packaging: playbackprofile.PackagingFMP4,
-			Video: playbackprofile.VideoTarget{
-				Mode: playbackprofile.MediaModeCopy,
+			Packaging: ports.PackagingFMP4,
+			Video: ports.VideoTarget{
+				Mode: ports.MediaModeCopy,
 			},
-			Audio: playbackprofile.AudioTarget{
-				Mode:        playbackprofile.MediaModeTranscode,
+			Audio: ports.AudioTarget{
+				Mode:        ports.MediaModeTranscode,
 				Codec:       "aac",
 				Channels:    2,
 				BitrateKbps: 256,
 				SampleRate:  48000,
 			},
-			HLS: playbackprofile.HLSTarget{
+			HLS: ports.HLSTarget{
 				Enabled:        true,
 				SegmentSeconds: 4,
 			},
-		},
+		}},
 	}
 
 	args, err := mapProfileToArgs(spec)

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,8 +42,10 @@ func TestManagerShutdownContext_DrainsBuildWorkers(t *testing.T) {
 	outputTemp := "index.live.m3u8"
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, outputTemp), []byte("#EXTM3U"), 0600))
 
-	dummyTarget := &playbackprofile.TargetPlaybackProfile{
-		Video: playbackprofile.VideoTarget{Mode: playbackprofile.MediaModeCopy},
+	dummyTarget := &ports.BuildIntent{
+		Target: ports.TargetPlaybackProfile{
+			Video: ports.VideoTarget{Mode: ports.MediaModeCopy},
+		},
 	}
 	_, err = mgr.StartBuild(context.Background(), "job-1", "meta-1", "/tmp/input.ts", workDir, outputTemp, "", dummyTarget)
 	require.NoError(t, err)

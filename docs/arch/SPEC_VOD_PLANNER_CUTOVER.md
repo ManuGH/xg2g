@@ -262,3 +262,41 @@ One PR per step, in order 1 → 2 → 3 → 4. Each PR independently green on CI
 and deployable. Step 2 ships with its flag off; the flag flip is a separate
 one-line PR after Step 3 is deployed (signed URLs must exist before strict
 enforcement makes sense).
+
+## 10. Post-cutover modernization backlog (Manuel-approved 2026-07-20)
+
+**Hard precondition — do NOT start any M-item before ALL of these hold:**
+Step 4 is merged, the strict flag is flipped and has survived one stable
+deploy cycle, and Manuel has explicitly kicked off the specific M-item.
+These are scoped follow-up projects, not tasks to pick up opportunistically.
+Each M-item gets its own mini-spec (same structure as this document:
+invariants, acceptance criteria, PR slicing) before any code is written.
+Invariants I1–I5 apply unchanged: the planner remains the sole decision
+authority; M-items change *delivery*, never *decision*.
+
+### M1 — JIT remux for copy-mode variants (highest value)
+
+When `Target.Video.Mode == copy` AND `Target.Audio.Mode == copy`, stop
+materializing an HLS artifact on disk. Repackage the source TS into fMP4
+fragments on the fly at delivery time. This eliminates build latency and
+disk usage for the most common case (clients that decode the source codec
+natively — the planner already knows this reliably). The signed-intent flow,
+variant hashing, and the transcode path stay exactly as they are; only the
+copy-mode delivery backend changes. Must handle still-growing recordings
+(timeshift) — TS is self-syncing, which makes this feasible.
+
+### M2 — Seek-ahead builds (closes the gap to Plex)
+
+When a client requests a segment beyond the built frontier of an in-progress
+build, start a second ffmpeg run at the requested position (segment-aligned
+`-ss`) instead of making the client wait for the linear build to arrive
+there. Requires segment-index bookkeeping so the two build runs stitch into
+one artifact without overlap. Without this, seeking to minute 150 of a
+3-hour recording blocks until the build reaches that point.
+
+### M3 — ABR ladder: REJECTED
+
+Deliberately not planned. A per-client single variant is the correct
+economics for a single-household DVR on a stable LAN. Revisit only if
+remote/cellular playback becomes a real, observed use case — reopen with
+usage data, not speculatively.

@@ -112,8 +112,8 @@ func requireVariantAwareRecordingURL(t *testing.T, rawURL, recordingID string) {
 	if targetParam := query.Get("target"); targetParam != "" {
 		decodedTarget, err := v3recordings.DecodeTargetProfileQuery(targetParam, "", "", false)
 		require.NoError(t, err)
-		assert.Equal(t, "mpegts", decodedTarget.Container)
-		assert.Equal(t, query.Get("variant"), v3recordings.TargetVariantHash(decodedTarget))
+		assert.Equal(t, "mpegts", decodedTarget.Target.Container)
+		assert.Equal(t, query.Get("variant"), v3recordings.TargetVariantHash(&decodedTarget.Target))
 	}
 }
 
@@ -835,9 +835,9 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeReturnsFMP4VariantURL(t *testi
 	target, err := v3recordings.DecodeTargetProfileQuery(parsed.Query().Get("target"), "", "", false)
 	require.NoError(t, err)
 	require.NotNil(t, target)
-	assert.Equal(t, playbackprofile.PackagingFMP4, target.Packaging)
-	assert.Equal(t, "mp4", target.Container)
-	assert.Equal(t, "fmp4", target.HLS.SegmentContainer)
+	assert.Equal(t, playbackprofile.PackagingFMP4, target.Target.Packaging)
+	assert.Equal(t, "mp4", target.Target.Container)
+	assert.Equal(t, "fmp4", target.Target.HLS.SegmentContainer)
 }
 
 func TestPostRecordingPlaybackInfo_AndroidTVNativeCopyableTSReturnsDirectPlayStreamURL(t *testing.T) {
