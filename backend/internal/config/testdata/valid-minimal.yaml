@@ -12,4 +12,4 @@ epg:
   enabled: true
   days: 7
 recordings:
-  targetSigningKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
+  target_signing_key: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"

@@ -25,7 +25,7 @@ enigma2:
 epg:
   enabled: true
 recordings:
-  targetSigningKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
+  target_signing_key: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
 `
 }
 

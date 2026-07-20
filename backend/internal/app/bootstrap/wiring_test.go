@@ -44,7 +44,7 @@ enigma2:
   username: root
   password: "dummy-password"
 recordings:
-  targetSigningKey: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
+  target_signing_key: "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
 `
 	err = os.WriteFile(configPath, []byte(content), 0600)
 	require.NoError(t, err)
