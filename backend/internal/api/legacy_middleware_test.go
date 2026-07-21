@@ -61,6 +61,18 @@ func TestLegacyAPIMiddleware(t *testing.T) {
 		assert.GreaterOrEqual(t, val, float64(1))
 	})
 
+	t.Run("paths like /api/v3-beta or /api/v34 are treated and measured as legacy endpoints", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v3-beta/test", nil)
+		req.Header.Set("User-Agent", "xg2g-beta/1.0")
+		rr := httptest.NewRecorder()
+
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+		val := testutil.ToFloat64(legacyAPIRequestsTotal.WithLabelValues("/api/v3-beta/test", "xg2g-beta/1.0"))
+		assert.GreaterOrEqual(t, val, float64(1))
+	})
+
 	t.Run("non-api public request passes through without measurement", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 		rr := httptest.NewRecorder()

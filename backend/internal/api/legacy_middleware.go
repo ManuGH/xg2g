@@ -17,7 +17,7 @@ import (
 func (s *Server) legacyAPIMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/api/v3") {
+		if strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/api/v3/") && path != "/api/v3" {
 			client := getClientLabel(r)
 			recordLegacyAPIMetric(path, client)
 			log.L().Warn().
