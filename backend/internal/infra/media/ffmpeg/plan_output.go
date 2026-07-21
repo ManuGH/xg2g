@@ -215,6 +215,7 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 	if len(audioSel) > 0 {
 		sel = audioSel[0]
 	}
+	// TODO(SPEC_MODERNIZATION_2026 §R3): TS segment packaging path is superseded by R3 CMAF/fMP4 delivery.
 	segmentType := "mpegts"
 	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec)
 	segmentFilename := filepath.Join(sessionDir, "seg_%06d.ts")

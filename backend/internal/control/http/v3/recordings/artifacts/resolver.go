@@ -335,6 +335,7 @@ func (r *DefaultResolver) recordingTarget(profile, variant string, intent *ports
 		if r.cfg.RecordingStrictTargetRequired {
 			return nil, "", &ArtifactError{Code: CodeInvalid, Detail: "playback-info handshake required"}
 		}
+		// TODO(SPEC_MODERNIZATION_2026 §A1.3): Copy-default fallback in recordingTarget() dies when strict flag flips default.
 		log.L().Warn().Str("profile", profile).Str("variant", variant).Msg("VOD target fallback triggered")
 		metrics.IncTargetFallback("missing_target")
 
@@ -367,6 +368,7 @@ func (r *DefaultResolver) ResolvePlaylistState(ctx context.Context, recordingID,
 	}
 
 	if variant == "" {
+		// TODO(SPEC_MODERNIZATION_2026 §R2): Empty-variant default in ResolvePlaylistState has legacy semantics; revisit in R2 artifact FSM.
 		target := recordingTargetProfile("")
 		if target == nil {
 			target = &playbackprofile.TargetPlaybackProfile{

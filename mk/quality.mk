@@ -20,9 +20,16 @@ lint-fix: ## Run golangci-lint with automatic fixes
 lint-invariants: ## Run repository lint invariants enforced in CI
 	@echo "Running lint invariants..."
 	@echo "Scanning for direct environment access outside internal/config..."
-	@VIOLATIONS=$$(grep -RIn --include='*.go' --exclude='*_test.go' -E '\b(os|syscall)\.(Getenv|LookupEnv|Environ|ExpandEnv|Expand)\b' $(BACKEND_DIR)/internal/ $(BACKEND_DIR)/cmd/ | grep -vE '^$(BACKEND_DIR)/internal/config/' || true); \
+	@VIOLATIONS=$$(grep -RIn --exclude-dir=vendor --exclude-dir=node_modules --exclude-dir=.git --include='*.go' --exclude='*_test.go' -E '\b(os|syscall)\.(Getenv|LookupEnv|Environ|ExpandEnv|Expand)\b' $(BACKEND_DIR)/internal/ $(BACKEND_DIR)/cmd/ | grep -vE '^$(BACKEND_DIR)/internal/config/' || true); \
 	if [ -n "$$VIOLATIONS" ]; then \
 		echo "❌ Direct environment access detected outside authorized packages:"; \
+		echo "$$VIOLATIONS"; \
+		exit 1; \
+	fi
+	@echo "Scanning for naked TODO/FIXME comments without (reference)..."
+	@VIOLATIONS=$$(grep -RIn --exclude-dir=vendor --exclude-dir=node_modules --exclude-dir=.git --include='*.go' --include='*.ts' --include='*.tsx' -E '^[[:space:]]*//[[:space:]]*(TODO|FIXME)([^a-zA-Z0-9(]|$$)' $(BACKEND_DIR)/ $(FRONTEND_DIR)/webui/src/ | grep -vE '(\.gen\.ts|_gen\.go|\.spec\.|\_test\.go)' || true); \
+	if [ -n "$$VIOLATIONS" ]; then \
+		echo "❌ Naked TODO/FIXME detected without reference parentheses (e.g. // TODO(reference): ...):"; \
 		echo "$$VIOLATIONS"; \
 		exit 1; \
 	fi

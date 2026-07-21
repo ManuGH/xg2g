@@ -137,7 +137,7 @@ func DecodeTargetProfileQuery(raw, primaryKey, previousKey string, strictTargetR
 		}, nil
 	}
 
-	// TODO(Spec: Payload-Migration): Remove legacy bare TargetPlaybackProfile fallback after a full deploy cycle.
+	// TODO(SPEC_MODERNIZATION_2026 §R0): Remove legacy bare TargetPlaybackProfile fallback after a full deploy cycle.
 	// Legacy unsigned/nackte Target-JSON fallback
 	var target playbackprofile.TargetPlaybackProfile
 	if err := json.Unmarshal(b, &target); err != nil {
