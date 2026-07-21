@@ -1,4 +1,8 @@
-package v3
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package tokens
 
 import (
 	"crypto/hmac"
@@ -28,18 +32,20 @@ type livePlaybackDecisionClaims struct {
 	ExpiresAt  int64  `json:"exp"`
 }
 
-//nolint:unused // Used by tests to mint deterministic attestation tokens.
-func (s *Server) attestLivePlaybackDecision(requestID, principal, serviceRef, mode string) string {
+// AttestLivePlaybackDecision mints a signed live playback attestation token.
+func (s *Service) AttestLivePlaybackDecision(requestID, principal, serviceRef, mode string) string {
 	requestID = strings.TrimSpace(requestID)
 	principal = strings.TrimSpace(principal)
 	serviceRef = strings.TrimSpace(serviceRef)
 	mode = normalize.Token(mode)
-	signerKid, signingKey, ok := s.resolveLiveDecisionSigner()
+	signerKid, signingKey, ok := s.resolveSigner()
 	if serviceRef == "" || mode == "" || !ok {
 		return ""
 	}
 
-	ttl := s.liveDecisionTTL
+	s.mu.RLock()
+	ttl := s.ttl
+	s.mu.RUnlock()
 	if ttl <= 0 {
 		ttl = defaultLivePlaybackDecisionTTL
 	}
@@ -70,7 +76,8 @@ func (s *Server) attestLivePlaybackDecision(requestID, principal, serviceRef, mo
 	return liveDecisionTokenVersion + "." + encodedPayload + "." + encodedSig
 }
 
-func (s *Server) verifyLivePlaybackDecision(token, principal, serviceRef, mode string) bool {
+// VerifyLivePlaybackDecision verifies the integrity, expiration, and claims of a live playback decision token.
+func (s *Service) VerifyLivePlaybackDecision(token, principal, serviceRef, mode string) bool {
 	token = strings.TrimSpace(token)
 	principal = strings.TrimSpace(principal)
 	serviceRef = strings.TrimSpace(serviceRef)
@@ -105,7 +112,7 @@ func (s *Server) verifyLivePlaybackDecision(token, principal, serviceRef, mode s
 		return false
 	}
 	now := time.Now().UTC()
-	if !s.verifyLiveDecisionSignature(sig, encodedPayload, claims.KeyID, now) {
+	if !s.verifySignature(sig, encodedPayload, claims.KeyID, now) {
 		return false
 	}
 
@@ -129,8 +136,8 @@ func (s *Server) verifyLivePlaybackDecision(token, principal, serviceRef, mode s
 }
 
 //nolint:unused // test helper for deterministic signature assertions
-func (s *Server) liveDecisionSignature(encodedPayload string) []byte {
-	_, signingKey, ok := s.resolveLiveDecisionSigner()
+func (s *Service) liveDecisionSignature(encodedPayload string) []byte {
+	_, signingKey, ok := s.resolveSigner()
 	if !ok {
 		return nil
 	}
@@ -147,45 +154,50 @@ func liveDecisionSignatureWithKey(encodedPayload string, signingKey []byte) []by
 	return mac.Sum(nil)
 }
 
-//nolint:unused // Used by test-only token minting helpers.
-func (s *Server) resolveLiveDecisionSigner() (kid string, key []byte, ok bool) {
-	if len(s.JWTSecret) > 0 {
-		return "", s.JWTSecret, true
+func (s *Service) resolveSigner() (kid string, key []byte, ok bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.jwtSecret) > 0 {
+		return "", append([]byte(nil), s.jwtSecret...), true
 	}
-	if kid, key, ok = s.liveDecisionKeyring.signingKey(); ok {
-		return kid, key, true
+	if kid, key, ok = s.keyring.signingKey(); ok {
+		return kid, append([]byte(nil), key...), true
 	}
-	if len(s.liveDecisionSigningKey) == 0 {
+	if len(s.signingKey) == 0 {
 		return "", nil, false
 	}
-	return "", s.liveDecisionSigningKey, true
+	return "", append([]byte(nil), s.signingKey...), true
 }
 
-func (s *Server) resolveLiveDecisionVerificationKey(kid string, now time.Time) ([]byte, bool) {
-	if key, ok := s.liveDecisionKeyring.lookupVerificationKey(kid, now); ok {
-		return key, true
+func (s *Service) resolveVerificationKey(kid string, now time.Time) ([]byte, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if key, ok := s.keyring.lookupVerificationKey(kid, now); ok {
+		return append([]byte(nil), key...), true
 	}
 	return nil, false
 }
 
-func (s *Server) resolveLiveDecisionLegacyVerificationKeys(now time.Time) [][]byte {
-	keys := s.liveDecisionKeyring.legacyVerificationKeys(now)
-	if len(s.JWTSecret) > 0 {
-		keys = append(keys, s.JWTSecret)
+func (s *Service) resolveLegacyVerificationKeys(now time.Time) [][]byte {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	keys := s.keyring.legacyVerificationKeys(now)
+	if len(s.jwtSecret) > 0 {
+		keys = append(keys, append([]byte(nil), s.jwtSecret...))
 	}
 	if len(keys) > 0 {
 		return keys
 	}
-	if len(s.liveDecisionSigningKey) == 0 {
+	if len(s.signingKey) == 0 {
 		return nil
 	}
-	return [][]byte{s.liveDecisionSigningKey}
+	return [][]byte{append([]byte(nil), s.signingKey...)}
 }
 
-func (s *Server) verifyLiveDecisionSignature(sig []byte, encodedPayload, claimKeyID string, now time.Time) bool {
+func (s *Service) verifySignature(sig []byte, encodedPayload, claimKeyID string, now time.Time) bool {
 	kid := normalizeLiveDecisionKeyID(claimKeyID)
 	if kid != "" {
-		key, ok := s.resolveLiveDecisionVerificationKey(kid, now)
+		key, ok := s.resolveVerificationKey(kid, now)
 		if !ok {
 			return false
 		}
@@ -193,7 +205,7 @@ func (s *Server) verifyLiveDecisionSignature(sig []byte, encodedPayload, claimKe
 		return len(expectedSig) > 0 && hmac.Equal(sig, expectedSig)
 	}
 
-	keys := s.resolveLiveDecisionLegacyVerificationKeys(now)
+	keys := s.resolveLegacyVerificationKeys(now)
 	for _, key := range keys {
 		expectedSig := liveDecisionSignatureWithKey(encodedPayload, key)
 		if len(expectedSig) > 0 && hmac.Equal(sig, expectedSig) {
