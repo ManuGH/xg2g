@@ -9,10 +9,10 @@ import (
 // setupEnv sets up the minimum required environment variables for validation to pass
 func setupEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	config.SetRequiredTestSecrets(t)
 	t.Setenv("XG2G_E2_HOST", "http://test-enigma2-host")
 	t.Setenv("XG2G_ENGINE_ENABLED", "false")
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	config.SetRequiredTestSecrets(t)
 }
 
 // TestDeliveryPolicyDefaults verifies that the default delivery_policy is "universal"

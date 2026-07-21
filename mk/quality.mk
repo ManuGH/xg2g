@@ -2,7 +2,24 @@
 # Quality Assurance Targets
 # ===================================================================================================
 
-.PHONY: lint lint-fix test test-race test-race-pr test-cover cover test-all test-integration smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools
+.PHONY: lint lint-fix test test-race test-race-pr test-cover cover test-all test-integration smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools pre-push hooks-install
+
+pre-push: ## Fast local guard against the PR gate's cheapest failures (gofmt, vet, build) — seconds, not minutes
+	@echo "Checking gofmt..."
+	@UNFMT=$$(cd $(BACKEND_DIR) && git ls-files -- '*.go' ':(exclude)vendor/**' | xargs gofmt -l 2>/dev/null); if [ -n "$$UNFMT" ]; then \
+		echo "❌ Not gofmt'd (run: cd $(BACKEND_DIR) && gofmt -w <files>):"; echo "$$UNFMT"; exit 1; fi
+	@echo "Running go vet..."
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" vet ./...
+	@echo "Building..."
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" build ./...
+	@echo "✅ pre-push guard passed"
+
+hooks-install: ## Install the versioned git pre-push hook into .git/hooks
+	@HOOKS_DIR=$$(git rev-parse --git-path hooks) && \
+		mkdir -p "$$HOOKS_DIR" && \
+		cp scripts/git-hooks/pre-push "$$HOOKS_DIR/pre-push" && \
+		chmod +x "$$HOOKS_DIR/pre-push" && \
+		echo "✅ pre-push hook installed to $$HOOKS_DIR"
 
 lint: ## Run golangci-lint with all checks
 	@echo "Running golangci-lint..."

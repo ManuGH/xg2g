@@ -115,6 +115,11 @@ thread before the thread is resolved — never a silent resolve.
   merging over pending or failing checks is prohibited.
 - Before any merge, confirm there are no unresolved review threads that lack
   a fix or a written reply (see lifecycle above).
+- Delegated merges (decided by Manuel, 2026-07-20): agents may merge a PR —
+  prefer `gh pr merge --auto` so branch protection stays the enforcer — once
+  every required check is green and every review thread is fixed or answered.
+  Manuel remains the escalation point and can revoke this delegation at any
+  time. Production promotion is never delegated.
 
 ### Branch and worktree rules
 
@@ -191,6 +196,12 @@ At handoff, compare the result with the original contract and record:
 - remaining temporary paths, debt, risks, and their next owner/action.
 
 ### Validation and handoff
+
+Run `make pre-push` before every push (or install the hook once via
+`make hooks-install`). A push that fails on gofmt, vet, or build wastes a
+full CI round-trip — this happened repeatedly during the VOD cutover.
+"Tests pass locally" is not a valid claim unless the exact CI target ran;
+for the PR gate that is `make ci-pr`.
 
 Every implementation handoff must state:
 

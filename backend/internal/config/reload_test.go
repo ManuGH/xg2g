@@ -65,7 +65,7 @@ func TestNewConfigHolder(t *testing.T) {
 		},
 	}
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test-version")
 	holder := NewConfigHolder(initial, loader, "/path/to/config.yaml")
 
@@ -98,7 +98,7 @@ func TestConfigHolder_Swap_AssignsMonotonicEpoch(t *testing.T) {
 		},
 	}
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	holder := NewConfigHolder(initial, loader, "")
 
@@ -146,7 +146,7 @@ func TestConfigHolder_Get(t *testing.T) {
 		},
 	}
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	holder := NewConfigHolder(cfg, loader, "")
 
@@ -172,7 +172,7 @@ func TestConfigHolder_Reload_Success(t *testing.T) {
 	writeValidConfig(t, configPath, "old-bouquet")
 
 	// Load initial config
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test")
 	initial, err := loader.Load()
 	if err != nil {
@@ -206,7 +206,7 @@ func TestConfigHolder_Reload_ValidationFailure(t *testing.T) {
 	// Write valid initial config
 	writeValidConfig(t, configPath, "stable-bouquet")
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test")
 	initial, err := loader.Load()
 	if err != nil {
@@ -248,7 +248,7 @@ func TestConfigHolder_RegisterListener(t *testing.T) {
 
 	writeValidConfig(t, configPath, "old")
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test")
 	initial, err := loader.Load()
 	if err != nil {
@@ -288,7 +288,7 @@ func TestConfigHolder_NotifyListeners_NonBlocking(t *testing.T) {
 
 	writeValidConfig(t, configPath, "old")
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test")
 	initial, err := loader.Load()
 	if err != nil {
@@ -353,7 +353,7 @@ func TestConfigHolder_ReloadDuringRequest_UsesSingleEpoch(t *testing.T) {
 
 	writeValidConfig(t, configPath, "old-bouquet")
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test")
 	initial, err := loader.Load()
 	if err != nil {
@@ -442,7 +442,7 @@ func TestConfigHolder_LogChanges(t *testing.T) {
 		},
 	}
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	holder := NewConfigHolder(old, loader, "")
 
@@ -462,7 +462,7 @@ func TestConfigHolder_Stop(t *testing.T) {
 			Password: "pass",
 		},
 	}
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	holder := NewConfigHolder(cfg, loader, "")
 
@@ -482,7 +482,7 @@ func TestConfigHolder_StartWatcher_EmptyPath(t *testing.T) {
 			Password: "pass",
 		},
 	}
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	holder := NewConfigHolder(cfg, loader, "") // Empty config path
 
@@ -505,7 +505,7 @@ func TestConfigHolder_Reload_StrictParseFailure(t *testing.T) {
 	// Write valid initial config
 	writeValidConfig(t, configPath, "stable-bouquet")
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test")
 	initial, err := loader.Load()
 	if err != nil {
@@ -556,7 +556,7 @@ func TestConfigHolder_Reload_TypeMismatch(t *testing.T) {
 	// Write valid initial config
 	writeValidConfig(t, configPath, "stable-bouquet")
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test")
 	initial, err := loader.Load()
 	if err != nil {
@@ -603,7 +603,7 @@ func TestConfigHolder_Reload_BusinessLogicFailure(t *testing.T) {
 	// Write valid initial config
 	writeValidConfig(t, configPath, "stable-bouquet")
 
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader(configPath, "test")
 	initial, err := loader.Load()
 	if err != nil {

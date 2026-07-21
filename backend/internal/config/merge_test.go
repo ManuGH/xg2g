@@ -11,7 +11,7 @@ import (
 )
 
 func TestWorkerEnvMergePreservesConfigValues(t *testing.T) {
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	loader.setDefaults(&cfg)
@@ -98,7 +98,7 @@ func TestWorkerEnvMergePreservesConfigValues(t *testing.T) {
 }
 
 func TestInvalidTunerSlotsEnvPreservesConfig(t *testing.T) {
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	loader.setDefaults(&cfg)
@@ -116,7 +116,7 @@ func TestInvalidTunerSlotsEnvPreservesConfig(t *testing.T) {
 }
 
 func TestEmptyTunerSlotsEnvPreservesConfig(t *testing.T) {
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	loader.setDefaults(&cfg)
@@ -134,7 +134,7 @@ func TestEmptyTunerSlotsEnvPreservesConfig(t *testing.T) {
 }
 
 func TestPublishedEndpointsEnvMerge(t *testing.T) {
-	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")
 	cfg := AppConfig{}
 	if err := loader.setDefaults(&cfg); err != nil {

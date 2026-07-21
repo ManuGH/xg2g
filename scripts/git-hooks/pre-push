@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Versioned pre-push hook — install via `make hooks-install`.
+# Blocks pushes that would fail the PR gate's cheapest checks (gofmt, vet, build).
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+exec make pre-push
