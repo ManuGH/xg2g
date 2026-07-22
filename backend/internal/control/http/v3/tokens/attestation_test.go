@@ -1,4 +1,8 @@
-package v3
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package tokens
 
 import (
 	"encoding/base64"
@@ -13,23 +17,23 @@ import (
 )
 
 func TestLivePlaybackDecisionTokenAccepted(t *testing.T) {
-	s := &Server{
-		liveDecisionSigningKey: []byte("0123456789abcdef0123456789abcdef"),
-		liveDecisionTTL:        90 * time.Second,
+	s := &Service{
+		signingKey: []byte("0123456789abcdef0123456789abcdef"),
+		ttl:        90 * time.Second,
 	}
 
-	token := s.attestLivePlaybackDecision("req-1", "user-1", "1:0:1:100:200:300:0:0:0:0:", "hlsjs")
+	token := s.AttestLivePlaybackDecision("req-1", "user-1", "1:0:1:100:200:300:0:0:0:0:", "hlsjs")
 	require.NotEmpty(t, token)
-	assert.True(t, s.verifyLivePlaybackDecision(token, "user-1", "1:0:1:100:200:300:0:0:0:0:", "hlsjs"))
+	assert.True(t, s.VerifyLivePlaybackDecision(token, "user-1", "1:0:1:100:200:300:0:0:0:0:", "hlsjs"))
 }
 
 func TestLivePlaybackDecisionTokenTamperedRejected(t *testing.T) {
-	s := &Server{
-		liveDecisionSigningKey: []byte("0123456789abcdef0123456789abcdef"),
-		liveDecisionTTL:        90 * time.Second,
+	s := &Service{
+		signingKey: []byte("0123456789abcdef0123456789abcdef"),
+		ttl:        90 * time.Second,
 	}
 
-	token := s.attestLivePlaybackDecision("req-2", "user-2", "1:0:1:101:201:301:0:0:0:0:", "native_hls")
+	token := s.AttestLivePlaybackDecision("req-2", "user-2", "1:0:1:101:201:301:0:0:0:0:", "native_hls")
 	require.NotEmpty(t, token)
 
 	parts := strings.Split(token, ".")
@@ -37,16 +41,16 @@ func TestLivePlaybackDecisionTokenTamperedRejected(t *testing.T) {
 	parts[2] = strings.Repeat("A", len(parts[2]))
 	tampered := strings.Join(parts, ".")
 
-	assert.False(t, s.verifyLivePlaybackDecision(tampered, "user-2", "1:0:1:101:201:301:0:0:0:0:", "native_hls"))
+	assert.False(t, s.VerifyLivePlaybackDecision(tampered, "user-2", "1:0:1:101:201:301:0:0:0:0:", "native_hls"))
 }
 
 func TestLivePlaybackDecisionTokenExpiredRejected(t *testing.T) {
-	s := &Server{
-		liveDecisionSigningKey: []byte("0123456789abcdef0123456789abcdef"),
-		liveDecisionTTL:        90 * time.Second,
+	s := &Service{
+		signingKey: []byte("0123456789abcdef0123456789abcdef"),
+		ttl:        90 * time.Second,
 	}
 
-	token := s.attestLivePlaybackDecision("req-3", "user-3", "1:0:1:102:202:302:0:0:0:0:", "transcode")
+	token := s.AttestLivePlaybackDecision("req-3", "user-3", "1:0:1:102:202:302:0:0:0:0:", "transcode")
 	require.NotEmpty(t, token)
 
 	expired := rewriteLivePlaybackDecisionToken(t, s, token, func(claims *livePlaybackDecisionClaims) {
@@ -55,21 +59,21 @@ func TestLivePlaybackDecisionTokenExpiredRejected(t *testing.T) {
 		claims.ExpiresAt = now - 1
 	})
 
-	assert.False(t, s.verifyLivePlaybackDecision(expired, "user-3", "1:0:1:102:202:302:0:0:0:0:", "transcode"))
+	assert.False(t, s.VerifyLivePlaybackDecision(expired, "user-3", "1:0:1:102:202:302:0:0:0:0:", "transcode"))
 }
 
 func TestLivePlaybackDecisionTokenClaimMismatchRejected(t *testing.T) {
-	s := &Server{
-		liveDecisionSigningKey: []byte("0123456789abcdef0123456789abcdef"),
-		liveDecisionTTL:        90 * time.Second,
+	s := &Service{
+		signingKey: []byte("0123456789abcdef0123456789abcdef"),
+		ttl:        90 * time.Second,
 	}
 
-	token := s.attestLivePlaybackDecision("req-4", "user-4", "1:0:1:103:203:303:0:0:0:0:", "hlsjs")
+	token := s.AttestLivePlaybackDecision("req-4", "user-4", "1:0:1:103:203:303:0:0:0:0:", "hlsjs")
 	require.NotEmpty(t, token)
 
-	assert.False(t, s.verifyLivePlaybackDecision(token, "user-other", "1:0:1:103:203:303:0:0:0:0:", "hlsjs"))
-	assert.False(t, s.verifyLivePlaybackDecision(token, "user-4", "1:0:1:999:203:303:0:0:0:0:", "hlsjs"))
-	assert.False(t, s.verifyLivePlaybackDecision(token, "user-4", "1:0:1:103:203:303:0:0:0:0:", "native_hls"))
+	assert.False(t, s.VerifyLivePlaybackDecision(token, "user-other", "1:0:1:103:203:303:0:0:0:0:", "hlsjs"))
+	assert.False(t, s.VerifyLivePlaybackDecision(token, "user-4", "1:0:1:999:203:303:0:0:0:0:", "hlsjs"))
+	assert.False(t, s.VerifyLivePlaybackDecision(token, "user-4", "1:0:1:103:203:303:0:0:0:0:", "native_hls"))
 }
 
 func TestLivePlaybackDecisionTokenWithKeyRotationAcceptedWithinWindow(t *testing.T) {
@@ -85,9 +89,9 @@ func TestLivePlaybackDecisionTokenWithKeyRotationAcceptedWithinWindow(t *testing
 		PlaybackDecisionRotationWindow: 5 * time.Minute,
 	}, now)
 
-	s := &Server{
-		liveDecisionKeyring: ring,
-		liveDecisionTTL:     90 * time.Second,
+	s := &Service{
+		keyring: ring,
+		ttl:     90 * time.Second,
 	}
 
 	token := buildLivePlaybackDecisionToken(t, []byte(legacySecret), livePlaybackDecisionClaims{
@@ -99,7 +103,7 @@ func TestLivePlaybackDecisionTokenWithKeyRotationAcceptedWithinWindow(t *testing
 		ExpiresAt:  now.Unix() + 60,
 	})
 
-	assert.True(t, s.verifyLivePlaybackDecision(token, "user-rotate", "1:0:1:104:204:304:0:0:0:0:", "hlsjs"))
+	assert.True(t, s.VerifyLivePlaybackDecision(token, "user-rotate", "1:0:1:104:204:304:0:0:0:0:", "hlsjs"))
 }
 
 func TestLivePlaybackDecisionTokenWithKeyRotationExpiredWindowRejected(t *testing.T) {
@@ -115,9 +119,9 @@ func TestLivePlaybackDecisionTokenWithKeyRotationExpiredWindowRejected(t *testin
 		PlaybackDecisionRotationWindow: 2 * time.Minute,
 	}, rotationStarted)
 
-	s := &Server{
-		liveDecisionKeyring: ring,
-		liveDecisionTTL:     90 * time.Second,
+	s := &Service{
+		keyring: ring,
+		ttl:     90 * time.Second,
 	}
 	now := time.Now().UTC()
 	token := buildLivePlaybackDecisionToken(t, []byte(legacySecret), livePlaybackDecisionClaims{
@@ -129,18 +133,18 @@ func TestLivePlaybackDecisionTokenWithKeyRotationExpiredWindowRejected(t *testin
 		ExpiresAt:  now.Unix() + 60,
 	})
 
-	assert.False(t, s.verifyLivePlaybackDecision(token, "user-expired", "1:0:1:105:205:305:0:0:0:0:", "hlsjs"))
+	assert.False(t, s.VerifyLivePlaybackDecision(token, "user-expired", "1:0:1:105:205:305:0:0:0:0:", "hlsjs"))
 }
 
 func TestLivePlaybackDecisionTokenUnknownKidRejected(t *testing.T) {
 	const activeSecret = "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1"
-	s := &Server{
-		liveDecisionKeyring: resolveLiveDecisionKeyring(config.AppConfig{
+	s := &Service{
+		keyring: resolveLiveDecisionKeyring(config.AppConfig{
 			PlaybackDecisionSecret:         activeSecret,
 			PlaybackDecisionKeyID:          "kid-active",
 			PlaybackDecisionRotationWindow: 5 * time.Minute,
 		}, time.Now().UTC()),
-		liveDecisionTTL: 90 * time.Second,
+		ttl: 90 * time.Second,
 	}
 	now := time.Now().UTC()
 	token := buildLivePlaybackDecisionToken(t, []byte(activeSecret), livePlaybackDecisionClaims{
@@ -152,10 +156,10 @@ func TestLivePlaybackDecisionTokenUnknownKidRejected(t *testing.T) {
 		ExpiresAt:  now.Unix() + 60,
 	})
 
-	assert.False(t, s.verifyLivePlaybackDecision(token, "user-kid", "1:0:1:106:206:306:0:0:0:0:", "hlsjs"))
+	assert.False(t, s.VerifyLivePlaybackDecision(token, "user-kid", "1:0:1:106:206:306:0:0:0:0:", "hlsjs"))
 }
 
-func rewriteLivePlaybackDecisionToken(t *testing.T, s *Server, token string, mutate func(*livePlaybackDecisionClaims)) string {
+func rewriteLivePlaybackDecisionToken(t *testing.T, s *Service, token string, mutate func(*livePlaybackDecisionClaims)) string {
 	t.Helper()
 
 	parts := strings.Split(token, ".")

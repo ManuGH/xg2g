@@ -18,6 +18,7 @@ import (
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
+	v3tokens "github.com/ManuGH/xg2g/internal/control/http/v3/tokens"
 	"github.com/ManuGH/xg2g/internal/control/playbackshadow"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
@@ -102,9 +103,7 @@ type Server struct {
 	admissionState         AdmissionState
 	hostPressureMonitor    *admissionmonitor.ResourceMonitor
 	hostPressureTracker    *hardware.PressureTracker
-	liveDecisionKeyring    liveDecisionKeyring
-	liveDecisionSigningKey []byte
-	liveDecisionTTL        time.Duration
+	tokensService          *v3tokens.Service
 	playbackSLO            *playbackSessionTracker
 	exposureLimiter        *exposureRateLimiter
 	intentService          *v3intents.Service
@@ -168,33 +167,30 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 			log.L().Info().Int("roots", len(libraryRoots)).Msg("library service initialized")
 		}
 	}
-	liveDecisionKeyring := resolveLiveDecisionKeyring(cfg, time.Now().UTC())
-	_, signingKey, _ := liveDecisionKeyring.signingKey()
+	tokensSvc := v3tokens.NewService(cfg)
 	profileResolver := profiles.LoadResolver()
 	clientAV1Disabled := config.ParseBool("XG2G_CLIENT_AV1_DISABLED", false)
 	iosNativeHEVCHWMode := autocodec.ResolveIOSNativeHEVCHWMode()
 
 	s := &Server{
-		cfg:                    cfg,
-		configManager:          cfgMgr,
-		startTime:              time.Now(),
-		libraryService:         librarySvc,
-		storageMonitor:         NewStorageMonitor(),
-		admission:              admission.NewController(cfg),
-		hostPressureMonitor:    admissionmonitor.NewResourceMonitor(cfg.Limits.MaxSessions, cfg.Limits.MaxTranscodes, 1.5),
-		hostPressureTracker:    hardware.NewPressureTracker(),
-		liveDecisionKeyring:    liveDecisionKeyring,
-		liveDecisionSigningKey: signingKey,
-		liveDecisionTTL:        defaultLivePlaybackDecisionTTL,
-		playbackSLO:            newPlaybackSessionTracker(defaultPlaybackSLOSessionTTL),
-		exposureLimiter:        newExposureRateLimiter(),
-		authSessionStore:       ctrlauth.NewInMemorySessionTokenStore(),
-		authSessionTTL:         defaultAuthSessionTTL,
-		householdUnlockStore:   household.NewInMemoryUnlockStore(),
-		householdUnlockTTL:     cfg.Household.UnlockTTL,
-		profileResolver:        profileResolver,
-		clientAV1Disabled:      clientAV1Disabled,
-		iosNativeHEVCHWMode:    iosNativeHEVCHWMode,
+		cfg:                  cfg,
+		configManager:        cfgMgr,
+		startTime:            time.Now(),
+		libraryService:       librarySvc,
+		storageMonitor:       NewStorageMonitor(),
+		admission:            admission.NewController(cfg),
+		hostPressureMonitor:  admissionmonitor.NewResourceMonitor(cfg.Limits.MaxSessions, cfg.Limits.MaxTranscodes, 1.5),
+		hostPressureTracker:  hardware.NewPressureTracker(),
+		tokensService:        tokensSvc,
+		playbackSLO:          newPlaybackSessionTracker(defaultPlaybackSLOSessionTTL),
+		exposureLimiter:      newExposureRateLimiter(),
+		authSessionStore:     ctrlauth.NewInMemorySessionTokenStore(),
+		authSessionTTL:       defaultAuthSessionTTL,
+		householdUnlockStore: household.NewInMemoryUnlockStore(),
+		householdUnlockTTL:   cfg.Household.UnlockTTL,
+		profileResolver:      profileResolver,
+		clientAV1Disabled:    clientAV1Disabled,
+		iosNativeHEVCHWMode:  iosNativeHEVCHWMode,
 	}
 
 	// Phase 2c: Shadow Observer
@@ -289,11 +285,15 @@ func (s *Server) SetJWTSecret(secret []byte) {
 	defer s.mu.Unlock()
 	if len(secret) == 0 {
 		s.JWTSecret = nil
-		s.liveDecisionSigningKey = nil
+		if s.tokensService != nil {
+			s.tokensService.SetJWTSecret(nil)
+		}
 		return
 	}
 	s.JWTSecret = append([]byte(nil), secret...)
-	s.liveDecisionSigningKey = append([]byte(nil), secret...)
+	if s.tokensService != nil {
+		s.tokensService.SetJWTSecret(secret)
+	}
 }
 
 // SetShutdownHandler sets the function to call for graceful shutdown.
@@ -313,6 +313,9 @@ func (s *Server) UpdateConfig(cfg config.AppConfig, snap config.Snapshot) {
 	s.owiClient = nil // Invalidate cached OWI client; s.owiEpoch is reset on next newOpenWebIFClient call
 	if state, ok := s.admissionState.(*storeAdmissionState); ok {
 		state.SetTunerCount(len(cfg.Engine.TunerSlots))
+	}
+	if s.tokensService != nil {
+		s.tokensService.UpdateConfig(cfg)
 	}
 }
 
