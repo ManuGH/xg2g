@@ -1,6 +1,7 @@
 package v3
 
 import (
+	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -336,7 +337,7 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 
 	firstFrameAtUnix := trace.FirstFrameAtUnix
 	if firstFrameAtUnix == 0 {
-		firstFrameAtUnix = sessionFirstFrameUnix(hlsRoot, session.SessionID)
+		firstFrameAtUnix = v3sessions.SessionFirstFrameUnix(hlsRoot, session.SessionID)
 	}
 	if firstFrameAtUnix > 0 {
 		firstFrameAtMs := int(firstFrameAtUnix * 1000)

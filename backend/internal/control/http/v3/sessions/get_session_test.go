@@ -6,7 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/pipeline/bus"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +23,11 @@ type fakeDeps struct {
 func (d fakeDeps) SessionStore() SessionStore {
 	return d.store
 }
+func (d fakeDeps) Config() config.AppConfig           { return config.AppConfig{} }
+func (d fakeDeps) Bus() bus.Bus                       { return nil }
+func (d fakeDeps) CapabilityRegistry() capreg.Store   { return nil }
+func (d fakeDeps) ProfileResolver() profiles.Resolver { return profiles.Resolver{} }
+func (d fakeDeps) RuntimeContext() context.Context    { return context.Background() }
 
 type fakeStore struct {
 	session *model.SessionRecord
@@ -26,6 +35,12 @@ type fakeStore struct {
 }
 
 func (s fakeStore) GetSession(ctx context.Context, id string) (*model.SessionRecord, error) {
+	return s.session, s.err
+}
+func (s fakeStore) UpdateSession(ctx context.Context, id string, fn func(*model.SessionRecord) error) (*model.SessionRecord, error) {
+	if s.session != nil && fn != nil {
+		_ = fn(s.session)
+	}
 	return s.session, s.err
 }
 
