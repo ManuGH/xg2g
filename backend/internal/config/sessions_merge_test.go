@@ -42,7 +42,9 @@ func TestSessionsConfigFileOverride(t *testing.T) {
 		t.Fatalf("setDefaults: %v", err)
 	}
 	src := &FileConfig{Sessions: &SessionsConfig{LeaseTTL: 5 * time.Minute, HeartbeatInterval: 20 * time.Second}}
-	loader.mergeFileSessions(&cfg, src)
+	if err := loader.mergeFileConfig(&cfg, src); err != nil {
+		t.Fatalf("mergeFileConfig: %v", err)
+	}
 
 	if cfg.Sessions.LeaseTTL != 5*time.Minute {
 		t.Errorf("file lease_ttl = %v, want 5m", cfg.Sessions.LeaseTTL)

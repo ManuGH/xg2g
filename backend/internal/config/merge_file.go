@@ -28,14 +28,12 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		return err
 	}
 
-	l.mergeFileCore(dst, src)
-	l.mergeFileGovernance(dst, src)
+	l.mergeFileConfigGenerated(dst, src)
+
 	if err := l.mergeFileEnigma2Aliases(dst, src); err != nil {
 		return err
 	}
 	l.mergeFileBouquets(dst, src)
-	l.mergeFileRecordingPlaybackCompat(dst, src)
-	l.mergeFileEPG(dst, src)
 	l.mergeFileRecordingRoots(dst, src)
 	if err := l.mergeFileRecordingPlayback(dst, src); err != nil {
 		return err
@@ -43,104 +41,17 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	if err := l.mergeFileAPI(dst, src); err != nil {
 		return err
 	}
-	l.mergeFileServer(dst, src)
-	l.mergeFileNetwork(dst, src)
-	l.mergeFileConnectivity(dst, src)
-	l.mergeFileMetrics(dst, src)
-	l.mergeFileStore(dst, src)
-	l.mergeFileStreaming(dst, src)
-	l.mergeFilePicons(dst, src)
-	l.mergeFileHDHR(dst, src)
-	l.mergeFileHLS(dst, src)
-	l.mergeFileSessions(dst, src)
-	l.mergeFileFFmpeg(dst, src)
-	l.mergeFileEngine(dst, src)
-	l.mergeFileTLS(dst, src)
 	l.mergeFileLibrary(dst, src)
 	l.mergeFileRootRecordingPathMappings(dst, src)
 	if err := l.mergeFileVerification(dst, src); err != nil {
 		return err
 	}
-	l.mergeFileResilience(dst, src)
-	l.mergeFilePlayback(dst, src)
-	l.mergeFilePlanner(dst, src)
-	l.mergeFileMonetization(dst, src)
 	if err := l.mergeFileHousehold(dst, src); err != nil {
 		return err
 	}
 	l.mergeFileVOD(dst, src)
-	l.mergeFileRecordings(dst, src)
 
 	return nil
-}
-
-func (l *Loader) mergeFileRecordings(dst *AppConfig, src *FileConfig) {
-	if src.Recordings == nil {
-		return
-	}
-	if src.Recordings.StrictTargetRequired != nil {
-		dst.RecordingStrictTargetRequired = *src.Recordings.StrictTargetRequired
-	}
-	if src.Recordings.TargetSigningKey != nil {
-		dst.RecordingTargetSigningKey = *src.Recordings.TargetSigningKey
-	}
-	if src.Recordings.TargetSigningKeyPrevious != nil {
-		dst.RecordingTargetSigningKeyPrevious = *src.Recordings.TargetSigningKeyPrevious
-	}
-}
-
-func (l *Loader) mergeFilePlanner(dst *AppConfig, src *FileConfig) {
-	if shadow := src.PlannerShadow; shadow != nil {
-		if shadow.Enabled != nil {
-			dst.PlannerShadow.Enabled = *shadow.Enabled
-		}
-		if shadow.QueueCapacity != nil {
-			dst.PlannerShadow.QueueCapacity = *shadow.QueueCapacity
-		}
-	}
-	if receipt := src.PlannerReceipt; receipt != nil {
-		if receipt.Enabled != nil {
-			dst.PlannerReceipt.Enabled = *receipt.Enabled
-		}
-		if receipt.Required != nil {
-			dst.PlannerReceipt.Required = *receipt.Required
-		}
-		if receipt.Capacity != nil {
-			dst.PlannerReceipt.Capacity = *receipt.Capacity
-		}
-		if receipt.TTL != nil {
-			dst.PlannerReceipt.TTL = *receipt.TTL
-		}
-	}
-}
-
-func (l *Loader) mergeFileCore(dst *AppConfig, src *FileConfig) {
-	if src.DataDir != "" {
-		dst.DataDir = expandEnv(src.DataDir)
-	}
-	if src.LogLevel != "" {
-		dst.LogLevel = src.LogLevel
-	}
-}
-
-// mergeFileGovernance applies the root-level governance keys (configStrict,
-// readyStrict, logService, trustedProxies). These are declared in FileConfig and
-// exposed in the registry as active YAML keys, but were never merged — so YAML
-// values were silently ignored and only ENV/default applied. ENV still overrides
-// afterward (precedence ENV > File > Default).
-func (l *Loader) mergeFileGovernance(dst *AppConfig, src *FileConfig) {
-	if src.ConfigStrict != nil {
-		dst.ConfigStrict = *src.ConfigStrict
-	}
-	if src.ReadyStrict != nil {
-		dst.ReadyStrict = *src.ReadyStrict
-	}
-	if src.LogService != "" {
-		dst.LogService = expandEnv(src.LogService)
-	}
-	if src.TrustedProxies != "" {
-		dst.TrustedProxies = expandEnv(src.TrustedProxies)
-	}
 }
 
 func (l *Loader) mergeFileEnigma2Aliases(dst *AppConfig, src *FileConfig) error {
@@ -161,45 +72,6 @@ func (l *Loader) mergeFileBouquets(dst *AppConfig, src *FileConfig) {
 	}
 }
 
-func (l *Loader) mergeFileRecordingPlaybackCompat(dst *AppConfig, src *FileConfig) {
-	// Recording Playback (Path Mappings)
-	dst.RecordingPlaybackPolicy = src.RecordingPlayback.PlaybackPolicy
-	if src.RecordingPlayback.StableWindow != "" {
-		if d, err := time.ParseDuration(src.RecordingPlayback.StableWindow); err == nil {
-			dst.RecordingStableWindow = d
-		}
-	}
-	dst.RecordingPathMappings = src.RecordingPlayback.Mappings
-}
-
-func (l *Loader) mergeFileEPG(dst *AppConfig, src *FileConfig) {
-	// EPG - use pointer types to allow false/0 values from YAML
-	if src.EPG.Enabled != nil {
-		dst.EPGEnabled = *src.EPG.Enabled
-	}
-	if src.EPG.Days != nil {
-		dst.EPGDays = *src.EPG.Days
-	}
-	if src.EPG.MaxConcurrency != nil {
-		dst.EPGMaxConcurrency = *src.EPG.MaxConcurrency
-	}
-	if src.EPG.TimeoutMS != nil {
-		dst.EPGTimeoutMS = *src.EPG.TimeoutMS
-	}
-	if src.EPG.Retries != nil {
-		dst.EPGRetries = *src.EPG.Retries
-	}
-	if src.EPG.FuzzyMax != nil {
-		dst.FuzzyMax = *src.EPG.FuzzyMax
-	}
-	if src.EPG.XMLTVPath != "" {
-		dst.XMLTVPath = src.EPG.XMLTVPath
-	}
-	if src.EPG.Source != "" {
-		dst.EPGSource = src.EPG.Source
-	}
-}
-
 func (l *Loader) mergeFileRecordingRoots(dst *AppConfig, src *FileConfig) {
 	// Recording Roots
 	if len(src.Recording) > 0 {
@@ -208,57 +80,6 @@ func (l *Loader) mergeFileRecordingRoots(dst *AppConfig, src *FileConfig) {
 			dst.RecordingRoots = make(map[string]string)
 		}
 		maps.Copy(dst.RecordingRoots, src.Recording)
-	}
-}
-
-func (l *Loader) mergeFileMonetization(dst *AppConfig, src *FileConfig) {
-	if src.Monetization == nil {
-		return
-	}
-	if src.Monetization.Enabled != nil {
-		dst.Monetization.Enabled = *src.Monetization.Enabled
-	}
-	if src.Monetization.Model != "" {
-		dst.Monetization.Model = src.Monetization.Model
-	}
-	if src.Monetization.ProductName != "" {
-		dst.Monetization.ProductName = src.Monetization.ProductName
-	}
-	if src.Monetization.RequiredScopes != nil {
-		dst.Monetization.RequiredScopes = append([]string(nil), src.Monetization.RequiredScopes...)
-	}
-	if src.Monetization.PurchaseURL != "" {
-		dst.Monetization.PurchaseURL = expandEnv(src.Monetization.PurchaseURL)
-	}
-	if src.Monetization.Enforcement != "" {
-		dst.Monetization.Enforcement = src.Monetization.Enforcement
-	}
-	if src.Monetization.GooglePlay != nil {
-		if src.Monetization.GooglePlay.PackageName != "" {
-			dst.Monetization.GooglePlay.PackageName = src.Monetization.GooglePlay.PackageName
-		}
-		if src.Monetization.GooglePlay.ServiceAccountCredentialsFile != "" {
-			dst.Monetization.GooglePlay.ServiceAccountCredentialsFile = expandEnv(src.Monetization.GooglePlay.ServiceAccountCredentialsFile)
-		}
-	}
-	if src.Monetization.Amazon != nil {
-		if src.Monetization.Amazon.SharedSecretFile != "" {
-			dst.Monetization.Amazon.SharedSecretFile = expandEnv(src.Monetization.Amazon.SharedSecretFile)
-		}
-		if src.Monetization.Amazon.UseSandbox != nil {
-			dst.Monetization.Amazon.UseSandbox = *src.Monetization.Amazon.UseSandbox
-		}
-	}
-	if src.Monetization.ProductMappings != nil {
-		mappings := make([]MonetizationProductMapping, 0, len(src.Monetization.ProductMappings))
-		for _, mapping := range src.Monetization.ProductMappings {
-			mappings = append(mappings, MonetizationProductMapping{
-				Provider:  mapping.Provider,
-				ProductID: mapping.ProductID,
-				Scopes:    append([]string(nil), mapping.Scopes...),
-			})
-		}
-		dst.Monetization.ProductMappings = mappings
 	}
 }
 
@@ -370,196 +191,6 @@ func (l *Loader) mergeFileAPI(dst *AppConfig, src *FileConfig) error {
 	return nil
 }
 
-func (l *Loader) mergeFileServer(dst *AppConfig, src *FileConfig) {
-	if src.Server == nil {
-		return
-	}
-	if src.Server.ReadTimeout != nil {
-		dst.Server.ReadTimeout = *src.Server.ReadTimeout
-	}
-	if src.Server.WriteTimeout != nil {
-		dst.Server.WriteTimeout = *src.Server.WriteTimeout
-	}
-	if src.Server.IdleTimeout != nil {
-		dst.Server.IdleTimeout = *src.Server.IdleTimeout
-	}
-	if src.Server.MaxHeaderBytes != nil {
-		dst.Server.MaxHeaderBytes = *src.Server.MaxHeaderBytes
-	}
-	if src.Server.ShutdownTimeout != nil {
-		dst.Server.ShutdownTimeout = *src.Server.ShutdownTimeout
-	}
-}
-
-func (l *Loader) mergeFileNetwork(dst *AppConfig, src *FileConfig) {
-	// Network outbound policy
-	if src.Network.Outbound.Enabled != nil {
-		dst.Network.Outbound.Enabled = *src.Network.Outbound.Enabled
-	}
-	if src.Network.Outbound.Allow.Hosts != nil {
-		dst.Network.Outbound.Allow.Hosts = append([]string(nil), src.Network.Outbound.Allow.Hosts...)
-	}
-	if src.Network.Outbound.Allow.CIDRs != nil {
-		dst.Network.Outbound.Allow.CIDRs = append([]string(nil), src.Network.Outbound.Allow.CIDRs...)
-	}
-	if src.Network.Outbound.Allow.Ports != nil {
-		dst.Network.Outbound.Allow.Ports = append([]int(nil), src.Network.Outbound.Allow.Ports...)
-	}
-	if src.Network.Outbound.Allow.Schemes != nil {
-		dst.Network.Outbound.Allow.Schemes = append([]string(nil), src.Network.Outbound.Allow.Schemes...)
-	}
-	if src.Network.LAN.Allow.CIDRs != nil {
-		dst.Network.LAN.Allow.CIDRs = append([]string(nil), src.Network.LAN.Allow.CIDRs...)
-	}
-}
-
-func (l *Loader) mergeFileConnectivity(dst *AppConfig, src *FileConfig) {
-	if src.Connectivity == nil {
-		return
-	}
-	if src.Connectivity.Profile != "" {
-		dst.Connectivity.Profile = src.Connectivity.Profile
-	}
-	if src.Connectivity.AllowLocalHTTP != nil {
-		dst.Connectivity.AllowLocalHTTP = *src.Connectivity.AllowLocalHTTP
-	}
-	if len(src.Connectivity.PublishedEndpoints) > 0 {
-		dst.Connectivity.PublishedEndpoints = clonePublishedEndpointConfigs(src.Connectivity.PublishedEndpoints)
-	}
-}
-
-func (l *Loader) mergeFileMetrics(dst *AppConfig, src *FileConfig) {
-	// Metrics
-	if src.Metrics.Enabled != nil {
-		dst.MetricsEnabled = *src.Metrics.Enabled
-	}
-	if src.Metrics.ListenAddr != "" {
-		dst.MetricsAddr = expandEnv(src.Metrics.ListenAddr)
-	}
-}
-
-func (l *Loader) mergeFilePicons(dst *AppConfig, src *FileConfig) {
-	// Picons
-	if src.Picons.BaseURL != "" {
-		dst.PiconBase = expandEnv(src.Picons.BaseURL)
-	}
-}
-
-func (l *Loader) mergeFileHDHR(dst *AppConfig, src *FileConfig) {
-	// HDHomeRun
-	if src.HDHR.Enabled != nil {
-		dst.HDHR.Enabled = src.HDHR.Enabled
-	}
-	if src.HDHR.DeviceID != "" {
-		dst.HDHR.DeviceID = expandEnv(src.HDHR.DeviceID)
-	}
-	if src.HDHR.FriendlyName != "" {
-		dst.HDHR.FriendlyName = expandEnv(src.HDHR.FriendlyName)
-	}
-	if src.HDHR.ModelNumber != "" {
-		dst.HDHR.ModelNumber = expandEnv(src.HDHR.ModelNumber)
-	}
-	if src.HDHR.FirmwareName != "" {
-		dst.HDHR.FirmwareName = expandEnv(src.HDHR.FirmwareName)
-	}
-	if src.HDHR.BaseURL != "" {
-		dst.HDHR.BaseURL = expandEnv(src.HDHR.BaseURL)
-	}
-	if src.HDHR.TunerCount != nil {
-		dst.HDHR.TunerCount = src.HDHR.TunerCount
-	}
-	if src.HDHR.PlexForceHLS != nil {
-		dst.HDHR.PlexForceHLS = src.HDHR.PlexForceHLS
-	}
-}
-
-func (l *Loader) mergeFileHLS(dst *AppConfig, src *FileConfig) {
-	// HLS (Typed Config)
-	if src.HLS != nil {
-		if src.HLS.Root != "" {
-			dst.HLS.Root = expandEnv(src.HLS.Root)
-		}
-		if src.HLS.DVRWindow > 0 {
-			dst.HLS.DVRWindow = src.HLS.DVRWindow
-		}
-		if src.HLS.SegmentSeconds > 0 {
-			dst.HLS.SegmentSeconds = src.HLS.SegmentSeconds
-		}
-		if src.HLS.LowLatency {
-			dst.HLS.LowLatency = true
-		}
-		if src.HLS.ReadySegments > 0 {
-			dst.HLS.ReadySegments = src.HLS.ReadySegments
-		}
-	}
-}
-
-func (l *Loader) mergeFileSessions(dst *AppConfig, src *FileConfig) {
-	// Sessions (ADR-009 lease lifecycle). Without this merge, sessions.* YAML was
-	// a dead no-op and the lease_ttl default was effectively hardcoded.
-	if src.Sessions != nil {
-		if src.Sessions.LeaseTTL > 0 {
-			dst.Sessions.LeaseTTL = src.Sessions.LeaseTTL
-		}
-		if src.Sessions.HeartbeatInterval > 0 {
-			dst.Sessions.HeartbeatInterval = src.Sessions.HeartbeatInterval
-		}
-		if src.Sessions.ExpiryCheckInterval > 0 {
-			dst.Sessions.ExpiryCheckInterval = src.Sessions.ExpiryCheckInterval
-		}
-	}
-}
-
-func (l *Loader) mergeFileFFmpeg(dst *AppConfig, src *FileConfig) {
-	// FFmpeg (Typed Config)
-	if src.FFmpeg != nil {
-		if src.FFmpeg.Bin != "" {
-			dst.FFmpeg.Bin = expandEnv(src.FFmpeg.Bin)
-		}
-		if src.FFmpeg.FFprobeBin != "" {
-			dst.FFmpeg.FFprobeBin = expandEnv(src.FFmpeg.FFprobeBin)
-		}
-		if src.FFmpeg.KillTimeout > 0 {
-			dst.FFmpeg.KillTimeout = src.FFmpeg.KillTimeout
-		}
-		if src.FFmpeg.VaapiDevice != "" {
-			dst.FFmpeg.VaapiDevice = expandEnv(src.FFmpeg.VaapiDevice)
-		}
-	}
-}
-
-func (l *Loader) mergeFileEngine(dst *AppConfig, src *FileConfig) {
-	// Engine mapping (P1.2 Harden)
-	if src.Engine.Enabled != nil {
-		dst.Engine.Enabled = *src.Engine.Enabled
-	}
-	if src.Engine.Mode != "" {
-		dst.Engine.Mode = src.Engine.Mode
-	}
-	if src.Engine.IdleTimeout > 0 {
-		dst.Engine.IdleTimeout = src.Engine.IdleTimeout
-	}
-	if len(src.Engine.TunerSlots) > 0 {
-		dst.Engine.TunerSlots = src.Engine.TunerSlots
-	}
-}
-
-func (l *Loader) mergeFileTLS(dst *AppConfig, src *FileConfig) {
-	// TLS mapping (P1.2 Harden)
-	if src.TLS.Enabled != nil {
-		dst.TLSEnabled = *src.TLS.Enabled
-	}
-	if src.TLS.Cert != "" {
-		dst.TLSCert = expandEnv(src.TLS.Cert)
-	}
-	if src.TLS.Key != "" {
-		dst.TLSKey = expandEnv(src.TLS.Key)
-	}
-	if src.TLS.ForceHTTPS != nil {
-		dst.ForceHTTPS = *src.TLS.ForceHTTPS
-	}
-}
-
 func (l *Loader) mergeFileLibrary(dst *AppConfig, src *FileConfig) {
 	// Library mapping (symmetric, fail-open-safe)
 	if src.Library.Enabled != nil {
@@ -610,63 +241,6 @@ func (l *Loader) mergeFileVerification(dst *AppConfig, src *FileConfig) error {
 	return nil
 }
 
-func (l *Loader) mergeFileResilience(dst *AppConfig, src *FileConfig) {
-	// Sprint 1: Resilience Core (YAML Mapping)
-	if src.Limits != nil {
-		if src.Limits.MaxSessions > 0 {
-			dst.Limits.MaxSessions = src.Limits.MaxSessions
-		}
-		if src.Limits.MaxTranscodes >= 0 { // 0 is valid "disable transcodes"
-			dst.Limits.MaxTranscodes = src.Limits.MaxTranscodes
-		}
-	}
-
-	if src.Timeouts != nil {
-		if src.Timeouts.TranscodeStart > 0 {
-			dst.Timeouts.TranscodeStart = src.Timeouts.TranscodeStart
-		}
-		if src.Timeouts.TranscodeNoProgress > 0 {
-			dst.Timeouts.TranscodeNoProgress = src.Timeouts.TranscodeNoProgress
-		}
-		if src.Timeouts.KillGrace > 0 {
-			dst.Timeouts.KillGrace = src.Timeouts.KillGrace
-		}
-	}
-
-	if src.Breaker != nil {
-		if src.Breaker.Window > 0 {
-			dst.Breaker.Window = src.Breaker.Window
-		}
-		if src.Breaker.MinAttempts > 0 {
-			dst.Breaker.MinAttempts = src.Breaker.MinAttempts
-		}
-		if src.Breaker.FailuresThreshold > 0 {
-			dst.Breaker.FailuresThreshold = src.Breaker.FailuresThreshold
-		}
-		if src.Breaker.ConsecutiveThreshold > 0 {
-			dst.Breaker.ConsecutiveThreshold = src.Breaker.ConsecutiveThreshold
-		}
-	}
-}
-
-func (l *Loader) mergeFilePlayback(dst *AppConfig, src *FileConfig) {
-	if src.Playback == nil {
-		return
-	}
-	if src.Playback.Operator.ForceIntent != "" {
-		dst.Playback.Operator.ForceIntent = src.Playback.Operator.ForceIntent
-	}
-	if src.Playback.Operator.MaxQualityRung != "" {
-		dst.Playback.Operator.MaxQualityRung = src.Playback.Operator.MaxQualityRung
-	}
-	if src.Playback.Operator.DisableClientFallback != nil {
-		dst.Playback.Operator.DisableClientFallback = *src.Playback.Operator.DisableClientFallback
-	}
-	if len(src.Playback.Operator.SourceRules) > 0 {
-		dst.Playback.Operator.SourceRules = clonePlaybackOperatorRuleFilesToRuntime(src.Playback.Operator.SourceRules)
-	}
-}
-
 func (l *Loader) mergeFileVOD(dst *AppConfig, src *FileConfig) {
 	// VOD (Typed config - with backwards-compat fallback to legacy flat fields)
 	if src.VOD != nil {
@@ -703,30 +277,5 @@ func (l *Loader) mergeFileVOD(dst *AppConfig, src *FileConfig) {
 			CacheTTL:        dst.VODCacheTTL.String(),
 			CacheMaxEntries: dst.VODCacheMaxEntries,
 		}
-	}
-}
-
-// mergeFileStore applies the YAML `store:` section (previously declared in
-// FileConfig but silently dropped). Env (XG2G_STORE_*) still overrides afterward.
-func (l *Loader) mergeFileStore(dst *AppConfig, src *FileConfig) {
-	if src.Store == nil {
-		return
-	}
-	if src.Store.Backend != "" {
-		dst.Store.Backend = src.Store.Backend
-	}
-	if src.Store.Path != "" {
-		dst.Store.Path = expandEnv(src.Store.Path)
-	}
-}
-
-// mergeFileStreaming applies the YAML `streaming:` section (previously declared
-// in FileConfig but silently dropped). Env (XG2G_STREAMING_POLICY) overrides after.
-func (l *Loader) mergeFileStreaming(dst *AppConfig, src *FileConfig) {
-	if src.Streaming == nil {
-		return
-	}
-	if src.Streaming.DeliveryPolicy != "" {
-		dst.Streaming.DeliveryPolicy = src.Streaming.DeliveryPolicy
 	}
 }
