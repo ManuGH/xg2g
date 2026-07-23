@@ -5,6 +5,8 @@ package config
 
 import (
 	"testing"
+
+	"github.com/ManuGH/xg2g/internal/validate"
 )
 
 // TestCodegenMergeEnv_Characterization verifies that the generated mergeEnvConfigGenerated
@@ -78,5 +80,18 @@ func TestCodegenMergeFile_Characterization(t *testing.T) {
 	}
 	if cfgDst.EPGDays != 7 {
 		t.Errorf("EPGDays = %d, want 7", cfgDst.EPGDays)
+	}
+}
+
+func TestCodegenValidation_Characterization(t *testing.T) {
+	v := validate.New()
+	cfg := AppConfig{
+		EPGEnabled: true,
+		EPGDays:    99, // Out of range (1-14)
+	}
+
+	validateConfigGenerated(v, cfg)
+	if v.IsValid() {
+		t.Error("expected validation failure for out-of-range EPGDays, got valid")
 	}
 }

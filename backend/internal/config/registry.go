@@ -64,6 +64,12 @@ type ConfigEntry struct {
 	Default       any       // Default value
 	HotReloadable bool      // Whether changes can be applied without restart
 	Type          ValueType // Expected value type
+	Description   string    // Human-readable description
+	Required      bool      // True if required for operation
+	Secret        bool      // True if sensitive/credential data
+	Min           *float64  // Min numeric value boundary (if applicable)
+	Max           *float64  // Max numeric value boundary (if applicable)
+	Allowed       []string  // Enum of allowed values (if applicable)
 }
 
 // Registry manages the configuration surface inventory.
@@ -89,6 +95,8 @@ func GetRegistry() (*Registry, error) {
 	return globalRegistry, globalRegistryErr
 }
 
+func floatPtr(v float64) *float64 { return &v }
+
 func buildRegistry() (*Registry, error) {
 	r := &Registry{
 		ByPath:  make(map[string]ConfigEntry),
@@ -102,7 +110,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "configVersion", Env: "", FieldPath: "ConfigVersion", Profile: ProfileInternal, Status: StatusInternal, Default: "v3"},
 		{Path: "configStrict", Env: "XG2G_CONFIG_STRICT", FieldPath: "ConfigStrict", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
 		{Path: "dataDir", Env: "XG2G_DATA", FieldPath: "DataDir", Profile: ProfileSimple, Status: StatusActive, Default: "/tmp"},
-		{Path: "logLevel", Env: "XG2G_LOG_LEVEL", FieldPath: "LogLevel", Profile: ProfileSimple, Status: StatusActive, Default: "info", HotReloadable: true},
+		{Path: "logLevel", Env: "XG2G_LOG_LEVEL", FieldPath: "LogLevel", Profile: ProfileSimple, Status: StatusActive, Default: "info", HotReloadable: true, Allowed: []string{"debug", "info", "warn", "error", "fatal", "panic", "disabled", "trace"}},
 		{Path: "logService", Env: "XG2G_LOG_SERVICE", FieldPath: "LogService", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "bouquets", Env: "XG2G_BOUQUET", FieldPath: "Bouquet", Profile: ProfileSimple, Status: StatusActive},
 
@@ -151,13 +159,13 @@ func buildRegistry() (*Registry, error) {
 
 		// --- EPG ---
 		{Path: "epg.enabled", Env: "XG2G_EPG_ENABLED", FieldPath: "EPGEnabled", Profile: ProfileSimple, Status: StatusActive, Default: true},
-		{Path: "epg.days", Env: "XG2G_EPG_DAYS", FieldPath: "EPGDays", Profile: ProfileSimple, Status: StatusActive, Default: 14},
-		{Path: "epg.maxConcurrency", Env: "XG2G_EPG_MAX_CONCURRENCY", FieldPath: "EPGMaxConcurrency", Profile: ProfileAdvanced, Status: StatusActive, Default: 1},
-		{Path: "epg.timeoutMs", Env: "XG2G_EPG_TIMEOUT_MS", FieldPath: "EPGTimeoutMS", Profile: ProfileAdvanced, Status: StatusActive, Default: 20000},
-		{Path: "epg.retries", Env: "XG2G_EPG_RETRIES", FieldPath: "EPGRetries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
+		{Path: "epg.days", Env: "XG2G_EPG_DAYS", FieldPath: "EPGDays", Profile: ProfileSimple, Status: StatusActive, Default: 14, Min: floatPtr(1), Max: floatPtr(14)},
+		{Path: "epg.maxConcurrency", Env: "XG2G_EPG_MAX_CONCURRENCY", FieldPath: "EPGMaxConcurrency", Profile: ProfileAdvanced, Status: StatusActive, Default: 1, Min: floatPtr(1), Max: floatPtr(10)},
+		{Path: "epg.timeoutMs", Env: "XG2G_EPG_TIMEOUT_MS", FieldPath: "EPGTimeoutMS", Profile: ProfileAdvanced, Status: StatusActive, Default: 20000, Min: floatPtr(100), Max: floatPtr(60000)},
+		{Path: "epg.retries", Env: "XG2G_EPG_RETRIES", FieldPath: "EPGRetries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2, Min: floatPtr(0), Max: floatPtr(5)},
 		{Path: "epg.source", Env: "XG2G_EPG_SOURCE", FieldPath: "EPGSource", Profile: ProfileAdvanced, Status: StatusActive, Default: "per-service"},
 		{Path: "epg.xmltvPath", Env: "XG2G_XMLTV", FieldPath: "XMLTVPath", Profile: ProfileAdvanced, Status: StatusActive, Default: "xmltv.xml"},
-		{Path: "epg.fuzzyMax", Env: "XG2G_FUZZY_MAX", FieldPath: "FuzzyMax", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
+		{Path: "epg.fuzzyMax", Env: "XG2G_FUZZY_MAX", FieldPath: "FuzzyMax", Profile: ProfileAdvanced, Status: StatusActive, Default: 2, Min: floatPtr(0), Max: floatPtr(10)},
 		{FieldPath: "EPGRefreshInterval", Profile: ProfileInternal, Status: StatusInternal, Default: 6 * time.Hour},
 
 		// --- ENGINE ---
