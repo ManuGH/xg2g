@@ -11,7 +11,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"strings"
 	"time"
-	"unsafe"
 )
 
 func mapPlaybackTraceHLSDebug(trace *model.PlaybackTrace) *PlaybackTraceHlsDebug {
@@ -200,7 +199,7 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	}
 
 	if trace.Source != nil {
-		dto.Source = (*PlaybackSourceProfile)(unsafe.Pointer(v3playbackinfo.MapSourceProfile(trace.Source)))
+		dto.Source = mapPlaybackSourceProfileToV3(v3playbackinfo.MapSourceProfile(trace.Source))
 	}
 
 	clientPath := strings.TrimSpace(trace.ClientPath)
@@ -238,7 +237,7 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	}
 	if target != nil {
 		canonical := playbackprofile.CanonicalizeTarget(*target)
-		dto.TargetProfile = (*PlaybackTargetProfile)(unsafe.Pointer(v3playbackinfo.MapTargetProfile(&canonical)))
+		dto.TargetProfile = mapPlaybackTargetProfileToV3(v3playbackinfo.MapTargetProfile(&canonical))
 		if hash := playbackprofile.HashTarget(canonical); hash != "" {
 			dto.TargetProfileHash = &hash
 		}

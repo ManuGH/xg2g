@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
-	"unsafe"
 
 	v3playbackinfo "github.com/ManuGH/xg2g/internal/control/http/v3/playbackinfo"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
@@ -77,7 +76,7 @@ func (s *Server) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 	// resolution never triggers cold-relay probes or issues decision tokens.
 	r.Header.Set(v3recordings.PlaybackInfoContextHeader, v3recordings.PlaybackInfoContextEpgBadge)
 
-	caps := (*v3playbackinfo.PlaybackCapabilities)(unsafe.Pointer(&req.Capabilities))
+	caps := mapCapabilitiesToPlaybackInfoSubpackage(&req.Capabilities)
 	deps := s.recordingsModuleDeps()
 
 	type refJob struct {

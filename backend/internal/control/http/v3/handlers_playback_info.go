@@ -79,7 +79,8 @@ func (s *Server) handlePlaybackInfo(w http.ResponseWriter, r *http.Request, reco
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(dto)
+	openApiDto := mapPlaybackInfoToOpenAPI(dto)
+	_ = json.NewEncoder(w).Encode(openApiDto)
 }
 
 func (s *Server) buildPlaybackInfoHTTPResponse(ctx context.Context, deps recordingsModuleDeps, recordingID string, caps *v3playbackinfo.PlaybackCapabilities, schemaType string, serviceRequest v3recordings.PlaybackInfoRequest) (v3playbackinfo.PlaybackInfo, *v3recordings.PlaybackInfoError) {

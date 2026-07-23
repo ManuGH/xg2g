@@ -303,7 +303,7 @@ func buildPlaybackResumeSummary(rState *resume.State) *ResumeSummary {
 
 	posSec := rState.PosSeconds
 	return &ResumeSummary{
-		PosSeconds:      &posSec,
+		PosSeconds:      posSec,
 		DurationSeconds: duration,
 		Finished:        &finished,
 	}

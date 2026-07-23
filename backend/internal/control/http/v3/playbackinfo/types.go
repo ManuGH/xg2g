@@ -4,6 +4,8 @@
 
 package playbackinfo
 
+import "time"
+
 // PlaybackCapabilities Client capabilities for playback decision
 type PlaybackCapabilities struct {
 	AllowTranscode       *bool                       `json:"allowTranscode,omitempty"`
@@ -88,11 +90,11 @@ const (
 type PlaybackInfoDurationSource string
 
 type ResumeSummary struct {
-	DurationSeconds *int64 `json:"durationSeconds,omitempty"`
-	Finished        *bool  `json:"finished,omitempty"`
-	PosSeconds      *int64 `json:"posSeconds,omitempty"`
-	PositionMs      *int64 `json:"positionMs,omitempty"`
-	UpdatedAt       *int64 `json:"updatedAt,omitempty"`
+	DurationSeconds *int64     `json:"durationSeconds,omitempty"`
+	Finished        *bool      `json:"finished,omitempty"`
+	PosSeconds      int64      `json:"posSeconds"`
+	PositionMs      *int64     `json:"positionMs,omitempty"`
+	UpdatedAt       *time.Time `json:"updatedAt,omitempty"`
 }
 
 type PlaybackDecisionMode string
@@ -124,40 +126,40 @@ type PlaybackDecisionSelected struct {
 }
 
 type PlaybackTrace struct {
-	AudioQualityRung          *string                `json:"audioQualityRung,omitempty"`
-	AutoCodecBenchmarkClass   *string                `json:"autoCodecBenchmarkClass,omitempty"`
-	AutoCodecPerformanceClass *string                `json:"autoCodecPerformanceClass,omitempty"`
-	AutoCodecPolicy           *string                `json:"autoCodecPolicy,omitempty"`
-	AutoCodecRequestedCodecs  *string                `json:"autoCodecRequestedCodecs,omitempty"`
-	AutoCodecSelectedCodec    *string                `json:"autoCodecSelectedCodec,omitempty"`
-	ClientCapsSource          *string                `json:"clientCapsSource,omitempty"`
-	ClientFamily              *string                `json:"clientFamily,omitempty"`
-	ClientPath                *string                `json:"clientPath,omitempty"`
-	DegradedFrom              *string                `json:"degradedFrom,omitempty"`
-	EffectiveModeSource       *string                `json:"effectiveModeSource,omitempty"`
-	EffectiveRuntimeMode      *string                `json:"effectiveRuntimeMode,omitempty"`
-	FallbackCount             *int                   `json:"fallbackCount,omitempty"`
-	FirstFrameAtMs            *int                   `json:"firstFrameAtMs,omitempty"`
-	HostOverrideApplied       *bool                  `json:"hostOverrideApplied,omitempty"`
-	HostPressureBand          *string                `json:"hostPressureBand,omitempty"`
-	InputKind                 *string                `json:"inputKind,omitempty"`
-	LastFallbackReason        *string                `json:"lastFallbackReason,omitempty"`
+	AudioQualityRung          *string                `json:"audioQualityRung"`
+	AutoCodecBenchmarkClass   *string                `json:"autoCodecBenchmarkClass"`
+	AutoCodecPerformanceClass *string                `json:"autoCodecPerformanceClass"`
+	AutoCodecPolicy           *string                `json:"autoCodecPolicy"`
+	AutoCodecRequestedCodecs  *string                `json:"autoCodecRequestedCodecs"`
+	AutoCodecSelectedCodec    *string                `json:"autoCodecSelectedCodec"`
+	ClientCapsSource          *string                `json:"clientCapsSource"`
+	ClientFamily              *string                `json:"clientFamily"`
+	ClientPath                *string                `json:"clientPath"`
+	DegradedFrom              *string                `json:"degradedFrom"`
+	EffectiveModeSource       *string                `json:"effectiveModeSource"`
+	EffectiveRuntimeMode      *string                `json:"effectiveRuntimeMode"`
+	FallbackCount             *int                   `json:"fallbackCount"`
+	FirstFrameAtMs            *int                   `json:"firstFrameAtMs"`
+	HostOverrideApplied       *bool                  `json:"hostOverrideApplied"`
+	HostPressureBand          *string                `json:"hostPressureBand"`
+	InputKind                 *string                `json:"inputKind"`
+	LastFallbackReason        *string                `json:"lastFallbackReason"`
 	Operator                  *PlaybackTraceOperator `json:"operator,omitempty"`
-	PolicyModeHint            *string                `json:"policyModeHint,omitempty"`
-	PreflightDetail           *string                `json:"preflightDetail,omitempty"`
-	PreflightReason           *string                `json:"preflightReason,omitempty"`
-	QualityRung               *string                `json:"qualityRung,omitempty"`
+	PolicyModeHint            *string                `json:"policyModeHint"`
+	PreflightDetail           *string                `json:"preflightDetail"`
+	PreflightReason           *string                `json:"preflightReason"`
+	QualityRung               *string                `json:"qualityRung"`
 	RequestId                 string                 `json:"requestId"`
-	RequestProfile            *string                `json:"requestProfile,omitempty"`
-	RequestedIntent           *string                `json:"requestedIntent,omitempty"`
-	ResolvedIntent            *string                `json:"resolvedIntent,omitempty"`
-	SessionId                 *string                `json:"sessionId,omitempty"`
+	RequestProfile            *string                `json:"requestProfile"`
+	RequestedIntent           *string                `json:"requestedIntent"`
+	ResolvedIntent            *string                `json:"resolvedIntent"`
+	SessionId                 *string                `json:"sessionId"`
 	Source                    *PlaybackSourceProfile `json:"source,omitempty"`
-	StopClass                 *string                `json:"stopClass,omitempty"`
-	StopReason                *string                `json:"stopReason,omitempty"`
+	StopClass                 *string                `json:"stopClass"`
+	StopReason                *string                `json:"stopReason"`
 	TargetProfile             *PlaybackTargetProfile `json:"targetProfile,omitempty"`
-	TargetProfileHash         *string                `json:"targetProfileHash,omitempty"`
-	VideoQualityRung          *string                `json:"videoQualityRung,omitempty"`
+	TargetProfileHash         *string                `json:"targetProfileHash"`
+	VideoQualityRung          *string                `json:"videoQualityRung"`
 }
 
 type PlaybackTraceOperator struct {
@@ -182,14 +184,14 @@ type PostLivePlaybackInfoJSONRequestBody struct {
 }
 
 type PlaybackDecision struct {
-	Constraints        []string                            `json:"constraints"`
-	Mode               PlaybackDecisionMode                `json:"mode"`
-	Outputs            []PlaybackOutput                    `json:"outputs"`
-	Reasons            []string                            `json:"reasons"`
-	Selected           PlaybackDecisionSelected            `json:"selected"`
+	Constraints        []string                           `json:"constraints"`
+	Mode               PlaybackDecisionMode               `json:"mode"`
+	Outputs            []PlaybackOutput                   `json:"outputs"`
+	Reasons            []string                           `json:"reasons"`
+	Selected           PlaybackDecisionSelected           `json:"selected"`
 	SelectedOutputKind PlaybackDecisionSelectedOutputKind `json:"selectedOutputKind"`
-	SelectedOutputUrl  string                              `json:"selectedOutputUrl"`
-	Trace              PlaybackTrace                       `json:"trace"`
+	SelectedOutputUrl  string                             `json:"selectedOutputUrl"`
+	Trace              PlaybackTrace                      `json:"trace"`
 }
 
 type PlaybackSourceProfile struct {
