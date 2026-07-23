@@ -2,11 +2,10 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package v3
+package playbackinfo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -29,7 +28,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
-func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int, plannerReceipt *v3intents.PlanningHandoff) PlaybackInfo {
+func (s *Service) MapPlaybackInfoV2(ctx context.Context, id string, dec *decision.Decision, rState *resume.State, truth *hls.SegmentTruth, attemptedTruth bool, rawTruth playback.MediaTruth, schemaType string, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, requestProfile, operatorRuleName, operatorRuleScope, runtimePolicyAction, runtimePolicyPhase, runtimeProbeCandidate string, runtimePolicyReasons, runtimePolicyConstraints []string, runtimeProbeSuccessStreak, runtimeProbeFailureStreak int, plannerReceipt *v3intents.PlanningHandoff) PlaybackInfo {
 	proto := decision.ProtocolFrom(dec)
 	var mode PlaybackInfoMode
 	var url string
@@ -51,7 +50,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 			if dec.TargetProfile != nil {
 				intent = &ports.BuildIntent{Target: *dec.TargetProfile}
 			}
-			url = v3recordings.RecordingPlaylistURL(id, requestProfile, intent, s.cfg.RecordingTargetSigningKey)
+			url = v3recordings.RecordingPlaylistURL(id, requestProfile, intent, s.deps.Config().RecordingTargetSigningKey)
 		}
 	case "none":
 		mode = PlaybackInfoModeDirectMp4
@@ -86,7 +85,7 @@ func (s *Server) mapPlaybackInfoV2(ctx context.Context, id string, dec *decision
 		Resume:                resDTO,
 		RequestId:             dec.Trace.RequestID,
 		SessionId:             fmt.Sprintf("rec:%s", id),
-		PlaybackDecisionToken: s.buildLivePlaybackDecisionToken(id, dec, schemaType, caps, plannerReceipt),
+		PlaybackDecisionToken: s.BuildLivePlaybackDecisionToken(id, dec, schemaType, caps, plannerReceipt),
 	}
 	if durSec > 0 {
 		info.DurationSeconds = &durSec
@@ -109,7 +108,6 @@ func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, raw
 	decDTO.SelectedOutputKind = PlaybackDecisionSelectedOutputKind(dec.SelectedOutputKind)
 
 	for _, out := range dec.Outputs {
-		var raw json.RawMessage
 		effectiveURL := out.URL
 		if len(effectiveURL) >= len("placeholder://") && effectiveURL[:len("placeholder://")] == "placeholder://" {
 			effectiveURL = url
@@ -117,20 +115,15 @@ func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, raw
 
 		switch out.Kind {
 		case "file":
-			raw, _ = json.Marshal(PlaybackOutputFile{
-				Kind: PlaybackOutputFileKindFile,
+			decDTO.Outputs = append(decDTO.Outputs, PlaybackOutput{
+				Kind: "file",
 				Url:  effectiveURL,
 			})
 		case "hls":
-			raw, _ = json.Marshal(PlaybackOutputHls{
-				Kind:        Hls,
-				PlaylistUrl: effectiveURL,
+			decDTO.Outputs = append(decDTO.Outputs, PlaybackOutput{
+				Kind: "hls",
+				Url:  effectiveURL,
 			})
-		}
-		if raw != nil {
-			var po PlaybackOutput
-			_ = po.UnmarshalJSON(raw)
-			decDTO.Outputs = append(decDTO.Outputs, po)
 		}
 	}
 
@@ -204,7 +197,7 @@ func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, raw
 		clientFamily := resolvedCaps.ClientFamilyFallback
 		decDTO.Trace.ClientFamily = &clientFamily
 	}
-	decDTO.Trace.Source = mapSourceProfile(sourceProfileFromMediaTruth(rawTruth))
+	decDTO.Trace.Source = MapSourceProfile(sourceProfileFromMediaTruth(rawTruth))
 	if dec.Trace.ForcedIntent != "" || dec.Trace.MaxQualityRung != "" || dec.Trace.OverrideApplied || runtimePolicyAction != "" || runtimePolicyPhase != "" || runtimeProbeCandidate != "" || len(runtimePolicyReasons) > 0 || len(runtimePolicyConstraints) > 0 || runtimeProbeSuccessStreak > 0 || runtimeProbeFailureStreak > 0 {
 		operator := PlaybackTraceOperator{
 			ClientFallbackDisabled: boolPtr(false),
@@ -260,7 +253,7 @@ func buildPlaybackDecisionDTO(id string, dec *decision.Decision, url string, raw
 	if dec.TargetProfile != nil {
 		hash := dec.TargetProfile.Hash()
 		decDTO.Trace.TargetProfileHash = &hash
-		decDTO.Trace.TargetProfile = mapTargetProfile(dec.TargetProfile)
+		decDTO.Trace.TargetProfile = MapTargetProfile(dec.TargetProfile)
 	}
 
 	return decDTO
@@ -308,24 +301,23 @@ func buildPlaybackResumeSummary(rState *resume.State) *ResumeSummary {
 		duration = &value
 	}
 
+	posSec := rState.PosSeconds
 	return &ResumeSummary{
-		PosSeconds:      rState.PosSeconds,
+		PosSeconds:      posSec,
 		DurationSeconds: duration,
 		Finished:        &finished,
 	}
 }
 
-func (s *Server) buildLivePlaybackDecisionToken(id string, dec *decision.Decision, schemaType string, caps *PlaybackCapabilities, plannerReceipt *v3intents.PlanningHandoff) *string {
-	s.mu.RLock()
-	jwtSecret := append([]byte(nil), s.JWTSecret...)
-	s.mu.RUnlock()
+func (s *Service) BuildLivePlaybackDecisionToken(id string, dec *decision.Decision, schemaType string, caps *PlaybackCapabilities, plannerReceipt *v3intents.PlanningHandoff) *string {
+	jwtSecret := s.deps.JWTSecret()
 
 	if schemaType != "live" || dec.Mode == decision.ModeDeny || len(jwtSecret) == 0 {
 		return nil
 	}
 
 	now := time.Now().Unix()
-	capHash := hashV3Capabilities(caps)
+	capHash := HashV3Capabilities(caps)
 
 	expiresAt := now + 60
 	if plannerReceipt != nil {
@@ -367,7 +359,21 @@ func (s *Server) buildLivePlaybackDecisionToken(id string, dec *decision.Decisio
 	return &tokenStr
 }
 
-func mapTargetProfile(target *playbackprofile.TargetPlaybackProfile) *PlaybackTargetProfile {
+func LogPlaybackTargetProfile(recordingID string, schemaType string, dec *decision.Decision) {
+	if dec == nil || dec.TargetProfile == nil {
+		return
+	}
+
+	log.L().Debug().
+		Str("recordingId", recordingID).
+		Str("schemaType", schemaType).
+		Str("decisionMode", string(dec.Mode)).
+		Str("targetProfileHash", dec.TargetProfile.Hash()).
+		Interface("targetProfile", dec.TargetProfile).
+		Msg("resolved recording target playback profile")
+}
+
+func MapTargetProfile(target *playbackprofile.TargetPlaybackProfile) *PlaybackTargetProfile {
 	if target == nil {
 		return nil
 	}
@@ -410,7 +416,7 @@ func mapTargetProfile(target *playbackprofile.TargetPlaybackProfile) *PlaybackTa
 	}
 }
 
-func mapSourceProfile(source *playbackprofile.SourceProfile) *PlaybackSourceProfile {
+func MapSourceProfile(source *playbackprofile.SourceProfile) *PlaybackSourceProfile {
 	if source == nil {
 		return nil
 	}
@@ -489,7 +495,7 @@ func applySegmentTruth(info *PlaybackInfo, truth *hls.SegmentTruth, attempted bo
 	info.Seekable = &canSeek
 }
 
-func (s *Server) mapLivePlannerPlaybackInfo(
+func (s *Service) MapLivePlannerPlaybackInfo(
 	id string, eval *v3recordings.PlannerEvaluation, truth playback.MediaTruth, caps *PlaybackCapabilities, resolvedCaps capabilities.PlaybackCapabilities, plannerReceipt *v3intents.PlanningHandoff, reqID string,
 ) PlaybackInfo {
 	isAllow := eval != nil &&
@@ -572,7 +578,7 @@ func (s *Server) mapLivePlannerPlaybackInfo(
 		Decision:              &decDTO,
 		RequestId:             reqID,
 		SessionId:             fmt.Sprintf("rec:%s", id),
-		PlaybackDecisionToken: s.buildLivePlannerDecisionToken(id, eval, caps, plannerReceipt, reqID),
+		PlaybackDecisionToken: s.BuildLivePlannerDecisionToken(id, eval, caps, plannerReceipt, reqID),
 	}
 	applySegmentTruth(&info, nil, false)
 	if eval.Result.Plan.Startup.DVRWindowSeconds > 0 {
@@ -609,15 +615,10 @@ func buildPlannerDecisionDTO(id string, eval *v3recordings.PlannerEvaluation, tr
 
 	decDTO.Outputs = []PlaybackOutput{}
 	if url != "" {
-		raw, _ := json.Marshal(PlaybackOutputHls{
-			Kind:        Hls,
-			PlaylistUrl: url,
+		decDTO.Outputs = append(decDTO.Outputs, PlaybackOutput{
+			Kind: "hls",
+			Url:  url,
 		})
-		if raw != nil {
-			var po PlaybackOutput
-			_ = po.UnmarshalJSON(raw)
-			decDTO.Outputs = append(decDTO.Outputs, po)
-		}
 	}
 
 	if eval.Result.Plan.Decision != playbackplanner.DecisionAllow || eval.Result.Plan.Outcome != playbackplanner.DecisionAllow || eval.Result.Plan.Mode == "deny" {
@@ -639,7 +640,7 @@ func buildPlannerDecisionDTO(id string, eval *v3recordings.PlannerEvaluation, tr
 		decDTO.Trace.RequestId = uuid.New().String()
 	}
 
-	decDTO.Trace.Source = mapSourceProfile(sourceProfileFromMediaTruth(truth))
+	decDTO.Trace.Source = MapSourceProfile(sourceProfileFromMediaTruth(truth))
 	if resolvedCaps.ClientCapsSource != "" {
 		src := resolvedCaps.ClientCapsSource
 		decDTO.Trace.ClientCapsSource = &src
@@ -703,7 +704,7 @@ func buildPlannerDecisionDTO(id string, eval *v3recordings.PlannerEvaluation, tr
 		}
 		hash := domainTarget.Hash()
 		decDTO.Trace.TargetProfileHash = &hash
-		decDTO.Trace.TargetProfile = mapTargetProfile(domainTarget)
+		decDTO.Trace.TargetProfile = MapTargetProfile(domainTarget)
 
 		var rung string
 		switch eval.Result.Plan.Mode {
@@ -734,17 +735,15 @@ func buildPlannerDecisionDTO(id string, eval *v3recordings.PlannerEvaluation, tr
 	return decDTO
 }
 
-func (s *Server) buildLivePlannerDecisionToken(id string, eval *v3recordings.PlannerEvaluation, caps *PlaybackCapabilities, plannerReceipt *v3intents.PlanningHandoff, reqID string) *string {
-	s.mu.RLock()
-	jwtSecret := append([]byte(nil), s.JWTSecret...)
-	s.mu.RUnlock()
+func (s *Service) BuildLivePlannerDecisionToken(id string, eval *v3recordings.PlannerEvaluation, caps *PlaybackCapabilities, plannerReceipt *v3intents.PlanningHandoff, reqID string) *string {
+	jwtSecret := s.deps.JWTSecret()
 
 	if eval == nil || eval.Result.Plan.Decision != playbackplanner.DecisionAllow || eval.Result.Plan.Outcome != playbackplanner.DecisionAllow || plannerReceipt == nil || plannerReceipt.Plan.Decision != playbackplanner.DecisionAllow || plannerReceipt.Plan.Outcome != playbackplanner.DecisionAllow || len(jwtSecret) == 0 {
 		return nil
 	}
 
 	now := time.Now().Unix()
-	capHash := hashV3Capabilities(caps)
+	capHash := HashV3Capabilities(caps)
 
 	expiresAt := now + 60
 	if plannerReceipt != nil {

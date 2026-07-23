@@ -1,6 +1,7 @@
 package v3
 
 import (
+	v3playbackinfo "github.com/ManuGH/xg2g/internal/control/http/v3/playbackinfo"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
@@ -198,7 +199,7 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	}
 
 	if trace.Source != nil {
-		dto.Source = mapSourceProfile(trace.Source)
+		dto.Source = mapPlaybackSourceProfileToV3(v3playbackinfo.MapSourceProfile(trace.Source))
 	}
 
 	clientPath := strings.TrimSpace(trace.ClientPath)
@@ -236,7 +237,7 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	}
 	if target != nil {
 		canonical := playbackprofile.CanonicalizeTarget(*target)
-		dto.TargetProfile = mapTargetProfile(&canonical)
+		dto.TargetProfile = mapPlaybackTargetProfileToV3(v3playbackinfo.MapTargetProfile(&canonical))
 		if hash := playbackprofile.HashTarget(canonical); hash != "" {
 			dto.TargetProfileHash = &hash
 		}

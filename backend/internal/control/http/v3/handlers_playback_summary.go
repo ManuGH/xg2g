@@ -1,7 +1,3 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package v3
 
 import (
@@ -9,6 +5,7 @@ import (
 	"net/http"
 	"sync"
 
+	v3playbackinfo "github.com/ManuGH/xg2g/internal/control/http/v3/playbackinfo"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/read"
 	"github.com/ManuGH/xg2g/internal/control/recordings"
@@ -34,32 +31,32 @@ func (s *Server) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
-		writePlaybackInfoInputProblem(w, r, &playbackInfoInputProblem{
-			status:      http.StatusBadRequest,
-			problemType: "live/invalid",
-			title:       "Invalid Request",
-			code:        problemcode.CodeInvalidInput,
-			detail:      "Failed to parse request body: " + err.Error(),
+		v3playbackinfo.WritePlaybackInfoInputProblem(w, r, &v3playbackinfo.PlaybackInfoInputProblem{
+			Status:      http.StatusBadRequest,
+			ProblemType: "live/invalid",
+			Title:       "Invalid Request",
+			Code:        problemcode.CodeInvalidInput,
+			Detail:      "Failed to parse request body: " + err.Error(),
 		})
 		return
 	}
 	if req.Capabilities.CapabilitiesVersion < 1 {
-		writePlaybackInfoInputProblem(w, r, &playbackInfoInputProblem{
-			status:      http.StatusBadRequest,
-			problemType: "live/invalid",
-			title:       "Invalid Request",
-			code:        problemcode.CodeInvalidCapabilities,
-			detail:      "capabilities_version must be >= 1",
+		v3playbackinfo.WritePlaybackInfoInputProblem(w, r, &v3playbackinfo.PlaybackInfoInputProblem{
+			Status:      http.StatusBadRequest,
+			ProblemType: "live/invalid",
+			Title:       "Invalid Request",
+			Code:        problemcode.CodeInvalidCapabilities,
+			Detail:      "capabilities_version must be >= 1",
 		})
 		return
 	}
 	if len(req.ServiceRefs) == 0 || len(req.ServiceRefs) > playbackSummaryMaxRefs {
-		writePlaybackInfoInputProblem(w, r, &playbackInfoInputProblem{
-			status:      http.StatusBadRequest,
-			problemType: "live/invalid",
-			title:       "Invalid Request",
-			code:        problemcode.CodeInvalidInput,
-			detail:      "serviceRefs must contain between 1 and 100 entries",
+		v3playbackinfo.WritePlaybackInfoInputProblem(w, r, &v3playbackinfo.PlaybackInfoInputProblem{
+			Status:      http.StatusBadRequest,
+			ProblemType: "live/invalid",
+			Title:       "Invalid Request",
+			Code:        problemcode.CodeInvalidInput,
+			Detail:      "serviceRefs must contain between 1 and 100 entries",
 		})
 		return
 	}
@@ -79,7 +76,7 @@ func (s *Server) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 	// resolution never triggers cold-relay probes or issues decision tokens.
 	r.Header.Set(v3recordings.PlaybackInfoContextHeader, v3recordings.PlaybackInfoContextEpgBadge)
 
-	caps := (*PlaybackCapabilities)(&req.Capabilities)
+	caps := mapCapabilitiesToPlaybackInfoSubpackage(&req.Capabilities)
 	deps := s.recordingsModuleDeps()
 
 	type refJob struct {
@@ -105,7 +102,7 @@ func (s *Server) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 		jobs = append(jobs, refJob{original: raw, resolved: serviceRef})
 	}
 
-	items := make(map[string]PlaybackInfo, len(jobs))
+	items := make(map[string]v3playbackinfo.PlaybackInfo, len(jobs))
 	var itemsMu sync.Mutex
 	sem := make(chan struct{}, playbackSummaryConcurrent)
 	var wg sync.WaitGroup
@@ -115,7 +112,7 @@ func (s *Server) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request)
 		go func(job refJob) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			serviceRequest := buildPlaybackInfoServiceRequest(r, job.resolved, caps, "v3.1", "live")
+			serviceRequest := v3playbackinfo.BuildPlaybackInfoServiceRequest(r, job.resolved, caps, "v3.1", "live")
 			dto, err := s.buildPlaybackInfoHTTPResponse(r.Context(), deps, job.resolved, caps, "live", serviceRequest)
 			if err != nil {
 				return // omitted from the batch by design
