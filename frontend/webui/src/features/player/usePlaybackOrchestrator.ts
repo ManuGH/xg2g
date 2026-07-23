@@ -94,7 +94,7 @@ import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
-import { buildPlayerViewState } from './components/playerViewStateModel';
+import { buildPlayerViewState, type V3PlayerLabeledValue, type V3PlayerViewState } from './components/playerViewStateModel';
 import { useLiveNowPlaying } from './useLiveNowPlaying';
 import { buildPlayerMediaSessionModel } from './components/playerMediaSessionModel';
 import { getManagedMseAv1Support, formatManagedMseAv1 } from './utils/managedMseAv1';
@@ -123,116 +123,7 @@ export interface PlaybackOrchestratorRefs {
   resumePrimaryActionRef: RefObject<HTMLButtonElement | null>;
 }
 
-export interface V3PlayerLabeledValue {
-  label: string;
-  value: string;
-}
-
-export interface V3PlayerViewState {
-  channelName: string | null;
-  programmeTitle: string | null;
-  programmeDesc: string | null;
-  useOverlayLayout: boolean;
-  userIdle: boolean;
-  showCloseButton: boolean;
-  closeButtonLabel: string;
-  showStatsOverlay: boolean;
-  statsTitle: string;
-  statusLabel: string;
-  statusChipLabel: string;
-  statusChipState: 'live' | 'error' | 'idle';
-  channelLogoUrl: string | null;
-  statsRows: V3PlayerLabeledValue[];
-  showNativeBufferingMask: boolean;
-  hideVideoElement: boolean;
-  showStartupBackdrop: boolean;
-  showStartupOverlay: boolean;
-  showSpinnerCard: boolean;
-  useNativeBufferingSafeOverlay: boolean;
-  overlayStatusLabel: string;
-  overlayStatusState: 'live' | 'idle';
-  spinnerEyebrow: string;
-  spinnerLabel: string;
-  spinnerSupport: string;
-  startupPhaseSteps: Array<{ key: string; label: string; state: 'done' | 'active' | 'pending' }>;
-  startupProgressPercent: number;
-  startupElapsedLabel: string;
-  showOverlayStopAction: boolean;
-  overlayStopLabel: string;
-  videoClassName: string;
-  autoPlay: boolean;
-  error: AppError | null;
-  showErrorDetails: boolean;
-  errorRetryLabel: string;
-  errorTelemetryRows: V3PlayerLabeledValue[];
-  errorDetailToggleLabel: string | null;
-  errorSessionLabel: string;
-  showPlaybackChrome: boolean;
-  showSeekControls: boolean;
-  seekBack15mLabel: string;
-  seekBack60sLabel: string;
-  seekBack15sLabel: string;
-  seekForward15sLabel: string;
-  seekForward60sLabel: string;
-  seekForward15mLabel: string;
-  playPauseLabel: string;
-  playPauseIcon: string;
-  ttffBadgeLabel: string | null;
-  ttffTitle: string | null;
-  seekableStart: number;
-  seekableEnd: number;
-  startTimeDisplay: string;
-  endTimeDisplay: string;
-  currentPositionDisplay: string;
-  dvrPreviewBaseUrl: string | null;
-  dvrPreviewSegmentSeconds: number;
-  dvrPreviewWindowStartUnix: number | null;
-  windowDuration: number;
-  relativePosition: number;
-  isLiveMode: boolean;
-  isAtLiveEdge: boolean;
-  liveButtonLabel: string;
-  showServiceInput: boolean;
-  serviceRef: string;
-  showManualStartButton: boolean;
-  manualStartLabel: string;
-  manualStartDisabled: boolean;
-  showDvrModeButton: boolean;
-  dvrModeLabel: string;
-  showNativeFullscreenButton: boolean;
-  nativeFullscreenTitle: string;
-  nativeFullscreenLabel: string;
-  showFullscreenButton: boolean;
-  fullscreenLabel: string;
-  fullscreenActive: boolean;
-  showVolumeControls: boolean;
-  audioToggleLabel: string;
-  audioToggleIcon: string;
-  audioToggleActive: boolean;
-  canAdjustVolume: boolean;
-  volume: number;
-  deviceVolumeHint: string;
-  showPipButton: boolean;
-  pipTitle: string;
-  pipLabel: string;
-  pipActive: boolean;
-  statsLabel: string;
-  statsActive: boolean;
-  showStopButton: boolean;
-  stopLabel: string;
-  showResumeOverlay: boolean;
-  resumeTitle: string;
-  resumePrompt: string;
-  resumeActionLabel: string;
-  startOverLabel: string;
-  resumePositionSeconds: number | null;
-  explicitProfile: string;
-  audioTracks: PlayerAudioTrack[];
-  activeAudioTrack: number;
-  playback: {
-    durationSeconds: number | null;
-  };
-}
+export type { V3PlayerLabeledValue, V3PlayerViewState };
 
 export interface PlaybackOrchestratorActions {
   stopStream(skipClose?: boolean): Promise<void>;

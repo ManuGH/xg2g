@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { AppError } from '../../../types/errors';
-import type { PlayerAudioTrack, PlayerStatus, V3PlayerViewState, V3PlayerLabeledValue } from '../../../types/v3-player';
+import type { PlayerAudioTrack, PlayerStatus } from '../../../types/v3-player';
 import type { PlaybackTrace as PlaybackTraceContract } from '../../../client-ts';
 import type { PlaybackObservability } from '../orchestrator/observabilityFormatters';
 import {
@@ -10,6 +10,117 @@ import {
   formatRequestProfileLabel,
   formatTargetProfileSummary,
 } from '../orchestrator/observabilityFormatters';
+
+export interface V3PlayerLabeledValue {
+  label: string;
+  value: string;
+}
+
+export interface V3PlayerViewState {
+  channelName: string | null;
+  programmeTitle: string | null;
+  programmeDesc: string | null;
+  useOverlayLayout: boolean;
+  userIdle: boolean;
+  showCloseButton: boolean;
+  closeButtonLabel: string;
+  showStatsOverlay: boolean;
+  statsTitle: string;
+  statusLabel: string;
+  statusChipLabel: string;
+  statusChipState: 'live' | 'error' | 'idle';
+  channelLogoUrl: string | null;
+  statsRows: V3PlayerLabeledValue[];
+  showNativeBufferingMask: boolean;
+  hideVideoElement: boolean;
+  showStartupBackdrop: boolean;
+  showStartupOverlay: boolean;
+  showSpinnerCard: boolean;
+  useNativeBufferingSafeOverlay: boolean;
+  overlayStatusLabel: string;
+  overlayStatusState: 'live' | 'idle';
+  spinnerEyebrow: string;
+  spinnerLabel: string;
+  spinnerSupport: string;
+  startupPhaseSteps: Array<{ key: string; label: string; state: 'done' | 'active' | 'pending' }>;
+  startupProgressPercent: number;
+  startupElapsedLabel: string;
+  showOverlayStopAction: boolean;
+  overlayStopLabel: string;
+  videoClassName: string;
+  autoPlay: boolean;
+  error: AppError | null;
+  showErrorDetails: boolean;
+  errorRetryLabel: string;
+  errorTelemetryRows: V3PlayerLabeledValue[];
+  errorDetailToggleLabel: string | null;
+  errorSessionLabel: string;
+  showPlaybackChrome: boolean;
+  showSeekControls: boolean;
+  seekBack15mLabel: string;
+  seekBack60sLabel: string;
+  seekBack15sLabel: string;
+  seekForward15sLabel: string;
+  seekForward60sLabel: string;
+  seekForward15mLabel: string;
+  playPauseLabel: string;
+  playPauseIcon: string;
+  ttffBadgeLabel: string | null;
+  ttffTitle: string | null;
+  seekableStart: number;
+  seekableEnd: number;
+  startTimeDisplay: string;
+  endTimeDisplay: string;
+  currentPositionDisplay: string;
+  dvrPreviewBaseUrl: string | null;
+  dvrPreviewSegmentSeconds: number;
+  dvrPreviewWindowStartUnix: number | null;
+  windowDuration: number;
+  relativePosition: number;
+  isLiveMode: boolean;
+  isAtLiveEdge: boolean;
+  liveButtonLabel: string;
+  showServiceInput: boolean;
+  serviceRef: string;
+  showManualStartButton: boolean;
+  manualStartLabel: string;
+  manualStartDisabled: boolean;
+  showDvrModeButton: boolean;
+  dvrModeLabel: string;
+  showNativeFullscreenButton: boolean;
+  nativeFullscreenTitle: string;
+  nativeFullscreenLabel: string;
+  showFullscreenButton: boolean;
+  fullscreenLabel: string;
+  fullscreenActive: boolean;
+  showVolumeControls: boolean;
+  audioToggleLabel: string;
+  audioToggleIcon: string;
+  audioToggleActive: boolean;
+  canAdjustVolume: boolean;
+  volume: number;
+  deviceVolumeHint: string;
+  showPipButton: boolean;
+  pipTitle: string;
+  pipLabel: string;
+  pipActive: boolean;
+  statsLabel: string;
+  statsActive: boolean;
+  showStopButton: boolean;
+  stopLabel: string;
+  showResumeOverlay: boolean;
+  resumeTitle: string;
+  resumePrompt: string;
+  resumeActionLabel: string;
+  startOverLabel: string;
+  resumePositionSeconds: number | null;
+  explicitProfile: string;
+  audioTracks: PlayerAudioTrack[];
+  activeAudioTrack: number;
+  playback: {
+    durationSeconds: number | null;
+  };
+}
 
 export interface BuildViewStateInput {
   channel: { name?: string; logoUrl?: string | null } | undefined;
