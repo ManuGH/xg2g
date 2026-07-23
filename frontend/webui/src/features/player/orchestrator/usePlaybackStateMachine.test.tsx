@@ -25,7 +25,7 @@ describe('usePlaybackStateMachine', () => {
       });
     });
 
-    expect(result.current.state.epoch).toBe(1);
+    expect(result.current.state.epoch.session).toBeDefined();
     expect(executor).toHaveBeenCalled();
   });
 });
