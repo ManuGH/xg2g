@@ -268,7 +268,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "recording_playback.playback_policy", Env: "XG2G_RECORDING_PLAYBACK_POLICY", FieldPath: "RecordingPlaybackPolicy", Profile: ProfileAdvanced, Status: StatusActive, Default: "auto"},
 		{Path: "recording_playback.stable_window", Env: "XG2G_RECORDING_STABLE_WINDOW", FieldPath: "RecordingStableWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Second},
 		{Path: "recording_playback.mappings", Env: "XG2G_RECORDINGS_MAP", FieldPath: "RecordingPathMappings", Profile: ProfileAdvanced, Status: StatusActive},
-		{Path: "recordings.strict_target_required", Env: "XG2G_RECORDINGS_STRICT_TARGET_REQUIRED", FieldPath: "RecordingStrictTargetRequired", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "recordings.strict_target_required", Env: "XG2G_RECORDINGS_STRICT_TARGET_REQUIRED", FieldPath: "RecordingStrictTargetRequired", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
 		{Path: "recordings.target_signing_key", Env: "XG2G_RECORDINGS_TARGET_SIGNING_KEY", FieldPath: "RecordingTargetSigningKey", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 		{Path: "recordings.target_signing_key_previous", Env: "XG2G_RECORDINGS_TARGET_SIGNING_KEY_PREVIOUS", FieldPath: "RecordingTargetSigningKeyPrevious", Profile: ProfileAdvanced, Status: StatusActive, Default: ""},
 
