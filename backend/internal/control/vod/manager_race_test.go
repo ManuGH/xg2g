@@ -26,7 +26,7 @@ func TestStateGenGuard_Deterministic(t *testing.T) {
 		State:    ArtifactStatePreparing,
 		StateGen: 10,
 	}
-	mgr.touch(&meta) // Becomes Gen 11
+	mgr.touch(id, &meta) // Becomes Gen 11
 	mgr.metadata[id] = meta
 	capturedGen := meta.StateGen // 11
 	mgr.mu.Unlock()
@@ -46,7 +46,7 @@ func TestStateGenGuard_Deterministic(t *testing.T) {
 	// Reset to PREPARING
 	mgr.mu.Lock()
 	meta.State = ArtifactStatePreparing
-	mgr.touch(&meta) // Gen increments (lets say 12 -> 13)
+	mgr.touch(id, &meta) // Gen increments (lets say 12 -> 13)
 	mgr.metadata[id] = meta
 	capturedGen = meta.StateGen
 	mgr.mu.Unlock()
@@ -56,7 +56,7 @@ func TestStateGenGuard_Deterministic(t *testing.T) {
 	mgr.mu.Lock()
 	meta = mgr.metadata[id]
 	meta.State = ArtifactStateReady
-	mgr.touch(&meta) // Gen 13 -> 14
+	mgr.touch(id, &meta) // Gen 13 -> 14
 	mgr.metadata[id] = meta
 	expectedFinalGen := meta.StateGen // Capture expected constant (14)
 	mgr.mu.Unlock()
@@ -79,7 +79,7 @@ func TestTouchHelper(t *testing.T) {
 	meta := Metadata{StateGen: 1}
 
 	start := time.Now().UnixNano()
-	mgr.touch(&meta)
+	mgr.touch("test-id", &meta)
 
 	require.Equal(t, uint64(2), meta.StateGen)
 	require.GreaterOrEqual(t, meta.UpdatedAt, start)

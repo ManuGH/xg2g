@@ -1,10 +1,15 @@
 package vod
 
 import (
+	"context"
 	"math"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/vod/fsm"
+	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/rs/zerolog/log"
 )
 
 // GetMetadata returns cached metadata for an artifact.
@@ -101,6 +106,7 @@ func (m *Manager) SeedMetadata(id string, meta Metadata) {
 		m.metadata = make(map[string]Metadata)
 	}
 	m.metadata[id] = meta
+	m.syncArtifactStore(id, meta)
 }
 
 // MarkUnknown safely transitions state to UNKNOWN without wiping other fields.
@@ -110,13 +116,13 @@ func (m *Manager) MarkUnknown(id string) {
 
 	if meta, ok := m.metadata[id]; ok {
 		meta.State = ArtifactStateUnknown
-		m.touch(&meta)
+		m.touch(id, &meta)
 		m.metadata[id] = meta
 	} else {
 		meta := Metadata{
 			State: ArtifactStateUnknown,
 		}
-		m.touch(&meta)
+		m.touch(id, &meta)
 		m.metadata[id] = meta
 	}
 }
@@ -136,11 +142,11 @@ func (m *Manager) DemoteOnOpenFailure(id string, err error) {
 	// The next loop will see PREPARING and return 503 strictly.
 	meta.State = ArtifactStatePreparing
 	meta.Error = "reconcile: open failed in READY state: " + err.Error()
-	m.touch(&meta)
+	m.touch(id, &meta)
 	if meta.ResolvedPath == "" && m.pathMapper == nil {
 		meta.State = ArtifactStateFailed
 		meta.Error = "reconcile: missing input path for probe"
-		m.touch(&meta)
+		m.touch(id, &meta)
 		m.metadata[id] = meta
 		return
 	}
@@ -165,7 +171,7 @@ func (m *Manager) MarkPreparingIfState(id string, expected ArtifactState, reason
 	if reason != "" {
 		meta.Error = reason
 	}
-	m.touch(&meta)
+	m.touch(id, &meta)
 	m.metadata[id] = meta
 
 	return meta, true
@@ -207,15 +213,67 @@ func (m *Manager) SetResolvedPathIfEmpty(id string, resolved string) bool {
 		return false
 	}
 	meta.ResolvedPath = resolved
-	m.touch(&meta)
+	m.touch(id, &meta)
 	m.metadata[id] = meta
 	return true
 }
 
-// touch updates timestamp and generation
-func (m *Manager) touch(meta *Metadata) {
+// touch updates timestamp and generation, and syncs FSM to SQLite store
+func (m *Manager) touch(id string, meta *Metadata) {
 	meta.UpdatedAt = time.Now().UnixNano() // Use Nano for higher resolution
 	meta.StateGen++
+	m.syncArtifactStore(id, *meta)
+}
+
+func parseArtifactRef(id string) (string, string) {
+	parts := strings.SplitN(id, ":", 2)
+	if len(parts) == 2 && parts[1] != "" {
+		return parts[0], parts[1]
+	}
+	return id, "default"
+}
+
+func (m *Manager) syncArtifactStore(metaID string, meta Metadata) {
+	if m == nil || m.artifactStore == nil {
+		return
+	}
+
+	recordingRef, variantHash := parseArtifactRef(metaID)
+	fsmState := fsm.StatePreparing
+	switch meta.State {
+	case ArtifactStateReady:
+		fsmState = fsm.StateReady
+	case ArtifactStateFailed:
+		fsmState = fsm.StateFailed
+	case ArtifactStatePreparing, ArtifactStateUnknown, ArtifactStateMissing:
+		fsmState = fsm.StatePreparing
+	}
+
+	art := &fsm.Artifact{
+		ID:             metaID,
+		RecordingRef:   recordingRef,
+		VariantHash:    variantHash,
+		State:          fsmState,
+		FailureReason:  meta.Error,
+		ManifestPath:   meta.ResolvedPath,
+		SegmentPattern: meta.PlaylistPath,
+		CreatedAt:      time.Unix(0, meta.UpdatedAt),
+		UpdatedAt:      time.Unix(0, meta.UpdatedAt),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := m.artifactStore.UpsertArtifact(ctx, art); err != nil {
+		log.Warn().Err(err).Str("id", metaID).Msg("VOD artifact dual-write to SQLite failed")
+	}
+
+	// Telemetry divergence check
+	if existing, err := m.artifactStore.GetArtifact(ctx, recordingRef, variantHash); err == nil {
+		if string(existing.State) != string(fsmState) {
+			metrics.IncVODStateDivergence(string(meta.State), string(existing.State))
+		}
+	}
 }
 
 // revertStateGuard atomically reverts state if generation matches (race guard)
@@ -229,7 +287,7 @@ func (m *Manager) revertStateGuard(id string, guardedGen uint64, targetState Art
 		current.StateGen == guardedGen {
 
 		current.State = targetState
-		m.touch(&current)
+		m.touch(id, &current)
 		m.metadata[id] = current
 	}
 }
@@ -247,7 +305,7 @@ func (m *Manager) RevertPreparingIfGen(id string, guardedGen uint64, targetState
 		if reason != "" {
 			current.Error = reason
 		}
-		m.touch(&current)
+		m.touch(id, &current)
 		m.metadata[id] = current
 		return true
 	}
@@ -268,7 +326,7 @@ func (m *Manager) MarkFailed(id string, reason string) {
 
 	meta.State = ArtifactStateFailed
 	meta.Error = reason
-	m.touch(&meta)
+	m.touch(id, &meta)
 	m.metadata[id] = meta
 }
 
@@ -300,7 +358,7 @@ func (m *Manager) MarkFailure(id string, state ArtifactState, reason string, res
 	if fp != nil {
 		meta.Fingerprint = *fp
 	}
-	m.touch(&meta)
+	m.touch(id, &meta)
 	m.metadata[id] = meta
 }
 
@@ -322,7 +380,7 @@ func (m *Manager) InvalidateTruth(id string) {
 	meta.Height = 0
 	meta.FPS = 0
 	meta.Interlaced = false
-	m.touch(&meta)
+	m.touch(id, &meta)
 	m.metadata[id] = meta
 }
 
@@ -396,6 +454,6 @@ func (m *Manager) MarkProbed(id string, resolvedPath string, info *StreamInfo, f
 	// Clear any previous error
 	meta.Error = ""
 
-	m.touch(&meta)
+	m.touch(id, &meta)
 	m.metadata[id] = meta
 }

@@ -4,32 +4,42 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rs/zerolog/log"
-	"golang.org/x/sync/singleflight"
 	"sort"
 	"sync"
+
+	"github.com/ManuGH/xg2g/internal/domain/vod/fsm"
+	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/singleflight"
 )
 
 // Manager handles VOD build jobs.
 type Manager struct {
-	runner     Runner
-	prober     Prober
-	mu         sync.Mutex
-	jobs       map[string]*BuildMonitor
-	metadata   map[string]Metadata // Cached artifact metadata
-	probeCh    chan probeRequest
-	workerWg   sync.WaitGroup
-	buildWg    sync.WaitGroup
-	sfg        singleflight.Group
-	pathMapper PathMapper
-	started    bool
-	ctx        context.Context
-	cancel     context.CancelFunc
+	runner        Runner
+	prober        Prober
+	mu            sync.Mutex
+	jobs          map[string]*BuildMonitor
+	metadata      map[string]Metadata // Cached artifact metadata
+	artifactStore ArtifactStore       // SQLite FSM store (dual-write)
+	probeCh       chan probeRequest
+	workerWg      sync.WaitGroup
+	buildWg       sync.WaitGroup
+	sfg           singleflight.Group
+	pathMapper    PathMapper
+	started       bool
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 // PathMapper abstracts local path resolution.
 type PathMapper interface {
 	ResolveLocalExisting(receiverPath string) (string, bool)
+}
+
+// ArtifactStore abstracts artifact state persistence for dual-write.
+type ArtifactStore interface {
+	UpsertArtifact(ctx context.Context, a *fsm.Artifact) error
+	GetArtifact(ctx context.Context, recordingRef, variantHash string) (*fsm.Artifact, error)
+	DeleteArtifact(ctx context.Context, recordingRef, variantHash string) error
 }
 
 func NewManager(runner Runner, prober Prober, pathMapper PathMapper) (*Manager, error) {
@@ -53,6 +63,13 @@ func NewManager(runner Runner, prober Prober, pathMapper PathMapper) (*Manager, 
 	}
 
 	return m, nil
+}
+
+// SetArtifactStore configures the SQLite artifact state store for dual-write.
+func (m *Manager) SetArtifactStore(store ArtifactStore) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.artifactStore = store
 }
 
 // Shutdown stops the manager and cancels all background contexts.
