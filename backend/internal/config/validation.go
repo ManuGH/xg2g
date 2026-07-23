@@ -79,6 +79,8 @@ func Validate(cfg AppConfig) error {
 		}
 	}
 
+	validateConfigGenerated(v, cfg)
+
 	validateBasicSettings(v, cfg)
 	validateNetworkSettings(v, cfg)
 	validateConnectivity(v, cfg)
@@ -122,10 +124,6 @@ func validateBasicSettings(v *validate.Validator, cfg AppConfig) {
 
 	v.Directory("DataDir", cfg.DataDir, false)
 
-	if cfg.LogLevel != "" {
-		v.OneOf("LogLevel", strings.ToLower(cfg.LogLevel), []string{"debug", "info", "warn", "error", "fatal", "panic", "disabled", "trace"})
-	}
-
 	if cfg.Server.ReadTimeout < 0 {
 		v.AddError("Server.ReadTimeout", "must be >= 0", cfg.Server.ReadTimeout)
 	}
@@ -140,14 +138,6 @@ func validateBasicSettings(v *validate.Validator, cfg AppConfig) {
 	}
 	if cfg.Server.ShutdownTimeout != 0 && cfg.Server.ShutdownTimeout < 3*time.Second {
 		v.AddError("Server.ShutdownTimeout", "must be >= 3s", cfg.Server.ShutdownTimeout)
-	}
-
-	if cfg.EPGEnabled {
-		v.Range("EPGDays", cfg.EPGDays, 1, 14)
-		v.Range("EPGMaxConcurrency", cfg.EPGMaxConcurrency, 1, 10)
-		v.Range("EPGTimeoutMS", cfg.EPGTimeoutMS, 100, 60000)
-		v.Range("EPGRetries", cfg.EPGRetries, 0, 5)
-		v.Range("FuzzyMax", cfg.FuzzyMax, 0, 10)
 	}
 
 	v.Range("Enigma2.Retries", cfg.Enigma2.Retries, 0, 10)
