@@ -990,7 +990,7 @@
     "recordings": {
       "properties": {
         "strict_target_required": {
-          "default": false,
+          "default": true,
           "type": "boolean"
         },
         "target_signing_key": {
