@@ -167,8 +167,13 @@ quality-gates-online: verify-generated-artifacts verify-release-output-contract 
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: lint test verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test ## Run the local PR validation bundle used by CI
+ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test test-pr ## PR gate check bundle (fast & deterministic)
 	@echo "✅ PR gate bundle passed"
+
+test-pr: ## Run deterministic unit tests for PR gate (short mode, no binary dependencies)
+	@echo "Running PR gate unit tests..."
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test -short ./... -count=1 -timeout=$(GO_TEST_TIMEOUT)
+	@echo "✅ PR gate unit tests passed"
 
 ci-nightly: quality-gates-online webui-test ## Run the local deep validation bundle
 	@echo "✅ Nightly gate bundle passed"
