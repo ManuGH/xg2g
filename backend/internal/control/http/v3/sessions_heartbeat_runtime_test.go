@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
@@ -89,13 +90,13 @@ func TestSessionHeartbeat_TicksRuntimePolicyLoop(t *testing.T) {
 	require.Equal(t, string(runtimepolicy.PlaybackStepH264720p), updated.ContextData[model.CtxKeyRuntimeCurrentStep])
 	require.NotEmpty(t, updated.ContextData[model.CtxKeyRuntimePolicyState])
 	require.NotEmpty(t, updated.ContextData[model.CtxKeyRuntimePolicyReplay])
-	timeline := loadSessionRuntimeTimeline(updated)
+	timeline := v3sessions.LoadSessionRuntimeTimeline(updated)
 	require.Len(t, timeline, 1)
 	require.Equal(t, runtimepolicy.PolicyStepDown, timeline[0].PolicyAction)
 	require.Equal(t, runtimepolicy.SessionTransitionScheduleStepDown, timeline[0].PlannedTransition)
 	require.Equal(t, runtimepolicy.SessionTransitionScheduleStepDown, timeline[0].ExecutedTransition)
 	require.Equal(t, runtimepolicy.PlaybackStepH264720p, timeline[0].ActiveStep)
-	replay := loadSessionRuntimeReplay(updated)
+	replay := v3sessions.LoadSessionRuntimeReplay(updated)
 	require.NotNil(t, replay)
 	require.Len(t, replay.Ticks, 1)
 	require.Equal(t, runtimepolicy.PolicyStepDown, replay.Ticks[0].Expected.Action)

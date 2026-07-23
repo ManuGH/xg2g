@@ -12,20 +12,6 @@ import (
 	"time"
 )
 
-func traceFFmpegPlanValue(trace *model.PlaybackTrace, selector func(*model.FFmpegPlanTrace) string) string {
-	if trace == nil || trace.FFmpegPlan == nil {
-		return ""
-	}
-	return selector(trace.FFmpegPlan)
-}
-
-func traceClientValue(trace *model.PlaybackTrace, selector func(*model.PlaybackClientSnapshot) string) string {
-	if trace == nil || trace.Client == nil {
-		return ""
-	}
-	return selector(trace.Client)
-}
-
 func mapPlaybackTraceHLSDebug(trace *model.PlaybackTrace) *PlaybackTraceHlsDebug {
 	if trace == nil || trace.HLS == nil {
 		return nil
@@ -116,11 +102,11 @@ func mapSessionPlaybackTrace(requestID string, session *model.SessionRecord, hls
 	if trace == nil {
 		trace = &model.PlaybackTrace{}
 	}
-	runtimeState := loadSessionRuntimePolicyState(session)
-	runtimeTimeline := loadSessionRuntimeTimeline(session)
-	runtimeReplay := loadSessionRuntimeReplay(session)
+	runtimeState := v3sessions.LoadSessionRuntimePolicyState(session)
+	runtimeTimeline := v3sessions.LoadSessionRuntimeTimeline(session)
+	runtimeReplay := v3sessions.LoadSessionRuntimeReplay(session)
 	if runtimeReplay == nil {
-		runtimeReplay = buildSessionRuntimePolicyReplay(session)
+		runtimeReplay = v3sessions.BuildSessionRuntimePolicyReplay(session)
 	}
 
 	requestProfile := strings.TrimSpace(trace.RequestProfile)

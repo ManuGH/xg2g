@@ -313,7 +313,7 @@ func TestBuildSessionRuntimePolicyReplay_FromTimeline(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	replay := buildSessionRuntimePolicyReplay(&model.SessionRecord{
+	replay := v3sessions.BuildSessionRuntimePolicyReplay(&model.SessionRecord{
 		SessionID:  "550e8400-e29b-41d4-a716-446655440004",
 		ServiceRef: "1:0:1:445D:453:1:C00000:0:0:0:",
 		ContextData: map[string]string{
