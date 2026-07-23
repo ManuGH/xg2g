@@ -13,36 +13,13 @@ import (
 // ENV variables have the highest precedence.
 // Uses consistent ParseBool/ParseInt/ParseDuration helpers from env.go.
 func (l *Loader) mergeEnvConfig(cfg *AppConfig) {
-	l.mergeEnvCore(cfg)
-	l.mergeEnvGlobal(cfg)
-	l.mergeEnvBouquet(cfg)
-	l.mergeEnvEPG(cfg)
+	l.mergeEnvConfigGenerated(cfg)
 	l.mergeEnvAPI(cfg)
-	l.mergeEnvServer(cfg)
 	l.mergeEnvMetrics(cfg)
-	l.mergeEnvPicons(cfg)
-	l.mergeEnvTLS(cfg)
-	l.mergeEnvNetwork(cfg)
 	l.mergeEnvConnectivity(cfg)
-	l.mergeEnvFeatureFlags(cfg)
-	l.mergeEnvCanonicalEngine(cfg)
-	l.mergeEnvCanonicalEnigma2(cfg)
-	l.mergeEnvTunerSlots(cfg)
-	l.mergeEnvResilience(cfg)
-	l.mergeEnvSessions(cfg)
-	l.mergeEnvCanonicalStore(cfg)
-	l.mergeEnvCanonicalHLS(cfg)
-	l.mergeEnvCanonicalFFmpeg(cfg)
-	l.mergeEnvRateLimiting(cfg)
-	l.mergeEnvTrustedProxies(cfg)
-	l.mergeEnvStreaming(cfg)
-	l.mergeEnvPlayback(cfg)
-	l.mergeEnvPlannerShadow(cfg)
-	l.mergeEnvPlannerReceipt(cfg)
-	l.mergeEnvMonetization(cfg)
 	l.mergeEnvRecordings(cfg)
-	l.mergeEnvVerification(cfg)
 	l.mergeEnvVOD(cfg)
+	l.mergeEnvTunerSlots(cfg)
 }
 
 // mergeEnvVOD applies the XG2G_VOD_* environment overrides to the flat VOD fields (the
@@ -66,36 +43,6 @@ func (l *Loader) mergeEnvVOD(cfg *AppConfig) {
 	cfg.VODStallTimeout = l.envDuration("XG2G_VOD_STALL_TIMEOUT", cfg.VODStallTimeout)
 	cfg.VODMaxConcurrent = l.envInt("XG2G_VOD_MAX_CONCURRENT", cfg.VODMaxConcurrent)
 	cfg.VODCacheTTL = l.envDuration("XG2G_VOD_CACHE_TTL", cfg.VODCacheTTL)
-}
-
-func (l *Loader) mergeEnvCore(cfg *AppConfig) {
-	// String values (direct assignment)
-	cfg.Version = l.envString("XG2G_VERSION", cfg.Version)
-	cfg.DataDir = l.envString("XG2G_DATA", cfg.DataDir)
-	cfg.LogLevel = l.envString("XG2G_LOG_LEVEL", cfg.LogLevel)
-	cfg.LogService = l.envString("XG2G_LOG_SERVICE", cfg.LogService)
-}
-
-func (l *Loader) mergeEnvGlobal(cfg *AppConfig) {
-	// Global strict mode
-	cfg.ConfigStrict = l.envBool("XG2G_CONFIG_STRICT", cfg.ConfigStrict)
-}
-
-func (l *Loader) mergeEnvBouquet(cfg *AppConfig) {
-	// Bouquet
-	cfg.Bouquet = l.envString("XG2G_BOUQUET", cfg.Bouquet)
-}
-
-func (l *Loader) mergeEnvEPG(cfg *AppConfig) {
-	// EPG
-	cfg.EPGEnabled = l.envBool("XG2G_EPG_ENABLED", cfg.EPGEnabled)
-	cfg.EPGDays = l.envInt("XG2G_EPG_DAYS", cfg.EPGDays)
-	cfg.EPGMaxConcurrency = l.envInt("XG2G_EPG_MAX_CONCURRENCY", cfg.EPGMaxConcurrency)
-	cfg.EPGTimeoutMS = l.envInt("XG2G_EPG_TIMEOUT_MS", cfg.EPGTimeoutMS)
-	cfg.EPGSource = l.envString("XG2G_EPG_SOURCE", cfg.EPGSource)
-	cfg.EPGRetries = l.envInt("XG2G_EPG_RETRIES", cfg.EPGRetries)
-	cfg.FuzzyMax = l.envInt("XG2G_FUZZY_MAX", cfg.FuzzyMax)
-	cfg.XMLTVPath = l.envString("XG2G_XMLTV", cfg.XMLTVPath)
 }
 
 func (l *Loader) mergeEnvAPI(cfg *AppConfig) {
@@ -125,14 +72,6 @@ func (l *Loader) mergeEnvAPI(cfg *AppConfig) {
 	}
 }
 
-func (l *Loader) mergeEnvServer(cfg *AppConfig) {
-	cfg.Server.ReadTimeout = l.envDuration("XG2G_SERVER_READ_TIMEOUT", cfg.Server.ReadTimeout)
-	cfg.Server.WriteTimeout = l.envDuration("XG2G_SERVER_WRITE_TIMEOUT", cfg.Server.WriteTimeout)
-	cfg.Server.IdleTimeout = l.envDuration("XG2G_SERVER_IDLE_TIMEOUT", cfg.Server.IdleTimeout)
-	cfg.Server.MaxHeaderBytes = l.envInt("XG2G_SERVER_MAX_HEADER_BYTES", cfg.Server.MaxHeaderBytes)
-	cfg.Server.ShutdownTimeout = l.envDuration("XG2G_SERVER_SHUTDOWN_TIMEOUT", cfg.Server.ShutdownTimeout)
-}
-
 func (l *Loader) mergeEnvMetrics(cfg *AppConfig) {
 	// Metrics
 	metricsAddr := l.envString("XG2G_METRICS_LISTEN", "")
@@ -140,29 +79,6 @@ func (l *Loader) mergeEnvMetrics(cfg *AppConfig) {
 		cfg.MetricsAddr = metricsAddr
 		cfg.MetricsEnabled = true
 	}
-}
-
-func (l *Loader) mergeEnvPicons(cfg *AppConfig) {
-	// Picons
-	cfg.PiconBase = l.envString("XG2G_PICON_BASE", cfg.PiconBase)
-}
-
-func (l *Loader) mergeEnvTLS(cfg *AppConfig) {
-	// TLS
-	cfg.TLSEnabled = l.envBool("XG2G_TLS_ENABLED", cfg.TLSEnabled)
-	cfg.TLSCert = l.envString("XG2G_TLS_CERT", cfg.TLSCert)
-	cfg.TLSKey = l.envString("XG2G_TLS_KEY", cfg.TLSKey)
-	cfg.ForceHTTPS = l.envBool("XG2G_FORCE_HTTPS", cfg.ForceHTTPS)
-}
-
-func (l *Loader) mergeEnvNetwork(cfg *AppConfig) {
-	// Network outbound policy
-	cfg.Network.Outbound.Enabled = l.envBool("XG2G_OUTBOUND_ENABLED", cfg.Network.Outbound.Enabled)
-	cfg.Network.Outbound.Allow.Hosts = parseCommaSeparated(l.envString("XG2G_OUTBOUND_ALLOW_HOSTS", ""), cfg.Network.Outbound.Allow.Hosts)
-	cfg.Network.Outbound.Allow.CIDRs = parseCommaSeparated(l.envString("XG2G_OUTBOUND_ALLOW_CIDRS", ""), cfg.Network.Outbound.Allow.CIDRs)
-	cfg.Network.Outbound.Allow.Ports = parseCommaSeparatedInts(l.envString("XG2G_OUTBOUND_ALLOW_PORTS", ""), cfg.Network.Outbound.Allow.Ports)
-	cfg.Network.Outbound.Allow.Schemes = parseCommaSeparated(l.envString("XG2G_OUTBOUND_ALLOW_SCHEMES", ""), cfg.Network.Outbound.Allow.Schemes)
-	cfg.Network.LAN.Allow.CIDRs = parseCommaSeparated(l.envString("XG2G_LAN_ALLOW_CIDRS", ""), cfg.Network.LAN.Allow.CIDRs)
 }
 
 func (l *Loader) mergeEnvConnectivity(cfg *AppConfig) {
@@ -189,44 +105,6 @@ func (l *Loader) mergeEnvConnectivity(cfg *AppConfig) {
 	cfg.Connectivity.PublishedEndpoints = clonePublishedEndpointConfigs(parsed)
 }
 
-func (l *Loader) mergeEnvFeatureFlags(cfg *AppConfig) {
-	// Feature Flags
-	cfg.ReadyStrict = l.envBool("XG2G_READY_STRICT", cfg.ReadyStrict)
-}
-
-func (l *Loader) mergeEnvCanonicalEngine(cfg *AppConfig) {
-	// CANONICAL ENGINE CONFIG
-	cfg.Engine.Enabled = l.envBool("XG2G_ENGINE_ENABLED", cfg.Engine.Enabled)
-	cfg.Engine.Mode = l.envString("XG2G_ENGINE_MODE", cfg.Engine.Mode)
-	cfg.Engine.IdleTimeout = l.envDuration("XG2G_ENGINE_IDLE_TIMEOUT", cfg.Engine.IdleTimeout)
-	cfg.Engine.CPUThresholdScale = l.envFloat("XG2G_ENGINE_CPU_SCALE", cfg.Engine.CPUThresholdScale)
-	cfg.Engine.MaxPool = l.envInt("XG2G_ENGINE_MAX_POOL", cfg.Engine.MaxPool)
-	cfg.Engine.GPULimit = l.envInt("XG2G_ENGINE_GPU_LIMIT", cfg.Engine.GPULimit)
-}
-
-func (l *Loader) mergeEnvCanonicalEnigma2(cfg *AppConfig) {
-	// CANONICAL ENIGMA2 CONFIG (Move up for discovery)
-	cfg.Enigma2.BaseURL = l.envString("XG2G_E2_HOST", cfg.Enigma2.BaseURL)
-	cfg.Enigma2.Username = l.envString("XG2G_E2_USER", cfg.Enigma2.Username)
-	cfg.Enigma2.Password = l.envString("XG2G_E2_PASS", cfg.Enigma2.Password)
-	cfg.Enigma2.AuthMode = strings.ToLower(strings.TrimSpace(l.envString("XG2G_E2_AUTH_MODE", cfg.Enigma2.AuthMode)))
-	cfg.Enigma2.Timeout = l.envDuration("XG2G_E2_TIMEOUT", cfg.Enigma2.Timeout)
-	cfg.Enigma2.ResponseHeaderTimeout = l.envDuration("XG2G_E2_RESPONSE_HEADER_TIMEOUT", cfg.Enigma2.ResponseHeaderTimeout)
-	cfg.Enigma2.TuneTimeout = l.envDuration("XG2G_E2_TUNE_TIMEOUT", cfg.Enigma2.TuneTimeout)
-	cfg.Enigma2.Retries = l.envInt("XG2G_E2_RETRIES", cfg.Enigma2.Retries)
-	cfg.Enigma2.Backoff = l.envDuration("XG2G_E2_BACKOFF", cfg.Enigma2.Backoff)
-	cfg.Enigma2.MaxBackoff = l.envDuration("XG2G_E2_MAX_BACKOFF", cfg.Enigma2.MaxBackoff)
-	cfg.Enigma2.StreamPort = l.envInt("XG2G_E2_STREAM_PORT", cfg.Enigma2.StreamPort)
-	cfg.Enigma2.UseWebIFStreams = l.envBool("XG2G_E2_USE_WEBIF_STREAMS", cfg.Enigma2.UseWebIFStreams)
-	cfg.Enigma2.RateLimit = l.envInt("XG2G_E2_RATE_LIMIT", cfg.Enigma2.RateLimit)
-	cfg.Enigma2.RateBurst = l.envInt("XG2G_E2_RATE_BURST", cfg.Enigma2.RateBurst)
-	cfg.Enigma2.UserAgent = l.envString("XG2G_E2_USER_AGENT", cfg.Enigma2.UserAgent)
-	cfg.Enigma2.AnalyzeDuration = l.envString("XG2G_E2_ANALYZE_DURATION", cfg.Enigma2.AnalyzeDuration)
-	cfg.Enigma2.ProbeSize = l.envString("XG2G_E2_PROBE_SIZE", cfg.Enigma2.ProbeSize)
-	cfg.Enigma2.FallbackTo8001 = l.envBool("XG2G_E2_FALLBACK_TO_8001", cfg.Enigma2.FallbackTo8001)
-	cfg.Enigma2.PreflightTimeout = l.envDuration("XG2G_E2_PREFLIGHT_TIMEOUT", cfg.Enigma2.PreflightTimeout)
-}
-
 func (l *Loader) mergeEnvTunerSlots(cfg *AppConfig) {
 	// Tuner Slots: Manual Override only (Auto-Discovery moved to runtime bootstrap)
 	if rawSlots, ok := l.envLookup("XG2G_TUNER_SLOTS"); ok && strings.TrimSpace(rawSlots) != "" {
@@ -234,115 +112,6 @@ func (l *Loader) mergeEnvTunerSlots(cfg *AppConfig) {
 			cfg.Engine.TunerSlots = slots
 		}
 	}
-}
-
-func (l *Loader) mergeEnvSessions(cfg *AppConfig) {
-	// Sessions lease lifecycle (ADR-009). Env overrides file/default.
-	cfg.Sessions.LeaseTTL = l.envDuration("XG2G_SESSION_LEASE_TTL", cfg.Sessions.LeaseTTL)
-	cfg.Sessions.HeartbeatInterval = l.envDuration("XG2G_SESSION_HEARTBEAT_INTERVAL", cfg.Sessions.HeartbeatInterval)
-	cfg.Sessions.ExpiryCheckInterval = l.envDuration("XG2G_SESSION_EXPIRY_CHECK_INTERVAL", cfg.Sessions.ExpiryCheckInterval)
-}
-
-func (l *Loader) mergeEnvResilience(cfg *AppConfig) {
-	// Sprint 1: Resilience Core ENV overrides
-	if v := l.envInt("XG2G_MAX_SESSIONS", 0); v > 0 {
-		cfg.Limits.MaxSessions = v
-	}
-	// 0 is a valid value for XG2G_MAX_TRANSCODES (disable transcodes)
-	if v := l.envInt("XG2G_MAX_TRANSCODES", -1); v >= 0 {
-		cfg.Limits.MaxTranscodes = v
-	}
-	// Timeouts env overrides (resilience concern, not canonical ffmpeg config)
-	cfg.Timeouts.TranscodeStart = l.envDuration("XG2G_TRANSCODE_START_TIMEOUT", cfg.Timeouts.TranscodeStart)
-	cfg.Timeouts.TranscodeNoProgress = l.envDuration("XG2G_TRANSCODE_NO_PROGRESS_TIMEOUT", cfg.Timeouts.TranscodeNoProgress)
-}
-
-func (l *Loader) mergeEnvCanonicalStore(cfg *AppConfig) {
-	// CANONICAL STORE CONFIG
-	cfg.Store.Backend = l.envString("XG2G_STORE_BACKEND", cfg.Store.Backend)
-	cfg.Store.Path = l.envString("XG2G_STORE_PATH", cfg.Store.Path)
-}
-
-func (l *Loader) mergeEnvCanonicalHLS(cfg *AppConfig) {
-	// CANONICAL HLS CONFIG
-	cfg.HLS.Root = l.envString("XG2G_HLS_ROOT", cfg.HLS.Root)
-	cfg.HLS.DVRWindow = l.envDuration("XG2G_HLS_DVR_WINDOW", cfg.HLS.DVRWindow)
-	cfg.HLS.SegmentSeconds = l.envInt("XG2G_HLS_SEGMENT_SECONDS", cfg.HLS.SegmentSeconds)
-	cfg.HLS.ReadySegments = l.envInt("XG2G_HLS_READY_SEGMENTS", cfg.HLS.ReadySegments)
-	cfg.HLS.LowLatency = l.envBool("XG2G_HLS_LOW_LATENCY", cfg.HLS.LowLatency)
-}
-
-func (l *Loader) mergeEnvCanonicalFFmpeg(cfg *AppConfig) {
-	// CANONICAL FFMPEG CONFIG
-	cfg.FFmpeg.Bin = l.envString("XG2G_FFMPEG_BIN", cfg.FFmpeg.Bin)
-	cfg.FFmpeg.FFprobeBin = l.envString("XG2G_FFPROBE_BIN", cfg.FFmpeg.FFprobeBin)
-	cfg.FFmpeg.KillTimeout = l.envDuration("XG2G_FFMPEG_KILL_TIMEOUT", cfg.FFmpeg.KillTimeout)
-	if raw, ok := l.envLookup(vaapiDeviceEnvKey); ok {
-		cfg.FFmpeg.VaapiDevice = strings.TrimSpace(raw)
-	} else {
-		cfg.FFmpeg.VaapiDevice = strings.TrimSpace(cfg.FFmpeg.VaapiDevice)
-	}
-}
-
-func (l *Loader) mergeEnvRateLimiting(cfg *AppConfig) {
-	// Rate Limiting
-	cfg.RateLimitEnabled = l.envBool("XG2G_RATE_LIMIT_ENABLED", cfg.RateLimitEnabled)
-	cfg.RateLimitGlobal = l.envInt("XG2G_RATE_LIMIT_GLOBAL", cfg.RateLimitGlobal)
-	cfg.RateLimitAuth = l.envInt("XG2G_RATE_LIMIT_AUTH", cfg.RateLimitAuth)
-	cfg.RateLimitBurst = l.envInt("XG2G_RATE_LIMIT_BURST", cfg.RateLimitBurst)
-	if whitelist := l.envString("XG2G_RATE_LIMIT_WHITELIST", ""); whitelist != "" {
-		cfg.RateLimitWhitelist = parseCommaSeparated(whitelist, cfg.RateLimitWhitelist)
-	}
-}
-
-func (l *Loader) mergeEnvTrustedProxies(cfg *AppConfig) {
-	// Trusted Proxies
-	cfg.TrustedProxies = l.envString("XG2G_TRUSTED_PROXIES", cfg.TrustedProxies)
-}
-
-func (l *Loader) mergeEnvStreaming(cfg *AppConfig) {
-	// Streaming Config (Canonical)
-	cfg.Streaming.DeliveryPolicy = l.envString("XG2G_STREAMING_POLICY", cfg.Streaming.DeliveryPolicy)
-}
-
-func (l *Loader) mergeEnvPlayback(cfg *AppConfig) {
-	cfg.Playback.Operator.ForceIntent = l.envString("XG2G_PLAYBACK_FORCE_INTENT", cfg.Playback.Operator.ForceIntent)
-	cfg.Playback.Operator.MaxQualityRung = l.envString("XG2G_PLAYBACK_MAX_QUALITY_RUNG", cfg.Playback.Operator.MaxQualityRung)
-	cfg.Playback.Operator.DisableClientFallback = l.envBool("XG2G_PLAYBACK_DISABLE_CLIENT_FALLBACK", cfg.Playback.Operator.DisableClientFallback)
-}
-
-func (l *Loader) mergeEnvPlannerShadow(cfg *AppConfig) {
-	cfg.PlannerShadow.Enabled = l.envBool("XG2G_PLANNER_SHADOW", cfg.PlannerShadow.Enabled)
-	cfg.PlannerShadow.QueueCapacity = l.envInt("XG2G_PLANNER_SHADOW_QUEUE_CAPACITY", cfg.PlannerShadow.QueueCapacity)
-}
-
-func (l *Loader) mergeEnvPlannerReceipt(cfg *AppConfig) {
-	cfg.PlannerReceipt.Enabled = l.envBool("XG2G_PLANNER_RECEIPT_ENABLED", cfg.PlannerReceipt.Enabled)
-	cfg.PlannerReceipt.Required = l.envBool("XG2G_PLANNER_RECEIPT_REQUIRED", cfg.PlannerReceipt.Required)
-	cfg.PlannerReceipt.Capacity = l.envInt("XG2G_PLANNER_RECEIPT_CAPACITY", cfg.PlannerReceipt.Capacity)
-	cfg.PlannerReceipt.TTL = l.envDuration("XG2G_PLANNER_RECEIPT_TTL", cfg.PlannerReceipt.TTL)
-}
-
-func (l *Loader) mergeEnvMonetization(cfg *AppConfig) {
-	cfg.Monetization.Enabled = l.envBool("XG2G_MONETIZATION_ENABLED", cfg.Monetization.Enabled)
-	cfg.Monetization.Model = l.envString("XG2G_MONETIZATION_MODEL", cfg.Monetization.Model)
-	cfg.Monetization.ProductName = l.envString("XG2G_MONETIZATION_PRODUCT_NAME", cfg.Monetization.ProductName)
-	cfg.Monetization.RequiredScopes = parseCommaSeparated(
-		l.envString("XG2G_MONETIZATION_REQUIRED_SCOPES", ""),
-		cfg.Monetization.RequiredScopes,
-	)
-	cfg.Monetization.PurchaseURL = l.envString("XG2G_MONETIZATION_PURCHASE_URL", cfg.Monetization.PurchaseURL)
-	cfg.Monetization.Enforcement = l.envString("XG2G_MONETIZATION_ENFORCEMENT", cfg.Monetization.Enforcement)
-	cfg.Monetization.GooglePlay.PackageName = l.envString("XG2G_MONETIZATION_GOOGLE_PLAY_PACKAGE_NAME", cfg.Monetization.GooglePlay.PackageName)
-	cfg.Monetization.GooglePlay.ServiceAccountCredentialsFile = l.envString(
-		"XG2G_MONETIZATION_GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS_FILE",
-		cfg.Monetization.GooglePlay.ServiceAccountCredentialsFile,
-	)
-	cfg.Monetization.Amazon.SharedSecretFile = l.envString(
-		"XG2G_MONETIZATION_AMAZON_SHARED_SECRET_FILE",
-		cfg.Monetization.Amazon.SharedSecretFile,
-	)
-	cfg.Monetization.Amazon.UseSandbox = l.envBool("XG2G_MONETIZATION_AMAZON_USE_SANDBOX", cfg.Monetization.Amazon.UseSandbox)
 }
 
 func (l *Loader) mergeEnvRecordings(cfg *AppConfig) {
@@ -355,10 +124,4 @@ func (l *Loader) mergeEnvRecordings(cfg *AppConfig) {
 	cfg.RecordingStrictTargetRequired = l.envBool("XG2G_RECORDINGS_STRICT_TARGET_REQUIRED", cfg.RecordingStrictTargetRequired)
 	cfg.RecordingTargetSigningKey = l.envString("XG2G_RECORDINGS_TARGET_SIGNING_KEY", cfg.RecordingTargetSigningKey)
 	cfg.RecordingTargetSigningKeyPrevious = l.envString("XG2G_RECORDINGS_TARGET_SIGNING_KEY_PREVIOUS", cfg.RecordingTargetSigningKeyPrevious)
-}
-
-func (l *Loader) mergeEnvVerification(cfg *AppConfig) {
-	// Verification (Drift Detection)
-	cfg.Verification.Enabled = l.envBool("XG2G_VERIFY_ENABLED", cfg.Verification.Enabled)
-	cfg.Verification.Interval = l.envDuration("XG2G_VERIFY_INTERVAL", cfg.Verification.Interval)
 }
