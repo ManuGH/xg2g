@@ -12,54 +12,68 @@ type hlsSLOAdapter struct {
 	server *Server
 }
 
-func (a *hlsSLOAdapter) MarkOutcome(sessionID, schema, mode, outcome string) {
+func (a *hlsSLOAdapter) MarkOutcome(ctx context.Context, sessionID, schema, mode, outcome string) {
 	if a == nil || a.server == nil || a.server.playbackSLO == nil {
 		return
 	}
+	reqID := requestID(ctx)
 	res := a.server.playbackSLO.MarkOutcome(playbackSessionMeta{
 		SessionID: sessionID,
 		Schema:    schema,
 		Mode:      mode,
 	}, outcome)
 	if res.TTFFObserved {
-		log.L().Info().
+		evt := log.L().Info().
 			Str("event", "playback.slo.ttff").
+			Str("request_id", reqID).
 			Str("session_id", sessionID).
 			Str("schema", res.Schema).
 			Str("mode", res.Mode).
 			Str("outcome", res.Outcome).
-			Float64("ttff_seconds", res.TTFFSeconds).
-			Msg("live playback ttff outcome observed")
+			Float64("ttff_seconds", res.TTFFSeconds)
+		if res.ServiceRef != "" {
+			evt = evt.Str("service_ref", res.ServiceRef)
+		}
+		evt.Msg("live playback ttff outcome observed")
 	}
 }
 
-func (a *hlsSLOAdapter) MarkMediaSuccess(sessionID, schema, mode string) {
+func (a *hlsSLOAdapter) MarkMediaSuccess(ctx context.Context, sessionID, schema, mode string) {
 	if a == nil || a.server == nil || a.server.playbackSLO == nil {
 		return
 	}
+	reqID := requestID(ctx)
 	obs := a.server.playbackSLO.MarkMediaSuccess(playbackSessionMeta{
 		SessionID: sessionID,
 		Schema:    schema,
 		Mode:      mode,
 	})
 	if obs.TTFFObserved {
-		log.L().Info().
+		evt := log.L().Info().
 			Str("event", "playback.slo.ttff").
+			Str("request_id", reqID).
 			Str("session_id", sessionID).
 			Str("schema", obs.Schema).
 			Str("mode", obs.Mode).
 			Str("outcome", "ok").
-			Float64("ttff_seconds", obs.TTFFSeconds).
-			Msg("live playback ttff observed")
+			Float64("ttff_seconds", obs.TTFFSeconds)
+		if obs.ServiceRef != "" {
+			evt = evt.Str("service_ref", obs.ServiceRef)
+		}
+		evt.Msg("live playback ttff observed")
 	}
 	if obs.RebufferSeverity != "" {
-		log.L().Warn().
+		evt := log.L().Warn().
 			Str("event", "playback.slo.rebuffer").
+			Str("request_id", reqID).
 			Str("session_id", sessionID).
 			Str("schema", obs.Schema).
 			Str("mode", obs.Mode).
-			Str("severity", obs.RebufferSeverity).
-			Msg("live playback rebuffer proxy event observed")
+			Str("severity", obs.RebufferSeverity)
+		if obs.ServiceRef != "" {
+			evt = evt.Str("service_ref", obs.ServiceRef)
+		}
+		evt.Msg("live playback rebuffer proxy event observed")
 	}
 }
 
@@ -87,9 +101,6 @@ func (s *Server) hlsProcessor() *v3hls.Service {
 		},
 		func(status int) string {
 			return playbackErrorCodeFromStatus(status)
-		},
-		func(ctx context.Context) string {
-			return requestID(ctx)
 		},
 	)
 }

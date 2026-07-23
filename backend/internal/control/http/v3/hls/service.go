@@ -39,8 +39,8 @@ type ResponseWrapper func(w http.ResponseWriter) (http.ResponseWriter, any)
 type LivePreviewHandler func(w http.ResponseWriter, r *http.Request, root string, segmentSeconds int, ffmpegBin, sessionID string)
 type LeaseRenewerFunc func(ctx context.Context, sessionID string)
 type SLOTracker interface {
-	MarkOutcome(sessionID, schema, mode, outcome string)
-	MarkMediaSuccess(sessionID, schema, mode string)
+	MarkOutcome(ctx context.Context, sessionID, schema, mode, outcome string)
+	MarkMediaSuccess(ctx context.Context, sessionID, schema, mode string)
 }
 
 type Service struct {
@@ -54,7 +54,6 @@ type Service struct {
 	slo                   SLOTracker
 	playbackStageResolver func(filename string) string
 	playbackErrorCode     func(status int) string
-	requestIDResolver     func(ctx context.Context) string
 }
 
 func NewService(
@@ -68,7 +67,6 @@ func NewService(
 	slo SLOTracker,
 	playbackStageResolver func(filename string) string,
 	playbackErrorCode func(status int) string,
-	requestIDResolver func(ctx context.Context) string,
 ) *Service {
 	return &Service{
 		cfg:                   cfg,
@@ -81,7 +79,6 @@ func NewService(
 		slo:                   slo,
 		playbackStageResolver: playbackStageResolver,
 		playbackErrorCode:     playbackErrorCode,
-		requestIDResolver:     requestIDResolver,
 	}
 }
 
@@ -180,13 +177,13 @@ func (s *Service) HandleV3HLS(w http.ResponseWriter, r *http.Request) {
 		}
 		metrics.IncPlaybackError("live", stage, code)
 		if s.slo != nil {
-			s.slo.MarkOutcome(sessionID, "live", "hls", "failed")
+			s.slo.MarkOutcome(r.Context(), sessionID, "live", "hls", "failed")
 		}
 		return
 	}
 
 	if s.slo != nil {
-		s.slo.MarkMediaSuccess(sessionID, "live", "hls")
+		s.slo.MarkMediaSuccess(r.Context(), sessionID, "live", "hls")
 	}
 }
 
