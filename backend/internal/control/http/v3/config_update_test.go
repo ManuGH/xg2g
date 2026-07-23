@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -83,6 +84,9 @@ func TestPutSystemConfigTriggersShutdown(t *testing.T) {
 }
 
 func TestPutSystemConfigDoesNotAliasCurrent(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found in PATH, skipping preflight-dependent test")
+	}
 	t.Setenv("XG2G_E2_HOST", "http://example.com")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "12345678901234567890123456789012")

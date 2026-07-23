@@ -31,6 +31,7 @@ func (m *mockProber) Probe(ctx context.Context, path string) (*vod.StreamInfo, e
 }
 
 func TestVODPlayback_DurationTruth(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 
