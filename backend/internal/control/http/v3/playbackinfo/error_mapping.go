@@ -29,14 +29,6 @@ func WritePlaybackInfoInputProblem(w http.ResponseWriter, r *http.Request, p *Pl
 	problem.Write(w, r, p.Status, p.ProblemType, p.Title, p.Code, p.Detail, nil)
 }
 
-func writeRegisteredProblem(w http.ResponseWriter, r *http.Request, status int, problemType, title, code, detail string, extra map[string]any) {
-	spec := problemcode.MustResolve(code, title)
-	if problemType == "" {
-		problemType = spec.ProblemType
-	}
-	problem.Write(w, r, status, problemType, spec.Title, spec.Code, detail, extra)
-}
-
 type terminalProblemSpec struct {
 	problemType string
 	title       string

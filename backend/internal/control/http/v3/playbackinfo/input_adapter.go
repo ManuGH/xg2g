@@ -17,15 +17,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
-type playbackInfoInputProblem struct {
-	status      int
-	problemType string
-	title       string
-	code        string
-	detail      string
-	extra       map[string]any
-}
-
 type LivePlaybackInfoInput struct {
 	ServiceRef   string
 	Capabilities *PlaybackCapabilities

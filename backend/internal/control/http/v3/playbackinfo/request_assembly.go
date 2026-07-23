@@ -190,13 +190,6 @@ func derefInt(i *int) int {
 	return *i
 }
 
-func derefBool(b *bool) bool {
-	if b == nil {
-		return false
-	}
-	return *b
-}
-
 func boolPtr(b bool) *bool {
 	return &b
 }

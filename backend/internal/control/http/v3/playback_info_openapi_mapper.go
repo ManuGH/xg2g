@@ -64,7 +64,8 @@ func mapPlaybackInfoToOpenAPI(in v3playbackinfo.PlaybackInfo) PlaybackInfo {
 		}
 
 		for _, o := range in.Decision.Outputs {
-			if o.Kind == "hls" {
+			switch o.Kind {
+			case "hls":
 				raw, _ := json.Marshal(PlaybackOutputHls{
 					Kind:        Hls,
 					PlaylistUrl: o.Url,
@@ -74,7 +75,7 @@ func mapPlaybackInfoToOpenAPI(in v3playbackinfo.PlaybackInfo) PlaybackInfo {
 					_ = po.UnmarshalJSON(raw)
 					dec.Outputs = append(dec.Outputs, po)
 				}
-			} else if o.Kind == "file" {
+			case "file":
 				raw, _ := json.Marshal(PlaybackOutputFile{
 					Kind: PlaybackOutputFileKindFile,
 					Url:  o.Url,

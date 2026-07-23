@@ -24,8 +24,6 @@ const (
 	ClientProfileSafari  ClientProfile = "safari"
 )
 
-func intPtr(i int) *int { return &i }
-
 // DetectClientProfile identifies the client profile from the request.
 // Priority:
 // 1. Query parameter "profile" (e.g. ?profile=safari or ?profile=android_native)
@@ -116,13 +114,6 @@ func parsePaginationParams(r *http.Request) (offset int, limit int) {
 	}
 
 	return offset, limit
-}
-
-func derefInt(i *int) int {
-	if i == nil {
-		return 0
-	}
-	return *i
 }
 
 func derefString(s *string) string {
