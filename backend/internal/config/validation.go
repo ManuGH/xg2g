@@ -124,10 +124,6 @@ func validateBasicSettings(v *validate.Validator, cfg AppConfig) {
 
 	v.Directory("DataDir", cfg.DataDir, false)
 
-	if cfg.LogLevel != "" {
-		v.OneOf("LogLevel", strings.ToLower(cfg.LogLevel), []string{"debug", "info", "warn", "error", "fatal", "panic", "disabled", "trace"})
-	}
-
 	if cfg.Server.ReadTimeout < 0 {
 		v.AddError("Server.ReadTimeout", "must be >= 0", cfg.Server.ReadTimeout)
 	}
