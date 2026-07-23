@@ -152,7 +152,7 @@ recording_playback:
   stable_window: 10s
 recording_roots: {}
 recordings:
-  strict_target_required: false
+  strict_target_required: true
   target_signing_key: ""
   target_signing_key_previous: ""
 server:

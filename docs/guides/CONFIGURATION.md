@@ -303,7 +303,7 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
-| `recordings.strict_target_required` | `XG2G_RECORDINGS_STRICT_TARGET_REQUIRED` | `false` | Active | Advanced |
+| `recordings.strict_target_required` | `XG2G_RECORDINGS_STRICT_TARGET_REQUIRED` | `true` | Active | Advanced |
 | `recordings.target_signing_key` | `XG2G_RECORDINGS_TARGET_SIGNING_KEY` | `""` | Active | Advanced |
 | `recordings.target_signing_key_previous` | `XG2G_RECORDINGS_TARGET_SIGNING_KEY_PREVIOUS` | `""` | Active | Advanced |
 
