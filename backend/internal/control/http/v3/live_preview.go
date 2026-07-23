@@ -25,12 +25,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
-// livePreviewFilename is intercepted on the existing ServeHLS route
-// (/sessions/{sessionID}/hls/{filename}) so the DVR scrub preview inherits the
-// session's exact auth/scope/exposure — and never touches the session
-// orchestrator. The FE fetches .../hls/preview.jpg?t=<seconds-from-window-start>.
-const livePreviewFilename = "preview.jpg"
-
 const (
 	livePreviewBuildTimeout = 5 * time.Second
 	livePreviewMaxWidth     = 320
