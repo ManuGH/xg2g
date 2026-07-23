@@ -72,11 +72,6 @@ import {
   formatHostPressureSummary,
   extractPlaybackTrace,
   formatClientPath,
-  formatRequestProfileLabel,
-  formatQualityRungLabel,
-  formatBooleanLabel,
-  formatTargetProfileSummary,
-  formatExecutionLabel,
   resolvePlaybackObservability,
   type PlaybackObservability,
 } from './orchestrator/observabilityFormatters';
@@ -99,6 +94,7 @@ import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 
 import { useStartupElapsed } from './orchestrator/useStartupElapsed';
 import { useNativeVideoReveal } from './orchestrator/useNativeVideoReveal';
+import { buildPlayerViewState } from './components/playerViewStateModel';
 import { useLiveNowPlaying } from './useLiveNowPlaying';
 import { buildPlayerMediaSessionModel } from './components/playerMediaSessionModel';
 import { getManagedMseAv1Support, formatManagedMseAv1 } from './utils/managedMseAv1';
@@ -2397,100 +2393,18 @@ export function usePlaybackOrchestrator(
   const fallbackSummary = formatFallbackSummary(sessionPlaybackTrace);
   const stopSummary = formatStopSummary(sessionPlaybackTrace);
   const hostPressureSummary = formatHostPressureSummary(effectiveHostPressureBand, effectiveHostOverrideApplied);
-  const showVerboseErrorTelemetry = !isCompactTouchLayout;
-  const audioToggleLabel = isMuted ? t('player.unmute') : t('player.mute');
-  const audioToggleIcon = isMuted ? '🔊' : '🔇';
-  const statsTitle = t('player.statsTitle', { defaultValue: 'Technical Stats' });
-  const hlsLevelValue = hlsRef.current ? (stats.levelIndex === -1 ? 'Auto' : String(stats.levelIndex)) : 'Native / Direct';
-  const fullscreenPathValue = isWebKitFullscreenActive
-    ? 'native-webkit'
-    : isFullscreen
-      ? 'container'
-      : prefersDesktopNativeFullscreen
-        ? 'desktop-webkit-ready'
-        : supportsNativeFullscreen
-          ? 'webkit-available'
-          : 'web-only';
-  // Stage 0 capability gate readout for the Stats panel (paste-free device check).
   const mseAv1Readout = useMemo(() => formatManagedMseAv1(getManagedMseAv1Support()), []);
 
-  const ttffReadout = ttffMetrics
-    ? `${(ttffMetrics.ttffMs / 1000).toFixed(2)}s (${ttffMetrics.manifestMs}ms manifest + ${ttffMetrics.bufferMs}ms buffer)`
-    : status === 'starting' || status === 'buffering'
-      ? t('player.measuring', { defaultValue: 'Messen…' })
-      : '-';
-
-  const statsRows: V3PlayerLabeledValue[] = [
-    { label: t('player.ttff', { defaultValue: 'Startzeit (TTFF)' }), value: ttffReadout },
-    { label: t('player.av1Mms', { defaultValue: 'AV1/MMS' }), value: mseAv1Readout },
-    { label: t('common.session', { defaultValue: 'Session' }), value: effectiveSessionId || '-' },
-    { label: t('common.requestId', { defaultValue: 'Request ID' }), value: sessionPlaybackTrace?.requestId || traceId },
-    { label: t('player.clientPath', { defaultValue: 'Client Path' }), value: effectiveClientPath || '-' },
-    { label: t('player.requestProfile', { defaultValue: 'Request Profile' }), value: formatRequestProfileLabel(effectiveRequestProfile) },
-    { label: t('player.requestedIntent', { defaultValue: 'Requested Intent' }), value: formatRequestProfileLabel(effectiveRequestedIntent) },
-    { label: t('player.resolvedIntent', { defaultValue: 'Resolved Intent' }), value: formatRequestProfileLabel(effectiveResolvedIntent) },
-    { label: t('player.qualityRung', { defaultValue: 'Quality Rung' }), value: formatQualityRungLabel(effectiveQualityRung) },
-    { label: t('player.audioQualityRung', { defaultValue: 'Audio Quality Rung' }), value: formatQualityRungLabel(effectiveAudioQualityRung) },
-    { label: t('player.videoQualityRung', { defaultValue: 'Video Quality Rung' }), value: formatQualityRungLabel(effectiveVideoQualityRung) },
-    { label: t('player.degradedFrom', { defaultValue: 'Degraded From' }), value: formatRequestProfileLabel(effectiveDegradedFrom) },
-    { label: t('player.hostPressure', { defaultValue: 'Host Pressure' }), value: effectiveHostPressureBand || '-' },
-    { label: t('player.hostOverrideApplied', { defaultValue: 'Host Override Applied' }), value: formatBooleanLabel(effectiveHostOverrideApplied) },
-    { label: t('player.forcedIntent', { defaultValue: 'Forced Intent' }), value: formatRequestProfileLabel(effectiveForcedIntent) },
-    { label: t('player.operatorMaxQualityRung', { defaultValue: 'Operator Max Quality' }), value: formatQualityRungLabel(effectiveOperatorMaxQualityRung) },
-    { label: t('player.operatorRuleName', { defaultValue: 'Operator Rule' }), value: effectiveOperatorRuleName || '-' },
-    { label: t('player.operatorRuleScope', { defaultValue: 'Operator Rule Scope' }), value: effectiveOperatorRuleScope || '-' },
-    { label: t('player.clientFallbackDisabled', { defaultValue: 'Client Fallback Disabled' }), value: formatBooleanLabel(effectiveClientFallbackDisabled) },
-    { label: t('player.operatorOverrideApplied', { defaultValue: 'Operator Override Applied' }), value: formatBooleanLabel(effectiveOperatorOverrideApplied) },
-    { label: t('player.sourceProfile', { defaultValue: 'Source Profile' }), value: sourceProfileSummary },
-    { label: t('player.outputProfile', { defaultValue: 'Output Profile' }), value: formatTargetProfileSummary(effectiveTargetProfile) },
-    { label: t('player.profileHash', { defaultValue: 'Profile Hash' }), value: effectiveTargetProfileHash || '-' },
-    { label: t('player.execution', { defaultValue: 'Execution' }), value: formatExecutionLabel(effectiveTargetProfile) },
-    { label: t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' }), value: ffmpegPlanSummary },
-    { label: t('player.firstFrame', { defaultValue: 'First Frame' }), value: firstFrameLabel },
-    { label: t('player.fallbacks', { defaultValue: 'Fallbacks' }), value: fallbackSummary },
-    { label: t('player.stopReason', { defaultValue: 'Stop' }), value: stopSummary },
-    { label: t('player.outputKind', { defaultValue: 'Output Kind' }), value: playbackObservability?.selectedOutputKind || '-' },
-    { label: t('player.resolution'), value: stats.resolution },
-    { label: t('player.bandwidth'), value: stats.bandwidth > 0 ? `${stats.bandwidth} kbps` : '-' },
-    { label: t('player.bufferHealth'), value: `${stats.bufferHealth}s` },
-    { label: t('player.latency'), value: stats.latency !== null ? `${stats.latency}s` : '-' },
-    { label: t('player.fps'), value: String(stats.fps) },
-    { label: t('player.dropped'), value: String(stats.droppedFrames) },
-    { label: t('player.hlsLevel'), value: hlsLevelValue },
-    { label: t('player.segDuration'), value: stats.buffer > 0 ? `${stats.buffer}s` : '-' },
-    { label: t('player.seekableRange', { defaultValue: 'Seekable' }), value: `${formatClock(seekableStart)} -> ${formatClock(seekableEnd)}` },
-    { label: t('player.playhead', { defaultValue: 'Playhead' }), value: formatClock(currentPlaybackTime) },
-    { label: t('player.seekWindow', { defaultValue: 'Seek Window' }), value: hasSeekWindow ? formatClock(windowDuration) : '-' },
-    { label: t('player.fullscreenPath', { defaultValue: 'Fullscreen Path' }), value: fullscreenPathValue },
-  ];
-  const errorTelemetryRows: V3PlayerLabeledValue[] = showVerboseErrorTelemetry
-    ? [
-      stopSummary !== '-' ? { label: t('player.stopReason', { defaultValue: 'Stop' }), value: stopSummary } : null,
-      hostPressureSummary !== '-' ? { label: t('player.hostPressure', { defaultValue: 'Host Pressure' }), value: hostPressureSummary } : null,
-      fallbackSummary !== '-' ? { label: t('player.fallbacks', { defaultValue: 'Fallbacks' }), value: fallbackSummary } : null,
-      ffmpegPlanSummary !== '-' ? { label: t('player.ffmpegPlan', { defaultValue: 'FFmpeg Plan' }), value: ffmpegPlanSummary } : null,
-    ].filter((row): row is V3PlayerLabeledValue => row !== null)
-    : [];
-  // Live DVR position readout: "14:23 · 7:00 behind live" when scrubbed back, or
-  // "14:23 · Live" at the edge; VOD shows the elapsed position. Pure helper so the
-  // edge/behind/VOD branching is unit-tested (see dvrPositionDisplay.test.ts).
   const currentPositionDisplay = formatDvrPositionDisplay(
     { isLiveMode, isAtLiveEdge, behindLiveSeconds, currentTimeDisplay },
     formatClock,
     (key, options) => t(key, options),
   );
 
-  // Live DVR scrub preview: the hover thumbnail is served off the existing HLS
-  // route (.../hls/preview.jpg?t=offset), so it inherits the session's media
-  // cookie auth. Only live sessions with a real seek window get it; windowStartUnix
-  // anchors the hover time label to wall-clock when an EPG start is known.
   const liveDvrPreviewBaseUrl =
     isLiveMode && hasSeekWindow && effectiveSessionId
       ? `${apiBase}/sessions/${effectiveSessionId}/hls/preview.jpg`
       : null;
-  // VOD counterpart: recordings serve grid-aligned scrub frames from their
-  // own cached endpoint; auth rides on the primed playback session cookie,
-  // same as the HLS media URLs.
   const vodScrubPreviewBaseUrl =
     playbackMode === 'VOD' && activeRecordingId && canSeek
       ? `${apiBase}/recordings/${activeRecordingId}/scrub.jpg`
@@ -2499,122 +2413,104 @@ export function usePlaybackOrchestrator(
   const dvrPreviewSegmentSeconds = liveDvrPreviewBaseUrl ? 6 : 10;
   const dvrPreviewWindowStartUnix = startUnix && startUnix > 0 ? startUnix + seekableStart : null;
 
-  const viewState: V3PlayerViewState = {
-    channelName: channel?.name ?? null,
-    // Live: the real EPG programme title (null until/unless known — the view
-    // falls back to the channel name for the title line). Recording: its title.
-    programmeTitle: playbackMode === 'LIVE' ? liveNowPlaying.title : (channel?.name ?? null),
-    programmeDesc: playbackMode === 'LIVE' ? liveNowPlaying.desc : null,
-    useOverlayLayout: Boolean(onClose),
-    userIdle: isIdle,
-    showCloseButton: Boolean(onClose),
-    closeButtonLabel: t('player.closePlayer'),
-    showStatsOverlay: showStats && showPlaybackChrome,
-    statsTitle,
-    statusLabel: t('player.status'),
-    statusChipLabel: t(`player.statusStates.${status}`, { defaultValue: status }),
-    statusChipState: status === 'ready' ? 'live' : status === 'error' ? 'error' : 'idle',
-    statsRows,
-    showNativeBufferingMask,
-    hideVideoElement: showNativeBufferingMask,
-    showStartupBackdrop: useMinimalStartupChrome,
-    showStartupOverlay,
-    showSpinnerCard,
-    channelLogoUrl: channel?.logoUrl ?? null,
-    useNativeBufferingSafeOverlay,
-    overlayStatusLabel: t(`player.statusStates.${overlayStatus}`, { defaultValue: overlayStatus }),
-    overlayStatusState: overlayStatus === 'buffering' ? 'live' : 'idle',
-    spinnerEyebrow: t('player.startupSurfaceEyebrow', { defaultValue: 'Live startup' }),
-    spinnerLabel,
-    spinnerSupport,
-    startupPhaseSteps,
-    startupProgressPercent,
-    startupElapsedLabel: t('player.startupElapsed', {
-      defaultValue: 'Wait {{seconds}}s',
-      seconds: startupElapsedSeconds,
-    }),
-    showOverlayStopAction: useMinimalStartupChrome && !onClose,
-    overlayStopLabel: t('common.stop'),
-    videoClassName: '',
-    autoPlay: Boolean(autoStart),
-    error,
-    showErrorDetails,
-    errorRetryLabel: t('common.retry'),
-    errorTelemetryRows,
-    errorDetailToggleLabel: error?.detail ? (showErrorDetails ? t('common.hideDetails') : t('common.showDetails')) : null,
-    errorSessionLabel: `${t('common.session')}: ${effectiveSessionId || t('common.notAvailable')}`,
+  const viewState = buildPlayerViewState({
+    channel,
+    playbackMode,
+    liveNowPlaying,
+    onClose,
+    isIdle,
+    status,
+    showStats,
     showPlaybackChrome,
-    showSeekControls: hasSeekWindow,
-    seekBack15mLabel: t('player.seekBack15m'),
-    seekBack60sLabel: t('player.seekBack60s'),
-    seekBack15sLabel: t('player.seekBack15s'),
-    seekForward15sLabel: t('player.seekForward15s'),
-    seekForward60sLabel: t('player.seekForward60s'),
-    seekForward15mLabel: t('player.seekForward15m'),
-    playPauseLabel: isPlaying ? t('player.pause') : t('player.play'),
-    playPauseIcon: isPlaying ? '⏸' : '▶',
-    ttffBadgeLabel: ttffMetrics ? `${(ttffMetrics.ttffMs / 1000).toFixed(2)}s` : null,
-    ttffTitle: ttffMetrics
-      ? `TTFF: ${ttffMetrics.ttffMs}ms (${ttffMetrics.manifestMs}ms manifest + ${ttffMetrics.bufferMs}ms decode)`
-      : null,
+    isWebKitFullscreenActive,
+    isFullscreen,
+    prefersDesktopNativeFullscreen,
+    supportsNativeFullscreen,
+    mseAv1Readout,
+    effectiveSessionId,
+    sessionPlaybackTrace,
+    traceId,
+    effectiveClientPath,
+    effectiveRequestProfile,
+    effectiveRequestedIntent,
+    effectiveResolvedIntent,
+    effectiveQualityRung,
+    effectiveAudioQualityRung,
+    effectiveVideoQualityRung,
+    effectiveDegradedFrom,
+    effectiveHostPressureBand,
+    effectiveHostOverrideApplied,
+    effectiveForcedIntent,
+    effectiveOperatorMaxQualityRung,
+    effectiveOperatorRuleName,
+    effectiveOperatorRuleScope,
+    effectiveClientFallbackDisabled,
+    effectiveOperatorOverrideApplied,
+    sourceProfileSummary,
+    effectiveTargetProfile,
+    effectiveTargetProfileHash,
+    ffmpegPlanSummary,
+    firstFrameLabel,
+    fallbackSummary,
+    stopSummary,
+    hostPressureSummary,
+    playbackObservability,
+    showNativeBufferingMask,
+    stats,
+    hlsRefCurrent: Boolean(hlsRef.current),
     seekableStart,
     seekableEnd,
-    startTimeDisplay,
-    endTimeDisplay,
+    currentPlaybackTime,
+    windowDuration,
+    hasSeekWindow,
+    isCompactTouchLayout,
     currentPositionDisplay,
     dvrPreviewBaseUrl,
     dvrPreviewSegmentSeconds,
     dvrPreviewWindowStartUnix,
-    windowDuration,
+    useMinimalStartupChrome,
+    showStartupOverlay,
+    showSpinnerCard,
+    useNativeBufferingSafeOverlay,
+    overlayStatus,
+    spinnerLabel,
+    spinnerSupport,
+    startupPhaseSteps,
+    startupProgressPercent,
+    startupElapsedSeconds,
+    autoStart,
+    error,
+    showErrorDetails,
+    effectiveSessionLabel: `${t('common.session')}: ${effectiveSessionId || t('common.notAvailable')}`,
+    isPlaying,
+    ttffMetrics,
+    startTimeDisplay,
+    endTimeDisplay,
     relativePosition,
     isLiveMode,
     isAtLiveEdge,
-    liveButtonLabel: t('player.goLive'),
-    showServiceInput: !hasSeekWindow && !channel && !recordingId && !src,
-    serviceRef: sRef,
-    showManualStartButton: !autoStart && !src && !recordingId,
-    manualStartLabel: t('common.startStream'),
-    manualStartDisabled: startIntentInFlight.current,
-    showDvrModeButton: showDvrModeButton && !canToggleFullscreen,
-    dvrModeLabel: t('player.dvrMode'),
-    showNativeFullscreenButton: prefersDesktopNativeFullscreen && canEnterNativeFullscreen && !isFullscreen,
-    nativeFullscreenTitle: t('player.nativeFullscreenTitle', { defaultValue: 'Open Apple player' }),
-    nativeFullscreenLabel: t('player.nativeFullscreenLabel', { defaultValue: 'Native' }),
-    showFullscreenButton: canToggleFullscreen,
-    fullscreenLabel: isFullscreen
-      ? t('player.exitFullscreenLabel', { defaultValue: 'Exit fullscreen' })
-      : t('player.fullscreenLabel', { defaultValue: 'Fullscreen' }),
-    fullscreenActive: isFullscreen,
-    showVolumeControls: canToggleMute,
-    audioToggleLabel,
-    audioToggleIcon,
-    audioToggleActive: !isMuted,
+    recordingId,
+    src,
+    sRef,
+    startIntentInFlightRef: startIntentInFlight.current,
+    showDvrModeButton,
+    canToggleFullscreen,
+    canEnterNativeFullscreen,
+    canToggleMute,
+    isMuted,
     canAdjustVolume,
-    volume: isMuted ? 0 : volume,
-    deviceVolumeHint: t('player.deviceVolumeHint', { defaultValue: 'Use device buttons' }),
-    showPipButton: canTogglePiP,
-    pipTitle: t('player.pipTitle'),
-    pipLabel: t('player.pipLabel'),
-    pipActive: isPip,
-    statsLabel: t('player.statsLabel'),
-    statsActive: showStats,
-    showStopButton: !onClose,
-    stopLabel: t('common.stop'),
-    showResumeOverlay: showResumeOverlay && Boolean(resumeState),
-    resumeTitle: t('player.resumeTitle'),
-    resumePrompt: resumeState
-      ? t('player.resumePrompt', { time: formatClock(resumeState.posSeconds) })
-      : '',
-    resumeActionLabel: t('player.resumeAction'),
-    startOverLabel: t('player.startOver'),
-    resumePositionSeconds: resumeState?.posSeconds ?? null,
+    volume,
+    canTogglePiP,
+    isPip,
+    showResumeOverlay,
+    resumeState,
     explicitProfile,
     audioTracks,
     activeAudioTrack,
-    playback: {
-      durationSeconds,
-    },
-  };
+    durationSeconds,
+    formatClock,
+    t,
+  });
   const actions: PlaybackOrchestratorActions = {
     stopStream,
     retry: handleRetry,
