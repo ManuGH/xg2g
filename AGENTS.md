@@ -220,20 +220,24 @@ worktree.
 ## Linux-first Repository Topology
 
 `xg2g` is a Linux/Go/Docker application. The Mac checkout is a development
-client, not the runtime host and not the OpenClaw workspace.
+client, not the runtime host.
+
+**Updated 2026-07-22 (post-migration to `pve2`):** OpenClaw was never adopted
+in production. The `/root/xg2g` read-only mirror and `/root/xg2g-build`
+detached build checkout described in older revisions of this section did not
+reflect a live process and have been retired — do not recreate them.
 
 - GitHub is the canonical source for committed code.
-- The Mac `StudioProjects` checkout is where Manuel/Codex develop and review.
-- Proxmox runs OpenClaw and owns Linux-side automation and build verification.
-- Proxmox `/root/xg2g` is a clean, read-only mirror of GitHub `main` used by
-  OpenClaw for inspection, PR context, and disposable worktrees. OpenClaw may
-  fetch it, but must not use it as an authoring checkout or build source.
-- Proxmox `/root/xg2g-build` is the clean, detached build checkout. It may be
-  advanced only to a commit that exists on GitHub.
-- LXC 110 `/srv/xg2g` and `/srv/xg2g-staging` are runtime/deployment surfaces,
-  not authoring checkouts. Staging is verified on `:8089`.
+- The Mac `StudioProjects` checkout is where Manuel develops and reviews.
+  Never a build or deployment source.
+- The Proxmox hypervisor (`pve2`, see infra docs) has no build role and no
+  `xg2g` checkout. It is VM/LXC management plane only.
+- **LXC 110 `/srv/xg2g` and `/srv/xg2g-staging` are the authoring AND build
+  checkouts, in addition to being the runtime surfaces.** `git pull` from
+  `origin` happens directly there; `make build-with-ui` runs in-container;
+  the resulting binary is copied straight onto the bind-mounted path used by
+  the corresponding Docker container — no cross-host binary transfer step.
+  Staging is verified on `:8089`, production on `:8088`.
 
-Use [docs/ops/XG2G_SYNC_WORKFLOW.md](docs/ops/XG2G_SYNC_WORKFLOW.md) and
-`scripts/reconcile_xg2g.sh status` to compare Mac, GitHub, Proxmox build, and
-staging evidence. A clean GitHub commit may be propagated one-way; no tool may
-silently synchronize uncommitted files between hosts.
+A clean GitHub commit may be propagated one-way into LXC 110's checkouts; no
+tool may silently synchronize uncommitted files between hosts.

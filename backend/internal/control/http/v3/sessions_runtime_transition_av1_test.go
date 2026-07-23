@@ -3,6 +3,7 @@ package v3
 import (
 	"testing"
 
+	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -18,7 +19,7 @@ func TestSessionRuntimeProfileForStep_AV1UsesFMP4AndGPU(t *testing.T) {
 		Deinterlace:    true,
 	}
 
-	next, ok := sessionRuntimeProfileForStepWithResolver(current, runtimepolicy.PlaybackStepAV11080p, profiles.Resolver{})
+	next, ok := v3sessions.SessionRuntimeProfileForStepWithResolver(current, runtimepolicy.PlaybackStepAV11080p, profiles.Resolver{})
 	require.True(t, ok)
 	require.Equal(t, profiles.ProfileAV1HW, next.Name)
 	require.True(t, next.TranscodeVideo)

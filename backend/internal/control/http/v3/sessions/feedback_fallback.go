@@ -1,10 +1,18 @@
-package v3
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package sessions
 
 import (
+	"strings"
+
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
+
+const SafariFallbackBrowserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15"
 
 type playbackFeedbackFallbackPlanID string
 
@@ -30,7 +38,8 @@ type playbackFeedbackFallbackPlan struct {
 	profile model.ProfileSpec
 }
 
-func nextPlaybackFeedbackPlanWithResolver(current model.ProfileSpec, serviceRef string, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
+// NextPlaybackFeedbackPlanWithResolver computes the next fallback profile plan based on the current profile.
+func NextPlaybackFeedbackPlanWithResolver(current model.ProfileSpec, serviceRef string, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
 	switch current.Name {
 	case profiles.ProfileSafari:
 		return nextSafariFeedbackPlanWithResolver(current, serviceRef, profileResolver)
@@ -40,7 +49,7 @@ func nextPlaybackFeedbackPlanWithResolver(current model.ProfileSpec, serviceRef 
 }
 
 func nextSafariFeedbackPlanWithResolver(current model.ProfileSpec, serviceRef string, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
-	preferTS := shouldPreferSafariTSFallbackForServiceRefWithSnapshot(serviceRef, profileResolver.ConfigSnapshot().SafariForceCopyServiceRefs)
+	preferTS := ShouldPreferSafariTSFallbackForServiceRefWithSnapshot(serviceRef, profileResolver.ConfigSnapshot().SafariForceCopyServiceRefs)
 	if preferTS && !current.DisableSafariForceCopy {
 		return buildSafariFeedbackBrowserTSPlan(current, profileResolver)
 	}
@@ -73,7 +82,7 @@ func buildPlaybackFeedbackRepairPlan(current model.ProfileSpec) playbackFeedback
 }
 
 func buildSafariFeedbackBrowserTSPlan(current model.ProfileSpec, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
-	next := resolvePlaybackFeedbackProfile(profiles.ProfileSafari, safariFallbackBrowserUA, current.DVRWindowSec, profileResolver)
+	next := resolvePlaybackFeedbackProfile(profiles.ProfileSafari, SafariFallbackBrowserUA, current.DVRWindowSec, profileResolver)
 	next.DisableSafariForceCopy = true
 	return playbackFeedbackFallbackPlan{
 		id:      playbackFeedbackFallbackPlanSafariBrowserTS,
@@ -83,7 +92,7 @@ func buildSafariFeedbackBrowserTSPlan(current model.ProfileSpec, profileResolver
 }
 
 func buildSafariFeedbackRepairTSPlan(current model.ProfileSpec, profileResolver profiles.Resolver) playbackFeedbackFallbackPlan {
-	next := resolvePlaybackFeedbackProfile(profiles.ProfileRepair, safariFallbackBrowserUA, current.DVRWindowSec, profileResolver)
+	next := resolvePlaybackFeedbackProfile(profiles.ProfileRepair, SafariFallbackBrowserUA, current.DVRWindowSec, profileResolver)
 	next.Container = "mpegts"
 	next.Deinterlace = true
 	next.HWAccel = ""
@@ -112,4 +121,64 @@ func resolvePlaybackFeedbackProfile(profileID, userAgent string, dvrWindowSec in
 	next := profileResolver.Resolve(profileID, userAgent, dvrWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 	next.EffectiveModeSource = ports.RuntimeModeSourceFeedbackFallback
 	return next
+}
+
+// ShouldPreferSafariTSFallbackForServiceRefWithSnapshot checks if a service reference is in the configured allowlist.
+func ShouldPreferSafariTSFallbackForServiceRefWithSnapshot(serviceRef string, configuredRefs []string) bool {
+	targetRef := NormalizeServiceRefForEnv(serviceRef)
+	if targetRef == "" {
+		return false
+	}
+	for _, candidate := range configuredRefs {
+		if NormalizeServiceRefForEnv(candidate) == targetRef {
+			return true
+		}
+	}
+	return false
+}
+
+// NormalizeServiceRefForEnv normalizes a service reference string.
+func NormalizeServiceRefForEnv(raw string) string {
+	ref := strings.TrimSpace(raw)
+	if ref == "" {
+		return ""
+	}
+	ref = strings.TrimRight(ref, ":")
+	if isHexColonServiceRefForEnv(ref) {
+		return strings.ToUpper(ref)
+	}
+	return ref
+}
+
+func isHexColonServiceRefForEnv(ref string) bool {
+	if ref == "" || !strings.Contains(ref, ":") {
+		return false
+	}
+	for _, ch := range ref {
+		switch {
+		case ch == ':':
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// SessionFallbackPlanID retrieves the last fallback plan ID from the session trace.
+func SessionFallbackPlanID(sess *model.SessionRecord) string {
+	if sess == nil || sess.PlaybackTrace == nil || len(sess.PlaybackTrace.Fallbacks) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(sess.PlaybackTrace.Fallbacks[len(sess.PlaybackTrace.Fallbacks)-1].PlanID)
+}
+
+// SessionFallbackPlanReason retrieves the last fallback plan reason from the session trace.
+func SessionFallbackPlanReason(sess *model.SessionRecord) string {
+	if sess == nil || sess.PlaybackTrace == nil || len(sess.PlaybackTrace.Fallbacks) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(sess.PlaybackTrace.Fallbacks[len(sess.PlaybackTrace.Fallbacks)-1].PlanReason)
 }

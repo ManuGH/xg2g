@@ -1,4 +1,8 @@
-package v3
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package sessions
 
 import (
 	"testing"
@@ -9,7 +13,7 @@ import (
 )
 
 func TestNextPlaybackFeedbackPlan_NonSafariEscalatesToRepairFMP4(t *testing.T) {
-	got := nextPlaybackFeedbackPlanWithResolver(model.ProfileSpec{
+	got := NextPlaybackFeedbackPlanWithResolver(model.ProfileSpec{
 		Name:         profiles.ProfileAV1HW,
 		Container:    "fmp4",
 		DVRWindowSec: 2700,
@@ -17,28 +21,28 @@ func TestNextPlaybackFeedbackPlan_NonSafariEscalatesToRepairFMP4(t *testing.T) {
 	}, "", profiles.Resolver{})
 
 	if got.id != playbackFeedbackFallbackPlanRepairFMP4 {
-		t.Fatalf("nextPlaybackFeedbackPlan() id = %q, want %q", got.id, playbackFeedbackFallbackPlanRepairFMP4)
+		t.Fatalf("NextPlaybackFeedbackPlanWithResolver() id = %q, want %q", got.id, playbackFeedbackFallbackPlanRepairFMP4)
 	}
 	if got.reason != playbackFeedbackFallbackReasonDefaultRepair {
-		t.Fatalf("nextPlaybackFeedbackPlan() reason = %q, want %q", got.reason, playbackFeedbackFallbackReasonDefaultRepair)
+		t.Fatalf("NextPlaybackFeedbackPlanWithResolver() reason = %q, want %q", got.reason, playbackFeedbackFallbackReasonDefaultRepair)
 	}
 	if got.profile.Name != profiles.ProfileRepair {
-		t.Fatalf("nextPlaybackFeedbackPlan() name = %q, want %q", got.profile.Name, profiles.ProfileRepair)
+		t.Fatalf("NextPlaybackFeedbackPlanWithResolver() name = %q, want %q", got.profile.Name, profiles.ProfileRepair)
 	}
 	if got.profile.Container != "fmp4" {
-		t.Fatalf("nextPlaybackFeedbackPlan() container = %q, want %q", got.profile.Container, "fmp4")
+		t.Fatalf("NextPlaybackFeedbackPlanWithResolver() container = %q, want %q", got.profile.Container, "fmp4")
 	}
 	if got.profile.VideoCodec != "libx264" {
-		t.Fatalf("nextPlaybackFeedbackPlan() codec = %q, want %q", got.profile.VideoCodec, "libx264")
+		t.Fatalf("NextPlaybackFeedbackPlanWithResolver() codec = %q, want %q", got.profile.VideoCodec, "libx264")
 	}
 	if got.profile.HWAccel != "" {
-		t.Fatalf("nextPlaybackFeedbackPlan() hwaccel = %q, want empty", got.profile.HWAccel)
+		t.Fatalf("NextPlaybackFeedbackPlanWithResolver() hwaccel = %q, want empty", got.profile.HWAccel)
 	}
 	if got.profile.PolicyModeHint != ports.RuntimeModeSafe {
-		t.Fatalf("nextPlaybackFeedbackPlan() mode = %q, want %q", got.profile.PolicyModeHint, ports.RuntimeModeSafe)
+		t.Fatalf("NextPlaybackFeedbackPlanWithResolver() mode = %q, want %q", got.profile.PolicyModeHint, ports.RuntimeModeSafe)
 	}
 	if got.profile.EffectiveModeSource != ports.RuntimeModeSourceFeedbackFallback {
-		t.Fatalf("nextPlaybackFeedbackPlan() mode source = %q, want %q", got.profile.EffectiveModeSource, ports.RuntimeModeSourceFeedbackFallback)
+		t.Fatalf("NextPlaybackFeedbackPlanWithResolver() mode source = %q, want %q", got.profile.EffectiveModeSource, ports.RuntimeModeSourceFeedbackFallback)
 	}
 }
 

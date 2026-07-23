@@ -1,4 +1,8 @@
-package v3
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package sessions
 
 import (
 	"context"
@@ -15,12 +19,17 @@ import (
 
 const sessionRuntimePolicyFreshness = 60 * time.Second
 
-func (s *Server) tickSessionRuntimePolicy(ctx context.Context, store SessionStateStore, session *model.SessionRecord, now time.Time) {
-	if s == nil || store == nil || session == nil || session.SessionID == "" {
+// TickSessionRuntimePolicy evaluates and applies runtime policy changes on a tick.
+func (s *Service) TickSessionRuntimePolicy(ctx context.Context, session *model.SessionRecord, now time.Time) {
+	if s == nil || s.deps == nil || session == nil || session.SessionID == "" {
+		return
+	}
+	store := s.deps.SessionStore()
+	if store == nil {
 		return
 	}
 
-	next, decision, input, changed := s.evaluateSessionRuntimePolicy(ctx, session, now.UTC())
+	next, decision, input, changed := s.EvaluateSessionRuntimePolicy(ctx, session, now.UTC())
 	if !changed {
 		return
 	}
@@ -29,29 +38,29 @@ func (s *Server) tickSessionRuntimePolicy(ctx context.Context, store SessionStat
 		updated    *model.SessionRecord
 		restart    bool
 		transition runtimepolicy.SessionTransition
-		execution  sessionRuntimeTransitionResult
+		execution  SessionRuntimeTransitionResult
 	)
 	record, err := store.UpdateSession(ctx, session.SessionID, func(rec *model.SessionRecord) error {
-		prev := loadSessionRuntimePolicyState(rec)
+		prev := LoadSessionRuntimePolicyState(rec)
 		if prev.CurrentStep == runtimepolicy.PlaybackStepUnknown {
-			prev.CurrentStep = observedRuntimeStep(rec)
+			prev.CurrentStep = ObservedRuntimeStep(rec)
 		}
 		if prev.TargetStep == runtimepolicy.PlaybackStepUnknown {
-			prev.TargetStep = targetRuntimeStep(rec)
+			prev.TargetStep = TargetRuntimeStep(rec)
 		}
 		transition = runtimepolicy.PlanSessionTransition(prev, next, decision)
-		storeSessionRuntimePolicyState(rec, next)
+		StoreSessionRuntimePolicyState(rec, next)
 		if !transition.IsZero() {
-			applied, applyErr := applySessionRuntimePolicyTransition(rec, transition, now.UTC(), s.profileResolver)
+			applied, applyErr := ApplySessionRuntimePolicyTransition(rec, transition, now.UTC(), s.deps.ProfileResolver())
 			if applyErr != nil {
 				return applyErr
 			}
 			execution = applied
 			restart = applied.Restart
 		}
-		timeline := runtimepolicy.AppendTickTrace(loadSessionRuntimeTimeline(rec), buildSessionRuntimeTickTrace(input, next, decision, transition, execution, now.UTC()))
-		storeSessionRuntimeTimeline(rec, timeline)
-		storeSessionRuntimeReplay(rec, buildSessionRuntimePolicyReplay(rec))
+		timeline := runtimepolicy.AppendTickTrace(LoadSessionRuntimeTimeline(rec), BuildSessionRuntimeTickTrace(input, next, decision, transition, execution, now.UTC()))
+		StoreSessionRuntimeTimeline(rec, timeline)
+		StoreSessionRuntimeReplay(rec, BuildSessionRuntimePolicyReplay(rec))
 		return nil
 	})
 	if err != nil {
@@ -60,18 +69,17 @@ func (s *Server) tickSessionRuntimePolicy(ctx context.Context, store SessionStat
 	}
 	updated = record
 	if restart && updated != nil {
-		s.publishSessionRuntimeTransition(ctx, store, updated, transition)
+		s.PublishSessionRuntimeTransition(ctx, updated, transition)
 	}
 }
 
-func (s *Server) evaluateSessionRuntimePolicy(ctx context.Context, session *model.SessionRecord, now time.Time) (runtimepolicy.SessionLoopState, runtimepolicy.SessionLoopDecision, runtimepolicy.SessionLoopInput, bool) {
-	if session == nil {
+// EvaluateSessionRuntimePolicy calculates next state and decision without writing to store.
+func (s *Service) EvaluateSessionRuntimePolicy(ctx context.Context, session *model.SessionRecord, now time.Time) (runtimepolicy.SessionLoopState, runtimepolicy.SessionLoopDecision, runtimepolicy.SessionLoopInput, bool) {
+	if s == nil || s.deps == nil || session == nil {
 		return runtimepolicy.SessionLoopState{}, runtimepolicy.SessionLoopDecision{}, runtimepolicy.SessionLoopInput{}, false
 	}
 
-	s.mu.RLock()
-	registry := s.capabilityRegistry
-	s.mu.RUnlock()
+	registry := s.deps.CapabilityRegistry()
 	if registry == nil {
 		return runtimepolicy.SessionLoopState{}, runtimepolicy.SessionLoopDecision{}, runtimepolicy.SessionLoopInput{}, false
 	}
@@ -112,12 +120,12 @@ func (s *Server) evaluateSessionRuntimePolicy(ctx context.Context, session *mode
 		return runtimepolicy.SessionLoopState{}, runtimepolicy.SessionLoopDecision{}, runtimepolicy.SessionLoopInput{}, false
 	}
 
-	prev := loadSessionRuntimePolicyState(session)
+	prev := LoadSessionRuntimePolicyState(session)
 	input := runtimepolicy.SessionLoopInput{
-		ObservedStep:       observedRuntimeStep(session),
-		TargetStep:         targetRuntimeStep(session),
+		ObservedStep:       ObservedRuntimeStep(session),
+		TargetStep:         TargetRuntimeStep(session),
 		Confidence:         policyState.Confidence,
-		StartupWarmupUntil: sessionPlaybackStartupWarmupUntil(session, s.cfg.HLS.Root, sessionRuntimeStartupWarmup),
+		StartupWarmupUntil: SessionPlaybackStartupWarmupUntil(session, s.deps.Config().HLS.Root, SessionRuntimeStartupWarmup),
 	}
 	next, decision, changed := runtimepolicy.TickSessionLoop(prev, input, now)
 	if !changed {
@@ -126,7 +134,8 @@ func (s *Server) evaluateSessionRuntimePolicy(ctx context.Context, session *mode
 	return next, decision, input, true
 }
 
-func loadSessionRuntimePolicyState(session *model.SessionRecord) runtimepolicy.SessionLoopState {
+// LoadSessionRuntimePolicyState unmarshals and normalizes the runtime state from ContextData.
+func LoadSessionRuntimePolicyState(session *model.SessionRecord) runtimepolicy.SessionLoopState {
 	if session == nil || session.ContextData == nil {
 		return runtimepolicy.SessionLoopState{}
 	}
@@ -141,7 +150,8 @@ func loadSessionRuntimePolicyState(session *model.SessionRecord) runtimepolicy.S
 	return runtimepolicy.NormalizeSessionLoopState(state)
 }
 
-func storeSessionRuntimePolicyState(session *model.SessionRecord, state runtimepolicy.SessionLoopState) {
+// StoreSessionRuntimePolicyState serializes state into ContextData.
+func StoreSessionRuntimePolicyState(session *model.SessionRecord, state runtimepolicy.SessionLoopState) {
 	if session == nil {
 		return
 	}
@@ -161,7 +171,8 @@ func storeSessionRuntimePolicyState(session *model.SessionRecord, state runtimep
 	}
 }
 
-func loadSessionRuntimeTimeline(session *model.SessionRecord) []runtimepolicy.TickTrace {
+// LoadSessionRuntimeTimeline unmarshals tick trace slice from ContextData.
+func LoadSessionRuntimeTimeline(session *model.SessionRecord) []runtimepolicy.TickTrace {
 	if session == nil || session.ContextData == nil {
 		return nil
 	}
@@ -176,7 +187,8 @@ func loadSessionRuntimeTimeline(session *model.SessionRecord) []runtimepolicy.Ti
 	return timeline
 }
 
-func storeSessionRuntimeTimeline(session *model.SessionRecord, timeline []runtimepolicy.TickTrace) {
+// StoreSessionRuntimeTimeline serializes tick trace slice into ContextData.
+func StoreSessionRuntimeTimeline(session *model.SessionRecord, timeline []runtimepolicy.TickTrace) {
 	if session == nil {
 		return
 	}
@@ -192,7 +204,8 @@ func storeSessionRuntimeTimeline(session *model.SessionRecord, timeline []runtim
 	}
 }
 
-func loadSessionRuntimeReplay(session *model.SessionRecord) *runtimepolicy.RuntimePolicyReplay {
+// LoadSessionRuntimeReplay unmarshals replay object from ContextData.
+func LoadSessionRuntimeReplay(session *model.SessionRecord) *runtimepolicy.RuntimePolicyReplay {
 	if session == nil || session.ContextData == nil {
 		return nil
 	}
@@ -207,7 +220,8 @@ func loadSessionRuntimeReplay(session *model.SessionRecord) *runtimepolicy.Runti
 	return &replay
 }
 
-func storeSessionRuntimeReplay(session *model.SessionRecord, replay *runtimepolicy.RuntimePolicyReplay) {
+// StoreSessionRuntimeReplay serializes replay object into ContextData.
+func StoreSessionRuntimeReplay(session *model.SessionRecord, replay *runtimepolicy.RuntimePolicyReplay) {
 	if session == nil {
 		return
 	}
@@ -223,7 +237,8 @@ func storeSessionRuntimeReplay(session *model.SessionRecord, replay *runtimepoli
 	}
 }
 
-func buildSessionRuntimeTickTrace(input runtimepolicy.SessionLoopInput, state runtimepolicy.SessionLoopState, decision runtimepolicy.SessionLoopDecision, transition runtimepolicy.SessionTransition, execution sessionRuntimeTransitionResult, now time.Time) runtimepolicy.TickTrace {
+// BuildSessionRuntimeTickTrace creates a single TickTrace entry.
+func BuildSessionRuntimeTickTrace(input runtimepolicy.SessionLoopInput, state runtimepolicy.SessionLoopState, decision runtimepolicy.SessionLoopDecision, transition runtimepolicy.SessionTransition, execution SessionRuntimeTransitionResult, now time.Time) runtimepolicy.TickTrace {
 	blockers := append([]string(nil), decision.Blockers...)
 	blockers = append(blockers, execution.Blockers...)
 	executedTransition := runtimepolicy.SessionTransitionNoOp
@@ -246,13 +261,14 @@ func buildSessionRuntimeTickTrace(input runtimepolicy.SessionLoopInput, state ru
 		ProbeStep:             state.ProbeStep,
 		ProbeState:            state.ProbeState,
 		CooldownUntil:         state.CooldownUntil,
-		RuntimePhase:          sessionRuntimePolicyPhaseName(state, now),
+		RuntimePhase:          SessionRuntimePolicyPhaseName(state, now),
 		Blockers:              blockers,
 		Reasons:               append([]string(nil), state.Reasons...),
 	}
 }
 
-func observedRuntimeStep(session *model.SessionRecord) runtimepolicy.PlaybackLadderStep {
+// ObservedRuntimeStep computes the active ladder step observed for a session.
+func ObservedRuntimeStep(session *model.SessionRecord) runtimepolicy.PlaybackLadderStep {
 	if session == nil {
 		return runtimepolicy.PlaybackStepUnknown
 	}
@@ -264,20 +280,22 @@ func observedRuntimeStep(session *model.SessionRecord) runtimepolicy.PlaybackLad
 	if target == nil {
 		target = model.TraceTargetProfileFromProfile(session.Profile)
 	}
-	return runtimepolicy.PlaybackLadderStepFromTargetProfile(target, sessionRuntimeQualityRung(trace))
+	return runtimepolicy.PlaybackLadderStepFromTargetProfile(target, SessionRuntimeQualityRung(trace))
 }
 
-func targetRuntimeStep(session *model.SessionRecord) runtimepolicy.PlaybackLadderStep {
+// TargetRuntimeStep computes the target ladder step from ContextData or fallback.
+func TargetRuntimeStep(session *model.SessionRecord) runtimepolicy.PlaybackLadderStep {
 	if session == nil || session.ContextData == nil {
-		return observedRuntimeStep(session)
+		return ObservedRuntimeStep(session)
 	}
 	if target := runtimepolicy.NormalizePlaybackLadderStep(session.ContextData[model.CtxKeyRuntimeTargetStep]); target != runtimepolicy.PlaybackStepUnknown {
 		return target
 	}
-	return observedRuntimeStep(session)
+	return ObservedRuntimeStep(session)
 }
 
-func sessionRuntimeQualityRung(trace *model.PlaybackTrace) playbackprofile.QualityRung {
+// SessionRuntimeQualityRung normalizes candidate quality rung fields from PlaybackTrace.
+func SessionRuntimeQualityRung(trace *model.PlaybackTrace) playbackprofile.QualityRung {
 	if trace == nil {
 		return playbackprofile.RungUnknown
 	}
@@ -291,4 +309,52 @@ func sessionRuntimeQualityRung(trace *model.PlaybackTrace) playbackprofile.Quali
 		}
 	}
 	return playbackprofile.RungUnknown
+}
+
+// SessionRuntimePolicyPhaseName calculates the string description of the runtime phase.
+func SessionRuntimePolicyPhaseName(state runtimepolicy.SessionLoopState, now time.Time) string {
+	if state.ProbeState == runtimepolicy.ProbeLifecycleScheduled || state.ProbeState == runtimepolicy.ProbeLifecycleObserving {
+		return "probing"
+	}
+	switch strings.TrimSpace(string(state.LastAction)) {
+	case "probe_up":
+		return "probing"
+	case "cooldown":
+		return "cooldown"
+	case "degrade", "step_down":
+		return "degraded"
+	case "lock_current":
+		return "recovering"
+	}
+	if hasString(state.Reasons, runtimepolicy.ReasonProbeRecentlyRegressed, runtimepolicy.ReasonProbeWindowRegressed) || state.ProbeState == runtimepolicy.ProbeLifecycleAborted {
+		return "probe_regressed"
+	}
+	if !state.CooldownUntil.IsZero() && state.CooldownUntil.After(now) {
+		return "cooldown"
+	}
+	switch state.ConfidenceState {
+	case runtimepolicy.ConfidenceRecovery:
+		return "recovering"
+	case runtimepolicy.ConfidenceLow:
+		return "degraded"
+	case runtimepolicy.ConfidenceStable, runtimepolicy.ConfidenceHigh:
+		return "stable"
+	default:
+		return ""
+	}
+}
+
+func hasString(values []string, targets ...string) bool {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		for _, target := range targets {
+			if value == strings.TrimSpace(target) {
+				return true
+			}
+		}
+	}
+	return false
 }

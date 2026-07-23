@@ -1,4 +1,8 @@
-package v3
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package sessions
 
 import (
 	"context"
@@ -13,53 +17,53 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
-type sessionRuntimeTransitionResult struct {
+type SessionRuntimeTransitionResult struct {
 	Executed bool
 	Restart  bool
 	Blockers []string
 }
 
-func applySessionRuntimePolicyTransition(rec *model.SessionRecord, transition runtimepolicy.SessionTransition, now time.Time, profileResolver profiles.Resolver) (sessionRuntimeTransitionResult, error) {
+func ApplySessionRuntimePolicyTransition(rec *model.SessionRecord, transition runtimepolicy.SessionTransition, now time.Time, profileResolver profiles.Resolver) (SessionRuntimeTransitionResult, error) {
 	if rec == nil || transition.IsZero() {
-		return sessionRuntimeTransitionResult{}, nil
+		return SessionRuntimeTransitionResult{}, nil
 	}
 	if rec.State != model.SessionReady && rec.State != model.SessionDraining {
-		return sessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerSessionNotRestartable}}, nil
+		return SessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerSessionNotRestartable}}, nil
 	}
 
 	switch transition.Kind {
 	case runtimepolicy.SessionTransitionScheduleStepDown:
-		nextProfile, ok := sessionRuntimeProfileForStepWithResolver(rec.Profile, transition.ToStep, profileResolver)
+		nextProfile, ok := SessionRuntimeProfileForStepWithResolver(rec.Profile, transition.ToStep, profileResolver)
 		if !ok {
-			return sessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerProfileUnmapped}}, nil
+			return SessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerProfileUnmapped}}, nil
 		}
 		currentTarget := model.TraceTargetProfileFromProfile(rec.Profile)
 		nextTarget := model.TraceTargetProfileFromProfile(nextProfile)
 		if currentTarget != nil && nextTarget != nil && currentTarget.Hash() == nextTarget.Hash() {
-			return sessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerAlreadyAtProfile}}, nil
+			return SessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerAlreadyAtProfile}}, nil
 		}
-		applyRuntimeTransitionProfile(rec, nextProfile, transition, now)
-		return sessionRuntimeTransitionResult{Executed: true, Restart: true}, nil
+		ApplyRuntimeTransitionProfile(rec, nextProfile, transition, now)
+		return SessionRuntimeTransitionResult{Executed: true, Restart: true}, nil
 	case runtimepolicy.SessionTransitionScheduleProbeUp, runtimepolicy.SessionTransitionRevertProbe:
-		nextProfile, ok := sessionRuntimeProfileForStepWithResolver(rec.Profile, transition.ToStep, profileResolver)
+		nextProfile, ok := SessionRuntimeProfileForStepWithResolver(rec.Profile, transition.ToStep, profileResolver)
 		if !ok {
-			return sessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerProfileUnmapped}}, nil
+			return SessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerProfileUnmapped}}, nil
 		}
 		currentTarget := model.TraceTargetProfileFromProfile(rec.Profile)
 		nextTarget := model.TraceTargetProfileFromProfile(nextProfile)
 		if currentTarget != nil && nextTarget != nil && currentTarget.Hash() == nextTarget.Hash() {
-			return sessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerAlreadyAtProfile}}, nil
+			return SessionRuntimeTransitionResult{Blockers: []string{runtimepolicy.BlockerAlreadyAtProfile}}, nil
 		}
-		applyRuntimeTransitionProfile(rec, nextProfile, transition, now)
-		return sessionRuntimeTransitionResult{Executed: true, Restart: true}, nil
+		ApplyRuntimeTransitionProfile(rec, nextProfile, transition, now)
+		return SessionRuntimeTransitionResult{Executed: true, Restart: true}, nil
 	case runtimepolicy.SessionTransitionCommitProbe:
-		return sessionRuntimeTransitionResult{Executed: true}, nil
+		return SessionRuntimeTransitionResult{Executed: true}, nil
 	default:
-		return sessionRuntimeTransitionResult{}, nil
+		return SessionRuntimeTransitionResult{}, nil
 	}
 }
 
-func applyRuntimeTransitionProfile(rec *model.SessionRecord, nextProfile model.ProfileSpec, transition runtimepolicy.SessionTransition, now time.Time) {
+func ApplyRuntimeTransitionProfile(rec *model.SessionRecord, nextProfile model.ProfileSpec, transition runtimepolicy.SessionTransition, now time.Time) {
 	fromTarget := model.TraceTargetProfileFromProfile(rec.Profile)
 	fromHash := ""
 	if fromTarget != nil {
@@ -74,7 +78,7 @@ func applyRuntimeTransitionProfile(rec *model.SessionRecord, nextProfile model.P
 	rec.PipelineState = model.PipeStopRequested
 	rec.StopReason = ""
 
-	trace := ensureSessionPlaybackTrace(rec)
+	trace := EnsureSessionPlaybackTrace(rec)
 	if trace.ClientPath == "" && rec.ContextData != nil {
 		trace.ClientPath = strings.TrimSpace(rec.ContextData[model.CtxKeyClientPath])
 	}
@@ -110,7 +114,7 @@ func applyRuntimeTransitionProfile(rec *model.SessionRecord, nextProfile model.P
 	})
 }
 
-func sessionRuntimeProfileForStepWithResolver(current model.ProfileSpec, step runtimepolicy.PlaybackLadderStep, profileResolver profiles.Resolver) (model.ProfileSpec, bool) {
+func SessionRuntimeProfileForStepWithResolver(current model.ProfileSpec, step runtimepolicy.PlaybackLadderStep, profileResolver profiles.Resolver) (model.ProfileSpec, bool) {
 	build := func(profileID string) model.ProfileSpec {
 		next := profileResolver.Resolve(profileID, "", current.DVRWindowSec, nil, profiles.GPUBackendNone, profiles.HWAccelOff)
 		next.DVRWindowSec = current.DVRWindowSec
@@ -183,11 +187,11 @@ func sessionRuntimeInputKindFromRecord(rec *model.SessionRecord) string {
 	return strings.TrimSpace(rec.ContextData[model.CtxKeySourceType])
 }
 
-func (s *Server) publishSessionRuntimeTransition(ctx context.Context, store SessionStateStore, sess *model.SessionRecord, transition runtimepolicy.SessionTransition) {
-	if s == nil || store == nil || sess == nil || transition.IsZero() {
+func (s *Service) PublishSessionRuntimeTransition(ctx context.Context, sess *model.SessionRecord, transition runtimepolicy.SessionTransition) {
+	if s == nil || s.deps == nil || sess == nil || transition.IsZero() {
 		return
 	}
-	eventBus := s.sessionsModuleDeps().bus
+	eventBus := s.deps.Bus()
 	if eventBus == nil {
 		return
 	}
@@ -213,5 +217,5 @@ func (s *Server) publishSessionRuntimeTransition(ctx context.Context, store Sess
 		Str("profile", sess.Profile.Name).
 		Msg("runtime policy transition scheduled session restart")
 
-	s.scheduleSessionRestart(eventBus, store, sess)
+	s.ScheduleSessionRestart(sess)
 }
