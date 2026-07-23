@@ -51,14 +51,14 @@ func (m *Manager) TriggerProbe(id string, input string) {
 	if input == "" && meta.ResolvedPath == "" && m.pathMapper == nil {
 		meta.State = ArtifactStateFailed
 		meta.Error = "missing input path for probe"
-		m.touch(&meta)
+		m.touch(id, &meta)
 		m.metadata[id] = meta
 		m.mu.Unlock()
 		return
 	}
 
 	meta.State = ArtifactStatePreparing
-	m.touch(&meta)
+	m.touch(id, &meta)
 	m.metadata[id] = meta
 	capturedGen := meta.StateGen
 	resolvedPath := meta.ResolvedPath // Capture under lock

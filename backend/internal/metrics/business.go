@@ -463,3 +463,12 @@ func IncVODRemuxStall(strategy string) {
 func IncTargetFallback(reason string) {
 	recordingsTargetFallbackTotal.WithLabelValues(reason).Inc()
 }
+
+var vodStateDivergenceTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "xg2g_vod_state_divergence_total",
+	Help: "Total count of artifact state divergence between memory/legacy and SQLite FSM",
+}, []string{"legacy_state", "fsm_state"})
+
+func IncVODStateDivergence(legacyState, fsmState string) {
+	vodStateDivergenceTotal.WithLabelValues(legacyState, fsmState).Inc()
+}

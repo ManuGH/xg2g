@@ -38,7 +38,7 @@ func (m *Manager) markReadyFromBuild(jobID string, metaID string, spec Spec, fin
 		meta.State = ArtifactStateFailed
 		meta.Error = "build completed without artifact path"
 	}
-	m.touch(&meta)
+	m.touch(metaID, &meta)
 	m.metadata[metaID] = meta
 
 	log.Info().Str(xlog.FieldJobID, jobID).Str(xlog.FieldMetaID, metaID).Str(xlog.FieldOldState, string(oldState)).Str(xlog.FieldNewState, string(meta.State)).Str(xlog.FieldPlaylistPath, meta.PlaylistPath).Uint64("stateGen", meta.StateGen).Msg("VOD manager: metadata updated")
@@ -59,7 +59,7 @@ func (m *Manager) markFailedFromBuild(jobID string, metaID string, reason string
 	oldState := meta.State
 	meta.State = ArtifactStateFailed
 	meta.Error = reason
-	m.touch(&meta)
+	m.touch(metaID, &meta)
 	m.metadata[metaID] = meta
 
 	log.Info().Str(xlog.FieldJobID, jobID).Str(xlog.FieldMetaID, metaID).Str(xlog.FieldOldState, string(oldState)).Str(xlog.FieldNewState, string(meta.State)).Str("error", meta.Error).Uint64("stateGen", meta.StateGen).Msg("VOD manager: metadata updated to FAILED")
