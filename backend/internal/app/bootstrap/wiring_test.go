@@ -22,6 +22,7 @@ import (
 // 3. Middleware (RequestID) is active.
 // 4. Config is injected.
 func TestWiring_BootsMinimalStack(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// 1. Setup minimal test config
 	t.Setenv("XG2G_INITIAL_REFRESH", "false") // Disable background refresh to prevent network hangs
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
@@ -89,6 +90,7 @@ recordings:
 }
 
 func TestWiring_MetricsDefaultBindsLocalhost(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
@@ -123,6 +125,7 @@ metrics:
 }
 
 func TestWiring_TLSEnabledForcesHTTPSByDefault(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")

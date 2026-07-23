@@ -22,6 +22,7 @@ import (
 // 2. No Auth -> 401 Unauthorized.
 // 3. Resolver MUST NOT be called.
 func TestVODPlayback_Path_Wiring_ScopeEnforcement(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")

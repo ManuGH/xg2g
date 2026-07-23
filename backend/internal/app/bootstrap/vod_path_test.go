@@ -42,6 +42,7 @@ func (m *mockResolver) GetMediaTruth(ctx context.Context, id string) (playback.M
 // 3. Sets X-Request-ID header (strictly canonical).
 // 4. Matches header ID with body ID.
 func TestVODPlayback_Path_Wiring_ErrorPath(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// 1. Setup minimal test config (Option A: Real components, temp dir)
 	t.Setenv("XG2G_INITIAL_REFRESH", "false") // Disable background refresh to prevent test hangs/noise
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
@@ -144,6 +145,7 @@ recordings:
 // 3. X-Request-ID header present and correlated.
 // 4. Stream URL is syntactically valid.
 func TestVODPlayback_Path_Wiring_SuccessPath(t *testing.T) {
+	skipIfNoFFmpeg(t)
 	// 1. Setup minimal test config
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())

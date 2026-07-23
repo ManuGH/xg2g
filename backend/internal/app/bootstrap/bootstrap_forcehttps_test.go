@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -15,6 +16,9 @@ import (
 // with the bug, masking it). With the promotion left after buildWireConfigState,
 // container.snapshot.App.ForceHTTPS was false despite TLS enabled.
 func TestWiring_TLSEnabled_SnapshotCarriesForceHTTPS(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not found in PATH, skipping preflight-dependent test")
+	}
 	t.Setenv("XG2G_INITIAL_REFRESH", "false")
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
