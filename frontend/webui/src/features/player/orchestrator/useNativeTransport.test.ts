@@ -14,10 +14,14 @@ describe('useNativeTransport', () => {
   it('binds native audio tracks if video element has audioTracks property', () => {
     const { result } = renderHook(() => useNativeTransport());
     const dummyVideo = document.createElement('video');
-    (dummyVideo as any).audioTracks = [
+    const mockTracks = [
       { label: 'English', language: 'en', enabled: true },
       { label: 'German', language: 'de', enabled: false },
     ];
+    Object.defineProperty(dummyVideo, 'audioTracks', {
+      value: mockTracks,
+      configurable: true,
+    });
 
     act(() => {
       result.current.bindNativeAudioTracks(dummyVideo);

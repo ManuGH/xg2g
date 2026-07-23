@@ -27,11 +27,11 @@ export function usePlaybackStateMachine(
 ): PlaybackStateMachineResult {
   const [state, dispatch] = usePlaybackMachineRuntime(initialStateFactory, executeCommand);
 
-  const isIdle = state.phase.kind === 'idle';
-  const isProbing = state.phase.kind === 'probing' || state.phase.kind === 'preflight';
-  const isPlaying = state.phase.kind === 'playing' || state.phase.kind === 'active';
-  const isRetrying = state.phase.kind === 'reconnecting' || state.phase.kind === 'recovering';
-  const isError = state.phase.kind === 'error' || state.phase.kind === 'failed';
+  const isIdle = state.sessionPhase === 'idle';
+  const isProbing = state.sessionPhase === 'starting' || state.mediaPhase === 'starting';
+  const isPlaying = state.mediaPhase === 'playing';
+  const isRetrying = state.mediaPhase === 'recovering';
+  const isError = state.sessionPhase === 'error' || state.mediaPhase === 'error';
 
   return useMemo(
     () => ({
