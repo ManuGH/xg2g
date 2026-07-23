@@ -18,10 +18,6 @@ type recordingArtifactSelfHealer interface {
 	InvalidateTruth(id string)
 }
 
-type recordingArtifactFailurePromoter interface {
-	PromoteFailedToReadyIfPlaylist(id string) (vod.Metadata, bool)
-}
-
 func recordingFinalPlaylistPath(hlsRoot, serviceRef, variant string) (string, error) {
 	cacheDir, err := RecordingVariantCacheDir(hlsRoot, serviceRef, variant)
 	if err != nil {
@@ -70,14 +66,6 @@ func LoadRecordingBuildState(ctx context.Context, hlsRoot string, manager record
 			healer.InvalidateTruth(metaID)
 			// Re-fetch metadata after invalidation to reflect the cleared truth
 			meta, metaOk = manager.GetMetadata(metaID)
-		}
-	}
-
-	if metaOk && meta.State == vod.ArtifactStateFailed && meta.HasPlaylist() && !isTruthMismatch {
-		if promoter, ok := manager.(recordingArtifactFailurePromoter); ok {
-			if promoted, changed := promoter.PromoteFailedToReadyIfPlaylist(metaID); changed {
-				meta = promoted
-			}
 		}
 	}
 

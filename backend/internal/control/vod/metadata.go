@@ -179,29 +179,6 @@ func (m *Manager) MarkPreparingIfState(id string, expected ArtifactState, reason
 	return meta, true
 }
 
-// PromoteFailedToReadyIfPlaylist transitions FAILED -> READY when a playlist path is already known.
-// Returns updated metadata and true if the transition was applied.
-func (m *Manager) PromoteFailedToReadyIfPlaylist(id string) (Metadata, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	meta, ok := m.metadata[id]
-	if !ok || meta.State != ArtifactStateFailed || !meta.HasPlaylist() ||
-		meta.Error == string(ReasonTruthMismatch) ||
-		meta.Error == string(ReasonContract) ||
-		meta.Error == string(ReasonProbeFail) ||
-		meta.Error == string(ReasonStartFail) {
-		return Metadata{}, false
-	}
-
-	meta.State = ArtifactStateReady
-	meta.Error = ""
-	m.touch(id, &meta)
-	m.metadata[id] = meta
-
-	return meta, true
-}
-
 // SetResolvedPathIfEmpty stores a resolved input path if none is set yet.
 func (m *Manager) SetResolvedPathIfEmpty(id string, resolved string) bool {
 	if resolved == "" {
