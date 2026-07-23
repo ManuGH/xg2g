@@ -167,7 +167,7 @@ quality-gates-online: verify-generated-artifacts verify-release-output-contract 
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test ## Run the local PR validation bundle used by CI
+ci-pr: lint test verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test ## Run the local PR validation bundle used by CI
 	@echo "✅ PR gate bundle passed"
 
 ci-nightly: quality-gates-online webui-test ## Run the local deep validation bundle
