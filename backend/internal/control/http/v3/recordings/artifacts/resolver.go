@@ -87,12 +87,6 @@ func (r *DefaultResolver) ResolvePlaylist(ctx context.Context, recordingID, prof
 		return ArtifactOK{}, &ArtifactError{Code: CodePreparing, RetryAfter: 5 * time.Second, Detail: "preparing"}
 	}
 
-	// 3. FAILED Handling (Self-heal)
-	if meta.State == vod.ArtifactStateFailed {
-		if updated, ok := r.vodManager.PromoteFailedToReadyIfPlaylist(metaID); ok {
-			meta = updated
-		}
-	}
 	if meta.State == vod.ArtifactStateFailed {
 		// Attempt reconcile
 		if _, transitioned := r.vodManager.MarkPreparingIfState(metaID, vod.ArtifactStateFailed, "reconcile: retrying build"); transitioned {
