@@ -53,6 +53,9 @@ func main() {
 	if err := writeConfigInventory(paths.repoRoot); err != nil {
 		fail(err)
 	}
+	if err := writeGeneratedCode(paths.backendRoot, entries); err != nil {
+		fail(err)
+	}
 }
 
 type generatorPaths struct {

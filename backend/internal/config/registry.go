@@ -311,11 +311,11 @@ func buildRegistry() (*Registry, error) {
 		// --- INTERNAL / CANDIDATES ---
 		{FieldPath: "apiTokensParseErr", Profile: ProfileInternal, Status: StatusInternal},
 		// Legacy VOD flat fields (backwards-compat only, use typed VOD.* instead)
-		{FieldPath: "VODProbeSize", Profile: ProfileInternal, Status: StatusInternal},
-		{FieldPath: "VODAnalyzeDuration", Profile: ProfileInternal, Status: StatusInternal},
-		{FieldPath: "VODStallTimeout", Profile: ProfileInternal, Status: StatusInternal},
-		{FieldPath: "VODMaxConcurrent", Profile: ProfileInternal, Status: StatusInternal},
-		{FieldPath: "VODCacheTTL", Profile: ProfileInternal, Status: StatusInternal, Default: 24 * time.Hour},
+		{Path: "vod_flat.probeSize", Env: "XG2G_VOD_PROBE_SIZE", FieldPath: "VODProbeSize", Profile: ProfileInternal, Status: StatusInternal},
+		{Path: "vod_flat.analyzeDuration", Env: "XG2G_VOD_ANALYZE_DURATION", FieldPath: "VODAnalyzeDuration", Profile: ProfileInternal, Status: StatusInternal},
+		{Path: "vod_flat.stallTimeout", Env: "XG2G_VOD_STALL_TIMEOUT", FieldPath: "VODStallTimeout", Profile: ProfileInternal, Status: StatusInternal},
+		{Path: "vod_flat.maxConcurrent", Env: "XG2G_VOD_MAX_CONCURRENT", FieldPath: "VODMaxConcurrent", Profile: ProfileInternal, Status: StatusInternal},
+		{Path: "vod_flat.cacheTTL", Env: "XG2G_VOD_CACHE_TTL", FieldPath: "VODCacheTTL", Profile: ProfileInternal, Status: StatusInternal, Default: 24 * time.Hour},
 		{FieldPath: "VODCacheMaxEntries", Profile: ProfileInternal, Status: StatusInternal, Default: 256},
 	}
 

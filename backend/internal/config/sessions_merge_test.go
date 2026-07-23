@@ -67,7 +67,7 @@ func TestSessionsConfigEnvOverride(t *testing.T) {
 	t.Setenv("XG2G_SESSION_LEASE_TTL", "45s")
 	t.Setenv("XG2G_SESSION_HEARTBEAT_INTERVAL", "15s")
 	t.Setenv("XG2G_SESSION_EXPIRY_CHECK_INTERVAL", "90s")
-	loader.mergeEnvSessions(&cfg)
+	loader.mergeEnvConfig(&cfg)
 
 	if cfg.Sessions.LeaseTTL != 45*time.Second {
 		t.Errorf("env lease_ttl = %v, want 45s", cfg.Sessions.LeaseTTL)
