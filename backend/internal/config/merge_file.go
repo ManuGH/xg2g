@@ -327,6 +327,9 @@ func (l *Loader) mergeFileAPI(dst *AppConfig, src *FileConfig) error {
 	if src.API.DisableLegacyTokenSources != nil {
 		dst.APIDisableLegacyTokenSources = *src.API.DisableLegacyTokenSources
 	}
+	if src.API.LegacyEnabled != nil {
+		dst.APILegacyEnabled = *src.API.LegacyEnabled
+	}
 	if src.API.PlaybackDecisionSecret != "" {
 		dst.PlaybackDecisionSecret = expandEnv(src.API.PlaybackDecisionSecret)
 	}

@@ -84,6 +84,7 @@ The core knobs for a typical deployment. Everything in the per-area sections bel
 | --- | --- | --- | --- | --- |
 | `api.allowedOrigins` | `XG2G_ALLOWED_ORIGINS` | - | Active | Advanced |
 | `api.disableLegacyTokenSources` | `XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES` | `true` | Active | Advanced |
+| `api.legacy_enabled` | `XG2G_API_LEGACY_ENABLED` | `true` | Active | Advanced |
 | `api.listenAddr` | `XG2G_LISTEN` | `127.0.0.1:8088` | Active | Simple |
 | `api.playbackDecisionKeyId` | `XG2G_PLAYBACK_DECISION_KID` | - | Active | Advanced |
 | `api.playbackDecisionPreviousKeys` | `XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS` | - | Active | Advanced |

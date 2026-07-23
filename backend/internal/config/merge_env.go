@@ -108,6 +108,7 @@ func (l *Loader) mergeEnvAPI(cfg *AppConfig) {
 		cfg.APITokens = tokens
 	}
 	cfg.APIDisableLegacyTokenSources = l.envBool("XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES", cfg.APIDisableLegacyTokenSources)
+	cfg.APILegacyEnabled = l.envBool("XG2G_API_LEGACY_ENABLED", cfg.APILegacyEnabled)
 	if value, ok := decisionSecretValueFromLookup(l.envLookup); ok {
 		cfg.PlaybackDecisionSecret = value
 	}
