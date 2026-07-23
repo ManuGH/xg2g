@@ -46,3 +46,37 @@ func TestCodegenRegistry_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestCodegenMergeFile_Characterization(t *testing.T) {
+	loader := NewLoader("", "")
+
+	trueVal := true
+	daysVal := 7
+
+	fileCfg := &FileConfig{
+		LogLevel: "debug",
+		DataDir:  "/tmp/test-data",
+		EPG: EPGConfig{
+			Enabled: &trueVal,
+			Days:    &daysVal,
+		},
+	}
+
+	cfgDst := &AppConfig{}
+	if err := loader.mergeFileConfig(cfgDst, fileCfg); err != nil {
+		t.Fatalf("mergeFileConfig failed: %v", err)
+	}
+
+	if cfgDst.LogLevel != "debug" {
+		t.Errorf("LogLevel = %q, want debug", cfgDst.LogLevel)
+	}
+	if cfgDst.DataDir != "/tmp/test-data" {
+		t.Errorf("DataDir = %q, want /tmp/test-data", cfgDst.DataDir)
+	}
+	if !cfgDst.EPGEnabled {
+		t.Errorf("EPGEnabled = false, want true")
+	}
+	if cfgDst.EPGDays != 7 {
+		t.Errorf("EPGDays = %d, want 7", cfgDst.EPGDays)
+	}
+}
