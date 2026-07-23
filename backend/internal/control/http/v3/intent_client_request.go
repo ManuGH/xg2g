@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"maps"
 
+	v3playbackinfo "github.com/ManuGH/xg2g/internal/control/http/v3/playbackinfo"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -25,7 +26,14 @@ func hashV3Capabilities(caps *PlaybackCapabilities) string {
 }
 
 func normalizeIntentClientCaps(caps *PlaybackCapabilities) *capabilities.PlaybackCapabilities {
-	internal := mapV3CapsToInternal(caps)
+	if caps == nil {
+		return nil
+	}
+	var infoCaps v3playbackinfo.PlaybackCapabilities
+	if b, err := json.Marshal(caps); err == nil {
+		_ = json.Unmarshal(b, &infoCaps)
+	}
+	internal := v3playbackinfo.MapV3CapsToInternal(&infoCaps)
 	if internal == nil {
 		return nil
 	}

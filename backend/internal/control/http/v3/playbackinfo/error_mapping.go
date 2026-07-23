@@ -2,16 +2,57 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package v3
+package playbackinfo
 
 import (
 	"net/http"
 	"strconv"
 
+	"github.com/ManuGH/xg2g/internal/control/http/problem"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
+
+type PlaybackInfoInputProblem struct {
+	Status      int
+	ProblemType string
+	Title       string
+	Code        string
+	Detail      string
+}
+
+func WritePlaybackInfoInputProblem(w http.ResponseWriter, r *http.Request, p *PlaybackInfoInputProblem) {
+	if p == nil {
+		return
+	}
+	problem.Write(w, r, p.Status, p.ProblemType, p.Title, p.Code, p.Detail, nil)
+}
+
+func writeRegisteredProblem(w http.ResponseWriter, r *http.Request, status int, problemType, title, code, detail string, extra map[string]any) {
+	spec := problemcode.MustResolve(code, title)
+	if problemType == "" {
+		problemType = spec.ProblemType
+	}
+	problem.Write(w, r, status, problemType, spec.Title, spec.Code, detail, extra)
+}
+
+type terminalProblemSpec struct {
+	problemType string
+	title       string
+	code        string
+	detail      string
+}
+
+func problemSpecForCode(code, title, detail string) terminalProblemSpec {
+	spec := problemcode.Resolve(code, title)
+	return terminalProblemSpec{
+		problemType: spec.ProblemType,
+		title:       spec.Title,
+		code:        spec.Code,
+		detail:      detail,
+	}
+}
 
 type playbackInfoHTTPProblemSpec struct {
 	status     int
@@ -155,13 +196,13 @@ func problemSpecForPlaybackInfoError(schemaType string, err *v3recordings.Playba
 	return internal
 }
 
-func writePlaybackInfoServiceError(w http.ResponseWriter, r *http.Request, id string, schemaType string, err *v3recordings.PlaybackInfoError) {
+func WritePlaybackInfoServiceError(w http.ResponseWriter, r *http.Request, id string, schemaType string, err *v3recordings.PlaybackInfoError) {
 	spec := problemSpecForPlaybackInfoError(schemaType, err)
 	if spec.retryAfter != nil {
 		w.Header().Set("Retry-After", strconv.Itoa(*spec.retryAfter))
 	}
 	if spec.rawProblem != nil {
-		writeProblem(w, r, spec.rawProblem.Status, spec.rawProblem.Type, spec.rawProblem.Title, spec.rawProblem.Code, spec.rawProblem.Detail, nil)
+		problem.Write(w, r, spec.rawProblem.Status, spec.rawProblem.Type, spec.rawProblem.Title, spec.rawProblem.Code, spec.rawProblem.Detail, nil)
 		return
 	}
 
@@ -169,8 +210,8 @@ func writePlaybackInfoServiceError(w http.ResponseWriter, r *http.Request, id st
 		fallback := problemSpecForCode(problemcode.CodeInternalError, "Resolution Failed", "Failed to resolve playback info")
 		fallback.problemType = "playback/resolution_failed"
 		log.L().Error().Err(err).Str("id", id).Msg("playback resolution failed")
-		writeProblem(w, r, http.StatusInternalServerError, fallback.problemType, fallback.title, fallback.code, fallback.detail, nil)
+		problem.Write(w, r, http.StatusInternalServerError, fallback.problemType, fallback.title, fallback.code, fallback.detail, nil)
 		return
 	}
-	writeProblem(w, r, spec.status, spec.problem.problemType, spec.problem.title, spec.problem.code, spec.problem.detail, spec.extra)
+	problem.Write(w, r, spec.status, spec.problem.problemType, spec.problem.title, spec.problem.code, spec.problem.detail, spec.extra)
 }

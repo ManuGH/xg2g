@@ -15,6 +15,7 @@ import (
 	v3deviceauth "github.com/ManuGH/xg2g/internal/control/http/v3/deviceauth"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
+	v3playbackinfo "github.com/ManuGH/xg2g/internal/control/http/v3/playbackinfo"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/recordings/artifacts"
 	v3sessions "github.com/ManuGH/xg2g/internal/control/http/v3/sessions"
@@ -111,6 +112,7 @@ type Server struct {
 	deviceAuthV3Service    *v3deviceauth.Service
 	recordingsV3Service    *v3recordings.Service
 	sessionsV3Service      *v3sessions.Service
+	playbackInfoV3Service  *v3playbackinfo.Service
 	deviceAuthStateStore   deviceauthstore.StateStore
 	plannerShadowWorker    *playbackshadow.Worker
 	plannerShadowObserver  playbackshadow.PlannerShadowObserver

@@ -31,7 +31,7 @@ func TestPlannerReceiptTokenRoundTripAndBinding(t *testing.T) {
 		},
 	}
 
-	token := server.buildLivePlannerDecisionToken(record.Receipt.ServiceRefBind, eval, nil, &record, "test-req-id")
+	token := server.playbackInfoProcessor().BuildLivePlannerDecisionToken(record.Receipt.ServiceRefBind, eval, nil, &record, "test-req-id")
 	require.NotNil(t, token)
 	claims, err := v3auth.VerifyStrict(*token, server.JWTSecret, "xg2g/v3/intents", "xg2g")
 	require.NoError(t, err)

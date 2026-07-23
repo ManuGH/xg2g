@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package v3
+package playbackinfo
 
 import (
 	"context"
@@ -16,18 +16,18 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 )
 
-type playbackRuntimeState struct {
-	segmentTruth          *hls.SegmentTruth
-	attemptedSegmentTruth bool
-	resumeState           *resume.State
+type PlaybackRuntimeState struct {
+	SegmentTruth          *hls.SegmentTruth
+	AttemptedSegmentTruth bool
+	ResumeState           *resume.State
 }
 
-func resolvePlaybackRuntimeState(ctx context.Context, deps recordingsModuleDeps, principalID, recordingID string, mode decision.Mode) playbackRuntimeState {
-	segmentTruth, attemptedSegmentTruth := resolvePlaybackSegmentTruth(ctx, deps.artifacts, recordingID, mode)
-	return playbackRuntimeState{
-		segmentTruth:          segmentTruth,
-		attemptedSegmentTruth: attemptedSegmentTruth,
-		resumeState:           loadPlaybackResumeState(ctx, deps.resumeStore, principalID, recordingID),
+func ResolvePlaybackRuntimeState(ctx context.Context, artifactResolver artifacts.Resolver, resumeStore resume.Store, principalID, recordingID string, mode decision.Mode) PlaybackRuntimeState {
+	segmentTruth, attemptedSegmentTruth := resolvePlaybackSegmentTruth(ctx, artifactResolver, recordingID, mode)
+	return PlaybackRuntimeState{
+		SegmentTruth:          segmentTruth,
+		AttemptedSegmentTruth: attemptedSegmentTruth,
+		ResumeState:           loadPlaybackResumeState(ctx, resumeStore, principalID, recordingID),
 	}
 }
 

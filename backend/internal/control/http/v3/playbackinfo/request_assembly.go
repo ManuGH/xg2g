@@ -2,9 +2,10 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package v3
+package playbackinfo
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -12,9 +13,10 @@ import (
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/normalize"
 )
 
-func buildPlaybackInfoServiceRequest(r *http.Request, subjectID string, caps *PlaybackCapabilities, apiVersion string, schemaType string) v3recordings.PlaybackInfoRequest {
+func BuildPlaybackInfoServiceRequest(r *http.Request, subjectID string, caps *PlaybackCapabilities, apiVersion string, schemaType string) v3recordings.PlaybackInfoRequest {
 	return v3recordings.PlaybackInfoRequest{
 		SubjectID:        subjectID,
 		SubjectKind:      playbackSubjectKindForSchema(schemaType),
@@ -25,7 +27,7 @@ func buildPlaybackInfoServiceRequest(r *http.Request, subjectID string, caps *Pl
 		RequestID:        log.RequestIDFromContext(r.Context()),
 		ClientProfile:    string(detectClientProfile(r)),
 		Headers:          playbackRequestHeaders(r.Header),
-		Capabilities:     mapV3CapsToInternal(caps),
+		Capabilities:     MapV3CapsToInternal(caps),
 	}
 }
 
@@ -63,7 +65,7 @@ func playbackRequestHeaders(headers http.Header) map[string]string {
 	return requestHeaders
 }
 
-func mapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabilities {
+func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabilities {
 	if v3 == nil {
 		return nil
 	}
@@ -155,4 +157,68 @@ func mapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 		}
 	}
 	return &c
+}
+
+func detectClientProfile(r *http.Request) string {
+	if r == nil {
+		return "generic"
+	}
+	if p := strings.TrimSpace(r.URL.Query().Get("profile")); p != "" {
+		return p
+	}
+	if p := strings.TrimSpace(r.Header.Get("X-XG2G-Profile")); p != "" {
+		return p
+	}
+	ua := r.UserAgent()
+	if strings.Contains(ua, "Safari") && !strings.Contains(ua, "Chrome") && !strings.Contains(ua, "Android") {
+		return "safari"
+	}
+	return "generic"
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func derefInt(i *int) int {
+	if i == nil {
+		return 0
+	}
+	return *i
+}
+
+func derefBool(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func HashV3Capabilities(caps *PlaybackCapabilities) string {
+	if caps == nil {
+		return ""
+	}
+	if capBytes, err := json.Marshal(caps); err == nil {
+		var capMap map[string]any
+		if err := json.Unmarshal(capBytes, &capMap); err == nil {
+			if hash, err := normalize.MapHash(capMap); err == nil {
+				return hash
+			}
+		}
+	}
+	return ""
 }

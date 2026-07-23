@@ -1,0 +1,15 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package playbackinfo
+
+// Service encapsulates playbackinfo domain logic and assembly.
+type Service struct {
+	deps Deps
+}
+
+// NewService creates a new playbackinfo domain Service instance.
+func NewService(deps Deps) *Service {
+	return &Service{deps: deps}
+}

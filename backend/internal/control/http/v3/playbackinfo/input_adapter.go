@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package v3
+package playbackinfo
 
 import (
 	"encoding/json"
@@ -26,45 +26,45 @@ type playbackInfoInputProblem struct {
 	extra       map[string]any
 }
 
-type livePlaybackInfoInput struct {
-	serviceRef   string
-	capabilities *PlaybackCapabilities
+type LivePlaybackInfoInput struct {
+	ServiceRef   string
+	Capabilities *PlaybackCapabilities
 }
 
-func parseRecordingPlaybackPostInput(r *http.Request) (*PlaybackCapabilities, *playbackInfoInputProblem) {
+func ParseRecordingPlaybackPostInput(r *http.Request) (*PlaybackCapabilities, *PlaybackInfoInputProblem) {
 	var caps PlaybackCapabilities
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&caps); err != nil {
-		return nil, &playbackInfoInputProblem{
-			status:      http.StatusBadRequest,
-			problemType: "recordings/invalid",
-			title:       "Invalid Request",
-			code:        problemcode.CodeInvalidCapabilities,
-			detail:      "Failed to parse capabilities body: " + err.Error(),
+		return nil, &PlaybackInfoInputProblem{
+			Status:      http.StatusBadRequest,
+			ProblemType: "recordings/invalid",
+			Title:       "Invalid Request",
+			Code:        problemcode.CodeInvalidCapabilities,
+			Detail:      "Failed to parse capabilities body: " + err.Error(),
 		}
 	}
 	if caps.CapabilitiesVersion < 1 {
-		return nil, &playbackInfoInputProblem{
-			status:      http.StatusBadRequest,
-			problemType: "recordings/invalid",
-			title:       "Invalid Request",
-			code:        problemcode.CodeInvalidCapabilities,
-			detail:      "capabilities_version must be >= 1",
+		return nil, &PlaybackInfoInputProblem{
+			Status:      http.StatusBadRequest,
+			ProblemType: "recordings/invalid",
+			Title:       "Invalid Request",
+			Code:        problemcode.CodeInvalidCapabilities,
+			Detail:      "capabilities_version must be >= 1",
 		}
 	}
 	return &caps, nil
 }
 
-func parseLivePlaybackPostInput(r *http.Request) (livePlaybackInfoInput, *playbackInfoInputProblem) {
+func ParseLivePlaybackPostInput(r *http.Request) (LivePlaybackInfoInput, *PlaybackInfoInputProblem) {
 	bodyBytes, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
-		return livePlaybackInfoInput{}, &playbackInfoInputProblem{
-			status:      http.StatusBadRequest,
-			problemType: "live/invalid",
-			title:       "Invalid Request",
-			code:        problemcode.CodeInvalidInput,
-			detail:      "Failed to read request body: " + readErr.Error(),
+		return LivePlaybackInfoInput{}, &PlaybackInfoInputProblem{
+			Status:      http.StatusBadRequest,
+			ProblemType: "live/invalid",
+			Title:       "Invalid Request",
+			Code:        problemcode.CodeInvalidInput,
+			Detail:      "Failed to read request body: " + readErr.Error(),
 		}
 	}
 
@@ -89,12 +89,12 @@ func parseLivePlaybackPostInput(r *http.Request) (livePlaybackInfoInput, *playba
 			parseLog = parseLog.Str("request_context", requestContext)
 		}
 		parseLog.Msg("PostLivePlaybackInfo parse failed")
-		return livePlaybackInfoInput{}, &playbackInfoInputProblem{
-			status:      http.StatusBadRequest,
-			problemType: "live/invalid",
-			title:       "Invalid Request",
-			code:        problemcode.CodeInvalidInput,
-			detail:      "Failed to parse request body: " + err.Error(),
+		return LivePlaybackInfoInput{}, &PlaybackInfoInputProblem{
+			Status:      http.StatusBadRequest,
+			ProblemType: "live/invalid",
+			Title:       "Invalid Request",
+			Code:        problemcode.CodeInvalidInput,
+			Detail:      "Failed to parse request body: " + err.Error(),
 		}
 	}
 	summary := log.L().Debug().
@@ -123,29 +123,29 @@ func parseLivePlaybackPostInput(r *http.Request) (livePlaybackInfoInput, *playba
 		summary.Msg("PostLivePlaybackInfo capability summary")
 	}
 	if req.ServiceRef == "" {
-		return livePlaybackInfoInput{}, &playbackInfoInputProblem{
-			status:      http.StatusBadRequest,
-			problemType: "live/invalid",
-			title:       "Invalid Request",
-			code:        problemcode.CodeInvalidInput,
-			detail:      "serviceRef is required",
+		return LivePlaybackInfoInput{}, &PlaybackInfoInputProblem{
+			Status:      http.StatusBadRequest,
+			ProblemType: "live/invalid",
+			Title:       "Invalid Request",
+			Code:        problemcode.CodeInvalidInput,
+			Detail:      "serviceRef is required",
 		}
 	}
 
 	serviceRef := normalize.ServiceRef(req.ServiceRef)
 	if err := recordings.ValidateLiveRef(serviceRef); err != nil {
-		return livePlaybackInfoInput{}, &playbackInfoInputProblem{
-			status:      http.StatusBadRequest,
-			problemType: "live/invalid",
-			title:       "Invalid Request",
-			code:        problemcode.CodeInvalidInput,
-			detail:      "serviceRef must be a valid live Enigma2 reference",
+		return LivePlaybackInfoInput{}, &PlaybackInfoInputProblem{
+			Status:      http.StatusBadRequest,
+			ProblemType: "live/invalid",
+			Title:       "Invalid Request",
+			Code:        problemcode.CodeInvalidInput,
+			Detail:      "serviceRef must be a valid live Enigma2 reference",
 		}
 	}
 
-	return livePlaybackInfoInput{
-		serviceRef:   serviceRef,
-		capabilities: (*PlaybackCapabilities)(&req.Capabilities),
+	return LivePlaybackInfoInput{
+		ServiceRef:   serviceRef,
+		Capabilities: (*PlaybackCapabilities)(&req.Capabilities),
 	}, nil
 }
 
@@ -161,11 +161,4 @@ func valueSliceOrEmpty(value *[]string) []string {
 		return nil
 	}
 	return *value
-}
-
-func writePlaybackInfoInputProblem(w http.ResponseWriter, r *http.Request, problem *playbackInfoInputProblem) {
-	if problem == nil {
-		return
-	}
-	writeRegisteredProblem(w, r, problem.status, problem.problemType, problem.title, problem.code, problem.detail, problem.extra)
 }

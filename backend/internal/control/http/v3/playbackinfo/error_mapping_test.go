@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package v3
+package playbackinfo
 
 import (
 	"encoding/json"
@@ -117,7 +117,7 @@ func TestWritePlaybackInfoServiceError_PassthroughProblem(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)
 	r = r.WithContext(log.ContextWithRequestID(r.Context(), "req-problem"))
 
-	writePlaybackInfoServiceError(w, r, "rec1", "compact", &v3recordings.PlaybackInfoError{
+	WritePlaybackInfoServiceError(w, r, "rec1", "compact", &v3recordings.PlaybackInfoError{
 		Kind: v3recordings.PlaybackInfoErrorProblem,
 		Problem: &v3recordings.PlaybackInfoProblem{
 			Status: 422,
@@ -143,7 +143,7 @@ func TestWritePlaybackInfoServiceError_PreparingWritesRetryAfterAndExtras(t *tes
 	r := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)
 	r = r.WithContext(log.ContextWithRequestID(r.Context(), "req-preparing"))
 
-	writePlaybackInfoServiceError(w, r, "rec1", "compact", &v3recordings.PlaybackInfoError{
+	WritePlaybackInfoServiceError(w, r, "rec1", "compact", &v3recordings.PlaybackInfoError{
 		Kind:              v3recordings.PlaybackInfoErrorPreparing,
 		Message:           "Retry shortly.",
 		RetryAfterSeconds: 11,

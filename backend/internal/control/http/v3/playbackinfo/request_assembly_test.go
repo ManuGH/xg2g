@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package v3
+package playbackinfo
 
 import (
 	"net/http"
@@ -51,11 +51,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		},
 		DeviceType: strPtr("tv"),
 		HlsEngines: &hlsEngines,
-		MaxVideo: &struct {
-			Fps    *int `json:"fps,omitempty"`
-			Height *int `json:"height,omitempty"`
-			Width  *int `json:"width,omitempty"`
-		}{
+		MaxVideo: &PlaybackMaxVideo{
 			Fps:    intPtr(60),
 			Height: intPtr(1080),
 			Width:  intPtr(1920),
@@ -83,7 +79,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	req = req.WithContext(log.ContextWithRequestID(req.Context(), "req-123"))
 	req = req.WithContext(auth.WithPrincipal(req.Context(), auth.NewPrincipal("token", "alice", nil)))
 
-	got := buildPlaybackInfoServiceRequest(req, "1:0:1:2:3:4:5:6:7:8:9", caps, "v3.1", "live")
+	got := BuildPlaybackInfoServiceRequest(req, "1:0:1:2:3:4:5:6:7:8:9", caps, "v3.1", "live")
 
 	require.NotNil(t, got.Capabilities)
 	assert.Equal(t, "1:0:1:2:3:4:5:6:7:8:9", got.SubjectID)
@@ -93,7 +89,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	assert.Equal(t, "safari", got.RequestedProfile)
 	assert.Equal(t, "alice", got.PrincipalID)
 	assert.Equal(t, "req-123", got.RequestID)
-	assert.Equal(t, string(ClientProfileSafari), got.ClientProfile)
+	assert.Equal(t, "safari", got.ClientProfile)
 	assert.Equal(t, map[string]string{
 		"User-Agent": "Mozilla/5.0 Safari/605.1.15",
 		"X-Test":     "first",
@@ -148,7 +144,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 func TestBuildPlaybackInfoServiceRequest_RecordingDefaults(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)
 
-	got := buildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
+	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
 
 	assert.Equal(t, "rec1", got.SubjectID)
 	assert.Equal(t, v3recordings.PlaybackSubjectRecording, got.SubjectKind)
@@ -157,7 +153,7 @@ func TestBuildPlaybackInfoServiceRequest_RecordingDefaults(t *testing.T) {
 	assert.Equal(t, "", got.RequestedProfile)
 	assert.Equal(t, "", got.PrincipalID)
 	assert.Equal(t, "", got.RequestID)
-	assert.Equal(t, string(ClientProfileGeneric), got.ClientProfile)
+	assert.Equal(t, "generic", got.ClientProfile)
 	assert.NotNil(t, got.Headers)
 	assert.Nil(t, got.Capabilities)
 }
@@ -165,7 +161,7 @@ func TestBuildPlaybackInfoServiceRequest_RecordingDefaults(t *testing.T) {
 func TestBuildPlaybackInfoServiceRequest_RecordingPreservesExplicitAndroidProfile(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info?profile=android_native", nil)
 
-	got := buildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
+	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
 
 	assert.Equal(t, "android_native", got.RequestedProfile)
 	assert.Equal(t, "android_native", got.ClientProfile)
@@ -175,7 +171,7 @@ func TestBuildPlaybackInfoServiceRequest_FallsBackToProfileHeader(t *testing.T) 
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info", nil)
 	req.Header.Set("X-XG2G-Profile", "repair")
 
-	got := buildPlaybackInfoServiceRequest(req, "rec1", nil, "v3.1", "compact")
+	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3.1", "compact")
 
 	assert.Equal(t, "repair", got.RequestedProfile)
 	assert.Equal(t, "repair", got.ClientProfile)

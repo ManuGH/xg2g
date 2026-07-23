@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package v3
+package playbackinfo
 
 import (
 	"net"
@@ -26,12 +26,12 @@ var zeroChunk = make([]byte, playbackProbeChunkBytes)
 // clients: a private client address is only honoured when it is the peer or
 // was supplied by a configured trusted proxy (exposureClientKey enforces that
 // invariant). Public and carrier-grade-NAT clients receive the full sample.
-func (s *Server) servePlaybackNetworkProbe(w http.ResponseWriter, r *http.Request) {
+func (s *Service) ServePlaybackNetworkProbe(w http.ResponseWriter, r *http.Request, clientIP string) {
 	w.Header().Set("Cache-Control", "no-store, no-transform")
 	w.Header().Set("Content-Encoding", "identity")
 	w.Header().Set("Vary", "Cookie, Authorization")
 
-	if s.isPrivatePlaybackClient(r) {
+	if isPrivatePlaybackClient(clientIP) {
 		w.Header().Set(playbackProbeHeader, playbackProbeLAN)
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -61,7 +61,7 @@ func (s *Server) servePlaybackNetworkProbe(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (s *Server) isPrivatePlaybackClient(r *http.Request) bool {
-	ip := net.ParseIP(s.exposureClientKey(r, s.GetConfig()))
+func isPrivatePlaybackClient(clientIP string) bool {
+	ip := net.ParseIP(clientIP)
 	return ip != nil && (ip.IsPrivate() || ip.IsLoopback())
 }

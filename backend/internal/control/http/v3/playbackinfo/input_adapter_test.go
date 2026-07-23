@@ -2,7 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
-package v3
+package playbackinfo
 
 import (
 	"net/http"
@@ -41,7 +41,7 @@ func TestParseRecordingPlaybackPostInput_Success(t *testing.T) {
 		}
 	}`))
 
-	caps, problem := parseRecordingPlaybackPostInput(req)
+	caps, problem := ParseRecordingPlaybackPostInput(req)
 
 	require.Nil(t, problem)
 	require.NotNil(t, caps)
@@ -68,14 +68,14 @@ func TestParseRecordingPlaybackPostInput_InvalidCapabilitiesVersion(t *testing.T
 		"audioCodecs":["aac"]
 	}`))
 
-	caps, problem := parseRecordingPlaybackPostInput(req)
+	caps, problem := ParseRecordingPlaybackPostInput(req)
 
 	assert.Nil(t, caps)
 	require.NotNil(t, problem)
-	assert.Equal(t, http.StatusBadRequest, problem.status)
-	assert.Equal(t, "recordings/invalid", problem.problemType)
-	assert.Equal(t, problemcode.CodeInvalidCapabilities, problem.code)
-	assert.Equal(t, "capabilities_version must be >= 1", problem.detail)
+	assert.Equal(t, http.StatusBadRequest, problem.Status)
+	assert.Equal(t, "recordings/invalid", problem.ProblemType)
+	assert.Equal(t, problemcode.CodeInvalidCapabilities, problem.Code)
+	assert.Equal(t, "capabilities_version must be >= 1", problem.Detail)
 }
 
 func TestParseLivePlaybackPostInput_NormalizesServiceRef(t *testing.T) {
@@ -94,28 +94,28 @@ func TestParseLivePlaybackPostInput_NormalizesServiceRef(t *testing.T) {
 		}
 	}`))
 
-	input, problem := parseLivePlaybackPostInput(req)
+	input, problem := ParseLivePlaybackPostInput(req)
 
 	require.Nil(t, problem)
-	assert.Equal(t, "1:0:1:1234:5678:9ABC:0:0:0:0", input.serviceRef)
-	require.NotNil(t, input.capabilities)
-	assert.Equal(t, 2, input.capabilities.CapabilitiesVersion)
-	assert.Equal(t, []string{"mpegts"}, input.capabilities.Container)
-	require.NotNil(t, input.capabilities.DeviceContext)
-	assert.Equal(t, "browser", *input.capabilities.DeviceContext.Platform)
+	assert.Equal(t, "1:0:1:1234:5678:9ABC:0:0:0:0", input.ServiceRef)
+	require.NotNil(t, input.Capabilities)
+	assert.Equal(t, 2, input.Capabilities.CapabilitiesVersion)
+	assert.Equal(t, []string{"mpegts"}, input.Capabilities.Container)
+	require.NotNil(t, input.Capabilities.DeviceContext)
+	assert.Equal(t, "browser", *input.Capabilities.DeviceContext.Platform)
 }
 
 func TestParseLivePlaybackPostInput_InvalidJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(`{"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:","capabilities":`))
 
-	input, problem := parseLivePlaybackPostInput(req)
+	input, problem := ParseLivePlaybackPostInput(req)
 
-	assert.Equal(t, livePlaybackInfoInput{}, input)
+	assert.Equal(t, LivePlaybackInfoInput{}, input)
 	require.NotNil(t, problem)
-	assert.Equal(t, http.StatusBadRequest, problem.status)
-	assert.Equal(t, "live/invalid", problem.problemType)
-	assert.Equal(t, problemcode.CodeInvalidInput, problem.code)
-	assert.Contains(t, problem.detail, "Failed to parse request body:")
+	assert.Equal(t, http.StatusBadRequest, problem.Status)
+	assert.Equal(t, "live/invalid", problem.ProblemType)
+	assert.Equal(t, problemcode.CodeInvalidInput, problem.Code)
+	assert.Contains(t, problem.Detail, "Failed to parse request body:")
 }
 
 func TestParseLivePlaybackPostInput_MissingServiceRef(t *testing.T) {
@@ -129,14 +129,14 @@ func TestParseLivePlaybackPostInput_MissingServiceRef(t *testing.T) {
 		}
 	}`))
 
-	input, problem := parseLivePlaybackPostInput(req)
+	input, problem := ParseLivePlaybackPostInput(req)
 
-	assert.Equal(t, livePlaybackInfoInput{}, input)
+	assert.Equal(t, LivePlaybackInfoInput{}, input)
 	require.NotNil(t, problem)
-	assert.Equal(t, http.StatusBadRequest, problem.status)
-	assert.Equal(t, "live/invalid", problem.problemType)
-	assert.Equal(t, problemcode.CodeInvalidInput, problem.code)
-	assert.Equal(t, "serviceRef is required", problem.detail)
+	assert.Equal(t, http.StatusBadRequest, problem.Status)
+	assert.Equal(t, "live/invalid", problem.ProblemType)
+	assert.Equal(t, problemcode.CodeInvalidInput, problem.Code)
+	assert.Equal(t, "serviceRef is required", problem.Detail)
 }
 
 func TestParseLivePlaybackPostInput_RecognizesPreviewContextHeader(t *testing.T) {
@@ -151,9 +151,9 @@ func TestParseLivePlaybackPostInput_RecognizesPreviewContextHeader(t *testing.T)
 	}`))
 	req.Header.Set("X-XG2G-Playback-Info-Context", "epg_badge")
 
-	input, problem := parseLivePlaybackPostInput(req)
+	input, problem := ParseLivePlaybackPostInput(req)
 
 	require.Nil(t, problem)
-	assert.Equal(t, "1:0:1:1234:5678:9ABC:0:0:0:0", input.serviceRef)
-	require.NotNil(t, input.capabilities)
+	assert.Equal(t, "1:0:1:1234:5678:9ABC:0:0:0:0", input.ServiceRef)
+	require.NotNil(t, input.Capabilities)
 }
