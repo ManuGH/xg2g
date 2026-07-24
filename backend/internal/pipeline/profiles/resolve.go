@@ -223,11 +223,11 @@ func isLikelyPALSDInterlaced(cap *scan.Capability) bool {
 	if cap == nil {
 		return false
 	}
-	codec := cap.VideoCodec
-	if codec == "" {
-		codec = cap.Codec
+	rawCodec := cap.VideoCodec
+	if rawCodec == "" {
+		rawCodec = cap.Codec
 	}
-	if codec != "mpeg2video" {
+	if !strings.HasPrefix(strings.ToLower(rawCodec), "mpeg2") {
 		return false
 	}
 	if cap.Width != 720 || cap.Height != 576 {

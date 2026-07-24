@@ -1,6 +1,12 @@
 package playbackplanner
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+)
 
 const PlannerVersion = "v5"
 
@@ -178,4 +184,25 @@ func Plan(ev PlaybackEvidence) (PlanningResult, error) {
 	plan.Mode = "none"
 
 	return PlanningResult{Plan: plan, Trace: trace}, nil
+}
+
+// CreatePlaybackIntent converts a PlanningResult into a signed PlaybackIntent envelope.
+func CreatePlaybackIntent(mode IntentMode, refID, sessionID, variantHash string, targetProfile *playbackprofile.TargetPlaybackProfile, ttl time.Duration, secretKey []byte) (*PlaybackIntent, error) {
+	if targetProfile == nil {
+		return nil, errors.New("targetProfile cannot be nil")
+	}
+	intent := &PlaybackIntent{
+		Mode:          mode,
+		SessionID:     sessionID,
+		RefID:         refID,
+		VariantHash:   variantHash,
+		TargetProfile: targetProfile,
+		ExpiresAt:     time.Now().Add(ttl),
+	}
+	sig, err := SignPlaybackIntent(intent, secretKey)
+	if err != nil {
+		return nil, fmt.Errorf("sign intent: %w", err)
+	}
+	intent.Signature = sig
+	return intent, nil
 }
