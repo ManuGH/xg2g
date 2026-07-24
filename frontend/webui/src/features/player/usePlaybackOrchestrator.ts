@@ -1337,6 +1337,17 @@ export function usePlaybackOrchestrator(
           profileForAttempt,
           automaticRequestProfile,
         );
+        debugLog('[V3Player] Client profile decision', {
+          profileForAttempt,
+          automaticRequestProfile,
+          resolvedRequestProfile: requestProfile,
+          networkKind: requestContext.network?.kind,
+          downlinkMbps: requestContext.network?.downlinkMbps,
+          effectiveType: requestContext.network?.effectiveType,
+          osName: requestContext.device?.osName,
+          isTv: requestContext.isTv,
+          videoCodecs: requestCaps.videoCodecs,
+        });
         const preferredHlsEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
         setCapabilitySnapshot(requestCaps);
         // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
