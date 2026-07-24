@@ -901,11 +901,6 @@ export function usePlaybackEngine({
       // exists (or a cap elapses). VOD playlists open the gate immediately.
       const START_GATE_TARGET_SECONDS = 4.5;
       const START_GATE_TIMEOUT_MS = 6000;
-      const SLOW_BUILD_RATE = 0.955;
-      const SLOW_BUILD_TARGET_AHEAD_SECONDS = 8;
-      const SLOW_BUILD_MAX_MS = 150000;
-      let slowBuildActive = false;
-      let slowBuildTimer: number | null = null;
       let startGateOpen = false;
       let startGateTimer: number | null = null;
       const bufferedAheadSeconds = (): number => {
@@ -915,24 +910,6 @@ export function usePlaybackEngine({
         }
         const from = Math.max(gateVideo.currentTime, gateVideo.buffered.start(0));
         return gateVideo.buffered.end(gateVideo.buffered.length - 1) - from;
-      };
-      const restorePlaybackRate = (reason: string) => {
-        if (!slowBuildActive) {
-          return;
-        }
-        slowBuildActive = false;
-        if (slowBuildTimer !== null) {
-          window.clearTimeout(slowBuildTimer);
-          slowBuildTimer = null;
-        }
-        const rateVideo = videoRef.current;
-        if (rateVideo && hlsRef.current === hls && rateVideo.playbackRate !== 1) {
-          rateVideo.playbackRate = 1;
-          debugLog('[V3Player] Slow-build complete', {
-            reason,
-            bufferedAhead: bufferedAheadSeconds().toFixed(2),
-          });
-        }
       };
       const openStartGate = (reason: string) => {
         if (startGateOpen) {
@@ -981,9 +958,6 @@ export function usePlaybackEngine({
       hls.on(Hls.Events.BUFFER_APPENDED, () => {
         if (!startGateOpen && bufferedAheadSeconds() >= START_GATE_TARGET_SECONDS) {
           openStartGate('buffer_target');
-        }
-        if (slowBuildActive && bufferedAheadSeconds() >= SLOW_BUILD_TARGET_AHEAD_SECONDS) {
-          restorePlaybackRate('target_reached');
         }
       });
 
