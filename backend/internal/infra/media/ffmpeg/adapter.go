@@ -180,16 +180,16 @@ func NewLocalAdapterWithConfig(binPath string, ffprobeBin string, hlsRoot string
 	cfg = cloneAdapterConfig(cfg)
 
 	httpClient := &http.Client{
-		Timeout: preflightTimeout,
+		Timeout: 0,
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			DialContext: (&net.Dialer{
-				Timeout: preflightTimeout,
+				Timeout: 10 * time.Second,
 			}).DialContext,
 			MaxIdleConnsPerHost:   2,
 			IdleConnTimeout:       30 * time.Second,
-			TLSHandshakeTimeout:   preflightTimeout,
-			ResponseHeaderTimeout: preflightTimeout,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
 			DisableCompression:    true,
 		},
 	}
