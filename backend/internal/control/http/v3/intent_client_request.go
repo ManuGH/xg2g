@@ -14,12 +14,10 @@ func hashV3Capabilities(caps *PlaybackCapabilities) string {
 	if caps == nil {
 		return ""
 	}
-	if capBytes, err := json.Marshal(caps); err == nil {
-		var capMap map[string]any
-		if err := json.Unmarshal(capBytes, &capMap); err == nil {
-			if hash, err := normalize.MapHash(capMap); err == nil {
-				return hash
-			}
+	var infoCaps v3playbackinfo.PlaybackCapabilities
+	if b, err := json.Marshal(caps); err == nil {
+		if err := json.Unmarshal(b, &infoCaps); err == nil {
+			return v3playbackinfo.HashV3Capabilities(&infoCaps)
 		}
 	}
 	return ""
