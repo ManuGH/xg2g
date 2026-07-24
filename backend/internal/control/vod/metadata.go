@@ -262,13 +262,7 @@ func (m *Manager) dispatchFSMShadow(metaID string, event fsm.Event, reason strin
 	var transitionErr error
 	switch event {
 	case fsm.EventCreateArtifact:
-		if art.State == fsm.StateFailed {
-			transitionErr = fsm.RetryBuild(art, now)
-		} else if art.State == fsm.StateReady || art.State == fsm.StateDeleted {
-			art.State = fsm.StatePreparing
-			art.FailureReason = ""
-			art.UpdatedAt = now
-		}
+		transitionErr = fsm.PrepareArtifact(art, now)
 	case fsm.EventCompleteBuild:
 		if path != "" {
 			art.ManifestPath = path

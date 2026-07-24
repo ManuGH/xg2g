@@ -102,6 +102,21 @@ func RetryBuild(a *Artifact, now time.Time) error {
 	return nil
 }
 
+// PrepareArtifact transitions an artifact to PREPARING (fresh build or retry).
+func PrepareArtifact(a *Artifact, now time.Time) error {
+	if a == nil {
+		return ErrArtifactNotFound
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	a.State = StatePreparing
+	a.FailureReason = ""
+	a.UpdatedAt = now
+	return nil
+}
+
 // EvictArtifact transitions an artifact from READY or FAILED to DELETED.
 func EvictArtifact(a *Artifact, now time.Time) error {
 	if a == nil {
