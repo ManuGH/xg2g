@@ -175,7 +175,12 @@ func isClosed(ch <-chan struct{}) bool {
 	}
 }
 
-func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
+// TestGetRecordingHLSPlaylist_FailedTriggersRebuild verifies the R2.4 replacement
+// for the deleted PromoteFailedToReadyIfPlaylist heuristic: a FAILED artifact with
+// a stale playlist file on disk is no longer silently promoted to READY -- the
+// resolver retries the build instead, since the leftover file is not proof the
+// content is actually valid.
+func TestGetRecordingHLSPlaylist_FailedTriggersRebuild(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:/media/test.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
 	hlsRoot := t.TempDir()
@@ -211,8 +216,15 @@ func TestGetRecordingHLSPlaylist_FailedPromotesReady(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.GetRecordingHLSPlaylist(rr, req, recordingID)
 
-	require.Equal(t, http.StatusOK, rr.Code)
-	require.Contains(t, rr.Body.String(), "#EXT-X-PLAYLIST-TYPE:VOD")
+	// No self-heal: a FAILED artifact is never served straight from the leftover
+	// playlist file. The resolver retries the build and reports "preparing".
+	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	require.NotEmpty(t, rr.Header().Get("Retry-After"))
+
+	meta, ok := vodMgr.GetMetadata(metaID)
+	require.True(t, ok)
+	require.NotEqual(t, vod.ArtifactStateReady, meta.State,
+		"artifact must not be silently promoted to READY off a stale playlist file")
 }
 
 func TestGetRecordingHLSPlaylist_Failed_Reconcile_BuildCallbackPromotesReady(t *testing.T) {
