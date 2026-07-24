@@ -115,6 +115,15 @@ jobs:
       - name: Enforce Invariant I1 (Decision Literals Linter)
         run: bash backend/scripts/ci/check-decision-literals.sh
 
+  check-todo-format:
+    runs-on: ubuntu-latest
+    needs: scope
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Enforce TODO/FIXME Reference Format
+        run: bash backend/scripts/ci/check-todo-format.sh
+
   webui-lint:
     runs-on: ubuntu-latest
     needs: scope
