@@ -282,7 +282,7 @@ func (s *Server) verifyDecisionToken(w http.ResponseWriter, r *http.Request, dep
 			}
 		}
 	}
-	if claims.CapHash != "" && claims.CapHash != expectedHash {
+	if claims.CapHash != "" && expectedHash != "" && claims.CapHash != expectedHash {
 		writeRegisteredProblem(w, r, http.StatusForbidden, "intent/claim-mismatch", "Forbidden Action", problemcode.CodeClaimMismatch, "Token is not authorized for these playback capabilities", nil)
 		return verifiedDecisionToken{}, true
 	}
