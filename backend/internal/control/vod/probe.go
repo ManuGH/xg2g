@@ -3,6 +3,8 @@ package vod
 import (
 	"context"
 	"errors"
+
+	"github.com/ManuGH/xg2g/internal/domain/vod/fsm"
 )
 
 // Probe delegates to the infra prober
@@ -60,6 +62,7 @@ func (m *Manager) TriggerProbe(id string, input string) {
 	meta.State = ArtifactStatePreparing
 	m.touch(id, &meta)
 	m.metadata[id] = meta
+	m.dispatchFSMShadow(id, fsm.EventCreateArtifact, "", input, meta.State)
 	capturedGen := meta.StateGen
 	resolvedPath := meta.ResolvedPath // Capture under lock
 	m.mu.Unlock()
