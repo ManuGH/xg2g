@@ -51,7 +51,7 @@ const (
 	QuickStartHLSSegmentSeconds = 2
 	// DefaultHLSReadySegments is the minimum number of live segments that must
 	// exist before a session is marked READY.
-	DefaultHLSReadySegments = 3
+	DefaultHLSReadySegments = 1
 )
 
 // ConfigEntry defines a single configuration option's metadata.

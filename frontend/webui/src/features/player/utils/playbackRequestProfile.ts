@@ -295,9 +295,7 @@ export function resolvePlaybackRequestProfile(
     supportsHighQualityPlayback(capabilities)
     && !network?.saveData
     && !network?.metered
-    && (network == null || network.kind === 'ethernet' || network.kind === 'wifi' || network.kind === 'browser' || network.kind === 'other')
-    && (network?.downlinkMbps == null || network.downlinkMbps >= 35)
-    && (context.isTv || context.isNativePlayback || scope === 'recording')
+    && (context.isTv || context.isNativePlayback || scope === 'recording' || !context.device?.osName?.includes('Android'))
   ) {
     return 'quality';
   }

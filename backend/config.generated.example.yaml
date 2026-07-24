@@ -79,7 +79,7 @@ hdhr:
 hls:
   dvrWindow: 45m
   lowLatency: false
-  readySegments: 3
+  readySegments: 1
   root: ""
   segmentSeconds: 6
 household:
