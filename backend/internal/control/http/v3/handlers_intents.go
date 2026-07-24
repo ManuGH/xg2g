@@ -272,14 +272,6 @@ func (s *Server) verifyDecisionToken(w http.ResponseWriter, r *http.Request, dep
 			expectedHash = rawCapHash
 		} else if rawCapHash := normalize.Token(params["cap_hash"]); rawCapHash != "" {
 			expectedHash = rawCapHash
-		} else {
-			genericMap := make(map[string]any, len(params))
-			for k, v := range params {
-				genericMap[k] = v
-			}
-			if cHash, err := normalize.MapHash(genericMap); err == nil {
-				expectedHash = cHash
-			}
 		}
 	}
 	if claims.CapHash != "" && expectedHash != "" && claims.CapHash != expectedHash {
