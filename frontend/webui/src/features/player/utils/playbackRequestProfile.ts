@@ -286,7 +286,7 @@ export function resolvePlaybackRequestProfile(
     network?.kind === 'cellular'
     || network?.metered
     || network?.effectiveType === '3g'
-    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps < 15)
+    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps < 4)
   ) {
     return 'bandwidth';
   }
