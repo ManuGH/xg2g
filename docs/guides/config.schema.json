@@ -56,7 +56,7 @@
           "type": "boolean"
         },
         "legacy_enabled": {
-          "default": true,
+          "default": false,
           "type": "boolean"
         },
         "listenAddr": {
