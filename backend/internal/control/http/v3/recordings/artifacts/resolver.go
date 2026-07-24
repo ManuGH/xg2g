@@ -34,6 +34,7 @@ type DefaultResolver struct {
 	cfg        *config.AppConfig
 	vodManager *vod.Manager
 	pathMapper *recordings.PathMapper
+	jitRemuxer *vod.JITRemuxer
 }
 
 func New(cfg *config.AppConfig, manager *vod.Manager, mapper *recordings.PathMapper) *DefaultResolver {
@@ -41,6 +42,7 @@ func New(cfg *config.AppConfig, manager *vod.Manager, mapper *recordings.PathMap
 		cfg:        cfg,
 		vodManager: manager,
 		pathMapper: mapper,
+		jitRemuxer: vod.NewJITRemuxer(),
 	}
 }
 
