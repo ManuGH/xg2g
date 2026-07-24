@@ -61,8 +61,10 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 		if isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner {
 			if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
 				analyzeDuration = v
+			} else if spec.Profile.TranscodeVideo {
+				analyzeDuration = "15000000" // 15s for OSCam decryption & DVB PMT discovery on transcode
 			} else {
-				analyzeDuration = "15000000" // 15s for OSCam decryption & DVB PMT discovery
+				analyzeDuration = "5000000" // 5s fast probe for direct passthrough
 			}
 			if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
 				probeSize = v
