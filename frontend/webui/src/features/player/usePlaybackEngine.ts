@@ -924,6 +924,10 @@ export function usePlaybackEngine({
           return;
         }
         debugLog('[V3Player] Startup gate open', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
+        const gateVideo = videoRef.current;
+        if (gateVideo && gateVideo.playbackRate !== 1) {
+          gateVideo.playbackRate = 1;
+        }
         videoRef.current?.play().catch((err) => {
           debugWarn('[V3Player] Autoplay failed', err);
           setStatus('ready');
