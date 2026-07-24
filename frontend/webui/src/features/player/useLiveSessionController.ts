@@ -587,6 +587,11 @@ export function useLiveSessionController({
               if (!cleanup()) return;
               const reason = stateData.reason || state;
               const detail = stateData.reasonDetail ? `: ${stateData.reasonDetail}` : '';
+              if (abortController.signal.aborted || state === 'CANCELLED' || reason === 'R_CANCELLED') {
+                debugLog('[V3Player] Session intentionally cancelled/aborted', { trackedSessionId, reason });
+                reject(new Error('Session cancelled'));
+                return;
+              }
               if (String(reason).includes('LEASE_BUSY') || String(detail).includes('LEASE_BUSY')) {
                 reject(createPlayerError(t('player.leaseBusy')));
               } else {
