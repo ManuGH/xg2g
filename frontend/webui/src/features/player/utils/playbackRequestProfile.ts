@@ -266,7 +266,7 @@ function supportsHighQualityPlayback(capabilities: CapabilitySnapshot): boolean 
 export function resolvePlaybackRequestProfile(
   context: PlaybackClientContext,
   capabilities: CapabilitySnapshot,
-  scope: 'live' | 'recording'
+  _scope: 'live' | 'recording'
 ): PlaybackRequestProfile | undefined {
   const network = context.network;
   if (network?.kind === 'offline') {
@@ -289,7 +289,6 @@ export function resolvePlaybackRequestProfile(
     supportsHighQualityPlayback(capabilities)
     && !network?.saveData
     && !network?.metered
-    && (context.isTv || context.isNativePlayback || scope === 'recording' || !context.device?.osName?.includes('Android'))
   ) {
     return 'quality';
   }
