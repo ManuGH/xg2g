@@ -361,3 +361,22 @@ func TestArtifactResolver_ResolvePlaylistState(t *testing.T) {
 		assert.Equal(t, []byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT"), res.Data)
 	})
 }
+
+func TestArtifactResolver_ResolvePlaylistState_SQLiteReadCutover(t *testing.T) {
+	cfg := &config.AppConfig{
+		HLS: config.HLSConfig{Root: t.TempDir()},
+	}
+	mgr, err := vod.NewManager(&dummyRunner{}, &dummyProber{}, nil)
+	assert.NoError(t, err)
+
+	r := New(cfg, mgr, nil)
+
+	// Encoded valid ID for "1:0:1:0:0:0:0:0:0:0:/foo.ts"
+	validID := "MTowOjE6MDowOjA6MDowOjA6MDovZm9vLnRz"
+
+	t.Run("Returns NotFound when Store is unconfigured or entry absent", func(t *testing.T) {
+		_, err := r.ResolvePlaylistState(context.Background(), validID, "h264")
+		assert.NotNil(t, err)
+		assert.Equal(t, CodeNotFound, err.Code)
+	})
+}

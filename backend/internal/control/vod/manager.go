@@ -72,6 +72,18 @@ func (m *Manager) SetArtifactStore(store ArtifactStore) {
 	m.artifactStore = store
 }
 
+// GetArtifactState reads the artifact lifecycle FSM state directly from SQLite store (Slice R2.3 Read Cutover).
+func (m *Manager) GetArtifactState(ctx context.Context, recordingRef, variantHash string) (*fsm.Artifact, error) {
+	m.mu.Lock()
+	store := m.artifactStore
+	m.mu.Unlock()
+
+	if store == nil {
+		return nil, errors.New("artifact store not configured")
+	}
+	return store.GetArtifact(ctx, recordingRef, variantHash)
+}
+
 // Shutdown stops the manager and cancels all background contexts.
 func (m *Manager) Shutdown() {
 	if m == nil {

@@ -301,6 +301,8 @@ func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string
 	}, nil
 }
 
+
+
 // Internal Logic
 
 func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, variant, metaID string, intent *ports.BuildIntent) error {
@@ -386,7 +388,15 @@ func (r *DefaultResolver) ResolvePlaylistState(ctx context.Context, recordingID,
 		return ArtifactOK{}, &ArtifactError{Code: CodeInternal, Err: err, Detail: "failed to determine cache dir"}
 	}
 	playlistPath := filepath.Join(cacheDir, "index.m3u8")
-	// #nosec G304 - playlistPath is confined to cacheDir
+
+	// Slice R2.3 Cutover: Query SQLite ArtifactStore state first
+	if art, err := r.vodManager.GetArtifactState(ctx, ref, variant); err == nil && art != nil {
+		if string(art.State) == string(vod.ArtifactStateReady) && art.ManifestPath != "" {
+			playlistPath = art.ManifestPath
+		}
+	}
+
+	// #nosec G304 - playlistPath is confined to cacheDir or persistent artifact manifest
 	f, err := os.Open(playlistPath)
 	if err != nil {
 		return ArtifactOK{}, &ArtifactError{Code: CodeNotFound, Detail: "playlist not found"}
