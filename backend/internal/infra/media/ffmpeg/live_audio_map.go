@@ -221,8 +221,10 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 	if isStreamRelayURL(inputURL) || spec.Source.Type == ports.SourceTuner {
 		if v := strings.TrimSpace(a.StreamRelayAnalyzeDuration); v != "" {
 			analyzeDuration = v
-		} else {
+		} else if spec.Profile.TranscodeVideo {
 			analyzeDuration = "15000000"
+		} else {
+			analyzeDuration = "5000000"
 		}
 		if v := strings.TrimSpace(a.StreamRelayProbeSize); v != "" {
 			probeSize = v
