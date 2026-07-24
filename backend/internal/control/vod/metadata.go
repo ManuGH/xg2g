@@ -2,6 +2,7 @@ package vod
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sort"
 	"strings"
@@ -106,7 +107,7 @@ func (m *Manager) SeedMetadata(id string, meta Metadata) {
 		m.metadata = make(map[string]Metadata)
 	}
 	m.metadata[id] = meta
-	m.syncArtifactStore(id, meta)
+	m.dispatchFSMShadow(id, fsm.EventCreateArtifact, "", meta.ResolvedPath, meta.State)
 }
 
 // MarkUnknown safely transitions state to UNKNOWN without wiping other fields.
@@ -173,6 +174,7 @@ func (m *Manager) MarkPreparingIfState(id string, expected ArtifactState, reason
 	}
 	m.touch(id, &meta)
 	m.metadata[id] = meta
+	m.dispatchFSMShadow(id, fsm.EventCreateArtifact, reason, "", meta.State)
 
 	return meta, true
 }
@@ -194,7 +196,7 @@ func (m *Manager) PromoteFailedToReadyIfPlaylist(id string) (Metadata, bool) {
 
 	meta.State = ArtifactStateReady
 	meta.Error = ""
-	m.touch(&meta)
+	m.touch(id, &meta)
 	m.metadata[id] = meta
 
 	return meta, true
@@ -218,11 +220,10 @@ func (m *Manager) SetResolvedPathIfEmpty(id string, resolved string) bool {
 	return true
 }
 
-// touch updates timestamp and generation, and syncs FSM to SQLite store
+// touch updates timestamp and generation
 func (m *Manager) touch(id string, meta *Metadata) {
 	meta.UpdatedAt = time.Now().UnixNano() // Use Nano for higher resolution
 	meta.StateGen++
-	m.syncArtifactStore(id, *meta)
 }
 
 func parseArtifactRef(id string) (string, string) {
@@ -233,46 +234,74 @@ func parseArtifactRef(id string) (string, string) {
 	return id, "default"
 }
 
-func (m *Manager) syncArtifactStore(metaID string, meta Metadata) {
+func (m *Manager) dispatchFSMShadow(metaID string, event fsm.Event, reason string, path string, legacyState ArtifactState) {
 	if m == nil || m.artifactStore == nil {
 		return
 	}
 
 	recordingRef, variantHash := parseArtifactRef(metaID)
-	fsmState := fsm.StatePreparing
-	switch meta.State {
-	case ArtifactStateReady:
-		fsmState = fsm.StateReady
-	case ArtifactStateFailed:
-		fsmState = fsm.StateFailed
-	case ArtifactStatePreparing, ArtifactStateUnknown, ArtifactStateMissing:
-		fsmState = fsm.StatePreparing
-	}
-
-	art := &fsm.Artifact{
-		ID:             metaID,
-		RecordingRef:   recordingRef,
-		VariantHash:    variantHash,
-		State:          fsmState,
-		FailureReason:  meta.Error,
-		ManifestPath:   meta.ResolvedPath,
-		SegmentPattern: meta.PlaylistPath,
-		CreatedAt:      time.Unix(0, meta.UpdatedAt),
-		UpdatedAt:      time.Unix(0, meta.UpdatedAt),
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := m.artifactStore.UpsertArtifact(ctx, art); err != nil {
-		log.Warn().Err(err).Str("id", metaID).Msg("VOD artifact dual-write to SQLite failed")
+	now := time.Now()
+
+	// 1. Fetch current artifact from SQLite FSM store (or create if absent)
+	art, err := m.artifactStore.GetArtifact(ctx, recordingRef, variantHash)
+	if errors.Is(err, fsm.ErrArtifactNotFound) {
+		art, err = fsm.NewArtifact(metaID, recordingRef, variantHash, path, "", now)
+		if err != nil {
+			log.Warn().Err(err).Str("id", metaID).Msg("VOD shadow FSM artifact creation failed")
+			return
+		}
+	} else if err != nil {
+		log.Warn().Err(err).Str("id", metaID).Msg("VOD shadow FSM fetch failed")
+		return
 	}
 
-	// Telemetry divergence check
-	if existing, err := m.artifactStore.GetArtifact(ctx, recordingRef, variantHash); err == nil {
-		if string(existing.State) != string(fsmState) {
-			metrics.IncVODStateDivergence(string(meta.State), string(existing.State))
+	// 2. Execute Pure FSM Transition Function based on Event
+	var transitionErr error
+	switch event {
+	case fsm.EventCreateArtifact:
+		if art.State == fsm.StateFailed {
+			transitionErr = fsm.RetryBuild(art, now)
+		} else if art.State == fsm.StateReady || art.State == fsm.StateDeleted {
+			art.State = fsm.StatePreparing
+			art.FailureReason = ""
+			art.UpdatedAt = now
 		}
+	case fsm.EventCompleteBuild:
+		if path != "" {
+			art.ManifestPath = path
+		}
+		transitionErr = fsm.CompleteBuild(art, now)
+	case fsm.EventFailBuild:
+		transitionErr = fsm.FailBuild(art, reason, now)
+	case fsm.EventRetryBuild:
+		transitionErr = fsm.RetryBuild(art, now)
+	case fsm.EventEvictArtifact:
+		transitionErr = fsm.EvictArtifact(art, now)
+	}
+
+	if transitionErr != nil {
+		log.Debug().Err(transitionErr).Str("id", metaID).Str("event", string(event)).Msg("VOD shadow FSM transition rejected by pure rules")
+	}
+
+	// 3. True Shadow Divergence Check: Compare Legacy state against Pure FSM calculated state
+	fsmStateStr := string(art.State)
+	legacyStateStr := string(legacyState)
+	if legacyStateStr != fsmStateStr {
+		log.Warn().
+			Str("id", metaID).
+			Str("event", string(event)).
+			Str("legacyState", legacyStateStr).
+			Str("fsmState", fsmStateStr).
+			Msg("VOD shadow state divergence detected between Legacy and Pure FSM")
+		metrics.IncVODStateDivergence(legacyStateStr, fsmStateStr)
+	}
+
+	// 4. Save calculated Pure FSM state to SQLite
+	if err := m.artifactStore.UpsertArtifact(ctx, art); err != nil {
+		log.Warn().Err(err).Str("id", metaID).Msg("VOD shadow FSM state save to SQLite failed")
 	}
 }
 
@@ -360,6 +389,7 @@ func (m *Manager) MarkFailure(id string, state ArtifactState, reason string, res
 	}
 	m.touch(id, &meta)
 	m.metadata[id] = meta
+	m.dispatchFSMShadow(id, fsm.EventFailBuild, reason, resolvedPath, meta.State)
 }
 
 // InvalidateTruth clears cached probe truth (codecs, container) to force re-planning.
@@ -456,4 +486,5 @@ func (m *Manager) MarkProbed(id string, resolvedPath string, info *StreamInfo, f
 
 	m.touch(id, &meta)
 	m.metadata[id] = meta
+	m.dispatchFSMShadow(id, fsm.EventCompleteBuild, "", resolvedPath, meta.State)
 }

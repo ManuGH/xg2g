@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports"
+	"github.com/ManuGH/xg2g/internal/domain/vod/fsm"
 	xlog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/rs/zerolog/log"
 	"strings"
@@ -40,6 +41,7 @@ func (m *Manager) markReadyFromBuild(jobID string, metaID string, spec Spec, fin
 	}
 	m.touch(metaID, &meta)
 	m.metadata[metaID] = meta
+	m.dispatchFSMShadow(metaID, fsm.EventCompleteBuild, "", finalPath, meta.State)
 
 	log.Info().Str(xlog.FieldJobID, jobID).Str(xlog.FieldMetaID, metaID).Str(xlog.FieldOldState, string(oldState)).Str(xlog.FieldNewState, string(meta.State)).Str(xlog.FieldPlaylistPath, meta.PlaylistPath).Uint64("stateGen", meta.StateGen).Msg("VOD manager: metadata updated")
 
@@ -61,6 +63,7 @@ func (m *Manager) markFailedFromBuild(jobID string, metaID string, reason string
 	meta.Error = reason
 	m.touch(metaID, &meta)
 	m.metadata[metaID] = meta
+	m.dispatchFSMShadow(metaID, fsm.EventFailBuild, reason, "", meta.State)
 
 	log.Info().Str(xlog.FieldJobID, jobID).Str(xlog.FieldMetaID, metaID).Str(xlog.FieldOldState, string(oldState)).Str(xlog.FieldNewState, string(meta.State)).Str("error", meta.Error).Uint64("stateGen", meta.StateGen).Msg("VOD manager: metadata updated to FAILED")
 

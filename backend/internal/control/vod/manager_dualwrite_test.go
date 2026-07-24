@@ -54,3 +54,47 @@ func TestManager_DualWriteToSQLiteStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, fsm.StateReady, updated.State)
 }
+
+func TestManager_PureFSMShadowDivergenceTracking(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+
+	ctx := context.Background()
+	store := sqlite.NewArtifactStore(db)
+	require.NoError(t, store.InitSchema(ctx))
+
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	require.NoError(t, err)
+	mgr.SetArtifactStore(store)
+
+	metaID := "rec-div-1:h264"
+	mgr.SeedMetadata(metaID, Metadata{
+		State:        ArtifactStatePreparing,
+		ResolvedPath: "/tmp/rec-div-1.ts",
+		UpdatedAt:    time.Now().UnixNano(),
+	})
+
+	// Simulate build completion -> Pure FSM moves to READY
+	mgr.MarkProbed(metaID, "/tmp/rec-div-1.ts", &StreamInfo{
+		Container: "mpegts",
+		Video:     VideoStreamInfo{CodecName: "h264"},
+	}, nil)
+
+	art, err := store.GetArtifact(ctx, "rec-div-1", "h264")
+	require.NoError(t, err)
+	require.Equal(t, fsm.StateReady, art.State)
+
+	// Now simulate a legacy code path trying to call MarkFailure on a READY artifact
+	mgr.MarkFailure(metaID, ArtifactStateFailed, "transcode error", "/tmp/rec-div-1.ts", nil)
+
+	// Pure FSM rule: cannot FailBuild directly from READY without returning to PREPARING/retry.
+	// FSM transition fails, FSM remains READY, whereas legacy set state to FAILED -> Divergence detected!
+	fsmArt, err := store.GetArtifact(ctx, "rec-div-1", "h264")
+	require.NoError(t, err)
+	require.Equal(t, fsm.StateReady, fsmArt.State)
+
+	legacyMeta, ok := mgr.GetMetadata(metaID)
+	require.True(t, ok)
+	require.Equal(t, ArtifactStateFailed, legacyMeta.State)
+}
