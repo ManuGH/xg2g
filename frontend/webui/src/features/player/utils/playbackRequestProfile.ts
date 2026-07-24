@@ -277,16 +277,10 @@ export function resolvePlaybackRequestProfile(
     network?.saveData
     || network?.effectiveType === 'slow-2g'
     || network?.effectiveType === '2g'
-    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps < 6)
-  ) {
-    return 'bandwidth';
-  }
-
-  if (
-    network?.kind === 'cellular'
-    || network?.metered
     || network?.effectiveType === '3g'
-    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps < 4)
+    || network?.kind === 'cellular'
+    || network?.metered
+    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps > 0 && network.downlinkMbps < 2)
   ) {
     return 'bandwidth';
   }

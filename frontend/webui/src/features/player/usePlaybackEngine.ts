@@ -870,7 +870,7 @@ export function usePlaybackEngine({
         backBufferLength: 300,
         maxBufferLength: 60,
         capLevelToPlayerSize: true,
-        liveSyncDuration: 6,
+        liveSyncDuration: 12,
         // Rate-based live catch-up is disabled: heartbeat telemetry showed the
         // latency controller periodically driving playbackRate to 1.05, which
         // Safari renders as visible judder (50fps video drops to ~29 eff. fps)
