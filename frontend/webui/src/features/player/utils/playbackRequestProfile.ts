@@ -260,7 +260,7 @@ function supportsHighQualityPlayback(capabilities: CapabilitySnapshot): boolean 
 
   const width = capabilities.maxVideo.width ?? 0;
   const height = capabilities.maxVideo.height ?? 0;
-  return width >= 1920 && height >= 1080;
+  return width >= 1280 && height >= 720;
 }
 
 export function resolvePlaybackRequestProfile(
