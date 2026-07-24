@@ -947,12 +947,6 @@ export function usePlaybackEngine({
           return;
         }
         debugLog('[V3Player] Startup gate open', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
-        const gateVideo = videoRef.current;
-        if (reason !== 'vod' && gateVideo && bufferedAheadSeconds() < SLOW_BUILD_TARGET_AHEAD_SECONDS) {
-          slowBuildActive = true;
-          gateVideo.playbackRate = SLOW_BUILD_RATE;
-          slowBuildTimer = window.setTimeout(() => restorePlaybackRate('timeout'), SLOW_BUILD_MAX_MS);
-        }
         videoRef.current?.play().catch((err) => {
           debugWarn('[V3Player] Autoplay failed', err);
           setStatus('ready');
