@@ -301,8 +301,6 @@ func (r *DefaultResolver) ResolveSegment(ctx context.Context, recordingID string
 	}, nil
 }
 
-
-
 // Internal Logic
 
 func (r *DefaultResolver) triggerBuild(ctx context.Context, ref, profile, variant, metaID string, intent *ports.BuildIntent) error {
