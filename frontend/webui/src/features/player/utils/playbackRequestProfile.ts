@@ -285,6 +285,21 @@ export function resolvePlaybackRequestProfile(
     return 'bandwidth';
   }
 
+  // Force bandwidth mode for mobile/WAN connections to save data.
+  // We determine this by checking if the app is accessed via a non-local hostname.
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')
+      || /^10\./.test(host)
+      || /^192\.168\./.test(host)
+      || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
+      || /^169\.254\./.test(host);
+    
+    if (!isLocal && !network?.saveData && !network?.metered) {
+      return 'bandwidth';
+    }
+  }
+
   if (
     supportsHighQualityPlayback(capabilities)
     && !network?.saveData
