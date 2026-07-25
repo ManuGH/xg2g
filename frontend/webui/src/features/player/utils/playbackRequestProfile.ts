@@ -284,6 +284,18 @@ export function resolvePlaybackRequestProfile(
 
   const isCellularOrMetered = network?.kind === 'cellular' || network?.metered;
 
+  if (capabilities.videoCodecs.includes('av1')) {
+    let hwEnabled = false;
+    try {
+      hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') === 'true';
+    } catch {
+      // Ignore
+    }
+    if (hwEnabled) {
+      return 'av1_hw';
+    }
+  }
+
   // A connection is considered slow if the browser explicitly flags it as 3G or worse,
   // or if the measured bandwidth is below 2.5 Mbps.
   const isSlowNetwork = network?.effectiveType === 'slow-2g'
