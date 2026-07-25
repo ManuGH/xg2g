@@ -25,12 +25,9 @@ func ResolveProfileUserAgent(requestedPlaybackMode, clientFamily, requestUserAge
 		}
 		return requestUserAgent
 	case "hlsjs":
-		switch normalize.Token(clientFamily) {
-		case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
-			return requestUserAgent
-		default:
-			return ""
-		}
+		// hls.js (MediaSource Extensions) cannot decode HEVC/hvc1 via MSE in Safari/Chrome.
+		// Return "" so hlsjs traffic receives standard H.264/fMP4 profiles.
+		return ""
 	default:
 		return ""
 	}
