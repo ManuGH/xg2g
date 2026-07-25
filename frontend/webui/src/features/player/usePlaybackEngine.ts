@@ -915,12 +915,12 @@ export function usePlaybackEngine({
         if (startGateOpen) {
           return;
         }
-        if (bufferedAheadSeconds() < 6.0) {
+        if (bufferedAheadSeconds() < 3.8) {
           debugLog('[V3Player] Startup gate hold - waiting for live headroom buffer', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
           if (startGateTimer !== null) {
             window.clearTimeout(startGateTimer);
           }
-          startGateTimer = window.setTimeout(() => openStartGate('retry'), 1500);
+          startGateTimer = window.setTimeout(() => openStartGate('retry'), 500);
           return;
         }
         startGateOpen = true;
