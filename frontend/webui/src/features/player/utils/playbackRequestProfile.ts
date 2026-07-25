@@ -280,16 +280,19 @@ export function resolvePlaybackRequestProfile(
     // Ignore
   }
 
-  const isCellularOrSlow = network?.effectiveType === 'slow-2g'
+  const isCellularOrMetered = network?.kind === 'cellular' || network?.metered;
+
+  // A connection is considered slow if the browser explicitly flags it as 3G or worse,
+  // or if the measured bandwidth is below 2.5 Mbps.
+  const isSlowNetwork = network?.effectiveType === 'slow-2g'
     || network?.effectiveType === '2g'
     || network?.effectiveType === '3g'
-    || network?.kind === 'cellular'
-    || network?.metered;
+    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps > 0 && network.downlinkMbps < 2.5);
 
   if (
     network?.saveData
-    || (isCellularOrSlow && userWantsMobileDataSavings)
-    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps > 0 && network.downlinkMbps < 2)
+    || isSlowNetwork
+    || (isCellularOrMetered && userWantsMobileDataSavings)
   ) {
     return 'bandwidth';
   }
@@ -297,7 +300,8 @@ export function resolvePlaybackRequestProfile(
   if (
     supportsHighQualityPlayback(capabilities)
     && !network?.saveData
-    && !(isCellularOrSlow && userWantsMobileDataSavings)
+    && !isSlowNetwork
+    && !(isCellularOrMetered && userWantsMobileDataSavings)
   ) {
     return 'quality';
   }
