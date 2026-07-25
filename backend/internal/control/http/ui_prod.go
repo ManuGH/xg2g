@@ -54,7 +54,12 @@ func uiHandler(cfg UIConfig, fileServer http.Handler, uiAvailable bool) http.Han
 
 		if uiAvailable {
 			if isUIHTMLRoute(r.URL.Path) {
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+				w.Header().Set("Pragma", "no-cache")
+				w.Header().Set("Expires", "0")
 				req := r.Clone(r.Context())
+				req.Header.Del("If-Modified-Since")
+				req.Header.Del("If-None-Match")
 				req.URL.Path = "/"
 				req.URL.RawPath = req.URL.Path
 				fileServer.ServeHTTP(w, req)

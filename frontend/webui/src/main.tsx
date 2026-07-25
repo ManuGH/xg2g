@@ -26,12 +26,12 @@ import { setClientAuthToken } from './services/clientWrapper';
 import { ROUTE_MAP } from './routes.ts';
 import { getStoredToken } from './utils/tokenStorage';
 import { safeLocalStorage } from './lib/safeStorage.ts';
-import { ensureCanonicalBasePath, cleanupStaleServiceWorkers } from './bootRecovery.ts';
+import { ensureCanonicalBasePath, cleanupStaleServiceWorkers, setupDynamicChunkReloadHandler } from './bootRecovery.ts';
 
-// Recover from stale service workers and non-canonical (basename-less) URLs
-// before anything renders, so the router never refuses to render (black screen).
+// Recover from stale service workers, non-canonical URLs, and dead JS chunks after deployment
 cleanupStaleServiceWorkers();
 ensureCanonicalBasePath();
+setupDynamicChunkReloadHandler();
 
 // TanStack Query Client Configuration
 // Phase 1: Server-State Layer (2026 State-of-the-Art)

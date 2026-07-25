@@ -102,3 +102,38 @@ export function cleanupStaleServiceWorkers(): void {
     // best effort
   }
 }
+
+/**
+ * Automatically reloads the browser ONCE if dynamic chunk loading fails
+ * (e.g. after a new build deployment on Proxmox replaced old JS chunk hashes).
+ */
+export function setupDynamicChunkReloadHandler(): void {
+  if (typeof window === 'undefined') return;
+
+  const handleChunkError = (message?: string) => {
+    if (!message) return;
+    const isChunkError =
+      message.includes('Failed to fetch dynamically imported module') ||
+      message.includes('Loading chunk') ||
+      message.includes('Importing a module script failed');
+
+    if (isChunkError) {
+      const storageKey = 'xg2g_chunk_reload_at';
+      const lastReload = parseInt(sessionStorage.getItem(storageKey) || '0', 10);
+      const now = Date.now();
+
+      if (now - lastReload > 10000) {
+        sessionStorage.setItem(storageKey, now.toString());
+        window.location.reload();
+      }
+    }
+  };
+
+  window.addEventListener('error', (event) => {
+    handleChunkError(event.message || event.error?.message);
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    handleChunkError(event.reason?.message || String(event.reason));
+  });
+}
