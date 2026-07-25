@@ -190,6 +190,22 @@ function Settings() {
       return '2h';
     }
   });
+  const [av1HardwareEnabled, setAv1HardwareEnabled] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('xg2g.settings.av1HardwareEnabled');
+      return stored !== 'false'; // default true
+    } catch {
+      return true;
+    }
+  });
+  const [av1SoftwareEnabled, setAv1SoftwareEnabled] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('xg2g.settings.av1SoftwareEnabled');
+      return stored === 'true'; // default false
+    } catch {
+      return false;
+    }
+  });
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const requestedSection = searchParams.get('section');
   const requestedTool = searchParams.get('tool');
@@ -1328,6 +1344,45 @@ function Settings() {
                     ⚠️ <strong>{t('settings.streaming.audioMode.surround.warningTitle')}</strong> {t('settings.streaming.audioMode.surround.warningText')}
                   </div>
                 </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div className={[styles.group, styles.optionGroup].join(' ')}>
+          <label className={styles.optionGroupTitle}>{t('settings.streaming.av1Options.title')}</label>
+          <div className={styles.optionList}>
+            <label className={styles.optionChoice}>
+              <input
+                type="checkbox"
+                checked={av1HardwareEnabled}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setAv1HardwareEnabled(val);
+                  try { localStorage.setItem('xg2g.settings.av1HardwareEnabled', val ? 'true' : 'false'); } catch {}
+                }}
+                className={styles.optionInput}
+              />
+              <div>
+                <div className={styles.optionLabel}>{t('settings.streaming.av1Options.hardware.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.av1Options.hardware.hint')}</div>
+              </div>
+            </label>
+
+            <label className={styles.optionChoice}>
+              <input
+                type="checkbox"
+                checked={av1SoftwareEnabled}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setAv1SoftwareEnabled(val);
+                  try { localStorage.setItem('xg2g.settings.av1SoftwareEnabled', val ? 'true' : 'false'); } catch {}
+                }}
+                className={styles.optionInput}
+              />
+              <div>
+                <div className={styles.optionLabel}>{t('settings.streaming.av1Options.software.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.av1Options.software.hint')}</div>
               </div>
             </label>
           </div>

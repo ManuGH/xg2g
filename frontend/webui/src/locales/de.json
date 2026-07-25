@@ -742,6 +742,17 @@
           "start": "Scan konnte nicht gestartet werden."
         }
       },
+      "av1Options": {
+        "title": "AV1 Codec Freigabe",
+        "hardware": {
+          "label": "Hardware AV1 (M3, A17 Pro+)",
+          "hint": "Erlaubt dem Player, hoch-effizientes AV1 anzufordern, falls dein Gerät einen physischen AV1-Decoder besitzt. Zieht keinen Akku, erzeugt keine Hitze."
+        },
+        "software": {
+          "label": "Software AV1 (Ältere Macs / iPhones)",
+          "hint": "Erlaubt dem Player, AV1-Streams per Software über den Prozessor zu berechnen, falls kein AV1-Chip existiert (erfordert macOS 14 / iOS 17). ACHTUNG: Erzeugt höheren Akkuverbrauch und Wärme!"
+        }
+      },
       "audioMode": {
         "title": "Audio-Ausgabemodus (HLS / fMP4)",
         "stereo": {

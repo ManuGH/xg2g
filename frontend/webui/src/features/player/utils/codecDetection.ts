@@ -181,7 +181,21 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
   const signalFor = (codec: PreferredCodec) => signals.find((signal) => signal.codec === codec);
   const av1Signal = signalFor('av1');
 
-  if (av1Signal?.supported || av1Signal?.smooth || av1Signal?.powerEfficient) out.push('av1');
+  let av1HwEnabled = true;
+  let av1SwEnabled = false;
+  try {
+    const hw = window.localStorage.getItem('xg2g.settings.av1HardwareEnabled');
+    if (hw !== null) av1HwEnabled = hw === 'true';
+    const sw = window.localStorage.getItem('xg2g.settings.av1SoftwareEnabled');
+    if (sw !== null) av1SwEnabled = sw === 'true';
+  } catch {}
+
+  if (av1Signal?.powerEfficient) {
+    if (av1HwEnabled) out.push('av1');
+  } else if (av1Signal?.supported || av1Signal?.smooth) {
+    if (av1SwEnabled) out.push('av1');
+  }
+
   if (signalFor('hevc')?.powerEfficient || signalFor('hevc')?.smooth) out.push('hevc');
 
   // Always include H.264 as a safe fallback.
