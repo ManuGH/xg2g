@@ -131,7 +131,17 @@ async function detectCodecSignal(
   }
 
   let supported = aggregated.supported;
-  if (!supported) {
+  if (codec === 'hevc' && typeof MediaSource !== 'undefined') {
+    try {
+      const mseSupported = contentTypes.some((contentType) => MediaSource.isTypeSupported(contentType));
+      if (!mseSupported) {
+        supported = false;
+      }
+    } catch {
+      supported = false;
+    }
+  }
+  if (!supported && codec !== 'hevc') {
     try {
       supported = contentTypes.some((contentType) => typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(contentType));
     } catch {
