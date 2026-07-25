@@ -753,6 +753,13 @@
           "hint": "Allows the player to decode AV1 streams via software processing if no AV1 chip is present (requires macOS 14 / iOS 17). WARNING: Generates more heat and drains battery faster!"
         }
       },
+      "mobileDataOptions": {
+        "title": "Cellular & Data Saver",
+        "transcode": {
+          "label": "Save data (Mobile Transcoding)",
+          "hint": "Forces a bandwidth-saving transcode when on a cellular network (5G/LTE). When disabled, the player will use Direct Play / Passthrough on cellular networks if the connection is fast enough."
+        }
+      },
       "audioMode": {
         "title": "Audio Output Mode (HLS / fMP4)",
         "stereo": {

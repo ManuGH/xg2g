@@ -206,6 +206,14 @@ function Settings() {
       return false;
     }
   });
+  const [saveMobileDataEnabled, setSaveMobileDataEnabled] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('xg2g.settings.saveMobileData');
+      return stored === 'true'; // default false
+    } catch {
+      return false;
+    }
+  });
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const requestedSection = searchParams.get('section');
   const requestedTool = searchParams.get('tool');
@@ -1383,6 +1391,28 @@ function Settings() {
               <div>
                 <div className={styles.optionLabel}>{t('settings.streaming.av1Options.software.label')}</div>
                 <div className={styles.hint}>{t('settings.streaming.av1Options.software.hint')}</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div className={[styles.group, styles.optionGroup].join(' ')}>
+          <label className={styles.optionGroupTitle}>{t('settings.streaming.mobileDataOptions.title')}</label>
+          <div className={styles.optionList}>
+            <label className={styles.optionChoice}>
+              <input
+                type="checkbox"
+                checked={saveMobileDataEnabled}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setSaveMobileDataEnabled(val);
+                  try { localStorage.setItem('xg2g.settings.saveMobileData', val ? 'true' : 'false'); } catch {}
+                }}
+                className={styles.optionInput}
+              />
+              <div>
+                <div className={styles.optionLabel}>{t('settings.streaming.mobileDataOptions.transcode.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.mobileDataOptions.transcode.hint')}</div>
               </div>
             </label>
           </div>

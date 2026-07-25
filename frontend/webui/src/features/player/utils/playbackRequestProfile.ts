@@ -273,37 +273,31 @@ export function resolvePlaybackRequestProfile(
     return undefined;
   }
 
-  if (
-    network?.saveData
-    || network?.effectiveType === 'slow-2g'
+  let userWantsMobileDataSavings = false;
+  try {
+    userWantsMobileDataSavings = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.saveMobileData') === 'true';
+  } catch {
+    // Ignore
+  }
+
+  const isCellularOrSlow = network?.effectiveType === 'slow-2g'
     || network?.effectiveType === '2g'
     || network?.effectiveType === '3g'
     || network?.kind === 'cellular'
-    || network?.metered
+    || network?.metered;
+
+  if (
+    network?.saveData
+    || (isCellularOrSlow && userWantsMobileDataSavings)
     || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps > 0 && network.downlinkMbps < 2)
   ) {
     return 'bandwidth';
   }
 
-  // Force bandwidth mode for mobile/WAN connections to save data.
-  // We determine this by checking if the app is accessed via a non-local hostname.
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    const isLocal = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')
-      || /^10\./.test(host)
-      || /^192\.168\./.test(host)
-      || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
-      || /^169\.254\./.test(host);
-    
-    if (!isLocal && !network?.saveData && !network?.metered) {
-      return 'bandwidth';
-    }
-  }
-
   if (
     supportsHighQualityPlayback(capabilities)
     && !network?.saveData
-    && !network?.metered
+    && !(isCellularOrSlow && userWantsMobileDataSavings)
   ) {
     return 'quality';
   }

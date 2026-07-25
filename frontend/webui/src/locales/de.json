@@ -753,6 +753,13 @@
           "hint": "Erlaubt dem Player, AV1-Streams per Software über den Prozessor zu berechnen, falls kein AV1-Chip existiert (erfordert macOS 14 / iOS 17). ACHTUNG: Erzeugt höheren Akkuverbrauch und Wärme!"
         }
       },
+      "mobileDataOptions": {
+        "title": "Mobilfunk & Datensparen",
+        "transcode": {
+          "label": "Datenvolumen schonen (Mobiles Transcoding)",
+          "hint": "Erzwingt bei Mobilfunk (5G/LTE) einen datensparsamen Transcode. Ist dies deaktiviert, nutzt der Player auch unterwegs Direct Play / Passthrough bei ausreichend schneller Verbindung."
+        }
+      },
       "audioMode": {
         "title": "Audio-Ausgabemodus (HLS / fMP4)",
         "stereo": {
