@@ -159,7 +159,9 @@ func applyPlannerPlanToProfile(spec model.ProfileSpec, plan playbackplanner.Play
 	spec.Container = plannerProfileContainer(plan.Packaging.Container)
 	spec.Deinterlace = spec.TranscodeVideo && plan.Filters.Deinterlace
 	spec.VideoMaxWidth = plan.Filters.ScaleWidth
-	spec.VideoTargetRateK = plan.RateControl.TargetVideoBitrateKbps
+	if plan.RateControl.TargetVideoBitrateKbps > 0 {
+		spec.VideoTargetRateK = plan.RateControl.TargetVideoBitrateKbps
+	}
 	if plan.RateControl.MaxVideoBitrateKbps > 0 {
 		spec.VideoMaxRateK = plan.RateControl.MaxVideoBitrateKbps
 		spec.VideoBufSizeK = plan.RateControl.MaxVideoBitrateKbps * 2
