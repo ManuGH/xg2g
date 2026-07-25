@@ -143,7 +143,6 @@ func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
 func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 	t.Setenv("XG2G_SAFARI_DIRTY_CRF", "15")
 	t.Setenv("XG2G_SAFARI_DIRTY_PRESET", "medium")
-	t.Setenv("XG2G_SAFARI_DIRTY_VAAPI_QP", "19")
 	t.Setenv("XG2G_SAFARI_DIRTY_MAXRATE_K", "18000")
 	t.Setenv("XG2G_SAFARI_DIRTY_BUFSIZE_K", "36000")
 	t.Setenv("XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K", "224")
@@ -159,9 +158,35 @@ func TestResolve_SafariDirtyEnvOverrides(t *testing.T) {
 
 	specGPU := resolveWithCurrentConfig("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelForce)
 	assert.Equal(t, "vaapi", specGPU.HWAccel)
-	assert.Equal(t, 19, specGPU.VideoQP)
 	assert.Equal(t, 18000, specGPU.VideoMaxRateK)
 	assert.Equal(t, 36000, specGPU.VideoBufSizeK)
+}
+
+// TestResolve_SafariVAAPIStaysVBR pins the constant-QP purge. VAAPI ignores
+// -maxrate/-bufsize in CQP rate-control mode ("Buffering settings are ignored in
+// CQP RC mode"), so a QP override silently voids the bitrate ceiling the very
+// same profile sets: HEVC at QP20 measured ~60 Mbit/s against a 14 Mbit/s cap,
+// which filled the tmpfs segment store and produced 0-byte segments.
+//
+// VideoQP must therefore stay 0 (VBR) on every Safari VAAPI profile, and no
+// environment variable may reintroduce it. XG2G_SAFARI_VAAPI_QP,
+// XG2G_SAFARI_DIRTY_VAAPI_QP and XG2G_SAFARI_HEVC_VAAPI_QP were removed
+// outright; setting them now yields an unknown-key warning instead of a
+// silently blown bitrate budget.
+func TestResolve_SafariVAAPIStaysVBR(t *testing.T) {
+	t.Setenv("XG2G_SAFARI_VAAPI_QP", "19")
+	t.Setenv("XG2G_SAFARI_DIRTY_VAAPI_QP", "19")
+	t.Setenv("XG2G_SAFARI_HEVC_VAAPI_QP", "20")
+
+	safariUA := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+
+	for _, profile := range []string{"safari_dirty", "safari_hevc_hw", "h264_fmp4"} {
+		t.Run(profile, func(t *testing.T) {
+			spec := resolveWithCurrentConfig(profile, safariUA, 0, nil, GPUBackendVAAPI, HWAccelForce)
+			assert.Equal(t, 0, spec.VideoQP, "constant-QP is purged; VAAPI must stay VBR so -maxrate is honoured")
+			assert.Greater(t, spec.VideoMaxRateK, 0, "a VBR profile must carry a bitrate ceiling")
+		})
+	}
 }
 
 func TestResolve_LiveVideoLadderBridge(t *testing.T) {

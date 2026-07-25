@@ -58,6 +58,16 @@ func DefaultConfigSnapshot() ConfigSnapshot {
 }
 
 // LoadConfigSnapshot is the sole environment boundary for profile resolution.
+//
+// The three "legacy purged: force VBR" QP fields below are pinned to 0 on
+// purpose and must NOT be wired back to an environment variable. VAAPI ignores
+// -maxrate and -bufsize in constant-QP rate-control mode ("Buffering settings
+// are ignored in CQP RC mode"), so any QP override silently voids the bitrate
+// ceiling set right next to it — HEVC at QP20 measured ~60 Mbit/s against a
+// 14 Mbit/s cap, filling the tmpfs segment store until ffmpeg emitted 0-byte
+// segments and died. The corresponding env keys were removed from
+// runtimeEnvKeys so setting one now warns instead of appearing supported.
+// Pinned by TestResolve_SafariVAAPIStaysVBR.
 func LoadConfigSnapshot() ConfigSnapshot {
 	defaults := DefaultConfigSnapshot()
 	return ConfigSnapshot{

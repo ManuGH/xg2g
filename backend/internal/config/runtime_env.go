@@ -129,15 +129,17 @@ var runtimeEnvKeys = []string{
 	// Safari "dirty"/HQ rate control + runtime probe (runtime_hardening / profiles).
 	"XG2G_SAFARI_CPU_PRESET",
 	"XG2G_SAFARI_CPU_START_TIMEOUT_MS",
-	"XG2G_SAFARI_DIRTY_VAAPI_QP",
+	// The three Safari VAAPI QP knobs (XG2G_SAFARI_VAAPI_QP,
+	// XG2G_SAFARI_DIRTY_VAAPI_QP, XG2G_SAFARI_HEVC_VAAPI_QP) are intentionally
+	// absent: constant-QP was purged in favour of VBR, see LoadConfigSnapshot.
+	// Keeping them listed would advertise them as live settings and suppress the
+	// unknown-key warning for anyone who still sets them.
 	"XG2G_SAFARI_DIRTY_X264_TUNE",
-	"XG2G_SAFARI_VAAPI_QP",
 	"XG2G_SAFARI_VAAPI_MAXRATE_K",
 	"XG2G_SAFARI_VAAPI_BUFSIZE_K",
 	"XG2G_SAFARI_DIRTY_MAXRATE_K",
 	"XG2G_SAFARI_DIRTY_BUFSIZE_K",
 	"XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K",
-	"XG2G_SAFARI_HEVC_VAAPI_QP",
 	"XG2G_SAFARI_RUNTIME_PROBE_TIMEOUT_MS",
 
 	// FPS probing (pipeline/profiles).
