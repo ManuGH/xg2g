@@ -122,7 +122,7 @@ func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 	case "h264", "avc", "libx264":
 		for _, encoder := range ev.HostSnapshot.EncoderCapabilities {
 			if strings.EqualFold(strings.TrimSpace(encoder.Codec), "h264") && encoder.Verified && encoder.AutoEligible {
-				return 20000
+				return 8000
 			}
 		}
 		return 8000

@@ -236,21 +236,18 @@ func ApplyClientCompatibilityProfileID(clientFamily, effectiveProfileID string) 
 }
 
 func ApplyClientCompatibilityProfileIDWithPolicy(clientFamily, effectiveProfileID, iosNativeHEVCHWMode string) string {
-	family := normalize.Token(clientFamily)
-	normProfile := profiles.NormalizeRequestedProfileID(effectiveProfileID)
-
-	if family == playbackprofile.ClientIOSSafariNative {
-		if normProfile == profiles.ProfileSafariHEVCHW {
-			if normalizeIOSNativeHEVCHWMode(iosNativeHEVCHWMode) == iosNativeHEVCHWModeCPU {
-				return profiles.ProfileSafariHEVC
-			}
-		}
-	} else if family == "safari_native" || family == "safari" {
-		if normProfile == profiles.ProfileSafariHEVCHW || normProfile == profiles.ProfileSafari {
-			return profiles.ProfileH264FMP4
-		}
+	if normalize.Token(clientFamily) != playbackprofile.ClientIOSSafariNative {
+		return effectiveProfileID
 	}
 
+	switch profiles.NormalizeRequestedProfileID(effectiveProfileID) {
+	case profiles.ProfileSafariHEVCHW:
+		if normalizeIOSNativeHEVCHWMode(iosNativeHEVCHWMode) == iosNativeHEVCHWModeCPU {
+			return profiles.ProfileSafariHEVC
+		}
+	default:
+		return effectiveProfileID
+	}
 	return effectiveProfileID
 }
 

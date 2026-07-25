@@ -339,7 +339,7 @@ func TestPlanAutoCodecRateControlMatchesExecutionProfiles(t *testing.T) {
 		{name: "av1", codec: "av1", hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 6000},
 		{name: "hevc", codec: "hevc", hostCodec: &HostEncoderCapability{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40}, wantMax: 5000},
 		{name: "h264 cpu", codec: "h264", wantMax: 8000},
-		{name: "h264 hardware", codec: "h264", hostCodec: &HostEncoderCapability{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10}, wantMax: 20000},
+		{name: "h264 hardware", codec: "h264", hostCodec: &HostEncoderCapability{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10}, wantMax: 8000},
 		{name: "constrained h264 hardware", codec: "h264", hostCodec: &HostEncoderCapability{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10}, downlink: 4000, wantTarget: 3000, wantMax: 6000},
 	}
 
