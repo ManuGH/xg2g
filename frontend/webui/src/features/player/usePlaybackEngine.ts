@@ -915,9 +915,9 @@ export function usePlaybackEngine({
         if (startGateOpen) {
           return;
         }
-        if (reason === 'timeout' && bufferedAheadSeconds() === 0) {
-          debugLog('[V3Player] Startup gate timeout extended - waiting for first segment');
-          startGateTimer = window.setTimeout(() => openStartGate('timeout'), 3000);
+        if (reason === 'timeout' && bufferedAheadSeconds() < 6.0) {
+          debugLog('[V3Player] Startup gate timeout extended - waiting for live headroom buffer');
+          startGateTimer = window.setTimeout(() => openStartGate('timeout'), 2000);
           return;
         }
         startGateOpen = true;
