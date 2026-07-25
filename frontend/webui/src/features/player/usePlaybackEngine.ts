@@ -762,7 +762,7 @@ export function usePlaybackEngine({
       hls.startLoad();
       void videoEl.play().catch((err) => debugWarn('[V3Player] hls.js stall autoplay retry failed', err));
 
-      if (attempts >= 2) {
+      if (attempts >= 5) {
         const started = beginSessionDecodeRecovery(4, `hlsjs_${trigger}`, () => {
           setStatus('error');
           reportMediaFailure({
