@@ -13,6 +13,13 @@ decision-engine semantics. Operational commands belong in `docs/ops/`.
 | Codec/container truth | [Codec Matrix](CODEC_MATRIX.md) |
 | Repository structure audit | [Repository Structure Audit](AUDIT_REPO_STRUCTURE.md) |
 
+## Direction & Programs
+
+| Need | Document |
+| :--- | :--- |
+| Modernization program (R-Epics, A-Epics) | [Modernization 2026](SPEC_MODERNIZATION_2026.md) |
+| Architecture direction & deletion budget (K-Epics) | [Kernel Direction](SPEC_KERNEL_DIRECTION.md) |
+
 ## Playback Decision System
 
 | Need | Document |
