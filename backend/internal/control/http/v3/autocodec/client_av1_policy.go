@@ -143,7 +143,7 @@ func isAppleMobileOS(ctx *capabilities.DeviceContext) bool {
 		return false
 	}
 	switch normalize.Token(ctx.OSName) {
-	case "ios", "ipados":
+	case "ios", "ipados", "tvos":
 		return true
 	default:
 		return false
@@ -152,7 +152,7 @@ func isAppleMobileOS(ctx *capabilities.DeviceContext) bool {
 
 func looksLikeAppleMobile(caps capabilities.PlaybackCapabilities) bool {
 	switch normalize.Token(caps.DeviceType) {
-	case "iphone", "ipad", "ios", "ios_safari", "mobile":
+	case "iphone", "ipad", "ios", "ios_safari", "mobile", "appletv":
 		return true
 	default:
 		return false
