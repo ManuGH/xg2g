@@ -915,9 +915,12 @@ export function usePlaybackEngine({
         if (startGateOpen) {
           return;
         }
-        if (reason === 'timeout' && bufferedAheadSeconds() < 6.0) {
-          debugLog('[V3Player] Startup gate timeout extended - waiting for live headroom buffer');
-          startGateTimer = window.setTimeout(() => openStartGate('timeout'), 2000);
+        if (bufferedAheadSeconds() < 6.0) {
+          debugLog('[V3Player] Startup gate hold - waiting for live headroom buffer', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
+          if (startGateTimer !== null) {
+            window.clearTimeout(startGateTimer);
+          }
+          startGateTimer = window.setTimeout(() => openStartGate('retry'), 1500);
           return;
         }
         startGateOpen = true;
