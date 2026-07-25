@@ -103,8 +103,8 @@ func TestResolve_SafariDirtyExplicit(t *testing.T) {
 	assert.Equal(t, "vaapi", specGPUOptIn.HWAccel)
 	assert.Equal(t, "h264", specGPUOptIn.VideoCodec)
 	assert.Equal(t, 20, specGPUOptIn.VideoQP)
-	assert.Equal(t, 20000, specGPUOptIn.VideoMaxRateK)
-	assert.Equal(t, 40000, specGPUOptIn.VideoBufSizeK)
+	assert.Equal(t, 8000, specGPUOptIn.VideoMaxRateK)
+	assert.Equal(t, 16000, specGPUOptIn.VideoBufSizeK)
 
 	specNative := Resolve("safari_dirty", "", 0, nil, GPUBackendNone, HWAccelAuto)
 	assert.Equal(t, "fmp4", specNative.Container)
@@ -118,8 +118,8 @@ func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
 	assert.Equal(t, "vaapi_encode_only", specEncodeOnly.HWAccel)
 	assert.Equal(t, "h264", specEncodeOnly.VideoCodec)
 	assert.Equal(t, 20, specEncodeOnly.VideoQP)
-	assert.Equal(t, 20000, specEncodeOnly.VideoMaxRateK)
-	assert.Equal(t, 40000, specEncodeOnly.VideoBufSizeK)
+	assert.Equal(t, 8000, specEncodeOnly.VideoMaxRateK)
+	assert.Equal(t, 16000, specEncodeOnly.VideoBufSizeK)
 
 	t.Setenv("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "full")
 	specFull := resolveWithCurrentConfig("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)

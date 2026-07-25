@@ -40,13 +40,13 @@ type ConfigSnapshot struct {
 func DefaultConfigSnapshot() ConfigSnapshot {
 	return ConfigSnapshot{
 		SafariVAAPIQP:              20,
-		SafariVAAPIMaxRateK:        20000,
-		SafariVAAPIBufSizeK:        40000,
+		SafariVAAPIMaxRateK:        8000,
+		SafariVAAPIBufSizeK:        16000,
 		SafariCPUPreset:            "veryfast",
 		SafariDirtyAudioBitrateK:   192,
 		SafariDirtyGPUQP:           20,
-		SafariDirtyGPUMaxRateK:     20000,
-		SafariDirtyGPUBufSizeK:     40000,
+		SafariDirtyGPUMaxRateK:     8000,
+		SafariDirtyGPUBufSizeK:     16000,
 		SafariDirtyCPUCRF:          18,
 		SafariDirtyCPUMaxRateK:     8000,
 		SafariDirtyCPUBufSizeK:     16000,
