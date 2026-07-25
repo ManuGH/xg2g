@@ -2,9 +2,11 @@ package ffmpeg
 
 import (
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"strconv"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 )
 
 func usesLegacyCPUDefaults(spec ports.StreamSpec, outputCodec string) bool {
@@ -127,7 +129,7 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 		parts = append(parts, softwareScaleWidthFilter(spec.Profile.VideoMaxWidth))
 	}
 	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
-	if isAV1 {
+	if isAV1 && hardware.GetGPUVendor() == hardware.VendorAMD {
 		parts = append(parts, av1VAAPIGeometryPadFilter())
 	}
 	// AV1 encodes 10-bit (p010 -> AV1 Main, which covers 8/10-bit). The extra
@@ -248,14 +250,23 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 		if isAV1 && prof.VideoTargetRateK <= 0 {
 			bV = max((prof.VideoMaxRateK*3)/4, 1)
 		}
+		// dynamic vendor optimizations.
+		vendor := hardware.GetGPUVendor()
+
+		if isAV1 && vendor == hardware.VendorAMD {
+			args = append(args, "-compression_level", "29")
+		}
+
 		// AV1 QVBR: quality-targeted encode that still honours -maxrate as a hard
-		// ceiling. Verified on this AMD stack (Mesa 25.0.7 / VCN4): QVBR holds the
+		// ceiling. Verified on AMD stacks (Mesa 25.0.7 / VCN4): QVBR holds the
 		// cap, is sustained-stable, and is immune to the b:v==maxrate ring-stall
-		// that constrains plain VBR. QVBR REQUIRES -b:v ("Bitrate must be set for
-		// QVBR RC mode"), which is set above. Disable with XG2G_AV1_QVBR=false to
-		// fall back to implicit VBR; tune the quality target with
-		// XG2G_AV1_QVBR_QUALITY (AV1 scale 0-255, lower = higher quality).
+		// that constrains plain VBR.
+		// On Intel (iHD), QVBR is not natively mapped and standard VBR/ICQ is used.
 		av1QVBR := isAV1 && cfg.AV1QVBR
+		if isAV1 && vendor == hardware.VendorIntel {
+			av1QVBR = false // Disable strictly for Intel
+		}
+
 		if av1QVBR {
 			args = append(args, "-rc_mode", "QVBR")
 		}

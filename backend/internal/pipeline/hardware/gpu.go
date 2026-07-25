@@ -53,15 +53,24 @@ const (
 	VerdictUnverifiable EncoderVerdict = "unverifiable"
 )
 
+type GPUVendor string
+
+const (
+	VendorUnknown GPUVendor = "unknown"
+	VendorIntel   GPUVendor = "intel"
+	VendorAMD     GPUVendor = "amd"
+	VendorNVIDIA  GPUVendor = "nvidia"
+)
+
 type HardwareEncoderCapability struct {
 	// Verified stays true iff Verdict == VerdictVerified, so existing admission
 	// (IsHardwareEncoderReady -> cap.Verified) keeps working unchanged and
 	// fail-closed for withheld/unverifiable.
 	Verified     bool
+	AutoEligible bool
 	Verdict      EncoderVerdict
 	Reason       string
 	ProbeElapsed time.Duration
-	AutoEligible bool
 
 	// Per-bit-depth verification (B2). Production drives AV1 at 10-bit (p010le)
 	// while 8-bit (nv12) is the broad-compat depth; recording both lets plan-time
@@ -116,6 +125,9 @@ var (
 
 	pathCapsMu sync.RWMutex
 	pathCaps   map[string]HardwarePathCapability
+
+	vendorMu       sync.RWMutex
+	detectedVendor GPUVendor = VendorUnknown
 )
 
 // HasVAAPI checks if the VAAPI render device exists
@@ -135,6 +147,23 @@ func HasNVENC() bool {
 		}
 	}
 	return false
+}
+
+// SetGPUVendor stores the globally detected GPU vendor from preflight.
+func SetGPUVendor(vendor GPUVendor) {
+	vendorMu.Lock()
+	defer vendorMu.Unlock()
+	detectedVendor = vendor
+}
+
+// GetGPUVendor retrieves the globally detected GPU vendor.
+func GetGPUVendor() GPUVendor {
+	vendorMu.RLock()
+	defer vendorMu.RUnlock()
+	if detectedVendor == VendorUnknown && IsNVENCReady() {
+		return VendorNVIDIA
+	}
+	return detectedVendor
 }
 
 // SetVAAPIPreflightResult records the result of the real VAAPI encode

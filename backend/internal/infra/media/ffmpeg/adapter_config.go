@@ -264,7 +264,7 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		TranscodeSharpen:              envFloatBounded("XG2G_TRANSCODE_SHARPEN", 0.5, 0.0, 3.0),
 		TranscodeDenoise:              envFloatBounded("XG2G_TRANSCODE_DENOISE", 0.6, 0.0, 1.5),
 		TranscodeDeband:               envBool("XG2G_TRANSCODE_DEBAND", true),
-		AV1QVBR:                       envBool("XG2G_AV1_QVBR", false), // Disabled by default for Intel compatibility
+		AV1QVBR:                       envBool("XG2G_AV1_QVBR", true), // Default true; Intel explicitly disables it dynamically
 		AV1QVBRQuality:                envIntBounded("XG2G_AV1_QVBR_QUALITY", 50, 1, 255),
 		ExperimentalInterlacedCodecs:  parseSnapshotList(config.ParseString(experimentalInterlacedVAAPICodecsEnv, ""), true),
 

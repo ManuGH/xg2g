@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 )
 
 func profileBenchmarksForBackend(backend string) []string {
@@ -46,7 +48,7 @@ func vaapiEncodeOnlyInterlacedCorrectnessFilter(encoder string) string {
 		"setfield=tff",
 		"bwdif=mode=send_field:parity=auto:deint=all",
 	}
-	if normalizeRequestedCodec(encoder) == "av1" {
+	if normalizeRequestedCodec(encoder) == "av1" && hardware.GetGPUVendor() == hardware.VendorAMD {
 		parts = append(parts, av1VAAPIGeometryPadFilter())
 	}
 	parts = append(parts, "format="+vaapiProductionUploadFormat(encoder), "hwupload")

@@ -160,6 +160,23 @@ func (d *Detector) PreflightVAAPI() error {
 		return d.vaapiDeviceErr
 	}
 
+	// 1.5. Detect GPU Vendor
+	ctxVendor, cancelVendor := context.WithTimeout(context.Background(), 2*time.Second)
+	// #nosec G204 -- BinPath and VaapiDevice are trusted
+	vendorCmd := exec.CommandContext(ctxVendor, d.BinPath, "-v", "verbose", "-init_hw_device", "vaapi=foo:"+d.VaapiDevice, "-hwaccel", "vaapi", "-f", "null", "-")
+	vendorOut, _ := vendorCmd.CombinedOutput()
+	cancelVendor()
+	vendorStr := strings.ToLower(string(vendorOut))
+	if strings.Contains(vendorStr, "intel") {
+		hardware.SetGPUVendor(hardware.VendorIntel)
+		d.Logger.Info().Msg("vaapi preflight: detected Intel GPU vendor")
+	} else if strings.Contains(vendorStr, "amd") {
+		hardware.SetGPUVendor(hardware.VendorAMD)
+		d.Logger.Info().Msg("vaapi preflight: detected AMD GPU vendor")
+	} else {
+		d.Logger.Info().Msg("vaapi preflight: unknown GPU vendor")
+	}
+
 	// 2. Enumerate available VAAPI encoders
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
