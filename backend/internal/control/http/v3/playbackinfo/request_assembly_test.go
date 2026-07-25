@@ -173,6 +173,47 @@ func TestBuildPlaybackInfoServiceRequest_FallsBackToProfileHeader(t *testing.T) 
 
 	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3.1", "compact")
 
+	// The header carries a PLAYBACK INTENT, so it binds RequestedProfile only.
+	// It must NOT leak into ClientProfile: "repair" is not a device family, and
+	// treating it as one makes the request look like it came from a client
+	// family that does not exist, silently disabling every family-gated path.
 	assert.Equal(t, "repair", got.RequestedProfile)
-	assert.Equal(t, "repair", got.ClientProfile)
+	assert.Equal(t, "generic", got.ClientProfile)
+}
+
+func TestBuildPlaybackInfoServiceRequest_PlaybackIntentsNeverBecomeClientFamilies(t *testing.T) {
+	// Public intents and internal encoder profile ids share the `profile` field
+	// with genuine client families. Only the latter may set ClientProfile.
+	for _, intent := range []string{"quality", "compatible", "bandwidth", "direct", "av1_hw", "safari_hevc_hw"} {
+		t.Run(intent, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info?profile="+intent, nil)
+
+			got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
+
+			assert.Equal(t, intent, got.RequestedProfile, "intent must still bind the requested profile")
+			assert.Equal(t, "generic", got.ClientProfile, "intent must not be mistaken for a client family")
+		})
+	}
+}
+
+func TestBuildPlaybackInfoServiceRequest_ClientFamilyTokensStillBind(t *testing.T) {
+	for _, family := range []string{"safari", "android_native", "android_tv_native", "ios_safari_native", "chromium_hlsjs"} {
+		t.Run(family, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info?profile="+family, nil)
+
+			got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
+
+			assert.Equal(t, family, got.ClientProfile)
+		})
+	}
+}
+
+func TestBuildPlaybackInfoServiceRequest_UnknownProfileFallsBackToUserAgentSniffing(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info?profile=quality", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5.2 Safari/605.1.15")
+
+	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
+
+	assert.Equal(t, "quality", got.RequestedProfile)
+	assert.Equal(t, "safari", got.ClientProfile)
 }

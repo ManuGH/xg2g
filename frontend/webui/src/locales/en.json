@@ -746,11 +746,11 @@
         "title": "AV1 Codec Allowance",
         "hardware": {
           "label": "Hardware AV1 (M3, A17 Pro+)",
-          "hint": "Allows the player to request highly-efficient AV1 streams if your device has a physical AV1 decoder. Does not drain the battery or generate heat."
+          "hint": "Allows highly-efficient AV1 when your device has a physical AV1 decoder. The server decides this from the device generation — Safari does not reliably report hardware AV1, not even on M3/M4 Macs. Barely touches the battery, generates no heat."
         },
         "software": {
           "label": "Software AV1 (Older Macs / iPhones)",
-          "hint": "Allows the player to decode AV1 streams via software processing if no AV1 chip is present (requires macOS 14 / iOS 17). WARNING: Generates more heat and drains battery faster!"
+          "hint": "Allows AV1 even without a proven hardware decoder, letting the CPU decode it (requires macOS 14 / iOS 17). WARNING: generates more heat and drains battery faster! With both switches off, AV1 is never requested."
         }
       },
       "mobileDataOptions": {

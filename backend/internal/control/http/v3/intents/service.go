@@ -79,6 +79,7 @@ type startProfileResolution struct {
 	degradedFrom          string
 	autoCodecTrace        autocodec.SelectionTrace
 	requestedCodecs       string
+	av1RejectReason       string
 }
 
 func NewService(deps Deps, opts ...Option) *Service {

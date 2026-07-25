@@ -77,6 +77,19 @@ func allowedRequestedCodecsForClientWithPolicy(intent Intent, requestedPlaybackM
 	return matrixFallbackVideoCodecs(intent, requestedPlaybackMode)
 }
 
+// av1RejectReasonForIntent reports why AV1 was not offered to the planner for
+// this intent, as a stable token (empty when AV1 was allowed). It exists purely
+// so the resolved-profile log answers "why not AV1?" directly instead of
+// leaving it to be inferred from an absent codec.
+func av1RejectReasonForIntent(intent Intent, clientAV1Disabled bool) string {
+	canonicalCaps := normalizedClientCaps(intent.ClientCaps)
+	if canonicalCaps == nil || len(canonicalCaps.VideoCodecs) == 0 {
+		return ""
+	}
+	_, reason := autocodec.ClientAV1PlaybackVerdict(*canonicalCaps, clientFamilyForIntent(intent), clientAV1Disabled)
+	return reason
+}
+
 func removeRequestedCodec(codecs []string, blocked string) []string {
 	out := make([]string, 0, len(codecs))
 	for _, codec := range codecs {

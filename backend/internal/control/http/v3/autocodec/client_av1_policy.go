@@ -21,21 +21,50 @@ func ClientAV1PlaybackAllowed(caps capabilities.PlaybackCapabilities, clientFami
 // planning adapters. The operational kill switch is captured before the
 // request and supplied explicitly.
 func ClientAV1PlaybackAllowedWithPolicy(caps capabilities.PlaybackCapabilities, clientFamily string, disabled bool) bool {
+	allowed, _ := ClientAV1PlaybackVerdict(caps, clientFamily, disabled)
+	return allowed
+}
+
+// AV1 rejection reasons. These are stable tokens meant for logs and traces:
+// when AV1 does not get picked, exactly one of these says why. Without them the
+// only way to find out is to read this file and guess which guard fired —
+// which is how a client-side capability filter once masqueraded as a
+// server-side profile problem through eight consecutive "fixes".
+const (
+	AV1RejectOperatorDisabled = "operator_disabled"
+	AV1RejectClientNoAV1Codec = "client_no_av1_codec"
+	AV1RejectNoFMP4Container  = "client_no_fmp4_container"
+	AV1RejectNoRuntimeSignal  = "no_runtime_av1_signal"
+	AV1RejectKnownTVNoAV1     = "known_tv_model_without_av1"
+	AV1RejectAppleModel       = "apple_model_predates_av1"
+	AV1RejectAppleOSTooOld    = "apple_os_below_av1_minimum"
+	AV1RejectNotAppleMobile   = "not_an_apple_mobile_device"
+	AV1RejectAndroidTooOld    = "android_below_av1_minimum"
+	AV1RejectSignalTooWeak    = "av1_signal_neither_smooth_nor_power_efficient"
+)
+
+// ClientAV1PlaybackVerdict is the reasoned form of the guard. It returns the
+// same decision plus a stable reason token when AV1 is refused (empty when
+// allowed), so callers can log and surface WHY rather than only that it failed.
+func ClientAV1PlaybackVerdict(caps capabilities.PlaybackCapabilities, clientFamily string, disabled bool) (bool, string) {
 	if disabled {
-		return false
+		return false, AV1RejectOperatorDisabled
 	}
 	canonical := capabilities.CanonicalizeCapabilities(caps)
 	if !playbackCapabilitiesHaveCodec(canonical.VideoCodecs, "av1") {
-		return false
+		// The client never offered AV1. Note this is reachable even on hardware
+		// that decodes AV1 fine, if the client filtered its own codec list
+		// before sending it — check videoCodecSignals for the raw verdicts.
+		return false, AV1RejectClientNoAV1Codec
 	}
 	if !playbackCapabilitiesHaveCodec(canonical.Containers, "fmp4") {
-		return false
+		return false, AV1RejectNoFMP4Container
 	}
 	if !hasRuntimeAV1Signal(canonical) {
-		return false
+		return false, AV1RejectNoRuntimeSignal
 	}
 	if hasKnownTVNoAV1Model(canonical.DeviceContext) {
-		return false
+		return false, AV1RejectKnownTVNoAV1
 	}
 
 	family := normalize.Token(clientFamily)
@@ -47,13 +76,13 @@ func ClientAV1PlaybackAllowedWithPolicy(caps capabilities.PlaybackCapabilities, 
 	}
 	switch family {
 	case playbackprofile.ClientIOSSafariNative:
-		return appleMobileAV1Allowed(canonical)
+		return appleMobileAV1Verdict(canonical)
 	case playbackprofile.ClientSafariNative:
-		return appleDesktopAV1Allowed(canonical)
+		return appleDesktopAV1Verdict(canonical)
 	case playbackprofile.ClientAndroidTVBrowser:
-		return androidTVBrowserAV1Allowed(canonical)
+		return androidTVBrowserAV1Verdict(canonical)
 	default:
-		return androidOrGenericAV1Allowed(canonical)
+		return androidOrGenericAV1Verdict(canonical)
 	}
 }
 
@@ -69,50 +98,102 @@ func hasRuntimeAV1Signal(caps capabilities.PlaybackCapabilities) bool {
 	return ok && signal.Supported
 }
 
-func appleMobileAV1Allowed(caps capabilities.PlaybackCapabilities) bool {
+// appleModelAV1Verdict consults the curated Apple model tables. Apple ships AV1
+// decode per silicon generation (A17 Pro / M3 and up), and the OS minimum alone
+// cannot tell an M2 from an M4 — both run macOS 14+. The tables settle it when
+// the device identifies itself.
+//
+// Known-AV1 is checked BEFORE known-pre-AV1 on purpose: model strings overlap
+// ("iPhone 15 Pro A17 Pro" matches both the "iphone15pro" AV1 marker and the
+// "iphone15" pre-AV1 marker), and the more specific AV1 verdict must win.
+//
+// decided=false means the device did not identify itself well enough to judge —
+// browsers commonly send only {platform, osName}. Those fall through to the
+// runtime probe rather than being vetoed on a missing field.
+func appleModelAV1Verdict(ctx *capabilities.DeviceContext) (allowed bool, decided bool) {
+	if hasKnownAppleAV1Model(ctx) {
+		return true, true
+	}
+	if hasKnownApplePreAV1Model(ctx) {
+		return false, true
+	}
+	return false, false
+}
+
+func appleMobileAV1Verdict(caps capabilities.PlaybackCapabilities) (bool, string) {
 	if !isAppleMobileOS(caps.DeviceContext) && !looksLikeAppleMobile(caps) {
-		return false
+		return false, AV1RejectNotAppleMobile
 	}
 	if !minimumMajorVersion(caps.DeviceContext, 17) {
-		return false
+		return false, AV1RejectAppleOSTooOld
 	}
-	return hasRuntimeAV1Signal(caps)
+	if allowed, decided := appleModelAV1Verdict(caps.DeviceContext); decided && !allowed {
+		return false, AV1RejectAppleModel
+	}
+	if !hasRuntimeAV1Signal(caps) {
+		return false, AV1RejectNoRuntimeSignal
+	}
+	return true, ""
 }
 
-func appleDesktopAV1Allowed(caps capabilities.PlaybackCapabilities) bool {
+func appleDesktopAV1Verdict(caps capabilities.PlaybackCapabilities) (bool, string) {
 	if caps.DeviceContext == nil || normalize.Token(caps.DeviceContext.OSName) != "macos" {
-		return hasRuntimeAV1Signal(caps)
+		if !hasRuntimeAV1Signal(caps) {
+			return false, AV1RejectNoRuntimeSignal
+		}
+		return true, ""
 	}
 	if !minimumMajorVersion(caps.DeviceContext, 14) {
-		return false
+		return false, AV1RejectAppleOSTooOld
 	}
-	return hasRuntimeAV1Signal(caps)
+	if allowed, decided := appleModelAV1Verdict(caps.DeviceContext); decided && !allowed {
+		return false, AV1RejectAppleModel
+	}
+	if !hasRuntimeAV1Signal(caps) {
+		return false, AV1RejectNoRuntimeSignal
+	}
+	return true, ""
 }
 
-func androidOrGenericAV1Allowed(caps capabilities.PlaybackCapabilities) bool {
+func androidOrGenericAV1Verdict(caps capabilities.PlaybackCapabilities) (bool, string) {
 	if caps.DeviceContext != nil && normalize.Token(caps.DeviceContext.OSName) == "android" {
 		if androidSDK(caps.DeviceContext) >= 34 || majorVersion(caps.DeviceContext.OSVersion) >= 14 {
-			return av1SignalIsAtLeastSmooth(caps)
+			if !av1SignalIsAtLeastSmooth(caps) {
+				return false, AV1RejectSignalTooWeak
+			}
+			return true, ""
 		}
 		// Android 10+ can expose AV1, but on Android 10-13 it is too device
 		// specific to trust a plain "supported" bit. Require the browser/native
 		// probe to report a smooth or power-efficient decode path.
-		return av1SignalIsPowerEfficientOrSmooth(caps)
+		if !av1SignalIsPowerEfficientOrSmooth(caps) {
+			return false, AV1RejectSignalTooWeak
+		}
+		return true, ""
 	}
-	return av1SignalIsPowerEfficientOrSmooth(caps)
+	if !av1SignalIsPowerEfficientOrSmooth(caps) {
+		return false, AV1RejectSignalTooWeak
+	}
+	return true, ""
 }
 
-func androidTVBrowserAV1Allowed(caps capabilities.PlaybackCapabilities) bool {
+func androidTVBrowserAV1Verdict(caps capabilities.PlaybackCapabilities) (bool, string) {
 	if hasKnownTVAV1Model(caps.DeviceContext) {
-		return av1SignalIsPowerEfficientOrSmooth(caps)
+		if !av1SignalIsPowerEfficientOrSmooth(caps) {
+			return false, AV1RejectSignalTooWeak
+		}
+		return true, ""
 	}
 	if caps.DeviceContext == nil || normalize.Token(caps.DeviceContext.OSName) != "android" {
-		return false
+		return false, AV1RejectAndroidTooOld
 	}
 	if androidSDK(caps.DeviceContext) < 34 && majorVersion(caps.DeviceContext.OSVersion) < 14 {
-		return false
+		return false, AV1RejectAndroidTooOld
 	}
-	return av1SignalIsPowerEfficientOrSmooth(caps)
+	if !av1SignalIsPowerEfficientOrSmooth(caps) {
+		return false, AV1RejectSignalTooWeak
+	}
+	return true, ""
 }
 
 func av1SignalIsAtLeastSmooth(caps capabilities.PlaybackCapabilities) bool {

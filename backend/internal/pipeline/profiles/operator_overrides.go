@@ -89,10 +89,8 @@ func ApplyHostPressureOverride(requestedProfileID string, band playbackprofile.H
 	}
 
 	switch NormalizeRequestedProfileID(requestedProfileID) {
-	case ProfileSafariHEVC, ProfileSafariHEVCHW, ProfileSafariHEVCHWLL:
+	case ProfileSafariHEVC, ProfileSafariHEVCHW, ProfileSafariHEVCHWLL, ProfileAV1HW:
 		return ProfileHigh, true
-	case ProfileAV1HW:
-		return ProfileAV1HW, false
 	default:
 		return NormalizeRequestedProfileID(requestedProfileID), false
 	}

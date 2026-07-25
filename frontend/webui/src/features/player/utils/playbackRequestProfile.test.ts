@@ -66,22 +66,42 @@ describe('resolvePlaybackRequestProfile', () => {
     )).toBe('bandwidth');
   });
 
-  it('uses the capped bandwidth profile on metered cellular links', () => {
+  // The data-saver toggle (xg2g.settings.saveMobileData, default off) governs
+  // metered links. A fast metered connection is NOT capped on its own: capping
+  // it by default would silently downgrade users on unlimited mobile plans.
+  // Genuinely slow links stay capped regardless of the toggle (see above).
+  const meteredCellularContext = () => buildContext({
+    network: {
+      kind: 'cellular',
+      effectiveType: '4g',
+      downlinkMbps: 18,
+      metered: true,
+    },
+    isTv: false,
+    isNativePlayback: false,
+    platform: 'browser',
+  });
+
+  it('keeps quality on fast metered links while the data saver is off', () => {
+    localStorage.removeItem('xg2g.settings.saveMobileData');
     expect(resolvePlaybackRequestProfile(
-      buildContext({
-        network: {
-          kind: 'cellular',
-          effectiveType: '4g',
-          downlinkMbps: 18,
-          metered: true,
-        },
-        isTv: false,
-        isNativePlayback: false,
-        platform: 'browser',
-      }),
+      meteredCellularContext(),
       buildCapabilities(),
       'recording'
-    )).toBe('bandwidth');
+    )).toBe('quality');
+  });
+
+  it('uses the capped bandwidth profile on metered cellular links when the data saver is on', () => {
+    localStorage.setItem('xg2g.settings.saveMobileData', 'true');
+    try {
+      expect(resolvePlaybackRequestProfile(
+        meteredCellularContext(),
+        buildCapabilities(),
+        'recording'
+      )).toBe('bandwidth');
+    } finally {
+      localStorage.removeItem('xg2g.settings.saveMobileData');
+    }
   });
 
   it('treats an AV1-only client as a modern quality path', () => {
@@ -158,7 +178,7 @@ describe('planner-bound profile selection', () => {
   });
 
   it('drops legacy encoder profile ids instead of bypassing the planner', () => {
-    expect(normalizePlaybackProfileSelection('av1_hw')).toBe('av1_hw');
+    expect(normalizePlaybackProfileSelection('av1_hw')).toBe('auto');
     expect(normalizePlaybackProfileSelection('hevc_hw')).toBe('auto');
     expect(normalizePlaybackProfileSelection('h264_fmp4')).toBe('auto');
   });

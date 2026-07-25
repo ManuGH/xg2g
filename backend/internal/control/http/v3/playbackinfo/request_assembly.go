@@ -12,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
@@ -159,15 +160,49 @@ func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 	return &c
 }
 
+// clientFamilyProfileTokens are the values of the `profile` field that actually
+// name a CLIENT FAMILY (what kind of device is asking). Historically the same
+// field also carries a PLAYBACK INTENT (what quality the user wants) — "quality",
+// "repair", "bandwidth" — and internal encoder profile ids such as "av1_hw".
+//
+// Those two meanings must not be conflated: feeding an intent into the client
+// family makes the request look like it came from a device family that does not
+// exist, which silently disables every family-gated path (native HLS profile
+// selection among them). Only the tokens below are accepted as a family; every
+// other value falls through to User-Agent sniffing, and the client-supplied
+// capabilities.clientFamilyFallback still takes precedence downstream.
+var clientFamilyProfileTokens = map[string]struct{}{
+	"generic":                              {},
+	"safari":                               {},
+	"android_native":                       {},
+	"android_tv_native":                    {},
+	playbackprofile.ClientSafariNative:     {},
+	playbackprofile.ClientIOSSafariNative:  {},
+	playbackprofile.ClientFirefoxHLSJS:     {},
+	playbackprofile.ClientAndroidTVBrowser: {},
+	playbackprofile.ClientChromiumHLSJS:    {},
+}
+
+func clientFamilyFromProfileToken(raw string) (string, bool) {
+	token := normalize.Token(raw)
+	if token == "" {
+		return "", false
+	}
+	if _, ok := clientFamilyProfileTokens[token]; !ok {
+		return "", false
+	}
+	return token, true
+}
+
 func detectClientProfile(r *http.Request) string {
 	if r == nil {
 		return "generic"
 	}
-	if p := strings.TrimSpace(r.URL.Query().Get("profile")); p != "" {
-		return p
+	if family, ok := clientFamilyFromProfileToken(r.URL.Query().Get("profile")); ok {
+		return family
 	}
-	if p := strings.TrimSpace(r.Header.Get("X-XG2G-Profile")); p != "" {
-		return p
+	if family, ok := clientFamilyFromProfileToken(r.Header.Get("X-XG2G-Profile")); ok {
+		return family
 	}
 	ua := r.UserAgent()
 	if strings.Contains(ua, "Safari") && !strings.Contains(ua, "Chrome") && !strings.Contains(ua, "Android") {

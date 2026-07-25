@@ -7,59 +7,12 @@ package v3
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	"reflect"
 
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
-	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
-
-// ClientProfile represents the detected capability bucket of the client.
-type ClientProfile string
-
-const (
-	ClientProfileGeneric ClientProfile = "generic"
-	ClientProfileSafari  ClientProfile = "safari"
-)
-
-// DetectClientProfile identifies the client profile from the request.
-// Priority:
-// 1. Query parameter "profile" (e.g. ?profile=safari or ?profile=android_native)
-// 2. Header "X-XG2G-Profile"
-// 3. User-Agent sniffing (Fallback)
-func DetectClientProfile(r *http.Request) ClientProfile {
-	// 1. Explicit Query Param
-	if p := r.URL.Query().Get("profile"); p != "" {
-		return mapProfileString(p)
-	}
-
-	// 2. Explicit Header
-	if p := r.Header.Get("X-XG2G-Profile"); p != "" {
-		return mapProfileString(p)
-	}
-
-	// 3. User-Agent Sniffing
-	ua := r.UserAgent()
-	// Rudimentary check for Safari (excluding Chrome/Android which often contain "Safari")
-	if strings.Contains(ua, "Safari") && !strings.Contains(ua, "Chrome") && !strings.Contains(ua, "Android") {
-		return ClientProfileSafari
-	}
-
-	return ClientProfileGeneric
-}
-
-func mapProfileString(s string) ClientProfile {
-	switch token := normalize.Token(s); token {
-	case "":
-		return ClientProfileGeneric
-	case "safari":
-		return ClientProfileSafari
-	default:
-		return ClientProfile(token)
-	}
-}
 
 // problemDetailsResponse defines the structure for RFC 7807 responses.
 // Note: This shadows the generated ProblemDetails to strictly enforce the "details" extension point

@@ -290,3 +290,109 @@ func TestClientAV1PlaybackAllowed_PlatformMatrix(t *testing.T) {
 		})
 	}
 }
+
+// TestClientAV1PlaybackVerdict_DesktopSafariWithoutModelOrPowerEfficient pins
+// the exact payload an Apple Silicon Mac running Safari sends in production:
+// the browser exposes no hardware model and no OS version, and its
+// MediaCapabilities verdict for AV1 is a bare `supported` with neither `smooth`
+// nor `powerEfficient` set.
+//
+// This must be ALLOWED. The model tables cannot judge a device that does not
+// identify itself, so the runtime probe decides. Regressing this to a
+// powerEfficient requirement is what silently disabled AV1 on M3/M4 Macs.
+func TestClientAV1PlaybackVerdict_DesktopSafariWithoutModelOrPowerEfficient(t *testing.T) {
+	caps := capabilities.PlaybackCapabilities{
+		CapabilitiesVersion:  3,
+		Containers:           []string{"mp4", "ts", "fmp4"},
+		VideoCodecs:          []string{"av1", "hevc", "h264"},
+		AudioCodecs:          []string{"aac", "mp3", "ac3"},
+		RuntimeProbeUsed:     true,
+		RuntimeProbeVersion:  2,
+		ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+		ClientFamilyFallback: playbackprofile.ClientSafariNative,
+		DeviceType:           "web",
+		DeviceContext:        &capabilities.DeviceContext{Platform: "macintel", OSName: "macos"},
+		VideoCodecSignals: []capabilities.VideoCodecSignal{
+			{Codec: "av1", Supported: true},
+		},
+	}
+
+	allowed, reason := ClientAV1PlaybackVerdict(caps, playbackprofile.ClientSafariNative, false)
+	if !allowed {
+		t.Fatalf("ClientAV1PlaybackVerdict() = false (reason %q), want true", reason)
+	}
+	if reason != "" {
+		t.Fatalf("ClientAV1PlaybackVerdict() reason = %q, want empty when allowed", reason)
+	}
+}
+
+// TestClientAV1PlaybackVerdict_ReasonsAreSpecific guards the diagnostic value of
+// the verdict: a refusal must say which guard fired, not just "no".
+func TestClientAV1PlaybackVerdict_ReasonsAreSpecific(t *testing.T) {
+	base := func() capabilities.PlaybackCapabilities {
+		smooth := true
+		return capabilities.PlaybackCapabilities{
+			CapabilitiesVersion:  3,
+			Containers:           []string{"mp4", "ts", "fmp4"},
+			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			ClientFamilyFallback: playbackprofile.ClientSafariNative,
+			DeviceContext:        &capabilities.DeviceContext{OSName: "macos", OSVersion: "14.4"},
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &smooth},
+			},
+		}
+	}
+
+	tests := []struct {
+		name       string
+		disabled   bool
+		mutate     func(*capabilities.PlaybackCapabilities)
+		wantReason string
+	}{
+		{
+			name:       "operator kill switch",
+			disabled:   true,
+			wantReason: AV1RejectOperatorDisabled,
+		},
+		{
+			name:       "client filtered av1 out of its own codec list",
+			mutate:     func(c *capabilities.PlaybackCapabilities) { c.VideoCodecs = []string{"hevc", "h264"} },
+			wantReason: AV1RejectClientNoAV1Codec,
+		},
+		{
+			name:       "no fmp4 container",
+			mutate:     func(c *capabilities.PlaybackCapabilities) { c.Containers = []string{"mp4", "ts"} },
+			wantReason: AV1RejectNoFMP4Container,
+		},
+		{
+			name:       "mac predating av1 decode",
+			mutate:     func(c *capabilities.PlaybackCapabilities) { c.DeviceContext.Model = "MacBook Pro M2" },
+			wantReason: AV1RejectAppleModel,
+		},
+		{
+			name:       "macos below the av1 minimum",
+			mutate:     func(c *capabilities.PlaybackCapabilities) { c.DeviceContext.OSVersion = "13.6" },
+			wantReason: AV1RejectAppleOSTooOld,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			caps := base()
+			if tt.mutate != nil {
+				tt.mutate(&caps)
+			}
+			allowed, reason := ClientAV1PlaybackVerdict(caps, playbackprofile.ClientSafariNative, tt.disabled)
+			if allowed {
+				t.Fatalf("ClientAV1PlaybackVerdict() = true, want false")
+			}
+			if reason != tt.wantReason {
+				t.Fatalf("reason = %q, want %q", reason, tt.wantReason)
+			}
+		})
+	}
+}

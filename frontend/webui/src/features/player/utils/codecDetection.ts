@@ -181,6 +181,19 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
   const signalFor = (codec: PreferredCodec) => signals.find((signal) => signal.codec === codec);
   const av1Signal = signalFor('av1');
 
+  // The client reports FACTS, it does not decide policy. Whether AV1 is a good
+  // idea for this device is decided server-side (autocodec/client_av1_policy.go),
+  // which has the device tables and host-encoder state to judge it; the raw
+  // per-codec verdicts travel alongside in videoCodecSignals.
+  //
+  // Do NOT gate this on powerEfficient. Safari reports AV1 as `supported` with
+  // neither `smooth` nor `powerEfficient` even on M3/M4 Macs that decode AV1 in
+  // hardware, so a powerEfficient gate silently deletes av1 from videoCodecs —
+  // and once it is gone the server can never select it, no matter what profile
+  // the client requests. That gate is what broke AV1 on Apple hardware.
+  //
+  // The Settings toggles stay meaningful as an explicit user opt-out: switching
+  // both off means "never send me AV1".
   let av1HwEnabled = true;
   let av1SwEnabled = false;
   try {
@@ -190,10 +203,9 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
     if (sw !== null) av1SwEnabled = sw === 'true';
   } catch {}
 
-  if (av1Signal?.powerEfficient) {
-    if (av1HwEnabled) out.push('av1');
-  } else if (av1Signal?.supported || av1Signal?.smooth) {
-    if (av1SwEnabled) out.push('av1');
+  const av1OptedOut = !av1HwEnabled && !av1SwEnabled;
+  if (!av1OptedOut && (av1Signal?.supported || av1Signal?.smooth || av1Signal?.powerEfficient)) {
+    out.push('av1');
   }
 
   if (signalFor('hevc')?.powerEfficient || signalFor('hevc')?.smooth) out.push('hevc');

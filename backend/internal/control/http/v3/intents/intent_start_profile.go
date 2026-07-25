@@ -190,6 +190,7 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 	resolution.profileSpec = adaptStartProfileForNetworkContext(intent, resolution.profileSpec)
 	requestedCodecs := requestedCodecsForIntentWithPolicy(intent, requestedPlaybackMode, s.clientAV1Disabled)
 	resolution.requestedCodecs = requestedCodecs
+	resolution.av1RejectReason = av1RejectReasonForIntent(intent, s.clientAV1Disabled)
 	if shouldTraceAutoCodecDecision(intent, requestedCodecs) {
 		resolution.autoCodecTrace = autocodec.DescribeSelection(requestedCodecs, resolution.effectiveProfileID, s.deps.HostRuntime(ctx))
 	}
@@ -289,6 +290,7 @@ func (s *Service) logStartProfileResolution(intent Intent, resolution startProfi
 		Str("auto_codec_selected", resolution.autoCodecTrace.SelectedCodec).
 		Str("auto_codec_host_class", resolution.autoCodecTrace.PerformanceClass).
 		Str("auto_codec_benchmark_class", resolution.autoCodecTrace.CodecBenchmarkClass).
+		Str("av1_reject_reason", resolution.av1RejectReason).
 		Str("encoder_backend", encoderBackend).
 		Str("video_codec", resolution.profileSpec.VideoCodec).
 		Int("video_maxrate_k", resolution.profileSpec.VideoMaxRateK).

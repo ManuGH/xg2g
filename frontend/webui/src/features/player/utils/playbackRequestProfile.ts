@@ -1,8 +1,8 @@
 import { getNativePlaybackCapabilities, resolveHostEnvironment } from '../../../lib/hostBridge';
 import type { CapabilitySnapshot } from './playbackCapabilities';
 
-export type PlaybackRequestProfile = 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth' | 'av1_hw';
-export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth' | 'av1_hw';
+export type PlaybackRequestProfile = 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
+export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
 
 export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfileSelection {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -15,8 +15,7 @@ export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfi
     case 'compatible':
     case 'repair':
     case 'bandwidth':
-    case 'av1_hw':
-      return normalized as PlaybackProfileSelection;
+      return normalized;
     default:
       // Internal encoder-profile ids from older UI builds are intentionally
       // discarded. The planner accepts public playback intents only.
@@ -24,19 +23,12 @@ export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfi
   }
 }
 
-export function resolvePlaybackProfileForPreflight(intent: PlaybackProfileSelection, resolvedAutoProfile: PlaybackRequestProfile | undefined): PlaybackRequestProfile | undefined {
-  let hwEnabled = true;
-  try {
-    hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') !== 'false';
-  } catch {
-    // Ignore
-  }
-  if (hwEnabled) {
-    return 'av1_hw';
-  }
-
-  const normalized = normalizePlaybackProfileSelection(intent);
-  return normalized === 'auto' ? resolvedAutoProfile : normalized;
+export function resolvePlaybackProfileForPreflight(
+  selection: unknown,
+  automaticProfile?: PlaybackRequestProfile,
+): PlaybackRequestProfile | undefined {
+  const normalized = normalizePlaybackProfileSelection(selection);
+  return normalized === 'auto' ? automaticProfile : normalized;
 }
 
 export type PlaybackClientDeviceContext = {
@@ -290,16 +282,6 @@ export function resolvePlaybackRequestProfile(
   }
 
   const isCellularOrMetered = network?.kind === 'cellular' || network?.metered;
-
-  let hwEnabled = true;
-  try {
-    hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') !== 'false';
-  } catch {
-    // Ignore
-  }
-  if (hwEnabled) {
-    return 'av1_hw';
-  }
 
   // A connection is considered slow if the browser explicitly flags it as 3G or worse,
   // or if the measured bandwidth is below 2.5 Mbps.
