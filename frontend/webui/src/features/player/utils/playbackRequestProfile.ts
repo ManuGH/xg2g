@@ -24,12 +24,21 @@ export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfi
   }
 }
 
-export function resolvePlaybackProfileForPreflight(
-  selection: unknown,
-  automaticProfile?: PlaybackRequestProfile,
-): PlaybackRequestProfile | undefined {
-  const normalized = normalizePlaybackProfileSelection(selection);
-  return normalized === 'auto' ? automaticProfile : normalized;
+export function resolvePlaybackProfileForPreflight(intent: PlaybackProfileSelection, resolvedAutoProfile: PlaybackRequestProfile | undefined): PlaybackRequestProfile | undefined {
+  let hwEnabled = false;
+  try {
+    hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') === 'true';
+  } catch {
+    // Ignore
+  }
+  if (hwEnabled) {
+    return 'av1_hw';
+  }
+
+  if (intent === 'auto') {
+    return resolvedAutoProfile;
+  }
+  return normalizePlaybackProfileSelection(intent);
 }
 
 export type PlaybackClientDeviceContext = {
