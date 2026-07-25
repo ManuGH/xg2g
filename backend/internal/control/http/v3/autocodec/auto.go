@@ -246,7 +246,7 @@ func ApplyClientCompatibilityProfileIDWithPolicy(clientFamily, effectiveProfileI
 			}
 		}
 	} else if family == "safari_native" || family == "safari" {
-		if normProfile == profiles.ProfileSafariHEVCHW {
+		if normProfile == profiles.ProfileSafariHEVCHW || normProfile == profiles.ProfileSafari {
 			return profiles.ProfileH264FMP4
 		}
 	}
