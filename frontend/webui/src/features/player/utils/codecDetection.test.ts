@@ -283,7 +283,7 @@ describe('codecDetection', () => {
     });
 
     const warmedPreferred = await detectPreferredCodecs(null);
-    expect(warmedPreferred).toEqual(['hevc', 'h264']);
+    expect(warmedPreferred).toEqual(['av1', 'hevc', 'h264']);
 
     const video = document.createElement('video') as HTMLVideoElement & { webkitEnterFullscreen?: () => void };
     video.webkitEnterFullscreen = vi.fn();

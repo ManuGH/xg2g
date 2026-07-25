@@ -5,8 +5,6 @@
  * Probes browser codec support via MediaCapabilities, MediaSource, and HTMLVideoElement APIs.
  */
 
-import { detectPlaybackClientFamily } from './playbackClientFamily';
-
 export type PreferredCodec = 'av1' | 'hevc' | 'h264';
 
 export type VideoCodecSignal = {
@@ -23,23 +21,7 @@ export function resetCachedCodecs(): void {
   cachedVideoCodecSignals = null;
 }
 
-function isIOSNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
-  if (!videoEl) return false;
-  try {
-    return detectPlaybackClientFamily(videoEl) === 'ios_safari_native';
-  } catch {
-    return false;
-  }
-}
 
-function isDesktopSafariNativeAV1ProbeEnabled(videoEl?: HTMLVideoElement | null): boolean {
-  if (!videoEl) return false;
-  try {
-    return detectPlaybackClientFamily(videoEl) === 'safari_native';
-  } catch {
-    return false;
-  }
-}
 
 type DecodingInfoResult = {
   supported: boolean;
@@ -198,14 +180,8 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
   const out: PreferredCodec[] = [];
   const signalFor = (codec: PreferredCodec) => signals.find((signal) => signal.codec === codec);
   const av1Signal = signalFor('av1');
-  const allowIOSNativeAV1 =
-    isIOSNativeAV1ProbeEnabled(videoEl) &&
-    (av1Signal?.supported || av1Signal?.smooth);
-  const allowDesktopSafariNativeAV1 =
-    isDesktopSafariNativeAV1ProbeEnabled(videoEl) &&
-    (av1Signal?.supported || av1Signal?.smooth);
 
-  if (av1Signal?.powerEfficient || allowIOSNativeAV1 || allowDesktopSafariNativeAV1) out.push('av1');
+  if (av1Signal?.supported || av1Signal?.smooth || av1Signal?.powerEfficient) out.push('av1');
   if (signalFor('hevc')?.powerEfficient || signalFor('hevc')?.smooth) out.push('hevc');
 
   // Always include H.264 as a safe fallback.
