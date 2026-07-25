@@ -35,10 +35,8 @@ export function resolvePlaybackProfileForPreflight(intent: PlaybackProfileSelect
     return 'av1_hw';
   }
 
-  if (intent === 'auto') {
-    return resolvedAutoProfile;
-  }
-  return normalizePlaybackProfileSelection(intent);
+  const normalized = normalizePlaybackProfileSelection(intent);
+  return normalized === 'auto' ? resolvedAutoProfile : normalized;
 }
 
 export type PlaybackClientDeviceContext = {

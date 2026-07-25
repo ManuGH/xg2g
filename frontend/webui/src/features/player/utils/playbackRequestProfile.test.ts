@@ -166,6 +166,6 @@ describe('planner-bound profile selection', () => {
   it('binds an explicit profile before preflight and preserves automatic policy for auto', () => {
     expect(resolvePlaybackProfileForPreflight('repair', 'quality')).toBe('repair');
     expect(resolvePlaybackProfileForPreflight('auto', 'bandwidth')).toBe('bandwidth');
-    expect(resolvePlaybackProfileForPreflight('auto')).toBeUndefined();
+    expect(resolvePlaybackProfileForPreflight('auto', undefined)).toBeUndefined();
   });
 });
