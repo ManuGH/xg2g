@@ -64,13 +64,13 @@ func LoadConfigSnapshot() ConfigSnapshot {
 		SafariDirtyHWAccelMode: normalizeSnapshotToken(config.ParseString("XG2G_SAFARI_DIRTY_HWACCEL_MODE", "")),
 		SafariDirtyUseGPU:      snapshotBool("XG2G_SAFARI_DIRTY_USE_GPU", false),
 
-		SafariVAAPIQP:       snapshotInt("XG2G_SAFARI_VAAPI_QP", defaults.SafariVAAPIQP, 10, 40),
+		SafariVAAPIQP:       0, // legacy purged: force VBR
 		SafariVAAPIMaxRateK: snapshotInt("XG2G_SAFARI_VAAPI_MAXRATE_K", defaults.SafariVAAPIMaxRateK, 4000, 60000),
 		SafariVAAPIBufSizeK: snapshotInt("XG2G_SAFARI_VAAPI_BUFSIZE_K", defaults.SafariVAAPIBufSizeK, 8000, 120000),
 		SafariCPUPreset:     snapshotPreset("XG2G_SAFARI_CPU_PRESET", defaults.SafariCPUPreset),
 
 		SafariDirtyAudioBitrateK: snapshotInt("XG2G_SAFARI_DIRTY_AUDIO_BITRATE_K", defaults.SafariDirtyAudioBitrateK, 96, 384),
-		SafariDirtyGPUQP:         snapshotInt("XG2G_SAFARI_DIRTY_VAAPI_QP", defaults.SafariDirtyGPUQP, 10, 40),
+		SafariDirtyGPUQP:         0, // legacy purged: force VBR
 		SafariDirtyGPUMaxRateK:   snapshotInt("XG2G_SAFARI_DIRTY_MAXRATE_K", defaults.SafariDirtyGPUMaxRateK, 4000, 60000),
 		SafariDirtyGPUBufSizeK:   snapshotInt("XG2G_SAFARI_DIRTY_BUFSIZE_K", defaults.SafariDirtyGPUBufSizeK, 8000, 120000),
 		SafariDirtyCPUCRF:        snapshotInt("XG2G_SAFARI_DIRTY_CRF", defaults.SafariDirtyCPUCRF, 12, 30),
@@ -78,7 +78,7 @@ func LoadConfigSnapshot() ConfigSnapshot {
 		SafariDirtyCPUBufSizeK:   snapshotInt("XG2G_SAFARI_DIRTY_BUFSIZE_K", defaults.SafariDirtyCPUBufSizeK, 8000, 120000),
 		SafariDirtyCPUPreset:     snapshotPreset("XG2G_SAFARI_DIRTY_PRESET", defaults.SafariDirtyCPUPreset),
 
-		SafariHEVCVAAPIQP:          snapshotInt("XG2G_SAFARI_HEVC_VAAPI_QP", defaults.SafariHEVCVAAPIQP, 10, 40),
+		SafariHEVCVAAPIQP:          0, // legacy purged: force VBR
 		ExperimentalAV1MPEGTS:      snapshotBool("XG2G_EXPERIMENTAL_AV1_MPEGTS_ENABLED", defaults.ExperimentalAV1MPEGTS),
 		SafariForceCopyServiceRefs: snapshotList("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS"),
 	}
