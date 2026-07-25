@@ -704,8 +704,7 @@ export function usePlaybackEngine({
       !hlsRef.current ||
       !sessionIdRef.current ||
       !lastHlsUrlRef.current ||
-      lastHlsEngineRef.current !== 'hlsjs' ||
-      videoEl.paused
+      lastHlsEngineRef.current !== 'hlsjs'
     ) {
       return;
     }
@@ -722,8 +721,7 @@ export function usePlaybackEngine({
         !hls ||
         !sessionIdRef.current ||
         !lastHlsUrlRef.current ||
-        lastHlsEngineRef.current !== 'hlsjs' ||
-        videoEl.paused
+        lastHlsEngineRef.current !== 'hlsjs'
       ) {
         return;
       }
