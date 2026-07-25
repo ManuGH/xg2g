@@ -298,4 +298,54 @@ describe('codecDetection', () => {
     const preferred = await detectPreferredCodecs(video);
     expect(preferred).toEqual(['av1', 'hevc', 'h264']);
   });
+
+  // The encoder delivers AV1 Main 10-bit (p010le). A device that decodes 8-bit
+  // AV1 but refuses 10-bit must NOT advertise av1, or it gets a stream it cannot
+  // play. Probing a generic 8-bit string answered the wrong question.
+  it('does not advertise av1 when only 8-bit av1 decodes but the delivered 10-bit does not', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
+        const contentType = video?.contentType ?? '';
+        if (contentType.includes('av01') && contentType.includes('.10')) {
+          return { supported: false, smooth: false, powerEfficient: false };
+        }
+        if (contentType.includes('av01')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        if (contentType.includes('avc1')) {
+          return { supported: true, smooth: true, powerEfficient: true };
+        }
+        return { supported: false, smooth: false, powerEfficient: false };
+      })
+    };
+
+    const video = document.createElement('video');
+    vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
+      if (type.includes('av01') && type.includes('.10')) return '';
+      if (type.includes('av01')) return 'probably';
+      if (type.includes('avc1')) return 'probably';
+      return '';
+    });
+
+    const preferred = await detectPreferredCodecs(video);
+
+    expect(preferred).not.toContain('av1');
+  });
+
+  it('advertises av1 when the delivered 10-bit variant decodes', async () => {
+    (navigator as any).mediaCapabilities = {
+      decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
+        const contentType = video?.contentType ?? '';
+        if (contentType.includes('av01')) {
+          return { supported: true, smooth: false, powerEfficient: false };
+        }
+        return { supported: true, smooth: true, powerEfficient: true };
+      })
+    };
+
+    const preferred = await detectPreferredCodecs();
+
+    expect(preferred).toContain('av1');
+  });
+
 });

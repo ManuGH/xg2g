@@ -158,7 +158,16 @@ async function detectCodecSignal(
 export async function detectVideoCodecSignals(videoEl?: HTMLVideoElement | null): Promise<VideoCodecSignal[]> {
   if (cachedVideoCodecSignals) return cachedVideoCodecSignals;
 
-  const av1Types = ['video/mp4; codecs="av01.0.05M.08"'];
+  // Probe the AV1 variant we actually deliver, not a generic one. The encoder
+  // uploads p010le and emits AV1 Main 10-bit, so an 8-bit probe answers the
+  // wrong question: a device that decodes av01.*.08 but refuses av01.*.10 would
+  // advertise av1 and then fail on the real stream. Level is
+  // resolution/fps-dependent, so accept either 1080p candidate (4.0/4.1) —
+  // matching the strings managedMseAv1 gates the hls.js route on.
+  const av1Types = [
+    'video/mp4; codecs="av01.0.08M.10"',
+    'video/mp4; codecs="av01.0.09M.10"',
+  ];
   const hevcTypes = [
     'video/mp4; codecs="hvc1.1.6.L120.90"',
     'video/mp4; codecs="hev1.1.6.L120.90"'
