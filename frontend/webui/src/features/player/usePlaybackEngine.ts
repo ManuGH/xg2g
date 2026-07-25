@@ -9,6 +9,7 @@ import type { PlaybackEngineErrorContext } from '../../client-ts';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
+import { shouldOpenStartGate } from './utils/startupGate';
 import {
   describeHlsRenderProbe,
   isBlackRenderSuspect,
@@ -891,8 +892,24 @@ export function usePlaybackEngine({
       // exists (or a cap elapses). VOD playlists open the gate immediately.
       const START_GATE_TARGET_SECONDS = 4.5;
       const START_GATE_TIMEOUT_MS = 6000;
+      const START_GATE_POLL_MS = 600;
       let startGateOpen = false;
-      let startGateTimer: number | null = null;
+      let startGateCapElapsed = false;
+      let startGateIsLive = true;
+      // The cap and the retry poll need separate handles. Sharing one made the
+      // first retry clear the cap timer, so the cap never fired.
+      let startGateCapTimer: number | null = null;
+      let startGatePollTimer: number | null = null;
+      const clearStartGateTimers = () => {
+        if (startGateCapTimer !== null) {
+          window.clearTimeout(startGateCapTimer);
+          startGateCapTimer = null;
+        }
+        if (startGatePollTimer !== null) {
+          window.clearTimeout(startGatePollTimer);
+          startGatePollTimer = null;
+        }
+      };
       const bufferedAheadSeconds = (): number => {
         const gateVideo = videoRef.current;
         if (!gateVideo || gateVideo.buffered.length === 0) {
@@ -905,19 +922,22 @@ export function usePlaybackEngine({
         if (startGateOpen) {
           return;
         }
-        if (bufferedAheadSeconds() < 5.0) {
-          debugLog('[V3Player] Startup gate hold - waiting for live headroom buffer', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
-          if (startGateTimer !== null) {
-            window.clearTimeout(startGateTimer);
+        const bufferedAhead = bufferedAheadSeconds();
+        if (!shouldOpenStartGate({
+          isLive: startGateIsLive,
+          bufferedAheadSeconds: bufferedAhead,
+          capElapsed: startGateCapElapsed,
+          targetSeconds: START_GATE_TARGET_SECONDS,
+        })) {
+          debugLog('[V3Player] Startup gate hold - waiting for live headroom buffer', { reason, bufferedAhead: bufferedAhead.toFixed(2) });
+          if (startGatePollTimer !== null) {
+            window.clearTimeout(startGatePollTimer);
           }
-          startGateTimer = window.setTimeout(() => openStartGate('retry'), 600);
+          startGatePollTimer = window.setTimeout(() => openStartGate('retry'), START_GATE_POLL_MS);
           return;
         }
         startGateOpen = true;
-        if (startGateTimer !== null) {
-          window.clearTimeout(startGateTimer);
-          startGateTimer = null;
-        }
+        clearStartGateTimers();
         if (hlsRef.current !== hls) {
           return;
         }
@@ -954,7 +974,10 @@ export function usePlaybackEngine({
             setStats((prev) => ({ ...prev, fps: first.frameRate || 0 }));
           }
         }
-        startGateTimer = window.setTimeout(() => openStartGate('timeout'), START_GATE_TIMEOUT_MS);
+        startGateCapTimer = window.setTimeout(() => {
+          startGateCapElapsed = true;
+          openStartGate('timeout');
+        }, START_GATE_TIMEOUT_MS);
       });
 
       hls.on(Hls.Events.BUFFER_APPENDED, () => {
@@ -965,6 +988,7 @@ export function usePlaybackEngine({
 
       hls.on(Hls.Events.LEVEL_LOADED, (_event, data: LevelLoadedData) => {
         if (data.details.live === false) {
+          startGateIsLive = false;
           revealHoldRef.current = false;
           if (!startGateOpen) {
             openStartGate('vod');
