@@ -211,9 +211,9 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 			if useGPU {
 				spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
 				spec.VideoCodec = "h264"
-				spec.VideoCRF = 16
-				spec.VideoMaxRateK = 20000
-				spec.VideoBufSizeK = 40000
+				spec.VideoCRF = 21
+				spec.VideoMaxRateK = cfg.SafariVAAPIMaxRateK
+				spec.VideoBufSizeK = cfg.SafariVAAPIMaxRateK * 2
 			} else {
 				spec.VideoCodec = "libx264"
 				applyH264VideoLadder(spec, playbackprofile.VideoRungForIntent(playbackprofile.IntentRepair))
