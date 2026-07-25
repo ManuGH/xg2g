@@ -869,13 +869,6 @@ export function usePlaybackEngine({
         backBufferLength: 300,
         maxBufferLength: 60,
         capLevelToPlayerSize: true,
-        liveSyncDuration: 12,
-        // Rate-based live catch-up is disabled: heartbeat telemetry showed the
-        // latency controller periodically driving playbackRate to 1.05, which
-        // Safari renders as visible judder (50fps video drops to ~29 eff. fps)
-        // and time-compressed audio — the recurring "stutter + audio dropout".
-        // With a multi-hour DVR window, slowly drifting behind the live edge
-        // is harmless; 1 keeps hls.js from ever touching playbackRate.
         maxLiveSyncPlaybackRate: 1,
         // Broadcast copy/passthrough sources (DVB relay) deliver imperfect DTS,
         // so the muxed segments carry small timestamp gaps ("Invalid DTS …
