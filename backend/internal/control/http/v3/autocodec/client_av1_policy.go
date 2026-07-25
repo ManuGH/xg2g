@@ -70,11 +70,35 @@ func hasRuntimeAV1Signal(caps capabilities.PlaybackCapabilities) bool {
 }
 
 func appleMobileAV1Allowed(caps capabilities.PlaybackCapabilities) bool {
-	return hasRuntimeAV1Signal(caps)
+	if !isAppleMobileOS(caps.DeviceContext) && !looksLikeAppleMobile(caps) {
+		return false
+	}
+	if !minimumMajorVersion(caps.DeviceContext, 17) {
+		return false
+	}
+	if hasKnownAppleAV1Model(caps.DeviceContext) {
+		return true
+	}
+	if hasKnownApplePreAV1Model(caps.DeviceContext) {
+		return false
+	}
+	return av1SignalIsAtLeastSmooth(caps)
 }
 
 func appleDesktopAV1Allowed(caps capabilities.PlaybackCapabilities) bool {
-	return hasRuntimeAV1Signal(caps)
+	if caps.DeviceContext == nil || normalize.Token(caps.DeviceContext.OSName) != "macos" {
+		return av1SignalIsAtLeastSmooth(caps)
+	}
+	if !minimumMajorVersion(caps.DeviceContext, 14) {
+		return false
+	}
+	if hasKnownAppleAV1Model(caps.DeviceContext) {
+		return true
+	}
+	if hasKnownApplePreAV1Model(caps.DeviceContext) {
+		return false
+	}
+	return av1SignalIsAtLeastSmooth(caps)
 }
 
 func androidOrGenericAV1Allowed(caps capabilities.PlaybackCapabilities) bool {
