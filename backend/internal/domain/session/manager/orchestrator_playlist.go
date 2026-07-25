@@ -246,7 +246,7 @@ func (o *Orchestrator) liveReadySegments() int {
 	if o.LiveReadySegments > 0 {
 		return o.LiveReadySegments
 	}
-	return 3
+	return 4
 }
 
 func playlistSegments(content []byte) []string {
