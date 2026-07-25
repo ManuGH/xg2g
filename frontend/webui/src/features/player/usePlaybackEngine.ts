@@ -863,10 +863,9 @@ export function usePlaybackEngine({
         // on unsupported plain MSE for AV1.
         preferManagedMediaSource: true,
         enableWorker: true,
-        // Engages only when the playlist advertises EXT-X-PART (server flag
-        // hls.lowLatency); on regular playlists this is a no-op, so the
-        // stable non-LL path is unchanged.
-        lowLatencyMode: true,
+        lowLatencyMode: false,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 6,
         backBufferLength: 300,
         maxBufferLength: 60,
         capLevelToPlayerSize: true,
@@ -915,12 +914,12 @@ export function usePlaybackEngine({
         if (startGateOpen) {
           return;
         }
-        if (bufferedAheadSeconds() < 3.8) {
+        if (bufferedAheadSeconds() < 5.0) {
           debugLog('[V3Player] Startup gate hold - waiting for live headroom buffer', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
           if (startGateTimer !== null) {
             window.clearTimeout(startGateTimer);
           }
-          startGateTimer = window.setTimeout(() => openStartGate('retry'), 500);
+          startGateTimer = window.setTimeout(() => openStartGate('retry'), 600);
           return;
         }
         startGateOpen = true;
