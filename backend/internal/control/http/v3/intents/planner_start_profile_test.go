@@ -119,7 +119,7 @@ func TestResolvePlannerStartProfilePreservesCodecQualityModeWhenTargetIsUnset(t 
 	require.Nil(t, intentErr)
 	require.True(t, resolution.profileSpec.PlannerBound)
 	require.Equal(t, "hevc", resolution.profileSpec.VideoCodec)
-	require.Equal(t, 20, resolution.profileSpec.VideoQP)
+	require.Equal(t, 0, resolution.profileSpec.VideoQP)
 	require.Zero(t, resolution.profileSpec.VideoTargetRateK)
 	require.Equal(t, 5000, resolution.profileSpec.VideoMaxRateK)
 	require.Equal(t, 10000, resolution.profileSpec.VideoBufSizeK)

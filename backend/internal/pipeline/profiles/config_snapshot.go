@@ -39,19 +39,19 @@ type ConfigSnapshot struct {
 // legacy tests and recovery code that has not yet been wired explicitly.
 func DefaultConfigSnapshot() ConfigSnapshot {
 	return ConfigSnapshot{
-		SafariVAAPIQP:              20,
+		SafariVAAPIQP:              0,
 		SafariVAAPIMaxRateK:        8000,
 		SafariVAAPIBufSizeK:        16000,
 		SafariCPUPreset:            "veryfast",
 		SafariDirtyAudioBitrateK:   192,
-		SafariDirtyGPUQP:           20,
+		SafariDirtyGPUQP:           0,
 		SafariDirtyGPUMaxRateK:     8000,
 		SafariDirtyGPUBufSizeK:     16000,
 		SafariDirtyCPUCRF:          18,
 		SafariDirtyCPUMaxRateK:     8000,
 		SafariDirtyCPUBufSizeK:     16000,
 		SafariDirtyCPUPreset:       "veryfast",
-		SafariHEVCVAAPIQP:          20,
+		SafariHEVCVAAPIQP:          0,
 		ExperimentalAV1MPEGTS:      false,
 		SafariForceCopyServiceRefs: nil,
 	}

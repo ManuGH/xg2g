@@ -250,6 +250,9 @@ func applyH264GPUSettings(
 	spec.HWAccel = hwaccel
 	spec.VideoCodec = "h264"
 	spec.VideoQP = qp
+	if qp == 0 {
+		spec.VideoTargetRateK = 6000
+	}
 	spec.VideoMaxRateK = maxRateK
 	spec.VideoBufSizeK = bufSizeK
 }

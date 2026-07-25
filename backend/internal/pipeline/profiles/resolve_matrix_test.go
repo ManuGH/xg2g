@@ -48,7 +48,7 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 			wantTranscodeVideo:  true,
 			wantContainer:       "mpegts",
 			wantDeinterlace:     true,
-			wantVideoQP:         20,
+			wantVideoQP:         0,
 		},
 		{
 			name:                "safari macos auto interlaced without gpu uses higher quality cpu transcode rung",

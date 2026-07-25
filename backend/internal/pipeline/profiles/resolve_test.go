@@ -45,7 +45,7 @@ func TestResolve_SmartScan(t *testing.T) {
 	assert.Equal(t, "mpegts", specGPU.Container)
 	assert.Equal(t, "vaapi", specGPU.HWAccel)
 	assert.Equal(t, "h264", specGPU.VideoCodec)
-	assert.Equal(t, 20, specGPU.VideoQP)
+	assert.Equal(t, 0, specGPU.VideoQP)
 	assert.Equal(t, ports.RuntimeModeHQ25, specGPU.PolicyModeHint)
 
 	// 3. Interlaced + No GPU -> Transcode CPU
@@ -102,7 +102,7 @@ func TestResolve_SafariDirtyExplicit(t *testing.T) {
 	assert.Equal(t, "safari_dirty", specGPUOptIn.Name)
 	assert.Equal(t, "vaapi", specGPUOptIn.HWAccel)
 	assert.Equal(t, "h264", specGPUOptIn.VideoCodec)
-	assert.Equal(t, 20, specGPUOptIn.VideoQP)
+	assert.Equal(t, 0, specGPUOptIn.VideoQP)
 	assert.Equal(t, 8000, specGPUOptIn.VideoMaxRateK)
 	assert.Equal(t, 16000, specGPUOptIn.VideoBufSizeK)
 
@@ -117,7 +117,7 @@ func TestResolve_SafariDirtyHWAccelModes(t *testing.T) {
 	specEncodeOnly := resolveWithCurrentConfig("safari_dirty", safariUA, 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "vaapi_encode_only", specEncodeOnly.HWAccel)
 	assert.Equal(t, "h264", specEncodeOnly.VideoCodec)
-	assert.Equal(t, 20, specEncodeOnly.VideoQP)
+	assert.Equal(t, 0, specEncodeOnly.VideoQP)
 	assert.Equal(t, 8000, specEncodeOnly.VideoMaxRateK)
 	assert.Equal(t, 16000, specEncodeOnly.VideoBufSizeK)
 
@@ -207,7 +207,7 @@ func TestResolve_SafariHEVCBrowserUsesFMP4(t *testing.T) {
 	assert.Equal(t, "fmp4", specHW.Container)
 	assert.Equal(t, "vaapi", specHW.HWAccel)
 	assert.Equal(t, "hevc", specHW.VideoCodec)
-	assert.Equal(t, 20, specHW.VideoQP)
+	assert.Equal(t, 0, specHW.VideoQP)
 }
 
 func TestResolve_SafariHEVCNativeKeepsFMP4(t *testing.T) {
@@ -216,7 +216,7 @@ func TestResolve_SafariHEVCNativeKeepsFMP4(t *testing.T) {
 
 	specHW := Resolve(ProfileSafariHEVCHW, "", 0, nil, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "fmp4", specHW.Container)
-	assert.Equal(t, 20, specHW.VideoQP)
+	assert.Equal(t, 0, specHW.VideoQP)
 }
 
 func TestResolve_AV1HWDefaultsToFMP4(t *testing.T) {
