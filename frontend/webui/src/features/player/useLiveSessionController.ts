@@ -587,8 +587,8 @@ export function useLiveSessionController({
               if (!cleanup()) return;
               const reason = stateData.reason || state;
               const detail = stateData.reasonDetail ? `: ${stateData.reasonDetail}` : '';
-              if (abortController.signal.aborted || state === 'CANCELLED' || reason === 'R_CANCELLED') {
-                debugLog('[V3Player] Session intentionally cancelled/aborted', { trackedSessionId, reason });
+              if (abortController.signal.aborted) {
+                debugLog('[V3Player] Session intentionally cancelled/aborted by client', { trackedSessionId, reason });
                 reject(new Error('Session cancelled'));
                 return;
               }
