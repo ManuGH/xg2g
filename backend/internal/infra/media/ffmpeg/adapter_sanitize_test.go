@@ -51,6 +51,31 @@ func TestSummarizeFFmpegFailureLine_ClassifiesMissingCodecParamsFromUnspecifiedS
 	assert.Equal(t, "copy output missing codec parameters", detail)
 }
 
+func TestIsCorruptInputSignalLine_MatchesKnownDecodeCorruptionWarnings(t *testing.T) {
+	cases := []string{
+		"[h264 @ 0x123] non-existing pps 0 referenced",
+		"[h264 @ 0x123] non-existing sps 0 referenced",
+		"[h264 @ 0x123] no frame!",
+		"[h264 @ 0x123] corrupt decoded frame in stream 0",
+		"[h264 @ 0x123] number of reference frames (0+5) exceeds max (4; probably corrupt input), discarding one",
+	}
+	for _, line := range cases {
+		assert.True(t, isCorruptInputSignalLine(line), "expected match for: %s", line)
+	}
+}
+
+func TestIsCorruptInputSignalLine_IgnoresUnrelatedLines(t *testing.T) {
+	cases := []string{
+		"frame=6472 fps=51.35 bitrate=N/A speed=1.03x",
+		"[hls @ 0x123] Opening 'seg_000020.ts' for writing",
+		"Input #0, mpegts, from 'http://192.0.2.64:17999/stream':",
+		"[out#0/hls @ 0x9cec31200] Could not write header (incorrect codec parameters ?): Invalid argument",
+	}
+	for _, line := range cases {
+		assert.False(t, isCorruptInputSignalLine(line), "expected no match for: %s", line)
+	}
+}
+
 func TestProcessDetailPriority_PrefersCodecParamsOverPrematureStreamEnd(t *testing.T) {
 	assert.Greater(t,
 		processDetailPriority("copy output missing codec parameters"),

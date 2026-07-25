@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -519,6 +520,9 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			}
 			sanitizedLine := sanitizeFFmpegLogLine(line)
 			a.recordRuntimeDiagnostics(handle, line, sanitizedLine)
+			if isCorruptInputSignalLine(strings.ToLower(sanitizedLine)) {
+				wd.ObserveCorruptInput()
+			}
 			if detail := summarizeFFmpegFailureLine(sanitizedLine); detail != "" {
 				a.recordProcessDetail(handle, detail)
 			}
@@ -554,8 +558,13 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 	classification := awaitProcessExit(
 		parentCtx, procErrCh, wdErrCh,
 		func(stallErr error) {
-			metrics.IncLiveFFmpegStall("watchdog_timeout")
-			a.recordProcessDetail(handle, "transcode stalled - no progress detected")
+			if errors.Is(stallErr, watchdog.ErrCorruptInput) {
+				metrics.IncLiveFFmpegStall("corrupt_input")
+				a.recordProcessDetail(handle, "corrupt input - decode failures exceeded threshold")
+			} else {
+				metrics.IncLiveFFmpegStall("watchdog_timeout")
+				a.recordProcessDetail(handle, "transcode stalled - no progress detected")
+			}
 			a.Logger.Error().Err(stallErr).Str("sessionId", sessionID).Msg("watchdog triggered process termination")
 			a.terminateProcessGroup(cmd, sessionID)
 		},
@@ -809,6 +818,8 @@ func processDetailPriority(detail string) int {
 		return 55
 	case "transcode stalled - no progress detected":
 		return 50
+	case "corrupt input - decode failures exceeded threshold":
+		return 48
 	case "copy output missing codec parameters":
 		return 45
 	case "upstream stream ended prematurely":

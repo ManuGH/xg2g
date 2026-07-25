@@ -6,12 +6,33 @@ package watchdog
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
+)
+
+// ErrCorruptInput is returned by Run when the source keeps decoding to garbage
+// (see ObserveCorruptInput) even though frame=/out_time_ms is still advancing,
+// so the ordinary progress-based stall check never trips.
+var ErrCorruptInput = errors.New("corrupt input: decode failures exceeded threshold")
+
+// corruptInputThreshold/-Window bound a sliding count of per-frame decode
+// corruption signals (e.g. "non-existing PPS", "no frame!") observed in
+// ffmpeg's stderr. A broadcast source delivering trickle/poison data during a
+// bad tune-in produces exactly this pattern: ffmpeg's own -progress output
+// keeps advancing (it's still consuming input and emitting frames), so
+// StateRunning never times out, but every frame is undecodable and the client
+// never gets real picture. First-pass values, not yet tuned against
+// production traffic: chosen well below the ~78-in-1s burst observed during
+// the incident that motivated this, while still requiring several seconds of
+// sustained corruption so an isolated benign glitch can't trip it.
+const (
+	corruptInputThreshold = 40
+	corruptInputWindow    = 5 * time.Second
 )
 
 type State int
@@ -61,6 +82,9 @@ type Watchdog struct {
 
 	state       State
 	hasProgress bool
+
+	corruptInputCount       int
+	corruptInputWindowStart time.Time
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -149,6 +173,23 @@ func (w *Watchdog) ObserveProgress() {
 	w.recordExternalProgress()
 }
 
+// ObserveCorruptInput records a per-line decode-corruption signal from
+// ffmpeg's stderr (non-existing PPS/SPS, "no frame!", corrupt reference
+// frames). Unlike ObserveProgress, this deliberately does NOT count as
+// progress — a source that keeps advancing frame=/out_time_ms while decoding
+// garbage must still be caught, which is exactly what this independent
+// density check is for.
+func (w *Watchdog) ObserveCorruptInput() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	now := w.clock.Now()
+	if now.Sub(w.corruptInputWindowStart) > corruptInputWindow {
+		w.corruptInputWindowStart = now
+		w.corruptInputCount = 0
+	}
+	w.corruptInputCount++
+}
+
 func (w *Watchdog) recordParsedProgress() {
 	w.lastHeartbeat = w.clock.Now()
 	if !w.hasProgress && (w.lastOutTimeMs > 0 || w.lastTotalSize > 0) {
@@ -184,6 +225,10 @@ func (w *Watchdog) check() error {
 		if elapsed > w.stallTimeout {
 			w.state = StateStalled
 			return context.DeadlineExceeded // Maps to 504
+		}
+		if w.corruptInputCount >= corruptInputThreshold && now.Sub(w.corruptInputWindowStart) <= corruptInputWindow {
+			w.state = StateStalled
+			return ErrCorruptInput
 		}
 	}
 

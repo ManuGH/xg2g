@@ -145,6 +145,82 @@ func TestWatchdog_ParserRobustness(t *testing.T) {
 	assert.Equal(t, int64(100), w.lastTotalSize, "Should not record non-monotonic size")
 }
 
+func TestWatchdog_CorruptInputTripsStall(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	w := New(2*time.Second, 5*time.Second)
+	w.clock = clock
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(ctx)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	clock.mu.Lock()
+	ticker := clock.latestTicker
+	clock.mu.Unlock()
+	require.NotNil(t, ticker)
+
+	// ffmpeg is still "progressing" (frame=/out_time_ms advancing) while every
+	// decoded frame is garbage — the ordinary progress-based stall check alone
+	// must not catch this.
+	w.ParseLine("out_time_ms=100")
+	require.Equal(t, StateRunning, w.State())
+
+	for i := 0; i < corruptInputThreshold; i++ {
+		w.ObserveCorruptInput()
+	}
+	ticker.c <- clock.Now()
+
+	err := <-errCh
+	assert.ErrorIs(t, err, ErrCorruptInput)
+	assert.Equal(t, StateStalled, w.State())
+}
+
+func TestWatchdog_CorruptInputBelowThresholdDoesNotTrip(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	w := New(2*time.Second, 5*time.Second)
+	w.clock = clock
+
+	w.ParseLine("out_time_ms=100")
+	require.Equal(t, StateRunning, w.State())
+
+	for i := 0; i < corruptInputThreshold-1; i++ {
+		w.ObserveCorruptInput()
+	}
+
+	assert.NoError(t, w.check())
+	assert.Equal(t, StateRunning, w.State(), "an isolated burst under threshold must not stall the session")
+}
+
+func TestWatchdog_CorruptInputWindowExpires(t *testing.T) {
+	clock := &mockClock{now: time.Now()}
+	// stallTimeout deliberately well past corruptInputWindow so advancing the
+	// clock past the corrupt-input window doesn't also trip the unrelated
+	// progress-based stall check this test isn't exercising.
+	w := New(2*time.Second, corruptInputWindow+10*time.Second)
+	w.clock = clock
+
+	w.ParseLine("out_time_ms=100")
+	require.Equal(t, StateRunning, w.State())
+
+	// A handful of corrupt lines, then a quiet stretch well past the window —
+	// stale counts from an old burst must not linger and trip later.
+	for i := 0; i < corruptInputThreshold-1; i++ {
+		w.ObserveCorruptInput()
+	}
+	clock.mu.Lock()
+	clock.now = clock.now.Add(corruptInputWindow + time.Second)
+	clock.mu.Unlock()
+
+	assert.NoError(t, w.check())
+	assert.Equal(t, StateRunning, w.State())
+}
+
 func TestWatchdog_CheckStateReadConcurrency(t *testing.T) {
 	clock := &mockClock{now: time.Now()}
 	w := New(1*time.Millisecond, 1*time.Millisecond)

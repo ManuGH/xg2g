@@ -466,6 +466,28 @@ func isFFmpegProgressLine(lower string) bool {
 	}
 }
 
+// isCorruptInputSignalLine matches the specific, high-frequency decode
+// warnings a broadcast source emits while ffmpeg is fed garbage (poison/
+// trickle DVB reception, orphaned tune-in). These are the frame-level
+// symptom: ffmpeg keeps running and advancing frame=/out_time_ms, so the
+// ordinary progress watchdog sees "healthy" output, but the decoded picture
+// is unusable. Fed to Watchdog.ObserveCorruptInput to catch that case
+// independently of progress.
+func isCorruptInputSignalLine(lower string) bool {
+	for _, kw := range []string{
+		"non-existing pps",
+		"non-existing sps",
+		"no frame!",
+		"corrupt decoded frame",
+		"probably corrupt input", // e.g. "...reference frames (0+5) exceeds max (4; probably corrupt input)..."
+	} {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 func looksLikeFFmpegWarning(lower string) bool {
 	keywords := []string{
 		" error",
