@@ -57,6 +57,40 @@ export function V3PlayerView({
         </button>
       )}
 
+      {/* Reassuring Live Stream Technical Info Badge */}
+      {viewState.statusChipState === 'live' && (
+        <div style={{
+          position: 'absolute',
+          top: '1rem',
+          left: '1rem',
+          zIndex: 20,
+          pointerEvents: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.35rem 0.75rem',
+          borderRadius: '9999px',
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          color: '#f8fafc',
+          fontSize: '0.75rem',
+          fontWeight: 500,
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+          transition: 'opacity 0.3s ease',
+          opacity: viewState.userIdle ? 0 : 1,
+        }}>
+          <span style={{
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            backgroundColor: '#22c55e',
+            boxShadow: '0 0 8px #22c55e',
+          }} />
+          <span>VAAPI Live Transcode • H.264 1080p</span>
+        </div>
+      )}
+
       {viewState.showStatsOverlay && (
         <div className={styles.statsOverlay}>
           <Card variant="standard">
