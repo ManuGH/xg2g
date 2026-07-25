@@ -113,6 +113,14 @@ export function useLiveSessionController({
   const [heartbeatInterval, setHeartbeatInterval] = useState<number | null>(null);
   const [, setLeaseExpiresAt] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  // "This session's cookie was already re-minted once" is a fact about the
+  // session, not about a single readiness poll. Keeping it in a local made the
+  // verdict depend on which invocation observed the failure: the first
+  // waitForSessionReady saw the recovery and reported "session expired", and a
+  // retry — starting fresh with recoveredSessionAuth=false — then overwrote that
+  // with the vaguer "session failed: <reason>". Same session, same cause, two
+  // different messages, last one winning.
+  const recoveredSessionAuthRef = useRef<{ sessionId: string; recovered: boolean } | null>(null);
   const stopSentRef = useRef<string | null>(null);
   const sessionCookieRef = useRef<SessionCookieState>({ token: null, pending: null });
 
@@ -363,7 +371,13 @@ export function useLiveSessionController({
     trackedSessionId: string,
     maxAttempts = SESSION_READY_MAX_ATTEMPTS
   ): Promise<V3SessionStatusResponse> => {
-    let recoveredSessionAuth = false;
+    const rememberedRecovery = recoveredSessionAuthRef.current;
+    let recoveredSessionAuth =
+      rememberedRecovery?.sessionId === trackedSessionId && rememberedRecovery.recovered;
+    const markRecoveredSessionAuth = () => {
+      recoveredSessionAuth = true;
+      recoveredSessionAuthRef.current = { sessionId: trackedSessionId, recovered: true };
+    };
 
     // 1. Initial quick check (in case existing session is already READY or fast-started)
     for (let i = 0; i < Math.min(3, maxAttempts); i++) {
@@ -376,7 +390,9 @@ export function useLiveSessionController({
             signal: timeoutSignal(SESSION_REQUEST_TIMEOUT_MS),
           })
         );
-        recoveredSessionAuth = recoveredSessionAuth || recovered;
+        if (recovered) {
+          markRecoveredSessionAuth();
+        }
 
         if (res.status === 401) {
           throw createPlayerError(t('player.authFailed'), {

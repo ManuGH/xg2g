@@ -160,12 +160,17 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     try {
       render(<V3Player autoStart={true} channel={mockChannel as any} />);
 
-      await act(async () => {
-        await flushMicrotasks();
-        await flushMicrotasks();
-        await vi.advanceTimersByTimeAsync(0);
-        await flushMicrotasks();
-      });
+      // The 410 verdict only surfaces after stream-info -> intents -> the first
+      // readiness poll have all settled, so drain until the alert is actually
+      // mounted instead of guessing a fixed number of flushes. Bounded, so a
+      // genuine regression still fails rather than hanging.
+      for (let i = 0; i < 40 && screen.queryByRole('alert') === null; i++) {
+        await act(async () => {
+          await flushMicrotasks();
+          await vi.advanceTimersByTimeAsync(50);
+          await flushMicrotasks();
+        });
+      }
 
       const alert = screen.getByRole('alert');
       expect(alert).toHaveTextContent(/player\.sessionFailed|Session failed/i);

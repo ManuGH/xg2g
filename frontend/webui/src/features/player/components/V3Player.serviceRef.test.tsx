@@ -1,12 +1,10 @@
 /// <reference types="@testing-library/jest-dom" />
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { StrictMode } from 'react';
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import V3Player from './V3Player';
 import type { V3PlayerProps } from '../../../types/v3-player';
 import { resetCachedCodecs } from '../utils/codecDetection';
-import { sessionTimeline } from '../orchestrator/sessionTimeline';
 
 const { createSessionMock, postRecordingPlaybackInfoMock } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
@@ -187,180 +185,35 @@ describe('V3Player ServiceRef Input', () => {
     }
   });
 
-  it('applies the latest profile chosen while a preflight is still in flight', async () => {
-    if (sessionTimeline.hasActiveAttempt()) {
-      sessionTimeline.endAttempt('test_cleanup');
-    }
-    const endAttemptSpy = vi.spyOn(sessionTimeline, 'endAttempt');
-    const response = (token: string) => ({
-      ok: true,
-      status: 200,
-      headers: { get: vi.fn().mockReturnValue('application/json') },
-      text: vi.fn().mockResolvedValue(JSON.stringify({
-        mode: 'direct_stream',
-        requestId: `live-decision-${token}`,
-        playbackDecisionToken: `live-token-${token}`,
-        decision: { reasons: ['direct_stream_match'] },
-      })),
-    });
-    let resolveFirstPreflight: (value: ReturnType<typeof response>) => void = () => {
-      throw new Error('first preflight resolver was not initialized');
-    };
-    const firstPreflight = new Promise<ReturnType<typeof response>>((resolve) => {
-      resolveFirstPreflight = resolve;
-    });
-    let streamInfoCount = 0;
+  // REMOVED: 'applies the latest profile chosen while a preflight is still in
+  // flight' and 'does not start a backend session from queued work after
+  // unmount'.
+  //
+  // Both drove their setup through the player's profile menu, which was removed
+  // on purpose (9bab9080 "Remove unnecessary profile menu from player",
+  // ee6b2a89). They needed to enqueue a second start while the first preflight
+  // was unresolved, and that window is no longer reachable from this component's
+  // UI: the only remaining start trigger is the manual Start button, which
+  // playerViewStateModel deliberately disables for exactly that window
+  // (manualStartDisabled: startIntentInFlightRef).
+  //
+  // Rewriting them onto the Start button was tried and produces a test that
+  // passes while asserting nothing — the second click is a no-op, so no queued
+  // work is ever created and "no session started after unmount" holds
+  // vacuously. A green test that verifies nothing is worse than an absent one,
+  // so they are deleted rather than adapted.
+  //
+  // The production behaviour they covered still exists and is now UNCOVERED:
+  // usePlaybackOrchestrator.startStream queues a re-entrant start into
+  // pendingStartRef, and disposal must drop that queued work. Reaching it needs
+  // a hook-level test against usePlaybackOrchestrator, not a UI-level one.
+  //
+  // The explicit-profile-to-header path is unaffected and stays covered by
+  // 'binds an explicit planner profile to stream-info before consuming the
+  // receipt' above, which drives it through localStorage
+  // 'xg2g.player.explicitProfile' — where the explicit profile actually comes
+  // from now.
 
-    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('/live/stream-info')) {
-        streamInfoCount += 1;
-        return streamInfoCount === 1
-          ? firstPreflight
-          : Promise.resolve(response(String(streamInfoCount)));
-      }
-      if (url.includes('/intents')) {
-        return Promise.resolve({
-          status: 503,
-          ok: false,
-          headers: { get: vi.fn().mockReturnValue('application/problem+json') },
-          json: vi.fn().mockResolvedValue({
-            type: '/problems/admission/state-unknown',
-            title: 'Unavailable',
-            status: 503,
-            code: 'ADMISSION_STATE_UNKNOWN',
-            requestId: 'test-latest-profile',
-          }),
-        });
-      }
-      return Promise.resolve({
-        status: 200,
-        ok: true,
-        headers: { get: vi.fn().mockReturnValue(null) },
-        json: vi.fn().mockResolvedValue({}),
-      });
-    });
-
-    const props = { autoStart: false } as unknown as V3PlayerProps;
-    render(<V3Player {...props} />);
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: '1:0:1:5555:666:777:0:0:0:0:' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
-
-    await waitFor(() => {
-      expect(streamInfoCount).toBe(1);
-    });
-    endAttemptSpy.mockClear();
-    expect(sessionTimeline.getSnapshot()[0]).toMatchObject({
-      kind: 'attempt_started',
-    });
-
-    fireEvent.click(screen.getByTitle('Profil'));
-    fireEvent.click(screen.getByRole('button', { name: 'Repair' }));
-    resolveFirstPreflight(response('1'));
-
-    await waitFor(() => {
-      expect(streamInfoCount).toBe(2);
-    });
-
-    const streamInfoCalls = (globalThis.fetch as any).mock.calls.filter(
-      (call: any[]) => String(call[0]).includes('/live/stream-info')
-    );
-    expect(streamInfoCalls).toHaveLength(2);
-    expect(streamInfoCalls[1][1].headers['X-XG2G-Profile']).toBe('repair');
-    expect(endAttemptSpy).toHaveBeenCalledWith('attempt_replaced');
-  });
-
-  it('does not start a backend session from queued work after unmount', async () => {
-    let resolveFirstPreflight: (value: {
-      ok: boolean;
-      status: number;
-      headers: { get: ReturnType<typeof vi.fn> };
-      text: ReturnType<typeof vi.fn>;
-    }) => void = () => {
-      throw new Error('first preflight resolver was not initialized');
-    };
-    const firstPreflight = new Promise<{
-      ok: boolean;
-      status: number;
-      headers: { get: ReturnType<typeof vi.fn> };
-      text: ReturnType<typeof vi.fn>;
-    }>((resolve) => {
-      resolveFirstPreflight = resolve;
-    });
-    let markBodyRead: () => void = () => {
-      throw new Error('body read resolver was not initialized');
-    };
-    const bodyRead = new Promise<void>((resolve) => {
-      markBodyRead = resolve;
-    });
-
-    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('/live/stream-info')) {
-        return firstPreflight;
-      }
-      if (url.includes('/intents')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: { get: vi.fn().mockReturnValue('application/json') },
-          json: vi.fn().mockResolvedValue({ sessionId: 'ghost-session' }),
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        headers: { get: vi.fn().mockReturnValue(null) },
-        json: vi.fn().mockResolvedValue({}),
-      });
-    });
-
-    const props = { autoStart: false } as unknown as V3PlayerProps;
-    const { unmount } = render(
-      <StrictMode>
-        <V3Player {...props} />
-      </StrictMode>
-    );
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: '1:0:1:5555:666:777:0:0:0:0:' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Start Stream/i }));
-
-    await waitFor(() => {
-      expect(
-        (globalThis.fetch as any).mock.calls.filter(
-          (call: any[]) => String(call[0]).includes('/live/stream-info')
-        )
-      ).toHaveLength(1);
-    });
-
-    // Queue a latest-wins restart while the first preflight is unresolved.
-    fireEvent.click(screen.getByTitle('Profil'));
-    fireEvent.click(screen.getByRole('button', { name: 'Repair' }));
-    unmount();
-
-    resolveFirstPreflight({
-      ok: true,
-      status: 200,
-      headers: { get: vi.fn().mockReturnValue('application/json') },
-      text: vi.fn().mockImplementation(async () => {
-        markBodyRead();
-        return JSON.stringify({
-          mode: 'direct_stream',
-          requestId: 'disposed-preflight',
-          playbackDecisionToken: 'disposed-token',
-          decision: { reasons: ['direct_stream_match'] },
-        });
-      }),
-    });
-    await bodyRead;
-    await Promise.resolve();
-    await Promise.resolve();
-
-    const fetchCalls = (globalThis.fetch as any).mock.calls as any[][];
-    expect(fetchCalls.filter((call) => String(call[0]).includes('/live/stream-info'))).toHaveLength(1);
-    expect(fetchCalls.some((call) => String(call[0]).includes('/intents'))).toBe(false);
-  });
 
   it('prefers native HLS for desktop Safari live playback when runtime capabilities prefer native', async () => {
     const maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
