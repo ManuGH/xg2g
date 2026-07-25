@@ -1385,7 +1385,8 @@ export function usePlaybackOrchestrator(
         const preferredHlsEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
         setCapabilitySnapshot(requestCaps);
         // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
-        const liveResponse = await fetch(`${apiBase}/live/stream-info`, {
+        const liveUrl = requestProfile ? `${apiBase}/live/stream-info?profile=${encodeURIComponent(requestProfile)}` : `${apiBase}/live/stream-info`;
+        const liveResponse = await fetch(liveUrl, {
           method: 'POST',
           headers: {
             ...(authHeaders(true) as Record<string, string>),
