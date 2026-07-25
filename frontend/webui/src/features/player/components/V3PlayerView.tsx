@@ -352,16 +352,7 @@ export function V3PlayerView({
                 />
               )}
 
-              <DropdownMenu
-                icon={<SettingsGlyph />}
-                title="Profil"
-                activeId={viewState.explicitProfile}
-                onSelect={(id) => actions.changeProfile(id as string)}
-                options={[
-                  { id: 'auto', label: 'Auto (Smart)' },
-                  { id: 'direct', label: 'Direct Play (Original)' },
-                ]}
-              />
+
 
               {viewState.showNativeFullscreenButton && (
                 <Button
