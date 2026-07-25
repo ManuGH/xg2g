@@ -31,7 +31,7 @@ var ErrCorruptInput = errors.New("corrupt input: decode failures exceeded thresh
 // the incident that motivated this, while still requiring several seconds of
 // sustained corruption so an isolated benign glitch can't trip it.
 const (
-	corruptInputThreshold = 40
+	corruptInputThreshold = 200
 	corruptInputWindow    = 5 * time.Second
 )
 
