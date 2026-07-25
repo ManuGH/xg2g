@@ -284,16 +284,14 @@ export function resolvePlaybackRequestProfile(
 
   const isCellularOrMetered = network?.kind === 'cellular' || network?.metered;
 
-  if (capabilities.videoCodecs.includes('av1')) {
-    let hwEnabled = false;
-    try {
-      hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') === 'true';
-    } catch {
-      // Ignore
-    }
-    if (hwEnabled) {
-      return 'av1_hw';
-    }
+  let hwEnabled = false;
+  try {
+    hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') === 'true';
+  } catch {
+    // Ignore
+  }
+  if (hwEnabled) {
+    return 'av1_hw';
   }
 
   // A connection is considered slow if the browser explicitly flags it as 3G or worse,
