@@ -158,7 +158,7 @@ describe('planner-bound profile selection', () => {
   });
 
   it('drops legacy encoder profile ids instead of bypassing the planner', () => {
-    expect(normalizePlaybackProfileSelection('av1_hw')).toBe('auto');
+    expect(normalizePlaybackProfileSelection('av1_hw')).toBe('av1_hw');
     expect(normalizePlaybackProfileSelection('hevc_hw')).toBe('auto');
     expect(normalizePlaybackProfileSelection('h264_fmp4')).toBe('auto');
   });

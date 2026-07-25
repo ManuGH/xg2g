@@ -1,8 +1,8 @@
 import { getNativePlaybackCapabilities, resolveHostEnvironment } from '../../../lib/hostBridge';
 import type { CapabilitySnapshot } from './playbackCapabilities';
 
-export type PlaybackRequestProfile = 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
-export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
+export type PlaybackRequestProfile = 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth' | 'av1_hw';
+export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth' | 'av1_hw';
 
 export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfileSelection {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -15,7 +15,8 @@ export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfi
     case 'compatible':
     case 'repair':
     case 'bandwidth':
-      return normalized;
+    case 'av1_hw':
+      return normalized as PlaybackProfileSelection;
     default:
       // Internal encoder-profile ids from older UI builds are intentionally
       // discarded. The planner accepts public playback intents only.
