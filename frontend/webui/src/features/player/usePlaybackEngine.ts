@@ -915,6 +915,11 @@ export function usePlaybackEngine({
         if (startGateOpen) {
           return;
         }
+        if (reason === 'timeout' && bufferedAheadSeconds() === 0) {
+          debugLog('[V3Player] Startup gate timeout extended - waiting for first segment');
+          startGateTimer = window.setTimeout(() => openStartGate('timeout'), 3000);
+          return;
+        }
         startGateOpen = true;
         if (startGateTimer !== null) {
           window.clearTimeout(startGateTimer);
