@@ -56,6 +56,7 @@ import type { PlaybackCommand, PlaybackStopReason } from './orchestrator/playbac
 import { sessionTimeline } from './orchestrator/sessionTimeline';
 import type { VodStreamMode } from './orchestrator/playbackTypes';
 import { normalizePlaybackInfo } from './contracts/normalizePlaybackInfo';
+import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 import {
   requestHostInputFocus,
   resolveHostEnvironment,
@@ -381,7 +382,7 @@ export function usePlaybackOrchestrator(
     setCanSeek,
     setStartUnix,
     setPlayerError,
-    reportPlaybackFailure,
+    reportPlaybackFailure: baseReportPlaybackFailure,
     clearPlaybackFailure,
     clearPlayerError,
     recordContractAdvisories,
@@ -391,6 +392,39 @@ export function usePlaybackOrchestrator(
     acceptedPlaybackEpochRef,
     setShowErrorDetails,
   });
+
+  const reportPlaybackFailure = useCallback((error: AppError, options?: PlaybackFailureReportOptions) => {
+    const isLive = !('recordingId' in props && props.recordingId) && !('src' in props && props.src);
+    
+    // Auto-Downgrade logic for Live TV when network stalls
+    if (isLive && explicitProfile !== 'bandwidth') {
+      const isNetworkIssue = 
+        options?.source === 'media-element' || 
+        options?.source === 'native-host' || 
+        error.code === 'AUTH_RECOVERY_FAILED' ||
+        (error.detail && error.detail.toLowerCase().includes('network')) || 
+        (error.title && error.title.toLowerCase().includes('network')) ||
+        (error.detail && error.detail.toLowerCase().includes('buffer'));
+        
+      if (isNetworkIssue) {
+        debugLog('[V3Player] Auto-Downgrade: Network stall detected. Falling back to bandwidth profile.');
+        setExplicitProfile('bandwidth');
+        try {
+          localStorage.setItem('xg2g.player.explicitProfile', 'bandwidth');
+        } catch (e) {
+          // ignore
+        }
+        
+        // Let the state settle, then restart
+        window.setTimeout(() => {
+          startStreamRef.current(sRef, 'bandwidth');
+        }, 50);
+        return;
+      }
+    }
+
+    baseReportPlaybackFailure(error, options);
+  }, [explicitProfile, props, baseReportPlaybackFailure, sRef]);
 
   const onNativePlaybackConfirmed = useCallback(() => {
     setStatus((previous) => (

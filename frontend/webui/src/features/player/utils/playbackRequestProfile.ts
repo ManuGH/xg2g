@@ -2,7 +2,7 @@ import { getNativePlaybackCapabilities, resolveHostEnvironment } from '../../../
 import type { CapabilitySnapshot } from './playbackCapabilities';
 
 export type PlaybackRequestProfile = 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
-export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair';
+export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
 
 export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfileSelection {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -14,6 +14,7 @@ export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfi
     case 'quality':
     case 'compatible':
     case 'repair':
+    case 'bandwidth':
       return normalized;
     default:
       // Internal encoder-profile ids from older UI builds are intentionally
