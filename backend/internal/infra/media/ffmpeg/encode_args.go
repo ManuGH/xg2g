@@ -18,6 +18,8 @@ func usesLegacyCPUDefaults(spec ports.StreamSpec, outputCodec string) bool {
 func appendVideoGOPArgs(args []string, gop, segmentSec int) []string {
 	return append(args,
 		"-g", strconv.Itoa(gop),
+		"-keyint_min", strconv.Itoa(gop),
+		"-bf", "0",
 		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSec),
 		"-flags", "+cgop",
 	)
