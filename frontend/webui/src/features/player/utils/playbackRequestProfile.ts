@@ -25,9 +25,9 @@ export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfi
 }
 
 export function resolvePlaybackProfileForPreflight(intent: PlaybackProfileSelection, resolvedAutoProfile: PlaybackRequestProfile | undefined): PlaybackRequestProfile | undefined {
-  let hwEnabled = false;
+  let hwEnabled = true;
   try {
-    hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') === 'true';
+    hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') !== 'false';
   } catch {
     // Ignore
   }
@@ -291,9 +291,9 @@ export function resolvePlaybackRequestProfile(
 
   const isCellularOrMetered = network?.kind === 'cellular' || network?.metered;
 
-  let hwEnabled = false;
+  let hwEnabled = true;
   try {
-    hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') === 'true';
+    hwEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.av1HardwareEnabled') !== 'false';
   } catch {
     // Ignore
   }
