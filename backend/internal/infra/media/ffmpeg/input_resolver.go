@@ -68,12 +68,22 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 		Int("http_status", result.HTTPStatus).
 		Msg("stream input preflight finished")
 	reason := preflightReason(result)
+	isRelay := isStreamRelayURL(streamURL)
 	if err == nil && result.OK {
+		if isRelay {
+			// BUGFIX: OpenATV 7.6.0 (e.g. Vu+ Uno 4K) crashes with 'dvb/dvb.cpp:1452 ASSERTION cnt == 1 FAILED!'
+			// if a streamrelay connection (port 17999) is closed and immediately reopened before the DVB demuxer
+			// is fully freed. We delay the ffmpeg start slightly to let the receiver clean up the preflight socket.
+			a.Logger.Info().
+				Str("session_id", sessionID).
+				Dur("delay", 750*time.Millisecond).
+				Msg("delaying ffmpeg start to prevent enigma2 streamrelay race condition")
+			_ = sleepWithContext(ctx, 750*time.Millisecond)
+		}
 		return streamURL, nil
 	}
 
 	resolvedLogURL := sanitizeURLForLog(streamURL)
-	isRelay := isStreamRelayURL(streamURL)
 	if isRelay {
 		a.Logger.Warn().
 			Str("event", "streamrelay_preflight_failed").
