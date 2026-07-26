@@ -153,11 +153,14 @@ func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.Stream
 }
 
 func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []string {
-	isTuner := spec.Source.Type == ports.SourceTuner
-	if !spec.Profile.TranscodesAudio() && !isTuner {
+	isLive := spec.Source.Type == ports.SourceTuner || spec.Mode == ports.ModeLive
+	if !spec.Profile.TranscodesAudio() && !isLive {
 		return append(args, "-c:a", "copy", "-sn")
 	}
 	audioCodec := spec.Profile.ResolvedAudioCodec()
+	if audioCodec == "" || audioCodec == "copy" {
+		audioCodec = "aac"
+	}
 	audioBitrate := "192k"
 	if spec.Profile.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
