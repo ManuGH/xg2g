@@ -210,7 +210,9 @@ export async function detectPreferredCodecs(videoEl?: HTMLVideoElement | null): 
     if (hw !== null) av1HwEnabled = hw === 'true';
     const sw = window.localStorage.getItem('xg2g.settings.av1SoftwareEnabled');
     if (sw !== null) av1SwEnabled = sw === 'true';
-  } catch {}
+  } catch {
+    // Storage may be unavailable in private browsing; keep the safe defaults.
+  }
 
   const av1OptedOut = !av1HwEnabled && !av1SwEnabled;
   if (!av1OptedOut && (av1Signal?.supported || av1Signal?.smooth || av1Signal?.powerEfficient)) {

@@ -1367,7 +1367,7 @@ function Settings() {
                 onChange={(e) => {
                   const val = e.target.checked;
                   setAv1HardwareEnabled(val);
-                  try { localStorage.setItem('xg2g.settings.av1HardwareEnabled', val ? 'true' : 'false'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.av1HardwareEnabled', val ? 'true' : 'false'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 className={styles.optionInput}
               />
@@ -1384,7 +1384,7 @@ function Settings() {
                 onChange={(e) => {
                   const val = e.target.checked;
                   setAv1SoftwareEnabled(val);
-                  try { localStorage.setItem('xg2g.settings.av1SoftwareEnabled', val ? 'true' : 'false'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.av1SoftwareEnabled', val ? 'true' : 'false'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 className={styles.optionInput}
               />
@@ -1406,7 +1406,7 @@ function Settings() {
                 onChange={(e) => {
                   const val = e.target.checked;
                   setSaveMobileDataEnabled(val);
-                  try { localStorage.setItem('xg2g.settings.saveMobileData', val ? 'true' : 'false'); } catch {}
+                  try { localStorage.setItem('xg2g.settings.saveMobileData', val ? 'true' : 'false'); } catch { /* localStorage may throw in private browsing */ }
                 }}
                 className={styles.optionInput}
               />
