@@ -40,7 +40,7 @@ func stagingSafariEvidence() PlaybackEvidence {
 	}
 }
 
-func TestSelectAutoTranscodeVideoCodec_StagingSafariDoesNotFallBackToH264(t *testing.T) {
+func TestSelectAutoTranscodeVideoCodec_StagingSafariPrefersVerifiedAV1(t *testing.T) {
 	ev := stagingSafariEvidence()
 
 	// None of the three bail-out conditions may fire for this evidence: the
@@ -61,13 +61,37 @@ func TestSelectAutoTranscodeVideoCodec_StagingSafariDoesNotFallBackToH264(t *tes
 		t.Fatalf("auto-codec selection bailed out (codec=%q) although no gate condition holds", codec)
 	}
 
-	// The production symptom this pins: staging emitted h264 for exactly this
-	// client while the host had verified, auto-eligible hevc AND av1 encoders.
-	// Given the full evidence the selector does NOT choose h264 — so a real h264
-	// outcome means the evidence reaching the planner was already narrowed
-	// (AutoTranscodeVideoCodecs reduced to h264), not that the selector chose it.
-	if codec == "h264" {
-		t.Fatalf("codec = h264 despite verified hevc and av1 encoders; the auto-codec selector regressed")
+	// Probe elapsed measures encoder startup, not sustained throughput. Once an
+	// Apple client and the host have both admitted AV1, prefer its higher quality
+	// instead of allowing a few startup milliseconds to demote it to HEVC.
+	if codec != "av1" {
+		t.Fatalf("codec = %q, want av1 for Safari with a verified, auto-eligible AV1 encoder", codec)
 	}
-	t.Logf("selector chose %q from av1/hevc/h264 (probe: h264 64ms, hevc 69ms, av1 74ms)", codec)
+}
+
+func TestSelectAutoTranscodeVideoCodec_NonAppleKeepsProbeTimeRanking(t *testing.T) {
+	ev := stagingSafariEvidence()
+	ev.ClientEvidence.Family = "chromium_hlsjs"
+	ev.ClientEvidence.DeviceType = "desktop"
+
+	codec, ok := selectAutoTranscodeVideoCodec(ev)
+	if !ok {
+		t.Fatal("auto-codec selection bailed out")
+	}
+	if codec != "h264" {
+		t.Fatalf("codec = %q, want h264 from the existing non-Apple probe-time ranking", codec)
+	}
+}
+
+func TestSelectAutoTranscodeVideoCodec_SafariRequiresEligibleAV1(t *testing.T) {
+	ev := stagingSafariEvidence()
+	ev.HostSnapshot.EncoderCapabilities[2].AutoEligible = false
+
+	codec, ok := selectAutoTranscodeVideoCodec(ev)
+	if !ok {
+		t.Fatal("auto-codec selection bailed out")
+	}
+	if codec != "hevc" {
+		t.Fatalf("codec = %q, want hevc when the AV1 encoder is not auto-eligible", codec)
+	}
 }

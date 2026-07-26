@@ -104,11 +104,11 @@ func selectAutoTranscodeVideoCodec(ev PlaybackEvidence) (string, bool) {
 	} else {
 		sort.SliceStable(candidates, func(i, j int) bool {
 			if nativeWebKitClient(ev.ClientEvidence.Family) {
-				if candidates[i].codec != "h264" && candidates[j].codec == "h264" {
-					return true
-				}
-				if candidates[j].codec != "h264" && candidates[i].codec == "h264" {
-					return false
+				// The encoder probe measures cold-start latency, not sustained
+				// throughput. Once native WebKit and the host have both admitted
+				// a codec, prefer output quality before a few probe milliseconds.
+				if candidates[i].quality != candidates[j].quality {
+					return candidates[i].quality > candidates[j].quality
 				}
 			} else {
 				// Legacy native-HLS selection deliberately keeps a CPU HEVC path
