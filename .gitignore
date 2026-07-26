@@ -14,8 +14,12 @@ logs/
 build-ffmpeg.sh
 ffmpeg-wrapper.sh
 ffprobe-wrapper.sh
-bin/
-pkg/
+# Anchored to the repo root on purpose. Unanchored "bin/" and "pkg/" match at
+# any depth and silently swallow vendored sources such as
+# backend/vendor/github.com/oapi-codegen/oapi-codegen/v2/pkg/codegen/, which
+# breaks the build only after a dependency bump adds new files there.
+/bin/
+/pkg/
 *.exe
 *.exe~
 *.dll
