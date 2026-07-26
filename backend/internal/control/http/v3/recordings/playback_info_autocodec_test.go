@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPickPlaybackInfoAutoProfile_UsesStrongAV1OnMediumAppleHost(t *testing.T) {
+func TestPickPlaybackInfoAutoProfile_UsesAV1OnlyOnHealthyHost(t *testing.T) {
 	hardware.SetVAAPIPreflightResult(true)
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
