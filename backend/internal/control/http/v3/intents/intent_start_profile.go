@@ -291,6 +291,12 @@ func (s *Service) logStartProfileResolution(intent Intent, resolution startProfi
 		Str("auto_codec_host_class", resolution.autoCodecTrace.PerformanceClass).
 		Str("auto_codec_benchmark_class", resolution.autoCodecTrace.CodecBenchmarkClass).
 		Str("av1_reject_reason", resolution.av1RejectReason).
+		// The codec list actually handed to the planner, AFTER client-capability
+		// narrowing. Compare it against client_video_codecs: when the client
+		// offers av1 and this shows only h264, the codec was dropped between the
+		// two — which is invisible without this field, because auto_codec_* stays
+		// empty whenever the auto-codec trace is skipped.
+		Str("requested_codecs", resolution.requestedCodecs).
 		Str("encoder_backend", encoderBackend).
 		Str("video_codec", resolution.profileSpec.VideoCodec).
 		Int("video_maxrate_k", resolution.profileSpec.VideoMaxRateK).
