@@ -11,8 +11,10 @@ on:
       - "mk/**"
       - ".github/workflows/coverage.yml"
       - "Makefile"
+  # No base-branch filter: this repo stacks PRs (e.g. #734 targets
+  # refactor/r5-1-guardrail-linter), and a `branches: [main]` filter silently skips
+  # every one of them — PR #734 ran nothing but Gitleaks for its whole lifetime.
   pull_request:
-    branches: [main]
     paths:
       - "backend/**/*.go"
       - "backend/go.mod"
