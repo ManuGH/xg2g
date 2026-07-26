@@ -52,8 +52,14 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 		}
 	case ProfileHigh:
 		return ProfileAxes{
-			Video:          VideoActionCopy,
-			AudioBitrateK:  192,
+			Video: VideoActionCopy,
+			// 256k matches the rung this profile publishes as: the "compatible"
+			// intent declares RungCompatibleAudioAAC256Stereo, so 192k undershot
+			// its own contract. Live DVB audio arrives as AC-3 (384k 5.1 or 192k
+			// stereo) and gets re-encoded to stereo AAC-LC, so this is a
+			// second-generation encode — 192k is where cascade artifacts start to
+			// show, and the extra 64k is free on a LAN.
+			AudioBitrateK:  256,
 			Container:      "",
 			PolicyModeHint: ports.RuntimeModeCopy,
 		}
@@ -68,14 +74,14 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 		if cap != nil && !cap.Interlaced {
 			return ProfileAxes{
 				Video:          VideoActionCopy,
-				AudioBitrateK:  192,
+				AudioBitrateK:  256,
 				Container:      safariFamilyContainer(isSafari),
 				PolicyModeHint: ports.RuntimeModeCopy,
 			}
 		}
 		return ProfileAxes{
 			Video:          VideoActionH264,
-			AudioBitrateK:  192,
+			AudioBitrateK:  256,
 			Container:      safariFamilyContainer(isSafari),
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
