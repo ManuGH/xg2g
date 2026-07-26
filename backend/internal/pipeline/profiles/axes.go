@@ -248,8 +248,8 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 	case VideoActionAV1:
 		spec.VideoCodec = "av1"
 		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoMaxRateK = 100000
-		spec.VideoBufSizeK = 200000
+		spec.VideoMaxRateK = 25000
+		spec.VideoBufSizeK = 50000
 		if useGPU {
 			spec.HWAccel = requestedEncodeOnlyHWAccelProfile(gpuBackend, hwaccelMode)
 		}
