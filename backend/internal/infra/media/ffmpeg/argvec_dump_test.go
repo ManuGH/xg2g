@@ -18,9 +18,14 @@ import (
 )
 
 // TestDumpLiveArgVector writes the argument vector of a live multi-audio session to
-// the path in XG2G_ARGVEC_DUMP, one argument per line, for scripts/smoke-live-audio.sh
+// the path in ARGVEC_DUMP, one argument per line, for scripts/smoke-live-audio.sh
 // to replay. Without that variable it still asserts the audio contract, so it earns
 // its place in the normal test run.
+//
+// The variable deliberately carries no product env prefix: it is a test harness knob,
+// while cmd/configgen inventories every file that mentions a product config key as a
+// config surface. A prefixed name would both pollute that inventory and read like an
+// operator setting that cannot be found in the schema.
 //
 // The point of dumping instead of hand-writing a vector: the smoke test must exercise
 // what the daemon really builds. On 2026-07-26 the audio bitrate was wrong in
@@ -74,9 +79,9 @@ func TestDumpLiveArgVector(t *testing.T) {
 	require.Equal(t, 1, strings.Count(varStreamMap, "a:0,"),
 		"an output audio stream may belong to exactly one variant; ffmpeg rejects the header otherwise")
 
-	dumpPath := strings.TrimSpace(os.Getenv("XG2G_ARGVEC_DUMP"))
+	dumpPath := strings.TrimSpace(os.Getenv("ARGVEC_DUMP"))
 	if dumpPath == "" {
-		t.Log("XG2G_ARGVEC_DUMP unset; skipping vector dump")
+		t.Log("ARGVEC_DUMP unset; skipping vector dump")
 		return
 	}
 	require.NoError(t, os.MkdirAll(filepath.Dir(dumpPath), 0o750))

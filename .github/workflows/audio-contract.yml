@@ -84,7 +84,7 @@ jobs:
           cd backend
           # Dumping instead of committing a golden vector: a checked-in vector drifts
           # from the code, which is the failure mode this gate exists to prevent.
-          XG2G_ARGVEC_DUMP="${ARGVEC}" go test ./internal/infra/media/ffmpeg/ \
+          ARGVEC_DUMP="${ARGVEC}" go test ./internal/infra/media/ffmpeg/ \
             -run TestDumpLiveArgVector -count=1 -v
           echo "--- vector ($(wc -l <"${ARGVEC}") args):"
           tr '\n' ' ' <"${ARGVEC}"
