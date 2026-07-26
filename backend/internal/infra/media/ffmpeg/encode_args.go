@@ -151,9 +151,6 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	if f := transcodeSharpenFilter(a.Config.TranscodeSharpen); f != "" {
 		parts = append(parts, f)
 	}
-	if f := transcodeCrop219Filter(a.Config.TranscodeCrop219); f != "" {
-		parts = append(parts, f)
-	}
 	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
 	if isAV1 && hardware.GetGPUVendor() == hardware.VendorAMD {
 		parts = append(parts, av1VAAPIGeometryPadFilter())
@@ -199,13 +196,6 @@ func transcodeDebandFilter(enabled bool) string {
 		return ""
 	}
 	return "deband"
-}
-
-func transcodeCrop219Filter(enabled bool) string {
-	if !enabled {
-		return ""
-	}
-	return "crop=1920:800:0:140"
 }
 
 func av1VAAPIGeometryPadFilter() string {

@@ -1,4 +1,4 @@
-import { type RefObject } from 'react';
+import { useState, type RefObject } from 'react';
 import { Button, Card, StatusChip } from '../../../components/ui';
 import { useUiSurface } from '../../../context/UiSurfaceContext';
 import type { VideoElementRef } from '../../../types/v3-player';
@@ -36,6 +36,7 @@ export function V3PlayerView({
   // were never wired up, so the player rendered letterboxed on phones.
   const { surface } = useUiSurface();
   const isCompactSurface = surface === 'small';
+  const [isCoverMode, setIsCoverMode] = useState(false);
   return (
     <div
       ref={containerRef}
@@ -183,6 +184,7 @@ export function V3PlayerView({
           autoPlay={viewState.autoPlay}
           className={[
             styles.videoElement,
+            isCoverMode ? styles.videoElementCover : null,
             viewState.hideVideoElement ? styles.videoElementHidden : null,
           ].filter(Boolean).join(' ')}
         />

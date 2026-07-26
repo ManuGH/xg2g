@@ -182,8 +182,12 @@
   display: block;
   object-fit: contain;
   object-position: center center;
-  background: #000000;
+  background: var(--bg-video);
   transition: opacity 220ms ease;
+}
+
+.videoElementCover {
+  object-fit: cover;
 }
 
 .videoElementHidden {
