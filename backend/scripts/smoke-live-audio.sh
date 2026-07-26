@@ -15,13 +15,18 @@
 #
 # Usage:
 #   smoke-live-audio.sh [--fixture PATH] [--expect-audio-bitrate-k N]
-#                       [--expect-audio-renditions N] [--keep] -- <ffmpeg args...>
+#                       [--expect-audio-renditions N] [--keep]
+#                       [--args-file FILE] [-- <ffmpeg args...>]
 #
-# Extract the vector from a running staging instance (needs python3 on the caller,
-# not in the container):
-#   docker logs xg2g-staging --since 10m 2>&1 \
-#     | grep ffmpeg_args_built | tail -1 \
-#     | python3 -c 'import json,sys; print(" ".join(json.loads(sys.stdin.read())["args"]))'
+# Extract the vector from a running staging instance into an args file (one argument
+# per line, which keeps values containing spaces intact):
+#   docker logs xg2g-staging --since 10m 2>&1 | grep ffmpeg_args_built | tail -1 \
+#     | python3 -c 'import json,sys; print("\n".join(json.loads(sys.stdin.read())["args"]))' \
+#     > /tmp/args.txt
+#   smoke-live-audio.sh --args-file /tmp/args.txt --expect-audio-bitrate-k 320
+#
+# Run it where the pipeline runs: a VAAPI vector (-c:v av1_vaapi) needs /dev/dri, so
+# replay inside the media container rather than on a workstation.
 #
 # Requires: ffmpeg, ffprobe.
 
@@ -31,6 +36,7 @@ FIXTURE=""
 EXPECT_AUDIO_KBPS=0
 EXPECT_RENDITIONS=2
 KEEP=0
+ARGS_FILE=""
 
 die() {
 	echo "❌ $*" >&2
@@ -56,6 +62,10 @@ while [[ $# -gt 0 ]]; do
 		KEEP=1
 		shift
 		;;
+	--args-file)
+		ARGS_FILE="$2"
+		shift 2
+		;;
 	--)
 		shift
 		break
@@ -64,7 +74,22 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-[[ $# -gt 0 ]] || die "no ffmpeg argument vector given (pass it after --)"
+# An args file (one argument per line) is the safe channel: production arguments
+# contain spaces (-metadata:s:a:0 "title=Stereo (GER)"), which no amount of shell
+# quoting survives when the vector travels through ssh and docker exec.
+if [[ -n "${ARGS_FILE}" ]]; then
+	[[ -f "${ARGS_FILE}" ]] || die "args file not found: ${ARGS_FILE}"
+	declare -a FILE_ARGS=()
+	# `|| [[ -n "${line}" ]]` keeps a final line that has no trailing newline. Without
+	# it the last argument — the HLS output path — is silently dropped and ffmpeg
+	# fails with "At least one output file must be specified".
+	while IFS= read -r line || [[ -n "${line}" ]]; do
+		[[ -n "${line}" ]] && FILE_ARGS+=("${line}")
+	done <"${ARGS_FILE}"
+	set -- "${FILE_ARGS[@]}" "$@"
+fi
+
+[[ $# -gt 0 ]] || die "no ffmpeg argument vector given (pass --args-file or the args after --)"
 command -v ffmpeg >/dev/null 2>&1 || die "ffmpeg not found"
 command -v ffprobe >/dev/null 2>&1 || die "ffprobe not found"
 
