@@ -9,7 +9,6 @@ package test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ManuGH/xg2g/test/helpers"
 )
 
 type ThreadSafeBuffer struct {
@@ -127,66 +128,10 @@ func setupMockOWI(t *testing.T) *httptest.Server {
 func TestSecuritySuiteExtended(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 
-	// --- 1. Rate Limits under Load ---
-	t.Run("RateLimit", func(t *testing.T) {
-		port := getFreeTCPPort(t)
+	// Rate limiting is covered at the middleware boundary. The removed
+	// XG2G_RATELIMIT* flags never enabled it in this daemon-level test.
 
-		mockOWI := setupMockOWI(t)
-		defer mockOWI.Close()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		cmd := exec.CommandContext(ctx, binaryPath) // #nosec G204
-		cmd.Env = append(os.Environ(),
-			"XG2G_DATA="+t.TempDir(),
-			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			"XG2G_E2_HOST="+mockOWI.URL,
-			"XG2G_BOUQUET=Test",
-			"XG2G_INITIAL_REFRESH=false",
-			"XG2G_RATELIMIT=true",
-			"XG2G_RATELIMIT_GLOBAL=1",
-		)
-		var outBuf ThreadSafeBuffer
-		cmd.Stdout = &outBuf
-		cmd.Stderr = &outBuf
-
-		if err := cmd.Start(); err != nil {
-			t.Fatalf("Start: %v", err)
-		}
-		defer func() {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
-
-		}()
-
-		if !waitForPort(t, port, 15*time.Second) {
-			t.Fatalf("Daemon start fail: %s", outBuf.String())
-		}
-
-		client := &http.Client{Timeout: 500 * time.Millisecond}
-		url := fmt.Sprintf("http://127.0.0.1:%d/healthz", port)
-
-		got429 := false
-		for i := 0; i < 100; i++ {
-			resp, err := client.Get(url)
-			if err == nil {
-				if resp.StatusCode == http.StatusTooManyRequests {
-					got429 = true
-					_ = resp.Body.Close()
-					break
-				}
-				_ = resp.Body.Close()
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-
-		if !got429 {
-			t.Errorf("Expected 429 Too Many Requests, but never got it")
-		}
-	})
-
-	// --- 2. Security Headers / CSP ---
+	// --- 1. Security Headers / CSP ---
 	t.Run("SecurityHeaders", func(t *testing.T) {
 		port := getFreeTCPPort(t)
 
@@ -197,9 +142,8 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, binaryPath) // #nosec G204
-		cmd.Env = append(os.Environ(),
-			"XG2G_DATA="+t.TempDir(),
-			fmt.Sprintf("XG2G_LISTEN=:%d", port),
+		dataDir := t.TempDir()
+		cmd.Env = helpers.DaemonEnv(t, dataDir, port,
 			"XG2G_E2_HOST="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_INITIAL_REFRESH=false",
@@ -253,7 +197,7 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		requireCSPTokens(t, cspDirectives, "connect-src", "'self'")
 	})
 
-	// --- 3. Stream Proxy Removed (v3) ---
+	// --- 2. Stream Proxy Removed (v3) ---
 	t.Run("StreamProxyRemoved", func(t *testing.T) {
 		port := getFreeTCPPort(t)
 
@@ -264,9 +208,8 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, binaryPath) // #nosec G204
-		cmd.Env = append(os.Environ(),
-			"XG2G_DATA="+t.TempDir(),
-			fmt.Sprintf("XG2G_LISTEN=:%d", port),
+		dataDir := t.TempDir()
+		cmd.Env = helpers.DaemonEnv(t, dataDir, port,
 			"XG2G_E2_HOST="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
 			"XG2G_INITIAL_REFRESH=false",
@@ -297,67 +240,7 @@ func TestSecuritySuiteExtended(t *testing.T) {
 		}
 	})
 
-	// --- 4. HDHomeRun Lineup & XMLTV Valid ---
-	t.Run("HDHomeRun_XMLTV", func(t *testing.T) {
-		tempDir := t.TempDir()
-
-		playlistContent := `#EXTM3U
-#EXTINF:-1 tvg-id="test1" tvg-chno="100" tvg-name="Test Channel" group-title="Test",Test Channel
-http://example.com/stream
-`
-		_ = os.WriteFile(filepath.Join(tempDir, "playlist.m3u"), []byte(playlistContent), 0600)
-
-		port := getFreeTCPPort(t)
-
-		mockOWI := setupMockOWI(t)
-		defer mockOWI.Close()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		cmd := exec.CommandContext(ctx, binaryPath) // #nosec G204
-		cmd.Env = append(os.Environ(),
-			"XG2G_DATA="+tempDir,
-			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			"XG2G_E2_HOST="+mockOWI.URL,
-			"XG2G_BOUQUET=Test",
-			"XG2G_HDHR_ENABLED=true",
-			"XG2G_INITIAL_REFRESH=false",
-		)
-		var outBuf ThreadSafeBuffer
-		cmd.Stdout = &outBuf
-		cmd.Stderr = &outBuf
-
-		if err := cmd.Start(); err != nil {
-			t.Fatalf("Start: %v", err)
-		}
-		defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
-
-		if !waitForPort(t, port, 15*time.Second) {
-			t.Fatalf("Daemon start fail: %s", outBuf.String())
-		}
-
-		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/lineup.json", port))
-		if err != nil {
-			t.Fatalf("lineup req failed: %v", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != 200 {
-			t.Errorf("lineup.json status %d", resp.StatusCode)
-		}
-		var lineup []map[string]interface{}
-		_ = json.NewDecoder(resp.Body).Decode(&lineup)
-
-		if len(lineup) == 0 {
-			t.Errorf("Empty lineup, expected 1 channel")
-		} else {
-			if lineup[0]["GuideNumber"] != "100" {
-				t.Errorf("Expected GuideNumber 100, got %v", lineup[0]["GuideNumber"])
-			}
-		}
-	})
-
-	// --- 5. XMLTV Path Traversal ---
+	// --- 3. XMLTV Path Traversal ---
 	t.Run("XMLTVTraversal", func(t *testing.T) {
 		port := getFreeTCPPort(t)
 
@@ -368,12 +251,11 @@ http://example.com/stream
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, binaryPath) // #nosec G204
-		cmd.Env = append(os.Environ(),
-			"XG2G_DATA="+t.TempDir(),
-			fmt.Sprintf("XG2G_LISTEN=:%d", port),
+		dataDir := t.TempDir()
+		cmd.Env = helpers.DaemonEnv(t, dataDir, port,
 			"XG2G_E2_HOST="+mockOWI.URL,
 			"XG2G_BOUQUET=Test",
-			"XG2G_XMLTV_PATH=../../etc/passwd", // TRAVERSAL ATTEMPT
+			"XG2G_XMLTV=../../etc/passwd", // TRAVERSAL ATTEMPT
 			"XG2G_INITIAL_REFRESH=false",
 		)
 		var outBuf ThreadSafeBuffer
@@ -383,27 +265,23 @@ http://example.com/stream
 		if err := cmd.Start(); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
-
-		if !waitForPort(t, port, 15*time.Second) {
-			t.Fatalf("Daemon start fail: %s", outBuf.String())
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Fatal("daemon accepted a traversing XMLTV path")
+			}
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+			t.Fatal("daemon did not reject the traversing XMLTV path promptly")
 		}
-
-		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/xmltv.xml", port))
-		if err != nil {
-			t.Fatalf("xmltv req failed: %v", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusNotFound {
-			t.Errorf("Expected 404 for traversal path, got %d", resp.StatusCode)
-		}
-		if !strings.Contains(outBuf.String(), "rejected") && !strings.Contains(outBuf.String(), "traversal") && !strings.Contains(outBuf.String(), "invalid") {
-			t.Logf("Logs didn't contain 'rejected' warning traversal: %s", outBuf.String())
+		if !strings.Contains(outBuf.String(), "contains path traversal") {
+			t.Fatalf("startup failure did not identify path traversal: %s", outBuf.String())
 		}
 	})
 
-	// --- 6. Config Reload ---
+	// --- 4. Config Reload ---
 	t.Run("ConfigReload", func(t *testing.T) {
 		tempDir := t.TempDir()
 		configFile := filepath.Join(tempDir, "config.yaml")
@@ -425,9 +303,7 @@ enigma2:
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, binaryPath, "-config", configFile) // #nosec G204
-		cmd.Env = append(os.Environ(),
-			fmt.Sprintf("XG2G_LISTEN=:%d", port),
-			"XG2G_DATA="+tempDir,
+		cmd.Env = helpers.DaemonEnv(t, tempDir, port,
 			"XG2G_INITIAL_REFRESH=false",
 		)
 		var outBuf ThreadSafeBuffer

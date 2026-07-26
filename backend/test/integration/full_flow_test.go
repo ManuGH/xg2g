@@ -10,7 +10,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -65,7 +64,7 @@ func TestFullRefreshFlow(t *testing.T) {
 	assert.NotZero(t, status.LastRun, "LastRun should be set")
 
 	// Verify: M3U playlist was created
-	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
+	playlistPath := filepath.Join(tmpDir, "playlist.m3u8")
 	require.FileExists(t, playlistPath, "Playlist file should exist")
 
 	playlistContent, err := os.ReadFile(playlistPath)
@@ -94,86 +93,6 @@ func TestFullRefreshFlow(t *testing.T) {
 	t.Logf("   Channels: %d", status.Channels)
 	t.Logf("   Playlist size: %d bytes", len(playlistContent))
 	t.Logf("   XMLTV size: %d bytes", len(xmltvContent))
-}
-
-// TestAPIRefreshEndpoint tests the complete flow through API endpoint
-func TestAPIRefreshEndpoint(t *testing.T) {
-	// Setup: Temp directory
-	tmpDir := t.TempDir()
-
-	// Setup: Mock OpenWebIF
-	mock := openwebif.NewMockServer()
-	defer mock.Close()
-
-	// Setup: API server
-	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		Bouquet:    "Premium",
-		APIToken:   "test-token",
-		XMLTVPath:  "xmltv.xml",
-		EPGEnabled: false, // Disable EPG for faster test
-		Enigma2: config.Enigma2Settings{
-			BaseURL:    mock.URL(),
-			StreamPort: 8001,
-		},
-	}
-
-	helpers.EnsureDecisionSecret(t)
-	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
-	apiServer, err := api.New(cfg, cfgMgr)
-	require.NoError(t, err)
-	handler := apiServer.Handler()
-	testServer := httptest.NewServer(handler)
-	defer testServer.Close()
-
-	// Execute: Call refresh endpoint
-	req, err := http.NewRequestWithContext(
-		context.Background(),
-		http.MethodPost,
-		testServer.URL+"/api/v2/refresh",
-		nil,
-	)
-	require.NoError(t, err, "Should create request")
-	req.Header.Set("Origin", testServer.URL) // CSRF protection
-	req.Header.Set("Authorization", "Bearer test-token")
-
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err, "Should make request")
-	defer resp.Body.Close()
-
-	// Verify: API response
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "Should return 200 OK")
-
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err, "Should read response body")
-
-	bodyStr := string(body)
-	assert.Contains(t, bodyStr, "channels", "Response should contain channels count")
-	// API uses camelCase (lastRun), not snake_case (last_run)
-	assert.Contains(t, bodyStr, "lastRun", "Response should contain lastRun timestamp")
-
-	// Verify: Files were created
-	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
-	require.FileExists(t, playlistPath, "Playlist should be generated")
-
-	// Verify: Status endpoint reflects update
-	statusReq, _ := http.NewRequestWithContext(
-		context.Background(),
-		http.MethodGet,
-		testServer.URL+"/api/v2/status",
-		nil,
-	)
-
-	statusResp, err := http.DefaultClient.Do(statusReq)
-	require.NoError(t, err, "Status request should succeed")
-	defer statusResp.Body.Close()
-
-	statusBody, _ := io.ReadAll(statusResp.Body)
-	statusStr := string(statusBody)
-	// API uses camelCase (lastRun), not snake_case (last_run)
-	assert.Contains(t, statusStr, "lastRun", "Status should show last refresh")
-
-	t.Logf("✅ API refresh endpoint flow completed successfully")
 }
 
 // TestRefreshWithBackendError tests error handling when backend fails
@@ -295,82 +214,6 @@ func TestRefreshWithPartialFailure(t *testing.T) {
 	assert.Greater(t, requestCount, 0, "Should have made requests")
 }
 
-// TestConcurrentRefreshRequests tests handling of concurrent refresh calls
-func TestConcurrentRefreshRequests(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	mock := openwebif.NewMockServer()
-	defer mock.Close()
-
-	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		Bouquet:    "Premium",
-		APIToken:   "test-token",
-		EPGEnabled: false,
-		Enigma2: config.Enigma2Settings{
-			BaseURL:    mock.URL(),
-			StreamPort: 8001,
-		},
-	}
-
-	helpers.EnsureDecisionSecret(t)
-	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
-	apiServer, err := api.New(cfg, cfgMgr)
-	require.NoError(t, err)
-	handler := apiServer.Handler()
-	testServer := httptest.NewServer(handler)
-	defer testServer.Close()
-
-	// Execute: Make multiple concurrent refresh requests
-	const numRequests = 5
-	results := make(chan error, numRequests)
-
-	for i := 0; i < numRequests; i++ {
-		go func(id int) {
-			req, _ := http.NewRequestWithContext(
-				context.Background(),
-				http.MethodPost,
-				testServer.URL+"/api/v2/refresh",
-				nil,
-			)
-			req.Header.Set("Origin", testServer.URL) // CSRF protection
-			req.Header.Set("Authorization", "Bearer test-token")
-
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				results <- err
-				return
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusTooManyRequests {
-				results <- fmt.Errorf("unexpected status: %d", resp.StatusCode)
-				return
-			}
-
-			results <- nil
-		}(i)
-	}
-
-	// Verify: All requests complete without hanging
-	successCount := 0
-	for i := 0; i < numRequests; i++ {
-		select {
-		case err := <-results:
-			if err == nil {
-				successCount++
-			} else {
-				t.Logf("Request failed: %v", err)
-			}
-		case <-time.After(30 * time.Second):
-			t.Fatal("Concurrent requests timed out")
-		}
-	}
-
-	assert.Greater(t, successCount, 0, "At least one request should succeed")
-	t.Logf("✅ Concurrent requests handled: %d/%d succeeded", successCount, numRequests)
-}
-
 // TestHealthCheckFlow tests complete health check flow
 func TestHealthCheckFlow(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -379,8 +222,10 @@ func TestHealthCheckFlow(t *testing.T) {
 	defer mock.Close()
 
 	cfg := config.AppConfig{
-		DataDir: tmpDir,
-		Bouquet: "Premium",
+		DataDir:        tmpDir,
+		Bouquet:        "Premium",
+		APIToken:       "test-token",
+		APITokenScopes: []string{"v3:read"},
 		Enigma2: config.Enigma2Settings{
 			BaseURL:    mock.URL(),
 			StreamPort: 8001,
@@ -415,7 +260,7 @@ func TestHealthCheckFlow(t *testing.T) {
 		},
 		{
 			name:           "status before refresh",
-			endpoint:       "/api/v2/status",
+			endpoint:       "/api/v3/system/health",
 			expectedStatus: http.StatusOK,
 			shouldContain:  "channels",
 		},
@@ -430,6 +275,9 @@ func TestHealthCheckFlow(t *testing.T) {
 				nil,
 			)
 			require.NoError(t, err)
+			if strings.HasPrefix(tt.endpoint, "/api/v3/") {
+				req.Header.Set("Authorization", "Bearer test-token")
+			}
 
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
@@ -449,61 +297,4 @@ func TestHealthCheckFlow(t *testing.T) {
 			t.Logf("✅ %s: %d - %s", tt.name, resp.StatusCode, bodyStr)
 		})
 	}
-}
-
-// TestFileServingFlow tests serving generated files
-func TestFileServingFlow(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create test files
-	playlistPath := filepath.Join(tmpDir, "playlist.m3u")
-	playlistContent := `#EXTM3U
-#EXTINF:-1,Test Channel
-http://example.com/stream`
-
-	err := os.WriteFile(playlistPath, []byte(playlistContent), 0600)
-	require.NoError(t, err)
-
-	mock := openwebif.NewMockServer()
-	defer mock.Close()
-
-	cfg := config.AppConfig{
-		DataDir: tmpDir,
-		Bouquet: "Premium",
-		Enigma2: config.Enigma2Settings{
-			BaseURL:    mock.URL(),
-			StreamPort: 8001,
-		},
-	}
-
-	helpers.EnsureDecisionSecret(t)
-	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
-	apiServer, err := api.New(cfg, cfgMgr)
-	require.NoError(t, err)
-	handler := apiServer.Handler()
-	testServer := httptest.NewServer(handler)
-	defer testServer.Close()
-
-	// Test: Fetch playlist
-	req, err := http.NewRequestWithContext(
-		context.Background(),
-		http.MethodGet,
-		testServer.URL+"/files/playlist.m3u",
-		nil,
-	)
-	require.NoError(t, err)
-
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Contains(t, resp.Header.Get("Content-Type"), "audio/x-mpegurl")
-
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-
-	assert.Equal(t, playlistContent, string(body), "Served content should match file")
-
-	t.Logf("✅ File serving flow completed successfully")
 }

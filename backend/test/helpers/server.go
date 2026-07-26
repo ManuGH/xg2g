@@ -38,11 +38,12 @@ func EnsureDecisionSecret(t *testing.T) {
 
 // TestServerOptions configures the test server setup
 type TestServerOptions struct {
-	DataDir    string
-	OWIBase    string
-	StreamPort int
-	APIToken   string
-	Bouquet    string
+	DataDir        string
+	OWIBase        string
+	StreamPort     int
+	APIToken       string
+	APITokenScopes []string
+	Bouquet        string
 }
 
 // TestServer wraps a test HTTP server with its configuration
@@ -93,8 +94,9 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 			BaseURL:    opts.OWIBase,
 			StreamPort: opts.StreamPort,
 		},
-		APIToken: opts.APIToken,
-		Bouquet:  opts.Bouquet,
+		APIToken:       opts.APIToken,
+		APITokenScopes: opts.APITokenScopes,
+		Bouquet:        opts.Bouquet,
 	}
 
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))

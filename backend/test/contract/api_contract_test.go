@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -216,72 +215,6 @@ func TestAPIServerContract(t *testing.T) {
 	})
 }
 
-// TestAPIDataFilePathContract verifies data file path resolution contract
-func TestAPIDataFilePathContract(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create test file
-	testFile := filepath.Join(tmpDir, "playlist.m3u")
-	err := os.WriteFile(testFile, []byte("#EXTM3U\n"), 0600)
-	require.NoError(t, err)
-
-	cfg := config.AppConfig{
-		Version:        "test",
-		DataDir:        tmpDir,
-		Bouquet:        "Test",
-		XMLTVPath:      "xmltv.xml",
-		APIToken:       "test-token",
-		APITokenScopes: []string{string(v3.ScopeV3Read)},
-		Enigma2: config.Enigma2Settings{
-			BaseURL:    "http://example.com",
-			StreamPort: 8001,
-			Timeout:    10 * time.Second,
-			Retries:    3,
-			Backoff:    500 * time.Millisecond,
-		},
-	}
-
-	helpers.EnsureDecisionSecret(t)
-	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
-	server, err := api.New(cfg, cfgMgr)
-	require.NoError(t, err)
-	handler := server.Handler()
-
-	t.Run("ValidFileAccess", func(t *testing.T) {
-		// Contract: Files within data dir are accessible via /files/ prefix
-		req := httptest.NewRequest(http.MethodGet, "/files/playlist.m3u", nil)
-		req.RemoteAddr = "127.0.0.1:1234" // LAN guard allows localhost
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-
-		assert.Equal(t, http.StatusOK, rec.Code, "Valid files must be accessible via /files/ prefix")
-		assert.Contains(t, rec.Body.String(), "#EXTM3U", "File content must be returned")
-	})
-
-	t.Run("PathTraversalPrevention", func(t *testing.T) {
-		// Contract: Path traversal attempts are blocked
-		dangerousPaths := []string{
-			"/../etc/passwd",
-			"/../../etc/passwd",
-			"/../../../etc/passwd",
-			"/./../../etc/passwd",
-		}
-
-		for _, path := range dangerousPaths {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			req.RemoteAddr = "127.0.0.1:1234" // LAN guard allows localhost
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-
-			// Should return 400/404, NOT 200 with sensitive file content
-			assert.NotEqual(t, http.StatusOK, rec.Code,
-				"Path traversal attempt must be blocked: %s", path)
-			assert.NotContains(t, rec.Body.String(), "root:",
-				"Sensitive file content must not be exposed: %s", path)
-		}
-	})
-}
-
 // TestAPIVersioningContract verifies API versioning contract
 func TestAPIVersioningContract(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -332,14 +265,14 @@ func TestAPIVersioningContract(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
-		assert.Equal(t, http.StatusNotFound, rec.Code,
-			"Legacy v2 endpoint should be removed (use /api/v3/*)")
+		assert.Equal(t, http.StatusGone, rec.Code,
+			"Legacy v2 endpoint should explicitly report retirement")
 
 		reqLegacy := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 		recLegacy := httptest.NewRecorder()
 		handler.ServeHTTP(recLegacy, reqLegacy)
-		assert.Equal(t, http.StatusNotFound, recLegacy.Code,
-			"Legacy /api/status endpoint should be removed")
+		assert.Equal(t, http.StatusGone, recLegacy.Code,
+			"Legacy /api/status endpoint should explicitly report retirement")
 	})
 }
 

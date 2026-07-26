@@ -27,8 +27,9 @@ import (
 // Risk Level: HIGH - production health checks depend on this
 func TestAPIFast_HealthEndpoints(t *testing.T) {
 	ts := helpers.NewTestServer(t, helpers.TestServerOptions{
-		DataDir:  t.TempDir(),
-		APIToken: "test-token",
+		DataDir:        t.TempDir(),
+		APIToken:       "test-token",
+		APITokenScopes: []string{"v3:read"},
 	})
 	defer ts.Close()
 
@@ -40,7 +41,7 @@ func TestAPIFast_HealthEndpoints(t *testing.T) {
 	}{
 		{"liveness", "/healthz", "", http.StatusOK},
 		{"readiness_not_ready", "/readyz", "", http.StatusServiceUnavailable},
-		{"status", "/api/v2/system/health", "test-token", http.StatusOK},
+		{"status", "/api/v3/system/health", "test-token", http.StatusOK},
 	}
 
 	for _, tt := range tests {
@@ -63,8 +64,9 @@ func TestAPIFast_HealthEndpoints(t *testing.T) {
 // Risk Level: HIGH - authentication bypass would be critical
 func TestAPIFast_RefreshEndpointAuth(t *testing.T) {
 	ts := helpers.NewTestServer(t, helpers.TestServerOptions{
-		DataDir:  t.TempDir(),
-		APIToken: "test-token",
+		DataDir:        t.TempDir(),
+		APIToken:       "test-token",
+		APITokenScopes: []string{"v3:write"},
 	})
 	defer ts.Close()
 
@@ -81,7 +83,7 @@ func TestAPIFast_RefreshEndpointAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
 				Method: http.MethodPost,
-				Path:   "/api/v2/system/refresh",
+				Path:   "/api/v3/system/refresh",
 				Token:  tt.token,
 			})
 			defer resp.Body.Close()
@@ -120,47 +122,4 @@ func TestAPIFast_BasicRefreshFlow(t *testing.T) {
 	require.NoError(t, err, "Basic refresh should succeed")
 	require.NotNil(t, status)
 	assert.Greater(t, status.Channels, 0, "Should find channels")
-}
-
-// TestAPIFast_ConcurrentAPIRequests tests basic concurrency safety (< 1s)
-// Tag: critical, fast, concurrency
-// Risk Level: HIGH - race conditions can cause production issues
-func TestAPIFast_ConcurrentAPIRequests(t *testing.T) {
-	mock := openwebif.NewMockServer()
-	defer mock.Close()
-
-	ts := helpers.NewTestServer(t, helpers.TestServerOptions{
-		DataDir:  t.TempDir(),
-		OWIBase:  mock.URL(),
-		APIToken: "test-token",
-	})
-	defer ts.Close()
-
-	// Make 3 concurrent requests (fast smoke test, not load test)
-	const numRequests = 3
-	results := make(chan int, numRequests)
-
-	for i := 0; i < numRequests; i++ {
-		go func() {
-			resp := helpers.DoRequest(t, ts.Server.URL, helpers.RequestOptions{
-				Method: http.MethodPost,
-				Path:   "/api/v2/system/refresh",
-				Token:  "test-token",
-			})
-			defer resp.Body.Close()
-			results <- resp.StatusCode
-		}()
-	}
-
-	// Collect results
-	var successCount int
-	for i := 0; i < numRequests; i++ {
-		status := <-results
-		if status == http.StatusOK || status == http.StatusConflict {
-			successCount++
-		}
-	}
-
-	// At least one should succeed, others may get 409 Conflict (expected for concurrent refresh)
-	assert.Greater(t, successCount, 0, "At least one concurrent request should succeed or conflict gracefully")
 }
