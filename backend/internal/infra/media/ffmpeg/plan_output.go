@@ -173,7 +173,7 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 	)
 	if audioCodec == "aac" {
 		res = append(res,
-			"-af", "aresample=async=1,aformat=channel_layouts=stereo",
+			"-af", "aformat=sample_fmts=s16p,aresample=async=1",
 			"-cutoff", "20000",
 		)
 	}
