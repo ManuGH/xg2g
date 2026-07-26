@@ -73,7 +73,7 @@ export function V3PlayerView({
           background: 'rgba(15, 23, 42, 0.75)',
           backdropFilter: 'blur(12px)',
           border: '1px solid rgba(255, 255, 255, 0.12)',
-          color: '#f8fafc',
+          color: 'var(--text-primary)',
           fontSize: '0.75rem',
           fontWeight: 500,
           boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
@@ -84,8 +84,8 @@ export function V3PlayerView({
             width: '6px',
             height: '6px',
             borderRadius: '50%',
-            backgroundColor: '#22c55e',
-            boxShadow: '0 0 8px #22c55e',
+            backgroundColor: 'var(--status-success)',
+            boxShadow: 'var(--shadow-status-dot-success)',
           }} />
           <span>VAAPI Live Transcode • H.264 1080p</span>
         </div>
