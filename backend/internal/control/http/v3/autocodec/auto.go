@@ -388,7 +388,7 @@ func pickBestCandidate(candidates []candidate, hostRuntime playbackprofile.HostR
 	if hostAwareAutoRankingEnabled(hostRuntime) {
 		eligible := make([]candidate, 0, len(candidates))
 		for _, candidate := range candidates {
-			if candidateAllowedForHost(candidate, hostRuntime) {
+			if candidateAllowedForHost(candidate, hostRuntime, clientFamily) {
 				eligible = append(eligible, candidate)
 			}
 		}
@@ -396,6 +396,9 @@ func pickBestCandidate(candidates []candidate, hostRuntime playbackprofile.HostR
 			return ""
 		}
 		sort.SliceStable(eligible, func(i, j int) bool {
+			if nativeWebKitClient(clientFamily) && eligible[i].qualityPriority != eligible[j].qualityPriority {
+				return eligible[i].qualityPriority > eligible[j].qualityPriority
+			}
 			iStrength := candidateHostStrength(eligible[i], hostRuntime)
 			jStrength := candidateHostStrength(eligible[j], hostRuntime)
 			if iStrength != jStrength {
@@ -449,9 +452,14 @@ func selectionPolicy(hostRuntime playbackprofile.HostRuntimeSnapshot) string {
 	return "probe_elapsed"
 }
 
-func candidateAllowedForHost(candidate candidate, hostRuntime playbackprofile.HostRuntimeSnapshot) bool {
-	if perfTier := hostPerformanceTier(hostRuntime.PerformanceClass); perfTier >= 0 && perfTier < minimumPerformanceTierForCodec(candidate.codec) {
-		return false
+func candidateAllowedForHost(candidate candidate, hostRuntime playbackprofile.HostRuntimeSnapshot, clientFamily string) bool {
+	// The aggregate performance class includes CPU and concurrency pressure; it
+	// must not veto a verified hardware AV1 path for native Apple clients.
+	// Codec-specific weak benchmarks still reject AV1 below.
+	if !(nativeWebKitClient(clientFamily) && candidate.codec == "av1") {
+		if perfTier := hostPerformanceTier(hostRuntime.PerformanceClass); perfTier >= 0 && perfTier < minimumPerformanceTierForCodec(candidate.codec) {
+			return false
+		}
 	}
 	if benchmarkTier := hostBenchmarkTier(playbackprofile.BenchmarkClassForCodec(hostRuntime.Benchmark, candidate.codec)); benchmarkTier >= 0 && benchmarkTier < minimumBenchmarkTierForCodec(candidate.codec) {
 		return false

@@ -469,7 +469,7 @@ func TestPickNativeHLSProfileForCapabilities_RuntimeHEVCPrefersHEVCOverH264(t *t
 	}
 }
 
-func TestPickNativeHLSProfileForCapabilitiesAndHost_DemotesAV1ToHEVCOnMediumHost(t *testing.T) {
+func TestPickNativeHLSProfileForCapabilitiesAndHost_PrefersStrongAV1OnMediumAppleHost(t *testing.T) {
 	hardware.SetVAAPIPreflightResult(true)
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
@@ -479,13 +479,24 @@ func TestPickNativeHLSProfileForCapabilitiesAndHost_DemotesAV1ToHEVCOnMediumHost
 		hardware.SetVAAPIEncoderCapabilities(nil)
 		hardware.SetVAAPIPreflightResult(false)
 	})
+	smooth := true
+	powerEfficient := true
 
 	got := autocodec.PickNativeHLSProfileForCapabilitiesAndHost(
-		playbackprofile.ClientIOSSafariNative,
+		playbackprofile.ClientSafariNative,
 		&capabilities.PlaybackCapabilities{
-			ClientFamilyFallback: playbackprofile.ClientIOSSafariNative,
+			CapabilitiesVersion:  3,
+			ClientFamilyFallback: playbackprofile.ClientSafariNative,
 			ClientCapsSource:     capabilities.ClientCapsSourceRuntimePlusFam,
+			Containers:           []string{"mp4", "ts", "fmp4"},
 			VideoCodecs:          []string{"av1", "hevc", "h264"},
+			RuntimeProbeUsed:     true,
+			RuntimeProbeVersion:  2,
+			DeviceType:           "web",
+			DeviceContext:        &capabilities.DeviceContext{Platform: "macintel", OSName: "macos"},
+			VideoCodecSignals: []capabilities.VideoCodecSignal{
+				{Codec: "av1", Supported: true, Smooth: &smooth, PowerEfficient: &powerEfficient},
+			},
 		},
 		profiles.HWAccelAuto,
 		playbackprofile.HostRuntimeSnapshot{
@@ -498,8 +509,38 @@ func TestPickNativeHLSProfileForCapabilitiesAndHost_DemotesAV1ToHEVCOnMediumHost
 			},
 		},
 	)
+	if got != profiles.ProfileAV1HW {
+		t.Fatalf("PickNativeHLSProfileForCapabilitiesAndHost() = %q, want %q", got, profiles.ProfileAV1HW)
+	}
+}
+
+func TestPickProfileForCodecsForClientAndHost_SafariRejectsWeakAV1Benchmark(t *testing.T) {
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 52 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 69 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 79 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	got := autocodec.PickProfileForCodecsForClientAndHost(
+		"av1,hevc,h264",
+		playbackprofile.ClientSafariNative,
+		profiles.HWAccelAuto,
+		playbackprofile.HostRuntimeSnapshot{
+			PerformanceClass: "medium",
+			Benchmark: playbackprofile.HostBenchmarkSnapshot{
+				Codecs: []playbackprofile.HostCodecBenchmark{
+					{Codec: "av1", Class: "weak"},
+					{Codec: "hevc", Class: "strong"},
+					{Codec: "h264", Class: "strong"},
+				},
+			},
+		},
+	)
 	if got != profiles.ProfileSafariHEVCHW {
-		t.Fatalf("PickNativeHLSProfileForCapabilitiesAndHost() = %q, want %q", got, profiles.ProfileSafariHEVCHW)
+		t.Fatalf("PickProfileForCodecsForClientAndHost() = %q, want %q", got, profiles.ProfileSafariHEVCHW)
 	}
 }
 

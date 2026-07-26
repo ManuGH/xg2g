@@ -95,3 +95,36 @@ func TestSelectAutoTranscodeVideoCodec_SafariRequiresEligibleAV1(t *testing.T) {
 		t.Fatalf("codec = %q, want hevc when the AV1 encoder is not auto-eligible", codec)
 	}
 }
+
+func TestSelectAutoTranscodeVideoCodec_SafariPrefersStrongAV1OnMediumHost(t *testing.T) {
+	ev := stagingSafariEvidence()
+	ev.HostSnapshot.PerformanceClass = "medium"
+	for i := range ev.HostSnapshot.EncoderCapabilities {
+		ev.HostSnapshot.EncoderCapabilities[i].BenchmarkClass = "strong"
+	}
+
+	codec, ok := selectAutoTranscodeVideoCodec(ev)
+	if !ok {
+		t.Fatal("auto-codec selection bailed out")
+	}
+	if codec != "av1" {
+		t.Fatalf("codec = %q, want av1 when Safari and the codec-specific benchmark admit AV1", codec)
+	}
+}
+
+func TestSelectAutoTranscodeVideoCodec_SafariRejectsWeakAV1Benchmark(t *testing.T) {
+	ev := stagingSafariEvidence()
+	ev.HostSnapshot.PerformanceClass = "medium"
+	for i := range ev.HostSnapshot.EncoderCapabilities {
+		ev.HostSnapshot.EncoderCapabilities[i].BenchmarkClass = "strong"
+	}
+	ev.HostSnapshot.EncoderCapabilities[2].BenchmarkClass = "weak"
+
+	codec, ok := selectAutoTranscodeVideoCodec(ev)
+	if !ok {
+		t.Fatal("auto-codec selection bailed out")
+	}
+	if codec != "hevc" {
+		t.Fatalf("codec = %q, want hevc when the codec-specific AV1 benchmark is weak", codec)
+	}
+}

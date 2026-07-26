@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPickPlaybackInfoAutoProfile_UsesAV1OnlyOnHealthyHost(t *testing.T) {
+func TestPickPlaybackInfoAutoProfile_UsesStrongAV1OnMediumAppleHost(t *testing.T) {
 	hardware.SetVAAPIPreflightResult(true)
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 30 * time.Millisecond},
@@ -56,8 +56,8 @@ func TestPickPlaybackInfoAutoProfile_UsesAV1OnlyOnHealthyHost(t *testing.T) {
 
 	mediumHost := healthyHost
 	mediumHost.PerformanceClass = "medium"
-	if got := pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, mediumHost, false, autocodec.ResolveIOSNativeHEVCHWMode()); got != profiles.ProfileSafariHEVCHW {
-		t.Fatalf("pickPlaybackInfoAutoProfile() on medium host = %q, want %q", got, profiles.ProfileSafariHEVCHW)
+	if got := pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps, mediumHost, false, autocodec.ResolveIOSNativeHEVCHWMode()); got != profiles.ProfileAV1HW {
+		t.Fatalf("pickPlaybackInfoAutoProfile() on medium host = %q, want %q", got, profiles.ProfileAV1HW)
 	}
 }
 
@@ -118,8 +118,8 @@ func TestAlignAutoCodecDecision_PersistsNeutralSelectionTrace(t *testing.T) {
 	if dec.Trace.AutoCodecRequested != "av1,hevc,h264" {
 		t.Fatalf("expected requested codecs trace, got %#v", dec.Trace)
 	}
-	if dec.Trace.AutoCodecSelected != "hevc" {
-		t.Fatalf("expected selected codec hevc, got %#v", dec.Trace)
+	if dec.Trace.AutoCodecSelected != "av1" {
+		t.Fatalf("expected selected codec av1, got %#v", dec.Trace)
 	}
 	if dec.Trace.AutoCodecHostClass != "medium" {
 		t.Fatalf("expected host class medium, got %#v", dec.Trace)

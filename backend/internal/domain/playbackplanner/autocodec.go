@@ -79,7 +79,7 @@ func selectAutoTranscodeVideoCodec(ev PlaybackEvidence) (string, bool) {
 	if hostAware {
 		eligible := candidates[:0]
 		for _, candidate := range candidates {
-			if autoCodecAllowedForHost(candidate, ev.HostSnapshot.PerformanceClass) {
+			if autoCodecAllowedForHost(candidate, ev.HostSnapshot.PerformanceClass, ev.ClientEvidence.Family) {
 				eligible = append(eligible, candidate)
 			}
 		}
@@ -88,6 +88,9 @@ func selectAutoTranscodeVideoCodec(ev PlaybackEvidence) (string, bool) {
 		}
 		candidates = eligible
 		sort.SliceStable(candidates, func(i, j int) bool {
+			if nativeWebKitClient(ev.ClientEvidence.Family) && candidates[i].quality != candidates[j].quality {
+				return candidates[i].quality > candidates[j].quality
+			}
 			leftStrength := autoCodecHostStrength(candidates[i], ev.HostSnapshot.PerformanceClass)
 			rightStrength := autoCodecHostStrength(candidates[j], ev.HostSnapshot.PerformanceClass)
 			if leftStrength != rightStrength {
@@ -162,9 +165,14 @@ func newAutoCodecCandidate(codec string, probeElapsedMS int64, benchmarkClass st
 	return candidate
 }
 
-func autoCodecAllowedForHost(candidate autoCodecCandidate, performanceClass string) bool {
-	if tier := hostPerformanceTier(performanceClass); tier >= 0 && tier < minimumPerformanceTier(candidate.codec) {
-		return false
+func autoCodecAllowedForHost(candidate autoCodecCandidate, performanceClass, clientFamily string) bool {
+	// The aggregate performance class includes CPU and concurrency pressure; it
+	// must not veto a verified hardware AV1 path for native Apple clients.
+	// Codec-specific weak benchmarks still reject AV1 below.
+	if !(nativeWebKitClient(clientFamily) && candidate.codec == "av1") {
+		if tier := hostPerformanceTier(performanceClass); tier >= 0 && tier < minimumPerformanceTier(candidate.codec) {
+			return false
+		}
 	}
 	if tier := hostBenchmarkTier(candidate.benchmarkClass); tier >= 0 && tier < minimumBenchmarkTier(candidate.codec) {
 		return false
