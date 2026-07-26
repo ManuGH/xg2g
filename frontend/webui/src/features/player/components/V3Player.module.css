@@ -10,19 +10,18 @@
 }
 
 .container.overlay {
-  --recording-watch-width: min(1560px, calc(100vw - 24px), calc((100dvh - 180px) * 16 / 9));
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
   height: 100dvh;
-  padding: calc(10px + var(--sat)) 12px calc(32px + var(--sab));
-  background: color-mix(in srgb, var(--bg-base) 96%, black 4%);
+  padding: 0;
+  background: #000000;
   z-index: 9999;
-  justify-content: flex-start;
+  justify-content: center;
   align-items: stretch;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .container.recordingPage {
@@ -47,17 +46,16 @@
 }
 
 .playerFrameOverlay {
-  width: var(--recording-watch-width);
-  height: auto;
-  aspect-ratio: 16 / 9;
+  width: 100%;
+  height: 100%;
   max-width: 100%;
-  max-height: calc(100dvh - 180px);
-  margin: 0 auto;
-  flex: 0 0 auto;
+  max-height: 100%;
+  margin: 0;
+  flex: 1 1 auto;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: 0;
   background: #000000;
-  box-shadow: 0 14px 32px color-mix(in srgb, var(--bg-video) 28%, transparent);
+  box-shadow: none;
 }
 
 .playerFramePage {
