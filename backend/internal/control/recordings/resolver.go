@@ -264,7 +264,7 @@ func (r *PlaybackInfoResolver) GetMediaTruth(ctx context.Context, serviceRef str
 		if !isDisabled {
 			// Trigger idempotent orchestration
 			_, source, localPath, _ := r.truth.ResolveSource(ctx, serviceRef)
-			state, retryAfter := r.probeMgr.ensureProbed(ctx, serviceRef, source, localPath)
+			state, retryAfter := r.probeMgr.ensureProbed(serviceRef, source, localPath)
 			truth.ProbeState = playback.ProbeState(state)
 			truth.RetryAfter = retryAfter
 		}
