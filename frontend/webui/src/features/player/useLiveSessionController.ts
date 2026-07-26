@@ -600,10 +600,11 @@ export function useLiveSessionController({
                 resolve(finalSession);
               }).catch((err) => reject(err));
             } else if (state === 'FAILED' || state === 'STOPPED' || state === 'CANCELLED' || state === 'STOPPING') {
+              const wasAbortedByClient = abortController.signal.aborted;
               if (!cleanup()) return;
               const reason = stateData.reason || state;
               const detail = stateData.reasonDetail ? `: ${stateData.reasonDetail}` : '';
-              if (abortController.signal.aborted) {
+              if (wasAbortedByClient) {
                 debugLog('[V3Player] Session intentionally cancelled/aborted by client', { trackedSessionId, reason });
                 reject(new Error('Session cancelled'));
                 return;
