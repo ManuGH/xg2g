@@ -99,8 +99,11 @@ jobs:
       - name: Run integration and invariants (fail-fast)
         run: |
           set -euo pipefail
-          cd backend
-          go test -count=1 -failfast -timeout=20m ./test/integration/... ./test/invariants/... 2>&1 | tee nightly-integration.log
+          {
+            make test-integration
+            cd backend
+            go test -count=1 -failfast -timeout=20m ./test/invariants/...
+          } 2>&1 | tee backend/nightly-integration.log
 
       - name: Upload integration logs on failure
         if: failure()
@@ -318,7 +321,7 @@ jobs:
             echo "| Job | Command | Result | Exit |"
             echo "|---|---|---:|---:|"
             echo "| nightly-race | \`cd backend && go test -race -count=1 ./...\` | $RACE_RESULT | $RACE_EXIT |"
-            echo "| nightly-integration | \`cd backend && go test -count=1 -failfast ./test/integration/... ./test/invariants/...\` | $INTEGRATION_RESULT | $INTEGRATION_EXIT |"
+            echo "| nightly-integration | \`make test-integration && cd backend && go test ./test/invariants/...\` | $INTEGRATION_RESULT | $INTEGRATION_EXIT |"
             echo "| nightly-performance | \`make performance-gate\` | $PERFORMANCE_RESULT | $PERFORMANCE_EXIT |"
             echo "| nightly-spec-doc-lint | \`redocly lint + markdownlint-cli2\` | $DOC_LINT_RESULT | $DOC_LINT_EXIT |"
             echo "| weekly-security-deep | \`cd backend && govulncheck -tags=nogpu ./... && gosec -severity=high ... ./...\` | $SECURITY_RESULT | $SECURITY_EXIT |"
