@@ -408,13 +408,25 @@ export function usePlaybackOrchestrator(
         
       if (isNetworkIssue) {
         debugLog('[V3Player] Auto-Downgrade: Network stall detected. Falling back to bandwidth profile.');
+        // Session-scoped on purpose: do NOT persist this to localStorage.
+        //
+        // A downgrade inferred from one symptom must not outlive the symptom.
+        // Persisting it made this a one-way ratchet — the guard above
+        // (explicitProfile !== 'bandwidth') then never fires again, so nothing
+        // ever re-evaluated it, and the only way back was the player's profile
+        // menu, which was removed in 9bab9080. A single bufferStalledError
+        // therefore pinned the client to the lowest profile permanently, across
+        // reloads and channels.
+        //
+        // Worse, it also silenced codec selection: the planner treats
+        // "bandwidth" as a non-auto intent (usesAutoTranscodeProfile returns
+        // false), so the auto-codec selector bails and the h264 default stands —
+        // which is the opposite of what a bandwidth-saving mode wants, AV1 being
+        // the more efficient codec. Observed in the wild: a client stuck on
+        // bandwidth got h264 on every session while its host had a verified AV1
+        // encoder and the client advertised av1.
         setExplicitProfile('bandwidth');
-        try {
-          localStorage.setItem('xg2g.player.explicitProfile', 'bandwidth');
-        } catch (e) {
-          // ignore
-        }
-        
+
         // Let the state settle, then restart
         window.setTimeout(() => {
           startStreamRef.current(sRef, 'bandwidth');
