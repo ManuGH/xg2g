@@ -143,8 +143,9 @@
   transform: translateY(0);
 }
 
-.container.userIdle {
-  cursor: none;
+.container.userIdle,
+.container.userIdle * {
+  cursor: none !important;
 }
 
 .container.userIdle .controlsHeader,
