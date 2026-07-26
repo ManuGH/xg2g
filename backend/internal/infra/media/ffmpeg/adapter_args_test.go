@@ -2718,5 +2718,10 @@ func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
 	assert.Contains(t, args, "0:2?")
 	assert.Contains(t, args, "-master_pl_name")
 	assert.Contains(t, args, "index.m3u8")
-	assert.Contains(t, args, "-var_stream_map")
+	varStreamMap, ok := valueAfter(args, "-var_stream_map")
+	require.True(t, ok)
+	assert.Equal(t,
+		"v:0,agroup:audio a:0,agroup:audio,default:yes,language:DEU a:1,agroup:audio,default:no,language:DEU",
+		varStreamMap,
+	)
 }

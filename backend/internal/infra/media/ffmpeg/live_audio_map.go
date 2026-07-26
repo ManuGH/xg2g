@@ -101,7 +101,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		}
 	}
 	audioArgs := appendLiveAudioArgs(nil, spec, maxChannels)
-	varMapParts := []string{"v:0,a:0,agroup:audio"}
+	varMapParts := []string{"v:0,agroup:audio"}
 
 	for idx, stream := range ordered {
 		maps = append(maps, fmt.Sprintf("0:%d?", stream.Index))
