@@ -67,7 +67,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 	if len(audioStreams) == 0 {
 		return defaultSel
 	}
-	if len(audioStreams) == 1 {
+	if len(audioStreams) >= 1 {
 		selected := audioStreams[0]
 		mapArg := fmt.Sprintf("0:%d?", selected.Index)
 		codecName := strings.ToLower(strings.TrimSpace(selected.CodecName))
