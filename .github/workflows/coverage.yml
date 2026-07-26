@@ -68,10 +68,22 @@ jobs:
             -covermode=atomic \
             -coverprofile=../artifacts/coverage.out \
             -coverpkg=./...
-          go tool cover -func=../artifacts/coverage.out | tee ../artifacts/coverage.txt
           go tool cover -html=../artifacts/coverage.out -o ../artifacts/coverage.html
 
-          total="$(go tool cover -func=../artifacts/coverage.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
+          # The gate is computed without generated files. They carry a
+          # "DO NOT EDIT" header, nobody writes tests against them, and counting
+          # them measures codegen output volume rather than test quality. Left in,
+          # a dependency bump that regenerates them moves the gate on its own:
+          # bumping oapi-codegen to v2.7.1 added ~4.8k generated lines and dropped
+          # the unfiltered total from 70.4% to 68.9% without touching a single
+          # hand-written statement. Filtered, that same commit and its base both
+          # measure 70.2%.
+          # The unfiltered profile is still published as an artifact.
+          head -1 ../artifacts/coverage.out > ../artifacts/coverage.filtered.out
+          { grep -v '_gen\.go:' ../artifacts/coverage.out || true; } | tail -n +2 >> ../artifacts/coverage.filtered.out
+          go tool cover -func=../artifacts/coverage.filtered.out | tee ../artifacts/coverage.txt
+
+          total="$(go tool cover -func=../artifacts/coverage.filtered.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
           if [[ -z "${total}" ]]; then
             echo "failed to extract total coverage" >&2
             exit 1
