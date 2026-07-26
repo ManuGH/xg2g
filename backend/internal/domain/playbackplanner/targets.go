@@ -116,9 +116,9 @@ func explicitlyRequestsHEVCProfile(requestedIntent string) bool {
 func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 	switch strings.ToLower(strings.TrimSpace(codec)) {
 	case "av1":
-		return 6000
+		return 25000
 	case "hevc", "h265":
-		return 5000
+		return 25000
 	case "h264", "avc", "libx264":
 		for _, encoder := range ev.HostSnapshot.EncoderCapabilities {
 			if strings.EqualFold(strings.TrimSpace(encoder.Codec), "h264") && encoder.Verified && encoder.AutoEligible {

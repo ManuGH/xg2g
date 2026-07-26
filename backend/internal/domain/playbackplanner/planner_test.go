@@ -336,10 +336,10 @@ func TestPlanAutoCodecRateControlMatchesExecutionProfiles(t *testing.T) {
 		wantTarget int
 		wantMax    int
 	}{
-		{name: "av1", codec: "av1", hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 6000},
-		{name: "hevc", codec: "hevc", hostCodec: &HostEncoderCapability{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40}, wantMax: 5000},
+		{name: "av1", codec: "av1", hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 25000},
+		{name: "hevc", codec: "hevc", hostCodec: &HostEncoderCapability{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40}, wantMax: 25000},
 		{name: "h264 cpu", codec: "h264", wantMax: 8000},
-		{name: "h264 hardware", codec: "h264", hostCodec: &HostEncoderCapability{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10}, wantMax: 8000},
+		{name: "h264 hardware", codec: "h264", hostCodec: &HostEncoderCapability{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10}, wantMax: 20000},
 		{name: "constrained h264 hardware", codec: "h264", hostCodec: &HostEncoderCapability{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10}, downlink: 4000, wantTarget: 3000, wantMax: 6000},
 	}
 
@@ -376,7 +376,7 @@ func TestPlanNativeSafariKeepsLegacyHEVCCPUFallback(t *testing.T) {
 	result, err := Plan(ev)
 	require.NoError(t, err)
 	require.Equal(t, "hevc", result.Plan.Video.Codec)
-	require.Equal(t, 5000, result.Plan.RateControl.MaxVideoBitrateKbps)
+	require.Equal(t, 25000, result.Plan.RateControl.MaxVideoBitrateKbps)
 
 	ev.ClientEvidence.Family = "chromium_hlsjs"
 	nonNative, err := Plan(ev)
