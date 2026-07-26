@@ -116,7 +116,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	} else {
 		args = appendAV1VAAPILevelArgs(args)
 	}
-	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv")
+	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv", "-flags", "+accurate_rnd")
 	return args
 }
 
