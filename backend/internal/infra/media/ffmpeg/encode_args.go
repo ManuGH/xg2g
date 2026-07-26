@@ -269,6 +269,8 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 
 		if av1QVBR {
 			args = append(args, "-rc_mode", "QVBR")
+		} else if isAV1 && vendor == hardware.VendorIntel {
+			args = append(args, "-rc_mode", "VBR")
 		}
 		args = append(args,
 			"-b:v", fmt.Sprintf("%dk", bV),
