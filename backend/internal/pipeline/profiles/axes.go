@@ -21,15 +21,12 @@ const (
 	VideoActionAV1  VideoCodecAction = "av1"
 )
 
-// liveBrowserAudioBitrateK is the stereo AAC-LC bitrate for live browser playback
-// (AV1/HEVC/H264 fMP4 transcodes). Live DVB audio arrives as AC-3 — 384k 5.1 or
-// 192k stereo — and is re-encoded to a stereo AAC-LC downmix, i.e. a second lossy
-// generation, which is where 192k started to show cascade artifacts. 320k is the
-// ceiling the rung ladder knows (RungQualityAudioAAC320Stereo) and costs nothing
-// on a LAN; MaxAudioBitrateForRung still clamps it down if an operator pins the
-// max quality rung. Deliberately NOT applied to ProfileRepair (its 192k is the
-// RungRepairAudioAAC192Stereo contract) or ProfileLow.
-const liveBrowserAudioBitrateK = 320
+// liveBrowserAudioBitrateK is the stereo AAC-LC bitrate for live browser playback.
+// Shared with the planner's media targets via playbackprofile so the two layers
+// cannot drift — see LiveTranscodeAudioBitrateKbps for the rationale. Deliberately
+// NOT applied to ProfileRepair (its 192k is the RungRepairAudioAAC192Stereo
+// contract) or ProfileLow.
+const liveBrowserAudioBitrateK = playbackprofile.LiveTranscodeAudioBitrateKbps
 
 // ProfileAxes represents the four orthogonal decision dimensions of any stream profile:
 // 1. Video Action (Copy vs Transcode Codec)
@@ -63,15 +60,8 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 	case ProfileHigh:
 		return ProfileAxes{
 			Video: VideoActionCopy,
-			// Live DVB audio arrives as AC-3 (384k 5.1 or 192k stereo) and is
-			// re-encoded to stereo AAC-LC, so this is a second-generation encode of
-			// a downmix — 192k was where cascade artifacts start to show. 320k is
-			// the ceiling the rung ladder knows (RungQualityAudioAAC320Stereo) and
-			// costs nothing on a LAN. Note both "quality" and "compatible" resolve
-			// to this profile, so this is the effective live audio bitrate for both;
-			// MaxAudioBitrateForRung still clamps it back to 256k if an operator
-			// pins the max rung to a compatible_* rung.
-			AudioBitrateK:  320,
+			// Both "quality" and "compatible" resolve to this profile.
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      "",
 			PolicyModeHint: ports.RuntimeModeCopy,
 		}
@@ -86,14 +76,14 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 		if cap != nil && !cap.Interlaced {
 			return ProfileAxes{
 				Video:          VideoActionCopy,
-				AudioBitrateK:  320,
+				AudioBitrateK:  liveBrowserAudioBitrateK,
 				Container:      safariFamilyContainer(isSafari),
 				PolicyModeHint: ports.RuntimeModeCopy,
 			}
 		}
 		return ProfileAxes{
 			Video:          VideoActionH264,
-			AudioBitrateK:  320,
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      safariFamilyContainer(isSafari),
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}

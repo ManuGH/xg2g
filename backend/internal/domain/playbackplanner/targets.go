@@ -2,6 +2,8 @@ package playbackplanner
 
 import (
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 // resolveMediaTargets populates Video, Audio, Packaging, Filters, and RateControl based on the selected Mode.
@@ -22,7 +24,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 
 	case "transcode":
 		plan.Video = TrackPlan{Mode: "transcode", Codec: "h264"} // Default
-		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
+		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: playbackprofile.LiveTranscodeAudioBitrateKbps, Channels: 2, SampleRate: 48000}
 		autoTranscodeProfile := false
 		plan.Packaging = Packaging{Container: "mpegts"}
 		if ev.ClientEvidence.PrefersFMP4 {
@@ -75,7 +77,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			// Legacy repair/forced-transcode mode is track-aware. Preserve a
 			// compatible video bitstream, but ensure the mode is not a no-op by
 			// normalizing audio to AAC when both tracks were otherwise copyable.
-			plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
+			plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: playbackprofile.LiveTranscodeAudioBitrateKbps, Channels: 2, SampleRate: 48000}
 		}
 		if plan.Video.Mode == "transcode" {
 			plan.RateControl.MaxVideoBitrateKbps = transcodeMaxVideoBitrateKbps(plan.Video.Codec, ev)
