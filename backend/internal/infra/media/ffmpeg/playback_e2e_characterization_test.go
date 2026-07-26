@@ -63,7 +63,7 @@ func TestFFmpegPlanner_Characterization(t *testing.T) {
 			want: ports.ExecutedFFmpegPlan{
 				Container: "mpegts", Packaging: "ts", HWAccel: "none",
 				VideoMode: "copy", VideoCodec: "copy",
-				AudioMode: "copy", AudioCodec: "copy",
+				AudioMode: "transcode", AudioCodec: "aac",
 			},
 		},
 		{
@@ -83,7 +83,7 @@ func TestFFmpegPlanner_Characterization(t *testing.T) {
 			want: ports.ExecutedFFmpegPlan{
 				Container: "fmp4", Packaging: "fmp4", HWAccel: "none",
 				VideoMode: "copy", VideoCodec: "copy",
-				AudioMode: "copy", AudioCodec: "copy",
+				AudioMode: "transcode", AudioCodec: "aac",
 			},
 		},
 		{
@@ -102,7 +102,7 @@ func TestFFmpegPlanner_Characterization(t *testing.T) {
 			want: ports.ExecutedFFmpegPlan{
 				Container: "mpegts", Packaging: "ts", HWAccel: "none",
 				VideoMode: "copy", VideoCodec: "copy",
-				AudioMode: "copy", AudioCodec: "copy",
+				AudioMode: "transcode", AudioCodec: "aac",
 			},
 		},
 		{
@@ -121,7 +121,7 @@ func TestFFmpegPlanner_Characterization(t *testing.T) {
 			want: ports.ExecutedFFmpegPlan{
 				Container: "mpegts", Packaging: "ts", HWAccel: "none",
 				VideoMode: "copy", VideoCodec: "copy",
-				AudioMode: "copy", AudioCodec: "copy",
+				AudioMode: "transcode", AudioCodec: "aac",
 			},
 		},
 		{
