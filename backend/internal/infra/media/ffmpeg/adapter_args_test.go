@@ -2721,7 +2721,7 @@ func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
 	varStreamMap, ok := valueAfter(args, "-var_stream_map")
 	require.True(t, ok)
 	assert.Equal(t,
-		"v:0,agroup:audio a:0,agroup:audio,default:yes,language:DEU a:1,agroup:audio,default:no,language:DEU",
+		"v:0,a:0,agroup:audio a:0,agroup:audio,default:yes,language:DEU a:1,agroup:audio,default:no,language:DEU",
 		varStreamMap,
 	)
 }
