@@ -21,6 +21,16 @@ const (
 	VideoActionAV1  VideoCodecAction = "av1"
 )
 
+// liveBrowserAudioBitrateK is the stereo AAC-LC bitrate for live browser playback
+// (AV1/HEVC/H264 fMP4 transcodes). Live DVB audio arrives as AC-3 — 384k 5.1 or
+// 192k stereo — and is re-encoded to a stereo AAC-LC downmix, i.e. a second lossy
+// generation, which is where 192k started to show cascade artifacts. 320k is the
+// ceiling the rung ladder knows (RungQualityAudioAAC320Stereo) and costs nothing
+// on a LAN; MaxAudioBitrateForRung still clamps it down if an operator pins the
+// max quality rung. Deliberately NOT applied to ProfileRepair (its 192k is the
+// RungRepairAudioAAC192Stereo contract) or ProfileLow.
+const liveBrowserAudioBitrateK = 320
+
 // ProfileAxes represents the four orthogonal decision dimensions of any stream profile:
 // 1. Video Action (Copy vs Transcode Codec)
 // 2. Audio Action (Copy vs Transcode Bitrate)
@@ -111,14 +121,14 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 	case ProfileH264FMP4:
 		return ProfileAxes{
 			Video:          VideoActionH264,
-			AudioBitrateK:  192,
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
 	case ProfileSafariHEVC, ProfileSafariHEVCHW, ProfileSafariHEVCHWLL:
 		return ProfileAxes{
 			Video:          VideoActionHEVC,
-			AudioBitrateK:  192,
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
@@ -129,7 +139,7 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 		}
 		return ProfileAxes{
 			Video:          VideoActionAV1,
-			AudioBitrateK:  192,
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      container,
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}

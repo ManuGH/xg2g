@@ -360,3 +360,28 @@ func TestPublicProfileName_MapsLegacyInternalIDs(t *testing.T) {
 	assert.Equal(t, PublicProfileRepair, PublicProfileName("repair"))
 	assert.Equal(t, PublicProfileCompatible, PublicProfileName("generic"))
 }
+
+// The live browser paths are the ones real sessions run on: staging resolves
+// Safari/AV1 clients to av1_hw, not to the profile the requested name maps to.
+// A regression here is invisible in the profile name and only shows up as a
+// lower "-b:a" in the ffmpeg output, so pin the bitrate per profile id.
+func TestResolveProfileAxes_LiveBrowserAudioBitrate(t *testing.T) {
+	cfg := LoadConfigSnapshot()
+	progressive := &scan.Capability{Interlaced: false}
+
+	for _, canonical := range []string{
+		ProfileAV1HW,
+		ProfileSafariHEVC,
+		ProfileSafariHEVCHW,
+		ProfileSafariHEVCHWLL,
+		ProfileH264FMP4,
+		ProfileHigh,
+		ProfileSafari,
+	} {
+		axes := resolveProfileAxes(canonical, true, progressive, cfg)
+		assert.Equal(t, liveBrowserAudioBitrateK, axes.AudioBitrateK, "live browser audio bitrate for %s", canonical)
+	}
+
+	// Repair keeps its own rung contract (RungRepairAudioAAC192Stereo).
+	assert.Equal(t, 192, resolveProfileAxes(ProfileRepair, true, progressive, cfg).AudioBitrateK)
+}
