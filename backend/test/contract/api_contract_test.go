@@ -26,6 +26,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
+	"github.com/ManuGH/xg2g/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,6 +51,7 @@ func TestAPIServerContract(t *testing.T) {
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	server, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)
@@ -239,6 +241,7 @@ func TestAPIDataFilePathContract(t *testing.T) {
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	server, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)
@@ -299,6 +302,7 @@ func TestAPIVersioningContract(t *testing.T) {
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	server, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)
@@ -363,6 +367,7 @@ func TestAPICircuitBreakerContract(t *testing.T) {
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	server, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)

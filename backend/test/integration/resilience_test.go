@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -51,6 +52,7 @@ func TestCircuitBreakerFlow(t *testing.T) {
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	apiServer, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)
@@ -341,6 +343,7 @@ func TestRateLimitingBehavior(t *testing.T) {
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	apiServer, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)

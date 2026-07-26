@@ -24,6 +24,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	"github.com/ManuGH/xg2g/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -117,6 +118,7 @@ func TestAPIRefreshEndpoint(t *testing.T) {
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	apiServer, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)
@@ -311,6 +313,7 @@ func TestConcurrentRefreshRequests(t *testing.T) {
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	apiServer, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)
@@ -384,6 +387,7 @@ func TestHealthCheckFlow(t *testing.T) {
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	apiServer, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)
@@ -472,6 +476,7 @@ http://example.com/stream`
 		},
 	}
 
+	helpers.EnsureDecisionSecret(t)
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
 	apiServer, err := api.New(cfg, cfgMgr)
 	require.NoError(t, err)

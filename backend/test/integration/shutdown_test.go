@@ -23,6 +23,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/ManuGH/xg2g/test/helpers"
 )
 
 func getFreeTCPPort(t *testing.T) int {
@@ -74,19 +76,12 @@ func TestGracefulShutdown(t *testing.T) {
 
 	// Prepare minimal environment
 	port := getFreeTCPPort(t)
-	proxyPort := getFreeTCPPort(t)
-	env := []string{
-		"XG2G_DATA=" + dataDir,
-		fmt.Sprintf("XG2G_LISTEN=:%d", port),
-		fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
-		"XG2G_E2_HOST=" + mockOWI.URL,
+	env := append(helpers.DaemonEnv(t, dataDir, port),
+		"XG2G_E2_HOST="+mockOWI.URL,
 		"XG2G_BOUQUET=Test",
-		"XG2G_EPG_ENABLED=false",            // Disable EPG to simplify test
-		"XG2G_HDHR_ENABLED=false",           // Disable HDHR
-		"XG2G_SMART_STREAM_DETECTION=false", // Disable detection
-		"XG2G_SERVER_SHUTDOWN_TIMEOUT=5s",   // 5s graceful shutdown window
-		"PATH=" + os.Getenv("PATH"),
-	}
+		"XG2G_EPG_ENABLED=false",          // Disable EPG to simplify test
+		"XG2G_SERVER_SHUTDOWN_TIMEOUT=5s", // 5s graceful shutdown window
+	)
 
 	tests := []struct {
 		name   string
@@ -198,19 +193,12 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 
 	dataDir := t.TempDir()
 	port := getFreeTCPPort(t)
-	proxyPort := getFreeTCPPort(t)
-	env := []string{
-		"XG2G_DATA=" + dataDir,
-		fmt.Sprintf("XG2G_LISTEN=:%d", port),
-		fmt.Sprintf("XG2G_PROXY_LISTEN=:%d", proxyPort),
-		"XG2G_E2_HOST=" + mockOWI.URL,
+	env := append(helpers.DaemonEnv(t, dataDir, port),
+		"XG2G_E2_HOST="+mockOWI.URL,
 		"XG2G_BOUQUET=Test",
 		"XG2G_EPG_ENABLED=false",
-		"XG2G_HDHR_ENABLED=false",
-		"XG2G_SMART_STREAM_DETECTION=false",
 		"XG2G_SERVER_SHUTDOWN_TIMEOUT=5s",
-		"PATH=" + os.Getenv("PATH"),
-	}
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -243,10 +231,20 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 		t.Fatalf("daemon did not become ready. Output:\n%s", outputBuffer.String())
 	}
 
-	// Start background request
+	// Start background request against the canonical v3 surface. The former
+	// /api/v2/status target is retired and answers 410, which this test used to
+	// swallow via a log-only branch — so it reported success while asserting
+	// nothing about in-flight request handling.
 	requestDone := make(chan error, 1)
 	go func() {
-		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/v2/status", port))
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/api/v3/system/health", port), nil)
+		if err != nil {
+			requestDone <- err
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+helpers.TestAPIToken)
+
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			requestDone <- err
 			return
@@ -254,12 +252,12 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 		defer func() { _ = resp.Body.Close() }()
 		body, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
-			requestDone <- io.EOF
+			requestDone <- fmt.Errorf("status %d, body: %s", resp.StatusCode, body)
 			return
 		}
 		// Verify response contains expected JSON
 		if !strings.Contains(string(body), "version") {
-			requestDone <- io.ErrUnexpectedEOF
+			requestDone <- fmt.Errorf("health body has no version field: %s", body)
 			return
 		}
 		requestDone <- nil
@@ -273,11 +271,13 @@ func TestShutdownWithActiveRequests(t *testing.T) {
 		t.Fatalf("failed to send SIGTERM: %v", err)
 	}
 
-	// Verify request completes successfully (not aborted)
+	// Verify request completes successfully (not aborted). Graceful shutdown
+	// means the in-flight request is served, not dropped — so a failure here is
+	// a real regression, not something to log past.
 	select {
 	case err := <-requestDone:
 		if err != nil {
-			t.Logf("⚠️  In-flight request failed: %v (acceptable if server was stopping)", err)
+			t.Errorf("in-flight request was not served during graceful shutdown: %v", err)
 		} else {
 			t.Log("✅ In-flight request completed successfully")
 		}
