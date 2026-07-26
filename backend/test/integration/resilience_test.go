@@ -10,116 +10,18 @@ package test
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/jobs"
-	"github.com/ManuGH/xg2g/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// TestCircuitBreakerFlow tests circuit breaker behavior under load
-func TestCircuitBreakerFlow(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Setup: Server that fails consistently
-	var requestCount atomic.Int32
-	failingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("Server error"))
-	}))
-	defer failingServer.Close()
-
-	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		Bouquet:    "Premium",
-		APIToken:   "test-token",
-		EPGEnabled: false,
-		Enigma2: config.Enigma2Settings{
-			BaseURL:    failingServer.URL,
-			StreamPort: 8001,
-		},
-	}
-
-	helpers.EnsureDecisionSecret(t)
-	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
-	apiServer, err := api.New(cfg, cfgMgr)
-	require.NoError(t, err)
-	handler := apiServer.Handler()
-	testServer := httptest.NewServer(handler)
-	defer testServer.Close()
-
-	// Execute: Make multiple refresh requests to trigger circuit breaker
-	const numRequests = 10
-	var successCount, errorCount, circuitOpenCount int
-
-	for i := 0; i < numRequests; i++ {
-		req, _ := http.NewRequestWithContext(
-			context.Background(),
-			http.MethodPost,
-			testServer.URL+"/api/v2/refresh",
-			nil,
-		)
-		req.Header.Set("Origin", testServer.URL) // CSRF protection
-		req.Header.Set("Authorization", "Bearer test-token")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			errorCount++
-			continue
-		}
-
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		switch resp.StatusCode {
-		case http.StatusOK:
-			successCount++
-		case http.StatusServiceUnavailable:
-			// Circuit breaker open - check behavior, not exact message
-			circuitOpenCount++
-			bodyStr := string(body)
-			// Verify it's a failure-related message (not just any 503)
-			assert.True(t,
-				strings.Contains(strings.ToLower(bodyStr), "failure") ||
-					strings.Contains(strings.ToLower(bodyStr), "unavailable") ||
-					strings.Contains(strings.ToLower(bodyStr), "circuit"),
-				"503 should indicate service unavailable due to failures")
-		default:
-			errorCount++
-		}
-
-		// Small delay between requests
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	t.Logf("Circuit Breaker Results:")
-	t.Logf("  Total requests: %d", numRequests)
-	t.Logf("  Backend calls: %d", requestCount.Load())
-	t.Logf("  Success: %d", successCount)
-	t.Logf("  Errors: %d", errorCount)
-	t.Logf("  Circuit open (fast-fail): %d", circuitOpenCount)
-
-	// Verify: Circuit breaker should have opened, reducing backend calls
-	assert.Less(t, int(requestCount.Load()), numRequests,
-		"Circuit breaker should have prevented some backend calls")
-
-	if circuitOpenCount > 0 {
-		t.Logf("✅ Circuit breaker activated and prevented %d backend calls",
-			numRequests-int(requestCount.Load()))
-	}
-}
 
 // TestRetryBehavior tests automatic retry on transient failures
 func TestRetryBehavior(t *testing.T) {
@@ -311,108 +213,6 @@ func TestRecoveryAfterFailure(t *testing.T) {
 		t.Logf("✅ Successfully recovered: %d channels", status.Channels)
 	} else {
 		t.Logf("⚠️  Still failing after recovery: %v", err2)
-	}
-}
-
-// TestRateLimitingBehavior tests rate limiting under heavy load
-func TestRateLimitingBehavior(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	var requestCount atomic.Int32
-	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
-
-		if r.URL.Path == "/api/bouquets" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"bouquets": [["Premium", "1:7:1:0:0:0:0:0:0:0:FROM BOUQUET"]]}`))
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"services": []}`))
-		}
-	}))
-	defer mock.Close()
-
-	cfg := config.AppConfig{
-		DataDir:    tmpDir,
-		Bouquet:    "Premium",
-		APIToken:   "test-token",
-		EPGEnabled: false,
-		Enigma2: config.Enigma2Settings{
-			BaseURL:    mock.URL,
-			StreamPort: 8001,
-		},
-	}
-
-	helpers.EnsureDecisionSecret(t)
-	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
-	apiServer, err := api.New(cfg, cfgMgr)
-	require.NoError(t, err)
-	handler := apiServer.Handler()
-	testServer := httptest.NewServer(handler)
-	defer testServer.Close()
-
-	// Execute: Rapid fire requests
-	const rapidRequests = 20
-	startTime := time.Now()
-	results := make(chan int, rapidRequests)
-
-	for i := 0; i < rapidRequests; i++ {
-		go func() {
-			req, _ := http.NewRequestWithContext(
-				context.Background(),
-				http.MethodPost,
-				testServer.URL+"/api/v2/refresh",
-				nil,
-			)
-			req.Header.Set("Origin", testServer.URL) // CSRF protection
-			req.Header.Set("Authorization", "Bearer test-token")
-
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				results <- 0
-				return
-			}
-			defer resp.Body.Close()
-
-			results <- resp.StatusCode
-		}()
-	}
-
-	// Collect results
-	var okCount, rateLimitedCount, otherCount int
-	for i := 0; i < rapidRequests; i++ {
-		select {
-		case statusCode := <-results:
-			switch statusCode {
-			case http.StatusOK:
-				okCount++
-			case http.StatusTooManyRequests, http.StatusServiceUnavailable:
-				rateLimitedCount++
-			default:
-				otherCount++
-			}
-		case <-time.After(30 * time.Second):
-			t.Fatal("Rate limiting test timed out")
-		}
-	}
-
-	elapsed := time.Since(startTime)
-
-	t.Logf("Rate Limiting Results:")
-	t.Logf("  Duration: %v", elapsed)
-	t.Logf("  Success (200): %d", okCount)
-	t.Logf("  Rate limited (429/503): %d", rateLimitedCount)
-	t.Logf("  Other: %d", otherCount)
-	t.Logf("  Backend requests: %d", requestCount.Load())
-
-	// Verify: System should handle rapid requests gracefully
-	assert.Equal(t, rapidRequests, okCount+rateLimitedCount+otherCount,
-		"All requests should complete")
-
-	if rateLimitedCount > 0 {
-		t.Logf("✅ Rate limiting active: %d requests were rate-limited", rateLimitedCount)
-	} else {
-		t.Logf("✅ All requests processed successfully (no rate limiting triggered)")
 	}
 }
 

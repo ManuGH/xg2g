@@ -187,12 +187,6 @@ func TestAPIServerContract(t *testing.T) {
 		}
 	})
 
-	t.Run("DeprecationHeadersContract", func(t *testing.T) {
-		// Contract: This test is skipped as legacy /api/* endpoints were removed
-		// API v2 endpoints (/api/v2/*) are the canonical API surface
-		t.Skip("Legacy /api/* endpoints removed in favor of /api/v2/* (see docs/UPGRADE.md)")
-	})
-
 	t.Run("ErrorResponseContract", func(t *testing.T) {
 		// Contract: Unauthorized responses use RFC7807 problem details
 		req := httptest.NewRequest(http.MethodGet, "/api/v3/system/health", nil)
