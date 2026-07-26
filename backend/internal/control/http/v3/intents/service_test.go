@@ -922,8 +922,8 @@ func TestService_ProcessIntent_StartDerivesRequestedCodecsFromClientCapsWhenMiss
 	if deps.store.putSession == nil {
 		t.Fatal("expected session to be persisted")
 	}
-	if deps.store.putSession.Profile.Name != "h264_fmp4" {
-		t.Fatalf("expected h264_fmp4 profile, got %q", deps.store.putSession.Profile.Name)
+	if deps.store.putSession.Profile.Name != "safari_hevc_hw" {
+		t.Fatalf("expected safari_hevc_hw profile, got %q", deps.store.putSession.Profile.Name)
 	}
 	if deps.store.putSession.ContextData["codecs"] != "hevc,h264" {
 		t.Fatalf("expected derived codecs in context data, got %#v", deps.store.putSession.ContextData)
@@ -934,11 +934,11 @@ func TestService_ProcessIntent_StartDerivesRequestedCodecsFromClientCapsWhenMiss
 	if deps.store.putSession.PlaybackTrace.AutoCodecRequested != "hevc,h264" {
 		t.Fatalf("expected derived requested codecs trace, got %#v", deps.store.putSession.PlaybackTrace)
 	}
-	if deps.store.putSession.PlaybackTrace.AutoCodecSelected != "h264" {
-		t.Fatalf("expected selected codec trace to be h264, got %#v", deps.store.putSession.PlaybackTrace)
+	if deps.store.putSession.PlaybackTrace.AutoCodecSelected != "hevc" {
+		t.Fatalf("expected selected codec trace to be hevc, got %#v", deps.store.putSession.PlaybackTrace)
 	}
-	if deps.store.putSession.Profile.HWAccel != "vaapi" {
-		t.Fatalf("expected generic auto path to keep the faster h264 vaapi profile, got hwaccel=%q", deps.store.putSession.Profile.HWAccel)
+	if deps.store.putSession.Profile.HWAccel != "vaapi_encode_only" {
+		t.Fatalf("expected iOS native HEVC compatibility policy to keep encode-only VAAPI, got hwaccel=%q", deps.store.putSession.Profile.HWAccel)
 	}
 }
 

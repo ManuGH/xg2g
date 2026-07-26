@@ -204,6 +204,78 @@ func TestPickNativeHLSProfileForCodecs_PrefersAV1HWOnSafariNative(t *testing.T) 
 	}
 }
 
+func TestPickProfileForCodecsForClient_SafariPrefersVerifiedAV1OverProbeLatency(t *testing.T) {
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {
+			Verified:     true,
+			AutoEligible: true,
+			ProbeElapsed: 52 * time.Millisecond,
+		},
+		"hevc_vaapi": {
+			Verified:     true,
+			AutoEligible: true,
+			ProbeElapsed: 69 * time.Millisecond,
+		},
+		"av1_vaapi": {
+			Verified:     true,
+			AutoEligible: true,
+			ProbeElapsed: 79 * time.Millisecond,
+		},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	got := autocodec.PickProfileForCodecsForClient(
+		"av1,hevc,h264",
+		playbackprofile.ClientSafariNative,
+		profiles.HWAccelAuto,
+	)
+	if got != profiles.ProfileAV1HW {
+		t.Fatalf("PickProfileForCodecsForClient() = %q, want %q", got, profiles.ProfileAV1HW)
+	}
+}
+
+func TestPickProfileForCodecsForClient_NonAppleKeepsProbeLatencyRanking(t *testing.T) {
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 52 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 69 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 79 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	got := autocodec.PickProfileForCodecsForClient(
+		"av1,hevc,h264",
+		playbackprofile.ClientChromiumHLSJS,
+		profiles.HWAccelAuto,
+	)
+	if got != profiles.ProfileH264FMP4 {
+		t.Fatalf("PickProfileForCodecsForClient() = %q, want %q", got, profiles.ProfileH264FMP4)
+	}
+}
+
+func TestPickProfileForCodecsForClient_SafariRequiresEligibleAV1(t *testing.T) {
+	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 52 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 69 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: false, ProbeElapsed: 79 * time.Millisecond},
+	})
+	t.Cleanup(func() {
+		hardware.SetVAAPIEncoderCapabilities(nil)
+	})
+
+	got := autocodec.PickProfileForCodecsForClient(
+		"av1,hevc,h264",
+		playbackprofile.ClientSafariNative,
+		profiles.HWAccelAuto,
+	)
+	if got != profiles.ProfileSafariHEVCHW {
+		t.Fatalf("PickProfileForCodecsForClient() = %q, want %q", got, profiles.ProfileSafariHEVCHW)
+	}
+}
+
 func TestPickProfileForCodecsForClient_IOSSafariNativeHEVCSelectionStaysOnHWProfile(t *testing.T) {
 	hardware.SetVAAPIEncoderCapabilities(map[string]hardware.VAAPIEncoderCapability{
 		"hevc_vaapi": {

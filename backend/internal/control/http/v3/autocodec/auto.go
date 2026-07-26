@@ -196,13 +196,13 @@ func PickNativeHLSProfileForCapabilitiesAndHostWithPolicy(clientFamily string, c
 	}
 
 	if clientCaps != nil && !playbackCapabilitiesHaveCodec(clientCaps.VideoCodecs, "hevc") {
-		return pickBestCandidate(candidates, hostRuntime)
+		return pickBestCandidate(candidates, hostRuntime, family)
 	}
 
 	if profileID := preferredNativeHLSHEVCProfile(hwaccelMode); profileID != "" {
 		candidates = append(candidates, newCandidate(profileID, "hevc", measuredProbeElapsedForCodec("hevc"), 1))
 	}
-	return pickBestCandidate(candidates, hostRuntime)
+	return pickBestCandidate(candidates, hostRuntime, family)
 }
 
 func preferredNativeHLSHEVCProfile(hwaccelMode profiles.HWAccelMode) string {
@@ -224,7 +224,7 @@ func PickProfileForCodecsForClient(raw, clientFamily string, hwaccelMode profile
 }
 
 func PickProfileForCodecsForClientAndHost(raw, clientFamily string, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
-	return PickProfileForCodecsWithCapabilitiesAndHost(raw, hwaccelMode, map[string]hardware.HardwareEncoderCapability{
+	return pickProfileForCodecsWithCapabilitiesForClientAndHost(raw, clientFamily, hwaccelMode, map[string]hardware.HardwareEncoderCapability{
 		"h264": capabilityForAutoCodec("h264"),
 		"hevc": capabilityForAutoCodec("hevc"),
 		"av1":  capabilityForAutoCodec("av1"),
@@ -329,6 +329,10 @@ func PickProfileForCodecsWithCapabilities(raw string, hwaccelMode profiles.HWAcc
 }
 
 func PickProfileForCodecsWithCapabilitiesAndHost(raw string, hwaccelMode profiles.HWAccelMode, encoderCaps map[string]hardware.HardwareEncoderCapability, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
+	return pickProfileForCodecsWithCapabilitiesForClientAndHost(raw, "", hwaccelMode, encoderCaps, hostRuntime)
+}
+
+func pickProfileForCodecsWithCapabilitiesForClientAndHost(raw, clientFamily string, hwaccelMode profiles.HWAccelMode, encoderCaps map[string]hardware.HardwareEncoderCapability, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
 	codecs := ParseCodecList(raw)
 	if len(codecs) == 0 {
 		return ""
@@ -363,7 +367,7 @@ func PickProfileForCodecsWithCapabilitiesAndHost(raw string, hwaccelMode profile
 		}
 	}
 
-	return pickBestCandidate(candidates, hostRuntime)
+	return pickBestCandidate(candidates, hostRuntime, clientFamily)
 }
 
 func newCandidate(profileID, codec string, probeElapsed time.Duration, legacyTieOrder int) candidate {
@@ -376,7 +380,7 @@ func newCandidate(profileID, codec string, probeElapsed time.Duration, legacyTie
 	}
 }
 
-func pickBestCandidate(candidates []candidate, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
+func pickBestCandidate(candidates []candidate, hostRuntime playbackprofile.HostRuntimeSnapshot, clientFamily string) string {
 	if len(candidates) == 0 {
 		return ""
 	}
@@ -409,12 +413,27 @@ func pickBestCandidate(candidates []candidate, hostRuntime playbackprofile.HostR
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
+		if nativeWebKitClient(clientFamily) && candidates[i].qualityPriority != candidates[j].qualityPriority {
+			// Probe elapsed measures encoder cold-start, not sustained
+			// throughput. Once native WebKit and the host have admitted a
+			// codec, prefer output quality before a few startup milliseconds.
+			return candidates[i].qualityPriority > candidates[j].qualityPriority
+		}
 		if candidates[i].probeElapsed == candidates[j].probeElapsed {
 			return candidates[i].legacyTieOrder < candidates[j].legacyTieOrder
 		}
 		return candidates[i].probeElapsed < candidates[j].probeElapsed
 	})
 	return candidates[0].profileID
+}
+
+func nativeWebKitClient(clientFamily string) bool {
+	switch normalize.Token(clientFamily) {
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+		return true
+	default:
+		return false
+	}
 }
 
 func hostAwareAutoRankingEnabled(hostRuntime playbackprofile.HostRuntimeSnapshot) bool {
