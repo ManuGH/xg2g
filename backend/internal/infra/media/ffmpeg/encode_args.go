@@ -285,13 +285,13 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			args = append(args, "-global_quality", strconv.Itoa(cfg.AV1QVBRQuality))
 		}
 		if isAV1 {
-			args = append(args, "-async_depth", "1")
+			args = append(args, "-blbrc", "1", "-async_depth", "1")
 		}
 		return args
 	}
 
 	if isAV1 {
-		args = append(args, "-rc_mode", "CQP", "-global_quality", "28", "-async_depth", "1")
+		args = append(args, "-rc_mode", "CQP", "-global_quality", "28", "-blbrc", "1", "-async_depth", "1")
 		return args
 	}
 	return append(args, "-global_quality", "23")
