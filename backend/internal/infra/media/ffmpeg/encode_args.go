@@ -128,10 +128,6 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	if spec.Profile.VideoMaxWidth > 0 {
 		parts = append(parts, softwareScaleWidthFilter(spec.Profile.VideoMaxWidth))
 	}
-	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
-	if isAV1 && hardware.GetGPUVendor() == hardware.VendorAMD {
-		parts = append(parts, av1VAAPIGeometryPadFilter())
-	}
 	// AV1 encodes 10-bit (p010 -> AV1 Main, which covers 8/10-bit). The extra
 	// precision reduces encoder-introduced banding on gradients even from an
 	// 8-bit source — the same quality rationale as the AV1 upscale above.
@@ -154,6 +150,10 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	}
 	if f := transcodeSharpenFilter(a.Config.TranscodeSharpen); f != "" {
 		parts = append(parts, f)
+	}
+	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
+	if isAV1 && hardware.GetGPUVendor() == hardware.VendorAMD {
+		parts = append(parts, av1VAAPIGeometryPadFilter())
 	}
 	uploadFormat := "nv12"
 	if isAV1 {
