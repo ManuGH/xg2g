@@ -172,10 +172,8 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 		"-ar", "48000",
 	)
 	if audioCodec == "aac" {
-		res = append(res,
-			"-af", "aformat=sample_fmts=s16p,aresample=async=1",
-			"-cutoff", "20000",
-		)
+		// Rely entirely on FFmpeg's auto_resampler to downmix 5.1 to stereo (-ac 2)
+		// Explicitly inserting aresample=async=1 causes EINVAL (-22) on 5.1(side) DVB layouts.
 	}
 	return append(res, "-sn")
 }
