@@ -36,6 +36,7 @@
 .container.fullscreenActive {
   padding: 0;
   overflow: hidden;
+  background: #000000;
 }
 
 .playerFrame {
@@ -167,9 +168,7 @@
 .videoWrapper {
   width: 100%;
   height: 100%;
-  background:
-    radial-gradient(circle at 50% 0%, var(--surface-muted), transparent 30%),
-    var(--bg-base);
+  background: #000000;
   position: relative;
   display: flex;
   align-items: center;
@@ -178,7 +177,7 @@
 }
 
 .videoWrapperMasked {
-  background: var(--bg-video);
+  background: #000000;
 }
 
 .videoElement {
@@ -189,7 +188,7 @@
   display: block;
   object-fit: contain;
   object-position: center center;
-  background: var(--bg-video);
+  background: #000000;
   transition: opacity 220ms ease;
 }
 
