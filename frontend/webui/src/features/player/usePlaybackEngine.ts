@@ -1022,8 +1022,13 @@ export function usePlaybackEngine({
       hls.attachMedia(video);
 
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
-        if (data.audioTracks && onAudioTracksUpdated) {
-          onAudioTracksUpdated(data.audioTracks.map(t => ({ id: t.id, name: t.name, language: t.lang, key: 'hls-' + t.id, engineIndex: t.id })));
+        if (data.audioTracks && data.audioTracks.length > 0) {
+          if (hls.audioTrack < 0 || hls.audioTrack >= data.audioTracks.length) {
+            hls.audioTrack = 0;
+          }
+          if (onAudioTracksUpdated) {
+            onAudioTracksUpdated(data.audioTracks.map(t => ({ id: t.id, name: t.name || `Track ${t.id + 1}`, language: t.lang || 'deu', key: 'hls-' + t.id, engineIndex: t.id })));
+          }
         }
       });
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
