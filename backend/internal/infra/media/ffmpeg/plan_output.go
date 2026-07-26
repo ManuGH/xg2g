@@ -174,8 +174,6 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 	if audioCodec == "aac" {
 		res = append(res,
 			// Convert to s16p to sanitize any NaN floating point values from corrupt DVB streams.
-			// This prevents FFmpeg's resampler (Linux) or AAC encoder from crashing with EINVAL (-22).
-			// We intentionally omit aresample=async=1 here as it fails to negotiate 5.1(side) layouts.
 			"-af", "aformat=sample_fmts=s16p",
 		)
 	}
