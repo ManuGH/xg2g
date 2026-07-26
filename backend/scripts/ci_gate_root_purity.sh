@@ -61,6 +61,10 @@ ALLOWLIST=(
     "backend/"
     "frontend/"
     "hack/"
+    "scripts/"
+
+    # Test fixtures (canonical location enforced by ci/check-test-assets-location.sh)
+    "testdata/"
 
     # Infrastructure & deployment
     "deploy/"
@@ -112,7 +116,7 @@ for item in *; do
     if git check-ignore --no-index -q -- "$item"; then
         continue
     fi
-    
+
     if [[ ! "$item" =~ $ALLOWLIST_REGEX ]]; then
         echo "❌ VIOLATION: Forbidden item in root: $item"
         VIOLATIONS=$((VIOLATIONS + 1))
