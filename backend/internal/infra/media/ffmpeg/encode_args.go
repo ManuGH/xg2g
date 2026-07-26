@@ -123,7 +123,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec string) string {
 	parts := make([]string, 0, 4)
 	if spec.Profile.Deinterlace {
-		parts = append(parts, a.deinterlaceFilterForProfile(spec))
+		parts = append(parts, "bwdif=mode=send_field:parity=auto:deint=all")
 	}
 	if spec.Profile.VideoMaxWidth > 0 {
 		parts = append(parts, softwareScaleWidthFilter(spec.Profile.VideoMaxWidth))
@@ -541,8 +541,6 @@ func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string
 	} else if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
 		deinterlaceFilter = strings.TrimSpace(a.SafariDirtyFilter)
 	} else if spec.Mode == ports.ModeLive && spec.Format == ports.FormatHLS {
-		// Generic live HLS transcodes should preserve sports motion on interlaced
-		// broadcast sources instead of collapsing them to 25p.
 		deinterlaceFilter = "bwdif=mode=send_field:parity=auto:deint=all"
 	}
 	return deinterlaceFilter
