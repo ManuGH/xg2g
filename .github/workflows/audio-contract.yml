@@ -21,8 +21,12 @@ on:
       - "backend/internal/control/http/v3/intents/**"
       - "backend/scripts/smoke-live-audio.sh"
       - ".github/workflows/audio-contract.yml"
+  # Deliberately not filtered by base branch. This repo stacks PRs (#734 targets
+  # refactor/r5-1-guardrail-linter, not main), and every gate that filters on
+  # `branches: [main]` silently skips those — which is how a red test and an
+  # unformatted file travelled unnoticed on 2026-07-26. A pipeline change deserves
+  # this gate wherever it is proposed.
   pull_request:
-    branches: [main]
     paths:
       - "backend/internal/infra/media/ffmpeg/**"
       - "backend/internal/domain/playbackplanner/**"
