@@ -400,7 +400,7 @@ export function usePlaybackOrchestrator(
     if (isLive && explicitProfile !== 'bandwidth') {
       const isNetworkIssue = 
         options?.source === 'media-element' || 
-        options?.source === 'native-host' || 
+        (options?.source === 'native-host' && options?.failureClass === 'media') ||
         error.code === 'AUTH_RECOVERY_FAILED' ||
         (error.detail && error.detail.toLowerCase().includes('network')) || 
         (error.title && error.title.toLowerCase().includes('network')) ||
