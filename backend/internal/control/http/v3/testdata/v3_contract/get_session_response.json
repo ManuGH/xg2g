@@ -7,37 +7,36 @@
   "reasonDetail": "",
   "requestId": "",
   "trace": {
-    "audioQualityRung": null,
-    "autoCodecBenchmarkClass": null,
-    "autoCodecPerformanceClass": null,
-    "autoCodecPolicy": null,
-    "autoCodecRequestedCodecs": null,
-    "autoCodecSelectedCodec": null,
-    "clientCapsSource": null,
-    "clientFamily": null,
-    "clientPath": null,
-    "degradedFrom": null,
-    "effectiveModeSource": null,
-    "effectiveRuntimeMode": null,
-    "fallbackCount": null,
-    "firstFrameAtMs": null,
-    "hostOverrideApplied": null,
-    "hostPressureBand": null,
-    "inputKind": null,
-    "lastFallbackReason": null,
-    "policyModeHint": null,
-    "preflightDetail": null,
-    "preflightReason": null,
-    "qualityRung": null,
     "requestId": "",
     "sessionId": "550e8400-e29b-41d4-a716-446655440000",
     "requestProfile": "compatible",
     "requestedIntent": "compatible",
     "resolvedIntent": "compatible",
-    "stopClass": null,
-    "stopReason": null,
-    "targetProfile": {"audio":{"bitrateKbps":192,"channels":2,"codec":"aac","mode":"transcode","sampleRate":48000},"container":"mpegts","hls":{"enabled":true,"segmentContainer":"mpegts","segmentSeconds":0},"hwAccel":"none","packaging":"ts","video":{"codec":"","fps":0,"height":0,"mode":"copy","width":0}}, "targetProfileHash": "52feee7bb2a64404f195adda750cdc8ced9e3b230ff97d918453a314ed20d74d",
-    "videoQualityRung": null
+    "targetProfile": {
+      "audio": {
+        "bitrateKbps": 192,
+        "channels": 2,
+        "codec": "aac",
+        "mode": "transcode",
+        "sampleRate": 48000
+      },
+      "container": "mpegts",
+      "hls": {
+        "enabled": true,
+        "segmentContainer": "mpegts",
+        "segmentSeconds": 0
+      },
+      "hwAccel": "none",
+      "packaging": "ts",
+      "video": {
+        "codec": "",
+        "fps": 0,
+        "height": 0,
+        "mode": "copy",
+        "width": 0
+      }
+    },
+    "targetProfileHash": "52feee7bb2a64404f195adda750cdc8ced9e3b230ff97d918453a314ed20d74d"
   },
   "correlationId": "corr-test-001",
   "updatedAtMs": 1700000000000,
