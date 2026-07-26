@@ -962,7 +962,7 @@ func TestBuildArgs_VaapiEncodeOnlyUsesCPUDecodeAndHWUpload(t *testing.T) {
 
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Contains(t, vf, "bwdif=mode=send_frame:parity=auto:deint=all")
+	assert.Contains(t, vf, "bwdif=mode=send_field:parity=auto:deint=all")
 	assert.Contains(t, vf, "format=nv12,hwupload")
 
 	assert.Contains(t, args, "h264_vaapi")
@@ -2081,7 +2081,7 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 	assert.NotContains(t, args, "-hwaccel", "verified AV1 uses encode-only even when full VAAPI was requested")
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Contains(t, vf, "bwdif=mode=send_frame:parity=auto:deint=all")
+	assert.Contains(t, vf, "bwdif=mode=send_field:parity=auto:deint=all")
 	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
 	assert.Contains(t, vf, "format=p010le,hwupload")
 	outputFPS, ok := valueAfter(args, "-r")
