@@ -122,11 +122,10 @@ func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 	case "hevc", "h265":
 		return 25000
 	case "h264", "avc", "libx264":
-		for _, encoder := range ev.HostSnapshot.EncoderCapabilities {
-			if strings.EqualFold(strings.TrimSpace(encoder.Codec), "h264") && encoder.Verified && encoder.AutoEligible {
-				return 8000
-			}
-		}
+		// d049ad61 capped the hardware ceiling at 8000 to stop 20 Mbps encodes from
+		// producing 15 MB segments and stalling. That made the encoder-capability
+		// loop dead code — both arms returned 8000 — while still implying hardware
+		// gets a higher ceiling. Collapsed; the cap is intentional and uniform.
 		return 8000
 	default:
 		return 8000
