@@ -169,7 +169,7 @@ func autoCodecAllowedForHost(candidate autoCodecCandidate, performanceClass, cli
 	// The aggregate performance class includes CPU and concurrency pressure; it
 	// must not veto a verified hardware AV1 path for native Apple clients.
 	// Codec-specific weak benchmarks still reject AV1 below.
-	if !(nativeWebKitClient(clientFamily) && candidate.codec == "av1") {
+	if !nativeWebKitClient(clientFamily) || candidate.codec != "av1" {
 		if tier := hostPerformanceTier(performanceClass); tier >= 0 && tier < minimumPerformanceTier(candidate.codec) {
 			return false
 		}

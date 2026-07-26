@@ -456,7 +456,7 @@ func candidateAllowedForHost(candidate candidate, hostRuntime playbackprofile.Ho
 	// The aggregate performance class includes CPU and concurrency pressure; it
 	// must not veto a verified hardware AV1 path for native Apple clients.
 	// Codec-specific weak benchmarks still reject AV1 below.
-	if !(nativeWebKitClient(clientFamily) && candidate.codec == "av1") {
+	if !nativeWebKitClient(clientFamily) || candidate.codec != "av1" {
 		if perfTier := hostPerformanceTier(hostRuntime.PerformanceClass); perfTier >= 0 && perfTier < minimumPerformanceTierForCodec(candidate.codec) {
 			return false
 		}
