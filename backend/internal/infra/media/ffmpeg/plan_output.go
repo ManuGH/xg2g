@@ -161,13 +161,19 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 	if spec.Profile.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
 	}
-	return append(args,
+	res := append(args,
 		"-c:a", audioCodec,
 		"-b:a", audioBitrate,
 		"-ac", "2",
 		"-ar", "48000",
-		"-sn",
 	)
+	if audioCodec == "aac" {
+		res = append(res,
+			"-af", "aresample=resampler=soxr:async=1",
+			"-cutoff", "20000",
+		)
+	}
+	return append(res, "-sn")
 }
 
 // useCMAFSegmenter reports whether this session runs in LL-HLS pipe mode.
