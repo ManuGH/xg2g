@@ -239,6 +239,7 @@ func mapCapabilitiesToPlaybackInfoSubpackage(c *PlaybackCapabilities) *v3playbac
 			DownlinkKbps:      c.NetworkContext.DownlinkKbps,
 			InternetValidated: c.NetworkContext.InternetValidated,
 			Kind:              c.NetworkContext.Kind,
+			MaxBitrateKbps:    c.NetworkContext.MaxBitrateKbps,
 			Metered:           c.NetworkContext.Metered,
 		}
 	}

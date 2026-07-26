@@ -38,7 +38,6 @@ import {
   gatherPlaybackClientContext,
   normalizePlaybackProfileSelection,
   resolvePlaybackProfileForPreflight,
-  resolvePlaybackRequestProfile,
   type PlaybackProfileSelection,
 } from './utils/playbackRequestProfile';
 import {
@@ -199,6 +198,8 @@ export function usePlaybackOrchestrator(
       return 'auto';
     }
   });
+  const networkRecoveryAttemptedRef = useRef(false);
+  const networkRecoveryConstraintRef = useRef(false);
   const ttffStartT0Ref = useRef<number | null>(null);
   const ttffManifestT1Ref = useRef<number | null>(null);
   const [ttffMetrics, setTtffMetrics] = useState<{
@@ -223,6 +224,9 @@ export function usePlaybackOrchestrator(
   }, []);
 
   const handlePlaybackMilestone = useCallback((milestone: 'manifest' | 'firstFrame') => {
+    if (milestone === 'firstFrame') {
+      networkRecoveryAttemptedRef.current = false;
+    }
     const startT0 = ttffStartT0Ref.current;
     if (startT0 === null) return;
 
@@ -396,8 +400,9 @@ export function usePlaybackOrchestrator(
   const reportPlaybackFailure = useCallback((error: AppError, options?: PlaybackFailureReportOptions) => {
     const isLive = !('recordingId' in props && props.recordingId) && !('src' in props && props.src);
     
-    // Auto-Downgrade logic for Live TV when network stalls
-    if (isLive && explicitProfile !== 'bandwidth') {
+    // Retry one live attempt with an orthogonal bitrate budget when the
+    // transport stalls. Codec and encoder selection remain evidence-driven.
+    if (isLive && !networkRecoveryAttemptedRef.current) {
       const isNetworkIssue = 
         options?.source === 'media-element' || 
         (options?.source === 'native-host' && options?.failureClass === 'media') ||
@@ -407,29 +412,13 @@ export function usePlaybackOrchestrator(
         (error.detail && error.detail.toLowerCase().includes('buffer'));
         
       if (isNetworkIssue) {
-        debugLog('[V3Player] Auto-Downgrade: Network stall detected. Falling back to bandwidth profile.');
-        // Session-scoped on purpose: do NOT persist this to localStorage.
-        //
-        // A downgrade inferred from one symptom must not outlive the symptom.
-        // Persisting it made this a one-way ratchet — the guard above
-        // (explicitProfile !== 'bandwidth') then never fires again, so nothing
-        // ever re-evaluated it, and the only way back was the player's profile
-        // menu, which was removed in 9bab9080. A single bufferStalledError
-        // therefore pinned the client to the lowest profile permanently, across
-        // reloads and channels.
-        //
-        // Worse, it also silenced codec selection: the planner treats
-        // "bandwidth" as a non-auto intent (usesAutoTranscodeProfile returns
-        // false), so the auto-codec selector bails and the h264 default stands —
-        // which is the opposite of what a bandwidth-saving mode wants, AV1 being
-        // the more efficient codec. Observed in the wild: a client stuck on
-        // bandwidth got h264 on every session while its host had a verified AV1
-        // encoder and the client advertised av1.
-        setExplicitProfile('bandwidth');
+        debugLog('[V3Player] Network stall detected. Retrying auto planning with a session bitrate budget.');
+        networkRecoveryAttemptedRef.current = true;
+        networkRecoveryConstraintRef.current = true;
 
         // Let the state settle, then restart
         window.setTimeout(() => {
-          startStreamRef.current(sRef, 'bandwidth');
+          startStreamRef.current(sRef, explicitProfile);
         }, 50);
         return;
       }
@@ -439,6 +428,7 @@ export function usePlaybackOrchestrator(
   }, [explicitProfile, props, baseReportPlaybackFailure, sRef]);
 
   const onNativePlaybackConfirmed = useCallback(() => {
+    networkRecoveryAttemptedRef.current = false;
     setStatus((previous) => (
       previous === 'starting' ||
       previous === 'priming' ||
@@ -1029,22 +1019,15 @@ export function usePlaybackOrchestrator(
           measurePlaybackNetwork(apiBase),
         ]);
         requestCaps = capabilities;
-        const requestContext = applyPlaybackNetworkProbe(
+        applyPlaybackNetworkProbe(
           requestCaps,
           gatherPlaybackClientContext(),
           networkProbe,
-
+          { forceConstrained: networkRecoveryConstraintRef.current },
         );
+        networkRecoveryConstraintRef.current = false;
         if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
-        const automaticRequestProfile = resolvePlaybackRequestProfile(
-          requestContext,
-          requestCaps,
-          'recording'
-        );
-        const requestProfile = resolvePlaybackProfileForPreflight(
-          profileForAttempt,
-          automaticRequestProfile,
-        );
+        const requestProfile = resolvePlaybackProfileForPreflight(profileForAttempt);
         setCapabilitySnapshot(requestCaps);
         let rawContract: unknown = null;
 
@@ -1371,24 +1354,17 @@ export function usePlaybackOrchestrator(
           requestCaps,
           gatherPlaybackClientContext(),
           networkProbe,
-
+          { forceConstrained: networkRecoveryConstraintRef.current },
         );
+        networkRecoveryConstraintRef.current = false;
         if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch)) return;
-        const automaticRequestProfile = resolvePlaybackRequestProfile(
-          requestContext,
-          requestCaps,
-          'live'
-        );
-        const requestProfile = resolvePlaybackProfileForPreflight(
-          profileForAttempt,
-          automaticRequestProfile,
-        );
+        const requestProfile = resolvePlaybackProfileForPreflight(profileForAttempt);
         debugLog('[V3Player] Client profile decision', {
           profileForAttempt,
-          automaticRequestProfile,
           resolvedRequestProfile: requestProfile,
           networkKind: requestContext.network?.kind,
           downlinkMbps: requestContext.network?.downlinkMbps,
+          maxBitrateKbps: requestCaps.networkContext?.maxBitrateKbps,
           effectiveType: requestContext.network?.effectiveType,
           osName: requestContext.device?.osName,
           isTv: requestContext.isTv,

@@ -47,6 +47,28 @@ func NormalizeRequestedIntent(raw string) PlaybackIntent {
 	}
 }
 
+// NormalizeClientRequestedIntent defines the public playback-input boundary.
+// Repair is the only client override. Empty, auto, legacy public intents and
+// internal encoder-profile ids all delegate to evidence-driven planning.
+func NormalizeClientRequestedIntent(raw string) string {
+	if NormalizeRequestedIntent(raw) == IntentRepair {
+		return string(IntentRepair)
+	}
+	return ""
+}
+
+// UsesAutoCodecSelection centralizes the compatibility rule for callers below
+// the public-input boundary. Non-repair values here are rolling-upgrade or
+// internal callers, not part of the current client contract.
+func UsesAutoCodecSelection(raw string) bool {
+	switch normalize.Token(raw) {
+	case "direct", "copy", "passthrough", "compatible", "high", "bandwidth", "low", "repair", "h264_fmp4", "safari_dirty":
+		return false
+	default:
+		return true
+	}
+}
+
 func PublicIntentName(intent PlaybackIntent) string {
 	switch intent {
 	case IntentDirect:

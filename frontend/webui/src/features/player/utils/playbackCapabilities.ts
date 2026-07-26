@@ -41,6 +41,7 @@ export type CapabilitySnapshot = Pick<
   networkContext?: {
     kind?: string;
     downlinkKbps?: number;
+    maxBitrateKbps?: number;
     metered?: boolean;
     internetValidated?: boolean;
   };
@@ -169,6 +170,12 @@ function sanitizeNativePlaybackCapabilities(
               .downlinkKbps === "number"
               ? ((record.networkContext as Record<string, unknown>)
                   .downlinkKbps as number)
+              : undefined,
+          maxBitrateKbps:
+            typeof (record.networkContext as Record<string, unknown>)
+              .maxBitrateKbps === "number"
+              ? ((record.networkContext as Record<string, unknown>)
+                  .maxBitrateKbps as number)
               : undefined,
           metered:
             typeof (record.networkContext as Record<string, unknown>)

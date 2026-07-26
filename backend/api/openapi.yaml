@@ -2036,6 +2036,12 @@ components:
           type: string
         downlinkKbps:
           type: integer
+        maxBitrateKbps:
+          type: integer
+          minimum: 400
+          description: |
+            Optional client-selected data budget. This constrains the planned
+            output bitrate without selecting a codec or encoder profile.
         metered:
           type: boolean
         internetValidated:

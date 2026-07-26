@@ -63,6 +63,7 @@ type DeviceContext struct {
 type NetworkContext struct {
 	Kind              string `json:"kind,omitempty"`
 	DownlinkKbps      int    `json:"downlinkKbps,omitempty"`
+	MaxBitrateKbps    int    `json:"maxBitrateKbps,omitempty"`
 	Metered           *bool  `json:"metered,omitempty"`
 	InternetValidated *bool  `json:"internetValidated,omitempty"`
 }
@@ -142,7 +143,10 @@ func canonicalNetworkContext(in *NetworkContext) *NetworkContext {
 	if out.DownlinkKbps < 0 {
 		out.DownlinkKbps = 0
 	}
-	if out.Kind == "" && out.DownlinkKbps == 0 && out.Metered == nil && out.InternetValidated == nil {
+	if out.MaxBitrateKbps < 0 {
+		out.MaxBitrateKbps = 0
+	}
+	if out.Kind == "" && out.DownlinkKbps == 0 && out.MaxBitrateKbps == 0 && out.Metered == nil && out.InternetValidated == nil {
 		return nil
 	}
 	return &out

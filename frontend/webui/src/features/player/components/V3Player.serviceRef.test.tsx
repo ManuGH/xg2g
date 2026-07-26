@@ -637,7 +637,7 @@ describe('V3Player ServiceRef Input', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('passes the current API token into native playback requests on Android hosts', async () => {
+  it('passes the API token but drops a stale client profile on Android hosts', async () => {
     const originalHost = window.__XG2G_HOST__;
     const originalBridge = window.Xg2gHost;
     const startNativePlayback = vi.fn();
@@ -678,8 +678,8 @@ describe('V3Player ServiceRef Input', () => {
         kind: 'live',
         serviceRef: '1:0:1:123:456:789:0:0:0:0:',
         authToken: 'dev-token',
-        profile: 'compatible',
       });
+      expect(JSON.parse(String(payload))).not.toHaveProperty('profile');
       // The refactored player does not make web fetch calls for native playback;
       // playback is fully managed through the host bridge.
       expect(

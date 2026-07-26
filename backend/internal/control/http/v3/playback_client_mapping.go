@@ -79,8 +79,9 @@ func mapPlaybackClientSnapshot(snapshot *model.PlaybackClientSnapshot) *Playback
 	}
 	if snapshot.NetworkContext != nil {
 		dto.NetworkContext = &PlaybackNetworkContext{
-			DownlinkKbps: optionalIntPtr(snapshot.NetworkContext.DownlinkKbps),
-			Kind:         optionalStringPtr(snapshot.NetworkContext.Kind),
+			DownlinkKbps:   optionalIntPtr(snapshot.NetworkContext.DownlinkKbps),
+			Kind:           optionalStringPtr(snapshot.NetworkContext.Kind),
+			MaxBitrateKbps: optionalIntPtr(snapshot.NetworkContext.MaxBitrateKbps),
 		}
 		if snapshot.NetworkContext.InternetValidated != nil {
 			v := *snapshot.NetworkContext.InternetValidated

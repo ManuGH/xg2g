@@ -37,9 +37,9 @@ func requestedPlaybackProfile(r *http.Request) string {
 		return ""
 	}
 	if profile := strings.TrimSpace(r.URL.Query().Get("profile")); profile != "" {
-		return profile
+		return playbackprofile.NormalizeClientRequestedIntent(profile)
 	}
-	return strings.TrimSpace(r.Header.Get("X-XG2G-Profile"))
+	return playbackprofile.NormalizeClientRequestedIntent(r.Header.Get("X-XG2G-Profile"))
 }
 
 func playbackSubjectKindForSchema(schemaType string) v3recordings.PlaybackSubjectKind {
@@ -145,8 +145,9 @@ func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 	}
 	if v3.NetworkContext != nil {
 		c.NetworkContext = &capabilities.NetworkContext{
-			Kind:         derefString(v3.NetworkContext.Kind),
-			DownlinkKbps: derefInt(v3.NetworkContext.DownlinkKbps),
+			Kind:           derefString(v3.NetworkContext.Kind),
+			DownlinkKbps:   derefInt(v3.NetworkContext.DownlinkKbps),
+			MaxBitrateKbps: derefInt(v3.NetworkContext.MaxBitrateKbps),
 		}
 		if v3.NetworkContext.Metered != nil {
 			v := *v3.NetworkContext.Metered

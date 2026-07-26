@@ -361,19 +361,25 @@ func adaptStartProfileForNetworkContext(intent Intent, spec model.ProfileSpec) m
 		return spec
 	}
 	netCtx := intent.ClientCaps.NetworkContext
-	if strings.EqualFold(strings.TrimSpace(netCtx.Kind), "lan") && spec.Name != profiles.ProfileLow {
+	if strings.EqualFold(strings.TrimSpace(netCtx.Kind), "lan") && spec.Name != profiles.ProfileLow && netCtx.MaxBitrateKbps <= 0 {
 		return spec
 	}
-	if netCtx.DownlinkKbps <= 0 {
+	if netCtx.DownlinkKbps <= 0 && netCtx.MaxBitrateKbps <= 0 {
 		return spec
 	}
 
 	downlinkKbps := netCtx.DownlinkKbps
-	if !spec.TranscodeVideo && downlinkKbps >= 15000 && spec.Name != profiles.ProfileLow {
+	if !spec.TranscodeVideo && downlinkKbps >= 15000 && spec.Name != profiles.ProfileLow && netCtx.MaxBitrateKbps <= 0 {
 		return spec
 	}
 
-	budgetKbps := (downlinkKbps * 75) / 100
+	budgetKbps := netCtx.MaxBitrateKbps
+	if downlinkKbps > 0 {
+		measuredBudgetKbps := (downlinkKbps * 75) / 100
+		if budgetKbps <= 0 || measuredBudgetKbps < budgetKbps {
+			budgetKbps = measuredBudgetKbps
+		}
+	}
 	audioKbps := spec.AudioBitrateK
 	if audioKbps <= 0 {
 		if downlinkKbps < 1000 {
@@ -388,7 +394,7 @@ func adaptStartProfileForNetworkContext(intent Intent, spec model.ProfileSpec) m
 	}
 
 	maxCeiling := 8000
-	if spec.Name == profiles.ProfileLow || downlinkKbps < 15000 {
+	if spec.Name == profiles.ProfileLow || (downlinkKbps > 0 && downlinkKbps < 15000) || (netCtx.MaxBitrateKbps > 0 && netCtx.MaxBitrateKbps <= 3000) {
 		maxCeiling = 3000
 	} else if spec.VideoMaxRateK > 0 {
 		maxCeiling = spec.VideoMaxRateK

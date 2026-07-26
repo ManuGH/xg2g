@@ -28,6 +28,28 @@ func TestNormalizeRequestedIntent(t *testing.T) {
 	})
 }
 
+func TestNormalizeClientRequestedIntent(t *testing.T) {
+	for _, raw := range []string{"repair", " REPAIR "} {
+		if got := NormalizeClientRequestedIntent(raw); got != "repair" {
+			t.Fatalf("NormalizeClientRequestedIntent(%q) = %q, want repair", raw, got)
+		}
+	}
+	for _, raw := range []string{"", "auto", "quality", "compatible", "direct", "bandwidth", "av1_hw", "safari_hevc_hw"} {
+		if got := NormalizeClientRequestedIntent(raw); got != "" {
+			t.Fatalf("NormalizeClientRequestedIntent(%q) = %q, want auto/empty", raw, got)
+		}
+	}
+}
+
+func TestUsesAutoCodecSelection(t *testing.T) {
+	if !UsesAutoCodecSelection("") || !UsesAutoCodecSelection("auto") || !UsesAutoCodecSelection("quality") {
+		t.Fatal("automatic and quality planning must use codec selection")
+	}
+	if UsesAutoCodecSelection("repair") || UsesAutoCodecSelection("bandwidth") {
+		t.Fatal("repair and rolling-upgrade bandwidth callers must preserve their fixed codec policy")
+	}
+}
+
 func TestPublicIntentName(t *testing.T) {
 	cases := map[PlaybackIntent]string{
 		IntentDirect:     "direct",

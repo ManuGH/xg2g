@@ -63,6 +63,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 			DownlinkKbps:      intPtr(940000),
 			InternetValidated: boolPtr(true),
 			Kind:              strPtr("ethernet"),
+			MaxBitrateKbps:    intPtr(2500),
 			Metered:           boolPtr(false),
 		},
 		SupportsHls:       boolPtr(true),
@@ -86,7 +87,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	assert.Equal(t, v3recordings.PlaybackSubjectLive, got.SubjectKind)
 	assert.Equal(t, "v3.1", got.APIVersion)
 	assert.Equal(t, "live", got.SchemaType)
-	assert.Equal(t, "safari", got.RequestedProfile)
+	assert.Equal(t, "", got.RequestedProfile)
 	assert.Equal(t, "alice", got.PrincipalID)
 	assert.Equal(t, "req-123", got.RequestID)
 	assert.Equal(t, "safari", got.ClientProfile)
@@ -127,6 +128,7 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	require.NotNil(t, got.Capabilities.NetworkContext)
 	assert.Equal(t, "ethernet", got.Capabilities.NetworkContext.Kind)
 	assert.Equal(t, 940000, got.Capabilities.NetworkContext.DownlinkKbps)
+	assert.Equal(t, 2500, got.Capabilities.NetworkContext.MaxBitrateKbps)
 	require.NotNil(t, got.Capabilities.NetworkContext.Metered)
 	assert.False(t, *got.Capabilities.NetworkContext.Metered)
 	require.NotNil(t, got.Capabilities.NetworkContext.InternetValidated)
@@ -158,12 +160,12 @@ func TestBuildPlaybackInfoServiceRequest_RecordingDefaults(t *testing.T) {
 	assert.Nil(t, got.Capabilities)
 }
 
-func TestBuildPlaybackInfoServiceRequest_RecordingPreservesExplicitAndroidProfile(t *testing.T) {
+func TestBuildPlaybackInfoServiceRequest_RecordingUsesAndroidProfileOnlyAsClientFamily(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info?profile=android_native", nil)
 
 	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
 
-	assert.Equal(t, "android_native", got.RequestedProfile)
+	assert.Equal(t, "", got.RequestedProfile)
 	assert.Equal(t, "android_native", got.ClientProfile)
 }
 
@@ -181,16 +183,16 @@ func TestBuildPlaybackInfoServiceRequest_FallsBackToProfileHeader(t *testing.T) 
 	assert.Equal(t, "generic", got.ClientProfile)
 }
 
-func TestBuildPlaybackInfoServiceRequest_PlaybackIntentsNeverBecomeClientFamilies(t *testing.T) {
-	// Public intents and internal encoder profile ids share the `profile` field
-	// with genuine client families. Only the latter may set ClientProfile.
+func TestBuildPlaybackInfoServiceRequest_LegacyClientProfilesNormalizeToAuto(t *testing.T) {
+	// Old public intents and internal encoder profile ids are no longer client
+	// overrides. They safely migrate to automatic planning.
 	for _, intent := range []string{"quality", "compatible", "bandwidth", "direct", "av1_hw", "safari_hevc_hw"} {
 		t.Run(intent, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/v3/recordings/rec1/stream-info?profile="+intent, nil)
 
 			got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
 
-			assert.Equal(t, intent, got.RequestedProfile, "intent must still bind the requested profile")
+			assert.Equal(t, "", got.RequestedProfile)
 			assert.Equal(t, "generic", got.ClientProfile, "intent must not be mistaken for a client family")
 		})
 	}
@@ -214,6 +216,6 @@ func TestBuildPlaybackInfoServiceRequest_UnknownProfileFallsBackToUserAgentSniff
 
 	got := BuildPlaybackInfoServiceRequest(req, "rec1", nil, "v3", "compact")
 
-	assert.Equal(t, "quality", got.RequestedProfile)
+	assert.Equal(t, "", got.RequestedProfile)
 	assert.Equal(t, "safari", got.ClientProfile)
 }
