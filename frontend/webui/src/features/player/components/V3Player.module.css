@@ -184,6 +184,9 @@
   object-position: center center;
   background: var(--bg-video);
   transition: opacity 220ms ease;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform;
 }
 
 .videoElementCover {
