@@ -16,7 +16,7 @@
 # Usage:
 #   smoke-live-audio.sh [--fixture PATH] [--expect-audio-bitrate-k N]
 #                       [--expect-audio-renditions N] [--keep]
-#                       [--args-file FILE] [-- <ffmpeg args...>]
+#                       [--args-file FILE] [--no-hwaccel] [-- <ffmpeg args...>]
 #
 # Extract the vector from a running staging instance into an args file (one argument
 # per line, which keeps values containing spaces intact):
@@ -26,7 +26,10 @@
 #   smoke-live-audio.sh --args-file /tmp/args.txt --expect-audio-bitrate-k 320
 #
 # Run it where the pipeline runs: a VAAPI vector (-c:v av1_vaapi) needs /dev/dri, so
-# replay inside the media container rather than on a workstation.
+# replay inside the media container rather than on a workstation. On a GPU-less host
+# (CI, a laptop) pass --no-hwaccel: the hardware encoder is swapped for libx264 and
+# the VAAPI-only options are dropped. The audio contract does not depend on the video
+# encoder, which is the whole point of asserting it separately.
 #
 # Requires: ffmpeg, ffprobe.
 
@@ -37,6 +40,7 @@ EXPECT_AUDIO_KBPS=0
 EXPECT_RENDITIONS=2
 KEEP=0
 ARGS_FILE=""
+NO_HWACCEL=0
 
 die() {
 	echo "❌ $*" >&2
@@ -65,6 +69,10 @@ while [[ $# -gt 0 ]]; do
 	--args-file)
 		ARGS_FILE="$2"
 		shift 2
+		;;
+	--no-hwaccel)
+		NO_HWACCEL=1
+		shift
 		;;
 	--)
 		shift
@@ -173,6 +181,32 @@ for arg in "$@"; do
 		skip_next=1
 		continue
 		;;
+	-reconnect | -reconnect_at_eof | -reconnect_streamed | -reconnect_delay_max | \
+		-reconnect_on_network_error | -reconnect_on_http_error | -icy | -user_agent | -rw_timeout)
+		# HTTP-demuxer options. ffmpeg errors out ("Option reconnect not found")
+		# when the input is a local fixture instead of a URL, so they go with the
+		# input they belong to. They carry no meaning for the audio contract.
+		DROPPED+=("${arg} <value>")
+		skip_next=1
+		continue
+		;;
+	-protocol_whitelist)
+		# The whitelist exists to constrain what the daemon may open on the
+		# network. A replay reads a local fixture instead, which the production
+		# whitelist (crypto,http,https,tcp,tls) rejects outright.
+		DROPPED+=("-protocol_whitelist <value>")
+		skip_next=1
+		continue
+		;;
+	-vaapi_device | -rc_mode | -async_depth)
+		# VAAPI-only knobs: meaningless once the encoder is libx264, and
+		# -vaapi_device fails outright without /dev/dri.
+		if [[ "${NO_HWACCEL}" == "1" ]]; then
+			DROPPED+=("${arg} <value>")
+			skip_next=1
+			continue
+		fi
+		;;
 	-ss)
 		if [[ "${seen_input}" == "0" ]]; then
 			DROPPED+=("-ss <input seek>")
@@ -190,10 +224,36 @@ for arg in "$@"; do
 			seen_input=1
 		fi
 		;;
-	/var/lib/xg2g/hls/sessions/*)
-		arg="${WORK}/$(basename "${arg}")"
+	*_vaapi)
+		# Substitute the hardware encoder so a GPU-less runner can replay the
+		# vector. The audio contract is unaffected by the video encoder; this is
+		# explicitly a CPU stand-in and is reported as such.
+		if [[ "${NO_HWACCEL}" == "1" && "${ARGS[$((${#ARGS[@]} - 1))]:-}" == "-c:v" ]]; then
+			note "substituted ${arg} -> libx264 (--no-hwaccel)"
+			ARGS+=("libx264" "-preset" "ultrafast")
+			continue
+		fi
 		;;
-	/dev/shm/xg2g/sessions/*)
+	*hwupload*)
+		# The filter chain ends in format=p010le,hwupload, which needs a VAAPI
+		# device. Strip that tail and keep the software filters.
+		if [[ "${NO_HWACCEL}" == "1" ]]; then
+			stripped="${arg%%,format=*hwupload}"
+			[[ "${stripped}" == "${arg}" ]] && stripped="${arg%%,hwupload}"
+			if [[ "${stripped}" == "${arg}" || -z "${stripped}" ]]; then
+				DROPPED+=("-vf <hwaccel-only chain>")
+				unset "ARGS[$((${#ARGS[@]} - 1))]" # drop the preceding -vf
+				continue
+			fi
+			note "stripped hwupload tail from filter chain"
+			ARGS+=("${stripped}")
+			continue
+		fi
+		;;
+	*/sessions/*)
+		# Every output path (playlists, segment pattern, fMP4 init pattern) points at
+		# the session directory, wherever it is configured — /var/lib/xg2g/hls,
+		# /dev/shm/xg2g, or a test temp dir. Move them all into the workdir.
 		arg="${WORK}/$(basename "${arg}")"
 		;;
 	esac

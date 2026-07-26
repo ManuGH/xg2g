@@ -500,7 +500,7 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 	}
 
 	args = append(args, "-c:v", codec)
-	args = append(args, "-preset", preset)
+	args = append(args, "-preset", encoderPreset(codec, preset))
 	tune := "zerolatency"
 	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") {
 		tune = strings.TrimSpace(a.SafariDirtyX264Tune)
