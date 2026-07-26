@@ -18,7 +18,7 @@ func TestAppendLiveAudioArgsSupportsPlannerAudioOnlyTranscode(t *testing.T) {
 	}}
 
 	require.Equal(t,
-		[]string{"-c:a", "aac", "-b:a", "160k", "-ac", "2", "-ar", "48000", "-af", "aformat=sample_fmts=s16p", "-sn"},
+		[]string{"-c:a", "aac", "-b:a", "160k", "-ac", "2", "-ar", "48000", "-af", "aformat=sample_fmts=s16p,aresample=async=1", "-sn"},
 		appendLiveAudioArgs(nil, spec, 2),
 	)
 }
@@ -29,7 +29,7 @@ func TestAppendLiveAudioArgsPreservesLegacyCouplingWhenModeUnset(t *testing.T) {
 
 	require.Equal(t, []string{"-c:a", "copy", "-sn"}, appendLiveAudioArgs(nil, copySpec, 2))
 	require.Equal(t,
-		[]string{"-c:a", "aac", "-b:a", "320k", "-ac", "2", "-ar", "48000", "-af", "aformat=sample_fmts=s16p", "-sn"},
+		[]string{"-c:a", "aac", "-b:a", "320k", "-ac", "2", "-ar", "48000", "-af", "aformat=sample_fmts=s16p,aresample=async=1", "-sn"},
 		appendLiveAudioArgs(nil, transcodeSpec, 2),
 	)
 }

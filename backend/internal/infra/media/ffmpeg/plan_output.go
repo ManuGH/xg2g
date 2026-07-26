@@ -173,12 +173,11 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 		res = append(res, "-ac", "2")
 	}
 	res = append(res, "-ar", "48000")
-	if audioCodec == "aac" {
-		res = append(res,
-			// Convert to s16p to sanitize any NaN floating point values from corrupt DVB streams.
-			"-af", "aformat=sample_fmts=s16p",
-		)
-	}
+	
+	// Convert to s16p to sanitize NaN floats from corrupt DVB streams.
+	// Use aresample=async=1 to pad/drop audio to match video timestamps (fixing A/V sync and "fascinating" robotic audio).
+	res = append(res, "-af", "aformat=sample_fmts=s16p,aresample=async=1")
+
 	return append(res, "-sn")
 }
 
