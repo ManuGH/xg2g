@@ -101,7 +101,10 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		}
 	}
 	audioArgs := appendLiveAudioArgs(nil, spec, maxChannels)
-	varMapParts := []string{"v:0,a:0,agroup:audio"}
+	// Video variant must stay audio-free: every output audio stream already has its own
+	// rendition variant below, and ffmpeg's hls muxer rejects a stream that appears in two
+	// variant definitions ("Same elementary stream found more than once" -> EINVAL, exit 234).
+	varMapParts := []string{"v:0,agroup:audio"}
 
 	for idx, stream := range ordered {
 		maps = append(maps, fmt.Sprintf("0:%d?", stream.Index))
