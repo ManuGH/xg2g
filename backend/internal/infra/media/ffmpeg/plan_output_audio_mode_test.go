@@ -29,7 +29,7 @@ func TestAppendLiveAudioArgsPreservesLegacyCouplingWhenModeUnset(t *testing.T) {
 
 	require.Equal(t, []string{"-c:a", "copy", "-sn"}, appendLiveAudioArgs(nil, copySpec, 2))
 	require.Equal(t,
-		[]string{"-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000", "-af", "aresample=resampler=soxr:async=1", "-cutoff", "20000", "-sn"},
+		[]string{"-c:a", "aac", "-b:a", "320k", "-ac", "2", "-ar", "48000", "-af", "aresample=resampler=soxr:async=1", "-cutoff", "20000", "-sn"},
 		appendLiveAudioArgs(nil, transcodeSpec, 2),
 	)
 }

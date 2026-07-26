@@ -160,7 +160,7 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 	if audioCodec == "" {
 		audioCodec = "aac"
 	}
-	audioBitrate := "192k"
+	audioBitrate := "320k"
 	if spec.Profile.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
 	}
