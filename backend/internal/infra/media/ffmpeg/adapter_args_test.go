@@ -153,7 +153,7 @@ func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
 
 	audioCodec, ok := valueAfter(args, "-c:a")
 	require.True(t, ok, "live HLS path should still emit an audio codec")
-	assert.Equal(t, "copy", audioCodec, "live HLS path now copies audio for native compatibility")
+	assert.Equal(t, "aac", audioCodec, "live HLS path transcodes audio to AAC for zero startup failure")
 
 	assert.NotContains(t, args, "libx264", "default copy path must not force legacy CPU transcode")
 	assert.NotContains(t, args, "bwdif=mode=send_field:parity=auto:deint=all", "default copy path must not inject deinterlace filters")
