@@ -616,7 +616,7 @@
           "type": "boolean"
         },
         "readySegments": {
-          "default": 1,
+          "default": 4,
           "type": "integer"
         },
         "root": {
