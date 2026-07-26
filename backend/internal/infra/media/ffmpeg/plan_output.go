@@ -168,9 +168,11 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 	res := append(args,
 		"-c:a", audioCodec,
 		"-b:a", audioBitrate,
-		"-ac", "2",
-		"-ar", "48000",
 	)
+	if audioCodec == "aac" {
+		res = append(res, "-ac", "2")
+	}
+	res = append(res, "-ar", "48000")
 	if audioCodec == "aac" {
 		res = append(res,
 			// Convert to s16p to sanitize any NaN floating point values from corrupt DVB streams.
