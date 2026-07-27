@@ -193,6 +193,16 @@ jobs:
     if: always()
     needs: [ci-pr, race-pr]
     steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+
+      # `needs` is evaluated generically below, but the dependency list itself is
+      # manual: a job added to this workflow without being added to `needs` can fail
+      # while this required check stays green. That hole would be invisible, so it is
+      # checked rather than commented.
+      - name: Verify the gate covers every job in this workflow
+        run: ./backend/scripts/ci/verify-ci-gate-covers-jobs.sh .github/workflows/ci.yml ci-gate
+
       - name: Evaluate required jobs
         shell: bash
         env:
