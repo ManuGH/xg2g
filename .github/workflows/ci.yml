@@ -7,31 +7,11 @@ on:
   # No base-branch filter: this repo stacks PRs (e.g. #734 targets
   # refactor/r5-1-guardrail-linter), and a `branches: [main]` filter silently skips
   # every one of them — PR #734 ran nothing but Gitleaks for its whole lifetime.
+  # Not path filtered: a filtered workflow never runs and therefore never reports a
+  # status, and a required check that never reports blocks the PR forever on
+  # "Expected — waiting for status". The job resolves its own scope instead, so the
+  # context is always produced — green in seconds when nothing relevant changed.
   pull_request:
-    paths:
-      - "android/**"
-      - "backend/**/*.go"
-      - ".github/**"
-      - backend/go.mod
-      - backend/go.sum
-      - "backend/api/openapi.yaml"
-      - "backend/config.example.yaml"
-      - "backend/config.generated.example.yaml"
-      - "docs/**"
-      - "backend/e2e/**"
-      - "backend/internal/**"
-      - "Dockerfile"
-      - "Dockerfile.*"
-      - "docker-compose*.yml"
-      - "README.md"
-      - "backend/scripts/**"
-      - "scripts/**"
-      - "Makefile"
-      - "backend/templates/**"
-      - "frontend/webui/**"
-      - "VERSION"
-      - "WORKFLOW.md"
-      - "mk/**"
 
 permissions:
   contents: read
@@ -55,6 +35,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ./backend/scripts/ci/resolve-workflow-scope.sh \
+            '^backend/' '^android/' '^frontend/webui/' '^docs/' '^mk/' '^scripts/' \
+            '^\.github/' '^Dockerfile' '^docker-compose' '^Makefile$' '^README\.md$' \
+            '^VERSION$' '^WORKFLOW\.md$' >> "$GITHUB_OUTPUT"
+
       - name: Token URL gate
         run: |
           set -euo pipefail
@@ -66,9 +60,11 @@ jobs:
 
 
       - name: Set Reproducible Build Headers
+        if: steps.scope.outputs.relevant == 'true'
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
 
       - name: Setup Go
+        if: steps.scope.outputs.relevant == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
@@ -80,9 +76,11 @@ jobs:
           GOTOOLCHAIN: auto
 
       - name: Verify Go toolchain policy
+        if: steps.scope.outputs.relevant == 'true'
         run: ./backend/scripts/check-go-toolchain.sh
 
       - name: Verify modules
+        if: steps.scope.outputs.relevant == 'true'
         run: |
           set -euo pipefail
           cd backend
@@ -90,6 +88,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum
 
       - name: Install golangci-lint (built with runner Go)
+        if: steps.scope.outputs.relevant == 'true'
         run: |
           set -euo pipefail
           cd backend
@@ -97,6 +96,7 @@ jobs:
           golangci-lint --version
 
       - name: Setup Node
+        if: steps.scope.outputs.relevant == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version-file: .node-version
@@ -104,6 +104,7 @@ jobs:
           cache-dependency-path: frontend/webui/package-lock.json
 
       - name: Install check-jsonschema
+        if: steps.scope.outputs.relevant == 'true'
         run: |
           set -euo pipefail
           python3 -m pip install --user check-jsonschema==0.34.1
@@ -111,9 +112,16 @@ jobs:
           check-jsonschema --version
 
       - name: Run PR gate bundle
+        if: steps.scope.outputs.relevant == 'true'
         # The default PR gate is intentionally deterministic and must not
         # depend on optional ffmpeg/system-package availability.
         run: make ci-pr
+
+      - name: Out of scope
+        if: steps.scope.outputs.relevant != 'true'
+        run: |
+          echo "PR gate bundle skipped: ${{ steps.scope.outputs.reason }}"
+          echo "The check still reports green so it stays usable as a required check."
 
   race-pr:
     name: CI / Race Detector (live concurrency packages)
@@ -129,7 +137,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ./backend/scripts/ci/resolve-workflow-scope.sh \
+            '^backend/' '^android/' '^frontend/webui/' '^docs/' '^mk/' '^scripts/' \
+            '^\.github/' '^Dockerfile' '^docker-compose' '^Makefile$' '^README\.md$' \
+            '^VERSION$' '^WORKFLOW\.md$' >> "$GITHUB_OUTPUT"
+
       - name: Setup Go
+        if: steps.scope.outputs.relevant == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
@@ -140,9 +163,48 @@ jobs:
           GOTOOLCHAIN: auto
 
       - name: Run scoped race detector
+        if: steps.scope.outputs.relevant == 'true'
         # Packages where the live transcode/session concurrency lives. These
         # are exactly the packages a fix to the session/ffmpeg/bus hot path
         # touches, and they were previously only covered by the nightly
         # full ./... -race run (ci-deep-scheduled.yml) — too late to block a
         # regression merging. Scoped + deterministic (no ffmpeg binary needed).
         run: make test-race-pr
+
+      - name: Out of scope
+        if: steps.scope.outputs.relevant != 'true'
+        run: |
+          echo "Race detector skipped: ${{ steps.scope.outputs.reason }}"
+          echo "The check still reports green so it stays usable as a required check."
+
+  # Stable aggregate context for branch protection. Requiring individual job names
+  # couples the protection rules to job titles: renaming or splitting a job silently
+  # turns its required context into "Expected — waiting for status" and blocks every
+  # merge. This job's name is the contract; the jobs behind it can change freely.
+  #
+  # always() so it also runs when a needed job failed or was skipped. It accepts only
+  # success or a deliberate skip — failure and cancelled must go red. The evaluation
+  # is generic over needs, so adding a job to this workflow extends the gate without
+  # touching branch protection.
+  ci-gate:
+    name: CI / Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [ci-pr, race-pr]
+    steps:
+      - name: Evaluate required jobs
+        shell: bash
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "  \(.key): \(.value.result)"'
+          bad="$(echo "$NEEDS" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | .key + " (" + .value.result + ")"')"
+          if [ -n "$bad" ]; then
+            echo "❌ CI gate failed, these jobs did not succeed:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "✅ CI gate passed"
+

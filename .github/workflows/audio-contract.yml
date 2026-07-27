@@ -21,20 +21,13 @@ on:
       - "backend/internal/control/http/v3/intents/**"
       - "backend/scripts/smoke-live-audio.sh"
       - ".github/workflows/audio-contract.yml"
-  # Deliberately not filtered by base branch. This repo stacks PRs (#734 targets
-  # refactor/r5-1-guardrail-linter, not main), and every gate that filters on
-  # `branches: [main]` silently skips those — which is how a red test and an
-  # unformatted file travelled unnoticed on 2026-07-26. A pipeline change deserves
-  # this gate wherever it is proposed.
+  # Neither base-branch nor path filtered. Base filter: this repo stacks PRs (#734
+  # targets refactor/r5-1-guardrail-linter), and `branches: [main]` silently skips
+  # those. Path filter: a filtered workflow never runs, so it never reports a status,
+  # and a required check that never reports blocks the PR forever on
+  # "Expected — waiting for status". Scope is resolved inside the job instead, so the
+  # context is always produced — green in seconds when nothing relevant changed.
   pull_request:
-    paths:
-      - "backend/internal/infra/media/ffmpeg/**"
-      - "backend/internal/domain/playbackplanner/**"
-      - "backend/internal/domain/playbackprofile/**"
-      - "backend/internal/pipeline/profiles/**"
-      - "backend/internal/control/http/v3/intents/**"
-      - "backend/scripts/smoke-live-audio.sh"
-      - ".github/workflows/audio-contract.yml"
 
 permissions:
   contents: read
@@ -55,8 +48,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ./backend/scripts/ci/resolve-workflow-scope.sh \
+            '^backend/internal/infra/media/ffmpeg/' \
+            '^backend/internal/domain/playbackplanner/' \
+            '^backend/internal/domain/playbackprofile/' \
+            '^backend/internal/pipeline/profiles/' \
+            '^backend/internal/control/http/v3/intents/' \
+            '^backend/scripts/smoke-live-audio\.sh$' \
+            '^backend/scripts/ci/resolve-workflow-scope\.sh$' \
+            '^\.github/workflows/audio-contract\.yml$' >> "$GITHUB_OUTPUT"
 
       - name: Setup Go
+        if: steps.scope.outputs.relevant == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
@@ -66,6 +81,7 @@ jobs:
           cache: false
 
       - name: Install ffmpeg
+        if: steps.scope.outputs.relevant == 'true'
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -79,6 +95,7 @@ jobs:
           }
 
       - name: Build the live argument vector from the real arg builder
+        if: steps.scope.outputs.relevant == 'true'
         run: |
           set -euo pipefail
           cd backend
@@ -91,6 +108,7 @@ jobs:
           echo
 
       - name: Replay the vector and assert the audio contract
+        if: steps.scope.outputs.relevant == 'true'
         run: |
           set -euo pipefail
           # Expect what the vector itself requested: this asserts that ffmpeg honored
@@ -105,6 +123,7 @@ jobs:
             --expect-audio-renditions 2
 
       - name: Negative control (the gate must be able to fail)
+        if: steps.scope.outputs.relevant == 'true'
         run: |
           set -euo pipefail
           # A smoke test that cannot fail is decoration. Assert a deliberately wrong
@@ -121,3 +140,9 @@ jobs:
             exit 1
           fi
           echo "✅ harness fails as expected when the bitrate is wrong"
+
+      - name: Out of scope
+        if: steps.scope.outputs.relevant != 'true'
+        run: |
+          echo "Audio contract gate skipped its work: ${{ steps.scope.outputs.reason }}"
+          echo "The check still reports green so it stays usable as a required check."

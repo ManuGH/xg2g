@@ -14,14 +14,10 @@ on:
   # No base-branch filter: this repo stacks PRs (e.g. #734 targets
   # refactor/r5-1-guardrail-linter), and a `branches: [main]` filter silently skips
   # every one of them — PR #734 ran nothing but Gitleaks for its whole lifetime.
+  # Also not path filtered: a filtered workflow never runs and therefore never
+  # reports, and a required check that never reports blocks the PR on
+  # "Expected — waiting for status". Scope is resolved inside the job instead.
   pull_request:
-    paths:
-      - "backend/**/*.go"
-      - "backend/go.mod"
-      - "backend/go.sum"
-      - "mk/**"
-      - ".github/workflows/coverage.yml"
-      - "Makefile"
 
 permissions:
   contents: read
@@ -41,8 +37,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+
+      - name: Resolve scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ./backend/scripts/ci/resolve-workflow-scope.sh \
+            '^backend/.*\.go$' \
+            '^backend/go\.(mod|sum)$' \
+            '^mk/' \
+            '^Makefile$' \
+            '^backend/scripts/ci/resolve-workflow-scope\.sh$' \
+            '^\.github/workflows/coverage\.yml$' >> "$GITHUB_OUTPUT"
 
       - name: Setup Go
+        if: steps.scope.outputs.relevant == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
@@ -50,6 +66,7 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Install ffmpeg
+        if: steps.scope.outputs.relevant == 'true'
         run: |
           set -euo pipefail
           if command -v ffmpeg >/dev/null 2>&1; then
@@ -61,6 +78,7 @@ jobs:
           ffmpeg -version | head -n 1
 
       - name: Run coverage
+        if: steps.scope.outputs.relevant == 'true'
         id: coverage
         run: |
           set -euo pipefail
@@ -99,7 +117,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Enforce coverage threshold
-        if: vars.COVERAGE_MIN != ''
+        if: steps.scope.outputs.relevant == 'true' && vars.COVERAGE_MIN != ''
         run: |
           set -euo pipefail
           total="${{ steps.coverage.outputs.total }}"
@@ -113,8 +131,10 @@ jobs:
           echo "Coverage gate passed: ${total}% >= ${minimum}%"
 
       - name: Upload coverage artifact
+        # always() so a failing threshold still uploads the report, but only when the
+        # coverage run actually happened.
+        if: always() && steps.scope.outputs.relevant == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.4.3
-        if: always()
         with:
           name: coverage-report
           path: |
@@ -122,3 +142,9 @@ jobs:
             artifacts/coverage.txt
             artifacts/coverage.html
           retention-days: 14
+
+      - name: Out of scope
+        if: steps.scope.outputs.relevant != 'true'
+        run: |
+          echo "Coverage skipped its work: ${{ steps.scope.outputs.reason }}"
+          echo "The check still reports green so it stays usable as a required check."
