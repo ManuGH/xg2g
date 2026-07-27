@@ -8,7 +8,6 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -161,39 +160,20 @@ func (s *Server) exposureRateLimitWhitelisted(r *http.Request, cfg config.AppCon
 	return ip != nil && middleware.IsIPAllowed(ip, allowed)
 }
 
+// exposureClientKey identifies the caller for per-class exposure rate limiting.
+// It delegates to the shared resolver so this limiter, the global API limiter
+// and LANGuard can never disagree about who a request came from — three
+// slightly different copies of the trusted-proxy walk is how that drifts.
 func (s *Server) exposureClientKey(r *http.Request, cfg config.AppConfig) string {
-	remoteIP := requestRemoteIP(r)
-	if remoteIP == nil {
+	trusted, err := middleware.ParseCIDRs(splitCSVNonEmpty(cfg.TrustedProxies))
+	if err != nil {
+		trusted = nil // Unparseable config: trust nothing, fall back to the socket peer.
+	}
+	ip := middleware.ResolveClientIP(r, trusted)
+	if ip == nil {
 		return "unknown"
 	}
-
-	trusted, err := middleware.ParseCIDRs(splitCSVNonEmpty(cfg.TrustedProxies))
-	if err != nil || !middleware.IsIPAllowed(remoteIP, trusted) {
-		return remoteIP.String()
-	}
-
-	for _, candidate := range forwardedForIPs(r.Header.Get("X-Forwarded-For")) {
-		if !middleware.IsIPAllowed(candidate, trusted) {
-			return candidate.String()
-		}
-	}
-	for _, candidate := range forwardedForIPs(r.Header.Get("X-Forwarded-For")) {
-		return candidate.String()
-	}
-	return remoteIP.String()
-}
-
-func forwardedForIPs(raw string) []net.IP {
-	parts := strings.Split(raw, ",")
-	out := make([]net.IP, 0, len(parts))
-	for _, v := range slices.Backward(parts) {
-		candidate := net.ParseIP(strings.TrimSpace(v))
-		if candidate == nil {
-			continue
-		}
-		out = append(out, candidate)
-	}
-	return out
+	return ip.String()
 }
 
 func (s *Server) logExposureRateLimit(r *http.Request, operationID string, policy authz.ExposurePolicy) {
