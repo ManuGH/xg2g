@@ -100,6 +100,36 @@ Before submitting a Pull Request, please ensure:
 - [ ] No regression markers (`FIXME`, `TODO`) left in production code.
 - [ ] Commit messages follow the project convention.
 
+## How Pull Requests Are Gated
+
+Branch protection on `main` requires four status checks. They are deliberately
+*aggregate* contexts, not individual job names — requiring a job name couples the
+protection rules to job titles, so renaming or splitting a job silently turns its
+required context into a permanent "Expected — waiting for status" block:
+
+| Required check | Covers |
+| --- | --- |
+| `CI / Gate` | every job in `ci.yml` (PR gate bundle, race detector) |
+| `Required Gates` | WebUI build + browser smoke |
+| `Go Coverage Report` | coverage run and threshold |
+| `Audio Contract / ffmpeg replay` | replays the daemon's real ffmpeg argument vector against a synthetic DVB fixture |
+
+None of these workflows filter on `paths:`. A filtered workflow does not run at all,
+so it never reports a status, and a required check that never reports blocks the PR
+forever. Each job resolves its own scope instead
+(`backend/scripts/ci/resolve-workflow-scope.sh`) and reports a green no-op in seconds
+when the diff does not touch its area.
+
+### `strict` is off, deliberately
+
+Required checks run with `strict: false`, so a PR does not have to be rebased onto the
+latest `main` before merging. This trades a little safety for a lot of churn: with
+`strict: true` every merge invalidates every other open PR's checks, and this repo
+stacks PRs on top of each other. The residual risk is real though — two PRs that are
+individually green can break `main` together. If merge frequency rises, the answer is a
+merge queue rather than `strict: true`, because a queue tests the actual merge result
+without serialising every author.
+
 ## Code of Conduct
 
 Please read and follow the [Code of Conduct](CODE_OF_CONDUCT.md).
