@@ -22,20 +22,30 @@ type RateLimitConfig struct {
 	RequestLimit int
 	// WindowSize is the time window for rate limiting
 	WindowSize time.Duration
-	// KeyFunc extracts the rate limit key from the request (e.g., IP address)
-	// If nil, defaults to IP-based rate limiting
+	// KeyFunc extracts the rate limit key from the request (e.g., IP address).
+	// If nil, the key is the client IP resolved via TrustedProxies.
 	KeyFunc func(r *http.Request) (string, error)
 	// Whitelist is a list of IPs or CIDRs to exempt from rate limiting
 	Whitelist []string
+	// TrustedProxies are the upstream hops allowed to assert a client's identity
+	// via X-Forwarded-For. Empty means forwarding headers are ignored entirely
+	// and the socket peer is the key.
+	TrustedProxies []*net.IPNet
 }
 
 // RateLimit creates a rate limiting middleware using the httprate library.
 // It uses a sliding window counter algorithm for accurate rate limiting.
+//
+// The default key is ResolveClientIP, NOT httprate.KeyByIP or
+// httprate.KeyByRealIP. KeyByIP buckets by the socket peer, which behind a
+// reverse proxy puts every client on the planet into one shared bucket — one
+// abusive client then rate-limits everybody. KeyByRealIP reads X-Forwarded-For
+// with no trust boundary at all, which lets any client forge a fresh identity
+// per request. Only a trusted-chain walk avoids both failure modes.
 func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
-	// Default to IP-based rate limiting if no key function provided
 	keyFunc := cfg.KeyFunc
 	if keyFunc == nil {
-		keyFunc = httprate.KeyByIP
+		keyFunc = KeyByTrustedProxyChain(cfg.TrustedProxies)
 	}
 
 	whitelistIPs, whitelistNets := parseWhitelist(cfg.Whitelist)
@@ -62,9 +72,12 @@ func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		limitedNext := limiter(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Check whitelist
+			// Check whitelist against the same resolved identity the limiter
+			// buckets by, so an exemption cannot be claimed by a spoofed header
+			// or missed because a proxy masked the real client.
 			if len(whitelistIPs) > 0 || len(whitelistNets) > 0 {
-				if clientIP := requestIP(r); clientIP != nil && isWhitelisted(clientIP, whitelistIPs, whitelistNets) {
+				if clientIP := ResolveClientIP(r, cfg.TrustedProxies); clientIP != nil &&
+					isWhitelisted(clientIP, whitelistIPs, whitelistNets) {
 					next.ServeHTTP(w, r)
 					return
 				}
@@ -89,7 +102,7 @@ func RefreshRateLimit() func(http.Handler) http.Handler {
 // capacity to configure. The former api.rateLimit.burst knob is deprecated and inert — see
 // DeprecatedBurstWarning. (The working burst lives elsewhere, on the Enigma2 client's
 // x/time/rate token bucket, and is unrelated to this API limiter.)
-func APIRateLimit(enabled bool, rps int, whitelist []string) func(http.Handler) http.Handler {
+func APIRateLimit(enabled bool, rps int, whitelist []string, trustedProxies []*net.IPNet) func(http.Handler) http.Handler {
 	if !enabled {
 		// Passthrough if disabled
 		return func(next http.Handler) http.Handler {
@@ -98,7 +111,7 @@ func APIRateLimit(enabled bool, rps int, whitelist []string) func(http.Handler) 
 	}
 
 	if rps <= 0 {
-		rps = 100 // Default safety net
+		rps = defaultAPIRateLimitRPS // Default safety net
 	}
 
 	// Sliding window logic: Window is 1 minute.
@@ -106,10 +119,63 @@ func APIRateLimit(enabled bool, rps int, whitelist []string) func(http.Handler) 
 	limit := rps * 60
 
 	return RateLimit(RateLimitConfig{
-		RequestLimit: limit,
-		WindowSize:   time.Minute,
-		Whitelist:    whitelist,
+		RequestLimit:   limit,
+		WindowSize:     time.Minute,
+		Whitelist:      whitelist,
+		TrustedProxies: trustedProxies,
 	})
+}
+
+// defaultAPIRateLimitRPS is the fallback when no API rate limit is configured.
+const defaultAPIRateLimitRPS = 100
+
+// PreflightRateLimitMultiplier sets how much more headroom CORS preflights get
+// than ordinary API calls.
+//
+// Preflights need their own, much larger budget rather than sharing the API
+// bucket. A browser issues one preflight per non-simple cross-origin request, so
+// a single legitimate page load can emit a burst of them; charged against the
+// API budget, an active UI would throttle itself out of its own backend. They
+// still must not be unlimited — before this split they bypassed rate limiting
+// entirely, because the CORS middleware answered and returned before the limiter
+// ever ran, leaving an unmetered amplification path open to anyone.
+const PreflightRateLimitMultiplier = 10
+
+// PreflightRateLimit returns a rate limiter sized for CORS preflight traffic.
+// Mount it so that only OPTIONS requests reach it.
+func PreflightRateLimit(enabled bool, rps int, whitelist []string, trustedProxies []*net.IPNet) func(http.Handler) http.Handler {
+	if !enabled {
+		return func(next http.Handler) http.Handler {
+			return next
+		}
+	}
+
+	if rps <= 0 {
+		rps = defaultAPIRateLimitRPS
+	}
+
+	return RateLimit(RateLimitConfig{
+		RequestLimit:   rps * PreflightRateLimitMultiplier * 60,
+		WindowSize:     time.Minute,
+		Whitelist:      whitelist,
+		TrustedProxies: trustedProxies,
+	})
+}
+
+// OnlyMethod applies mw exclusively to requests using the given method, letting
+// everything else pass straight through. It is what keeps the preflight limiter
+// from metering ordinary API traffic.
+func OnlyMethod(method string, mw func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		wrapped := mw(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == method {
+				wrapped.ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // DeprecatedAPIRateLimitBurstDefault is the historical default of the now-inert
@@ -154,19 +220,9 @@ func parseWhitelist(entries []string) ([]net.IP, []*net.IPNet) {
 	return ips, nets
 }
 
-func requestIP(r *http.Request) net.IP {
-	if ipStr, err := httprate.KeyByIP(r); err == nil && ipStr != "" {
-		if ip := net.ParseIP(ipStr); ip != nil {
-			return ip
-		}
-	}
-
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	return net.ParseIP(host)
-}
+// requestIP was the old socket-peer-only lookup used for whitelist checks.
+// Client identity now comes from ResolveClientIP so the whitelist and the
+// limiter bucket agree; see RateLimit.
 
 func isWhitelisted(ip net.IP, ips []net.IP, nets []*net.IPNet) bool {
 	for _, allowed := range ips {

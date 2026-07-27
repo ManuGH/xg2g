@@ -1,22 +1,29 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
 package middleware
 
 import (
-	"fmt"
 	"net"
 	"net/http"
-	"slices"
-	"strings"
 
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
+// LANGuardConfig configures a client-IP allowlist gate.
+//
+// NOTE: LANGuard is currently exercised only by tests (internal/control/http/v3
+// auth_strict_test.go); no production route mounts RequireLAN. Wiring it would
+// add a LAN restriction the daemon does not have today, so that decision is
+// deliberately left to the operator rather than made here.
 type LANGuardConfig struct {
-	// allowedCIDRs defines which CLIENT IPs can access the protected resource.
-	// If empty, defaults to RFC1918 ranges.
+	// AllowedCIDRs defines which CLIENT IPs can access the protected resource.
+	// If empty, defaults to RFC1918 ranges plus loopback.
 	AllowedCIDRs []string
 
-	// trustedProxyCIDRs defines which UPSTREAM IPs (RemoteAddr) are trusted to set X-Forwarded-For.
-	// If empty, X-Forwarded-For is ALWAYS IGNORED.
+	// TrustedProxyCIDRs defines which UPSTREAM IPs (RemoteAddr) are trusted to
+	// set X-Forwarded-For. If empty, X-Forwarded-For is ALWAYS IGNORED.
 	TrustedProxyCIDRs []string
 }
 
@@ -26,7 +33,6 @@ type LANGuard struct {
 }
 
 func NewLANGuard(cfg LANGuardConfig) (*LANGuard, error) {
-	// Parse Allowed Clients (LAN)
 	clientCIDRs := cfg.AllowedCIDRs
 	if len(clientCIDRs) == 0 {
 		clientCIDRs = []string{
@@ -41,7 +47,6 @@ func NewLANGuard(cfg LANGuardConfig) (*LANGuard, error) {
 		return nil, err
 	}
 
-	// Parse Trusted Proxies
 	trustedProxies, err := ParseCIDRs(cfg.TrustedProxyCIDRs)
 	if err != nil {
 		return nil, err
@@ -50,40 +55,11 @@ func NewLANGuard(cfg LANGuardConfig) (*LANGuard, error) {
 	return &LANGuard{allowedClient: allowedClients, trustedProxy: trustedProxies}, nil
 }
 
-func ParseCIDRs(cidrs []string) ([]*net.IPNet, error) {
-	var nets []*net.IPNet
-	for _, c := range cidrs {
-		if strings.TrimSpace(c) == "" {
-			continue
-		}
-		// Try CIDR first
-		_, n, err := net.ParseCIDR(c)
-		if err == nil {
-			nets = append(nets, n)
-			continue
-		}
-
-		// Try single IP
-		ip := net.ParseIP(strings.TrimSpace(c))
-		if ip != nil {
-			bits := 32
-			if ip.To4() == nil {
-				bits = 128
-			}
-			mask := net.CIDRMask(bits, bits)
-			n = &net.IPNet{IP: ip, Mask: mask}
-			nets = append(nets, n)
-			continue
-		}
-
-		return nil, fmt.Errorf("invalid CIDR or IP: %s", c)
-	}
-	return nets, nil
-}
-
 func (g *LANGuard) RequireLAN(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := g.resolveClientIP(r)
+		// Client-IP resolution is shared with the rate limiter so the two can
+		// never disagree about who a request came from — see ResolveClientIP.
+		ip := ResolveClientIP(r, g.trustedProxy)
 		logger := log.WithComponentFromContext(r.Context(), "authz.lan")
 
 		if ip == nil {
@@ -99,80 +75,4 @@ func (g *LANGuard) RequireLAN(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func IsIPAllowed(ip net.IP, subnets []*net.IPNet) bool {
-	ip = ip.To16()
-	if ip == nil {
-		return false
-	}
-	for _, n := range subnets {
-		if n.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-// resolveClientIP determines the true client IP using right-to-left traversal.
-// Policy:
-// 1. Start with RemoteAddr.
-// 2. If RemoteAddr is NOT in TrustedProxyCIDRs, return RemoteAddr.
-// 3. If RemoteAddr IS Trusted, parse X-Forwarded-For.
-// 4. Iterate XFF IPs from Right-to-Left.
-// 5. Skip IPs that are present in TrustedProxyCIDRs.
-// 6. Return the first non-trusted IP found.
-// 7. If all XFF IPs are trusted, fallback to RemoteAddr (or the leftmost trusted).
-func (g *LANGuard) resolveClientIP(r *http.Request) net.IP {
-	remoteIPStr, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-	if err != nil {
-		remoteIPStr = strings.TrimSpace(r.RemoteAddr)
-	}
-	remoteIP := net.ParseIP(remoteIPStr)
-	if remoteIP == nil {
-		return nil
-	}
-
-	// If RemoteAddr is NOT trusted, we must ignore headers
-	if !IsIPAllowed(remoteIP, g.trustedProxy) {
-		return remoteIP
-	}
-
-	// Remote is trusted; inspect XFF
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff == "" {
-		// Try X-Real-IP as a fallback for single-proxy setups
-		// But only if XFF is missing, to avoid confusion
-		xrip := r.Header.Get("X-Real-IP")
-		if xrip != "" {
-			ip := net.ParseIP(strings.TrimSpace(xrip))
-			if ip != nil {
-				return ip
-			}
-		}
-		return remoteIP
-	}
-
-	// Parse XFF list
-	parts := strings.Split(xff, ",")
-	// Traverse Right-to-Left
-	for _, v := range slices.Backward(parts) {
-		ipPart := strings.TrimSpace(v)
-		ip := net.ParseIP(ipPart)
-		if ip == nil {
-			continue
-		}
-
-		// If this IP is trusted, it's just another proxy hop -> skip
-		if IsIPAllowed(ip, g.trustedProxy) {
-			continue
-		}
-
-		// Found the first non-trusted IP -> The Real Client
-		return ip
-	}
-
-	// If we get here, all IPs in XFF were trusted.
-	// Fallback to RemoteAddr (or could be construed as the 'edge' trusted proxy).
-	return remoteIP
 }

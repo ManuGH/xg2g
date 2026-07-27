@@ -6,6 +6,7 @@ package middleware
 
 import (
 	"net"
+	"net/http"
 
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/go-chi/chi/v5"
@@ -37,6 +38,10 @@ type StackConfig struct {
 
 	// Rate limiting (API). No burst field: the API limiter is a window counter (httprate)
 	// with no burst capacity; the api.rateLimit.burst knob is deprecated/inert.
+	//
+	// TrustedProxies (above) doubles as the limiter's trust boundary: it decides
+	// whether a request is bucketed by its socket peer or by the client IP that
+	// its proxy chain vouches for. See ResolveClientIP.
 	EnableRateLimit    bool
 	RateLimitEnabled   bool
 	RateLimitGlobalRPS int
@@ -54,44 +59,83 @@ func NewRouter(cfg StackConfig) *chi.Mux {
 }
 
 // ApplyStack applies the canonical middleware stack to r.
+//
+// Ordering is load-bearing, in particular around CORS and rate limiting:
+//
+//   - Security headers and the request ID are stamped before anything can
+//     reject a request, so a 429 is as well-formed and as traceable as a 200.
+//   - CORS response headers are stamped before both limiters, so a rate-limit
+//     rejection reaches the browser as a readable 429 rather than an opaque
+//     CORS failure that hides the real cause from the UI.
+//   - Preflights are metered by their own generous limiter and answered
+//     afterwards. Previously CORS answered OPTIONS and returned at this point in
+//     the chain, so preflights never reached the limiter at all — an unmetered
+//     path anyone could amplify.
+//   - The API limiter stays innermost, metering only what actually continues on
+//     to the router, so browser preflight volume cannot consume the budget that
+//     real API calls depend on.
+//
+// If r is a *chi.Mux the preflight responder is bound to it and advertises the
+// methods each path genuinely accepts; otherwise it falls back to a static list.
 func ApplyStack(r chi.Router, cfg StackConfig) {
 	// 1. Recoverer (outermost safety net)
 	r.Use(Recoverer)
 	// 2. RequestID (correlation early)
 	r.Use(RequestID)
-	// 2b. Body-size backstop (bound memory before any handler reads the body)
+	// 3. Body-size backstop (bound memory before any handler reads the body)
 	if cfg.MaxRequestBodyBytes > 0 {
 		r.Use(MaxBodyBytes(cfg.MaxRequestBodyBytes))
 	}
-	// 2c. Compression (response transform; only touches text-ish content types,
+	// 4. Compression (response transform; only touches text-ish content types,
 	// never media segments, so it sits outside the per-request logic below).
 	if cfg.EnableCompression {
 		r.Use(Compression())
 	}
-	// 3. CORS (so OPTIONS and browser clients behave)
-	if cfg.EnableCORS {
-		r.Use(CORS(cfg.AllowedOrigins, cfg.CORSAllowCredentials))
-	}
-	// 4. CSRF (fail-closed for state-changing requests)
-	r.Use(CSRFProtection(cfg.AllowedOrigins))
-	// 5. Security headers
+	// 5. Security headers (before any rejection, so 4xx/5xx carry them too)
 	if cfg.EnableSecurityHeaders {
 		r.Use(SecurityHeaders(cfg.CSP, cfg.TrustedProxies))
 	}
-	// 6. Metrics (track all requests)
+	// 6. CORS response headers (stamp only; never short-circuits)
+	if cfg.EnableCORS {
+		r.Use(CORSHeaders(cfg.AllowedOrigins, cfg.CORSAllowCredentials))
+	}
+	// 7. Preflight rate limit (OPTIONS only, separate generous budget)
+	if cfg.EnableRateLimit {
+		r.Use(OnlyMethod(http.MethodOptions, PreflightRateLimit(
+			cfg.RateLimitEnabled, cfg.RateLimitGlobalRPS, cfg.RateLimitWhitelist, cfg.TrustedProxies,
+		)))
+	}
+	// 8. Preflight responder (answers OPTIONS, route-aware where possible)
+	if cfg.EnableCORS {
+		r.Use(Preflight(routeMatcherFor(r)))
+	}
+	// 9. CSRF (fail-closed for state-changing requests)
+	r.Use(CSRFProtection(cfg.AllowedOrigins))
+	// 10. Metrics (track all requests)
 	if cfg.EnableMetrics {
 		r.Use(Metrics())
 	}
-	// 7. Tracing (distributed tracing with OpenTelemetry)
+	// 11. Tracing (distributed tracing with OpenTelemetry)
 	if cfg.TracingService != "" {
 		r.Use(Tracing(cfg.TracingService))
 	}
-	// 8. Logging (wraps handlers, captures full latency)
+	// 12. Logging (wraps handlers, captures full latency)
 	if cfg.EnableLogging {
 		r.Use(xglog.Middleware())
 	}
-	// 9. Rate limit (global protection)
+	// 13. Rate limit (global protection, keyed by resolved client IP)
 	if cfg.EnableRateLimit {
-		r.Use(APIRateLimit(cfg.RateLimitEnabled, cfg.RateLimitGlobalRPS, cfg.RateLimitWhitelist))
+		r.Use(APIRateLimit(
+			cfg.RateLimitEnabled, cfg.RateLimitGlobalRPS, cfg.RateLimitWhitelist, cfg.TrustedProxies,
+		))
 	}
+}
+
+// routeMatcherFor returns r as a RouteMatcher when it can answer route queries,
+// or nil to make the preflight responder fall back to its static method list.
+func routeMatcherFor(r chi.Router) RouteMatcher {
+	if m, ok := r.(RouteMatcher); ok {
+		return m
+	}
+	return nil
 }

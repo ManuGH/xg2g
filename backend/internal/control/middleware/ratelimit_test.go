@@ -146,7 +146,7 @@ func TestAPIRateLimit_Configuration(t *testing.T) {
 
 	// Apply API rate limiter: Enabled=true, RPS=1 (60 RPM), Whitelist=nil. No burst param —
 	// the window limiter has no burst capacity (see DeprecatedBurstWarning).
-	limitedHandler := APIRateLimit(true, 1, nil)(handler)
+	limitedHandler := APIRateLimit(true, 1, nil, nil)(handler)
 
 	// Make 60 requests (at limit)
 	for i := 0; i < 60; i++ {
