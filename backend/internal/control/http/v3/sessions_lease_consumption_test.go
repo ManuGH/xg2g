@@ -36,6 +36,31 @@ func TestRenewLeaseFromConsumption_ExtendsStaleLease(t *testing.T) {
 	require.GreaterOrEqual(t, updated.LastHeartbeatUnix, now.Unix(), "renewal must reset the idempotency window")
 }
 
+func TestRenewLeaseFromConsumption_DVRWindowSurvivesBackgroundSuspension(t *testing.T) {
+	s, st := newV3TestServer(t, t.TempDir())
+	s.cfg.Sessions.LeaseTTL = 120 * time.Second
+
+	sessionID := "550e8400-e29b-41d4-a716-446655440106"
+	now := time.Now().UTC()
+	require.NoError(t, st.PutSession(context.Background(), &model.SessionRecord{
+		SessionID:          sessionID,
+		State:              model.SessionReady,
+		ServiceRef:         "1:0:1:445D:453:1:C00000:0:0:0:",
+		Profile:            model.ProfileSpec{DVRWindowSec: 7200},
+		HeartbeatInterval:  30,
+		LeaseExpiresAtUnix: now.Add(20 * time.Second).Unix(),
+		LastHeartbeatUnix:  now.Add(-31 * time.Second).Unix(),
+	}))
+
+	s.renewLeaseFromConsumption(context.Background(), sessionID)
+
+	updated, err := st.GetSession(context.Background(), sessionID)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.GreaterOrEqual(t, updated.LeaseExpiresAtUnix, now.Add(2*time.Hour+119*time.Second).Unix())
+	require.LessOrEqual(t, updated.LeaseExpiresAtUnix, time.Now().Add(2*time.Hour+121*time.Second).Unix())
+}
+
 func TestRenewLeaseFromConsumption_IdempotentWithinInterval(t *testing.T) {
 	s, st := newV3TestServer(t, t.TempDir())
 	s.cfg.Sessions.LeaseTTL = 120 * time.Second

@@ -3,6 +3,9 @@ package intents
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
@@ -10,8 +13,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
-	"strconv"
-	"time"
 )
 
 func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profileSpec model.ProfileSpec) *Error {
@@ -137,7 +138,10 @@ func (s *Service) buildStartSession(intent Intent, resolution startProfileResolu
 	session.Profile = startupProfile
 	session.CorrelationID = intent.CorrelationID
 	session.GenerationID = fmt.Sprintf("gen_%d", now.UnixNano())
-	session.LeaseExpiresAtUnix = now.Add(s.deps.SessionLeaseTTL()).Unix()
+	session.LeaseExpiresAtUnix = now.Add(model.SessionInactivityTTL(
+		s.deps.SessionLeaseTTL(),
+		startupProfile.DVRWindowSec,
+	)).Unix()
 	session.HeartbeatInterval = int(s.deps.SessionHeartbeatInterval().Seconds())
 	session.ContextData = buildStartRequestParams(intent, resolution)
 	session.PlaybackTrace = &model.PlaybackTrace{

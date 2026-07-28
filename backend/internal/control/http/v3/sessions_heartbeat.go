@@ -86,12 +86,20 @@ func (s *Server) handleSessionHeartbeat(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	// 4. Extend lease (backend-controlled, best-effort)
-	// ADR-009: Use config TTL (CTO Patch 1 - NO hardcoded + 60)
-	newExpiry := time.Now().Add(cfg.Sessions.LeaseTTL).Unix()
+	// 4. Extend lease (backend-controlled, best-effort). DVR sessions retain
+	// their complete configured timeshift window plus the normal lease as
+	// foreground-resume grace; live-only sessions keep the short lease.
+	newExpiry := session.LeaseExpiresAtUnix
 
 	_, err = store.UpdateSession(ctx, sessionID, func(s *model.SessionRecord) error {
-		s.LeaseExpiresAtUnix = newExpiry
+		candidateExpiry := time.Unix(now, 0).Add(model.SessionInactivityTTL(
+			cfg.Sessions.LeaseTTL,
+			s.Profile.DVRWindowSec,
+		)).Unix()
+		if candidateExpiry > s.LeaseExpiresAtUnix {
+			s.LeaseExpiresAtUnix = candidateExpiry
+		}
+		newExpiry = s.LeaseExpiresAtUnix
 		s.LastHeartbeatUnix = now
 		return nil
 	})
