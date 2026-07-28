@@ -1,0 +1,6 @@
+Operational changes in v3.9.0:
+- Guided Linux Setup Wizard: Added interactive `infra/systemd/setup-linux.sh` and comprehensive `docs/guides/INSTALLATION.md` for guided systemd/Docker deployments, receiver credentials, GPU selection, and storage setup.
+- Dedicated DVR Scratch Mounts: Supported portable dedicated DVR scratch mounts with fail-closed capacity reporting and automatic workspace discovery.
+- Response Deadlines: Enforced route-aware response deadlines with full preservation of v3 auth/scope parity.
+- Repository Layout Modernization: Restructured repository topology into canonical `apps/` (applications) and `infra/` (operations) hierarchies with root purity gates.
+- Security & Preflight Hardening: Hardened proxy-aware rate limiting, CORS preflight handling, and dependency vulnerability checks.
