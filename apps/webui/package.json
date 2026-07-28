@@ -1,0 +1,63 @@
+{
+  "name": "webui",
+  "private": true,
+  "version": "3.5.1",
+  "type": "module",
+  "engines": {
+    "node": "^24.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "generate-client": "openapi-ts --input ../../backend/api/openapi.yaml --output ./src/client-ts",
+    "design:check": "bash scripts/verify-no-hardcoded-colors.sh && bash scripts/verify-motion-contract.sh && bash scripts/verify-no-window-dialogs.sh && bash scripts/verify-no-btn-classes.sh",
+    "gate:no-appledouble": "node scripts/no-appledouble.mjs",
+    "gate:no-duration-guessing": "node scripts/no-duration-guessing.mjs",
+    "gate:no-raw-json-fetch": "node scripts/no-raw-json-fetch.mjs",
+    "gate:no-raw-error-text": "node scripts/no-raw-error-text.mjs",
+    "gate:no-client-decision-engine": "node scripts/no-client-decision-engine.mjs",
+    "gate:no-ua-sniffing": "node scripts/no-ua-sniffing.mjs",
+    "gate:no-seek-resume-guessing": "node scripts/no-seek-resume-guessing.mjs",
+    "verify:client-wrapper": "bash scripts/verify-client-wrapper-boundary.sh",
+    "gate:seekable-contract": "vitest run tests/contracts/v3player.seekable-gate.test.tsx",
+    "gate:mode-bridge": "vitest run tests/contracts/v3player.mode-bridge.test.ts",
+    "lint": "eslint . && bash ../../backend/scripts/ci_gate_webui_logging.sh && npm run design:check",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@tanstack/react-query": "^5.101.2",
+    "hls.js": "^1.6.16",
+    "i18next": "^26.3.6",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-i18next": "^17.0.9",
+    "react-router": "8.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@hey-api/openapi-ts": "^0.99.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "24.13.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "eslint": "^10.7.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "fast-check": "^4.9.0",
+    "globals": "^17.7.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.9.1",
+    "typescript-eslint": "^8.63.0",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "js-yaml": "^4.2.0"
+  }
+}

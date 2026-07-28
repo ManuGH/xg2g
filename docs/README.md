@@ -3,6 +3,12 @@
 Start with your role. Each lane links only the docs you need; the full
 directory and contributor governance are at the bottom.
 
+For the authoritative repository, runtime, network, storage, API, WebUI, and
+lifecycle snapshot as of 2026-07-28, read the
+[Current 2026 System Overview](arch/SYSTEM_OVERVIEW_2026.md). Historical ADRs,
+release notes, audits, and dated incident sections remain evidence of the state
+at that time; they do not override the current overview or active contracts.
+
 ## Run xg2g — User
 
 You want to stream your Enigma2 receiver in a browser.
@@ -10,7 +16,8 @@ You want to stream your Enigma2 receiver in a browser.
 | Step | Document |
 | :--- | :--- |
 | Get streaming, step by step | [Getting Started](guides/GETTING_STARTED.md) |
-| Install in one command | [Quickstart](../README.md#quickstart) |
+| Install a complete Linux server | [Complete Linux Installation](guides/INSTALLATION.md) |
+| Evaluate locally in one container | [Local Evaluation Quickstart](../README.md#local-evaluation-quickstart) |
 | Set the essential options | [Configuration → Essential](guides/CONFIGURATION.md#essential-start-here) |
 | Full configuration reference | [Configuration Guide](guides/CONFIGURATION.md) |
 | Understand playback & codecs | [Codec Matrix](arch/CODEC_MATRIX.md) |
@@ -23,7 +30,9 @@ You run xg2g as a service for others.
 
 | Task | Document |
 | :--- | :--- |
+| Install from an empty Linux host | [Complete Linux Installation](guides/INSTALLATION.md) |
 | Deploy (systemd / Compose) | [Deployment Guide](ops/DEPLOYMENT.md) |
+| Understand the current runtime | [2026 System Overview](arch/SYSTEM_OVERVIEW_2026.md) |
 | Security operations | [Security](ops/SECURITY.md) |
 | Browser / client playback policy | [Client Profiles](ops/CLIENT_PROFILES.md) |
 | Runbooks & incident response | [Operations Index](ops/README.md) |

@@ -77,6 +77,16 @@ func TestValidateEnvUsage_RuntimeKeyAllowed(t *testing.T) {
 	}
 }
 
+func TestKnownRuntimeEnvKeys_IncludesHostStorageContractKey(t *testing.T) {
+	known := make(map[string]struct{})
+	for _, key := range KnownRuntimeEnvKeys() {
+		known[key] = struct{}{}
+	}
+	if _, ok := known["XG2G_HLS_REQUIRE_MOUNT"]; !ok {
+		t.Fatal("host storage contract key must not be reported as an unknown runtime flag")
+	}
+}
+
 func TestKnownRuntimeEnvKeys_IncludesDirectReadEnvKeys(t *testing.T) {
 	// These keys are read directly via env helpers (envIntBounded/envFloatBounded/
 	// envBool/ParseBool) in the ffmpeg/pipeline packages, outside the config loader,

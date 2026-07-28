@@ -1,0 +1,21 @@
+[Unit]
+Description=xg2g managed Caddy HTTPS edge
+Wants=network-online.target
+After=network-online.target docker.service xg2g.service
+Requires=docker.service
+ConditionPathExists=/etc/xg2g/Caddyfile
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStartPre=-/usr/bin/docker rm -f xg2g-caddy
+ExecStart=/usr/bin/docker run --rm --name xg2g-caddy --network host --read-only --tmpfs /tmp --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges:true -v /etc/xg2g/Caddyfile:/etc/caddy/Caddyfile:ro -v /var/lib/xg2g-caddy/data:/data -v /var/lib/xg2g-caddy/config:/config caddy:2.11.4-alpine caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecStop=/usr/bin/docker stop -t 20 xg2g-caddy
+TimeoutStartSec=120
+TimeoutStopSec=30
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

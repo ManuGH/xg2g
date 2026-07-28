@@ -31,7 +31,7 @@ make workspace-clean-aggressive
 - Script removes only clean auxiliary worktrees (`.worktrees/*`, `/tmp/xg2g-*`).
 - Dirty worktrees are skipped and must be handled manually.
 - Reproducible local build/test outputs (`artifacts/`, `test-results/`,
-  `playwright-report/`, coverage output, `frontend/webui/dist/`) are removed.
+  `playwright-report/`, coverage output, `apps/webui/dist/`) are removed.
 - `make workspace-clean-aggressive` also removes local `bin/` outputs.
 - Runtime and dependency state (`data/`, `logs/`, `node_modules/`, `.venv/`) is
   reported but intentionally kept.

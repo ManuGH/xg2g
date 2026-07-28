@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const manifestFile = path.join(repoRoot, 'backend/contracts/ui_consumption.manifest.json');
-const outputFile = path.join(repoRoot, 'frontend/webui/src/types/api/consumption.d.ts');
+const outputFile = path.join(repoRoot, 'apps/webui/src/types/api/consumption.d.ts');
 
 const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf-8'));
 const entries = manifest.entries || [];

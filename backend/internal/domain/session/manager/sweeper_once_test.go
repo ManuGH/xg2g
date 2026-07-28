@@ -207,6 +207,51 @@ func TestSweeper_SweepOnce_IdleTimeout(t *testing.T) {
 	assert.Equal(t, model.RIdleTimeout, got.Reason, "Reason should be RIdleTimeout")
 }
 
+func TestSweeper_SweepOnce_DVRSessionRetainsConfiguredWindow(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+	orch := &Orchestrator{
+		Store:            st,
+		Bus:              NewStubBus(),
+		Pipeline:         stub.NewAdapter(),
+		Platform:         NewStubPlatform(),
+		LeaseTTL:         30 * time.Second,
+		HeartbeatEvery:   10 * time.Second,
+		Owner:            "sweeper-dvr-retention-test",
+		StartConcurrency: 5,
+		StopConcurrency:  5,
+		HLSRoot:          "/tmp/test",
+	}
+	sweeper := &Sweeper{
+		Orch:      orch,
+		RecoverFn: func(context.Context) error { return nil },
+		Conf: SweeperConfig{
+			IdleTimeout:      5 * time.Minute,
+			SessionRetention: 24 * time.Hour,
+		},
+	}
+	now := time.Now()
+	sessionID := "sess-dvr-background"
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:            sessionID,
+		State:                model.SessionReady,
+		ServiceRef:           "ref:dvr",
+		Profile:              model.ProfileSpec{DVRWindowSec: 7200},
+		LastAccessUnix:       now.Add(-30 * time.Minute).Unix(),
+		PlaylistPublishedAt:  now.Add(-30 * time.Minute),
+		LastPlaylistAccessAt: now.Add(-30 * time.Minute),
+		LatestSegmentAt:      now.Add(-2 * time.Second),
+		LeaseExpiresAtUnix:   now.Add(90 * time.Minute).Unix(),
+	}))
+
+	sweeper.SweepOnce(ctx)
+
+	got, err := st.GetSession(ctx, sessionID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, model.SessionReady, got.State)
+}
+
 func TestSweeper_SweepOnce_NeverConsumedSessionStopsAfterInitialGrace(t *testing.T) {
 	ctx := context.Background()
 	st := store.NewMemoryStore()

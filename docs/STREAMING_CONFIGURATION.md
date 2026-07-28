@@ -133,8 +133,10 @@ The live DVR is a **rolling** window: `XG2G_HLS_DVR_WINDOW` controls how far bac
 you can rewind. ffmpeg keeps `ceil(window / segmentSeconds)` segments on disk and
 prunes the oldest as new ones arrive (`-hls_flags delete_segments`), so an active
 session never grows past **one window's worth**, and its segments are freed when
-the session ends. Disk to provision therefore scales with `window × bitrate ×
-concurrent streams`.
+the session ends. A consumed DVR session remains active through its concrete
+window plus `sessions.lease_ttl` as resume grace, including while a mobile
+browser is suspended; an explicit stop still ends it immediately. Disk to
+provision therefore scales with `window × bitrate × concurrent streams`.
 
 Rule of thumb (decimal GB):
 

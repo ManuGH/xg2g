@@ -38,6 +38,11 @@ These files are useful operational truth, but are not primary product state.
 
 These artifacts live under `XG2G_HLS_ROOT` and are intentionally not treated as authoritative product state.
 
+On hosts with a dedicated DVR scratch mount, set
+`XG2G_HLS_REQUIRE_MOUNT=true`. Startup then fails instead of writing HLS data
+onto the system disk when that mount is missing. See
+[Linux Storage Layout](STORAGE_LAYOUT.md).
+
 | Class | Path | Backup | Verify | Purpose |
 | :--- | :--- | :--- | :--- | :--- |
 | Transient dir | `$XG2G_HLS_ROOT/sessions/` | No | No | Ephemeral live session playlists, segments, and first-frame markers |
@@ -57,6 +62,18 @@ These are runtime or generated artifacts. They are usually better rebuilt than b
 ## Backup Strategy
 
 Always take a backup before upgrading `xg2g`.
+
+Guided installations enable `xg2g-backup.timer`, which creates an online,
+checksum-manifested archive of all top-level durable SQLite databases, the
+durable JSON files, and `/etc/xg2g/xg2g.env`:
+
+```bash
+sudo xg2g-admin backup
+```
+
+Archives are mode `0600` under `/var/backups/xg2g`. The default retention is
+14 days and can be changed with `XG2G_BACKUP_RETENTION_DAYS`. HLS/DVR scratch
+and receiver recordings are intentionally excluded.
 
 ### 1. Online SQLite backup
 
@@ -84,6 +101,18 @@ sqlite3 "$XG2G_STORE_PATH/sessions.sqlite" "VACUUM INTO '/var/backups/xg2g/sessi
 3. Copy the file-backed state from `XG2G_DATA_DIR` that you want to preserve.
 
 ## Restore Strategy
+
+For a backup created by the installed lifecycle helper:
+
+```bash
+sudo xg2g-admin restore \
+  /var/backups/xg2g/xg2g-backup-YYYYMMDDTHHMMSSZ.tar.gz --yes
+```
+
+The helper rejects unsafe archive paths, verifies every manifest checksum,
+creates a safety backup, stops the service only for the replacement, restores
+the state/configuration, fixes runtime ownership, and starts the service again
+when it was previously active.
 
 1. Stop `xg2g`.
 2. Restore the target `.sqlite` files under `XG2G_STORE_PATH`.

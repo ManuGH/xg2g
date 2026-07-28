@@ -20,9 +20,7 @@ import (
 // Note: One can tune the behavior of uniqueItems: true verification
 // by registering a custom function with openapi3.RegisterArrayUniqueItemsChecker
 func ValidateResponse(ctx context.Context, input *ResponseValidationInput) error {
-	req := input.RequestValidationInput.Request
-	switch req.Method {
-	case "HEAD":
+	if req := input.RequestValidationInput.Request; req.Method == http.MethodHead {
 		return nil
 	}
 	status := input.Status
@@ -63,7 +61,7 @@ func ValidateResponse(ctx context.Context, input *ResponseValidationInput) error
 		return &ResponseError{Input: input, Reason: "response has not been resolved"}
 	}
 
-	opts := make([]openapi3.SchemaValidationOption, 0, 3+len(options.SchemaValidationOptions))
+	var opts []openapi3.SchemaValidationOption
 	if options.MultiError {
 		opts = append(opts, openapi3.MultiErrors())
 	}
@@ -75,6 +73,9 @@ func ValidateResponse(ctx context.Context, input *ResponseValidationInput) error
 	}
 	// Append additional schema validation options (e.g., document-scoped format validators)
 	opts = append(opts, options.SchemaValidationOptions...)
+	if route.Spec.IsOpenAPI31OrLater() {
+		opts = append(opts, openapi3.EnableJSONSchema2020())
+	}
 
 	headers := make([]string, 0, len(response.Headers))
 	for k := range response.Headers {

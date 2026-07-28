@@ -7,7 +7,7 @@ cd "$REPO_ROOT"
 # The generated @hey-api/openapi-ts TypeScript client must stay in lock-step with
 # the OpenAPI contract (backend/api/openapi.yaml). Regenerate and fail on drift —
 # mirrors verify-embedded-webui-dist for the embedded WebUI bundle.
-TARGET_PATH="frontend/webui/src/client-ts"
+TARGET_PATH="apps/webui/src/client-ts"
 
 before_diff="$(mktemp)"
 after_diff="$(mktemp)"
@@ -25,7 +25,7 @@ git ls-files --others --exclude-standard -- "$TARGET_PATH" | LC_ALL=C sort > "$a
 
 if ! cmp -s "$before_diff" "$after_diff" || ! cmp -s "$before_untracked" "$after_untracked"; then
   echo "❌ Generated TS API client drift detected."
-  echo "   frontend/webui/src/client-ts is out of sync with backend/api/openapi.yaml."
+  echo "   apps/webui/src/client-ts is out of sync with backend/api/openapi.yaml."
   echo "   Run: make generate-client   (then commit the regenerated client)"
   echo ""
   echo "Status for tracked scope:"

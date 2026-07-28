@@ -1,7 +1,7 @@
 paths:
-  - frontend/webui
+  - apps/webui
   - backend/scripts
 paths-ignore:
-  - frontend/webui/src/client-ts
-  - frontend/webui/tests
+  - apps/webui/src/client-ts
+  - apps/webui/tests
   - backend/internal/control/http/dist

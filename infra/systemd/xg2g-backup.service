@@ -1,0 +1,12 @@
+[Unit]
+Description=xg2g durable-state backup
+After=xg2g.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/xg2g-admin backup
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+UMask=0077

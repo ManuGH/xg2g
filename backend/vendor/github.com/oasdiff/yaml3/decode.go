@@ -30,12 +30,13 @@ import (
 // Parser, produces a node tree out of a libyaml event stream.
 
 type parser struct {
-	parser   yaml_parser_t
-	event    yaml_event_t
-	doc      *Node
-	anchors  map[string]*Node
-	doneInit bool
-	textless bool
+	parser            yaml_parser_t
+	event             yaml_event_t
+	doc               *Node
+	anchors           map[string]*Node
+	doneInit          bool
+	textless          bool
+	disableTimestamps bool
 }
 
 func newParser(b []byte) *parser {
@@ -175,7 +176,7 @@ func (p *parser) node(kind Kind, defaultTag, tag, value string) *Node {
 	} else if defaultTag != "" {
 		tag = defaultTag
 	} else if kind == ScalarNode {
-		tag, _ = resolve("", value)
+		tag, _ = resolve("", value, p.disableTimestamps)
 	}
 	n := &Node{
 		Kind:  kind,
@@ -186,6 +187,13 @@ func (p *parser) node(kind Kind, defaultTag, tag, value string) *Node {
 	if !p.textless {
 		n.Line = p.event.start_mark.line + 1
 		n.Column = p.event.start_mark.column + 1
+		// end_mark is the position just past this event. For scalars and aliases
+		// it already spans the whole node. For mappings and sequences this is the
+		// MAPPING-START/SEQUENCE-START event, so it only marks the start for now;
+		// mapping()/sequence() overwrite it from the matching END event so the
+		// span covers the whole block.
+		n.EndLine = p.event.end_mark.line + 1
+		n.EndColumn = p.event.end_mark.column + 1
 		n.HeadComment = string(p.event.head_comment)
 		n.LineComment = string(p.event.line_comment)
 		n.FootComment = string(p.event.foot_comment)
@@ -263,6 +271,26 @@ func (p *parser) sequence() *Node {
 	}
 	n.LineComment = string(p.event.line_comment)
 	n.FootComment = string(p.event.foot_comment)
+	// End at the last item's end so the span reaches the end of the actual
+	// content, consistent with scalars/aliases. The SEQUENCE-END token sits at
+	// the start of the following line after a block dedent, which would
+	// overshoot the element. Empty sequences fall back to that token's mark.
+	if !p.textless {
+		if n.Style&FlowStyle != 0 {
+			// Flow collections close with an explicit `}`/`]`; the END token's
+			// mark is just past that delimiter, so the span covers the whole
+			// collection (and stays consistent with the empty-flow fallback,
+			// which has no last child and uses the same mark).
+			n.EndLine = p.event.end_mark.line + 1
+			n.EndColumn = p.event.end_mark.column + 1
+		} else if len(n.Content) > 0 {
+			last := n.Content[len(n.Content)-1]
+			n.EndLine, n.EndColumn = last.EndLine, last.EndColumn
+		} else {
+			n.EndLine = p.event.end_mark.line + 1
+			n.EndColumn = p.event.end_mark.column + 1
+		}
+	}
 	p.expect(yaml_SEQUENCE_END_EVENT)
 	return n
 }
@@ -303,6 +331,28 @@ func (p *parser) mapping() *Node {
 		n.Content[len(n.Content)-2].FootComment = n.FootComment
 		n.FootComment = ""
 	}
+	// End at the last entry's value end so the span reaches the end of the
+	// actual content, consistent with scalars/aliases. The MAPPING-END token
+	// sits at the start of the following line after a block dedent, which would
+	// overshoot the element. Empty mappings fall back to that token's mark.
+	// (Origin __origin__ nodes are appended later, during decode, so the last
+	// element here is a real value.)
+	if !p.textless {
+		if n.Style&FlowStyle != 0 {
+			// Flow collections close with an explicit `}`/`]`; the END token's
+			// mark is just past that delimiter, so the span covers the whole
+			// collection (and stays consistent with the empty-flow fallback,
+			// which has no last child and uses the same mark).
+			n.EndLine = p.event.end_mark.line + 1
+			n.EndColumn = p.event.end_mark.column + 1
+		} else if len(n.Content) > 0 {
+			last := n.Content[len(n.Content)-1]
+			n.EndLine, n.EndColumn = last.EndLine, last.EndColumn
+		} else {
+			n.EndLine = p.event.end_mark.line + 1
+			n.EndColumn = p.event.end_mark.column + 1
+		}
+	}
 	p.expect(yaml_MAPPING_END_EVENT)
 	return n
 }
@@ -318,13 +368,14 @@ type decoder struct {
 	stringMapType  reflect.Type
 	generalMapType reflect.Type
 
-	knownFields bool
-	origin      bool
-	file        string
-	uniqueKeys  bool
-	decodeCount int
-	aliasCount  int
-	aliasDepth  int
+	knownFields       bool
+	origin            bool
+	file              string
+	uniqueKeys        bool
+	decodeCount       int
+	aliasCount        int
+	aliasDepth        int
+	disableTimestamps bool
 
 	mergedFields map[interface{}]bool
 }
@@ -589,7 +640,7 @@ func (d *decoder) scalar(n *Node, out reflect.Value) bool {
 		tag = strTag
 		resolved = n.Value
 	} else {
-		tag, resolved = resolve(n.Tag, n.Value)
+		tag, resolved = resolve(n.Tag, n.Value, d.disableTimestamps)
 		if tag == binaryTag {
 			data, err := base64.StdEncoding.DecodeString(resolved.(string))
 			if err != nil {

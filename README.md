@@ -66,6 +66,47 @@ in the Docker image; size your host for the concurrent streams you expect.
 
 [Read the codec/container matrix](docs/arch/CODEC_MATRIX.md)
 
+## Guided Linux Install
+
+For a persistent Linux installation, download the archive for your architecture
+from [GitHub Releases](https://github.com/ManuGH/xg2g/releases), verify it
+against `checksums.txt`, and confirm the archive contains
+`infra/systemd/setup-linux.sh`. Then extract it and run:
+
+```bash
+sudo ./infra/systemd/setup-linux.sh
+```
+
+Older archives may predate the guided installer. Do not combine current
+installer files with an older release image; the
+[complete installation guide](docs/guides/INSTALLATION.md) includes an
+availability check and the safe interim path.
+
+Do not use GitHub's green **Code → Download ZIP** button for a server install;
+branch ZIPs are mutable source snapshots, not versioned release bundles.
+
+The assistant asks plain-language questions about the receiver, HTTPS/VPN
+access, DVR rewind window, simultaneous streams, storage, and GPU. **Caddy is
+optional and opt-in.** The default HTTPS choice keeps an existing same-host
+nginx, Traefik, Caddy, or other reverse proxy unchanged; setup only verifies
+the URL and xg2g's trusted-proxy contract. Managed public or LAN/VPN Caddy is a
+separate explicit choice for users who do not already have an HTTPS edge.
+
+Setup generates strong secrets, enables daily backups and runtime verification,
+and uses the same pinned systemd/Compose deployment contract as upgrades. It
+never partitions, formats, mounts, or deletes a disk.
+
+After installation, routine administration uses one command:
+
+```bash
+sudo xg2g-admin doctor
+```
+
+[Complete Linux installation](docs/guides/INSTALLATION.md) ·
+[Getting started](docs/guides/GETTING_STARTED.md)
+
+[Current 2026 system overview](docs/arch/SYSTEM_OVERVIEW_2026.md)
+
 ## Local Evaluation Quickstart
 
 This single-container path is for evaluating xg2g from the same host. It is not
@@ -77,7 +118,7 @@ network, and a host with enough CPU for transcoding (x86 hosts can offload video
 encoding to a GPU/iGPU — see Playback Pipeline above)
 
 ```bash
-docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \
+docker run -d --name xg2g --restart unless-stopped -p 127.0.0.1:8088:8088 \
   -e XG2G_E2_HOST="http://192.168.1.10" \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
@@ -109,6 +150,7 @@ encoding.
 
 **Next steps:**
 [Documentation](docs/README.md) •
+[Installation](docs/guides/INSTALLATION.md) •
 [Configuration](docs/guides/CONFIGURATION.md) •
 [Deployment](docs/ops/DEPLOYMENT.md) •
 [Security](docs/ops/SECURITY.md) •
@@ -153,7 +195,7 @@ Docker health checks, and CI-backed release automation are built in.
 
 | | |
 | :--- | :--- |
-| **Get started** | [Documentation Portal](docs/README.md) · [10-Minute Intro](backend/NEW_HERE.md) · [Repository Map](docs/dev/REPO_MAP.md) · [API Reference](https://manugh.github.io/xg2g/) |
+| **Get started** | [Documentation Portal](docs/README.md) · [10-Minute Intro](docs/dev/NEW_HERE.md) · [Repository Map](docs/dev/REPO_MAP.md) · [API Reference](https://manugh.github.io/xg2g/) |
 | **Operate** | [Ops Index](docs/ops/README.md) · [Configuration](docs/guides/CONFIGURATION.md) · [Deployment](docs/ops/DEPLOYMENT.md) · [Client Profiles](docs/ops/CLIENT_PROFILES.md) · [Security](docs/ops/SECURITY.md) |
 | **Develop** | [Dev Index](docs/dev/README.md) · [Architecture Index](docs/arch/README.md) · [Codec Matrix](docs/arch/CODEC_MATRIX.md) · [WebUI Index](docs/webui/README.md) · [CI Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) |
 

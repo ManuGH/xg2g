@@ -38,18 +38,13 @@ ALLOWLIST=(
     "AGENTS.md"
     "ARCHITECTURE.md"
     "CHANGELOG.md"
-    "CODE_OF_CONDUCT.md"
-    "CONTRIBUTING.md"
     "DIGESTS.lock"
     "LICENSE"
     "README.md"
-    "SECURITY.md"
-    "TECHNICAL_DEBT_2026.md"
+    "TECH_DEBT.md"
 
     # Build & container
     "Dockerfile"
-    "Dockerfile.distroless"
-    "Dockerfile.ffmpeg-base"
     "Makefile"
     "mk/"
     "cliff.toml"
@@ -58,8 +53,8 @@ ALLOWLIST=(
 
     # Source directories
     "android/"
+    "apps/"
     "backend/"
-    "frontend/"
     "hack/"
     "scripts/"
 
@@ -67,17 +62,15 @@ ALLOWLIST=(
     "testdata/"
 
     # Infrastructure & deployment
-    "deploy/"
     "design/"
     "docs/"
-    "infrastructure/"
-    "monitoring/"
+    "infra/"
     "openapi/"
     "support/"
 
     # Docker Compose
-    "docker-compose.dev.yml"
-    "docker-compose.monitoring.yml"
+    "compose.dev.yaml"
+    "compose.monitoring.yaml"
 
     # Go workspace
     "go.work"

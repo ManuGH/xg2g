@@ -8,7 +8,7 @@ const fixtureServerUrl = `http://127.0.0.1:${fixtureServerPort}`;
 const baseURL = `http://127.0.0.1:${webuiPort}`;
 const configDir = __dirname;
 const fixtureServerDir = path.resolve(configDir, 'fixture-server');
-const webuiDir = path.resolve(configDir, '../../frontend/webui');
+const webuiDir = path.resolve(configDir, '../../apps/webui');
 
 /**
  * See https://playwright.dev/docs/test-configuration.

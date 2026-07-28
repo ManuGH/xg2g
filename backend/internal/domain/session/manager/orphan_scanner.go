@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg"
@@ -48,20 +49,22 @@ func (o *Orchestrator) ScanAndAdoptOrphans(ctx context.Context) {
 
 		log.L().Info().Str("session_id", state.SessionID).Int("pid", state.PID).Msg("Orphan scanner: adopting session")
 
-		now := time.Now().Unix()
-		adopted := &model.SessionRecord{
-			SessionID:          state.SessionID,
-			ServiceRef:         state.ServiceRef,
-			Profile:            ports.ProfileSpec{Name: state.ProfileID, TranscodeVideo: true},
-			State:              model.SessionReady,
-			PipelineState:      model.PipeServing,
-			Reason:             model.RNone,
-			CreatedAtUnix:      state.CreatedAt,
-			UpdatedAtUnix:      now,
-			LastAccessUnix:     now,
-			ExpiresAtUnix:      now + 30, // Sweeper will extend this when browser requests playlists
-			LeaseExpiresAtUnix: now + 30,
+		nowTime := time.Now()
+		now := nowTime.Unix()
+		adopted, err := lifecycle.NewReadySessionRecord(nowTime)
+		if err != nil {
+			log.L().Error().Err(err).Str("session_id", state.SessionID).Msg("Orphan scanner failed to construct adopted session lifecycle")
+			continue
 		}
+		adopted.SessionID = state.SessionID
+		adopted.ServiceRef = state.ServiceRef
+		adopted.Profile = ports.ProfileSpec{Name: state.ProfileID, TranscodeVideo: true}
+		adopted.PipelineState = model.PipeServing
+		adopted.CreatedAtUnix = state.CreatedAt
+		adopted.UpdatedAtUnix = now
+		adopted.LastAccessUnix = now
+		adopted.ExpiresAtUnix = now + 30 // Sweeper will extend this when browser requests playlists
+		adopted.LeaseExpiresAtUnix = now + 30
 		_ = o.Store.PutSession(ctx, adopted)
 	}
 }

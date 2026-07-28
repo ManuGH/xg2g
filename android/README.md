@@ -16,7 +16,7 @@ Current scope:
 ## Current Approach
 
 The app starts a `WebView` and loads the existing xg2g UI from the server.
-This keeps the backend and `frontend/webui/` as the single source of product
+This keeps the backend and `apps/webui/` as the single source of product
 behavior while still creating a proper Android client shell.
 
 Native additions should be limited to Android-specific concerns such as:
@@ -86,7 +86,7 @@ make android-local-smoke
 
 That helper will:
 
-- build `frontend/webui/` and copy it into `backend/internal/control/http/dist/`
+- build `apps/webui/` and copy it into `backend/internal/control/http/dist/`
 - build the local backend binary
 - start the backend on `http://127.0.0.1:8080`
 - launch the installed Android `dev` app through `adb` with both `base_url` and `auth_token`

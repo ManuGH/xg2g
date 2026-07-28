@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_EXAMPLE="${REPO_ROOT}/.env.example"
 ENV_FILE="${REPO_ROOT}/.env"
-WEBUI_DIR="${REPO_ROOT}/frontend/webui"
+WEBUI_DIR="${REPO_ROOT}/apps/webui"
 NODE_TOOLCHAIN_CHECK="${REPO_ROOT}/backend/scripts/check-node-toolchain.sh"
 LIB_ENV="${REPO_ROOT}/backend/scripts/lib/env.sh"
 

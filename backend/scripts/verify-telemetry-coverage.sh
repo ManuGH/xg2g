@@ -5,7 +5,7 @@ set -e
 # Ensures that significant error paths in V3Player are instrumented with Telemetry.
 # "Significant" means contract/network errors.
 
-TARGET_FILE="frontend/webui/src/components/V3Player.tsx"
+TARGET_FILE="apps/webui/src/components/V3Player.tsx"
 
 echo "--- Verifying Telemetry Coverage ---"
 

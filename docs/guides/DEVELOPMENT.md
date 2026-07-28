@@ -54,7 +54,7 @@ normal help and verification workflows because it restarts crashes indefinitely.
   local path is typically `:8088`)
 - `make dev-ui`: `http://localhost:8080/ui/`
 
-### `run_dev.sh` (Development Loop)
+### `scripts/run_dev.sh` (Development Loop)
 
 - **Purpose**: Rapid iteration and local debugging.
 - **Behavior**: Infinite loop; auto-rebuilds and restarts on crash.
@@ -91,14 +91,16 @@ make webui-dev
 Optional overrides:
 
 - `XG2G_UI_DEV_PROXY_URL=http://127.0.0.1:5173` points the dev backend at a specific Vite instance
-- `XG2G_UI_DEV_DIR=/abs/path/to/frontend/webui/dist` serves a local built bundle instead of Vite
+- `XG2G_UI_DEV_DIR=/abs/path/to/apps/webui/dist` serves a local built bundle instead of Vite
 
 ### System / Production (Hardened Container)
 
 - **Standard**: **OCI Image is Source of Truth for Runtime.**
-- **Supervisor**: **systemd** (manages Docker/Podman lifecycle).
-- **Behavior**: Single execution lifecycle; formal hardening (v3.1.4).
-- **Deployment**: `deploy/sync.sh --apply --ref <tag|sha>` is the only supported
+- **Host contract**: Linux + systemd + Docker Engine with Compose v2.
+- **Supervisor**: **systemd** manages the Docker Compose lifecycle.
+- **Behavior**: One pinned deployment, health, backup, verification, and
+  rollback lifecycle; production is not controlled by development Make targets.
+- **Deployment**: `infra/systemd/sync.sh --apply --ref <tag|sha>` is the only supported
   installation and upgrade entrypoint.
 - **Usage**: Mandatory for releases, sign-offs, and production verification.
 - **Boundary**: Make targets never start or stop a production installation.
@@ -156,7 +158,7 @@ make start
 ```
 
 `make docker-ffmpeg-base` builds `xg2g-ffmpeg:8.1.2` once from
-[Dockerfile.ffmpeg-base](../../Dockerfile.ffmpeg-base).
+[Dockerfile.ffmpeg-base](../../infra/docker/Dockerfile.ffmpeg-base).
 `make docker-dev-fast-build` then builds the development image with
 `XG2G_FFMPEG_BASE_IMAGE=xg2g-ffmpeg:8.1.2`, so the main
 [Dockerfile](../../Dockerfile) can reuse the cached FFmpeg runtime layer instead

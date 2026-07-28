@@ -169,13 +169,7 @@ func (w *LeaseExpiryWorker) requestCleanupStop(ctx context.Context, session *mod
 			return nil
 		}
 		if s.State == model.SessionStopping {
-			if s.StopReason == "" {
-				s.StopReason = stopReason
-			}
-			if s.Reason == "" {
-				s.Reason = model.RLeaseExpired
-			}
-			s.PipelineState = model.PipeStopRequested
+			lifecycle.ApplyRepeatedStopRequest(s, model.RLeaseExpired, stopReason, now)
 			return nil
 		}
 

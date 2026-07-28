@@ -1,6 +1,6 @@
 # Package Layout Policy
 
-**Status:** Active (2026-01-11)
+**Status:** Active (updated 2026-07-28)
 **Scope:** All code in `internal/`
 
 This document defines the **non-negotiable rules** for where code lives in the xg2g codebase.
@@ -18,7 +18,7 @@ This document defines the **non-negotiable rules** for where code lives in the x
 
 ```
 internal/
-├── api/              # HTTP server lifecycle (legacy, being refactored)
+├── api/              # Top-level HTTP lifecycle, composition, compatibility
 ├── app/              # Application bootstrap & wiring (DI container)
 ├── config/           # Configuration parsing, validation, hot-reload
 ├── control/          # Control plane (API handlers, middleware, auth)
@@ -162,14 +162,17 @@ VOD spans multiple layers:
 
 `internal/core` was removed and must not be recreated.
 
-### `internal/api/` - LEGACY
+### `internal/api/` - COMPOSITION BOUNDARY
 
-The old monolithic API server. Being refactored into:
-- `app/bootstrap/` (wiring)
-- `control/http/v3/` (handlers)
-- Feature-specific packages
+The package owns the production server lifecycle, outer router, compatibility
+surface, and governed registration of outer plus v3 routes. New v3 feature
+handlers and operation behavior belong in `control/http/v3/` or a matching
+feature/domain package.
 
-**Rule:** New code goes to the new structure, not `internal/api/`.
+**Rule:** `internal/api` may change for composition, compatibility, or
+cross-cutting ingress behavior. It must not become a second feature-handler
+layer, introduce another production router factory, or register routes outside
+the governed policy adapter.
 
 ---
 
@@ -246,5 +249,5 @@ The name "core" provides no semantic information. It became a second `utils/` pa
 
 ---
 
-**Last updated:** 2026-01-11
+**Last updated:** 2026-07-28
 **Owner:** Engineering

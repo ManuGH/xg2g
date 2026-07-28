@@ -67,7 +67,7 @@ func mapPlaybackInfoToOpenAPI(in v3playbackinfo.PlaybackInfo) PlaybackInfo {
 			switch o.Kind {
 			case "hls":
 				raw, _ := json.Marshal(PlaybackOutputHls{
-					Kind:        Hls,
+					Kind:        PlaybackOutputHlsKindHls,
 					PlaylistUrl: o.Url,
 				})
 				if raw != nil {

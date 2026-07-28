@@ -1,7 +1,9 @@
 # xg2g Architecture Reference
 
 **Author:** Engineering Leadership
-**Date:** 2026-01-11
+**Originally published:** 2026-01-11
+
+**Last updated:** 2026-07-28
 **Status:** Active Reference
 **Audience:** Senior engineers, contributors, code reviewers
 
@@ -148,33 +150,44 @@ c2, _ := bootstrap.WireServices(ctx, ...)
 
 ---
 
-### C) `internal/api/` – HTTP Entry Layer (Legacy, Being Refactored)
+### C) `internal/api/` – Top-Level HTTP Composition And Compatibility
 
 **What Lives Here:**
 
-- `http.go` – Legacy HTTP server (monolithic)
-- `server_impl.go` – `api.Server` struct (holds state, routes)
-- `integration_test.go` – End-to-end API tests
+- server lifecycle and top-level middleware composition
+- the canonical outer chi router and compatibility routes
+- policy-aware production registration for outer and `/api/v3` routes
+- integration, security, inventory, and route-governance tests
 
-**Current State:** **LEGACY**. This is the old structure before `bootstrap/` and `control/http/v3/` existed.
+**Current State (2026-07-28):** This remains the production composition
+boundary. It is not the home for new v3 feature handlers. Those live under
+`control/http/v3`, while `internal/api` mounts them into the server, owns
+compatibility surfaces, and binds deadline/streaming policies to the actual
+production route inventory.
 
-**Refactoring Plan:**
+**Route Construction:**
 
-- Move HTTP lifecycle → `control/http/`
-- Move wiring → `app/bootstrap/`
-- Move handler logic → `control/http/v3/handlers_*.go`
+- `server_routes_wiring.go` is the canonical production and governance router
+  construction path.
+- Outer and v3 adapters share one policy binding registry.
+- Generated v3 routes retain the same household, scope, authentication, and
+  exposure middleware when registered through the production adapter.
+- Compatibility routes are registered once through governed adapters.
+- An independent baseline proves route identity, router ownership, and policy
+  parity.
 
-**Why Still Here:**
+**Ownership Rule:**
 
-- Historical: `api.Server` was the original monolith
-- Incremental refactor: new code goes to `control/http/v3/`, old code stays until migrated
+- New v3 operation behavior belongs in `control/http/v3` and its feature
+  subpackages.
+- Changes in `internal/api` should be limited to server composition,
+  compatibility behavior, cross-cutting ingress, and governed route wiring.
+- Do not add a second production router factory or bypass the policy registrar.
 
 **Import Rules (Current):**
 
 - ✅ MAY import `config/`, `control/`, `domain/`, `infra/`, `library/`
-- ❌ SHOULD NOT grow (add new handlers to `control/http/v3/` instead)
-
-**Tech Debt:** `api.Server` is 1.4MB. Plan: dissolve into feature handlers + bootstrap.
+- ❌ MUST NOT become a second home for v3 feature logic
 
 ---
 

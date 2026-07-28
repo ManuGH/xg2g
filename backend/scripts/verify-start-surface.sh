@@ -48,7 +48,7 @@ run_case() {
     XG2G_DEV_ENV_FILE="${env_file}" \
     "${DEV_COMPOSE}" "${runtime}" ps --all
 
-  assert_eq "root=${REPO_ROOT}/deploy" "$(sed -n '1p' "${capture}")" "${runtime} compose root"
+  assert_eq "root=${REPO_ROOT}/infra/systemd" "$(sed -n '1p' "${capture}")" "${runtime} compose root"
   assert_eq "project=xg2g-dev" "$(sed -n '2p' "${capture}")" "${runtime} project"
   assert_eq "env=${env_file}" "$(sed -n '3p' "${capture}")" "${runtime} env"
   assert_eq "files=${expected_files}" "$(sed -n '4p' "${capture}")" "${runtime} files"
@@ -56,9 +56,9 @@ run_case() {
   assert_eq "args=ps --all" "$(sed -n '6p' "${capture}")" "${runtime} arguments"
 }
 
-run_case base "docker-compose.yml:../docker-compose.dev.yml"
-run_case vaapi "docker-compose.yml:../docker-compose.dev.yml:docker-compose.gpu.yml"
-run_case nvidia "docker-compose.yml:../docker-compose.dev.yml:docker-compose.nvidia.yml"
+run_case base "docker-compose.yml:../../compose.dev.yaml"
+run_case vaapi "docker-compose.yml:../../compose.dev.yaml:docker-compose.gpu.yml"
+run_case nvidia "docker-compose.yml:../../compose.dev.yaml:docker-compose.nvidia.yml"
 
 if XG2G_DEV_COMPOSE_HELPER="${fake_helper}" XG2G_DEV_ENV_FILE="${env_file}" \
   "${DEV_COMPOSE}" invalid ps >/dev/null 2>&1; then

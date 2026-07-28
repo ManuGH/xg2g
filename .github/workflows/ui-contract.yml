@@ -9,23 +9,23 @@ on:
   push:
     branches: [main]
     paths:
-      - "frontend/webui/src/components/**/*.tsx"
-      - "frontend/webui/src/components/**/*.module.css"
-      - "frontend/webui/src/features/**/*.tsx"
-      - "frontend/webui/src/features/**/*.module.css"
-      - "frontend/webui/src/**/*.tsx"
-      - "frontend/webui/src/**/*.css"
+      - "apps/webui/src/components/**/*.tsx"
+      - "apps/webui/src/components/**/*.module.css"
+      - "apps/webui/src/features/**/*.tsx"
+      - "apps/webui/src/features/**/*.module.css"
+      - "apps/webui/src/**/*.tsx"
+      - "apps/webui/src/**/*.css"
       - "backend/scripts/check-ui-contract.sh"
       - ".github/workflows/ui-contract.yml"
   pull_request:
     branches: [main]
     paths:
-      - "frontend/webui/src/components/**/*.tsx"
-      - "frontend/webui/src/components/**/*.module.css"
-      - "frontend/webui/src/features/**/*.tsx"
-      - "frontend/webui/src/features/**/*.module.css"
-      - "frontend/webui/src/**/*.tsx"
-      - "frontend/webui/src/**/*.css"
+      - "apps/webui/src/components/**/*.tsx"
+      - "apps/webui/src/components/**/*.module.css"
+      - "apps/webui/src/features/**/*.tsx"
+      - "apps/webui/src/features/**/*.module.css"
+      - "apps/webui/src/**/*.tsx"
+      - "apps/webui/src/**/*.css"
       - "backend/scripts/check-ui-contract.sh"
       - ".github/workflows/ui-contract.yml"
 
@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            changed_files=$(git ls-files 'frontend/webui/src/**/*.tsx' 'frontend/webui/src/**/*.css' || true)
+            changed_files=$(git ls-files 'apps/webui/src/**/*.tsx' 'apps/webui/src/**/*.css' || true)
           else
             before="${{ github.event.before }}"
             if [ "$before" = "0000000000000000000000000000000000000000" ]; then
@@ -71,13 +71,13 @@ jobs:
           fi
 
           mapfile -t scope_files < <(printf '%s\n' "$changed_files" \
-            | grep -E '^frontend/webui/src/.*\.(tsx|css)$' \
-            | sed -e 's#^frontend/webui/src/##' \
+            | grep -E '^apps/webui/src/.*\.(tsx|css)$' \
+            | sed -e 's#^apps/webui/src/##' \
             | sort -u)
 
           if [ "${#scope_files[@]}" -eq 0 ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo "No frontend/webui/src *.tsx/*.css changes detected"
+            echo "No apps/webui/src *.tsx/*.css changes detected"
             exit 0
           fi
 

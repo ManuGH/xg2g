@@ -5,6 +5,7 @@
 package v3
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -48,4 +49,33 @@ func RegisterCompatibilityRoutes(rRead, rWrite chi.Router, handler Compatibility
 		itemID := chi.URLParam(r, "itemId")
 		handler.PostItemsPlaybackInfo(w, r, itemID)
 	})
+}
+
+// RegisterCompatibilityRoutesWithRegistrars registers the four /api/v3
+// compatibility routes exactly once while preserving their read/write stacks.
+func RegisterCompatibilityRoutesWithRegistrars(
+	readRegistrar, writeRegistrar RouteRegistrar,
+	handler CompatibilityHandler,
+) error {
+	if readRegistrar == nil || writeRegistrar == nil {
+		return fmt.Errorf("compatibility route registrar cannot be nil")
+	}
+	if handler == nil {
+		return fmt.Errorf("compatibility route handler cannot be nil")
+	}
+
+	if err := readRegistrar.Register(http.MethodGet, V3BaseURL+"/vod/{recordingId}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.GetRecordingPlaybackInfo(w, r, chi.URLParam(r, "recordingId"))
+	})); err != nil {
+		return err
+	}
+	if err := readRegistrar.Register(http.MethodHead, V3BaseURL+"/recordings/{recordingId}/stream.mp4", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.StreamRecordingDirect(w, r, chi.URLParam(r, "recordingId"))
+	})); err != nil {
+		return err
+	}
+	if err := writeRegistrar.Register(http.MethodPut, V3BaseURL+"/recordings/{recordingId}/resume", http.HandlerFunc(handler.HandleRecordingResume)); err != nil {
+		return err
+	}
+	return readRegistrar.Register(http.MethodGet, V3BaseURL+"/recordings/continue", http.HandlerFunc(handler.HandleRecordingsContinue))
 }

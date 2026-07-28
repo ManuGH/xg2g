@@ -39,8 +39,8 @@ Hard proof that Safari playback is capability-driven and fail-closed:
 
 ### Gate W — No UA Sniffing (mechanical)
 
-- Script: `frontend/webui/scripts/no-ua-sniffing.mjs`
-- Fails on `navigator.userAgent/platform/vendor/appVersion` in runtime `frontend/webui/src/**`.
+- Script: `apps/webui/scripts/no-ua-sniffing.mjs`
+- Fails on `navigator.userAgent/platform/vendor/appVersion` in runtime `apps/webui/src/**`.
 - Tests/stories/generated client are excluded.
 - Allowlist comment for telemetry-only tags: `ua-telemetry-only`.
 
@@ -52,7 +52,7 @@ Hard proof that Safari playback is capability-driven and fail-closed:
   - `direct_mp4|deny` => no HLS engine
 - Additional availability check:
   - if mapped engine is not available in measured capabilities, fail-closed.
-- Contract test: `frontend/webui/tests/contracts/v3player.mode-bridge.test.ts`.
+- Contract test: `apps/webui/tests/contracts/v3player.mode-bridge.test.ts`.
 
 ### Gate Y — HLS MIME + Playlist Sanity (server-side)
 

@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "Dockerfile.ffmpeg-base"
+      - "infra/docker/Dockerfile.ffmpeg-base"
       - "backend/scripts/build-ffmpeg.sh"
       - "backend/scripts/ffmpeg-wrapper.sh"
       - "backend/scripts/ffprobe-wrapper.sh"
@@ -67,7 +67,7 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: Dockerfile.ffmpeg-base
+          file: infra/docker/Dockerfile.ffmpeg-base
           platforms: ${{ matrix.platform }}
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: ${{ env.IMAGE }}:${{ steps.ffmpeg.outputs.version }}-${{ matrix.arch }}

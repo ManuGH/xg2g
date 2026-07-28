@@ -8,13 +8,13 @@ DOC="${REPO_ROOT}/docs/ops/GENERATED_ARTIFACT_GOVERNANCE.md"
 
 GOVERNED_EXACT=(
   "README.md"
-  "deploy/docker-compose.yml"
+  "infra/systemd/docker-compose.yml"
   "docs/guides/CONFIGURATION.md"
   "docs/guides/CONFIG_SURFACES.md"
   "docs/guides/config.schema.json"
   "docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md"
   "docs/ops/OPERATIONS_MODEL.md"
-  "deploy/xg2g.service"
+  "infra/systemd/xg2g.service"
   "docs/ops/xg2g-verifier.service"
   "docs/ops/xg2g-verifier.timer"
   "backend/config.generated.example.yaml"
@@ -22,12 +22,12 @@ GOVERNED_EXACT=(
   "backend/internal/control/authz/operation_catalog_gen.go"
   "backend/internal/control/http/v3/operation_routes_gen.go"
   "backend/internal/control/http/v3/server_gen.go"
-  "frontend/webui/src/types/api/consumption.d.ts"
+  "apps/webui/src/types/api/consumption.d.ts"
   "openapi/v3.normative.snapshot.yaml"
 )
 
 GOVERNED_PREFIXES=(
-  "frontend/webui/src/client-ts/"
+  "apps/webui/src/client-ts/"
   "backend/internal/control/http/dist/"
 )
 
@@ -178,7 +178,7 @@ verify_doc_contract() {
   assert_contains "${DOC}" 'never committed' "governance doc local-only policy"
   assert_contains "${DOC}" 'ungoverned generated truth' "governance doc ungoverned policy"
   assert_contains "${DOC}" 'backend/internal/control/http/dist/' "governance doc dist prefix"
-  assert_contains "${DOC}" 'frontend/webui/src/client-ts/' "governance doc client prefix"
+  assert_contains "${DOC}" 'apps/webui/src/client-ts/' "governance doc client prefix"
   assert_contains "${DOC}" 'backend/scripts/verify-generated-artifacts-contract.sh' "governance doc verifier path"
 }
 
@@ -205,7 +205,7 @@ verify_marker_coverage() {
     [[ -f "${REPO_ROOT}/${rel}" ]] || continue
 
     case "${rel}" in
-      backend/vendor/*|frontend/webui/dist/*|node_modules/*)
+      backend/vendor/*|apps/webui/dist/*|node_modules/*)
         continue
         ;;
     esac
@@ -218,7 +218,7 @@ verify_marker_coverage() {
 verify_local_only_outputs_not_tracked() {
   local tracked
 
-  tracked="$(git ls-files 'frontend/webui/dist' 'artifacts' 'coverage.out' 'coverage.html')"
+  tracked="$(git ls-files 'apps/webui/dist' 'artifacts' 'coverage.out' 'coverage.html')"
   if [[ -n "${tracked}" ]]; then
     echo "Tracked local-only generated outputs:" >&2
     printf '%s\n' "${tracked}" >&2

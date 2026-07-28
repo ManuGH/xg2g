@@ -38,8 +38,8 @@ Run these commands to verify the milestone end-to-end:
 go test ./backend/internal/health ./backend/internal/api ./backend/internal/daemon
 go test ./backend/internal/storageinventory ./backend/cmd/daemon
 go test ./backend/internal/platform/paths ./backend/internal/control/recordings ./backend/internal/control/vod ./backend/internal/pipeline/api ./backend/internal/infra/media/ffmpeg ./backend/cmd/daemon
-npm --prefix frontend/webui test -- --run src/features/player/components/V3Player.serviceRef.test.tsx
-npm --prefix frontend/webui run type-check
+npm --prefix apps/webui test -- --run src/features/player/components/V3Player.serviceRef.test.tsx
+npm --prefix apps/webui run type-check
 ```
 
 Operational note: `./backend/cmd/daemon` appears in more than one verification command because both startup/runtime wiring and storage verification terminate there.

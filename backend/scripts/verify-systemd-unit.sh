@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CANONICAL_UNIT="deploy/xg2g.service"
+CANONICAL_UNIT="infra/systemd/xg2g.service"
 
 fail() {
   echo "ERROR: $*" >&2

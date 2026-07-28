@@ -4,6 +4,10 @@ set -e
 # verify-v3-shadowing.sh
 # Fails if anonymous struct shadowing or unsafe pointers casts are found in v3 handlers.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$BACKEND_ROOT"
+
 TARGET_DIR="internal/control/http/v3"
 
 echo "--- Checking v3 Handlers for Anonymous Struct Shadowing ---"

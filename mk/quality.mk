@@ -167,7 +167,7 @@ quality-gates-online: verify-generated-artifacts verify-release-output-contract 
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test test-pr ## PR gate check bundle (fast & deterministic)
+ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test test-pr ## PR gate check bundle (fast & deterministic)
 	@echo "✅ PR gate bundle passed"
 
 test-pr: ## Run deterministic unit tests for PR gate (short mode, no binary dependencies)

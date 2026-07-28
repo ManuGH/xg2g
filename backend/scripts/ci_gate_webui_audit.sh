@@ -6,7 +6,7 @@ set -e
 # Fail-closed implementation.
 # Usage: ./ci_gate_webui_audit.sh [--verify-fail]
 
-WEBUI_SRC="frontend/webui/src"
+WEBUI_SRC="apps/webui/src"
 EXIT_CODE=0
 VERIFY_MODE=0
 
@@ -27,8 +27,8 @@ FORBIDDEN=(
 if [ $VERIFY_MODE -eq 1 ]; then
     echo "🧪 Running Negative Test Mode..."
     # Create a dummy violation file
-    mkdir -p frontend/webui/src/test_violation
-    echo "function derivePlaybackDecision() { return 'bad'; }" > frontend/webui/src/test_violation/bad_logic.ts
+    mkdir -p apps/webui/src/test_violation
+    echo "function derivePlaybackDecision() { return 'bad'; }" > apps/webui/src/test_violation/bad_logic.ts
     
     # We expect failure
     set +e
@@ -37,7 +37,7 @@ if [ $VERIFY_MODE -eq 1 ]; then
     set -e
     
     # Cleanup
-    rm -rf frontend/webui/src/test_violation
+    rm -rf apps/webui/src/test_violation
     
     if [ $RESULT -ne 0 ]; then
         echo "✅ Negative Test Passed: Gate correctly caught violation."

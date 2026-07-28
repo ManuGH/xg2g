@@ -4,7 +4,7 @@
 
 | Tool | Version | Notes |
 | :--- | :--- | :--- |
-| **Go** | 1.25.9+ | Pinned in `backend/go.mod` |
+| **Go** | 1.26.5 | Pinned exactly in `backend/go.mod`, `mise.toml`, and `mk/variables.mk` |
 | **Node.js** | 24 LTS | Pinned in `.node-version`, `.nvmrc`, and `mise.toml` |
 | **Docker** | Recent | Required for container builds and integration tests |
 | **Make** | GNU Make | Build orchestration |
@@ -46,7 +46,7 @@ Use `make doctor` on its own when you want to validate the local workspace witho
 make build           # backend binary
 make lint            # static analysis
 cd backend && go test ./...           # backend tests
-cd frontend/webui && npm run test     # frontend tests
+cd apps/webui && npm run test     # frontend tests
 ```
 
 Recommended start paths after setup:

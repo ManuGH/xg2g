@@ -1,16 +1,29 @@
-# Allowlist for time-based tests that are treated as integration/legacy for now.
-# Prefer deterministic harnesses; shrink this list over time.
-internal/control/http/v3/contract_v3_test.go
-internal/control/http/v3/contract_v3_system_refresh_test.go
-internal/control/http/v3/config_update_test.go
-internal/control/http/v3/recordings_hls_reconcile_test.go
-internal/control/vod/mock_runner_test.go
-internal/control/vod/monitor_contract_test.go
-internal/control/vod/cleanup_publish_test.go
-internal/control/recordings/truth_table_test.go
-internal/control/recordings/service_test.go
-internal/control/vod/monitor_test.go
-internal/control/vod/manager_callback_test.go
-internal/control/recordings/truth_test.go
-internal/control/vod/manager_test.go
-internal/control/vod/manager_probed_test.go
+# Timing-based tests that are still integration-style. The count is part of the
+# reviewed exception: adding even one Sleep/Eventually/time.After fails the gate.
+internal/control/auth/session_store_test.go	1
+internal/control/http/ui_deadline_dev_test.go	2
+internal/control/http/v3/config_update_test.go	1
+internal/control/http/v3/contract_v3_system_refresh_test.go	1
+internal/control/http/v3/contract_v3_test.go	2
+internal/control/http/v3/handlers_intents_replay_test.go	2
+internal/control/http/v3/handlers_sessions_feedback_test.go	17
+internal/control/http/v3/recordings/artifacts/resolver_test.go	2
+internal/control/http/v3/recordings/live_probe_budget_test.go	3
+internal/control/http/v3/recordings/playback_info_test.go	3
+internal/control/http/v3/recordings_continue_test.go	1
+internal/control/http/v3/recordings_hls_reconcile_test.go	8
+internal/control/http/v3/sessions_heartbeat_runtime_enforcement_test.go	1
+internal/control/middleware/deadline_integration_test.go	5
+internal/control/recordings/manager_lifecycle_test.go	12
+internal/control/recordings/self_healing_test.go	2
+internal/control/recordings/service_test.go	1
+internal/control/recordings/truth_table_test.go	5
+internal/control/recordings/truth_test.go	3
+internal/control/vod/cleanup_publish_test.go	1
+internal/control/vod/manager_callback_test.go	3
+internal/control/vod/manager_probed_test.go	1
+internal/control/vod/manager_test.go	1
+internal/control/vod/mock_runner_test.go	2
+internal/control/vod/monitor_contract_test.go	3
+internal/control/vod/monitor_test.go	2
+internal/control/vod/recording_cache_evictor_test.go	1

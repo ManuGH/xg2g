@@ -1,0 +1,6 @@
+# Canonical deploy bundle file for the optional /dev/dri GPU overlay.
+# compose-xg2g.sh consumes this marker and materializes runtime device entries
+# only for visible /dev/dri/renderD* nodes. NVIDIA / NVENC hosts use
+# infra/systemd/docker-compose.nvidia.yml instead of this overlay.
+services:
+  xg2g: {}

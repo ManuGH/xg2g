@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 UNIT_TEMPLATE="${REPO_ROOT}/backend/templates/docs/ops/xg2g.service.tmpl"
-CANONICAL_DEPLOY_UNIT="${REPO_ROOT}/deploy/xg2g.service"
+CANONICAL_DEPLOY_UNIT="${REPO_ROOT}/infra/systemd/xg2g.service"
 RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 COMPOSE_HELPER="${REPO_ROOT}/backend/scripts/compose-xg2g.sh"
 COMPOSE_CONTRACT="${REPO_ROOT}/backend/scripts/verify-compose-contract.sh"
@@ -39,7 +39,7 @@ assert_contains() {
   local needle="$2"
   local label="$3"
 
-  grep -Fq "${needle}" "${file}" || fail "${label}: expected '${needle}' in ${file}"
+  grep -Fq -- "${needle}" "${file}" || fail "${label}: expected '${needle}' in ${file}"
 }
 
 assert_regex() {
@@ -58,7 +58,7 @@ verify_unit_render_sync() {
   deploy_body="$(mktemp)"
 
   tail -n +2 "${CANONICAL_DEPLOY_UNIT}" > "${deploy_body}"
-  diff -u "${UNIT_TEMPLATE}" "${deploy_body}" >/dev/null || fail "deploy/xg2g.service drifted from backend/templates/docs/ops/xg2g.service.tmpl"
+  diff -u "${UNIT_TEMPLATE}" "${deploy_body}" >/dev/null || fail "infra/systemd/xg2g.service drifted from backend/templates/docs/ops/xg2g.service.tmpl"
 
   rm -f "${deploy_body}"
 }
@@ -89,6 +89,7 @@ verify_unit_semantics() {
   assert_contains "${unit_file}" "XG2G_API_TOKEN" "unit API token preflight"
   assert_contains "${unit_file}" "XG2G_DECISION_SECRET" "unit decision secret preflight"
   assert_contains "${unit_file}" "need >= 32 bytes for HS256" "unit decision secret length guard"
+  assert_exact_line "${unit_file}" "ExecStartPre=${CANONICAL_HELPER} --storage-check" "unit DVR storage preflight"
   assert_contains "${unit_file}" "${CANONICAL_HELPER} ps -q xg2g" "unit start-post health helper"
   assert_contains "${unit_file}" "docker inspect --format \"{{.State.Health.Status}}\"" "unit health poll"
 
@@ -112,8 +113,11 @@ verify_helper_semantics() {
   assert_contains "${COMPOSE_HELPER}" "COMPOSE_FILE" "compose helper COMPOSE_FILE support"
   assert_contains "${COMPOSE_HELPER}" "assert_secure_env_file" "compose helper secure env guard"
   assert_contains "${COMPOSE_HELPER}" "build_dri_render_overlay" "compose helper render overlay materialization"
+  assert_contains "${COMPOSE_HELPER}" "build_hls_storage_overlay" "compose helper external HLS bind materialization"
+  assert_contains "${COMPOSE_HELPER}" "--storage-layout" "compose helper storage layout report"
+  assert_contains "${COMPOSE_HELPER}" "XG2G_HLS_REQUIRE_MOUNT" "compose helper dedicated-mount guard"
 
-  assert_exact_line "${COMPOSE_CONTRACT}" "ROOT=\"${CANONICAL_ROOT}\"" "compose contract root"
+  assert_exact_line "${COMPOSE_CONTRACT}" "ROOT=\"\${XG2G_COMPOSE_ROOT:-${CANONICAL_ROOT}}\"" "compose contract root default"
   assert_exact_line "${COMPOSE_CONTRACT}" "COMPOSE_HELPER=\"\$ROOT/scripts/compose-xg2g.sh\"" "compose contract helper path"
 }
 
@@ -130,6 +134,8 @@ verify_runbook_semantics() {
   assert_contains "${RUNBOOK}" "XG2G_E2_HOST" "runbook required env host"
   assert_contains "${RUNBOOK}" "XG2G_API_TOKEN" "runbook required env token"
   assert_contains "${RUNBOOK}" "XG2G_DECISION_SECRET" "runbook required env decision secret"
+  assert_contains "${RUNBOOK}" "${CANONICAL_HELPER} --storage-layout" "runbook storage layout report"
+  assert_contains "${RUNBOOK}" "XG2G_HLS_REQUIRE_MOUNT" "runbook dedicated HLS mount guard"
 }
 
 verify_negative_drift_guard() {

@@ -230,7 +230,7 @@ is the single largest deletion candidate in the repo.
    metric `xg2g_legacy_api_requests_total{path,client}` + WARN log. No
    behavior change. Deploy staging + production. Observation window:
    ≥ 7 days. Also verify statically which spec the WebUI client is
-   generated from: `grep -rn "servers\|basePath\|/api/v" frontend/webui/src/client-ts/ | head`
+   generated from: `grep -rn "servers\|basePath\|/api/v" apps/webui/src/client-ts/ | head`
    and check the Android app's base paths the same way.
 2. **A1.2 Gate.** Config flag `api.legacy_enabled` (default `true`),
    registered per the current config process. When `false`, legacy routes
@@ -270,7 +270,7 @@ without being split at a natural seam noted in the PR description.
 
 ### A3 — Decompose the frontend playback orchestrator
 
-**Finding:** `frontend/webui/src/features/player/usePlaybackOrchestrator.ts`
+**Finding:** `apps/webui/src/features/player/usePlaybackOrchestrator.ts`
 is 2,689 lines — a single React hook holding the entire player logic.
 This is the frontend twin of the deleted `DecideProfile`: client-side
 playback decisions the planner already makes authoritatively.
@@ -289,7 +289,7 @@ playback decisions the planner already makes authoritatively.
 4. **A3.4 Delete duplicated decisions** approved in A3.1; the hook shrinks
    to orchestration glue.
 
-**Per PR:** `cd frontend/webui && npm run lint && npm run test` — paste
+**Per PR:** `cd apps/webui && npm run lint && npm run test` — paste
 final lines in the handoff.
 
 ### A4 — Mechanical file splits (low priority)

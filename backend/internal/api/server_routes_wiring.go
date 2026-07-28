@@ -4,6 +4,7 @@
 package api
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	"github.com/ManuGH/xg2g/internal/control/http/deadline"
 	systemhttp "github.com/ManuGH/xg2g/internal/control/http/system"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
@@ -61,8 +63,95 @@ func (s *Server) newRouter() chi.Router {
 		RateLimitWhitelist: s.cfg.RateLimitWhitelist,
 
 		MaxRequestBodyBytes: middleware.DefaultMaxRequestBodyBytes,
+		DeadlineRuntimeMode: middleware.RuntimeEnforced,
+		DeadlineTimeouts:    deadline.DefaultTimeouts(),
 	})
 	return r
+}
+
+// buildRouter constructs the canonical top-level chi.Router for a Server instance.
+// This function is the single canonical factory used by production server startup (s.routes()) as well as governance inventory testing.
+func (s *Server) buildRouter() chi.Router {
+	variant, err := s.getUIConfigVariant()
+	if err != nil {
+		panic("resolve UI config variant: " + err.Error())
+	}
+	r, _, err := s.buildRouterWithBindings(variant)
+	if err != nil {
+		panic("build router with policy bindings: " + err.Error())
+	}
+	return r
+}
+
+func (s *Server) getUIConfigVariant() (ConfigVariant, error) {
+	mode := controlhttp.DetermineUIMode(
+		s.snap.Runtime.UIDevDir,
+		s.snap.Runtime.UIDevProxyURL,
+	)
+	switch mode {
+	case controlhttp.UIModeProdStatic:
+		return ConfigVariantProdStatic, nil
+	case controlhttp.UIModeDevDir:
+		return ConfigVariantDevDir, nil
+	case controlhttp.UIModeDevProxy:
+		return ConfigVariantDevProxy, nil
+	default:
+		return "", fmt.Errorf("unsupported UI mode %q", mode)
+	}
+}
+
+// buildRouterWithBindings is the single canonical production and governance
+// router construction path.
+func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, PolicyBindingSnapshot, error) {
+	r := s.newRouter()
+	r.Use(s.legacyAPIMiddleware)
+	registry := deadline.NewPolicyBindingRegistry()
+
+	adapterFor := func(router chi.Router, routerID, mountPrefix string) *policyRegistrarAdapter {
+		return newPolicyRegistrarAdapter(policyRegistrarConfig{
+			Router:      router,
+			RouterID:    routerID,
+			MountPrefix: mountPrefix,
+			UIMode:      variant,
+			Registry:    registry,
+			RuntimeMode: middleware.RuntimeEnforced,
+		})
+	}
+
+	rootAdapter := adapterFor(r, "outer", "")
+	if err := s.registerPublicRoutesWithPolicies(rootAdapter, r); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register public routes: %w", err)
+	}
+
+	_, rRead, rWrite, rAdmin, rStatus := s.scopedRouters(r)
+	if err := s.registerOperatorRoutesWithPolicies(
+		adapterFor(rAdmin, "outer", ""),
+		adapterFor(rStatus, "outer", ""),
+	); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register operator routes: %w", err)
+	}
+
+	v3Sub := v3.NewRouteRouter()
+	v3Adapter := adapterFor(v3Sub, "v3", v3.V3BaseURL)
+	if err := v3.RegisterRoutes(v3Adapter, s.v3Handler); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register v3 routes: %w", err)
+	}
+	// v3Sub contains full /api/v3 patterns. A wildcard delegate preserves the
+	// Phase 1 outer inventory's nine technical method entries.
+	r.Handle(v3.V3BaseURL+"/*", v3Sub)
+
+	readAdapter := adapterFor(rRead, "outer", "")
+	writeAdapter := adapterFor(rWrite, "outer", "")
+	if err := v3.RegisterCompatibilityRoutesWithRegistrars(readAdapter, writeAdapter, s.v3Handler); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register compatibility routes: %w", err)
+	}
+	if err := readAdapter.Register(http.MethodPost, "/Items/{itemId}/PlaybackInfo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.v3Handler.PostItemsPlaybackInfo(w, r, chi.URLParam(r, "itemId"))
+	})); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register playback-info compatibility route: %w", err)
+	}
+
+	return r, registry.Snapshot(), nil
 }
 
 func (s *Server) parsedTrustedProxies() []*net.IPNet {
@@ -91,24 +180,48 @@ func splitCSVNonEmpty(raw string) []string {
 	return out
 }
 
-func (s *Server) registerPublicRoutes(r chi.Router) {
-	r.Get("/healthz", systemhttp.NewHealthHandler(s.healthManager))
-	r.Get("/readyz", systemhttp.NewReadyHandler(s.healthManager))
-
+func (s *Server) registerPublicRoutesWithPolicies(adapter *policyRegistrarAdapter, r chi.Router) error {
+	if err := adapter.Register(http.MethodGet, "/healthz", systemhttp.NewHealthHandler(s.healthManager)); err != nil {
+		return err
+	}
+	if err := adapter.Register(http.MethodGet, "/readyz", systemhttp.NewReadyHandler(s.healthManager)); err != nil {
+		return err
+	}
 	uiHandler := controlhttp.UIHandler(controlhttp.UIConfig{
 		CSP:         middleware.DefaultCSP,
 		DevProxyURL: s.snap.Runtime.UIDevProxyURL,
 		DevDir:      s.snap.Runtime.UIDevDir,
 	})
-	r.Handle("/ui/*", http.StripPrefix("/ui", uiHandler))
-	r.Get("/ui", redirectTo("/ui/", http.StatusMovedPermanently))
-	r.Get("/index.html", redirectTo("/ui/", http.StatusTemporaryRedirect))
-	r.Get("/", redirectTo("/ui/", http.StatusTemporaryRedirect))
+	uiWildcardHandler := http.StripPrefix("/ui", uiHandler)
+	for _, method := range []string{
+		http.MethodGet,
+		http.MethodHead,
+		http.MethodPost,
+		http.MethodPut,
+		http.MethodDelete,
+		http.MethodOptions,
+		http.MethodPatch,
+		http.MethodTrace,
+		http.MethodConnect,
+	} {
+		if err := adapter.Register(method, "/ui/*", uiWildcardHandler); err != nil {
+			return err
+		}
+	}
+	if err := adapter.Register(http.MethodGet, "/ui", redirectTo("/ui/", http.StatusMovedPermanently)); err != nil {
+		return err
+	}
+	if err := adapter.Register(http.MethodGet, "/index.html", redirectTo("/ui/", http.StatusTemporaryRedirect)); err != nil {
+		return err
+	}
+	if err := adapter.Register(http.MethodGet, "/", redirectTo("/ui/", http.StatusTemporaryRedirect)); err != nil {
+		return err
+	}
 	r.NotFound(s.publicNotFoundHandler(uiHandler))
-
-	// Serve picon logos from {dataDir}/picons/ directory.
-	// URLs are generated as /logos/{REF}.png by refresh and services.go.
-	r.Get("/logos/{filename}", s.servePiconLogo)
+	if err := adapter.Register(http.MethodGet, "/logos/{filename}", http.HandlerFunc(s.servePiconLogo)); err != nil {
+		return err
+	}
+	return nil
 }
 
 // servePiconLogo securely serves a picon PNG from the data directory.
@@ -207,25 +320,14 @@ func (s *Server) scopedRouters(r chi.Router) (chi.Router, chi.Router, chi.Router
 	return rAuth, rRead, rWrite, rAdmin, rStatus
 }
 
-func (s *Server) registerOperatorRoutes(rAuth, rAdmin, rStatus chi.Router) {
-	_ = rAuth
-	rAdmin.Post("/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload))
-	rStatus.Get(v3.V3BaseURL+"/status", controlhttp.NewStatusHandler(s.verificationStore, s.cfg.FFmpeg.Bin).ServeHTTP)
-	rAdmin.Post("/internal/setup/validate", systemhttp.NewSetupValidateHandler(s.GetConfig))
-}
-
-func (s *Server) registerCanonicalV3Routes(r chi.Router) {
-	// Register API v3 routes via canonical factory handler.
-	// This keeps v3 middleware/routing decisions centralized in internal/control/http/v3/factory.go.
-	v3Routes, err := v3.NewHandler(s.v3Handler, s.cfg)
-	if err != nil {
-		log.L().Error().Err(err).Msg("failed to build v3 handler")
-		r.Handle(v3.V3BaseURL+"/*", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		}))
-		return
+func (s *Server) registerOperatorRoutesWithPolicies(
+	adminAdapter, statusAdapter *policyRegistrarAdapter,
+) error {
+	if err := adminAdapter.Register(http.MethodPost, "/internal/system/config/reload", http.HandlerFunc(s.handleConfigReload)); err != nil {
+		return err
 	}
-	// Register catch-all for canonical v3 routes.
-	// More specific manual routes remain registered separately.
-	r.Handle(v3.V3BaseURL+"/*", v3Routes)
+	if err := statusAdapter.Register(http.MethodGet, v3.V3BaseURL+"/status", controlhttp.NewStatusHandler(s.verificationStore, s.cfg.FFmpeg.Bin)); err != nil {
+		return err
+	}
+	return adminAdapter.Register(http.MethodPost, "/internal/setup/validate", systemhttp.NewSetupValidateHandler(s.GetConfig))
 }

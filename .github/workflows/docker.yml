@@ -154,8 +154,8 @@ jobs:
             --predicate provenance.json \
             "${PRIMARY_TAG}@${DIGEST}"
 
-  # Disabled: Dockerfile.distroless not yet implemented
-  # TODO: Create Dockerfile.distroless for minimal attack surface deployment
+  # Disabled: infra/docker/Dockerfile.distroless is not yet wired into this workflow
+  # TODO: Wire infra/docker/Dockerfile.distroless for minimal attack surface deployment
   # build-and-push-distroless:
   #   runs-on: ubuntu-latest
   #   needs: build-and-push

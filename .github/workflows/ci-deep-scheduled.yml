@@ -48,7 +48,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: "npm"
-          cache-dependency-path: frontend/webui/package-lock.json
+          cache-dependency-path: apps/webui/package-lock.json
 
       - name: Build WebUI assets (embed prereq)
         run: |
@@ -125,7 +125,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: "npm"
-          cache-dependency-path: frontend/webui/package-lock.json
+          cache-dependency-path: apps/webui/package-lock.json
 
       - name: Lint OpenAPI (nightly)
         run: |
@@ -217,22 +217,22 @@ jobs:
         with:
           node-version-file: .node-version
           cache: "npm"
-          cache-dependency-path: frontend/webui/package-lock.json
+          cache-dependency-path: apps/webui/package-lock.json
 
       - name: Run governance deep checks
         run: |
           set -euo pipefail
 
-          NEW_JSX=$(find frontend/webui/src -type f -name '*.jsx' || true)
+          NEW_JSX=$(find apps/webui/src -type f -name '*.jsx' || true)
           if [ -n "$NEW_JSX" ]; then
             echo "❌ New .jsx files detected:"
             echo "$NEW_JSX"
             exit 1
           fi
 
-          bash frontend/webui/scripts/verify-client-wrapper-boundary.sh
+          bash apps/webui/scripts/verify-client-wrapper-boundary.sh
 
-          cd frontend/webui
+          cd apps/webui
           npm ci
           npm run build
 
@@ -288,7 +288,7 @@ jobs:
             echo "| nightly-integration | \`cd backend && go test -count=1 -failfast ./test/integration/... ./test/invariants/...\` | $INTEGRATION_RESULT | $INTEGRATION_EXIT |"
             echo "| nightly-spec-doc-lint | \`redocly lint + markdownlint-cli2\` | $DOC_LINT_RESULT | $DOC_LINT_EXIT |"
             echo "| weekly-security-deep | \`cd backend && govulncheck -tags=nogpu ./... && gosec -severity=high ... ./...\` | $SECURITY_RESULT | $SECURITY_EXIT |"
-            echo "| weekly-governance-deep | \`jsx + wrapper-boundary guards + (cd frontend/webui && npm ci && npm run build)\` | $GOVERNANCE_RESULT | $GOVERNANCE_EXIT |"
+            echo "| weekly-governance-deep | \`jsx + wrapper-boundary guards + (cd apps/webui && npm ci && npm run build)\` | $GOVERNANCE_RESULT | $GOVERNANCE_EXIT |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deep-alert-on-failure:

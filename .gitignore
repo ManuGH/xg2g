@@ -77,8 +77,8 @@ config.yml
 node_modules/
 .node_modules_partial_*/
 webui/dist/
-frontend/webui/dist/
-frontend/webui/node_modules/
+apps/webui/dist/
+apps/webui/node_modules/
 backend/internal/control/http/dist/
 !backend/internal/control/http/dist/.gitkeep
 dist/

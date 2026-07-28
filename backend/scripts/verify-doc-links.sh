@@ -32,6 +32,26 @@ CHECKED=0
 # Helper: trim surrounding whitespace
 trim() { sed -E 's/^[[:space:]]+|[[:space:]]+$//g'; }
 
+# Normalize an absolute path without GNU-specific realpath flags. macOS ships a
+# BSD realpath that has no `-m`; resolving the existing parent keeps missing
+# targets checkable while still collapsing `.` and `..` deterministically.
+normalize_path() {
+  local input="$1"
+  local parent
+  local name
+
+  parent="$(dirname "${input}")"
+  name="$(basename "${input}")"
+  if [[ -d "${parent}" ]]; then
+    (
+      cd "${parent}"
+      printf '%s/%s\n' "$(pwd -P)" "${name}"
+    )
+    return 0
+  fi
+  printf '%s\n' "${input}"
+}
+
 # Iterate files safely line-by-line
 while IFS= read -r FILE; do
   [[ -z "$FILE" ]] && continue
@@ -96,17 +116,15 @@ while IFS= read -r FILE; do
         resolved="$ROOT/$base_dir/$path_decoded"
       fi
 
-      # Collapse .. and .
-      if command -v realpath >/dev/null 2>&1; then
-        resolved_norm="$(realpath -m "$resolved" 2>/dev/null || true)"
-      else
-        # Fallback: best-effort normalization without realpath
-        resolved_norm="$resolved"
-      fi
+      # Collapse .. and . portably on GNU/Linux and macOS.
+      resolved_norm="$(normalize_path "$resolved")"
 
       CHECKED=$((CHECKED + 1))
 
-      if [[ ! -e "$resolved_norm" ]]; then
+      if [[ "${resolved_norm}" != "${ROOT}" && "${resolved_norm}" != "${ROOT}/"* ]]; then
+        BROKEN=$((BROKEN + 1))
+        echo "❌ $FILE:$line_no: link escapes repository -> $target"
+      elif [[ ! -e "$resolved_norm" ]]; then
         BROKEN=$((BROKEN + 1))
         echo "❌ $FILE:$line_no: broken link -> $target (resolved: ${resolved_norm#$ROOT/})"
       fi

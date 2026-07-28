@@ -151,7 +151,7 @@ for path in \
   "$ROOT/test-results" \
   "$ROOT/playwright-report" \
   "$ROOT/coverage" \
-  "$ROOT/frontend/webui/dist" \
+  "$ROOT/apps/webui/dist" \
   "$ROOT/backend/coverage.out" \
   "$ROOT/coverage.out" \
   "$ROOT/coverage.html"; do
@@ -176,7 +176,7 @@ for path in \
   "$ROOT/data" \
   "$ROOT/logs" \
   "$ROOT/node_modules" \
-  "$ROOT/frontend/webui/node_modules" \
+  "$ROOT/apps/webui/node_modules" \
   "$ROOT/backend/.venv" \
   "$ROOT/.venv"; do
   [[ -e "$path" || -L "$path" ]] || continue

@@ -442,14 +442,11 @@ func (o *Orchestrator) handleStop(ctx context.Context, e model.StopSessionEvent)
 			return nil
 		}
 		if r.State == model.SessionStopping {
-			if r.Reason == "" && e.Reason != "" {
-				r.Reason = e.Reason
+			stopReason := ""
+			if e.Reason == model.RLeaseExpired {
+				stopReason = "LEASE_EXPIRED"
 			}
-			if r.StopReason == "" && e.Reason == model.RLeaseExpired {
-				r.StopReason = "LEASE_EXPIRED"
-			}
-			r.PipelineState = model.PipeStopRequested
-			r.UpdatedAtUnix = time.Now().Unix()
+			lifecycle.ApplyRepeatedStopRequest(r, e.Reason, stopReason, time.Now())
 			return nil
 		}
 		if r.State == model.SessionNew {

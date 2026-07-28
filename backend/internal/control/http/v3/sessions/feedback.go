@@ -12,6 +12,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
@@ -113,7 +114,7 @@ func (s *Service) ReportPlaybackFeedback(ctx context.Context, sessionID string, 
 		}
 		rec.FallbackReason = fmt.Sprintf("client_report:code=%d", codeVal)
 		rec.FallbackAtUnix = now.Unix()
-		rec.State = model.SessionStarting
+		lifecycle.ApplyFallbackRestart(rec, now)
 		rec.PipelineState = model.PipeStopRequested
 		rec.StopReason = ""
 		toTarget := model.TraceTargetProfileFromProfile(rec.Profile)

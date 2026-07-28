@@ -89,7 +89,7 @@ jobs:
           # transcode pipeline (infra/media/ffmpeg), the session lifecycle
           # (domain/session) and the HTTP layer that serves HLS + sessions
           # (control/http/v3). Previously a pure transcode/session PR skipped it.
-          if printf '%s\n' "$changed_files" | grep -Eq '^(frontend/webui/|backend/e2e/|backend/internal/infra/media/ffmpeg/|backend/internal/domain/session/|backend/internal/control/http/v3/|\.github/workflows/pr-required-gates\.yml$)'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/webui/|backend/e2e/|backend/internal/infra/media/ffmpeg/|backend/internal/domain/session/|backend/internal/control/http/v3/|\.github/workflows/pr-required-gates\.yml$)'; then
             webui_gate_needed=true
           fi
 
@@ -125,7 +125,7 @@ jobs:
           cache: "npm"
           cache-dependency-path: |
             package-lock.json
-            frontend/webui/package-lock.json
+            apps/webui/package-lock.json
             backend/e2e/fixture-server/package-lock.json
 
       - name: Install WebUI gate dependencies
@@ -134,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           npm ci
-          cd frontend/webui
+          cd apps/webui
           npm ci
           cd ../../backend/e2e/fixture-server
           npm ci
@@ -143,7 +143,7 @@ jobs:
         if: steps.scope.outputs.webui_gate_needed == 'true'
         run: |
           set -euo pipefail
-          cd frontend/webui
+          cd apps/webui
           npm run build
 
       - name: WebUI browser smoke

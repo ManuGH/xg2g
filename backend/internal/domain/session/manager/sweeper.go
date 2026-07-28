@@ -40,7 +40,7 @@ func effectiveIdleStopThreshold(r *model.SessionRecord, idleTimeout time.Duratio
 	if r.LastPlaylistAccessAt.IsZero() && !r.PlaylistPublishedAt.IsZero() && model.IdleThreshold < idleTimeout {
 		return model.IdleThreshold
 	}
-	return idleTimeout
+	return model.SessionInactivityTTL(idleTimeout, r.Profile.DVRWindowSec)
 }
 
 // Run starts the sweeper loop. It periodically calls SweepOnce on a ticker.

@@ -7,9 +7,9 @@ import { execSync } from 'child_process';
 // Applies specific mutations to source code and ensures tests FAIL.
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const TARGET_FILE = path.join(REPO_ROOT, 'frontend/webui/src/components/V3Player.tsx');
-const TEST_FAILCLOSED = 'frontend/webui/tests/contracts/v3player.failclosed.test.tsx';
-const TEST_ERRORMAP = 'frontend/webui/tests/contracts/error-map.matrix.test.tsx';
+const TARGET_FILE = path.join(REPO_ROOT, 'apps/webui/src/components/V3Player.tsx');
+const TEST_FAILCLOSED = 'apps/webui/tests/contracts/v3player.failclosed.test.tsx';
+const TEST_ERRORMAP = 'apps/webui/tests/contracts/error-map.matrix.test.tsx';
 
 // Colors
 const RED = '\x1b[31m';

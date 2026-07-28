@@ -108,12 +108,12 @@ render "${BACKEND_ROOT}/templates/README.md.tmpl" "${REPO_ROOT}/README.md" "md"
 # 2. systemd Unit bundle
 render_deploy_unit \
     "${BACKEND_ROOT}/templates/docs/ops/xg2g.service.tmpl" \
-    "${REPO_ROOT}/deploy/xg2g.service"
+    "${REPO_ROOT}/infra/systemd/xg2g.service"
 
 # 3. docker-compose bundle
 render_deploy_compose \
     "${BACKEND_ROOT}/templates/docker-compose.yml.tmpl" \
-    "${REPO_ROOT}/deploy/docker-compose.yml"
+    "${REPO_ROOT}/infra/systemd/docker-compose.yml"
 
 # 4. Deployment Runtime Contract
 render "${BACKEND_ROOT}/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl" "${REPO_ROOT}/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md" "md"

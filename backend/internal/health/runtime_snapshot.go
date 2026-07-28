@@ -154,9 +154,9 @@ func CollectLifecycleRuntimeSnapshot(ctx context.Context, cfg config.AppConfig, 
 	}
 
 	if repoRoot != "" {
-		repoUnit := snapshotFile(filepath.Join(repoRoot, "deploy", "xg2g.service"))
+		repoUnit := snapshotFile(filepath.Join(repoRoot, "infra", "systemd", "xg2g.service"))
 		snapshot.Unit.RepoBundle = &repoUnit
-		repoCompose := snapshotFile(filepath.Join(repoRoot, "deploy", "docker-compose.yml"))
+		repoCompose := snapshotFile(filepath.Join(repoRoot, "infra", "systemd", "docker-compose.yml"))
 		snapshot.Compose.RepoBaseFile = &repoCompose
 	}
 	snapshot.Compose.OptionalFiles = collectOptionalComposeFiles(installRoot)

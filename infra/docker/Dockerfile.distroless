@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1
+# Build with the repo-root Dockerfile path and backend as the build context:
+# docker build -f Dockerfile.distroless backend
+
+# Build stage
+FROM golang:1.26.5-alpine AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache git make
+
+# Copy module files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build statically linked binary.
+# The backend context may not carry full git metadata into the container build.
+RUN CGO_ENABLED=0 go build -buildvcs=false -ldflags="-w -s" -o /xg2g ./cmd/daemon
+
+# Production stage
+FROM gcr.io/distroless/static:nonroot
+
+WORKDIR /
+
+# Copy binary from builder
+COPY --from=builder --chown=65532:65532 /xg2g /xg2g
+
+# Copy necessary assets (if any - e.g. dist folders if embedded, but usually Go embeds)
+# Assuming static assets are embedded or config is mounted.
+# If we need CA certs, distroless/static includes them.
+
+# Expose port (default 8080 or whatever config uses)
+# Default config: API listens on :8088; streaming proxy uses :18000.
+EXPOSE 8088 18000
+
+USER 65532:65532
+
+ENTRYPOINT ["/xg2g"]

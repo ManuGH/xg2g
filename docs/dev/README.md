@@ -32,5 +32,5 @@ make ci-pr
 git diff --check
 ```
 
-For frontend-only work, use `npm --prefix frontend/webui test` and
-`npm --prefix frontend/webui run lint` before the broader gate.
+For frontend-only work, use `npm --prefix apps/webui test` and
+`npm --prefix apps/webui run lint` before the broader gate.

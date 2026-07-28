@@ -227,6 +227,11 @@ func ValidateParameter(ctx context.Context, input *RequestValidationInput, param
 		}
 		return nil
 	}
+	// #1096 keeps empty strings as ""; with allowEmptyValue skip schema checks
+	// (format, pattern, ...) like we used to when the value was nil.
+	if s, ok := value.(string); ok && s == "" && parameter.AllowEmptyValue {
+		return nil
+	}
 	if schema == nil {
 		// A parameter's schema is not defined so skip validation of a parameter's value.
 		return nil
@@ -234,11 +239,13 @@ func ValidateParameter(ctx context.Context, input *RequestValidationInput, param
 
 	var opts []openapi3.SchemaValidationOption
 	if options.MultiError {
-		opts = make([]openapi3.SchemaValidationOption, 0, 1)
 		opts = append(opts, openapi3.MultiErrors())
 	}
 	if options.customSchemaErrorFunc != nil {
 		opts = append(opts, openapi3.SetSchemaErrorMessageCustomizer(options.customSchemaErrorFunc))
+	}
+	if input.Route != nil && input.Route.Spec.IsOpenAPI31OrLater() {
+		opts = append(opts, openapi3.EnableJSONSchema2020())
 	}
 	if err = schema.VisitJSON(value, opts...); err != nil {
 		return &RequestError{Input: input, Parameter: parameter, Err: err}
@@ -330,7 +337,7 @@ func ValidateRequestBody(ctx context.Context, input *RequestValidationInput, req
 	}
 
 	defaultsSet := false
-	opts := make([]openapi3.SchemaValidationOption, 0, 4+len(options.SchemaValidationOptions))
+	var opts []openapi3.SchemaValidationOption
 	opts = append(opts, openapi3.VisitAsRequest())
 	if !options.SkipSettingDefaults {
 		opts = append(opts, openapi3.DefaultsSet(func() { defaultsSet = true }))
@@ -349,6 +356,9 @@ func ValidateRequestBody(ctx context.Context, input *RequestValidationInput, req
 	}
 	// Append additional schema validation options (e.g., document-scoped format validators)
 	opts = append(opts, options.SchemaValidationOptions...)
+	if input.Route != nil && input.Route.Spec.IsOpenAPI31OrLater() {
+		opts = append(opts, openapi3.EnableJSONSchema2020())
+	}
 
 	// Validate JSON with the schema
 	if err := contentType.Schema.Value.VisitJSON(value, opts...); err != nil {

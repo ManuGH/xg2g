@@ -3,6 +3,8 @@ set -euo pipefail
 
 CANONICAL_ROOT="/srv/xg2g"
 CANONICAL_ENV_FILE="/etc/xg2g/xg2g.env"
+DEFAULT_DATA_ROOT="/var/lib/xg2g"
+DEFAULT_RECORDINGS_ROOT="/media/nfs-recordings"
 DRI_RENDER_GLOB="${XG2G_DRI_RENDER_GLOB:-/dev/dri/renderD*}"
 TEMP_FILES=()
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -130,6 +132,221 @@ build_dri_render_overlay() {
   printf '%s\n' "${tmp_file}"
 }
 
+env_value_or_default() {
+  local key="$1"
+  local fallback="$2"
+  local value=""
+
+  if value="$(read_env_value "${ENV_FILE}" "${key}" 2>/dev/null)"; then
+    value="$(trim_ascii_whitespace "${value}")"
+  fi
+  if [[ -z "${value}" ]]; then
+    value="${fallback}"
+  fi
+  printf '%s\n' "${value}"
+}
+
+is_true() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_absolute_storage_path() {
+  local label="$1"
+  local path="$2"
+
+  [[ "${path}" == /* ]] || {
+    echo "ERROR: ${label} must be an absolute Linux path: ${path}" >&2
+    return 1
+  }
+  case "${path}" in
+    *$'\n'*|*$'\r'*)
+      echo "ERROR: ${label} contains a line break" >&2
+      return 1
+      ;;
+  esac
+  case "/${path#/}/" in
+    *"/../"*|*"/./"*|*"//"*)
+      echo "ERROR: ${label} must be a normalized absolute path: ${path}" >&2
+      return 1
+      ;;
+  esac
+}
+
+path_is_within() {
+  local child="${1%/}"
+  local parent="${2%/}"
+
+  [[ "${child}" == "${parent}" || "${child}" == "${parent}/"* ]]
+}
+
+existing_storage_ancestor() {
+  local path="$1"
+
+  while [[ ! -e "${path}" && "${path}" != "/" ]]; do
+    path="$(dirname "${path}")"
+  done
+  printf '%s\n' "${path}"
+}
+
+storage_mount_target() {
+  local path
+  path="$(existing_storage_ancestor "$1")"
+  command -v findmnt >/dev/null 2>&1 || return 1
+  findmnt -T "${path}" -n -o TARGET 2>/dev/null | head -n 1
+}
+
+storage_medium() {
+  local source="$1"
+  local fs_type="$2"
+  local rotations=""
+
+  case "${fs_type}" in
+    tmpfs|ramfs) printf 'ram\n'; return 0 ;;
+    nfs|nfs4|cifs|smb3) printf 'network\n'; return 0 ;;
+    fuse.mergerfs) printf 'pooled\n'; return 0 ;;
+  esac
+
+  if command -v lsblk >/dev/null 2>&1 && [[ "${source}" == /dev/* ]]; then
+    rotations="$(lsblk -s -n -o ROTA "${source}" 2>/dev/null | awk '$1 ~ /^[01]$/ {print $1}' | sort -u | tr -d '\n')"
+    case "${rotations}" in
+      0) printf 'ssd/nvme\n'; return 0 ;;
+      1) printf 'hdd\n'; return 0 ;;
+      01|10) printf 'mixed\n'; return 0 ;;
+    esac
+  fi
+  printf 'unknown\n'
+}
+
+print_storage_row() {
+  local role="$1"
+  local configured_path="$2"
+  local probe_path source fs_type mount_target size available medium
+
+  probe_path="$(existing_storage_ancestor "${configured_path}")"
+  source="-"
+  fs_type="-"
+  mount_target="-"
+  size="-"
+  available="-"
+  medium="unknown"
+
+  if command -v findmnt >/dev/null 2>&1; then
+    read -r source fs_type mount_target < <(findmnt -T "${probe_path}" -n -o SOURCE,FSTYPE,TARGET 2>/dev/null | head -n 1) || true
+  fi
+  if command -v df >/dev/null 2>&1; then
+    read -r size available < <(df -hP "${probe_path}" 2>/dev/null | awk 'NR==2 {print $2, $4}') || true
+  fi
+  medium="$(storage_medium "${source}" "${fs_type}")"
+
+  printf '%-12s %-34s %-18s %-12s %-10s %-9s %-9s\n' \
+    "${role}" "${configured_path}" "${mount_target}" "${fs_type}" "${medium}" "${size}" "${available}"
+}
+
+print_storage_layout() {
+  local data_root hls_root recordings_root data_mount hls_mount placement
+
+  data_root="$(env_value_or_default XG2G_DATA "${DEFAULT_DATA_ROOT}")"
+  hls_root="$(env_value_or_default XG2G_HLS_ROOT "${data_root%/}/hls")"
+  recordings_root="${DEFAULT_RECORDINGS_ROOT}"
+
+  validate_absolute_storage_path XG2G_DATA "${data_root}"
+  validate_absolute_storage_path XG2G_HLS_ROOT "${hls_root}"
+  [[ "${hls_root}" != "/" ]] || {
+    echo "ERROR: XG2G_HLS_ROOT must not be the filesystem root" >&2
+    return 1
+  }
+  validate_absolute_storage_path recordings-root "${recordings_root}"
+
+  printf '%-12s %-34s %-18s %-12s %-10s %-9s %-9s\n' \
+    "ROLE" "PATH" "MOUNT" "FILESYSTEM" "MEDIUM" "SIZE" "AVAILABLE"
+  print_storage_row "persistent" "${data_root}"
+  print_storage_row "dvr-scratch" "${hls_root}"
+  print_storage_row "recordings" "${recordings_root}"
+
+  data_mount="$(storage_mount_target "${data_root}" 2>/dev/null || true)"
+  hls_mount="$(storage_mount_target "${hls_root}" 2>/dev/null || true)"
+  placement="shared-with-data"
+  if [[ -n "${data_mount}" && -n "${hls_mount}" && "${data_mount}" != "${hls_mount}" ]]; then
+    placement="dedicated-mount"
+  fi
+  printf 'DVR_PLACEMENT=%s\n' "${placement}"
+  printf 'DVR_MOUNT_REQUIRED=%s\n' "$(env_value_or_default XG2G_HLS_REQUIRE_MOUNT false)"
+}
+
+validate_hls_storage() {
+  local data_root hls_root require_mount data_mount hls_mount
+
+  data_root="$(env_value_or_default XG2G_DATA "${DEFAULT_DATA_ROOT}")"
+  hls_root="$(env_value_or_default XG2G_HLS_ROOT "${data_root%/}/hls")"
+  require_mount="$(env_value_or_default XG2G_HLS_REQUIRE_MOUNT false)"
+
+  validate_absolute_storage_path XG2G_DATA "${data_root}"
+  validate_absolute_storage_path XG2G_HLS_ROOT "${hls_root}"
+  [[ "${hls_root}" != "/" ]] || {
+    echo "ERROR: XG2G_HLS_ROOT must not be the filesystem root" >&2
+    return 1
+  }
+  case "$(printf '%s' "${require_mount}" | tr '[:upper:]' '[:lower:]')" in
+    0|1|false|true|no|yes|off|on) ;;
+    *)
+      echo "ERROR: XG2G_HLS_REQUIRE_MOUNT must be a boolean, got: ${require_mount}" >&2
+      return 1
+      ;;
+  esac
+
+  if ! path_is_within "${hls_root}" "${data_root}"; then
+    [[ -d "${hls_root}" ]] || {
+      echo "ERROR: external XG2G_HLS_ROOT does not exist: ${hls_root}" >&2
+      return 1
+    }
+    [[ -w "${hls_root}" ]] || {
+      echo "ERROR: external XG2G_HLS_ROOT is not writable: ${hls_root}" >&2
+      return 1
+    }
+  fi
+
+  if is_true "${require_mount}"; then
+    command -v findmnt >/dev/null 2>&1 || {
+      echo "ERROR: XG2G_HLS_REQUIRE_MOUNT=true requires findmnt" >&2
+      return 1
+    }
+    data_mount="$(storage_mount_target "${data_root}")"
+    hls_mount="$(storage_mount_target "${hls_root}")"
+    [[ -n "${data_mount}" && -n "${hls_mount}" && "${data_mount}" != "${hls_mount}" ]] || {
+      echo "ERROR: XG2G_HLS_REQUIRE_MOUNT=true but DVR scratch shares the data mount (${data_mount:-unknown})" >&2
+      return 1
+    }
+  fi
+}
+
+build_hls_storage_overlay() {
+  local data_root hls_root tmp_file quoted_path
+
+  data_root="$(env_value_or_default XG2G_DATA "${DEFAULT_DATA_ROOT}")"
+  hls_root="$(env_value_or_default XG2G_HLS_ROOT "${data_root%/}/hls")"
+  validate_hls_storage
+
+  if path_is_within "${hls_root}" "${data_root}"; then
+    return 1
+  fi
+
+  tmp_file="$(mktemp)"
+  TEMP_FILES+=("${tmp_file}")
+  quoted_path="${hls_root//\'/\'\'}"
+  cat > "${tmp_file}" <<EOF
+services:
+  xg2g:
+    volumes:
+      - type: bind
+        source: '${quoted_path}'
+        target: '${quoted_path}'
+EOF
+  printf '%s\n' "${tmp_file}"
+}
+
 if [[ "${SCRIPT_PATH}" == "${CANONICAL_ROOT}/scripts/compose-xg2g.sh" && -f "${CANONICAL_ENV_FILE}" ]]; then
   assert_secure_env_file "${CANONICAL_ENV_FILE}"
 fi
@@ -243,6 +460,26 @@ if [[ -f "${ENV_FILE}" ]]; then
   esac
 fi
 
+case "${1:-}" in
+  --storage-layout)
+    [[ "$#" -eq 1 ]] || {
+      echo "ERROR: --storage-layout accepts no additional arguments" >&2
+      exit 1
+    }
+    print_storage_layout
+    exit 0
+    ;;
+  --storage-check)
+    [[ "$#" -eq 1 ]] || {
+      echo "ERROR: --storage-check accepts no additional arguments" >&2
+      exit 1
+    }
+    validate_hls_storage
+    echo "OK: HLS/DVR storage contract holds."
+    exit 0
+    ;;
+esac
+
 compose_files=()
 if [[ -n "${COMPOSE_FILE:-}" ]]; then
   raw_compose_files=()
@@ -285,6 +522,10 @@ for file in "${compose_files[@]}"; do
     break
   fi
 done
+
+if hls_storage_overlay="$(build_hls_storage_overlay)"; then
+  compose_files+=("${hls_storage_overlay}")
+fi
 
 args=(--project-name "${PROJECT}")
 for file in "${compose_files[@]}"; do

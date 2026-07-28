@@ -17,7 +17,7 @@
 /.github/workflows/*.yml @ManuGH
 /Makefile @ManuGH
 /Dockerfile @ManuGH
-/Dockerfile.distroless @ManuGH
+/infra/docker/ @ManuGH
 
 # Core Business Logic
 /internal/epg/ @ManuGH
@@ -25,7 +25,7 @@
 /internal/jobs/refresh.go @ManuGH
 
 # Configuration & Deployment
-/deploy/ @ManuGH
+/infra/systemd/ @ManuGH
 /docker-compose*.yml @ManuGH
 /go.mod @ManuGH
 /go.sum @ManuGH

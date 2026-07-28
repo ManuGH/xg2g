@@ -190,3 +190,65 @@ func TestEvaluateContractPublicBrowserTrust(t *testing.T) {
 		}
 	})
 }
+
+func TestEvaluateContractRejectsExtremelyBroadPrivateProxyTrustInPublicProfiles(t *testing.T) {
+	t.Parallel()
+
+	endpoint := PublishedEndpoint{
+		URL:             "https://tv.example.net",
+		Kind:            EndpointKindPublicHTTPS,
+		Priority:        10,
+		TLSMode:         TLSModeRequired,
+		AllowPairing:    true,
+		AllowStreaming:  true,
+		AllowWeb:        true,
+		AllowNative:     true,
+		AdvertiseReason: "public origin",
+		Source:          EndpointSourceConfig,
+	}
+
+	for _, trustedProxy := range []string{"10.0.0.0/8", "172.16.0.0/12", "fd00::/8"} {
+		trustedProxy := trustedProxy
+		t.Run(trustedProxy, func(t *testing.T) {
+			t.Parallel()
+			report := EvaluateContract(ContractInput{
+				Profile:            DeploymentProfileReverseProxy,
+				PublishedEndpoints: []PublishedEndpoint{endpoint},
+				AllowedOrigins:     []string{"https://tv.example.net"},
+				TrustedProxies:     []string{trustedProxy},
+			})
+			if !report.StartupFatal() {
+				t.Fatalf("expected %s to be startup fatal, got %#v", trustedProxy, report.Findings)
+			}
+			if finding := report.BlockingFinding(FindingScopeStartup); finding == nil ||
+				finding.Code != "connectivity.trusted_proxies.too_broad" {
+				t.Fatalf("expected broad proxy finding for %s, got %#v", trustedProxy, report.Findings)
+			}
+		})
+	}
+}
+
+func TestEvaluateContractAllowsNarrowPrivateProxyNetwork(t *testing.T) {
+	t.Parallel()
+
+	report := EvaluateContract(ContractInput{
+		Profile: DeploymentProfileReverseProxy,
+		PublishedEndpoints: []PublishedEndpoint{{
+			URL:             "https://tv.example.net",
+			Kind:            EndpointKindPublicHTTPS,
+			Priority:        10,
+			TLSMode:         TLSModeRequired,
+			AllowPairing:    true,
+			AllowStreaming:  true,
+			AllowWeb:        true,
+			AllowNative:     true,
+			AdvertiseReason: "public origin",
+			Source:          EndpointSourceConfig,
+		}},
+		AllowedOrigins: []string{"https://tv.example.net"},
+		TrustedProxies: []string{"172.31.0.0/24"},
+	})
+	if report.StartupFatal() {
+		t.Fatalf("narrow private proxy network unexpectedly fatal: %#v", report.Findings)
+	}
+}

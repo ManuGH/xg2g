@@ -1,0 +1,1462 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import Config, { isConfigured } from './Config';
+import Files from './Files';
+import Logs from './Logs';
+import SectionContextBar from './SectionContextBar';
+import {
+  putSystemConfig,
+  type AppConfig,
+  type ConfigUpdate,
+  type ConnectivityContract,
+} from '../client-ts';
+import {
+  useSystemConfig,
+  useSystemConnectivity,
+  useSystemScanStatus,
+  useTriggerSystemScanMutation,
+} from '../hooks/useServerQueries';
+import { useAppContext } from '../context/AppContext';
+import { useHouseholdProfiles } from '../context/HouseholdProfilesContext';
+import { usePendingChanges } from '../context/PendingChangesContext';
+import { useUiOverlay } from '../context/UiOverlayContext';
+import {
+  createHouseholdProfile,
+  normalizeHouseholdProfile,
+  type HouseholdProfile,
+} from '../features/household/model';
+import { getClientAuthToken, unwrapClientResultOrThrow } from '../services/clientWrapper';
+import { debugError, formatError } from '../utils/logging';
+import {
+  buildSettingsRoute,
+  type SettingsSection,
+  type SettingsTool,
+} from '../routes';
+import { getSettingsSectionLabel, getSettingsToolLabel } from '../lib/routeContext';
+import { Button } from './ui';
+import styles from './Settings.module.css';
+
+const SETTINGS_SECTIONS: SettingsSection[] = [
+  'setup',
+  'household',
+  'android-tv',
+  'scan',
+  'streaming',
+  'advanced',
+];
+
+const SETTINGS_TOOLS: SettingsTool[] = ['files', 'logs'];
+
+function isSettingsSection(value: string | null): value is SettingsSection {
+  return value !== null && SETTINGS_SECTIONS.includes(value as SettingsSection);
+}
+
+function isSettingsTool(value: string | null): value is SettingsTool {
+  return value !== null && SETTINGS_TOOLS.includes(value as SettingsTool);
+}
+
+function resolveAndroidTvBaseUrl(
+  config: AppConfig | null,
+  contract: ConnectivityContract | null,
+): string {
+  const contractNativeUrl = contract?.public
+    ? contract.selections.nativePublic.endpoint?.url
+    : contract?.selections.native.endpoint?.url;
+  if (contractNativeUrl) {
+    try {
+      return new URL('/ui/', contractNativeUrl).toString();
+    } catch {
+      return '';
+    }
+  }
+
+  const profile = config?.connectivity?.profile ?? 'lan';
+  const configuredNativeUrl = config?.connectivity?.publishedEndpoints
+    ?.find((endpoint) => endpoint.allowNative && (profile === 'lan' || endpoint.kind === 'public_https'))
+    ?.url;
+  if (configuredNativeUrl) {
+    try {
+      return new URL('/ui/', configuredNativeUrl).toString();
+    } catch {
+      return '';
+    }
+  }
+
+  if (profile !== 'lan' || contract?.public) {
+    return '';
+  }
+
+  if (typeof window === 'undefined') {
+    return '';
+  }
+  return new URL('/ui/', window.location.origin).toString();
+}
+
+function Settings() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { search } = useLocation();
+  const { channels, loadChannels } = useAppContext();
+  const { confirm, toast } = useUiOverlay();
+  const { confirmPendingChanges, setPendingChangesGuard } = usePendingChanges();
+  const {
+    profiles,
+    selectedProfile,
+    saveProfile,
+    deleteProfile,
+    selectProfile,
+  } = useHouseholdProfiles();
+  // ADR-00X: Profile selection removed (universal policy only)
+
+  // ADR-00X: Unused savedMessage state removed (was for profile save feedback)
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [showSetup, setShowSetup] = useState<boolean>(false);
+  const [editingProfileId, setEditingProfileId] = useState<string>(() => selectedProfile.id);
+  const [profileDraft, setProfileDraft] = useState<HouseholdProfile>(() => selectedProfile);
+  const [channelQuery, setChannelQuery] = useState<string>('');
+  const [pinDraft, setPinDraft] = useState<string>('');
+  const [pinConfirmDraft, setPinConfirmDraft] = useState<string>('');
+  const [pinSaving, setPinSaving] = useState<boolean>(false);
+  const {
+    data: config = null,
+    refetch: refetchConfig,
+  } = useSystemConfig();
+  const { data: connectivity = null } = useSystemConnectivity();
+  const {
+    data: scanStatus = null,
+    error: scanStatusError,
+    refetch: refetchScanStatus,
+  } = useSystemScanStatus();
+  const triggerScanMutation = useTriggerSystemScanMutation();
+  const androidTvBaseUrl = useMemo(() => {
+    return resolveAndroidTvBaseUrl(config, connectivity);
+  }, [config, connectivity]);
+  const androidTvLaunchUrl = useMemo(() => {
+    if (!androidTvBaseUrl) {
+      return '';
+    }
+    const params = new URLSearchParams({ base_url: androidTvBaseUrl });
+    const authToken = getClientAuthToken();
+    if (authToken) {
+      params.set('auth_token', authToken);
+    }
+    return `xg2g://connect?${params.toString()}`;
+  }, [androidTvBaseUrl]);
+  const androidTvBlockingFinding = useMemo(() => {
+    if (!connectivity?.pairingBlocked) {
+      return null;
+    }
+    return connectivity.findings.find((finding) => {
+      return (finding.severity === 'fatal' || finding.severity === 'degraded')
+        && finding.scopes.includes('pairing');
+    }) ?? null;
+  }, [connectivity]);
+  const androidTvPublicMode = connectivity?.public ?? ((config?.connectivity?.profile ?? 'lan') !== 'lan');
+  const androidTvBaseUrlDisplay = androidTvBaseUrl || t('settings.androidTv.unavailableValue', {
+    defaultValue: 'No published native endpoint',
+  });
+  const androidTvLaunchDisabled = !androidTvLaunchUrl || Boolean(androidTvBlockingFinding);
+  const androidTvLaunchHint = androidTvBlockingFinding?.detail
+    ?? androidTvBlockingFinding?.summary
+    ?? (
+      !androidTvLaunchUrl && androidTvPublicMode
+        ? t('settings.androidTv.unavailableReason', {
+          defaultValue: 'No published native endpoint is available for the current deployment contract.',
+        })
+        : t('settings.androidTv.hint')
+    );
+
+  const configured = isConfigured(config);
+  const [audioMode, setAudioMode] = useState<'stereo' | 'surround'>(() => {
+    try {
+      return (localStorage.getItem('xg2g.settings.audioMode') as 'stereo' | 'surround') || 'stereo';
+    } catch {
+      return 'stereo';
+    }
+  });
+  const [dvrMode, setDvrMode] = useState<'live_only' | '1h' | '2h' | '4h'>(() => {
+    try {
+      const stored = localStorage.getItem('xg2g.settings.dvrMode');
+      if (stored === 'live_only' || stored === '1h' || stored === '2h' || stored === '4h') {
+        return stored;
+      }
+      return '2h';
+    } catch {
+      return '2h';
+    }
+  });
+  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
+  const requestedSection = searchParams.get('section');
+  const requestedTool = searchParams.get('tool');
+  const activeSection: SettingsSection = !configured
+    ? 'setup'
+    : isSettingsSection(requestedSection)
+      ? requestedSection
+      : 'setup';
+  const activeTool: SettingsTool | null = configured
+    && activeSection === 'advanced'
+    && isSettingsTool(requestedTool)
+    ? requestedTool
+    : null;
+  const householdPinConfigured = Boolean(config?.household?.pinConfigured);
+  const persistedEditingProfile = profiles.find((profile) => profile.id === editingProfileId) ?? null;
+  const editingProfile = persistedEditingProfile ?? selectedProfile;
+  const editingProfilePersisted = profiles.some((profile) => profile.id === editingProfile.id);
+  const normalizedDraft = normalizeHouseholdProfile(profileDraft);
+  const isProfileDirty = editingProfilePersisted
+    ? JSON.stringify(normalizedDraft) !== JSON.stringify(persistedEditingProfile)
+    : true;
+  const scanStatusErrorMessage = !scanStatus
+    ? scanError ?? (
+      scanStatusError instanceof Error
+        ? scanStatusError.message
+        : scanStatusError
+          ? t('settings.streaming.scan.errors.loadStatus')
+          : null
+    )
+    : scanError;
+  const pinDraftValid = /^\d{4,12}$/.test(pinDraft);
+  const pinDraftsMatch = pinDraft === pinConfirmDraft;
+  const showSection = (section: SettingsSection) => {
+    return activeSection === section;
+  };
+  const sectionLabelMap: Record<SettingsSection, string> = {
+    setup: getSettingsSectionLabel('setup', t),
+    household: getSettingsSectionLabel('household', t),
+    'android-tv': getSettingsSectionLabel('android-tv', t),
+    scan: getSettingsSectionLabel('scan', t),
+    streaming: getSettingsSectionLabel('streaming', t),
+    advanced: getSettingsSectionLabel('advanced', t),
+  };
+  const toolLabelMap: Record<SettingsTool, string> = {
+    files: getSettingsToolLabel('files', t),
+    logs: getSettingsToolLabel('logs', t),
+  };
+  const headerTitle = activeTool
+    ? toolLabelMap[activeTool]
+    : sectionLabelMap[activeSection];
+  const headerSubtitle = activeTool
+    ? t(`settings.context.tool.${activeTool}`, {
+      defaultValue: activeTool === 'files'
+        ? 'Playlist, guide and compatibility feeds now live under the advanced settings area.'
+        : 'Diagnostics and recent server events now live under the advanced settings area.',
+    })
+    : t(`settings.context.section.${activeSection}`, {
+      defaultValue: 'This area is part of Settings and can also be reached directly by URL.',
+    });
+  const showContextBar = true;
+  useEffect(() => {
+    const persistedProfile = profiles.find((profile) => profile.id === editingProfileId);
+    if (persistedProfile) {
+      setProfileDraft(persistedProfile);
+      return;
+    }
+
+    if (profileDraft.id === editingProfileId) {
+      return;
+    }
+
+    setEditingProfileId(selectedProfile.id);
+    setProfileDraft(selectedProfile);
+  }, [editingProfileId, profileDraft.id, profiles, selectedProfile]);
+
+  useEffect(() => {
+    if (!isProfileDirty) {
+      setPendingChangesGuard(null);
+      return;
+    }
+
+    setPendingChangesGuard({
+      isDirty: true,
+      confirmDiscard: async () => {
+        const ok = await confirm({
+          title: t('settings.household.unsavedTitle', { defaultValue: 'Ungespeicherte Aenderungen verwerfen?' }),
+          message: t('settings.household.unsavedMessage', {
+            defaultValue: 'Dieses Profil hat ungespeicherte Aenderungen. Willst du sie wirklich verwerfen?',
+          }),
+          confirmLabel: t('settings.household.unsavedConfirm', { defaultValue: 'Verwerfen' }),
+          cancelLabel: t('common.cancel', { defaultValue: 'Abbrechen' }),
+          tone: 'danger',
+        });
+        if (!ok) {
+          return false;
+        }
+
+        if (persistedEditingProfile) {
+          setProfileDraft(persistedEditingProfile);
+        } else {
+          setEditingProfileId(selectedProfile.id);
+          setProfileDraft(selectedProfile);
+        }
+        setChannelQuery('');
+        return true;
+      },
+    });
+  }, [
+    confirm,
+    isProfileDirty,
+    persistedEditingProfile,
+    selectedProfile,
+    setPendingChangesGuard,
+    t,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      setPendingChangesGuard(null);
+    };
+  }, [setPendingChangesGuard]);
+
+  const visibleChannels = useMemo(() => {
+    const query = channelQuery.trim().toLowerCase();
+    if (!query) {
+      return channels.channels;
+    }
+
+    return channels.channels.filter((channel) => {
+      const haystack = [
+        channel.name,
+        channel.group,
+        channel.number,
+      ].join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [channelQuery, channels.channels]);
+
+  const handleStartScan = async () => {
+    setScanError(null);
+    try {
+      await triggerScanMutation.mutateAsync();
+      await refetchScanStatus();
+    } catch (err) {
+      debugError('Failed to start scan', formatError(err));
+      setScanError(err instanceof Error ? err.message : t('settings.streaming.scan.errors.start'));
+    }
+  };
+
+  const updateDraft = (updates: Partial<HouseholdProfile>) => {
+    setProfileDraft((current) => normalizeHouseholdProfile({
+      ...current,
+      ...updates,
+    }));
+  };
+
+  const toggleDraftListValue = (field: 'allowedBouquets' | 'allowedServiceRefs' | 'favoriteServiceRefs', value: string) => {
+    const normalizedValue = value.trim().toLowerCase();
+    if (!normalizedValue) {
+      return;
+    }
+
+    setProfileDraft((current) => {
+      const currentList = current[field];
+      const nextList = currentList.includes(normalizedValue)
+        ? currentList.filter((entry) => entry !== normalizedValue)
+        : [...currentList, normalizedValue];
+
+      return normalizeHouseholdProfile({
+        ...current,
+        [field]: nextList,
+      });
+    });
+  };
+
+  const handleCreateProfile = (kind: 'adult' | 'child') => {
+    const nextProfile = createHouseholdProfile(kind);
+    setEditingProfileId(nextProfile.id);
+    setProfileDraft(nextProfile);
+    setChannelQuery('');
+  };
+
+  const handleOpenProfile = async (profile: HouseholdProfile) => {
+    if (profile.id === editingProfileId) {
+      return;
+    }
+
+    const ok = await confirmPendingChanges();
+    if (!ok) {
+      return;
+    }
+
+    setEditingProfileId(profile.id);
+    setProfileDraft(profile);
+    setChannelQuery('');
+  };
+
+  const handleCreateProfileWithGuard = async (kind: 'adult' | 'child') => {
+    const ok = await confirmPendingChanges();
+    if (!ok) {
+      return;
+    }
+
+    handleCreateProfile(kind);
+  };
+
+  const handleUseProfileNow = async () => {
+    if (selectedProfile.id === editingProfile.id) {
+      return;
+    }
+
+    const ok = await confirmPendingChanges();
+    if (!ok) {
+      return;
+    }
+
+    await selectProfile(editingProfile.id);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      await saveProfile(normalizedDraft);
+      toast({
+        kind: 'success',
+        message: t('settings.household.saveSuccess', { defaultValue: 'Profil gespeichert' }),
+      });
+    } catch (err) {
+      debugError('Failed to save household profile', formatError(err));
+      toast({
+        kind: 'error',
+        message: t('settings.household.saveError', { defaultValue: 'Profil konnte nicht gespeichert werden' }),
+      });
+    }
+  };
+
+  const handleDeleteProfile = async () => {
+    if (profiles.length <= 1) {
+      return;
+    }
+
+    const ok = await confirm({
+      title: t('settings.household.deleteTitle', { defaultValue: 'Profil löschen' }),
+      message: t('settings.household.deleteMessage', {
+        defaultValue: `Soll "${editingProfile.name}" wirklich entfernt werden?`,
+      }),
+      confirmLabel: t('settings.household.deleteConfirm', { defaultValue: 'Löschen' }),
+      cancelLabel: t('common.cancel', { defaultValue: 'Abbrechen' }),
+      tone: 'danger',
+    });
+    if (!ok) {
+      return;
+    }
+
+    try {
+      await deleteProfile(editingProfile.id);
+      toast({
+        kind: 'info',
+        message: t('settings.household.deleteSuccess', { defaultValue: 'Profil entfernt' }),
+      });
+    } catch (err) {
+      debugError('Failed to delete household profile', formatError(err));
+      toast({
+        kind: 'error',
+        message: t('settings.household.deleteError', { defaultValue: 'Profil konnte nicht entfernt werden' }),
+      });
+    }
+  };
+
+  const handleSaveHouseholdPin = async () => {
+    if (!pinDraftValid) {
+      toast({
+        kind: 'warning',
+        message: t('settings.household.pin.invalid', { defaultValue: 'Der Haushalt-PIN muss aus 4 bis 12 Ziffern bestehen.' }),
+      });
+      return;
+    }
+    if (!pinDraftsMatch) {
+      toast({
+        kind: 'warning',
+        message: t('settings.household.pin.mismatch', { defaultValue: 'PIN und PIN-Bestaetigung stimmen nicht ueberein.' }),
+      });
+      return;
+    }
+
+    setPinSaving(true);
+    try {
+      const payload: ConfigUpdate = {
+        household: {
+          pin: pinDraft,
+        },
+      };
+      const result = await putSystemConfig({ body: payload });
+      const data = unwrapClientResultOrThrow<{ restartRequired?: boolean }>(result, {
+        source: 'Settings.handleSaveHouseholdPin',
+      });
+      await refetchConfig();
+      setPinDraft('');
+      setPinConfirmDraft('');
+      toast({
+        kind: 'success',
+        message: data.restartRequired
+          ? t('settings.household.pin.savedRestart', { defaultValue: 'Haushalt-PIN gespeichert. Ein Neustart wurde angefordert.' })
+          : t('settings.household.pin.saved', { defaultValue: 'Haushalt-PIN gespeichert.' }),
+      });
+    } catch (err) {
+      debugError('Failed to save household pin', formatError(err));
+      toast({
+        kind: 'error',
+        message: t('settings.household.pin.saveError', { defaultValue: 'Haushalt-PIN konnte nicht gespeichert werden.' }),
+      });
+    } finally {
+      setPinSaving(false);
+    }
+  };
+
+  const handleClearHouseholdPin = async () => {
+    const ok = await confirm({
+      title: t('settings.household.pin.clearTitle', { defaultValue: 'Haushalt-PIN entfernen?' }),
+      message: t('settings.household.pin.clearMessage', {
+        defaultValue: 'Danach sind Erwachsenenprofile und Household-Settings nicht mehr per PIN geschützt.',
+      }),
+      confirmLabel: t('settings.household.pin.clearConfirm', { defaultValue: 'PIN entfernen' }),
+      cancelLabel: t('common.cancel', { defaultValue: 'Abbrechen' }),
+      tone: 'danger',
+    });
+    if (!ok) {
+      return;
+    }
+
+    setPinSaving(true);
+    try {
+      const payload: ConfigUpdate = {
+        household: {
+          pin: '',
+        },
+      };
+      const result = await putSystemConfig({ body: payload });
+      unwrapClientResultOrThrow<{ restartRequired?: boolean }>(result, {
+        source: 'Settings.handleClearHouseholdPin',
+      });
+      await refetchConfig();
+      setPinDraft('');
+      setPinConfirmDraft('');
+      toast({
+        kind: 'info',
+        message: t('settings.household.pin.cleared', { defaultValue: 'Haushalt-PIN entfernt.' }),
+      });
+    } catch (err) {
+      debugError('Failed to clear household pin', formatError(err));
+      toast({
+        kind: 'error',
+        message: t('settings.household.pin.clearError', { defaultValue: 'Haushalt-PIN konnte nicht entfernt werden.' }),
+      });
+    } finally {
+      setPinSaving(false);
+    }
+  };
+
+  const handleOpenSettingsSection = async (
+    nextSection: SettingsSection,
+    nextTool?: SettingsTool,
+  ) => {
+    const normalizedTool = nextSection === 'advanced' ? nextTool : undefined;
+    const activeToolValue = activeTool ?? undefined;
+
+    if (activeSection === nextSection && activeToolValue === normalizedTool) {
+      return;
+    }
+
+    const ok = await confirmPendingChanges();
+    if (!ok) {
+      return;
+    }
+
+    navigate(buildSettingsRoute({
+      section: nextSection,
+      tool: normalizedTool,
+    }));
+  };
+
+  // ADR-00X: Profile persistence removed (universal policy only)
+
+  return (
+    <div className={`${styles.page} animate-enter`.trim()}>
+      <div className={styles.header}>
+        <div>
+          <p className={styles.kicker}>{t('settings.kicker')}</p>
+          <h1>{headerTitle}</h1>
+          <p className={styles.subtitle}>
+            {headerSubtitle}
+          </p>
+        </div>
+      </div>
+
+      {showContextBar ? (
+        <SectionContextBar
+          segments={[
+            {
+              label: t('settings.title'),
+              onClick: () => { void handleOpenSettingsSection('setup'); },
+            },
+            {
+              label: sectionLabelMap[activeSection],
+              onClick: activeTool
+                ? () => { void handleOpenSettingsSection(activeSection); }
+                : undefined,
+            },
+            ...(activeTool ? [{ label: toolLabelMap[activeTool] }] : []),
+          ]}
+          actionLabel={activeTool
+            ? t('settings.backToSection', {
+              defaultValue: 'Back to {{section}}',
+              section: sectionLabelMap[activeSection],
+            })
+            : t('settings.backToOverview', { defaultValue: 'Back to overview' })}
+          onAction={activeTool
+            ? () => { void handleOpenSettingsSection(activeSection); }
+            : () => { void handleOpenSettingsSection('setup'); }}
+        />
+      ) : null}
+
+      {configured ? (
+        <>
+          <div className={styles.sectionTabsShell}>
+            <div className={styles.sectionTabs} role="tablist" aria-label={t('settings.sectionNavLabel', { defaultValue: 'Settings sections' })}>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'setup'}
+                onClick={() => { void handleOpenSettingsSection('setup'); }}
+                role="tab"
+                aria-selected={activeSection === 'setup'}
+              >
+                {t('setup.title')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'household'}
+                onClick={() => { void handleOpenSettingsSection('household'); }}
+                role="tab"
+                aria-selected={activeSection === 'household'}
+              >
+                {t('settings.household.title', { defaultValue: 'Household profiles' })}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'android-tv'}
+                onClick={() => { void handleOpenSettingsSection('android-tv'); }}
+                role="tab"
+                aria-selected={activeSection === 'android-tv'}
+              >
+                {t('settings.androidTv.title')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'scan'}
+                onClick={() => { void handleOpenSettingsSection('scan'); }}
+                role="tab"
+                aria-selected={activeSection === 'scan'}
+              >
+                {t('settings.streaming.scan.title')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'streaming'}
+                onClick={() => { void handleOpenSettingsSection('streaming'); }}
+                role="tab"
+                aria-selected={activeSection === 'streaming'}
+              >
+                {t('settings.streaming.title')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                active={activeSection === 'advanced'}
+                onClick={() => { void handleOpenSettingsSection('advanced'); }}
+                role="tab"
+                aria-selected={activeSection === 'advanced'}
+              >
+                {t('settings.advanced.title', { defaultValue: 'Advanced tools' })}
+              </Button>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {showSection('setup') ? (
+        <div className={styles.setup}>
+        {!configured ? (
+          <Config onUpdate={() => { void refetchConfig(); }} />
+        ) : (
+          <div className={styles.section}>
+            <div className={styles.accordionHeader}>
+              <h2>{t('setup.title')}</h2>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowSetup(v => !v)}
+                data-testid="config-rerun-setup"
+                aria-expanded={showSetup}
+                aria-controls="settings-setup-details"
+              >
+                {showSetup ? t('common.hideDetails') : t('setup.actions.rerunSetup') || 'Re-run Setup'}
+              </Button>
+            </div>
+            {showSetup && (
+              <div id="settings-setup-details" className="animate-enter">
+                <Config onUpdate={() => { void refetchConfig(); }} showTitle={false} compact />
+              </div>
+            )}
+          </div>
+        )}
+        </div>
+      ) : null}
+
+      {showSection('household') ? (
+        <div className={styles.section}>
+        <h2>{t('settings.household.title', { defaultValue: 'Haushaltsprofile' })}</h2>
+        <p className={styles.subtitle}>
+          {t('settings.household.subtitle', {
+            defaultValue: 'Lege getrennte Profile fuer Erwachsene und Kinder an, speichere Senderfavoriten und steuere pro Profil den Zugriff auf DVR und Einstellungen.',
+          })}
+        </p>
+
+        <div className={styles.profileEditor}>
+          <div className={styles.profileEditorHeader}>
+            <div>
+              <p className={styles.kicker}>{t('settings.household.pin.eyebrow', { defaultValue: 'PIN-Schutz' })}</p>
+              <h3 className={styles.profileEditorTitle}>{t('settings.household.pin.title', { defaultValue: 'Erwachsenenprofile absichern' })}</h3>
+            </div>
+            <div className={styles.profileEditorActions}>
+              <span className={styles.profileBadge}>
+                {householdPinConfigured
+                  ? t('settings.household.pin.configured', { defaultValue: 'PIN aktiv' })
+                  : t('settings.household.pin.unconfigured', { defaultValue: 'Kein PIN' })}
+              </span>
+            </div>
+          </div>
+
+          <div className={styles.profileGrid}>
+            <label className={styles.profileField}>
+              <span>{t('settings.household.pin.label', { defaultValue: 'Neuer Haushalt-PIN' })}</span>
+              <input
+                className={styles.profileInput}
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="new-password"
+                value={pinDraft}
+                onChange={(event) => setPinDraft(event.target.value)}
+                placeholder={t('settings.household.pin.placeholder', { defaultValue: '4 bis 12 Ziffern' })}
+              />
+            </label>
+
+            <label className={styles.profileField}>
+              <span>{t('settings.household.pin.confirmLabel', { defaultValue: 'PIN bestätigen' })}</span>
+              <input
+                className={styles.profileInput}
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="new-password"
+                value={pinConfirmDraft}
+                onChange={(event) => setPinConfirmDraft(event.target.value)}
+                placeholder={t('settings.household.pin.placeholder', { defaultValue: '4 bis 12 Ziffern' })}
+              />
+            </label>
+          </div>
+
+          <div className={styles.profilePanel}>
+            <span className={styles.hint}>
+              {t('settings.household.pin.hint', {
+                defaultValue: 'Mit gesetztem PIN brauchen Erwachsenenprofile, Household-Settings und Logout aus dem Kinderprofil die Freigabe. Die Freischaltung endet bei Logout, Browserende oder Ablauf der Server-Entsperrung. Ohne PIN bleibt Household reines Profil-Scoping.',
+              })}
+            </span>
+            <div className={styles.profilePanelActions}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => { void handleSaveHouseholdPin(); }}
+                disabled={pinSaving || !pinDraftValid || !pinDraftsMatch}
+              >
+                {t('settings.household.pin.save', { defaultValue: 'PIN speichern' })}
+              </Button>
+              {householdPinConfigured ? (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => { void handleClearHouseholdPin(); }}
+                  disabled={pinSaving}
+                >
+                  {t('settings.household.pin.clear', { defaultValue: 'PIN entfernen' })}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.profileCards}>
+          {profiles.map((profile) => (
+            <button
+              key={profile.id}
+              type="button"
+              className={[
+                styles.profileCard,
+                editingProfileId === profile.id ? styles.profileCardActive : null,
+              ].filter(Boolean).join(' ')}
+              onClick={() => { void handleOpenProfile(profile); }}
+            >
+              <div className={styles.profileCardHeader}>
+                <div>
+                  <p className={styles.profileCardEyebrow}>
+                    {profile.kind === 'child'
+                      ? t('settings.household.kind.child', { defaultValue: 'Kinderprofil' })
+                      : t('settings.household.kind.adult', { defaultValue: 'Erwachsenenprofil' })}
+                  </p>
+                  <strong className={styles.profileCardTitle}>{profile.name}</strong>
+                </div>
+                {selectedProfile.id === profile.id && (
+                  <span className={styles.profileBadge}>
+                    {t('settings.household.active', { defaultValue: 'Aktiv' })}
+                  </span>
+                )}
+              </div>
+              <p className={styles.profileCardMeta}>
+                {profile.favoriteServiceRefs.length} {t('settings.household.favoritesShort', { defaultValue: 'Favoriten' })}
+                {' · '}
+                {profile.allowedServiceRefs.length > 0 || profile.allowedBouquets.length > 0
+                  ? t('settings.household.restricted', { defaultValue: 'eingeschraenkt' })
+                  : t('settings.household.unrestricted', { defaultValue: 'alle Sender' })}
+              </p>
+            </button>
+          ))}
+        </div>
+
+        <div className={styles.profileToolbar}>
+          <Button size="sm" onClick={() => { void handleCreateProfileWithGuard('adult'); }}>
+            {t('settings.household.newAdult', { defaultValue: 'Erwachsenenprofil' })}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => { void handleCreateProfileWithGuard('child'); }}>
+            {t('settings.household.newChild', { defaultValue: 'Kinderprofil' })}
+          </Button>
+          {channels.selectedBouquet ? (
+            <Button variant="ghost" size="sm" onClick={() => { void loadChannels(''); }}>
+              {t('settings.household.loadAllChannels', { defaultValue: 'Alle Sender laden' })}
+            </Button>
+          ) : null}
+        </div>
+
+        <div className={styles.profileEditor}>
+          <div className={styles.profileEditorHeader}>
+            <div>
+              <p className={styles.kicker}>{t('settings.household.editorEyebrow', { defaultValue: 'Profil bearbeiten' })}</p>
+              <h3 className={styles.profileEditorTitle}>{editingProfile.name}</h3>
+            </div>
+            <div className={styles.profileEditorActions}>
+              <Button
+                variant={selectedProfile.id === editingProfile.id ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => { void handleUseProfileNow(); }}
+                disabled={!editingProfilePersisted}
+              >
+                {selectedProfile.id === editingProfile.id
+                  ? t('settings.household.active', { defaultValue: 'Aktiv' })
+                  : t('settings.household.useNow', { defaultValue: 'Jetzt nutzen' })}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={handleSaveProfile}>
+                {t('common.save', { defaultValue: 'Speichern' })}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => { void handleDeleteProfile(); }}
+                disabled={profiles.length <= 1}
+              >
+                {t('common.delete', { defaultValue: 'Loeschen' })}
+              </Button>
+            </div>
+          </div>
+
+          <div className={styles.profileGrid}>
+            <label className={styles.profileField}>
+              <span>{t('settings.household.name', { defaultValue: 'Profilname' })}</span>
+              <input
+                className={styles.profileInput}
+                type="text"
+                value={normalizedDraft.name}
+                onChange={(event) => updateDraft({ name: event.target.value })}
+              />
+            </label>
+
+            <label className={styles.profileField}>
+              <span>{t('settings.household.kind.label', { defaultValue: 'Typ' })}</span>
+              <select
+                className={styles.profileInput}
+                value={normalizedDraft.kind}
+                onChange={(event) => updateDraft({ kind: event.target.value === 'child' ? 'child' : 'adult' })}
+              >
+                <option value="adult">{t('settings.household.kind.adult', { defaultValue: 'Erwachsenenprofil' })}</option>
+                <option value="child">{t('settings.household.kind.child', { defaultValue: 'Kinderprofil' })}</option>
+              </select>
+            </label>
+
+            <label className={styles.profileField}>
+              <span>{t('settings.household.maxFsk', { defaultValue: 'Maximale FSK' })}</span>
+              <select
+                className={styles.profileInput}
+                value={normalizedDraft.maxFsk ?? -1}
+                onChange={(event) => updateDraft({
+                  maxFsk: Number.parseInt(event.target.value, 10) < 0 ? null : Number.parseInt(event.target.value, 10),
+                })}
+              >
+                <option value={-1}>{t('settings.household.maxFskAny', { defaultValue: 'ohne Grenze' })}</option>
+                <option value={0}>FSK 0</option>
+                <option value={6}>FSK 6</option>
+                <option value={12}>FSK 12</option>
+                <option value={16}>FSK 16</option>
+                <option value={18}>FSK 18</option>
+              </select>
+              <span className={styles.hint}>
+                {t('settings.household.maxFskHint', {
+                  defaultValue: 'Vorbereitet fuer spaetere EPG-Altersfreigaben. Aktuell hat die App noch keine verifizierten FSK-Daten im Feed.',
+                })}
+              </span>
+            </label>
+          </div>
+
+          <div className={styles.permissionGrid}>
+            <label className={styles.permissionToggle}>
+              <input
+                type="checkbox"
+                checked={normalizedDraft.permissions.dvrPlayback}
+                onChange={(event) => updateDraft({
+                  permissions: {
+                    ...normalizedDraft.permissions,
+                    dvrPlayback: event.target.checked,
+                  },
+                })}
+              />
+              <span>{t('settings.household.permissions.dvrPlayback', { defaultValue: 'Aufnahmen ansehen' })}</span>
+            </label>
+
+            <label className={styles.permissionToggle}>
+              <input
+                type="checkbox"
+                checked={normalizedDraft.permissions.dvrManage}
+                onChange={(event) => updateDraft({
+                  permissions: {
+                    ...normalizedDraft.permissions,
+                    dvrManage: event.target.checked,
+                  },
+                })}
+              />
+              <span>{t('settings.household.permissions.dvrManage', { defaultValue: 'DVR bedienen' })}</span>
+            </label>
+
+            <label className={styles.permissionToggle}>
+              <input
+                type="checkbox"
+                checked={normalizedDraft.permissions.settings}
+                onChange={(event) => updateDraft({
+                  permissions: {
+                    ...normalizedDraft.permissions,
+                    settings: event.target.checked,
+                  },
+                })}
+              />
+              <span>{t('settings.household.permissions.settings', { defaultValue: 'System & Einstellungen' })}</span>
+            </label>
+          </div>
+
+          <div className={styles.profilePanel}>
+            <div className={styles.profilePanelHeader}>
+              <div>
+                <label>{t('settings.household.allowedBouquets', { defaultValue: 'Erlaubte Bouquets' })}</label>
+                <span className={styles.hint}>
+                  {t('settings.household.allowedBouquetsHint', { defaultValue: 'Leer bedeutet: keine Einschraenkung auf Bouquet-Ebene.' })}
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => updateDraft({ allowedBouquets: [] })}
+              >
+                {t('settings.household.clearBouquets', { defaultValue: 'Alle erlauben' })}
+              </Button>
+            </div>
+
+            <div className={styles.choiceGrid}>
+              {channels.bouquets.map((bouquet) => {
+                const bouquetName = String(bouquet.name || '').trim();
+                if (!bouquetName) {
+                  return null;
+                }
+
+                return (
+                  <label key={bouquetName} className={styles.choiceChip}>
+                    <input
+                      type="checkbox"
+                      checked={normalizedDraft.allowedBouquets.includes(bouquetName.toLowerCase())}
+                      onChange={() => toggleDraftListValue('allowedBouquets', bouquetName)}
+                    />
+                    <span>{bouquetName}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={styles.profilePanel}>
+            <div className={styles.profilePanelHeader}>
+              <div>
+                <label>{t('settings.household.channels', { defaultValue: 'Senderzugriff & Favoriten' })}</label>
+                <span className={styles.hint}>
+                  {t('settings.household.channelsHint', {
+                    defaultValue: 'Mit Zugriff markierte Sender bleiben sichtbar. Favoriten werden im Guide nach vorne gezogen und koennen separat gefiltert werden.',
+                  })}
+                </span>
+              </div>
+              <div className={styles.profilePanelActions}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => updateDraft({ allowedServiceRefs: [] })}
+                >
+                  {t('settings.household.clearAccess', { defaultValue: 'Alle Sender erlauben' })}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => updateDraft({ favoriteServiceRefs: [] })}
+                >
+                  {t('settings.household.clearFavorites', { defaultValue: 'Favoriten leeren' })}
+                </Button>
+              </div>
+            </div>
+
+            <input
+              className={styles.profileInput}
+              type="search"
+              value={channelQuery}
+              onChange={(event) => setChannelQuery(event.target.value)}
+              placeholder={t('settings.household.channelSearch', { defaultValue: 'Sender suchen' })}
+            />
+
+            {channels.channels.length === 0 ? (
+              <div className={styles.profileEmptyState}>
+                {t('settings.household.noChannels', { defaultValue: 'Noch keine Sender geladen. Lade zuerst die Senderliste, um Profilrechte pro Sender zu pflegen.' })}
+              </div>
+            ) : (
+              <div className={styles.channelChecklist}>
+                {visibleChannels.map((channel) => {
+                  const serviceRef = String(channel.serviceRef || channel.id || '').trim().toLowerCase();
+                  if (!serviceRef) {
+                    return null;
+                  }
+
+                  return (
+                    <div key={serviceRef} className={styles.channelRow}>
+                      <label className={styles.channelAccess}>
+                        <input
+                          type="checkbox"
+                          checked={normalizedDraft.allowedServiceRefs.includes(serviceRef)}
+                          onChange={() => toggleDraftListValue('allowedServiceRefs', serviceRef)}
+                        />
+                        <span>
+                          <strong>{channel.name || serviceRef}</strong>
+                          <small>{[channel.number, channel.group].filter(Boolean).join(' · ')}</small>
+                        </span>
+                      </label>
+
+                      <label className={styles.channelFavorite}>
+                        <input
+                          type="checkbox"
+                          checked={normalizedDraft.favoriteServiceRefs.includes(serviceRef)}
+                          onChange={() => toggleDraftListValue('favoriteServiceRefs', serviceRef)}
+                        />
+                        <span>{t('settings.household.favorite', { defaultValue: 'Favorit' })}</span>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        </div>
+      ) : null}
+
+      {showSection('android-tv') ? (
+        <div className={styles.section}>
+        <h2>{t('settings.androidTv.title')}</h2>
+        <p className={styles.subtitle}>{t('settings.androidTv.subtitle')}</p>
+
+        <div className={styles.onboardingCard}>
+          <div className={styles.onboardingHero}>
+            <div className={styles.onboardingIntro}>
+              <p className={styles.onboardingEyebrow}>{t('settings.androidTv.eyebrow')}</p>
+              <h3 className={styles.onboardingTitle}>{t('settings.androidTv.headline')}</h3>
+              <p className={styles.onboardingCopy}>{t('settings.androidTv.subtitle')}</p>
+            </div>
+
+            <div className={styles.onboardingSteps} aria-label={t('settings.androidTv.eyebrow')}>
+              <div className={styles.stepCard}>
+                <span className={`${styles.stepNumber} tabular`.trim()}>1</span>
+                <p className={styles.stepLabel}>{t('settings.androidTv.steps.browser')}</p>
+              </div>
+              <div className={styles.stepCard}>
+                <span className={`${styles.stepNumber} tabular`.trim()}>2</span>
+                <p className={styles.stepLabel}>{t('settings.androidTv.steps.launch')}</p>
+              </div>
+              <div className={styles.stepCard}>
+                <span className={`${styles.stepNumber} tabular`.trim()}>3</span>
+                <p className={styles.stepLabel}>{t('settings.androidTv.steps.confirm')}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.onboardingMeta}>
+            <div className={styles.group}>
+              <label>{t('settings.androidTv.currentServer')}</label>
+              <code className={`${styles.launchValue} tabular`.trim()}>{androidTvBaseUrlDisplay}</code>
+              <span className={styles.hint}>{t('settings.androidTv.currentServerHint')}</span>
+            </div>
+
+            <div className={styles.onboardingActions}>
+              {androidTvLaunchDisabled ? (
+                <Button
+                  className={styles.onboardingButton}
+                  disabled
+                >
+                  {t('settings.androidTv.openApp')}
+                </Button>
+              ) : (
+                <Button
+                  href={androidTvLaunchUrl}
+                  className={styles.onboardingButton}
+                  rel="noopener noreferrer"
+                >
+                  {t('settings.androidTv.openApp')}
+                </Button>
+              )}
+              <p className={androidTvLaunchDisabled ? styles.errorInline : styles.hint}>{androidTvLaunchHint}</p>
+            </div>
+          </div>
+        </div>
+        </div>
+      ) : null}
+
+      {showSection('scan') ? (
+        <div className={styles.section}>
+        <h2>{t('settings.streaming.scan.title')}</h2>
+        <p className={styles.subtitle}>{t('settings.streaming.scan.description')}</p>
+
+        <div className={styles.group}>
+          <div className={styles.scanControls}>
+            <Button
+              onClick={handleStartScan}
+              disabled={scanStatus?.state === 'running' || triggerScanMutation.isPending}
+            >
+              {scanStatus?.state === 'running' || triggerScanMutation.isPending
+                ? t('settings.streaming.scan.status.running')
+                : t('settings.streaming.scan.start')}
+            </Button>
+            {scanStatusErrorMessage && <span className={styles.errorInline}>{scanStatusErrorMessage}</span>}
+          </div>
+
+          {scanStatus && (
+            <div className={styles.scanCard} data-state={scanStatus.state || undefined}>
+              <div className={styles.scanHeader}>
+                <div className={styles.scanBadge}>
+                  <span className={styles.statusDot} data-state={scanStatus.state || undefined}></span>
+                  <span className={styles.statusText}>{t(`settings.streaming.scan.status.${scanStatus.state || 'idle'}`)}</span>
+                </div>
+                {scanStatus.startedAt && scanStatus.startedAt > 0 && (
+                  <div className={styles.scanTime}>
+                    {new Date(scanStatus.startedAt * 1000).toLocaleTimeString()}
+                  </div>
+                )}
+              </div>
+
+              <div className={styles.progressContainer}>
+                <svg
+                  width="100%"
+                  height="100%"
+                  viewBox="0 0 100 6"
+                  preserveAspectRatio="none"
+                  role="img"
+                  aria-label={t('settings.streaming.scan.stats.scanned')}
+                >
+                  <rect
+                    x="0"
+                    y="0"
+                    width={Math.min(100, Math.max(0, ((scanStatus.scannedChannels || 0) / (scanStatus.totalChannels || 1)) * 100))}
+                    height="6"
+                    rx="3"
+                    ry="3"
+                    fill="var(--accent-action)"
+                  />
+                </svg>
+              </div>
+
+              <div className={styles.statsRow}>
+                <div className={styles.statItem}>
+                  <span className={`${styles.statValue} tabular`.trim()}>{scanStatus.scannedChannels} / {scanStatus.totalChannels}</span>
+                  <span className={styles.statLabel}>{t('settings.streaming.scan.stats.scanned')}</span>
+                </div>
+                <div className={styles.statItem}>
+                  <span className={`${styles.statValue} tabular`.trim()}>{scanStatus.updatedCount}</span>
+                  <span className={styles.statLabel}>{t('settings.streaming.scan.stats.updated')}</span>
+                </div>
+                {scanStatus.finishedAt && scanStatus.finishedAt > 0 && (
+                  <div className={styles.statItem}>
+                    <span className={styles.statValue}>{new Date(scanStatus.finishedAt * 1000).toLocaleTimeString()}</span>
+                    <span className={styles.statLabel}>{t('settings.streaming.scan.timestamps.finished')}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        </div>
+      ) : null}
+
+      {showSection('streaming') ? (
+        <div className={styles.section}>
+        <h2>{t('settings.streaming.title')}</h2>
+        <p className={styles.subtitle}>
+          {t('settings.streaming.engineSubtitle', {
+            defaultValue: 'xg2g regelt Video-Bitrate, Auflösung und Codecs vollautomatisch und adaptiv anhand deiner aktuellen Verbindung. Es ist kein starres manuelles Profil mehr nötig.'
+          })}
+        </p>
+
+        <div className={styles.capabilityGrid}>
+          <div className={styles.capabilityCard}>
+            <div className={styles.capabilityCardHeader}>
+              <span className={[styles.capabilityBadge, styles.capabilityBadgeInfo].join(' ')}>
+                ADAPTIVE ENGINE
+              </span>
+              <strong className={styles.capabilityCardTitle}>CPU & GPU Transcoding</strong>
+            </div>
+            <p className={styles.capabilityCardCopy}>
+              {t('settings.streaming.cardEngineText', {
+                defaultValue: 'Erkennt automatisch Hardware-Beschleunigung (GPU: VAAPI, NVENC, QSV, VideoToolbox) auf dem Server und greift bei Bedarf nahtlos auf optimiertes CPU-Encoding zurück. Passt Bitrate und Auflösung dynamisch an (strikte 720p-Untergrenze bis hin zu nativem 1080p. Hinweis: 4K/UHD ist aktuell vorübergehend pausiert – wir arbeiten bereits daran!).'
+              })}
+            </p>
+          </div>
+
+          <div className={styles.capabilityCard}>
+            <div className={styles.capabilityCardHeader}>
+              <span className={[styles.capabilityBadge, styles.capabilityBadgeSuccess].join(' ')}>
+                CODECS
+              </span>
+              <strong className={styles.capabilityCardTitle}>AV1 · HEVC · H.264 · MPEG-2</strong>
+            </div>
+            <p className={styles.capabilityCardCopy}>
+              {t('settings.streaming.cardCodecsText', {
+                defaultValue: 'Dynamische Aushandlung der besten Codecs: AV1 & HEVC (H.265) für maximale Qualität bei kleinstem Datenvolumen, H.264 für universelle Kompatibilität und MPEG-2 für verlustfreies Direct Play im LAN.'
+              })}
+            </p>
+          </div>
+
+          <div className={styles.capabilityCard}>
+            <div className={styles.capabilityCardHeader}>
+              <span className={[styles.capabilityBadge, styles.capabilityBadgeInfo].join(' ')}>
+                CONTAINER
+              </span>
+              <strong className={styles.capabilityCardTitle}>fMP4 · CMAF · MPEG-TS</strong>
+            </div>
+            <p className={styles.capabilityCardCopy}>
+              {t('settings.streaming.cardContainersText', {
+                defaultValue: 'Modernes Low-Latency HLS (fMP4 / CMAF) für blitzschnelles Umschalten bei HD-Sendern. Schutz bei 4K-Sendern: Da 4K/UHD-Streams in fMP4 im Browser häufig zu Pufferstaus/Rucklern führen, sind 4K/UHD-Sender momentan vorübergehend pausiert, bis die Pipeline dafür vollständig optimiert ist (wir arbeiten daran!).'
+              })}
+            </p>
+          </div>
+
+          <div className={styles.capabilityCard}>
+            <div className={styles.capabilityCardHeader}>
+              <span className={[styles.capabilityBadge, styles.capabilityBadgeWarning].join(' ')}>
+                DEINTERLACING
+              </span>
+              <strong className={styles.capabilityCardTitle}>Interlaced vs. Progressive</strong>
+            </div>
+            <p className={styles.capabilityCardCopy}>
+              {t('settings.streaming.cardInterlacedText', {
+                defaultValue: 'Progressive Sender (720p, 1080p) können 1:1 durchgereicht werden (4K/UHD in Vorbereitung – wir arbeiten daran!). Interlaced Sender (z. B. 1080i / 576i) werden von Browsern/Smartphones nicht nativ unterstützt (Zeilenflimmern) und daher von xg2g immer automatisch in flüssiges 50-fps-Progressive-Video konvertiert.'
+              })}
+            </p>
+          </div>
+        </div>
+
+        <div className={[styles.group, styles.optionGroup].join(' ')}>
+          <label className={styles.optionGroupTitle}>{t('settings.streaming.audioMode.title')}</label>
+          <div className={styles.optionList}>
+            <label className={styles.optionChoice}>
+              <input
+                type="radio"
+                name="audioMode"
+                value="stereo"
+                checked={audioMode === 'stereo'}
+                onChange={() => {
+                  setAudioMode('stereo');
+                  try { localStorage.setItem('xg2g.settings.audioMode', 'stereo'); } catch { /* localStorage may throw in private browsing */ }
+                }}
+                className={styles.optionInput}
+              />
+              <div>
+                <div className={styles.optionLabel}>{t('settings.streaming.audioMode.stereo.label')}</div>
+                <div className={styles.hint}>
+                  {t('settings.streaming.audioMode.stereo.hint')}
+                </div>
+              </div>
+            </label>
+
+            <label className={styles.optionChoice}>
+              <input
+                type="radio"
+                name="audioMode"
+                value="surround"
+                checked={audioMode === 'surround'}
+                onChange={() => {
+                  setAudioMode('surround');
+                  try { localStorage.setItem('xg2g.settings.audioMode', 'surround'); } catch { /* localStorage may throw in private browsing */ }
+                }}
+                className={styles.optionInput}
+              />
+              <div>
+                <div className={styles.optionLabel}>{t('settings.streaming.audioMode.surround.label')}</div>
+                <div className={styles.hint}>
+                  {t('settings.streaming.audioMode.surround.hint')}
+                  <div className={styles.warningHint}>
+                    ⚠️ <strong>{t('settings.streaming.audioMode.surround.warningTitle')}</strong> {t('settings.streaming.audioMode.surround.warningText')}
+                  </div>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div className={[styles.group, styles.optionGroup].join(' ')}>
+          <label className={styles.optionGroupTitle}>{t('settings.streaming.dvrMode.title')}</label>
+          <div className={styles.optionList}>
+            <label className={styles.optionChoice}>
+              <input
+                type="radio"
+                name="dvrMode"
+                value="live_only"
+                checked={dvrMode === 'live_only'}
+                onChange={() => {
+                  setDvrMode('live_only');
+                  try { localStorage.setItem('xg2g.settings.dvrMode', 'live_only'); } catch { /* localStorage unavailable */ }
+                }}
+                className={styles.optionInput}
+              />
+              <div>
+                <div className={styles.optionLabel}>{t('settings.streaming.dvrMode.liveOnly.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.dvrMode.liveOnly.hint')}</div>
+              </div>
+            </label>
+
+            <label className={styles.optionChoice}>
+              <input
+                type="radio"
+                name="dvrMode"
+                value="1h"
+                checked={dvrMode === '1h'}
+                onChange={() => {
+                  setDvrMode('1h');
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '1h'); } catch { /* localStorage unavailable */ }
+                }}
+                className={styles.optionInput}
+              />
+              <div>
+                <div className={styles.optionLabel}>{t('settings.streaming.dvrMode.dvr1h.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr1h.hint')}</div>
+              </div>
+            </label>
+
+            <label className={styles.optionChoice}>
+              <input
+                type="radio"
+                name="dvrMode"
+                value="2h"
+                checked={dvrMode === '2h'}
+                onChange={() => {
+                  setDvrMode('2h');
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '2h'); } catch { /* localStorage unavailable */ }
+                }}
+                className={styles.optionInput}
+              />
+              <div>
+                <div className={styles.optionLabel}>{t('settings.streaming.dvrMode.dvr2h.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr2h.hint')}</div>
+              </div>
+            </label>
+
+            <label className={styles.optionChoice}>
+              <input
+                type="radio"
+                name="dvrMode"
+                value="4h"
+                checked={dvrMode === '4h'}
+                onChange={() => {
+                  setDvrMode('4h');
+                  try { localStorage.setItem('xg2g.settings.dvrMode', '4h'); } catch { /* localStorage unavailable */ }
+                }}
+                className={styles.optionInput}
+              />
+              <div>
+                <div className={styles.optionLabel}>{t('settings.streaming.dvrMode.dvr4h.label')}</div>
+                <div className={styles.hint}>{t('settings.streaming.dvrMode.dvr4h.hint')}</div>
+              </div>
+            </label>
+          </div>
+        </div>
+        </div>
+      ) : null}
+
+      {showSection('advanced') ? (
+        <div className={styles.section}>
+        <h2>{t('settings.advanced.title', { defaultValue: 'Advanced tools' })}</h2>
+        <p className={styles.subtitle}>
+          {t('settings.advanced.subtitle', {
+            defaultValue: 'File browser and diagnostic logs stay available here as expert tools without adding more main navigation.',
+          })}
+        </p>
+        <div className={styles.advancedActions}>
+          <Button
+            variant="secondary"
+            active={activeTool === 'files'}
+            onClick={() => { void handleOpenSettingsSection('advanced', 'files'); }}
+          >
+            {t('nav.files')}
+          </Button>
+          <Button
+            variant="secondary"
+            active={activeTool === 'logs'}
+            onClick={() => { void handleOpenSettingsSection('advanced', 'logs'); }}
+          >
+            {t('nav.logs')}
+          </Button>
+        </div>
+        {activeTool === 'files' ? (
+          <div className={styles.embeddedTool}>
+            <Files showLegacyNotice={false} />
+          </div>
+        ) : null}
+        {activeTool === 'logs' ? (
+          <div className={styles.embeddedTool}>
+            <Logs showLegacyNotice={false} />
+          </div>
+        ) : null}
+        </div>
+      ) : null}
+
+      {/* Adaptive Bitrate removed as per 2026 Design Contract (Trust Hardening) */}
+
+      {/* ADR-00X: Saved message removed (was for profile save feedback) */}
+
+
+
+    </div>
+  );
+}
+
+export default Settings;

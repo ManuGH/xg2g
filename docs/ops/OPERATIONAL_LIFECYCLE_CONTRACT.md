@@ -62,6 +62,29 @@ Deliverable 3 extends the same preflight engine with upgrade-specific gates.
 Upgrade checks are not a separate validator; they are folded into the shared
 report under the `upgrade_migration_contract`.
 
+## Guided Host Lifecycle
+
+The installed `xg2g-admin` command (`/usr/local/sbin/xg2g-admin`, with its
+canonical deployed copy at `/srv/xg2g/scripts/xg2g-admin.sh`) is the
+beginner-facing host entrypoint. It does not create another deployment/config
+source:
+
+- `doctor` checks the installed environment, storage contract, Docker/systemd,
+  local readiness, and the configured HTTPS origin.
+- `backup` uses SQLite's online backup API and writes an atomic,
+  checksum-manifested mode-`0600` archive.
+- `restore` verifies the archive, takes a safety backup, and replaces only the
+  governed durable state/configuration.
+- `update --ref` backs up first and calls the installed canonical
+  `setup-linux.sh`/`sync.sh` path. Failed readiness triggers reinstallation of
+  the prior recorded ref.
+- `rollback --yes` selects that recorded ref explicitly.
+- `uninstall` removes deployed runtime artifacts while preserving data by
+  default; data removal requires `--purge-data --yes`.
+
+`/srv/xg2g/INSTALL_REF` is the installed provenance label written and checked by
+`sync.sh`. It is not editable configuration.
+
 Current upgrade-slice coverage:
 
 - current runtime release derived from the live compose image

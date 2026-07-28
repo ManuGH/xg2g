@@ -161,26 +161,7 @@ func canRestartTerminalFallback(r *model.SessionRecord) bool {
 }
 
 func resetForFallbackRestart(r *model.SessionRecord, now time.Time) {
-	baseline := lifecycle.NewSessionRecord(now)
-	createdAtUnix := r.CreatedAtUnix
-
-	r.State = baseline.State
-	r.PipelineState = baseline.PipelineState
-	r.Reason = baseline.Reason
-	r.ReasonDetailCode = baseline.ReasonDetailCode
-	r.ReasonDetailDebug = ""
-	r.UpdatedAtUnix = baseline.UpdatedAtUnix
-	if createdAtUnix > 0 {
-		r.CreatedAtUnix = createdAtUnix
-	} else {
-		r.CreatedAtUnix = baseline.CreatedAtUnix
-	}
-	r.LastAccessUnix = 0
-	r.LastHeartbeatUnix = 0
-	r.StopReason = ""
-	r.LatestSegmentAt = time.Time{}
-	r.LastPlaylistAccessAt = time.Time{}
-	r.PlaylistPublishedAt = time.Time{}
+	lifecycle.ResetForFallbackRestart(r, now)
 	if r.PlaybackTrace != nil {
 		r.PlaybackTrace.PolicyModeHint = ports.RuntimeModeUnknown
 		r.PlaybackTrace.EffectiveRuntimeMode = ports.RuntimeModeUnknown

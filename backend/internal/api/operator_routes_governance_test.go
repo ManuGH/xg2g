@@ -120,11 +120,5 @@ func TestPublicRoutes_IndexHTMLRedirectsToUI(t *testing.T) {
 }
 
 func mustBuildChiRouter(s *Server) chi.Router {
-	r := s.newRouter()
-	s.registerPublicRoutes(r)
-	rAuth, rRead, rWrite, rAdmin, rStatus := s.scopedRouters(r)
-	s.registerOperatorRoutes(rAuth, rAdmin, rStatus)
-	s.registerCanonicalV3Routes(r)
-	v3.RegisterCompatibilityRoutes(rRead, rWrite, s.v3Handler)
-	return r
+	return s.buildRouter()
 }

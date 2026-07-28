@@ -1,5 +1,5 @@
 # Multi-Stage Dockerfile for xg2g with embedded FFmpeg 8.1
-ARG BUILD_VERSION=v3.5.1
+ARG BUILD_VERSION=v3.8.1
 ARG BUILD_COMMIT=unknown
 ARG BUILD_DATE=unknown
 ARG FFMPEG_BASE_IMAGE=ffmpeg-runtime-base-internal
@@ -74,16 +74,16 @@ RUN chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
 
 # Stage 2: Build WebUI
 FROM node:24-slim AS webui-builder
-WORKDIR /frontend/webui
-COPY frontend/webui/package*.json ./
+WORKDIR /apps/webui
+COPY apps/webui/package*.json ./
 RUN npm ci
-COPY frontend/webui/ ./
+COPY apps/webui/ ./
 COPY backend/contracts/version_matrix.json ../../backend/contracts/version_matrix.json
 RUN npm run build
 
 # Stage 3: Build xg2g application
-# Keep in sync with go.mod (currently requires Go 1.25.12).
-FROM golang:1.25.12 AS app-builder
+# Keep in sync with go.mod (currently requires Go 1.26.5).
+FROM golang:1.26.5 AS app-builder
 ARG BUILD_VERSION
 ARG BUILD_COMMIT
 ARG BUILD_DATE
@@ -94,7 +94,7 @@ RUN cd . && go mod download
 
 COPY . /app
 # Copy built WebUI assets to the correct location for Go embedding
-COPY --from=webui-builder /frontend/webui/dist /app/backend/internal/control/http/dist
+COPY --from=webui-builder /apps/webui/dist /app/backend/internal/control/http/dist
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64

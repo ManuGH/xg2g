@@ -155,14 +155,21 @@ func (m *manager) Start(ctx context.Context) error {
 //
 //nolint:unparam // error return kept for consistency with other start methods
 func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error {
+	if m.serverCfg.WriteTimeout != 0 {
+		m.logger.Warn().
+			Dur("configured_write_timeout", m.serverCfg.WriteTimeout).
+			Msg("ignoring global server write timeout; route-aware deadlines are enforced by the API handler")
+	}
 	m.apiServer = &http.Server{
 		Addr:              m.serverCfg.ListenAddr,
 		Handler:           m.deps.APIHandler,
 		ReadTimeout:       m.serverCfg.ReadTimeout,
 		ReadHeaderTimeout: m.serverCfg.ReadTimeout / 2,
-		WriteTimeout:      m.serverCfg.WriteTimeout,
-		IdleTimeout:       m.serverCfg.IdleTimeout,
-		MaxHeaderBytes:    m.serverCfg.MaxHeaderBytes,
+		// A connection-wide timeout breaks MP4, SSE, WebSocket, and unrelated
+		// HTTP/2 streams. The API handler owns per-route/per-stream deadlines.
+		WriteTimeout:   0,
+		IdleTimeout:    m.serverCfg.IdleTimeout,
+		MaxHeaderBytes: m.serverCfg.MaxHeaderBytes,
 	}
 
 	go func() {
@@ -189,8 +196,12 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 			}
 		} else {
 			if shouldWarnCleartextTokenAuth(m.serverCfg.ListenAddr, m.deps.Config, tokenAuthConfigured) {
-				m.logger.Warn().
-					Msg("running with token auth over cleartext HTTP - credentials can be sniffed on network")
+				event := m.logger.Warn()
+				if strings.TrimSpace(m.deps.Config.TrustedProxies) != "" {
+					event.Msg("API backend uses cleartext HTTP on a non-loopback listener; block direct access and allow only the trusted reverse proxy")
+				} else {
+					event.Msg("running with token auth over cleartext HTTP - credentials can be sniffed on network")
+				}
 			}
 			m.logger.Info().
 				Str("addr", m.serverCfg.ListenAddr).
@@ -214,9 +225,6 @@ func shouldWarnCleartextTokenAuth(listenAddr string, cfg config.AppConfig, token
 		return false
 	}
 	if strings.TrimSpace(cfg.TLSCert) != "" && strings.TrimSpace(cfg.TLSKey) != "" {
-		return false
-	}
-	if strings.TrimSpace(cfg.TrustedProxies) != "" {
 		return false
 	}
 	return !isLoopbackListenAddr(listenAddr)

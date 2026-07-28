@@ -88,6 +88,9 @@ var runtimeEnvKeys = []string{
 	"XG2G_SKIP_FPS_PROBE_WARMUP",
 	"XG2G_BACKGROUND_SCAN_ENABLED",
 	"XG2G_BACKGROUND_SCAN_INTERVAL",
+	// Host-side Compose preflight consumes this key before container start. It
+	// remains visible through env_file so runtime validation must recognize it.
+	"XG2G_HLS_REQUIRE_MOUNT",
 
 	// --- Keys read directly via env helpers OUTSIDE the config loader ---
 	// (encode_args.go, runtime_hardening.go, pipeline/profiles, fps probing, …).

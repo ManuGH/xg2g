@@ -80,6 +80,7 @@ func (s *Service) RenewLeaseFromConsumption(ctx context.Context, sessionID strin
 	if ttl <= 0 {
 		return
 	}
+	ttl = model.SessionInactivityTTL(ttl, session.Profile.DVRWindowSec)
 	newExpiry := time.Now().Add(ttl).Unix()
 	if newExpiry <= session.LeaseExpiresAtUnix {
 		return

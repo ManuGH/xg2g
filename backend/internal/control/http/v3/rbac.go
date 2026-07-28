@@ -212,7 +212,7 @@ func (s *Server) projectTokenPrincipal(ctx context.Context, principal *auth.Prin
 // contextKey is a private type for context keys to avoid collisions.
 type contextKey string
 
-const bearerAuthScopesKey contextKey = contextKey(BearerAuthScopes)
+const bearerAuthScopesKey contextKey = "BearerAuth.Scopes" // #nosec G101 -- OpenAPI auth-scheme context key, not a credential.
 
 const (
 	operationIDKey    contextKey = "operation_id"
@@ -243,7 +243,7 @@ func (s *Server) ScopeMiddleware(required ...Scope) func(http.Handler) http.Hand
 	}
 }
 
-// ScopeMiddlewareFromContext enforces BearerAuthScopes injected by the v3 router.
+// ScopeMiddlewareFromContext enforces the bearer-auth scopes injected by the v3 router.
 func (s *Server) ScopeMiddlewareFromContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, ok := r.Context().Value(bearerAuthScopesKey).([]string)

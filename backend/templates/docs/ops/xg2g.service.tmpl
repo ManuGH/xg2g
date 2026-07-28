@@ -4,7 +4,7 @@ Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service
 
-# Repo-side canonical source for this unit lives at deploy/xg2g.service.
+# Repo-side canonical source for this unit lives at infra/systemd/xg2g.service.
 
 # Truth model: systemd orchestrates Compose only; Docker is runtime truth.
 # Base compose path is frozen to /srv/xg2g/docker-compose.yml.
@@ -33,6 +33,9 @@ ExecStartPre=/bin/sh -eu -c 'h="$${XG2G_E2_HOST:-}"; o="$${XG2G_OWI_BASE:-}"; h=
 ExecStartPre=/bin/sh -eu -c 't="$${XG2G_API_TOKEN:-}"; t="$$(printf %%s "$$t" | tr -d "[:space:]")"; test -n "$$t"'
 # Fail-closed: XG2G_DECISION_SECRET required for live stream JWT signing (min 32 bytes).
 ExecStartPre=/bin/sh -eu -c 's="$${XG2G_DECISION_SECRET:-}"; s="$$(printf %%s "$$s" | tr -d "[:space:]")"; if [ -z "$$s" ]; then echo "Missing XG2G_DECISION_SECRET (required for live stream JWT)" >&2; exit 1; fi; len="$$(printf %%s "$$s" | wc -c)"; if [ "$$len" -lt 32 ]; then echo "XG2G_DECISION_SECRET too short: need >= 32 bytes for HS256, got $${len}" >&2; exit 1; fi'
+
+# Fail closed before Compose can silently create an absent external DVR path on the system disk.
+ExecStartPre=/srv/xg2g/scripts/compose-xg2g.sh --storage-check
 
 # Fail-closed: ensure compose file is valid before touching containers
 ExecStartPre=/srv/xg2g/scripts/compose-xg2g.sh config -q

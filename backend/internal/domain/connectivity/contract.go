@@ -115,14 +115,14 @@ func EvaluateContract(input ContractInput) ContractReport {
 		return report.finalize()
 	}
 
-	if isTrustedProxyBroad(report.TrustedProxies) {
+	if isTrustedProxyBroad(report.TrustedProxies, report.Public) {
 		report.addFinding(ContractFinding{
 			Code:     "connectivity.trusted_proxies.too_broad",
 			Severity: FindingSeverityFatal,
 			Scopes:   []FindingScope{FindingScopeStartup, FindingScopeReadiness, FindingScopePairing, FindingScopeWeb},
 			Field:    "TrustedProxies",
 			Summary:  "trustedProxies is too broad for a public deployment contract",
-			Detail:   "Do not trust every remote address for X-Forwarded-* headers. Use explicit proxy CIDRs only.",
+			Detail:   "Trust only explicit proxy host addresses or narrowly scoped proxy networks; trust-all and entire private address families are not allowed.",
 		})
 	}
 
@@ -447,13 +447,25 @@ func normalizeTrustedProxies(values []string) []string {
 	return out
 }
 
-func isTrustedProxyBroad(values []string) bool {
+func isTrustedProxyBroad(values []string, public bool) bool {
 	for _, value := range values {
 		prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
 		if err != nil {
 			continue
 		}
 		if prefix.Bits() == 0 {
+			return true
+		}
+		if !public || !prefix.Addr().IsPrivate() {
+			continue
+		}
+		// Public deployments must not trust an entire private address family.
+		// Narrow Docker/LAN proxy networks remain supported, while common
+		// foot-guns such as 10/8, 172.16/12 and fd00::/8 fail closed.
+		if prefix.Addr().Is4() && prefix.Bits() < 16 {
+			return true
+		}
+		if prefix.Addr().Is6() && prefix.Bits() < 48 {
 			return true
 		}
 	}

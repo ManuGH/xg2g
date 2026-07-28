@@ -1,10 +1,10 @@
 {
-  "testdata/contract/p4_1/golden/01_happy_directplay_h264_aac_mp4.expected.json": "07379b45c683ee422b256c2650572db5d2b60009a4aaed9537f9e67b68461b68",
-  "testdata/contract/p4_1/golden/02_directstream_mkv_to_hls_h264_aac.expected.json": "ae548fc550bb536fc8c1592ac827f715d4a993a8e9048f625312749586a71623",
-  "testdata/contract/p4_1/golden/03_transcode_video_hevc_to_h264.expected.json": "6c52f14650525e498c22b3b8c5641df900915e70309733f4a8b1ec50c47458b7",
-  "testdata/contract/p4_1/golden/04_transcode_audio_ac3_to_aac.expected.json": "575338c416a1f867374e5fc49fc50dd612b37e355ecae6bbfc79af757688409a",
+  "testdata/contract/p4_1/golden/01_happy_directplay_h264_aac_mp4.expected.json": "837f24ec2db2094de5541850815102eb42a9df9e48c11d8f220aade56494b9f9",
+  "testdata/contract/p4_1/golden/02_directstream_mkv_to_hls_h264_aac.expected.json": "dd7c09d0410e9030baa5e1cab6a2a0a43f30ed9cbbd121a00d7de35b14951876",
+  "testdata/contract/p4_1/golden/03_transcode_video_hevc_to_h264.expected.json": "46952e483f7df39575d517b17290e78a028346c8ddb2dbf444d3bdd7b5f3ec1d",
+  "testdata/contract/p4_1/golden/04_transcode_audio_ac3_to_aac.expected.json": "7cdd768b8d2f982206818ecfe072de5c297be80050350acfdfa8bb8e34e3114f",
   "testdata/contract/p4_1/golden/05_policy_denies_transcode.expected.json": "59f57f457e31ef7efcc32e344daaf7f83774d06c8c84439c50827404454be6f2",
   "testdata/contract/p4_1/golden/06_fail_closed_capabilities_missing.expected.json": "958ff53a4390a6621ec343caa7bf3c89d80b78a4535bde7f60ac8cdaf5e307e2",
-  "testdata/contract/p4_1/golden/07_fail_closed_capabilities_invalid_version.expected.json": "d35fea7350b2b646f2315049c2e6755613ec7cbe2ab567d1a4f6566543dd8894",
+  "testdata/contract/p4_1/golden/07_fail_closed_capabilities_invalid_version.expected.json": "ba9df44cdbe969cb86c5185ab91a608b696e11306895d823667e0d9aef9683c3",
   "testdata/contract/p4_1/golden/08_fail_closed_media_truth_unknown.expected.json": "5cd897f1e8ac692ef57292d67214a0b47b33db74c449e1745ccdb5558bcb854f"
 }

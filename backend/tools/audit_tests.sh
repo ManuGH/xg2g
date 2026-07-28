@@ -29,10 +29,10 @@ done | sort -nr) > /tmp/xg2g-audit/go_test_counts.txt
 
 echo "--- Frontend Inventory ---"
 # A) Frontend Test Files
-git ls-files 'frontend/webui/**/*.(test|spec).(ts|tsx|js|jsx)' | sort > /tmp/xg2g-audit/tests_webui_files.txt
+git ls-files 'apps/webui/**/*.(test|spec).(ts|tsx|js|jsx)' | sort > /tmp/xg2g-audit/tests_webui_files.txt
 
 # B) Policy Regression / Checks (grep)
-rg -n "describe\(|it\(|test\(" frontend/webui/src | head -n 200 > /tmp/xg2g-audit/webui_test_grep.txt || true
+rg -n "describe\(|it\(|test\(" apps/webui/src | head -n 200 > /tmp/xg2g-audit/webui_test_grep.txt || true
 
 echo "--- CI / Scripts Inventory ---"
 # A) Workflow Files

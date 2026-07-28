@@ -132,7 +132,7 @@ if printf '%s\n' "$changed_files" | grep -Eq '^(docs/deprecations\.json|docs/DEP
 fi
 
 webui_lint_needed=false
-if printf '%s\n' "$changed_files" | grep -Eq '^frontend/webui/'; then
+if printf '%s\n' "$changed_files" | grep -Eq '^apps/webui/'; then
   webui_lint_needed=true
 fi
 

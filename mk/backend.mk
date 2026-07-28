@@ -70,19 +70,19 @@ webui-dev: ## Start only the Vite dev server (advanced, second terminal)
 	npm run dev
 
 dev-ui: ## Run the frontend HMR path (Vite background + foreground backend on :8080)
-	@./run_ui_dev.sh
+	@./scripts/run_ui_dev.sh
 
 android-local-smoke: ## Build embedded UI, run local backend on :8080, and launch Android dev app with auth if adb is connected
-	@./run_android_local.sh
+	@./scripts/run_android_local.sh
 
 android-tv-smoke: ## Run the paired-device Android TV smoke with backend, guide, playback, and WebUI assertions
-	@./run_android_tv_smoke.sh
+	@./scripts/run_android_tv_smoke.sh
 
 dev: backend-dev ## Run the backend once in the foreground
 
 dev-loop:
 	@echo "NOTE: make dev-loop is an internal crash-restart compatibility path."
-	@./run_dev.sh
+	@./scripts/run_dev.sh
 
 install: ## Bootstrap local developer workspace (.env + WebUI dependencies)
 	@./$(BACKEND_DIR)/scripts/dev-install.sh

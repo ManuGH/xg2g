@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily xg2g durable-state backup
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+Unit=xg2g-backup.service
+
+[Install]
+WantedBy=timers.target

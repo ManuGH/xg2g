@@ -265,7 +265,7 @@ func detectRepoRoot() string {
 	}
 	dir := wd
 	for {
-		if fileExists(filepath.Join(dir, "deploy", "docker-compose.yml")) && fileExists(filepath.Join(dir, "deploy", "xg2g.service")) {
+		if fileExists(filepath.Join(dir, "infra", "systemd", "docker-compose.yml")) && fileExists(filepath.Join(dir, "infra", "systemd", "xg2g.service")) {
 			return dir
 		}
 		parent := filepath.Dir(dir)
