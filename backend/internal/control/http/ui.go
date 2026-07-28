@@ -17,6 +17,15 @@ type UIConfig struct {
 	DevDir      string
 }
 
+// UIMode describes the build-specific UI handler selected by this package.
+type UIMode string
+
+const (
+	UIModeProdStatic UIMode = "ui-prod-static"
+	UIModeDevDir     UIMode = "ui-dev-dir"
+	UIModeDevProxy   UIMode = "ui-dev-proxy"
+)
+
 type uiCacheMode int
 
 const (

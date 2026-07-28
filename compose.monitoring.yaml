@@ -1,5 +1,5 @@
 # Optional monitoring stack for xg2g
-# Usage: docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.monitoring.yml up -d
+# Usage: docker compose --project-directory . -f deploy/docker-compose.yml -f compose.monitoring.yaml up -d
 
 services:
   prometheus:

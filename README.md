@@ -153,7 +153,7 @@ Docker health checks, and CI-backed release automation are built in.
 
 | | |
 | :--- | :--- |
-| **Get started** | [Documentation Portal](docs/README.md) · [10-Minute Intro](backend/NEW_HERE.md) · [Repository Map](docs/dev/REPO_MAP.md) · [API Reference](https://manugh.github.io/xg2g/) |
+| **Get started** | [Documentation Portal](docs/README.md) · [10-Minute Intro](docs/dev/NEW_HERE.md) · [Repository Map](docs/dev/REPO_MAP.md) · [API Reference](https://manugh.github.io/xg2g/) |
 | **Operate** | [Ops Index](docs/ops/README.md) · [Configuration](docs/guides/CONFIGURATION.md) · [Deployment](docs/ops/DEPLOYMENT.md) · [Client Profiles](docs/ops/CLIENT_PROFILES.md) · [Security](docs/ops/SECURITY.md) |
 | **Develop** | [Dev Index](docs/dev/README.md) · [Architecture Index](docs/arch/README.md) · [Codec Matrix](docs/arch/CODEC_MATRIX.md) · [WebUI Index](docs/webui/README.md) · [CI Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) |
 

@@ -16,6 +16,11 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// RouteRegistrar is the complete external route-registration contract.
+type RouteRegistrar interface {
+	Register(method, localPattern string, handler http.Handler) error
+}
+
 // RouterOptions configures the policy-aware v3 router.
 type RouterOptions struct {
 	BaseURL          string
@@ -27,8 +32,14 @@ type RouterOptions struct {
 type routeRegistrar struct {
 	baseURL                 string
 	router                  chi.Router
+	policyRegistrar         RouteRegistrar
+	state                   *routeRegistrationState
 	missingScopePolicies    map[string]struct{}
 	missingExposurePolicies map[string]struct{}
+}
+
+type routeRegistrationState struct {
+	err error
 }
 
 type operationRoute struct {
@@ -37,23 +48,27 @@ type operationRoute struct {
 }
 
 func (r routeRegistrar) add(operationID string, handler http.HandlerFunc) {
+	if r.state != nil && r.state.err != nil {
+		return
+	}
 	route, ok := operationRoutes[operationID]
 	if !ok {
-		panic(fmt.Sprintf("missing generated route for operation %s", operationID))
+		r.fail(fmt.Errorf("missing generated route for operation %s", operationID))
+		return
 	}
 	scopes, ok := authz.RequiredScopes(operationID)
 	if !ok {
 		if r.missingScopePolicies != nil {
 			r.missingScopePolicies[operationID] = struct{}{}
 		}
-		if r.router != nil {
-			panic(fmt.Sprintf("missing scope policy for operation %s", operationID))
+		if r.router != nil || r.policyRegistrar != nil {
+			r.fail(fmt.Errorf("missing scope policy for operation %s", operationID))
 		}
 		return
 	}
 	if len(scopes) == 0 && !authz.IsUnscopedAllowed(operationID) {
-		if r.router != nil {
-			panic(fmt.Sprintf("empty scope policy is not allowlisted for operation %s", operationID))
+		if r.router != nil || r.policyRegistrar != nil {
+			r.fail(fmt.Errorf("empty scope policy is not allowlisted for operation %s", operationID))
 		}
 		if r.missingScopePolicies != nil {
 			r.missingScopePolicies[operationID] = struct{}{}
@@ -65,24 +80,43 @@ func (r routeRegistrar) add(operationID string, handler http.HandlerFunc) {
 		if r.missingExposurePolicies != nil {
 			r.missingExposurePolicies[operationID] = struct{}{}
 		}
-		if r.router != nil {
-			panic(fmt.Sprintf("missing exposure policy for operation %s", operationID))
+		if r.router != nil || r.policyRegistrar != nil {
+			r.fail(fmt.Errorf("missing exposure policy for operation %s", operationID))
 		}
 		return
 	}
 	if err := authz.ValidateExposurePolicy(operationID, route.Method, scopes, exposure); err != nil {
-		if r.router != nil {
-			panic(err.Error())
+		if r.router != nil || r.policyRegistrar != nil {
+			r.fail(err)
 		}
 		if r.missingExposurePolicies != nil {
 			r.missingExposurePolicies[operationID] = struct{}{}
 		}
 		return
 	}
-	if r.router == nil {
+	if r.router == nil && r.policyRegistrar == nil {
 		return
 	}
-	r.router.Method(route.Method, r.baseURL+route.Path, withRoutePolicy(operationID, scopes, exposure, handler))
+	boundHandler := withRoutePolicy(operationID, scopes, exposure, handler)
+	if r.policyRegistrar != nil {
+		if err := r.policyRegistrar.Register(route.Method, route.Path, boundHandler); err != nil {
+			r.fail(fmt.Errorf("register operation %s: %w", operationID, err))
+			return
+		}
+	}
+	if r.router != nil {
+		r.router.Method(route.Method, r.baseURL+route.Path, boundHandler)
+	}
+}
+
+func (r routeRegistrar) fail(err error) {
+	if r.state != nil {
+		if r.state.err == nil {
+			r.state.err = err
+		}
+		return
+	}
+	panic(err.Error())
 }
 
 // NewRouter mounts the generated operation catalog and injects its policy per route.

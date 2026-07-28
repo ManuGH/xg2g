@@ -23,6 +23,11 @@ func init() {
 	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 }
 
+// DetermineUIMode mirrors the handler selected by this non-dev build.
+func DetermineUIMode(_, _ string) UIMode {
+	return UIModeProdStatic
+}
+
 // UIHandler serves the embedded Web UI (SPA) with correct caching + CSP.
 // It is self-contained: embed + serving live together in control.
 func UIHandler(cfg UIConfig) http.Handler {

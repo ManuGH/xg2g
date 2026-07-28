@@ -6,87 +6,41 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/control/http/deadline"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
+	"github.com/go-chi/chi/v5"
 )
 
-// RouteDeadlineClass categorizes static routes by their write deadline and connection lifetime requirements.
-// NOTE: RouteDeadlineUnknown is 0 so that uninitialized zero-values are explicitly invalid.
-type RouteDeadlineClass uint8
+type (
+	RouteDeadlineClass             = deadline.RouteDeadlineClass
+	CapabilityState                = deadline.CapabilityState
+	ResponseWriterEquivalenceClass = deadline.ResponseWriterEquivalenceClass
+	VerifiedStackEvidence          = deadline.VerifiedStackEvidence
+	RoutePolicy                    = deadline.RoutePolicy
+	RegistrationKey                = deadline.RegistrationKey
+	PolicyBindingRegistry          = deadline.PolicyBindingRegistry
+	PolicyBindingSnapshot          = deadline.PolicyBindingSnapshot
+)
 
 const (
-	// RouteDeadlineUnknown represents an unclassified or uninitialized route deadline class.
-	// This zero-value MUST be rejected by inventory validation gates.
-	RouteDeadlineUnknown RouteDeadlineClass = iota
-	// RouteDeadlineAPIBounded represents normal JSON/REST endpoints with a tight, bounded runtime.
-	RouteDeadlineAPIBounded
-	// RouteDeadlineMediaBounded represents file/media serving endpoints (e.g. HLS segments, static UI files, media metadata probes) with fixed content or bounded runtime.
-	RouteDeadlineMediaBounded
-	// RouteDeadlineStreaming represents explicitly unbounded streams (SSE, continuous mp4 streaming).
-	RouteDeadlineStreaming
+	RouteDeadlineUnknown      = deadline.RouteDeadlineUnknown
+	RouteDeadlineAPIBounded   = deadline.RouteDeadlineAPIBounded
+	RouteDeadlineMediaBounded = deadline.RouteDeadlineMediaBounded
+	RouteDeadlineStreaming    = deadline.RouteDeadlineStreaming
+
+	CapabilityUnknown     = deadline.CapabilityUnknown
+	CapabilityUnsupported = deadline.CapabilityUnsupported
+	CapabilityDeclared    = deadline.CapabilityDeclared
+	CapabilityVerified    = deadline.CapabilityVerified
+
+	EquivalenceClassOuterStandard   = deadline.EquivalenceClassOuterStandard
+	EquivalenceClassOuterCompressed = deadline.EquivalenceClassOuterCompressed
+	EquivalenceClassV3Standard      = deadline.EquivalenceClassV3Standard
+	EquivalenceClassV3Compressed    = deadline.EquivalenceClassV3Compressed
 )
-
-func (c RouteDeadlineClass) String() string {
-	switch c {
-	case RouteDeadlineUnknown:
-		return "Unknown"
-	case RouteDeadlineAPIBounded:
-		return "APIBounded"
-	case RouteDeadlineMediaBounded:
-		return "MediaBounded"
-	case RouteDeadlineStreaming:
-		return "Streaming"
-	default:
-		return fmt.Sprintf("UnknownRouteDeadlineClass(%d)", c)
-	}
-}
-
-// CapabilityState represents a four-stage capability verification lifecycle model.
-type CapabilityState uint8
-
-const (
-	// CapabilityUnknown indicates an uninitialized capability state.
-	CapabilityUnknown CapabilityState = iota
-	// CapabilityUnsupported indicates that the stack structurally cannot support the capability.
-	CapabilityUnsupported
-	// CapabilityDeclared indicates a target declared expectation that is structurally required but pending Phase 2 empirical runtime verification.
-	CapabilityDeclared
-	// CapabilityVerified indicates a capability that has been empirically verified via runtime TCP/HTTP probes.
-	CapabilityVerified
-)
-
-func (s CapabilityState) String() string {
-	switch s {
-	case CapabilityUnknown:
-		return "Unknown"
-	case CapabilityUnsupported:
-		return "Unsupported"
-	case CapabilityDeclared:
-		return "Declared"
-	case CapabilityVerified:
-		return "Verified"
-	default:
-		return fmt.Sprintf("UnknownCapabilityState(%d)", uint8(s))
-	}
-}
-
-// ResponseWriterEquivalenceClass uniquely identifies a distinct ResponseWriter wrapper stack construction.
-type ResponseWriterEquivalenceClass string
-
-const (
-	EquivalenceClassOuterStandard   ResponseWriterEquivalenceClass = "outer-standard"
-	EquivalenceClassOuterCompressed ResponseWriterEquivalenceClass = "outer-compressed"
-	EquivalenceClassV3Standard      ResponseWriterEquivalenceClass = "v3-standard"
-	EquivalenceClassV3Compressed    ResponseWriterEquivalenceClass = "v3-compressed"
-)
-
-// VerifiedStackEvidence records empirical proof gathered from HTTP/TCP probes for a specific ResponseWriter equivalence class.
-type VerifiedStackEvidence struct {
-	EquivalenceClass          ResponseWriterEquivalenceClass
-	SetWriteDeadlineVerified  bool
-	FlushVerified             bool
-	HijackVerified            bool
-	UpgradeTransitionVerified bool
-}
 
 // ConfigVariant distinguishes the concrete configuration variant under which the router is built.
 type ConfigVariant string
@@ -96,13 +50,6 @@ const (
 	ConfigVariantDevDir     ConfigVariant = "ui-dev-dir"
 	ConfigVariantDevProxy   ConfigVariant = "ui-dev-proxy"
 )
-
-// RoutePolicy captures route-specific static deadline classification and request-dependent capabilities.
-type RoutePolicy struct {
-	Class                RouteDeadlineClass
-	RequiresFlush        bool // Set to true for SSE endpoints (GET /api/v3/sessions/{sessionID}/events)
-	MayUpgradePerRequest bool // Set to true for GET /ui and GET /ui/* under DevProxy
-}
 
 // StackConfig describes the concrete middleware stack configuration for capability resolution.
 type StackConfig struct {
@@ -133,18 +80,6 @@ type DeclaredMiddlewareCapabilities struct {
 	Flush                     CapabilityState
 	Hijack                    CapabilityState
 	UpgradeDeadlineTransition CapabilityState
-}
-
-// RegistrationKey uniquely identifies a registration instance within a router inventory.
-type RegistrationKey struct {
-	RouterID string
-	Method   string
-	Pattern  string
-	Ordinal  int // 0-indexed per (RouterID, Method, Pattern) pair
-}
-
-func (k RegistrationKey) String() string {
-	return fmt.Sprintf("[%s#%d] %s %s", k.RouterID, k.Ordinal, k.Method, k.Pattern)
 }
 
 // RouteRegistration captures metadata for a single route registration instance within a router setup.
@@ -340,6 +275,102 @@ func ApplyVerifiedEvidence(declared DeclaredMiddlewareCapabilities, evidenceRegi
 		res.UpgradeDeadlineTransition = CapabilityVerified
 	}
 	return res
+}
+
+type policyRegistrarConfig struct {
+	Router      chi.Router
+	RouterID    string
+	MountPrefix string
+	UIMode      ConfigVariant
+	Registry    *deadline.PolicyBindingRegistry
+	RuntimeMode middleware.RuntimeMode
+}
+
+type policyRegistrarAdapter struct {
+	cfg policyRegistrarConfig
+}
+
+func newPolicyRegistrarAdapter(cfg policyRegistrarConfig) *policyRegistrarAdapter {
+	return &policyRegistrarAdapter{cfg: cfg}
+}
+
+func isNilHandler(handler http.Handler) bool {
+	if handler == nil {
+		return true
+	}
+	value := reflect.ValueOf(handler)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
+func registerChiRoute(router chi.Router, method, pattern string, handler http.Handler) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("chi route registration failed for %s %s: %v", method, pattern, recovered)
+		}
+	}()
+	router.Method(method, pattern, handler)
+	return nil
+}
+
+// Register validates, policy-wraps, registers, and finally commits one binding.
+// The registry reservation serializes the operation so the final commit cannot fail.
+func (a *policyRegistrarAdapter) Register(method, localPattern string, handler http.Handler) error {
+	if a == nil {
+		return fmt.Errorf("nil policy registrar adapter")
+	}
+	if a.cfg.Router == nil {
+		return fmt.Errorf("nil policy registrar router")
+	}
+	if a.cfg.Registry == nil {
+		return fmt.Errorf("nil policy binding registry")
+	}
+	if isNilHandler(handler) {
+		return fmt.Errorf("nil route handler")
+	}
+
+	baseKey, err := deadline.NormalizeRegistrationKey(
+		a.cfg.RouterID,
+		method,
+		localPattern,
+		a.cfg.MountPrefix,
+		0,
+	)
+	if err != nil {
+		return err
+	}
+	policy := ClassifyRoute(a.cfg.RouterID, a.cfg.UIMode, baseKey.Method, baseKey.Pattern)
+	if policy.Class == deadline.RouteDeadlineUnknown {
+		return fmt.Errorf("cannot register unclassified route %s %s", baseKey.Method, baseKey.Pattern)
+	}
+
+	// Exercise chi's pattern validation before reserving or mutating the real router.
+	if err := registerChiRoute(chi.NewRouter(), baseKey.Method, baseKey.Pattern, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})); err != nil {
+		return err
+	}
+
+	reservation, err := a.cfg.Registry.ReserveBinding(
+		a.cfg.RouterID,
+		baseKey.Method,
+		localPattern,
+		a.cfg.MountPrefix,
+		policy,
+	)
+	if err != nil {
+		return err
+	}
+
+	wrapped := middleware.WithRoutePolicy(policy, a.cfg.RuntimeMode)(handler)
+	if err := registerChiRoute(a.cfg.Router, baseKey.Method, baseKey.Pattern, wrapped); err != nil {
+		reservation.Cancel()
+		return err
+	}
+	reservation.Commit()
+	return nil
 }
 
 // isRecognizedAPIRoute checks if a method and pattern belong to known application route patterns.

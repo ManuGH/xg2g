@@ -17,6 +17,14 @@ import (
 
 const defaultUIDevProxyURL = "http://127.0.0.1:5173"
 
+// DetermineUIMode mirrors UIHandler's build-specific selection order.
+func DetermineUIMode(devDir, _ string) UIMode {
+	if strings.TrimSpace(devDir) != "" {
+		return UIModeDevDir
+	}
+	return UIModeDevProxy
+}
+
 // UIHandler serves the Web UI in development mode.
 // It prefers a live Vite dev server for HMR and can optionally serve a local dist directory.
 func UIHandler(cfg UIConfig) http.Handler {

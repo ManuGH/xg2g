@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "8088:8088"
-    # Production compose: deterministic paths (use docker-compose.dev.yml for local overrides).
+    # Production compose: deterministic paths (use compose.dev.yaml for local overrides).
     env_file:
       - /etc/xg2g/xg2g.env
     environment:

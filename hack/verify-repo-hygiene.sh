@@ -30,7 +30,7 @@ if command -v fd >/dev/null 2>&1; then
         -E node_modules \
         -E webui/node_modules
     } 2>/dev/null \
-      | sed 's|^\./||' \
+      | sed 's|^\./||; s|/$||' \
       | awk '$0 != ".git"' \
       | sort -u
   )"
@@ -50,7 +50,7 @@ else
       -mindepth 2 \
       \( -type d -name .git -o -type f -name .git \) \
       -print 2>/dev/null \
-      | sed 's|^\./||' \
+      | sed 's|^\./||; s|/$||' \
       | sort -u
   )"
 fi

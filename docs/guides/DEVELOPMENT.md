@@ -54,7 +54,7 @@ normal help and verification workflows because it restarts crashes indefinitely.
   local path is typically `:8088`)
 - `make dev-ui`: `http://localhost:8080/ui/`
 
-### `run_dev.sh` (Development Loop)
+### `scripts/run_dev.sh` (Development Loop)
 
 - **Purpose**: Rapid iteration and local debugging.
 - **Behavior**: Infinite loop; auto-rebuilds and restarts on crash.
