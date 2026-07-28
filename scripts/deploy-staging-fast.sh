@@ -57,7 +57,24 @@ git fetch origin "${branch}" --quiet
 }
 git switch --detach "${commit}"
 [[ "$(git rev-parse HEAD)" == "${commit}" ]] || exit 1
-make build-with-ui
+
+node_version="$(tr -d '[:space:]' < .node-version)"
+[[ "${node_version}" =~ ^[0-9]+([.][0-9]+){0,2}$ ]] || {
+  echo "ERROR: invalid .node-version: ${node_version}" >&2
+  exit 1
+}
+if command -v fnm >/dev/null 2>&1; then
+  fnm install "${node_version}" >/dev/null
+  echo "Using $(fnm exec --using "${node_version}" node --version) for WebUI build"
+  fnm exec --using "${node_version}" make build-with-ui
+else
+  actual_node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+  [[ "${actual_node_major}" == "${node_version%%.*}" ]] || {
+    echo "ERROR: Node ${node_version} is required, found $(node --version 2>/dev/null || echo unavailable)" >&2
+    exit 1
+  }
+  make build-with-ui
+fi
 REMOTE
 
 remote_binary="${REMOTE_BUILD_ROOT}/bin/xg2g"
