@@ -60,8 +60,9 @@ func newProbeManager(rootCtx context.Context, mgr MetadataManager, probeFn func(
 
 // ensureProbed checks if a probe is already active or in cooling.
 // If needed, it triggers a new probe asynchronously (Gate R2).
+// Probe lifetime is owned exclusively by rootCtx; request contexts are deliberately not accepted.
 // Returns the current ProbeState and recommended retry interval in seconds.
-func (pm *probeManager) ensureProbed(ctx context.Context, serviceRef string, sourceURL string, localPath string) (ProbeState, int) {
+func (pm *probeManager) ensureProbed(serviceRef string, sourceURL string, localPath string) (ProbeState, int) {
 	if pm == nil {
 		return "", 0
 	}
