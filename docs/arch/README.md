@@ -18,10 +18,9 @@ decision-engine semantics. Operational commands belong in `docs/ops/`.
 
 | Need | Document |
 | :--- | :--- |
-| Decision-engine semantics | [Decision Engine Semantics](ADR_P8_DECISION_ENGINE_SEMANTICS.md) |
-| Core playback decision rules | [Playback Decision Core Semantics](ADR_PLAYBACK_DECISION_P4_2_CORE_SEMANTICS.md) |
-| Legacy playback decision reference | [Playback Decision](ADR_PLAYBACK_DECISION.md) |
-| Capability resolution | [Capability Resolution](ADR_P7_CAPABILITY_RESOLUTION.md) |
+| Decision-engine semantics | [Playback Decision Spec](../ADR/009-playback-decision-spec.md) |
+| Core playback decision rules | [Playback Confidence Policy](../ADR/025-playback-confidence-policy.md) |
+| Capability resolution | [Capability Resolution](../ADR/028-playback-capability-claims.md) |
 
 ## Platform-Specific Architecture
 
