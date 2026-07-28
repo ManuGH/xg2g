@@ -13,6 +13,25 @@ has RAM, NVMe, SSD, and HDD tiers.
 The default needs only one writable filesystem. An external HLS path is an
 optional optimization, not an installation requirement.
 
+## First Installation
+
+The guided Linux setup makes this choice without requiring mount-table
+knowledge:
+
+```bash
+sudo ./infra/systemd/setup-linux.sh
+```
+
+It shows the usable mounts and free space, estimates the selected DVR window at
+a conservative 20 Mbit/s plus 20% headroom, and offers:
+
+1. a portable single-filesystem setup, or
+2. a directory on an already-mounted HDD/SSD/NVMe volume.
+
+The wizard never partitions, formats, mounts, or deletes storage. With a
+dedicated path it enables the fail-closed mount check, so a missing disk cannot
+silently fill the Linux system disk.
+
 ## Setup Inventory
 
 The installed Compose helper reports the resolved paths, backing mounts,

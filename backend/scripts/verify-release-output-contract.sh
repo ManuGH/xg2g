@@ -176,6 +176,7 @@ verify_goreleaser_contract() {
   assert_contains "${GORELEASER_CFG}" 'LICENSE' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'backend/VERSION' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'docs/**' "goreleaser archive payload"
+  assert_contains "${GORELEASER_CFG}" 'infra/systemd/setup-linux.sh' "goreleaser guided setup payload"
   assert_contains "${GORELEASER_CFG}" 'name_template: "checksums.txt"' "goreleaser checksum naming"
   assert_contains "${GORELEASER_CFG}" 'dockers_v2:' "goreleaser dockers_v2 block"
   assert_contains "${GORELEASER_CFG}" '- "ghcr.io/manugh/xg2g"' "goreleaser dockers_v2 image"
@@ -251,6 +252,7 @@ verify_archive_payload() {
   printf '%s\n' "${entries}" | grep -Eq '(^|/)LICENSE$' || fail "archive missing LICENSE: ${archive}"
   printf '%s\n' "${entries}" | grep -Eq '(^|/)backend/VERSION$' || fail "archive missing backend/VERSION: ${archive}"
   printf '%s\n' "${entries}" | grep -Eq '(^|/)docs/.+' || fail "archive missing docs payload: ${archive}"
+  printf '%s\n' "${entries}" | grep -Eq '(^|/)infra/systemd/setup-linux\.sh$' || fail "archive missing guided Linux setup: ${archive}"
 
   version_member="$(printf '%s\n' "${entries}" | grep -E '(^|/)backend/VERSION$' | head -n 1 || true)"
   [[ -n "${version_member}" ]] || fail "archive missing backend/VERSION member: ${archive}"
@@ -322,11 +324,13 @@ create_synthetic_bundle() {
   while IFS=: read -r os arch; do
     archive_name="xg2g_${plain_version}_${os}_${arch}.tar.gz"
     payload_root="${bundle_dir}/payload-${os}-${arch}"
-    mkdir -p "${payload_root}/backend" "${payload_root}/docs/ops"
+    mkdir -p "${payload_root}/backend" "${payload_root}/docs/ops" "${payload_root}/infra/systemd"
     printf '%s\n' 'synthetic release readme' > "${payload_root}/README.md"
     printf '%s\n' 'synthetic license' > "${payload_root}/LICENSE"
     printf '%s\n' "${tag_version}" > "${payload_root}/backend/VERSION"
     printf '%s\n' 'synthetic docs' > "${payload_root}/docs/ops/placeholder.md"
+    printf '%s\n' '#!/usr/bin/env bash' > "${payload_root}/infra/systemd/setup-linux.sh"
+    chmod 0755 "${payload_root}/infra/systemd/setup-linux.sh"
 
     if [[ "${os}" == "windows" ]]; then
       binary_name="xg2g.exe"

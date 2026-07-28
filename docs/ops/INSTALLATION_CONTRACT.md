@@ -21,6 +21,10 @@ These paths are required for a start-ready installation.
 | `/etc/xg2g/xg2g.env` | Operator-provided input | Yes before start | `0600` | Operator-managed | Required secrets and env surface; must be `root:root` |
 | `/var/lib/xg2g` | Host runtime state | Yes before start | Writable directory | Operator / package | Data root must exist before service start |
 
+The guided setup creates the persistent data and DVR scratch directories as
+UID/GID `10001:10001`, matching the non-root user in the release image. It does
+not change ownership of the recordings mount.
+
 ## Optional Host Artifacts
 
 These paths are optional and host-specific. Absence is valid unless otherwise noted.
@@ -34,6 +38,10 @@ These paths are optional and host-specific. Absence is valid unless otherwise no
 Repo-side canonical deploy truth now lives under `infra/systemd/`. Files under `/srv/xg2g/`
 remain installation targets and must not be treated as an editable source of truth.
 Supported installs must be applied via `infra/systemd/sync.sh --apply --ref <tag|sha>`, not via manual file copies.
+For a first installation, `infra/systemd/setup-linux.sh` gathers and validates
+the operator inputs, creates the env/storage inputs, and then calls that same
+pinned sync path. It is a front end to the contract, not a second deployment
+mechanism.
 
 ## Optional Periodic Verifier Bundle
 

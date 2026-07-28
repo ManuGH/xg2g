@@ -65,6 +65,21 @@ in the Docker image; size your host for the concurrent streams you expect.
 
 [Read the codec/container matrix](docs/arch/CODEC_MATRIX.md)
 
+## Guided Linux Install
+
+For a persistent Linux installation, clone or download the repository and run:
+
+```bash
+sudo ./infra/systemd/setup-linux.sh
+```
+
+The assistant asks plain-language questions about the receiver, HTTPS/VPN
+access, DVR rewind window, storage, and GPU. It generates the secrets and uses
+the same pinned systemd/Compose deployment contract as manual upgrades. It
+never partitions, formats, mounts, or deletes a disk.
+
+[Read the step-by-step guide](docs/guides/GETTING_STARTED.md)
+
 ## Local Evaluation Quickstart
 
 This single-container path is for evaluating xg2g from the same host. It is not

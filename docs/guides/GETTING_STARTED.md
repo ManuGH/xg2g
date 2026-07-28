@@ -26,7 +26,35 @@ You need:
   (VAAPI/NVENC); arm64 is software-only and much heavier. Plan for meaningful CPU
   (or a GPU encode session) per concurrent stream.
 
-## 1. Start a local evaluation instance
+## 1. Recommended: guided Linux installation
+
+Download or clone the repository on the Linux server, then run:
+
+```bash
+sudo ./infra/systemd/setup-linux.sh
+```
+
+The setup assistant uses plain-language questions for:
+
+- the receiver address and optional OpenWebIF login,
+- local, private/VPN, or public HTTPS access,
+- the DVR rewind window and its estimated disk requirement,
+- shared storage or an already-mounted HDD/SSD/NVMe path, and
+- automatic, VAAPI, NVIDIA, or CPU-only transcoding.
+
+It creates strong secrets, writes the protected configuration, installs the
+systemd/Compose bundle from an exact Git commit, and starts xg2g. It does not
+partition, format, mount, or delete disks. If you downloaded GitHub's source
+ZIP instead of cloning, it retrieves the matching tagged deployment source
+before installation.
+
+Choose the local-only option if you are only evaluating on the Linux host.
+Phones, tablets, and other machines need the HTTPS proxy option; the wizard
+configures xg2g's trust boundary but expects Caddy/nginx/Traefik to run on the
+same Linux host already. The standard install deliberately binds xg2g only to
+loopback, so it cannot be bypassed over cleartext from the LAN.
+
+## 2. Alternative: one-container local evaluation
 
 This command is intended for same-host evaluation. For a persistent production
 installation, use the pinned, systemd-supervised workflow in
@@ -56,7 +84,7 @@ The image is multi-arch (`linux/amd64` + `linux/arm64`), so it runs on x86-64
 servers and on arm64 boards/NAS. Hardware transcoding (VAAPI/NVENC) is x86-only;
 on arm64, ffmpeg uses software encoding.
 
-## 2. Confirm it is healthy
+## 3. Confirm it is healthy
 
 ```bash
 curl -fsS http://localhost:8088/readyz
@@ -65,12 +93,12 @@ docker logs xg2g
 
 `readyz` returning OK means xg2g started and reached your receiver.
 
-## 3. Open the WebUI
+## 4. Open the WebUI
 
 From the **same host**, open `http://localhost:8088/ui/` and sign in with the
 `XG2G_API_TOKEN` you generated above.
 
-## 4. Reaching xg2g from another device
+## 5. Reaching xg2g from another device
 
 Plain `http://` works **only from the same machine (loopback)**. From another
 browser or device, xg2g rejects the browser session exchange
@@ -83,7 +111,7 @@ reverse proxy (Caddy, nginx, Traefik) that terminates TLS and forwards
 Do not widen the Docker port to `8088:8088` when adding a reverse proxy; that
 would leave a direct cleartext path around HTTPS.
 
-## 5. Choose your channels
+## 6. Choose your channels
 
 By default xg2g exposes your receiver's bouquets. Pick which one to serve with
 `XG2G_BOUQUET`, and tune EPG, picons, and streaming policy as needed — all in

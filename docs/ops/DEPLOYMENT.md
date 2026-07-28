@@ -7,6 +7,21 @@ infra/systemd/sync.sh --check --ref <tag|sha>
 infra/systemd/sync.sh --apply --ref <tag|sha>
 ```
 
+For a new Linux host, use the guided front end
+`infra/systemd/setup-linux.sh`:
+
+```bash
+sudo ./infra/systemd/setup-linux.sh
+```
+
+It asks for the receiver, private/public access topology, DVR window, an
+optional already-mounted scratch disk, and GPU type. It generates the required
+secrets and delegates the installation to the pinned `sync.sh` path above. It
+never partitions, formats, mounts, or deletes a disk. Existing installations
+remain on `sync.sh`; the wizard will not overwrite their environment file.
+The standard proxy choice assumes Caddy/nginx/Traefik runs on the same host,
+because the hardened base Compose file publishes xg2g on loopback only.
+
 This copies repo truth into `/srv/xg2g` and `/etc/systemd/system`, reloads
 systemd, and runs verification checks.
 

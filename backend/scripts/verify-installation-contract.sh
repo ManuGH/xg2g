@@ -10,6 +10,7 @@ DEPLOYMENT_INDEX="${REPO_ROOT}/docs/ops/DEPLOYMENT.md"
 RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 
 REQUIRED_REPO_FILES=(
+  "infra/systemd/setup-linux.sh"
   "infra/systemd/sync.sh"
   "infra/systemd/docker-compose.yml"
   "infra/systemd/xg2g.service"
@@ -21,6 +22,7 @@ REQUIRED_REPO_FILES=(
 )
 
 REQUIRED_REPO_EXECUTABLES=(
+  "infra/systemd/setup-linux.sh"
   "infra/systemd/sync.sh"
   "backend/scripts/compose-xg2g.sh"
   "backend/scripts/verify-compose-contract.sh"
@@ -194,6 +196,7 @@ verify_installation_doc() {
   assert_contains "${INSTALL_DOC}" "all-or-nothing" "installation contract bundle rule"
   assert_contains "${INSTALL_DOC}" "--verify-install-root /" "installation contract live-host verification"
   assert_contains "${INSTALL_DOC}" '`infra/systemd/sync.sh --apply --ref <tag|sha>`' "installation contract sync apply path"
+  assert_contains "${INSTALL_DOC}" '`infra/systemd/setup-linux.sh`' "installation contract guided setup path"
 }
 
 verify_docs_discoverability() {
@@ -203,6 +206,7 @@ verify_docs_discoverability() {
   assert_contains "${DEPLOYMENT_INDEX}" '`infra/systemd/sync.sh --check --ref <tag|sha>`' "deployment index sync check command"
   assert_contains "${DEPLOYMENT_INDEX}" '`infra/systemd/sync.sh --apply --ref <tag|sha>`' "deployment index sync apply command"
   assert_contains "${DEPLOYMENT_INDEX}" 'only supported deployment path' "deployment index sole deployment path"
+  assert_contains "${DEPLOYMENT_INDEX}" '`infra/systemd/setup-linux.sh`' "deployment index guided setup path"
 
   assert_file "${RUNBOOK}"
   assert_contains "${RUNBOOK}" 'Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.' "runbook installation contract link"

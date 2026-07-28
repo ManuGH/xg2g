@@ -42,6 +42,7 @@ Every release archive must contain:
 - `LICENSE`
 - `backend/VERSION`
 - `docs/**`
+- `infra/systemd/setup-linux.sh`
 
 The verifier treats archive wrapper directories as implementation detail. The
 required payload entries may be nested, but they must be present.
