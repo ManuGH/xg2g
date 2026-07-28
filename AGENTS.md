@@ -10,7 +10,7 @@ Capture and compare these three files before patching anything:
 - `/srv/xg2g/docker-compose.gpu.yml` — optional GPU overlay; compare it too when present
 - `/etc/xg2g/xg2g.env` — live environment file loaded by both systemd and Compose; may also select compose files via `COMPOSE_FILE`
 
-The checked-in canonical unit is [deploy/xg2g.service](deploy/xg2g.service), rendered from [backend/templates/docs/ops/xg2g.service.tmpl](backend/templates/docs/ops/xg2g.service.tmpl). The live unit may drift from both the repo truth and the deployed host copy under `/srv/xg2g/docs/ops/xg2g.service`.
+The checked-in canonical unit is [infra/systemd/xg2g.service](infra/systemd/xg2g.service), rendered from [backend/templates/docs/ops/xg2g.service.tmpl](backend/templates/docs/ops/xg2g.service.tmpl). The live unit may drift from both the repo truth and the deployed host copy under `/srv/xg2g/docs/ops/xg2g.service`.
 
 ## Env Reload Rule (LXC 110)
 

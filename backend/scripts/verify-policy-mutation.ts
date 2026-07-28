@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 
-const TARGET_FILE = path.join(__dirname, '../../frontend/webui/src/contracts/PolicyEngine.ts');
+const TARGET_FILE = path.join(__dirname, '../../apps/webui/src/contracts/PolicyEngine.ts');
 const TEST_CMD = 'npx vitest run tests/contracts/policy.test.ts';
 
 function runTests() {

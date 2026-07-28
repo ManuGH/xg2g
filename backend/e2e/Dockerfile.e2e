@@ -20,8 +20,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 # WebUI deps (vite dev server is started by the Playwright webServer config).
-COPY frontend/webui/package.json frontend/webui/package-lock.json ./frontend/webui/
-WORKDIR /app/frontend/webui
+COPY apps/webui/package.json apps/webui/package-lock.json ./apps/webui/
+WORKDIR /app/apps/webui
 RUN npm ci --no-audit --no-fund
 
 # Fixture-server deps.
@@ -32,7 +32,7 @@ RUN npm ci --no-audit --no-fund
 
 # Source — reset WORKDIR before copying the rest of the tree.
 WORKDIR /app
-COPY frontend/webui ./frontend/webui
+COPY apps/webui ./apps/webui
 COPY backend/e2e ./backend/e2e
 
 # Generate the HLS fixture into backend/e2e/fixtures/hls.

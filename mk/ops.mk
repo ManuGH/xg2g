@@ -55,7 +55,7 @@ restart: ## Restart the default local Compose service (advanced)
 
 prod-up:
 	@echo "ERROR: Production deployment is not a Make target." >&2
-	@echo "Use: deploy/sync.sh --apply --ref <tag|sha>" >&2
+	@echo "Use: infra/systemd/sync.sh --apply --ref <tag|sha>" >&2
 	@false
 
 prod-down:

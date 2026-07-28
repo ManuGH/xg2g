@@ -3,6 +3,7 @@ package openapi3
 import (
 	"context"
 	"encoding/json"
+	"maps"
 )
 
 //go:generate go run refsgenerator.go
@@ -12,15 +13,13 @@ import (
 type Ref struct {
 	Ref        string         `json:"$ref" yaml:"$ref"`
 	Extensions map[string]any `json:"-" yaml:"-"`
-	Origin     *Origin        `json:"__origin__,omitempty" yaml:"__origin__,omitempty"`
+	Origin     *Origin        `json:"-" yaml:"-"`
 }
 
 // MarshalYAML returns the YAML encoding of Ref.
 func (x Ref) MarshalYAML() (any, error) {
 	m := make(map[string]any, 1+len(x.Extensions))
-	for k, v := range x.Extensions {
-		m[k] = v
-	}
+	maps.Copy(m, x.Extensions)
 	if x := x.Ref; x != "" {
 		m["$ref"] = x
 	}
@@ -39,5 +38,5 @@ func (x Ref) MarshalJSON() ([]byte, error) {
 // Validate returns an error if Extensions does not comply with the OpenAPI spec.
 func (e *Ref) Validate(ctx context.Context, opts ...ValidationOption) error {
 	ctx = WithValidationOptions(ctx, opts...)
-	return validateExtensions(ctx, e.Extensions)
+	return validateExtensions(ctx, e.Extensions, e.Origin)
 }

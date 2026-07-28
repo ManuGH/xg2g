@@ -15,7 +15,7 @@ no production deployment, no network egress.
 
 ## One-command run
 
-Build context is the **repo root** (the image needs `frontend/webui`, the
+Build context is the **repo root** (the image needs `apps/webui`, the
 fixture-server, and the e2e sources):
 
 ```sh
@@ -59,7 +59,7 @@ pct exec 110 -- sh -c 'cd /tmp/xg2g-build/xg2g \
 **Re-running** is cheaper: the built image is self-contained (source + HLS fixture
 are baked in at build time), so a pure re-run is just
 `pct exec 110 -- docker run --rm xg2g-e2e` — no re-push, no rebuild. **But** that
-image is a frozen snapshot: after you change anything under `frontend/webui` or
+image is a frozen snapshot: after you change anything under `apps/webui` or
 `backend/e2e`, you must re-push (step 1) and rebuild (step 2), or you are testing
 stale code. To capture the Playwright trace on a failure (it lives inside the
 container and `--rm` discards it), mount a volume:
@@ -71,7 +71,7 @@ container and `--rm` discards it), mount a volume:
 ## CI
 
 This suite is a **required PR gate**: `pr-required-gates.yml` runs
-`make webui-browser-smoke` whenever a PR touches `frontend/webui/` or
+`make webui-browser-smoke` whenever a PR touches `apps/webui/` or
 `backend/e2e/`. The make target runs *all* specs in `specs/` (no filter), so any
 spec you add here runs on every relevant PR — including the real-hls.js playback
 spec. The CI job installs `ffmpeg` and the make target runs `gen-hls-fixture.sh`,

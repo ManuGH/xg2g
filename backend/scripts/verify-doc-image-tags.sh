@@ -24,7 +24,7 @@ echo "🔍 Canonical Version (SSoT): ${CANONICAL_VERSION}"
 # 2. Scope
 FILES=(
     "${REPO_ROOT}/README.md"
-    "${REPO_ROOT}/deploy/docker-compose.yml"
+    "${REPO_ROOT}/infra/systemd/docker-compose.yml"
     "${REPO_ROOT}/docs/ops/OPERATIONS_MODEL.md"
     "${REPO_ROOT}/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md"
 )

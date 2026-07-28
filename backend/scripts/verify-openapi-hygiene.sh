@@ -6,6 +6,10 @@ set -e
 # 1. Casing: camelCase is the standard. Specific legacy fields are ALLOWED (not checked).
 # 2. Strictness: additionalProperties: false is mandatory for Decision/Problem types.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$BACKEND_ROOT"
+
 OPENAPI_FILE="api/openapi.yaml"
 EXIT_CODE=0
 

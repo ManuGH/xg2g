@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 MODE=""
 SOURCE_REF=""
@@ -22,9 +22,9 @@ DRIFT_DETECTED=0
 TEMP_DIRS=()
 
 CORE_SPECS=(
-  "deploy/docker-compose.yml|/srv/xg2g/docker-compose.yml|644"
-  "deploy/xg2g.service|/srv/xg2g/docs/ops/xg2g.service|644"
-  "deploy/xg2g.service|/etc/systemd/system/xg2g.service|644"
+  "infra/systemd/docker-compose.yml|/srv/xg2g/docker-compose.yml|644"
+  "infra/systemd/xg2g.service|/srv/xg2g/docs/ops/xg2g.service|644"
+  "infra/systemd/xg2g.service|/etc/systemd/system/xg2g.service|644"
   "backend/scripts/compose-xg2g.sh|/srv/xg2g/scripts/compose-xg2g.sh|755"
   "backend/scripts/verify-compose-contract.sh|/srv/xg2g/scripts/verify-compose-contract.sh|755"
   "backend/scripts/verify-installed-unit.sh|/srv/xg2g/scripts/verify-installed-unit.sh|755"
@@ -33,11 +33,11 @@ CORE_SPECS=(
 )
 
 GPU_SPECS=(
-  "deploy/docker-compose.gpu.yml|/srv/xg2g/docker-compose.gpu.yml|644"
+  "infra/systemd/docker-compose.gpu.yml|/srv/xg2g/docker-compose.gpu.yml|644"
 )
 
 NVIDIA_SPECS=(
-  "deploy/docker-compose.nvidia.yml|/srv/xg2g/docker-compose.nvidia.yml|644"
+  "infra/systemd/docker-compose.nvidia.yml|/srv/xg2g/docker-compose.nvidia.yml|644"
 )
 
 VERIFIER_SPECS=(
@@ -63,8 +63,8 @@ VERIFIER_TARGETS=(
 usage() {
   cat <<'EOF'
 Usage:
-  deploy/sync.sh --check [--ref <tag|sha>] [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
-  deploy/sync.sh --apply --ref <tag|sha> [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
+  infra/systemd/sync.sh --check [--ref <tag|sha>] [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
+  infra/systemd/sync.sh --apply --ref <tag|sha> [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
 
 Modes:
   --check   Compare repo truth (current checkout or pinned ref) against the host install root.
@@ -287,7 +287,7 @@ gpu_overlay_enabled() {
       return 1
       ;;
     auto)
-      if [[ ! -f "${SOURCE_ROOT}/deploy/docker-compose.gpu.yml" ]]; then
+      if [[ ! -f "${SOURCE_ROOT}/infra/systemd/docker-compose.gpu.yml" ]]; then
         return 1
       fi
 
@@ -313,7 +313,7 @@ nvidia_overlay_enabled() {
       return 1
       ;;
     auto)
-      if [[ ! -f "${SOURCE_ROOT}/deploy/docker-compose.nvidia.yml" ]]; then
+      if [[ ! -f "${SOURCE_ROOT}/infra/systemd/docker-compose.nvidia.yml" ]]; then
         return 1
       fi
 
@@ -417,10 +417,10 @@ compare_absent_target() {
 validate_env_contract() {
   local schema_file env_file output status line
 
-  schema_file="${SOURCE_ROOT}/deploy/xg2g.env.schema.yaml"
+  schema_file="${SOURCE_ROOT}/infra/systemd/xg2g.env.schema.yaml"
   env_file="$(host_path "/etc/xg2g/xg2g.env")"
 
-  [[ -f "${schema_file}" ]] || fail "missing env schema in ${SOURCE_LABEL}: deploy/xg2g.env.schema.yaml"
+  [[ -f "${schema_file}" ]] || fail "missing env schema in ${SOURCE_LABEL}: infra/systemd/xg2g.env.schema.yaml"
 
   set +e
   output="$(python3 - "${schema_file}" "${env_file}" <<'PY'

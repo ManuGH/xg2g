@@ -419,6 +419,11 @@ export type PlaybackFeedbackRequest = {
     details?: {
         [key: string]: unknown;
     };
+    /**
+     * Optional client-side correlation context (engine, phase, attempt id).
+     * Backend logs this field if present; not persisted.
+     *
+     */
     context?: PlaybackEngineErrorContext;
 };
 
@@ -1063,6 +1068,9 @@ export type PlaybackInfo = {
      */
     audioCodec?: string;
     reason?: PlaybackInfoReason;
+    /**
+     * Backend playback decision (P4-1). Required when client provides capabilities.
+     */
     decision?: PlaybackDecision;
 };
 

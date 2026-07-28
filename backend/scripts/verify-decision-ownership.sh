@@ -6,7 +6,7 @@
 set -euo pipefail
 
 DECISION_PKG="github.com/ManuGH/xg2g/internal/control/recordings/decision"
-LEGACY_RUNTIME_OWNER="internal/control/http/v3/recordings/playback_info.go"
+LEGACY_RUNTIME_OWNER="backend/internal/control/http/v3/recordings/playback_info.go"
 
 # Exact production imports that still exchange legacy decision DTOs, provide
 # offline audit/reporting, or wire the non-live compatibility path. An entry is
@@ -14,30 +14,29 @@ LEGACY_RUNTIME_OWNER="internal/control/http/v3/recordings/playback_info.go"
 # empty list plus deletion of LEGACY_RUNTIME_OWNER when recording playback also
 # uses playbackplanner.
 PRODUCTION_IMPORT_ALLOWLIST=(
-    "cmd/daemon/storage_decision_report_render.go"
-    "cmd/daemon/storage_decision_report_sqlite.go"
-    "cmd/daemon/storage_decision_sweep_clients.go"
-    "cmd/daemon/storage_decision_sweep_cmd.go"
-    "cmd/daemon/storage_decision_sweep_deps.go"
-    "cmd/daemon/storage_decision_sweep_diff.go"
-    "internal/app/bootstrap/bootstrap.go"
-    "internal/control/http/v3/intents/start_profile_policy.go"
-    "internal/control/http/v3/playback_info_http_adapter.go"
-    "internal/control/http/v3/playback_info_response_mapping.go"
-    "internal/control/http/v3/playback_info_runtime_state.go"
-    "internal/control/http/v3/recordings/capability_registry.go"
-    "internal/control/http/v3/recordings/deps.go"
+    "backend/cmd/daemon/storage_decision_report_render.go"
+    "backend/cmd/daemon/storage_decision_report_sqlite.go"
+    "backend/cmd/daemon/storage_decision_sweep_clients.go"
+    "backend/cmd/daemon/storage_decision_sweep_cmd.go"
+    "backend/cmd/daemon/storage_decision_sweep_deps.go"
+    "backend/cmd/daemon/storage_decision_sweep_diff.go"
+    "backend/internal/app/bootstrap/bootstrap.go"
+    "backend/internal/control/http/v3/intents/start_profile_policy.go"
+    "backend/internal/control/http/v3/playbackinfo/response_mapping.go"
+    "backend/internal/control/http/v3/playbackinfo/runtime_state.go"
+    "backend/internal/control/http/v3/recordings/capability_registry.go"
+    "backend/internal/control/http/v3/recordings/deps.go"
     "$LEGACY_RUNTIME_OWNER"
-    "internal/control/http/v3/recordings/playback_info_types.go"
-    "internal/control/http/v3/recordings/playback_transport_policy.go"
-    "internal/control/http/v3/server.go"
-    "internal/control/playbackshadow/shadow.go"
-    "internal/health/lifecycle_upgrade.go"
+    "backend/internal/control/http/v3/recordings/playback_info_types.go"
+    "backend/internal/control/http/v3/recordings/playback_transport_policy.go"
+    "backend/internal/control/http/v3/server.go"
+    "backend/internal/control/playbackshadow/shadow.go"
+    "backend/internal/health/lifecycle_upgrade.go"
 )
 
 is_test_surface() {
     local file="$1"
-    [[ "$file" == *_test.go || "$file" == test/* ]]
+    [[ "$file" == *_test.go || "$file" == backend/test/* ]]
 }
 
 is_production_import_allowlisted() {
@@ -122,7 +121,7 @@ while IFS= read -r match; do
     fi
     hits_actionable=$((hits_actionable + 1))
     echo "❌ RECEIPT_GATE_VIOLATION: $match"
-done < <(git grep -n -E '(^|[^[:alnum:]_])IssueEquivalent\(' -- 'internal/control/http/v3/*.go' 'internal/control/http/v3/**/*.go' || true)
+done < <(git grep -n -E '(^|[^[:alnum:]_])IssueEquivalent\(' -- 'backend/internal/control/http/v3/*.go' 'backend/internal/control/http/v3/**/*.go' || true)
 
 echo ""
 echo "Summary:"

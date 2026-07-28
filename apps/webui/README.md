@@ -25,7 +25,7 @@ Open: `http://localhost:8080/ui/`
 For backend + UI development without rebuilding the production container image:
 
 `make install` ensures `.env` exists, generates a local playback decision
-secret, and installs `frontend/webui` dependencies.
+secret, and installs `apps/webui` dependencies.
 
 `make doctor` is available when you want a standalone workspace check before
 starting the dev path.
@@ -40,7 +40,7 @@ make webui-dev
 If you want raw Vite only:
 
 ```bash
-cd frontend/webui
+cd apps/webui
 npm run dev
 ```
 
@@ -61,7 +61,7 @@ Useful overrides:
 ## Design And Contracts
 
 - WebUI docs index: `../../docs/webui/README.md`
-- Design contract: `frontend/webui/DESIGN.md`
+- Design contract: `apps/webui/DESIGN.md`
 - UI contract gate script: `../../backend/scripts/check-ui-contract.sh`
 - API contract source: `../../backend/api/openapi.yaml`
 

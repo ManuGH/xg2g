@@ -23,7 +23,7 @@ updates:
   - package-ecosystem: "npm"
     directories:
       - "/"
-      - "/frontend/webui"
+      - "/apps/webui"
       - "/backend/e2e/fixture-server"
     schedule:
       interval: "daily"

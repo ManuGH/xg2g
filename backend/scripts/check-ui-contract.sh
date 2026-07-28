@@ -11,7 +11,7 @@ set -euo pipefail
 # Determine project root (script is in scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-WEBUI_SRC="$PROJECT_ROOT/frontend/webui/src"
+WEBUI_SRC="$PROJECT_ROOT/apps/webui/src"
 
 EXIT_CODE=0
 
@@ -28,7 +28,7 @@ if [ ${#SCOPE_FILES[@]} -gt 0 ]; then
 else
   echo "=========================================="
   echo "UI Contract Enforcement - FULL SCAN"
-  echo "Checking: All files in frontend/webui/src"
+  echo "Checking: All files in apps/webui/src"
   echo "=========================================="
 fi
 echo ""
@@ -38,7 +38,7 @@ cd "$WEBUI_SRC"
 if [ "$IS_SCOPED" = true ]; then
   FILTERED_SCOPE=()
   for file in "${SCOPE_FILES[@]}"; do
-    clean_file="${file#frontend/webui/src/}"
+    clean_file="${file#apps/webui/src/}"
     if [ -f "$clean_file" ]; then
       FILTERED_SCOPE+=("$file")
     else
@@ -53,7 +53,7 @@ if [ "$IS_SCOPED" = true ]; then
   fi
 
   for file in "${SCOPE_FILES[@]}"; do
-    clean_file="${file#frontend/webui/src/}"
+    clean_file="${file#apps/webui/src/}"
     case "$clean_file" in
       *.tsx|*.css) ;;
       *)
@@ -75,7 +75,7 @@ echo "------------------------"
 V1=""
 if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
-    clean_file="${file#frontend/webui/src/}"
+    clean_file="${file#apps/webui/src/}"
     result=$(grep -HInE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' "$clean_file" | grep -vE 'transparent|inherit|currentColor|index.css:.*--' || true)
     if [ -n "$result" ]; then
       V1="$V1$result"$'\n'
@@ -105,7 +105,7 @@ V2=""
 if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     if [[ "$file" == *.css ]]; then
-      clean_file="${file#frontend/webui/src/}"
+      clean_file="${file#apps/webui/src/}"
       result=$(grep -In "animation:" "$clean_file" || true)
       if [ -n "$result" ]; then
         V2="$V2$clean_file:$result"$'\n'
@@ -135,7 +135,7 @@ V3=""
 if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     if [[ "$file" == *.css ]]; then
-      clean_file="${file#frontend/webui/src/}"
+      clean_file="${file#apps/webui/src/}"
       result=$(grep -HIn 'box-shadow: ' "$clean_file" | grep -v 'box-shadow: var(--' | grep -vE "(index.css|Card.css|StatusChip.module.css|Navigation.css|Dashboard.module.css|V3Player.module.css)" || true)
       if [ -n "$result" ]; then
         V3="$V3$result"$'\n'
@@ -167,7 +167,7 @@ if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     # Only check CSS files in scoped mode for gradients
     if [[ "$file" == *.css ]]; then
-      clean_file="${file#frontend/webui/src/}"
+      clean_file="${file#apps/webui/src/}"
       result=$(grep -HInE 'linear-gradient\(|radial-gradient\(' "$clean_file" | grep -vE "(index.css|V3Player.module.css|Dashboard.module.css)" || true)
       if [ -n "$result" ]; then
         V4="$V4$result"$'\n'
@@ -197,7 +197,7 @@ V5=""
 if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     if [[ "$file" == *.tsx ]]; then
-      clean_file="${file#frontend/webui/src/}"
+      clean_file="${file#apps/webui/src/}"
       
       # Step 1: Check for multi-line style props (FAIL immediately).
       # TypeScript custom-property objects commonly close as

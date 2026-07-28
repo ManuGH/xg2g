@@ -5,7 +5,7 @@ set -e
 # CTO-grade enforcement: "Pure Viewport" in WebUI.
 #
 # Rule (normative):
-# - In frontend/webui/src/** NEVER access decision.outputs directly
+# - In apps/webui/src/** NEVER access decision.outputs directly
 # - ONLY allowed: selected_output_url, selected_output_kind, decision.mode
 #
 # Exemption Policy:
@@ -13,7 +13,7 @@ set -e
 # - Exempted files must be listed below (allowlist-only)
 # - New exemptions require ADR or PR review justification
 
-WEBUI_DIR="frontend/webui/src"
+WEBUI_DIR="apps/webui/src"
 EXIT_CODE=0
 
 # Explicit exemption allowlist (CTO requirement)

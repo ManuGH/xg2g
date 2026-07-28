@@ -129,6 +129,18 @@ and CSRF accept the public origin.
 > You still get HTTPS from the proxy; only the *profile* stays `lan` (though you
 > must still set `XG2G_TRUSTED_PROXIES` so the proxy's headers are trusted).
 
+### VPN-only binding
+
+The base Compose file publishes the backend as
+`127.0.0.1:8088:8088`, so direct LAN/public access is closed by default. For a
+VPN-only native/API listener, replace the host side with the server's exact VPN
+address, for example `10.8.0.1:8088:8088`, and restrict port 8088 with the VPN
+ACL or host firewall.
+
+Do **not** add `10.8.0.0/24` (or a Tailscale client range) to
+`XG2G_TRUSTED_PROXIES`. Only add the address of a real HTTP reverse proxy.
+Ordinary VPN clients must remain untrusted header senders.
+
 ---
 
 ## Reference configs

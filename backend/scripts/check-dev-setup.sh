@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
-WEBUI_NODE_MODULES="${REPO_ROOT}/frontend/webui/node_modules"
+WEBUI_NODE_MODULES="${REPO_ROOT}/apps/webui/node_modules"
 VARIABLES_FILE="${REPO_ROOT}/mk/variables.mk"
 GO_TOOLCHAIN_CHECK="${REPO_ROOT}/backend/scripts/check-go-toolchain.sh"
 NODE_TOOLCHAIN_CHECK="${REPO_ROOT}/backend/scripts/check-node-toolchain.sh"

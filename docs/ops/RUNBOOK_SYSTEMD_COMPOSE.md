@@ -5,7 +5,7 @@ Canonical guide for managing the hardened `xg2g` daemon via systemd.
 ### Installation
 Deploy a pinned repo ref via the sync entrypoint:
 ```bash
-deploy/sync.sh --apply --ref <tag|sha>
+infra/systemd/sync.sh --apply --ref <tag|sha>
 systemctl enable --now xg2g
 ```
 
@@ -27,11 +27,11 @@ checked-in `docker-compose.gpu.yml` marker expands into visible render-node-only
 device entries at runtime. The NVIDIA selector loads its dedicated overlay.
 
 Drift guard: `backend/scripts/verify-systemd-unit.sh` and `backend/scripts/verify-systemd-runtime-contract.sh` must pass before release.
-Canonical repo-side unit is `deploy/xg2g.service`; no repo-root `xg2g.service` is permitted.
+Canonical repo-side unit is `infra/systemd/xg2g.service`; no repo-root `xg2g.service` is permitted.
 
 Host verification (deploy-time, fail-closed):
 ```bash
-deploy/sync.sh --check --ref <tag|sha>
+infra/systemd/sync.sh --check --ref <tag|sha>
 /srv/xg2g/scripts/verify-installed-unit.sh /srv/xg2g/docs/ops/xg2g.service
 /srv/xg2g/scripts/verify-installation-contract.sh --verify-install-root /
 /srv/xg2g/scripts/verify-systemd-runtime-contract.sh
@@ -146,7 +146,7 @@ When a future AI or operator debugs a failed `systemctl start xg2g` or `systemct
    - `/srv/xg2g/docker-compose.gpu.yml` (if present)
    - `/srv/xg2g/docker-compose.nvidia.yml` (if present)
    - `/etc/xg2g/xg2g.env`
-3. Only after that, compare against the repo-side canonical unit `deploy/xg2g.service`.
+3. Only after that, compare against the repo-side canonical unit `infra/systemd/xg2g.service`.
 
 Use these symptom mappings:
 
@@ -211,7 +211,7 @@ Observed live-host delta on March 23, 2026 (VAAPI runtime truth, later relaxed b
 - Current CPU-only escape hatch for `/dev/dri` hosts: set `XG2G_VAAPI_DEVICE=` explicitly empty in `/etc/xg2g/xg2g.env` to disable VAAPI auto-detect without removing the Compose overlay.
 
 Observed live-host delta on March 24, 2026 (installation drift still present):
-- `/etc/systemd/system/xg2g.service` did not byte-match either `/srv/xg2g/docs/ops/xg2g.service` or the repo-side canonical unit `deploy/xg2g.service`.
+- `/etc/systemd/system/xg2g.service` did not byte-match either `/srv/xg2g/docs/ops/xg2g.service` or the repo-side canonical unit `infra/systemd/xg2g.service`.
 - `/srv/xg2g/docs/ops/xg2g.service` and the installed unit still used direct `/usr/bin/docker compose --project-name xg2g ...` calls; `/srv/xg2g/scripts/compose-xg2g.sh` was present on the host but not yet wired into the unit.
 - The installed unit carried extra `ExecStartPre` gates not present in the canonical host copy, including:
   - image preflight derived from `services.xg2g.image` in `/srv/xg2g/docker-compose.yml`

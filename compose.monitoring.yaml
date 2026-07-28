@@ -1,5 +1,5 @@
 # Optional monitoring stack for xg2g
-# Usage: docker compose --project-directory . -f deploy/docker-compose.yml -f compose.monitoring.yaml up -d
+# Usage: docker compose --project-directory . -f infra/systemd/docker-compose.yml -f compose.monitoring.yaml up -d
 
 services:
   prometheus:
@@ -13,7 +13,7 @@ services:
     ports:
       - "9091:9090"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     networks:
       - monitoring
@@ -29,7 +29,7 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/xg2g.json:ro
+      - ./infra/monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/xg2g.json:ro
     networks:
       - monitoring
     restart: unless-stopped

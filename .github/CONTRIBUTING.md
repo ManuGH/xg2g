@@ -44,8 +44,8 @@ If you want to start with a small task, look for issues labeled:
 The project is organized into a monorepo with a clear separation between backend and frontend:
 
 - `backend/`: Contains all Go source code, internal packages, and backend-specific scripts.
-- `frontend/`: Contains the Web UI (located in `frontend/webui/`).
-- `infrastructure/`: Docker Compose files and monitoring configurations.
+- `apps/`: Contains application frontends, including the Web UI in `apps/webui/`.
+- `infra/`: Contains Docker, systemd, reverse-proxy, and monitoring infrastructure.
 - `mk/`: Modular Makefile fragments.
 - `docs/`: Project documentation.
 
@@ -62,7 +62,7 @@ make dev
 standard local container stack.
 
 ### Frontend (WebUI)
-Located in [frontend/webui/](frontend/webui/).
+Located in [apps/webui/](apps/webui/).
 ```bash
 make dev-ui
 ```

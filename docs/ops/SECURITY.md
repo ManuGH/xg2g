@@ -43,6 +43,17 @@ To protect against Cross-Site Request Forgery (CSRF) while maintaining API usabi
 - `trustedProxies` must never be world-open in public profiles. `0.0.0.0/0`
   and `::/0` are rejected by the contract because they let untrusted clients
   spoof HTTPS-offload headers.
+- Trust only addresses that actually terminate proxy connections. Never put a
+  WireGuard, Tailscale, or other VPN client subnet into `trustedProxies`; VPN
+  membership is not permission to assert `X-Forwarded-*` identity or scheme.
+- Keep the backend listener unreachable from untrusted hosts. The production
+  Compose default publishes `8088` on host loopback only. A VPN-only deployment
+  must replace that host bind with the server's exact VPN IP and enforce its
+  WireGuard/Tailscale ACL or host firewall independently.
+- The WebUI uses React Router only as a client-side browser router. RSC,
+  server actions, and data-router action APIs are forbidden by
+  `backend/scripts/verify-webui-router-security.sh` while the upstream RSC CSRF
+  advisory has no published fixed release.
 - If xg2g sees a non-loopback browser request as plain HTTP,
   `POST /api/v3/auth/session` fails closed with `400 HTTPS required`. The
   `xg2g_session` cookie is not minted, native HLS media requests to

@@ -4,16 +4,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-DEPLOY_ROOT="${REPO_ROOT}/deploy"
+DEPLOY_ROOT="${REPO_ROOT}/infra/systemd"
 INSTALL_DOC="${REPO_ROOT}/docs/ops/INSTALLATION_CONTRACT.md"
 DEPLOYMENT_INDEX="${REPO_ROOT}/docs/ops/DEPLOYMENT.md"
 RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 
 REQUIRED_REPO_FILES=(
-  "deploy/sync.sh"
-  "deploy/docker-compose.yml"
-  "deploy/xg2g.service"
-  "deploy/xg2g.env.schema.yaml"
+  "infra/systemd/sync.sh"
+  "infra/systemd/docker-compose.yml"
+  "infra/systemd/xg2g.service"
+  "infra/systemd/xg2g.env.schema.yaml"
   "backend/scripts/compose-xg2g.sh"
   "backend/scripts/verify-compose-contract.sh"
   "backend/scripts/verify-installed-unit.sh"
@@ -21,7 +21,7 @@ REQUIRED_REPO_FILES=(
 )
 
 REQUIRED_REPO_EXECUTABLES=(
-  "deploy/sync.sh"
+  "infra/systemd/sync.sh"
   "backend/scripts/compose-xg2g.sh"
   "backend/scripts/verify-compose-contract.sh"
   "backend/scripts/verify-installed-unit.sh"
@@ -30,8 +30,8 @@ REQUIRED_REPO_EXECUTABLES=(
 )
 
 OPTIONAL_REPO_FILES=(
-  "deploy/docker-compose.gpu.yml"
-  "deploy/docker-compose.nvidia.yml"
+  "infra/systemd/docker-compose.gpu.yml"
+  "infra/systemd/docker-compose.nvidia.yml"
   "docs/ops/xg2g-verifier.service"
   "docs/ops/xg2g-verifier.timer"
   "backend/scripts/verify-runtime.sh"
@@ -181,9 +181,9 @@ verify_installation_doc() {
   assert_contains "${INSTALL_DOC}" "## Required Host Layout" "installation contract section"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/docker-compose.yml`' "installation contract base compose"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/docker-compose.nvidia.yml`' "installation contract nvidia overlay"
-  assert_contains "${INSTALL_DOC}" '`deploy/docker-compose.yml`' "installation contract canonical base compose source"
-  assert_contains "${INSTALL_DOC}" '`deploy/docker-compose.nvidia.yml`' "installation contract canonical nvidia overlay source"
-  assert_contains "${INSTALL_DOC}" '`deploy/xg2g.service`' "installation contract canonical unit source"
+  assert_contains "${INSTALL_DOC}" '`infra/systemd/docker-compose.yml`' "installation contract canonical base compose source"
+  assert_contains "${INSTALL_DOC}" '`infra/systemd/docker-compose.nvidia.yml`' "installation contract canonical nvidia overlay source"
+  assert_contains "${INSTALL_DOC}" '`infra/systemd/xg2g.service`' "installation contract canonical unit source"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/compose-xg2g.sh`' "installation contract compose helper"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/verify-installation-contract.sh`' "installation contract verifier script"
   assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g.service`' "installation contract installed unit"
@@ -193,21 +193,21 @@ verify_installation_doc() {
   assert_contains "${INSTALL_DOC}" "## Optional Periodic Verifier Bundle" "installation contract optional verifier bundle"
   assert_contains "${INSTALL_DOC}" "all-or-nothing" "installation contract bundle rule"
   assert_contains "${INSTALL_DOC}" "--verify-install-root /" "installation contract live-host verification"
-  assert_contains "${INSTALL_DOC}" '`deploy/sync.sh --apply --ref <tag|sha>`' "installation contract sync apply path"
+  assert_contains "${INSTALL_DOC}" '`infra/systemd/sync.sh --apply --ref <tag|sha>`' "installation contract sync apply path"
 }
 
 verify_docs_discoverability() {
   assert_file "${DEPLOYMENT_INDEX}"
   assert_contains "${DEPLOYMENT_INDEX}" '`docs/ops/INSTALLATION_CONTRACT.md`' "deployment index installation contract"
-  assert_contains "${DEPLOYMENT_INDEX}" 'Repo-side deploy truth lives under `deploy/`.' "deployment index deploy migration note"
-  assert_contains "${DEPLOYMENT_INDEX}" '`deploy/sync.sh --check --ref <tag|sha>`' "deployment index sync check command"
-  assert_contains "${DEPLOYMENT_INDEX}" '`deploy/sync.sh --apply --ref <tag|sha>`' "deployment index sync apply command"
+  assert_contains "${DEPLOYMENT_INDEX}" 'Repo-side deploy truth lives under `infra/systemd/`.' "deployment index deploy migration note"
+  assert_contains "${DEPLOYMENT_INDEX}" '`infra/systemd/sync.sh --check --ref <tag|sha>`' "deployment index sync check command"
+  assert_contains "${DEPLOYMENT_INDEX}" '`infra/systemd/sync.sh --apply --ref <tag|sha>`' "deployment index sync apply command"
   assert_contains "${DEPLOYMENT_INDEX}" 'only supported deployment path' "deployment index sole deployment path"
 
   assert_file "${RUNBOOK}"
   assert_contains "${RUNBOOK}" 'Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.' "runbook installation contract link"
   assert_contains "${RUNBOOK}" 'Manual file copies into `/etc/systemd/system` or `/srv/xg2g` are not a supported deployment path.' "runbook unsupported manual deployment note"
-  assert_contains "${RUNBOOK}" 'deploy/sync.sh --check --ref <tag|sha>' "runbook sync check command"
+  assert_contains "${RUNBOOK}" 'infra/systemd/sync.sh --check --ref <tag|sha>' "runbook sync check command"
   assert_contains "${RUNBOOK}" "/srv/xg2g/scripts/verify-installation-contract.sh --verify-install-root /" "runbook installation verifier command"
 }
 

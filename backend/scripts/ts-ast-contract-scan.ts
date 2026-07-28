@@ -8,7 +8,7 @@ import * as path from 'path';
 // Uses TypeScript Compiler API for AST traversal.
 
 const MANIFEST_PATH = path.join(__dirname, '../contracts/ui_consumption.manifest.json');
-const SRC_DIR = path.join(__dirname, '../../frontend/webui/src');
+const SRC_DIR = path.join(__dirname, '../../apps/webui/src');
 
 // Load prohibited fields
 const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf-8'));

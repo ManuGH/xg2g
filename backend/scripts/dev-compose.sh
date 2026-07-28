@@ -23,13 +23,13 @@ shift
 
 case "${runtime}" in
   base)
-    compose_files="docker-compose.yml:../docker-compose.dev.yml"
+    compose_files="docker-compose.yml:../../compose.dev.yaml"
     ;;
   vaapi)
-    compose_files="docker-compose.yml:../docker-compose.dev.yml:docker-compose.gpu.yml"
+    compose_files="docker-compose.yml:../../compose.dev.yaml:docker-compose.gpu.yml"
     ;;
   nvidia)
-    compose_files="docker-compose.yml:../docker-compose.dev.yml:docker-compose.nvidia.yml"
+    compose_files="docker-compose.yml:../../compose.dev.yaml:docker-compose.nvidia.yml"
     ;;
   *)
     fail "unknown development runtime '${runtime}'; expected base, vaapi, or nvidia"
@@ -40,7 +40,7 @@ esac
 [[ -f "${ENV_FILE}" ]] || fail "missing ${ENV_FILE} (run: make install)"
 
 exec env \
-  XG2G_COMPOSE_ROOT="${REPO_ROOT}/deploy" \
+  XG2G_COMPOSE_ROOT="${REPO_ROOT}/infra/systemd" \
   XG2G_COMPOSE_PROJECT="xg2g-dev" \
   XG2G_ENV_FILE="${ENV_FILE}" \
   XG2G_COMPOSE_FILES_LOCKED=1 \

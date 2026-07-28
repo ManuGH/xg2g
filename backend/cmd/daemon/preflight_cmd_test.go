@@ -157,8 +157,8 @@ func writePreflightRuntimeFixture(t *testing.T, installRoot, repoRoot, dataDir s
 	}
 
 	if repoRoot != "" {
-		mustWritePreflightFile(t, filepath.Join(repoRoot, "deploy/xg2g.service"), unit)
-		mustWritePreflightFile(t, filepath.Join(repoRoot, "deploy/docker-compose.yml"), repoCompose)
+		mustWritePreflightFile(t, filepath.Join(repoRoot, "infra/systemd/xg2g.service"), unit)
+		mustWritePreflightFile(t, filepath.Join(repoRoot, "infra/systemd/docker-compose.yml"), repoCompose)
 	}
 }
 

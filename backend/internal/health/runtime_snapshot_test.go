@@ -249,8 +249,8 @@ func writeRuntimeSnapshotFixture(t *testing.T, installRoot, repoRoot string, opt
 	}
 
 	if strings.TrimSpace(repoRoot) != "" {
-		mustWriteFile(t, filepath.Join(repoRoot, "deploy/xg2g.service"), unit, 0o644)
-		mustWriteFile(t, filepath.Join(repoRoot, "deploy/docker-compose.yml"), repoCompose, 0o644)
+		mustWriteFile(t, filepath.Join(repoRoot, "infra/systemd/xg2g.service"), unit, 0o644)
+		mustWriteFile(t, filepath.Join(repoRoot, "infra/systemd/docker-compose.yml"), repoCompose, 0o644)
 	}
 }
 

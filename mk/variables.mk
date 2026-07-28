@@ -16,7 +16,7 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH
 export TZ := UTC
 export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
-GOTOOLCHAIN ?= go1.25.12
+GOTOOLCHAIN ?= go1.26.5
 export GOTOOLCHAIN
 export GOWORK := off
 GO := go
@@ -36,7 +36,7 @@ PYTHON_TOOLS := $(PYTHON_TOOLS_BIN)/python3
 BINARY_NAME := xg2g
 BUILD_DIR := bin
 BACKEND_DIR := backend
-FRONTEND_DIR := frontend
+FRONTEND_DIR := apps
 # Artifacts and Temporary Directories
 ARTIFACTS_DIR := artifacts
 TMP_DIR := tmp
@@ -70,7 +70,7 @@ TOOL_DIR := $(if $(GOBIN),$(GOBIN),$(GOPATH_BIN))
 
 # Locked Tool Versions (Sourced from tools.go / Baseline Policy)
 GOLANGCI_LINT_VERSION := v2.8.0
-OAPI_CODEGEN_VERSION := v2.5.1
+OAPI_CODEGEN_VERSION := v2.8.0
 GOVULNCHECK_VERSION := v1.1.4
 SYFT_VERSION := v1.19.0
 GRYPE_VERSION := v0.87.0

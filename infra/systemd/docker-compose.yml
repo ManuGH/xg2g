@@ -5,7 +5,9 @@ services:
     container_name: xg2g
     restart: unless-stopped
     ports:
-      - "8088:8088"
+      # Secure default: only a same-host reverse proxy can reach the backend.
+      # For VPN-only access, replace 127.0.0.1 with the host's VPN IP explicitly.
+      - "127.0.0.1:8088:8088"
     # Production compose: deterministic paths (use compose.dev.yaml for local overrides).
     env_file:
       - /etc/xg2g/xg2g.env

@@ -5,6 +5,10 @@ set -e
 # Generates or updates the GOVERNANCE_BASELINE.json manifest.
 # Requirement: jq is installed.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$BACKEND_ROOT"
+
 MANIFEST="testdata/contract/GOVERNANCE_BASELINE.json"
 GOLDENS=$(find testdata/contract -name "*.expected.json" | sort)
 

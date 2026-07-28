@@ -7,7 +7,7 @@ EXIT_CODE=0
 echo "--- Checking for Forbidden Field Consumption (outputs[]) ---"
 # V3Player is allowed to CHECK for outputs existence but not read from it.
 # We grep for indexed access or map/find operations on outputs.
-VIOLATIONS=$(grep -rE "\.outputs\[|\[['\"]outputs['\"|\]\.outputs\.(map|find|filter|forEach)" frontend/webui/src --exclude-dir=node_modules)
+VIOLATIONS=$(grep -rE "\.outputs\[|\[['\"]outputs['\"|\]\.outputs\.(map|find|filter|forEach)" apps/webui/src --exclude-dir=node_modules)
 
 if [ ! -z "$VIOLATIONS" ]; then
     echo "FAILED: Forbidden consumption of 'outputs[]' detected."
@@ -19,7 +19,7 @@ fi
 
 echo ""
 echo "--- Checking for Forbidden Field Consumption (profiles[]) ---"
-VIOLATIONS=$(grep -rE "\.profiles|\[['\"]profiles['\"]\]" frontend/webui/src --exclude-dir=node_modules)
+VIOLATIONS=$(grep -rE "\.profiles|\[['\"]profiles['\"]\]" apps/webui/src --exclude-dir=node_modules)
 
 if [ ! -z "$VIOLATIONS" ]; then
     echo "FAILED: Forbidden consumption of 'profiles[]' detected (Obsolete)."
@@ -31,7 +31,7 @@ fi
 
 echo ""
 echo "--- Checking for Forbidden Field Consumption (transcodeParams) ---"
-VIOLATIONS=$(grep -rE "\.transcodeParams|\[['\"]transcodeParams['\"]\]" frontend/webui/src --exclude-dir=node_modules)
+VIOLATIONS=$(grep -rE "\.transcodeParams|\[['\"]transcodeParams['\"]\]" apps/webui/src --exclude-dir=node_modules)
 
 if [ ! -z "$VIOLATIONS" ]; then
     echo "FAILED: Forbidden consumption of 'transcodeParams' detected (Backend-only)."

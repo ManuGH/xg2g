@@ -46,7 +46,7 @@ Use `make doctor` on its own when you want to validate the local workspace witho
 make build           # backend binary
 make lint            # static analysis
 cd backend && go test ./...           # backend tests
-cd frontend/webui && npm run test     # frontend tests
+cd apps/webui && npm run test     # frontend tests
 ```
 
 Recommended start paths after setup:

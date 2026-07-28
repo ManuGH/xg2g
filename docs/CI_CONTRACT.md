@@ -21,7 +21,7 @@ All developers must verify these gates locally before pushing.
 | `Integration` | `make smoke-test` | Local daemon run. |
 | `validate-config` | `make validate` | Config validation. |
 | `schema-validate` | `make schema-validate` | JSON Schema check. |
-| `Phase4 wrapper boundary` | `cd frontend/webui && npm run verify:client-wrapper` | Enforces no direct `client-ts/*.gen` imports outside wrapper. |
+| `Phase4 wrapper boundary` | `cd apps/webui && npm run verify:client-wrapper` | Enforces no direct `client-ts/*.gen` imports outside wrapper. |
 
 ## 3. Build Sanity
 

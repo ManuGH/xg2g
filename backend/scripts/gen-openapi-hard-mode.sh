@@ -16,12 +16,12 @@ echo "Generating normative OpenAPI snapshot..."
 echo "Generating consumption contract types..."
 node "$BACKEND_ROOT/scripts/generate-consumption-types.mjs"
 
-if [ ! -x "$REPO_ROOT/frontend/webui/node_modules/.bin/openapi-ts" ]; then
+if [ ! -x "$REPO_ROOT/apps/webui/node_modules/.bin/openapi-ts" ]; then
   echo "Installing webui dependencies (npm ci)..."
-  npm --prefix frontend/webui ci
+  npm --prefix apps/webui ci
 fi
 
 echo "Generating TypeScript client from OpenAPI..."
-npm --prefix frontend/webui run generate-client
+npm --prefix apps/webui run generate-client
 
 echo "✅ OpenAPI hard-mode generation complete"

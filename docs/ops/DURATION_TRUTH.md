@@ -93,10 +93,10 @@ Observability contract:
 ## Mechanical Gates
 
 - Gate F (No UI guessing):
-  - `frontend/webui/tests/contracts/v3player.duration-truth-gate.test.ts`
+  - `apps/webui/tests/contracts/v3player.duration-truth-gate.test.ts`
 - Gate K (No Duration Guessing, repo-wide UI policy):
-  - `npm --prefix frontend/webui run gate:no-duration-guessing`
-  - `frontend/webui/scripts/no-duration-guessing.mjs`
+  - `npm --prefix apps/webui run gate:no-duration-guessing`
+  - `apps/webui/scripts/no-duration-guessing.mjs`
 - Gate G/H (deterministic resolver + clamp):
   - `internal/control/recordings/duration_truth_resolver_test.go`
 - Gate I (DTO schema stability):

@@ -785,10 +785,11 @@ components:
         details:
           type: object
         context:
-          $ref: "#/components/schemas/PlaybackEngineErrorContext"
           description: |
             Optional client-side correlation context (engine, phase, attempt id).
             Backend logs this field if present; not persisted.
+          allOf:
+            - $ref: "#/components/schemas/PlaybackEngineErrorContext"
 
     PlaybackEngineErrorContext:
       type: object
@@ -1796,8 +1797,9 @@ components:
         reason:
           $ref: "#/components/schemas/PlaybackInfoReason"
         decision:
-          $ref: "#/components/schemas/PlaybackDecision"
           description: Backend playback decision (P4-1). Required when client provides capabilities.
+          allOf:
+            - $ref: "#/components/schemas/PlaybackDecision"
 
     PlaybackInfoMode:
       type: string

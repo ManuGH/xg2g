@@ -7,7 +7,7 @@ set -e
 # - No token/authorization/bearer strings in log calls.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-WEBUI_SRC="$REPO_ROOT/frontend/webui/src"
+WEBUI_SRC="$REPO_ROOT/apps/webui/src"
 EXIT_CODE=0
 
 if [ ! -d "$WEBUI_SRC" ]; then

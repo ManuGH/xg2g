@@ -488,7 +488,7 @@ func TestManager_StartAPIServer_WarnsOnCleartextTokenAuthPublicListener(t *testi
 	t.Fatalf("expected cleartext token auth warning in logs, got: %s", logBuf.String())
 }
 
-func TestManager_StartAPIServer_DoesNotWarnWhenTrustedProxiesConfigured(t *testing.T) {
+func TestManager_StartAPIServer_WarnsWhenTrustedProxyBackendIsNonLoopback(t *testing.T) {
 	var logBuf safeBuffer
 	testLogger := zerolog.New(&logBuf).With().Timestamp().Logger()
 
@@ -528,8 +528,8 @@ func TestManager_StartAPIServer_DoesNotWarnWhenTrustedProxiesConfigured(t *testi
 	for time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if strings.Contains(logBuf.String(), "running with token auth over cleartext HTTP") {
-		t.Fatalf("did not expect cleartext token auth warning with trusted proxy config, got: %s", logBuf.String())
+	if !strings.Contains(logBuf.String(), "block direct access and allow only the trusted reverse proxy") {
+		t.Fatalf("expected direct-access warning for non-loopback proxy backend, got: %s", logBuf.String())
 	}
 }
 

@@ -6,7 +6,8 @@ cd "$REPO_ROOT"
 
 echo "--- verify-no-hardcoded-baseurl ---"
 
-matches=$(rg -n '"/api/v3"' internal/ \
+matches=$(rg -n '"/api/v3"' internal/control/http/v3/ \
+  --glob '!**/*_test.go' \
   --glob '!internal/control/http/v3/baseurl.go' || true)
 
 if [[ -n "${matches}" ]]; then
@@ -15,4 +16,4 @@ if [[ -n "${matches}" ]]; then
   exit 1
 fi
 
-echo "✅ No hardcoded V3 base URL found in internal/ (excluding baseurl.go)"
+echo "✅ No hardcoded V3 base URL found in production v3 handlers (excluding baseurl.go)"

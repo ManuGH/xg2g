@@ -33,7 +33,7 @@ repos:
       - id: check-yaml
         name: Check YAML files
         args: [--allow-multiple-documents]
-        exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
+        exclude: ^infra/systemd/helm/.*/templates/.*\.(yaml|yml)$
       - id: check-added-large-files
         name: Check for large files
         args: [--maxkb=1024]
@@ -49,7 +49,7 @@ repos:
       - id: yamlfmt
         name: Format YAML files
         files: ^(backend/internal/config/testdata/|backend/fixtures/).*\.(ya?ml)$
-        exclude: ^deploy/helm/.*/templates/.*\.(yaml|yml)$
+        exclude: ^infra/systemd/helm/.*/templates/.*\.(yaml|yml)$
 
   # Local hooks
   - repo: local

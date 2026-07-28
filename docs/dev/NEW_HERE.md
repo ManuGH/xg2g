@@ -22,7 +22,7 @@ make start
 Optional WebUI dev loop:
 
 ```bash
-cd frontend/webui
+cd apps/webui
 npm ci
 npm run dev
 ```
@@ -38,7 +38,7 @@ If that is too heavy locally, use this narrower path first:
 ```bash
 make lint
 cd backend && go test ./...
-cd frontend/webui && npm run test
+cd apps/webui && npm run test
 ```
 
 ## 4. Where To Change What
@@ -46,7 +46,7 @@ cd frontend/webui && npm run test
 - API and handlers: `backend/internal/control/http/v3/`
 - Playback/session domain behavior: `backend/internal/control/` and `backend/internal/domain/`
 - App wiring/bootstrap: `backend/internal/app/bootstrap/`
-- Frontend: `frontend/webui/src/`
+- Frontend: `apps/webui/src/`
 - Contracts and invariants: `docs/ops/`, `docs/arch/`, `docs/decision/`
 
 ## 5. If CI Fails
@@ -57,7 +57,7 @@ Common checks you can run locally:
 
 - `./backend/scripts/check-go-toolchain.sh`
 - `./backend/scripts/check-ui-contract.sh`
-- `cd frontend/webui && npm run verify:client-wrapper`
+- `cd apps/webui && npm run verify:client-wrapper`
 
 ## 6. Contributor Notes
 

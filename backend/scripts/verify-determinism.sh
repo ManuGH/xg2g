@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT=${REPO_ROOT:-"$(pwd)"}
+cd "$ROOT"
 SCAN_DIRS_DEFAULT="internal/domain/session/manager internal/control internal/engine"
 SCAN_DIRS=${DETERMINISM_SCAN_DIRS:-"$SCAN_DIRS_DEFAULT"}
 ALLOWLIST=${DETERMINISM_ALLOWLIST:-"$ROOT/determinism_allowlist.txt"}
@@ -10,8 +11,8 @@ PATTERN='time\.Sleep\(|\bEventually\(|time\.After\('
 
 matches=""
 for dir in $SCAN_DIRS; do
-  if [ -d "$ROOT/$dir" ]; then
-    out=$(rg -n --glob '*_test.go' "$PATTERN" "$ROOT/$dir" || true)
+  if [ -d "$dir" ]; then
+    out=$(rg -n --glob '*_test.go' "$PATTERN" "$dir" || true)
     if [ -n "$out" ]; then
       matches+="$out"$'\n'
     fi

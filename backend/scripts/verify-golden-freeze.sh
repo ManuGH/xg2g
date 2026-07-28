@@ -4,6 +4,10 @@ set -e
 # verify-golden-freeze.sh
 # Enforces that changes to contract goldens are intentional.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$BACKEND_ROOT"
+
 MANIFEST="testdata/contract/GOVERNANCE_BASELINE.json"
 EXIT_CODE=0
 
@@ -11,7 +15,7 @@ echo "--- Checking Golden Freeze (Contract Stability) ---"
 
 if [ ! -f "$MANIFEST" ]; then
     echo "❌ Missing Governance Baseline Manifest at $MANIFEST"
-    echo "   To generate: ./scripts/generate-golden-baseline.sh"
+    echo "   To generate: ./backend/scripts/generate-golden-baseline.sh"
     exit 1
 fi
 

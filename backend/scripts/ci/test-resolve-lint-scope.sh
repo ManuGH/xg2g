@@ -21,7 +21,7 @@ trap 'rm -rf "${tmpdir}"' EXIT
 changed_files="${tmpdir}/changed-files.txt"
 
 cat > "${changed_files}" <<'EOF'
-frontend/webui/src/App.tsx
+apps/webui/src/App.tsx
 EOF
 output="$(XG2G_CI_CHANGED_FILES_PATH="${changed_files}" "${SCRIPT}" pull_request base head)"
 assert_contains "${output}" "env_access_needed=false"

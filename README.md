@@ -77,7 +77,7 @@ network, and a host with enough CPU for transcoding (x86 hosts can offload video
 encoding to a GPU/iGPU — see Playback Pipeline above)
 
 ```bash
-docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \
+docker run -d --name xg2g --restart unless-stopped -p 127.0.0.1:8088:8088 \
   -e XG2G_E2_HOST="http://192.168.1.10" \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \

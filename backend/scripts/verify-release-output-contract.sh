@@ -9,8 +9,8 @@ GORELEASER_CFG="${REPO_ROOT}/.goreleaser.yml"
 RELEASE_WORKFLOW="${REPO_ROOT}/.github/workflows/release.yml"
 DOCKER_WORKFLOW="${REPO_ROOT}/.github/workflows/docker.yml"
 FFMPEG_BASE_WORKFLOW="${REPO_ROOT}/.github/workflows/ffmpeg-base.yml"
-RELEASE_DOCKERFILE="${REPO_ROOT}/infrastructure/docker/Dockerfile.release"
-FFMPEG_BASE_DOCKERFILE="${REPO_ROOT}/Dockerfile.ffmpeg-base"
+RELEASE_DOCKERFILE="${REPO_ROOT}/infra/docker/Dockerfile.release"
+FFMPEG_BASE_DOCKERFILE="${REPO_ROOT}/infra/docker/Dockerfile.ffmpeg-base"
 MK_VARIABLES="${REPO_ROOT}/mk/variables.mk"
 FFMPEG_BUILD_SCRIPT="${REPO_ROOT}/backend/scripts/build-ffmpeg.sh"
 RELEASE_PREPARE="${REPO_ROOT}/backend/scripts/release-prepare.sh"
@@ -143,7 +143,7 @@ verify_doc_contract() {
   assert_contains "${DOC}" 'DIGESTS.lock' "release output doc exclusion"
   assert_contains "${DOC}" 'xg2g-ffmpeg:<ffmpeg-version>' "release output doc exclusion"
   assert_contains "${DOC}" '.github/workflows/ffmpeg-base.yml' "release output doc truth input"
-  assert_contains "${DOC}" 'Dockerfile.ffmpeg-base' "release output doc truth input"
+  assert_contains "${DOC}" 'infra/docker/Dockerfile.ffmpeg-base' "release output doc truth input"
   assert_contains "${DOC}" 'unexpected published output' "release output doc policy"
 }
 
@@ -161,7 +161,7 @@ verify_release_workflow_contract() {
   assert_contains "${DOCKER_WORKFLOW}" 'branches:' "docker workflow trigger"
   assert_contains "${DOCKER_WORKFLOW}" '- main' "docker workflow main trigger"
   assert_not_contains "${DOCKER_WORKFLOW}" '- "v*"' "docker workflow tag trigger"
-  assert_contains "${FFMPEG_BASE_WORKFLOW}" 'Dockerfile.ffmpeg-base' "ffmpeg base workflow dockerfile"
+  assert_contains "${FFMPEG_BASE_WORKFLOW}" 'infra/docker/Dockerfile.ffmpeg-base' "ffmpeg base workflow dockerfile"
   assert_contains "${FFMPEG_BASE_WORKFLOW}" 'ghcr.io/${{ github.repository_owner }}/xg2g-ffmpeg' "ffmpeg base workflow registry"
 }
 

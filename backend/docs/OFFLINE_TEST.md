@@ -11,7 +11,7 @@ Die ZIP muss ermöglichen:
 Entscheidung (bindend)
 
 WebUI-Modell A (empfohlen):
-→ WebUI nicht offline bauen, `frontend/webui/dist/` kommt fix in die ZIP
+→ WebUI nicht offline bauen, `apps/webui/dist/` kommt fix in die ZIP
 
 ⸻
 
@@ -85,7 +85,7 @@ quality-gates-online
 Der Techniker muss eine dieser Optionen bewusst wählen:
 
 Option A – WebUI nicht offline bauen (empfohlen)
-	•	`frontend/webui/dist/` ist in der ZIP enthalten
+	•	`apps/webui/dist/` ist in der ZIP enthalten
 	•	Backend nutzt diese Assets
 	•	quality-gates-offline baut keine WebUI
 
@@ -110,7 +110,7 @@ repo-root/
 │  ├─ cmd/
 │  ├─ internal/
 │  └─ scripts/
-├─ frontend/
+├─ apps/
 │  └─ webui/
 │  └─ dist/        # falls Option A
 └─ README.md

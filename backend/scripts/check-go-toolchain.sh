@@ -83,7 +83,7 @@ check_dockerfile() {
 }
 
 check_dockerfile "${REPO_ROOT}/Dockerfile" "$EXPECTED_GO_VERSION"
-check_dockerfile "${REPO_ROOT}/Dockerfile.distroless" "$EXPECTED_GO_VERSION"
+check_dockerfile "${REPO_ROOT}/infra/docker/Dockerfile.distroless" "$EXPECTED_GO_VERSION"
 
 # 5. Workflow Version Verification
 echo "🔍 Checking CI workflows..."

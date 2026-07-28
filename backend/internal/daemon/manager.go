@@ -196,8 +196,12 @@ func (m *manager) startAPIServer(_ context.Context, errChan chan<- error) error 
 			}
 		} else {
 			if shouldWarnCleartextTokenAuth(m.serverCfg.ListenAddr, m.deps.Config, tokenAuthConfigured) {
-				m.logger.Warn().
-					Msg("running with token auth over cleartext HTTP - credentials can be sniffed on network")
+				event := m.logger.Warn()
+				if strings.TrimSpace(m.deps.Config.TrustedProxies) != "" {
+					event.Msg("API backend uses cleartext HTTP on a non-loopback listener; block direct access and allow only the trusted reverse proxy")
+				} else {
+					event.Msg("running with token auth over cleartext HTTP - credentials can be sniffed on network")
+				}
 			}
 			m.logger.Info().
 				Str("addr", m.serverCfg.ListenAddr).
@@ -221,9 +225,6 @@ func shouldWarnCleartextTokenAuth(listenAddr string, cfg config.AppConfig, token
 		return false
 	}
 	if strings.TrimSpace(cfg.TLSCert) != "" && strings.TrimSpace(cfg.TLSKey) != "" {
-		return false
-	}
-	if strings.TrimSpace(cfg.TrustedProxies) != "" {
 		return false
 	}
 	return !isLoopbackListenAddr(listenAddr)

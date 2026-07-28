@@ -5,7 +5,7 @@
 
 ## Scope
 
-- Runtime image hardening (`Dockerfile`, `Dockerfile.ffmpeg-base`, `infrastructure/docker/Dockerfile.release`)
+- Runtime image hardening (`Dockerfile`, `infra/docker/Dockerfile.ffmpeg-base`, `infra/docker/Dockerfile.release`)
 - Distroless non-root posture (`Dockerfile.distroless`)
 - Path confinement (`backend/internal/platform/fs/confinement.go`)
 - Workflow token minimization (`.github/workflows/*.yml`)

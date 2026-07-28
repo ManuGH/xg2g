@@ -80,8 +80,8 @@ The release output contract is derived from:
 - `.github/workflows/release.yml`
 - `.github/workflows/ffmpeg-base.yml`
 - `.goreleaser.yml`
-- `Dockerfile.ffmpeg-base`
-- `infrastructure/docker/Dockerfile.release`
+- `infra/docker/Dockerfile.ffmpeg-base`
+- `infra/docker/Dockerfile.release`
 - `backend/VERSION`
 
 ## Verification

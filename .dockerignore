@@ -38,9 +38,8 @@ android/
 docs/
 red/
 design/
-infrastructure/
 support/
-monitoring/
+infra/monitoring/
 *.md
 !backend/**/*.md
 LICENSE

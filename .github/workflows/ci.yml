@@ -26,7 +26,7 @@ on:
       - "scripts/**"
       - "Makefile"
       - "backend/templates/**"
-      - "frontend/webui/**"
+      - "apps/webui/**"
       - "VERSION"
       - "WORKFLOW.md"
       - "mk/**"
@@ -99,7 +99,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: "npm"
-          cache-dependency-path: frontend/webui/package-lock.json
+          cache-dependency-path: apps/webui/package-lock.json
 
       - name: Install check-jsonschema
         run: |

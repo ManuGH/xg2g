@@ -16,14 +16,14 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-[[ -d frontend/webui/node_modules ]] || {
-    echo "Missing frontend/webui/node_modules. Run 'make install' before 'make dev-ui'." >&2
+[[ -d apps/webui/node_modules ]] || {
+    echo "Missing apps/webui/node_modules. Run 'make install' before 'make dev-ui'." >&2
     exit 1
 }
 
 echo "Starting Vite dev server in the background..."
 (
-    cd frontend/webui
+    cd apps/webui
     npm run dev >> ../../logs/webui-dev.log 2>&1
 ) &
 vite_pid=$!

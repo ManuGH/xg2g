@@ -1,7 +1,11 @@
 {{define "opSignature"}}
-{{.SummaryAsComment }}
+{{if not .IsAlias}}{{.SummaryAsComment .OperationId }}
 // ({{.Method}} {{.Path}})
+{{with .DeprecationComment}}//
+{{.}}
+{{end}}
 {{.OperationId}}(w http.ResponseWriter, r *http.Request{{genParamArgs .PathParams}}{{if .RequiresParamObject}}, params {{.OperationId}}Params{{end}})
+{{end}}
 {{end}}
 
 // Tag-scoped server interfaces keep transport boundaries modular.
@@ -74,9 +78,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct {}
- {{range .}}{{.SummaryAsComment }}
+ {{range .}}{{if not .IsAlias}}{{.SummaryAsComment .OperationId }}
  // ({{.Method}} {{.Path}})
+{{with .DeprecationComment}}//
+{{.}}
+{{end}}
  func (_ Unimplemented) {{.OperationId}}(w http.ResponseWriter, r *http.Request{{genParamArgs .PathParams}}{{if .RequiresParamObject}}, params {{.OperationId}}Params{{end}}) {
 	w.WriteHeader(http.StatusNotImplemented)
  }
- {{end}}
+ {{end}}{{end}}

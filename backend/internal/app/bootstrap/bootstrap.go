@@ -688,7 +688,13 @@ func (c *Container) Run(ctx context.Context, stop context.CancelFunc) error {
 }
 
 func (c *Container) runInitialRefresh(ctx context.Context) {
-	time.Sleep(100 * time.Millisecond)
+	timer := time.NewTimer(100 * time.Millisecond)
+	select {
+	case <-ctx.Done():
+		timer.Stop()
+		return
+	case <-timer.C:
+	}
 	c.Logger.Info().Msg("performing initial data refresh (background)")
 	st, err := jobs.RefreshWithOptions(ctx, c.snapshot, jobs.WithPiconPool(c.piconPool))
 	if err != nil {

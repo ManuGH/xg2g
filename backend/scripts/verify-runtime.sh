@@ -5,7 +5,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-VERSION_FILE="${REPO_ROOT}/VERSION"
+VERSION_FILE="${REPO_ROOT}/backend/VERSION"
 LOCK_FILE="${REPO_ROOT}/DIGESTS.lock"
 RUNTIME_SNAPSHOT="/var/lib/xg2g/runtime_state.json"
 

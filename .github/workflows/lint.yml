@@ -111,7 +111,7 @@ jobs:
     needs: scope
     defaults:
       run:
-        working-directory: frontend/webui
+        working-directory: apps/webui
     steps:
       - name: Skip by scope
         if: needs.scope.outputs.webui_lint_needed != 'true'
@@ -125,7 +125,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: "npm"
-          cache-dependency-path: frontend/webui/package-lock.json
+          cache-dependency-path: apps/webui/package-lock.json
       - if: needs.scope.outputs.webui_lint_needed == 'true'
         run: npm ci
       - if: needs.scope.outputs.webui_lint_needed == 'true'

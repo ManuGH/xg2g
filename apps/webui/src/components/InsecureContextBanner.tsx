@@ -8,7 +8,7 @@ import { detectInsecureContext } from '../lib/insecureContext';
 import styles from './InsecureContextBanner.module.css';
 
 const DISMISS_KEY = 'xg2g.insecureContextBannerDismissed';
-const DOCS_URL = 'https://github.com/ManuGH/xg2g/blob/main/deploy/REVERSE_PROXY.md';
+const DOCS_URL = 'https://github.com/ManuGH/xg2g/blob/main/infra/systemd/REVERSE_PROXY.md';
 
 // One-glance hint when the app is opened over plain HTTP on a non-localhost host
 // — the configuration in which playback silently does not start. Dismissible for

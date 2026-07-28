@@ -70,7 +70,13 @@ func (a *LocalAdapter) learnFPSFromOutput(ctx context.Context, sourceKey, sessio
 				Msg("learned fps from encoder output")
 			return
 		}
-		time.Sleep(500 * time.Millisecond)
+		timer := time.NewTimer(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 	}
 }
 

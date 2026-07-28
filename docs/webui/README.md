@@ -15,10 +15,10 @@ error semantics.
 
 | Area | Path |
 | :--- | :--- |
-| WebUI app source | [frontend/webui/src](../../frontend/webui/src) |
-| Player feature | [frontend/webui/src/features/player](../../frontend/webui/src/features/player) |
-| WebUI README | [frontend/webui/README.md](../../frontend/webui/README.md) |
-| Design gate | [frontend/webui/DESIGN.md](../../frontend/webui/DESIGN.md) |
+| WebUI app source | [apps/webui/src](../../apps/webui/src) |
+| Player feature | [apps/webui/src/features/player](../../apps/webui/src/features/player) |
+| WebUI README | [apps/webui/README.md](../../apps/webui/README.md) |
+| Design gate | [apps/webui/DESIGN.md](../../apps/webui/DESIGN.md) |
 
 ## Maintenance Rule
 

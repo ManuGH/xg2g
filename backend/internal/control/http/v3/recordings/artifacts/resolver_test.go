@@ -292,6 +292,7 @@ func TestArtifactResolver_LegacyFallback_Metrics(t *testing.T) {
 	}
 	runner := &captureRunner{}
 	mgr, _ := vod.NewManager(runner, &dummyProber{}, nil)
+	t.Cleanup(mgr.Shutdown)
 	r := New(cfg, mgr, nil)
 
 	validID := "MTowOjE6MDowOjA6MDowOjA6MDovZm9vLnRz"

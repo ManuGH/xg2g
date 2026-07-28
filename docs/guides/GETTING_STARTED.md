@@ -33,7 +33,7 @@ installation, use the pinned, systemd-supervised workflow in
 [Deployment](../ops/DEPLOYMENT.md); do not promote this container manually.
 
 ```bash
-docker run -d --name xg2g --restart unless-stopped -p 8088:8088 \
+docker run -d --name xg2g --restart unless-stopped -p 127.0.0.1:8088:8088 \
   -e XG2G_E2_HOST="http://RECEIVER_IP" \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
@@ -80,6 +80,8 @@ design, because the session cookie must travel securely.
 To use xg2g from your phone, tablet, or another PC, put it behind **HTTPS**: a
 reverse proxy (Caddy, nginx, Traefik) that terminates TLS and forwards
 `X-Forwarded-Proto: https`. See the [Deployment Guide](../ops/DEPLOYMENT.md).
+Do not widen the Docker port to `8088:8088` when adding a reverse proxy; that
+would leave a direct cleartext path around HTTPS.
 
 ## 5. Choose your channels
 

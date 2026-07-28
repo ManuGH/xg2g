@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -73,8 +74,7 @@ func ApplyRuntimeTransitionProfile(rec *model.SessionRecord, nextProfile model.P
 	rec.Profile = nextProfile
 	rec.FallbackReason = runtimeTransitionReason(transition)
 	rec.FallbackAtUnix = now.Unix()
-	rec.UpdatedAtUnix = now.Unix()
-	rec.State = model.SessionStarting
+	lifecycle.ApplyFallbackRestart(rec, now)
 	rec.PipelineState = model.PipeStopRequested
 	rec.StopReason = ""
 

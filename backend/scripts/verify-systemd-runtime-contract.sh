@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 UNIT_TEMPLATE="${REPO_ROOT}/backend/templates/docs/ops/xg2g.service.tmpl"
-CANONICAL_DEPLOY_UNIT="${REPO_ROOT}/deploy/xg2g.service"
+CANONICAL_DEPLOY_UNIT="${REPO_ROOT}/infra/systemd/xg2g.service"
 RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 COMPOSE_HELPER="${REPO_ROOT}/backend/scripts/compose-xg2g.sh"
 COMPOSE_CONTRACT="${REPO_ROOT}/backend/scripts/verify-compose-contract.sh"
@@ -58,7 +58,7 @@ verify_unit_render_sync() {
   deploy_body="$(mktemp)"
 
   tail -n +2 "${CANONICAL_DEPLOY_UNIT}" > "${deploy_body}"
-  diff -u "${UNIT_TEMPLATE}" "${deploy_body}" >/dev/null || fail "deploy/xg2g.service drifted from backend/templates/docs/ops/xg2g.service.tmpl"
+  diff -u "${UNIT_TEMPLATE}" "${deploy_body}" >/dev/null || fail "infra/systemd/xg2g.service drifted from backend/templates/docs/ops/xg2g.service.tmpl"
 
   rm -f "${deploy_body}"
 }
@@ -113,7 +113,7 @@ verify_helper_semantics() {
   assert_contains "${COMPOSE_HELPER}" "assert_secure_env_file" "compose helper secure env guard"
   assert_contains "${COMPOSE_HELPER}" "build_dri_render_overlay" "compose helper render overlay materialization"
 
-  assert_exact_line "${COMPOSE_CONTRACT}" "ROOT=\"${CANONICAL_ROOT}\"" "compose contract root"
+  assert_exact_line "${COMPOSE_CONTRACT}" "ROOT=\"\${XG2G_COMPOSE_ROOT:-${CANONICAL_ROOT}}\"" "compose contract root default"
   assert_exact_line "${COMPOSE_CONTRACT}" "COMPOSE_HELPER=\"\$ROOT/scripts/compose-xg2g.sh\"" "compose contract helper path"
 }
 

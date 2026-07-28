@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -539,14 +541,14 @@ func (d *urlValuesDecoder) DecodeArray(param string, sm *openapi3.SerializationM
 		}
 		values = strings.Split(values[0], delim)
 	}
-	val, err := d.parseArray(values, sm, schema)
+	val, err := d.parseArray(values, schema)
 	return val, ok, err
 }
 
 // parseArray returns an array that contains items from a raw array.
 // Every item is parsed as a primitive value.
 // The function returns an error when an error happened while parse array's items.
-func (d *urlValuesDecoder) parseArray(raw []string, sm *openapi3.SerializationMethod, schemaRef *openapi3.SchemaRef) ([]any, error) {
+func (d *urlValuesDecoder) parseArray(raw []string, schemaRef *openapi3.SchemaRef) ([]any, error) {
 	var value []any
 
 	for i, v := range raw {
@@ -930,6 +932,13 @@ func makeObject(props map[string]string, schema *openapi3.SchemaRef) (map[string
 	return result, nil
 }
 
+// maxSliceMapToSliceGap bounds how many synthesized nil holes sliceMapToSlice
+// will fill in for a sparse array before rejecting the input. Without this,
+// an attacker-supplied index (e.g. from a deepObject query parameter) drives
+// an allocation proportional to the index itself, regardless of how many
+// elements were actually provided.
+const maxSliceMapToSliceGap = 10000
+
 // example: map[0:map[key:true] 1:map[key:false]] -> [map[key:true] map[key:false]]
 func sliceMapToSlice(m map[string]any) ([]any, error) {
 	var result []any
@@ -940,6 +949,9 @@ func sliceMapToSlice(m map[string]any) ([]any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("array indexes must be integers: %w", err)
 		}
+		if key < 0 {
+			return nil, fmt.Errorf("array indexes must not be negative: %d", key)
+		}
 		keys = append(keys, key)
 	}
 	max := -1
@@ -947,6 +959,12 @@ func sliceMapToSlice(m map[string]any) ([]any, error) {
 		if k > max {
 			max = k
 		}
+	}
+	// max+1 is the size of the slice this loop is about to build; bound the
+	// gap between what was actually supplied (len(m)) and that size so a
+	// single huge index can't force an outsized allocation.
+	if gap := max + 1 - len(m); gap > maxSliceMapToSliceGap {
+		return nil, fmt.Errorf("array index %d is too sparse relative to the %d supplied items", max, len(m))
 	}
 	for i := 0; i <= max; i++ {
 		val, ok := m[strconv.Itoa(i)]
@@ -1057,9 +1075,7 @@ func buildFromSchemas(schemas openapi3.SchemaRefs, params map[string]any, mapKey
 		if err == nil && val != nil {
 
 			if m, ok := val.(map[string]any); ok {
-				for k, v := range m {
-					resultMap[k] = v
-				}
+				maps.Copy(resultMap, m)
 				continue
 			}
 
@@ -1243,6 +1259,39 @@ func getEncodingContentType(encFn EncodingFn) string {
 	return enc.ContentType
 }
 
+// contentTypeAllowedByEncoding reports whether mediaType satisfies the
+// encoding.contentType, which per OAS 3.0 may be a single media type, a wildcard
+// (e.g. image/*), or a comma-separated list of those. mediaType must be a base
+// type; parameters on encoding entries (e.g. "; charset=utf-8") are ignored.
+func contentTypeAllowedByEncoding(mediaType, encodingContentType string) bool {
+	for raw := range strings.SplitSeq(encodingContentType, ",") {
+		want := strings.TrimSpace(raw)
+		if want == "" {
+			continue
+		}
+		if base, _, err := mime.ParseMediaType(want); err == nil {
+			want = base
+		}
+		if mediaTypeMatches(mediaType, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// mediaTypeMatches reports whether got matches want (exact, type/* or */* wildcard,
+// case-insensitive). Both must be base media types without parameters.
+func mediaTypeMatches(got, want string) bool {
+	if want == "*/*" || strings.EqualFold(want, got) {
+		return true
+	}
+	if prefix, ok := strings.CutSuffix(want, "/*"); ok {
+		gotType, _, found := strings.Cut(got, "/")
+		return found && strings.EqualFold(gotType, prefix)
+	}
+	return false
+}
+
 // decodeBody returns a decoded body.
 // The function returns ParseError when a body is invalid.
 func decodeBody(body io.Reader, header http.Header, schema *openapi3.SchemaRef, encFn EncodingFn) (
@@ -1265,7 +1314,7 @@ func decodeBody(body io.Reader, header http.Header, schema *openapi3.SchemaRef, 
 	}
 
 	if encodingContentType != "" &&
-		mediaType != encodingContentType {
+		!contentTypeAllowedByEncoding(mediaType, encodingContentType) {
 		return "", nil, &ParseError{
 			Kind: KindOther,
 			Reason: fmt.Sprintf(
@@ -1279,6 +1328,13 @@ func decodeBody(body io.Reader, header http.Header, schema *openapi3.SchemaRef, 
 
 	decoder, ok := bodyDecoders[mediaType]
 	if !ok {
+		// A binary part with no registered decoder (e.g. image/png) is read as
+		// raw bytes: encoding.contentType restricts the accepted media types but
+		// does not require a registered decoder.
+		if isBinary(schema) {
+			value, err := FileBodyDecoder(body, header, schema, encFn)
+			return mediaType, value, err
+		}
 		return "", nil, &ParseError{
 			Kind:   KindUnsupportedFormat,
 			Reason: fmt.Sprintf("%s %q", prefixUnsupportedCT, mediaType),
@@ -1343,7 +1399,13 @@ func UrlencodedBodyDecoder(body io.Reader, header http.Header, schema *openapi3.
 	if !schema.Value.Type.Is("object") {
 		return nil, errors.New("unsupported schema of request body")
 	}
-	for propName, propSchema := range schema.Value.Properties {
+	propNames := make([]string, 0, len(schema.Value.Properties))
+	for name := range schema.Value.Properties {
+		propNames = append(propNames, name)
+	}
+	slices.Sort(propNames)
+	for _, propName := range propNames {
+		propSchema := schema.Value.Properties[propName]
 		propType := propSchema.Value.Type
 		switch {
 		case propType.Is("object"):
@@ -1393,7 +1455,13 @@ func decodeSchemaConstructs(dec *urlValuesDecoder, schemas []*openapi3.SchemaRef
 			return err
 		}
 
-		for name, prop := range schemaRef.Value.Properties {
+		propNames := make([]string, 0, len(schemaRef.Value.Properties))
+		for name := range schemaRef.Value.Properties {
+			propNames = append(propNames, name)
+		}
+		slices.Sort(propNames)
+		for _, name := range propNames {
+			prop := schemaRef.Value.Properties[name]
 			value, present, err := decodeProperty(dec, name, prop, encFn)
 			if err != nil || !present {
 				continue
@@ -1499,7 +1567,7 @@ func MultipartBodyDecoder(body io.Reader, header http.Header, schema *openapi3.S
 			return nil, fmt.Errorf("part %s: %w", name, err)
 		}
 
-		// Parse primitive types when no content type is explicitely provided, or the content type is set to text/plain
+		// Parse primitive types when no content type is explicitly provided, or the content type is set to text/plain
 		if contentType := partHeader.Get(headerCT); contentType == "" || contentType == "text/plain" {
 			if value, err = parsePrimitive(value.(string), valueSchema); err != nil {
 				if v, ok := err.(*ParseError); ok {
@@ -1515,23 +1583,15 @@ func MultipartBodyDecoder(body io.Reader, header http.Header, schema *openapi3.S
 	allTheProperties := make(map[string]*openapi3.SchemaRef)
 	if len(schema.Value.AllOf) > 0 {
 		for _, sr := range schema.Value.AllOf {
-			for k, v := range sr.Value.Properties {
-				allTheProperties[k] = v
-			}
+			maps.Copy(allTheProperties, sr.Value.Properties)
 			if addProps := sr.Value.AdditionalProperties.Schema; addProps != nil {
-				for k, v := range addProps.Value.Properties {
-					allTheProperties[k] = v
-				}
+				maps.Copy(allTheProperties, addProps.Value.Properties)
 			}
 		}
 	} else {
-		for k, v := range schema.Value.Properties {
-			allTheProperties[k] = v
-		}
+		maps.Copy(allTheProperties, schema.Value.Properties)
 		if addProps := schema.Value.AdditionalProperties.Schema; addProps != nil {
-			for k, v := range addProps.Value.Properties {
-				allTheProperties[k] = v
-			}
+			maps.Copy(allTheProperties, addProps.Value.Properties)
 		}
 	}
 

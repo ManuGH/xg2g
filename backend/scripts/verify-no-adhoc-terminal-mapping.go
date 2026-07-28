@@ -75,7 +75,7 @@ func main() {
 						}
 						field := sel.Sel.Name
 						if _, ok := guardedFields[field]; ok {
-							violations = append(violations, formatViolation(filename, sel.Pos(), "direct SessionRecord field write (use lifecycle.Dispatch/ApplyTransition)"))
+							violations = append(violations, formatViolation(pkg.Fset, filename, sel.Pos(), "direct SessionRecord field write (use lifecycle.Dispatch/ApplyTransition)"))
 						}
 					}
 				case *ast.CompositeLit:
@@ -92,7 +92,7 @@ func main() {
 							continue
 						}
 						if _, ok := guardedFields[key.Name]; ok {
-							violations = append(violations, formatViolation(filename, kv.Pos(), "direct SessionRecord field literal (use lifecycle.Dispatch/ApplyTransition)"))
+							violations = append(violations, formatViolation(pkg.Fset, filename, kv.Pos(), "direct SessionRecord field literal (use lifecycle.Dispatch/ApplyTransition)"))
 						}
 					}
 				}
@@ -137,6 +137,10 @@ func isSessionRecordType(expr ast.Expr, info *types.Info) bool {
 
 // No per-value filters; any direct write outside lifecycle is forbidden.
 
-func formatViolation(filename string, pos token.Pos, msg string) string {
-	return fmt.Sprintf("%s:%d: %s", filename, pos, msg)
+func formatViolation(fset *token.FileSet, filename string, pos token.Pos, msg string) string {
+	position := fset.Position(pos)
+	if position.IsValid() {
+		return fmt.Sprintf("%s:%d: %s", filename, position.Line, msg)
+	}
+	return fmt.Sprintf("%s: %s", filename, msg)
 }

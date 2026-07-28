@@ -50,7 +50,7 @@ changelog:
 
 dockers_v2:
   - id: xg2g
-    dockerfile: infrastructure/docker/Dockerfile.release
+    dockerfile: infra/docker/Dockerfile.release
     images:
       - "ghcr.io/manugh/xg2g"
     tags:

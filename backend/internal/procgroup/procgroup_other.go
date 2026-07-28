@@ -77,7 +77,9 @@ func killGroupGraceful(pid int, grace, _ time.Duration) error {
 		return nil
 	}
 	_ = proc.Signal(os.Interrupt)
-	time.Sleep(grace)
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	<-timer.C
 	_ = proc.Kill()
 	return nil
 }

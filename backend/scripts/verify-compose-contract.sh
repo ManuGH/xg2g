@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT="xg2g"
 SERVICE="xg2g"
-ROOT="/srv/xg2g"
+ROOT="${XG2G_COMPOSE_ROOT:-/srv/xg2g}"
 COMPOSE_HELPER="$ROOT/scripts/compose-xg2g.sh"
 
 cd "$ROOT"
@@ -110,4 +110,14 @@ if ! service_list_contains "volumes" "/var/lib/xg2g:/var/lib/xg2g"; then
   exit 1
 fi
 
-echo "OK: Compose contract holds (env_file + volume + no interpolation)."
+if service_list_contains "ports" "8088:8088"; then
+  echo "ERROR: Compose contract violated: backend port must not publish on every host interface" >&2
+  exit 1
+fi
+
+if ! service_list_contains "ports" "127.0.0.1:8088:8088"; then
+  echo "ERROR: Compose contract violated: base backend port must bind to 127.0.0.1" >&2
+  exit 1
+fi
+
+echo "OK: Compose contract holds (loopback port + env_file + volume + no interpolation)."

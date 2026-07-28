@@ -6,8 +6,8 @@ description = "Allowlist for false positives in example/template files"
 
 # Exclude example and template files that contain placeholder secrets
 paths = [
-  '''deploy/.*\.example\.yaml$''',
-  '''deploy/.*\.example\.yml$''',
+  '''infra/systemd/.*\.example\.yaml$''',
+  '''infra/systemd/.*\.example\.yml$''',
   '''.*/\.example''',
 ]
 

@@ -10,8 +10,8 @@ These paths are required for a start-ready installation.
 
 | Target Path | Class | Required | Expected Mode | Source / Truth | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `/srv/xg2g/docker-compose.yml` | Repo-deployed artifact | Yes | `0644` | Repo deploy bundle `deploy/docker-compose.yml` | Base compose source of truth |
-| `/srv/xg2g/docs/ops/xg2g.service` | Repo-deployed artifact | Yes | `0644` | Repo deploy bundle `deploy/xg2g.service` | Canonical unit copy kept on host |
+| `/srv/xg2g/docker-compose.yml` | Repo-deployed artifact | Yes | `0644` | Repo deploy bundle `infra/systemd/docker-compose.yml` | Base compose source of truth |
+| `/srv/xg2g/docs/ops/xg2g.service` | Repo-deployed artifact | Yes | `0644` | Repo deploy bundle `infra/systemd/xg2g.service` | Canonical unit copy kept on host |
 | `/srv/xg2g/scripts/compose-xg2g.sh` | Repo-deployed runtime helper | Yes | `0755` | Repo `backend/scripts/compose-xg2g.sh` | Compose resolver SSOT |
 | `/srv/xg2g/scripts/verify-compose-contract.sh` | Repo-deployed runtime helper | Yes | `0755` | Repo `backend/scripts/verify-compose-contract.sh` | Compose contract gate |
 | `/srv/xg2g/scripts/verify-installed-unit.sh` | Repo-deployed operator verifier | Yes | `0755` | Repo `backend/scripts/verify-installed-unit.sh` | Host unit drift audit |
@@ -27,13 +27,13 @@ These paths are optional and host-specific. Absence is valid unless otherwise no
 
 | Target Path | Class | Required | Expected Mode | Source / Truth | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `/srv/xg2g/docker-compose.gpu.yml` | Repo-deployed optional overlay | GPU hosts only | `0644` | Repo deploy bundle `deploy/docker-compose.gpu.yml` | Install only when the host should auto-load that marker overlay for render-node-only `/dev/dri` bindings |
-| `/srv/xg2g/docker-compose.nvidia.yml` | Repo-deployed optional overlay | NVIDIA GPU hosts only | `0644` | Repo deploy bundle `deploy/docker-compose.nvidia.yml` | Install only when the host should auto-load the NVIDIA runtime overlay |
+| `/srv/xg2g/docker-compose.gpu.yml` | Repo-deployed optional overlay | GPU hosts only | `0644` | Repo deploy bundle `infra/systemd/docker-compose.gpu.yml` | Install only when the host should auto-load that marker overlay for render-node-only `/dev/dri` bindings |
+| `/srv/xg2g/docker-compose.nvidia.yml` | Repo-deployed optional overlay | NVIDIA GPU hosts only | `0644` | Repo deploy bundle `infra/systemd/docker-compose.nvidia.yml` | Install only when the host should auto-load the NVIDIA runtime overlay |
 | `/etc/xg2g/config.yaml` | Operator-provided input | Optional | Operator-defined | Operator-managed | Optional explicit config file |
 
-Repo-side canonical deploy truth now lives under `deploy/`. Files under `/srv/xg2g/`
+Repo-side canonical deploy truth now lives under `infra/systemd/`. Files under `/srv/xg2g/`
 remain installation targets and must not be treated as an editable source of truth.
-Supported installs must be applied via `deploy/sync.sh --apply --ref <tag|sha>`, not via manual file copies.
+Supported installs must be applied via `infra/systemd/sync.sh --apply --ref <tag|sha>`, not via manual file copies.
 
 ## Optional Periodic Verifier Bundle
 
