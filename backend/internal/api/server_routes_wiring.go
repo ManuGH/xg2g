@@ -63,6 +63,8 @@ func (s *Server) newRouter() chi.Router {
 		RateLimitWhitelist: s.cfg.RateLimitWhitelist,
 
 		MaxRequestBodyBytes: middleware.DefaultMaxRequestBodyBytes,
+		DeadlineRuntimeMode: middleware.RuntimeEnforced,
+		DeadlineTimeouts:    deadline.DefaultTimeouts(),
 	})
 	return r
 }
@@ -112,7 +114,7 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 			MountPrefix: mountPrefix,
 			UIMode:      variant,
 			Registry:    registry,
-			RuntimeMode: middleware.RuntimeDisabled,
+			RuntimeMode: middleware.RuntimeEnforced,
 		})
 	}
 

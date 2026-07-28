@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/ManuGH/xg2g/internal/control/http/deadline"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/go-chi/chi/v5"
 )
@@ -49,6 +50,11 @@ type StackConfig struct {
 
 	// MaxRequestBodyBytes caps the size of inbound request bodies (0 disables).
 	MaxRequestBodyBytes int64
+
+	// Route-aware write deadlines. RuntimeDisabled preserves the historical
+	// stack exactly; RuntimeEnforced installs the request lifecycle owner.
+	DeadlineRuntimeMode RuntimeMode
+	DeadlineTimeouts    deadline.DeadlineTimeouts
 }
 
 // NewRouter constructs a chi router with the canonical middleware stack applied.
@@ -78,52 +84,58 @@ func NewRouter(cfg StackConfig) *chi.Mux {
 // If r is a *chi.Mux the preflight responder is bound to it and advertises the
 // methods each path genuinely accepts; otherwise it falls back to a static list.
 func ApplyStack(r chi.Router, cfg StackConfig) {
-	// 1. Recoverer (outermost safety net)
+	// 1. Route-deadline lifecycle (outermost network writer). It must wrap
+	// compression and response capture so their final writes happen before the
+	// keep-alive deadline reset.
+	if cfg.DeadlineRuntimeMode == RuntimeEnforced {
+		r.Use(WriteTimeoutMiddleware(cfg.DeadlineTimeouts, cfg.DeadlineRuntimeMode))
+	}
+	// 2. Recoverer (outermost application safety net)
 	r.Use(Recoverer)
-	// 2. RequestID (correlation early)
+	// 3. RequestID (correlation early)
 	r.Use(RequestID)
-	// 3. Body-size backstop (bound memory before any handler reads the body)
+	// 4. Body-size backstop (bound memory before any handler reads the body)
 	if cfg.MaxRequestBodyBytes > 0 {
 		r.Use(MaxBodyBytes(cfg.MaxRequestBodyBytes))
 	}
-	// 4. Compression (response transform; only touches text-ish content types,
+	// 5. Compression (response transform; only touches text-ish content types,
 	// never media segments, so it sits outside the per-request logic below).
 	if cfg.EnableCompression {
 		r.Use(Compression())
 	}
-	// 5. Security headers (before any rejection, so 4xx/5xx carry them too)
+	// 6. Security headers (before any rejection, so 4xx/5xx carry them too)
 	if cfg.EnableSecurityHeaders {
 		r.Use(SecurityHeaders(cfg.CSP, cfg.TrustedProxies))
 	}
-	// 6. CORS response headers (stamp only; never short-circuits)
+	// 7. CORS response headers (stamp only; never short-circuits)
 	if cfg.EnableCORS {
 		r.Use(CORSHeaders(cfg.AllowedOrigins, cfg.CORSAllowCredentials))
 	}
-	// 7. Preflight rate limit (OPTIONS only, separate generous budget)
+	// 8. Preflight rate limit (OPTIONS only, separate generous budget)
 	if cfg.EnableRateLimit {
 		r.Use(OnlyMethod(http.MethodOptions, PreflightRateLimit(
 			cfg.RateLimitEnabled, cfg.RateLimitGlobalRPS, cfg.RateLimitWhitelist, cfg.TrustedProxies,
 		)))
 	}
-	// 8. Preflight responder (answers OPTIONS, route-aware where possible)
+	// 9. Preflight responder (answers OPTIONS, route-aware where possible)
 	if cfg.EnableCORS {
 		r.Use(Preflight(routeMatcherFor(r)))
 	}
-	// 9. CSRF (fail-closed for state-changing requests)
+	// 10. CSRF (fail-closed for state-changing requests)
 	r.Use(CSRFProtection(cfg.AllowedOrigins))
-	// 10. Metrics (track all requests)
+	// 11. Metrics (track all requests)
 	if cfg.EnableMetrics {
 		r.Use(Metrics())
 	}
-	// 11. Tracing (distributed tracing with OpenTelemetry)
+	// 12. Tracing (distributed tracing with OpenTelemetry)
 	if cfg.TracingService != "" {
 		r.Use(Tracing(cfg.TracingService))
 	}
-	// 12. Logging (wraps handlers, captures full latency)
+	// 13. Logging (wraps handlers, captures full latency)
 	if cfg.EnableLogging {
 		r.Use(xglog.Middleware())
 	}
-	// 13. Rate limit (global protection, keyed by resolved client IP)
+	// 14. Rate limit (global protection, keyed by resolved client IP)
 	if cfg.EnableRateLimit {
 		r.Use(APIRateLimit(
 			cfg.RateLimitEnabled, cfg.RateLimitGlobalRPS, cfg.RateLimitWhitelist, cfg.TrustedProxies,

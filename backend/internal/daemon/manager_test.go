@@ -422,6 +422,12 @@ func TestManager_StartAPIServer_DoesNotWarnOnLoopbackCleartextTokenAuth(t *testi
 	if err := m.startAPIServer(context.Background(), errChan); err != nil {
 		t.Fatalf("startAPIServer() error = %v", err)
 	}
+	if m.apiServer.WriteTimeout != 0 {
+		t.Fatalf("global WriteTimeout = %v, want 0 with route-aware deadlines", m.apiServer.WriteTimeout)
+	}
+	if !strings.Contains(logBuf.String(), "ignoring global server write timeout") {
+		t.Fatalf("expected ignored global write timeout warning, got: %s", logBuf.String())
+	}
 	t.Cleanup(func() {
 		if m.apiServer != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)

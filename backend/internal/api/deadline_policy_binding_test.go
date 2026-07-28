@@ -13,6 +13,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
+	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
 )
@@ -257,6 +258,42 @@ func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
 	}
 }
 
+func getDefaultPhase2VerifiedEvidenceRegistry() map[ResponseWriterEquivalenceClass]VerifiedStackEvidence {
+	evidence := GetDefaultPhase1VerifiedEvidenceRegistry()
+	for _, class := range []ResponseWriterEquivalenceClass{
+		EquivalenceClassOuterStandard,
+		EquivalenceClassOuterCompressed,
+	} {
+		entry := evidence[class]
+		entry.HijackVerified = true
+		entry.UpgradeTransitionVerified = true
+		evidence[class] = entry
+	}
+	return evidence
+}
+
+func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
+	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
+	registrations, err := ValidateRouterInventory(s, ConfigVariantDevProxy)
+	require.NoError(t, err)
+	require.Len(t, registrations, 103)
+
+	evidence := getDefaultPhase2VerifiedEvidenceRegistry()
+	runtimeReady := 0
+	for _, registration := range registrations {
+		declared, declaredErr := DeclaredCapabilitiesForStack(StackConfig{
+			RouterID:    registration.Key.RouterID,
+			UIMode:      ConfigVariantDevProxy,
+			Compression: true,
+		})
+		require.NoError(t, declaredErr, "%s", registration.Key)
+		registration.Capabilities = ApplyVerifiedEvidence(declared, evidence)
+		require.NoError(t, registration.ValidateRuntimeReadiness(), "%s", registration.Key)
+		runtimeReady++
+	}
+	require.Equal(t, 103, runtimeReady)
+}
+
 func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 	expected := getPhase1CanonicalBaselineMap()
 	known := RegistrationKey{RouterID: "outer", Method: http.MethodGet, Pattern: "/healthz"}
@@ -335,9 +372,11 @@ func TestMountedV3RoutePreservesChiURLParams(t *testing.T) {
 	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
 	const expectedTimerID = "phase2-route-param"
 	var capturedTimerID string
+	var capturedDeadlineState *middleware.DeadlineState
 	s.v3Handler.AuthMiddlewareOverride = func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedTimerID = chi.URLParam(r, "timerId")
+			capturedDeadlineState, _ = middleware.DeadlineStateFromContext(r.Context())
 			w.WriteHeader(218)
 		})
 	}
@@ -350,6 +389,10 @@ func TestMountedV3RoutePreservesChiURLParams(t *testing.T) {
 
 	require.Equal(t, 218, rec.Code)
 	require.Equal(t, expectedTimerID, capturedTimerID)
+	require.NotNil(t, capturedDeadlineState)
+	require.True(t, capturedDeadlineState.IsBound())
+	require.Equal(t, middleware.RuntimeEnforced, capturedDeadlineState.Mode)
+	require.Equal(t, RouteDeadlineAPIBounded, capturedDeadlineState.Policy.Class)
 }
 
 func TestUIWildcardMethodPolicyParityExecutesSelectedHandler(t *testing.T) {
