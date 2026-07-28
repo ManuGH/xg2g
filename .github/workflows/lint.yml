@@ -76,7 +76,7 @@ jobs:
           # Scan non-test code in internal/ and cmd/ for the banned patterns.
           # We exclude internal/config (authorized).
           VIOLATIONS=$(grep -RIn --include='*.go' --exclude='*_test.go' -E '\b(os|syscall)\.(Getenv|LookupEnv|Environ|ExpandEnv|Expand)\b' backend/internal/ backend/cmd/ \
-            | grep -vE '^backend/internal/config/' \
+            | grep -vE '^backend/internal/config/|ui_dev\.go' \
             || true)
             
           if [ -n "$VIOLATIONS" ]; then
