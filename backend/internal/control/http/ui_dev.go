@@ -18,11 +18,24 @@ import (
 const defaultUIDevProxyURL = "http://127.0.0.1:5173"
 
 // DetermineUIMode mirrors UIHandler's build-specific selection order.
-func DetermineUIMode(devDir, _ string) UIMode {
-	if strings.TrimSpace(devDir) != "" {
+func DetermineUIMode(devDir, devProxyURL string) UIMode {
+	devDir, _ = resolveUIDevConfig(devDir, devProxyURL)
+	if devDir != "" {
 		return UIModeDevDir
 	}
 	return UIModeDevProxy
+}
+
+func resolveUIDevConfig(devDir, devProxyURL string) (string, string) {
+	devDir = strings.TrimSpace(devDir)
+	if devDir == "" {
+		devDir = strings.TrimSpace(os.Getenv("XG2G_UI_DEV_DIR"))
+	}
+	devProxyURL = strings.TrimSpace(devProxyURL)
+	if devProxyURL == "" {
+		devProxyURL = strings.TrimSpace(os.Getenv("XG2G_UI_DEV_PROXY_URL"))
+	}
+	return devDir, devProxyURL
 }
 
 // UIHandler serves the Web UI in development mode.
@@ -31,12 +44,11 @@ func UIHandler(cfg UIConfig) http.Handler {
 	devCSP := withAdditionalConnectSrc(cfg.CSP, "ws:", "wss:")
 	devCSP = withAdditionalScriptSrc(devCSP, "'unsafe-inline'")
 
-	devDir := strings.TrimSpace(cfg.DevDir)
+	devDir, proxyURL := resolveUIDevConfig(cfg.DevDir, cfg.DevProxyURL)
 	if devDir != "" {
 		return newUIDevStaticHandler(devDir, devCSP)
 	}
 
-	proxyURL := strings.TrimSpace(cfg.DevProxyURL)
 	if proxyURL == "" {
 		proxyURL = defaultUIDevProxyURL
 	}

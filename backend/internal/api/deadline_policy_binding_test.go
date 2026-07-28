@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -219,6 +222,41 @@ func TestPhase1RegistrationIdentityParity(t *testing.T) {
 	require.Equal(t, 80, counts["v3"])
 }
 
+func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
+	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
+	apiPolicy := RoutePolicy{Class: RouteDeadlineAPIBounded}
+	mediaPolicy := RoutePolicy{Class: RouteDeadlineMediaBounded}
+	devProxyPolicy := RoutePolicy{Class: RouteDeadlineMediaBounded, MayUpgradePerRequest: true}
+
+	for _, test := range []struct {
+		name      string
+		variant   ConfigVariant
+		uiGet     RoutePolicy
+		uiHead    RoutePolicy
+		uiRootGet RoutePolicy
+	}{
+		{"prod_static", ConfigVariantProdStatic, mediaPolicy, mediaPolicy, mediaPolicy},
+		{"dev_dir", ConfigVariantDevDir, mediaPolicy, mediaPolicy, mediaPolicy},
+		{"dev_proxy", ConfigVariantDevProxy, devProxyPolicy, apiPolicy, devProxyPolicy},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, snapshot, err := s.buildRouterWithBindings(test.variant)
+			require.NoError(t, err)
+			require.Equal(t, 103, snapshot.Len())
+
+			for key, expected := range map[RegistrationKey]RoutePolicy{
+				{RouterID: "outer", Method: http.MethodGet, Pattern: "/ui/*"}:  test.uiGet,
+				{RouterID: "outer", Method: http.MethodHead, Pattern: "/ui/*"}: test.uiHead,
+				{RouterID: "outer", Method: http.MethodGet, Pattern: "/ui"}:    test.uiRootGet,
+			} {
+				actual, ok := snapshot.Lookup(key)
+				require.True(t, ok, "missing %s", key)
+				require.Equal(t, expected, actual, "%s", key)
+			}
+		})
+	}
+}
+
 func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 	expected := getPhase1CanonicalBaselineMap()
 	known := RegistrationKey{RouterID: "outer", Method: http.MethodGet, Pattern: "/healthz"}
@@ -293,7 +331,37 @@ func TestMountedV3RoutesRetainAuthAndScopeProtection(t *testing.T) {
 	})
 }
 
+func TestMountedV3RoutePreservesChiURLParams(t *testing.T) {
+	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
+	const expectedTimerID = "phase2-route-param"
+	var capturedTimerID string
+	s.v3Handler.AuthMiddlewareOverride = func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedTimerID = chi.URLParam(r, "timerId")
+			w.WriteHeader(218)
+		})
+	}
+
+	router, _, err := s.buildRouterWithBindings(ConfigVariantProdStatic)
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/timers/"+expectedTimerID, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, 218, rec.Code)
+	require.Equal(t, expectedTimerID, capturedTimerID)
+}
+
 func TestUIWildcardMethodPolicyParityExecutesSelectedHandler(t *testing.T) {
+	devDir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(devDir, "index.html"),
+		[]byte("<!doctype html><html><body>phase2 UI</body></html>"),
+		0o600,
+	))
+	t.Setenv("XG2G_UI_DEV_DIR", devDir)
+	t.Setenv("XG2G_UI_DEV_PROXY_URL", "")
+
 	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
 	router, _, err := s.buildRouterWithBindings(ConfigVariantProdStatic)
 	require.NoError(t, err)
