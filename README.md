@@ -80,11 +80,15 @@ Do not use GitHub's green **Code → Download ZIP** button for a server install;
 branch ZIPs are mutable source snapshots, not versioned release bundles.
 
 The assistant asks plain-language questions about the receiver, HTTPS/VPN
-access, DVR rewind window, simultaneous streams, storage, and GPU. It can use
-an existing reverse proxy or manage Caddy for you, generates strong secrets,
-enables daily backups and runtime verification, and uses the same pinned
-systemd/Compose deployment contract as upgrades. It never partitions, formats,
-mounts, or deletes a disk.
+access, DVR rewind window, simultaneous streams, storage, and GPU. **Caddy is
+optional and opt-in.** The default HTTPS choice keeps an existing same-host
+nginx, Traefik, Caddy, or other reverse proxy unchanged; setup only verifies
+the URL and xg2g's trusted-proxy contract. Managed public or LAN/VPN Caddy is a
+separate explicit choice for users who do not already have an HTTPS edge.
+
+Setup generates strong secrets, enables daily backups and runtime verification,
+and uses the same pinned systemd/Compose deployment contract as upgrades. It
+never partitions, formats, mounts, or deletes a disk.
 
 After installation, routine administration uses one command:
 
@@ -93,6 +97,8 @@ sudo xg2g-admin doctor
 ```
 
 [Read the step-by-step guide](docs/guides/GETTING_STARTED.md)
+
+[Current 2026 system overview](docs/arch/SYSTEM_OVERVIEW_2026.md)
 
 ## Local Evaluation Quickstart
 

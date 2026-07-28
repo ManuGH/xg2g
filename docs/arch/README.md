@@ -7,6 +7,7 @@ decision-engine semantics. Operational commands belong in `docs/ops/`.
 
 | Need | Document |
 | :--- | :--- |
+| Current repository/runtime snapshot | [2026 System Overview](SYSTEM_OVERVIEW_2026.md) |
 | High-level system model | [Architecture Reference](ARCHITECTURE.md) |
 | Where code belongs | [Package Layout](PACKAGE_LAYOUT.md) |
 | Enigma2 streaming topology | [Enigma2 Streaming Topology](ENIGMA2_STREAMING_TOPOLOGY.md) |

@@ -80,6 +80,10 @@ proxy_env="${proxy_root}/etc/xg2g/xg2g.env"
 assert_contains "${proxy_env}" "XG2G_ALLOWED_ORIGINS='https://tv.example.test'"
 assert_contains "${proxy_env}" "XG2G_TRUSTED_PROXIES='127.0.0.1/32,::1/128'"
 assert_contains "${proxy_env}" '"kind":"local_https"'
+[[ ! -e "${proxy_root}/etc/xg2g/Caddyfile" ]] ||
+  fail "existing-proxy mode must not create a managed Caddyfile"
+[[ ! -e "${proxy_root}/var/lib/xg2g-caddy" ]] ||
+  fail "existing-proxy mode must not create managed Caddy state"
 
 managed_proxy_root="$(mktemp -d)"
 TEMP_DIRS+=("${managed_proxy_root}")

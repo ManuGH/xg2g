@@ -96,8 +96,10 @@ Optional overrides:
 ### System / Production (Hardened Container)
 
 - **Standard**: **OCI Image is Source of Truth for Runtime.**
-- **Supervisor**: **systemd** (manages Docker/Podman lifecycle).
-- **Behavior**: Single execution lifecycle; formal hardening (v3.1.4).
+- **Host contract**: Linux + systemd + Docker Engine with Compose v2.
+- **Supervisor**: **systemd** manages the Docker Compose lifecycle.
+- **Behavior**: One pinned deployment, health, backup, verification, and
+  rollback lifecycle; production is not controlled by development Make targets.
 - **Deployment**: `infra/systemd/sync.sh --apply --ref <tag|sha>` is the only supported
   installation and upgrade entrypoint.
 - **Usage**: Mandatory for releases, sign-offs, and production verification.

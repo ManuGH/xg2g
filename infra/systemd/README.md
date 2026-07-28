@@ -1,8 +1,9 @@
 # Deploy Bundle
 
-`infra/systemd/` is the staged repo-side source of truth for host deployment artifacts.
+`infra/systemd/` is the canonical repo-side source of truth for Linux host
+deployment artifacts.
 
-This is the deploy-SSoT migration slice:
+Current 2026 deploy bundle:
 
 - `infra/systemd/xg2g.service` is the intended canonical systemd unit bundle file.
 - `infra/systemd/docker-compose.yml` is the intended canonical base compose file.
@@ -15,13 +16,15 @@ This is the deploy-SSoT migration slice:
   update/rollback, and safe removal.
 - `infra/systemd/xg2g-backup.service` and `.timer` provide daily verified
   durable-state backups.
-- `infra/systemd/xg2g-caddy.service` is the optional managed HTTPS edge.
+- `infra/systemd/xg2g-caddy.service` is the optional managed HTTPS edge. The
+  unit is installed inertly and starts only when setup explicitly creates
+  `/etc/xg2g/Caddyfile`; an existing reverse proxy is never replaced.
 - `infra/systemd/REVERSE_PROXY.md` documents every reverse-proxy / HTTPS topology (direct, in-process TLS, Caddy, nginx, Traefik, Cloudflare Tunnel) and the settings each requires; `infra/systemd/reverse-proxy/` holds drop-in reference configs.
 
-Current deployment boundary:
+Deployment boundary:
 
 - Docs renderers and verifier scripts consume `infra/systemd/` directly as repo truth.
-- Live hosts are still operationally validated via `/srv/xg2g` and `/etc/systemd/system`.
+- Live hosts are operationally validated via `/srv/xg2g` and `/etc/systemd/system`.
 - `infra/systemd/sync.sh` applies the repo bundle onto those host targets.
 
 Sync workflow:
@@ -32,14 +35,15 @@ Sync workflow:
 - Exit `0` means synced, `1` means drift, `2` means `/etc/xg2g/xg2g.env` violates the deploy contract.
 - `--install-root <path>` is available for local dry-runs and fixture-style tests.
 
-Why the env schema is intentionally narrow:
+Why the env schema is intentionally curated:
 
 - `/etc/xg2g/xg2g.env` mixes deploy-time keys, systemd/compose control, and app overrides.
-- The deploy contract keys are curated here first.
-- App override coverage is intentionally limited to common host-side overrides until the schema can be generated from the config registry and runtime env readers.
+- The deploy contract keys are curated here and validated before start.
+- App override coverage is intentionally limited to common host-side
+  overrides; the application config registry remains the broader runtime
+  source.
 
-Remaining tail after this slice:
-
-- live hosts still need to adopt `infra/systemd/sync.sh` as the normal deployment entrypoint everywhere
-- some historical docs still describe previously observed host drift against older layouts
-- NVIDIA / NVENC hosts still use a different runtime class than `/dev/dri`, but the repo now ships that contract as `infra/systemd/docker-compose.nvidia.yml`
+Historical incident/runbook sections may describe older installed layouts.
+They are evidence, not current deployment instructions. For current truth use
+this bundle, [Deployment](../../docs/ops/DEPLOYMENT.md), and the
+[2026 system overview](../../docs/arch/SYSTEM_OVERVIEW_2026.md).

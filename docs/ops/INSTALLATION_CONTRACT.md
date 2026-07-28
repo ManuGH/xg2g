@@ -86,3 +86,6 @@ all of them must be present in the same installation.
 6. Live-host validation uses `/srv/xg2g/scripts/verify-installation-contract.sh --verify-install-root /`.
 7. Default uninstall preserves `/etc/xg2g`, `/var/lib/xg2g`,
    `/var/backups/xg2g`, receiver recordings, and external DVR scratch.
+8. Selecting an existing reverse proxy must not create
+   `/etc/xg2g/Caddyfile`, pull a Caddy image, or enable/start
+   `xg2g-caddy.service`. The installed unit remains an inert deploy artifact.

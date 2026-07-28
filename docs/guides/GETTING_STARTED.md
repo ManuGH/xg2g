@@ -57,19 +57,35 @@ durable-state backups and runtime verification, and starts xg2g. It does not
 partition, format, mount, or delete disks.
 
 Choose the local-only option if you are only evaluating on the Linux host.
-Phones, tablets, and other machines need the HTTPS proxy option. The wizard can
-use an existing same-host Caddy/nginx/Traefik proxy or manage a pinned Caddy
-container itself. Public Caddy mode obtains a normal ACME certificate; internal
-CA mode is intended for LAN/VPN and prints the CA certificate that clients must
-trust. Internal mode can bind Caddy to one exact LAN/VPN server IP instead of
+Phones, tablets, and other machines need HTTPS. At the HTTPS prompt, choose the
+topology you actually operate:
+
+| Choice | Use it when | What setup changes |
+| :--- | :--- | :--- |
+| Existing same-host proxy (default) | nginx, Traefik, Caddy, HAProxy, or another HTTPS proxy already forwards to xg2g | Keeps that proxy untouched. No Caddyfile, image pull, container, enable, or start; setup only validates the configured HTTPS URL and xg2g proxy trust. |
+| Managed public Caddy (opt-in) | You have a public DNS name and want setup to own ACME HTTPS | Creates the xg2g Caddyfile and enables the pinned `xg2g-caddy.service`. |
+| Managed internal Caddy (opt-in) | Access is limited to LAN/VPN and clients can trust a private CA | Creates the internal-CA Caddyfile, enables the service, and prints the CA certificate path. |
+
+The Caddy unit file is shipped on every guided installation so a later switch
+is deterministic, but it remains inactive without a setup-generated
+`/etc/xg2g/Caddyfile`. Selecting an existing proxy never replaces, reloads, or
+edits it.
+
+Managed internal mode can bind Caddy to one exact LAN/VPN server IP instead of
 all interfaces. The standard install deliberately binds xg2g itself only to
-loopback, so it cannot be bypassed over cleartext from the LAN.
+loopback, so it cannot be bypassed over cleartext from the LAN. Consequently,
+the beginner wizard supports an existing proxy on the same Linux host. A proxy
+on another machine requires an explicitly firewalled non-loopback backend
+binding and is an advanced manual deployment.
 
 For an existing proxy with a private CA, provide its CA certificate when asked.
 Setup keeps a public copy at `/etc/xg2g/https-ca.crt` for later diagnostics and
 does not finish until the configured URL serves the WebUI with HSTS and the
 authenticated connectivity contract confirms effective HTTPS and the exact
 allowed origin.
+
+See the [current 2026 system overview](../arch/SYSTEM_OVERVIEW_2026.md) for the
+complete runtime, storage, API, WebUI, and lifecycle boundaries.
 
 If a required tool is missing, the installer prints the matching package
 command for Debian/Ubuntu, Fedora/RHEL, or Arch. Docker Engine and its Compose

@@ -208,6 +208,7 @@ verify_installation_doc() {
   assert_contains "${INSTALL_DOC}" '`infra/systemd/sync.sh --apply --ref <tag|sha>`' "installation contract sync apply path"
   assert_contains "${INSTALL_DOC}" '`infra/systemd/setup-linux.sh`' "installation contract guided setup path"
   assert_contains "${INSTALL_DOC}" 'GitHub branch source ZIPs are rejected' "installation contract mutable ZIP rejection"
+  assert_contains "${INSTALL_DOC}" 'Selecting an existing reverse proxy must not create' "installation contract preserves existing reverse proxy"
 }
 
 verify_docs_discoverability() {

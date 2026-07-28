@@ -19,9 +19,29 @@ concurrency, an optional already-mounted scratch disk, and GPU type. It
 generates the required secrets and delegates the installation to the pinned
 `sync.sh` path above. It never partitions, formats, mounts, or deletes a disk.
 Existing installations remain on `sync.sh`; the wizard will not overwrite
-their environment file. The HTTPS choice can use an existing same-host proxy or
-install the managed Caddy systemd service. The hardened base Compose file
-continues to publish xg2g on loopback only.
+their environment file. The hardened base Compose file continues to publish
+xg2g on loopback only.
+
+## HTTPS Ownership
+
+Caddy is not an automatic dependency. The setup prompt makes ownership
+explicit:
+
+| Mode | Proxy ownership | Installer behavior |
+| :--- | :--- | :--- |
+| Existing same-host proxy (default) | Operator | Does not edit or reload the proxy. It creates no Caddyfile, pulls no Caddy image, and leaves `xg2g-caddy.service` disabled/inactive. It verifies the external HTTPS endpoint and xg2g's forwarded-header contract. |
+| Managed public Caddy (opt-in) | xg2g setup | Creates `/etc/xg2g/Caddyfile`, pulls the pinned Caddy image, and enables/starts `xg2g-caddy.service` for public ACME HTTPS. |
+| Managed internal Caddy (opt-in) | xg2g setup | Creates an internal-CA Caddyfile, optionally binds an exact LAN/VPN IP, enables/starts the service, and exposes the CA certificate for client trust. |
+| Local-only | None | Leaves xg2g on loopback HTTP for same-host use only. |
+
+The Caddy unit is installed as an inert deploy artifact in every standard
+installation. `ConditionPathExists=/etc/xg2g/Caddyfile` prevents it from
+starting unless managed Caddy was explicitly selected.
+
+The guided existing-proxy mode assumes the proxy runs on the xg2g host because
+the backend remains bound to `127.0.0.1:8088`. A separate proxy host requires a
+deliberate backend bind plus firewall/VPN policy and is outside the
+beginner-safe wizard.
 
 Official release archives contain the complete deploy bundle and install
 without cloning Git. GitHub-generated branch source ZIPs are rejected because
@@ -31,6 +51,8 @@ This copies repo truth into `/srv/xg2g` and `/etc/systemd/system`, reloads
 systemd, and runs verification checks.
 
 Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
+Current architecture/runtime snapshot:
+`docs/arch/SYSTEM_OVERVIEW_2026.md`.
 Use `infra/systemd/sync.sh --check --ref <tag|sha>` for drift checks and
 `infra/systemd/sync.sh --apply --ref <tag|sha>` for the actual deployment.
 

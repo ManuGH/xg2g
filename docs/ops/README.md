@@ -8,6 +8,7 @@ workflow belongs in `docs/dev/`.
 
 | Need | Document |
 | :--- | :--- |
+| Understand the current supported system | [2026 System Overview](../arch/SYSTEM_OVERVIEW_2026.md) |
 | Deploy a pinned ref | [Deployment Guide](DEPLOYMENT.md) |
 | Manage systemd + Compose | [Systemd + Compose Runbook](RUNBOOK_SYSTEMD_COMPOSE.md) |
 | Verify installation layout | [Installation Contract](INSTALLATION_CONTRACT.md) |

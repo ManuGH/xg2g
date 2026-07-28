@@ -18,22 +18,39 @@ to add them.
 
 ---
 
-## New here? Quick start (a domain + Caddy)
+## Choose who owns HTTPS
 
-The shortest path to a working, secure deployment. Caddy gives you automatic
-HTTPS in a few lines and handles the redirect and forwarded headers for you.
+**Managed Caddy is optional and opt-in.** The guided
+`infra/systemd/setup-linux.sh` installer defaults to an existing same-host
+proxy when HTTPS access is selected.
 
-The guided `infra/systemd/setup-linux.sh` installer can perform this path
-directly. Choose managed public Caddy for a DNS name with ACME reachability, or
-managed internal Caddy for LAN/VPN use. Internal mode prints the local CA
-certificate that must be trusted on each browser device. In both modes Caddy
-runs as the hardened `xg2g-caddy.service`, reaches xg2g over loopback, and is
-validated through the configured HTTPS origin before setup succeeds.
+| Setup choice | Existing proxy modified? | Managed Caddy started? |
+| :--- | :---: | :---: |
+| Existing same-host proxy (default) | No | No |
+| Managed public Caddy | Not applicable | Yes, explicitly |
+| Managed internal Caddy for LAN/VPN | Not applicable | Yes, explicitly |
+| Local-only | No | No |
+
+All installations receive the hardened `xg2g-caddy.service` unit as an inert
+deploy artifact. With an existing proxy, setup creates no
+`/etc/xg2g/Caddyfile`, performs no Caddy image pull, and does not enable or
+start that unit. It does not edit or reload nginx, Traefik, Caddy, HAProxy, or
+another operator-managed edge. It only configures xg2g's allowed origin and
+trusted loopback proxy, then verifies the real HTTPS endpoint.
+
 An existing proxy with a private CA can supply
-`XG2G_SETUP_HTTPS_CA_FILE=/path/to/root.crt` in non-interactive setup.
-Managed internal Caddy can be restricted to one interface with
+`XG2G_SETUP_HTTPS_CA_FILE=/path/to/root.crt` in non-interactive setup. The
+standard wizard requires the existing proxy on the same Linux host because
+xg2g remains safely bound to `127.0.0.1:8088`.
+
+Choose managed public Caddy only when setup should own a DNS/ACME HTTPS edge.
+Choose managed internal Caddy only when setup should own LAN/VPN HTTPS with a
+private CA. Internal mode prints the CA certificate that each client must
+trust and can restrict Caddy to one server address with
 `XG2G_SETUP_CADDY_BIND_IP=<server-lan-or-vpn-ip>`; otherwise host firewall/VPN
 ACLs remain responsible for limiting ports 80/443.
+
+## Manual quick start with Caddy
 
 1. Point a DNS name at the host (e.g. `tv.example.com` → your server). No public
    domain? See **"No public domain? (homelab / internal only)"** below.
