@@ -1,6 +1,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import V3Player from './V3Player';
 import Hls from '../lib/hlsRuntime';
 
@@ -76,7 +76,7 @@ describe('V3Player Safari Logic', () => {
     vi.restoreAllMocks();
   });
 
-  it('prefers native HLS on desktop Safari when WebKit playback controls are available', () => {
+  it('prefers native HLS on desktop Safari when WebKit playback controls are available', async () => {
     // Simulate Safari
     userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15');
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
@@ -98,7 +98,9 @@ describe('V3Player Safari Logic', () => {
       return el;
     });
 
-    render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+    await act(async () => {
+      render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+    });
 
     expect(Hls).not.toHaveBeenCalled();
   });
@@ -125,7 +127,7 @@ describe('V3Player Safari Logic', () => {
     });
   });
 
-  it('falls back to native HLS on desktop Safari when hls.js is unsupported', () => {
+  it('falls back to native HLS on desktop Safari when hls.js is unsupported', async () => {
     userAgentGetter.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15');
 
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', {
@@ -144,7 +146,9 @@ describe('V3Player Safari Logic', () => {
     });
     (Hls as any).isSupported.mockReturnValue(false);
 
-    render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+    await act(async () => {
+      render(<V3Player src="http://example.com/playlist.m3u8" autoStart={true} />);
+    });
 
     expect(Hls).not.toHaveBeenCalled();
   });
