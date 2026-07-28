@@ -212,7 +212,7 @@ func (s *Server) projectTokenPrincipal(ctx context.Context, principal *auth.Prin
 // contextKey is a private type for context keys to avoid collisions.
 type contextKey string
 
-const bearerAuthScopesKey contextKey = "BearerAuth.Scopes"
+const bearerAuthScopesKey contextKey = "BearerAuth.Scopes" // #nosec G101 -- OpenAPI auth-scheme context key, not a credential.
 
 const (
 	operationIDKey    contextKey = "operation_id"
