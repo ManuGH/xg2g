@@ -14,6 +14,11 @@ For a new Linux host, use the guided front end
 sudo ./infra/systemd/setup-linux.sh
 ```
 
+Start with the [complete Linux installation guide](../guides/INSTALLATION.md)
+when preparing a new host. It includes exact release download and checksum
+commands, Docker/systemd prerequisites, receiver and storage preflight, every
+wizard decision, first login, verification, update, restore, and uninstall.
+
 It asks for the receiver, private/public access topology, DVR window and
 concurrency, an optional already-mounted scratch disk, and GPU type. It
 generates the required secrets and delegates the installation to the pinned

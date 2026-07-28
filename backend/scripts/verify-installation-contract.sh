@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Markdown assertions intentionally contain literal backticks.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -6,6 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 DEPLOY_ROOT="${REPO_ROOT}/infra/systemd"
 INSTALL_DOC="${REPO_ROOT}/docs/ops/INSTALLATION_CONTRACT.md"
+INSTALL_GUIDE="${REPO_ROOT}/docs/guides/INSTALLATION.md"
 DEPLOYMENT_INDEX="${REPO_ROOT}/docs/ops/DEPLOYMENT.md"
 RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 
@@ -212,6 +214,19 @@ verify_installation_doc() {
 }
 
 verify_docs_discoverability() {
+  assert_file "${INSTALL_GUIDE}"
+  assert_contains "${INSTALL_GUIDE}" '`xg2g_<version>_linux_amd64.tar.gz`' "installation guide amd64 release asset"
+  assert_contains "${INSTALL_GUIDE}" '`xg2g_<version>_linux_arm64.tar.gz`' "installation guide arm64 release asset"
+  assert_contains "${INSTALL_GUIDE}" 'sha256sum --check selected-checksum.txt' "installation guide checksum verification"
+  assert_contains "${INSTALL_GUIDE}" 'predate the guided installer' "installation guide release availability"
+  assert_contains "${INSTALL_GUIDE}" 'if test -z "${setup_script}"' "installation guide payload guard"
+  assert_contains "${INSTALL_GUIDE}" 'sudo ./infra/systemd/setup-linux.sh' "installation guide setup command"
+  assert_contains "${INSTALL_GUIDE}" '`127.0.0.1:8088`' "installation guide safe backend binding"
+  assert_contains "${INSTALL_GUIDE}" 'not take over an existing reverse proxy' "installation guide existing proxy ownership"
+  assert_contains "${INSTALL_GUIDE}" 'sudo xg2g-admin doctor' "installation guide post-install diagnosis"
+  assert_contains "${INSTALL_GUIDE}" 'sudo xg2g-admin update --ref vX.Y.Z' "installation guide governed update"
+  assert_contains "${INSTALL_GUIDE}" 'sudo xg2g-admin uninstall' "installation guide safe uninstall"
+
   assert_file "${DEPLOYMENT_INDEX}"
   assert_contains "${DEPLOYMENT_INDEX}" '`docs/ops/INSTALLATION_CONTRACT.md`' "deployment index installation contract"
   assert_contains "${DEPLOYMENT_INDEX}" 'Repo-side deploy truth lives under `infra/systemd/`.' "deployment index deploy migration note"

@@ -16,7 +16,8 @@ You want to stream your Enigma2 receiver in a browser.
 | Step | Document |
 | :--- | :--- |
 | Get streaming, step by step | [Getting Started](guides/GETTING_STARTED.md) |
-| Install in one command | [Quickstart](../README.md#quickstart) |
+| Install a complete Linux server | [Complete Linux Installation](guides/INSTALLATION.md) |
+| Evaluate locally in one container | [Local Evaluation Quickstart](../README.md#local-evaluation-quickstart) |
 | Set the essential options | [Configuration → Essential](guides/CONFIGURATION.md#essential-start-here) |
 | Full configuration reference | [Configuration Guide](guides/CONFIGURATION.md) |
 | Understand playback & codecs | [Codec Matrix](arch/CODEC_MATRIX.md) |
@@ -29,6 +30,7 @@ You run xg2g as a service for others.
 
 | Task | Document |
 | :--- | :--- |
+| Install from an empty Linux host | [Complete Linux Installation](guides/INSTALLATION.md) |
 | Deploy (systemd / Compose) | [Deployment Guide](ops/DEPLOYMENT.md) |
 | Understand the current runtime | [2026 System Overview](arch/SYSTEM_OVERVIEW_2026.md) |
 | Security operations | [Security](ops/SECURITY.md) |

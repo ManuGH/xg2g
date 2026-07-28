@@ -31,11 +31,18 @@ You need:
 
 Open [GitHub Releases](https://github.com/ManuGH/xg2g/releases), download the
 `linux_amd64` or `linux_arm64` archive plus `checksums.txt`, verify the
-checksum, and extract the archive on the Linux server. Then run:
+checksum, and confirm the archive contains `infra/systemd/setup-linux.sh`.
+Then extract the archive on the Linux server and run:
 
 ```bash
 sudo ./infra/systemd/setup-linux.sh
 ```
+
+The [complete Linux installation guide](INSTALLATION.md) provides a
+copy-paste download and checksum workflow, prerequisite commands, an
+answer-by-answer wizard explanation, storage/GPU/HTTPS preparation,
+post-install verification, updates, restore, safe uninstall, and a clear
+availability check for older releases that predate the guided installer.
 
 Do not use **Code → Download ZIP** for installation. That ZIP represents a
 mutable source branch and deliberately fails with a link back to Releases
@@ -156,6 +163,8 @@ the [Configuration guide](CONFIGURATION.md#essential-start-here).
 
 ## Next steps
 
+- [Complete Linux installation](INSTALLATION.md) — from an empty host through
+  verification, updates, restore, and uninstall.
 - `sudo xg2g-admin doctor` — verify Docker, storage,
   service health, and the published HTTPS endpoint.
 - `sudo xg2g-admin backup` — create an immediate verified

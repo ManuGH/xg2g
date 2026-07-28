@@ -69,11 +69,17 @@ in the Docker image; size your host for the concurrent streams you expect.
 
 For a persistent Linux installation, download the archive for your architecture
 from [GitHub Releases](https://github.com/ManuGH/xg2g/releases), verify it
-against `checksums.txt`, extract it, and run:
+against `checksums.txt`, and confirm the archive contains
+`infra/systemd/setup-linux.sh`. Then extract it and run:
 
 ```bash
 sudo ./infra/systemd/setup-linux.sh
 ```
+
+Older archives may predate the guided installer. Do not combine current
+installer files with an older release image; the
+[complete installation guide](docs/guides/INSTALLATION.md) includes an
+availability check and the safe interim path.
 
 Do not use GitHub's green **Code → Download ZIP** button for a server install;
 branch ZIPs are mutable source snapshots, not versioned release bundles.
@@ -95,7 +101,8 @@ After installation, routine administration uses one command:
 sudo xg2g-admin doctor
 ```
 
-[Read the step-by-step guide](docs/guides/GETTING_STARTED.md)
+[Complete Linux installation](docs/guides/INSTALLATION.md) ·
+[Getting started](docs/guides/GETTING_STARTED.md)
 
 [Current 2026 system overview](docs/arch/SYSTEM_OVERVIEW_2026.md)
 
@@ -142,6 +149,7 @@ encoding.
 
 **Next steps:**
 [Documentation](docs/README.md) •
+[Installation](docs/guides/INSTALLATION.md) •
 [Configuration](docs/guides/CONFIGURATION.md) •
 [Deployment](docs/ops/DEPLOYMENT.md) •
 [Security](docs/ops/SECURITY.md) •
