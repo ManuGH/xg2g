@@ -22,15 +22,18 @@ knowledge:
 sudo ./infra/systemd/setup-linux.sh
 ```
 
-It shows the usable mounts and free space, estimates the selected DVR window at
-a conservative 20 Mbit/s plus 20% headroom, and offers:
+It shows the usable mounts and free space, multiplies the selected DVR window
+by the expected simultaneous streams at a conservative 20 Mbit/s plus 20%
+headroom, compares the result with available capacity, and offers:
 
 1. a portable single-filesystem setup, or
 2. a directory on an already-mounted HDD/SSD/NVMe volume.
 
 The wizard never partitions, formats, mounts, or deletes storage. With a
 dedicated path it enables the fail-closed mount check, so a missing disk cannot
-silently fill the Linux system disk.
+silently fill the Linux system disk. It also requires the mount to be declared
+in `/etc/fstab` or as a systemd mount unit unless the operator explicitly
+accepts a non-persistent mount.
 
 ## Setup Inventory
 

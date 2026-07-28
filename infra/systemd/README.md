@@ -10,6 +10,12 @@ This is the deploy-SSoT migration slice:
 - `infra/systemd/docker-compose.nvidia.yml` is the intended canonical NVIDIA runtime / NVENC overlay.
 - `infra/systemd/xg2g.env.schema.yaml` is the initial machine-readable contract for `/etc/xg2g/xg2g.env`.
 - `infra/systemd/sync.sh` is the idempotent host sync entrypoint.
+- `infra/systemd/setup-linux.sh` is the guided release installer.
+- `infra/systemd/xg2g-admin.sh` owns diagnosis, backup/restore,
+  update/rollback, and safe removal.
+- `infra/systemd/xg2g-backup.service` and `.timer` provide daily verified
+  durable-state backups.
+- `infra/systemd/xg2g-caddy.service` is the optional managed HTTPS edge.
 - `infra/systemd/REVERSE_PROXY.md` documents every reverse-proxy / HTTPS topology (direct, in-process TLS, Caddy, nginx, Traefik, Cloudflare Tunnel) and the settings each requires; `infra/systemd/reverse-proxy/` holds drop-in reference configs.
 
 Current deployment boundary:

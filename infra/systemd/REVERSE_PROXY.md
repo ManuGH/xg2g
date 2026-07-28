@@ -23,6 +23,18 @@ to add them.
 The shortest path to a working, secure deployment. Caddy gives you automatic
 HTTPS in a few lines and handles the redirect and forwarded headers for you.
 
+The guided `infra/systemd/setup-linux.sh` installer can perform this path
+directly. Choose managed public Caddy for a DNS name with ACME reachability, or
+managed internal Caddy for LAN/VPN use. Internal mode prints the local CA
+certificate that must be trusted on each browser device. In both modes Caddy
+runs as the hardened `xg2g-caddy.service`, reaches xg2g over loopback, and is
+validated through the configured HTTPS origin before setup succeeds.
+An existing proxy with a private CA can supply
+`XG2G_SETUP_HTTPS_CA_FILE=/path/to/root.crt` in non-interactive setup.
+Managed internal Caddy can be restricted to one interface with
+`XG2G_SETUP_CADDY_BIND_IP=<server-lan-or-vpn-ip>`; otherwise host firewall/VPN
+ACLs remain responsible for limiting ports 80/443.
+
 1. Point a DNS name at the host (e.g. `tv.example.com` → your server). No public
    domain? See **"No public domain? (homelab / internal only)"** below.
 2. Run xg2g normally — plain HTTP is fine, Caddy adds the TLS. (Don't set

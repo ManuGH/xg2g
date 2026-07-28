@@ -41,8 +41,17 @@ Every release archive must contain:
 - `README.md`
 - `LICENSE`
 - `backend/VERSION`
+- `DIGESTS.lock`
 - `docs/**`
-- `infra/systemd/setup-linux.sh`
+- `infra/systemd/**`
+- the deployment helpers required by `infra/systemd/sync.sh` under
+  `backend/scripts/`
+
+The archive is a self-contained installation bundle. Running
+`infra/systemd/setup-linux.sh` from an official release archive must not clone
+the repository or resolve a mutable branch. GitHub-generated source ZIPs are
+not release artifacts and must fail with a link to the matching Releases page
+instead of guessing a tag from `backend/VERSION`.
 
 The verifier treats archive wrapper directories as implementation detail. The
 required payload entries may be nested, but they must be present.

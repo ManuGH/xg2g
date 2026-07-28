@@ -20,6 +20,27 @@ RELEASE_POLICY="${REPO_ROOT}/backend/scripts/verify-release-policy.sh"
 DOC_IMAGE_TAGS="${REPO_ROOT}/backend/scripts/verify-doc-image-tags.sh"
 RELEASE_INVARIANTS="${REPO_ROOT}/docs/ops/CONTRACT_INVARIANTS_RELEASE.md"
 
+RELEASE_INSTALL_FILES=(
+  "infra/systemd/setup-linux.sh"
+  "infra/systemd/sync.sh"
+  "infra/systemd/xg2g-admin.sh"
+  "infra/systemd/xg2g-caddy.service"
+  "infra/systemd/xg2g-backup.service"
+  "infra/systemd/xg2g-backup.timer"
+  "infra/systemd/docker-compose.yml"
+  "infra/systemd/xg2g.service"
+  "infra/systemd/xg2g.env.schema.yaml"
+  "backend/scripts/compose-xg2g.sh"
+  "backend/scripts/verify-compose-contract.sh"
+  "backend/scripts/verify-installed-unit.sh"
+  "backend/scripts/verify-systemd-runtime-contract.sh"
+  "backend/scripts/verify-installation-contract.sh"
+  "backend/scripts/verify-runtime.sh"
+  "docs/ops/xg2g-verifier.service"
+  "docs/ops/xg2g-verifier.timer"
+  "DIGESTS.lock"
+)
+
 ALLOWED_GORELEASER_TOP_LEVEL_KEYS=(
   "version"
   "project_name"
@@ -145,6 +166,8 @@ verify_doc_contract() {
   assert_contains "${DOC}" '.github/workflows/ffmpeg-base.yml' "release output doc truth input"
   assert_contains "${DOC}" 'infra/docker/Dockerfile.ffmpeg-base' "release output doc truth input"
   assert_contains "${DOC}" 'unexpected published output' "release output doc policy"
+  assert_contains "${DOC}" 'self-contained installation bundle' "release output self-contained install contract"
+  assert_contains "${DOC}" 'GitHub-generated source ZIPs' "release output mutable source ZIP rejection"
 }
 
 verify_release_workflow_contract() {
@@ -176,7 +199,9 @@ verify_goreleaser_contract() {
   assert_contains "${GORELEASER_CFG}" 'LICENSE' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'backend/VERSION' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'docs/**' "goreleaser archive payload"
-  assert_contains "${GORELEASER_CFG}" 'infra/systemd/setup-linux.sh' "goreleaser guided setup payload"
+  assert_contains "${GORELEASER_CFG}" 'infra/systemd/**' "goreleaser self-contained systemd payload"
+  assert_contains "${GORELEASER_CFG}" 'backend/scripts/compose-xg2g.sh' "goreleaser compose helper payload"
+  assert_contains "${GORELEASER_CFG}" 'backend/scripts/verify-installation-contract.sh' "goreleaser installation verifier payload"
   assert_contains "${GORELEASER_CFG}" 'name_template: "checksums.txt"' "goreleaser checksum naming"
   assert_contains "${GORELEASER_CFG}" 'dockers_v2:' "goreleaser dockers_v2 block"
   assert_contains "${GORELEASER_CFG}" '- "ghcr.io/manugh/xg2g"' "goreleaser dockers_v2 image"
@@ -238,6 +263,7 @@ verify_archive_payload() {
   local version_member
   local archived_version
   local expected_tag
+  local required
 
   entries="$(tar -tzf "${archive}")" || fail "unable to list archive: ${archive}"
   expected_tag="$(normalize_tag_version "${version}")"
@@ -252,7 +278,10 @@ verify_archive_payload() {
   printf '%s\n' "${entries}" | grep -Eq '(^|/)LICENSE$' || fail "archive missing LICENSE: ${archive}"
   printf '%s\n' "${entries}" | grep -Eq '(^|/)backend/VERSION$' || fail "archive missing backend/VERSION: ${archive}"
   printf '%s\n' "${entries}" | grep -Eq '(^|/)docs/.+' || fail "archive missing docs payload: ${archive}"
-  printf '%s\n' "${entries}" | grep -Eq '(^|/)infra/systemd/setup-linux\.sh$' || fail "archive missing guided Linux setup: ${archive}"
+  for required in "${RELEASE_INSTALL_FILES[@]}"; do
+    printf '%s\n' "${entries}" | grep -Eq "(^|/)${required//./\\.}$" ||
+      fail "archive missing self-contained install file ${required}: ${archive}"
+  done
 
   version_member="$(printf '%s\n' "${entries}" | grep -E '(^|/)backend/VERSION$' | head -n 1 || true)"
   [[ -n "${version_member}" ]] || fail "archive missing backend/VERSION member: ${archive}"
@@ -324,13 +353,21 @@ create_synthetic_bundle() {
   while IFS=: read -r os arch; do
     archive_name="xg2g_${plain_version}_${os}_${arch}.tar.gz"
     payload_root="${bundle_dir}/payload-${os}-${arch}"
-    mkdir -p "${payload_root}/backend" "${payload_root}/docs/ops" "${payload_root}/infra/systemd"
+    mkdir -p "${payload_root}/backend/scripts" "${payload_root}/docs/ops" "${payload_root}/infra"
     printf '%s\n' 'synthetic release readme' > "${payload_root}/README.md"
     printf '%s\n' 'synthetic license' > "${payload_root}/LICENSE"
     printf '%s\n' "${tag_version}" > "${payload_root}/backend/VERSION"
     printf '%s\n' 'synthetic docs' > "${payload_root}/docs/ops/placeholder.md"
-    printf '%s\n' '#!/usr/bin/env bash' > "${payload_root}/infra/systemd/setup-linux.sh"
-    chmod 0755 "${payload_root}/infra/systemd/setup-linux.sh"
+    cp -R "${REPO_ROOT}/infra/systemd" "${payload_root}/infra/systemd"
+    cp "${REPO_ROOT}/backend/scripts/compose-xg2g.sh" "${payload_root}/backend/scripts/"
+    cp "${REPO_ROOT}/backend/scripts/verify-compose-contract.sh" "${payload_root}/backend/scripts/"
+    cp "${REPO_ROOT}/backend/scripts/verify-installed-unit.sh" "${payload_root}/backend/scripts/"
+    cp "${REPO_ROOT}/backend/scripts/verify-systemd-runtime-contract.sh" "${payload_root}/backend/scripts/"
+    cp "${REPO_ROOT}/backend/scripts/verify-installation-contract.sh" "${payload_root}/backend/scripts/"
+    cp "${REPO_ROOT}/backend/scripts/verify-runtime.sh" "${payload_root}/backend/scripts/"
+    cp "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "${payload_root}/docs/ops/"
+    cp "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "${payload_root}/docs/ops/"
+    cp "${REPO_ROOT}/DIGESTS.lock" "${payload_root}/DIGESTS.lock"
 
     if [[ "${os}" == "windows" ]]; then
       binary_name="xg2g.exe"

@@ -14,13 +14,18 @@ For a new Linux host, use the guided front end
 sudo ./infra/systemd/setup-linux.sh
 ```
 
-It asks for the receiver, private/public access topology, DVR window, an
-optional already-mounted scratch disk, and GPU type. It generates the required
-secrets and delegates the installation to the pinned `sync.sh` path above. It
-never partitions, formats, mounts, or deletes a disk. Existing installations
-remain on `sync.sh`; the wizard will not overwrite their environment file.
-The standard proxy choice assumes Caddy/nginx/Traefik runs on the same host,
-because the hardened base Compose file publishes xg2g on loopback only.
+It asks for the receiver, private/public access topology, DVR window and
+concurrency, an optional already-mounted scratch disk, and GPU type. It
+generates the required secrets and delegates the installation to the pinned
+`sync.sh` path above. It never partitions, formats, mounts, or deletes a disk.
+Existing installations remain on `sync.sh`; the wizard will not overwrite
+their environment file. The HTTPS choice can use an existing same-host proxy or
+install the managed Caddy systemd service. The hardened base Compose file
+continues to publish xg2g on loopback only.
+
+Official release archives contain the complete deploy bundle and install
+without cloning Git. GitHub-generated branch source ZIPs are rejected because
+they cannot prove a released image/ref pairing.
 
 This copies repo truth into `/srv/xg2g` and `/etc/systemd/system`, reloads
 systemd, and runs verification checks.
@@ -33,10 +38,18 @@ Use `infra/systemd/sync.sh --check --ref <tag|sha>` for drift checks and
 
 | Requirement | Value |
 | :--- | :--- |
-| **Runtime** | Docker or Podman |
+| **Operating system** | Linux with systemd (`amd64` or `arm64`) |
+| **Runtime** | Docker Engine with the Compose v2 plugin |
 | **Supervisor** | systemd (manages container lifecycle) |
 | **Network** | Enigma2 receiver reachable from host |
 | **HTTPS** | Required for non-loopback browser access |
+
+The guided path is distribution-neutral above the package layer and prints
+prerequisite commands for Debian/Ubuntu, Fedora/RHEL, and Arch families.
+Appliance/NAS operating systems without systemd are not covered by this host
+installer; they can consume the OCI image through their native container
+manager, but must provide equivalent persistence, secrets, HTTPS, health, and
+backup supervision themselves.
 
 ## Detailed Documentation
 
@@ -59,6 +72,24 @@ Deployment artifacts:
 - `infra/systemd/docker-compose.gpu.yml` — optional `/dev/dri` marker overlay (expanded into render-node-only binds by `compose-xg2g.sh`)
 - `infra/systemd/docker-compose.nvidia.yml` — optional NVIDIA runtime overlay
 - `infra/systemd/xg2g.service` — systemd unit
+- `infra/systemd/xg2g-admin.sh` — doctor, backup/restore, update/rollback, and
+  uninstall lifecycle
+- `infra/systemd/xg2g-backup.service` / `.timer` — online daily backup
+- `infra/systemd/xg2g-caddy.service` — optional managed HTTPS edge
+
+Routine host commands:
+
+```bash
+sudo xg2g-admin doctor
+sudo xg2g-admin backup
+sudo xg2g-admin restore /var/backups/xg2g/ARCHIVE.tar.gz --yes
+sudo xg2g-admin update --ref vX.Y.Z
+sudo xg2g-admin rollback --yes
+sudo xg2g-admin uninstall
+```
+
+Uninstall preserves configuration, data, local backups, recordings, and
+external DVR storage unless the operator explicitly adds `--purge-data --yes`.
 
 Direct host edits, ad-hoc file copies, and manual `/srv/xg2g` drift are not
 supported deployment workflows for tagged releases, and are never acceptable

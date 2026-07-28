@@ -33,8 +33,15 @@ archives:
       - README.md
       - LICENSE
       - backend/VERSION
+      - DIGESTS.lock
       - docs/**
-      - infra/systemd/setup-linux.sh
+      - infra/systemd/**
+      - backend/scripts/compose-xg2g.sh
+      - backend/scripts/verify-compose-contract.sh
+      - backend/scripts/verify-installed-unit.sh
+      - backend/scripts/verify-systemd-runtime-contract.sh
+      - backend/scripts/verify-installation-contract.sh
+      - backend/scripts/verify-runtime.sh
 
 checksum:
   name_template: "checksums.txt"

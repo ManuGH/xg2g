@@ -67,16 +67,29 @@ in the Docker image; size your host for the concurrent streams you expect.
 
 ## Guided Linux Install
 
-For a persistent Linux installation, clone or download the repository and run:
+For a persistent Linux installation, download the archive for your architecture
+from [GitHub Releases](https://github.com/ManuGH/xg2g/releases), verify it
+against `checksums.txt`, extract it, and run:
 
 ```bash
 sudo ./infra/systemd/setup-linux.sh
 ```
 
+Do not use GitHub's green **Code → Download ZIP** button for a server install;
+branch ZIPs are mutable source snapshots, not versioned release bundles.
+
 The assistant asks plain-language questions about the receiver, HTTPS/VPN
-access, DVR rewind window, storage, and GPU. It generates the secrets and uses
-the same pinned systemd/Compose deployment contract as manual upgrades. It
-never partitions, formats, mounts, or deletes a disk.
+access, DVR rewind window, simultaneous streams, storage, and GPU. It can use
+an existing reverse proxy or manage Caddy for you, generates strong secrets,
+enables daily backups and runtime verification, and uses the same pinned
+systemd/Compose deployment contract as upgrades. It never partitions, formats,
+mounts, or deletes a disk.
+
+After installation, routine administration uses one command:
+
+```bash
+sudo xg2g-admin doctor
+```
 
 [Read the step-by-step guide](docs/guides/GETTING_STARTED.md)
 

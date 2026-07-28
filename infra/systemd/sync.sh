@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 MODE=""
 SOURCE_REF=""
+SOURCE_DIR=""
 INSTALL_ROOT="/"
 GPU_OVERLAY_MODE="auto"
 NVIDIA_OVERLAY_MODE="auto"
@@ -14,7 +15,6 @@ FETCH_REMOTE="origin"
 
 SOURCE_ROOT=""
 SOURCE_LABEL=""
-SOURCE_COMMIT=""
 GPU_OVERLAY_ENABLED=0
 NVIDIA_OVERLAY_ENABLED=0
 VERIFIER_BUNDLE_ENABLED=0
@@ -23,6 +23,13 @@ TEMP_DIRS=()
 
 CORE_SPECS=(
   "infra/systemd/docker-compose.yml|/srv/xg2g/docker-compose.yml|644"
+  "infra/systemd/setup-linux.sh|/srv/xg2g/infra/systemd/setup-linux.sh|755"
+  "infra/systemd/sync.sh|/srv/xg2g/infra/systemd/sync.sh|755"
+  "infra/systemd/xg2g-admin.sh|/srv/xg2g/scripts/xg2g-admin.sh|755"
+  "infra/systemd/xg2g-admin.sh|/usr/local/sbin/xg2g-admin|755"
+  "infra/systemd/xg2g-caddy.service|/etc/systemd/system/xg2g-caddy.service|644"
+  "infra/systemd/xg2g-backup.service|/etc/systemd/system/xg2g-backup.service|644"
+  "infra/systemd/xg2g-backup.timer|/etc/systemd/system/xg2g-backup.timer|644"
   "infra/systemd/xg2g.service|/srv/xg2g/docs/ops/xg2g.service|644"
   "infra/systemd/xg2g.service|/etc/systemd/system/xg2g.service|644"
   "backend/scripts/compose-xg2g.sh|/srv/xg2g/scripts/compose-xg2g.sh|755"
@@ -30,6 +37,7 @@ CORE_SPECS=(
   "backend/scripts/verify-installed-unit.sh|/srv/xg2g/scripts/verify-installed-unit.sh|755"
   "backend/scripts/verify-systemd-runtime-contract.sh|/srv/xg2g/scripts/verify-systemd-runtime-contract.sh|755"
   "backend/scripts/verify-installation-contract.sh|/srv/xg2g/scripts/verify-installation-contract.sh|755"
+  "backend/VERSION|/srv/xg2g/backend/VERSION|644"
 )
 
 GPU_SPECS=(
@@ -63,8 +71,8 @@ VERIFIER_TARGETS=(
 usage() {
   cat <<'EOF'
 Usage:
-  infra/systemd/sync.sh --check [--ref <tag|sha>] [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
-  infra/systemd/sync.sh --apply --ref <tag|sha> [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
+  infra/systemd/sync.sh --check [--ref <tag|sha>] [--source-dir <path>] [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
+  infra/systemd/sync.sh --apply --ref <tag|sha> [--source-dir <path>] [--install-root <path>] [--gpu-overlay auto|enable|disable] [--nvidia-overlay auto|enable|disable] [--verifier-bundle auto|enable|disable]
 
 Modes:
   --check   Compare repo truth (current checkout or pinned ref) against the host install root.
@@ -77,6 +85,9 @@ Exit codes:
 
 Options:
   --ref <tag|sha>         Pinned git ref to archive from the local repo. Required for --apply.
+  --source-dir <path>     Use an immutable extracted release bundle instead of
+                          resolving --ref through Git. Intended for official
+                          release archives and tests.
   --install-root <path>   Prefix host targets with a test root. Defaults to /.
   --gpu-overlay <mode>    auto (preserve host intent), enable, or disable.
   --nvidia-overlay <mode> auto (preserve host intent), enable, or disable.
@@ -115,6 +126,7 @@ cleanup() {
   for dir in "${TEMP_DIRS[@]:-}"; do
     [[ -n "${dir}" && -d "${dir}" ]] && rm -rf "${dir}"
   done
+  return 0
 }
 
 trap cleanup EXIT
@@ -157,6 +169,11 @@ parse_args() {
       --ref)
         [[ "$#" -ge 2 ]] || fail "--ref requires a value"
         SOURCE_REF="$2"
+        shift 2
+        ;;
+      --source-dir)
+        [[ "$#" -ge 2 ]] || fail "--source-dir requires a value"
+        SOURCE_DIR="$2"
         shift 2
         ;;
       --install-root)
@@ -212,10 +229,20 @@ parse_args() {
   if [[ "${MODE}" == "apply" && -z "${SOURCE_REF}" ]]; then
     fail "--apply requires --ref <tag|sha> to avoid implicit checkout state"
   fi
+  if [[ -n "${SOURCE_DIR}" ]]; then
+    [[ "${SOURCE_DIR}" == /* ]] || fail "--source-dir must be an absolute path"
+    [[ -d "${SOURCE_DIR}" ]] || fail "--source-dir does not exist: ${SOURCE_DIR}"
+  fi
 }
 
 resolve_source_tree() {
   local commit archive_root
+
+  if [[ -n "${SOURCE_DIR}" ]]; then
+    SOURCE_ROOT="${SOURCE_DIR%/}"
+    SOURCE_LABEL="release bundle ${SOURCE_REF:-unversioned}"
+    return 0
+  fi
 
   if [[ -z "${SOURCE_REF}" ]]; then
     SOURCE_ROOT="${REPO_ROOT}"
@@ -237,7 +264,6 @@ resolve_source_tree() {
   git -C "${REPO_ROOT}" archive "${commit}" | tar -x -C "${archive_root}"
 
   SOURCE_ROOT="${archive_root}"
-  SOURCE_COMMIT="${commit}"
   SOURCE_LABEL="${SOURCE_REF} ($(git -C "${REPO_ROOT}" rev-parse --short "${commit}"))"
 }
 
@@ -679,6 +705,15 @@ run_check() {
     compare_spec "${spec}"
   done
 
+  if [[ -n "${SOURCE_REF}" ]]; then
+    local installed_ref
+    installed_ref="$(host_path "/srv/xg2g/INSTALL_REF")"
+    if [[ ! -f "${installed_ref}" || "$(tr -d '[:space:]' < "${installed_ref}")" != "${SOURCE_REF}" ]]; then
+      DRIFT_DETECTED=1
+      warn "installed ref drift: expected ${SOURCE_REF} in ${installed_ref}"
+    fi
+  fi
+
   if [[ "${GPU_OVERLAY_ENABLED}" -eq 0 ]]; then
     for spec in "${GPU_SPECS[@]}"; do
       IFS='|' read -r rel target mode <<< "${spec}"
@@ -716,13 +751,17 @@ run_check() {
 }
 
 apply_sync() {
-  local spec status
+  local spec status installed_ref
 
   build_manifest
 
   for spec in "${CURRENT_SPECS[@]}"; do
     copy_spec "${spec}"
   done
+  installed_ref="$(host_path "/srv/xg2g/INSTALL_REF")"
+  install -d "$(dirname "${installed_ref}")"
+  printf '%s\n' "${SOURCE_REF}" > "${installed_ref}"
+  chmod 0644 "${installed_ref}"
 
   remove_disabled_optionals
 
@@ -751,12 +790,14 @@ main() {
 
   parse_args "$@"
 
-  require_tool git
   require_tool tar
   require_tool install
   require_tool diff
   require_tool stat
   require_tool python3
+  if [[ -z "${SOURCE_DIR}" ]]; then
+    require_tool git
+  fi
 
   resolve_source_tree
   note "using source ${SOURCE_LABEL}"

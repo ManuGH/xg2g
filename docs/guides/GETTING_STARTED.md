@@ -8,7 +8,8 @@ or self-host setup; for production (HTTPS, systemd, Compose) see the
 
 You need:
 
-- **Docker** on the host that will run xg2g.
+- **A Linux host with systemd**, on `amd64` or `arm64`.
+- **Docker Engine with the Compose v2 plugin** on the host that will run xg2g.
 - **An Enigma2 receiver** (e.g. a VU+ or Dreambox running OpenWebIF) reachable
   on your network. Confirm it answers:
 
@@ -28,31 +29,51 @@ You need:
 
 ## 1. Recommended: guided Linux installation
 
-Download or clone the repository on the Linux server, then run:
+Open [GitHub Releases](https://github.com/ManuGH/xg2g/releases), download the
+`linux_amd64` or `linux_arm64` archive plus `checksums.txt`, verify the
+checksum, and extract the archive on the Linux server. Then run:
 
 ```bash
 sudo ./infra/systemd/setup-linux.sh
 ```
 
+Do not use **Code → Download ZIP** for installation. That ZIP represents a
+mutable source branch and deliberately fails with a link back to Releases
+instead of guessing which container image should be installed. A Git clone is
+supported for development; the versioned release archive is the recommended
+server installation.
+
 The setup assistant uses plain-language questions for:
 
 - the receiver address and optional OpenWebIF login,
 - local, private/VPN, or public HTTPS access,
-- the DVR rewind window and its estimated disk requirement,
+- the DVR rewind window, simultaneous streams, and verified free-space estimate,
 - shared storage or an already-mounted HDD/SSD/NVMe path, and
 - automatic, VAAPI, NVIDIA, or CPU-only transcoding.
 
 It creates strong secrets, writes the protected configuration, installs the
-systemd/Compose bundle from an exact Git commit, and starts xg2g. It does not
-partition, format, mount, or delete disks. If you downloaded GitHub's source
-ZIP instead of cloning, it retrieves the matching tagged deployment source
-before installation.
+self-contained systemd/Compose bundle from the exact release, enables daily
+durable-state backups and runtime verification, and starts xg2g. It does not
+partition, format, mount, or delete disks.
 
 Choose the local-only option if you are only evaluating on the Linux host.
-Phones, tablets, and other machines need the HTTPS proxy option; the wizard
-configures xg2g's trust boundary but expects Caddy/nginx/Traefik to run on the
-same Linux host already. The standard install deliberately binds xg2g only to
+Phones, tablets, and other machines need the HTTPS proxy option. The wizard can
+use an existing same-host Caddy/nginx/Traefik proxy or manage a pinned Caddy
+container itself. Public Caddy mode obtains a normal ACME certificate; internal
+CA mode is intended for LAN/VPN and prints the CA certificate that clients must
+trust. Internal mode can bind Caddy to one exact LAN/VPN server IP instead of
+all interfaces. The standard install deliberately binds xg2g itself only to
 loopback, so it cannot be bypassed over cleartext from the LAN.
+
+For an existing proxy with a private CA, provide its CA certificate when asked.
+Setup keeps a public copy at `/etc/xg2g/https-ca.crt` for later diagnostics and
+does not finish until the configured URL serves the WebUI with HSTS and the
+authenticated connectivity contract confirms effective HTTPS and the exact
+allowed origin.
+
+If a required tool is missing, the installer prints the matching package
+command for Debian/Ubuntu, Fedora/RHEL, or Arch. Docker Engine and its Compose
+v2 plugin remain explicit prerequisites.
 
 ## 2. Alternative: one-container local evaluation
 
@@ -119,6 +140,12 @@ the [Configuration guide](CONFIGURATION.md#essential-start-here).
 
 ## Next steps
 
+- `sudo xg2g-admin doctor` — verify Docker, storage,
+  service health, and the published HTTPS endpoint.
+- `sudo xg2g-admin backup` — create an immediate verified
+  backup in `/var/backups/xg2g`.
+- `sudo xg2g-admin update --ref vX.Y.Z` — back up, update,
+  health-check, and automatically restore the previous ref if startup fails.
 - [Configuration → Essential](CONFIGURATION.md#essential-start-here) — the core knobs.
 - [Deployment Guide](../ops/DEPLOYMENT.md) — HTTPS, systemd, Compose, production.
 - [Troubleshooting](TROUBLESHOOTING.md) — when something does not work.

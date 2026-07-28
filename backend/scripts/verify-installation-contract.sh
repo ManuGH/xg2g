@@ -12,6 +12,10 @@ RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 REQUIRED_REPO_FILES=(
   "infra/systemd/setup-linux.sh"
   "infra/systemd/sync.sh"
+  "infra/systemd/xg2g-admin.sh"
+  "infra/systemd/xg2g-caddy.service"
+  "infra/systemd/xg2g-backup.service"
+  "infra/systemd/xg2g-backup.timer"
   "infra/systemd/docker-compose.yml"
   "infra/systemd/xg2g.service"
   "infra/systemd/xg2g.env.schema.yaml"
@@ -24,6 +28,7 @@ REQUIRED_REPO_FILES=(
 REQUIRED_REPO_EXECUTABLES=(
   "infra/systemd/setup-linux.sh"
   "infra/systemd/sync.sh"
+  "infra/systemd/xg2g-admin.sh"
   "backend/scripts/compose-xg2g.sh"
   "backend/scripts/verify-compose-contract.sh"
   "backend/scripts/verify-installed-unit.sh"
@@ -187,6 +192,11 @@ verify_installation_doc() {
   assert_contains "${INSTALL_DOC}" '`infra/systemd/docker-compose.nvidia.yml`' "installation contract canonical nvidia overlay source"
   assert_contains "${INSTALL_DOC}" '`infra/systemd/xg2g.service`' "installation contract canonical unit source"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/compose-xg2g.sh`' "installation contract compose helper"
+  assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/xg2g-admin.sh`' "installation contract lifecycle helper"
+  assert_contains "${INSTALL_DOC}" '`/usr/local/sbin/xg2g-admin`' "installation contract stable admin command"
+  assert_contains "${INSTALL_DOC}" '`/srv/xg2g/INSTALL_REF`' "installation contract installed ref"
+  assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g-backup.timer`' "installation contract backup timer"
+  assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g-caddy.service`' "installation contract managed HTTPS unit"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/verify-installation-contract.sh`' "installation contract verifier script"
   assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g.service`' "installation contract installed unit"
   assert_contains "${INSTALL_DOC}" '`/etc/xg2g/xg2g.env`' "installation contract env file"
@@ -197,6 +207,7 @@ verify_installation_doc() {
   assert_contains "${INSTALL_DOC}" "--verify-install-root /" "installation contract live-host verification"
   assert_contains "${INSTALL_DOC}" '`infra/systemd/sync.sh --apply --ref <tag|sha>`' "installation contract sync apply path"
   assert_contains "${INSTALL_DOC}" '`infra/systemd/setup-linux.sh`' "installation contract guided setup path"
+  assert_contains "${INSTALL_DOC}" 'GitHub branch source ZIPs are rejected' "installation contract mutable ZIP rejection"
 }
 
 verify_docs_discoverability() {
@@ -207,6 +218,8 @@ verify_docs_discoverability() {
   assert_contains "${DEPLOYMENT_INDEX}" '`infra/systemd/sync.sh --apply --ref <tag|sha>`' "deployment index sync apply command"
   assert_contains "${DEPLOYMENT_INDEX}" 'only supported deployment path' "deployment index sole deployment path"
   assert_contains "${DEPLOYMENT_INDEX}" '`infra/systemd/setup-linux.sh`' "deployment index guided setup path"
+  assert_contains "${DEPLOYMENT_INDEX}" '`infra/systemd/xg2g-admin.sh`' "deployment index lifecycle helper"
+  assert_contains "${DEPLOYMENT_INDEX}" 'GitHub-generated branch source ZIPs are rejected' "deployment index mutable ZIP rejection"
 
   assert_file "${RUNBOOK}"
   assert_contains "${RUNBOOK}" 'Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.' "runbook installation contract link"
