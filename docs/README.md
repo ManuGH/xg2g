@@ -9,6 +9,28 @@ lifecycle snapshot as of 2026-07-28, read the
 release notes, audits, and dated incident sections remain evidence of the state
 at that time; they do not override the current overview or active contracts.
 
+## ⚡ Quickstart TL;DR
+
+```bash
+# 1. Start local development environment
+make dev
+
+# 2. Deploy fast-track staging to LXC 110
+./scripts/fast_deploy.sh
+
+# 3. Run PR verification gates
+make ci-pr
+```
+
+## 🏗️ Streaming Architecture Overview
+
+```mermaid
+flowchart LR
+    E2["Enigma2 Receiver\n(OpenWebIf / Stream 8001)"] -->|"MPEG-TS Stream"| BE["xg2g Daemon\n(Go Backend / Port 8088)"]
+    BE -->|"fMP4 / Low-Latency HLS"| FE["xg2g WebUI & Android App\n(React / Native TV Player)"]
+    BE -->|"Transcode Acceleration"| HW["GPU (VAAPI / NVENC) / CPU"]
+```
+
 ## Run xg2g — User
 
 You want to stream your Enigma2 receiver in a browser.
