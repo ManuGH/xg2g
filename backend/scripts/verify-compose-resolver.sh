@@ -179,6 +179,77 @@ if grep -Fq "/dev/dri:/dev/dri" "${runtime_overlay_copy}"; then
   fail "runtime overlay widened access to the whole /dev/dri tree"
 fi
 
+hls_root="$(make_stack_root)"
+cleanup_roots+=("${hls_root}")
+mkdir -p "${hls_root}/data" "${hls_root}/dvr"
+cat <<'EOF' > "${hls_root}/bin/docker"
+#!/usr/bin/env bash
+set -euo pipefail
+last_file=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "-f" && "$#" -ge 2 ]]; then
+    last_file="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+[[ -n "${last_file}" ]] || exit 1
+cp "${last_file}" "${XG2G_RUNTIME_OVERLAY_COPY:?}"
+EOF
+chmod +x "${hls_root}/bin/docker"
+cat <<EOF > "${hls_root}/xg2g.env"
+XG2G_DATA=${hls_root}/data
+XG2G_HLS_ROOT=${hls_root}/dvr
+EOF
+hls_overlay_copy="${hls_root}/hls-storage-overlay.yml"
+PATH="${hls_root}/bin:${PATH}" \
+XG2G_RUNTIME_OVERLAY_COPY="${hls_overlay_copy}" \
+XG2G_COMPOSE_ROOT="${hls_root}" \
+XG2G_ENV_FILE="${hls_root}/xg2g.env" \
+  "${HELPER}" config -q
+grep -Fq "source: '${hls_root}/dvr'" "${hls_overlay_copy}" || fail "HLS storage overlay missed external source"
+grep -Fq "target: '${hls_root}/dvr'" "${hls_overlay_copy}" || fail "HLS storage overlay missed matching container target"
+
+layout_output="$(
+  XG2G_COMPOSE_ROOT="${hls_root}" \
+  XG2G_ENV_FILE="${hls_root}/xg2g.env" \
+    "${HELPER}" --storage-layout
+)"
+case "${layout_output}" in
+  *"persistent"*"dvr-scratch"*"recordings"*"DVR_PLACEMENT="*) ;;
+  *) fail "storage layout report missed required tier breakdown" ;;
+esac
+
+cat <<EOF > "${hls_root}/xg2g.env"
+XG2G_DATA=${hls_root}/data
+XG2G_HLS_ROOT=${hls_root}/dvr
+XG2G_HLS_REQUIRE_MOUNT=true
+EOF
+if XG2G_COMPOSE_ROOT="${hls_root}" XG2G_ENV_FILE="${hls_root}/xg2g.env" \
+  "${HELPER}" --storage-check >/dev/null 2>&1; then
+  fail "required dedicated HLS mount unexpectedly accepted a shared filesystem"
+fi
+
+cat <<'EOF' > "${hls_root}/xg2g.env"
+XG2G_DATA=/var/lib/xg2g
+XG2G_HLS_ROOT=relative/hls
+EOF
+if XG2G_COMPOSE_ROOT="${hls_root}" XG2G_ENV_FILE="${hls_root}/xg2g.env" \
+  "${HELPER}" --storage-check >/dev/null 2>&1; then
+  fail "relative HLS root unexpectedly passed storage validation"
+fi
+
+cat <<EOF > "${hls_root}/xg2g.env"
+XG2G_DATA=${hls_root}/data
+XG2G_HLS_ROOT=${hls_root}/dvr
+XG2G_HLS_REQUIRE_MOUNT=treu
+EOF
+if XG2G_COMPOSE_ROOT="${hls_root}" XG2G_ENV_FILE="${hls_root}/xg2g.env" \
+  "${HELPER}" --storage-check >/dev/null 2>&1; then
+  fail "invalid HLS mount boolean unexpectedly passed storage validation"
+fi
+
 cat <<'EOF' > "${root}/bin/docker"
 #!/usr/bin/env bash
 set -euo pipefail

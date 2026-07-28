@@ -597,6 +597,27 @@ PY
   return "${status}"
 }
 
+report_storage_layout() {
+  local helper env_file
+
+  if [[ "${INSTALL_ROOT}" != "/" ]]; then
+    note "skipping host storage layout report for install root ${INSTALL_ROOT}"
+    return 0
+  fi
+
+  helper="$(host_path "/srv/xg2g/scripts/compose-xg2g.sh")"
+  env_file="$(host_path "/etc/xg2g/xg2g.env")"
+  if [[ ! -x "${helper}" || ! -f "${env_file}" ]]; then
+    warn "storage layout report unavailable until the compose helper and env file are installed"
+    return 0
+  fi
+
+  note "resolved host storage layout"
+  if ! "${helper}" --storage-layout; then
+    warn "storage layout report failed; run ${helper} --storage-check for details"
+  fi
+}
+
 copy_spec() {
   local spec="$1"
   local rel target mode
@@ -721,6 +742,7 @@ apply_sync() {
     warn "apply completed, but post-apply verification failed"
   fi
 
+  report_storage_layout
   return "${status}"
 }
 
@@ -744,6 +766,7 @@ main() {
     run_check
     status=$?
     set -e
+    report_storage_layout
     exit "${status}"
   fi
 

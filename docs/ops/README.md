@@ -11,6 +11,7 @@ workflow belongs in `docs/dev/`.
 | Deploy a pinned ref | [Deployment Guide](DEPLOYMENT.md) |
 | Manage systemd + Compose | [Systemd + Compose Runbook](RUNBOOK_SYSTEMD_COMPOSE.md) |
 | Verify installation layout | [Installation Contract](INSTALLATION_CONTRACT.md) |
+| Plan RAM/NVMe/SSD/HDD placement | [Linux Storage Layout](STORAGE_LAYOUT.md) |
 | Validate lifecycle gates | [Operational Lifecycle Contract](OPERATIONAL_LIFECYCLE_CONTRACT.md) |
 | Check service health manually | [Service Smoke](SERVICE_SMOKE.md) |
 | Run smoke tests | [Smoke Test](SMOKE_TEST.md) |

@@ -89,11 +89,75 @@ expected_sha="$2"
 commit="$3"
 next="/srv/xg2g-staging/xg2g-staging-binary.next"
 destination="/srv/xg2g-staging/xg2g-staging-binary"
+compose_file="/srv/xg2g-staging/docker-compose.yml"
+storage_overlay="/srv/xg2g-staging/docker-compose.storage.yml"
+env_file="/etc/xg2g/xg2g-staging.env"
+
+read_env_value() {
+  local key="$1"
+  awk -F= -v wanted="${key}" '
+    /^[[:space:]]*#/ { next }
+    {
+      key = $1
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+      sub(/^export[[:space:]]+/, "", key)
+      if (key != wanted) next
+      value = substr($0, index($0, "=") + 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      if (value ~ /^".*"$/ || value ~ /^'\''.*'\''$/) {
+        value = substr(value, 2, length(value) - 2)
+      }
+      print value
+      exit
+    }
+  ' "${env_file}"
+}
 
 cp "${binary}" "${next}"
 chmod 0755 "${next}"
 mv "${next}" "${destination}"
-docker compose --project-directory /srv/xg2g-staging -f /srv/xg2g-staging/docker-compose.yml up -d --force-recreate
+
+compose_args=(--project-directory /srv/xg2g-staging -f "${compose_file}")
+hls_root="$(read_env_value XG2G_HLS_ROOT 2>/dev/null || true)"
+require_mount="$(read_env_value XG2G_HLS_REQUIRE_MOUNT 2>/dev/null || true)"
+case "${require_mount,,}" in
+  ""|0|1|false|true|no|yes|off|on) ;;
+  *)
+    echo "ERROR: staging XG2G_HLS_REQUIRE_MOUNT must be a boolean, got: ${require_mount}" >&2
+    exit 1
+    ;;
+esac
+if [[ -n "${hls_root}" && "${hls_root}" != /var/lib/xg2g/* && "${hls_root}" != "/var/lib/xg2g" ]]; then
+  [[ "${hls_root}" =~ ^/[A-Za-z0-9._/@+-]+$ ]] || {
+    echo "ERROR: staging XG2G_HLS_ROOT must be a safe absolute Linux path: ${hls_root}" >&2
+    exit 1
+  }
+  [[ -d "${hls_root}" && -w "${hls_root}" ]] || {
+    echo "ERROR: staging HLS/DVR scratch path must exist and be writable: ${hls_root}" >&2
+    exit 1
+  }
+  if [[ "${require_mount,,}" =~ ^(1|true|yes|on)$ ]]; then
+    data_mount="$(findmnt -T /var/lib/xg2g-staging -n -o TARGET)"
+    hls_mount="$(findmnt -T "${hls_root}" -n -o TARGET)"
+    [[ -n "${data_mount}" && -n "${hls_mount}" && "${data_mount}" != "${hls_mount}" ]] || {
+      echo "ERROR: staging requires a dedicated HLS mount, but data and DVR resolve to ${data_mount:-unknown}" >&2
+      exit 1
+    }
+  fi
+  cat > "${storage_overlay}" <<EOF
+services:
+  xg2g:
+    volumes:
+      - type: bind
+        source: '${hls_root}'
+        target: '${hls_root}'
+EOF
+  compose_args+=(-f "${storage_overlay}")
+else
+  rm -f "${storage_overlay}"
+fi
+
+docker compose "${compose_args[@]}" up -d --force-recreate
 
 healthy=0
 for ((i = 0; i < 90; i++)); do
@@ -116,6 +180,13 @@ running_sha="$(docker exec xg2g-staging sha256sum /usr/local/bin/xg2g | awk '{pr
   echo "ERROR: running staging hash ${running_sha} != ${expected_sha}" >&2
   exit 1
 }
+if [[ -n "${hls_root}" ]]; then
+  running_hls_root="$(docker exec xg2g-staging printenv XG2G_HLS_ROOT)"
+  [[ "${running_hls_root}" == "${hls_root}" ]] || {
+    echo "ERROR: running staging HLS root ${running_hls_root} != ${hls_root}" >&2
+    exit 1
+  }
+fi
 printf '%s %s\n' "${commit}" "${expected_sha}" > /srv/xg2g-staging/deploy-manifest
 REMOTE
 

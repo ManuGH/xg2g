@@ -38,6 +38,11 @@ These files are useful operational truth, but are not primary product state.
 
 These artifacts live under `XG2G_HLS_ROOT` and are intentionally not treated as authoritative product state.
 
+On hosts with a dedicated DVR scratch mount, set
+`XG2G_HLS_REQUIRE_MOUNT=true`. Startup then fails instead of writing HLS data
+onto the system disk when that mount is missing. See
+[Linux Storage Layout](STORAGE_LAYOUT.md).
+
 | Class | Path | Backup | Verify | Purpose |
 | :--- | :--- | :--- | :--- | :--- |
 | Transient dir | `$XG2G_HLS_ROOT/sessions/` | No | No | Ephemeral live session playlists, segments, and first-frame markers |

@@ -18,6 +18,8 @@ Canonical install layout: `docs/ops/INSTALLATION_CONTRACT.md`.
 - Optional hardware overlay paths are `/srv/xg2g/docker-compose.gpu.yml` and `/srv/xg2g/docker-compose.nvidia.yml`.
 - Working directory must be `/srv/xg2g`.
 - Data directory must exist and be writable at `/var/lib/xg2g`.
+- An external `XG2G_HLS_ROOT` must exist and be writable before startup.
+- `XG2G_HLS_REQUIRE_MOUNT=true` requires DVR scratch to resolve to a mount distinct from `XG2G_DATA`.
 - Compose service name must remain `xg2g` (health gate relies on it).
 
 Production compose is deterministic. For local development, use
@@ -36,6 +38,8 @@ infra/systemd/sync.sh --check --ref <tag|sha>
 /srv/xg2g/scripts/verify-installation-contract.sh --verify-install-root /
 /srv/xg2g/scripts/verify-systemd-runtime-contract.sh
 /srv/xg2g/scripts/verify-compose-contract.sh
+/srv/xg2g/scripts/compose-xg2g.sh --storage-layout
+/srv/xg2g/scripts/compose-xg2g.sh --storage-check
 /srv/xg2g/scripts/run-service-smoke.sh
 /srv/xg2g/scripts/verify-post-deploy-playback.sh
 ```
@@ -89,6 +93,10 @@ use `systemctl restart xg2g` and verify container health via Docker.
    ```bash
    systemctl reload xg2g
    ```
+3. When changing `XG2G_HLS_ROOT`, create and mount the target first, run
+   `/srv/xg2g/scripts/compose-xg2g.sh --storage-check`, and use
+   `systemctl restart xg2g`. Storage-path changes terminate active sessions and
+   require container recreation.
 Legacy receiver env aliases such as `XG2G_OWI_*`, `XG2G_STREAM_PORT`, and `XG2G_USE_WEBIF_STREAMS` now fail startup; keep `/etc/xg2g/xg2g.env` on the canonical `XG2G_E2_*` surface.
 
 ### Security Notes (Minimum)

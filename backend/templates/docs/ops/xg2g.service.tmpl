@@ -34,6 +34,9 @@ ExecStartPre=/bin/sh -eu -c 't="$${XG2G_API_TOKEN:-}"; t="$$(printf %%s "$$t" | 
 # Fail-closed: XG2G_DECISION_SECRET required for live stream JWT signing (min 32 bytes).
 ExecStartPre=/bin/sh -eu -c 's="$${XG2G_DECISION_SECRET:-}"; s="$$(printf %%s "$$s" | tr -d "[:space:]")"; if [ -z "$$s" ]; then echo "Missing XG2G_DECISION_SECRET (required for live stream JWT)" >&2; exit 1; fi; len="$$(printf %%s "$$s" | wc -c)"; if [ "$$len" -lt 32 ]; then echo "XG2G_DECISION_SECRET too short: need >= 32 bytes for HS256, got $${len}" >&2; exit 1; fi'
 
+# Fail closed before Compose can silently create an absent external DVR path on the system disk.
+ExecStartPre=/srv/xg2g/scripts/compose-xg2g.sh --storage-check
+
 # Fail-closed: ensure compose file is valid before touching containers
 ExecStartPre=/srv/xg2g/scripts/compose-xg2g.sh config -q
 
