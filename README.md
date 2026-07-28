@@ -206,7 +206,7 @@ Docker health checks, and CI-backed release automation are built in.
 
 ## License & Trademark Protection
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — **Copyright (c) 2025-2026 Manuel (ManuGH) <https://github.com/ManuGH>.**
+[PolyForm Noncommercial 1.0.0](LICENSE) — **Copyright (c) 2025-2026 ManuGH <https://github.com/ManuGH>. Original architecture & codebase directed by ManuGH.**
 
 - **Personal & Non-Commercial Use:** Free for personal, homelab, and educational use.
 - **Commercial Restriction:** Any commercial exploitation, selling, or paid hosting is strictly prohibited.
