@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HouseholdProfilesProvider } from '../context/HouseholdProfilesContext';
 import { PendingChangesProvider, usePendingChanges } from '../context/PendingChangesContext';

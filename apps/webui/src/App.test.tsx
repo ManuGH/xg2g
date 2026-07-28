@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Outlet } from 'react-router-dom';
+import { MemoryRouter, Outlet } from 'react-router';
 import { beforeEach, describe, it, vi } from 'vitest';
 
 const mockUseAppContext = vi.fn();

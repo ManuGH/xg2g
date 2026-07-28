@@ -63,7 +63,7 @@ vi.mock('../features/player/components/V3Player', () => ({
   default: v3Player,
 }));
 
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import RecordingsList from './RecordingsList';
 
 function renderWithQueryClient() {

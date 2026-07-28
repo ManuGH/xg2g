@@ -3,7 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { Suspense, useEffect, useMemo, type ReactElement } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router';
 import './App.css';
 import { lazyWithRetry } from './lib/lazyWithRetry';
 import { useAppContext } from './context/AppContext';

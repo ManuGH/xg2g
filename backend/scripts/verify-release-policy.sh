@@ -39,10 +39,12 @@ echo "🛡️  Release PR Firewall: Validating diff scope..."
 # 2. Authorized File List (Allowlist)
 ALLOWLIST=(
     "backend/VERSION"
+    "Dockerfile"
     "DIGESTS.lock"
     "RELEASE_MANIFEST.json"
     "CHANGELOG.md"
     "README.md"
+    "backend/cmd/daemon/deploy/docker-compose.yml"
     "infra/systemd/docker-compose.yml"
     "infra/systemd/xg2g.service"
     "docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md"

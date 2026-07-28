@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import Navigation from '../src/components/Navigation';
 import { ROUTE_MAP } from '../src/routes';

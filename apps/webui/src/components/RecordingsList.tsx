@@ -6,7 +6,7 @@
 // CTO Contract: No custom surfaces/badges, layout-only CSS, tabular technical data
 
 import React, { useState, useEffect, Suspense, useRef, type CSSProperties } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { type RecordingItem } from '../client-ts';
 import { useAppContext } from '../context/AppContext';

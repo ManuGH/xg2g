@@ -1,91 +1,109 @@
-#!/bin/bash
-# Best Practice 2026: Live Runtime Truth Verifier
-# Probes the running container to ensure it matches the Repo-Truth and Node-Truth.
+#!/usr/bin/env bash
+# Live runtime truth verifier. A successful result proves that the running
+# container, binary, health endpoint, and release metadata match repo truth.
 
 set -euo pipefail
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
 VERSION_FILE="${REPO_ROOT}/backend/VERSION"
 LOCK_FILE="${REPO_ROOT}/DIGESTS.lock"
-RUNTIME_SNAPSHOT="/var/lib/xg2g/runtime_state.json"
+RUNTIME_SNAPSHOT="${XG2G_RUNTIME_SNAPSHOT:-/var/lib/xg2g/runtime_state.json}"
+CONTAINER_NAME="${XG2G_CONTAINER_NAME:-xg2g}"
+EXPECTED_USER="${XG2G_EXPECTED_CONTAINER_USER:-10001:10001}"
+API_PORT="${XG2G_PORT:-8088}"
 
-# Invariants from Repo-Truth
-TARGET_VERSION="$(cat "$VERSION_FILE" | tr -d '[:space:]')"
-
-echo "🔍 Verifying Runtime Truth against v${TARGET_VERSION}..."
-
-# 1. Container Identity (Docker Inspect)
-# We expect the container name to be 'xg2g' per our compose template.
-CONTAINER_NAME="xg2g"
-if ! docker ps --filter "name=^/${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    echo "❌ FAIL: Container '${CONTAINER_NAME}' is not running."
+fail() {
+    echo "❌ FAIL: $*" >&2
     exit 1
-fi
+}
 
-LIVE_DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$CONTAINER_NAME" 2>/dev/null | cut -d'@' -f2 || true)
-CHECK_VALUE="$LIVE_DIGEST"
-if [[ -z "$LIVE_DIGEST" ]]; then
-    # Fallback for local builds that might not have RepoDigests
-    LIVE_ID=$(docker inspect --format '{{.Image}}' "$CONTAINER_NAME")
-    echo "⚠️  No RepoDigest found. Image ID: ${LIVE_ID}"
-    CHECK_VALUE="$LIVE_ID"
+command -v docker >/dev/null 2>&1 || fail "docker is required"
+command -v jq >/dev/null 2>&1 || fail "jq is required"
+[[ -f "$VERSION_FILE" ]] || fail "version file is missing: $VERSION_FILE"
+[[ -f "$LOCK_FILE" ]] || fail "digest lock is missing: $LOCK_FILE"
+
+TARGET_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
+[[ -n "$TARGET_VERSION" ]] || fail "canonical version is empty"
+echo "🔍 Verifying Runtime Truth against ${TARGET_VERSION}..."
+
+running="$(docker inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || true)"
+[[ "$running" == "true" ]] || fail "container '${CONTAINER_NAME}' is not running"
+
+actual_user="$(docker inspect --format '{{.Config.User}}' "$CONTAINER_NAME")"
+[[ "$actual_user" == "$EXPECTED_USER" ]] || \
+    fail "container '${CONTAINER_NAME}' runs as '${actual_user:-root}', expected '${EXPECTED_USER}'"
+echo "✅ Runtime user: ${actual_user}"
+
+health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$CONTAINER_NAME")"
+[[ "$health_status" == "healthy" ]] || \
+    fail "container health is '${health_status}', expected 'healthy'"
+echo "✅ Container health: ${health_status}"
+
+image_id="$(docker inspect --format '{{.Image}}' "$CONTAINER_NAME")"
+image_version="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image_id" 2>/dev/null || true)"
+[[ "$image_version" == "$TARGET_VERSION" ]] || \
+    fail "image version label is '${image_version:-missing}', expected '${TARGET_VERSION}'"
+
+binary_version="$(docker exec "$CONTAINER_NAME" xg2g --version 2>/dev/null | awk 'NR == 1 { print $1 }')"
+[[ "$binary_version" == "$TARGET_VERSION" ]] || \
+    fail "binary version is '${binary_version:-missing}', expected '${TARGET_VERSION}'"
+echo "✅ Image and binary version: ${binary_version}"
+
+echo "📡 Probing live API on container port ${API_PORT}..."
+docker exec "$CONTAINER_NAME" xg2g healthcheck \
+    --mode=live \
+    --port="$API_PORT" \
+    --timeout=5s >/dev/null || fail "live API healthcheck failed"
+echo "✅ Live API healthcheck passed"
+
+EXPECTED_DIGEST="$(jq -r --arg version "$TARGET_VERSION" '.releases[$version].digest // empty' "$LOCK_FILE")"
+[[ -n "$EXPECTED_DIGEST" ]] || fail "DIGESTS.lock has no entry for ${TARGET_VERSION}"
+
+LIVE_DIGEST="$(
+    docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image_id" 2>/dev/null |
+        awk -F '@' 'NF == 2 { print $2; exit }'
+)"
+if [[ "$EXPECTED_DIGEST" == "pending" ]]; then
+    echo "⚠️  Release digest is pending; binary and image labels provide local identity proof."
 else
-    echo "✅ Live Digest: ${LIVE_DIGEST}"
-fi
-
-# 2. Binary Identity (Internal Endpoint)
-# We probe the healthcheck or a future /version endpoint.
-# For now, we'll try to get it from the daemon's own telemetry or logs if possible, 
-# but a direct probe is better. 
-# Assume we have a reachable API on 8088 (default)
-API_PORT=${XG2G_PORT:-8088}
-# We'll use a simple curl to a known endpoint that returns version info if available, 
-# otherwise we rely on the container image identity which is the core truth anchor.
-echo "📡 Probing API on port ${API_PORT}..."
-# Note: This requires the container to be 'ready'.
-
-# 3. Validation against DIGESTS.lock
-EXPECTED_DIGEST=$(grep -A 1 "\"${TARGET_VERSION}\":" "$LOCK_FILE" | grep "digest" | sed 's/.*"digest":[[:space:]]*//' | tr -d '"' | tr -d '[:space:]' | tr -d ',' | tr -d '{}')
-
-if [[ -n "$CHECK_VALUE" ]] && [[ "$EXPECTED_DIGEST" != "pending" ]]; then
-    if [[ "$CHECK_VALUE" != "$EXPECTED_DIGEST" ]]; then
-        echo "❌ FAIL: Runtime Digest Drift!"
-        echo "   Expected: ${EXPECTED_DIGEST}"
-        echo "   Actual:   ${CHECK_VALUE}"
-        exit 1
-    fi
+    [[ -n "$LIVE_DIGEST" ]] || fail "running image has no repository digest"
+    [[ "$LIVE_DIGEST" == "$EXPECTED_DIGEST" ]] || {
+        echo "   Expected: ${EXPECTED_DIGEST}" >&2
+        echo "   Actual:   ${LIVE_DIGEST}" >&2
+        fail "runtime digest drift"
+    }
     echo "✅ Runtime matches DIGESTS.lock"
 fi
 
-# 4. Config Fingerprint Normalization (Guardrail #5)
-# Files: /etc/xg2g/xg2g.env, /etc/xg2g/config.yaml (if exist)
 calculate_config_hash() {
     local files=("/etc/xg2g/xg2g.env" "/etc/xg2g/config.yaml")
-    local combined_manifest
-    combined_manifest=$(mktemp)
-    for f in "${files[@]}"; do
-        if [[ -f "$f" ]]; then
-            # Normalization: Trim whitespace, sort (if env), LF only
-            echo "--- $f ---" >> "$combined_manifest"
-            cat "$f" | tr -d '\r' | sed 's/[[:space:]]*$//' >> "$combined_manifest"
+    local combined_manifest hash
+    combined_manifest="$(mktemp)"
+    trap 'rm -f "$combined_manifest"' RETURN
+    for file in "${files[@]}"; do
+        if [[ -f "$file" ]]; then
+            echo "--- $file ---" >> "$combined_manifest"
+            tr -d '\r' < "$file" | sed 's/[[:space:]]*$//' >> "$combined_manifest"
         else
-            echo "--- $f (MISSING) ---" >> "$combined_manifest"
+            echo "--- $file (MISSING) ---" >> "$combined_manifest"
         fi
     done
-    sha256sum "$combined_manifest" | awk '{print $1}'
-    rm "$combined_manifest"
+    if command -v sha256sum >/dev/null 2>&1; then
+        hash="$(sha256sum "$combined_manifest" | awk '{print $1}')"
+    else
+        hash="$(shasum -a 256 "$combined_manifest" | awk '{print $1}')"
+    fi
+    printf '%s' "$hash"
 }
 
-CURRENT_FINGERPRINT=$(calculate_config_hash)
-echo "✅ Configuration Fingerprint: ${CURRENT_FINGERPRINT}"
+CURRENT_FINGERPRINT="$(calculate_config_hash)"
+echo "✅ Configuration fingerprint: ${CURRENT_FINGERPRINT}"
 
-# 5. Node-Truth Snapshot Comparison
 if [[ -f "$RUNTIME_SNAPSHOT" ]]; then
-    SNAPSHOT_VERSION=$(jq -r '.active_version' "$RUNTIME_SNAPSHOT")
-    if [[ "$SNAPSHOT_VERSION" != "$TARGET_VERSION" ]]; then
-        echo "⚠️  Warning: Node-Truth (${SNAPSHOT_VERSION}) differs from Repo-Truth (${TARGET_VERSION})"
-    fi
+    SNAPSHOT_VERSION="$(jq -r '.active_version // empty' "$RUNTIME_SNAPSHOT")"
+    [[ "$SNAPSHOT_VERSION" == "$TARGET_VERSION" ]] || \
+        fail "node truth '${SNAPSHOT_VERSION:-missing}' differs from repo truth '${TARGET_VERSION}'"
+    echo "✅ Node truth version: ${SNAPSHOT_VERSION}"
 fi
 
 echo "✨ Runtime Identity Verified."
-exit 0

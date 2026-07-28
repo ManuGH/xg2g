@@ -1,5 +1,5 @@
 import { useMemo, type CSSProperties } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ROUTE_MAP } from '../../routes';
 import { Card } from '../../components/ui';

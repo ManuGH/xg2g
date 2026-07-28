@@ -8,8 +8,6 @@ import (
 	"github.com/oasdiff/yaml"
 )
 
-const originKey = "__origin__"
-
 var originPtrType = reflect.TypeFor[*Origin]()
 
 // Origin contains the origin of a collection.
@@ -96,12 +94,12 @@ func originFromSeq(s []any) *Origin {
 			}
 			count := toInt(s[idx])
 			idx++
-			locs := make([]Location, count)
+			locs := make([]Location, 0, count)
 			for j := 0; j < count && idx+2 < len(s); j++ {
 				name, _ := s[idx].(string)
 				delta := toInt(s[idx+1])
 				col := toInt(s[idx+2])
-				locs[j] = Location{File: file, Line: keyLine + delta, Column: col, Name: name}
+				locs = append(locs, Location{File: file, Line: keyLine + delta, Column: col, Name: name})
 				idx += 3
 			}
 			o.Sequences[sname] = locs
@@ -326,3 +324,7 @@ func jsonTagName(f reflect.StructField) string {
 	name, _, _ := strings.Cut(tag, ",")
 	return name
 }
+
+// originTree aliases the decoder-side origin tree, so the loader and marsh can
+// carry it without referencing the yaml package directly.
+type originTree = yaml.OriginTree

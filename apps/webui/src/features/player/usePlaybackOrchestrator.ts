@@ -294,6 +294,8 @@ export function usePlaybackOrchestrator(
     lastAdvisory,
   } = playbackState;
   const error = failure?.appError ?? null;
+  const recoveryStatusRef = useRef(status);
+  recoveryStatusRef.current = status;
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [capabilitySnapshot, setCapabilitySnapshot] = useState<CapabilitySnapshot | null>(null);
   const [playbackObservability, setPlaybackObservability] = useState<PlaybackObservability | null>(null);
@@ -380,7 +382,6 @@ export function usePlaybackOrchestrator(
     setActiveHlsEngine,
     setCanSeek,
     setStartUnix,
-    setPlayerError,
     reportPlaybackFailure,
     clearPlaybackFailure,
     clearPlayerError,
@@ -468,7 +469,7 @@ export function usePlaybackOrchestrator(
     if (nextTrace.requestId) {
       setTraceId(nextTrace.requestId);
     }
-  }, []);
+  }, [setTraceId]);
 
   const {
     nativePlaybackState,
@@ -515,7 +516,7 @@ export function usePlaybackOrchestrator(
     }
     setSessionProfileReason(session.profileReason ?? null);
     mergeSessionPlaybackTrace(extractPlaybackTrace(session));
-  }, [acceptedPlaybackEpochRef, acceptedSessionEpochRef, mergeSessionPlaybackTrace, setTraceId]);
+  }, [acceptedPlaybackEpochRef, acceptedSessionEpochRef, dispatchPlayback, mergeSessionPlaybackTrace, setTraceId]);
 
   // Explicitly static/memoized apiBase
   const apiBase = useMemo(() => {
@@ -949,7 +950,7 @@ export function usePlaybackOrchestrator(
   const gatherPlaybackCapabilitiesForPlayer = useCallback(async (scope: 'live' | 'recording' = 'live'): Promise<CapabilitySnapshot> => {
     const video = videoRef.current as HTMLVideoElement | null;
     return gatherPlaybackCapabilities(scope, video);
-  }, []);
+  }, [videoRef]);
 
   const startRecordingPlayback = useCallback(async (
     id: string,
@@ -1209,19 +1210,30 @@ export function usePlaybackOrchestrator(
     }
   }, [
     allocatePlaybackEpoch,
+    apiBase,
     beginPlaybackAttempt,
     clearPlayerError,
+    dispatchPlayback,
     ensureSessionCookie,
     explicitProfile,
     gatherPlaybackCapabilitiesForPlayer,
-    isStalePlaybackEpoch,
     isLifecycleActive,
+    isStalePlaybackEpoch,
     mergeSessionPlaybackTrace,
+    normalizeRuntimePlaybackError,
     playDirectMp4,
     playHls,
     prepareForNextPlaybackAttempt,
+    recordContractAdvisories,
     reportPlaybackFailure,
     resolvePreferredHlsEngineForCapabilities,
+    setActiveHlsEngine,
+    setCanSeek,
+    setDurationSeconds,
+    setStartUnix,
+    setStatus,
+    setTraceId,
+    setVodStreamMode,
     sleep,
     t,
     vodFetchRef,
@@ -1698,7 +1710,7 @@ export function usePlaybackOrchestrator(
         });
       }
     }
-  }, [src, recordingId, sRef, explicitProfile, apiBase, authHeaders, clearPlayerError, ensureSessionCookie, waitForSessionReady, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, prepareForNextPlaybackAttempt, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, setPlayerError, requestedDuration, beginNativePlayback, channel?.name, nativePlaybackState, allocatePlaybackEpoch, beginPlaybackAttempt, isLifecycleActive, isStalePlaybackEpoch, allocateSessionEpoch, isStaleSessionEpoch, sessionIdRef]);
+  }, [src, recordingId, sRef, explicitProfile, apiBase, authHeaders, clearPlayerError, ensureSessionCookie, waitForSessionReady, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, prepareForNextPlaybackAttempt, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, requestedDuration, beginNativePlayback, channel?.logoUrl, channel?.name, nativePlaybackState, allocatePlaybackEpoch, beginPlaybackAttempt, dispatchPlayback, isLifecycleActive, isStalePlaybackEpoch, allocateSessionEpoch, isStaleSessionEpoch, normalizeRuntimePlaybackError, recordContractAdvisories, reportPlaybackFailure, sessionIdRef, setActiveHlsEngine, setStatus, setTraceId, token]);
 
   startStreamRef.current = startStream;
 
@@ -1840,7 +1852,7 @@ export function usePlaybackOrchestrator(
       type: 'system.requested_duration.synced',
       durationSeconds: requestedDuration,
     });
-  }, [requestedDuration]);
+  }, [dispatchPlayback, requestedDuration]);
 
   const isImmediateStartupStatus =
     status === 'starting' || status === 'priming' || status === 'building';
@@ -1948,7 +1960,7 @@ export function usePlaybackOrchestrator(
     const action = decideForegroundResume({
       wasHidden,
       isPiP: document.pictureInPictureElement === video,
-      status,
+      status: recoveryStatusRef.current,
       userPaused: userPauseIntentRef.current,
       hasTerminal: hasTerminalStatus,
     });
@@ -1969,7 +1981,8 @@ export function usePlaybackOrchestrator(
     // advances (the only proof the decoder accepted the resume), bounded; the
     // returned cancel cleans it up if the page hides again mid-recovery.
     //
-    // NOTE: `status` is intentionally OMITTED from the dependency list. The
+    // NOTE: the live status is read through recoveryStatusRef instead of making
+    // it an effect dependency. The
     // `setStatus('paused'→'buffering')` call below would otherwise trigger a
     // re-render where React cleans up the current effect (calling the cancel
     // function) before the observation timer can fire, defeating the retry loop.
@@ -2039,7 +2052,7 @@ export function usePlaybackOrchestrator(
     const action = decideOnlineRecovery({
       wasOffline,
       hasActiveSession,
-      status,
+      status: recoveryStatusRef.current,
       userPaused: userPauseIntentRef.current,
       hasTerminal: hasTerminalStatus,
     });
@@ -2057,8 +2070,8 @@ export function usePlaybackOrchestrator(
     // action === 'play'. As in foreground recovery, a single play() right after a
     // network stall often fizzles (the element discards it), so nudge play()
     // until currentTime advances, bounded; the returned cancel cleans it up if we
-    // go offline again mid-recovery. `status` is intentionally OMITTED from deps
-    // for the same reason documented on the foreground effect above.
+    // go offline again mid-recovery. The latest status is read through
+    // recoveryStatusRef for the same reason documented on the foreground effect.
     setStatus((current) => (current === 'paused' ? 'buffering' : current));
     return startResumePlaybackRecovery(video, {
       shouldContinue: () => !userPauseIntentRef.current,
@@ -2106,7 +2119,7 @@ export function usePlaybackOrchestrator(
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [hostEnvironment.isTv, onClose]);
+  }, [containerRef, hostEnvironment.isTv, onClose]);
   useTvInitialFocus({
     enabled: hostEnvironment.isTv && showResumeOverlay,
     targetRef: resumePrimaryActionRef,

@@ -2,9 +2,9 @@
 # Governance and Verification Gates
 # ===================================================================================================
 
-.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-webui-router-security verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-hot-reload-governance verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
+.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-webui-router-security verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-runtime-contract verify-hot-reload-governance verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
 
-verify: verify-generated-artifacts verify-webui-router-security verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-hot-reload-governance verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract ## Run all hermetic repository governance gates
+verify: verify-generated-artifacts verify-webui-router-security verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime-contract verify-hot-reload-governance verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract ## Run all hermetic repository governance gates
 
 verify-config: ## Verify generated config surfaces are up-to-date
 	@echo "Verifying generated config surfaces..."
@@ -43,7 +43,7 @@ verify-embedded-webui-dist: ## Verify embedded WebUI dist is up-to-date
 verify-client-ts-fresh: ## Verify generated TS API client is up-to-date with openapi.yaml
 	@MAKE="$(MAKE)" ./$(BACKEND_DIR)/scripts/verify-client-ts-fresh.sh
 
-verify-webui-router-security: ## Keep the WebUI outside React Router's RSC/action advisory surface
+verify-webui-router-security: ## Pin the fixed React Router and keep the WebUI on its reviewed declarative surface
 	@./$(BACKEND_DIR)/scripts/verify-webui-router-security.sh
 
 verify-generated-artifacts: verify-config verify-docs-compiled verify-generate verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-generated-artifacts-contract ## Verify all committed generated artifacts and governance rules
@@ -76,12 +76,7 @@ verify-no-sleep: ## Gate: No time.Sleep in production code
 	@echo "✅ No production time.Sleep"
 
 verify-no-panic: ## Gate: No panics in production code
-	@test -f $(BACKEND_DIR)/panic_allowlist.txt || (echo "❌ Missing panic allowlist" && exit 1)
-	@if grep -rH "panic(" $(BACKEND_DIR)/internal/ --include="*.go" | grep -v "_test.go" | grep -vFf $(BACKEND_DIR)/panic_allowlist.txt; then \
-		echo "❌ Panic found in production code"; \
-		exit 1; \
-	fi
-	@echo "✅ No unreviewed production panics"
+	@cd $(BACKEND_DIR) && ./scripts/verify-no-panic.sh
 
 verify-no-ignored-errors: ## Gate: No ignored errors
 	@if grep -r "_ = err" $(BACKEND_DIR)/internal/ --include="*.go" | grep -v "_test.go"; then \
@@ -119,6 +114,9 @@ verify-release-policy: ## Verify release policy
 
 verify-runtime: ## Verify a running installed deployment against repo truth
 	@./$(BACKEND_DIR)/scripts/verify-runtime.sh
+
+verify-runtime-contract: ## Verify the live runtime verifier fails closed
+	@./$(BACKEND_DIR)/scripts/verify-runtime-contract.sh
 
 verify-hot-reload-governance: ## Verify hot-reload ownership boundaries
 	@cd $(BACKEND_DIR) && $(GO) run ./scripts/verify-hot-reload-governance.go

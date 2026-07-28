@@ -23,7 +23,9 @@ echo "🔍 Canonical Version (SSoT): ${CANONICAL_VERSION}"
 
 # 2. Scope
 FILES=(
+    "${REPO_ROOT}/Dockerfile"
     "${REPO_ROOT}/README.md"
+    "${REPO_ROOT}/backend/cmd/daemon/deploy/docker-compose.yml"
     "${REPO_ROOT}/infra/systemd/docker-compose.yml"
     "${REPO_ROOT}/docs/ops/OPERATIONS_MODEL.md"
     "${REPO_ROOT}/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md"
@@ -44,6 +46,11 @@ IMAGE_BASE="ghcr.io/manugh/xg2g"
 REGEX="${IMAGE_BASE}([:@])([a-zA-Z0-9.-]+|sha256:[a-f0-9]{64})"
 
 echo "🕵️ Scanning ${#FILES[@]} files for image tag drift..."
+
+if ! grep -Fqx "ARG BUILD_VERSION=${CANONICAL_VERSION}" "${REPO_ROOT}/Dockerfile"; then
+    echo "❌ FAIL: Dockerfile BUILD_VERSION does not match ${CANONICAL_VERSION}"
+    EXIT_CODE=1
+fi
 
 for file in "${FILES[@]}"; do
     if [[ ! -f "$file" ]]; then continue; fi

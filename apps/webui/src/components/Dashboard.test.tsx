@@ -10,7 +10,7 @@ const mockRefetch = vi.fn();
 const mockUseSystemHealth = vi.fn();
 const mockUseHouseholdProfiles = vi.fn();
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => <a href={to} {...props}>{children}</a>,
   useNavigate: () => mockNavigate,
 }));

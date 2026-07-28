@@ -38,6 +38,8 @@ const (
 	KindInvalidFormat
 )
 
+var deepObjectBracketRE = regexp.MustCompile(`\[(.*?)\]`)
+
 // ParseError describes errors which happens while parse operation's parameters, requestBody, or response.
 type ParseError struct {
 	Kind   ParseErrorKind
@@ -190,6 +192,10 @@ func defaultContentParameterDecoder(param *openapi3.Parameter, values []string) 
 	mt := content.Get("application/json")
 	if mt == nil {
 		err = fmt.Errorf("parameter %q has no content schema", param.Name)
+		return
+	}
+	if mt.Schema == nil {
+		err = fmt.Errorf("parameter %q content media type has no schema", param.Name)
 		return
 	}
 	outSchema = mt.Schema.Value
@@ -512,10 +518,23 @@ func (d *urlValuesDecoder) DecodePrimitive(param string, sm *openapi3.Serializat
 		return nil, ok, nil
 	}
 
-	if schema.Value.Type == nil && schema.Value.Pattern != "" {
-		return values[0], ok, nil
+	// Repeated query keys: prefer the first non-empty value so an empty
+	// leading occurrence cannot hide a later value from schema validation
+	// (#1230). A lone empty string is still returned unchanged.
+	raw := values[0]
+	if raw == "" && len(values) > 1 {
+		for _, v := range values[1:] {
+			if v != "" {
+				raw = v
+				break
+			}
+		}
 	}
-	val, err := parsePrimitive(values[0], schema)
+
+	if schema.Value.Type == nil && schema.Value.Pattern != "" {
+		return raw, ok, nil
+	}
+	val, err := parsePrimitive(raw, schema)
 	return val, ok, err
 }
 
@@ -539,7 +558,13 @@ func (d *urlValuesDecoder) DecodeArray(param string, sm *openapi3.SerializationM
 		case "pipeDelimited":
 			delim = "|"
 		}
-		values = strings.Split(values[0], delim)
+		// strings.Split always allocates a new slice, even when the delimiter
+		// is absent (single-element arrays — the common case). Reuse values[:1].
+		if strings.Contains(values[0], delim) {
+			values = strings.Split(values[0], delim)
+		} else {
+			values = values[:1]
+		}
 	}
 	val, err := d.parseArray(values, schema)
 	return val, ok, err
@@ -665,8 +690,7 @@ func (d *urlValuesDecoder) DecodeObject(param string, sm *openapi3.Serialization
 				if !regexp.MustCompile(fmt.Sprintf(`^%s\[`, regexp.QuoteMeta(param))).MatchString(key) {
 					continue
 				}
-
-				matches := regexp.MustCompile(`\[(.*?)\]`).FindAllStringSubmatch(key, -1)
+				matches := deepObjectBracketRE.FindAllStringSubmatch(key, -1)
 				switch l := len(matches); {
 				case l == 0:
 					// A query parameter's name does not match the required format, so skip it.
@@ -1117,6 +1141,9 @@ func pathFromKeys(kk []string) []any {
 // Every item is parsed as a primitive value.
 // The function returns an error when an error happened while parse array's items.
 func parseArray(raw []string, schemaRef *openapi3.SchemaRef) ([]any, error) {
+	if schemaRef.Value.Items == nil || schemaRef.Value.Items.Value == nil {
+		return nil, errors.New("array items schema is required for decoding")
+	}
 	var value []any
 	for i, v := range raw {
 		item, err := parsePrimitive(v, schemaRef.Value.Items)
@@ -1411,6 +1438,9 @@ func UrlencodedBodyDecoder(body io.Reader, header http.Header, schema *openapi3.
 		case propType.Is("object"):
 			return nil, fmt.Errorf("unsupported schema of request body's property %q", propName)
 		case propType.Is("array"):
+			if propSchema.Value.Items == nil || propSchema.Value.Items.Value == nil {
+				return nil, fmt.Errorf("unsupported schema of request body's property %q: array items required", propName)
+			}
 			items := propSchema.Value.Items.Value
 			if !(items.Type.Is("string") || items.Type.Is("integer") || items.Type.Is("number") || items.Type.Is("boolean")) {
 				return nil, fmt.Errorf("unsupported schema of request body's property %q", propName)
@@ -1554,6 +1584,9 @@ func MultipartBodyDecoder(body io.Reader, header http.Header, schema *openapi3.S
 				}
 			}
 			if valueSchema.Value.Type.Is("array") {
+				if valueSchema.Value.Items == nil {
+					return nil, fmt.Errorf("unsupported schema of multipart part %q: array items required", name)
+				}
 				valueSchema = valueSchema.Value.Items
 			}
 		}

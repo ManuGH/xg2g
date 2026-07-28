@@ -4,7 +4,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import React, { useReducer, useEffect, useCallback, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { epgReducer, createInitialEpgState } from './epgModel';
 import { fetchEpgEvents, fetchTimers } from './epgApi';

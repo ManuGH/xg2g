@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import SeriesManager from '../src/components/SeriesManager';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as client from '../src/client-ts';

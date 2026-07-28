@@ -1,6 +1,6 @@
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HouseholdProfilesProvider } from '../../context/HouseholdProfilesContext';
 import { ClientRequestError, setClientAuthToken } from '../../services/clientWrapper';

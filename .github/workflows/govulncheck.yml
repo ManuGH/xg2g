@@ -49,10 +49,12 @@ jobs:
           jq --version || (sudo apt-get update && sudo apt-get install -y jq)
 
       - name: Run govulncheck (SARIF)
+        id: sarif_scan
         run: |
           # govulncheck exits with code 3 if vulnerabilities are found.
-          # We want the SARIF output even if it exits non-zero.
-          # We use a temp file to avoid partial SARIF on disk if it fails early.
+          # Preserve the SARIF for upload, but remember the finding so the job
+          # fails after publishing the evidence.
+          echo "reachable=false" >> "$GITHUB_OUTPUT"
           bash ./scripts/ci/run-govulncheck.sh sarif govulncheck.tmp.sarif || {
             RET=$?
             if [ $RET -ne 3 ]; then
@@ -60,7 +62,8 @@ jobs:
               cat govulncheck.tmp.sarif || true
               exit $RET
             fi
-            echo "✅ govulncheck found vulnerabilities (expected); SARIF generated."
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+            echo "❌ govulncheck found reachable vulnerabilities; SARIF generated."
           }
           mv govulncheck.tmp.sarif govulncheck.sarif
 
@@ -140,4 +143,10 @@ jobs:
         if: steps.severity.outputs.fail == 'true'
         run: |
           echo "❌ High/Critical vulnerabilities detected: ${{ steps.severity.outputs.high_crit_count }}" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Fail on any reachable Go vulnerability
+        if: steps.sarif_scan.outputs.reachable == 'true'
+        run: |
+          echo "❌ govulncheck found at least one reachable vulnerability." >> "$GITHUB_STEP_SUMMARY"
           exit 1
