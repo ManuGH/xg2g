@@ -2,7 +2,7 @@
 
 This guide takes you from nothing to live TV in your browser. It assumes a home
 or self-host setup; for production (HTTPS, systemd, Compose) see the
-[Deployment Guide](../ops/DEPLOYMENT.md).
+[Complete Linux Installation Guide](INSTALLATION.md).
 
 ## Before you start
 
