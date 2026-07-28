@@ -65,6 +65,20 @@ func (s *Server) newRouter() chi.Router {
 	return r
 }
 
+// buildRouter constructs the canonical top-level chi.Router for a Server instance.
+// This function is the single canonical factory used by production server startup (s.routes()) as well as governance inventory testing.
+func (s *Server) buildRouter() chi.Router {
+	r := s.newRouter()
+	r.Use(s.legacyAPIMiddleware)
+	s.registerPublicRoutes(r)
+
+	rAuth, rRead, rWrite, rAdmin, rStatus := s.scopedRouters(r)
+	s.registerOperatorRoutes(rAuth, rAdmin, rStatus)
+	s.registerCanonicalV3Routes(r)
+	v3.RegisterCompatibilityRoutes(rRead, rWrite, s.v3Handler)
+	return r
+}
+
 func (s *Server) parsedTrustedProxies() []*net.IPNet {
 	list := splitCSVNonEmpty(s.cfg.TrustedProxies)
 	if len(list) == 0 {

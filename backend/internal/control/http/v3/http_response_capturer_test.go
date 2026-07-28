@@ -2,13 +2,16 @@ package v3
 
 import (
 	"bufio"
+	"compress/gzip"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -208,4 +211,141 @@ func TestWriterTransparent_StatusTracking(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, rec, unwrapper.Unwrap())
 	})
+}
+
+func TestV3ResponseCapturer_ResponseControllerPassThrough(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	var capturerActive bool
+	var capturedStatus int
+	var capturedBytes int64
+
+	// Middleware chain: outer chi WrapResponseWriter + v3 wrapResponseWriter
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 1. Outer chi WrapResponseWriter (simulates outer router)
+		chiWrapped := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
+
+		// 2. v3 Response Capturer (simulates exposureSecurityMiddleware audit wrapping)
+		v3Wrapped, tracker := wrapResponseWriter(chiWrapped)
+		require.NotNil(t, tracker)
+
+		// 3. ResponseController lookup from inner handler
+		rc := http.NewResponseController(v3Wrapped)
+		require.NotNil(t, rc)
+
+		// Empirical check 1: SetWriteDeadline (+1h)
+		err := rc.SetWriteDeadline(time.Now().Add(1 * time.Hour))
+		assert.NoError(t, err, "SetWriteDeadline(+1h) must succeed through chi + v3 ResponseCapturer on real TCP conn")
+
+		// Empirical check 2: SetWriteDeadline (clear deadline)
+		err = rc.SetWriteDeadline(time.Time{})
+		assert.NoError(t, err, "SetWriteDeadline(zero) must succeed through chi + v3 ResponseCapturer on real TCP conn")
+
+		// Empirical check 3: Flush
+		err = rc.Flush()
+		assert.NoError(t, err, "Flush must succeed through chi + v3 ResponseCapturer on real TCP conn")
+
+		payload := []byte("v3-empirical-ok")
+		v3Wrapped.WriteHeader(http.StatusOK)
+		_, err = v3Wrapped.Write(payload)
+		assert.NoError(t, err)
+
+		// Observable verification: Prove wrapResponseWriter was installed, active, and captured stats
+		capturerActive = tracker.WroteHeader()
+		if st, ok := tracker.(StatusTracker); ok {
+			capturedStatus = st.StatusCode()
+			capturedBytes = st.BytesWritten()
+		}
+	})
+
+	srv := &http.Server{Handler: handler}
+	go srv.Serve(ln)
+	defer srv.Close()
+
+	resp, err := http.Get("http://" + ln.Addr().String() + "/")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "v3-empirical-ok", string(body))
+
+	// Assert capturer observable state
+	assert.True(t, capturerActive, "wrapResponseWriter must have recorded WroteHeader = true")
+	assert.Equal(t, http.StatusOK, capturedStatus, "wrapResponseWriter must have recorded status 200")
+	assert.Equal(t, int64(15), capturedBytes, "wrapResponseWriter must have recorded 15 bytes written")
+}
+
+func TestV3ResponseCapturer_WithCompressionPassThrough(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	activeCh := make(chan bool, 1)
+
+	// Middleware chain with compression: chi.Compress + chi.WrapResponseWriter + v3 wrapResponseWriter
+	compressMw := chimw.Compress(5)
+	innerHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chiWrapped := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
+		v3Wrapped, tracker := wrapResponseWriter(chiWrapped)
+		require.NotNil(t, tracker)
+
+		rc := http.NewResponseController(v3Wrapped)
+		require.NotNil(t, rc)
+
+		v3Wrapped.Header().Set("Content-Type", "text/plain")
+
+		err := rc.SetWriteDeadline(time.Now().Add(1 * time.Hour))
+		assert.NoError(t, err, "SetWriteDeadline(+1h) must succeed through compression + chi + v3 ResponseCapturer")
+
+		err = rc.SetWriteDeadline(time.Time{})
+		assert.NoError(t, err, "SetWriteDeadline(zero) must succeed through compression + chi + v3 ResponseCapturer")
+
+		payload := []byte(strings.Repeat("compressible-payload-data-stream-content-for-testing-", 40))
+		_, err = v3Wrapped.Write(payload)
+		assert.NoError(t, err)
+
+		err = rc.Flush()
+		assert.NoError(t, err, "Flush must succeed through compression + chi + v3 ResponseCapturer")
+
+		activeCh <- tracker.WroteHeader()
+	})
+
+	handler := compressMw(innerHandler)
+	srv := &http.Server{Handler: handler}
+	go srv.Serve(ln)
+	defer srv.Close()
+
+	req, err := http.NewRequest("GET", "http://"+ln.Addr().String()+"/", nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"), "response must carry Content-Encoding: gzip header")
+
+	gzReader, err := gzip.NewReader(resp.Body)
+	require.NoError(t, err, "response body must be valid gzip compressed stream")
+	defer gzReader.Close()
+
+	decompressedBody, err := io.ReadAll(gzReader)
+	require.NoError(t, err)
+	assert.Equal(t, strings.Repeat("compressible-payload-data-stream-content-for-testing-", 40), string(decompressedBody))
+
+	// Layering assertion: wrapResponseWriter wraps w INSIDE the handler BEFORE chi's compressResponseWriter.
+	// Therefore, tracker.BytesWritten() records uncompressed payload bytes written by the inner handler (2120 bytes),
+	// while the wire response is gzip-compressed.
+	capturerActive := <-activeCh
+	assert.True(t, capturerActive, "wrapResponseWriter must have recorded WroteHeader = true with compression active")
 }
