@@ -34,7 +34,7 @@ func TestResolve_SmartScan(t *testing.T) {
 	specProg := Resolve("auto", safariUA, 0, progCap, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, false, specProg.TranscodeVideo, "Progressive should assume safe for copy")
 	assert.Equal(t, "mpegts", specProg.Container)
-	assert.Equal(t, 192, specProg.AudioBitrateK, "Audio should be normalized for Safari")
+	assert.Equal(t, 320, specProg.AudioBitrateK, "Audio should be normalized for Safari")
 	assert.Equal(t, ports.RuntimeModeCopy, specProg.PolicyModeHint)
 
 	// 2. Interlaced + GPU -> Transcode VAAPI
@@ -65,7 +65,7 @@ func TestResolve_SafariWithoutUserAgentUsesFMP4ForNativeProgressiveClients(t *te
 
 	assert.False(t, spec.TranscodeVideo)
 	assert.Equal(t, "fmp4", spec.Container)
-	assert.Equal(t, 192, spec.AudioBitrateK)
+	assert.Equal(t, 320, spec.AudioBitrateK)
 }
 
 func TestResolve_UnknownCap(t *testing.T) {
@@ -359,4 +359,29 @@ func TestPublicProfileName_MapsLegacyInternalIDs(t *testing.T) {
 	assert.Equal(t, PublicProfileQuality, PublicProfileName("quality"))
 	assert.Equal(t, PublicProfileRepair, PublicProfileName("repair"))
 	assert.Equal(t, PublicProfileCompatible, PublicProfileName("generic"))
+}
+
+// The live browser paths are the ones real sessions run on: staging resolves
+// Safari/AV1 clients to av1_hw, not to the profile the requested name maps to.
+// A regression here is invisible in the profile name and only shows up as a
+// lower "-b:a" in the ffmpeg output, so pin the bitrate per profile id.
+func TestResolveProfileAxes_LiveBrowserAudioBitrate(t *testing.T) {
+	cfg := LoadConfigSnapshot()
+	progressive := &scan.Capability{Interlaced: false}
+
+	for _, canonical := range []string{
+		ProfileAV1HW,
+		ProfileSafariHEVC,
+		ProfileSafariHEVCHW,
+		ProfileSafariHEVCHWLL,
+		ProfileH264FMP4,
+		ProfileHigh,
+		ProfileSafari,
+	} {
+		axes := resolveProfileAxes(canonical, true, progressive, cfg)
+		assert.Equal(t, liveBrowserAudioBitrateK, axes.AudioBitrateK, "live browser audio bitrate for %s", canonical)
+	}
+
+	// Repair keeps its own rung contract (RungRepairAudioAAC192Stereo).
+	assert.Equal(t, 192, resolveProfileAxes(ProfileRepair, true, progressive, cfg).AudioBitrateK)
 }

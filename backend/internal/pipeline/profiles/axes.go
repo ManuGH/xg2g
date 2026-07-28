@@ -21,6 +21,13 @@ const (
 	VideoActionAV1  VideoCodecAction = "av1"
 )
 
+// liveBrowserAudioBitrateK is the stereo AAC-LC bitrate for live browser playback.
+// Shared with the planner's media targets via playbackprofile so the two layers
+// cannot drift — see LiveTranscodeAudioBitrateKbps for the rationale. Deliberately
+// NOT applied to ProfileRepair (its 192k is the RungRepairAudioAAC192Stereo
+// contract) or ProfileLow.
+const liveBrowserAudioBitrateK = playbackprofile.LiveTranscodeAudioBitrateKbps
+
 // ProfileAxes represents the four orthogonal decision dimensions of any stream profile:
 // 1. Video Action (Copy vs Transcode Codec)
 // 2. Audio Action (Copy vs Transcode Bitrate)
@@ -52,8 +59,9 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 		}
 	case ProfileHigh:
 		return ProfileAxes{
-			Video:          VideoActionCopy,
-			AudioBitrateK:  192,
+			Video: VideoActionCopy,
+			// Both "quality" and "compatible" resolve to this profile.
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      "",
 			PolicyModeHint: ports.RuntimeModeCopy,
 		}
@@ -68,14 +76,14 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 		if cap != nil && !cap.Interlaced {
 			return ProfileAxes{
 				Video:          VideoActionCopy,
-				AudioBitrateK:  192,
+				AudioBitrateK:  liveBrowserAudioBitrateK,
 				Container:      safariFamilyContainer(isSafari),
 				PolicyModeHint: ports.RuntimeModeCopy,
 			}
 		}
 		return ProfileAxes{
 			Video:          VideoActionH264,
-			AudioBitrateK:  192,
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      safariFamilyContainer(isSafari),
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
@@ -103,14 +111,14 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 	case ProfileH264FMP4:
 		return ProfileAxes{
 			Video:          VideoActionH264,
-			AudioBitrateK:  192,
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
 	case ProfileSafariHEVC, ProfileSafariHEVCHW, ProfileSafariHEVCHWLL:
 		return ProfileAxes{
 			Video:          VideoActionHEVC,
-			AudioBitrateK:  192,
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
@@ -121,7 +129,7 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 		}
 		return ProfileAxes{
 			Video:          VideoActionAV1,
-			AudioBitrateK:  192,
+			AudioBitrateK:  liveBrowserAudioBitrateK,
 			Container:      container,
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
@@ -248,8 +256,8 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 	case VideoActionAV1:
 		spec.VideoCodec = "av1"
 		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoMaxRateK = 100000
-		spec.VideoBufSizeK = 200000
+		spec.VideoMaxRateK = 25000
+		spec.VideoBufSizeK = 50000
 		if useGPU {
 			spec.HWAccel = requestedEncodeOnlyHWAccelProfile(gpuBackend, hwaccelMode)
 		}

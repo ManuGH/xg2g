@@ -51,6 +51,7 @@ type PlaybackNetworkContext struct {
 	InternetValidated *bool   `json:"internetValidated,omitempty"`
 	Kind              *string `json:"kind,omitempty"`
 	LinkSpeedMbps     *int    `json:"linkSpeedMbps,omitempty"`
+	MaxBitrateKbps    *int    `json:"maxBitrateKbps,omitempty"`
 	Metered           *bool   `json:"metered,omitempty"`
 	SignalDbm         *int    `json:"signalDbm,omitempty"`
 }

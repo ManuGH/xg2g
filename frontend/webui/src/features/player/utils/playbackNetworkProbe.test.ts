@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { measurePlaybackNetwork } from './playbackNetworkProbe';
+import { applyPlaybackNetworkProbe, measurePlaybackNetwork } from './playbackNetworkProbe';
+import type { CapabilitySnapshot } from './playbackCapabilities';
+import type { PlaybackClientContext } from './playbackRequestProfile';
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  localStorage.removeItem('xg2g.settings.saveMobileData');
 });
 
 describe('measurePlaybackNetwork', () => {
@@ -180,5 +183,59 @@ describe('measurePlaybackNetwork', () => {
         delete (navigator as Navigator & { connection?: unknown }).connection;
       }
     }
+  });
+});
+
+describe('applyPlaybackNetworkProbe', () => {
+  const capabilities = (): CapabilitySnapshot => ({
+    capabilitiesVersion: 3,
+    container: ['hls'],
+    videoCodecs: ['av1', 'hevc', 'h264'],
+    audioCodecs: ['aac'],
+    supportsHls: true,
+    supportsRange: true,
+  });
+  const context = (network: PlaybackClientContext['network']): PlaybackClientContext => ({
+    platform: 'browser',
+    isTv: false,
+    isNativePlayback: false,
+    network,
+  });
+
+  it('expresses browser data saver as a bitrate constraint, not a profile', () => {
+    const caps = capabilities();
+    applyPlaybackNetworkProbe(caps, context({
+      kind: 'browser',
+      downlinkMbps: 20,
+      saveData: true,
+    }), undefined);
+
+    expect(caps.networkContext?.maxBitrateKbps).toBe(2500);
+  });
+
+  it('expresses metered user policy as a bitrate constraint', () => {
+    localStorage.setItem('xg2g.settings.saveMobileData', 'true');
+    const caps = capabilities();
+    applyPlaybackNetworkProbe(caps, context({
+      kind: 'cellular',
+      downlinkMbps: 20,
+      metered: true,
+    }), { kind: 'measured', downlinkMbps: 18 });
+
+    expect(caps.networkContext).toMatchObject({
+      kind: 'measured',
+      downlinkKbps: 18000,
+      maxBitrateKbps: 2500,
+    });
+  });
+
+  it('applies a one-attempt recovery budget independently of measured bandwidth', () => {
+    const caps = capabilities();
+    applyPlaybackNetworkProbe(caps, context({
+      kind: 'ethernet',
+      downlinkMbps: 100,
+    }), { kind: 'lan' }, { forceConstrained: true });
+
+    expect(caps.networkContext?.maxBitrateKbps).toBe(1000);
   });
 });

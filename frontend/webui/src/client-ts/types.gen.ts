@@ -1214,6 +1214,12 @@ export type PlaybackClientSummary = {
 export type PlaybackNetworkContext = {
     kind?: string;
     downlinkKbps?: number;
+    /**
+     * Optional client-selected data budget. This constrains the planned
+     * output bitrate without selecting a codec or encoder profile.
+     *
+     */
+    maxBitrateKbps?: number;
     metered?: boolean;
     internetValidated?: boolean;
 };

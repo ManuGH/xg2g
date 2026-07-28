@@ -153,21 +153,32 @@ func (a *LocalAdapter) buildLiveVideoOutputArgs(args []string, spec ports.Stream
 }
 
 func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []string {
-	if !spec.Profile.TranscodesAudio() {
+	isLive := spec.Source.Type == ports.SourceTuner || spec.Mode == ports.ModeLive
+	if !spec.Profile.TranscodesAudio() && !isLive {
 		return append(args, "-c:a", "copy", "-sn")
 	}
 	audioCodec := spec.Profile.ResolvedAudioCodec()
-	audioBitrate := "192k"
+	if audioCodec == "" || audioCodec == "copy" {
+		audioCodec = "aac"
+	}
+	audioBitrate := "320k"
 	if spec.Profile.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
 	}
-	return append(args,
+	res := append(args,
 		"-c:a", audioCodec,
 		"-b:a", audioBitrate,
-		"-ac", "2",
-		"-ar", "48000",
-		"-sn",
 	)
+	if audioCodec == "aac" {
+		res = append(res, "-ac", "2")
+	}
+	res = append(res, "-ar", "48000")
+
+	// Convert to s16p to sanitize NaN floats from corrupt DVB streams.
+	// Use aresample=async=1 to pad/drop audio to match video timestamps (fixing A/V sync and "fascinating" robotic audio).
+	res = append(res, "-af", "aformat=sample_fmts=s16p,aresample=async=1")
+
+	return append(res, "-sn")
 }
 
 // useCMAFSegmenter reports whether this session runs in LL-HLS pipe mode.

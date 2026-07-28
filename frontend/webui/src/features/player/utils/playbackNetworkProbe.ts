@@ -34,6 +34,46 @@ export type PlaybackNetworkProbe =
   | { kind: 'measured'; downlinkMbps: number }
   | { kind: 'constrained' };
 
+type PlaybackNetworkPolicyOptions = {
+	forceConstrained?: boolean;
+};
+
+function mobileDataSavingsEnabled(): boolean {
+	try {
+		return typeof localStorage !== 'undefined'
+			&& localStorage.getItem('xg2g.settings.saveMobileData') === 'true';
+	} catch {
+		return false;
+	}
+}
+
+function requestedMaxBitrateKbps(
+	context: PlaybackClientContext,
+	options: PlaybackNetworkPolicyOptions,
+): number | undefined {
+	if (options.forceConstrained) {
+		return 1000;
+	}
+
+	const network = context.network;
+	const isSlowNetwork = network?.effectiveType === 'slow-2g'
+		|| network?.effectiveType === '2g'
+		|| network?.effectiveType === '3g'
+		|| (typeof network?.downlinkMbps === 'number'
+			&& network.downlinkMbps > 0
+			&& network.downlinkMbps < 2.5);
+	const isCellularOrMetered = network?.kind === 'cellular' || network?.metered === true;
+
+	if (
+		network?.saveData === true
+		|| isSlowNetwork
+		|| (isCellularOrMetered && mobileDataSavingsEnabled())
+	) {
+		return 2500;
+	}
+	return undefined;
+}
+
 function currentNetworkConnection(): NetworkInformationLike | null {
 	if (typeof navigator === 'undefined') {
 		return null;
@@ -173,23 +213,32 @@ export function applyPlaybackNetworkProbe(
 	capabilities: CapabilitySnapshot,
 	context: PlaybackClientContext,
 	probe: PlaybackNetworkProbe | undefined,
+	options: PlaybackNetworkPolicyOptions = {},
 ): PlaybackClientContext {
-	if (probe == null || probe.kind === 'lan') {
-		return context;
+	let nextContext = context;
+	if (probe != null && probe.kind !== 'lan') {
+		const downlinkMbps = probe.kind === 'constrained' ? 1 : probe.downlinkMbps;
+		capabilities.networkContext = {
+			...capabilities.networkContext,
+			kind: 'measured',
+			downlinkKbps: Math.max(1, Math.round(downlinkMbps * 1000)),
+		};
+		nextContext = {
+			...context,
+			network: {
+				...context.network,
+				kind: 'measured',
+				downlinkMbps,
+			},
+		};
 	}
 
-	const downlinkMbps = probe.kind === 'constrained' ? 1 : probe.downlinkMbps;
-	capabilities.networkContext = {
-		...capabilities.networkContext,
-		kind: 'measured',
-		downlinkKbps: Math.max(1, Math.round(downlinkMbps * 1000)),
-	};
-	return {
-		...context,
-		network: {
-			...context.network,
-			kind: 'measured',
-			downlinkMbps,
-		},
-	};
+	const maxBitrateKbps = requestedMaxBitrateKbps(nextContext, options);
+	if (maxBitrateKbps !== undefined) {
+		capabilities.networkContext = {
+			...capabilities.networkContext,
+			maxBitrateKbps,
+		};
+	}
+	return nextContext;
 }

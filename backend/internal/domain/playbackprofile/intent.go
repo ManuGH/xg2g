@@ -16,6 +16,19 @@ const (
 	IntentRepair     PlaybackIntent = "repair"
 )
 
+// LiveTranscodeAudioBitrateKbps is the single source of truth for the stereo
+// AAC-LC bitrate of live transcodes. Two independent layers used to carry their
+// own literal — the profile axes and the planner's media targets — and only the
+// planner's wins at runtime (applyPlannerPlanToProfile overwrites AudioBitrateK
+// from the plan), so a change in one place alone had no observable effect.
+//
+// 320k is the ceiling of the rung ladder (RungQualityAudioAAC320Stereo). Live DVB
+// audio arrives as AC-3 (384k 5.1 or 192k stereo) and is re-encoded to a stereo
+// AAC-LC downmix, i.e. a second lossy generation, where the previous 192k started
+// to show cascade artifacts. MaxAudioBitrateForRung still clamps this down when an
+// operator pins the max quality rung.
+const LiveTranscodeAudioBitrateKbps = 320
+
 type QualityRung string
 
 const (
@@ -44,6 +57,28 @@ func NormalizeRequestedIntent(raw string) PlaybackIntent {
 		return IntentRepair
 	default:
 		return IntentUnknown
+	}
+}
+
+// NormalizeClientRequestedIntent defines the public playback-input boundary.
+// Repair is the only client override. Empty, auto, legacy public intents and
+// internal encoder-profile ids all delegate to evidence-driven planning.
+func NormalizeClientRequestedIntent(raw string) string {
+	if NormalizeRequestedIntent(raw) == IntentRepair {
+		return string(IntentRepair)
+	}
+	return ""
+}
+
+// UsesAutoCodecSelection centralizes the compatibility rule for callers below
+// the public-input boundary. Non-repair values here are rolling-upgrade or
+// internal callers, not part of the current client contract.
+func UsesAutoCodecSelection(raw string) bool {
+	switch normalize.Token(raw) {
+	case "direct", "copy", "passthrough", "compatible", "high", "bandwidth", "low", "repair", "h264_fmp4", "safari_dirty":
+		return false
+	default:
+		return true
 	}
 }
 

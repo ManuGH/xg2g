@@ -1,34 +1,21 @@
 import { getNativePlaybackCapabilities, resolveHostEnvironment } from '../../../lib/hostBridge';
-import type { CapabilitySnapshot } from './playbackCapabilities';
 
-export type PlaybackRequestProfile = 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
-export type PlaybackProfileSelection = 'auto' | 'direct' | 'quality' | 'compatible' | 'repair' | 'bandwidth';
+export type PlaybackRequestProfile = 'repair';
+export type PlaybackProfileSelection = 'auto' | PlaybackRequestProfile;
 
 export function normalizePlaybackProfileSelection(value: unknown): PlaybackProfileSelection {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  switch (normalized) {
-    case 'direct':
-    case 'copy':
-    case 'passthrough':
-      return 'direct';
-    case 'quality':
-    case 'compatible':
-    case 'repair':
-    case 'bandwidth':
-      return normalized;
-    default:
-      // Internal encoder-profile ids from older UI builds are intentionally
-      // discarded. The planner accepts public playback intents only.
-      return 'auto';
-  }
+  // The client may request the conservative repair path. Everything else,
+  // including values persisted by older builds, returns to evidence-driven
+  // automatic planning. Internal encoder profile ids are planner outputs.
+  return normalized === 'repair' ? 'repair' : 'auto';
 }
 
 export function resolvePlaybackProfileForPreflight(
   selection: unknown,
-  automaticProfile?: PlaybackRequestProfile,
 ): PlaybackRequestProfile | undefined {
   const normalized = normalizePlaybackProfileSelection(selection);
-  return normalized === 'auto' ? automaticProfile : normalized;
+  return normalized === 'repair' ? normalized : undefined;
 }
 
 export type PlaybackClientDeviceContext = {
@@ -234,84 +221,8 @@ export function gatherPlaybackClientContext(): PlaybackClientContext {
   };
 }
 
-const MODERN_VIDEO_CODECS = ['av1', 'hevc', 'h264'] as const;
-
-function supportsHighQualityPlayback(capabilities: CapabilitySnapshot): boolean {
-  const modernCodecs = MODERN_VIDEO_CODECS.filter((codec) => capabilities.videoCodecs.includes(codec));
-  if (modernCodecs.length === 0) {
-    return false;
-  }
-
-  // Media Capabilities verdicts (decodingInfo) beat static codec lists: when
-  // every modern codec the client offers carries an explicit smooth=false
-  // signal, the device decodes but cannot keep up — don't request quality.
-  const signals = capabilities.videoCodecSignals;
-  if (signals && signals.length > 0) {
-    const verdicts = modernCodecs
-      .map((codec) => signals.find((signal) => signal.codec === codec))
-      .filter((signal): signal is NonNullable<typeof signal> => signal != null && signal.smooth !== undefined);
-    if (verdicts.length > 0 && verdicts.every((signal) => signal.smooth === false)) {
-      return false;
-    }
-  }
-
-  if (!capabilities.maxVideo) {
-    return true;
-  }
-
-  const width = capabilities.maxVideo.width ?? 0;
-  const height = capabilities.maxVideo.height ?? 0;
-  return width >= 1280 && height >= 720;
-}
-
-export function resolvePlaybackRequestProfile(
-  context: PlaybackClientContext,
-  capabilities: CapabilitySnapshot,
-  _scope: 'live' | 'recording'
-): PlaybackRequestProfile | undefined {
-  const network = context.network;
-  if (network?.kind === 'offline') {
-    return undefined;
-  }
-
-  let userWantsMobileDataSavings = false;
-  try {
-    userWantsMobileDataSavings = typeof localStorage !== 'undefined' && localStorage.getItem('xg2g.settings.saveMobileData') === 'true';
-  } catch {
-    // Ignore
-  }
-
-  const isCellularOrMetered = network?.kind === 'cellular' || network?.metered;
-
-  // A connection is considered slow if the browser explicitly flags it as 3G or worse,
-  // or if the measured bandwidth is below 2.5 Mbps.
-  const isSlowNetwork = network?.effectiveType === 'slow-2g'
-    || network?.effectiveType === '2g'
-    || network?.effectiveType === '3g'
-    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps > 0 && network.downlinkMbps < 2.5);
-
-  if (
-    network?.saveData
-    || isSlowNetwork
-    || (isCellularOrMetered && userWantsMobileDataSavings)
-  ) {
-    return 'bandwidth';
-  }
-
-  if (
-    supportsHighQualityPlayback(capabilities)
-    && !network?.saveData
-    && !isSlowNetwork
-    && !(isCellularOrMetered && userWantsMobileDataSavings)
-  ) {
-    return 'quality';
-  }
-
-  return undefined;
-}
-
 export function buildPlaybackProfileHeaders(profile?: PlaybackRequestProfile): Record<string, string> {
-  if (!profile) {
+  if (profile !== 'repair') {
     return {};
   }
   return {

@@ -116,21 +116,17 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	} else {
 		args = appendAV1VAAPILevelArgs(args)
 	}
-	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
+	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv")
 	return args
 }
 
 func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec string) string {
 	parts := make([]string, 0, 4)
 	if spec.Profile.Deinterlace {
-		parts = append(parts, a.deinterlaceFilterForProfile(spec))
+		parts = append(parts, "bwdif=mode=send_field:parity=auto:deint=all")
 	}
 	if spec.Profile.VideoMaxWidth > 0 {
 		parts = append(parts, softwareScaleWidthFilter(spec.Profile.VideoMaxWidth))
-	}
-	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
-	if isAV1 && hardware.GetGPUVendor() == hardware.VendorAMD {
-		parts = append(parts, av1VAAPIGeometryPadFilter())
 	}
 	// AV1 encodes 10-bit (p010 -> AV1 Main, which covers 8/10-bit). The extra
 	// precision reduces encoder-introduced banding on gradients even from an
@@ -154,6 +150,10 @@ func (a *LocalAdapter) vaapiEncodeOnlyFilter(spec ports.StreamSpec, outputCodec 
 	}
 	if f := transcodeSharpenFilter(a.Config.TranscodeSharpen); f != "" {
 		parts = append(parts, f)
+	}
+	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
+	if isAV1 && hardware.GetGPUVendor() == hardware.VendorAMD {
+		parts = append(parts, av1VAAPIGeometryPadFilter())
 	}
 	uploadFormat := "nv12"
 	if isAV1 {
@@ -269,6 +269,8 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 
 		if av1QVBR {
 			args = append(args, "-rc_mode", "QVBR")
+		} else if isAV1 && vendor == hardware.VendorIntel {
+			args = append(args, "-rc_mode", "VBR")
 		}
 		args = append(args,
 			"-b:v", fmt.Sprintf("%dk", bV),
@@ -498,7 +500,7 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 	}
 
 	args = append(args, "-c:v", codec)
-	args = append(args, "-preset", preset)
+	args = append(args, "-preset", encoderPreset(codec, preset))
 	tune := "zerolatency"
 	if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") {
 		tune = strings.TrimSpace(a.SafariDirtyX264Tune)
@@ -541,8 +543,6 @@ func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string
 	} else if strings.EqualFold(strings.TrimSpace(spec.Profile.Name), "safari_dirty") && strings.TrimSpace(a.SafariDirtyFilter) != "" {
 		deinterlaceFilter = strings.TrimSpace(a.SafariDirtyFilter)
 	} else if spec.Mode == ports.ModeLive && spec.Format == ports.FormatHLS {
-		// Generic live HLS transcodes should preserve sports motion on interlaced
-		// broadcast sources instead of collapsing them to 25p.
 		deinterlaceFilter = "bwdif=mode=send_field:parity=auto:deint=all"
 	}
 	return deinterlaceFilter

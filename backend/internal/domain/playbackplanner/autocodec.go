@@ -3,6 +3,8 @@ package playbackplanner
 import (
 	"sort"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 const unmeasuredEncoderProbeMS = int64(24 * 60 * 60 * 1000)
@@ -144,12 +146,7 @@ func nativeWebKitClient(family string) bool {
 }
 
 func usesAutoTranscodeProfile(requestedIntent string) bool {
-	switch strings.ToLower(strings.TrimSpace(requestedIntent)) {
-	case "direct", "copy", "passthrough", "compatible", "high", "bandwidth", "low", "repair", "h264_fmp4", "safari_dirty":
-		return false
-	default:
-		return true
-	}
+	return playbackprofile.UsesAutoCodecSelection(requestedIntent)
 }
 
 func newAutoCodecCandidate(codec string, probeElapsedMS int64, benchmarkClass string) autoCodecCandidate {

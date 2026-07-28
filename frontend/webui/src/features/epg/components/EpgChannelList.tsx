@@ -11,12 +11,6 @@ import { Button } from '../../../components/ui';
 import { requestAuthRequired } from '../../player/sessionEvents';
 import { gatherPlaybackCapabilities, type CapabilitySnapshot } from '../../player/utils/playbackCapabilities';
 import {
-  buildPlaybackProfileHeaders,
-  gatherPlaybackClientContext,
-  resolvePlaybackRequestProfile,
-  type PlaybackRequestProfile,
-} from '../../player/utils/playbackRequestProfile';
-import {
   PLAYBACK_INFO_CONTEXT_EPG_BADGE,
   PLAYBACK_INFO_CONTEXT_HEADER,
 } from '../../player/utils/playbackInfoContext';
@@ -56,7 +50,7 @@ function cacheChannelPlaybackBadge(cacheKey: string, badge: ChannelPlaybackBadge
   channelPlaybackBadgeCache.set(cacheKey, badge);
 }
 
-function buildCapabilityCacheKey(capabilities: CapabilitySnapshot, requestProfile?: PlaybackRequestProfile): string {
+function buildCapabilityCacheKey(capabilities: CapabilitySnapshot): string {
   return JSON.stringify({
     deviceType: capabilities.deviceType || 'unknown',
     container: [...(capabilities.container || [])].sort(),
@@ -69,7 +63,6 @@ function buildCapabilityCacheKey(capabilities: CapabilitySnapshot, requestProfil
     supportsHls: capabilities.supportsHls === true,
     runtimeProbeUsed: capabilities.runtimeProbeUsed === true,
     clientFamilyFallback: capabilities.clientFamilyFallback || '',
-    requestProfile: requestProfile || '',
   });
 }
 
@@ -179,7 +172,6 @@ type BadgeBatchState = {
   channelsByRef: Map<string, EpgChannel>;
   callbacks: Set<(serviceRef: string, badge: ChannelPlaybackBadge) => void>;
   capabilities: CapabilitySnapshot;
-  requestProfile?: PlaybackRequestProfile;
   timer: number | null;
 };
 
@@ -189,7 +181,6 @@ function queueChannelPlaybackBadge(
   channel: EpgChannel,
   capabilities: CapabilitySnapshot,
   capabilityCacheKey: string,
-  requestProfile: PlaybackRequestProfile | undefined,
   onBadge: (serviceRef: string, badge: ChannelPlaybackBadge) => void
 ): void {
   const serviceRef = channel.serviceRef || channel.id || '';
@@ -203,7 +194,6 @@ function queueChannelPlaybackBadge(
       channelsByRef: new Map(),
       callbacks: new Set(),
       capabilities,
-      requestProfile,
       timer: null,
     };
     badgeBatchByCapabilityKey.set(capabilityCacheKey, state);
@@ -241,7 +231,6 @@ async function flushBadgeBatch(capabilityCacheKey: string): Promise<void> {
   const result = await postLivePlaybackSummary({
     headers: {
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...buildPlaybackProfileHeaders(state.requestProfile),
       [PLAYBACK_INFO_CONTEXT_HEADER]: PLAYBACK_INFO_CONTEXT_EPG_BADGE,
     },
     body: {
@@ -848,15 +837,9 @@ export function EpgChannelList({
   }, [channels, searchGroups]);
 
   const orderedDisplayChannels = mode === 'main' ? sortedChannels : searchChannels;
-  const playbackRequestProfile = React.useMemo(
-    () => (capabilitySnapshot
-      ? resolvePlaybackRequestProfile(gatherPlaybackClientContext(), capabilitySnapshot, 'live')
-      : undefined),
-    [capabilitySnapshot]
-  );
   const capabilityCacheKey = React.useMemo(
-    () => (capabilitySnapshot ? buildCapabilityCacheKey(capabilitySnapshot, playbackRequestProfile) : null),
-    [capabilitySnapshot, playbackRequestProfile]
+    () => (capabilitySnapshot ? buildCapabilityCacheKey(capabilitySnapshot) : null),
+    [capabilitySnapshot]
   );
 
   React.useEffect(() => {
@@ -909,9 +892,9 @@ export function EpgChannelList({
         return; // cached negative result: do not re-request
       }
 
-      queueChannelPlaybackBadge(channel, capabilitySnapshot, capabilityCacheKey, playbackRequestProfile, applyBadge);
+      queueChannelPlaybackBadge(channel, capabilitySnapshot, capabilityCacheKey, applyBadge);
     });
-  }, [capabilityCacheKey, capabilitySnapshot, orderedDisplayChannels, playbackRequestProfile]);
+  }, [capabilityCacheKey, capabilitySnapshot, orderedDisplayChannels]);
 
   React.useEffect(() => {
     if (orderedDisplayChannels.length === 0) {

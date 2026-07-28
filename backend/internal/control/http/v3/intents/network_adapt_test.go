@@ -69,3 +69,29 @@ func TestAdaptStartProfileForNetworkContext_VeryLowBandwidth(t *testing.T) {
 	assert.Equal(t, 1280, got.VideoMaxWidth)
 	assert.Equal(t, 28, got.VideoCRF)
 }
+
+func TestAdaptStartProfileForNetworkContext_ExplicitBudgetPreservesCodec(t *testing.T) {
+	intent := Intent{
+		ClientCaps: &capabilities.PlaybackCapabilities{
+			NetworkContext: &capabilities.NetworkContext{
+				Kind:           "lan",
+				DownlinkKbps:   100000,
+				MaxBitrateKbps: 2500,
+			},
+		},
+	}
+	spec := model.ProfileSpec{
+		Name:           "av1_hw",
+		TranscodeVideo: true,
+		VideoCodec:     "av1_vaapi",
+		VideoMaxRateK:  8000,
+		AudioBitrateK:  160,
+	}
+
+	got := adaptStartProfileForNetworkContext(intent, spec)
+
+	assert.Equal(t, "av1_vaapi", got.VideoCodec, "a data budget must not select a codec")
+	assert.Equal(t, 2340, got.VideoMaxRateK)
+	assert.Equal(t, 4680, got.VideoBufSizeK)
+	assert.Equal(t, 1280, got.VideoMaxWidth)
+}

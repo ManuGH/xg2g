@@ -542,12 +542,7 @@ func pickPlaybackInfoAutoProfileWithPolicy(resolvedCaps capabilities.PlaybackCap
 }
 
 func shouldApplyAutoCodecDecision(requestedProfile string) bool {
-	switch strings.ToLower(strings.TrimSpace(requestedProfile)) {
-	case "direct", "copy", "passthrough", "compatible", "high", "bandwidth", "low", "repair", "h264_fmp4", "safari_dirty":
-		return false
-	default:
-		return true
-	}
+	return playbackprofile.UsesAutoCodecSelection(requestedProfile)
 }
 
 func resolvePlaybackInfoGPUBackend(profileID string) profiles.GPUBackend {

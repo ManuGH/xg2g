@@ -153,7 +153,7 @@ func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
 
 	audioCodec, ok := valueAfter(args, "-c:a")
 	require.True(t, ok, "live HLS path should still emit an audio codec")
-	assert.Equal(t, "copy", audioCodec, "live HLS path now copies audio for native compatibility")
+	assert.Equal(t, "aac", audioCodec, "live HLS path transcodes audio to AAC for zero startup failure")
 
 	assert.NotContains(t, args, "libx264", "default copy path must not force legacy CPU transcode")
 	assert.NotContains(t, args, "bwdif=mode=send_field:parity=auto:deint=all", "default copy path must not inject deinterlace filters")
@@ -962,7 +962,7 @@ func TestBuildArgs_VaapiEncodeOnlyUsesCPUDecodeAndHWUpload(t *testing.T) {
 
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Contains(t, vf, "bwdif=mode=send_frame:parity=auto:deint=all")
+	assert.Contains(t, vf, "bwdif=mode=send_field:parity=auto:deint=all")
 	assert.Contains(t, vf, "format=nv12,hwupload")
 
 	assert.Contains(t, args, "h264_vaapi")
@@ -2081,7 +2081,7 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 	assert.NotContains(t, args, "-hwaccel", "verified AV1 uses encode-only even when full VAAPI was requested")
 	vf, ok := valueAfter(args, "-vf")
 	require.True(t, ok)
-	assert.Contains(t, vf, "bwdif=mode=send_frame:parity=auto:deint=all")
+	assert.Contains(t, vf, "bwdif=mode=send_field:parity=auto:deint=all")
 	assert.Contains(t, vf, av1VAAPIGeometryPadFilter())
 	assert.Contains(t, vf, "format=p010le,hwupload")
 	outputFPS, ok := valueAfter(args, "-r")
@@ -2718,5 +2718,10 @@ func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
 	assert.Contains(t, args, "0:2?")
 	assert.Contains(t, args, "-master_pl_name")
 	assert.Contains(t, args, "index.m3u8")
-	assert.Contains(t, args, "-var_stream_map")
+	varStreamMap, ok := valueAfter(args, "-var_stream_map")
+	require.True(t, ok)
+	assert.Equal(t,
+		"v:0,agroup:audio a:0,agroup:audio,default:yes,language:DEU a:1,agroup:audio,default:no,language:DEU",
+		varStreamMap,
+	)
 }

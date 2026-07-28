@@ -1,0 +1,148 @@
+name: Audio Contract
+
+# Replays the ffmpeg argument vector the daemon really builds against a synthetic
+# DVB-like fixture and asserts the audio contract on the output.
+#
+# Why a dedicated gate: on 2026-07-26 three deploys shipped without effect (or broke
+# playback) because the only oracle was a person zapping the receiver and listening.
+# Go tests cannot observe ffmpeg refusing an invalid -var_stream_map (exit 234), and
+# they stayed green while production served 192k instead of 320k. This job closes both
+# gaps in ~2 minutes, without a tuner and without a GPU.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/internal/infra/media/ffmpeg/**"
+      - "backend/internal/domain/playbackplanner/**"
+      - "backend/internal/domain/playbackprofile/**"
+      - "backend/internal/pipeline/profiles/**"
+      - "backend/internal/control/http/v3/intents/**"
+      - "backend/scripts/smoke-live-audio.sh"
+      - ".github/workflows/audio-contract.yml"
+  # Neither base-branch nor path filtered. Base filter: this repo stacks PRs (#734
+  # targets refactor/r5-1-guardrail-linter), and `branches: [main]` silently skips
+  # those. Path filter: a filtered workflow never runs, so it never reports a status,
+  # and a required check that never reports blocks the PR forever on
+  # "Expected — waiting for status". Scope is resolved inside the job instead, so the
+  # context is always produced — green in seconds when nothing relevant changed.
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audio-contract:
+    name: Audio Contract / ffmpeg replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: UTC
+      ARGVEC: ${{ github.workspace }}/argvec/live-args.txt
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ./backend/scripts/ci/resolve-workflow-scope.sh \
+            '^backend/internal/infra/media/ffmpeg/' \
+            '^backend/internal/domain/playbackplanner/' \
+            '^backend/internal/domain/playbackprofile/' \
+            '^backend/internal/pipeline/profiles/' \
+            '^backend/internal/control/http/v3/intents/' \
+            '^backend/scripts/smoke-live-audio\.sh$' \
+            '^backend/scripts/ci/resolve-workflow-scope\.sh$' \
+            '^\.github/workflows/audio-contract\.yml$' >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go
+        if: steps.scope.outputs.relevant == 'true'
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: true
+          cache-dependency-path: backend/go.sum
+          # Matches ci.yml: cache restore has been flaky (tar exit code 2).
+          cache: false
+
+      - name: Install ffmpeg
+        if: steps.scope.outputs.relevant == 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -version | head -1
+          # The CPU AV1 path encodes with libsvtav1; without it the replay would fail
+          # for a reason that has nothing to do with the audio contract.
+          ffmpeg -hide_banner -encoders | grep -q libsvtav1 || {
+            echo "❌ this ffmpeg build has no libsvtav1 encoder"
+            exit 1
+          }
+
+      - name: Build the live argument vector from the real arg builder
+        if: steps.scope.outputs.relevant == 'true'
+        run: |
+          set -euo pipefail
+          cd backend
+          # Dumping instead of committing a golden vector: a checked-in vector drifts
+          # from the code, which is the failure mode this gate exists to prevent.
+          ARGVEC_DUMP="${ARGVEC}" go test ./internal/infra/media/ffmpeg/ \
+            -run TestDumpLiveArgVector -count=1 -v
+          echo "--- vector ($(wc -l <"${ARGVEC}") args):"
+          tr '\n' ' ' <"${ARGVEC}"
+          echo
+
+      - name: Replay the vector and assert the audio contract
+        if: steps.scope.outputs.relevant == 'true'
+        run: |
+          set -euo pipefail
+          # Expect what the vector itself requested: this asserts that ffmpeg honored
+          # the pipeline's own -b:a, and keeps the "is 320k the right number" question
+          # where it belongs (the Go seam tests).
+          expect_k="$(grep -A1 '^-b:a$' "${ARGVEC}" | tail -1 | tr -d 'k')"
+          echo "vector requests ${expect_k} kbit/s audio"
+          bash backend/scripts/smoke-live-audio.sh \
+            --args-file "${ARGVEC}" \
+            --no-hwaccel \
+            --expect-audio-bitrate-k "${expect_k}" \
+            --expect-audio-renditions 2
+
+      - name: Negative control (the gate must be able to fail)
+        if: steps.scope.outputs.relevant == 'true'
+        run: |
+          set -euo pipefail
+          # A smoke test that cannot fail is decoration. Assert a deliberately wrong
+          # bitrate and require a non-zero exit; today's regression was invisible
+          # precisely because nothing in CI could go red.
+          expect_k="$(grep -A1 '^-b:a$' "${ARGVEC}" | tail -1 | tr -d 'k')"
+          wrong_k=$((expect_k / 2))
+          if bash backend/scripts/smoke-live-audio.sh \
+            --args-file "${ARGVEC}" \
+            --no-hwaccel \
+            --expect-audio-bitrate-k "${wrong_k}" \
+            --expect-audio-renditions 2 >/dev/null 2>&1; then
+            echo "❌ harness passed while asserting ${wrong_k} kbit/s — it is not measuring anything"
+            exit 1
+          fi
+          echo "✅ harness fails as expected when the bitrate is wrong"
+
+      - name: Out of scope
+        if: steps.scope.outputs.relevant != 'true'
+        run: |
+          echo "Audio contract gate skipped its work: ${{ steps.scope.outputs.reason }}"
+          echo "The check still reports green so it stays usable as a required check."

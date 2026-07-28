@@ -1265,12 +1265,22 @@ export function usePlayerChrome({
     container.addEventListener('keydown', onKey);
     container.addEventListener('touchstart', onClick);
 
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('click', onClick);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('touchstart', onClick);
+
     return () => {
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
       container.removeEventListener('mousemove', onMove);
       container.removeEventListener('click', onClick);
       container.removeEventListener('keydown', onKey);
       container.removeEventListener('touchstart', onClick);
+
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('click', onClick);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('touchstart', onClick);
     };
   }, [containerRef, idleDelayMs]);
 

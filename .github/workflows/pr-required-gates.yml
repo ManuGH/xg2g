@@ -4,8 +4,10 @@ name: PR Required Gates
 
 on:
   workflow_dispatch:
+  # No base-branch filter: this repo stacks PRs (e.g. #734 targets
+  # refactor/r5-1-guardrail-linter), and a `branches: [main]` filter silently skips
+  # every one of them — PR #734 ran nothing but Gitleaks for its whole lifetime.
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read

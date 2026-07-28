@@ -128,8 +128,9 @@ func cloneClientNetworkContext(in *capabilities.NetworkContext) *model.PlaybackC
 		return nil
 	}
 	out := &model.PlaybackClientNetworkContext{
-		DownlinkKbps: in.DownlinkKbps,
-		Kind:         strings.TrimSpace(in.Kind),
+		DownlinkKbps:   in.DownlinkKbps,
+		Kind:           strings.TrimSpace(in.Kind),
+		MaxBitrateKbps: in.MaxBitrateKbps,
 	}
 	if in.InternetValidated != nil {
 		v := *in.InternetValidated

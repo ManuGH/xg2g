@@ -433,7 +433,7 @@ func TestGetRecordingPlaybackInfo_PerSourceOperatorForceIntentThreadsIntoDecisio
 	assert.Equal(t, true, operator["overrideApplied"])
 }
 
-func TestGetRecordingPlaybackInfo_HostPressureThreadsIntoDecisionTrace(t *testing.T) {
+func TestGetRecordingPlaybackInfo_LegacyQualityQueryNormalizesToAuto(t *testing.T) {
 	serviceRef := "1:0:0:0:0:0:0:0:0:0:/hdd/movie/host-pressure.ts"
 	recordingID := recservice.EncodeRecordingID(serviceRef)
 
@@ -467,8 +467,9 @@ func TestGetRecordingPlaybackInfo_HostPressureThreadsIntoDecisionTrace(t *testin
 	trace, ok := dec["trace"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "critical", trace["hostPressureBand"])
-	assert.Equal(t, true, trace["hostOverrideApplied"])
-	assert.Equal(t, "quality", trace["degradedFrom"])
+	assert.Nil(t, trace["hostOverrideApplied"])
+	assert.Nil(t, trace["degradedFrom"])
+	assert.Equal(t, "compatible", trace["requestProfile"])
 	assert.Equal(t, "compatible", trace["resolvedIntent"])
 }
 
