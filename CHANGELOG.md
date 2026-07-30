@@ -1050,3 +1050,13 @@ Operational changes in v3.9.0:
 - Security & Preflight Hardening: Hardened proxy-aware rate limiting, CORS preflight handling, and dependency vulnerability checks.
 
 
+### Behavioral Changes (v3.9.1)
+Operational changes in v3.9.1:
+- Linux release metadata, pinned image examples, toolchain documentation, and security-policy links are consistent with the canonical release.
+- The guided systemd installation now installs an xg2g(1) manual page.
+- Top-level CLI help now documents the existing status and report commands, including topic-specific help.
+- Release preparation verifies Go module tidiness without mutating go.mod or go.sum and automatically synchronizes non-historical pinned image references.
+
+No API, playback-policy, configuration-default, or storage-schema behavior changes.
+
+
