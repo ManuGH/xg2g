@@ -2,7 +2,7 @@
 # Quality Assurance Targets
 # ===================================================================================================
 
-.PHONY: lint lint-fix test test-race test-race-pr test-cover cover test-all test-integration smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools pre-push hooks-install
+.PHONY: lint lint-fix test test-race test-race-pr test-cover cover test-all test-integration performance-gate smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools pre-push hooks-install
 
 pre-push: ## Fast local guard against the PR gate's cheapest failures (gofmt, vet, build) — seconds, not minutes
 	@echo "Checking gofmt..."
@@ -88,6 +88,12 @@ cover: test-cover ## Alias for test-cover
 
 test-all: test-race test-cover ## Run complete test suite (unit + race)
 
+performance-gate: ## Enforce versioned latency and allocation budgets for critical hot paths
+	@mkdir -p $(ARTIFACTS_DIR)/performance
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run ./cmd/tools/perfgate \
+		--budgets test/benchmark/budgets.json \
+		--report ../$(ARTIFACTS_DIR)/performance/report.json
+
 smoke-test: ## Run E2E smoke test (Builds & Runs daemon)
 	@echo "Building binary for smoke test..."
 	@mkdir -p $(BUILD_DIR)
@@ -167,7 +173,7 @@ quality-gates-online: verify-generated-artifacts verify-release-output-contract 
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-monitoring-contract verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-maintainer-deploy-topology verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test test-pr ## PR gate check bundle (fast & deterministic)
+ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-monitoring-contract verify-scheduled-ci-contract verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-maintainer-deploy-topology verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test test-pr ## PR gate check bundle (fast & deterministic)
 	@echo "✅ PR gate bundle passed"
 
 test-pr: ## Run deterministic unit tests for PR gate (short mode, no binary dependencies)
@@ -175,7 +181,7 @@ test-pr: ## Run deterministic unit tests for PR gate (short mode, no binary depe
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test -short ./... -count=1 -timeout=$(GO_TEST_TIMEOUT)
 	@echo "✅ PR gate unit tests passed"
 
-ci-nightly: quality-gates-online webui-test ## Run the local deep validation bundle
+ci-nightly: quality-gates-online webui-test performance-gate ## Run the local deep validation bundle
 	@echo "✅ Nightly gate bundle passed"
 
 # Deterministic Python toolchain for governance scripts.

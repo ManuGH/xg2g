@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "count": 3,
+  "benchtime": "200ms",
+  "benchmarks": [
+    {
+      "package": "./internal/control/http/v3",
+      "benchmark": "BenchmarkExtractPathFromServiceRef",
+      "max_ns_per_op": 2500,
+      "max_bytes_per_op": 256,
+      "max_allocs_per_op": 2
+    },
+    {
+      "package": "./internal/epg",
+      "benchmark": "BenchmarkFindBestLarge",
+      "max_ns_per_op": 15000,
+      "max_bytes_per_op": 256,
+      "max_allocs_per_op": 12
+    },
+    {
+      "package": "./internal/epg",
+      "benchmark": "BenchmarkBuildNameToIDMap",
+      "max_ns_per_op": 2000000,
+      "max_bytes_per_op": 70000,
+      "max_allocs_per_op": 1800
+    },
+    {
+      "package": "./internal/jobs",
+      "benchmark": "BenchmarkSlugify",
+      "max_ns_per_op": 150000,
+      "max_bytes_per_op": 22000,
+      "max_allocs_per_op": 220
+    },
+    {
+      "package": "./internal/jobs",
+      "benchmark": "BenchmarkMakeHumanReadableTvgID",
+      "max_ns_per_op": 50000,
+      "max_bytes_per_op": 6000,
+      "max_allocs_per_op": 60
+    }
+  ]
+}
