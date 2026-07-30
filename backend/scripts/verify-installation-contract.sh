@@ -21,6 +21,7 @@ REQUIRED_REPO_FILES=(
   "infra/systemd/docker-compose.yml"
   "infra/systemd/xg2g.service"
   "infra/systemd/xg2g.env.schema.yaml"
+  "docs/man/xg2g.1"
   "backend/scripts/compose-xg2g.sh"
   "backend/scripts/verify-compose-contract.sh"
   "backend/scripts/verify-installed-unit.sh"
@@ -196,6 +197,7 @@ verify_installation_doc() {
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/compose-xg2g.sh`' "installation contract compose helper"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/xg2g-admin.sh`' "installation contract lifecycle helper"
   assert_contains "${INSTALL_DOC}" '`/usr/local/sbin/xg2g-admin`' "installation contract stable admin command"
+  assert_contains "${INSTALL_DOC}" '`/usr/local/share/man/man1/xg2g.1`' "installation contract manual page"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/INSTALL_REF`' "installation contract installed ref"
   assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g-backup.timer`' "installation contract backup timer"
   assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g-caddy.service`' "installation contract managed HTTPS unit"
@@ -226,6 +228,7 @@ verify_docs_discoverability() {
   assert_contains "${INSTALL_GUIDE}" 'sudo xg2g-admin doctor' "installation guide post-install diagnosis"
   assert_contains "${INSTALL_GUIDE}" 'sudo xg2g-admin update --ref vX.Y.Z' "installation guide governed update"
   assert_contains "${INSTALL_GUIDE}" 'sudo xg2g-admin uninstall' "installation guide safe uninstall"
+  assert_contains "${INSTALL_GUIDE}" '`man xg2g`' "installation guide manual page"
 
   assert_file "${DEPLOYMENT_INDEX}"
   assert_contains "${DEPLOYMENT_INDEX}" '`docs/ops/INSTALLATION_CONTRACT.md`' "deployment index installation contract"
@@ -267,10 +270,12 @@ verify_install_tree() {
   local etc_root
   local systemd_root
   local data_root
+  local man_root
   srv_root="$(join_path "${root}" "/srv/xg2g")"
   etc_root="$(join_path "${root}" "/etc/xg2g")"
   systemd_root="$(join_path "${root}" "/etc/systemd/system")"
   data_root="$(join_path "${root}" "/var/lib/xg2g")"
+  man_root="$(join_path "${root}" "/usr/local/share/man/man1")"
 
   assert_dir "${srv_root}"
   assert_dir "${srv_root}/scripts"
@@ -278,6 +283,10 @@ verify_install_tree() {
   assert_dir "${etc_root}"
   assert_dir "${systemd_root}"
   assert_dir "${data_root}"
+  assert_dir "${man_root}"
+
+  assert_file "${man_root}/xg2g.1"
+  assert_mode "${man_root}/xg2g.1" "644" "manual page mode"
 
   assert_file "${srv_root}/docker-compose.yml"
   assert_mode "${srv_root}/docker-compose.yml" "644" "base compose mode"
@@ -363,7 +372,7 @@ build_reference_install_tree() {
   local install_root
   install_root="$(join_path "${root}" "")"
 
-  install -d "${install_root}/srv/xg2g/scripts" "${install_root}/srv/xg2g/docs/ops" "${install_root}/etc/systemd/system" "${install_root}/etc/xg2g" "${install_root}/var/lib/xg2g"
+  install -d "${install_root}/srv/xg2g/scripts" "${install_root}/srv/xg2g/docs/ops" "${install_root}/etc/systemd/system" "${install_root}/etc/xg2g" "${install_root}/var/lib/xg2g" "${install_root}/usr/local/share/man/man1"
 
   install -m 0644 "${DEPLOY_ROOT}/docker-compose.yml" "${install_root}/srv/xg2g/docker-compose.yml"
   if [[ -f "${DEPLOY_ROOT}/docker-compose.gpu.yml" ]]; then
@@ -374,6 +383,7 @@ build_reference_install_tree() {
   fi
   install -m 0644 "${DEPLOY_ROOT}/xg2g.service" "${install_root}/srv/xg2g/docs/ops/xg2g.service"
   install -m 0644 "${DEPLOY_ROOT}/xg2g.service" "${install_root}/etc/systemd/system/xg2g.service"
+  install -m 0644 "${REPO_ROOT}/docs/man/xg2g.1" "${install_root}/usr/local/share/man/man1/xg2g.1"
 
   install -m 0755 "${REPO_ROOT}/backend/scripts/compose-xg2g.sh" "${install_root}/srv/xg2g/scripts/compose-xg2g.sh"
   install -m 0755 "${REPO_ROOT}/backend/scripts/verify-compose-contract.sh" "${install_root}/srv/xg2g/scripts/verify-compose-contract.sh"

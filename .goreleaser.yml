@@ -5,7 +5,7 @@ project_name: xg2g
 before:
   hooks:
     - make ui-build
-    - bash -c 'cd backend && go mod tidy'
+    - bash -c 'cd backend && go mod tidy -diff && go mod verify'
 
 builds:
   - id: xg2g
@@ -87,7 +87,7 @@ release:
     - Quickstart: https://github.com/ManuGH/xg2g?tab=readme-ov-file#quickstart
     - API reference: https://manugh.github.io/xg2g/
     - Deployment guide: https://github.com/ManuGH/xg2g/blob/main/docs/ops/DEPLOYMENT.md
-    - Security policy: https://github.com/ManuGH/xg2g/blob/main/SECURITY.md
+    - Security policy: https://github.com/ManuGH/xg2g/blob/main/.github/SECURITY.md
 
     ## What changed
 

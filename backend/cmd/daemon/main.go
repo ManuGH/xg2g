@@ -46,6 +46,8 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g preflight [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g healthcheck [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g diagnostic [flags]")
+	_, _ = fmt.Fprintln(w, "  xg2g status [flags]")
+	_, _ = fmt.Fprintln(w, "  xg2g report [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g help [command]")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Commands:")
@@ -55,6 +57,8 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  preflight    Run lifecycle preflight checks against effective config")
 	_, _ = fmt.Fprintln(w, "  healthcheck  Probe API readiness/liveness endpoints")
 	_, _ = fmt.Fprintln(w, "  diagnostic   Trigger diagnostic actions against the API")
+	_, _ = fmt.Fprintln(w, "  status       Show verified system status")
+	_, _ = fmt.Fprintln(w, "  report       Generate a redacted evidence bundle")
 	_, _ = fmt.Fprintln(w, "  help         Show help for a command")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Flags:")
@@ -76,39 +80,65 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g preflight --config /etc/xg2g/config.yaml --runtime-snapshot --json")
 	_, _ = fmt.Fprintln(w, "  xg2g healthcheck --mode=ready --port=8088")
 	_, _ = fmt.Fprintln(w, "  xg2g diagnostic --action=refresh --token $XG2G_API_TOKEN")
+	_, _ = fmt.Fprintln(w, "  xg2g status --token $XG2G_API_TOKEN")
+	_, _ = fmt.Fprintln(w, "  xg2g report --token $XG2G_API_TOKEN --out xg2g-report.json")
 }
 
 func runHelp(args []string) int {
+	return runHelpTo(os.Stdout, os.Stderr, args)
+}
+
+func runHelpTo(stdout, stderr io.Writer, args []string) int {
 	if len(args) == 0 {
-		printMainUsage(os.Stdout)
+		printMainUsage(stdout)
 		return 0
 	}
 
 	switch args[0] {
 	case "config":
-		printConfigUsage(os.Stdout)
+		printConfigUsage(stdout)
 		return 0
 	case "entitlements":
-		printEntitlementsUsage(os.Stdout)
+		printEntitlementsUsage(stdout)
 		return 0
 	case "storage":
-		printStorageUsage(os.Stdout)
+		printStorageUsage(stdout)
 		return 0
 	case "preflight":
-		printPreflightUsage(os.Stdout)
+		printPreflightUsage(stdout)
 		return 0
 	case "healthcheck":
-		printHealthcheckUsage(os.Stdout)
+		printHealthcheckUsage(stdout)
 		return 0
 	case "diagnostic":
-		printDiagnosticUsage(os.Stdout)
+		printDiagnosticUsage(stdout)
+		return 0
+	case "status":
+		statusCmd.SetOut(stdout)
+		statusCmd.SetErr(stderr)
+		defer statusCmd.SetOut(nil)
+		defer statusCmd.SetErr(nil)
+		if err := statusCmd.Help(); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Unable to render help for status: %v\n", err)
+			return 1
+		}
+		return 0
+	case "report":
+		reportCmd.SetOut(stdout)
+		reportCmd.SetErr(stderr)
+		defer reportCmd.SetOut(nil)
+		defer reportCmd.SetErr(nil)
+		if err := reportCmd.Help(); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Unable to render help for report: %v\n", err)
+			return 1
+		}
 		return 0
 	case "daemon":
-		printMainUsage(os.Stdout)
+		printMainUsage(stdout)
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown help topic: %s\n\n", args[0])
-		printMainUsage(os.Stderr)
+		_, _ = fmt.Fprintf(stderr, "Unknown help topic: %s\n\n", args[0])
+		printMainUsage(stderr)
 		return 2
 	}
 }

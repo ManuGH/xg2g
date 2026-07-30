@@ -16,6 +16,7 @@ The standard installation is:
 - Docker Engine with the Compose v2 plugin;
 - the pinned multi-architecture xg2g image, including FFmpeg;
 - `xg2g.service`, supervised by systemd;
+- an `xg2g(1)` manual page available through `man xg2g`;
 - a backend exposed only as `127.0.0.1:8088`;
 - protected configuration in `/etc/xg2g/xg2g.env`;
 - durable state in `/var/lib/xg2g`;
@@ -40,15 +41,12 @@ is a mutable source snapshot and cannot prove which container image belongs to
 it. The installer deliberately rejects it. Use the versioned Linux archive from
 [GitHub Releases](https://github.com/ManuGH/xg2g/releases).
 
-> **Release availability:** the currently published `v3.8.1` Linux archives
-> predate the guided installer and do not contain
-> `infra/systemd/setup-linux.sh`. Do not combine installer files from `main`
-> with that older image. Until the first release carrying the complete
-> installation bundle is published, use the
-> [one-container local evaluation](GETTING_STARTED.md#2-alternative-one-container-local-evaluation)
-> or follow the operator documentation attached to the exact older tag. The
-> download block below validates the archive and stops with a clear error when
-> a release predates the guided installer.
+> **Release availability:** official Linux archives from `v3.9.0` onward are
+> self-contained installation bundles and include
+> `infra/systemd/setup-linux.sh`. Older archives predate the guided installer;
+> do not combine installer files from `main` with an older image. The download
+> block below validates the archive and stops with a clear error when a release
+> predates the guided installer.
 
 ## 1. Prepare the Linux host
 

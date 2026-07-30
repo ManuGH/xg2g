@@ -1,0 +1,114 @@
+.TH XG2G 1 "2026-07-30" "xg2g" "User Commands"
+.SH NAME
+xg2g \- serve Enigma2 live TV and recordings as browser-ready HLS
+.SH SYNOPSIS
+.B xg2g
+.RB [ \-\-config
+.IR path ]
+.RB [ \-\-version ]
+.br
+.B xg2g
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+.B xg2g
+is a Linux server daemon that connects to an Enigma2/OpenWebIF receiver,
+selects direct-play, remux, or transcode paths, and exposes a WebUI and a
+versioned HTTP API.
+.PP
+The supported persistent installation runs the daemon in a hardened container
+managed by Docker Compose and systemd. Running
+.B xg2g
+without a command starts the daemon.
+.SH COMMANDS
+.TP
+.B config
+Validate, dump, or migrate configuration files.
+.TP
+.B entitlements
+Inspect and manage commercial unlock overrides.
+.TP
+.B storage
+Verify SQLite storage and inspect decision history.
+.TP
+.B preflight
+Run lifecycle checks against the effective configuration.
+.TP
+.B healthcheck
+Probe daemon readiness or liveness.
+.TP
+.B diagnostic
+Trigger an authenticated diagnostic action.
+.TP
+.B status
+Show verified daemon status through the authenticated API.
+.TP
+.B report
+Generate a redacted JSON evidence bundle.
+.TP
+.B help
+Show help for a command.
+.SH OPTIONS
+.TP
+.BI \-\-config " path"
+Load the YAML configuration at
+.IR path .
+.TP
+.B \-\-version
+Print release, commit, and build metadata, then exit.
+.TP
+.B \-h
+.TQ
+.B \-\-help
+Show command-specific help where supported.
+.SH EXAMPLES
+Validate a configuration:
+.PP
+.nf
+xg2g config validate -f /etc/xg2g/config.yaml
+.fi
+.PP
+Probe readiness:
+.PP
+.nf
+xg2g healthcheck --mode=ready --port=8088
+.fi
+.PP
+Show authenticated status:
+.PP
+.nf
+xg2g status --token "$XG2G_API_TOKEN"
+.fi
+.PP
+Write a redacted support report:
+.PP
+.nf
+xg2g report --token "$XG2G_API_TOKEN" --out xg2g-report.json
+.fi
+.SH FILES
+.TP
+.I /etc/xg2g/xg2g.env
+Root-owned service environment and secrets.
+.TP
+.I /etc/xg2g/config.yaml
+Optional system-wide YAML configuration.
+.TP
+.I /var/lib/xg2g
+Persistent runtime state.
+.TP
+.I /srv/xg2g
+Installed Compose, lifecycle, and verification bundle.
+.SH SECURITY
+Non-loopback browser access requires HTTPS. Protect API tokens and signing
+secrets, and keep
+.I /etc/xg2g/xg2g.env
+owned by root with mode 0600.
+.SH SEE ALSO
+.BR docker (1),
+.BR systemctl (1),
+.BR xg2g-admin (8)
+.PP
+Project documentation:
+.UR https://github.com/ManuGH/xg2g
+https://github.com/ManuGH/xg2g
+.UE

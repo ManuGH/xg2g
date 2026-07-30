@@ -49,6 +49,50 @@ fi
 echo "$TAG_VERSION" > "${BACKEND_VERSION_FILE}"
 echo "✅ backend/VERSION updated to ${TAG_VERSION}"
 
+# Keep every non-historical, pinned image example aligned with the release.
+# The release verifier scans the same docs surface and fails on stale tags.
+python3 - <<EOF
+from pathlib import Path
+import re
+
+repo = Path("${REPO_ROOT}")
+tag = "${TAG_VERSION}"
+image_pattern = re.compile(
+    r"ghcr\.io/manugh/xg2g:v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?"
+)
+release_surfaces = [
+    repo / "Dockerfile",
+    repo / "backend/cmd/daemon/deploy/docker-compose.yml",
+]
+for candidate in (repo / "docs").rglob("*.md"):
+    relative = candidate.relative_to(repo).as_posix()
+    if relative.startswith("docs/release/"):
+        continue
+    if relative in {
+        "docs/ops/RELEASE_OUTPUT_CONTRACT.md",
+        "docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md",
+    }:
+        continue
+    release_surfaces.append(candidate)
+
+updated_paths = []
+for path in release_surfaces:
+    text = path.read_text()
+    updated = image_pattern.sub(f"ghcr.io/manugh/xg2g:{tag}", text)
+    if path == repo / "Dockerfile":
+        updated = re.sub(
+            r"(?m)^ARG BUILD_VERSION=v[^\s]+$",
+            f"ARG BUILD_VERSION={tag}",
+            updated,
+            count=1,
+        )
+    if updated != text:
+        path.write_text(updated)
+        updated_paths.append(path.relative_to(repo).as_posix())
+
+print(f"✅ synchronized {len(updated_paths)} pinned release surfaces to {tag}")
+EOF
+
 # Keep the fallback version metadata aligned with the release tag.
 python3 - <<EOF
 from pathlib import Path
@@ -91,9 +135,11 @@ make docs-render
 
 # 4b. Record Behavioral Changes to Walkthrough/Changelog
 # This ensures they are part of the commit history.
-echo "### Behavioral Changes (${TAG_VERSION})" >> "${REPO_ROOT}/CHANGELOG.md"
-cat "docs/release/${TAG_VERSION}_behavioral_changes.txt" >> "${REPO_ROOT}/CHANGELOG.md"
-echo -e "\n" >> "${REPO_ROOT}/CHANGELOG.md"
+{
+    echo "### Behavioral Changes (${TAG_VERSION})"
+    cat "docs/release/${TAG_VERSION}_behavioral_changes.txt"
+    printf '\n\n'
+} >> "${REPO_ROOT}/CHANGELOG.md"
 
 # 5. Update RELEASE_MANIFEST.json
 # Updated exclusively here per Hard Condition #1

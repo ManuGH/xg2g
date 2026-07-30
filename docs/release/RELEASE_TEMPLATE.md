@@ -52,7 +52,7 @@ outcomes, deployment impact, or a specific reliability/security improvement.
 - Quickstart: <https://github.com/ManuGH/xg2g?tab=readme-ov-file#quickstart>
 - API reference: <https://manugh.github.io/xg2g/>
 - Deployment guide: <https://github.com/ManuGH/xg2g/blob/main/docs/ops/DEPLOYMENT.md>
-- Security policy: <https://github.com/ManuGH/xg2g/blob/main/SECURITY.md>
+- Security policy: <https://github.com/ManuGH/xg2g/blob/main/.github/SECURITY.md>
 
 ## Safari/iOS Manual Repro (Gate Z)
 
