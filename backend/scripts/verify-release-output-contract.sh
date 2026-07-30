@@ -212,6 +212,7 @@ verify_release_workflow_contract() {
   assert_contains "${RELEASE_WORKFLOW}" 'Resolve FFmpeg base image reference' "release workflow ffmpeg base gate"
   assert_contains "${RELEASE_WORKFLOW}" 'docker/login-action@' "release workflow ghcr login"
   assert_contains "${RELEASE_WORKFLOW}" 'artifact-metadata: write' "release workflow attestation permission"
+  assert_contains "${RELEASE_WORKFLOW}" 'attestations: write' "release workflow attestation persistence permission"
   assert_contains "${RELEASE_WORKFLOW}" 'id-token: write' "release workflow keyless signing permission"
   assert_contains "${RELEASE_WORKFLOW}" 'anchore/sbom-action/download-syft@' "release workflow syft install"
   assert_contains "${RELEASE_WORKFLOW}" 'sigstore/cosign-installer@' "release workflow cosign install"

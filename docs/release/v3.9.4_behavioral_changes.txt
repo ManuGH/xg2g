@@ -1,0 +1,2 @@
+No application runtime, API, configuration-default, or deployment behavior changes.
+The tagged release workflow can now persist GitHub build-provenance attestations.
