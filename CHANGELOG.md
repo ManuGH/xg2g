@@ -1095,3 +1095,21 @@ Unknown top-level commands and unsupported daemon actions continue to fail
 closed with exit code 2.
 API behavior, configuration defaults, storage and streaming behavior, and
 production deployment state are unchanged.
+
+
+### Behavioral Changes (v3.9.7)
+v3.9.7 Linux installation and verification behavior:
+
+- Guided Linux setup now waits up to five minutes for first-refresh readiness
+  instead of treating the expected initial 503 response as an installation
+  failure.
+- Installed runtime verification resolves the canonical /srv/xg2g bundle
+  without requiring a Git checkout or jq, and normalizes release tags against
+  the plain semantic version reported by the OCI image and binary.
+- Legacy recovery metadata is informational; verified live container identity
+  remains authoritative for the periodic runtime verifier.
+- The installed systemd contract verifier now runs directly from the canonical
+  deployment bundle.
+
+API, configuration, storage, streaming, and authorization contracts are
+unchanged.

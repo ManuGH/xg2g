@@ -27,6 +27,18 @@ Existing installations remain on `sync.sh`; the wizard will not overwrite
 their environment file. The hardened base Compose file continues to publish
 xg2g on loopback only.
 
+## Port Roles
+
+The official production service listens on container port `8088` and is
+published as `127.0.0.1:8088` by default. Every release user gets that same
+local production default on their own host; the port does not grant access to
+the xg2g repository or release process.
+
+Port `8089` is reserved for the maintainer's isolated staging instance when
+production and staging share a host. It is not shipped as an additional public
+service. Repository write access, protected branches, required CI, and the
+tag-only release workflow determine who can change official xg2g releases.
+
 ## HTTPS Ownership
 
 Caddy is not an automatic dependency. The setup prompt makes ownership

@@ -193,6 +193,11 @@ successful release is not a successful release.
 - The default deployment target is staging on `:8089`.
 - Production on `:8088` requires explicit Manuel approval and a separate,
   auditable promotion step.
+- These ports describe runtime roles, not repository permissions. Official
+  installations use `:8088` on their own hosts; `:8089` is reserved for the
+  maintainer staging instance and is not a second public product surface.
+  GitHub write access, protected branches, required CI, and the release
+  workflow control who may change official xg2g code and releases.
 - Do not expose tokens, secrets, JWTs, or private host configuration in chat,
   logs, PR comments, or committed files.
 - Do not use `git reset --hard`, broad cleanup, force-push, or destructive
