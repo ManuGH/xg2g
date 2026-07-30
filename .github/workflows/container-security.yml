@@ -54,6 +54,30 @@ jobs:
           vuln-type: "os,library"
           ignore-unfixed: false
 
+      - name: Generate SBOM for production image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        with:
+          image-ref: xg2g:${{ github.sha }}
+          format: "cyclonedx"
+          output: "sbom-production.json"
+          scan-type: "image"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.4.3
+        with:
+          name: container-sbom
+          path: sbom-production.json
+          retention-days: 90
+
+      - name: Scan SBOM for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        with:
+          scan-type: "sbom"
+          scan-ref: "sbom-production.json"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
       - name: Fail on critical/high vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
@@ -128,52 +152,3 @@ jobs:
         with:
           sarif_file: trivy-fs-results.sarif
           category: release-filesystem
-
-  generate-sbom:
-    name: Generate and Scan SBOM
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # Latest stable
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - name: Build production image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        env:
-          SOURCE_DATE_EPOCH: "0"
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          load: true
-          tags: xg2g:${{ github.sha }}
-          provenance: false
-
-      - name: Generate SBOM for production image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        with:
-          image-ref: xg2g:${{ github.sha }}
-          format: "cyclonedx"
-          output: "sbom-production.json"
-          scan-type: "image"
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.4.3
-        with:
-          name: container-sbom
-          path: sbom-production.json
-          retention-days: 90
-
-      - name: Scan SBOM for vulnerabilities
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
-        with:
-          scan-type: "sbom"
-          scan-ref: "sbom-production.json"
-          format: "table"
-          severity: "CRITICAL,HIGH"
-          exit-code: "0"

@@ -41,7 +41,8 @@
 - `ci`: scheduled deep validation now has one nightly owner, with versioned
   latency/allocation budgets and a machine-readable performance report.
 - `quality`: Go coverage now enforces one repository-owned baseline locally and
-  in CI; release scanners retain SARIF evidence on failing runs.
+  in CI; release scanners retain SARIF evidence on failing runs and reuse one
+  production-image build for vulnerability and SBOM checks.
 - `fix`: RFC 7807 extension fields can no longer spoof the canonical request ID;
   direct-play and HLS route security boundaries now have package-level tests.
 - `perf`: stream-relay reconnect backoff cap tightened 5s→2s (#602);

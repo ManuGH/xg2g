@@ -142,6 +142,9 @@ Purpose: Make CI deterministic, offline-reproducible, and not dependent on GitHu
 - Release image and filesystem scans must upload their SARIF results even when
   an enforcement step fails, so a red release check retains actionable
   scanner-native evidence.
+- Image vulnerability scanning and SBOM generation consume one production
+  image build in the release scanner; duplicate network-bound builds are not
+  permitted.
 
 ## Branch Protection Debt
 - Stable historical workflow/job names are currently preserved to avoid accidental branch-protection drift.

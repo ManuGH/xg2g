@@ -64,6 +64,10 @@ Release scanner failures must retain machine-readable evidence:
 - govulncheck SARIF upload is guarded by artifact existence, not by the success
   of earlier scan steps.
 
+The release container is built once per workflow run. Vulnerability scanning,
+SBOM generation, and SBOM scanning consume that same local image so an
+independent network-bound rebuild cannot create contradictory release evidence.
+
 `make verify-quality-evidence-contract` prevents these uploads from silently
 becoming report-only or disappearing during workflow maintenance.
 

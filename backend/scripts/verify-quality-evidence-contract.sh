@@ -39,6 +39,13 @@ grep -Fq "sarif_file: trivy-fs-results.sarif" "${container_workflow}" ||
   fail "release filesystem SARIF is not uploaded"
 grep -Fq "category: release-filesystem" "${container_workflow}" ||
   fail "release filesystem SARIF category is missing"
+image_build_count="$(
+  grep -Ec 'name: "?Build production image' "${container_workflow}" || true
+)"
+[[ "${image_build_count}" -eq 1 ]] ||
+  fail "Container Security must build the production image exactly once"
+grep -Fq "Generate SBOM for production image" "${container_workflow}" ||
+  fail "the single production image must also produce the release SBOM"
 
 if grep -A4 -F "Upload SARIF to code scanning" "${govuln_workflow}" | grep -Fq "success()"; then
   fail "govulncheck SARIF upload must run even when an earlier scanner step fails"
