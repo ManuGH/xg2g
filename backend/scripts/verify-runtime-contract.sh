@@ -10,7 +10,7 @@ fake_bin="${tmp_dir}/bin"
 mkdir -p "${repo_root}/backend" "$fake_bin"
 printf 'v3.8.1\n' > "${repo_root}/backend/VERSION"
 printf '{"releases":{"v3.8.1":{"digest":"pending"}}}\n' > "${repo_root}/DIGESTS.lock"
-printf '{"active_version":"v3.8.1"}\n' > "${tmp_dir}/runtime_state.json"
+printf '{"active_version":"v3.1.7"}\n' > "${tmp_dir}/runtime_state.json"
 
 cat > "${fake_bin}/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -30,14 +30,14 @@ case "${1:-} ${2:-}" in
   "image inspect")
     template="${4:-}"
     case "$template" in
-      *org.opencontainers.image.version*) printf '%s\n' "${FAKE_DOCKER_VERSION:-v3.8.1}" ;;
+      *org.opencontainers.image.version*) printf '%s\n' "${FAKE_DOCKER_VERSION:-3.8.1}" ;;
       *RepoDigests*) ;;
       *) exit 2 ;;
     esac
     ;;
   "exec xg2g")
     if [[ "${4:-}" == "--version" ]]; then
-      printf '%s (commit: test, built: test)\n' "${FAKE_DOCKER_VERSION:-v3.8.1}"
+      printf '%s (commit: test, built: test)\n' "${FAKE_DOCKER_VERSION:-3.8.1}"
       exit 0
     fi
     if [[ "${4:-}" == "healthcheck" ]]; then
@@ -74,10 +74,10 @@ if FAKE_DOCKER_HEALTHCHECK_FAIL=1 run_verifier >"${tmp_dir}/health-error" 2>&1; 
 fi
 grep -Fq "live API healthcheck failed" "${tmp_dir}/health-error"
 
-if FAKE_DOCKER_VERSION=v3.7.2 run_verifier >"${tmp_dir}/version-error" 2>&1; then
+if FAKE_DOCKER_VERSION=3.7.2 run_verifier >"${tmp_dir}/version-error" 2>&1; then
   echo "ERROR: runtime verifier accepted a stale image version" >&2
   exit 1
 fi
-grep -Fq "expected 'v3.8.1'" "${tmp_dir}/version-error"
+grep -Fq "expected '3.8.1'" "${tmp_dir}/version-error"
 
 echo "OK: runtime verifier fails closed on user, health, and version drift."

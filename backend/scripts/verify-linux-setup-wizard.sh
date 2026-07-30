@@ -29,6 +29,8 @@ assert_contains() {
 bash -n "${SETUP}"
 help_output="$("${SETUP}" --help)"
 grep -Fq -- "never partitions, formats, mounts, or deletes" <<< "${help_output}"
+assert_contains "${SETUP}" 'readiness_deadline=$((SECONDS + 300))'
+assert_contains "${SETUP}" 'readiness did not converge within 5 minutes'
 
 shared_root="$(mktemp -d)"
 TEMP_DIRS+=("${shared_root}")

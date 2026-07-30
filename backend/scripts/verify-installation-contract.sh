@@ -316,6 +316,8 @@ verify_install_tree() {
   assert_file "${srv_root}/scripts/verify-systemd-runtime-contract.sh"
   assert_mode "${srv_root}/scripts/verify-systemd-runtime-contract.sh" "755" "systemd runtime verifier mode"
   assert_executable "${srv_root}/scripts/verify-systemd-runtime-contract.sh" "systemd runtime verifier executable"
+  "${srv_root}/scripts/verify-systemd-runtime-contract.sh" >/dev/null ||
+    fail "installed systemd runtime verifier must execute from the canonical install bundle"
 
   assert_file "${srv_root}/scripts/verify-installation-contract.sh"
   assert_mode "${srv_root}/scripts/verify-installation-contract.sh" "755" "installation verifier mode"

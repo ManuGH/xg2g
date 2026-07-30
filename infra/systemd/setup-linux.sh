@@ -846,7 +846,8 @@ run_sync() {
 }
 
 start_service() {
-  local helper attempt ca_cert headers_file connectivity_file
+  local helper attempt ca_cert headers_file connectivity_file readiness_deadline
+  local local_readiness=0
   local curl_tls=()
   [[ "${NO_START}" -eq 0 ]] || {
     info "installation prepared but not started (--no-start)"
@@ -870,8 +871,16 @@ start_service() {
     systemctl enable --now xg2g-caddy.service
   fi
   "${helper}" --storage-layout
-  curl -fsS --max-time 10 http://127.0.0.1:8088/readyz >/dev/null ||
-    fail "xg2g started but readiness failed; run: journalctl -u xg2g -n 100 --no-pager"
+  readiness_deadline=$((SECONDS + 300))
+  while [[ "${SECONDS}" -lt "${readiness_deadline}" ]]; do
+    if curl -fsS --max-time 10 http://127.0.0.1:8088/readyz >/dev/null 2>&1; then
+      local_readiness=1
+      break
+    fi
+    sleep 2
+  done
+  [[ "${local_readiness}" -eq 1 ]] ||
+    fail "xg2g started but readiness did not converge within 5 minutes; run: journalctl -u xg2g -n 100 --no-pager"
   if [[ -n "${HTTPS_ORIGIN}" ]]; then
     ca_cert="/var/lib/xg2g-caddy/data/caddy/pki/authorities/local/root.crt"
     attempt=0

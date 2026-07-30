@@ -4,7 +4,17 @@
 
 set -euo pipefail
 
-REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${REPO_ROOT:-}" ]]; then
+    if REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel 2>/dev/null)"; then
+        :
+    elif [[ -f "${SCRIPT_DIR}/../VERSION" && -f "${SCRIPT_DIR}/../DIGESTS.lock" ]]; then
+        REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    else
+        echo "❌ FAIL: unable to locate repository or installed runtime truth" >&2
+        exit 1
+    fi
+fi
 VERSION_FILE="${REPO_ROOT}/backend/VERSION"
 LOCK_FILE="${REPO_ROOT}/DIGESTS.lock"
 RUNTIME_SNAPSHOT="${XG2G_RUNTIME_SNAPSHOT:-/var/lib/xg2g/runtime_state.json}"
@@ -18,11 +28,12 @@ fail() {
 }
 
 command -v docker >/dev/null 2>&1 || fail "docker is required"
-command -v jq >/dev/null 2>&1 || fail "jq is required"
+command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 [[ -f "$VERSION_FILE" ]] || fail "version file is missing: $VERSION_FILE"
 [[ -f "$LOCK_FILE" ]] || fail "digest lock is missing: $LOCK_FILE"
 
-TARGET_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
+TARGET_RELEASE_TAG="$(tr -d '[:space:]' < "$VERSION_FILE")"
+TARGET_VERSION="${TARGET_RELEASE_TAG#v}"
 [[ -n "$TARGET_VERSION" ]] || fail "canonical version is empty"
 echo "🔍 Verifying Runtime Truth against ${TARGET_VERSION}..."
 
@@ -56,8 +67,18 @@ docker exec "$CONTAINER_NAME" xg2g healthcheck \
     --timeout=5s >/dev/null || fail "live API healthcheck failed"
 echo "✅ Live API healthcheck passed"
 
-EXPECTED_DIGEST="$(jq -r --arg version "$TARGET_VERSION" '.releases[$version].digest // empty' "$LOCK_FILE")"
-[[ -n "$EXPECTED_DIGEST" ]] || fail "DIGESTS.lock has no entry for ${TARGET_VERSION}"
+EXPECTED_DIGEST="$(
+    python3 - "$LOCK_FILE" "$TARGET_RELEASE_TAG" <<'PY'
+import json
+import sys
+
+path, version = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    payload = json.load(handle)
+print(payload.get("releases", {}).get(version, {}).get("digest", ""))
+PY
+)"
+[[ -n "$EXPECTED_DIGEST" ]] || fail "DIGESTS.lock has no entry for ${TARGET_RELEASE_TAG}"
 
 LIVE_DIGEST="$(
     docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image_id" 2>/dev/null |
@@ -100,10 +121,21 @@ CURRENT_FINGERPRINT="$(calculate_config_hash)"
 echo "✅ Configuration fingerprint: ${CURRENT_FINGERPRINT}"
 
 if [[ -f "$RUNTIME_SNAPSHOT" ]]; then
-    SNAPSHOT_VERSION="$(jq -r '.active_version // empty' "$RUNTIME_SNAPSHOT")"
-    [[ "$SNAPSHOT_VERSION" == "$TARGET_VERSION" ]] || \
-        fail "node truth '${SNAPSHOT_VERSION:-missing}' differs from repo truth '${TARGET_VERSION}'"
-    echo "✅ Node truth version: ${SNAPSHOT_VERSION}"
+    SNAPSHOT_VERSION="$(
+        python3 - "$RUNTIME_SNAPSHOT" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+print(payload.get("active_version", ""))
+PY
+    )" || SNAPSHOT_VERSION=""
+    if [[ -n "$SNAPSHOT_VERSION" && "${SNAPSHOT_VERSION#v}" == "$TARGET_VERSION" ]]; then
+        echo "✅ Recovery metadata version: ${SNAPSHOT_VERSION}"
+    else
+        echo "⚠️  Stale recovery metadata ignored; live container identity remains authoritative."
+    fi
 fi
 
 echo "✨ Runtime Identity Verified."
