@@ -76,6 +76,11 @@ against `checksums.txt`, and confirm the archive contains
 sudo ./infra/systemd/setup-linux.sh
 ```
 
+Releases from v3.9.2 also publish an SPDX SBOM for each archive, a keyless
+Sigstore bundle for `checksums.txt`, and GitHub build-provenance attestations.
+The complete installation guide shows the optional `cosign` and `gh
+attestation verify` commands.
+
 Older archives may predate the guided installer. Do not combine current
 installer files with an older release image; the
 [complete installation guide](docs/guides/INSTALLATION.md) includes an
