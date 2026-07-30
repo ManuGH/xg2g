@@ -36,6 +36,9 @@ jobs:
       - name: Verify workflow action refs are SHA-pinned
         run: ./backend/scripts/verify-action-pins.sh --local-only
 
+      - name: Verify required checks run for every PR
+        run: ./backend/scripts/verify-required-check-triggers.sh
+
   check-large-files:
     name: Prevent Large Files
     runs-on: ubuntu-latest
