@@ -1067,3 +1067,6 @@ checksums gain a keyless Sigstore bundle, OCI manifests are signed and attested,
 and GitHub publishes the draft only after remote multi-architecture verification.
 
 
+### Behavioral Changes (v3.9.3)
+No application runtime, API, configuration-default, or deployment behavior changes.
+The tagged release build now uses the repository-pinned Node 24 toolchain and npm cache.
