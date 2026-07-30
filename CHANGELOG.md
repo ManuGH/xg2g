@@ -1086,3 +1086,12 @@ Maintainer staging builds now use only the clean, isolated LXC build checkout
 and fail closed when the target path is dirty or is not a Git checkout.
 API behavior, configuration defaults, streaming behavior, and production
 deployment state are unchanged.
+
+
+### Behavioral Changes (v3.9.6)
+The official OCI image now accepts its governed `daemon run` command and starts
+the existing long-lived daemon instead of rejecting the container entrypoint.
+Unknown top-level commands and unsupported daemon actions continue to fail
+closed with exit code 2.
+API behavior, configuration defaults, storage and streaming behavior, and
+production deployment state are unchanged.

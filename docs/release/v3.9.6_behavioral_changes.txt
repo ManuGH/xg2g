@@ -1,0 +1,6 @@
+The official OCI image now accepts its governed `daemon run` command and starts
+the existing long-lived daemon instead of rejecting the container entrypoint.
+Unknown top-level commands and unsupported daemon actions continue to fail
+closed with exit code 2.
+API behavior, configuration defaults, storage and streaming behavior, and
+production deployment state are unchanged.
