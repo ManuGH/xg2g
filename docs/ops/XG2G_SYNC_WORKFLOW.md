@@ -42,6 +42,49 @@ Ein Git-Commit bedeutet nicht automatisch „fertig“:
 
 Kein Agent darf einen Zustand stillschweigend in den nächsten überführen.
 
+### Verbindliche Umgebungszustände
+
+Die Portnummer ist niemals ein Versionssignal. Die laufenden Artefakte dürfen
+nur einen dieser beiden Zustände bilden:
+
+- **`baseline`**: Produktion `:8088` und Staging `:8089` haben dasselbe
+  unveränderliche OCI-Image, denselben Git-Commit und denselben
+  Binary-SHA-256-Hash. In diesem Zustand gibt es keinen Binary-Override.
+- **`candidate`**: Staging ist ein nachweislicher Git-Nachfolger von Produktion
+  und das schema-v2 Deployment-Manifest nennt exakt seinen Commit und
+  Binary-Hash.
+
+`stale` (Staging älter), `diverged`, ein abweichender Build desselben Commits
+und ein nicht im Manifest erfasster Kandidat sind Fehlerzustände. Prüfen:
+
+```bash
+scripts/check-deployment-state.sh
+```
+
+Der direkte Runtime-Host ist standardmäßig der SSH-Alias `xg2g-dev` und kann
+für Status und Baseline-Sync gezielt mit `XG2G_RUNTIME_HOST` überschrieben
+werden. Diese Variable ist absichtlich von `XG2G_DEPLOY_HOST` des
+Proxmox-Promotion-Schritts getrennt.
+
+Auf LXC 110 sind beide Runtime-Ports an Loopback gebunden. Produktion wird
+ausschließlich über den verwalteten Reverse Proxy erreicht; Staging nur über
+einen ausdrücklichen SSH-/VPN-Operatorpfad. Ein Publish auf `0.0.0.0:8089`
+oder unbeschränktes IPv6 ist ein Fehlerzustand.
+
+Nach einer Image-basierten Produktionsaktualisierung wird Staging ohne Neubau
+auf das tatsächlich laufende Produktionsartefakt zurückgeführt:
+
+```bash
+scripts/sync-staging-baseline.sh --confirm-staging-baseline
+scripts/check-deployment-state.sh
+```
+
+Der Baseline-Sync pinnt das Staging-Compose auf den tatsächlich laufenden
+Produktions-Image-Digest, entfernt den nur für Kandidaten erlaubten
+Binary-Override, erzwingt `127.0.0.1:8089` und erstellt den Staging-Container
+mit seiner bestehenden Umgebungs- und Datenkonfiguration neu. Produktion,
+Produktionsdaten und die logischen Portrollen bleiben unverändert.
+
 Auf dem Mac:
 
 ```bash
@@ -74,6 +117,22 @@ gepushten Remote-Branch entspricht. Es deployt ausschließlich den Teststand
 auf `:8089`; Produktion `:8088` bleibt unberührt. `--confirm-staging` bestätigt
 nur den Start dieses Testdeployments, nicht die Produktionsreife.
 
+Ein schneller Branch-Binary-Test ist niemals direkt promotbar. Für eine
+Produktionsfreigabe wird nach Veröffentlichung des unveränderlichen
+Release-Images exakt dieses Image separat auf Staging geprüft:
+
+```bash
+scripts/stage-release-candidate.sh --ref vX.Y.Z --confirm-staging
+scripts/check-deployment-state.sh
+scripts/promote_production.sh --ref vX.Y.Z --confirm-production
+```
+
+Der Promote-Schritt akzeptiert nur den exakt passenden Staging-Tag und
+Git-Commit. Er verwendet im LXC den kanonischen Installationspfad
+`xg2g-admin update`; eine rohe Binary wird niemals in Produktion kopiert.
+Nach erfolgreicher Produktionsprüfung stellt derselbe Befehl automatisch den
+`baseline`-Zustand wieder her.
+
 ## Statusprüfung
 
 ```bash
@@ -86,6 +145,11 @@ Die Prüfung zeigt mindestens:
 - GitHub-Commit des aktuellen Branches,
 - LXC-Build-Checkout inklusive Commit und Dirty-Count,
 - Staging-Manifest, Health und laufenden Binary-Hash.
+
+Für die verbindliche Produktions-/Staging-Beziehung ist zusätzlich
+`scripts/check-deployment-state.sh` auszuführen. Der Befehl liest die
+Prozessmetadaten mit `xg2g --version`, vergleicht die tatsächlichen
+Image-IDs und Binary-Hashes und schlägt bei jedem unerlaubten Zustand fehl.
 
 Abweichungen sind normal, solange sie erklärbar sind. Ein uncommitted Mac-
 Stand darf gegenüber GitHub und LXC voraus sein. Der LXC-Build-Checkout muss

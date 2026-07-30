@@ -102,6 +102,7 @@ next="/srv/xg2g-staging/xg2g-staging-binary.next"
 destination="/srv/xg2g-staging/xg2g-staging-binary"
 compose_file="/srv/xg2g-staging/docker-compose.yml"
 storage_overlay="/srv/xg2g-staging/docker-compose.storage.yml"
+candidate_overlay="/srv/xg2g-staging/docker-compose.candidate.yml"
 env_file="/etc/xg2g/xg2g-staging.env"
 
 read_env_value() {
@@ -129,6 +130,17 @@ chmod 0755 "${next}"
 mv "${next}" "${destination}"
 
 compose_args=(--project-directory /srv/xg2g-staging -f "${compose_file}")
+cat >"${candidate_overlay}.next" <<EOF
+services:
+  xg2g:
+    volumes:
+      - type: bind
+        source: '${destination}'
+        target: /usr/local/bin/xg2g
+        read_only: true
+EOF
+mv "${candidate_overlay}.next" "${candidate_overlay}"
+compose_args+=(-f "${candidate_overlay}")
 hls_root="$(read_env_value XG2G_HLS_ROOT 2>/dev/null || true)"
 require_mount="$(read_env_value XG2G_HLS_REQUIRE_MOUNT 2>/dev/null || true)"
 case "${require_mount,,}" in
@@ -187,8 +199,16 @@ done
 }
 
 running_sha="$(docker exec xg2g-staging sha256sum /usr/local/bin/xg2g | awk '{print $1}')"
+running_image_id="$(docker inspect --format '{{.Image}}' xg2g-staging)"
 [[ "${running_sha}" == "${expected_sha}" ]] || {
   echo "ERROR: running staging hash ${running_sha} != ${expected_sha}" >&2
+  exit 1
+}
+version_line="$(docker exec xg2g-staging /usr/local/bin/xg2g --version)"
+running_commit="$(sed -n 's/.*(commit: \([0-9a-fA-F]\{7,40\}\), built:.*/\1/p' <<<"${version_line}")"
+running_version="$(awk '{print $1}' <<<"${version_line}")"
+[[ "${commit}" == "${running_commit}" ]] || {
+  echo "ERROR: running staging commit ${running_commit:-missing} != ${commit}" >&2
   exit 1
 }
 if [[ -n "${hls_root}" ]]; then
@@ -198,8 +218,20 @@ if [[ -n "${hls_root}" ]]; then
     exit 1
   }
 fi
-printf '%s %s\n' "${commit}" "${expected_sha}" > /srv/xg2g-staging/deploy-manifest
+manifest_next="/srv/xg2g-staging/deploy-manifest.next"
+{
+  printf 'schema=2\n'
+  printf 'mode=candidate\n'
+  printf 'source=github\n'
+  printf 'version=%s\n' "${running_version}"
+  printf 'commit=%s\n' "${commit}"
+  printf 'sha256=%s\n' "${expected_sha}"
+  printf 'image_id=%s\n' "${running_image_id}"
+  printf 'deployed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} >"${manifest_next}"
+mv "${manifest_next}" /srv/xg2g-staging/deploy-manifest
 REMOTE
 
 echo "Staging deployment complete: commit=${commit} sha256=${expected_sha} port=8089"
 echo "Production :8088 was not touched."
+"${ROOT}/scripts/check-deployment-state.sh"

@@ -193,6 +193,29 @@ successful release is not a successful release.
 - The default deployment target is staging on `:8089`.
 - Production on `:8088` requires explicit Manuel approval and a separate,
   auditable promotion step.
+- A release promotion always stages the exact published OCI release first:
+  `scripts/stage-release-candidate.sh --ref vX.Y.Z --confirm-staging`. Only
+  that exact tag/commit may then be promoted with
+  `scripts/promote_production.sh --ref vX.Y.Z --confirm-production`.
+  Production uses the installed canonical `xg2g-admin update` path; copying a
+  raw binary into production is prohibited.
+- Runtime lifecycle has exactly two valid steady states:
+  `baseline` means `:8088` and `:8089` run the exact same immutable image,
+  commit, and binary hash with no staging binary override; `candidate` means
+  `:8089` runs a Git-descendant of production and its schema-v2 deploy
+  manifest identifies that commit and hash. Staging may never
+  remain older than production, diverge from production, or carry an untracked
+  candidate. Run `scripts/check-deployment-state.sh` before and after every
+  staging deployment or production promotion.
+- Both maintainer runtime ports are loopback-only on LXC 110. `:8088` is
+  reached through the governed production reverse proxy; `:8089` is reached
+  only through an explicit SSH/VPN operator path and must never be published
+  on `0.0.0.0` or unrestricted IPv6.
+- After a candidate is promoted, mark staging as `baseline`. If production was
+  updated through the release-image path instead of binary promotion, run
+  `scripts/sync-staging-baseline.sh --confirm-staging-baseline` immediately
+  after production verification. This copies the exact running production
+  artifact; it does not rebuild it.
 - These ports describe runtime roles, not repository permissions. Official
   installations use `:8088` on their own hosts; `:8089` is reserved for the
   maintainer staging instance and is not a second public product surface.
