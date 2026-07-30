@@ -15,6 +15,17 @@ import {
   readPlaybackFrameCounters,
   type HlsRenderProbeSnapshot,
 } from './playbackRenderProbe';
+import {
+  extractHlsHttpStatus,
+  isNonFatalHlsStallDetail,
+  playbackRecoveryInfoForWarning,
+  PLAYBACK_WARNING_CODE_DECODER_RECOVERY,
+  PLAYBACK_WARNING_CODE_HLS_LEADGAP,
+  PLAYBACK_WARNING_CODE_HLS_NONFATAL,
+  PLAYBACK_WARNING_CODE_NETWORK_RETRY,
+  PLAYBACK_WARNING_CODE_STALLED,
+  PLAYBACK_WARNING_CODE_WAITING,
+} from './playbackEngineTelemetryModel';
 import { isInMemorySeekTarget } from './orchestrator/nativePlaybackHelpers';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
@@ -30,26 +41,6 @@ type PrimePlaybackAuthFn = (playbackUrl: string, source: string) => Promise<void
 
 const NATIVE_STALL_RECOVERY_MS = 2500;
 const HLS_STALL_RECOVERY_MS = 2200;
-const PLAYBACK_WARNING_CODE_WAITING = 101;
-const PLAYBACK_WARNING_CODE_STALLED = 102;
-const PLAYBACK_WARNING_CODE_DECODER_RECOVERY = 103;
-const PLAYBACK_WARNING_CODE_NETWORK_RETRY = 104;
-const PLAYBACK_WARNING_CODE_HLS_NONFATAL = 105;
-const PLAYBACK_WARNING_CODE_HLS_LEADGAP = 106;
-
-// hls.js ErrorDetails (string-valued) for the non-fatal events that manifest a
-// live stall / rough cold-start. hls.js self-recovers from these, so they were
-// dropped silently - which left the backend blind to WHY playback froze. We now
-// surface this stall class to server telemetry for diagnosis.
-const NON_FATAL_STALL_DETAILS = new Set<string>([
-  'bufferStalledError',
-  'bufferSeekOverHole',
-  'bufferNudgeOnStall',
-  'bufferAppendError',
-]);
-const PLAYBACK_INFO_CODE_RECOVERED_BUFFERING = 211;
-const PLAYBACK_INFO_CODE_RECOVERED_NETWORK = 212;
-const PLAYBACK_INFO_CODE_RECOVERED_DECODER = 213;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_STARTED = 220;
 const PLAYBACK_INFO_CODE_PROBE_WINDOW_CONFIRMED = 221;
 const PLAYBACK_INFO_CODE_HLSJS_RENDER_PLAYING = 240;
@@ -94,29 +85,6 @@ interface PlaybackEngineController {
   playDirectMp4: (url: string) => void;
 }
 
-function playbackRecoveryInfoForWarning(code: number): { code: number; message: string } | null {
-  switch (code) {
-    case PLAYBACK_WARNING_CODE_WAITING:
-    case PLAYBACK_WARNING_CODE_STALLED:
-      return { code: PLAYBACK_INFO_CODE_RECOVERED_BUFFERING, message: 'recovered_buffering' };
-    case PLAYBACK_WARNING_CODE_NETWORK_RETRY:
-      return { code: PLAYBACK_INFO_CODE_RECOVERED_NETWORK, message: 'recovered_network' };
-    case PLAYBACK_WARNING_CODE_DECODER_RECOVERY:
-      return { code: PLAYBACK_INFO_CODE_RECOVERED_DECODER, message: 'recovered_decoder' };
-    default:
-      return null;
-  }
-}
-
-function extractHlsHttpStatus(data: ErrorData): number | undefined {
-  const candidates = [
-    (data as { response?: { code?: number; status?: number } }).response?.code,
-    (data as { response?: { code?: number; status?: number } }).response?.status,
-    (data as { networkDetails?: { status?: number } }).networkDetails?.status,
-  ];
-
-  return candidates.find((value): value is number => typeof value === 'number');
-}
 export function usePlaybackEngine({
   videoRef,
   hlsRef,
@@ -1051,7 +1019,7 @@ export function usePlaybackEngine({
           // telemetry (deduped per session by reportPlaybackWarning) so the
           // reason is diagnosable from logs. Recovery behaviour is unchanged:
           // hls.js still self-recovers; this only adds observability.
-          if (NON_FATAL_STALL_DETAILS.has(data.details as string)) {
+          if (isNonFatalHlsStallDetail(data.details)) {
             const sv = videoRef.current;
             const sct = sv ? sv.currentTime : -1;
             const srs = sv ? sv.readyState : -1;
