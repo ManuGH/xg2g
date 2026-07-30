@@ -135,10 +135,12 @@ make docs-render
 
 # 4b. Record Behavioral Changes to Walkthrough/Changelog
 # This ensures they are part of the commit history.
+behavioral_changes="$(cat "docs/release/${TAG_VERSION}_behavioral_changes.txt")"
 {
-    echo "### Behavioral Changes (${TAG_VERSION})"
-    cat "docs/release/${TAG_VERSION}_behavioral_changes.txt"
-    printf '\n\n'
+    printf '\n\n### Behavioral Changes (%s)\n' "${TAG_VERSION}"
+    if [[ -n "${behavioral_changes}" ]]; then
+        printf '%s\n' "${behavioral_changes}"
+    fi
 } >> "${REPO_ROOT}/CHANGELOG.md"
 
 # 5. Update the checked-in release intent.

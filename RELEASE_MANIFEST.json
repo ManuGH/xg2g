@@ -1,8 +1,8 @@
 {
-  "version": "v3.9.3",
+  "version": "v3.9.4",
   "git_sha": null,
   "image": "ghcr.io/manugh/xg2g",
-  "tag": "v3.9.3",
+  "tag": "v3.9.4",
   "digest": null,
   "build_time_utc": null,
   "provenance_ref": null,
