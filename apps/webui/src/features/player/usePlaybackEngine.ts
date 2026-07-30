@@ -26,6 +26,12 @@ import {
   PLAYBACK_WARNING_CODE_STALLED,
   PLAYBACK_WARNING_CODE_WAITING,
 } from './playbackEngineTelemetryModel';
+import {
+  createHlsRuntimeConfig,
+  hlsNetworkRetryBackoffMs,
+  HLS_NETWORK_RETRY_POLICY,
+  HLS_STARTUP_POLICY,
+} from './playbackEnginePolicy';
 import { isInMemorySeekTarget } from './orchestrator/nativePlaybackHelpers';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
@@ -820,44 +826,7 @@ export function usePlaybackEngine({
       if (hlsRef.current) {
         hlsRef.current.destroy();
       }
-      const hls = new Hls({
-        debug: false,
-        // Own the buffer via ManagedMediaSource on Safari 17.1+ (the app-owned path
-        // the migration relies on); pinned so a future hls.js default change can't
-        // silently fall back to plain MSE (which breaks AirPlay and the MMS lifecycle).
-        // ALWAYS prefer MMS. Safari requires MMS for AV1 decoding.
-        // If MMS blocks sourceopen in background tabs, the backend session might rot,
-        // but it will seamlessly recover when foregrounded instead of permanently failing
-        // on unsupported plain MSE for AV1.
-        preferManagedMediaSource: true,
-        enableWorker: true,
-        // Engages only when the playlist advertises EXT-X-PART (server flag
-        // hls.lowLatency); on regular playlists this is a no-op, so the
-        // stable non-LL path is unchanged.
-        lowLatencyMode: true,
-        backBufferLength: 300,
-        maxBufferLength: 60,
-        capLevelToPlayerSize: true,
-        liveSyncDuration: 12,
-        // Rate-based live catch-up is disabled: heartbeat telemetry showed the
-        // latency controller periodically driving playbackRate to 1.05, which
-        // Safari renders as visible judder (50fps video drops to ~29 eff. fps)
-        // and time-compressed audio — the recurring "stutter + audio dropout".
-        // With a multi-hour DVR window, slowly drifting behind the live edge
-        // is harmless; 1 keeps hls.js from ever touching playbackRate.
-        maxLiveSyncPlaybackRate: 1,
-        // Broadcast copy/passthrough sources (DVB relay) deliver imperfect DTS,
-        // so the muxed segments carry small timestamp gaps ("Invalid DTS …
-        // replacing by guess"). hls.js's default maxBufferHole (0.1s) is too
-        // tight to jump those, stranding live TV at the gap until the nudge
-        // retries are exhausted ("hlsjs stall recovery failed"). Widen the
-        // hole-skip and give the nudge a few more tries so playback rides over a
-        // bad-DTS gap instead of stalling. No effect on clean streams: with no
-        // buffer hole, none of these engage.
-        maxBufferHole: 1.0,
-        nudgeOffset: 0.2,
-        nudgeMaxRetry: 6
-      });
+      const hls = new Hls(createHlsRuntimeConfig());
       hlsRef.current = hls;
 
       // Live startup gate: on a fresh live session the encoder edge is only
@@ -867,11 +836,6 @@ export function usePlaybackEngine({
       // jolt seconds after start). Live input is realtime-paced, so headroom
       // can only come from waiting: hold play() until a small buffer target
       // exists (or a cap elapses). VOD playlists open the gate immediately.
-      const START_GATE_TARGET_SECONDS = 4.5;
-      const START_GATE_TIMEOUT_MS = 6000;
-      const SLOW_BUILD_RATE = 0.955;
-      const SLOW_BUILD_TARGET_AHEAD_SECONDS = 8;
-      const SLOW_BUILD_MAX_MS = 150000;
       let slowBuildActive = false;
       let slowBuildTimer: number | null = null;
       let startGateOpen = false;
@@ -916,10 +880,17 @@ export function usePlaybackEngine({
         }
         debugLog('[V3Player] Startup gate open', { reason, bufferedAhead: bufferedAheadSeconds().toFixed(2) });
         const gateVideo = videoRef.current;
-        if (reason !== 'vod' && gateVideo && bufferedAheadSeconds() < SLOW_BUILD_TARGET_AHEAD_SECONDS) {
+        if (
+          reason !== 'vod' &&
+          gateVideo &&
+          bufferedAheadSeconds() < HLS_STARTUP_POLICY.slowBuildTargetSeconds
+        ) {
           slowBuildActive = true;
-          gateVideo.playbackRate = SLOW_BUILD_RATE;
-          slowBuildTimer = window.setTimeout(() => restorePlaybackRate('timeout'), SLOW_BUILD_MAX_MS);
+          gateVideo.playbackRate = HLS_STARTUP_POLICY.slowBuildPlaybackRate;
+          slowBuildTimer = window.setTimeout(
+            () => restorePlaybackRate('timeout'),
+            HLS_STARTUP_POLICY.slowBuildMaxMs,
+          );
         }
         videoRef.current?.play().catch((err) => {
           debugWarn('[V3Player] Autoplay failed', err);
@@ -949,14 +920,20 @@ export function usePlaybackEngine({
             setStats((prev) => ({ ...prev, fps: first.frameRate || 0 }));
           }
         }
-        startGateTimer = window.setTimeout(() => openStartGate('timeout'), START_GATE_TIMEOUT_MS);
+        startGateTimer = window.setTimeout(
+          () => openStartGate('timeout'),
+          HLS_STARTUP_POLICY.timeoutMs,
+        );
       });
 
       hls.on(Hls.Events.BUFFER_APPENDED, () => {
-        if (!startGateOpen && bufferedAheadSeconds() >= START_GATE_TARGET_SECONDS) {
+        if (!startGateOpen && bufferedAheadSeconds() >= HLS_STARTUP_POLICY.bufferTargetSeconds) {
           openStartGate('buffer_target');
         }
-        if (slowBuildActive && bufferedAheadSeconds() >= SLOW_BUILD_TARGET_AHEAD_SECONDS) {
+        if (
+          slowBuildActive &&
+          bufferedAheadSeconds() >= HLS_STARTUP_POLICY.slowBuildTargetSeconds
+        ) {
           restorePlaybackRate('target_reached');
         }
       });
@@ -1008,8 +985,7 @@ export function usePlaybackEngine({
 
       let mediaRecoveryAttempted = false;
       let networkRetryCount = 0;
-      const maxNetworkRetries = 6;
-      const networkBackoffCapMs = 30_000;
+      const { maxRetries: maxNetworkRetries } = HLS_NETWORK_RETRY_POLICY;
 
       hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal) {
@@ -1116,7 +1092,7 @@ export function usePlaybackEngine({
               return;
             }
             if (networkRetryCount < maxNetworkRetries) {
-              const backoffMs = Math.min(1000 * Math.pow(2, networkRetryCount), networkBackoffCapMs);
+              const backoffMs = hlsNetworkRetryBackoffMs(networkRetryCount);
               networkRetryCount++;
               reportPlaybackWarning(PLAYBACK_WARNING_CODE_NETWORK_RETRY, 'hlsjs_network_retry', 'network', networkRetryCount);
               debugWarn(`[V3Player] NETWORK_ERROR recovery attempt ${networkRetryCount}/${maxNetworkRetries}, backoff ${backoffMs}ms`);
