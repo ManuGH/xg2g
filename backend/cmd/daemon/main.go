@@ -40,6 +40,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Usage:")
 	_, _ = fmt.Fprintln(w, "  xg2g [--config path] [--version]")
+	_, _ = fmt.Fprintln(w, "  xg2g daemon run [--config path]")
 	_, _ = fmt.Fprintln(w, "  xg2g version")
 	_, _ = fmt.Fprintln(w, "  xg2g config <command> [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g entitlements <command> [flags]")
@@ -52,6 +53,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g help [command]")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Commands:")
+	_, _ = fmt.Fprintln(w, "  daemon       Run the long-lived xg2g service")
 	_, _ = fmt.Fprintln(w, "  version      Print version and build metadata")
 	_, _ = fmt.Fprintln(w, "  config       Validate, dump, and migrate config files")
 	_, _ = fmt.Fprintln(w, "  entitlements Inspect and manage commercial unlock overrides")
@@ -72,6 +74,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Examples:")
 	_, _ = fmt.Fprintln(w, "  xg2g --config /etc/xg2g/config.yaml")
+	_, _ = fmt.Fprintln(w, "  xg2g daemon run --config /etc/xg2g/config.yaml")
 	_, _ = fmt.Fprintln(w, "  xg2g version")
 	_, _ = fmt.Fprintln(w, "  xg2g config validate -f /etc/xg2g/config.yaml")
 	_, _ = fmt.Fprintln(w, "  xg2g entitlements list --token $XG2G_API_TOKEN --principal-id viewer")
@@ -105,7 +108,7 @@ func handleImmediateMainCommand(stdout, stderr io.Writer, args []string) (bool, 
 		}
 		printVersion(stdout)
 		return true, 0
-	case "help", "config", "entitlements", "storage", "preflight",
+	case "daemon", "help", "config", "entitlements", "storage", "preflight",
 		"healthcheck", "diagnostic", "status", "report":
 		return false, 0
 	default:
@@ -113,6 +116,18 @@ func handleImmediateMainCommand(stdout, stderr io.Writer, args []string) (bool, 
 		printMainUsage(stderr)
 		return true, 2
 	}
+}
+
+func normalizeDaemonArgs(stderr io.Writer, args []string) ([]string, int) {
+	if len(args) == 0 || args[0] != "daemon" {
+		return args, 0
+	}
+	if len(args) < 2 || args[1] != "run" {
+		_, _ = fmt.Fprintln(stderr, "Usage: xg2g daemon run [--config path]")
+		printMainUsage(stderr)
+		return nil, 2
+	}
+	return args[2:], 0
 }
 
 func rejectDaemonPositionals(stderr io.Writer, args []string) int {
@@ -200,7 +215,8 @@ func exitCodeForErr(err error) int {
 }
 
 func main() {
-	if handled, code := handleImmediateMainCommand(os.Stdout, os.Stderr, os.Args[1:]); handled {
+	cliArgs := os.Args[1:]
+	if handled, code := handleImmediateMainCommand(os.Stdout, os.Stderr, cliArgs); handled {
 		os.Exit(code)
 	}
 
@@ -233,12 +249,20 @@ func main() {
 		}
 	}
 
+	var code int
+	cliArgs, code = normalizeDaemonArgs(os.Stderr, cliArgs)
+	if code != 0 {
+		os.Exit(code)
+	}
+
 	flag.Usage = func() {
 		printMainUsage(flag.CommandLine.Output())
 	}
 	showVersion := flag.Bool("version", false, "print version and exit")
 	configPath := flag.String("config", "", "path to config file (YAML)")
-	flag.Parse()
+	if err := flag.CommandLine.Parse(cliArgs); err != nil {
+		os.Exit(2)
+	}
 
 	if code := rejectDaemonPositionals(os.Stderr, flag.Args()); code != 0 {
 		os.Exit(code)

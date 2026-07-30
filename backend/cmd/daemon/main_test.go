@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -89,7 +90,7 @@ func TestMainUsageListsExecutableCommands(t *testing.T) {
 	var out bytes.Buffer
 	printMainUsage(&out)
 
-	for _, command := range []string{"version", "status", "report"} {
+	for _, command := range []string{"daemon", "version", "status", "report"} {
 		if !strings.Contains(out.String(), "  "+command) {
 			t.Fatalf("main help does not list %q:\n%s", command, out.String())
 		}
@@ -132,6 +133,11 @@ func TestHandleImmediateMainCommand(t *testing.T) {
 			wantHandled: false,
 		},
 		{
+			name:        "daemon command continues to normalizer",
+			args:        []string{"daemon", "run"},
+			wantHandled: false,
+		},
+		{
 			name:        "daemon flags continue to flag parser",
 			args:        []string{"--config", "/etc/xg2g/config.yaml"},
 			wantHandled: false,
@@ -160,6 +166,76 @@ func TestHandleImmediateMainCommand(t *testing.T) {
 				t.Fatalf("stderr missing %q: %q", tt.wantStderr, stderr.String())
 			}
 		})
+	}
+}
+
+func TestNormalizeDaemonArgs(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantArgs   []string
+		wantCode   int
+		wantStderr string
+	}{
+		{
+			name:     "container entrypoint",
+			args:     []string{"daemon", "run"},
+			wantArgs: nil,
+		},
+		{
+			name:     "explicit daemon flags",
+			args:     []string{"daemon", "run", "--config", "/etc/xg2g/config.yaml"},
+			wantArgs: []string{"--config", "/etc/xg2g/config.yaml"},
+		},
+		{
+			name:     "legacy no argument daemon",
+			args:     nil,
+			wantArgs: nil,
+		},
+		{
+			name:       "missing run action",
+			args:       []string{"daemon"},
+			wantCode:   2,
+			wantStderr: "Usage: xg2g daemon run",
+		},
+		{
+			name:       "unknown daemon action",
+			args:       []string{"daemon", "stop"},
+			wantCode:   2,
+			wantStderr: "Usage: xg2g daemon run",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			gotArgs, gotCode := normalizeDaemonArgs(&stderr, tt.args)
+			if gotCode != tt.wantCode {
+				t.Fatalf("normalizeDaemonArgs(%q) code = %d, want %d", tt.args, gotCode, tt.wantCode)
+			}
+			if strings.Join(gotArgs, "\x00") != strings.Join(tt.wantArgs, "\x00") {
+				t.Fatalf("normalizeDaemonArgs(%q) args = %q, want %q", tt.args, gotArgs, tt.wantArgs)
+			}
+			if tt.wantStderr != "" && !strings.Contains(stderr.String(), tt.wantStderr) {
+				t.Fatalf("stderr missing %q: %q", tt.wantStderr, stderr.String())
+			}
+		})
+	}
+}
+
+func TestReleaseContainerCommandUsesSupportedDaemonCommand(t *testing.T) {
+	dockerfile, err := os.ReadFile("../../../infra/docker/Dockerfile.release")
+	if err != nil {
+		t.Fatalf("read release Dockerfile: %v", err)
+	}
+	if !strings.Contains(string(dockerfile), `CMD ["daemon", "run"]`) {
+		t.Fatalf("release Dockerfile does not declare the governed daemon command")
+	}
+
+	var stderr bytes.Buffer
+	args, code := normalizeDaemonArgs(&stderr, []string{"daemon", "run"})
+	if code != 0 || len(args) != 0 || stderr.Len() != 0 {
+		t.Fatalf("release container command rejected: args=%q code=%d stderr=%q", args, code, stderr.String())
 	}
 }
 
