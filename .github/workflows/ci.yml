@@ -6,30 +6,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-    paths:
-      - "android/**"
-      - "backend/**/*.go"
-      - ".github/**"
-      - backend/go.mod
-      - backend/go.sum
-      - "backend/api/openapi.yaml"
-      - "backend/config.example.yaml"
-      - "backend/config.generated.example.yaml"
-      - "docs/**"
-      - "backend/e2e/**"
-      - "backend/internal/**"
-      - "Dockerfile"
-      - "Dockerfile.*"
-      - "docker-compose*.yml"
-      - "README.md"
-      - "backend/scripts/**"
-      - "scripts/**"
-      - "Makefile"
-      - "backend/templates/**"
-      - "apps/webui/**"
-      - "VERSION"
-      - "WORKFLOW.md"
-      - "mk/**"
+    # This workflow emits a branch-protection-required check. It must run for
+    # every PR; path filters would leave unmatched PRs permanently "Expected".
 
 permissions:
   contents: read

@@ -17,6 +17,10 @@ Purpose: Make CI deterministic, offline-reproducible, and not dependent on GitHu
 ## Scope Policy
 - Any diff-scoped workflow decision is security-relevant and must be fail-closed.
 - If scope resolution is ambiguous, missing commit context, or diff computation fails, the workflow must run the broader check set instead of skipping.
+- A workflow that emits a branch-protection-required check must trigger for
+  every PR without top-level `paths` or `paths-ignore` filters. Expensive work
+  may be selected inside the workflow, but the required check itself must
+  always be reported.
 - `.github/workflows/lint.yml` uses `backend/scripts/ci/resolve-lint-scope.sh` for this reason.
 
 ## PR Gate (Required Core)
