@@ -1,147 +1,139 @@
-# Phase 5.3 Runbook: Soak & Load Validation (Nightly Gate)
+# Phase 5.3 Runbook: Playback Lifecycle Soak
 
-## 0) Scope
+## Scope
 
-**Validate under sustained load:**
+`xg2g-soak` is an operator-run staging check for the current v3 playback
+lifecycle:
 
-- Admission correctness: 503 before spawn; deterministic decisions
-- Preemption correctness: Recording > Live > Pulse
-- Token correctness: No GPU token leaks; orphan recovery works
-- Hermetic invariants: UTI/ffmpeg independent of host libs
-- Observability truth: metrics/logs reflect reality
+1. resolve playback truth at `/api/v3/live/stream-info`;
+2. start a session through `/api/v3/intents`;
+3. wait for a playable session;
+4. maintain its heartbeat while it is held; and
+5. stop every accepted session.
 
-**Non-Goals:** Performance tuning, new config knobs, contract weakening.
+The harness records lifecycle counts, cleanup failures, mean ready latency, the
+random seed, and a pass/fail verdict in a private JSON report.
 
----
+It does **not** prove GPU saturation, tuner preemption, CPU-pressure admission,
+process/container chaos recovery, or hermetic library resolution. Those require
+dedicated hardware-aware probes and must not be inferred from a green lifecycle
+soak.
 
-## 1) Gate Strategy
+## Safety boundary
 
-### PR Gate (Fast, Every PR)
+- Mutating profiles accept only loopback staging on port `8089`.
+- Production port `8088` is rejected unconditionally.
+- `--confirm-staging`, a private token file, and at least one real service
+  reference are mandatory.
+- API tokens are never accepted as command-line arguments. The token file must
+  be a regular file with mode `0600` or stricter.
+- The harness does not send signals to processes or stop containers.
+
+These controls are defense in depth. Before a run, the operator remains
+responsible for confirming that `127.0.0.1:8089` maps to the intended staging
+instance and that the supplied channels may be exercised.
+
+## Build and unit gate
+
+From the repository root:
 
 ```bash
-go test -race ./internal/admission/...
+go test -race ./backend/cmd/xg2g-soak
+mkdir -p ./artifacts/bin
+go build -o ./artifacts/bin/xg2g-soak ./backend/cmd/xg2g-soak
 ```
 
-- Determinism property test (seeded) for `CanAdmit` + `SelectPreemptionTarget`
-- No-spawn guarantee test must remain green
-- **Hard fail**: Any flake is stop-the-line
+The tests pin the current v3 request contract, mandatory cleanup, loopback/port
+guards, token-file permissions, Prometheus fail-closed behavior, and the
+duration/concurrency scheduler.
 
-### Nightly Soak Gate (8h+, Dedicated VAAPI Host)
+## Read-only smoke
 
-- Full load matrix + chaos + hermetic probes
-- Artifact capture (logs/metrics/traces)
-- Automatic pass/fail scoring
+Smoke checks `/readyz`. If `--prom-url` is provided, it also requires exactly
+one selected xg2g `up` series with value `1`.
 
----
+```bash
+go run ./backend/cmd/xg2g-soak \
+  --profile smoke \
+  --base-url http://127.0.0.1:8089 \
+  --prom-url http://127.0.0.1:9090 \
+  --prom-selector '{job="xg2g",instance="xg2g-main"}' \
+  --artifact-dir ./artifacts/soak/smoke
+```
 
-## 2) Required Instrumentation
+Omit the Prometheus flags when the monitoring overlay is not running. A smoke
+run without `--prom-url` proves readiness only.
 
-### Metrics (Prometheus)
+## Staging soak
 
-| Metric | Labels |
-|--------|--------|
-| `xg2g_admission_admit_total` | priority |
-| `xg2g_admission_reject_total` | reason, priority |
-| `xg2g_preempt_total` | victim_priority, request_priority |
-| `xg2g_active_sessions` | priority |
-| `xg2g_gpu_tokens_in_use` | - |
-| `xg2g_tuners_in_use` | - |
+Create a private token file without placing the token in shell history:
 
-### Logs (Structured)
+```bash
+install -m 0600 /dev/null /tmp/xg2g-soak-token
+${EDITOR:-vi} /tmp/xg2g-soak-token
+```
 
-Every reject/preempt logs: `requestId`, `service_ref`, `priority`, `reason`,
-snapshot: `loadavg1m`, `cores`, `gpu_tokens_in_use`, `tuners_in_use`
+Then run a bounded staging soak with real Enigma2 service references:
 
----
+```bash
+go run ./backend/cmd/xg2g-soak \
+  --profile soak \
+  --base-url http://127.0.0.1:8089 \
+  --confirm-staging \
+  --token-file /tmp/xg2g-soak-token \
+  --service-ref '1:0:1:445D:453:1:C00000:0:0:0:' \
+  --duration 1h \
+  --cycles-per-second 0.1 \
+  --max-inflight 2 \
+  --hold 15s \
+  --ready-timeout 45s \
+  --artifact-dir ./artifacts/soak/staging
+```
 
-## 3) Soak Harness
+Repeat `--service-ref` to distribute cycles deterministically across multiple
+channels. Set `--seed` to reproduce the same channel-selection sequence.
 
-**Responsibilities:**
+The `nightly` profile uses the same checks and defaults to an eight-hour
+submission window:
 
-- Generate traffic (Pulse/Live/Recording) with controlled ratios
-- Maintain session lifecycles
-- Inject chaos (SIGKILL UTI, container kill, tuner starvation)
-- Query Prometheus, assert invariants
-- Emit scoreboard + verdict
+```bash
+go run ./backend/cmd/xg2g-soak \
+  --profile nightly \
+  --base-url http://127.0.0.1:8089 \
+  --confirm-staging \
+  --token-file /tmp/xg2g-soak-token \
+  --service-ref '1:0:1:445D:453:1:C00000:0:0:0:' \
+  --artifact-dir ./artifacts/soak/nightly
+```
 
-**Baseline Mix:** 60% Pulse, 35% Live, 5% Recording
+Nightly execution is operator-triggered until a dedicated staging/hardware
+runner and secret delivery path are established. Repository CI must not point a
+mutating soak at a shared or production instance.
 
----
+## Verdict and artifacts
 
-## 4) Scenarios & Pass/Fail
+The command exits non-zero when readiness, the optional Prometheus target, any
+playback lifecycle, or any session cleanup fails. It writes:
 
-### A) GPU Saturation
+```text
+<artifact-dir>/report.json
+```
 
-| Step | Action |
-|------|--------|
-| 1 | Drive Live until `gpu_tokens == limit` |
-| 2 | Attempt +N Live for 15 min |
+The report has mode `0600` and includes at most the first 100 detailed failures
+while retaining complete aggregate counts. Preserve the seed and report with
+the matching service logs for diagnosis. Reports may contain service
+references and operational details and must not be committed.
 
-| Pass | Fail |
-|------|------|
-| All surplus → 503 | Any spawn on reject |
-| Tokens never exceed limit | Token gauge > limit |
-| Reject counter matches | Token never returns to baseline |
+## Closure criteria
 
-### B) Tuner Exhaustion + Preemption
+Phase 5.3 is complete only when evidence from the current harness shows:
 
-| Pass | Fail |
-|------|------|
-| Recording admitted | Recording rejected while lower runs |
-| Victims: Pulse first, then Live | Recording ever preempted |
-| Victims get 410 Gone | Wrong status codes |
+- [ ] three consecutive eight-hour staging runs pass;
+- [ ] every accepted session is stopped successfully;
+- [ ] no playback lifecycle fails;
+- [ ] ready latency remains inside the agreed staging SLO; and
+- [ ] reports and matching service telemetry are retained for each run.
 
-### C) CPU Pressure (30s Window)
-
-| Pass | Fail |
-|------|------|
-| Rejects begin after ~30s | Early rejects |
-| Rejects stop after recovery | Indefinite rejection |
-| No flapping (≤1 transition/min) | Severe flapping |
-
-### D) Orphan Recovery (SIGKILL)
-
-| Pass | Fail |
-|------|------|
-| Tokens reclaimed in 5–30s | Token leak over time |
-| Admission recovers | Tokens stuck after all stop |
-| No 8h capacity loss | Deadlocks/stalls |
-
-### E) Hermetic Probe
-
-| Pass | Fail |
-|------|------|
-| UTI executes with masked /lib* | Dynamic resolution outside bundle |
-
----
-
-## 5) Alert Thresholds
-
-Fire fail-fast if:
-
-- `gpu_tokens_in_use` doesn't return to baseline
-- `admission_reject_total` spikes without load increase
-- `preempt_total` increases without Recording requests
-- Deadman: no admits for >N min while resources free
-
----
-
-## 6) Output Artifacts
-
-- Harness report (scenario pass/fail + counts)
-- Prometheus snapshot
-- Structured logs with request IDs
-- Crash dumps / stack traces
-- Random seeds for reproducibility
-
----
-
-## 7) Closure Criteria
-
-Phase 5.3 complete when:
-
-- [x] 3 consecutive nightly runs pass
-- [x] Zero token leaks
-- [x] Zero "spawn on reject"
-- [x] Priority invariants never violated
-- [x] Hermetic probe passes
+GPU/tuner saturation, priority/preemption, CPU-pressure admission, chaos
+recovery, and hermetic execution are separate future gates with their own
+instrumentation and acceptance criteria.

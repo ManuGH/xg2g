@@ -1,199 +1,134 @@
-// Package main implements the xg2g-soak harness for Phase 5.3 validation.
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// PromClient provides Prometheus query capabilities for the harness.
-type PromClient struct {
+type promClient struct {
 	baseURL    string
-	selector   string // e.g., {job="xg2g",instance="xg2g-main"}
+	selector   string
 	httpClient *http.Client
 }
 
-// NewPromClient creates a new Prometheus client with selector.
-func NewPromClient(baseURL, selector string) *PromClient {
-	if selector == "" {
-		selector = `{job="xg2g",instance="xg2g-main"}`
+type promQueryResult struct {
+	Status    string `json:"status"`
+	ErrorType string `json:"errorType"`
+	Error     string `json:"error"`
+	Data      struct {
+		ResultType string `json:"resultType"`
+		Value      []any  `json:"value"`
+		Result     []struct {
+			Value []any `json:"value"`
+		} `json:"result"`
+	} `json:"data"`
+}
+
+func newPromClient(baseURL, selector string, httpClient *http.Client) *promClient {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &PromClient{
-		baseURL:  baseURL,
-		selector: selector,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+	return &promClient{
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		selector:   strings.TrimSpace(selector),
+		httpClient: httpClient,
 	}
 }
 
-// Metric returns a metric name with the configured selector injected.
-// Handles both "name" -> "name{selector}" and "name{label='val'}" -> "name{label='val',selector}"
-func (p *PromClient) Metric(name string) string {
+func (p *promClient) metric(name string) (string, error) {
 	if p.selector == "" || p.selector == "{}" {
-		return name
+		return name, nil
 	}
-	// Strip braces from selector
-	inner := p.selector
-	if inner[0] == '{' {
-		inner = inner[1:]
+	if !strings.HasPrefix(p.selector, "{") || !strings.HasSuffix(p.selector, "}") {
+		return "", errors.New("prometheus selector must be enclosed in braces")
 	}
-	if inner[len(inner)-1] == '}' {
-		inner = inner[:len(inner)-1]
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(p.selector, "{"), "}"))
+	if inner == "" {
+		return name, nil
 	}
-
-	// Logic:
-	if idx := strings.LastIndex(name, "}"); idx != -1 {
-		// Insert before closing brace
-		return name[:idx] + "," + inner + "}"
+	if idx := strings.LastIndex(name, "}"); idx >= 0 {
+		return name[:idx] + "," + inner + "}", nil
 	}
-	return name + "{" + inner + "}"
+	return name + "{" + inner + "}", nil
 }
 
-// QueryValue executes an instant query and returns the scalar value.
-// Returns 0 if no data or error.
-func (p *PromClient) QueryValue(query string) (float64, error) {
-	u, err := url.Parse(p.baseURL + "/api/v1/query")
+func (p *promClient) queryValue(ctx context.Context, query string) (float64, error) {
+	endpoint, err := url.Parse(p.baseURL + "/api/v1/query")
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("parse prometheus URL: %w", err)
 	}
-	q := u.Query()
-	q.Set("query", query)
-	u.RawQuery = q.Encode()
+	values := endpoint.Query()
+	values.Set("query", query)
+	endpoint.RawQuery = values.Encode()
 
-	resp, err := p.httpClient.Get(u.String())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("create prometheus request: %w", err)
 	}
-	defer func() {
-		// best-effort close
-		_ = resp.Body.Close()
-	}()
-
-	body, err := io.ReadAll(resp.Body)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("query prometheus: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return 0, responseError("Prometheus query", resp)
 	}
 
 	var result promQueryResult
-	if err := json.Unmarshal(body, &result); err != nil {
-		return 0, err
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decode prometheus response: %w", err)
 	}
-
 	if result.Status != "success" {
-		return 0, fmt.Errorf("prometheus query failed: %s", result.Status)
+		return 0, fmt.Errorf("prometheus query failed (%s): %s", result.ErrorType, result.Error)
 	}
 
-	// Handle different result types
-	if result.Data.ResultType == "scalar" {
-		if len(result.Data.Value) >= 2 {
-			if val, ok := result.Data.Value[1].(string); ok {
-				var f float64
-				if _, err := fmt.Sscanf(val, "%f", &f); err != nil {
-					return 0, fmt.Errorf("failed to parse scalar value: %w", err)
-				}
-				return f, nil
-			}
+	switch result.Data.ResultType {
+	case "scalar":
+		return parsePromValue(result.Data.Value)
+	case "vector":
+		if len(result.Data.Result) != 1 {
+			return 0, fmt.Errorf("prometheus query returned %d series, expected exactly one", len(result.Data.Result))
 		}
+		return parsePromValue(result.Data.Result[0].Value)
+	default:
+		return 0, fmt.Errorf("unsupported prometheus result type %q", result.Data.ResultType)
 	}
-
-	// For vector results, take first value
-	if len(result.Data.Result) == 0 {
-		return 0, nil // No data
-	}
-
-	if len(result.Data.Result[0].Value) >= 2 {
-		val, ok := result.Data.Result[0].Value[1].(string)
-		if ok {
-			var f float64
-			if _, err := fmt.Sscanf(val, "%f", &f); err != nil {
-				return 0, fmt.Errorf("failed to parse vector value: %w", err)
-			}
-			return f, nil
-		}
-	}
-
-	return 0, nil
 }
 
-// QueryDelta returns increase in a counter over the given window.
-func (p *PromClient) QueryDelta(metric string, window string) (float64, error) {
-	query := fmt.Sprintf("increase(%s[%s])", metric, window)
-	return p.QueryValue(query)
-}
-
-// QueryMax returns max value over the given window.
-func (p *PromClient) QueryMax(metric string, window string) (float64, error) {
-	query := fmt.Sprintf("max_over_time(%s[%s])", metric, window)
-	return p.QueryValue(query)
-}
-
-// WaitForAtLeast waits until metric >= target with tolerance.
-func (p *PromClient) WaitForAtLeast(query string, target float64, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	tolerance := 0.01
-	for time.Now().Before(deadline) {
-		val, err := p.QueryValue(query)
-		if err == nil && val >= target-tolerance {
-			return nil
-		}
-		time.Sleep(5 * time.Second)
+func parsePromValue(value []any) (float64, error) {
+	if len(value) < 2 {
+		return 0, errors.New("prometheus value is missing")
 	}
-	val, _ := p.QueryValue(query)
-	return fmt.Errorf("condition not met: got %.2f, wanted >= %.2f", val, target)
-}
-
-// WaitForAtMost waits until metric <= target with tolerance.
-func (p *PromClient) WaitForAtMost(query string, target float64, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	tolerance := 0.01
-	for time.Now().Before(deadline) {
-		val, err := p.QueryValue(query)
-		if err == nil && val <= target+tolerance {
-			return nil
-		}
-		time.Sleep(5 * time.Second)
+	raw, ok := value[1].(string)
+	if !ok {
+		return 0, errors.New("prometheus value is not a string")
 	}
-	val, _ := p.QueryValue(query)
-	return fmt.Errorf("condition not met: got %.2f, wanted <= %.2f", val, target)
-}
-
-// WaitStable waits until metric stays at target for the given duration.
-func (p *PromClient) WaitStable(query string, target float64, stableFor, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	tolerance := 0.01
-	stableStart := time.Time{}
-
-	for time.Now().Before(deadline) {
-		val, err := p.QueryValue(query)
-		if err == nil && val >= target-tolerance && val <= target+tolerance {
-			if stableStart.IsZero() {
-				stableStart = time.Now()
-			} else if time.Since(stableStart) >= stableFor {
-				return nil
-			}
-		} else {
-			stableStart = time.Time{} // Reset
-		}
-		time.Sleep(5 * time.Second)
+	number, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse prometheus value %q: %w", raw, err)
 	}
-	return fmt.Errorf("metric did not stabilize at %.2f for %v", target, stableFor)
+	return number, nil
 }
 
-// promQueryResult is the Prometheus API response structure.
-type promQueryResult struct {
-	Status string `json:"status"`
-	Data   struct {
-		ResultType string `json:"resultType"`
-		Value      []any  `json:"value"` // For scalar
-		Result     []struct {
-			Metric map[string]string `json:"metric"`
-			Value  []any             `json:"value"`
-		} `json:"result"` // For vector
-	} `json:"data"`
+func (p *promClient) targetUp(ctx context.Context) error {
+	metric, err := p.metric("up")
+	if err != nil {
+		return err
+	}
+	value, err := p.queryValue(ctx, metric)
+	if err != nil {
+		return err
+	}
+	if value != 1 {
+		return fmt.Errorf("prometheus target up value is %.0f, expected 1", value)
+	}
+	return nil
 }
