@@ -2,13 +2,27 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+INSTALLED_MODE=false
+if git -C "${SCRIPT_DIR}" rev-parse --show-toplevel >/dev/null 2>&1; then
+  REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
+elif [[ -f "${SCRIPT_DIR}/../docs/ops/xg2g.service" ]]; then
+  REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  INSTALLED_MODE=true
+else
+  echo "ERROR: unable to locate repository or installed systemd contract bundle" >&2
+  exit 1
+fi
 
 UNIT_TEMPLATE="${REPO_ROOT}/backend/templates/docs/ops/xg2g.service.tmpl"
 CANONICAL_DEPLOY_UNIT="${REPO_ROOT}/infra/systemd/xg2g.service"
 RUNBOOK="${REPO_ROOT}/docs/ops/RUNBOOK_SYSTEMD_COMPOSE.md"
 COMPOSE_HELPER="${REPO_ROOT}/backend/scripts/compose-xg2g.sh"
 COMPOSE_CONTRACT="${REPO_ROOT}/backend/scripts/verify-compose-contract.sh"
+if [[ "${INSTALLED_MODE}" == "true" ]]; then
+  CANONICAL_DEPLOY_UNIT="${REPO_ROOT}/docs/ops/xg2g.service"
+  COMPOSE_HELPER="${REPO_ROOT}/scripts/compose-xg2g.sh"
+  COMPOSE_CONTRACT="${REPO_ROOT}/scripts/verify-compose-contract.sh"
+fi
 
 CANONICAL_ROOT="/srv/xg2g"
 CANONICAL_ENV_FILE="/etc/xg2g/xg2g.env"
@@ -166,13 +180,23 @@ main() {
       ;;
   esac
 
-  verify_unit_render_sync
+  if [[ "${INSTALLED_MODE}" == "false" ]]; then
+    verify_unit_render_sync
+  fi
   verify_unit_semantics "${CANONICAL_DEPLOY_UNIT}"
   verify_helper_semantics
-  verify_runbook_semantics
-  verify_negative_drift_guard
+  if [[ "${INSTALLED_MODE}" == "false" ]]; then
+    verify_runbook_semantics
+  fi
+  if [[ "${INSTALLED_MODE}" == "false" ]]; then
+    verify_negative_drift_guard
+  fi
 
-  echo "OK: systemd runtime contract holds."
+  if [[ "${INSTALLED_MODE}" == "true" ]]; then
+    echo "OK: installed systemd runtime contract holds."
+  else
+    echo "OK: systemd runtime contract holds."
+  fi
 }
 
 main "$@"
