@@ -264,22 +264,31 @@ worktree.
 `xg2g` is a Linux/Go/Docker application. The Mac checkout is a development
 client, not the runtime host.
 
-**Updated 2026-07-22 (post-migration to `pve2`):** OpenClaw was never adopted
+**Updated 2026-07-30 (verified against LXC 110):** OpenClaw was never adopted
 in production. The `/root/xg2g` read-only mirror and `/root/xg2g-build`
 detached build checkout described in older revisions of this section did not
-reflect a live process and have been retired — do not recreate them.
+reflect the live topology and have been retired — do not recreate them.
 
 - GitHub is the canonical source for committed code.
 - The Mac `StudioProjects` checkout is where Manuel develops and reviews.
-  Never a build or deployment source.
+  It may run local validation, but it is never a Linux runtime or deployment
+  surface.
 - The Proxmox hypervisor (`pve2`, see infra docs) has no build role and no
   `xg2g` checkout. It is VM/LXC management plane only.
-- **LXC 110 `/srv/xg2g` and `/srv/xg2g-staging` are the authoring AND build
-  checkouts, in addition to being the runtime surfaces.** `git pull` from
-  `origin` happens directly there; `make build-with-ui` runs in-container;
-  the resulting binary is copied straight onto the bind-mounted path used by
-  the corresponding Docker container — no cross-host binary transfer step.
-  Staging is verified on `:8089`, production on `:8088`.
+- LXC 110 `/srv/xg2g-build` is the only Linux fast-iteration build checkout.
+  It stays clean, detached at an exact pushed commit, and is updated only by
+  the governed staging workflow.
+- LXC 110 `/srv/xg2g-staging` is a deployment surface, not a Git checkout.
+  Its binary and `deploy-manifest` are produced from `/srv/xg2g-build`, and
+  staging is verified on `:8089`.
+- LXC 110 `/srv/xg2g` is the production install/runtime surface defined by
+  [docs/ops/INSTALLATION_CONTRACT.md](docs/ops/INSTALLATION_CONTRACT.md), not
+  an authoring or build checkout. A legacy Git checkout found there is
+  migration drift: capture it, do not pull/build/edit it, and reconcile it
+  only through the canonical install/sync path after explicit production
+  approval. Production is verified on `:8088`.
 
-A clean GitHub commit may be propagated one-way into LXC 110's checkouts; no
-tool may silently synchronize uncommitted files between hosts.
+A clean, pushed GitHub commit may be propagated one-way into the isolated
+`/srv/xg2g-build` checkout and then explicitly deployed to staging. No tool may
+silently synchronize uncommitted files between hosts or build from a runtime
+surface.
