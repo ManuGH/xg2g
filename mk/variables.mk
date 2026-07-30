@@ -54,7 +54,7 @@ FFMPEG_BASE_IMAGE ?= $(DOCKER_IMAGE)-ffmpeg
 FFMPEG_BASE_TAG := $(FFMPEG_BASE_IMAGE):$(FFMPEG_VERSION)
 
 # Coverage thresholds (Locked to Baseline per Governance Policy)
-COVERAGE_THRESHOLD := 43
+COVERAGE_THRESHOLD := 70
 EPG_COVERAGE_THRESHOLD := 85
 
 # Test timeout budgets (STAB-002 fail-closed gating)

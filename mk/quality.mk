@@ -2,7 +2,7 @@
 # Quality Assurance Targets
 # ===================================================================================================
 
-.PHONY: lint lint-fix test test-race test-race-pr test-cover cover test-all test-integration performance-gate smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools pre-push hooks-install
+.PHONY: lint lint-fix test test-race test-race-pr test-cover print-coverage-threshold cover test-all test-integration performance-gate smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools pre-push hooks-install
 
 pre-push: ## Fast local guard against the PR gate's cheapest failures (gofmt, vet, build) — seconds, not minutes
 	@echo "Checking gofmt..."
@@ -78,11 +78,19 @@ test-cover: ## Run tests with coverage reporting
 	@echo "Running tests with coverage..."
 	@mkdir -p $(ARTIFACTS_DIR)
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && { \
-	  GOTOOLCHAIN=local "$$GO_BIN" test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.out -coverpkg=./internal/...,./test/... ./... && \
-	  GOTOOLCHAIN=local "$$GO_BIN" tool cover -html=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.out -o $(CURDIR)/$(ARTIFACTS_DIR)/coverage.html && \
+	  GOTOOLCHAIN=local "$$GO_BIN" test -count=1 -timeout=$(GO_TEST_COVER_TIMEOUT) -covermode=atomic -coverprofile=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.out -coverpkg=./... ./... && \
+	  GO_BIN="$$GO_BIN" ./scripts/ci/enforce-coverage.sh \
+	    $(CURDIR)/$(ARTIFACTS_DIR)/coverage.out \
+	    $(CURDIR)/$(ARTIFACTS_DIR)/coverage.filtered.out \
+	    $(CURDIR)/$(ARTIFACTS_DIR)/coverage.txt \
+	    $(COVERAGE_THRESHOLD) && \
+	  GOTOOLCHAIN=local "$$GO_BIN" tool cover -html=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.filtered.out -o $(CURDIR)/$(ARTIFACTS_DIR)/coverage.html && \
 	  echo "Coverage report generated: $(ARTIFACTS_DIR)/coverage.html" && \
-	  GOTOOLCHAIN=local "$$GO_BIN" tool cover -func=$(CURDIR)/$(ARTIFACTS_DIR)/coverage.out | tail -1; \
+	  tail -n 1 $(CURDIR)/$(ARTIFACTS_DIR)/coverage.txt; \
 	}
+
+print-coverage-threshold: ## Print the repository-governed minimum Go coverage
+	@printf '%s\n' '$(COVERAGE_THRESHOLD)'
 
 cover: test-cover ## Alias for test-cover
 
@@ -173,7 +181,7 @@ quality-gates-online: verify-generated-artifacts verify-release-output-contract 
 	@echo "Validating quality gates..."
 	@echo "✅ All quality gates passed"
 
-ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-monitoring-contract verify-scheduled-ci-contract verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-maintainer-deploy-topology verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test test-pr ## PR gate check bundle (fast & deterministic)
+ci-pr: lint verify-generated-artifacts verify-release-output-contract verify-compose-resolver verify-monitoring-contract verify-quality-evidence-contract verify-scheduled-ci-contract verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-maintainer-deploy-topology verify-capacity-autocodec-demotion verify-codec-path-matrix verify-client-wrapper webui-test test-pr ## PR gate check bundle (fast & deterministic)
 	@echo "✅ PR gate bundle passed"
 
 test-pr: ## Run deterministic unit tests for PR gate (short mode, no binary dependencies)

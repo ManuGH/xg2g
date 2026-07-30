@@ -55,6 +55,18 @@ must be accompanied by a justification comment.
 2. **Justify**: Explain why it is a false positive or a managed risk.
 3. **Audit**: These annotations are subject to review by security-aware peers.
 
+### 4. Failure Evidence
+
+Release scanner failures must retain machine-readable evidence:
+
+- production-image Trivy SARIF is uploaded as `release-container-image`;
+- release-filesystem Trivy SARIF is uploaded as `release-filesystem`;
+- govulncheck SARIF upload is guarded by artifact existence, not by the success
+  of earlier scan steps.
+
+`make verify-quality-evidence-contract` prevents these uploads from silently
+becoming report-only or disappearing during workflow maintenance.
+
 ---
 
 **Policy Status**: Active
