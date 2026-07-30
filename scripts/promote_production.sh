@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REMOTE_HOST="${XG2G_DEPLOY_HOST:-root@10.10.55.2}"
+REMOTE_HOST="${XG2G_DEPLOY_HOST:-pve2}"
 CTID="${XG2G_DEPLOY_CTID:-110}"
 
 die() {

@@ -2,7 +2,7 @@
 # Governance and Verification Gates
 # ===================================================================================================
 
-.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-webui-router-security verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-runtime-contract verify-hot-reload-governance verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
+.PHONY: verify verify-generated-artifacts verify-generated-artifacts-contract verify-openapi-hard-mode verify-embedded-webui-dist verify-client-ts-fresh verify-webui-router-security verify-config verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-doc-image-tags verify-docs-compiled verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime verify-runtime-contract verify-hot-reload-governance verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle verify-maintainer-deploy-topology verify-public-deployment verify-capacity-autocodec-demotion verify-codec-path-matrix gate-a gate-webui gate-repo-hygiene gate-v3-contract verify-v3-fanout verify-dead-packages
 
 verify: verify-generated-artifacts verify-webui-router-security verify-doc-links verify-capabilities contract-matrix verify-purity contract-freeze-check verify-no-sleep verify-no-panic verify-no-ignored-errors verify-determinism verify-codegen-transport verify-router-parity verify-oapi-codegen-version verify-no-hardcoded-baseurl verify-no-adhoc-terminal-mapping verify-no-adhoc-session-mapping verify-no-hls-startup-policy-client-usage verify-doc-image-tags verify-digest-lock verify-release-policy verify-release-output-contract verify-runtime-contract verify-hot-reload-governance verify-compose-resolver verify-start-surface verify-systemd-runtime-contract verify-installation-contract verify-linux-setup-wizard verify-linux-lifecycle ## Run all hermetic repository governance gates
 
@@ -166,6 +166,9 @@ verify-linux-setup-wizard: ## Verify beginner-safe Linux first-run setup
 
 verify-linux-lifecycle: ## Verify beginner-safe backup, restore, diagnostics, and removal
 	@./$(BACKEND_DIR)/scripts/verify-linux-lifecycle.sh
+
+verify-maintainer-deploy-topology: ## Verify staging/build paths do not use runtime checkouts
+	@./$(BACKEND_DIR)/scripts/verify-maintainer-deploy-topology.sh
 
 verify-capacity-autocodec-demotion: ## Verify deterministic auto-codec capacity/demotion behavior
 	@./$(BACKEND_DIR)/scripts/verify-capacity-autocodec-demotion.sh
