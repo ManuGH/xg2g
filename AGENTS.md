@@ -121,6 +121,48 @@ thread before the thread is resolved — never a silent resolve.
   Manuel remains the escalation point and can revoke this delegation at any
   time. Production promotion is never delegated.
 
+### Release and tag safety
+
+A GitHub release is a separate, auditable publication after merge. It is not a
+deployment and never authorizes staging or production promotion. Follow
+[docs/ops/RELEASE_OUTPUT_CONTRACT.md](docs/ops/RELEASE_OUTPUT_CONTRACT.md) as
+the normative output contract.
+
+1. Prepare every release from a clean, isolated worktree based on the latest
+   `origin/main`. Never release from a feature branch or dirty checkout.
+2. Create and commit
+   `docs/release/vX.Y.Z_behavioral_changes.txt` first, even when it only states
+   that runtime, API, configuration, and deployment behavior are unchanged.
+   Then run `backend/scripts/release-prepare.sh vX.Y.Z` from the clean tree,
+   review every generated change, and commit the preparation coherently.
+3. Put release preparation through a PR. Run `make ci-pr` and `make pre-push`;
+   merge only after all GitHub checks are green and no review thread lacks a
+   fix or written disposition.
+4. Before tagging, fetch `origin/main`, confirm `backend/VERSION` and
+   `RELEASE_MANIFEST.json` match the intended tag, confirm the tag does not
+   exist, and confirm immutable releases are enabled. Create an annotated tag
+   on the exact merged commit and push only that tag.
+5. `.github/workflows/release.yml` is the only release publisher. It must keep
+   the release as a draft until archive/SBOM generation, checksum and OCI
+   signing, remote multi-platform verification, and GitHub attestations have
+   all succeeded. Never bypass a failed workflow with a manual
+   `gh release create`, public draft edit, replacement asset, or moved tag.
+6. Treat every pushed tag as permanent. If a tagged run fails, retain the tag
+   and failed run as audit evidence, remove an incomplete unpublished draft
+   only after recording the failure, fix the cause through a new reviewed PR,
+   and select a new SemVer (normally the next patch). Never delete, reuse, or
+   force-move a failed or published release tag.
+7. Do not report a release complete until the public release is `latest`,
+   non-draft, non-prerelease, and immutable; its exact asset bundle downloads
+   and passes checksums; both SPDX SBOMs parse; file and OCI attestations verify;
+   the version tag and `latest` resolve to the same OCI digest with
+   `linux/amd64` and `linux/arm64`; and the Sigstore checksum and OCI signatures
+   verify against the tagged release workflow identity.
+
+If any verification fails, stop publication or leave it failed closed and
+report the exact run, tag, draft state, and next corrective action. A partially
+successful release is not a successful release.
+
 ### Branch and worktree rules
 
 - Inspect `git status`, branch, worktrees, and remote tracking state before
