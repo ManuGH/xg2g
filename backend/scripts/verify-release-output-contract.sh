@@ -17,6 +17,7 @@ MK_VARIABLES="${REPO_ROOT}/mk/variables.mk"
 FFMPEG_BUILD_SCRIPT="${REPO_ROOT}/backend/scripts/build-ffmpeg.sh"
 RELEASE_PREPARE="${REPO_ROOT}/backend/scripts/release-prepare.sh"
 RELEASE_VERIFY_REMOTE="${REPO_ROOT}/backend/scripts/release-verify-remote.sh"
+RELEASE_VERIFY_REMOTE_CONTRACT="${REPO_ROOT}/backend/scripts/verify-release-remote-contract.sh"
 DIGEST_VERIFY="${REPO_ROOT}/backend/scripts/verify-digest-lock.sh"
 RELEASE_POLICY="${REPO_ROOT}/backend/scripts/verify-release-policy.sh"
 DOC_IMAGE_TAGS="${REPO_ROOT}/backend/scripts/verify-doc-image-tags.sh"
@@ -51,9 +52,12 @@ ALLOWED_GORELEASER_TOP_LEVEL_KEYS=(
   "builds"
   "archives"
   "checksum"
+  "sboms"
+  "signs"
   "snapshot"
   "changelog"
   "dockers_v2"
+  "docker_signs"
   "release"
 )
 
@@ -120,18 +124,33 @@ extract_build_script_ffmpeg_version() {
 
 expected_bundle_files() {
   local version="$1"
+
+  expected_checksum_subject_files "${version}"
+  cat <<'EOF'
+checksums.txt
+checksums.txt.sigstore.json
+EOF
+}
+
+expected_archive_files() {
   local plain
-  plain="$(normalize_plain_version "${version}")"
+  plain="$(normalize_plain_version "$1")"
 
   cat <<EOF
-checksums.txt
 xg2g_${plain}_linux_amd64.tar.gz
 xg2g_${plain}_linux_arm64.tar.gz
 EOF
 }
 
-expected_archive_files() {
-  expected_bundle_files "$1" | grep -v '^checksums.txt$'
+expected_sbom_files() {
+  while IFS= read -r archive; do
+    printf '%s.spdx.json\n' "${archive}"
+  done < <(expected_archive_files "$1")
+}
+
+expected_checksum_subject_files() {
+  expected_archive_files "$1"
+  expected_sbom_files "$1"
 }
 
 assert_allowed_goreleaser_keys() {
@@ -159,8 +178,12 @@ verify_doc_contract() {
   assert_contains "${DOC}" 'Registry Publication Outputs' "release output doc section"
   assert_contains "${DOC}" 'Non-Contract Outputs / Explicit Exclusions' "release output doc section"
   assert_contains "${DOC}" 'checksums.txt' "release output doc asset"
+  assert_contains "${DOC}" 'checksums.txt.sigstore.json' "release output signature"
   assert_contains "${DOC}" 'xg2g_<version>_linux_amd64.tar.gz' "release output doc asset"
+  assert_contains "${DOC}" 'xg2g_<version>_linux_amd64.tar.gz.spdx.json' "release output doc SBOM"
   assert_contains "${DOC}" 'ghcr.io/manugh/xg2g:vX.Y.Z' "release output doc registry tag"
+  assert_contains "${DOC}" 'GitHub artifact attestations' "release output provenance"
+  assert_contains "${DOC}" 'immutable' "release output immutability"
   assert_contains "${DOC}" 'backend/scripts/verify-release-output-contract.sh' "release output doc verifier"
   assert_contains "${DOC}" 'backend/VERSION' "release output doc version source"
   assert_contains "${DOC}" 'RELEASE_MANIFEST.json' "release output doc exclusion"
@@ -182,8 +205,19 @@ verify_release_workflow_contract() {
   assert_contains "${RELEASE_WORKFLOW}" '- "v*"' "release workflow tag trigger"
   assert_matches "${RELEASE_WORKFLOW}" 'goreleaser/goreleaser-action@([[:xdigit:]]{40}|v7)([[:space:]]*#.*v7)?' "release workflow goreleaser action"
   assert_contains "${RELEASE_WORKFLOW}" 'args: release --clean' "release workflow goreleaser args"
+  assert_contains "${RELEASE_WORKFLOW}" 'version: "v2.17.1"' "release workflow pinned goreleaser"
   assert_contains "${RELEASE_WORKFLOW}" 'Resolve FFmpeg base image reference' "release workflow ffmpeg base gate"
   assert_contains "${RELEASE_WORKFLOW}" 'docker/login-action@' "release workflow ghcr login"
+  assert_contains "${RELEASE_WORKFLOW}" 'artifact-metadata: write' "release workflow attestation permission"
+  assert_contains "${RELEASE_WORKFLOW}" 'id-token: write' "release workflow keyless signing permission"
+  assert_contains "${RELEASE_WORKFLOW}" 'anchore/sbom-action/download-syft@' "release workflow syft install"
+  assert_contains "${RELEASE_WORKFLOW}" 'sigstore/cosign-installer@' "release workflow cosign install"
+  assert_contains "${RELEASE_WORKFLOW}" 'Verify published OCI manifest' "release workflow remote verification"
+  assert_contains "${RELEASE_WORKFLOW}" '--require-platform linux/amd64' "release workflow amd64 verification"
+  assert_contains "${RELEASE_WORKFLOW}" '--require-platform linux/arm64' "release workflow arm64 verification"
+  assert_contains "${RELEASE_WORKFLOW}" 'actions/attest@' "release workflow provenance attestation"
+  assert_contains "${RELEASE_WORKFLOW}" 'Publish verified draft' "release workflow draft publication gate"
+  assert_contains "${RELEASE_WORKFLOW}" 'gh release edit "${GITHUB_REF_NAME}" --draft=false --latest' "release workflow final publication"
   assert_contains "${DOCKER_WORKFLOW}" 'branches:' "docker workflow trigger"
   assert_contains "${DOCKER_WORKFLOW}" '- main' "docker workflow main trigger"
   assert_not_contains "${DOCKER_WORKFLOW}" '- "v*"' "docker workflow tag trigger"
@@ -209,12 +243,23 @@ verify_goreleaser_contract() {
   assert_contains "${GORELEASER_CFG}" 'backend/scripts/compose-xg2g.sh' "goreleaser compose helper payload"
   assert_contains "${GORELEASER_CFG}" 'backend/scripts/verify-installation-contract.sh' "goreleaser installation verifier payload"
   assert_contains "${GORELEASER_CFG}" 'name_template: "checksums.txt"' "goreleaser checksum naming"
+  assert_contains "${GORELEASER_CFG}" 'sboms:' "goreleaser SBOM block"
+  assert_contains "${GORELEASER_CFG}" 'artifacts: archive' "goreleaser archive SBOM"
+  assert_contains "${GORELEASER_CFG}" '{{ .ArtifactName }}.spdx.json' "goreleaser SBOM naming"
+  assert_contains "${GORELEASER_CFG}" 'signs:' "goreleaser checksum signing"
+  assert_contains "${GORELEASER_CFG}" 'checksums.txt.sigstore.json' "goreleaser sigstore bundle"
   assert_contains "${GORELEASER_CFG}" 'dockers_v2:' "goreleaser dockers_v2 block"
   assert_contains "${GORELEASER_CFG}" '- "ghcr.io/manugh/xg2g"' "goreleaser dockers_v2 image"
   assert_contains "${GORELEASER_CFG}" '- "{{ .Tag }}"' "goreleaser dockers_v2 version tag"
   assert_contains "${GORELEASER_CFG}" '- "latest"' "goreleaser dockers_v2 latest tag"
   assert_contains "${GORELEASER_CFG}" '- linux/amd64' "goreleaser dockers_v2 amd64 platform"
   assert_contains "${GORELEASER_CFG}" '- linux/arm64' "goreleaser dockers_v2 arm64 platform"
+  assert_contains "${GORELEASER_CFG}" 'sbom: true' "goreleaser container SBOM"
+  assert_contains "${GORELEASER_CFG}" 'docker_signs:' "goreleaser container signing"
+  assert_contains "${GORELEASER_CFG}" 'artifacts: manifests' "goreleaser manifest signing"
+  assert_contains "${GORELEASER_CFG}" 'draft: true' "goreleaser draft-first release"
+  assert_contains "${GORELEASER_CFG}" 'mode: keep-existing' "goreleaser immutable release notes"
+  assert_not_contains "${GORELEASER_CFG}" 'mode: replace' "goreleaser mutable release notes"
   assert_not_contains "${GORELEASER_CFG}" 'build-ffmpeg.sh' "goreleaser release ffmpeg source build"
 }
 
@@ -241,7 +286,13 @@ verify_release_docker_contract() {
 verify_release_input_contract() {
   assert_contains "${RELEASE_PREPARE}" 'backend/VERSION' "release prepare version source"
   assert_contains "${RELEASE_PREPARE}" 'docs/release/' "release prepare behavioral changes path"
+  assert_contains "${RELEASE_PREPARE}" '"git_sha": null' "release prepare honest source provenance"
   assert_contains "${RELEASE_VERIFY_REMOTE}" 'backend/VERSION' "release verify remote version source"
+  assert_contains "${RELEASE_VERIFY_REMOTE}" 'jq -er' "release verify remote JSON parsing"
+  assert_contains "${RELEASE_VERIFY_REMOTE}" 'application/vnd.oci.image.index.v1+json' "release verify OCI index"
+  assert_not_contains "${RELEASE_VERIFY_REMOTE}" 'docker manifest inspect' "release verify docker daemon dependency"
+  assert_not_contains "${RELEASE_VERIFY_REMOTE}" 'DIGESTS.lock updated' "release verify metadata mutation"
+  assert_file "${RELEASE_VERIFY_REMOTE_CONTRACT}"
   assert_contains "${DIGEST_VERIFY}" 'backend/VERSION' "verify-digest-lock version source"
   assert_contains "${RELEASE_POLICY}" 'backend/VERSION' "release policy allowlist"
   assert_contains "${DOC_IMAGE_TAGS}" 'backend/VERSION' "verify-doc-image-tags version fallback"
@@ -303,7 +354,9 @@ assert_release_bundle_dir() {
   local actual_files
   local expected_files
   local actual_checksums
+  local expected_checksum_subjects
   local expected_archives
+  local sbom
   local archive
   local archive_name
   local archive_os
@@ -314,16 +367,32 @@ assert_release_bundle_dir() {
   actual_files="${tmpdir}/actual-files.txt"
   expected_files="${tmpdir}/expected-files.txt"
   actual_checksums="${tmpdir}/actual-checksums.txt"
+  expected_checksum_subjects="${tmpdir}/expected-checksum-subjects.txt"
   expected_archives="${tmpdir}/expected-archives.txt"
 
   find "${bundle_dir}" -maxdepth 1 -mindepth 1 -type f -exec basename '{}' ';' | LC_ALL=C sort > "${actual_files}"
   expected_bundle_files "${version}" | LC_ALL=C sort > "${expected_files}"
   compare_exact_file_set "${actual_files}" "${expected_files}"
 
-  expected_archive_files "${version}" | LC_ALL=C sort > "${expected_archives}"
+  expected_checksum_subject_files "${version}" | LC_ALL=C sort > "${expected_checksum_subjects}"
   awk 'NF >= 2 {print $2}' "${bundle_dir}/checksums.txt" | sed 's/^\*//' | LC_ALL=C sort > "${actual_checksums}"
-  compare_exact_file_set "${actual_checksums}" "${expected_archives}"
+  compare_exact_file_set "${actual_checksums}" "${expected_checksum_subjects}"
 
+  jq -e '
+    .mediaType == "application/vnd.dev.sigstore.bundle.v0.3+json" and
+    (.verificationMaterial | type == "object")
+  ' "${bundle_dir}/checksums.txt.sigstore.json" >/dev/null ||
+    fail "invalid checksums Sigstore bundle"
+
+  while IFS= read -r sbom; do
+    jq -e '
+      (.spdxVersion | type == "string" and startswith("SPDX-")) and
+      (.packages | type == "array")
+    ' "${bundle_dir}/${sbom}" >/dev/null ||
+      fail "invalid SPDX SBOM: ${sbom}"
+  done < <(expected_sbom_files "${version}")
+
+  expected_archive_files "${version}" | LC_ALL=C sort > "${expected_archives}"
   while IFS= read -r archive_name; do
     [[ -n "${archive_name}" ]] || continue
     archive="${bundle_dir}/${archive_name}"
@@ -385,6 +454,13 @@ create_synthetic_bundle() {
     printf '%s\n' 'binary' > "${payload_root}/${binary_name}"
     tar -czf "${bundle_dir}/${archive_name}" -C "${payload_root}" .
     rm -rf "${payload_root}"
+    cat > "${bundle_dir}/${archive_name}.spdx.json" <<EOF
+{
+  "spdxVersion": "SPDX-2.3",
+  "name": "${archive_name}",
+  "packages": []
+}
+EOF
   done <<'EOF'
 linux:amd64
 linux:arm64
@@ -392,8 +468,14 @@ EOF
 
   (
     cd "${bundle_dir}"
-    sha256sum xg2g_*.tar.gz > checksums.txt
+    sha256sum xg2g_*.tar.gz xg2g_*.tar.gz.spdx.json > checksums.txt
   )
+  cat > "${bundle_dir}/checksums.txt.sigstore.json" <<'EOF'
+{
+  "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+  "verificationMaterial": {}
+}
+EOF
 
   if [[ "${include_rogue}" == "true" ]]; then
     printf '%s\n' 'unexpected output' > "${bundle_dir}/rogue.txt"
@@ -449,6 +531,7 @@ main() {
   verify_release_docker_contract
   verify_release_input_contract
   verify_synthetic_bundle_guards
+  "${RELEASE_VERIFY_REMOTE_CONTRACT}" >/dev/null
 
   echo "OK: release output contract holds."
 }

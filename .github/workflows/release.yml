@@ -12,7 +12,9 @@ jobs:
   goreleaser:
     runs-on: ubuntu-latest
     permissions:
+      artifact-metadata: write
       contents: write
+      id-token: write
       packages: write
     steps:
       - name: Checkout
@@ -68,11 +70,66 @@ jobs:
           echo "FFMPEG_BASE_IMAGE=ghcr.io/manugh/xg2g-ffmpeg:${version}" >> "$GITHUB_ENV"
           echo "FFmpeg base image: ghcr.io/manugh/xg2g-ffmpeg:${version}" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           distribution: goreleaser
-          version: "~> 2" # pin to v2.x; bump intentionally when v3 ships
+          version: "v2.17.1"
           args: release --clean --timeout 2h
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify published OCI manifest
+        id: verify-image
+        run: |
+          verification="$(
+            backend/scripts/release-verify-remote.sh \
+              --version "${GITHUB_REF_NAME}" \
+              --also-tag latest \
+              --require-platform linux/amd64 \
+              --require-platform linux/arm64 \
+              --json
+          )"
+          digest="$(jq -r '.digest' <<<"${verification}")"
+          test "${digest}" != "null"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Verified OCI release"
+            echo
+            echo "- Image: \`ghcr.io/manugh/xg2g@${digest}\`"
+            echo "- Platforms: \`linux/amd64\`, \`linux/arm64\`"
+            echo "- \`${GITHUB_REF_NAME}\` and \`latest\` resolve to the same digest"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest release files
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.spdx.json
+            dist/checksums.txt
+            dist/checksums.txt.sigstore.json
+
+      - name: Attest OCI manifest
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ghcr.io/manugh/xg2g
+          subject-digest: ${{ steps.verify-image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Publish verified draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          is_draft="$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq '.isDraft')"
+          if [[ "${is_draft}" != "true" ]]; then
+            echo "::error::Expected ${GITHUB_REF_NAME} to remain a draft until verification completed." >&2
+            exit 1
+          fi
+          gh release edit "${GITHUB_REF_NAME}" --draft=false --latest

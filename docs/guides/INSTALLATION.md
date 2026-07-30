@@ -207,6 +207,18 @@ cd "${work_dir}"
 
 curl --proto '=https' --tlsv1.2 -fLO "${release_base}/${archive}"
 curl --proto '=https' --tlsv1.2 -fLO "${release_base}/checksums.txt"
+curl --proto '=https' --tlsv1.2 -fLO "${release_base}/checksums.txt.sigstore.json"
+
+# Recommended provenance checks when the tools are installed:
+if command -v cosign >/dev/null 2>&1; then
+  cosign verify-blob \
+    --bundle checksums.txt.sigstore.json \
+    checksums.txt
+fi
+if command -v gh >/dev/null 2>&1; then
+  gh attestation verify "${archive}" --repo ManuGH/xg2g
+fi
+
 grep -F " ${archive}" checksums.txt > selected-checksum.txt
 sha256sum --check selected-checksum.txt
 tar -xzf "${archive}"
@@ -226,8 +238,11 @@ INSTALL_SCRIPT
 To install a specific version instead of the latest stable release, open its
 [release page](https://github.com/ManuGH/xg2g/releases), download
 `xg2g_<version>_linux_amd64.tar.gz` or
-`xg2g_<version>_linux_arm64.tar.gz` and `checksums.txt`, verify the matching
-line with `sha256sum --check`, extract it, confirm that
+`xg2g_<version>_linux_arm64.tar.gz`, its `.spdx.json` SBOM,
+`checksums.txt`, and `checksums.txt.sigstore.json`. Verify the Sigstore bundle
+with `cosign verify-blob`, optionally verify GitHub provenance with
+`gh attestation verify`, then verify the matching checksum line with
+`sha256sum --check`. Extract the archive, confirm that
 `infra/systemd/setup-linux.sh` exists, and run:
 
 ```bash

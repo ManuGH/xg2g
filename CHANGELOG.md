@@ -1060,3 +1060,10 @@ Operational changes in v3.9.1:
 No API, playback-policy, configuration-default, or storage-schema behavior changes.
 
 
+### Behavioral Changes (v3.9.2)
+No application runtime, API, configuration-default, or deployment behavior changes.
+Release publication is now draft-first and fail-closed: archives gain SPDX SBOMs,
+checksums gain a keyless Sigstore bundle, OCI manifests are signed and attested,
+and GitHub publishes the draft only after remote multi-architecture verification.
+
+

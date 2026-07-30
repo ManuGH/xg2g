@@ -38,6 +38,10 @@ Then extract the archive on the Linux server and run:
 sudo ./infra/systemd/setup-linux.sh
 ```
 
+v3.9.2 and newer releases also include per-archive SPDX SBOMs, a keyless
+Sigstore bundle for the checksum file, and GitHub provenance attestations; see
+the complete guide for verification commands.
+
 The [complete Linux installation guide](INSTALLATION.md) provides a
 copy-paste download and checksum workflow, prerequisite commands, an
 answer-by-answer wizard explanation, storage/GPU/HTTPS preparation,
@@ -110,7 +114,7 @@ docker run -d --name xg2g --restart unless-stopped -p 127.0.0.1:8088:8088 \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
   -e XG2G_DECISION_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/manugh/xg2g:v3.9.1
+  ghcr.io/manugh/xg2g:v3.9.2
 ```
 
 What each setting does:

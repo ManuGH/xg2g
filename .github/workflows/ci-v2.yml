@@ -48,7 +48,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
           cache-dependency-path: apps/webui/package-lock.json
 
@@ -94,7 +94,7 @@ jobs:
       - name: Setup Node for OpenAPI + Markdown lint
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
           cache-dependency-path: apps/webui/package-lock.json
 

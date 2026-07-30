@@ -77,6 +77,11 @@ against `checksums.txt`, and confirm the archive contains
 sudo ./infra/systemd/setup-linux.sh
 ```
 
+Releases from v3.9.2 also publish an SPDX SBOM for each archive, a keyless
+Sigstore bundle for `checksums.txt`, and GitHub build-provenance attestations.
+The complete installation guide shows the optional `cosign` and `gh
+attestation verify` commands.
+
 Older archives may predate the guided installer. Do not combine current
 installer files with an older release image; the
 [complete installation guide](docs/guides/INSTALLATION.md) includes an
@@ -123,7 +128,7 @@ docker run -d --name xg2g --restart unless-stopped -p 127.0.0.1:8088:8088 \
   -e XG2G_API_TOKEN="$(openssl rand -hex 32)" \
   -e XG2G_API_TOKEN_SCOPES="v3:admin" \
   -e XG2G_DECISION_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/manugh/xg2g:v3.9.1
+  ghcr.io/manugh/xg2g:v3.9.2
 ```
 
 Check the service health:
