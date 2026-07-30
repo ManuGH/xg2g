@@ -1075,3 +1075,14 @@ The tagged release build now uses the repository-pinned Node 24 toolchain and np
 ### Behavioral Changes (v3.9.4)
 No application runtime, API, configuration-default, or deployment behavior changes.
 The tagged release workflow can now persist GitHub build-provenance attestations.
+
+
+### Behavioral Changes (v3.9.5)
+The CLI now supports `xg2g version` and rejects unknown commands or unexpected
+daemon positionals instead of falling through into daemon startup.
+The guided Linux lifecycle now installs `xg2g-admin(8)` and removes both xg2g
+manual pages during uninstall.
+Maintainer staging builds now use only the clean, isolated LXC build checkout
+and fail closed when the target path is dirty or is not a Git checkout.
+API behavior, configuration defaults, streaming behavior, and production
+deployment state are unchanged.
