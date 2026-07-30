@@ -1,5 +1,5 @@
 # Multi-Stage Dockerfile for xg2g with embedded FFmpeg 8.1
-ARG BUILD_VERSION=v3.9.1
+ARG BUILD_VERSION=v3.9.2
 ARG BUILD_COMMIT=unknown
 ARG BUILD_DATE=unknown
 ARG FFMPEG_BASE_IMAGE=ffmpeg-runtime-base-internal
