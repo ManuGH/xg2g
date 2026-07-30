@@ -40,6 +40,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Usage:")
 	_, _ = fmt.Fprintln(w, "  xg2g [--config path] [--version]")
+	_, _ = fmt.Fprintln(w, "  xg2g version")
 	_, _ = fmt.Fprintln(w, "  xg2g config <command> [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g entitlements <command> [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g storage verify [flags]")
@@ -51,6 +52,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g help [command]")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Commands:")
+	_, _ = fmt.Fprintln(w, "  version      Print version and build metadata")
 	_, _ = fmt.Fprintln(w, "  config       Validate, dump, and migrate config files")
 	_, _ = fmt.Fprintln(w, "  entitlements Inspect and manage commercial unlock overrides")
 	_, _ = fmt.Fprintln(w, "  storage      Manage and verify local storage (SQLite)")
@@ -70,6 +72,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Examples:")
 	_, _ = fmt.Fprintln(w, "  xg2g --config /etc/xg2g/config.yaml")
+	_, _ = fmt.Fprintln(w, "  xg2g version")
 	_, _ = fmt.Fprintln(w, "  xg2g config validate -f /etc/xg2g/config.yaml")
 	_, _ = fmt.Fprintln(w, "  xg2g entitlements list --token $XG2G_API_TOKEN --principal-id viewer")
 	_, _ = fmt.Fprintln(w, "  xg2g entitlements grant --token $XG2G_API_TOKEN --principal-id viewer --scope xg2g:unlock")
@@ -82,6 +85,43 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g diagnostic --action=refresh --token $XG2G_API_TOKEN")
 	_, _ = fmt.Fprintln(w, "  xg2g status --token $XG2G_API_TOKEN")
 	_, _ = fmt.Fprintln(w, "  xg2g report --token $XG2G_API_TOKEN --out xg2g-report.json")
+}
+
+func printVersion(w io.Writer) {
+	_, _ = fmt.Fprintf(w, "%s (commit: %s, built: %s)\n", appversion.Version, appversion.Commit, appversion.Date)
+}
+
+func handleImmediateMainCommand(stdout, stderr io.Writer, args []string) (bool, int) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return false, 0
+	}
+
+	switch args[0] {
+	case "version":
+		if len(args) != 1 {
+			_, _ = fmt.Fprintln(stderr, "The version command accepts no arguments.")
+			printMainUsage(stderr)
+			return true, 2
+		}
+		printVersion(stdout)
+		return true, 0
+	case "help", "config", "entitlements", "storage", "preflight",
+		"healthcheck", "diagnostic", "status", "report":
+		return false, 0
+	default:
+		_, _ = fmt.Fprintln(stderr, "Unknown command.")
+		printMainUsage(stderr)
+		return true, 2
+	}
+}
+
+func rejectDaemonPositionals(stderr io.Writer, args []string) int {
+	if len(args) == 0 {
+		return 0
+	}
+	_, _ = fmt.Fprintln(stderr, "Unexpected positional arguments; daemon mode accepts flags only.")
+	printMainUsage(stderr)
+	return 2
 }
 
 func runHelp(args []string) int {
@@ -160,6 +200,10 @@ func exitCodeForErr(err error) int {
 }
 
 func main() {
+	if handled, code := handleImmediateMainCommand(os.Stdout, os.Stderr, os.Args[1:]); handled {
+		os.Exit(code)
+	}
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help":
@@ -196,8 +240,12 @@ func main() {
 	configPath := flag.String("config", "", "path to config file (YAML)")
 	flag.Parse()
 
+	if code := rejectDaemonPositionals(os.Stderr, flag.Args()); code != 0 {
+		os.Exit(code)
+	}
+
 	if *showVersion {
-		fmt.Printf("%s (commit: %s, built: %s)\n", appversion.Version, appversion.Commit, appversion.Date)
+		printVersion(os.Stdout)
 		os.Exit(0)
 	}
 
