@@ -29,6 +29,10 @@ ADMIN="${TEMP_ROOT}/srv/xg2g/scripts/xg2g-admin.sh"
 [[ -x "${ADMIN}" ]] || fail "admin helper was not installed"
 [[ -x "${TEMP_ROOT}/usr/local/sbin/xg2g-admin" ]] ||
   fail "stable xg2g-admin command was not installed"
+[[ -f "${TEMP_ROOT}/usr/local/share/man/man1/xg2g.1" ]] ||
+  fail "xg2g manual page was not installed"
+[[ -f "${TEMP_ROOT}/usr/local/share/man/man8/xg2g-admin.8" ]] ||
+  fail "xg2g-admin manual page was not installed"
 [[ -f "${TEMP_ROOT}/etc/systemd/system/xg2g-backup.timer" ]] ||
   fail "backup timer was not installed"
 [[ -f "${TEMP_ROOT}/srv/xg2g/INSTALL_REF" ]] ||
@@ -121,6 +125,10 @@ XG2G_ADMIN_SOURCE_DIR="${REPO_ROOT}" \
 [[ ! -e "${TEMP_ROOT}/srv/xg2g" ]] || fail "runtime tree survived uninstall"
 [[ ! -e "${TEMP_ROOT}/usr/local/sbin/xg2g-admin" ]] ||
   fail "stable admin command survived uninstall"
+[[ ! -e "${TEMP_ROOT}/usr/local/share/man/man1/xg2g.1" ]] ||
+  fail "xg2g manual page survived uninstall"
+[[ ! -e "${TEMP_ROOT}/usr/local/share/man/man8/xg2g-admin.8" ]] ||
+  fail "xg2g-admin manual page survived uninstall"
 [[ -f "${TEMP_ROOT}/var/lib/xg2g/sessions.sqlite" ]] ||
   fail "default uninstall removed persistent state"
 "${REPO_ROOT}/infra/systemd/xg2g-admin.sh" uninstall --install-root "${TEMP_ROOT}" >/dev/null

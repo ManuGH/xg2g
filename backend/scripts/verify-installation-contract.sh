@@ -22,6 +22,7 @@ REQUIRED_REPO_FILES=(
   "infra/systemd/xg2g.service"
   "infra/systemd/xg2g.env.schema.yaml"
   "docs/man/xg2g.1"
+  "docs/man/xg2g-admin.8"
   "backend/scripts/compose-xg2g.sh"
   "backend/scripts/verify-compose-contract.sh"
   "backend/scripts/verify-installed-unit.sh"
@@ -198,6 +199,7 @@ verify_installation_doc() {
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/scripts/xg2g-admin.sh`' "installation contract lifecycle helper"
   assert_contains "${INSTALL_DOC}" '`/usr/local/sbin/xg2g-admin`' "installation contract stable admin command"
   assert_contains "${INSTALL_DOC}" '`/usr/local/share/man/man1/xg2g.1`' "installation contract manual page"
+  assert_contains "${INSTALL_DOC}" '`/usr/local/share/man/man8/xg2g-admin.8`' "installation contract admin manual page"
   assert_contains "${INSTALL_DOC}" '`/srv/xg2g/INSTALL_REF`' "installation contract installed ref"
   assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g-backup.timer`' "installation contract backup timer"
   assert_contains "${INSTALL_DOC}" '`/etc/systemd/system/xg2g-caddy.service`' "installation contract managed HTTPS unit"
@@ -270,12 +272,14 @@ verify_install_tree() {
   local etc_root
   local systemd_root
   local data_root
-  local man_root
+  local man1_root
+  local man8_root
   srv_root="$(join_path "${root}" "/srv/xg2g")"
   etc_root="$(join_path "${root}" "/etc/xg2g")"
   systemd_root="$(join_path "${root}" "/etc/systemd/system")"
   data_root="$(join_path "${root}" "/var/lib/xg2g")"
-  man_root="$(join_path "${root}" "/usr/local/share/man/man1")"
+  man1_root="$(join_path "${root}" "/usr/local/share/man/man1")"
+  man8_root="$(join_path "${root}" "/usr/local/share/man/man8")"
 
   assert_dir "${srv_root}"
   assert_dir "${srv_root}/scripts"
@@ -283,10 +287,13 @@ verify_install_tree() {
   assert_dir "${etc_root}"
   assert_dir "${systemd_root}"
   assert_dir "${data_root}"
-  assert_dir "${man_root}"
+  assert_dir "${man1_root}"
+  assert_dir "${man8_root}"
 
-  assert_file "${man_root}/xg2g.1"
-  assert_mode "${man_root}/xg2g.1" "644" "manual page mode"
+  assert_file "${man1_root}/xg2g.1"
+  assert_mode "${man1_root}/xg2g.1" "644" "manual page mode"
+  assert_file "${man8_root}/xg2g-admin.8"
+  assert_mode "${man8_root}/xg2g-admin.8" "644" "admin manual page mode"
 
   assert_file "${srv_root}/docker-compose.yml"
   assert_mode "${srv_root}/docker-compose.yml" "644" "base compose mode"
@@ -372,7 +379,7 @@ build_reference_install_tree() {
   local install_root
   install_root="$(join_path "${root}" "")"
 
-  install -d "${install_root}/srv/xg2g/scripts" "${install_root}/srv/xg2g/docs/ops" "${install_root}/etc/systemd/system" "${install_root}/etc/xg2g" "${install_root}/var/lib/xg2g" "${install_root}/usr/local/share/man/man1"
+  install -d "${install_root}/srv/xg2g/scripts" "${install_root}/srv/xg2g/docs/ops" "${install_root}/etc/systemd/system" "${install_root}/etc/xg2g" "${install_root}/var/lib/xg2g" "${install_root}/usr/local/share/man/man1" "${install_root}/usr/local/share/man/man8"
 
   install -m 0644 "${DEPLOY_ROOT}/docker-compose.yml" "${install_root}/srv/xg2g/docker-compose.yml"
   if [[ -f "${DEPLOY_ROOT}/docker-compose.gpu.yml" ]]; then
@@ -384,6 +391,7 @@ build_reference_install_tree() {
   install -m 0644 "${DEPLOY_ROOT}/xg2g.service" "${install_root}/srv/xg2g/docs/ops/xg2g.service"
   install -m 0644 "${DEPLOY_ROOT}/xg2g.service" "${install_root}/etc/systemd/system/xg2g.service"
   install -m 0644 "${REPO_ROOT}/docs/man/xg2g.1" "${install_root}/usr/local/share/man/man1/xg2g.1"
+  install -m 0644 "${REPO_ROOT}/docs/man/xg2g-admin.8" "${install_root}/usr/local/share/man/man8/xg2g-admin.8"
 
   install -m 0755 "${REPO_ROOT}/backend/scripts/compose-xg2g.sh" "${install_root}/srv/xg2g/scripts/compose-xg2g.sh"
   install -m 0755 "${REPO_ROOT}/backend/scripts/verify-compose-contract.sh" "${install_root}/srv/xg2g/scripts/verify-compose-contract.sh"

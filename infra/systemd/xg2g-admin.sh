@@ -514,7 +514,10 @@ uninstall_runtime() {
     /etc/systemd/system/xg2g-verifier.timer; do
     rm -f "$(host_path "${path}")"
   done
-  rm -f "$(host_path "/usr/local/sbin/xg2g-admin")"
+  rm -f \
+    "$(host_path "/usr/local/sbin/xg2g-admin")" \
+    "$(host_path "/usr/local/share/man/man1/xg2g.1")" \
+    "$(host_path "/usr/local/share/man/man8/xg2g-admin.8")"
   if [[ -d "$(host_path "/srv/xg2g")" ]]; then
     find "$(host_path "/srv/xg2g")" -depth -mindepth 1 -delete
     rmdir "$(host_path "/srv/xg2g")"
