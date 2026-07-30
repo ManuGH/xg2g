@@ -87,10 +87,18 @@ for panel in panels:
 PY
 
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  compose_override="$(mktemp "${TMPDIR:-/tmp}/xg2g-monitoring-compose.XXXXXX")"
+  trap 'rm -f -- "${compose_override}"' EXIT
+  printf '%s\n' \
+    'services:' \
+    '  xg2g:' \
+    '    env_file: !reset []' >"${compose_override}"
+
   docker compose \
     --project-directory "${REPO_ROOT}" \
     -f "${REPO_ROOT}/infra/systemd/docker-compose.yml" \
     -f "${COMPOSE}" \
+    -f "${compose_override}" \
     config --no-env-resolution --no-path-resolution --quiet
 fi
 
