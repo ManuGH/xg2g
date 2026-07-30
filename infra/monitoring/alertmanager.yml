@@ -1,0 +1,15 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: local-ui
+  group_by: [alertname, environment, schema]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+# The local receiver keeps active alerts visible in Alertmanager without
+# transmitting operational data off-host. Operators may add a reviewed
+# notification receiver in a private deployment override.
+receivers:
+  - name: local-ui

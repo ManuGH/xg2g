@@ -2,12 +2,19 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 rule_files:
   - "alerts-xg2g-phase5-3.yml"
 
 scrape_configs:
   - job_name: "xg2g"
+    metrics_path: "/metrics"
     static_configs:
       - targets: ["xg2g:9091"]
         labels:
+          environment: "production"
           instance: "xg2g-main"

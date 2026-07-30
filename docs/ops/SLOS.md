@@ -70,11 +70,11 @@ This document defines operator-facing SLOs for playback health and the telemetry
 Assume availability SLO = `99%` over `30d` (error budget = `1%`).
 
 ```promql
-# Error rate by schema (recording/live), denominator clamped to avoid divide-by-zero.
+# Error rate by schema (recording/live), denominator clamped only to avoid division by zero.
 (
   sum by (schema) (rate(xg2g_playback_error_total[5m]))
 /
-  clamp_min(sum by (schema) (rate(xg2g_playback_start_total[5m])), 1)
+  clamp_min(sum by (schema) (rate(xg2g_playback_start_total[5m])), 1e-9)
 )
 ```
 
@@ -84,7 +84,7 @@ Assume availability SLO = `99%` over `30d` (error budget = `1%`).
   (
     sum by (schema) (rate(xg2g_playback_error_total[5m]))
   /
-    clamp_min(sum by (schema) (rate(xg2g_playback_start_total[5m])), 1)
+    clamp_min(sum by (schema) (rate(xg2g_playback_start_total[5m])), 1e-9)
   ) / 0.01
 ) > 14.4
 and
@@ -92,7 +92,7 @@ and
   (
     sum by (schema) (rate(xg2g_playback_error_total[1h]))
   /
-    clamp_min(sum by (schema) (rate(xg2g_playback_start_total[1h])), 1)
+    clamp_min(sum by (schema) (rate(xg2g_playback_start_total[1h])), 1e-9)
   ) / 0.01
 ) > 14.4
 ```
@@ -103,7 +103,7 @@ and
   (
     sum by (schema) (rate(xg2g_playback_error_total[30m]))
   /
-    clamp_min(sum by (schema) (rate(xg2g_playback_start_total[30m])), 1)
+    clamp_min(sum by (schema) (rate(xg2g_playback_start_total[30m])), 1e-9)
   ) / 0.01
 ) > 6
 and
@@ -111,12 +111,15 @@ and
   (
     sum by (schema) (rate(xg2g_playback_error_total[6h]))
   /
-    clamp_min(sum by (schema) (rate(xg2g_playback_start_total[6h])), 1)
+    clamp_min(sum by (schema) (rate(xg2g_playback_start_total[6h])), 1e-9)
   ) / 0.01
 ) > 6
 ```
 
 Use `for: 2m` on fast-burn and `for: 15m` on slow-burn alerts to reduce noise.
+The executable rules also require at least five starts in the fast window and
+twenty starts in the slow window, so a single low-traffic failure does not page
+as an error-budget burn.
 
 ## Cardinality Guardrails
 

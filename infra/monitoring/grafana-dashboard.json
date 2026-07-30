@@ -1,86 +1,306 @@
 {
-  "dashboard": {
-    "title": "xg2g Streaming Metrics",
-    "tags": ["xg2g", "streaming"],
-    "timezone": "browser",
-    "panels": [
-      {
-        "id": 1,
-        "title": "Active Streams",
-        "type": "stat",
-        "targets": [
-          {
-            "expr": "xg2g_v3_sessions_active",
-            "refId": "A"
-          }
-        ],
-        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
-      },
-      {
-        "id": 2,
-        "title": "FFmpeg Processes",
-        "type": "stat",
-        "targets": [
-          {
-            "expr": "xg2g_v3_ffmpeg_processes",
-            "refId": "A"
-          }
-        ],
-        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
-      },
-      {
-        "id": 3,
-        "title": "Memory Usage",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "go_memstats_alloc_bytes",
-            "refId": "A",
-            "legendFormat": "Memory"
-          }
-        ],
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
-      },
-      {
-        "id": 4,
-        "title": "HTTP Request Rate",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "rate(http_requests_total[5m])",
-            "refId": "A"
-          }
-        ],
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
-      },
-      {
-        "id": 5,
-        "title": "Session State",
-        "type": "piechart",
-        "targets": [
-          {
-            "expr": "xg2g_v3_sessions_by_state",
-            "refId": "A"
-          }
-        ],
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
-      },
-      {
-        "id": 6,
-        "title": "Error Rate",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "rate(xg2g_errors_total[5m])",
-            "refId": "A"
-          }
-        ],
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
-      }
-    ],
-    "refresh": "10s",
-    "schemaVersion": 16,
-    "version": 0
+  "annotations": {
+    "list": []
   },
-  "overwrite": true
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "xg2g-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "xg2g_v3_sessions_active",
+          "legendFormat": "sessions",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Active sessions",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "xg2g-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 18,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, schema) (rate(xg2g_playback_ttff_seconds_bucket{outcome=\"ok\"}[5m])))",
+          "legendFormat": "{{schema}} p95",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Playback TTFF p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "xg2g-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (schema) (rate(xg2g_playback_error_total[5m])) / clamp_min(sum by (schema) (rate(xg2g_playback_start_total[5m])), 1e-9)",
+          "legendFormat": "{{schema}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Playback error ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "xg2g-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (schema, severity) (rate(xg2g_playback_rebuffer_total[5m]))",
+          "legendFormat": "{{schema}} {{severity}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Rebuffer proxy rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "xg2g-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "xg2g_active_ffmpeg_processes",
+          "legendFormat": "ffmpeg",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "xg2g_tuners_in_use",
+          "legendFormat": "tuners",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Runtime resources",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "xg2g-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "legendFormat": "{{alertname}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Firing alerts",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": [
+    "xg2g",
+    "streaming",
+    "slo"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "xg2g Streaming SLOs",
+  "uid": "xg2g-streaming-slos",
+  "version": 1
 }

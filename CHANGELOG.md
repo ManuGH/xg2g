@@ -32,6 +32,9 @@
 
 ### Technical Notes
 
+- `ops`: the optional monitoring overlay now uses pinned, loopback-only
+  Prometheus, Alertmanager, and Grafana services with secret-backed Grafana
+  authentication, automatic provisioning, and executable playback SLO alerts.
 - `perf`: stream-relay reconnect backoff cap tightened 5s→2s (#602);
   preflight clear-lead fast path skips a 752KB descrambler-lock read for FTA
   relay sources (#601).

@@ -1,0 +1,14 @@
+apiVersion: 1
+
+datasources:
+  - name: xg2g Prometheus
+    uid: xg2g-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      prometheusType: Prometheus
+      prometheusVersion: 3.13.2
