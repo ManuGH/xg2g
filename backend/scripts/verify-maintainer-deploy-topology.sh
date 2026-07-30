@@ -68,7 +68,13 @@ assert_contains "${WORKFLOW_DOC}" 'LXC 110 `/srv/xg2g-staging`'
 assert_contains "${WORKFLOW_DOC}" 'LXC 110 `/srv/xg2g`'
 assert_contains "${AGENT_RULES}" 'LXC 110 `/srv/xg2g-build` is the only Linux fast-iteration build checkout.'
 assert_contains "${AGENT_RULES}" 'LXC 110 `/srv/xg2g-staging` is a deployment surface, not a Git checkout.'
+assert_contains "${AGENT_RULES}" 'Before selecting a SemVer or editing release metadata, complete a'
+assert_contains "${AGENT_RULES}" 'Never use public tags or patch versions as release-pipeline experiments.'
+assert_contains "${AGENT_RULES}" 'Treat a successful stable release as a terminal state.'
+assert_contains "${AGENT_RULES}" 'Before changing either live environment, capture the complete'
 assert_contains "${AGENT_RULES}" 'Runtime lifecycle has exactly two valid steady states:'
+assert_contains "${AGENT_RULES}" 'If an explicitly authorized out-of-band production'
+assert_not_contains "${AGENT_RULES}" 'instead of binary promotion'
 
 tmp_repo="$(mktemp -d)"
 trap 'rm -rf "${tmp_repo}"' EXIT

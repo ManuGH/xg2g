@@ -128,36 +128,52 @@ deployment and never authorizes staging or production promotion. Follow
 [docs/ops/RELEASE_OUTPUT_CONTRACT.md](docs/ops/RELEASE_OUTPUT_CONTRACT.md) as
 the normative output contract.
 
-1. Prepare every release from a clean, isolated worktree based on the latest
+1. Before selecting a SemVer or editing release metadata, complete a
+   release-readiness audit. Inventory changes to the release workflow,
+   packaging, entrypoint, runtime image, installer, updater, uninstaller,
+   signatures, attestations, and required toolchain versions. Record one
+   coherent release contract before preparing the release.
+2. Land separable release-infrastructure changes through their own reviewed PR
+   and verify them on `main` before opening the release-preparation PR.
+   Never use public tags or patch versions as release-pipeline experiments.
+   Validate the publisher with local, snapshot, dry-run, and untagged PR/main
+   checks first.
+3. Prepare every release from a clean, isolated worktree based on the latest
    `origin/main`. Never release from a feature branch or dirty checkout.
-2. Create and commit
+4. Create and commit
    `docs/release/vX.Y.Z_behavioral_changes.txt` first, even when it only states
    that runtime, API, configuration, and deployment behavior are unchanged.
    Then run `backend/scripts/release-prepare.sh vX.Y.Z` from the clean tree,
    review every generated change, and commit the preparation coherently.
-3. Put release preparation through a PR. Run `make ci-pr` and `make pre-push`;
+5. Put release preparation through a PR. Run `make ci-pr` and `make pre-push`;
    merge only after all GitHub checks are green and no review thread lacks a
    fix or written disposition.
-4. Before tagging, fetch `origin/main`, confirm `backend/VERSION` and
+6. Before tagging, fetch `origin/main`, confirm `backend/VERSION` and
    `RELEASE_MANIFEST.json` match the intended tag, confirm the tag does not
    exist, and confirm immutable releases are enabled. Create an annotated tag
    on the exact merged commit and push only that tag.
-5. `.github/workflows/release.yml` is the only release publisher. It must keep
+7. `.github/workflows/release.yml` is the only release publisher. It must keep
    the release as a draft until archive/SBOM generation, checksum and OCI
    signing, remote multi-platform verification, and GitHub attestations have
    all succeeded. Never bypass a failed workflow with a manual
    `gh release create`, public draft edit, replacement asset, or moved tag.
-6. Treat every pushed tag as permanent. If a tagged run fails, retain the tag
+8. Treat every pushed tag as permanent. If a tagged run fails, retain the tag
    and failed run as audit evidence, remove an incomplete unpublished draft
    only after recording the failure, fix the cause through a new reviewed PR,
-   and select a new SemVer (normally the next patch). Never delete, reuse, or
-   force-move a failed or published release tag.
-7. Do not report a release complete until the public release is `latest`,
+   verify the root cause through the untagged pipeline, and select a new SemVer
+   (normally the next patch). Never delete, reuse, or force-move a failed or
+   published release tag, and never repeat the same unverified correction as a
+   patch-release cascade.
+9. Do not report a release complete until the public release is `latest`,
    non-draft, non-prerelease, and immutable; its exact asset bundle downloads
    and passes checksums; both SPDX SBOMs parse; file and OCI attestations verify;
    the version tag and `latest` resolve to the same OCI digest with
    `linux/amd64` and `linux/arm64`; and the Sigstore checksum and OCI signatures
    verify against the tagged release workflow identity.
+10. Treat a successful stable release as a terminal state. Do not create
+    another version merely to continue cleanup or retry release machinery.
+    Require a concrete corrected artifact, runtime, user-visible, or security
+    reason plus explicit operator intent.
 
 If any verification fails, stop publication or leave it failed closed and
 report the exact run, tag, draft state, and next corrective action. A partially
@@ -199,6 +215,12 @@ successful release is not a successful release.
   `scripts/promote_production.sh --ref vX.Y.Z --confirm-production`.
   Production uses the installed canonical `xg2g-admin update` path; copying a
   raw binary into production is prohibited.
+- Before changing either live environment, capture the complete
+  production/staging runtime evidence with
+  `scripts/check-deployment-state.sh`: container image reference and immutable
+  ID/digest, reported version/commit/build, binary hash, bind mounts, published
+  addresses, Compose file chain, manifest mode, Docker health, and endpoint
+  health. Do not infer runtime truth from a port, mutable tag, or label alone.
 - Runtime lifecycle has exactly two valid steady states:
   `baseline` means `:8088` and `:8089` run the exact same immutable image,
   commit, and binary hash with no staging binary override; `candidate` means
@@ -211,11 +233,12 @@ successful release is not a successful release.
   reached through the governed production reverse proxy; `:8089` is reached
   only through an explicit SSH/VPN operator path and must never be published
   on `0.0.0.0` or unrestricted IPv6.
-- After a candidate is promoted, mark staging as `baseline`. If production was
-  updated through the release-image path instead of binary promotion, run
+- After a candidate is promoted, `scripts/promote_production.sh` must restore
+  staging to `baseline`. If an explicitly authorized out-of-band production
+  update occurs, run
   `scripts/sync-staging-baseline.sh --confirm-staging-baseline` immediately
-  after production verification. This copies the exact running production
-  artifact; it does not rebuild it.
+  after production verification. This pins staging to the exact running
+  production image digest; it does not rebuild an artifact.
 - These ports describe runtime roles, not repository permissions. Official
   installations use `:8088` on their own hosts; `:8089` is reserved for the
   maintainer staging instance and is not a second public product surface.
