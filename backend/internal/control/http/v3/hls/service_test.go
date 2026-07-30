@@ -202,7 +202,7 @@ func TestSafeHLSArtifactAllowlist(t *testing.T) {
 		"preview.jpg",
 		"../index.m3u8",
 		"seg_1.mp4",
-		"stream.m3u8?token=x",
+		"stream.m3u8?quality=high",
 		"/absolute.ts",
 		"segment.ts",
 	}
