@@ -89,10 +89,95 @@ func TestMainUsageListsExecutableCommands(t *testing.T) {
 	var out bytes.Buffer
 	printMainUsage(&out)
 
-	for _, command := range []string{"status", "report"} {
+	for _, command := range []string{"version", "status", "report"} {
 		if !strings.Contains(out.String(), "  "+command) {
 			t.Fatalf("main help does not list %q:\n%s", command, out.String())
 		}
+	}
+}
+
+func TestHandleImmediateMainCommand(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantHandled bool
+		wantCode    int
+		wantStdout  string
+		wantStderr  string
+	}{
+		{
+			name:        "version command",
+			args:        []string{"version"},
+			wantHandled: true,
+			wantCode:    0,
+			wantStdout:  "commit:",
+		},
+		{
+			name:        "version rejects arguments",
+			args:        []string{"version", "extra"},
+			wantHandled: true,
+			wantCode:    2,
+			wantStderr:  "accepts no arguments",
+		},
+		{
+			name:        "unknown command fails closed",
+			args:        []string{"statuz"},
+			wantHandled: true,
+			wantCode:    2,
+			wantStderr:  "Unknown command.",
+		},
+		{
+			name:        "known command continues to dispatcher",
+			args:        []string{"status"},
+			wantHandled: false,
+		},
+		{
+			name:        "daemon flags continue to flag parser",
+			args:        []string{"--config", "/etc/xg2g/config.yaml"},
+			wantHandled: false,
+		},
+		{
+			name:        "empty args continue to daemon",
+			args:        nil,
+			wantHandled: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			handled, code := handleImmediateMainCommand(&stdout, &stderr, tt.args)
+			if handled != tt.wantHandled || code != tt.wantCode {
+				t.Fatalf("handleImmediateMainCommand(%q) = (%v, %d), want (%v, %d)",
+					tt.args, handled, code, tt.wantHandled, tt.wantCode)
+			}
+			if tt.wantStdout != "" && !strings.Contains(stdout.String(), tt.wantStdout) {
+				t.Fatalf("stdout missing %q: %q", tt.wantStdout, stdout.String())
+			}
+			if tt.wantStderr != "" && !strings.Contains(stderr.String(), tt.wantStderr) {
+				t.Fatalf("stderr missing %q: %q", tt.wantStderr, stderr.String())
+			}
+		})
+	}
+}
+
+func TestRejectDaemonPositionals(t *testing.T) {
+	var stderr bytes.Buffer
+	if code := rejectDaemonPositionals(&stderr, []string{"unexpected"}); code != 2 {
+		t.Fatalf("rejectDaemonPositionals() exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "daemon mode accepts flags only") {
+		t.Fatalf("missing positional-argument error: %q", stderr.String())
+	}
+
+	stderr.Reset()
+	if code := rejectDaemonPositionals(&stderr, nil); code != 0 {
+		t.Fatalf("rejectDaemonPositionals(nil) exit code = %d, want 0", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("rejectDaemonPositionals(nil) wrote stderr: %q", stderr.String())
 	}
 }
 

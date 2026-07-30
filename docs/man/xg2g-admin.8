@@ -1,0 +1,89 @@
+.TH XG2G-ADMIN 8 "2026-07-30" "xg2g" "System Administration"
+.SH NAME
+xg2g-admin \- administer a persistent xg2g Linux installation
+.SH SYNOPSIS
+.B xg2g-admin
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+.B xg2g-admin
+is the supported lifecycle command for an xg2g installation managed by
+systemd and Docker Compose.
+It diagnoses the installed contract, creates and restores backups, applies
+pinned updates with rollback protection, and removes installed runtime
+artifacts.
+.PP
+Run host operations as root.
+The command never partitions, formats, mounts, or deletes an external DVR
+path.
+.SH COMMANDS
+.TP
+.B doctor
+Check prerequisites, permissions, storage, container health, and HTTPS.
+.TP
+.B backup
+Create an atomic backup of durable SQLite and JSON state plus configuration.
+.TP
+.BI restore " ARCHIVE " \-\-yes
+Validate and restore a backup after first creating a safety backup.
+.TP
+.BI update " \-\-ref TAG_OR_SHA"
+Back up the current installation, install the pinned ref, health-check it, and
+roll back automatically on failure.
+.TP
+.B rollback \-\-yes
+Reinstall the ref recorded immediately before the last update.
+.TP
+.B uninstall
+Remove services and deployed runtime files while preserving configuration,
+data, local backups, recordings, and external DVR storage.
+.TP
+.B uninstall \-\-purge-data \-\-yes
+Also remove xg2g-managed configuration, state, Caddy state, and local backups.
+External recordings and DVR storage remain untouched.
+.SH OPTIONS
+.TP
+.BI \-\-install-root " DIR"
+Prefix installed paths with
+.IR DIR .
+This option exists for packaging and lifecycle contract tests, not routine host
+administration.
+.TP
+.B \-h
+.TQ
+.B \-\-help
+Show command usage.
+.SH FILES
+.TP
+.I /etc/xg2g/xg2g.env
+Root-owned service environment and secrets.
+.TP
+.I /var/lib/xg2g
+Persistent runtime state.
+.TP
+.I /var/backups/xg2g
+Default local backup directory.
+.TP
+.I /var/lib/xg2g/admin/previous-ref
+Ref recorded for a governed rollback.
+.TP
+.I /srv/xg2g
+Installed Compose, lifecycle, and verification bundle.
+.SH SECURITY
+Backups contain service configuration and may contain credentials.
+Keep them root-owned, do not publish them, and verify archive provenance before
+restoring.
+.PP
+Both
+.B restore
+and destructive data removal require explicit
+.BR \-\-yes .
+.SH SEE ALSO
+.BR xg2g (1),
+.BR docker (1),
+.BR systemctl (1)
+.PP
+Project documentation:
+.UR https://github.com/ManuGH/xg2g
+https://github.com/ManuGH/xg2g
+.UE

@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${XG2G_DEPLOY_HOST:-xg2g-dev}"
-REMOTE_SOURCE_ROOT="${XG2G_DEPLOY_SOURCE_ROOT:-/srv/xg2g}"
 REMOTE_BUILD_ROOT="${XG2G_DEPLOY_BUILD_ROOT:-/srv/xg2g-build}"
 
 die() {
@@ -30,23 +29,30 @@ branch="$(git branch --show-current)"
 git fetch origin "${branch}" --quiet
 commit="$(git rev-parse HEAD)"
 origin_commit="$(git rev-parse "origin/${branch}")"
+origin_url="$(git remote get-url origin)"
 [[ "${commit}" == "${origin_commit}" ]] || die "HEAD must exactly match pushed origin/${branch} before deployment"
+[[ -n "${origin_url}" ]] || die "origin URL could not be resolved"
 
 echo "Preparing commit ${commit} in ${REMOTE_HOST}:${REMOTE_BUILD_ROOT}..."
-ssh "${REMOTE_HOST}" bash -s -- "${REMOTE_SOURCE_ROOT}" "${REMOTE_BUILD_ROOT}" "${branch}" "${commit}" <<'REMOTE'
+ssh "${REMOTE_HOST}" bash -s -- "${REMOTE_BUILD_ROOT}" "${origin_url}" "${branch}" "${commit}" <<'REMOTE'
 set -euo pipefail
-source_root="$1"
-build_root="$2"
+build_root="$1"
+origin_url="$2"
 branch="$3"
 commit="$4"
 
-origin_url="$(git -C "${source_root}" remote get-url origin 2>/dev/null || echo "https://github.com/ManuGH/xg2g.git")"
 if [[ ! -d "${build_root}/.git" ]]; then
-  if [[ -e "${build_root}" ]]; then
-    rm -rf "${build_root}"
-  fi
+  [[ ! -e "${build_root}" ]] || {
+    echo "ERROR: ${build_root} exists but is not a Git checkout" >&2
+    exit 1
+  }
   git clone "${origin_url}" "${build_root}"
 fi
+
+[[ -z "$(git -C "${build_root}" status --porcelain=v1 -uall)" ]] || {
+  echo "ERROR: Linux build checkout is dirty; refusing to overwrite it" >&2
+  exit 1
+}
 
 cd "${build_root}"
 git remote set-url origin "${origin_url}"
@@ -78,7 +84,12 @@ fi
 REMOTE
 
 remote_binary="${REMOTE_BUILD_ROOT}/bin/xg2g"
-expected_sha="$(ssh "${REMOTE_HOST}" "sha256sum '${remote_binary}' | awk '{print \$1}'")"
+expected_sha="$(
+  ssh "${REMOTE_HOST}" bash -s -- "${remote_binary}" <<'REMOTE'
+set -euo pipefail
+sha256sum "$1" | awk '{print $1}'
+REMOTE
+)"
 [[ -n "${expected_sha}" ]] || die "could not hash remote build artifact"
 
 echo "Deploying ${commit} (${expected_sha}) to staging :8089 on ${REMOTE_HOST}..."

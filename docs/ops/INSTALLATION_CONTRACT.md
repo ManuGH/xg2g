@@ -17,6 +17,7 @@ These paths are required for a start-ready installation.
 | `/srv/xg2g/scripts/xg2g-admin.sh` | Repo-deployed lifecycle helper | Yes | `0755` | Repo `infra/systemd/xg2g-admin.sh` | Doctor, backup/restore, update/rollback, uninstall |
 | `/usr/local/sbin/xg2g-admin` | Operator command | Yes | `0755` | Repo `infra/systemd/xg2g-admin.sh` | Stable command on root's PATH |
 | `/usr/local/share/man/man1/xg2g.1` | Operator documentation | Yes | `0644` | Repo `docs/man/xg2g.1` | Manual page available through `man xg2g` |
+| `/usr/local/share/man/man8/xg2g-admin.8` | Operator documentation | Yes | `0644` | Repo `docs/man/xg2g-admin.8` | Administration manual available through `man xg2g-admin` |
 | `/srv/xg2g/docs/ops/xg2g.service` | Repo-deployed artifact | Yes | `0644` | Repo deploy bundle `infra/systemd/xg2g.service` | Canonical unit copy kept on host |
 | `/srv/xg2g/scripts/compose-xg2g.sh` | Repo-deployed runtime helper | Yes | `0755` | Repo `backend/scripts/compose-xg2g.sh` | Compose resolver SSOT |
 | `/srv/xg2g/scripts/verify-compose-contract.sh` | Repo-deployed runtime helper | Yes | `0755` | Repo `backend/scripts/verify-compose-contract.sh` | Compose contract gate |
