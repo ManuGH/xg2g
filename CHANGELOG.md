@@ -38,6 +38,8 @@
 - `test`: the soak command now exercises the real v3 playback lifecycle,
   cleans up every accepted session, produces reproducible private reports, and
   refuses mutating traffic outside confirmed loopback staging on port 8089.
+- `ci`: scheduled deep validation now has one nightly owner, with versioned
+  latency/allocation budgets and a machine-readable performance report.
 - `perf`: stream-relay reconnect backoff cap tightened 5s→2s (#602);
   preflight clear-lead fast path skips a 752KB descrambler-lock read for FTA
   relay sources (#601).

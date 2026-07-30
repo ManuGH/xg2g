@@ -55,7 +55,7 @@ Purpose: Make CI deterministic, offline-reproducible, and not dependent on GitHu
   - optional pull_request backstops
 - These scans must not block merges by default.
 - `.github/workflows/ci-deep-scheduled.yml` has two scheduled suites under one workflow:
-  - `0 2 * * *`: nightly race, integration, and spec/doc lint
+  - `0 2 * * *`: nightly race, integration, performance budgets, and spec/doc lint
   - `0 3 * * 0`: weekly security and governance
 - Scheduled deep-suite run names, summaries, and alert issues must include the
   concrete suite label (`nightly` or `weekly`) so failures are triaged against
@@ -63,6 +63,22 @@ Purpose: Make CI deterministic, offline-reproducible, and not dependent on GitHu
 - Pinned Go security tools must be built with the active repository toolchain
   from `go env GOVERSION`; scanner binaries built with an older Go release can
   fail against the backend module's `go` directive.
+
+## Nightly Performance Budgets
+
+- `make performance-gate` is the local and CI entry point.
+- `backend/test/benchmark/budgets.json` is the versioned source of truth for
+  selected hot-path latency, bytes-per-operation, and allocations-per-operation
+  ceilings.
+- Each benchmark runs three times. The worst observed sample must stay within
+  every budget; an allocation regression cannot be hidden by a faster timing
+  sample.
+- Timing ceilings intentionally include runner headroom because
+  `ubuntu-latest` hardware is not fixed. Allocation ceilings are tighter and
+  should remain stable across runners.
+- The nightly job uploads `artifacts/performance/report.json` for 30 days.
+  Budget changes require benchmark evidence in the pull request; raising a
+  ceiling solely to make CI green is not an acceptable fix.
 
 ## Offline Rules
 - No @latest in tools.
