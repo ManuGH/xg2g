@@ -69,7 +69,7 @@ func Write(w http.ResponseWriter, r *http.Request, status int, problemType, titl
 	// Add extensions (Extras) at top level, protecting reserved keys.
 	for k, v := range extra {
 		switch k {
-		case "type", "title", "status", "detail", "instance", "code":
+		case "type", "title", "status", "detail", "instance", "code", JSONKeyRequestID:
 			log.L().Warn().Str("key", k).Str("problem_type", problemType).Msg("ignoring reserved key in problem extras")
 			continue
 		}
