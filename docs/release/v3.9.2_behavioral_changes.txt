@@ -1,0 +1,4 @@
+No application runtime, API, configuration-default, or deployment behavior changes.
+Release publication is now draft-first and fail-closed: archives gain SPDX SBOMs,
+checksums gain a keyless Sigstore bundle, OCI manifests are signed and attested,
+and GitHub publishes the draft only after remote multi-architecture verification.

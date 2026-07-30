@@ -38,6 +38,10 @@ Then extract the archive on the Linux server and run:
 sudo ./infra/systemd/setup-linux.sh
 ```
 
+v3.9.2 and newer releases also include per-archive SPDX SBOMs, a keyless
+Sigstore bundle for the checksum file, and GitHub provenance attestations; see
+the complete guide for verification commands.
+
 The [complete Linux installation guide](INSTALLATION.md) provides a
 copy-paste download and checksum workflow, prerequisite commands, an
 answer-by-answer wizard explanation, storage/GPU/HTTPS preparation,

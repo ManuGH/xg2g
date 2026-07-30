@@ -17,6 +17,9 @@ inputs, and which outputs are explicitly outside the published contract.
 - GitHub release archive names use GoReleaser `{{ .Version }}` semantics
   (`X.Y.Z` without the leading `v`).
 - Registry publication uses tag semantics (`ghcr.io/manugh/xg2g:vX.Y.Z`).
+- A release is assembled as a draft and published only after every normative
+  file and registry output has been verified and attested.
+- Published releases are immutable: their tag and assets cannot be replaced.
 
 ## Normative Published Release Assets
 
@@ -26,7 +29,10 @@ Each tagged release must publish exactly these GitHub release assets:
 
 - `xg2g_<version>_linux_amd64.tar.gz`
 - `xg2g_<version>_linux_arm64.tar.gz`
+- `xg2g_<version>_linux_amd64.tar.gz.spdx.json`
+- `xg2g_<version>_linux_arm64.tar.gz.spdx.json`
 - `checksums.txt`
+- `checksums.txt.sigstore.json`
 
 xg2g is a Linux server (Docker/systemd); macOS and Windows binaries are not
 built or published.
@@ -67,6 +73,20 @@ Each tagged release must publish exactly these registry-facing outputs:
 The version tag and `latest` are published by GoReleaser `dockers_v2` as single
 multi-architecture manifests (`linux/amd64` + `linux/arm64`); there are no
 per-architecture suffix tags. Both manifests are normative release outputs.
+The manifest carries a BuildKit SBOM/provenance referrer, is signed keylessly
+with Sigstore, and receives a GitHub build-provenance attestation.
+
+### Provenance and Publication Gate
+
+- `checksums.txt.sigstore.json` is the keyless Sigstore bundle for
+  `checksums.txt`.
+- Each archive has a matching SPDX JSON SBOM.
+- GitHub artifact attestations bind every archive, SBOM, checksum file and
+  Sigstore bundle to the tagged workflow run.
+- GitHub's immutable-release attestation binds the published tag, source commit
+  and final release assets.
+- The release workflow verifies the remote OCI digest and both required
+  platforms while the GitHub release is still a draft.
 
 ## Non-Contract Outputs / Explicit Exclusions
 
@@ -79,10 +99,11 @@ they are not published release outputs:
 - GoReleaser `dist/` internals and temporary build contexts
 - copied helper files such as `build-ffmpeg.sh`, `ffmpeg-wrapper.sh`,
   `ffprobe-wrapper.sh`
-- SBOM, signatures, provenance, or attestations
 
-Those outputs may exist in CI or future release flows, but they are not part of
-the current external release guarantee unless this contract is updated.
+Native `.deb`, `.rpm`, Flatpak, AppImage and Snap packages are also excluded.
+xg2g's supported lifecycle remains the self-contained archive installer and
+the OCI/systemd deployment path; adding a package format requires tested
+install, upgrade, removal and service-lifecycle contracts.
 
 ## Truth Inputs
 
@@ -111,6 +132,8 @@ Verification has two modes:
 Bundle audit mode verifies:
 
 - exact asset filenames
-- `checksums.txt` coverage over the archive set
+- `checksums.txt` coverage over the archives and their SBOMs
 - required payload entries inside each archive
+- one SPDX SBOM per archive
+- one Sigstore bundle for `checksums.txt`
 - rejection of unexpected published output

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/goreleaser/goreleaser/v2.17.1/www/docs/static/schema.json
 # .goreleaser.yml
 version: 2
 project_name: xg2g
@@ -46,6 +47,24 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+sboms:
+  - id: archive-sboms
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.spdx.json"
+
+signs:
+  - id: checksum-keyless
+    cmd: cosign
+    signature: "checksums.txt.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
 snapshot:
   version_template: "{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}"
 
@@ -67,16 +86,31 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
-    sbom: false
+    sbom: true
     labels:
       org.opencontainers.image.source: "{{ .GitURL }}"
       org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+
+docker_signs:
+  - id: container-keyless
+    cmd: cosign
+    args:
+      - sign
+      - "${artifact}@${digest}"
+      - "--yes"
+    artifacts: manifests
+    output: true
 
 release:
   github:
     owner: ManuGH
     name: xg2g
-  mode: replace
+  draft: true
+  use_existing_draft: true
+  replace_existing_artifacts: true
+  make_latest: false
+  mode: keep-existing
   name_template: "xg2g {{ .Tag }}"
   header: |
     xg2g {{ .Tag }} delivers browser-ready Enigma2 streaming with operator-grade security, observability, and release-backed artifacts.

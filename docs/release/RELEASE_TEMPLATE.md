@@ -65,4 +65,9 @@ outcomes, deployment impact, or a specific reliability/security improvement.
 
 - requestId(s):
 - screenshots / screen recording:
+- immutable GitHub release: PASS / FAIL
+- archive checksum + Sigstore bundle: PASS / FAIL
+- GitHub artifact attestation: PASS / FAIL
+- OCI signature + attestation: PASS / FAIL
+- OCI platforms (`linux/amd64`, `linux/arm64`): PASS / FAIL
 - known limitations or waiver reason (if any):

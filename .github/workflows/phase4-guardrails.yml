@@ -7,12 +7,14 @@ on:
     paths:
       - "apps/webui/**"
       - "backend/scripts/**"
+      - ".node-version"
       - ".github/workflows/phase4-guardrails.yml"
   pull_request:
     branches: [main]
     paths:
       - "apps/webui/**"
       - "backend/scripts/**"
+      - ".node-version"
       - ".github/workflows/phase4-guardrails.yml"
 
 permissions:
@@ -55,6 +57,13 @@ jobs:
         run: |
           set -euo pipefail
           bash apps/webui/scripts/verify-client-wrapper-boundary.sh
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version-file: .node-version
+          cache: "npm"
+          cache-dependency-path: apps/webui/package-lock.json
 
       - name: TypeScript Check
         run: |

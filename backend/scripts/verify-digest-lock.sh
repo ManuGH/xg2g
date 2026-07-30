@@ -1,76 +1,58 @@
-#!/bin/bash
-# Best Practice 2026: Zero-Drift Digest Stability Gate
-# Verifies that DIGESTS.lock is consistent with VERSION and remote registry.
+#!/usr/bin/env bash
+# Validate the committed release-intent and optional deployment digest pins.
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-VERSION="$(cat "${REPO_ROOT}/backend/VERSION" | tr -d '[:space:]')"
+VERSION="$(tr -d '[:space:]' < "${REPO_ROOT}/backend/VERSION")"
 LOCK_FILE="${REPO_ROOT}/DIGESTS.lock"
 MANIFEST_FILE="${REPO_ROOT}/RELEASE_MANIFEST.json"
 
-if [[ ! -f "$LOCK_FILE" ]]; then
-    echo "❌ DIGESTS.lock missing"
-    exit 1
-fi
+fail() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
 
-echo "🔍 Validating Digest Stability for ${VERSION}..."
+[[ -f "${LOCK_FILE}" ]] || fail "DIGESTS.lock missing"
+[[ -f "${MANIFEST_FILE}" ]] || fail "RELEASE_MANIFEST.json missing"
 
-# 1. Structural Validation (Basic YAML/JSON check)
-# Check if VERSION exists in releases
-if ! grep -q "\"${VERSION}\":" "$LOCK_FILE"; then
-    echo "❌ DIGESTS.lock does not contain an entry for VERSION ${VERSION}"
-    exit 1
-fi
+jq -e '
+  (.image | type == "string" and length > 0) and
+  (.releases | type == "object")
+' "${LOCK_FILE}" >/dev/null ||
+  fail "DIGESTS.lock is not valid release-digest JSON"
 
-# 2. RELEASE_MANIFEST.json Consistency
-if [[ -f "$MANIFEST_FILE" ]]; then
-    M_VERSION=$(jq -r '.version' "$MANIFEST_FILE")
-    if [[ "$M_VERSION" != "$VERSION" ]]; then
-        echo "❌ RELEASE_MANIFEST.json version ($M_VERSION) differs from VERSION ($VERSION)"
-        exit 1
-    fi
-    echo "✅ RELEASE_MANIFEST.json version matches VERSION"
-fi
+jq -e --arg version "${VERSION}" '
+  .releases[$version] as $release
+  | ($release | type == "object")
+  and ($release.digest == "pending" or
+       ($release.digest | type == "string" and test("^sha256:[a-f0-9]{64}$")))
+  and ($release.published_at == "pending" or
+       ($release.published_at | type == "string" and
+        test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")))
+' "${LOCK_FILE}" >/dev/null ||
+  fail "DIGESTS.lock has no valid entry for ${VERSION}"
 
-# 3. Context-Aware Remote Check
-# Detect if we are in a trusted context (main/release in same repo)
-# We assume GITHUB_ACTIONS=true and a present GITHUB_TOKEN or similar indicates trust.
-IS_TRUSTED_CONTEXT=false
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    IS_TRUSTED_CONTEXT=true
-fi
+IMAGE_REPO="$(jq -er '.image' "${LOCK_FILE}")"
+jq -e \
+  --arg version "${VERSION}" \
+  --arg image "${IMAGE_REPO}" '
+    .version == $version and
+    .tag == $version and
+    .image == $image and
+    (.git_sha == null or
+     (.git_sha | type == "string" and test("^[a-f0-9]{40}$"))) and
+    (.digest == null or
+     (.digest | type == "string" and test("^sha256:[a-f0-9]{64}$"))) and
+    (.build_time_utc == null or
+     (.build_time_utc | type == "string" and
+      test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")))
+  ' "${MANIFEST_FILE}" >/dev/null ||
+  fail "RELEASE_MANIFEST.json does not match the ${VERSION} release intent"
 
-# Override for local testing if needed
-if [[ "${TRUSTED_RELEASE_CONTEXT:-}" == "true" ]]; then
-    IS_TRUSTED_CONTEXT=true
-fi
-
-DIGEST_VAL=$(grep -A 1 "\"${VERSION}\":" "$LOCK_FILE" | grep "digest" | sed 's/.*"digest":[[:space:]]*//' | tr -d '"' | tr -d '[:space:]' | tr -d ',' | tr -d '{}')
-IMAGE_REPO=$(grep "\"image\":" "$LOCK_FILE" | sed 's/.*"image":[[:space:]]*//' | tr -d '"' | tr -d '[:space:]' | tr -d ',')
-
-if [[ -z "$DIGEST_VAL" ]]; then
-    echo "❌ Could not extract digest for ${VERSION} from DIGESTS.lock"
-    exit 1
-fi
-
-if [[ "$IS_TRUSTED_CONTEXT" == "true" ]]; then
-    echo "🌐 Trusted context: Verifying remote existence of ${IMAGE_REPO}@${DIGEST_VAL}..."
-    if ! docker manifest inspect "${IMAGE_REPO}@${DIGEST_VAL}" > /dev/null 2>&1; then
-        echo "❌ FAIL: Digest ${DIGEST_VAL} not found in remote registry ${IMAGE_REPO}"
-        exit 1
-    fi
-    echo "✅ Remote existence verified."
+DIGEST_VALUE="$(jq -r --arg version "${VERSION}" '.releases[$version].digest' "${LOCK_FILE}")"
+if [[ "${DIGEST_VALUE}" == "pending" ]]; then
+  echo "OK: ${VERSION} is structurally prepared; remote digest proof belongs to the tagged release workflow."
 else
-    echo "⚠️  Untrusted/Local context: Skipping remote registry check (Format-only validation)."
-    if [[ "$DIGEST_VAL" == "pending" ]]; then
-        echo "✅ Digest is pending (release-prepare state)."
-    elif [[ ! "$DIGEST_VAL" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-        echo "❌ FAIL: Digest '${DIGEST_VAL}' has invalid format."
-        exit 1
-    else
-        echo "✅ Digest format is valid."
-    fi
+  echo "OK: ${VERSION} carries a well-formed deployment digest pin (${DIGEST_VALUE})."
 fi
-
-echo "✨ Digest Stability Gate Passed."

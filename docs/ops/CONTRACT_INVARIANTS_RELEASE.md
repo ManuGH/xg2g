@@ -2,13 +2,21 @@
 
 This document defines the operatively binding engineering policy for xg2g.
 Maintainer governance and CI enforcement must strictly adhere to these
-invariants to guarantee that **Repository Truth = Runtime Truth**.
+invariants to guarantee a verifiable chain from source to published artifact.
 
 ## 1. Truth Hierarchy (SSoT)
 
-- **`backend/VERSION`**: Canonical source for the release tag (e.g., `v3.3.0`).
-- **`DIGESTS.lock`**: ONLY truth for digests (`@sha256:...`).
-- **`RELEASE_MANIFEST.json`**: Canonical record of build state and metadata.
+- **`backend/VERSION`**: Canonical source intent for the release tag (for
+  example, `v3.9.2`).
+- **GitHub immutable release attestation**: Canonical identity for the tag,
+  source commit, and published file digests.
+- **OCI registry digest + GitHub/Sigstore attestations**: Canonical identity and
+  provenance for the published container manifest.
+- **`DIGESTS.lock`**: Optional deployment-pin registry. A `pending` entry is
+  preparation state, never proof that an image exists.
+- **`RELEASE_MANIFEST.json`**: Checked-in release intent only. Fields that are
+  unknowable before the release commit/build remain `null`; it must not invent
+  provenance.
 
 ## 2. Documentation Drift Prevention (Docs-as-Code)
 
@@ -28,10 +36,15 @@ invariants to guarantee that **Repository Truth = Runtime Truth**.
   (SSoT Anchors and Generated Artifacts).
 - **No Template Changes**: Templates must not be modified in Release PRs.
 
-## 5. Reachability Guarantee
+## 5. Draft-First Reachability Guarantee
 
-- **Digest Verification**: Before release, the digest MUST be proven reachable
-  via `make release-verify-remote`.
+- GoReleaser MUST create a draft and upload all files before publication.
+- The version tag and `latest` MUST resolve to the same OCI digest.
+- The OCI index MUST contain `linux/amd64` and `linux/arm64`.
+- Release files and the OCI manifest MUST be attested before the draft is
+  published.
+- Any failed verification leaves the GitHub release as a draft.
+- Published releases and their associated tags/assets MUST be immutable.
 
 ---
 **Status**: Operatively Binding Protocol
