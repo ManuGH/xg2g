@@ -1,16 +1,116 @@
-# Session/tuner invariants.
-#
-# This file previously alerted on the Phase 5.3 admission-control metrics
-# (xg2g_active_sessions, xg2g_gpu_tokens_in_use, xg2g_admission_admit/reject_total,
-# xg2g_preempt_total, xg2g_uti_exit_total). None of those are emitted by the live
-# daemon: the admission ResourceMonitor's gate/token/session-tracking methods have
-# no live caller (capacity is enforced via tuner leases, host pressure via the live
-# CPU snapshot). Alerting on never-emitted series is a permanent false-positive that
-# trains operators to ignore the page, so those rules were removed rather than kept
-# as lies. What remains is backed by metrics the daemon actually emits: a tuner
-# lease held while the orchestrator reports zero active sessions, which pinpoints a
-# leak rather than a legitimately long-running session.
+# Alerts in this file use only metrics emitted by the live daemon. Keep every
+# expression aligned with docs/ops/SLOS.md and backend/internal/metrics.
 groups:
+  - name: xg2g_availability
+    interval: 30s
+    rules:
+      - alert: XG2GMetricsTargetDown
+        expr: up{job="xg2g"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "xg2g metrics target is down"
+          description: "Prometheus has been unable to scrape the xg2g metrics endpoint for two minutes."
+
+      - alert: XG2GPlaybackErrorBudgetFastBurn
+        expr: |
+          (
+            (
+              sum by (schema) (rate(xg2g_playback_error_total[5m]))
+            /
+              clamp_min(sum by (schema) (rate(xg2g_playback_start_total[5m])), 1e-9)
+            ) / 0.01
+          ) > 14.4
+          and
+          (
+            (
+              sum by (schema) (rate(xg2g_playback_error_total[1h]))
+            /
+              clamp_min(sum by (schema) (rate(xg2g_playback_start_total[1h])), 1e-9)
+            ) / 0.01
+          ) > 14.4
+          and
+          sum by (schema) (increase(xg2g_playback_start_total[5m])) >= 5
+        for: 2m
+        labels:
+          severity: critical
+          slo: playback_availability
+        annotations:
+          summary: "Playback error budget is burning quickly for {{ $labels.schema }}"
+          description: "The 5m and 1h playback error-budget burn rates both exceed 14.4x."
+
+      - alert: XG2GPlaybackErrorBudgetSlowBurn
+        expr: |
+          (
+            (
+              sum by (schema) (rate(xg2g_playback_error_total[30m]))
+            /
+              clamp_min(sum by (schema) (rate(xg2g_playback_start_total[30m])), 1e-9)
+            ) / 0.01
+          ) > 6
+          and
+          (
+            (
+              sum by (schema) (rate(xg2g_playback_error_total[6h]))
+            /
+              clamp_min(sum by (schema) (rate(xg2g_playback_start_total[6h])), 1e-9)
+            ) / 0.01
+          ) > 6
+          and
+          sum by (schema) (increase(xg2g_playback_start_total[30m])) >= 20
+        for: 15m
+        labels:
+          severity: warning
+          slo: playback_availability
+        annotations:
+          summary: "Playback error budget is burning steadily for {{ $labels.schema }}"
+          description: "The 30m and 6h playback error-budget burn rates both exceed 6x."
+
+      - alert: XG2GLiveTTFFHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(xg2g_playback_ttff_seconds_bucket{schema="live",outcome="ok"}[10m]))
+          ) > 5
+          and
+          sum(increase(xg2g_playback_start_total{schema="live"}[10m])) >= 5
+        for: 5m
+        labels:
+          severity: warning
+          slo: playback_ttff
+          schema: live
+        annotations:
+          summary: "Live playback TTFF p95 exceeds five seconds"
+          description: "At least five live starts were observed and the successful TTFF p95 stayed above the live SLO."
+
+      - alert: XG2GRecordingTTFFHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(xg2g_playback_ttff_seconds_bucket{schema="recording",outcome="ok"}[10m]))
+          ) > 4
+          and
+          sum(increase(xg2g_playback_start_total{schema="recording"}[10m])) >= 5
+        for: 5m
+        labels:
+          severity: warning
+          slo: playback_ttff
+          schema: recording
+        annotations:
+          summary: "Recording playback TTFF p95 exceeds four seconds"
+          description: "At least five recording starts were observed and the successful TTFF p95 stayed above the recording SLO."
+
+      - alert: XG2GMajorRebufferObserved
+        expr: sum by (schema) (increase(xg2g_playback_rebuffer_total{severity="major"}[10m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          slo: playback_rebuffer
+        annotations:
+          summary: "Major playback rebuffer observed for {{ $labels.schema }}"
+          description: "At least one server-side media gap of 24 seconds or more was observed in the last ten minutes."
+
   - name: xg2g_session_invariants
     interval: 30s
     rules:
@@ -22,7 +122,7 @@ groups:
         for: 5m
         labels:
           severity: critical
-          gate: "nightly"
+          slo: resource_integrity
         annotations:
           summary: "Tuner leak suspected (tuners held with no active sessions)"
           description: "xg2g_tuners_in_use > 0 while xg2g_v3_sessions_active == 0 for 5 minutes: a tuner lease was not released after its session ended. Both gauges are emitted by the live session orchestrator."

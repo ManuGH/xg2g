@@ -17,7 +17,7 @@
 - **Required metrics:**
   - `xg2g_sessions_active` – current active stream sessions
   - `xg2g_requests_total` – HTTP request counter by path/status
-  - `xg2g_ffmpeg_processes` – active FFmpeg processes
+  - `xg2g_active_ffmpeg_processes` – active FFmpeg processes
   - `xg2g_recordings_preparing_total{probe_state,blocked_reason}` – preparing responses for recording playback truth
   - `xg2g_playback_start_total{schema,mode}` – playback start denominator for SLO ratios
   - `xg2g_playback_ttff_seconds_bucket{schema,mode,outcome}` – TTFF distribution
@@ -44,6 +44,43 @@ Rebuffer proxy thresholds:
 - Same thresholds are intentionally used for `live` and `recording` to keep
   server-side proxy behavior comparable across schemas. We will only split
   thresholds when reliable per-session target-duration telemetry is available.
+
+## Local Monitoring Stack
+
+The optional monitoring overlay is an operator-only, loopback-bound stack with
+Prometheus, Alertmanager, and Grafana. It enables the xg2g metrics listener on
+the private Compose network and does not publish the metrics endpoint itself.
+
+Before the first start, create the Grafana admin-password secret:
+
+```bash
+sudo install -d -m 0750 /etc/xg2g
+sudo sh -c 'umask 077; head -c 48 /dev/urandom | base64 > /etc/xg2g/grafana-admin-password'
+```
+
+Then start the canonical runtime plus monitoring overlay:
+
+```bash
+docker compose \
+  --project-directory . \
+  -f infra/systemd/docker-compose.yml \
+  -f compose.monitoring.yaml \
+  up -d
+```
+
+Operator UIs remain local to the host:
+
+- Grafana: `http://127.0.0.1:3000`
+- Prometheus: `http://127.0.0.1:9091`
+- Alertmanager: `http://127.0.0.1:9093`
+
+Use an SSH/VPN path to reach them. Do not change the bindings to `0.0.0.0`.
+Grafana provisions the Prometheus datasource and the `xg2g Streaming SLOs`
+dashboard automatically. Prometheus loads the reviewed playback burn-rate,
+TTFF, rebuffer, target-health, and tuner-leak rules. Alertmanager deliberately
+keeps alerts local by default; external notification receivers belong in a
+private, reviewed deployment override so credentials and destinations never
+enter the repository.
 
 ## Tracing (OpenTelemetry)
 

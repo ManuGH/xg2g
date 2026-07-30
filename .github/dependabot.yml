@@ -53,3 +53,15 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+
+  # Container images used by the runtime and optional monitoring overlay.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "docker"

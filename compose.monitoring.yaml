@@ -1,40 +1,94 @@
-# Optional monitoring stack for xg2g
-# Usage: docker compose --project-directory . -f infra/systemd/docker-compose.yml -f compose.monitoring.yaml up -d
+# Optional, loopback-only monitoring stack for xg2g.
+# Usage and required secret setup: docs/ops/OBSERVABILITY.md
 
 services:
+  xg2g:
+    environment:
+      - XG2G_METRICS_LISTEN=:9091
+    networks:
+      - monitoring
+
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.13.2@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69
     container_name: xg2g-prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
     ports:
-      - "9091:9090"
+      - "127.0.0.1:9091:9090"
     volumes:
       - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/monitoring/alerts-xg2g-phase5-3.yml:/etc/prometheus/alerts-xg2g-phase5-3.yml:ro
       - prometheus-data:/prometheus
     networks:
       - monitoring
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      xg2g:
+        condition: service_healthy
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: xg2g-grafana
+  alertmanager:
+    image: prom/alertmanager:v0.33.1@sha256:9e082985f56f4c8c9f724e18f2288c6708f472e56a5286b8863d080434ea065d
+    container_name: xg2g-alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
     ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
+      - "127.0.0.1:9093:9093"
     volumes:
-      - grafana-data:/var/lib/grafana
-      - ./infra/monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/xg2g.json:ro
+      - ./infra/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
     networks:
       - monitoring
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  grafana:
+    image: grafana/grafana:13.1.1@sha256:7cb8c64c4d57a57e734073f3cc94620adb24a0acb929bd80ba9f14017e3a975b
+    container_name: xg2g-grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_PATHS_LOGS=/var/lib/grafana/log
+    secrets:
+      - grafana_admin_password
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/monitoring/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./infra/monitoring/provisioning/dashboards/xg2g.yml:/etc/grafana/provisioning/dashboards/xg2g.yml:ro
+      - ./infra/monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/xg2g.json:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+      alertmanager:
+        condition: service_started
 
 networks:
   monitoring:
@@ -42,4 +96,9 @@ networks:
 
 volumes:
   prometheus-data:
+  alertmanager-data:
   grafana-data:
+
+secrets:
+  grafana_admin_password:
+    file: ${XG2G_GRAFANA_ADMIN_PASSWORD_FILE:-/etc/xg2g/grafana-admin-password}
