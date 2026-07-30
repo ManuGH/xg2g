@@ -43,6 +43,7 @@ Every release archive must contain:
 - `backend/VERSION`
 - `DIGESTS.lock`
 - `docs/**`
+- the `docs/man/xg2g.1` manual page
 - `infra/systemd/**`
 - the deployment helpers required by `infra/systemd/sync.sh` under
   `backend/scripts/`

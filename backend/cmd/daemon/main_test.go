@@ -5,7 +5,11 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 package main
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
 
 func TestMaskURL(t *testing.T) {
 	tests := []struct {
@@ -76,6 +80,44 @@ func TestMaskURL(t *testing.T) {
 			got := maskURL(tt.rawURL)
 			if got != tt.want {
 				t.Errorf("maskURL(%q) = %q, want %q", tt.rawURL, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMainUsageListsExecutableCommands(t *testing.T) {
+	var out bytes.Buffer
+	printMainUsage(&out)
+
+	for _, command := range []string{"status", "report"} {
+		if !strings.Contains(out.String(), "  "+command) {
+			t.Fatalf("main help does not list %q:\n%s", command, out.String())
+		}
+	}
+}
+
+func TestRunHelpSupportsStatusAndReport(t *testing.T) {
+	tests := []struct {
+		topic string
+		want  string
+	}{
+		{topic: "status", want: "status [flags]"},
+		{topic: "report", want: "report [flags]"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.topic, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			if code := runHelpTo(&stdout, &stderr, []string{tt.topic}); code != 0 {
+				t.Fatalf("runHelpTo(%q) exit code = %d, stderr = %q", tt.topic, code, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), tt.want) {
+				t.Fatalf("help for %q missing %q:\n%s", tt.topic, tt.want, stdout.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("help for %q wrote stderr: %q", tt.topic, stderr.String())
 			}
 		})
 	}

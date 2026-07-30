@@ -27,6 +27,7 @@ CORE_SPECS=(
   "infra/systemd/sync.sh|/srv/xg2g/infra/systemd/sync.sh|755"
   "infra/systemd/xg2g-admin.sh|/srv/xg2g/scripts/xg2g-admin.sh|755"
   "infra/systemd/xg2g-admin.sh|/usr/local/sbin/xg2g-admin|755"
+  "docs/man/xg2g.1|/usr/local/share/man/man1/xg2g.1|644"
   "infra/systemd/xg2g-caddy.service|/etc/systemd/system/xg2g-caddy.service|644"
   "infra/systemd/xg2g-backup.service|/etc/systemd/system/xg2g-backup.service|644"
   "infra/systemd/xg2g-backup.timer|/etc/systemd/system/xg2g-backup.timer|644"

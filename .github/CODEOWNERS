@@ -33,7 +33,8 @@
 # Security & Dependencies
 /.golangci.yml @ManuGH
 /.github/dependabot.yml @ManuGH
-/SECURITY.md @ManuGH
+/.github/SECURITY.md @ManuGH
+/docs/ops/SECURITY.md @ManuGH
 
 # Documentation (can be more relaxed, but still require review)
 /README.md @ManuGH

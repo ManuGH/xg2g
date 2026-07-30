@@ -141,6 +141,7 @@ TEMP_DIRS+=("${archive_root}" "${archive_install_root}")
 mkdir -p \
   "${archive_root}/backend/scripts" \
   "${archive_root}/infra" \
+  "${archive_root}/docs/man" \
   "${archive_root}/docs/ops"
 cp -R "${REPO_ROOT}/infra/systemd" "${archive_root}/infra/systemd"
 for helper in \
@@ -154,6 +155,7 @@ for helper in \
 done
 cp "${REPO_ROOT}/backend/VERSION" "${archive_root}/backend/VERSION"
 cp "${REPO_ROOT}/DIGESTS.lock" "${archive_root}/DIGESTS.lock"
+cp "${REPO_ROOT}/docs/man/xg2g.1" "${archive_root}/docs/man/xg2g.1"
 cp "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "${archive_root}/docs/ops/xg2g-verifier.service"
 cp "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "${archive_root}/docs/ops/xg2g-verifier.timer"
 printf '#!/usr/bin/env sh\nexit 0\n' > "${archive_root}/xg2g"

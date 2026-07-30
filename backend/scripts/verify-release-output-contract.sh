@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Literal workflow expressions and shell variables are contract assertions.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -6,6 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 DOC="${REPO_ROOT}/docs/ops/RELEASE_OUTPUT_CONTRACT.md"
 GORELEASER_CFG="${REPO_ROOT}/.goreleaser.yml"
+LEGACY_GORELEASER_CFG="${REPO_ROOT}/backend/.goreleaser.yml"
 RELEASE_WORKFLOW="${REPO_ROOT}/.github/workflows/release.yml"
 DOCKER_WORKFLOW="${REPO_ROOT}/.github/workflows/docker.yml"
 FFMPEG_BASE_WORKFLOW="${REPO_ROOT}/.github/workflows/ffmpeg-base.yml"
@@ -36,6 +38,7 @@ RELEASE_INSTALL_FILES=(
   "backend/scripts/verify-systemd-runtime-contract.sh"
   "backend/scripts/verify-installation-contract.sh"
   "backend/scripts/verify-runtime.sh"
+  "docs/man/xg2g.1"
   "docs/ops/xg2g-verifier.service"
   "docs/ops/xg2g-verifier.timer"
   "DIGESTS.lock"
@@ -190,6 +193,8 @@ verify_release_workflow_contract() {
 
 verify_goreleaser_contract() {
   assert_file "${GORELEASER_CFG}"
+  [[ ! -e "${LEGACY_GORELEASER_CFG}" ]] ||
+    fail "legacy GoReleaser configuration must not exist: ${LEGACY_GORELEASER_CFG}"
   assert_allowed_goreleaser_keys
 
   assert_contains "${GORELEASER_CFG}" 'project_name: xg2g' "goreleaser project"
@@ -199,6 +204,7 @@ verify_goreleaser_contract() {
   assert_contains "${GORELEASER_CFG}" 'LICENSE' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'backend/VERSION' "goreleaser archive payload"
   assert_contains "${GORELEASER_CFG}" 'docs/**' "goreleaser archive payload"
+  assert_contains "${DOC}" 'docs/man/xg2g.1' "release output manual page"
   assert_contains "${GORELEASER_CFG}" 'infra/systemd/**' "goreleaser self-contained systemd payload"
   assert_contains "${GORELEASER_CFG}" 'backend/scripts/compose-xg2g.sh' "goreleaser compose helper payload"
   assert_contains "${GORELEASER_CFG}" 'backend/scripts/verify-installation-contract.sh' "goreleaser installation verifier payload"
@@ -353,11 +359,12 @@ create_synthetic_bundle() {
   while IFS=: read -r os arch; do
     archive_name="xg2g_${plain_version}_${os}_${arch}.tar.gz"
     payload_root="${bundle_dir}/payload-${os}-${arch}"
-    mkdir -p "${payload_root}/backend/scripts" "${payload_root}/docs/ops" "${payload_root}/infra"
+    mkdir -p "${payload_root}/backend/scripts" "${payload_root}/docs/man" "${payload_root}/docs/ops" "${payload_root}/infra"
     printf '%s\n' 'synthetic release readme' > "${payload_root}/README.md"
     printf '%s\n' 'synthetic license' > "${payload_root}/LICENSE"
     printf '%s\n' "${tag_version}" > "${payload_root}/backend/VERSION"
     printf '%s\n' 'synthetic docs' > "${payload_root}/docs/ops/placeholder.md"
+    cp "${REPO_ROOT}/docs/man/xg2g.1" "${payload_root}/docs/man/"
     cp -R "${REPO_ROOT}/infra/systemd" "${payload_root}/infra/systemd"
     cp "${REPO_ROOT}/backend/scripts/compose-xg2g.sh" "${payload_root}/backend/scripts/"
     cp "${REPO_ROOT}/backend/scripts/verify-compose-contract.sh" "${payload_root}/backend/scripts/"
