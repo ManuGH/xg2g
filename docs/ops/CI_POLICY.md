@@ -20,7 +20,8 @@ Purpose: Make CI deterministic, offline-reproducible, and not dependent on GitHu
 - A workflow that emits a branch-protection-required check must trigger for
   every PR without top-level `paths` or `paths-ignore` filters. Expensive work
   may be selected inside the workflow, but the required check itself must
-  always be reported.
+  always be reported. Repository Health enforces this through
+  `backend/scripts/verify-required-check-triggers.sh`.
 - `.github/workflows/lint.yml` uses `backend/scripts/ci/resolve-lint-scope.sh` for this reason.
 
 ## PR Gate (Required Core)
