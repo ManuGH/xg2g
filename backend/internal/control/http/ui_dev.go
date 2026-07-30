@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/config"
 )
 
 const defaultUIDevProxyURL = "http://127.0.0.1:5173"
@@ -29,11 +31,11 @@ func DetermineUIMode(devDir, devProxyURL string) UIMode {
 func resolveUIDevConfig(devDir, devProxyURL string) (string, string) {
 	devDir = strings.TrimSpace(devDir)
 	if devDir == "" {
-		devDir = strings.TrimSpace(os.Getenv("XG2G_UI_DEV_DIR"))
+		devDir = strings.TrimSpace(config.ParseString("XG2G_UI_DEV_DIR", ""))
 	}
 	devProxyURL = strings.TrimSpace(devProxyURL)
 	if devProxyURL == "" {
-		devProxyURL = strings.TrimSpace(os.Getenv("XG2G_UI_DEV_PROXY_URL"))
+		devProxyURL = strings.TrimSpace(config.ParseString("XG2G_UI_DEV_PROXY_URL", ""))
 	}
 	return devDir, devProxyURL
 }
