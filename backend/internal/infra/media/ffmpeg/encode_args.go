@@ -86,19 +86,43 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
 	} else {
-		args = appendAV1VAAPILevelArgs(args)
+		args = appendAV1VAAPILevelArgs(args, prof.VideoMaxRateK)
 	}
 	return args
 }
 
-// appendAV1VAAPILevelArgs pins the AV1 seq_level_idx to 5.0. The AMD VAAPI
-// encoder derives the level from picture size alone and ignores frame rate:
-// 1920x1088@50 gets level 4.1 (max ~70.8M samples/s) although it needs ~104M.
-// macOS decoders tolerate the violation; the iPhone hardware decoder does not
-// and never outputs a frame (endless buffering, then a decode error). Level
-// 5.0 covers 1088p50 10-bit with headroom.
-func appendAV1VAAPILevelArgs(args []string) []string {
-	return append(args, "-level", "5.0")
+// appendAV1VAAPILevelArgs pins the AV1 seq_level_idx, because the VAAPI encoder
+// derives it from picture size alone and ignores frame rate: 1920x1088@50 gets
+// level 4.1 (max ~70.8M samples/s) although it needs ~104M. macOS decoders
+// tolerate the violation; the iPhone hardware decoder does not and never
+// outputs a frame (endless buffering, then a decode error).
+//
+// The level also carries a Main-tier bitrate cap - 20 Mbps at 4.1, 30 at 5.0,
+// 40 at 5.1 - so a pin that ignores the configured bitrate reintroduces exactly
+// the violation it exists to prevent. Measured after the ceiling went to
+// 25 Mbps: real segments peaked at 27.4 Mbps, 91% of the level-5.0 cap, because
+// -bufsize deliberately allows short bursts above -maxrate. Pick the level from
+// the bitrate with room for those bursts.
+func appendAV1VAAPILevelArgs(args []string, maxRateK int) []string {
+	return append(args, "-level", av1LevelForMaxRateK(maxRateK))
+}
+
+// av1LevelForMaxRateK returns the lowest AV1 level whose Main-tier bitrate cap
+// covers the configured ceiling with burst headroom. Claiming a higher level
+// than needed is not free either: a decoder may refuse a level it does not
+// implement, so this steps up rather than pinning the maximum outright.
+func av1LevelForMaxRateK(maxRateK int) string {
+	// 25% headroom: measured on real segments, a 25 Mbps ceiling peaked at
+	// 27.4 Mbps, so the bursts -bufsize permits run about 10% over. 25% keeps
+	// margin without claiming a level the hardware may not implement.
+	switch required := maxRateK * 5 / 4; {
+	case required <= 30000:
+		return "5.0"
+	case required <= 40000:
+		return "5.1"
+	default:
+		return "6.0"
+	}
 }
 
 func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
@@ -126,7 +150,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
 	} else {
-		args = appendAV1VAAPILevelArgs(args)
+		args = appendAV1VAAPILevelArgs(args, prof.VideoMaxRateK)
 	}
 	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args

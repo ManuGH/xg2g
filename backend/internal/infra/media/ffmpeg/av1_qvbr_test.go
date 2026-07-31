@@ -159,3 +159,19 @@ func TestAppendVaapiRateControlArgs_RingStallHeadroomIsAMDOnly(t *testing.T) {
 	intel, _ := valueAfter(appendVaapiRateControlArgs(nil, prof, "av1", withProbedQVBRForVendor(t, true, "intel")), "-b:v")
 	assert.Equal(t, "8000k", intel, "no ring stall here, so no headroom to give away")
 }
+
+// The level carries a Main-tier bitrate cap (20 Mbps at 4.1, 30 at 5.0, 40 at
+// 5.1). Pinning 5.0 while raising the ceiling to 25 Mbps put real segments at
+// 27.4 Mbps - 91% of the cap - and the iPhone decoder does not tolerate a level
+// violation: it never outputs a frame.
+func TestAV1LevelFollowsTheConfiguredBitrate(t *testing.T) {
+	assert.Equal(t, "5.0", av1LevelForMaxRateK(6000), "the old default stays where it was")
+	assert.Equal(t, "5.0", av1LevelForMaxRateK(12000))
+	assert.Equal(t, "5.1", av1LevelForMaxRateK(25000), "25 Mbps bursts past the 30 Mbps level-5.0 cap")
+	assert.Equal(t, "6.0", av1LevelForMaxRateK(40000))
+
+	args := appendAV1VAAPILevelArgs(nil, 25000)
+	level, ok := valueAfter(args, "-level")
+	assert.True(t, ok)
+	assert.Equal(t, "5.1", level)
+}
