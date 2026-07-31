@@ -167,6 +167,10 @@ func TestAppendVaapiRateControlArgs_RingStallHeadroomIsAMDOnly(t *testing.T) {
 func TestAV1LevelFollowsTheConfiguredBitrate(t *testing.T) {
 	assert.Equal(t, "5.0", av1LevelForMaxRateK(6000), "the old default stays where it was")
 	assert.Equal(t, "5.0", av1LevelForMaxRateK(12000))
+	// 24 Mbps is the most a level-5.0 stream can carry with burst headroom, and
+	// staying there keeps the signalled level on ground Apple decoders have
+	// already been seen to accept.
+	assert.Equal(t, "5.0", av1LevelForMaxRateK(24000))
 	assert.Equal(t, "5.1", av1LevelForMaxRateK(25000), "25 Mbps bursts past the 30 Mbps level-5.0 cap")
 	assert.Equal(t, "6.0", av1LevelForMaxRateK(40000))
 
