@@ -153,6 +153,16 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 				// see av1NeedsSoftwareNormalization.
 				fullVAAPI = false
 			}
+			// The full pipeline pins -hwaccel_output_format vaapi below, so it
+			// is only available when the GPU proved it decodes THIS input. An
+			// unscanned source has no proof and therefore keeps software
+			// decode - the same conservative direction every other probe takes.
+			if fullVAAPI && !hardware.VAAPIDecodeVerified(spec.Profile.VideoSourceCodec) {
+				fullVAAPI = false
+				a.Logger.Info().
+					Str("source_codec", spec.Profile.VideoSourceCodec).
+					Msg("vaapi full pipeline disabled: hardware decode not verified for this input codec")
+			}
 			if spec.Profile.Deinterlace {
 				fullPathID := vaapiPathCorrectnessIDFor(resolvedCodec, true)
 				if fullVAAPI && fullPathID != "" {

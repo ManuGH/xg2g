@@ -175,3 +175,5 @@ func (a *LocalAdapter) PreflightTranscodeProfiles() { a.detector.PreflightTransc
 func (a *LocalAdapter) PreflightPathCorrectness() { a.detector.PreflightPathCorrectness() }
 
 func (a *LocalAdapter) PreflightVAAPIRateControlModes() { a.detector.PreflightVAAPIRateControlModes() }
+
+func (a *LocalAdapter) PreflightVAAPIDecode() { a.detector.PreflightVAAPIDecode() }

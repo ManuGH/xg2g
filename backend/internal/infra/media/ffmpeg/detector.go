@@ -62,9 +62,12 @@ type Detector struct {
 	pathCorrectnessChecked bool
 	pathProbeFn            func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
 
-	rateControlChecked    bool
-	rateControlProbeFn    func(ctx context.Context, encoder, mode string) error
-	encoderOptionProbeFn  func(ctx context.Context, encoder, option, value string) error
+	rateControlChecked   bool
+	rateControlProbeFn   func(ctx context.Context, encoder, mode string) error
+	encoderOptionProbeFn func(ctx context.Context, encoder, option, value string) error
+
+	decodeChecked         bool
+	decodeProbeFn         func(ctx context.Context, codec string) error
 	signalStatsYAvgFn     func(context.Context, string) (float64, error)
 	recordProcessDetail   func(ports.RunHandle, string)
 	terminateProcessGroup func(*exec.Cmd, string)

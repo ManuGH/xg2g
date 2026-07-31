@@ -132,3 +132,58 @@ func VAAPIEncoderOptionVerified(encoder, option string) bool {
 	}
 	return encoderOptVerified[strings.ToLower(strings.TrimSpace(encoder))][strings.ToLower(strings.TrimSpace(option))]
 }
+
+var (
+	decodeMu       sync.RWMutex
+	decodeChecked  bool
+	decodeVerified map[string]bool
+)
+
+// SetVAAPIDecodeCapabilities records which input codecs the GPU proved it can
+// decode. Requesting hardware decode is not free of consequence: with
+// -hwaccel_output_format vaapi pinned, a decoder the driver cannot provide
+// fails the session outright rather than falling back to software.
+func SetVAAPIDecodeCapabilities(capabilities map[string]bool) {
+	decodeMu.Lock()
+	defer decodeMu.Unlock()
+	decodeChecked = capabilities != nil
+	if capabilities == nil {
+		decodeVerified = nil
+		return
+	}
+	decodeVerified = make(map[string]bool, len(capabilities))
+	for codec, ok := range capabilities {
+		decodeVerified[normalizeDecodeCodec(codec)] = ok
+	}
+}
+
+// VAAPIDecodeVerified reports whether the GPU proved it decodes this input
+// codec. An empty or unprobed codec reads as false: an unknown input is
+// precisely the case where guessing costs the viewer the stream.
+func VAAPIDecodeVerified(codec string) bool {
+	decodeMu.RLock()
+	defer decodeMu.RUnlock()
+	if !decodeChecked {
+		return false
+	}
+	return decodeVerified[normalizeDecodeCodec(codec)]
+}
+
+// normalizeDecodeCodec folds the spellings a scan, a container and FFmpeg each
+// use for the same bitstream onto one key.
+func normalizeDecodeCodec(codec string) string {
+	switch strings.ToLower(strings.TrimSpace(codec)) {
+	case "h264", "avc", "avc1", "libx264":
+		return "h264"
+	case "hevc", "h265", "hvc1", "hev1", "libx265":
+		return "hevc"
+	case "mpeg2", "mpeg2video", "mpegvideo":
+		return "mpeg2video"
+	case "av1", "av01":
+		return "av1"
+	case "vp9":
+		return "vp9"
+	default:
+		return strings.ToLower(strings.TrimSpace(codec))
+	}
+}
