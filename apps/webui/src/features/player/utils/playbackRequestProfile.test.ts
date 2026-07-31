@@ -114,6 +114,61 @@ describe('resolvePlaybackRequestProfile', () => {
     )).toBe('quality');
   });
 
+  it('resolves quality for a Mac on the LAN once the server probe confirmed it', () => {
+    // The LAN verdict carries no measured bitrate on purpose; the browser's own
+    // resource-timing guess must not be able to veto the quality rung.
+    expect(resolvePlaybackRequestProfile(
+      buildContext({
+        isTv: false,
+        isNativePlayback: false,
+        platform: 'macos',
+        network: {
+          kind: 'lan',
+          metered: false,
+        },
+      }),
+      buildCapabilities({
+        videoCodecs: ['av1', 'h264'],
+        videoCodecSignals: [
+          { codec: 'av1', supported: true },
+        ],
+      }),
+      'live'
+    )).toBe('quality');
+  });
+
+  it('resolves quality from a measured server probe', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext({
+        isTv: false,
+        isNativePlayback: false,
+        platform: 'macos',
+        network: {
+          kind: 'measured',
+          downlinkMbps: 120,
+          metered: false,
+        },
+      }),
+      buildCapabilities(),
+      'live'
+    )).toBe('quality');
+  });
+
+  it('still caps a measured link that is genuinely slow', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext({
+        isTv: false,
+        isNativePlayback: false,
+        network: {
+          kind: 'measured',
+          downlinkMbps: 4,
+        },
+      }),
+      buildCapabilities(),
+      'live'
+    )).toBe('bandwidth');
+  });
+
   it('withholds quality when Media Capabilities reports no smooth modern codec', () => {
     expect(resolvePlaybackRequestProfile(
       buildContext(),

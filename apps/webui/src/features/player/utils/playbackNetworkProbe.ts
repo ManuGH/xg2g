@@ -174,8 +174,31 @@ export function applyPlaybackNetworkProbe(
 	context: PlaybackClientContext,
 	probe: PlaybackNetworkProbe | undefined,
 ): PlaybackClientContext {
-	if (probe == null || probe.kind === 'lan') {
+	if (probe == null) {
 		return context;
+	}
+
+	// A LAN verdict is the server confirming the client is a private peer on the
+	// media path — the strongest positive evidence we can get, and the reason it
+	// ships no payload to measure. Keeping the browser's own resource-timing
+	// guess here was the bug: that heuristic divides bytes by wall time incl.
+	// latency, so a fast LAN routinely estimated 15-35 Mbps, which is too slow
+	// for the quality rung and too fast for the bandwidth rung — the profile
+	// silently stayed unresolved. Record the verdict and drop the guess.
+	if (probe.kind === 'lan') {
+		capabilities.networkContext = {
+			...capabilities.networkContext,
+			kind: 'lan',
+			downlinkKbps: undefined,
+		};
+		return {
+			...context,
+			network: {
+				...context.network,
+				kind: 'lan',
+				downlinkMbps: undefined,
+			},
+		};
 	}
 
 	const downlinkMbps = probe.kind === 'constrained' ? 1 : probe.downlinkMbps;
