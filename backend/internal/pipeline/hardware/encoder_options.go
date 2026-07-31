@@ -24,6 +24,14 @@ const (
 	RateControlQVBR = "QVBR"
 	// RateControlVBR is the universal fallback: bitrate-targeted, cap honoured.
 	RateControlVBR = "VBR"
+	// OptionBFrames is the encoder's willingness to reorder frames. Measured on
+	// an Intel AV1 encoder at a fixed QP, B-frames cut the bitstream by 9.3%
+	// (-bf 7) and 7.0% (-bf 2) at identical quality settings - at a fixed
+	// bitrate those bits go into the picture instead. Whether a given encoder
+	// honours the option (rather than silently ignoring or rejecting it) is a
+	// per-encoder fact, so it is probed like every other one.
+	OptionBFrames = "bf"
+
 	// RateControlICQ is deliberately NOT probed or used. It is quality-targeted
 	// but ignores the bitrate ceiling, and a ceiling-less mode has already
 	// filled this deployment's /dev/shm segment store once (CQP at QP20 ran
@@ -32,6 +40,10 @@ const (
 )
 
 var (
+	encoderOptMu       sync.RWMutex
+	encoderOptChecked  bool
+	encoderOptVerified map[string]map[string]bool
+
 	encoderRCMu       sync.RWMutex
 	encoderRCChecked  bool
 	encoderRCVerified map[string]map[string]bool
@@ -87,4 +99,36 @@ func VAAPIRateControlModes(encoder string) []string {
 
 func normalizeRateControlMode(mode string) string {
 	return strings.ToUpper(strings.TrimSpace(mode))
+}
+
+// SetVAAPIEncoderOptions records, per encoder, which non-rate-control encoder
+// options the driver accepted during startup preflight.
+func SetVAAPIEncoderOptions(capabilities map[string]map[string]bool) {
+	encoderOptMu.Lock()
+	defer encoderOptMu.Unlock()
+	encoderOptChecked = capabilities != nil
+	if capabilities == nil {
+		encoderOptVerified = nil
+		return
+	}
+	encoderOptVerified = make(map[string]map[string]bool, len(capabilities))
+	for encoder, options := range capabilities {
+		copied := make(map[string]bool, len(options))
+		for option, ok := range options {
+			copied[strings.ToLower(strings.TrimSpace(option))] = ok
+		}
+		encoderOptVerified[strings.ToLower(strings.TrimSpace(encoder))] = copied
+	}
+}
+
+// VAAPIEncoderOptionVerified reports whether the probe proved this encoder
+// accepts this option. Unprobed reads as unsupported, for the same reason it
+// does for rate-control modes.
+func VAAPIEncoderOptionVerified(encoder, option string) bool {
+	encoderOptMu.RLock()
+	defer encoderOptMu.RUnlock()
+	if !encoderOptChecked {
+		return false
+	}
+	return encoderOptVerified[strings.ToLower(strings.TrimSpace(encoder))][strings.ToLower(strings.TrimSpace(option))]
 }

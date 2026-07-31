@@ -90,3 +90,42 @@ func TestVAAPIRateControlVerifiedIsFalseBeforeAnyProbe(t *testing.T) {
 	assert.False(t, hardware.VAAPIRateControlVerified("av1_vaapi", hardware.RateControlQVBR))
 	assert.False(t, hardware.VAAPIRateControlVerified("", ""))
 }
+
+// B-frames are a per-encoder fact like every other option: measured on an Intel
+// AV1 encoder they cut 9.3% of the bits at identical quality, but whether a
+// given driver honours -bf has to be proven, not assumed.
+func TestPreflightVAAPIEncoderOptions_RecordsBFrameVerdicts(t *testing.T) {
+	d := rateControlDetector(t, func(context.Context, string, string) error { return nil })
+	hardware.SetVAAPIEncoderOptions(nil)
+	t.Cleanup(func() { hardware.SetVAAPIEncoderOptions(nil) })
+	d.encoderOptionProbeFn = func(_ context.Context, encoder, option, value string) error {
+		if option != "-bf" || value == "" {
+			t.Fatalf("unexpected option probe %q=%q", option, value)
+		}
+		if encoder == "av1_vaapi" {
+			return errors.New("driver rejects frame reordering")
+		}
+		return nil
+	}
+
+	d.PreflightVAAPIRateControlModes()
+
+	assert.False(t, hardware.VAAPIEncoderOptionVerified("av1_vaapi", hardware.OptionBFrames))
+	assert.True(t, hardware.VAAPIEncoderOptionVerified("hevc_vaapi", hardware.OptionBFrames))
+}
+
+func TestAppendVaapiBFrameArgs_OnlyWhenProven(t *testing.T) {
+	hardware.SetVAAPIEncoderOptions(nil)
+	t.Cleanup(func() { hardware.SetVAAPIEncoderOptions(nil) })
+	assert.NotContains(t, appendVaapiBFrameArgs(nil, "av1"), "-bf", "unprobed must not request reordering")
+
+	hardware.SetVAAPIEncoderOptions(map[string]map[string]bool{
+		"av1_vaapi": {hardware.OptionBFrames: true},
+	})
+	assert.Contains(t, appendVaapiBFrameArgs(nil, "av1"), "-bf")
+
+	hardware.SetVAAPIEncoderOptions(map[string]map[string]bool{
+		"av1_vaapi": {hardware.OptionBFrames: false},
+	})
+	assert.NotContains(t, appendVaapiBFrameArgs(nil, "av1"), "-bf", "a rejected option must not be emitted")
+}

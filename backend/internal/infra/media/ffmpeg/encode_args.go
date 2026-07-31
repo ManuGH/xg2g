@@ -78,6 +78,7 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
 	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
+	args = appendVaapiBFrameArgs(args, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = appendVideoGOPArgs(args, gop, segmentSec)
@@ -118,6 +119,7 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
 	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
+	args = appendVaapiBFrameArgs(args, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = appendVideoGOPArgs(args, gop, segmentSec)
@@ -229,6 +231,17 @@ func av1VAAPIGeometryPadFilter() string {
 	return "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=lanczos," +
 		"setsar=sar=sar*ceil(h/16)*16/h:max=1000," +
 		"pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
+}
+
+// appendVaapiBFrameArgs requests frame reordering where the driver proved it
+// accepts the option. Bits saved by B-frames are bits the rate control can
+// spend on the picture instead.
+func appendVaapiBFrameArgs(args []string, outputCodec string) []string {
+	encoder := vaapiEncoderForCodec(outputCodec)
+	if !hardware.VAAPIEncoderOptionVerified(encoder, hardware.OptionBFrames) {
+		return args
+	}
+	return append(args, "-bf", strconv.Itoa(vaapiBFrames))
 }
 
 func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCodec string, cfg AdapterConfig) []string {
