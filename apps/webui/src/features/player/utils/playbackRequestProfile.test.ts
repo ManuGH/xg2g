@@ -92,6 +92,28 @@ describe('resolvePlaybackRequestProfile', () => {
     )).toBe('quality');
   });
 
+  it('automatically resolves quality profile on a desktop web browser (e.g. Mac on Wi-Fi)', () => {
+    expect(resolvePlaybackRequestProfile(
+      buildContext({
+        isTv: false,
+        isNativePlayback: false,
+        platform: 'macos',
+        network: {
+          kind: 'wifi',
+          downlinkMbps: 100,
+          metered: false,
+        },
+      }),
+      buildCapabilities({
+        videoCodecs: ['av1', 'h264'],
+        videoCodecSignals: [
+          { codec: 'av1', supported: true, smooth: true, powerEfficient: true },
+        ],
+      }),
+      'live'
+    )).toBe('quality');
+  });
+
   it('withholds quality when Media Capabilities reports no smooth modern codec', () => {
     expect(resolvePlaybackRequestProfile(
       buildContext(),
