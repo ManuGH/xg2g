@@ -55,11 +55,23 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 
 	filters := make([]string, 0, 2)
 	if prof.Deinterlace {
-		filters = append(filters, "deinterlace_vaapi")
+		// rate=field emits one frame per field - the GPU equivalent of bwdif's
+		// send_field, and the only way this path reaches 50p. Without it
+		// deinterlace_vaapi defaults to one frame per field PAIR, so the full-GPU
+		// chain silently produced 25p no matter what the runtime mode said.
+		filters = append(filters, vaapiDeinterlaceFilter(spec))
 	}
-	scaleFilter := "scale_vaapi=format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709"
+	// AV1 encodes 10-bit (see vaapiEncodeOnlyFilter): the extra precision cuts
+	// encoder-introduced banding on gradients even from an 8-bit source. Forcing
+	// nv12 here threw that away the moment the full-GPU path became reachable -
+	// verified on a real segment, pix_fmt came back yuv420p instead of 10-bit.
+	hwFormat := "nv12"
+	if normalizeRequestedCodec(outputCodec) == "av1" {
+		hwFormat = "p010"
+	}
+	scaleFilter := fmt.Sprintf("scale_vaapi=format=%s:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", hwFormat)
 	if prof.VideoMaxWidth > 0 {
-		scaleFilter = fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", prof.VideoMaxWidth)
+		scaleFilter = fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=%s:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", prof.VideoMaxWidth, hwFormat)
 	}
 	filters = append(filters, scaleFilter)
 	args = append(args, "-vf", strings.Join(filters, ","))
@@ -531,6 +543,15 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 
 func softwareScaleWidthFilter(width int) string {
 	return fmt.Sprintf("scale=w=%d:h=-2:flags=lanczos", width)
+}
+
+// vaapiDeinterlaceFilter mirrors deinterlaceFilterForProfile for the full-GPU
+// chain: HQ25 keeps one frame per field pair, everything else bobs to 50p.
+func vaapiDeinterlaceFilter(spec ports.StreamSpec) string {
+	if effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeHQ25 {
+		return "deinterlace_vaapi"
+	}
+	return "deinterlace_vaapi=rate=field"
 }
 
 func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string {

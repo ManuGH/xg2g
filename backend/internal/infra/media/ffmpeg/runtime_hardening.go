@@ -51,7 +51,18 @@ func (a *LocalAdapter) FinalizePlan(ctx context.Context, spec ports.StreamSpec, 
 }
 
 func seedRuntimeMode(spec ports.StreamSpec) ports.StreamSpec {
-	spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
+	// The profile resolver already expressed a policy for this profile; seeding
+	// used to overwrite it with the coarse name-based mapping, which returns
+	// HQ25 for every transcode profile. That silently discarded the HQ50 policy
+	// of the hardware AV1/HEVC profiles - the resolver said 50p, the pipeline
+	// emitted -r 25. Keep the hint when there is one, and fall back to the
+	// name-based mapping only for specs that carry none. This mirrors the
+	// precedence effectiveLiveRuntimeMode already applies when reading it back.
+	if hint := spec.Profile.PolicyModeHint; hint != "" && hint != ports.RuntimeModeUnknown {
+		spec.Profile.EffectiveRuntimeMode = hint
+	} else {
+		spec.Profile.EffectiveRuntimeMode = profiles.RuntimeModeHintFromProfile(spec.Profile)
+	}
 	if spec.Profile.EffectiveModeSource == "" || spec.Profile.EffectiveModeSource == ports.RuntimeModeSourceUnknown {
 		spec.Profile.EffectiveModeSource = ports.RuntimeModeSourceResolve
 	}
