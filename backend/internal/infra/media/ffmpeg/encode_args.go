@@ -256,12 +256,16 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 		// fall back to implicit VBR; tune the quality target with
 		// XG2G_AV1_QVBR_QUALITY (AV1 scale 0-255, lower = higher quality).
 		//
-		// AMD ONLY. Intel iHD advertises CQP/CBR/VBR/ICQ and rejects QVBR outright
-		// ("Driver does not support QVBR RC mode"), which fails at encoder-open and
-		// kills the session before the first frame. An unknown vendor is treated
-		// like Intel on purpose: a wrong guess here is not a quality regression,
-		// it is a dead stream.
-		av1QVBR := isAV1 && cfg.AV1QVBR && cfg.GPUVendor == string(hardware.GPUVendorAMD)
+		// Gated on a real probe, not on the GPU vendor: the startup preflight
+		// opens an encoder with -rc_mode QVBR once and records whether the driver
+		// took it (PreflightVAAPIRateControlModes). Intel iHD rejects QVBR and
+		// fails at encoder-open, killing the session before its first frame -
+		// but "Intel" is not the rule, "this driver said no" is. A stack that
+		// gains QVBR in a later release picks it up on the next restart, and a
+		// vendor nobody here has ever seen gets a correct answer too. Unprobed
+		// means unsupported: an unproven mode must not reach a live session.
+		av1QVBR := isAV1 && cfg.AV1QVBR &&
+			hardware.VAAPIRateControlVerified(vaapiEncoderForCodec(outputCodec), hardware.RateControlQVBR)
 		if av1QVBR {
 			args = append(args, "-rc_mode", "QVBR")
 		}

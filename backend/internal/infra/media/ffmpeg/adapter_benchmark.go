@@ -173,3 +173,5 @@ func (a *LocalAdapter) PreflightNVENC() error       { return a.detector.Prefligh
 func (a *LocalAdapter) PreflightTranscodeProfiles() { a.detector.PreflightTranscodeProfiles() }
 
 func (a *LocalAdapter) PreflightPathCorrectness() { a.detector.PreflightPathCorrectness() }
+
+func (a *LocalAdapter) PreflightVAAPIRateControlModes() { a.detector.PreflightVAAPIRateControlModes() }

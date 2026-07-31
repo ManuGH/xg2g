@@ -61,9 +61,12 @@ type Detector struct {
 
 	pathCorrectnessChecked bool
 	pathProbeFn            func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
-	signalStatsYAvgFn      func(context.Context, string) (float64, error)
-	recordProcessDetail    func(ports.RunHandle, string)
-	terminateProcessGroup  func(*exec.Cmd, string)
+
+	rateControlChecked    bool
+	rateControlProbeFn    func(ctx context.Context, encoder, mode string) error
+	signalStatsYAvgFn     func(context.Context, string) (float64, error)
+	recordProcessDetail   func(ports.RunHandle, string)
+	terminateProcessGroup func(*exec.Cmd, string)
 
 	vaapiEncoders            map[string]bool
 	vaapiEncoderCaps         map[string]hardware.VAAPIEncoderCapability
