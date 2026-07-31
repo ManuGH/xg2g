@@ -178,6 +178,9 @@ func PickNativeHLSProfileForCapabilitiesAndHostWithPolicy(clientFamily string, c
 	}
 
 	if clientCaps != nil {
+		if strings.EqualFold(clientCaps.PreferredHLSEngine, "hlsjs") {
+			return ""
+		}
 		source := normalize.Token(clientCaps.ClientCapsSource)
 		if source != capabilities.ClientCapsSourceRuntimePlusFam &&
 			source != capabilities.ClientCapsSourceFamilyFallback &&
