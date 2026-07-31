@@ -241,8 +241,10 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 	case VideoActionHEVC:
 		spec.VideoCodec = "hevc"
 		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoMaxRateK = 5000
-		spec.VideoBufSizeK = 10000
+		// Must stay in step with playbackplanner.transcodeMaxVideoBitrateKbps;
+		// TestPlanAutoCodecRateControlMatchesExecutionProfiles enforces it.
+		spec.VideoMaxRateK = 10000
+		spec.VideoBufSizeK = 20000
 		switch canonical {
 		case ProfileSafariHEVC:
 			spec.VideoCRF = 22
@@ -258,8 +260,8 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 	case VideoActionAV1:
 		spec.VideoCodec = "av1"
 		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoMaxRateK = 6000
-		spec.VideoBufSizeK = 12000
+		spec.VideoMaxRateK = 12000
+		spec.VideoBufSizeK = 24000
 		if useGPU {
 			// Ask for the full GPU chain, exactly like hardware HEVC above. This
 			// is an intent, not a guarantee: the FFmpeg layer still drops AV1 to

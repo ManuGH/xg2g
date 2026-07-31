@@ -117,10 +117,15 @@ func explicitlyRequestsHEVCProfile(requestedIntent string) bool {
 
 func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 	switch strings.ToLower(strings.TrimSpace(codec)) {
+	// Ceilings sized for 1080p50 broadcast, not for 24-30fps film: 50 fields per
+	// second carry roughly twice the temporal information, and the old 6000/5000
+	// were the visible quality limit once the pipeline stopped collapsing 50i to
+	// 25p. These are ceilings, not targets - the encoder spends what the picture
+	// needs, and applyPolicyModifiers still clamps them on a constrained link.
 	case "av1":
-		return 6000
+		return 12000
 	case "hevc", "h265":
-		return 5000
+		return 10000
 	case "h264", "avc", "libx264":
 		for _, encoder := range ev.HostSnapshot.EncoderCapabilities {
 			if strings.EqualFold(strings.TrimSpace(encoder.Codec), "h264") && encoder.Verified && encoder.AutoEligible {

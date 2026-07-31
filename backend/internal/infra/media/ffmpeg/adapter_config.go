@@ -82,6 +82,11 @@ type AdapterConfig struct {
 	TranscodeDeband               bool
 	AV1QVBR                       bool
 	AV1QVBRQuality                int
+	// LiveAudioLanguages is the operator's ordered ISO-639 preference for the
+	// live audio track (e.g. "deu,ger,de"). Empty keeps the broadcaster's first
+	// track, which is the primary language by DVB convention.
+	LiveAudioLanguages []string
+
 	// GPUVendor is the detected VAAPI/NVENC silicon vendor ("amd", "intel",
 	// "nvidia", "unknown"), captured once with the adapter. Encoder tuning is
 	// vendor-specific and must be gated on this rather than assumed.
@@ -271,6 +276,7 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		TranscodeDeband:               envBool("XG2G_TRANSCODE_DEBAND", true),
 		AV1QVBR:                       envBool("XG2G_AV1_QVBR", true),
 		AV1QVBRQuality:                envIntBounded("XG2G_AV1_QVBR_QUALITY", 90, 1, 255),
+		LiveAudioLanguages:            parseSnapshotList(config.ParseString("XG2G_LIVE_AUDIO_LANGUAGES", ""), true),
 		GPUVendor:                     string(hardware.DetectGPUVendor().Vendor),
 		ExperimentalInterlacedCodecs:  parseSnapshotList(config.ParseString(experimentalInterlacedVAAPICodecsEnv, ""), true),
 

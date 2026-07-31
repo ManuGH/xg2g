@@ -15,6 +15,10 @@ import (
 // below depend on what a driver was measured to accept rather than on whatever
 // silicon the test machine happens to have.
 func withProbedQVBR(t *testing.T, supported bool) AdapterConfig {
+	return withProbedQVBRForVendor(t, supported, "intel")
+}
+
+func withProbedQVBRForVendor(t *testing.T, supported bool, vendor string) AdapterConfig {
 	t.Helper()
 	hardware.SetVAAPIRateControlCapabilities(map[string]map[string]bool{
 		"av1_vaapi":  {hardware.RateControlQVBR: supported},
@@ -22,7 +26,9 @@ func withProbedQVBR(t *testing.T, supported bool) AdapterConfig {
 		"h264_vaapi": {hardware.RateControlQVBR: supported},
 	})
 	t.Cleanup(func() { hardware.SetVAAPIRateControlCapabilities(nil) })
-	return LoadAdapterConfig("", "")
+	cfg := LoadAdapterConfig("", "")
+	cfg.GPUVendor = vendor
+	return cfg
 }
 
 func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
@@ -38,7 +44,7 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 		// QVBR requires -b:v; keep the 75% target headroom.
 		bv, ok := valueAfter(args, "-b:v")
 		assert.True(t, ok, "QVBR must carry -b:v (else 'Bitrate must be set for QVBR RC mode')")
-		assert.Equal(t, "6000k", bv)
+		assert.Equal(t, "8000k", bv, "off AMD the target is the ceiling, no ring-stall headroom")
 
 		maxrate, _ := valueAfter(args, "-maxrate")
 		assert.Equal(t, "8000k", maxrate, "maxrate stays the hard ceiling")
@@ -57,7 +63,7 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 		assert.NotContains(t, args, "-rc_mode", "disabled QVBR must not set an explicit rc_mode")
 		assert.NotContains(t, args, "-global_quality")
 		bv, _ := valueAfter(args, "-b:v")
-		assert.Equal(t, "6000k", bv, "VBR fallback keeps the 75% target")
+		assert.Equal(t, "8000k", bv, "VBR fallback also spends the full ceiling off AMD")
 		maxrate, _ := valueAfter(args, "-maxrate")
 		assert.Equal(t, "8000k", maxrate)
 	})
@@ -94,7 +100,7 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 		assert.NotContains(t, args, "-rc_mode", "a rejected mode fails encoder-open")
 		assert.NotContains(t, args, "-global_quality")
 		bv, _ := valueAfter(args, "-b:v")
-		assert.Equal(t, "6000k", bv, "VBR fallback keeps the 75% target headroom")
+		assert.Equal(t, "8000k", bv, "VBR fallback also spends the full ceiling off AMD")
 		maxrate, _ := valueAfter(args, "-maxrate")
 		assert.Equal(t, "8000k", maxrate)
 	})
@@ -140,4 +146,16 @@ func TestAV1NeedsSoftwareNormalization(t *testing.T) {
 	t.Run("unknown source height does not block the GPU chain", func(t *testing.T) {
 		assert.False(t, av1NeedsSoftwareNormalization(unknownHeight, "intel"))
 	})
+}
+
+// The 25% target headroom is an AMD VCN ring-stall workaround. Keeping it on
+// other silicon handed back a quarter of the bitrate ceiling for free.
+func TestAppendVaapiRateControlArgs_RingStallHeadroomIsAMDOnly(t *testing.T) {
+	prof := ports.ProfileSpec{VideoMaxRateK: 8000, VideoBufSizeK: 16000}
+
+	amd, _ := valueAfter(appendVaapiRateControlArgs(nil, prof, "av1", withProbedQVBRForVendor(t, true, "amd")), "-b:v")
+	assert.Equal(t, "6000k", amd, "75% of the 8000k ceiling")
+
+	intel, _ := valueAfter(appendVaapiRateControlArgs(nil, prof, "av1", withProbedQVBRForVendor(t, true, "intel")), "-b:v")
+	assert.Equal(t, "8000k", intel, "no ring stall here, so no headroom to give away")
 }

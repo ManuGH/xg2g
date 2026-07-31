@@ -251,13 +251,16 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 	}
 
 	if prof.VideoMaxRateK > 0 {
-		// AMD VAAPI AV1 (Phoenix3 / VCN4) stalls the VCN ring when -b:v == -maxrate.
-		// Use a 25% target headroom (-b:v = 75% of -maxrate) to keep the ring stable.
+		// AMD VAAPI AV1 (Phoenix3 / VCN4) stalls the VCN ring when -b:v == -maxrate,
+		// so that stack gets a 25% target headroom (-b:v = 75% of -maxrate). AMD
+		// only: on other silicon the workaround simply hands back a quarter of the
+		// bitrate ceiling for a defect that is not there. Verified against the
+		// Intel iGPU this runs on, which encodes at b:v == maxrate without stalling.
 		bV := prof.VideoTargetRateK
 		if bV <= 0 {
 			bV = prof.VideoMaxRateK
 		}
-		if isAV1 && prof.VideoTargetRateK <= 0 {
+		if isAV1 && prof.VideoTargetRateK <= 0 && cfg.GPUVendor == string(hardware.GPUVendorAMD) {
 			bV = max((prof.VideoMaxRateK*3)/4, 1)
 		}
 		// AV1 QVBR: quality-targeted encode that still honours -maxrate as a hard

@@ -75,7 +75,10 @@ func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 	assert.Contains(t, args, "0:a:0?", "audio map should remain optional")
 }
 
-func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
+// The broadcaster's first track is the primary language by DVB convention, and
+// -ac 2 downmixes it, so a surround track is no reason to skip it. Preferring
+// "the first stereo stream" played German channels out in English.
+func TestBuildArgs_LiveAudioProbePrefersBroadcastPrimaryTrack(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
 		"ffprobe",
@@ -95,8 +98,8 @@ func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 	)
 	adapter.liveAudioProbeFn = func(context.Context, string) ([]liveAudioStream, error) {
 		return []liveAudioStream{
-			{Index: 2, CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)"},
-			{Index: 3, CodecType: "audio", CodecName: "ac3", Channels: 2, ChannelLayout: "stereo"},
+			{Index: 2, CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)", Tags: map[string]string{"language": "deu"}},
+			{Index: 3, CodecType: "audio", CodecName: "ac3", Channels: 2, ChannelLayout: "stereo", Tags: map[string]string{"language": "eng"}},
 		}, nil
 	}
 
@@ -120,10 +123,48 @@ func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
-	assert.Contains(t, args, "0:3?", "live audio selection should prefer the stereo AC3 source track")
-	assert.NotContains(t, args, "0:a:0?", "stereo probe result should replace blind first-audio mapping")
-	assert.Contains(t, args, "aac", "stereo AC3 track should be transcoded to AAC when transcoding video to maintain PTS sync")
+	assert.Contains(t, args, "0:2?", "the broadcaster's primary track wins even when it carries surround")
+	assert.NotContains(t, args, "0:a:0?", "probe result should replace blind first-audio mapping")
+	assert.Contains(t, args, "aac", "the track is transcoded to AAC when transcoding video to maintain PTS sync")
+	ac, ok := valueAfter(args, "-ac")
+	require.True(t, ok)
+	assert.Equal(t, "2", ac, "surround is downmixed, not skipped")
+}
 
+func TestBuildArgs_LiveAudioHonoursLanguagePreference(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.Config.LiveAudioLanguages = []string{"eng"}
+	adapter.liveAudioProbeFn = func(context.Context, string) ([]liveAudioStream, error) {
+		return []liveAudioStream{
+			{Index: 2, CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)", Tags: map[string]string{"language": "deu"}},
+			{Index: 3, CodecType: "audio", CodecName: "ac3", Channels: 2, ChannelLayout: "stereo", Tags: map[string]string{"language": "eng"}},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "audio-language-preference",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:           "av1_hw",
+			Container:      "fmp4",
+			VideoCodec:     "av1",
+			TranscodeVideo: true,
+			AudioBitrateK:  192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "0:3?", "a configured language preference outranks broadcast order")
 }
 
 func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
@@ -2714,8 +2755,8 @@ func TestBuildArgs_LiveMultipleAudioStreamsUseStereoMuxedTrack(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 
-	assert.Contains(t, args, "0:3?", "the stereo rendition should be muxed into the A/V playlist")
-	assert.NotContains(t, args, "0:2?", "additional renditions remain disabled until the master playlist can emit AUTOSELECT=YES")
+	assert.Contains(t, args, "0:2?", "the broadcaster's primary track is the one muxed into the A/V playlist")
+	assert.NotContains(t, args, "0:3?", "additional renditions remain disabled until the master playlist can emit AUTOSELECT=YES")
 	assert.NotContains(t, args, "-master_pl_name")
 	assert.NotContains(t, args, "-var_stream_map")
 	require.NotEmpty(t, args)

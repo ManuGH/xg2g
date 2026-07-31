@@ -92,14 +92,18 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 
 	// FFmpeg 8 cannot emit AUTOSELECT=YES for HLS audio renditions. Safari/HLS.js
 	// consequently leaves the external audio group unloaded. Keep live playback
-	// audible by muxing one stereo-compatible track into the A/V playlist until the
-	// master-playlist writer can produce a standards-compliant rendition group.
+	// audible by muxing ONE track into the A/V playlist until the master-playlist
+	// writer can produce a standards-compliant rendition group.
+	//
+	// Which one is a language question, not a channel-count question. Picking the
+	// first 2-channel stream looked like a compatibility measure but was not one:
+	// appendLiveAudioArgs pins -ac 2 unconditionally, so a 5.1 source is
+	// downmixed either way. All that rule did was skip the broadcaster's primary
+	// track whenever it carried surround - a German channel with deu 5.1 plus eng
+	// stereo played out in English.
 	selected := audioStreams[0]
-	for _, stream := range audioStreams {
-		if stream.Channels == 2 {
-			selected = stream
-			break
-		}
+	if preferred, ok := preferredAudioStream(audioStreams, a.Config.LiveAudioLanguages); ok {
+		selected = preferred
 	}
 	mapArg := fmt.Sprintf("0:%d?", selected.Index)
 	audioArgs := appendLiveAudioArgs(nil, spec, selected.Channels)
@@ -212,4 +216,23 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 		"-of", "json",
 		inputURL,
 	)
+}
+
+// preferredAudioStream picks the first stream whose language tag matches the
+// operator's preference list, in preference order. Without a configured
+// preference the caller keeps the broadcaster's first track, which is the
+// primary language by DVB convention.
+func preferredAudioStream(streams []liveAudioStream, languages []string) (liveAudioStream, bool) {
+	for _, want := range languages {
+		want = strings.ToLower(strings.TrimSpace(want))
+		if want == "" {
+			continue
+		}
+		for _, stream := range streams {
+			if strings.ToLower(strings.TrimSpace(stream.Tags["language"])) == want {
+				return stream, true
+			}
+		}
+	}
+	return liveAudioStream{}, false
 }
