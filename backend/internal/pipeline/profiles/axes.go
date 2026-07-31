@@ -261,7 +261,13 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 		spec.VideoMaxRateK = 6000
 		spec.VideoBufSizeK = 12000
 		if useGPU {
-			spec.HWAccel = requestedEncodeOnlyHWAccelProfile(gpuBackend, hwaccelMode)
+			// Ask for the full GPU chain, exactly like hardware HEVC above. This
+			// is an intent, not a guarantee: the FFmpeg layer still drops AV1 to
+			// encode-only for AMD/unknown GPUs and sub-720p sources, and the
+			// path-correctness matrix vetoes any full path whose probe did not
+			// verify. Requesting encode-only here made that decision twice and
+			// hid the cheaper path from the layer that can actually judge it.
+			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
 		}
 	}
 }

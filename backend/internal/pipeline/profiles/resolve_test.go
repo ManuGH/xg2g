@@ -224,7 +224,9 @@ func TestResolve_AV1HWDefaultsToFMP4(t *testing.T) {
 	assert.Equal(t, "fmp4", spec.Container)
 	assert.Equal(t, "av1", spec.VideoCodec)
 	assert.True(t, spec.Deinterlace)
-	assert.Equal(t, "vaapi_encode_only", spec.HWAccel)
+	// The profile asks for the full GPU chain; the FFmpeg layer downgrades to
+	// encode-only per GPU vendor, source height and the path-correctness matrix.
+	assert.Equal(t, "vaapi", spec.HWAccel)
 }
 
 func TestResolve_AV1HWUsesMPEGTSWhenExperimentalFlagEnabled(t *testing.T) {
@@ -240,7 +242,7 @@ func TestResolve_AV1HWProgressiveCapabilityDisablesDeinterlace(t *testing.T) {
 	spec := Resolve(ProfileAV1HW, "", 0, &scan.Capability{Interlaced: false}, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, "av1", spec.VideoCodec)
 	assert.False(t, spec.Deinterlace)
-	assert.Equal(t, "vaapi_encode_only", spec.HWAccel)
+	assert.Equal(t, "vaapi", spec.HWAccel)
 }
 
 func TestResolve_AV1HWInterlacedCapabilityKeepsDeinterlace(t *testing.T) {
