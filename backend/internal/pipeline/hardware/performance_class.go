@@ -17,7 +17,45 @@ func classifyHostPerformanceClass(cpu playbackprofile.HostCPUSnapshot, concurren
 	return applyPerformancePenalty(baseClass, runtimePerformancePenalty(cpu, concurrency))
 }
 
+// Throughput thresholds, in multiples of realtime at 1080i25->50p. They are
+// stated as capacity, not as hardware: "high" means the host carries a live
+// stream with enough headroom for a second one plus bursts, which is the
+// question the auto-codec policy is really asking when it demands a high host
+// for AV1. Below 1.5x a single stream has no margin at all.
+const (
+	ultraThroughputRealtimeX  = 6.0
+	highThroughputRealtimeX   = 3.0
+	mediumThroughputRealtimeX = 1.5
+)
+
+// classifyMeasuredHostPerformanceClass classifies from measured throughput.
+// Returns "" when nothing was measured, so the caller keeps its heuristic.
+func classifyMeasuredHostPerformanceClass(realtimeX float64) string {
+	switch {
+	case realtimeX <= 0:
+		return ""
+	case realtimeX >= ultraThroughputRealtimeX:
+		return "ultra"
+	case realtimeX >= highThroughputRealtimeX:
+		return "high"
+	case realtimeX >= mediumThroughputRealtimeX:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
 func classifyStaticHostPerformanceClass(coreCount int, caps playbackprofile.ServerTranscodeCapabilities) string {
+	// A measurement beats every inference available here. Core count describes
+	// a CPU; the transcode it is being asked about runs on a fixed-function
+	// block whose speed the core count does not predict - measured on this
+	// project's own host, four cores sustained 7.6x realtime, while the
+	// core-count rungs below called the same machine "medium" and locked AV1
+	// out of the auto-codec policy entirely.
+	if measured := classifyMeasuredHostPerformanceClass(BestVAAPIThroughputRealtimeX()); measured != "" {
+		return measured
+	}
+
 	h264Cap, _, hasH264HW := HardwareEncoderCapabilityFor("h264")
 	hevcCap, _, hasHEVCHW := HardwareEncoderCapabilityFor("hevc")
 	av1Cap, _, hasAV1HW := HardwareEncoderCapabilityFor("av1")

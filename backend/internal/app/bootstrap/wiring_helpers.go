@@ -86,6 +86,7 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 	}
 	adapter.PreflightVAAPIRateControlModes()
 	adapter.PreflightVAAPIDecode()
+	adapter.PreflightVAAPIThroughput()
 	adapter.PreflightTranscodeProfiles()
 	if config.ParseBool("XG2G_ENABLE_SYNTHETIC_PATH_CORRECTNESS_PREFLIGHT", true) {
 		adapter.PreflightPathCorrectness()

@@ -187,3 +187,65 @@ func normalizeDecodeCodec(codec string) string {
 		return strings.ToLower(strings.TrimSpace(codec))
 	}
 }
+
+// EncoderThroughput is a measured sustained transcode rate, expressed as a
+// multiple of realtime at a stated geometry. It exists because the alternative
+// - inferring capacity from core count - is a guess that was wrong on this
+// project's own host: four cores classified as "medium" and locked AV1 out
+// entirely, while the GPU sustained more than seven times realtime.
+type EncoderThroughput struct {
+	// RealtimeX is content-seconds encoded per wall-clock second. 1.0 means the
+	// host can just keep up with one live stream and nothing more.
+	RealtimeX float64
+	// Geometry names what was measured, so a number is never read out of the
+	// context that produced it.
+	Geometry string
+}
+
+var (
+	throughputMu       sync.RWMutex
+	throughputChecked  bool
+	throughputMeasured map[string]EncoderThroughput
+)
+
+// SetVAAPIThroughput records measured transcode throughput per codec.
+func SetVAAPIThroughput(measurements map[string]EncoderThroughput) {
+	throughputMu.Lock()
+	defer throughputMu.Unlock()
+	throughputChecked = measurements != nil
+	if measurements == nil {
+		throughputMeasured = nil
+		return
+	}
+	throughputMeasured = make(map[string]EncoderThroughput, len(measurements))
+	for codec, m := range measurements {
+		throughputMeasured[normalizeDecodeCodec(codec)] = m
+	}
+}
+
+// VAAPIThroughputRealtimeX returns the measured multiple of realtime for a
+// codec, or 0 when it was never measured. Callers must treat 0 as "unknown"
+// and fall back to their previous heuristic rather than as "too slow".
+func VAAPIThroughputRealtimeX(codec string) float64 {
+	throughputMu.RLock()
+	defer throughputMu.RUnlock()
+	if !throughputChecked {
+		return 0
+	}
+	return throughputMeasured[normalizeDecodeCodec(codec)].RealtimeX
+}
+
+// BestVAAPIThroughputRealtimeX returns the fastest measured codec throughput,
+// which is what host-level capacity classification cares about: the question is
+// what this machine can do, not what its slowest encoder can do.
+func BestVAAPIThroughputRealtimeX() float64 {
+	throughputMu.RLock()
+	defer throughputMu.RUnlock()
+	best := 0.0
+	for _, m := range throughputMeasured {
+		if m.RealtimeX > best {
+			best = m.RealtimeX
+		}
+	}
+	return best
+}
