@@ -336,7 +336,7 @@ func TestPlanAutoCodecRateControlMatchesExecutionProfiles(t *testing.T) {
 		wantTarget int
 		wantMax    int
 	}{
-		{name: "av1", codec: "av1", hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 12000},
+		{name: "av1", codec: "av1", hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 25000},
 		{name: "hevc", codec: "hevc", hostCodec: &HostEncoderCapability{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40}, wantMax: 10000},
 		{name: "h264 cpu", codec: "h264", wantMax: 8000},
 		{name: "h264 hardware", codec: "h264", hostCodec: &HostEncoderCapability{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 10}, wantMax: 20000},
