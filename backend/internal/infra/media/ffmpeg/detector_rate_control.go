@@ -70,14 +70,17 @@ func (d *Detector) probeVAAPIRateControlMode(encoder, mode string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Small and short on purpose: this asks "does the driver accept this mode",
-	// which is decided when the encoder opens, not by the picture content.
+	// Short, but at a production-like geometry on purpose. The question is "does
+	// the driver accept this mode", which is answered when the encoder opens -
+	// but some encoders fail small frames for unrelated reasons (hevc_vaapi on
+	// iHD returns "internal encoding error" at 640x480), and a probe that cannot
+	// tell a rejected mode from a broken probe silently gives away quality.
 	args := []string{
 		"-y",
 		"-hide_banner",
 		"-vaapi_device", d.VaapiDevice,
 		"-f", "lavfi",
-		"-i", "testsrc2=duration=0.2:size=640x480:rate=25",
+		"-i", "testsrc2=duration=0.2:size=1280x720:rate=25",
 		"-vf", "format=" + vaapiProductionUploadFormat(encoder) + ",hwupload",
 		"-c:v", encoder,
 		"-rc_mode", mode,
