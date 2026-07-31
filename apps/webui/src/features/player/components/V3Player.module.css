@@ -1,7 +1,11 @@
 .container {
   font-family: var(--font-body);
   overflow: hidden;
-  background-color: var(--bg-base);
+  /* The player is a video surface end to end. Its padding sits between the
+     viewport edge and the picture, so any non-black colour here is drawn as a
+     frame around the video - 12px at the sides, 32px at the bottom. Making the
+     stage black while leaving this at --bg-base only sharpened that frame. */
+  background-color: var(--bg-video-stage);
   position: relative;
   width: 100%;
   height: 100%;
@@ -18,7 +22,7 @@
   height: 100vh;
   height: 100dvh;
   padding: calc(10px + var(--sat)) 12px calc(32px + var(--sab));
-  background: color-mix(in srgb, var(--bg-base) 96%, black 4%);
+  background: var(--bg-video-stage);
   z-index: 9999;
   justify-content: flex-start;
   align-items: stretch;
