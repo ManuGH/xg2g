@@ -395,8 +395,8 @@ export default function EPG({
   }, [state.searchEvents]);
 
   const favoriteServiceRefs = useMemo(
-    () => new Set(selectedProfile.favoriteServiceRefs),
-    [selectedProfile.favoriteServiceRefs]
+    () => new Set(selectedProfile?.favoriteServiceRefs || []),
+    [selectedProfile?.favoriteServiceRefs]
   );
 
   const visibleChannels = useMemo(() => {
