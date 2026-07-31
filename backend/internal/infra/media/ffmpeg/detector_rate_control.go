@@ -80,6 +80,51 @@ func (d *Detector) PreflightVAAPIRateControlModes() {
 			Msg("vaapi preflight: encoder option probe")
 	}
 	hardware.SetVAAPIEncoderOptions(options)
+
+	// Deinterlacing modes. "default" means the highest-numbered mode the driver
+	// offers, and the numbering is bob(1) < weave(2) < motion_adaptive(3) <
+	// motion_compensated(4). On a driver that only implements bob and weave,
+	// "default" therefore picks WEAVE - which does not deinterlace at all and
+	// leaves combing in every 50p frame. Probing lets us pick the best real
+	// deinterlacer and never that one.
+	deinterlace := make(map[string]bool, len(vaapiDeinterlaceModePreference))
+	for _, mode := range vaapiDeinterlaceModePreference {
+		err := d.probeVAAPIDeinterlaceMode(mode)
+		deinterlace[mode] = err == nil
+		event := d.Logger.Info()
+		if err != nil {
+			event = d.Logger.Info().Str("reason", err.Error())
+		}
+		event.Str("mode", mode).Bool("supported", err == nil).
+			Msg("vaapi preflight: deinterlace mode probe")
+	}
+	hardware.SetVAAPIDeinterlaceModes(deinterlace)
+}
+
+// vaapiDeinterlaceModePreference is best-first. Weave is deliberately absent:
+// it interleaves both fields into one frame, which is the opposite of what a
+// 50p output needs.
+var vaapiDeinterlaceModePreference = []string{"motion_compensated", "motion_adaptive", "bob"}
+
+func (d *Detector) probeVAAPIDeinterlaceMode(mode string) error {
+	if d.deinterlaceProbeFn != nil {
+		return d.deinterlaceProbeFn(context.Background(), mode)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	args := []string{
+		"-hide_banner",
+		"-vaapi_device", d.VaapiDevice,
+		"-f", "lavfi",
+		"-i", "testsrc2=duration=0.4:size=1280x720:rate=25",
+		"-vf", "format=nv12,hwupload,deinterlace_vaapi=mode=" + mode + ":rate=field",
+		"-frames:v", "5",
+		"-f", "null", "-",
+	}
+	_, err := runProfileBenchmarkCommand(ctx, d.BinPath, args)
+	return err
 }
 
 // vaapiBFrames is the reorder depth requested where the encoder accepts it.

@@ -69,8 +69,10 @@ type Detector struct {
 	decodeChecked bool
 	decodeProbeFn func(ctx context.Context, codec string) error
 
-	throughputChecked     bool
-	throughputProbeFn     func(ctx context.Context, encoder string) (float64, error)
+	throughputChecked bool
+	throughputProbeFn func(ctx context.Context, encoder string) (float64, error)
+
+	deinterlaceProbeFn    func(ctx context.Context, mode string) error
 	signalStatsYAvgFn     func(context.Context, string) (float64, error)
 	recordProcessDetail   func(ports.RunHandle, string)
 	terminateProcessGroup func(*exec.Cmd, string)

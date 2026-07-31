@@ -564,10 +564,17 @@ func softwareScaleWidthFilter(width int) string {
 // vaapiDeinterlaceFilter mirrors deinterlaceFilterForProfile for the full-GPU
 // chain: HQ25 keeps one frame per field pair, everything else bobs to 50p.
 func vaapiDeinterlaceFilter(spec ports.StreamSpec) string {
-	if effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeHQ25 {
-		return "deinterlace_vaapi"
+	filter := "deinterlace_vaapi"
+	if mode := hardware.BestVAAPIDeinterlaceMode(vaapiDeinterlaceModePreference); mode != "" {
+		filter += "=mode=" + mode
 	}
-	return "deinterlace_vaapi=rate=field"
+	if effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeHQ25 {
+		return filter
+	}
+	if strings.Contains(filter, "=") {
+		return filter + ":rate=field"
+	}
+	return filter + "=rate=field"
 }
 
 func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string {

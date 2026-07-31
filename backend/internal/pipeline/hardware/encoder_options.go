@@ -249,3 +249,43 @@ func BestVAAPIThroughputRealtimeX() float64 {
 	}
 	return best
 }
+
+var (
+	deinterlaceMu       sync.RWMutex
+	deinterlaceChecked  bool
+	deinterlaceVerified map[string]bool
+)
+
+// SetVAAPIDeinterlaceModes records which deinterlacing modes the driver
+// accepted during startup preflight.
+func SetVAAPIDeinterlaceModes(modes map[string]bool) {
+	deinterlaceMu.Lock()
+	defer deinterlaceMu.Unlock()
+	deinterlaceChecked = modes != nil
+	if modes == nil {
+		deinterlaceVerified = nil
+		return
+	}
+	deinterlaceVerified = make(map[string]bool, len(modes))
+	for mode, ok := range modes {
+		deinterlaceVerified[strings.ToLower(strings.TrimSpace(mode))] = ok
+	}
+}
+
+// BestVAAPIDeinterlaceMode returns the best verified mode from the supplied
+// best-first preference, or "" when nothing was probed - in which case the
+// caller keeps FFmpeg's "default", which is right on a capable driver and only
+// wrong on one that lacks a real deinterlacer.
+func BestVAAPIDeinterlaceMode(preference []string) string {
+	deinterlaceMu.RLock()
+	defer deinterlaceMu.RUnlock()
+	if !deinterlaceChecked {
+		return ""
+	}
+	for _, mode := range preference {
+		if deinterlaceVerified[strings.ToLower(strings.TrimSpace(mode))] {
+			return mode
+		}
+	}
+	return ""
+}

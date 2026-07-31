@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -70,4 +71,48 @@ func TestPreflightVAAPIDecode_NoDeviceIsNotProbed(t *testing.T) {
 
 	d.PreflightVAAPIDecode()
 	assert.False(t, hardware.VAAPIDecodeVerified("h264"))
+}
+
+// "default" resolves to the highest-numbered mode the driver offers, and the
+// numbering runs bob(1) < weave(2) < motion_adaptive(3) < motion_compensated(4).
+// A driver with only bob and weave therefore gets weave, which interleaves both
+// fields instead of deinterlacing and leaves combing in every 50p frame.
+func TestBestVAAPIDeinterlaceMode_NeverWeave(t *testing.T) {
+	hardware.SetVAAPIDeinterlaceModes(map[string]bool{
+		"motion_compensated": false,
+		"motion_adaptive":    false,
+		"bob":                true,
+	})
+	t.Cleanup(func() { hardware.SetVAAPIDeinterlaceModes(nil) })
+
+	assert.Equal(t, "bob", hardware.BestVAAPIDeinterlaceMode(vaapiDeinterlaceModePreference))
+	assert.NotContains(t, vaapiDeinterlaceModePreference, "weave")
+}
+
+func TestBestVAAPIDeinterlaceMode_PrefersTheMostCapable(t *testing.T) {
+	hardware.SetVAAPIDeinterlaceModes(map[string]bool{
+		"motion_compensated": true,
+		"motion_adaptive":    true,
+		"bob":                true,
+	})
+	t.Cleanup(func() { hardware.SetVAAPIDeinterlaceModes(nil) })
+
+	assert.Equal(t, "motion_compensated", hardware.BestVAAPIDeinterlaceMode(vaapiDeinterlaceModePreference))
+}
+
+// Unprobed keeps FFmpeg's own default, which is correct on a capable driver.
+func TestBestVAAPIDeinterlaceMode_UnprobedKeepsTheFFmpegDefault(t *testing.T) {
+	hardware.SetVAAPIDeinterlaceModes(nil)
+	assert.Empty(t, hardware.BestVAAPIDeinterlaceMode(vaapiDeinterlaceModePreference))
+}
+
+func TestVaapiDeinterlaceFilter_CarriesModeAndFieldRate(t *testing.T) {
+	hardware.SetVAAPIDeinterlaceModes(map[string]bool{"motion_adaptive": true})
+	t.Cleanup(func() { hardware.SetVAAPIDeinterlaceModes(nil) })
+
+	spec := ports.StreamSpec{Profile: ports.ProfileSpec{PolicyModeHint: ports.RuntimeModeHQ50}}
+	assert.Equal(t, "deinterlace_vaapi=mode=motion_adaptive:rate=field", vaapiDeinterlaceFilter(spec))
+
+	hq25 := ports.StreamSpec{Profile: ports.ProfileSpec{PolicyModeHint: ports.RuntimeModeHQ25}}
+	assert.Equal(t, "deinterlace_vaapi=mode=motion_adaptive", vaapiDeinterlaceFilter(hq25))
 }
