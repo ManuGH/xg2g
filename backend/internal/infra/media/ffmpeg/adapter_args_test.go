@@ -2668,7 +2668,7 @@ func TestBuildArgs_UsesCachedFPSForStreamRelayInput(t *testing.T) {
 	assert.Contains(t, x264Params, "keyint=150:min-keyint=150:scenecut=0")
 }
 
-func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
+func TestBuildArgs_LiveMultipleAudioStreamsUseStereoMuxedTrack(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
 		"ffprobe",
@@ -2714,9 +2714,11 @@ func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 
-	assert.Contains(t, args, "0:3?")
-	assert.Contains(t, args, "0:2?")
-	assert.Contains(t, args, "-master_pl_name")
-	assert.Contains(t, args, "index.m3u8")
-	assert.Contains(t, args, "-var_stream_map")
+	assert.Contains(t, args, "0:3?", "the stereo rendition should be muxed into the A/V playlist")
+	assert.NotContains(t, args, "0:2?", "additional renditions remain disabled until the master playlist can emit AUTOSELECT=YES")
+	assert.NotContains(t, args, "-master_pl_name")
+	assert.NotContains(t, args, "-var_stream_map")
+	require.NotEmpty(t, args)
+	assert.Contains(t, args[len(args)-1], "index.m3u8")
+	assert.NotContains(t, args, "stream_%v.m3u8")
 }
