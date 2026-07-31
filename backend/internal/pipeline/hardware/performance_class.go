@@ -28,9 +28,15 @@ func classifyStaticHostPerformanceClass(coreCount int, caps playbackprofile.Serv
 	switch {
 	case coreCount >= 12 && (av1Fast || hevcFast):
 		return "ultra"
-	case (coreCount >= 8 && hevcFast) || (coreCount >= 10 && h264Fast):
+	// A measured-fast AV1 ASIC carries the transcode itself, so the core count
+	// stops being the bottleneck: without this rung a 4-8 core host with hardware
+	// AV1 stayed "medium" forever and the auto-codec policy (AV1 needs a "high"
+	// host) could never select AV1, no matter how fast the encoder probed.
+	// Runtime load still demotes this back to "medium" via the penalty below,
+	// which keeps the AV1->HEVC downgrade under concurrent transcodes intact.
+	case (coreCount >= 8 && hevcFast) || (coreCount >= 10 && h264Fast) || (coreCount >= 4 && av1Fast):
 		return "high"
-	case hasH264HW || hasHEVCHW || coreCount >= 4:
+	case hasH264HW || hasHEVCHW || hasAV1HW || coreCount >= 4:
 		return "medium"
 	default:
 		return "low"
