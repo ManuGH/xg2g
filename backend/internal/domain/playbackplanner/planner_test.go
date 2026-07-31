@@ -507,3 +507,55 @@ func TestPlanHonorsSignedRepairIntent(t *testing.T) {
 	require.Equal(t, "aac", result.Plan.Audio.Codec)
 	require.Contains(t, result.Trace.Log, RuleHit{Rule: "direct_play_gate", Result: "fail", Reason: "transcode_intent_requested"})
 }
+
+// The codec choice must not flip on probe jitter: AV1 encodes measurably slower
+// than HEVC on the same silicon, so its benchmark class lands one rung lower
+// even when both encoders are comfortably fast. Both stay eligible, so the
+// higher-quality codec has to win.
+func TestPlanPrefersAV1OverFasterHEVCProbeWhenBothEligible(t *testing.T) {
+	ev := PlaybackEvidence{
+		EvaluatedAt:    time.Now().UnixMilli(),
+		Scope:          "live",
+		SourceIdentity: "service:probe-jitter",
+		SourceTruth: SourceTruth{
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+			Width:      1920,
+			Height:     1080,
+			FPS:        25,
+			Interlaced: true,
+		},
+		ClientEvidence: ClientEvidence{
+			Family:                   "safari_native",
+			AllowTranscode:           true,
+			SupportedContainers:      []string{"mp4", "mpegts", "fmp4"},
+			SupportedVideoCodecs:     []string{"av1", "hevc", "h264"},
+			SupportedAudioCodecs:     []string{"aac", "ac3"},
+			AutoTranscodeVideoCodecs: []string{"av1", "hevc", "h264"},
+			PrefersFMP4:              true,
+			SupportsHls:              true,
+		},
+		HostSnapshot: HostSnapshot{
+			AvailableEngines: []string{"hls"},
+			PerformanceClass: "high",
+			EncoderCapabilities: []HostEncoderCapability{
+				// Real staging measurements: HEVC squeaked under the 70ms
+				// "strong" threshold, AV1 did not.
+				{Codec: "h264", Verified: true, AutoEligible: true, ProbeElapsedMS: 90, BenchmarkClass: "moderate"},
+				{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 65, BenchmarkClass: "strong"},
+				{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 80, BenchmarkClass: "moderate"},
+			},
+		},
+	}
+
+	result, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "av1", result.Plan.Video.Codec)
+
+	// A "weak" AV1 encoder is still rejected by the eligibility floor.
+	ev.HostSnapshot.EncoderCapabilities[2].BenchmarkClass = "weak"
+	weak, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "hevc", weak.Plan.Video.Codec)
+}

@@ -88,13 +88,23 @@ func selectAutoTranscodeVideoCodec(ev PlaybackEvidence) (string, bool) {
 		}
 		candidates = eligible
 		sort.SliceStable(candidates, func(i, j int) bool {
+			// Quality outranks the benchmark class, because the benchmark class
+			// has already done its job above: autoCodecAllowedForHost rejects
+			// anything below minimumBenchmarkTier, so every candidate reaching
+			// this point is hardware-verified AND at least "moderate". Using the
+			// class a second time as a ranking key made the codec choice flip on
+			// probe jitter - measured on one host across two restarts, AV1
+			// probed 65.6 ms ("strong", won) and 79.5 ms ("moderate", lost to
+			// HEVC at 65.1 ms). AV1 encodes are intrinsically a little slower
+			// than HEVC on the same silicon, so that comparison systematically
+			// discarded the better codec over a difference of milliseconds.
+			if candidates[i].quality != candidates[j].quality {
+				return candidates[i].quality > candidates[j].quality
+			}
 			leftStrength := autoCodecHostStrength(candidates[i], ev.HostSnapshot.PerformanceClass)
 			rightStrength := autoCodecHostStrength(candidates[j], ev.HostSnapshot.PerformanceClass)
 			if leftStrength != rightStrength {
 				return leftStrength > rightStrength
-			}
-			if candidates[i].quality != candidates[j].quality {
-				return candidates[i].quality > candidates[j].quality
 			}
 			if candidates[i].probeElapsedMS != candidates[j].probeElapsedMS {
 				return candidates[i].probeElapsedMS < candidates[j].probeElapsedMS
