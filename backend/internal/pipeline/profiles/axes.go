@@ -107,12 +107,24 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
-	case ProfileSafariHEVC, ProfileSafariHEVCHW, ProfileSafariHEVCHWLL:
+	case ProfileSafariHEVC:
 		return ProfileAxes{
 			Video:          VideoActionHEVC,
 			AudioBitrateK:  192,
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
+		}
+	// Hardware HEVC/AV1 keep the full 50 fields per second of interlaced
+	// broadcast: send_field costs encoder time these paths have (measured 7.6x
+	// realtime for 1080i25 -> 50p AV1 on a full-GPU chain), and collapsing 50i
+	// to 25p is the single most visible quality loss on sports and pans. The
+	// CPU-encoded profiles above stay at 25p, where that budget does not exist.
+	case ProfileSafariHEVCHW, ProfileSafariHEVCHWLL:
+		return ProfileAxes{
+			Video:          VideoActionHEVC,
+			AudioBitrateK:  192,
+			Container:      "fmp4",
+			PolicyModeHint: ports.RuntimeModeHQ50,
 		}
 	case ProfileAV1HW:
 		container := "fmp4"
@@ -123,7 +135,7 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 			Video:          VideoActionAV1,
 			AudioBitrateK:  192,
 			Container:      container,
-			PolicyModeHint: ports.RuntimeModeHQ25,
+			PolicyModeHint: ports.RuntimeModeHQ50,
 		}
 	case ProfileRepair:
 		return ProfileAxes{

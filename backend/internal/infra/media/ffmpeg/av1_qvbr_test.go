@@ -97,3 +97,37 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 		assert.NotContains(t, args, "-rc_mode", "never guess a vendor-specific RC mode")
 	})
 }
+
+// The full-GPU AV1 chain was pinned off for every host because of an AMD output
+// bug. On an Intel iGPU that cost 1.6x vs 7.6x realtime for 1080i25 -> 50p,
+// since the software filters, not the encoder, are the bottleneck.
+func TestAV1NeedsSoftwareNormalization(t *testing.T) {
+	hd := ports.StreamSpec{Profile: ports.ProfileSpec{VideoSourceHeight: 1080}}
+	sd := ports.StreamSpec{Profile: ports.ProfileSpec{VideoSourceHeight: 576}}
+	unknownHeight := ports.StreamSpec{Profile: ports.ProfileSpec{}}
+
+	t.Run("AMD keeps the software geometry normalization", func(t *testing.T) {
+		assert.True(t, av1NeedsSoftwareNormalization(hd, "amd"))
+	})
+
+	t.Run("unknown vendor is treated like AMD", func(t *testing.T) {
+		assert.True(t, av1NeedsSoftwareNormalization(hd, "unknown"))
+		assert.True(t, av1NeedsSoftwareNormalization(hd, ""))
+	})
+
+	t.Run("Intel and NVIDIA may run the full GPU chain on HD", func(t *testing.T) {
+		assert.False(t, av1NeedsSoftwareNormalization(hd, "intel"))
+		assert.False(t, av1NeedsSoftwareNormalization(hd, "nvidia"))
+	})
+
+	// Apple's M-series AV1 decoder shows black video for SD-resolution AV1, and
+	// the upscale that avoids it lives in the software filter chain.
+	t.Run("sub-720p sources keep the software upscale on every vendor", func(t *testing.T) {
+		assert.True(t, av1NeedsSoftwareNormalization(sd, "intel"))
+		assert.True(t, av1NeedsSoftwareNormalization(sd, "nvidia"))
+	})
+
+	t.Run("unknown source height does not block the GPU chain", func(t *testing.T) {
+		assert.False(t, av1NeedsSoftwareNormalization(unknownHeight, "intel"))
+	})
+}

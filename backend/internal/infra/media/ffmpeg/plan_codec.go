@@ -147,11 +147,10 @@ func (a *LocalAdapter) planCodec(spec ports.StreamSpec) (codecPlan, error) {
 			}
 			preInputArgs = append(preInputArgs, "-vaapi_device", a.VaapiDevice)
 			fullVAAPI = profiles.IsFullVAAPIProfile(spec.Profile.HWAccel)
-			if normalizeRequestedCodec(resolvedCodec) == "av1" {
-				// Keep AV1 on the encode-only path even when a caller requested
-				// full VAAPI. This preserves a software-domain normalization step
-				// before hwupload, which is required to avoid malformed 1080p AV1
-				// output on current AMD VAAPI stacks.
+			if normalizeRequestedCodec(resolvedCodec) == "av1" && av1NeedsSoftwareNormalization(spec, a.Config.GPUVendor) {
+				// Drop AV1 to the encode-only path so the software-domain
+				// normalization before hwupload still runs. Two distinct reasons,
+				// see av1NeedsSoftwareNormalization.
 				fullVAAPI = false
 			}
 			if spec.Profile.Deinterlace {
@@ -361,4 +360,34 @@ func normalizeRequestedCodec(codec string) string {
 	default:
 		return c
 	}
+}
+
+// av1NeedsSoftwareNormalization reports whether an AV1 encode must stay on the
+// encode-only path (CPU filters, then hwupload) instead of running the whole
+// chain on the GPU.
+//
+// This used to be unconditional, which cost every non-AMD host a large amount of
+// throughput: measured on an Intel Arrow Lake iGPU, 1080i25 -> 50p AV1 runs at
+// 1.6x realtime through the CPU chain and 7.6x with deinterlace_vaapi, because
+// the software filters - not the encoder - are the bottleneck. Two reasons
+// survive, and both are narrow:
+//
+//  1. AMD VAAPI stacks emit malformed 1080p AV1 without the software geometry
+//     normalization (bitstreams that decode 1082 lines). An unknown vendor is
+//     treated the same way: never gamble on output correctness.
+//
+//  2. Sub-720p sources need the software upscale regardless of vendor. Apple's
+//     M-series AV1 decoder renders SD-resolution AV1 as black video with running
+//     audio, and that upscale lives in the software filter chain.
+//
+// Everything else is still gated by the path-correctness matrix in the caller,
+// which only admits a full-GPU path whose synthetic probe verified real output.
+func av1NeedsSoftwareNormalization(spec ports.StreamSpec, gpuVendor string) bool {
+	if gpuVendor != string(hardware.GPUVendorIntel) && gpuVendor != string(hardware.GPUVendorNVIDIA) {
+		return true
+	}
+	if height := spec.Profile.VideoSourceHeight; height > 0 && height < 720 {
+		return true
+	}
+	return false
 }

@@ -874,6 +874,7 @@ func (d *Detector) PreflightPathCorrectness() {
 	capabilities := make(map[string]hardware.HardwarePathCapability)
 	for _, req := range []pathProbeRequest{
 		{PathID: hardware.PathVAAPIFullInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
+		{PathID: hardware.PathVAAPIFullInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 	} {
