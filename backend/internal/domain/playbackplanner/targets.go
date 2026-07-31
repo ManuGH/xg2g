@@ -56,7 +56,9 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 					ev.ClientEvidence.Family == "safari_hevc" ||
 					ev.ClientEvidence.Family == "safari_hevc_hw"
 
-				if isSafari && !isChromium &&
+				isHLSJS := strings.EqualFold(ev.ClientEvidence.PreferredEngine, "hlsjs")
+
+				if isSafari && !isChromium && !isHLSJS &&
 					explicitlyRequestsHEVCProfile(ev.RequestedIntent) &&
 					contains(ev.ClientEvidence.SupportedVideoCodecs, "hevc") {
 					plan.Video.Codec = "hevc"
