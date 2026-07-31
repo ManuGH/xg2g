@@ -10,11 +10,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// vendorConfig loads the adapter config and pins the GPU vendor, so rate-control
+// expectations do not depend on whatever silicon the test machine happens to have.
+func vendorConfig(vendor string) AdapterConfig {
+	cfg := LoadAdapterConfig("", "")
+	cfg.GPUVendor = vendor
+	return cfg
+}
+
 func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 	prof := ports.ProfileSpec{VideoMaxRateK: 8000, VideoBufSizeK: 16000}
 
-	t.Run("default: AV1 emits QVBR with b:v + maxrate cap + quality target", func(t *testing.T) {
-		args := appendVaapiRateControlArgs(nil, prof, "av1", LoadAdapterConfig("", ""))
+	t.Run("AMD: AV1 emits QVBR with b:v + maxrate cap + quality target", func(t *testing.T) {
+		args := appendVaapiRateControlArgs(nil, prof, "av1", vendorConfig("amd"))
 
 		rc, ok := valueAfter(args, "-rc_mode")
 		assert.True(t, ok)
@@ -37,7 +45,7 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 
 	t.Run("XG2G_AV1_QVBR=false falls back to implicit VBR", func(t *testing.T) {
 		t.Setenv("XG2G_AV1_QVBR", "false")
-		args := appendVaapiRateControlArgs(nil, prof, "av1", LoadAdapterConfig("", ""))
+		args := appendVaapiRateControlArgs(nil, prof, "av1", vendorConfig("amd"))
 
 		assert.NotContains(t, args, "-rc_mode", "disabled QVBR must not set an explicit rc_mode")
 		assert.NotContains(t, args, "-global_quality")
@@ -49,13 +57,13 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 
 	t.Run("XG2G_AV1_QVBR_QUALITY tunes the quality target", func(t *testing.T) {
 		t.Setenv("XG2G_AV1_QVBR_QUALITY", "90")
-		args := appendVaapiRateControlArgs(nil, prof, "av1", LoadAdapterConfig("", ""))
+		args := appendVaapiRateControlArgs(nil, prof, "av1", vendorConfig("amd"))
 		gq, _ := valueAfter(args, "-global_quality")
 		assert.Equal(t, "90", gq)
 	})
 
 	t.Run("non-AV1 (h264) is unaffected — no QVBR, no quality target", func(t *testing.T) {
-		args := appendVaapiRateControlArgs(nil, prof, "h264", LoadAdapterConfig("", ""))
+		args := appendVaapiRateControlArgs(nil, prof, "h264", vendorConfig("amd"))
 		assert.NotContains(t, args, "-rc_mode")
 		assert.NotContains(t, args, "-global_quality")
 		bv, _ := valueAfter(args, "-b:v")
@@ -64,9 +72,28 @@ func TestAppendVaapiRateControlArgs_AV1QVBR(t *testing.T) {
 
 	t.Run("explicit VideoQP keeps the CQP branch (QVBR not applied)", func(t *testing.T) {
 		cqp := ports.ProfileSpec{VideoQP: 110, VideoMaxRateK: 8000}
-		args := appendVaapiRateControlArgs(nil, cqp, "av1", LoadAdapterConfig("", ""))
+		args := appendVaapiRateControlArgs(nil, cqp, "av1", vendorConfig("amd"))
 		rc, _ := valueAfter(args, "-rc_mode")
 		assert.Equal(t, "CQP", rc)
 		assert.NotContains(t, args, "-b:v", "CQP branch does not emit -b:v")
+	})
+
+	// Regression: an Intel iHD box rejects QVBR at encoder-open
+	// ("Driver does not support QVBR RC mode (supported modes: CQP, CBR, VBR, ICQ)"),
+	// which killed every AV1 session before the first frame.
+	t.Run("Intel: AV1 must not request QVBR", func(t *testing.T) {
+		args := appendVaapiRateControlArgs(nil, prof, "av1", vendorConfig("intel"))
+
+		assert.NotContains(t, args, "-rc_mode", "iHD rejects QVBR and fails encoder-open")
+		assert.NotContains(t, args, "-global_quality")
+		bv, _ := valueAfter(args, "-b:v")
+		assert.Equal(t, "6000k", bv, "VBR fallback keeps the 75% target headroom")
+		maxrate, _ := valueAfter(args, "-maxrate")
+		assert.Equal(t, "8000k", maxrate)
+	})
+
+	t.Run("unknown vendor stays on the safe VBR path", func(t *testing.T) {
+		args := appendVaapiRateControlArgs(nil, prof, "av1", vendorConfig("unknown"))
+		assert.NotContains(t, args, "-rc_mode", "never guess a vendor-specific RC mode")
 	})
 }

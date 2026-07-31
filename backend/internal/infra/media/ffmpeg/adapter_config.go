@@ -11,6 +11,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/infra/media/ffmpeg/capability"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 )
 
 // AdapterConfig holds the ENV-tunable knobs that shape FFmpeg live ingest, FPS
@@ -81,7 +82,11 @@ type AdapterConfig struct {
 	TranscodeDeband               bool
 	AV1QVBR                       bool
 	AV1QVBRQuality                int
-	ExperimentalInterlacedCodecs  []string
+	// GPUVendor is the detected VAAPI/NVENC silicon vendor ("amd", "intel",
+	// "nvidia", "unknown"), captured once with the adapter. Encoder tuning is
+	// vendor-specific and must be gated on this rather than assumed.
+	GPUVendor                    string
+	ExperimentalInterlacedCodecs []string
 
 	SafariForceCopyServiceRefs []string
 	SafariHQServiceRefs        []string
@@ -266,6 +271,7 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 		TranscodeDeband:               envBool("XG2G_TRANSCODE_DEBAND", true),
 		AV1QVBR:                       envBool("XG2G_AV1_QVBR", true),
 		AV1QVBRQuality:                envIntBounded("XG2G_AV1_QVBR_QUALITY", 90, 1, 255),
+		GPUVendor:                     string(hardware.DetectGPUVendor().Vendor),
 		ExperimentalInterlacedCodecs:  parseSnapshotList(config.ParseString(experimentalInterlacedVAAPICodecsEnv, ""), true),
 
 		SafariForceCopyServiceRefs: parseSnapshotList(config.ParseString("XG2G_SAFARI_FORCE_COPY_SERVICE_REFS", ""), false),

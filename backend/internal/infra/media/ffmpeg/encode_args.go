@@ -2,9 +2,11 @@ package ffmpeg
 
 import (
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"strconv"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 )
 
 func usesLegacyCPUDefaults(spec ports.StreamSpec, outputCodec string) bool {
@@ -247,13 +249,19 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 			bV = max((prof.VideoMaxRateK*3)/4, 1)
 		}
 		// AV1 QVBR: quality-targeted encode that still honours -maxrate as a hard
-		// ceiling. Verified on this AMD stack (Mesa 25.0.7 / VCN4): QVBR holds the
+		// ceiling. Verified on an AMD stack (Mesa 25.0.7 / VCN4): QVBR holds the
 		// cap, is sustained-stable, and is immune to the b:v==maxrate ring-stall
 		// that constrains plain VBR. QVBR REQUIRES -b:v ("Bitrate must be set for
 		// QVBR RC mode"), which is set above. Disable with XG2G_AV1_QVBR=false to
 		// fall back to implicit VBR; tune the quality target with
 		// XG2G_AV1_QVBR_QUALITY (AV1 scale 0-255, lower = higher quality).
-		av1QVBR := isAV1 && cfg.AV1QVBR
+		//
+		// AMD ONLY. Intel iHD advertises CQP/CBR/VBR/ICQ and rejects QVBR outright
+		// ("Driver does not support QVBR RC mode"), which fails at encoder-open and
+		// kills the session before the first frame. An unknown vendor is treated
+		// like Intel on purpose: a wrong guess here is not a quality regression,
+		// it is a dead stream.
+		av1QVBR := isAV1 && cfg.AV1QVBR && cfg.GPUVendor == string(hardware.GPUVendorAMD)
 		if av1QVBR {
 			args = append(args, "-rc_mode", "QVBR")
 		}

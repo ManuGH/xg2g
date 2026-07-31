@@ -388,7 +388,16 @@ func (d *Detector) PreflightTranscodeProfiles() {
 	}
 	d.profileBenchmarksChecked = true
 
-	d.Logger.Info().Msg("transcode profile preflight: starting")
+	// Log the detected silicon up front: encoder tuning (rate-control modes,
+	// level signalling, bitrate headroom) is vendor-specific, so an operator
+	// debugging a failed encode must be able to read the vendor off the startup
+	// log instead of inferring it from a driver error message.
+	gpu := hardware.DetectGPUVendor()
+	d.Logger.Info().
+		Str("gpu_vendor", string(gpu.Vendor)).
+		Str("gpu_device_id", gpu.DeviceID).
+		Str("gpu_driver", gpu.Driver).
+		Msg("transcode profile preflight: starting")
 
 	cpuSamples := d.measureProfileBenchmarks("cpu", "libx264")
 	hardware.SetCPUProfileBenchmarks(capability.DeriveProfileCapabilities(cpuSamples))
