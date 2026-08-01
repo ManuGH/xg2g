@@ -10,7 +10,7 @@ import type {
   MediaPhase,
 } from './playbackTypes';
 import { classifyPlaybackFailure } from '../semantics/playbackFailureSemantics';
-import { decideRecoveryEscalation } from './recoveryLadder';
+import { createRecoveryLadderState, decideRecoveryEscalation } from './recoveryLadder';
 
 function statusToMediaPhase(status: PlayerStatus): MediaPhase {
   switch (status) {
@@ -97,9 +97,7 @@ export function createInitialPlaybackDomainState(requestedDuration: number | nul
     lastAdvisory: null,
     explicitProfilePinned: false,
     hasSessionIntent: false,
-    recovery: {
-      autoFallbackUsed: false,
-    },
+    recovery: createRecoveryLadderState(),
   };
 }
 
@@ -144,9 +142,13 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         lastAdvisory: null,
         explicitProfilePinned: event.explicitProfilePinned ?? false,
         hasSessionIntent: event.hasSessionIntent ?? false,
-        recovery: {
-          autoFallbackUsed: false,
-        },
+        // An attempt that continues an automatic recovery inherits the budget;
+        // any other new attempt (user retry, channel change, remount) starts
+        // with a fresh one. See RecoveryLadderState.restartPending for why the
+        // marker is explicit rather than read off the status.
+        recovery: state.recovery.restartPending
+          ? { ...state.recovery, restartPending: false }
+          : createRecoveryLadderState(),
       };
 
     case 'normative.playback.stopped':
@@ -169,9 +171,7 @@ export function playbackMachine(state: PlaybackDomainState, event: PlaybackMachi
         contract: null,
         explicitProfilePinned: false,
         hasSessionIntent: false,
-        recovery: {
-          autoFallbackUsed: false,
-        },
+        recovery: createRecoveryLadderState(),
       };
 
     case 'normative.playback.mode.changed':
@@ -371,28 +371,61 @@ export function runPlaybackMachine(
       failure: event.failure,
       explicitProfilePinned: event.explicitProfilePinned ?? state.explicitProfilePinned,
       hasActiveIntent: state.hasSessionIntent,
+      // Read from the pre-event state: this is about what the session was doing
+      // when it died, not what the failure has just turned it into.
+      hasEstablishedSession: state.sessionPhase === 'ready',
       state: state.recovery,
     });
+
+    // Re-establishing a reaped lease waits longer than a profile fallback: the
+    // server has just torn the session down, and the dedup lease on the service
+    // ref is released as part of that teardown. Starting into it earns a 409.
+    const SESSION_RESTART_DELAY_MS = 1500;
+    const PROFILE_FALLBACK_DELAY_MS = 250;
+
+    const restart = (
+      profile: string | null,
+      delayMs: number,
+      recovery: typeof state.recovery,
+      holdBandwidth = false,
+    ): PlaybackMachineResult => ({
+      state: {
+        ...nextState,
+        status: 'recovering',
+        mediaPhase: 'recovering',
+        failure: null,
+        recovery: { ...recovery, restartPending: true },
+      },
+      commands: [{
+        type: 'command.playback.schedule_auto_fallback',
+        epoch: event.epoch,
+        delayMs,
+        profile,
+        holdBandwidth,
+        failureCode: event.failure.code,
+        failureClass: event.failure.class,
+      }],
+    });
+
+    if (escalation === 'restart_session') {
+      return restart(null, SESSION_RESTART_DELAY_MS, {
+        ...state.recovery,
+        sessionRestarts: state.recovery.sessionRestarts + 1,
+      });
+    }
+
+    if (escalation === 'restart_on_safe_bandwidth') {
+      return restart(null, PROFILE_FALLBACK_DELAY_MS, {
+        ...state.recovery,
+        autoFallbackUsed: true,
+      }, true);
+    }
+
     if (escalation === 'restart_with_fallback_profile') {
-      return {
-        state: {
-          ...nextState,
-          status: 'recovering',
-          mediaPhase: 'recovering',
-          failure: null,
-          recovery: {
-            autoFallbackUsed: true,
-          },
-        },
-        commands: [{
-          type: 'command.playback.schedule_auto_fallback',
-          epoch: event.epoch,
-          delayMs: 250,
-          profile: 'repair',
-          failureCode: event.failure.code,
-          failureClass: event.failure.class,
-        }],
-      };
+      return restart('repair', PROFILE_FALLBACK_DELAY_MS, {
+        ...state.recovery,
+        autoFallbackUsed: true,
+      });
     }
   }
 

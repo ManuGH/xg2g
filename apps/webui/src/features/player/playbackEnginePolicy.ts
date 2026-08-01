@@ -1,6 +1,8 @@
 import type { HlsConfig } from 'hls.js';
+import { hlsTuningForLink, type PlaybackLinkProfile } from './utils/playbackLinkProfile';
 
-export function createHlsRuntimeConfig(): Partial<HlsConfig> {
+export function createHlsRuntimeConfig(link: PlaybackLinkProfile = 'stable'): Partial<HlsConfig> {
+  const tuning = hlsTuningForLink(link);
   return {
     debug: false,
     // Own the buffer via ManagedMediaSource on Safari 17.1+. Keeping this
@@ -10,11 +12,11 @@ export function createHlsRuntimeConfig(): Partial<HlsConfig> {
     enableWorker: true,
     // This engages only for playlists advertising EXT-X-PART. It is a no-op
     // for the stable non-low-latency path.
-    lowLatencyMode: true,
+    lowLatencyMode: tuning.lowLatencyMode,
     backBufferLength: 300,
-    maxBufferLength: 60,
+    maxBufferLength: tuning.maxBufferLength,
     capLevelToPlayerSize: true,
-    liveSyncDuration: 12,
+    liveSyncDuration: tuning.liveSyncDuration,
     // Rate-based live catch-up caused visible judder and compressed audio.
     // A multi-hour DVR window makes slow drift safer than playback-rate churn.
     maxLiveSyncPlaybackRate: 1,
@@ -40,9 +42,22 @@ export const HLS_NETWORK_RETRY_POLICY = Object.freeze({
   backoffCapMs: 30_000,
 });
 
-export function hlsNetworkRetryBackoffMs(retryCount: number): number {
+export function hlsNetworkRetryPolicyForLink(link: PlaybackLinkProfile = 'stable') {
+  const tuning = hlsTuningForLink(link);
+  return {
+    maxRetries: tuning.maxNetworkRetries,
+    initialBackoffMs: HLS_NETWORK_RETRY_POLICY.initialBackoffMs,
+    backoffCapMs: tuning.networkBackoffCapMs,
+  };
+}
+
+export function hlsNetworkRetryBackoffMs(
+  retryCount: number,
+  link: PlaybackLinkProfile = 'stable',
+): number {
+  const policy = hlsNetworkRetryPolicyForLink(link);
   return Math.min(
-    HLS_NETWORK_RETRY_POLICY.initialBackoffMs * Math.pow(2, retryCount),
-    HLS_NETWORK_RETRY_POLICY.backoffCapMs,
+    policy.initialBackoffMs * Math.pow(2, retryCount),
+    policy.backoffCapMs,
   );
 }

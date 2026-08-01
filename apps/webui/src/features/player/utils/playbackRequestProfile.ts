@@ -263,48 +263,148 @@ function supportsHighQualityPlayback(capabilities: CapabilitySnapshot): boolean 
   return width >= 1920 && height >= 1080;
 }
 
+// Profile selection is a step function over measured downlink, and the encoder
+// output carries a single rendition — there is no ABR ladder to absorb a
+// bandwidth change, so every profile change costs a fresh encoder session. On
+// mobile the measurement walks across the step edges continuously (a train
+// swings between ~5 and ~40 Mbit within a minute), which turns ordinary
+// cellular jitter into repeated transcode restarts. Two mechanisms keep that
+// quiet without making the decision less truthful:
+//
+//   * hysteresis — moving to a different rung needs a clearly better (or
+//     clearly worse) measurement than staying on the current one, so a sample
+//     sitting on an edge never flips the decision back and forth;
+//   * a downgrade hold — once playback has actually died of link starvation,
+//     stay on 'bandwidth' for a cooldown no matter what the next probe claims.
+//     The probe is a 512 KB burst; it cannot see the dead spot that just killed
+//     the stream.
+//
+// The declared signals (save-data, 2g/3g, metered) get no hysteresis: they are
+// statements of intent from the client, not noisy measurements.
+
+/** Below this the link cannot carry any rung but the safe one. */
+const MINIMUM_VIABLE_MBPS = 6;
+/** Downlink under this selects 'bandwidth'... */
+const BANDWIDTH_ENTER_MBPS = 15;
+/** ...and it takes this much to climb back out of it. */
+const BANDWIDTH_EXIT_MBPS = 20;
+/** Downlink at or above this selects 'quality'... */
+const QUALITY_ENTER_MBPS = 35;
+/** ...and it takes a drop below this to give it up. */
+const QUALITY_EXIT_MBPS = 28;
+
+/** How long a starvation failure pins the automatic choice to 'bandwidth'. */
+export const NETWORK_DOWNGRADE_HOLD_MS = 10 * 60 * 1000;
+
+/**
+ * Carries the automatic resolver's memory across attempts. Held by the
+ * orchestrator for the lifetime of a player instance; the resolver stays a
+ * function of (context, capabilities, memory) with no hidden module state.
+ */
+export interface AutomaticProfileMemory {
+  /** The rung the previous automatic resolution settled on. */
+  lastProfile: PlaybackRequestProfile | undefined;
+  /** Epoch ms until which 'bandwidth' is forced; 0 when no hold is active. */
+  bandwidthHoldUntilMs: number;
+}
+
+export function createAutomaticProfileMemory(): AutomaticProfileMemory {
+  return { lastProfile: undefined, bandwidthHoldUntilMs: 0 };
+}
+
+/**
+ * Record that playback died because the link could not carry the stream. Pins
+ * the automatic resolution to 'bandwidth' for the cooldown.
+ */
+export function noteNetworkStarvation(
+  memory: AutomaticProfileMemory,
+  nowMs: number = Date.now(),
+): void {
+  memory.bandwidthHoldUntilMs = nowMs + NETWORK_DOWNGRADE_HOLD_MS;
+  memory.lastProfile = 'bandwidth';
+}
+
+/** Drop any active hold — used when a new viewing intent starts. */
+export function clearNetworkStarvationHold(memory: AutomaticProfileMemory): void {
+  memory.bandwidthHoldUntilMs = 0;
+}
+
+// Network kinds that may be promoted to 'quality'. 'lan' and 'measured' are
+// verdicts of the server-side probe and outrank anything the browser guesses;
+// without them a probed client could only ever be demoted to 'bandwidth',
+// never promoted.
+const QUALITY_ELIGIBLE_NETWORK_KINDS: ReadonlySet<string> = new Set([
+  'lan',
+  'measured',
+  'ethernet',
+  'wifi',
+  'browser',
+  'other',
+]);
+
 export function resolvePlaybackRequestProfile(
   context: PlaybackClientContext,
   capabilities: CapabilitySnapshot,
-  _scope: 'live' | 'recording'
+  _scope: 'live' | 'recording',
+  memory?: AutomaticProfileMemory,
+  nowMs: number = Date.now(),
 ): PlaybackRequestProfile | undefined {
   const network = context.network;
   if (network?.kind === 'offline') {
     return undefined;
   }
 
+  const settle = (profile: PlaybackRequestProfile | undefined) => {
+    if (memory) {
+      memory.lastProfile = profile;
+    }
+    return profile;
+  };
+
+  if (memory && memory.bandwidthHoldUntilMs > nowMs) {
+    return settle('bandwidth');
+  }
+
+  const downlinkMbps = typeof network?.downlinkMbps === 'number' ? network.downlinkMbps : undefined;
+
   if (
     network?.saveData
     || network?.effectiveType === 'slow-2g'
     || network?.effectiveType === '2g'
-    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps < 6)
+    || (downlinkMbps !== undefined && downlinkMbps < MINIMUM_VIABLE_MBPS)
   ) {
-    return 'bandwidth';
+    return settle('bandwidth');
   }
 
   if (
     network?.kind === 'cellular'
     || network?.metered
     || network?.effectiveType === '3g'
-    || (typeof network?.downlinkMbps === 'number' && network.downlinkMbps < 15)
   ) {
-    return 'bandwidth';
+    return settle('bandwidth');
   }
 
+  const previous = memory?.lastProfile;
+
+  if (downlinkMbps !== undefined) {
+    const bandwidthCeiling = previous === 'bandwidth' ? BANDWIDTH_EXIT_MBPS : BANDWIDTH_ENTER_MBPS;
+    if (downlinkMbps < bandwidthCeiling) {
+      return settle('bandwidth');
+    }
+  }
+
+  const qualityFloor = previous === 'quality' ? QUALITY_EXIT_MBPS : QUALITY_ENTER_MBPS;
   if (
     supportsHighQualityPlayback(capabilities)
     && !network?.saveData
     && !network?.metered
-    // 'lan' and 'measured' are verdicts of the server-side probe and outrank
-    // anything the browser guesses; without them a probed client could only ever
-    // be demoted to 'bandwidth', never promoted to 'quality'.
-    && (network == null || network.kind === 'lan' || network.kind === 'measured' || network.kind === 'ethernet' || network.kind === 'wifi' || network.kind === 'browser' || network.kind === 'other')
-    && (network?.downlinkMbps == null || network.downlinkMbps >= 35)
+    && (network == null || QUALITY_ELIGIBLE_NETWORK_KINDS.has(network.kind))
+    && (downlinkMbps === undefined || downlinkMbps >= qualityFloor)
   ) {
-    return 'quality';
+    return settle('quality');
   }
 
-  return undefined;
+  return settle(undefined);
 }
 
 export function buildPlaybackProfileHeaders(profile?: PlaybackRequestProfile): Record<string, string> {

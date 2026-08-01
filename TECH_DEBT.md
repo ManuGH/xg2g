@@ -265,3 +265,47 @@ production.
   anywhere in this repo's git — orphaned artifacts on that host's stale
   checkout, not a repo issue. Needs a decision on the live host, not a
   commit; not actioned here.
+
+---
+
+## P6 — Mobile playback on a moving link (found 2026-08-01)
+
+Context: a train journey produced repeated re-transcodes and then a frozen
+player. The client-side causes were fixed in the same pass (hysteresis and a
+starvation hold on profile selection, a bounded session re-establishment ladder,
+a reachability watchdog, link-aware hls.js tuning, and a bounded wait for the
+dedup lease). The item below is the structural cause and was deliberately not
+attempted alongside them.
+
+### P6.1 Live output carries a single rendition — no ABR ladder
+**Status:** Tracked, not actioned (2026-08-01).
+
+**Finding**
+- `backend/internal/infra/media/ffmpeg/plan_output.go` builds `-var_stream_map`
+  only for multi-**audio** (`sel.IsMultiAudio`). There is no video bitrate
+  ladder, so the master playlist offers exactly one video rendition.
+- Consequence: a client cannot absorb a bandwidth change by switching down.
+  The only available response is to restart the session with a different
+  request profile, and every such restart is a new encoder process.
+- This is why bandwidth jitter on cellular reads as "it re-transcoded several
+  times". The client-side mitigations bound how often that happens; they do not
+  remove the need for it.
+
+**Target**
+- Live HLS output offers at least two video renditions so hls.js can switch
+  down within the same session, leaving profile changes for genuine device or
+  policy changes rather than for bandwidth.
+
+**Why it was not done in the same pass**
+- It is a pipeline change, not a client one: multi-rendition encode multiplies
+  GPU load per session, and it touches the encoder plan, the master playlist,
+  segment layout, the session model and the tuner/capacity accounting. It needs
+  its own branch, its own benchmarks on the actual hardware, and a decision on
+  the capacity trade — none of which belong in a player fix.
+
+**Exit-Criteria**
+- A live master playlist contains more than one `#EXT-X-STREAM-INF`.
+- A client whose downlink drops mid-session switches rendition without a new
+  `/intents` start (assert on session count, not on picture quality).
+- Measured GPU cost per session against the current single-rendition baseline,
+  with the capacity/tuner accounting updated to match.

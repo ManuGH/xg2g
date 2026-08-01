@@ -29,6 +29,8 @@ const PLAYBACK_INFO_CODE_SESSION_TIMELINE = 230;
 const SESSION_READY_TIMEOUT_MS = 60_000;
 const SESSION_READY_POLL_MS = 250;
 const SESSION_READY_MAX_ATTEMPTS = Math.ceil(SESSION_READY_TIMEOUT_MS / SESSION_READY_POLL_MS);
+const HEARTBEAT_RETRY_INTERVAL_MS = 5_000;
+const CONNECTION_LOST_AFTER_FAILURES = 2;
 
 type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
 type ErrorBodyReader = (res: Response) => Promise<{ json: any | null; text: string | null }>;
@@ -52,6 +54,7 @@ interface UseLiveSessionControllerProps {
 interface LiveSessionController {
   sessionId: string | null;
   sessionIdRef: MutableRefObject<string | null>;
+  connectionLost: boolean;
   authHeaders: (contentType?: boolean) => HeadersInit;
   reportError: (event: 'error' | 'warning' | 'info', code: number, msg?: string) => Promise<void>;
   reportSessionTimeline: (reason: string, timeline: string[]) => Promise<void>;
@@ -112,6 +115,7 @@ export function useLiveSessionController({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [heartbeatInterval, setHeartbeatInterval] = useState<number | null>(null);
   const [, setLeaseExpiresAt] = useState<string | null>(null);
+  const [connectionLost, setConnectionLost] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
   const stopSentRef = useRef<string | null>(null);
   const sessionCookieRef = useRef<SessionCookieState>({ token: null, pending: null });
@@ -629,9 +633,42 @@ export function useLiveSessionController({
     // Guard against non-finite intervalMs (e.g. malformed heartbeatInterval)
     // so AbortSignal.timeout never receives NaN → 0 → immediate abort.
     const safeIntervalMs = Number.isFinite(intervalMs) ? intervalMs : HEARTBEAT_REQUEST_TIMEOUT_MS;
-    const heartbeatRequestTimeoutMs = Math.max(1000, Math.min(safeIntervalMs, HEARTBEAT_REQUEST_TIMEOUT_MS));
+    let cancelled = false;
+    let timerId: number | null = null;
+    let consecutiveFailures = 0;
+    let currentDelayMs = safeIntervalMs;
 
-    const timerId = window.setInterval(async () => {
+    const stopLoop = () => {
+      cancelled = true;
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+        timerId = null;
+      }
+    };
+
+    const schedule = (delayMs: number) => {
+      if (cancelled) return;
+      currentDelayMs = delayMs;
+      timerId = window.setTimeout(() => {
+        timerId = null;
+        void beat();
+      }, delayMs);
+    };
+
+    const noteUnreachable = () => {
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= CONNECTION_LOST_AFTER_FAILURES) {
+        setConnectionLost(true);
+      }
+      schedule(HEARTBEAT_RETRY_INTERVAL_MS);
+    };
+
+    const beat = async () => {
+      if (cancelled) return;
+      const heartbeatRequestTimeoutMs = Math.max(
+        1000,
+        Math.min(currentDelayMs, safeIntervalMs, HEARTBEAT_REQUEST_TIMEOUT_MS),
+      );
       try {
         const { response: res } = await fetchWithRecoveredSessionCookie(
           'useLiveSessionController.heartbeat',
@@ -642,13 +679,13 @@ export function useLiveSessionController({
           })
         );
 
-        if (sessionIdRef.current !== trackedSessionId) {
+        if (cancelled || sessionIdRef.current !== trackedSessionId) {
           return;
         }
 
         if (res.status === 401) {
           debugWarn('[V3Player][Heartbeat] Session unauthorized (401)');
-          window.clearInterval(timerId);
+          stopLoop();
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
           setStatus('error');
@@ -670,7 +707,7 @@ export function useLiveSessionController({
           }
         } else if (res.status === 403) {
           debugWarn('[V3Player][Heartbeat] Session forbidden (403)');
-          window.clearInterval(timerId);
+          stopLoop();
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
           setStatus('error');
@@ -697,7 +734,7 @@ export function useLiveSessionController({
           }
           if (!data.acknowledged || !data.leaseExpiresAt || data.sessionId !== trackedSessionId) {
             debugError('[V3Player][Heartbeat] Invalid heartbeat contract response', data);
-            window.clearInterval(timerId);
+            stopLoop();
             clearSessionLeaseState();
             setPlaybackMode('UNKNOWN');
             setStatus('error');
@@ -722,9 +759,12 @@ export function useLiveSessionController({
           setLeaseExpiresAt(data.leaseExpiresAt);
           debugLog('[V3Player][Heartbeat] Lease extended:', data.leaseExpiresAt);
           void refreshSessionSnapshot(trackedSessionId);
+          consecutiveFailures = 0;
+          setConnectionLost(false);
+          schedule(safeIntervalMs);
         } else if (res.status === 410) {
           debugError('[V3Player][Heartbeat] Session expired (410)');
-          window.clearInterval(timerId);
+          stopLoop();
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
           setStatus('error');
@@ -746,7 +786,7 @@ export function useLiveSessionController({
           }
         } else if (res.status === 404) {
           debugWarn('[V3Player][Heartbeat] Session not found (404)');
-          window.clearInterval(timerId);
+          stopLoop();
           clearSessionLeaseState();
           setPlaybackMode('UNKNOWN');
           setStatus('error');
@@ -766,15 +806,23 @@ export function useLiveSessionController({
           if (videoRef.current) {
             videoRef.current.pause();
           }
+        } else {
+          debugWarn('[V3Player][Heartbeat] Unexpected status', res.status);
+          noteUnreachable();
         }
       } catch (err) {
+        if (cancelled) return;
         debugError('[V3Player][Heartbeat] Network error:', err);
+        noteUnreachable();
       }
-    }, intervalMs);
+    };
+
+    schedule(safeIntervalMs);
 
     return () => {
       debugLog('[V3Player][Heartbeat] Cleanup: Clearing heartbeat timer');
-      window.clearInterval(timerId);
+      stopLoop();
+      setConnectionLost(false);
     };
   }, [apiBase, authHeaders, clearPlaybackFailure, clearSessionLeaseState, fetchWithRecoveredSessionCookie, heartbeatInterval, refreshSessionSnapshot, reportPlaybackFailure, sessionId, setPlaybackMode, setStatus, t, videoRef]);
 
@@ -787,7 +835,8 @@ export function useLiveSessionController({
   return {
     sessionId,
     sessionIdRef,
-      authHeaders,
+    connectionLost,
+    authHeaders,
     reportError,
     reportSessionTimeline,
     ensureSessionCookie,

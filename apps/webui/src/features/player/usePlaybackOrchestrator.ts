@@ -35,7 +35,10 @@ import {
 import { gatherPlaybackCapabilities, type CapabilitySnapshot } from './utils/playbackCapabilities';
 import {
   buildPlaybackProfileHeaders,
+  clearNetworkStarvationHold,
+  createAutomaticProfileMemory,
   gatherPlaybackClientContext,
+  noteNetworkStarvation,
   normalizePlaybackProfileSelection,
   resolvePlaybackProfileForPreflight,
   resolvePlaybackRequestProfile,
@@ -45,6 +48,10 @@ import {
   applyPlaybackNetworkProbe,
   measurePlaybackNetwork,
 } from './utils/playbackNetworkProbe';
+import {
+  resolvePlaybackLinkProfile,
+  type PlaybackLinkProfile,
+} from './utils/playbackLinkProfile';
 import { normalizePlayerError } from '../../lib/appErrors';
 import { notifyAuthRequiredIfUnauthorizedResponse } from '../../lib/httpProblem';
 import { useTvInitialFocus } from '../../hooks/useTvInitialFocus';
@@ -89,6 +96,10 @@ import { useDocumentVisibility } from './orchestrator/useDocumentVisibility';
 import { useOnlineStatus } from './orchestrator/useOnlineStatus';
 import { decideForegroundResume } from './orchestrator/foregroundResume';
 import { decideOnlineRecovery } from './orchestrator/onlineRecovery';
+import {
+  shouldWatchForNetworkRecovery,
+  useNetworkRecoveryWatchdog,
+} from './orchestrator/useNetworkRecoveryWatchdog';
 import { startResumePlaybackRecovery } from './orchestrator/resumePlaybackRecovery';
 import { useBufferingOverlay } from './orchestrator/useBufferingOverlay';
 
@@ -114,6 +125,10 @@ import {
   resolveLiveEngineFromMode,
   resolveResumeStateFromContract,
 } from './orchestrator/startupHelpers';
+
+const MAX_LEASE_CONFLICT_RETRIES = 3;
+const DEFAULT_LEASE_CONFLICT_WAIT_MS = 1_000;
+const MAX_LEASE_CONFLICT_WAIT_MS = 5_000;
 
 
 export interface PlaybackOrchestratorRefs {
@@ -331,7 +346,6 @@ export function usePlaybackOrchestrator(
   const retryInFlightRef = useRef(false);
   const stopCommandCompletionRef = useRef<Promise<void>>(Promise.resolve());
   const timelineReportCompletionRef = useRef<Promise<void>>(Promise.resolve());
-  // ADR-00X: Profile-related refs removed (universal policy only)
   const isTeardownRef = useRef<boolean>(false);
   const userPauseIntentRef = useRef<boolean>(false);
   const nativeVideoTempMutedRef = useRef(false);
@@ -340,6 +354,8 @@ export function usePlaybackOrchestrator(
   const wasOfflineRef = useRef(false);
   const cleanupPlaybackResourcesRef = useRef<() => void>(() => {});
   const activeLiveSessionIdRef = useRef<string | null>(null);
+  const automaticProfileMemoryRef = useRef(createAutomaticProfileMemory());
+  const linkProfileRef = useRef<PlaybackLinkProfile>('stable');
 
   const isLifecycleActive = useCallback((generation: number): boolean => (
     !disposedRef.current && lifecycleGenerationRef.current === generation
@@ -526,6 +542,7 @@ export function usePlaybackOrchestrator(
 
   const {
     sessionIdRef,
+    connectionLost,
     authHeaders,
     reportError,
     reportSessionTimeline,
@@ -779,6 +796,7 @@ export function usePlaybackOrchestrator(
     isTeardownRef,
     lastDecodedRef,
     playbackEpochRef,
+    linkProfileRef,
     t,
     reportError,
     waitForSessionReady,
@@ -994,12 +1012,18 @@ export function usePlaybackOrchestrator(
         const automaticRequestProfile = resolvePlaybackRequestProfile(
           requestContext,
           requestCaps,
-          'recording'
+          'recording',
+          automaticProfileMemoryRef.current,
         );
         const requestProfile = resolvePlaybackProfileForPreflight(
           profileForAttempt,
           automaticRequestProfile,
         );
+        linkProfileRef.current = resolvePlaybackLinkProfile({
+          requestProfile,
+          probeKind: networkProbe?.kind,
+          network: requestContext.network,
+        });
         setCapabilitySnapshot(requestCaps);
         let rawContract: unknown = null;
 
@@ -1216,6 +1240,8 @@ export function usePlaybackOrchestrator(
     dispatchPlayback,
     ensureSessionCookie,
     explicitProfile,
+    automaticProfileMemoryRef,
+    linkProfileRef,
     gatherPlaybackCapabilitiesForPlayer,
     isLifecycleActive,
     isStalePlaybackEpoch,
@@ -1343,12 +1369,18 @@ export function usePlaybackOrchestrator(
         const automaticRequestProfile = resolvePlaybackRequestProfile(
           requestContext,
           requestCaps,
-          'live'
+          'live',
+          automaticProfileMemoryRef.current,
         );
         const requestProfile = resolvePlaybackProfileForPreflight(
           profileForAttempt,
           automaticRequestProfile,
         );
+        linkProfileRef.current = resolvePlaybackLinkProfile({
+          requestProfile,
+          probeKind: networkProbe?.kind,
+          network: requestContext.network,
+        });
         const preferredHlsEngine = resolvePreferredHlsEngineForCapabilities(requestCaps);
         setCapabilitySnapshot(requestCaps);
         // raw-fetch-justified: live decision request posts dynamic capability payload not covered by generated wrapper flow.
@@ -1484,12 +1516,33 @@ export function usePlaybackOrchestrator(
 
         if (!isLifecycleActive(lifecycleGeneration)) return;
 
-        // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
-        const res = await fetch(`${apiBase}/intents`, {
-          method: 'POST',
-          headers: authHeaders(true),
-          body: JSON.stringify(intentBody)
-        });
+        // A recovery restart can race the previous session's dedup-lease
+        // teardown. Treat 409 as that bounded timing conflict, honoring the
+        // server's Retry-After instead of turning it into a user-visible dead end.
+        let res!: Response;
+        for (let attempt = 0; ; attempt++) {
+          // raw-fetch-justified: stream.start intent needs explicit payload shaping and immediate RFC7807 handling.
+          res = await fetch(`${apiBase}/intents`, {
+            method: 'POST',
+            headers: authHeaders(true),
+            body: JSON.stringify(intentBody)
+          });
+          if (res.status !== 409 || attempt >= MAX_LEASE_CONFLICT_RETRIES) {
+            break;
+          }
+          const retryAfterSeconds = parseInt(res.headers.get('Retry-After') ?? '', 10);
+          const waitMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+            ? Math.min(retryAfterSeconds * 1_000, MAX_LEASE_CONFLICT_WAIT_MS)
+            : DEFAULT_LEASE_CONFLICT_WAIT_MS;
+          debugWarn('[V3Player] Intent lease still held, waiting', { attempt, waitMs });
+          await sleep(waitMs);
+          if (
+            !isLifecycleActive(lifecycleGeneration)
+            || isStaleSessionEpoch(playbackEpoch, sessionEpoch)
+          ) {
+            return;
+          }
+        }
         if (!isLifecycleActive(lifecycleGeneration)) {
           // The request may already have created a backend session while React was
           // unmounting us. Consume the accepted response only to reap that session;
@@ -1710,7 +1763,7 @@ export function usePlaybackOrchestrator(
         });
       }
     }
-  }, [src, recordingId, sRef, explicitProfile, apiBase, authHeaders, clearPlayerError, ensureSessionCookie, waitForSessionReady, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, gatherPlaybackCapabilitiesForPlayer, prepareForNextPlaybackAttempt, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, requestedDuration, beginNativePlayback, channel?.logoUrl, channel?.name, nativePlaybackState, allocatePlaybackEpoch, beginPlaybackAttempt, dispatchPlayback, isLifecycleActive, isStalePlaybackEpoch, allocateSessionEpoch, isStaleSessionEpoch, normalizeRuntimePlaybackError, recordContractAdvisories, reportPlaybackFailure, sessionIdRef, setActiveHlsEngine, setStatus, setTraceId, token]);
+  }, [src, recordingId, sRef, explicitProfile, apiBase, authHeaders, clearPlayerError, ensureSessionCookie, waitForSessionReady, mergeSessionPlaybackTrace, playHls, sendStopIntent, clearSessionLeaseState, t, startRecordingPlayback, applyAutoplayMute, automaticProfileMemoryRef, linkProfileRef, gatherPlaybackCapabilitiesForPlayer, prepareForNextPlaybackAttempt, resolvePreferredHlsEngine, resolvePreferredHlsEngineForCapabilities, setActiveSessionId, requestedDuration, beginNativePlayback, channel?.logoUrl, channel?.name, nativePlaybackState, allocatePlaybackEpoch, beginPlaybackAttempt, dispatchPlayback, isLifecycleActive, isStalePlaybackEpoch, allocateSessionEpoch, isStaleSessionEpoch, normalizeRuntimePlaybackError, recordContractAdvisories, reportPlaybackFailure, sessionIdRef, setActiveHlsEngine, setStatus, setTraceId, sleep, token]);
 
   startStreamRef.current = startStream;
 
@@ -1789,6 +1842,9 @@ export function usePlaybackOrchestrator(
         break;
       case 'command.playback.schedule_auto_fallback':
         {
+          if (command.holdBandwidth) {
+            noteNetworkStarvation(automaticProfileMemoryRef.current);
+          }
           const lifecycleGeneration = lifecycleGenerationRef.current;
           const timerId = window.setTimeout(() => {
             autoFallbackTimersRef.current.delete(timerId);
@@ -1800,7 +1856,7 @@ export function usePlaybackOrchestrator(
                 serviceRef: sRef,
                 recordingId: recordingId || undefined,
                 srcUrl: src || undefined,
-                explicitProfile: command.profile,
+                explicitProfile: command.profile ?? undefined,
               });
             }
           }, command.delayMs);
@@ -1827,6 +1883,10 @@ export function usePlaybackOrchestrator(
       if (ref) setSRef(ref);
     }
   }, [channel]);
+
+  useEffect(() => {
+    clearNetworkStarvationHold(automaticProfileMemoryRef.current);
+  }, [sRef, recordingId]);
 
   useEffect(() => {
     if (!autoStart || mounted.current) return;
@@ -2026,7 +2086,7 @@ export function usePlaybackOrchestrator(
       return;
     }
 
-    if (!isOnline) {
+    if (!isOnline || connectionLost) {
       wasOfflineRef.current = true;
       return;
     }
@@ -2087,7 +2147,15 @@ export function usePlaybackOrchestrator(
         void handleRetry();
       },
     });
-  }, [handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, setStatus, videoRef]);
+  }, [connectionLost, handleRetry, hasTerminalStatus, hlsRef, hostEnvironment.isTv, isNativePlaybackHost, isOnline, nativePlaybackState, sessionIdRef, setStatus, videoRef]);
+
+  useNetworkRecoveryWatchdog({
+    apiBase,
+    active: !hostEnvironment.isTv && status === 'error' && shouldWatchForNetworkRecovery(failure),
+    intentKey: `${sRef}|${recordingId ?? ''}|${src ?? ''}`,
+    healthy: status === 'playing',
+    onReachable: handleRetry,
+  });
 
   const showBufferingOverlay = useBufferingOverlay(status);
 
