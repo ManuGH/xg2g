@@ -14,7 +14,9 @@ func createTestSegment(serviceRef string, seq uint64, start, end time.Time, size
 		ID: SegmentID{
 			ServiceRef: serviceRef,
 			SessionID:  "sess_1",
+			Kind:       SegmentKindComplete,
 			Sequence:   seq,
+			PartIndex:  0,
 		},
 		Path:           fmt.Sprintf("/tmp/test_seg_%d.ts", seq),
 		Sequence:       seq,
@@ -31,6 +33,23 @@ func createTestSegment(serviceRef string, seq uint64, start, end time.Time, size
 	}
 }
 
+func TestParseSegmentFilename(t *testing.T) {
+	id1, ok1 := ParseSegmentFilename("ref1", "sess1", "seg_000123.ts")
+	if !ok1 || id1.Kind != SegmentKindComplete || id1.Sequence != 123 || id1.PartIndex != 0 {
+		t.Errorf("Failed to parse seg_000123.ts correctly: %+v", id1)
+	}
+
+	id2, ok2 := ParseSegmentFilename("ref1", "sess1", "part_000123_4.m4s")
+	if !ok2 || id2.Kind != SegmentKindPart || id2.Sequence != 123 || id2.PartIndex != 4 {
+		t.Errorf("Failed to parse part_000123_4.m4s correctly: %+v", id2)
+	}
+
+	_, ok3 := ParseSegmentFilename("ref1", "sess1", "invalid_name.ts")
+	if ok3 {
+		t.Errorf("Expected parse failure on invalid filename, got success")
+	}
+}
+
 func TestProbeRange_Complete(t *testing.T) {
 	idx := NewSegmentIndex()
 	now := time.Now()
@@ -41,6 +60,8 @@ func TestProbeRange_Complete(t *testing.T) {
 	idx.AddSegment(createTestSegment(ref, 3, now.Add(-10*time.Minute), now, 1000, "h264", false))
 
 	store := NewReservationStore(idx, DefaultReservationLimits(), "")
+	defer store.Close()
+
 	probe, err := store.ProbeRange(ref, now.Add(-25*time.Minute), now.Add(-5*time.Minute))
 	if err != nil {
 		t.Fatalf("ProbeRange failed: %v", err)
@@ -63,6 +84,8 @@ func TestProbeRange_PartialStart(t *testing.T) {
 	idx.AddSegment(createTestSegment(ref, 2, now.Add(-10*time.Minute), now, 1000, "h264", false))
 
 	store := NewReservationStore(idx, DefaultReservationLimits(), "")
+	defer store.Close()
+
 	probe, err := store.ProbeRange(ref, now.Add(-30*time.Minute), now.Add(-5*time.Minute))
 	if err != nil {
 		t.Fatalf("ProbeRange failed: %v", err)
@@ -82,6 +105,7 @@ func TestMultiJobReservationOwnership(t *testing.T) {
 	idx.AddSegment(seg1)
 
 	store := NewReservationStore(idx, DefaultReservationLimits(), "")
+	defer store.Close()
 
 	res1, err := store.ReserveRange(ref, now.Add(-25*time.Minute), now.Add(-21*time.Minute), "job_1", 5*time.Minute)
 	if err != nil {
@@ -127,6 +151,7 @@ func TestReserveRange_ContextIndependence(t *testing.T) {
 	idx.AddSegment(seg1)
 
 	store := NewReservationStore(idx, DefaultReservationLimits(), "")
+	defer store.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	res, err := store.ReserveRange(ref, now.Add(-25*time.Minute), now.Add(-21*time.Minute), "job_http", 5*time.Minute)
@@ -154,12 +179,14 @@ func TestCleanerDeletingRace(t *testing.T) {
 	seg1 := createTestSegment(ref, 1, now.Add(-30*time.Minute), now.Add(-20*time.Minute), 1000, "h264", false)
 	idx.AddSegment(seg1)
 
-	marked := idx.MarkForDeletion(seg1.ID)
+	marked := idx.TryMarkDeleting(seg1.ID)
 	if !marked {
 		t.Fatalf("Failed to mark segment for deletion")
 	}
 
 	store := NewReservationStore(idx, DefaultReservationLimits(), "")
+	defer store.Close()
+
 	_, err := store.ReserveRange(ref, now.Add(-28*time.Minute), now.Add(-22*time.Minute), "job_late", 5*time.Minute)
 	if err == nil {
 		t.Fatalf("Expected error when reserving DELETING segment, but got success!")
@@ -180,6 +207,8 @@ func TestRecoveryCorruptedJSON_FailsSafely(t *testing.T) {
 
 	idx := NewSegmentIndex()
 	store := NewReservationStore(idx, DefaultReservationLimits(), storagePath)
+	defer store.Close()
+
 	lifecycle := NewLifecycleManager(store, idx)
 
 	err = lifecycle.RunRecovery()
@@ -217,6 +246,7 @@ func TestStartupRecoveryLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReserveRange failed: %v", err)
 	}
+	store.Close()
 
 	newIdx := NewSegmentIndex()
 	seg1Reloaded := createTestSegment(ref, 1, now.Add(-30*time.Minute), now.Add(-20*time.Minute), 1000, "h264", false)
@@ -224,6 +254,8 @@ func TestStartupRecoveryLifecycle(t *testing.T) {
 	newIdx.AddSegment(seg1Reloaded)
 
 	newStore := NewReservationStore(newIdx, DefaultReservationLimits(), storagePath)
+	defer newStore.Close()
+
 	lifecycle := NewLifecycleManager(newStore, newIdx)
 
 	if lifecycle.State() != LifecycleStarting {
@@ -253,7 +285,12 @@ func TestStartupRecoveryLifecycle(t *testing.T) {
 }
 
 func TestRealIngestServer_ReservationEvictionProtection(t *testing.T) {
-	reg := NewRegistry(5) // Max 5 RAM segments
+	reg, err := NewRegistryWithStorage(5, "")
+	if err != nil {
+		t.Fatalf("NewRegistryWithStorage failed: %v", err)
+	}
+	defer reg.Stop()
+
 	sessionID := "test_live_session"
 	buf := reg.GetOrCreate(sessionID, nil)
 

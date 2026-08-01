@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+// SegmentKind distinguishes full segments from LL-HLS partial segments.
+type SegmentKind string
+
+const (
+	SegmentKindComplete SegmentKind = "SEG"
+	SegmentKindPart     SegmentKind = "PART"
+)
+
 // SegmentState tracks the authoritative lifecycle state of a segment within the ringbuffer.
 type SegmentState uint8
 
@@ -32,13 +40,15 @@ func (s SegmentState) String() string {
 
 // SegmentID uniquely identifies a segment across stream restarts and session boundaries.
 type SegmentID struct {
-	ServiceRef string `json:"service_ref"`
-	SessionID  string `json:"session_id"`
-	Sequence   uint64 `json:"sequence"`
+	ServiceRef string      `json:"service_ref"`
+	SessionID  string      `json:"session_id"`
+	Kind       SegmentKind `json:"kind"`
+	Sequence   uint64      `json:"sequence"`
+	PartIndex  uint32      `json:"part_index"`
 }
 
 func (id SegmentID) String() string {
-	return fmt.Sprintf("%s:%s:%d", id.ServiceRef, id.SessionID, id.Sequence)
+	return fmt.Sprintf("%s:%s:%s:%d:%d", id.ServiceRef, id.SessionID, id.Kind, id.Sequence, id.PartIndex)
 }
 
 // Completeness describes the availability status of requested segments in the ringbuffer.
@@ -67,6 +77,7 @@ type Gap struct {
 type InternalSegment struct {
 	ID             SegmentID           `json:"id"`
 	Path           string              `json:"path"`
+	DurationSec    float64             `json:"duration_sec"`
 	Sequence       uint64              `json:"sequence"`
 	StartPTS90k    int64               `json:"start_pts_90k"`
 	EndPTS90k      int64               `json:"end_pts_90k"`
@@ -89,6 +100,7 @@ func (seg *InternalSegment) IsReserved() bool {
 type SegmentHandle struct {
 	ID            SegmentID `json:"id"`
 	Path          string    `json:"path"`
+	DurationSec   float64   `json:"duration_sec"`
 	Sequence      uint64    `json:"sequence"`
 	StartPTS90k   int64     `json:"start_pts_90k"`
 	EndPTS90k     int64     `json:"end_pts_90k"`
