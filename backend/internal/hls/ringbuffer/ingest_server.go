@@ -204,7 +204,6 @@ func (s *IngestServer) persistToDisk(sessionID, filename string, data []byte) {
 	if s.hlsRoot == "" {
 		return
 	}
-	// Defense-in-depth: ensure no path traversal reaches the disk writer.
 	filename = sanitizeIngestFilename(filename)
 	if filename == "" {
 		s.logger.Warn().Str("session_id", sessionID).Str("original", filename).Msg("persistToDisk: rejected path traversal")
@@ -214,9 +213,48 @@ func (s *IngestServer) persistToDisk(sessionID, filename string, data []byte) {
 	_ = os.MkdirAll(sessionDir, 0755) // #nosec G301
 	filePath := filepath.Join(sessionDir, filename)
 	tmpPath := filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0600); err == nil { // #nosec G306
-		_ = os.Rename(tmpPath, filePath)
+
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		s.logger.Error().Err(err).Str("path", filePath).Msg("async dvr write open failed")
+		return
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
+		return
+	}
+	_ = f.Sync()
+	_ = f.Close()
+
+	if err := os.Rename(tmpPath, filePath); err == nil {
+		// Register fully committed segment in authoritative DiskSegmentStore!
+		if strings.HasPrefix(filename, "seg_") && strings.HasSuffix(filename, ".ts") {
+			var seq uint64
+			_, _ = fmt.Sscanf(filename, "seg_%d.ts", &seq)
+			now := time.Now()
+			segID := SegmentID{
+				ServiceRef: sessionID,
+				SessionID:  sessionID,
+				Kind:       SegmentKindComplete,
+				Sequence:   seq,
+			}
+			if s.registry != nil && s.registry.DiskStore() != nil {
+				s.registry.DiskStore().CommitSegment(&DiskSegment{
+					ID:            segID,
+					ServiceRef:    sessionID,
+					SessionID:     sessionID,
+					Path:          filePath,
+					Sequence:      seq,
+					StartWallTime: now.Add(-2 * time.Second),
+					EndWallTime:   now,
+					DurationSec:   2.0,
+					SizeBytes:     int64(len(data)),
+					State:         SegmentActive,
+				})
+			}
+		}
 	} else {
-		s.logger.Error().Err(err).Str("path", filePath).Msg("async dvr write failed")
+		s.logger.Error().Err(err).Str("path", filePath).Msg("async dvr write rename failed")
 	}
 }
