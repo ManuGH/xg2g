@@ -21,7 +21,7 @@
 
 xg2g connects to Enigma2 receivers (VU+, Dreambox, GigaBlue) and turns raw MPEG-TS satellite/cable streams into browser-ready HLS and fMP4 on the fly.
 
-[**Getting Started**](docs/guides/GETTING_STARTED.md) · [**Linux Setup**](docs/guides/INSTALLATION.md) · [**Quickstart**](#quickstart) · [**Documentation**](docs/README.md) · [**Sponsor**](https://www.paypal.me/manuelherma) · [**Releases**](https://github.com/ManuGH/xg2g/releases)
+[**Getting Started**](docs/guides/GETTING_STARTED.md) · [**Linux Setup**](docs/guides/INSTALLATION.md) · [**Quickstart**](#quickstart) · [**Documentation**](docs/README.md) · [**Codec Matrix**](docs/arch/CODEC_MATRIX.md) · [**Sponsor**](https://www.paypal.me/manuelherma) · [**Releases**](https://github.com/ManuGH/xg2g/releases)
 
 </div>
 
