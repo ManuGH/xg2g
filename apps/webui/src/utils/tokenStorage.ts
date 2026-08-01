@@ -82,11 +82,14 @@ function persistTokenBestEffort(token: string): void {
   const local = getStorage('local');
 
   if (token) {
-    safeSet(local, TOKEN_KEY, token);
+    safeSet(session, TOKEN_KEY, token);
   } else {
-    safeRemove(local, TOKEN_KEY);
+    safeRemove(session, TOKEN_KEY);
   }
-  safeRemove(session, TOKEN_KEY);
+  // Never leave a bearer token in persistent browser storage. Besides clearing
+  // stale values from this build, this completes the one-time migration from
+  // releases that intentionally kept the token across browser restarts.
+  safeRemove(local, TOKEN_KEY);
 }
 
 export function getStoredToken(): string {
@@ -100,17 +103,19 @@ export function getStoredToken(): string {
   const session = getStorage('session');
   const local = getStorage('local');
 
-  const localToken = safeGet(local, TOKEN_KEY);
-  if (localToken) {
-    volatileToken = localToken;
-    return localToken;
+  const sessionToken = safeGet(session, TOKEN_KEY);
+  if (sessionToken) {
+    volatileToken = sessionToken;
+    // Also clean up a stale persistent copy when both stores contain a token.
+    safeRemove(local, TOKEN_KEY);
+    return sessionToken;
   }
 
-  const legacySessionToken = safeGet(session, TOKEN_KEY);
-  if (legacySessionToken) {
-    volatileToken = legacySessionToken;
-    persistTokenBestEffort(legacySessionToken);
-    return legacySessionToken;
+  const legacyLocalToken = safeGet(local, TOKEN_KEY);
+  if (legacyLocalToken) {
+    volatileToken = legacyLocalToken;
+    persistTokenBestEffort(legacyLocalToken);
+    return legacyLocalToken;
   }
 
   return volatileToken;

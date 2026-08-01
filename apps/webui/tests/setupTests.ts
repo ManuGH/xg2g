@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
+import { resetPlaybackNetworkProbeCache } from '../src/features/player/utils/playbackNetworkProbe';
 
 // Global cleanup: ensure every test unmounts rendered React trees to prevent
 // V8 heap OOM (~4GB) on CI when many test files render <V3Player> without
@@ -8,6 +9,9 @@ import { afterEach, vi } from 'vitest';
 // to call cleanup() locally.
 afterEach(() => {
   cleanup();
+  // The network probe caches its verdict in module state; without this a test
+  // inherits whatever the previous one measured, making results order-dependent.
+  resetPlaybackNetworkProbeCache();
 });
 
 // Node 26 ships native experimental Web Storage globals (localStorage,

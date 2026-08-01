@@ -9,20 +9,29 @@ describe('tokenStorage', () => {
     window.sessionStorage.clear();
   });
 
-  it('persists the API token in localStorage', () => {
+  it('persists the API token only for the browser session', () => {
     setStoredToken('test01');
 
-    expect(window.localStorage.getItem('XG2G_API_TOKEN')).toBe('test01');
-    expect(window.sessionStorage.getItem('XG2G_API_TOKEN')).toBeNull();
+    expect(window.sessionStorage.getItem('XG2G_API_TOKEN')).toBe('test01');
+    expect(window.localStorage.getItem('XG2G_API_TOKEN')).toBeNull();
     expect(getStoredToken()).toBe('test01');
   });
 
-  it('migrates legacy sessionStorage tokens to localStorage', () => {
-    window.sessionStorage.setItem('XG2G_API_TOKEN', 'legacy-token');
+  it('migrates legacy localStorage tokens to sessionStorage', () => {
+    window.localStorage.setItem('XG2G_API_TOKEN', 'legacy-token');
 
     expect(getStoredToken()).toBe('legacy-token');
-    expect(window.localStorage.getItem('XG2G_API_TOKEN')).toBe('legacy-token');
-    expect(window.sessionStorage.getItem('XG2G_API_TOKEN')).toBeNull();
+    expect(window.sessionStorage.getItem('XG2G_API_TOKEN')).toBe('legacy-token');
+    expect(window.localStorage.getItem('XG2G_API_TOKEN')).toBeNull();
+  });
+
+  it('prefers the session token and removes a stale persistent copy', () => {
+    window.sessionStorage.setItem('XG2G_API_TOKEN', 'current-token');
+    window.localStorage.setItem('XG2G_API_TOKEN', 'stale-token');
+
+    expect(getStoredToken()).toBe('current-token');
+    expect(window.sessionStorage.getItem('XG2G_API_TOKEN')).toBe('current-token');
+    expect(window.localStorage.getItem('XG2G_API_TOKEN')).toBeNull();
   });
 
   it('consumes bootstrap tokens from the URL hash and clears the hash afterwards', () => {
@@ -30,7 +39,8 @@ describe('tokenStorage', () => {
 
     expect(getStoredToken()).toBe('hash-token');
     expect(window.location.hash).toBe('');
-    expect(window.localStorage.getItem('XG2G_API_TOKEN')).toBe('hash-token');
+    expect(window.sessionStorage.getItem('XG2G_API_TOKEN')).toBe('hash-token');
+    expect(window.localStorage.getItem('XG2G_API_TOKEN')).toBeNull();
   });
 
   it('clears the token from both storages', () => {

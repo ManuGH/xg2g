@@ -29,10 +29,11 @@ import {
 import {
   createHlsRuntimeConfig,
   hlsNetworkRetryBackoffMs,
-  HLS_NETWORK_RETRY_POLICY,
+  hlsNetworkRetryPolicyForLink,
   HLS_STARTUP_POLICY,
 } from './playbackEnginePolicy';
 import { isInMemorySeekTarget } from './orchestrator/nativePlaybackHelpers';
+import type { PlaybackLinkProfile } from './utils/playbackLinkProfile';
 
 type PlaybackEngineName = 'auto' | 'native' | 'hlsjs';
 type ReportErrorFn = (
@@ -84,6 +85,7 @@ interface UsePlaybackEngineProps {
   isTeardownRef: MutableRefObject<boolean>;
   lastDecodedRef: MutableRefObject<number>;
   playbackEpochRef: MutableRefObject<number>;
+  linkProfileRef?: MutableRefObject<PlaybackLinkProfile>;
   t: TFunction;
   reportError: ReportErrorFn;
   waitForSessionReady: WaitForSessionReadyFn;
@@ -114,6 +116,7 @@ export function usePlaybackEngine({
   isTeardownRef,
   lastDecodedRef,
   playbackEpochRef,
+  linkProfileRef,
   t,
   reportError,
   waitForSessionReady,
@@ -842,7 +845,8 @@ export function usePlaybackEngine({
       if (hlsRef.current) {
         hlsRef.current.destroy();
       }
-      const hls = new Hls(createHlsRuntimeConfig());
+      const linkProfile = linkProfileRef?.current ?? 'stable';
+      const hls = new Hls(createHlsRuntimeConfig(linkProfile));
       hlsRef.current = hls;
 
       // Live startup gate: on a fresh live session the encoder edge is only
@@ -1005,7 +1009,7 @@ export function usePlaybackEngine({
 
       let mediaRecoveryAttempted = false;
       let networkRetryCount = 0;
-      const { maxRetries: maxNetworkRetries } = HLS_NETWORK_RETRY_POLICY;
+      const { maxRetries: maxNetworkRetries } = hlsNetworkRetryPolicyForLink(linkProfile);
 
       hls.on(Hls.Events.ERROR, (_event, data: ErrorData) => {
         if (!data.fatal) {
@@ -1112,7 +1116,7 @@ export function usePlaybackEngine({
               return;
             }
             if (networkRetryCount < maxNetworkRetries) {
-              const backoffMs = hlsNetworkRetryBackoffMs(networkRetryCount);
+              const backoffMs = hlsNetworkRetryBackoffMs(networkRetryCount, linkProfile);
               networkRetryCount++;
               reportPlaybackWarning(PLAYBACK_WARNING_CODE_NETWORK_RETRY, 'hlsjs_network_retry', 'network', networkRetryCount);
               debugWarn(`[V3Player] NETWORK_ERROR recovery attempt ${networkRetryCount}/${maxNetworkRetries}, backoff ${backoffMs}ms`);
@@ -1232,7 +1236,7 @@ export function usePlaybackEngine({
     }
 
     throw new Error('HLS playback engine not available');
-  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, isTeardownRef, lastDecodedRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackFailure, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
+  }, [beginSessionDecodeRecovery, clearHlsRenderProbe, clearHlsStallRecovery, clearNativeStallRecovery, clearPendingNativeAutoplay, hlsRef, isTeardownRef, lastDecodedRef, linkProfileRef, onAudioTrackSwitched, onAudioTracksUpdated, onPlaybackMilestone, playbackEngineContext, reportError, reportMediaFailure, reportPlaybackFailure, reportPlaybackWarning, sessionIdRef, setStats, setStatus, shouldPreferNativeHls, startNativeHlsPlayback, t, updateStats, videoRef]);
 
   replayHlsRef.current = playHls;
 

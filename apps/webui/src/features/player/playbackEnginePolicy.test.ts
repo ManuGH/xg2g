@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createHlsRuntimeConfig,
   hlsNetworkRetryBackoffMs,
+  hlsNetworkRetryPolicyForLink,
   HLS_NETWORK_RETRY_POLICY,
   HLS_STARTUP_POLICY,
 } from './playbackEnginePolicy';
@@ -30,6 +31,22 @@ describe('playbackEnginePolicy', () => {
 
     expect(first).not.toBe(second);
     expect(first).toEqual(second);
+  });
+
+  it('trades latency for resilience on a constrained link', () => {
+    expect(createHlsRuntimeConfig('constrained')).toMatchObject({
+      lowLatencyMode: false,
+      liveSyncDuration: 30,
+      maxBufferLength: 180,
+    });
+    expect(hlsNetworkRetryPolicyForLink('constrained')).toEqual({
+      maxRetries: 8,
+      initialBackoffMs: 1_000,
+      backoffCapMs: 15_000,
+    });
+    expect([0, 1, 2, 3, 4, 5].map((retryCount) => (
+      hlsNetworkRetryBackoffMs(retryCount, 'constrained')
+    ))).toEqual([1_000, 2_000, 4_000, 8_000, 15_000, 15_000]);
   });
 
   it('preserves live startup buffering policy', () => {

@@ -253,13 +253,24 @@ export type PlaybackCommand =
     }
   | {
       /**
-       * Schedule an automatic profile fallback retry after a transient media failure.
-       * Executed once per viewing intent via the recovery ladder.
+       * Schedule an automatic recovery restart after a transient failure.
+       * Which restarts are offered, and how often, is the recovery ladder's call.
        */
       type: 'command.playback.schedule_auto_fallback';
       epoch: number;
       delayMs: number;
-      profile: string;
+      /**
+       * Request intent forced onto the retry. `null` keeps whatever the user or
+       * the automatic resolver already selected — used when the encode was fine
+       * and only the session needs re-establishing.
+       */
+      profile: string | null;
+      /**
+       * Pin automatic profile resolution to the safe bandwidth rung for this
+       * retry and a cooldown after it. Set when playback died of link
+       * starvation, where re-measuring would just reproduce the failure.
+       */
+      holdBandwidth?: boolean;
       failureCode: string;
       failureClass: string;
     };
