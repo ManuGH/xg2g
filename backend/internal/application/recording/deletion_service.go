@@ -12,6 +12,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/infra/storage"
 )
 
+var (
+	ErrBackendOfflineForDeletion = errors.New("storage backend is offline or unregistered; physical file deletion required by policy cannot be completed")
+)
+
 // AssetDeletionService coordinates physical file removal and metadata deletion across application boundaries.
 type AssetDeletionService struct {
 	assetRepo recording.AssetRepository
@@ -48,27 +52,34 @@ func (s *AssetDeletionService) DeleteAsset(ctx context.Context, assetID string, 
 
 	// 1. Evaluate pure domain policy using asset's embedded snapshot
 	errPolicy := recording.CanDeletePhysicalFile(asset.ManagementMode, asset.DeletePolicy, force)
+	requiresPhysicalDelete := (errPolicy == nil || (asset.DeletePolicy == recording.DeleteAssetAndFile))
 
-	// 2. Physical File Deletion (if policy permits or force requested)
-	if errPolicy == nil || force {
-		if backend, ok := s.backends[asset.BackendID]; ok && backend != nil {
-			if err := backend.DeleteFile(ctx, asset.ObjectKey); err != nil && !errors.Is(err, storage.ErrObjectNotFound) {
-				return fmt.Errorf("failed to delete physical file on backend '%s': %w", asset.BackendID, err)
-			}
+	// 2. Resolve Backend
+	backend, backendAvailable := s.backends[asset.BackendID]
 
-			// Verify removal via Stat
-			_, statErr := backend.Stat(ctx, asset.ObjectKey)
-			if statErr != nil {
-				if !errors.Is(statErr, storage.ErrObjectNotFound) {
-					return fmt.Errorf("failed to verify physical file deletion via stat: %w", statErr)
-				}
-				// Confirmed deleted (ErrObjectNotFound)
-			} else {
-				return fmt.Errorf("physical file still exists on backend '%s' after deletion", asset.BackendID)
+	// SAFETY GUARD: If physical deletion is required by policy but backend is offline/unregistered, REFUSE METADATA DELETION!
+	if requiresPhysicalDelete && (!backendAvailable || backend == nil) {
+		return fmt.Errorf("%w: backend '%s' unavailable for asset '%s'", ErrBackendOfflineForDeletion, asset.BackendID, asset.ID)
+	}
+
+	// 3. Physical File Deletion (if policy permits or force requested)
+	if (errPolicy == nil || force) && backendAvailable && backend != nil {
+		if err := backend.DeleteFile(ctx, asset.ObjectKey); err != nil && !errors.Is(err, storage.ErrObjectNotFound) {
+			return fmt.Errorf("failed to delete physical file on backend '%s': %w", asset.BackendID, err)
+		}
+
+		// Verify removal via Stat
+		_, statErr := backend.Stat(ctx, asset.ObjectKey)
+		if statErr != nil {
+			if !errors.Is(statErr, storage.ErrObjectNotFound) {
+				return fmt.Errorf("failed to verify physical file deletion via stat: %w", statErr)
 			}
+			// Confirmed deleted (ErrObjectNotFound)
+		} else {
+			return fmt.Errorf("physical file still exists on backend '%s' after deletion", asset.BackendID)
 		}
 	}
 
-	// 3. Remove metadata from AssetRepository second
+	// 4. Remove metadata from AssetRepository ONLY after physical file deletion is verified
 	return s.assetRepo.Delete(ctx, assetID)
 }

@@ -6,6 +6,7 @@ package staging
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/recording"
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/infra/storage"
+)
+
+var (
+	ErrTransferTaskSaveFailed = errors.New("failed to save persistent transfer task during target backend fallback")
 )
 
 // RetroDVRHandoverEngine orchestrates Retro-DVR recordings from NVMe segment reservations to finalized RecordingAssets.
@@ -81,14 +86,26 @@ type RetroHandoverResult struct {
 	TransferScheduled       bool                      `json:"transfer_scheduled"`
 }
 
+// StagedSegment details verified original-to-staged mapping for each segment.
+type StagedSegment struct {
+	OriginalID      ringbuffer.SegmentID `json:"original_id"`
+	OriginalPath    string               `json:"original_path"`
+	StagedObjectKey string               `json:"staged_object_key"`
+	ExpectedBytes   int64                `json:"expected_bytes"`
+	ActualBytes     int64                `json:"actual_bytes"`
+	StartTime       time.Time            `json:"start_time"`
+	EndTime         time.Time            `json:"end_time"`
+	TransferMethod  string               `json:"transfer_method"` // "HARDLINK" or "COPY"
+}
+
 // StagingManifest persists full original segment metadata in the staging workspace before lease release.
 type StagingManifest struct {
-	Version       int                      `json:"version"`
-	JobID         string                   `json:"job_id"`
-	ReservationID string                   `json:"reservation_id"`
-	CreatedAt     time.Time                `json:"created_at"`
-	Segments      []ringbuffer.SegmentHandle `json:"segments"`
-	Complete      bool                     `json:"complete"`
+	Version       int             `json:"version"`
+	JobID         string          `json:"job_id"`
+	ReservationID string          `json:"reservation_id"`
+	CreatedAt     time.Time       `json:"created_at"`
+	Segments      []StagedSegment `json:"segments"`
+	Complete      bool            `json:"complete"`
 }
 
 // ExecuteRetroRecording processes a retro recording from NVMe disk buffer handover to finalized RecordingAsset.
@@ -117,6 +134,8 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	// 1. Lock NVMe segment range under lease from ReservationManager
 	var reservation ringbuffer.Reservation
 	var handles []ringbuffer.SegmentHandle
+	released := false
+
 	if e.resMgr != nil {
 		leaseDuration := 30 * time.Minute
 		reservation, err = e.resMgr.ReserveRange(req.ServiceRef, req.StartTime, req.EndTime, req.JobID, leaseDuration)
@@ -130,6 +149,13 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 			return nil, fmt.Errorf("failed to list reserved segments for %s: %w", reservation.ID, err)
 		}
 	}
+
+	// SAFE CLEANUP GUARD: Ensure reservation lease is released on early errors before manifest commit
+	defer func() {
+		if !released && reservation.ID != "" && e.resMgr != nil {
+			_ = e.resMgr.ReleaseReservation(reservation.ID)
+		}
+	}()
 
 	// Sort handles chronologically by 1. StartWallTime, 2. SessionID, 3. Sequence
 	sort.Slice(handles, func(i, j int) bool {
@@ -182,21 +208,41 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		return nil, fmt.Errorf("failed to prepare staging workspace: %w", err)
 	}
 
-	// 4. Transfer reserved segments into staging directory and write manifest before lease release
+	// 4. Transfer reserved segments into staging directory & verify size
 	stagingSegsDir := e.stagingMgr.SegmentsDir(job.ID)
 	if err := os.MkdirAll(stagingSegsDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create staging segments directory: %w", err)
 	}
 
+	var stagedSegments []StagedSegment
 	for idx, h := range handles {
 		srcPath := h.Location.Path
 		if srcPath == "" {
-			continue
+			return nil, fmt.Errorf("reserved segment %s has empty path", h.ID)
 		}
-		destPath := filepath.Join(stagingSegsDir, fmt.Sprintf("seg_%06d.ts", idx+1))
-		if err := copyOrLinkFile(srcPath, destPath); err != nil {
+
+		segFilename := fmt.Sprintf("seg_%06d.ts", idx+1)
+		destPath := filepath.Join(stagingSegsDir, segFilename)
+		method, err := copyOrLinkFile(srcPath, destPath)
+		if err != nil {
 			return nil, fmt.Errorf("failed to transfer retro segment %s to staging: %w", srcPath, err)
 		}
+
+		stat, err := os.Stat(destPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat staged segment %s: %w", destPath, err)
+		}
+
+		stagedSegments = append(stagedSegments, StagedSegment{
+			OriginalID:      h.ID,
+			OriginalPath:    srcPath,
+			StagedObjectKey: filepath.Join("segments", segFilename),
+			ExpectedBytes:   h.SizeBytes,
+			ActualBytes:     stat.Size(),
+			StartTime:       h.StartWallTime,
+			EndTime:         h.EndWallTime,
+			TransferMethod:  method,
+		})
 	}
 
 	// Write StagingManifest with explicit file & directory fsync
@@ -206,7 +252,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		JobID:         job.ID,
 		ReservationID: reservation.ID,
 		CreatedAt:     now,
-		Segments:      handles,
+		Segments:      stagedSegments,
 		Complete:      reservation.Status == ringbuffer.CompletenessComplete,
 	}
 	if err := writeAndFsyncManifest(manifestPath, sManifest); err != nil {
@@ -215,7 +261,10 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 
 	// 5. Release NVMe reservation lease ONLY AFTER staging copy & manifest fsync complete
 	if e.resMgr != nil && reservation.ID != "" {
-		_ = e.resMgr.ReleaseReservation(reservation.ID)
+		if err := e.resMgr.ReleaseReservation(reservation.ID); err != nil {
+			return nil, fmt.Errorf("failed to release NVMe reservation lease: %w", err)
+		}
+		released = true
 	}
 
 	// 6. Update job state to STAGING & assemble output
@@ -256,7 +305,9 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 
 	job.State = recording.StateTransferring
 	if e.jobRepo != nil {
-		_ = e.jobRepo.Save(ctx, job)
+		if err := e.jobRepo.Save(ctx, job); err != nil {
+			return nil, fmt.Errorf("failed to update job to TRANSFERRING: %w", err)
+		}
 	}
 
 	// 8. Construct RecordingAsset with embedded profile policy snapshot
@@ -310,36 +361,45 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		}
 	}
 
-	transferScheduled := false
-
 	if commitErr != nil {
 		// TARGET FAILURE FALLBACK: Job -> WAITING_FOR_TARGET, Asset -> TRANSFER_PENDING, Create TransferTask
-		assetPending, _ := asset.TransitionState(recording.AssetTransferPending)
+		assetPending, transErr := asset.TransitionState(recording.AssetTransferPending)
+		if transErr != nil {
+			return nil, fmt.Errorf("failed to transition asset to TRANSFER_PENDING: %w", transErr)
+		}
 		if e.assetRepo != nil {
-			_ = e.assetRepo.Save(ctx, assetPending, 0)
+			if err := e.assetRepo.Save(ctx, assetPending, 0); err != nil {
+				return nil, fmt.Errorf("failed to save TRANSFER_PENDING asset: %w", err)
+			}
 		}
 
 		job.State = recording.StateWaitingTarget
 		if e.jobRepo != nil {
-			_ = e.jobRepo.Save(ctx, job)
+			if err := e.jobRepo.Save(ctx, job); err != nil {
+				return nil, fmt.Errorf("failed to save WAITING_FOR_TARGET job: %w", err)
+			}
 		}
 
-		if e.taskRepo != nil {
-			task, taskErr := recording.NewTransferTask(
-				"task_"+req.JobID,
-				job.ID,
-				assetPending.ID,
-				job.ID, // SourceWorkspaceID = JobID
-				baseOutFilename,
-				profile.Target.BackendID,
-				targetObjectKey,
-				report.TotalBytes,
-			)
-			if taskErr == nil {
-				task.LastError = commitErr.Error()
-				_ = e.taskRepo.Save(ctx, task)
-				transferScheduled = true
-			}
+		if e.taskRepo == nil {
+			return nil, fmt.Errorf("%w: taskRepo is nil", ErrTransferTaskSaveFailed)
+		}
+
+		task, taskErr := recording.NewTransferTask(
+			"task_"+req.JobID,
+			job.ID,
+			assetPending.ID,
+			job.ID, // SourceWorkspaceID = JobID
+			baseOutFilename,
+			profile.Target.BackendID,
+			targetObjectKey,
+			report.TotalBytes,
+		)
+		if taskErr != nil {
+			return nil, fmt.Errorf("%w: %v", ErrTransferTaskSaveFailed, taskErr)
+		}
+		task.LastError = commitErr.Error()
+		if err := e.taskRepo.Save(ctx, task); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrTransferTaskSaveFailed, err)
 		}
 
 		return &RetroHandoverResult{
@@ -347,7 +407,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 			Asset:                   assetPending,
 			AssemblyReport:          *report,
 			LiveContinuationPending: isLiveActive,
-			TransferScheduled:       transferScheduled,
+			TransferScheduled:       true,
 		}, nil
 	}
 
@@ -382,26 +442,26 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	}, nil
 }
 
-func copyOrLinkFile(src, dst string) error {
+func copyOrLinkFile(src, dst string) (string, error) {
 	if err := os.Link(src, dst); err == nil {
-		return nil
+		return "HARDLINK", nil
 	}
 	in, err := os.Open(src)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer in.Close()
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer out.Close()
 
 	if _, err := io.Copy(out, in); err != nil {
-		return err
+		return "", err
 	}
-	return out.Sync()
+	return "COPY", out.Sync()
 }
 
 func writeAndFsyncManifest(manifestPath string, manifest StagingManifest) error {

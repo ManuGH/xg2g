@@ -21,20 +21,24 @@ var (
 
 // Maximum length limits for object keys
 const (
-	MaxObjectKeyLength       = 1024
-	MaxComponentKeyLength    = 255
+	MaxObjectKeyLength    = 1024
+	MaxComponentKeyLength = 255
 )
 
 // Illegal characters for POSIX/Windows filenames: \ : * ? " < > |
 var illegalChars = []string{"\\", ":", "*", "?", "\"", "<", ">", "|"}
 
-// JoinObjectKey performs a backend-neutral POSIX slash path join with strict length & bounds checks.
+// JoinObjectKey performs a backend-neutral POSIX slash path join with strict component & bounds checks.
 func JoinObjectKey(parts ...string) (string, error) {
+	if len(parts) == 0 {
+		return "", fmt.Errorf("%w: parts cannot be empty", ErrIllegalPathCharacter)
+	}
+
 	var cleanParts []string
-	for _, part := range parts {
+	for idx, part := range parts {
 		trimmed := strings.TrimSpace(part)
 		if trimmed == "" {
-			continue
+			return "", fmt.Errorf("%w: component at index %d cannot be empty", ErrIllegalPathCharacter, idx)
 		}
 		// Reject backslashes, absolute leading slashes, volume markers
 		if strings.Contains(trimmed, "\\") || strings.HasPrefix(trimmed, "/") || (len(trimmed) >= 2 && trimmed[1] == ':') {
@@ -43,8 +47,8 @@ func JoinObjectKey(parts ...string) (string, error) {
 		// Component checks
 		comps := strings.Split(trimmed, "/")
 		for _, comp := range comps {
-			if comp == "." || comp == ".." {
-				return "", fmt.Errorf("%w: contains '%s'", ErrPathOutsideBackendRoot, comp)
+			if comp == "" || comp == "." || comp == ".." {
+				return "", fmt.Errorf("%w: contains invalid component '%s'", ErrPathOutsideBackendRoot, comp)
 			}
 			if strings.ContainsRune(comp, '\x00') {
 				return "", fmt.Errorf("%w: contains real NUL byte", ErrIllegalPathCharacter)

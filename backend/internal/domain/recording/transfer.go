@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	ErrTransferTaskNotFound = errors.New("transfer task not found")
+	ErrTransferTaskNotFound  = errors.New("transfer task not found")
 	ErrNoTransferTaskToClaim = errors.New("no pending transfer task available for claiming")
+	ErrWorkerLeaseLost       = errors.New("worker lease lost or task acquired by another worker")
 )
 
 // TransferState defines the lifecycle states of background transfer retries.
@@ -75,9 +76,11 @@ func NewTransferTask(id, jobID, assetID, workspaceID, sourceObjKey, backendID, t
 	}, nil
 }
 
-// TransferTaskRepository defines persistent CRUD and claiming operations for TransferTasks.
+// TransferTaskRepository defines persistent CRUD and CAS claiming operations for TransferTasks.
 type TransferTaskRepository interface {
 	Save(ctx context.Context, task *TransferTask) error
+	SaveTaskLeased(ctx context.Context, task *TransferTask, expectedWorkerID string, expectedLeaseExpiresAt time.Time) error
+	RenewTaskLease(ctx context.Context, taskID string, workerID string, extension time.Duration) error
 	Get(ctx context.Context, id string) (*TransferTask, error)
 	List(ctx context.Context) ([]*TransferTask, error)
 	ClaimTask(ctx context.Context, workerID string, leaseDuration time.Duration) (*TransferTask, error)
@@ -126,6 +129,77 @@ func (r *DiskTransferTaskRepository) Save(ctx context.Context, task *TransferTas
 	cp := *task
 	cp.UpdatedAt = time.Now()
 	tasks[cp.ID] = &cp
+
+	return r.saveLocked(tasks)
+}
+
+// SaveTaskLeased updates a RUNNING TransferTask strictly verifying worker lease ownership.
+func (r *DiskTransferTaskRepository) SaveTaskLeased(ctx context.Context, task *TransferTask, expectedWorkerID string, expectedLeaseExpiresAt time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if task == nil || task.ID == "" || expectedWorkerID == "" {
+		return fmt.Errorf("invalid SaveTaskLeased parameters")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tasks, err := r.loadLocked()
+	if err != nil {
+		return err
+	}
+
+	existing, ok := tasks[task.ID]
+	if !ok {
+		return ErrTransferTaskNotFound
+	}
+
+	now := time.Now()
+	// Lease ownership check
+	if existing.LockedBy != expectedWorkerID {
+		return fmt.Errorf("%w: active lock belongs to '%s', expected '%s'", ErrWorkerLeaseLost, existing.LockedBy, expectedWorkerID)
+	}
+	if now.After(existing.LeaseExpiresAt) && task.State != TransferCompleted {
+		return fmt.Errorf("%w: worker lease expired at %v", ErrWorkerLeaseLost, existing.LeaseExpiresAt)
+	}
+
+	cp := *task
+	cp.UpdatedAt = now
+	tasks[cp.ID] = &cp
+
+	return r.saveLocked(tasks)
+}
+
+// RenewTaskLease extends the active worker lease duration for a RUNNING task.
+func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID string, workerID string, extension time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if taskID == "" || workerID == "" || extension <= 0 {
+		return fmt.Errorf("invalid RenewTaskLease parameters")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tasks, err := r.loadLocked()
+	if err != nil {
+		return err
+	}
+
+	existing, ok := tasks[taskID]
+	if !ok {
+		return ErrTransferTaskNotFound
+	}
+
+	now := time.Now()
+	if existing.LockedBy != workerID || now.After(existing.LeaseExpiresAt) {
+		return fmt.Errorf("%w: cannot renew lease for worker '%s'", ErrWorkerLeaseLost, workerID)
+	}
+
+	existing.LeaseExpiresAt = now.Add(extension)
+	existing.UpdatedAt = now
 
 	return r.saveLocked(tasks)
 }

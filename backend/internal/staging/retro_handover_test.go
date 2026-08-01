@@ -5,6 +5,7 @@ package staging
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -86,20 +87,20 @@ func TestRetroDVRHandoverEngine_EndToEndFlow(t *testing.T) {
 		handles: map[string][]ringbuffer.SegmentHandle{
 			"res_mock_123": {
 				{
-					ID:          ringbuffer.SegmentID{SessionID: "sess_1", Sequence: 1},
-					Location:    ringbuffer.SegmentLocation{Kind: ringbuffer.StorageKindDisk, Path: seg1Path},
-					Sequence:    1,
-					SizeBytes:   int64(len(payload1)),
-					DurationSec: 900.0,
+					ID:            ringbuffer.SegmentID{SessionID: "sess_1", Sequence: 1},
+					Location:      ringbuffer.SegmentLocation{Kind: ringbuffer.StorageKindDisk, Path: seg1Path},
+					Sequence:      1,
+					SizeBytes:     int64(len(payload1)),
+					DurationSec:   900.0,
 					StartWallTime: now.Add(-30 * time.Minute),
 					EndWallTime:   now.Add(-15 * time.Minute),
 				},
 				{
-					ID:          ringbuffer.SegmentID{SessionID: "sess_1", Sequence: 2},
-					Location:    ringbuffer.SegmentLocation{Kind: ringbuffer.StorageKindDisk, Path: seg2Path},
-					Sequence:    2,
-					SizeBytes:   int64(len(payload2)),
-					DurationSec: 900.0,
+					ID:            ringbuffer.SegmentID{SessionID: "sess_1", Sequence: 2},
+					Location:      ringbuffer.SegmentLocation{Kind: ringbuffer.StorageKindDisk, Path: seg2Path},
+					Sequence:      2,
+					SizeBytes:     int64(len(payload2)),
+					DurationSec:   900.0,
 					StartWallTime: now.Add(-15 * time.Minute),
 					EndWallTime:   now,
 				},
@@ -243,11 +244,11 @@ func TestRetroDVRHandoverEngine_TargetFailureFallbackAndWorkerRetry(t *testing.T
 		handles: map[string][]ringbuffer.SegmentHandle{
 			"res_mock_123": {
 				{
-					ID:          ringbuffer.SegmentID{SessionID: "sess_1", Sequence: 1},
-					Location:    ringbuffer.SegmentLocation{Kind: ringbuffer.StorageKindDisk, Path: seg1Path},
-					Sequence:    1,
-					SizeBytes:   int64(len(payload)),
-					DurationSec: 900.0,
+					ID:            ringbuffer.SegmentID{SessionID: "sess_1", Sequence: 1},
+					Location:      ringbuffer.SegmentLocation{Kind: ringbuffer.StorageKindDisk, Path: seg1Path},
+					Sequence:      1,
+					SizeBytes:     int64(len(payload)),
+					DurationSec:   900.0,
 					StartWallTime: now.Add(-30 * time.Minute),
 					EndWallTime:   now.Add(-15 * time.Minute),
 				},
@@ -340,5 +341,80 @@ func TestRetroDVRHandoverEngine_TargetFailureFallbackAndWorkerRetry(t *testing.T
 	}
 	if recJob.State != recording.StateCompleted {
 		t.Errorf("Expected recovered job COMPLETED, got state: %s", recJob.State)
+	}
+}
+
+func TestAssetDeletionService_RefusesOfflineBackend(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "del_offline_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	assetRepoPath := filepath.Join(tmpDir, "assets.json")
+	assetRepo, _ := recording.NewDiskAssetRepository(assetRepoPath)
+
+	asset, _ := recording.NewRecordingAsset("asset_offline_1", "job_1", "Show", "ref_1", "offline_backend", "movies/show.ts", recording.ContainerTS)
+	asset.ManagementMode = recording.ManagementXG2GManaged
+	asset.DeletePolicy = recording.DeleteAssetAndFile
+	_ = assetRepo.Save(ctx, asset, 0)
+
+	// Instantiated with NO backends (backend is offline)
+	delService := appRecording.NewAssetDeletionService(assetRepo, []storage.StorageBackend{})
+
+	err = delService.DeleteAsset(ctx, asset.ID, false)
+	if !errors.Is(err, appRecording.ErrBackendOfflineForDeletion) {
+		t.Fatalf("Expected ErrBackendOfflineForDeletion, got %v", err)
+	}
+
+	// Verify metadata was NOT deleted
+	savedAsset, getErr := assetRepo.Get(ctx, asset.ID)
+	if getErr != nil || savedAsset == nil {
+		t.Fatalf("Asset metadata was incorrectly deleted while backend was offline!")
+	}
+}
+
+func TestTransferWorker_LeaseOwnershipCASRejection(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cas_lease_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	taskRepoPath := filepath.Join(tmpDir, "transfers.json")
+	taskRepo, _ := recording.NewDiskTransferTaskRepository(taskRepoPath)
+
+	task, _ := recording.NewTransferTask("task_cas_1", "job_1", "asset_1", "job_1", "finalized/show.ts", "backend_1", "movies/show.ts", 100)
+	_ = taskRepo.Save(ctx, task)
+
+	// Worker A claims task
+	claimedA, err := taskRepo.ClaimTask(ctx, "worker-A", 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("ClaimTask worker-A failed: %v", err)
+	}
+
+	// Wait for lease to expire
+	time.Sleep(150 * time.Millisecond)
+
+	// Worker B claims task
+	claimedB, err := taskRepo.ClaimTask(ctx, "worker-B", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("ClaimTask worker-B failed: %v", err)
+	}
+	_ = claimedB
+
+	// Worker A wakes up and tries to save task using its expired lease token
+	claimedA.State = recording.TransferFailed
+	err = taskRepo.SaveTaskLeased(ctx, claimedA, "worker-A", claimedA.LeaseExpiresAt)
+	if !errors.Is(err, recording.ErrWorkerLeaseLost) {
+		t.Fatalf("Expected ErrWorkerLeaseLost when worker-A attempts stale save, got %v", err)
+	}
+
+	// Verify Worker B's active lock remains intact
+	freshTask, _ := taskRepo.Get(ctx, "task_cas_1")
+	if freshTask.LockedBy != "worker-B" {
+		t.Fatalf("Worker B's lease was corrupted by Worker A! Active lock: %s", freshTask.LockedBy)
 	}
 }
