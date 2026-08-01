@@ -33,6 +33,13 @@ updates:
       npm-deps:
         patterns:
           - "*"
+    ignore:
+      # typescript-eslint (latest: 8.65.0) declares peer typescript ">=4.8.4 <6.1.0".
+      # Anything at or above 6.1 makes `npm ci` fail with ERESOLVE, so the whole
+      # grouped PR becomes uninstallable. Lift this cap once typescript-eslint
+      # ships a release that accepts the newer major.
+      - dependency-name: "typescript"
+        versions: [">=6.1.0"]
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
