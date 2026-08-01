@@ -4,6 +4,7 @@
 package staging
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,100 +13,126 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/recording"
 )
 
-func TestStagingManager_WorkspaceAndAssembly(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "staging_test")
+func TestHardenedRecordingPipeline_ManifestAndAssembly(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "staging_hardened_test")
 	if err != nil {
 		t.Fatalf("MkdirTemp failed: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	sm, err := NewStagingManager(tmpDir)
+	ctx := context.Background()
+	repo, err := recording.NewDiskJobRepository(tmpDir)
+	if err != nil {
+		t.Fatalf("NewDiskJobRepository failed: %v", err)
+	}
+
+	sm, err := NewStagingManager(tmpDir, repo)
 	if err != nil {
 		t.Fatalf("NewStagingManager failed: %v", err)
 	}
 
-	job := recording.NewRecordingJob("job_101", "1:0:19:283D:3FB:1:C00000:0:0:0:", "Test Movie", recording.SourceRetro, time.Now(), time.Now().Add(1*time.Hour), "local-nvme")
-	
-	wsDir, err := sm.PrepareWorkspace(job)
+	job, err := recording.NewRecordingJob("job_hardened_101", "1:0:19:283D:3FB:1:C00000:0:0:0:", "Hardened Movie", recording.SourceRetro, time.Now(), time.Now().Add(1*time.Hour), "local-nvme")
+	if err != nil {
+		t.Fatalf("NewRecordingJob failed: %v", err)
+	}
+
+	wsDir, err := sm.PrepareWorkspace(ctx, job)
 	if err != nil {
 		t.Fatalf("PrepareWorkspace failed: %v", err)
 	}
+	t.Logf("Prepared workspace at %s", wsDir)
 
-	if _, err := os.Stat(wsDir); os.IsNotExist(err) {
-		t.Fatalf("Workspace dir %s was not created!", wsDir)
+	// Verify manifest.json exists on disk
+	manifestFile := repo.ManifestPath(job.ID)
+	if _, err := os.Stat(manifestFile); os.IsNotExist(err) {
+		t.Fatalf("Manifest file %s was not persisted!", manifestFile)
 	}
 
-	// Create 3 segment files in workspace out of order
-	seg2 := filepath.Join(wsDir, "seg_000002.ts")
-	seg1 := filepath.Join(wsDir, "seg_000001.ts")
-	seg3 := filepath.Join(wsDir, "seg_000003.ts")
+	// Verify safe workspace recovery: re-calling PrepareWorkspace reuses directory without deleting files!
+	segsDir := sm.SegmentsDir(job.ID)
+	seg1 := filepath.Join(segsDir, "seg_000001.ts")
+	seg3 := filepath.Join(segsDir, "seg_000003.ts") // Gap: seg_000002.ts missing!
 
-	_ = os.WriteFile(seg2, []byte("PART2_"), 0644)
-	_ = os.WriteFile(seg1, []byte("PART1_"), 0644)
-	_ = os.WriteFile(seg3, []byte("PART3"), 0644)
-
-	// Transition job to STAGING
-	if err := job.TransitionTo(recording.StatePreparing, ""); err != nil {
-		t.Fatalf("TransitionTo StatePreparing failed: %v", err)
+	if err := os.WriteFile(seg1, []byte("PART1_"), 0644); err != nil {
+		t.Fatalf("WriteFile seg1 failed: %v", err)
 	}
-	if err := job.TransitionTo(recording.StateStaging, ""); err != nil {
-		t.Fatalf("TransitionTo StateStaging failed: %v", err)
+	if err := os.WriteFile(seg3, []byte("PART3"), 0644); err != nil {
+		t.Fatalf("WriteFile seg3 failed: %v", err)
 	}
 
-	// Assemble segments
-	finalPath, err := sm.AssembleSegments(job.ID, "final_movie.ts")
+	// Re-run PrepareWorkspace to verify safe recovery
+	_, err = sm.PrepareWorkspace(ctx, job)
 	if err != nil {
-		t.Fatalf("AssembleSegments failed: %v", err)
+		t.Fatalf("PrepareWorkspace recovery failed: %v", err)
 	}
 
-	data, err := os.ReadFile(finalPath)
+	if _, err := os.Stat(seg1); os.IsNotExist(err) {
+		t.Fatalf("Workspace recovery deleted existing segment file seg1!")
+	}
+
+	// Transition job to StateStaging
+	job.State = recording.StateStaging
+	if err := repo.Save(ctx, job); err != nil {
+		t.Fatalf("repo.Save failed: %v", err)
+	}
+
+	// Execute Assembly & Finalization
+	report, err := sm.AssembleAndFinalize(ctx, job.ID, "final_movie.ts")
 	if err != nil {
-		t.Fatalf("ReadFile finalPath failed: %v", err)
+		t.Fatalf("AssembleAndFinalize failed: %v", err)
 	}
 
-	if string(data) != "PART1_PART2_PART3" {
-		t.Errorf("Expected assembled data 'PART1_PART2_PART3', got '%s'", string(data))
+	if report.Complete {
+		t.Errorf("Expected report.Complete to be false due to missing seg_000002.ts!")
+	}
+	if len(report.MissingRanges) != 1 {
+		t.Errorf("Expected 1 missing range gap, got %d", len(report.MissingRanges))
+	} else if report.MissingRanges[0].StartSeq != 2 || report.MissingRanges[0].EndSeq != 2 {
+		t.Errorf("Expected missing range [2, 2], got %v", report.MissingRanges[0])
 	}
 
-	// Cleanup workspace
-	if err := sm.CleanupWorkspace(job.ID); err != nil {
-		t.Fatalf("CleanupWorkspace failed: %v", err)
+	// Verify job state transitioned to StatePartial in persistent repository
+	savedJob, err := repo.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("repo.Get failed: %v", err)
+	}
+	if savedJob.State != recording.StatePartial {
+		t.Errorf("Expected persistent job state StatePartial, got %s", savedJob.State)
 	}
 
-	if _, err := os.Stat(wsDir); !os.IsNotExist(err) {
-		t.Errorf("Workspace dir %s still exists after CleanupWorkspace!", wsDir)
+	// Verify crash recovery listing
+	recoverable, err := repo.ListRecoverable(ctx)
+	if err != nil {
+		t.Fatalf("ListRecoverable failed: %v", err)
+	}
+	if len(recoverable) != 0 {
+		t.Errorf("Expected 0 recoverable jobs (StatePartial is terminal), got %d", len(recoverable))
 	}
 }
 
-func TestRecordingJob_StateTransitions(t *testing.T) {
-	job := recording.NewRecordingJob("job_202", "ref_1", "Test Show", recording.SourceScheduled, time.Now(), time.Now().Add(1*time.Hour), "local-nvme")
+func TestPathTraversalRejection(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "staging_traversal_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
 
-	if job.CurrentState() != recording.StatePending {
-		t.Errorf("Expected initial state PENDING, got %s", job.CurrentState())
+	ctx := context.Background()
+	repo, _ := recording.NewDiskJobRepository(tmpDir)
+	sm, _ := NewStagingManager(tmpDir, repo)
+
+	// Reject invalid job ID with path traversal
+	_, err = recording.NewRecordingJob("../illegal_job", "ref_1", "Title", recording.SourceScheduled, time.Now(), time.Now().Add(1*time.Hour), "local-nvme")
+	if err == nil {
+		t.Errorf("Expected error for illegal job ID with '../', got nil")
 	}
 
-	if err := job.TransitionTo(recording.StatePreparing, ""); err != nil {
-		t.Errorf("Transition to StatePreparing failed: %v", err)
-	}
+	// Reject path traversal in outputFilename
+	job, _ := recording.NewRecordingJob("job_valid_102", "ref_1", "Title", recording.SourceScheduled, time.Now(), time.Now().Add(1*time.Hour), "local-nvme")
+	_, _ = sm.PrepareWorkspace(ctx, job)
 
-	if err := job.TransitionTo(recording.StateRecording, ""); err != nil {
-		t.Errorf("Transition to StateRecording failed: %v", err)
-	}
-
-	// Invalid transition: Recording -> Completed directly (must go through Staging/Finalizing)
-	if err := job.TransitionTo(recording.StateCompleted, ""); err == nil {
-		t.Errorf("Expected error on invalid transition Recording -> Completed, got nil")
-	}
-
-	// Valid transition: Recording -> Staging -> Finalizing -> Completed
-	_ = job.TransitionTo(recording.StateStaging, "")
-	_ = job.TransitionTo(recording.StateFinalizing, "")
-	if err := job.TransitionTo(recording.StateCompleted, ""); err != nil {
-		t.Errorf("Transition to StateCompleted failed: %v", err)
-	}
-
-	// Terminal state cannot be changed
-	if err := job.TransitionTo(recording.StateFailed, "already completed"); err == nil {
-		t.Errorf("Expected error when modifying terminal state, got nil")
+	_, err = sm.AssembleAndFinalize(ctx, job.ID, "../../../etc/passwd")
+	if err == nil {
+		t.Errorf("Expected error for path traversal in outputFilename, got nil")
 	}
 }

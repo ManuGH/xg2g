@@ -6,14 +6,25 @@ package recording
 import (
 	"errors"
 	"fmt"
-	"sync"
+	"regexp"
 	"time"
 )
 
 var (
 	ErrInvalidStateTransition = errors.New("invalid recording state transition")
 	ErrJobAlreadyFinished     = errors.New("recording job is already in terminal state")
+	ErrInvalidJobID           = errors.New("invalid job ID format")
 )
+
+var jobIDRegex = regexp.MustCompile(`^[a-zA-Z0-9_\-]+$`)
+
+// ValidateJobID ensures jobID is free of path traversal and illegal characters.
+func ValidateJobID(jobID string) error {
+	if jobID == "" || !jobIDRegex.MatchString(jobID) {
+		return fmt.Errorf("%w: '%s'", ErrInvalidJobID, jobID)
+	}
+	return nil
+}
 
 // RecordingSource identifies how a recording was initiated.
 type RecordingSource string
@@ -36,36 +47,44 @@ const (
 	StateTransferring  RecordingState = "TRANSFERRING"
 	StateCompleted     RecordingState = "COMPLETED"
 	StateWaitingTarget RecordingState = "WAITING_FOR_TARGET"
+	StateCanceled      RecordingState = "CANCELED"
+	StateInterrupted   RecordingState = "INTERRUPTED"
+	StatePartial       RecordingState = "PARTIAL"
 	StateFailed        RecordingState = "FAILED"
 )
 
 // IsTerminal returns true if the recording state is a final unchangeable state.
 func (s RecordingState) IsTerminal() bool {
-	return s == StateCompleted || s == StateFailed
+	return s == StateCompleted || s == StateCanceled || s == StatePartial || s == StateFailed
 }
 
-// RecordingJob represents an active or historic recording within the Unified Recording Storage Architecture.
+// RecordingJob is a serializable, pure domain model without embedded locks.
 type RecordingJob struct {
-	mu              sync.RWMutex     `json:"-"`
-	ID              string           `json:"id"`
-	ServiceRef      string           `json:"service_ref"`
-	EventID         string           `json:"event_id,omitempty"`
-	Title           string           `json:"title"`
-	SourceType      RecordingSource  `json:"source_type"`
-	RequestedStart  time.Time        `json:"requested_start"`
-	RequestedEnd    time.Time        `json:"requested_end"`
-	ActualStart     time.Time        `json:"actual_start,omitempty"`
-	ActualEnd       time.Time        `json:"actual_end,omitempty"`
-	TargetBackendID string           `json:"target_backend_id"`
-	LocalFallbackID string           `json:"local_fallback_id"`
-	State           RecordingState   `json:"state"`
+	ID               string          `json:"id"`
+	ServiceRef       string          `json:"service_ref"`
+	EventID          string          `json:"event_id,omitempty"`
+	Title            string          `json:"title"`
+	SourceType       RecordingSource `json:"source_type"`
+	RequestedStart   time.Time       `json:"requested_start"`
+	RequestedEnd     time.Time       `json:"requested_end"`
+	ActualStart      time.Time       `json:"actual_start,omitempty"`
+	ActualEnd        time.Time       `json:"actual_end,omitempty"`
+	RecordedUntil    time.Time       `json:"recorded_until,omitempty"`
+	FinishedAt       time.Time       `json:"finished_at,omitempty"`
+	FailedAt         time.Time       `json:"failed_at,omitempty"`
+	TargetBackendID  string          `json:"target_backend_id"`
+	LocalFallbackID  string          `json:"local_fallback_id"`
+	State            RecordingState  `json:"state"`
 	LocalStagingPath string          `json:"local_staging_path,omitempty"`
-	FinalizedPath   string           `json:"finalized_path,omitempty"`
-	ErrorDetail     string           `json:"error_detail,omitempty"`
+	FinalizedPath    string          `json:"finalized_path,omitempty"`
+	ErrorDetail      string          `json:"error_detail,omitempty"`
 }
 
-// NewRecordingJob creates a new RecordingJob initialized in PENDING state.
-func NewRecordingJob(id, serviceRef, title string, source RecordingSource, reqStart, reqEnd time.Time, targetBackendID string) *RecordingJob {
+// NewRecordingJob creates a new pure RecordingJob model in PENDING state.
+func NewRecordingJob(id, serviceRef, title string, source RecordingSource, reqStart, reqEnd time.Time, targetBackendID string) (*RecordingJob, error) {
+	if err := ValidateJobID(id); err != nil {
+		return nil, err
+	}
 	return &RecordingJob{
 		ID:              id,
 		ServiceRef:      serviceRef,
@@ -76,14 +95,11 @@ func NewRecordingJob(id, serviceRef, title string, source RecordingSource, reqSt
 		TargetBackendID: targetBackendID,
 		LocalFallbackID: "local-nvme",
 		State:           StatePending,
-	}
+	}, nil
 }
 
-// TransitionTo updates the job state if the requested transition is valid.
-func (j *RecordingJob) TransitionTo(newState RecordingState, errDetail string) error {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-
+// CanTransitionTo validates if a state transition is legal according to domain rules.
+func (j *RecordingJob) CanTransitionTo(newState RecordingState) error {
 	if j.State.IsTerminal() {
 		return fmt.Errorf("%w: current state is %s", ErrJobAlreadyFinished, j.State)
 	}
@@ -91,42 +107,26 @@ func (j *RecordingJob) TransitionTo(newState RecordingState, errDetail string) e
 	valid := false
 	switch j.State {
 	case StatePending:
-		valid = (newState == StatePreparing || newState == StateFailed)
+		valid = (newState == StatePreparing || newState == StateCanceled || newState == StateFailed)
 	case StatePreparing:
-		valid = (newState == StateRecording || newState == StateStaging || newState == StateFailed)
+		valid = (newState == StateRecording || newState == StateStaging || newState == StateCanceled || newState == StateFailed)
 	case StateRecording:
-		valid = (newState == StateStaging || newState == StateFailed)
+		valid = (newState == StateStaging || newState == StateInterrupted || newState == StateCanceled || newState == StateFailed)
 	case StateStaging:
-		valid = (newState == StateFinalizing || newState == StateFailed)
+		valid = (newState == StateFinalizing || newState == StateInterrupted || newState == StateFailed)
 	case StateFinalizing:
-		valid = (newState == StateTransferring || newState == StateCompleted || newState == StateWaitingTarget || newState == StateFailed)
+		valid = (newState == StateTransferring || newState == StateCompleted || newState == StateWaitingTarget || newState == StatePartial || newState == StateFailed)
 	case StateTransferring:
 		valid = (newState == StateCompleted || newState == StateWaitingTarget || newState == StateFailed)
 	case StateWaitingTarget:
 		valid = (newState == StateTransferring || newState == StateCompleted || newState == StateFailed)
+	case StateInterrupted, StatePartial:
+		valid = (newState == StateStaging || newState == StateFinalizing || newState == StateFailed)
 	}
 
 	if !valid {
 		return fmt.Errorf("%w: cannot transition from %s to %s", ErrInvalidStateTransition, j.State, newState)
 	}
 
-	j.State = newState
-	if errDetail != "" {
-		j.ErrorDetail = errDetail
-	}
-	if newState == StateRecording && j.ActualStart.IsZero() {
-		j.ActualStart = time.Now()
-	}
-	if (newState == StateCompleted || newState == StateFailed) && j.ActualEnd.IsZero() {
-		j.ActualEnd = time.Now()
-	}
-
 	return nil
-}
-
-// CurrentState returns the current state under read lock.
-func (j *RecordingJob) CurrentState() RecordingState {
-	j.mu.RLock()
-	defer j.mu.RUnlock()
-	return j.State
 }
