@@ -8,7 +8,7 @@ alerting:
         - targets: ["alertmanager:9093"]
 
 rule_files:
-  - "alerts-xg2g-phase5-3.yml"
+  - "alerts-xg2g.yml"
 
 scrape_configs:
   - job_name: "xg2g"

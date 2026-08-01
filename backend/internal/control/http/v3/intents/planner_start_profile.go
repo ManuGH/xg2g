@@ -152,14 +152,30 @@ func plannerExecutionProfileID(plan playbackplanner.PlaybackPlan) (string, error
 
 func applyPlannerPlanToProfile(spec model.ProfileSpec, plan playbackplanner.PlaybackPlan) model.ProfileSpec {
 	spec.PlannerBound = true
-	spec.DVRWindowSec = plan.Startup.DVRWindowSeconds
-	spec.TranscodeVideo = plan.Video.Mode == "transcode"
-	spec.AudioMode = plan.Audio.Mode
-	spec.AudioCodec = normalize.Token(plan.Audio.Codec)
-	spec.Container = plannerProfileContainer(plan.Packaging.Container)
-	spec.Deinterlace = spec.TranscodeVideo && plan.Filters.Deinterlace
-	spec.VideoMaxWidth = plan.Filters.ScaleWidth
-	spec.VideoTargetRateK = plan.RateControl.TargetVideoBitrateKbps
+	if plan.Startup.DVRWindowSeconds > 0 {
+		spec.DVRWindowSec = plan.Startup.DVRWindowSeconds
+	}
+	if plan.Video.Mode != "" {
+		spec.TranscodeVideo = plan.Video.Mode == "transcode"
+	}
+	if plan.Audio.Mode != "" {
+		spec.AudioMode = plan.Audio.Mode
+	}
+	if codec := normalize.Token(plan.Audio.Codec); codec != "" {
+		spec.AudioCodec = codec
+	}
+	if container := plannerProfileContainer(plan.Packaging.Container); container != "" {
+		spec.Container = container
+	}
+	if spec.TranscodeVideo && plan.Filters.Deinterlace {
+		spec.Deinterlace = true
+	}
+	if plan.Filters.ScaleWidth > 0 {
+		spec.VideoMaxWidth = plan.Filters.ScaleWidth
+	}
+	if plan.RateControl.TargetVideoBitrateKbps > 0 {
+		spec.VideoTargetRateK = plan.RateControl.TargetVideoBitrateKbps
+	}
 	if plan.RateControl.MaxVideoBitrateKbps > 0 {
 		spec.VideoMaxRateK = plan.RateControl.MaxVideoBitrateKbps
 		spec.VideoBufSizeK = plan.RateControl.MaxVideoBitrateKbps * 2
@@ -177,7 +193,7 @@ func applyPlannerPlanToProfile(spec model.ProfileSpec, plan playbackplanner.Play
 	} else {
 		plannedCodec := normalize.Token(plan.Video.Codec)
 		baseCodec := normalize.Token(spec.VideoCodec)
-		if plannedCodec != "h264" || (baseCodec != "h264" && baseCodec != "libx264") {
+		if plannedCodec != "" && (plannedCodec != "h264" || (baseCodec != "h264" && baseCodec != "libx264")) {
 			spec.VideoCodec = plannedCodec
 		}
 		if plan.RateControl.TargetVideoBitrateKbps > 0 {

@@ -221,7 +221,7 @@ func (s *Service) serveLLHLSPlaylist(w http.ResponseWriter, r *http.Request, ses
 	w.Header().Set("X-XG2G-Source", "disk")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Encoding", "identity")
-	_, _ = w.Write([]byte(out))
+	_, _ = w.Write([]byte(out)) //nolint:gosec // G705: rendered LLHLS manifest is bounded in-memory string
 	return true
 }
 

@@ -51,13 +51,13 @@ NVIDIA_SPECS=(
 )
 
 VERIFIER_SPECS=(
-  "docs/ops/xg2g-verifier.service|/srv/xg2g/docs/ops/xg2g-verifier.service|644"
-  "docs/ops/xg2g-verifier.timer|/srv/xg2g/docs/ops/xg2g-verifier.timer|644"
+  "infra/systemd/xg2g-verifier.service|/srv/xg2g/docs/ops/xg2g-verifier.service|644"
+  "infra/systemd/xg2g-verifier.timer|/srv/xg2g/docs/ops/xg2g-verifier.timer|644"
   "backend/scripts/verify-runtime.sh|/srv/xg2g/scripts/verify-runtime.sh|755"
   "backend/VERSION|/srv/xg2g/VERSION|644"
   "DIGESTS.lock|/srv/xg2g/DIGESTS.lock|644"
-  "docs/ops/xg2g-verifier.service|/etc/systemd/system/xg2g-verifier.service|644"
-  "docs/ops/xg2g-verifier.timer|/etc/systemd/system/xg2g-verifier.timer|644"
+  "infra/systemd/xg2g-verifier.service|/etc/systemd/system/xg2g-verifier.service|644"
+  "infra/systemd/xg2g-verifier.timer|/etc/systemd/system/xg2g-verifier.timer|644"
 )
 
 VERIFIER_TARGETS=(

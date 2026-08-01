@@ -86,7 +86,7 @@ Status: implemented as release procedure.
 
 Runbook:
 
-- `docs/ops/SAFARI_REPRO_RUN.md`
+- `docs/ops/archive/SAFARI_REPRO_RUN.md`
 - `docs/release/RELEASE_TEMPLATE.md` (Gate Z release section)
 
 ## Autoplay/Inline Checklist

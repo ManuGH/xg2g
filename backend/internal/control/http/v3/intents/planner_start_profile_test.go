@@ -271,6 +271,33 @@ func TestBuildStartSessionDoesNotReplanReceiptProfileThroughStartupCap(t *testin
 	require.Equal(t, profile, session.Profile)
 }
 
+func TestApplyPlannerPlanToProfile_PreservesProfileAxesDefaults(t *testing.T) {
+	baseSpec := model.ProfileSpec{
+		AudioMode:     "copy",
+		AudioCodec:    "ac3",
+		AudioBitrateK: 320,
+		Container:     "mpegts",
+		VideoCodec:    "h264",
+		VideoCRF:      21,
+	}
+
+	plan := playbackplanner.PlaybackPlan{
+		Startup:   playbackplanner.StartupPlan{DVRWindowSeconds: 7200},
+		Video:     playbackplanner.TrackPlan{Mode: "transcode", Codec: "h264"},
+		Packaging: playbackplanner.Packaging{Container: "fmp4"},
+	}
+
+	merged := applyPlannerPlanToProfile(baseSpec, plan)
+	require.True(t, merged.PlannerBound)
+	require.True(t, merged.TranscodeVideo)
+	require.Equal(t, "copy", merged.AudioMode)
+	require.Equal(t, "ac3", merged.AudioCodec)
+	require.Equal(t, 320, merged.AudioBitrateK)
+	require.Equal(t, "fmp4", merged.Container)
+	require.Equal(t, 7200, merged.DVRWindowSec)
+	require.Equal(t, 21, merged.VideoCRF)
+}
+
 func plannerStartFixture(t *testing.T) (playbackplanner.PlaybackEvidence, playbackplanner.PlaybackPlan, playbackplanner.PlanningReceipt) {
 	t.Helper()
 	evidence := playbackplanner.PlaybackEvidence{

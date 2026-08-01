@@ -19,7 +19,6 @@ Use this area for contributor orientation and local development workflow.
 | Config surface changes | [Config Surfaces](../guides/CONFIG_SURFACES.md) |
 | Generated artifacts | [Generated Artifact Governance](../ops/GENERATED_ARTIFACT_GOVERNANCE.md) |
 | Workspace cleanup | [Workspace Cleanup](../ops/WORKSPACE_CLEANUP.md) |
-| Log hygiene | [Log Hygiene Ticket](LOG_HYGIENE_TICKET.md) |
 
 ## Minimum Local Proof
 

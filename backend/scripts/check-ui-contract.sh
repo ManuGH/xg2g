@@ -76,13 +76,13 @@ V1=""
 if [ "$IS_SCOPED" = true ]; then
   for file in "${SCOPE_FILES[@]}"; do
     clean_file="${file#apps/webui/src/}"
-    result=$(grep -HInE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' "$clean_file" | grep -vE 'transparent|inherit|currentColor|index.css:.*--' || true)
+    result=$(grep -HInE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(|hsl\(|hsla\(|color\(' "$clean_file" | grep -vE 'transparent|inherit|currentColor|index.css:.*--' || true)
     if [ -n "$result" ]; then
       V1="$V1$result"$'\n'
     fi
   done
 else
-  V1=$(grep -RInE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(' . \
+  V1=$(grep -RInE '#([0-9a-fA-F]{3,8})|rgb\(|rgba\(|hsl\(|hsla\(|color\(' . \
     --include='*.css' --include='*.tsx' \
     --exclude-dir=node_modules \
     --exclude-dir=client-ts \

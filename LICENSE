@@ -1,8 +1,9 @@
 PolyForm Noncommercial License 1.0.0
 
-Copyright (c) 2025 ManuGH
+Copyright (c) 2025-2026 ManuGH <https://github.com/ManuGH>
+Original software architecture, system design, and codebase authored, orchestrated, and directed by ManuGH.
 
-This software is provided under the PolyForm Noncommercial License 1.0.0.
+This software is provided under the PolyForm Noncommercial License 1.0.0 with explicit Trademark & Attribution Protection.
 
 1. Rights and Restrictions
 
@@ -12,20 +13,28 @@ This software is provided under the PolyForm Noncommercial License 1.0.0.
 
    "Commercial Purpose" means any use, modification, distribution, or other exploitation of the Software
    that is primarily intended for or directed towards commercial advantage or private monetary compensation.
-   Commercial Purpose usually includes:
+   Commercial Purpose includes:
     - Integrating the Software into a product or service that is sold.
     - Using the Software to provide a service that requires payment.
     - Using the Software in a business context, even internally, if it supports revenue-generating activities.
+    - Selling, leasing, or charging access fees for binaries or hosting instances.
 
    "Noncommercial Purpose" means any use that is not a Commercial Purpose. This includes personal use,
    educational use, and use by non-profit organizations where the Software is not sold or used to generate revenue.
 
-2. Notices
+2. Notices & Attribution
 
    You must ensure that anyone who receives a copy of this Software from you also receives a copy of this
-   License and the Copyright Notice.
+   License and the Copyright Notice. Original author attribution to ManuGH must be preserved in all copies.
 
-3. No Warranty
+3. Trademark & Re-Branding Prohibition
+
+   No right, license, or permission is granted to remove, alter, or obscure the 'xg2g' name, trademark, branding,
+   logos, copyright notices, or author attribution in any copies, derivative works, or distributions.
+   Re-branding, white-labeling, or distributing derivative works under another name or trademark without express
+   written consent from ManuGH is strictly prohibited.
+
+4. No Warranty
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.

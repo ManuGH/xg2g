@@ -43,8 +43,8 @@ REQUIRED_REPO_EXECUTABLES=(
 OPTIONAL_REPO_FILES=(
   "infra/systemd/docker-compose.gpu.yml"
   "infra/systemd/docker-compose.nvidia.yml"
-  "docs/ops/xg2g-verifier.service"
-  "docs/ops/xg2g-verifier.timer"
+  "infra/systemd/xg2g-verifier.service"
+  "infra/systemd/xg2g-verifier.timer"
   "backend/scripts/verify-runtime.sh"
   "backend/VERSION"
   "DIGESTS.lock"
@@ -401,13 +401,13 @@ build_reference_install_tree() {
   install -m 0755 "${REPO_ROOT}/backend/scripts/verify-systemd-runtime-contract.sh" "${install_root}/srv/xg2g/scripts/verify-systemd-runtime-contract.sh"
   install -m 0755 "${REPO_ROOT}/backend/scripts/verify-installation-contract.sh" "${install_root}/srv/xg2g/scripts/verify-installation-contract.sh"
 
-  install -m 0644 "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "${install_root}/srv/xg2g/docs/ops/xg2g-verifier.service"
-  install -m 0644 "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "${install_root}/srv/xg2g/docs/ops/xg2g-verifier.timer"
+  install -m 0644 "${REPO_ROOT}/infra/systemd/xg2g-verifier.service" "${install_root}/srv/xg2g/docs/ops/xg2g-verifier.service"
+  install -m 0644 "${REPO_ROOT}/infra/systemd/xg2g-verifier.timer" "${install_root}/srv/xg2g/docs/ops/xg2g-verifier.timer"
   install -m 0755 "${REPO_ROOT}/backend/scripts/verify-runtime.sh" "${install_root}/srv/xg2g/scripts/verify-runtime.sh"
   install -m 0644 "${REPO_ROOT}/backend/VERSION" "${install_root}/srv/xg2g/VERSION"
   install -m 0644 "${REPO_ROOT}/DIGESTS.lock" "${install_root}/srv/xg2g/DIGESTS.lock"
-  install -m 0644 "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "${install_root}/etc/systemd/system/xg2g-verifier.service"
-  install -m 0644 "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "${install_root}/etc/systemd/system/xg2g-verifier.timer"
+  install -m 0644 "${REPO_ROOT}/infra/systemd/xg2g-verifier.service" "${install_root}/etc/systemd/system/xg2g-verifier.service"
+  install -m 0644 "${REPO_ROOT}/infra/systemd/xg2g-verifier.timer" "${install_root}/etc/systemd/system/xg2g-verifier.timer"
 
   printf 'PLACEHOLDER=1\n' > "${install_root}/etc/xg2g/xg2g.env"
   chmod 600 "${install_root}/etc/xg2g/xg2g.env"

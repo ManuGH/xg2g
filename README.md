@@ -204,9 +204,10 @@ Docker health checks, and CI-backed release automation are built in.
 | **Operate** | [Ops Index](docs/ops/README.md) · [Configuration](docs/guides/CONFIGURATION.md) · [Deployment](docs/ops/DEPLOYMENT.md) · [Client Profiles](docs/ops/CLIENT_PROFILES.md) · [Security](docs/ops/SECURITY.md) |
 | **Develop** | [Dev Index](docs/dev/README.md) · [Architecture Index](docs/arch/README.md) · [Codec Matrix](docs/arch/CODEC_MATRIX.md) · [WebUI Index](docs/webui/README.md) · [CI Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) |
 
-## License
+## License & Trademark Protection
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — **source-available, not OSI open-source.** The code is public, but use is restricted:
+[PolyForm Noncommercial 1.0.0](LICENSE) — **Copyright (c) 2025-2026 ManuGH <https://github.com/ManuGH>. Original architecture & codebase directed by ManuGH.**
 
-- Free for personal, homelab, and educational use.
-- Commercial use requires permission.
+- **Personal & Non-Commercial Use:** Free for personal, homelab, and educational use.
+- **Commercial Restriction:** Any commercial exploitation, selling, or paid hosting is strictly prohibited.
+- **Trademark & Re-Branding Prohibition:** Re-branding, white-labeling, or distributing derivative works under another name or trademark without express written permission from Manuel is strictly prohibited.

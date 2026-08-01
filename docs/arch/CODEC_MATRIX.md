@@ -126,4 +126,4 @@ Given a source stream and a client:
 6. If transcode is policy-denied or the client lacks HLS → **Deny**.
 
 For the full decision algorithm, see
-[ADR: Playback Decision Engine Semantics](ADR_P8_DECISION_ENGINE_SEMANTICS.md).
+[ADR: Playback Decision Spec](../ADR/009-playback-decision-spec.md).

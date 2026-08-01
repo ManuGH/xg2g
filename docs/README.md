@@ -9,61 +9,51 @@ lifecycle snapshot as of 2026-07-28, read the
 release notes, audits, and dated incident sections remain evidence of the state
 at that time; they do not override the current overview or active contracts.
 
-## Run xg2g — User
+## ⚡ Quickstart TL;DR
 
-You want to stream your Enigma2 receiver in a browser.
+```bash
+# 1. Start local development environment
+make dev
 
-| Step | Document |
+# 2. Deploy fast-track staging to LXC 110
+./scripts/fast_deploy.sh
+
+# 3. Run PR verification gates
+make ci-pr
+```
+
+## 🏗️ Streaming Architecture Overview
+
+```mermaid
+flowchart LR
+    E2["Enigma2 Receiver\n(OpenWebIf / Stream 8001)"] -->|"MPEG-TS Stream"| BE["xg2g Daemon\n(Go Backend / Port 8088)"]
+    BE -->|"fMP4 / Low-Latency HLS"| FE["xg2g WebUI & Android App\n(React / Native TV Player)"]
+    BE -->|"Transcode Acceleration"| HW["GPU (VAAPI / NVENC) / CPU"]
+```
+
+## 📖 System Guides & Operation
+
+| Task / Need | Document |
 | :--- | :--- |
-| Get streaming, step by step | [Getting Started](guides/GETTING_STARTED.md) |
-| Install a complete Linux server | [Complete Linux Installation](guides/INSTALLATION.md) |
-| Evaluate locally in one container | [Local Evaluation Quickstart](../README.md#local-evaluation-quickstart) |
-| Set the essential options | [Configuration → Essential](guides/CONFIGURATION.md#essential-start-here) |
+| Step-by-step setup | [Getting Started](guides/GETTING_STARTED.md) |
+| Complete Linux server installation | [Linux Installation](guides/INSTALLATION.md) |
 | Full configuration reference | [Configuration Guide](guides/CONFIGURATION.md) |
-| Understand playback & codecs | [Codec Matrix](arch/CODEC_MATRIX.md) |
-| Something not working? | [Troubleshooting](guides/TROUBLESHOOTING.md) |
-| Published API reference | [API Docs](https://manugh.github.io/xg2g/) |
+| Systemd & Docker deployment | [Deployment Guide](ops/DEPLOYMENT.md) |
+| Security posture & TLS | [Security Operations](ops/SECURITY.md) |
+| Codec & playback matrix | [Codec Matrix](arch/CODEC_MATRIX.md) |
+| System Architecture & 2026 Overview | [2026 System Overview](arch/SYSTEM_OVERVIEW_2026.md) |
+| Troubleshooting | [Troubleshooting Guide](guides/TROUBLESHOOTING.md) |
 
-## Operate xg2g — Operator
+## 🔒 Internal Maintainer Reference
 
-You run xg2g as a service for others.
-
-| Task | Document |
-| :--- | :--- |
-| Install from an empty Linux host | [Complete Linux Installation](guides/INSTALLATION.md) |
-| Deploy (systemd / Compose) | [Deployment Guide](ops/DEPLOYMENT.md) |
-| Understand the current runtime | [2026 System Overview](arch/SYSTEM_OVERVIEW_2026.md) |
-| Security operations | [Security](ops/SECURITY.md) |
-| Browser / client playback policy | [Client Profiles](ops/CLIENT_PROFILES.md) |
-| Runbooks & incident response | [Operations Index](ops/README.md) |
-| Decision-engine incidents | [Decision Incident Playbook](ops/INCIDENT_PLAYBOOK_DECISION.md) |
-
-## Develop xg2g — Contributor
-
-You change the code.
-
-| Need | Document |
-| :--- | :--- |
-| Fast repository orientation | [Repository Map](dev/REPO_MAP.md) |
-| Local setup & pinned tools | [Developer Setup](dev/SETUP.md) |
-| Contributor index | [Dev Index](dev/README.md) |
-| Architecture & ownership | [Architecture Index](arch/README.md) |
-| WebUI contracts | [WebUI Index](webui/README.md) |
-| Accepted decisions | [ADRs](ADR/README.md) |
-| Release process | [Release Index](release/README.md) |
-
-## All Documentation Areas
-
-| Area | Audience | Purpose |
+| Resource | Description | Document |
 | :--- | :--- | :--- |
-| [guides/](guides/README.md) | User | Setup, configuration, and reference material. |
-| [ops/](ops/README.md) | Operator | Deployment, runtime contracts, runbooks, incident response, security ops. |
-| [arch/](arch/README.md) | Contributor | System design, package ownership, playback decision rules, codec behavior. |
-| [dev/](dev/README.md) | Contributor | Contributor setup, repo map, local workflow, workspace hygiene. |
-| [webui/](webui/README.md) | Contributor | UI contracts, telemetry, error mapping, frontend/backend rules. |
-| [ADR/](ADR/README.md) | Contributor | Accepted architecture decisions and historical context. |
-| [decision/](decision/SPEC_INDEX.md) | Contributor | Normative decision-engine specs. |
-| [release/](release/README.md) | Maintainer | Release templates, release notes, and GitHub copy. |
+| Repository Map | Source code layout & modules | [Repo Map](dev/REPO_MAP.md) |
+| Internal Architecture | System design & invariants | [Architecture Index](arch/README.md) |
+| Architecture Decisions | Accepted ADR records | [ADR Index](ADR/README.md) |
+| Dev Setup | Local tooling & environment | [Dev Setup](dev/SETUP.md) |
+| WebUI Contracts | Frontend state & telemetry | [WebUI Index](webui/README.md) |
+| Release Process | Packaging & versioning | [Release Index](release/README.md) |
 
 ## Maintenance Rules
 

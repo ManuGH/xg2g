@@ -76,11 +76,9 @@ config.yaml
 config.yml
 node_modules/
 .node_modules_partial_*/
-webui/dist/
 apps/webui/dist/
 apps/webui/node_modules/
 backend/internal/control/http/dist/
-!backend/internal/control/http/dist/.gitkeep
 dist/
 
 # Allow placeholder files needed for `go:embed` compilation/tests when WebUI isn't built.
@@ -122,14 +120,19 @@ backend/internal/control/http/v3/openapi.yaml
 !.vscode/extensions.json
 .idea/
 .DS_Store
+**/.DS_Store
 ._*
 .Spotlight-V100/
 .Trashes/
 .cache/
+.gemini/
+.claude/
+.cursor/
+*.swp
+*.swo
 .codex_patch.diff
 .copilot-instructions.md
 .worktrees/
-*.log
 
 # TLS certificates
 certs/
