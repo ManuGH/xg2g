@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	ErrJobNotFound     = errors.New("recording job manifest not found")
-	ErrJobExists       = errors.New("recording job manifest already exists")
-	ErrManifestCorrupt = errors.New("recording job manifest corrupted")
+	ErrJobNotFound            = errors.New("recording job manifest not found")
+	ErrJobExists              = errors.New("recording job manifest already exists")
+	ErrManifestCorrupt        = errors.New("recording job manifest corrupted")
+	ErrOptimisticLockConflict = errors.New("optimistic lock conflict: job manifest was modified by another process")
 )
 
 // InventoryIssue captures explicit manifest corruption or read errors during inventory scanning.
@@ -31,9 +32,9 @@ type JobInventory struct {
 	Issues []InventoryIssue `json:"issues"`
 }
 
-// JobRepository defines persistent CRUD operations for RecordingJobs.
+// JobRepository defines persistent CRUD operations for RecordingJobs with Optimistic Concurrency Control.
 type JobRepository interface {
-	Save(ctx context.Context, job *RecordingJob) error
+	Save(ctx context.Context, job *RecordingJob, expectedVersion uint64) error
 	Get(ctx context.Context, id string) (*RecordingJob, error)
 	ListAllInventory(ctx context.Context) (JobInventory, error)
 	ListRecoverable(ctx context.Context) ([]*RecordingJob, error)
@@ -69,8 +70,8 @@ func (r *DiskJobRepository) LegacyManifestPath(jobID string) string {
 	return filepath.Join(r.stagingRoot, "jobs", jobID, "manifest.json")
 }
 
-// Save atomically writes job_manifest.json with .tmp -> fsync -> rename.
-func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob) error {
+// Save atomically writes job_manifest.json enforcing Optimistic Concurrency Control via expectedVersion.
+func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob, expectedVersion uint64) error {
 	if job == nil {
 		return fmt.Errorf("cannot save nil RecordingJob")
 	}
@@ -87,7 +88,23 @@ func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob) error {
 		return fmt.Errorf("failed to create job directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(job, "", "  ")
+	// Optimistic Concurrency Control Check
+	if data, err := os.ReadFile(manifestFile); err == nil {
+		var existing RecordingJob
+		if err := json.Unmarshal(data, &existing); err == nil && existing.ID == job.ID {
+			if expectedVersion > 0 && existing.Version != expectedVersion {
+				return fmt.Errorf("%w: job %s existing version %d != expected version %d", ErrOptimisticLockConflict, job.ID, existing.Version, expectedVersion)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read existing job manifest for CAS check: %w", err)
+	}
+
+	// Increment version on save
+	saveJob := *job
+	saveJob.Version++
+
+	data, err := json.MarshalIndent(&saveJob, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal job manifest: %w", err)
 	}
@@ -125,6 +142,9 @@ func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob) error {
 		return fmt.Errorf("failed to fsync job directory: %w", err)
 	}
 	_ = pDir.Close()
+
+	// Update in-memory job struct version
+	job.Version = saveJob.Version
 
 	return nil
 }

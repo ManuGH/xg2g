@@ -245,7 +245,7 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		if err != nil {
 			return fmt.Errorf("failed to transition job to COMPLETED: %w", err)
 		}
-		if err := w.jobRepo.Save(ctx, completedJob); err != nil {
+		if err := w.jobRepo.Save(ctx, completedJob, job.Version); err != nil {
 			return fmt.Errorf("failed to save COMPLETED job: %w", err)
 		}
 	}

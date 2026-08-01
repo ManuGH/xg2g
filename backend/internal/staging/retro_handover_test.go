@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -376,7 +377,7 @@ func TestStartupReconciler_5CaseRecoveryMatrix(t *testing.T) {
 	now := time.Now()
 	job1, _ := recording.NewRecordingJob("job_rec_1", "ref_1", "Show 1", recording.SourceRetro, now.Add(-1*time.Hour), now, backend.ID())
 	job1Pending, _ := job1.TransitionState(recording.StateWaitingTarget, "")
-	_ = jobRepo.Save(ctx, job1Pending)
+	_ = jobRepo.Save(ctx, job1Pending, 0)
 
 	asset1, _ := recording.NewRecordingAsset("asset_rec_1", job1.ID, "Show 1", "ref_1", backend.ID(), "movies/show1.ts", recording.ContainerTS)
 	asset1.SizeBytes = int64(len(payload))
@@ -461,7 +462,7 @@ func TestListAllInventory_CorruptedManifestResilience(t *testing.T) {
 
 	// 1. Create a valid job
 	job1, _ := recording.NewRecordingJob("job_valid_1", "ref_1", "Valid Show", recording.SourceRetro, time.Now(), time.Now().Add(1*time.Hour), "backend-1")
-	if err := jobRepo.Save(ctx, job1); err != nil {
+	if err := jobRepo.Save(ctx, job1, 0); err != nil {
 		t.Fatalf("jobRepo.Save failed: %v", err)
 	}
 
@@ -512,7 +513,7 @@ func TestCrashMatrixMultiSaveRecovery(t *testing.T) {
 	job, _ := recording.NewRecordingJob("job_crash_1", "ref_crash", "Crash Show", recording.SourceRetro, now.Add(-1*time.Hour), now, backend.ID())
 	jobWaiting, _ := job.TransitionState(recording.StateWaitingTarget, "")
 	jobTransferring, _ := jobWaiting.TransitionState(recording.StateTransferring, "")
-	if err := jobRepo.Save(ctx, jobTransferring); err != nil {
+	if err := jobRepo.Save(ctx, jobTransferring, 0); err != nil {
 		t.Fatalf("jobRepo.Save failed: %v", err)
 	}
 
@@ -557,7 +558,7 @@ func TestManifestFileIsolation_NoOverwrite(t *testing.T) {
 	}
 
 	job, _ := recording.NewRecordingJob("job_iso_100", "ref_100", "Isolated Show", recording.SourceRetro, time.Now(), time.Now().Add(1*time.Hour), "backend-1")
-	if err := jobRepo.Save(ctx, job); err != nil {
+	if err := jobRepo.Save(ctx, job, 0); err != nil {
 		t.Fatalf("jobRepo.Save failed: %v", err)
 	}
 
@@ -622,8 +623,8 @@ func TestLegacyJobManifestSchema_MigrationAndTransition(t *testing.T) {
 	if job.Source != recording.SourceManual {
 		t.Errorf("Expected Source MANUAL, got '%s'", job.Source)
 	}
-	if job.TargetBackendID != "local-nvme-legacy" {
-		t.Errorf("Expected TargetBackendID 'local-nvme-legacy', got '%s'", job.TargetBackendID)
+	if job.LocalFallbackID != "local-nvme-legacy" {
+		t.Errorf("Expected LocalFallbackID 'local-nvme-legacy', got '%s'", job.LocalFallbackID)
 	}
 	if job.State != recording.StatePending {
 		t.Errorf("Expected State PENDING, got '%s'", job.State)
@@ -635,7 +636,7 @@ func TestLegacyJobManifestSchema_MigrationAndTransition(t *testing.T) {
 		t.Fatalf("Failed to transition legacy job from PENDING to PREPARING: %v", err)
 	}
 
-	if err := jobRepo.Save(ctx, preparingJob); err != nil {
+	if err := jobRepo.Save(ctx, preparingJob, job.Version); err != nil {
 		t.Fatalf("Failed to save migrated job: %v", err)
 	}
 }
@@ -678,5 +679,186 @@ func TestAtomicReplaceWithExistingTargetFile(t *testing.T) {
 
 	if info.SizeBytes != int64(len(newPayload)) {
 		t.Errorf("Expected atomic replace target size %d, got %d", len(newPayload), info.SizeBytes)
+	}
+}
+
+type memoryJobRepo struct {
+	mu   sync.Mutex
+	jobs map[string]*recording.RecordingJob
+}
+
+func newMemoryJobRepo() *memoryJobRepo {
+	return &memoryJobRepo{jobs: make(map[string]*recording.RecordingJob)}
+}
+
+func (m *memoryJobRepo) Save(ctx context.Context, job *recording.RecordingJob, expectedVersion uint64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if existing, ok := m.jobs[job.ID]; ok && expectedVersion > 0 && existing.Version != expectedVersion {
+		return recording.ErrOptimisticLockConflict
+	}
+	saveJob := *job
+	saveJob.Version++
+	m.jobs[job.ID] = &saveJob
+	job.Version = saveJob.Version
+	return nil
+}
+
+func (m *memoryJobRepo) Get(ctx context.Context, id string) (*recording.RecordingJob, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if job, ok := m.jobs[id]; ok {
+		cp := *job
+		return &cp, nil
+	}
+	return nil, recording.ErrJobNotFound
+}
+
+func (m *memoryJobRepo) ListAllInventory(ctx context.Context) (recording.JobInventory, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var inv recording.JobInventory
+	for _, j := range m.jobs {
+		cp := *j
+		inv.Jobs = append(inv.Jobs, &cp)
+	}
+	return inv, nil
+}
+
+func (m *memoryJobRepo) ListRecoverable(ctx context.Context) ([]*recording.RecordingJob, error) {
+	inv, _ := m.ListAllInventory(ctx)
+	var rec []*recording.RecordingJob
+	for _, j := range inv.Jobs {
+		if !j.State.IsTerminal() {
+			rec = append(rec, j)
+		}
+	}
+	return rec, nil
+}
+
+func (m *memoryJobRepo) Delete(ctx context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.jobs, id)
+	return nil
+}
+
+func TestStagingManager_MockRepository_NoPanic(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "mock_repo_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	repo := newMemoryJobRepo()
+	sm, err := NewStagingManager(tmpDir, repo)
+	if err != nil {
+		t.Fatalf("NewStagingManager failed: %v", err)
+	}
+
+	job, _ := recording.NewRecordingJob("job_mock_1", "ref_m1", "Mock Show", recording.SourceLive, time.Now(), time.Now().Add(1*time.Hour), "nas-1")
+	if err := repo.Save(ctx, job, 0); err != nil {
+		t.Fatalf("repo.Save failed: %v", err)
+	}
+
+	// PrepareWorkspace must succeed with non-disk JobRepository without panic!
+	jobDir, err := sm.PrepareWorkspace(ctx, job)
+	if err != nil {
+		t.Fatalf("PrepareWorkspace failed with memory repo: %v", err)
+	}
+	if jobDir == "" {
+		t.Errorf("Expected non-empty jobDir")
+	}
+}
+
+func TestJobRepository_OptimisticLocking(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cas_lock_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	repo, _ := recording.NewDiskJobRepository(tmpDir)
+
+	job, _ := recording.NewRecordingJob("job_cas_1", "ref_cas", "CAS Show", recording.SourceRetro, time.Now(), time.Now().Add(1*time.Hour), "b-1")
+	if err := repo.Save(ctx, job, 0); err != nil {
+		t.Fatalf("Initial Save failed: %v", err)
+	}
+	initialVersion := job.Version
+
+	// Worker 1 fetches job (Version 1)
+	snapshot1, _ := repo.Get(ctx, job.ID)
+	// Worker 2 fetches job (Version 1)
+	snapshot2, _ := repo.Get(ctx, job.ID)
+
+	// Worker 1 mutates & saves state (Version becomes 2)
+	st1, _ := snapshot1.TransitionState(recording.StateStaging, "")
+	if err := repo.Save(ctx, st1, snapshot1.Version); err != nil {
+		t.Fatalf("Worker 1 Save failed: %v", err)
+	}
+
+	// Worker 2 attempts save with stale expectedVersion 1 -> MUST return ErrOptimisticLockConflict!
+	st2, _ := snapshot2.TransitionState(recording.StateWaitingTarget, "")
+	err = repo.Save(ctx, st2, initialVersion)
+	if err == nil || !errors.Is(err, recording.ErrOptimisticLockConflict) {
+		t.Errorf("Expected ErrOptimisticLockConflict for stale save attempt, got: %v", err)
+	}
+}
+
+func TestJobStateTransition_InterruptedRecovery(t *testing.T) {
+	job, _ := recording.NewRecordingJob("job_int_1", "ref_int", "Interrupted Show", recording.SourceLive, time.Now(), time.Now().Add(1*time.Hour), "b-1")
+	intJob, err := job.TransitionState(recording.StateInterrupted, "power failure")
+	if err != nil {
+		t.Fatalf("TransitionState StateInterrupted failed: %v", err)
+	}
+
+	if intJob.State.IsTerminal() {
+		t.Errorf("StateInterrupted MUST NOT be terminal")
+	}
+
+	// Verify recovery transition to StateStaging works
+	stJob, err := intJob.TransitionState(recording.StateStaging, "")
+	if err != nil {
+		t.Fatalf("Transition from INTERRUPTED to STAGING failed: %v", err)
+	}
+	if stJob.State != recording.StateStaging {
+		t.Errorf("Expected state STAGING, got %s", stJob.State)
+	}
+}
+
+func TestLegacyManifest_FallbackIsolation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "fallback_iso_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	jobRepo, _ := recording.NewDiskJobRepository(tmpDir)
+
+	legacyDir := filepath.Join(tmpDir, "jobs", "job_fb_1")
+	_ = os.MkdirAll(legacyDir, 0755)
+	legacyJSON := `{
+		"id": "job_fb_1",
+		"service_ref": "ref_fb",
+		"title": "Fallback Show",
+		"target_backend_id": "nas-primary",
+		"local_fallback_id": "local-nvme-backup",
+		"state": "STAGING"
+	}`
+	_ = os.WriteFile(filepath.Join(legacyDir, "manifest.json"), []byte(legacyJSON), 0644)
+
+	job, err := jobRepo.Get(ctx, "job_fb_1")
+	if err != nil {
+		t.Fatalf("jobRepo.Get failed: %v", err)
+	}
+
+	if job.TargetBackendID != "nas-primary" {
+		t.Errorf("Expected TargetBackendID 'nas-primary', got '%s'", job.TargetBackendID)
+	}
+	if job.LocalFallbackID != "local-nvme-backup" {
+		t.Errorf("Expected LocalFallbackID 'local-nvme-backup', got '%s'", job.LocalFallbackID)
 	}
 }

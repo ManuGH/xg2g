@@ -225,7 +225,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	}
 
 	if e.jobRepo != nil {
-		if err := e.jobRepo.Save(ctx, job); err != nil {
+		if err := e.jobRepo.Save(ctx, job, job.Version); err != nil {
 			return nil, fmt.Errorf("failed to save initial RecordingJob: %w", err)
 		}
 	}
@@ -234,6 +234,11 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	_, err = e.stagingMgr.PrepareWorkspace(ctx, job)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare staging workspace: %w", err)
+	}
+	if e.jobRepo != nil {
+		if refreshed, getErr := e.jobRepo.Get(ctx, job.ID); getErr == nil {
+			job = refreshed
+		}
 	}
 
 	// 4. Transfer reserved segments into staging directory & verify sizes
@@ -328,7 +333,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		return nil, fmt.Errorf("failed to transition job to STAGING: %w", err)
 	}
 	if e.jobRepo != nil {
-		if err := e.jobRepo.Save(ctx, stagingJob); err != nil {
+		if err := e.jobRepo.Save(ctx, stagingJob, job.Version); err != nil {
 			return nil, fmt.Errorf("failed to update job to STAGING: %w", err)
 		}
 	}
@@ -346,16 +351,22 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	report, err := e.stagingMgr.AssembleAndFinalize(ctx, currentJob.ID, baseOutFilename)
 	if err != nil {
 		if failedJob, transErr := currentJob.TransitionState(recording.StateFailed, fmt.Sprintf("assembly failed: %v", err)); transErr == nil && e.jobRepo != nil {
-			_ = e.jobRepo.Save(ctx, failedJob)
+			_ = e.jobRepo.Save(ctx, failedJob, currentJob.Version)
 		}
 		return nil, fmt.Errorf("failed to assemble and finalize retro recording: %w", err)
+	}
+
+	if e.jobRepo != nil {
+		if refreshed, getErr := e.jobRepo.Get(ctx, currentJob.ID); getErr == nil {
+			currentJob = refreshed
+		}
 	}
 
 	// 7. Join target object key securely using POSIX slashes
 	targetObjectKey, err := recording.JoinObjectKey(profile.Target.RelativePath, formattedPath)
 	if err != nil {
 		if failedJob, transErr := currentJob.TransitionState(recording.StateFailed, fmt.Sprintf("invalid target object key: %v", err)); transErr == nil && e.jobRepo != nil {
-			_ = e.jobRepo.Save(ctx, failedJob)
+			_ = e.jobRepo.Save(ctx, failedJob, currentJob.Version)
 		}
 		return nil, fmt.Errorf("invalid recording target object key: %w", err)
 	}
@@ -365,7 +376,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		return nil, fmt.Errorf("failed to transition job to TRANSFERRING: %w", err)
 	}
 	if e.jobRepo != nil {
-		if err := e.jobRepo.Save(ctx, transferringJob); err != nil {
+		if err := e.jobRepo.Save(ctx, transferringJob, currentJob.Version); err != nil {
 			return nil, fmt.Errorf("failed to update job to TRANSFERRING: %w", err)
 		}
 	}
@@ -465,7 +476,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 			return nil, fmt.Errorf("failed to transition job to WAITING_FOR_TARGET: %w", transErr)
 		}
 		if e.jobRepo != nil {
-			if err := e.jobRepo.Save(ctx, waitingJob); err != nil {
+			if err := e.jobRepo.Save(ctx, waitingJob, currentJob.Version); err != nil {
 				return nil, fmt.Errorf("failed to save WAITING_FOR_TARGET job: %w", err)
 			}
 		}
@@ -524,7 +535,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		return nil, fmt.Errorf("failed to transition job to COMPLETED: %w", err)
 	}
 	if e.jobRepo != nil {
-		if err := e.jobRepo.Save(ctx, completedJob); err != nil {
+		if err := e.jobRepo.Save(ctx, completedJob, currentJob.Version); err != nil {
 			return nil, fmt.Errorf("failed to update job to COMPLETED: %w", err)
 		}
 	}

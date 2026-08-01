@@ -213,7 +213,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 					if job.State != recording.StateFailed {
 						failedJob, transErr := job.TransitionState(recording.StateFailed, "recovery requires manual intervention: finalization manifest or staged file unrecoverable")
 						if transErr == nil {
-							if saveErr := r.jobRepo.Save(ctx, failedJob); saveErr != nil {
+							if saveErr := r.jobRepo.Save(ctx, failedJob, job.Version); saveErr != nil {
 								errs = append(errs, fmt.Errorf("failed to save FAILED job %s: %w", jobID, saveErr))
 							}
 						}
@@ -293,7 +293,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 				if job != nil {
 					failedJob, transErr := job.TransitionState(recording.StateFailed, "target file size mismatch and atomic replace unrecoverable")
 					if transErr == nil {
-						if saveErr := r.jobRepo.Save(ctx, failedJob); saveErr != nil {
+						if saveErr := r.jobRepo.Save(ctx, failedJob, job.Version); saveErr != nil {
 							errs = append(errs, fmt.Errorf("failed to save FAILED job %s: %w", job.ID, saveErr))
 						}
 					}
@@ -335,7 +335,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 			if job != nil {
 				completedJob, transErr := job.TransitionState(recording.StateCompleted, "")
 				if transErr == nil {
-					if saveErr := r.jobRepo.Save(ctx, completedJob); saveErr != nil {
+					if saveErr := r.jobRepo.Save(ctx, completedJob, job.Version); saveErr != nil {
 						errs = append(errs, fmt.Errorf("case 1 job save failed: %w", saveErr))
 						continue
 					}
@@ -356,7 +356,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 				if job != nil {
 					completedJob, transErr := job.TransitionState(recording.StateCompleted, "")
 					if transErr == nil {
-						if saveErr := r.jobRepo.Save(ctx, completedJob); saveErr != nil {
+						if saveErr := r.jobRepo.Save(ctx, completedJob, job.Version); saveErr != nil {
 							errs = append(errs, fmt.Errorf("case 2 job save failed: %w", saveErr))
 						}
 					}
@@ -415,7 +415,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 				if job != nil {
 					completedJob, transErr := job.TransitionState(recording.StateCompleted, "")
 					if transErr == nil {
-						if saveErr := r.jobRepo.Save(ctx, completedJob); saveErr != nil {
+						if saveErr := r.jobRepo.Save(ctx, completedJob, job.Version); saveErr != nil {
 							errs = append(errs, fmt.Errorf("case 4 job save failed: %w", saveErr))
 						}
 					}
@@ -441,7 +441,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 			if job != nil {
 				failedJob, transErr := job.TransitionState(recording.StateFailed, "staged source file and target backend object confirmed missing during recovery")
 				if transErr == nil {
-					if saveErr := r.jobRepo.Save(ctx, failedJob); saveErr != nil {
+					if saveErr := r.jobRepo.Save(ctx, failedJob, job.Version); saveErr != nil {
 						errs = append(errs, fmt.Errorf("case 5 job save failed: %w", saveErr))
 						continue
 					}

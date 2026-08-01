@@ -241,10 +241,14 @@ func TestRecordingPipeline_EndToEndIntegration(t *testing.T) {
 	}
 
 	// Transition job state to STAGING
-	job.State = recording.StateStaging
-	if err := jobRepo.Save(ctx, job); err != nil {
+	stagingJob, err := job.TransitionState(recording.StateStaging, "")
+	if err != nil {
+		t.Fatalf("TransitionState StateStaging failed: %v", err)
+	}
+	if err := jobRepo.Save(ctx, stagingJob, job.Version); err != nil {
 		t.Fatalf("jobRepo.Save StateStaging failed: %v", err)
 	}
+	job = stagingJob
 
 	// 3. Finalize segments into staged output
 	report, err := sm.AssembleAndFinalize(ctx, job.ID, "tatort_wien.ts")
@@ -288,8 +292,15 @@ func TestRecordingPipeline_EndToEndIntegration(t *testing.T) {
 	}
 
 	// 6. Transition RecordingJob to COMPLETED atomically
-	job.State = recording.StateCompleted
-	if err := jobRepo.Save(ctx, job); err != nil {
+	job, err = jobRepo.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("jobRepo.Get latest job failed: %v", err)
+	}
+	completedJob, err := job.TransitionState(recording.StateCompleted, "")
+	if err != nil {
+		t.Fatalf("TransitionState StateCompleted failed: %v", err)
+	}
+	if err := jobRepo.Save(ctx, completedJob, job.Version); err != nil {
 		t.Fatalf("jobRepo.Save StateCompleted failed: %v", err)
 	}
 

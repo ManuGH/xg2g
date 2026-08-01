@@ -71,8 +71,11 @@ func TestHardenedRecordingPipeline_ManifestAndAssembly(t *testing.T) {
 	}
 
 	// Transition job to StateStaging
-	job.State = recording.StateStaging
-	if err := repo.Save(ctx, job); err != nil {
+	stagingJob, err := job.TransitionState(recording.StateStaging, "")
+	if err != nil {
+		t.Fatalf("TransitionState StateStaging failed: %v", err)
+	}
+	if err := repo.Save(ctx, stagingJob, job.Version); err != nil {
 		t.Fatalf("repo.Save failed: %v", err)
 	}
 

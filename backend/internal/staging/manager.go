@@ -16,71 +16,69 @@ import (
 )
 
 var (
-	ErrWorkspaceConflict = errors.New("workspace directory exists with conflicting job manifest")
-	ErrInvalidFilename  = errors.New("invalid output filename for staging")
+	ErrWorkspaceConflict = errors.New("workspace directory conflict for job")
+	ErrInvalidFilename   = errors.New("invalid or unsafe output filename")
 )
 
-// StagingManager manages per-job local NVMe workspace subdirectories with fine-grained per-job locks.
+// StagingManager manages workspace directories and finalization assembly under domain repository isolation.
 type StagingManager struct {
-	globalMu    sync.Mutex
-	jobLocks    map[string]*sync.Mutex
 	stagingRoot string
 	repo        recording.JobRepository
 	finalizer   Finalizer
+	globalMu    sync.Mutex
+	jobLocks    map[string]*sync.Mutex
 }
 
-// NewStagingManager initializes a StagingManager bound to stagingRoot.
+// NewStagingManager initializes a StagingManager.
 func NewStagingManager(stagingRoot string, repo recording.JobRepository) (*StagingManager, error) {
 	if stagingRoot == "" {
 		return nil, fmt.Errorf("stagingRoot cannot be empty")
 	}
 	if repo == nil {
-		var err error
-		repo, err = recording.NewDiskJobRepository(stagingRoot)
-		if err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("job repository cannot be nil")
 	}
 	if err := os.MkdirAll(stagingRoot, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create stagingRoot %s: %w", stagingRoot, err)
+		return nil, fmt.Errorf("failed to create stagingRoot: %w", err)
 	}
 	return &StagingManager{
-		jobLocks:    make(map[string]*sync.Mutex),
 		stagingRoot: stagingRoot,
 		repo:        repo,
 		finalizer:   NewTSFinalizer(),
+		jobLocks:    make(map[string]*sync.Mutex),
 	}, nil
 }
 
 func (sm *StagingManager) getJobLock(jobID string) *sync.Mutex {
 	sm.globalMu.Lock()
 	defer sm.globalMu.Unlock()
-
-	l, ok := sm.jobLocks[jobID]
+	lock, ok := sm.jobLocks[jobID]
 	if !ok {
-		l = &sync.Mutex{}
-		sm.jobLocks[jobID] = l
+		lock = &sync.Mutex{}
+		sm.jobLocks[jobID] = lock
 	}
-	return l
+	return lock
 }
 
-// JobDir returns the dedicated local staging workspace directory for jobID.
+// JobDir returns the absolute path to a job's workspace directory.
 func (sm *StagingManager) JobDir(jobID string) string {
 	return filepath.Join(sm.stagingRoot, "jobs", jobID)
 }
 
-// SegmentsDir returns the input segments directory for jobID.
+// SegmentsDir returns the absolute path to a job's segments directory.
 func (sm *StagingManager) SegmentsDir(jobID string) string {
-	return filepath.Join(sm.JobDir(jobID), "segments")
+	return filepath.Join(sm.stagingRoot, "jobs", jobID, "segments")
 }
 
-// FinalizedDir returns the output finalized directory for jobID.
+// FinalizedDir returns the absolute path to a job's finalized output directory.
 func (sm *StagingManager) FinalizedDir(jobID string) string {
-	return filepath.Join(sm.JobDir(jobID), "finalized")
+	return filepath.Join(sm.stagingRoot, "jobs", jobID, "finalized")
 }
 
-// PrepareWorkspace creates a clean, structured workspace (segments/, work/, finalized/) for a job.
+// PrepareWorkspace creates a clean, structured workspace (segments/, work/, finalized/) for a job without type assertions.
 func (sm *StagingManager) PrepareWorkspace(ctx context.Context, job *recording.RecordingJob) (string, error) {
+	if job == nil {
+		return "", fmt.Errorf("cannot prepare workspace for nil job")
+	}
 	if err := recording.ValidateJobID(job.ID); err != nil {
 		return "", err
 	}
@@ -90,20 +88,16 @@ func (sm *StagingManager) PrepareWorkspace(ctx context.Context, job *recording.R
 	defer jobLock.Unlock()
 
 	jobDir := sm.JobDir(job.ID)
-	manifestFile := sm.repo.(*recording.DiskJobRepository).ManifestPath(job.ID)
 
-	// Safe workspace recovery check: if workspace exists, verify manifest
-	if _, err := os.Stat(manifestFile); err == nil {
-		existingJob, err := sm.repo.Get(ctx, job.ID)
-		if err == nil && existingJob.ID == job.ID {
-			// Workspace belongs to same job: reuse existing directory safely!
-			job.LocalStagingPath = jobDir
-			return jobDir, nil
-		}
-		return "", fmt.Errorf("%w: jobID '%s'", ErrWorkspaceConflict, job.ID)
+	// Safe workspace recovery check via domain repository interface (no concrete type assertions)
+	existingJob, err := sm.repo.Get(ctx, job.ID)
+	if err == nil && existingJob != nil && existingJob.ID == job.ID {
+		// Workspace belongs to same job: reuse existing directory safely!
+		job.LocalStagingPath = jobDir
+		return jobDir, nil
 	}
 
-	// Create subdirectories safely without blind os.RemoveAll
+	// Create subdirectories safely with strict error checking
 	segsDir := sm.SegmentsDir(job.ID)
 	workDir := filepath.Join(jobDir, "work")
 	finDir := sm.FinalizedDir(job.ID)
@@ -111,24 +105,27 @@ func (sm *StagingManager) PrepareWorkspace(ctx context.Context, job *recording.R
 	if err := os.MkdirAll(segsDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create segments dir: %w", err)
 	}
-	_ = os.MkdirAll(workDir, 0755)
-	_ = os.MkdirAll(finDir, 0755)
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create work dir: %w", err)
+	}
+	if err := os.MkdirAll(finDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create finalized dir: %w", err)
+	}
 
 	job.LocalStagingPath = jobDir
-	if err := sm.repo.Save(ctx, job); err != nil {
+	if err := sm.repo.Save(ctx, job, job.Version); err != nil {
 		return "", fmt.Errorf("failed to persist job manifest during workspace prep: %w", err)
 	}
 
 	return jobDir, nil
 }
 
-// AssembleAndFinalize concatenates segments in SegmentsDir into FinalizedDir and updates job manifest atomicaly.
+// AssembleAndFinalize concatenates segments in SegmentsDir into FinalizedDir and updates job manifest atomically.
 func (sm *StagingManager) AssembleAndFinalize(ctx context.Context, jobID string, outputFilename string) (*AssemblyReport, error) {
 	if err := recording.ValidateJobID(jobID); err != nil {
 		return nil, err
 	}
 
-	// Defense-in-depth: sanitize outputFilename against path traversal
 	cleaned := filepath.Base(outputFilename)
 	if cleaned != outputFilename || strings.Contains(outputFilename, "/") || strings.Contains(outputFilename, "..") {
 		return nil, fmt.Errorf("%w: '%s'", ErrInvalidFilename, outputFilename)
@@ -147,7 +144,7 @@ func (sm *StagingManager) AssembleAndFinalize(ctx context.Context, jobID string,
 	if err != nil {
 		return nil, err
 	}
-	if err := sm.repo.Save(ctx, finalizingJob); err != nil {
+	if err := sm.repo.Save(ctx, finalizingJob, job.Version); err != nil {
 		return nil, fmt.Errorf("failed to update job state to FINALIZING: %w", err)
 	}
 
@@ -158,23 +155,23 @@ func (sm *StagingManager) AssembleAndFinalize(ctx context.Context, jobID string,
 	if err != nil {
 		failedJob, transErr := finalizingJob.TransitionState(recording.StateFailed, fmt.Sprintf("assembly failed: %v", err))
 		if transErr == nil {
-			_ = sm.repo.Save(ctx, failedJob)
+			saveErr := sm.repo.Save(ctx, failedJob, finalizingJob.Version)
+			if saveErr != nil {
+				return nil, errors.Join(fmt.Errorf("assembly failed: %w", err), fmt.Errorf("failed to save FAILED job state: %w", saveErr))
+			}
 		}
 		return nil, err
 	}
 
-	finalState := recording.StateCompleted
+	// Update job finalized path under CAS lock. If assembly was incomplete due to missing segment gaps, transition to StatePartial.
+	finalizingJob.FinalizedPath = report.FinalizedPath
 	if !report.Complete {
-		finalState = recording.StatePartial
+		if partialJob, transErr := finalizingJob.TransitionState(recording.StatePartial, "assembly completed with missing segment gaps"); transErr == nil {
+			finalizingJob = partialJob
+		}
 	}
-	completedJob, err := finalizingJob.TransitionState(finalState, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to transition job to %s: %w", finalState, err)
-	}
-	completedJob.FinalizedPath = report.FinalizedPath
-
-	if err := sm.repo.Save(ctx, completedJob); err != nil {
-		return nil, fmt.Errorf("failed to save finalized job manifest: %w", err)
+	if err := sm.repo.Save(ctx, finalizingJob, finalizingJob.Version); err != nil {
+		return nil, fmt.Errorf("failed to save finalized job path: %w", err)
 	}
 
 	return report, nil

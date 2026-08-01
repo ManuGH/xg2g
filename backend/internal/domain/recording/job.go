@@ -49,7 +49,7 @@ const (
 
 // IsTerminal returns true if the job has reached a final state.
 func (s RecordingState) IsTerminal() bool {
-	return s == StateCompleted || s == StatePartial || s == StateFailed || s == StateCanceled || s == StateInterrupted
+	return s == StateCompleted || s == StatePartial || s == StateFailed || s == StateCanceled
 }
 
 // ValidateJobID ensures job ID meets naming standards and prevents path traversal.
@@ -81,6 +81,7 @@ type RecordingJob struct {
 	LocalStagingPath string          `json:"local_staging_path,omitempty"`
 	FinalizedPath    string          `json:"finalized_path,omitempty"`
 	ErrorDetail      string          `json:"error_detail,omitempty"`
+	Version          uint64          `json:"version"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
 	FinishedAt       *time.Time      `json:"finished_at,omitempty"`
@@ -104,8 +105,8 @@ func (j *RecordingJob) UnmarshalJSON(data []byte) error {
 	if j.Source == "" && aux.LegacySourceType != "" {
 		j.Source = aux.LegacySourceType
 	}
-	if j.TargetBackendID == "" && aux.LegacyFallback != "" {
-		j.TargetBackendID = aux.LegacyFallback
+	if j.LocalFallbackID == "" && aux.LegacyFallback != "" {
+		j.LocalFallbackID = aux.LegacyFallback
 	}
 	if j.SourceType == "" {
 		j.SourceType = j.Source
@@ -133,6 +134,7 @@ func NewRecordingJob(id, serviceRef, title string, source RecordingSource, start
 		StartTime:       start,
 		EndTime:         end,
 		TargetBackendID: backendID,
+		Version:         1,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}, nil
@@ -149,11 +151,13 @@ func (j *RecordingJob) CanTransitionTo(newState RecordingState) error {
 	case StatePending:
 		valid = (newState == StatePreparing || newState == StateRecording || newState == StateStaging || newState == StateWaitingTarget || newState == StateFailed || newState == StateCanceled)
 	case StatePreparing:
-		valid = (newState == StateRecording || newState == StateStaging || newState == StateFinalizing || newState == StateWaitingTarget || newState == StateFailed || newState == StateCanceled)
+		valid = (newState == StateRecording || newState == StateStaging || newState == StateFinalizing || newState == StateWaitingTarget || newState == StateFailed || newState == StateCanceled || newState == StateInterrupted)
 	case StateRecording:
 		valid = (newState == StateStaging || newState == StateFinalizing || newState == StateWaitingTarget || newState == StateFailed || newState == StateInterrupted)
+	case StateInterrupted:
+		valid = (newState == StateStaging || newState == StateFinalizing || newState == StateWaitingTarget || newState == StateTransferring || newState == StateFailed)
 	case StateStaging:
-		valid = (newState == StateFinalizing || newState == StateWaitingTarget || newState == StateTransferring || newState == StateCompleted || newState == StatePartial || newState == StateFailed)
+		valid = (newState == StateFinalizing || newState == StateWaitingTarget || newState == StateTransferring || newState == StateCompleted || newState == StatePartial || newState == StateFailed || newState == StateInterrupted)
 	case StateFinalizing:
 		valid = (newState == StateWaitingTarget || newState == StateTransferring || newState == StateCompleted || newState == StatePartial || newState == StateFailed)
 	case StateWaitingTarget:
