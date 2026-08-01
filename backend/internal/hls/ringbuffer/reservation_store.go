@@ -26,7 +26,6 @@ type ReservationStore struct {
 	reservations map[string]*Reservation
 	limits       ReservationLimits
 	storagePath  string
-	onExpire     func(res *Reservation)
 }
 
 // NewReservationStore creates a new ReservationStore instance.
@@ -302,7 +301,7 @@ func (rs *ReservationStore) saveStateLocked() error {
 	}
 
 	dir := filepath.Dir(rs.storagePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 
@@ -312,7 +311,7 @@ func (rs *ReservationStore) saveStateLocked() error {
 		return err
 	}
 
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // G304: tmpPath is derived from operator-configured storagePath
 	if err != nil {
 		return err
 	}
@@ -334,7 +333,7 @@ func (rs *ReservationStore) saveStateLocked() error {
 	}
 
 	// Sync parent directory
-	if dirFile, err := os.Open(dir); err == nil {
+	if dirFile, err := os.Open(dir); err == nil { //nolint:gosec // G304: dir is derived from operator-configured storagePath
 		_ = dirFile.Sync()
 		_ = dirFile.Close()
 	}
