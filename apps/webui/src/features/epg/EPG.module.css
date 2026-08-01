@@ -1227,21 +1227,36 @@
   align-items: center;
 }
 
-.timelineCurrentTimeIndicator {
+.timelineHeaderTimeKnob {
+  left: var(--xg2g-timeline-left);
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-error);
+  box-shadow: var(--shadow-status-error-strong);
+  z-index: 25;
+}
+
+.timelineCurrentTimeLine {
   left: var(--xg2g-timeline-left);
   position: absolute;
   top: 0;
-  bottom: -2000px; /* extends down into the body */
+  bottom: 0;
+  height: 100%;
   width: 2px;
-  background: var(--status-error);
-  z-index: 10;
+  background: linear-gradient(180deg, var(--status-error) 0%, color-mix(in srgb, var(--status-error) 75%, transparent) 100%);
+  z-index: 40;
   pointer-events: none;
-  box-shadow: var(--shadow-epg-current-time);
+  box-shadow: var(--shadow-status-error);
 }
 
 .timelineBody {
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .timelineRow {
@@ -1258,7 +1273,7 @@
   left: 0;
   z-index: 50;
   transform: translateZ(0);
-  background: var(--bg-base);
+  background: var(--surface-shell-safe);
   border-right: 1px solid var(--border-base);
   padding: 6px 12px;
   height: 54px;
@@ -1266,19 +1281,20 @@
   display: flex;
   align-items: center;
   cursor: pointer;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.5);
   transition: background 0.2s;
 }
 
 .timelineChannelCard:hover,
 .timelineChannelCard:focus-visible {
-  background: var(--surface-panel);
+  background: var(--surface-panel-strong);
   outline: none;
 }
 
 .timelineChannelContent {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -1286,19 +1302,21 @@
 
 .timelineChannelLogo {
   width: auto;
-  height: 28px;
-  max-width: 50px;
+  height: 26px;
+  max-width: 44px;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
 .timelineChannelName {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 130px;
+  flex: 1;
+  min-width: 0;
 }
 
 .timelineEventsContainer {

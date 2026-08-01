@@ -56,14 +56,24 @@ export function EpgTimelineGrid({
               {tick.label}
             </div>
           ))}
-          {/* Current Time Indicator Line */}
+          {/* Header Time Knob */}
           {nowLeftPx >= 0 && nowLeftPx <= timelineWidth && (
-            <div className={styles.timelineCurrentTimeIndicator} style={{ '--xg2g-timeline-left': `${nowLeftPx}px` } as CSSProperties} />
+            <div
+              className={styles.timelineHeaderTimeKnob}
+              style={{ '--xg2g-timeline-left': `${nowLeftPx}px` } as CSSProperties}
+            />
           )}
         </div>
       </div>
       
       <div className={styles.timelineBody}>
+        {/* Full-Height Vertical Laser Line across all channels */}
+        {nowLeftPx >= 0 && nowLeftPx <= timelineWidth && (
+          <div
+            className={styles.timelineCurrentTimeLine}
+            style={{ '--xg2g-timeline-left': `${nowLeftPx + 250}px` } as CSSProperties}
+          />
+        )}
         {channels.map((channel) => {
           const ref = channel.serviceRef || channel.id || '';
           const events = eventsByServiceRef.get(ref) || [];
