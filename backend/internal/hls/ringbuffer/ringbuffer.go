@@ -280,6 +280,7 @@ type Registry struct {
 	closeOnce   sync.Once
 	store       *ReservationStore
 	index       *SegmentIndex
+	diskStore   *DiskSegmentStore
 	lifecycle   *LifecycleManager
 }
 
@@ -298,6 +299,7 @@ func NewRegistryWithStorage(maxSegments int, storagePath string) (*Registry, err
 	}
 	r.index = NewSegmentIndex()
 	r.store = NewReservationStore(r.index, DefaultReservationLimits(), storagePath)
+	r.diskStore = NewDiskSegmentStore(storagePath, DefaultReservationLimits(), storagePath)
 	r.lifecycle = NewLifecycleManager(r.store, r.index)
 
 	if err := r.lifecycle.RunRecovery(); err != nil && storagePath != "" {
@@ -314,6 +316,11 @@ var DefaultRegistry = NewRegistry(20)
 // Store returns the underlying ReservationStore.
 func (r *Registry) Store() *ReservationStore {
 	return r.store
+}
+
+// DiskStore returns the authoritative NVMe DiskSegmentStore.
+func (r *Registry) DiskStore() *DiskSegmentStore {
+	return r.diskStore
 }
 
 // Index returns the underlying SegmentIndex.
