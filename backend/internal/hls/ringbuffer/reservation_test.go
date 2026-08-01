@@ -251,3 +251,66 @@ func TestStartupRecoveryLifecycle(t *testing.T) {
 		t.Errorf("Reloaded segment expected SegmentReserved, got %s", seg1Reloaded.State)
 	}
 }
+
+func TestRealIngestServer_ReservationEvictionProtection(t *testing.T) {
+	reg := NewRegistry(5) // Max 5 RAM segments
+	sessionID := "test_live_session"
+	buf := reg.GetOrCreate(sessionID, nil)
+
+	now := time.Now()
+	// Put 10 segments
+	for i := uint64(1); i <= 10; i++ {
+		filename := fmt.Sprintf("seg_%06d.ts", i)
+		buf.Put(filename, []byte(fmt.Sprintf("ts_data_%d", i)))
+	}
+
+	// Reserve segments 3, 4, 5
+	start := now.Add(-10 * time.Minute)
+	end := now.Add(10 * time.Minute)
+	res, err := reg.Store().ReserveRange(sessionID, start, end, "test_owner", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("ReserveRange failed: %v", err)
+	}
+
+	// Put 20 MORE segments (triggering heavy eviction)
+	for i := uint64(11); i <= 30; i++ {
+		filename := fmt.Sprintf("seg_%06d.ts", i)
+		buf.Put(filename, []byte(fmt.Sprintf("ts_data_%d", i)))
+	}
+
+	// Reserved segments MUST NOT be evicted from RAM artifacts or index!
+	handles, err := reg.Store().ListReservedSegments(res.ID)
+	if err != nil {
+		t.Fatalf("ListReservedSegments failed: %v", err)
+	}
+	if len(handles) == 0 {
+		t.Fatalf("Expected reserved segment handles, got 0!")
+	}
+
+	for _, segID := range res.SegmentIDs {
+		seg, ok := reg.Index().GetByID(segID)
+		if !ok || seg.State != SegmentReserved {
+			t.Errorf("Reserved segment %s was evicted or lost state!", segID)
+		}
+	}
+
+	// Release reservation
+	if err := reg.Store().ReleaseReservation(res.ID); err != nil {
+		t.Fatalf("ReleaseReservation failed: %v", err)
+	}
+
+	// Put 10 more segments to trigger eviction of unreserved segments
+	for i := uint64(31); i <= 40; i++ {
+		filename := fmt.Sprintf("seg_%06d.ts", i)
+		buf.Put(filename, []byte(fmt.Sprintf("ts_data_%d", i)))
+	}
+
+	// Verify buffer size dropped down to maxSegments
+	buf.mu.RLock()
+	artCount := len(buf.artifacts)
+	buf.mu.RUnlock()
+
+	if artCount > 5 {
+		t.Errorf("Expected artifact count <= 5 after release & eviction, got %d", artCount)
+	}
+}

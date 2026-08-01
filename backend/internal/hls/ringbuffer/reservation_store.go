@@ -29,6 +29,8 @@ type ReservationStore struct {
 	reservations map[string]*Reservation
 	limits       ReservationLimits
 	storagePath  string
+	onExpire     func(res *Reservation)
+	stopCh       chan struct{}
 }
 
 // NewReservationStore creates a new ReservationStore instance.
@@ -36,11 +38,37 @@ func NewReservationStore(index *SegmentIndex, limits ReservationLimits, storageP
 	if limits.MaxPinnedBytesGlobal == 0 {
 		limits = DefaultReservationLimits()
 	}
-	return &ReservationStore{
+	rs := &ReservationStore{
 		index:        index,
 		reservations: make(map[string]*Reservation),
 		limits:       limits,
 		storagePath:  storagePath,
+		stopCh:       make(chan struct{}),
+	}
+	go rs.reaperLoop()
+	return rs
+}
+
+func (rs *ReservationStore) Close() {
+	select {
+	case <-rs.stopCh:
+	default:
+		close(rs.stopCh)
+	}
+}
+
+func (rs *ReservationStore) reaperLoop() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-rs.stopCh:
+			return
+		case <-ticker.C:
+			rs.mu.Lock()
+			rs.purgeExpiredLocked()
+			rs.mu.Unlock()
+		}
 	}
 }
 
@@ -299,8 +327,13 @@ func (rs *ReservationStore) RenewReservation(reservationID string, leaseDuration
 		leaseDuration = rs.limits.MaxLeaseDuration
 	}
 
+	oldExpiry := res.ExpiresAt
 	res.ExpiresAt = time.Now().Add(leaseDuration)
-	return rs.saveStateLocked()
+	if err := rs.saveStateLocked(); err != nil {
+		res.ExpiresAt = oldExpiry // ROLLBACK!
+		return fmt.Errorf("failed to persist renewed reservation state: %w", err)
+	}
+	return nil
 }
 
 // ReleaseReservation unlocks segments and removes the reservation.
@@ -313,8 +346,14 @@ func (rs *ReservationStore) ReleaseReservation(reservationID string) error {
 		return ErrReservationNotFound
 	}
 
+	delete(rs.reservations, reservationID)
+	if err := rs.saveStateLocked(); err != nil {
+		rs.reservations[reservationID] = res // ROLLBACK!
+		return fmt.Errorf("failed to persist released reservation state: %w", err)
+	}
+
 	rs.releaseReservationLocked(res)
-	return rs.saveStateLocked()
+	return nil
 }
 
 func (rs *ReservationStore) releaseReservationLocked(res *Reservation) {
