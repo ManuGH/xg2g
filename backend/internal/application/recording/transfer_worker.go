@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/recording"
@@ -54,7 +55,7 @@ func NewTransferWorker(
 	}, nil
 }
 
-// ProcessNextTask claims and processes one TransferTask idempotently. Returns true if a task was processed.
+// ProcessNextTask claims and processes one TransferTask idempotently under lease heartbeat. Returns true if a task was processed.
 func (w *TransferWorker) ProcessNextTask(ctx context.Context) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -79,7 +80,7 @@ func (w *TransferWorker) ProcessNextTask(ctx context.Context) (bool, error) {
 			task.State = recording.TransferRetrying
 			task.NextAttemptAt = now.Add(time.Duration(task.AttemptCount*10) * time.Second)
 		}
-		saveErr := w.taskRepo.SaveTaskLeased(ctx, task, w.workerID, task.LeaseExpiresAt)
+		saveErr := w.taskRepo.SaveTaskLeased(ctx, task, w.workerID, task.LeaseToken)
 		if saveErr != nil {
 			return true, fmt.Errorf("transfer task %s failed (attempt %d): %v; AND lease save failed: %w", task.ID, task.AttemptCount, err, saveErr)
 		}
@@ -95,16 +96,52 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		return fmt.Errorf("target storage backend '%s' offline or unavailable", task.TargetBackendID)
 	}
 
+	// Create cancelable sub-context bound to worker lease heartbeat
+	transferCtx, cancelTransfer := context.WithCancel(ctx)
+	defer cancelTransfer()
+
+	// Launch background heartbeat ticker renewing task lease every 15 seconds
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	stopHeartbeat := make(chan struct{})
+	var heartbeatWg sync.WaitGroup
+	heartbeatWg.Add(1)
+
+	go func() {
+		defer heartbeatWg.Done()
+		for {
+			select {
+			case <-ticker.C:
+				renewErr := w.taskRepo.RenewTaskLease(ctx, task.ID, w.workerID, task.LeaseToken, 10*time.Minute)
+				if renewErr != nil {
+					// Lease lost or expired: CANCEL TRANSFER CONTEXT IMMEDIATELY!
+					cancelTransfer()
+					return
+				}
+			case <-stopHeartbeat:
+				return
+			case <-transferCtx.Done():
+				return
+			}
+		}
+	}()
+
+	defer func() {
+		close(stopHeartbeat)
+		heartbeatWg.Wait()
+	}()
+
 	// 1. Idempotency Pre-Check: Check if target file already exists on backend
 	alreadyCommitted := false
-	targetInfo, statErr := backend.Stat(ctx, task.TargetObjectKey)
+	targetInfo, statErr := backend.Stat(transferCtx, task.TargetObjectKey)
 	if statErr == nil && targetInfo.SizeBytes == task.ExpectedSize {
 		alreadyCommitted = true
 	}
 
 	// 2. Perform CommitFile only if not already committed
 	if !alreadyCommitted {
-		srcRel := filepath.Clean(filepath.Join("jobs", task.SourceWorkspaceID, "finalized", task.SourceObjectKey))
+		srcRel := filepath.Clean(filepath.Join("jobs", task.SourceWorkspaceID, "finalized", task.SourceFilename))
 		srcAbsPath, err := recording.SanitizeAndValidateRelativePath(w.stagingRoot, srcRel)
 		if err != nil {
 			return fmt.Errorf("failed to sanitize source staging path: %w", err)
@@ -119,12 +156,12 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 			return fmt.Errorf("staged source size mismatch: got %d, expected %d", info.Size(), task.ExpectedSize)
 		}
 
-		if err := backend.CommitFile(ctx, fullSrcPath, task.TargetObjectKey); err != nil {
+		if err := backend.CommitFile(transferCtx, fullSrcPath, task.TargetObjectKey); err != nil {
 			return fmt.Errorf("failed to commit file to backend: %w", err)
 		}
 
 		// Stat Verification on Target Backend
-		targetInfo, statErr = backend.Stat(ctx, task.TargetObjectKey)
+		targetInfo, statErr = backend.Stat(transferCtx, task.TargetObjectKey)
 		if statErr != nil {
 			return fmt.Errorf("failed to verify committed file via backend.Stat: %w", statErr)
 		}
@@ -134,7 +171,7 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 	}
 
 	// 3. Transition Asset to AVAILABLE idempotently
-	asset, err := w.assetRepo.Get(ctx, task.AssetID)
+	asset, err := w.assetRepo.Get(transferCtx, task.AssetID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch asset %s: %w", task.AssetID, err)
 	}
@@ -148,27 +185,30 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		finTime := time.Now()
 		availableAsset.FinalizedAt = &finTime
 
-		if err := w.assetRepo.Save(ctx, availableAsset, asset.Version); err != nil {
+		if err := w.assetRepo.Save(transferCtx, availableAsset, asset.Version); err != nil {
 			return fmt.Errorf("failed to save AVAILABLE asset: %w", err)
 		}
 	}
 
 	// 4. Transition Job to COMPLETED idempotently
-	job, err := w.jobRepo.Get(ctx, task.JobID)
-	if err == nil && job != nil && job.State != recording.StateCompleted {
+	job, err := w.jobRepo.Get(transferCtx, task.JobID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch job %s: %w", task.JobID, err)
+	}
+	if job.State != recording.StateCompleted {
 		job.State = recording.StateCompleted
-		if err := w.jobRepo.Save(ctx, job); err != nil {
+		if err := w.jobRepo.Save(transferCtx, job); err != nil {
 			return fmt.Errorf("failed to save COMPLETED job: %w", err)
 		}
 	}
 
 	// 5. Mark TransferTask COMPLETED under CAS lease ownership
 	task.State = recording.TransferCompleted
-	if err := w.taskRepo.SaveTaskLeased(ctx, task, w.workerID, task.LeaseExpiresAt); err != nil {
+	if err := w.taskRepo.SaveTaskLeased(transferCtx, task, w.workerID, task.LeaseToken); err != nil {
 		return fmt.Errorf("failed to save COMPLETED transfer task under lease: %w", err)
 	}
 
-	// 6. Safe Cleanup of Staged Workspace temporary subdirectories ONLY AFTER verified completion & CAS save
+	// 6. Safe Cleanup of Staged Workspace temporary subdirectories (non-fatal warning if cleanup fails)
 	jobDir := filepath.Join(w.stagingRoot, "jobs", task.SourceWorkspaceID)
 	_ = os.RemoveAll(filepath.Join(jobDir, "segments"))
 	_ = os.RemoveAll(filepath.Join(jobDir, "finalized"))

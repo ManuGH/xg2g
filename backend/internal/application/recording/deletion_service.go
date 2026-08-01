@@ -50,20 +50,23 @@ func (s *AssetDeletionService) DeleteAsset(ctx context.Context, assetID string, 
 		return err
 	}
 
-	// 1. Evaluate pure domain policy using asset's embedded snapshot
+	// 1. Evaluate pure domain policy strictly
 	errPolicy := recording.CanDeletePhysicalFile(asset.ManagementMode, asset.DeletePolicy, force)
-	requiresPhysicalDelete := (errPolicy == nil || (asset.DeletePolicy == recording.DeleteAssetAndFile))
+	if errPolicy != nil {
+		return fmt.Errorf("asset deletion rejected by domain policy: %w", errPolicy)
+	}
 
 	// 2. Resolve Backend
 	backend, backendAvailable := s.backends[asset.BackendID]
+	requiresPhysicalDelete := (asset.DeletePolicy == recording.DeleteAssetAndFile)
 
 	// SAFETY GUARD: If physical deletion is required by policy but backend is offline/unregistered, REFUSE METADATA DELETION!
 	if requiresPhysicalDelete && (!backendAvailable || backend == nil) {
 		return fmt.Errorf("%w: backend '%s' unavailable for asset '%s'", ErrBackendOfflineForDeletion, asset.BackendID, asset.ID)
 	}
 
-	// 3. Physical File Deletion (if policy permits or force requested)
-	if (errPolicy == nil || force) && backendAvailable && backend != nil {
+	// 3. Physical File Deletion (if backend is available and policy allows)
+	if backendAvailable && backend != nil && requiresPhysicalDelete {
 		if err := backend.DeleteFile(ctx, asset.ObjectKey); err != nil && !errors.Is(err, storage.ErrObjectNotFound) {
 			return fmt.Errorf("failed to delete physical file on backend '%s': %w", asset.BackendID, err)
 		}

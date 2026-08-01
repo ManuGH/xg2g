@@ -22,6 +22,7 @@ import (
 
 var (
 	ErrTransferTaskSaveFailed = errors.New("failed to save persistent transfer task during target backend fallback")
+	ErrSegmentSizeMismatch    = errors.New("staged segment size mismatch against reserved NVMe segment")
 )
 
 // RetroDVRHandoverEngine orchestrates Retro-DVR recordings from NVMe segment reservations to finalized RecordingAssets.
@@ -108,8 +109,8 @@ type StagingManifest struct {
 	Complete      bool            `json:"complete"`
 }
 
-// ExecuteRetroRecording processes a retro recording from NVMe disk buffer handover to finalized RecordingAsset.
-func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req RetroHandoverRequest) (*RetroHandoverResult, error) {
+// ExecuteRetroRecording processes a retro recording from NVMe disk buffer handover to finalized RecordingAsset with named defer error chaining.
+func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req RetroHandoverRequest) (result *RetroHandoverResult, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -121,9 +122,9 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	if e.profileRepo == nil {
 		return nil, fmt.Errorf("profileRepo cannot be nil")
 	}
-	profile, err := e.profileRepo.Get(ctx, req.ProfileID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve recording profile '%s': %w", req.ProfileID, err)
+	profile, profileErr := e.profileRepo.Get(ctx, req.ProfileID)
+	if profileErr != nil {
+		return nil, fmt.Errorf("failed to resolve recording profile '%s': %w", req.ProfileID, profileErr)
 	}
 
 	backend, ok := e.backends[profile.Target.BackendID]
@@ -150,10 +151,17 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		}
 	}
 
-	// SAFE CLEANUP GUARD: Ensure reservation lease is released on early errors before manifest commit
+	// NAMED DEFER GUARD: Ensure reservation lease release error is chained if early errors occur
 	defer func() {
 		if !released && reservation.ID != "" && e.resMgr != nil {
-			_ = e.resMgr.ReleaseReservation(reservation.ID)
+			relErr := e.resMgr.ReleaseReservation(reservation.ID)
+			if relErr != nil {
+				if err != nil {
+					err = fmt.Errorf("%w; additionally failed to release reservation lease '%s': %v", err, reservation.ID, relErr)
+				} else {
+					err = fmt.Errorf("failed to release reservation lease '%s': %w", reservation.ID, relErr)
+				}
+			}
 		}
 	}()
 
@@ -183,7 +191,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	}
 
 	// 2. Create RecordingJob in PENDING state
-	job, err := recording.NewRecordingJob(
+	job, jobErr := recording.NewRecordingJob(
 		req.JobID,
 		req.ServiceRef,
 		req.Title,
@@ -192,8 +200,8 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		effectiveEnd,
 		profile.Target.BackendID,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create RecordingJob: %w", err)
+	if jobErr != nil {
+		return nil, fmt.Errorf("failed to create RecordingJob: %w", jobErr)
 	}
 
 	if e.jobRepo != nil {
@@ -208,7 +216,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		return nil, fmt.Errorf("failed to prepare staging workspace: %w", err)
 	}
 
-	// 4. Transfer reserved segments into staging directory & verify size
+	// 4. Transfer reserved segments into staging directory & verify sizes
 	stagingSegsDir := e.stagingMgr.SegmentsDir(job.ID)
 	if err := os.MkdirAll(stagingSegsDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create staging segments directory: %w", err)
@@ -223,14 +231,19 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 
 		segFilename := fmt.Sprintf("seg_%06d.ts", idx+1)
 		destPath := filepath.Join(stagingSegsDir, segFilename)
-		method, err := copyOrLinkFile(srcPath, destPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to transfer retro segment %s to staging: %w", srcPath, err)
+		method, copyErr := copyOrLinkFile(srcPath, destPath)
+		if copyErr != nil {
+			return nil, fmt.Errorf("failed to transfer retro segment %s to staging: %w", srcPath, copyErr)
 		}
 
-		stat, err := os.Stat(destPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to stat staged segment %s: %w", destPath, err)
+		stat, statErr := os.Stat(destPath)
+		if statErr != nil {
+			return nil, fmt.Errorf("failed to stat staged segment %s: %w", destPath, statErr)
+		}
+
+		// STRICT SEGMENT SIZE VERIFICATION
+		if h.SizeBytes > 0 && stat.Size() != h.SizeBytes {
+			return nil, fmt.Errorf("%w: segment %s staged size %d != expected %d", ErrSegmentSizeMismatch, h.ID, stat.Size(), h.SizeBytes)
 		}
 
 		stagedSegments = append(stagedSegments, StagedSegment{
@@ -244,6 +257,17 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 			TransferMethod:  method,
 		})
 	}
+
+	// Fsync segments/ directory
+	pSegDir, pErr := os.Open(stagingSegsDir)
+	if pErr != nil {
+		return nil, fmt.Errorf("failed to open staging segments directory for fsync: %w", pErr)
+	}
+	if err := pSegDir.Sync(); err != nil {
+		_ = pSegDir.Close()
+		return nil, fmt.Errorf("failed to fsync staging segments directory: %w", err)
+	}
+	_ = pSegDir.Close()
 
 	// Write StagingManifest with explicit file & directory fsync
 	manifestPath := filepath.Join(e.stagingMgr.JobDir(job.ID), "manifest.json")
@@ -259,7 +283,18 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		return nil, fmt.Errorf("failed to write staging manifest: %w", err)
 	}
 
-	// 5. Release NVMe reservation lease ONLY AFTER staging copy & manifest fsync complete
+	// Fsync job workspace directory
+	pJobDir, pJobErr := os.Open(e.stagingMgr.JobDir(job.ID))
+	if pJobErr != nil {
+		return nil, fmt.Errorf("failed to open job workspace directory for fsync: %w", pJobErr)
+	}
+	if err := pJobDir.Sync(); err != nil {
+		_ = pJobDir.Close()
+		return nil, fmt.Errorf("failed to fsync job workspace directory: %w", err)
+	}
+	_ = pJobDir.Close()
+
+	// 5. Release NVMe reservation lease ONLY AFTER staging copy, manifest fsync, and workspace fsync complete
 	if e.resMgr != nil && reservation.ID != "" {
 		if err := e.resMgr.ReleaseReservation(reservation.ID); err != nil {
 			return nil, fmt.Errorf("failed to release NVMe reservation lease: %w", err)
@@ -398,7 +433,9 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 			return nil, fmt.Errorf("%w: %v", ErrTransferTaskSaveFailed, taskErr)
 		}
 		task.LastError = commitErr.Error()
-		if err := e.taskRepo.Save(ctx, task); err != nil {
+
+		// CREATE TASK strictly via CreateTask (prevents silent overwrite of existing tasks)
+		if err := e.taskRepo.CreateTask(ctx, task); err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrTransferTaskSaveFailed, err)
 		}
 
@@ -456,12 +493,19 @@ func copyOrLinkFile(src, dst string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer out.Close()
 
 	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
 		return "", err
 	}
-	return "COPY", out.Sync()
+	if err := out.Sync(); err != nil {
+		_ = out.Close()
+		return "", err
+	}
+	if err := out.Close(); err != nil {
+		return "", err
+	}
+	return "COPY", nil
 }
 
 func writeAndFsyncManifest(manifestPath string, manifest StagingManifest) error {

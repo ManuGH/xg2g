@@ -5,6 +5,8 @@ package recording
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,9 +17,10 @@ import (
 )
 
 var (
-	ErrTransferTaskNotFound  = errors.New("transfer task not found")
-	ErrNoTransferTaskToClaim = errors.New("no pending transfer task available for claiming")
-	ErrWorkerLeaseLost       = errors.New("worker lease lost or task acquired by another worker")
+	ErrTransferTaskNotFound      = errors.New("transfer task not found")
+	ErrTransferTaskAlreadyExists = errors.New("transfer task already exists")
+	ErrNoTransferTaskToClaim     = errors.New("no pending transfer task available for claiming")
+	ErrWorkerLeaseLost           = errors.New("worker lease lost or task acquired by another worker")
 )
 
 // TransferState defines the lifecycle states of background transfer retries.
@@ -37,7 +40,7 @@ type TransferTask struct {
 	JobID             string        `json:"job_id"`
 	AssetID           string        `json:"asset_id"`
 	SourceWorkspaceID string        `json:"source_workspace_id"` // Matches JobID
-	SourceObjectKey   string        `json:"source_object_key"`   // e.g. "finalized/tatort.ts"
+	SourceFilename    string        `json:"source_filename"`    // Filename inside finalized/ directory
 	TargetBackendID   string        `json:"target_backend_id"`
 	TargetObjectKey   string        `json:"target_object_key"`
 	ExpectedSize      int64         `json:"expected_size"`
@@ -47,6 +50,7 @@ type TransferTask struct {
 	LastError         string        `json:"last_error,omitempty"`
 	State             TransferState `json:"state"`
 	LockedBy          string        `json:"locked_by,omitempty"`
+	LeaseToken        string        `json:"lease_token,omitempty"`
 	LeaseExpiresAt    time.Time     `json:"lease_expires_at,omitempty"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
@@ -54,8 +58,8 @@ type TransferTask struct {
 }
 
 // NewTransferTask initializes a TransferTask in PENDING state.
-func NewTransferTask(id, jobID, assetID, workspaceID, sourceObjKey, backendID, targetObjKey string, expectedSize int64) (*TransferTask, error) {
-	if id == "" || jobID == "" || assetID == "" || workspaceID == "" || sourceObjKey == "" || backendID == "" || targetObjKey == "" {
+func NewTransferTask(id, jobID, assetID, workspaceID, sourceFilename, backendID, targetObjKey string, expectedSize int64) (*TransferTask, error) {
+	if id == "" || jobID == "" || assetID == "" || workspaceID == "" || sourceFilename == "" || backendID == "" || targetObjKey == "" {
 		return nil, fmt.Errorf("transfer task missing required fields")
 	}
 	now := time.Now()
@@ -64,7 +68,7 @@ func NewTransferTask(id, jobID, assetID, workspaceID, sourceObjKey, backendID, t
 		JobID:             jobID,
 		AssetID:           assetID,
 		SourceWorkspaceID: workspaceID,
-		SourceObjectKey:   sourceObjKey,
+		SourceFilename:    sourceFilename,
 		TargetBackendID:   backendID,
 		TargetObjectKey:   targetObjKey,
 		ExpectedSize:      expectedSize,
@@ -78,9 +82,9 @@ func NewTransferTask(id, jobID, assetID, workspaceID, sourceObjKey, backendID, t
 
 // TransferTaskRepository defines persistent CRUD and CAS claiming operations for TransferTasks.
 type TransferTaskRepository interface {
-	Save(ctx context.Context, task *TransferTask) error
-	SaveTaskLeased(ctx context.Context, task *TransferTask, expectedWorkerID string, expectedLeaseExpiresAt time.Time) error
-	RenewTaskLease(ctx context.Context, taskID string, workerID string, extension time.Duration) error
+	CreateTask(ctx context.Context, task *TransferTask) error
+	SaveTaskLeased(ctx context.Context, task *TransferTask, workerID string, leaseToken string) error
+	RenewTaskLease(ctx context.Context, taskID string, workerID string, leaseToken string, extension time.Duration) error
 	Get(ctx context.Context, id string) (*TransferTask, error)
 	List(ctx context.Context) ([]*TransferTask, error)
 	ClaimTask(ctx context.Context, workerID string, leaseDuration time.Duration) (*TransferTask, error)
@@ -107,7 +111,8 @@ func NewDiskTransferTaskRepository(storagePath string) (*DiskTransferTaskReposit
 	}, nil
 }
 
-func (r *DiskTransferTaskRepository) Save(ctx context.Context, task *TransferTask) error {
+// CreateTask creates a new TransferTask, failing if task ID already exists.
+func (r *DiskTransferTaskRepository) CreateTask(ctx context.Context, task *TransferTask) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -126,6 +131,10 @@ func (r *DiskTransferTaskRepository) Save(ctx context.Context, task *TransferTas
 		tasks = make(map[string]*TransferTask)
 	}
 
+	if _, ok := tasks[task.ID]; ok {
+		return ErrTransferTaskAlreadyExists
+	}
+
 	cp := *task
 	cp.UpdatedAt = time.Now()
 	tasks[cp.ID] = &cp
@@ -133,12 +142,12 @@ func (r *DiskTransferTaskRepository) Save(ctx context.Context, task *TransferTas
 	return r.saveLocked(tasks)
 }
 
-// SaveTaskLeased updates a RUNNING TransferTask strictly verifying worker lease ownership.
-func (r *DiskTransferTaskRepository) SaveTaskLeased(ctx context.Context, task *TransferTask, expectedWorkerID string, expectedLeaseExpiresAt time.Time) error {
+// SaveTaskLeased updates a TransferTask verifying matching workerID, leaseToken, and active unexpired lease.
+func (r *DiskTransferTaskRepository) SaveTaskLeased(ctx context.Context, task *TransferTask, workerID string, leaseToken string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if task == nil || task.ID == "" || expectedWorkerID == "" {
+	if task == nil || task.ID == "" || workerID == "" || leaseToken == "" {
 		return fmt.Errorf("invalid SaveTaskLeased parameters")
 	}
 
@@ -156,11 +165,11 @@ func (r *DiskTransferTaskRepository) SaveTaskLeased(ctx context.Context, task *T
 	}
 
 	now := time.Now()
-	// Lease ownership check
-	if existing.LockedBy != expectedWorkerID {
-		return fmt.Errorf("%w: active lock belongs to '%s', expected '%s'", ErrWorkerLeaseLost, existing.LockedBy, expectedWorkerID)
+	// Strict CAS lease ownership & expiration check
+	if existing.LockedBy != workerID || existing.LeaseToken != leaseToken {
+		return fmt.Errorf("%w: active lock belongs to worker '%s' (token: '%s'), expected worker '%s' (token: '%s')", ErrWorkerLeaseLost, existing.LockedBy, existing.LeaseToken, workerID, leaseToken)
 	}
-	if now.After(existing.LeaseExpiresAt) && task.State != TransferCompleted {
+	if now.After(existing.LeaseExpiresAt) {
 		return fmt.Errorf("%w: worker lease expired at %v", ErrWorkerLeaseLost, existing.LeaseExpiresAt)
 	}
 
@@ -171,12 +180,12 @@ func (r *DiskTransferTaskRepository) SaveTaskLeased(ctx context.Context, task *T
 	return r.saveLocked(tasks)
 }
 
-// RenewTaskLease extends the active worker lease duration for a RUNNING task.
-func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID string, workerID string, extension time.Duration) error {
+// RenewTaskLease extends the active worker lease duration for a RUNNING task requiring matching leaseToken.
+func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID string, workerID string, leaseToken string, extension time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if taskID == "" || workerID == "" || extension <= 0 {
+	if taskID == "" || workerID == "" || leaseToken == "" || extension <= 0 {
 		return fmt.Errorf("invalid RenewTaskLease parameters")
 	}
 
@@ -194,8 +203,8 @@ func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID 
 	}
 
 	now := time.Now()
-	if existing.LockedBy != workerID || now.After(existing.LeaseExpiresAt) {
-		return fmt.Errorf("%w: cannot renew lease for worker '%s'", ErrWorkerLeaseLost, workerID)
+	if existing.LockedBy != workerID || existing.LeaseToken != leaseToken || now.After(existing.LeaseExpiresAt) {
+		return fmt.Errorf("%w: cannot renew lease for worker '%s' (token: '%s')", ErrWorkerLeaseLost, workerID, leaseToken)
 	}
 
 	existing.LeaseExpiresAt = now.Add(extension)
@@ -249,7 +258,7 @@ func (r *DiskTransferTaskRepository) List(ctx context.Context) ([]*TransferTask,
 	return list, nil
 }
 
-// ClaimTask claims the next runnable TransferTask atomically under lease.
+// ClaimTask claims the next runnable TransferTask atomically generating a unique crypto LeaseToken.
 func (r *DiskTransferTaskRepository) ClaimTask(ctx context.Context, workerID string, leaseDuration time.Duration) (*TransferTask, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -291,8 +300,14 @@ func (r *DiskTransferTaskRepository) ClaimTask(ctx context.Context, workerID str
 		return nil, ErrNoTransferTaskToClaim
 	}
 
+	tokenBytes := make([]byte, 16)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return nil, fmt.Errorf("failed to generate random lease token: %w", err)
+	}
+
 	candidate.State = TransferRunning
 	candidate.LockedBy = workerID
+	candidate.LeaseToken = hex.EncodeToString(tokenBytes)
 	candidate.LeaseExpiresAt = now.Add(leaseDuration)
 	candidate.AttemptCount++
 	candidate.UpdatedAt = now

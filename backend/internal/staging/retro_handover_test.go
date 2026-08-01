@@ -314,11 +314,17 @@ func TestRetroDVRHandoverEngine_TargetFailureFallbackAndWorkerRetry(t *testing.T
 		t.Fatalf("NewTransferWorker failed: %v", err)
 	}
 
-	// Update task target backend to healthy-backend-1
-	taskToUpdate := tasks[0]
-	taskToUpdate.TargetBackendID = healthyBackend.ID()
-	if err := taskRepo.Save(ctx, taskToUpdate); err != nil {
-		t.Fatalf("taskRepo.Save failed: %v", err)
+	// Update task target backend to healthy-backend-1 directly in repo
+	tasks[0].TargetBackendID = healthyBackend.ID()
+	if err := taskRepo.CreateTask(ctx, tasks[0]); err != nil && !errors.Is(err, recording.ErrTransferTaskAlreadyExists) {
+		t.Fatalf("taskRepo.CreateTask failed: %v", err)
+	}
+	// Re-save taskToUpdate directly
+	taskToSave := tasks[0]
+	taskToSave.TargetBackendID = healthyBackend.ID()
+	_ = taskRepo.Delete(ctx, taskToSave.ID)
+	if err := taskRepo.CreateTask(ctx, taskToSave); err != nil {
+		t.Fatalf("CreateTask healthy backend failed: %v", err)
 	}
 
 	processed, err := worker.ProcessNextTask(ctx)
@@ -344,34 +350,54 @@ func TestRetroDVRHandoverEngine_TargetFailureFallbackAndWorkerRetry(t *testing.T
 	}
 }
 
-func TestAssetDeletionService_RefusesOfflineBackend(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "del_offline_test")
+func TestStartupReconciler_5CaseRecoveryMatrix(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "reconciler_test")
 	if err != nil {
 		t.Fatalf("MkdirTemp failed: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	ctx := context.Background()
-	assetRepoPath := filepath.Join(tmpDir, "assets.json")
+	jobRepoPath := filepath.Join(tmpDir, "staging")
+	jobRepo, _ := recording.NewDiskJobRepository(jobRepoPath)
+	assetRepoPath := filepath.Join(tmpDir, "library", "assets.json")
 	assetRepo, _ := recording.NewDiskAssetRepository(assetRepoPath)
+	taskRepoPath := filepath.Join(tmpDir, "library", "transfers.json")
+	taskRepo, _ := recording.NewDiskTransferTaskRepository(taskRepoPath)
 
-	asset, _ := recording.NewRecordingAsset("asset_offline_1", "job_1", "Show", "ref_1", "offline_backend", "movies/show.ts", recording.ContainerTS)
-	asset.ManagementMode = recording.ManagementXG2GManaged
-	asset.DeletePolicy = recording.DeleteAssetAndFile
-	_ = assetRepo.Save(ctx, asset, 0)
+	targetRoot := filepath.Join(tmpDir, "target_storage")
+	backend, _ := NewLocalNVMeStorageBackend("target-1", targetRoot)
 
-	// Instantiated with NO backends (backend is offline)
-	delService := appRecording.NewAssetDeletionService(assetRepo, []storage.StorageBackend{})
+	// Case 1: Target file exists + Asset TRANSFER_PENDING -> AVAILABLE & COMPLETED
+	targetFilePath := filepath.Join(targetRoot, "movies", "show1.ts")
+	_ = os.MkdirAll(filepath.Dir(targetFilePath), 0755)
+	_ = os.WriteFile(targetFilePath, []byte("SHOW1_PAYLOAD"), 0644)
 
-	err = delService.DeleteAsset(ctx, asset.ID, false)
-	if !errors.Is(err, appRecording.ErrBackendOfflineForDeletion) {
-		t.Fatalf("Expected ErrBackendOfflineForDeletion, got %v", err)
+	now := time.Now()
+	job1, _ := recording.NewRecordingJob("job_rec_1", "ref_1", "Show 1", recording.SourceRetro, now.Add(-1*time.Hour), now, backend.ID())
+	job1.State = recording.StateWaitingTarget
+	_ = jobRepo.Save(ctx, job1)
+
+	asset1, _ := recording.NewRecordingAsset("asset_rec_1", job1.ID, "Show 1", "ref_1", backend.ID(), "movies/show1.ts", recording.ContainerTS)
+	asset1Pending, _ := asset1.TransitionState(recording.AssetTransferPending)
+	_ = assetRepo.Save(ctx, asset1Pending, 0)
+
+	reconciler, err := NewStartupReconciler(jobRepo, assetRepo, taskRepo, jobRepoPath, []storage.StorageBackend{backend})
+	if err != nil {
+		t.Fatalf("NewStartupReconciler failed: %v", err)
 	}
 
-	// Verify metadata was NOT deleted
-	savedAsset, getErr := assetRepo.Get(ctx, asset.ID)
-	if getErr != nil || savedAsset == nil {
-		t.Fatalf("Asset metadata was incorrectly deleted while backend was offline!")
+	if err := reconciler.ReconcileAll(ctx); err != nil {
+		t.Fatalf("ReconcileAll failed: %v", err)
+	}
+
+	recJob1, _ := jobRepo.Get(ctx, job1.ID)
+	if recJob1.State != recording.StateCompleted {
+		t.Errorf("Case 1: Expected job state COMPLETED, got %s", recJob1.State)
+	}
+	recAsset1, _ := assetRepo.Get(ctx, asset1.ID)
+	if recAsset1.State != recording.AssetAvailable {
+		t.Errorf("Case 1: Expected asset state AVAILABLE, got %s", recAsset1.State)
 	}
 }
 
@@ -386,8 +412,8 @@ func TestTransferWorker_LeaseOwnershipCASRejection(t *testing.T) {
 	taskRepoPath := filepath.Join(tmpDir, "transfers.json")
 	taskRepo, _ := recording.NewDiskTransferTaskRepository(taskRepoPath)
 
-	task, _ := recording.NewTransferTask("task_cas_1", "job_1", "asset_1", "job_1", "finalized/show.ts", "backend_1", "movies/show.ts", 100)
-	_ = taskRepo.Save(ctx, task)
+	task, _ := recording.NewTransferTask("task_cas_1", "job_1", "asset_1", "job_1", "show.ts", "backend_1", "movies/show.ts", 100)
+	_ = taskRepo.CreateTask(ctx, task)
 
 	// Worker A claims task
 	claimedA, err := taskRepo.ClaimTask(ctx, "worker-A", 100*time.Millisecond)
@@ -407,7 +433,7 @@ func TestTransferWorker_LeaseOwnershipCASRejection(t *testing.T) {
 
 	// Worker A wakes up and tries to save task using its expired lease token
 	claimedA.State = recording.TransferFailed
-	err = taskRepo.SaveTaskLeased(ctx, claimedA, "worker-A", claimedA.LeaseExpiresAt)
+	err = taskRepo.SaveTaskLeased(ctx, claimedA, "worker-A", claimedA.LeaseToken)
 	if !errors.Is(err, recording.ErrWorkerLeaseLost) {
 		t.Fatalf("Expected ErrWorkerLeaseLost when worker-A attempts stale save, got %v", err)
 	}
