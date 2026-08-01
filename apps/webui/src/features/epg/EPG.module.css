@@ -1236,7 +1236,7 @@
   height: 8px;
   border-radius: 50%;
   background: var(--status-error);
-  box-shadow: 0 0 10px var(--status-error), 0 0 4px #ffffff;
+  box-shadow: var(--shadow-status-error-strong);
   z-index: 25;
 }
 
@@ -1247,10 +1247,10 @@
   bottom: 0;
   height: 100%;
   width: 2px;
-  background: linear-gradient(180deg, var(--status-error) 0%, rgba(248, 113, 113, 0.75) 100%);
+  background: linear-gradient(180deg, var(--status-error) 0%, color-mix(in srgb, var(--status-error) 75%, transparent) 100%);
   z-index: 40;
   pointer-events: none;
-  box-shadow: 0 0 8px rgba(248, 113, 113, 0.6), 0 0 2px rgba(248, 113, 113, 0.9);
+  box-shadow: var(--shadow-status-error);
 }
 
 .timelineBody {
@@ -1273,7 +1273,7 @@
   left: 0;
   z-index: 50;
   transform: translateZ(0);
-  background: var(--surface-shell-safe, #080d14);
+  background: var(--surface-shell-safe);
   border-right: 1px solid var(--border-base);
   padding: 6px 12px;
   height: 54px;
