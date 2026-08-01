@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0, 0, 0, 0.75);
+  background: var(--overlay-backdrop-strong);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
@@ -12,15 +12,15 @@
 }
 
 .card {
-  background: #0e1623;
-  border: 1px solid var(--border-elevated, rgba(255, 255, 255, 0.18));
+  background: var(--surface-dialog-opaque);
+  border: 1px solid var(--border-strong);
   border-radius: 20px;
   width: 100%;
   max-width: 580px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
+  box-shadow: var(--shadow-epg-dialog-strong);
   overflow: hidden;
   position: relative;
   z-index: 10000;
@@ -39,7 +39,7 @@
 
 .header {
   padding: 24px 28px 18px;
-  border-bottom: 1px solid var(--border-base, rgba(255, 255, 255, 0.1));
+  border-bottom: 1px solid var(--border-base);
   flex-shrink: 0;
   position: relative;
   z-index: 1;
@@ -59,8 +59,8 @@
   display: inline-flex;
   align-items: center;
   padding: 5px 12px;
-  background: var(--surface-muted, rgba(255, 255, 255, 0.06));
-  border: 1px solid var(--border-base, rgba(255, 255, 255, 0.1));
+  background: var(--surface-muted);
+  border: 1px solid var(--border-base);
   border-radius: 8px;
   font-size: 13px;
   color: var(--text-secondary);
@@ -81,7 +81,7 @@
 
 .footer {
   padding: 16px 28px;
-  border-top: 1px solid var(--border-base, rgba(255, 255, 255, 0.1));
+  border-top: 1px solid var(--border-base);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
