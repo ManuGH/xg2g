@@ -134,7 +134,12 @@ func (s *IngestServer) handleIngest(w http.ResponseWriter, r *http.Request) {
 		dvrCb = s.persistToDisk
 	}
 
-	buf := s.registry.GetOrCreate(sessionID, dvrCb)
+	serviceRef := r.Header.Get("X-Service-Ref")
+	if serviceRef == "" {
+		serviceRef = sessionID
+	}
+
+	buf := s.registry.GetOrCreateService(serviceRef, sessionID, dvrCb)
 	buf.Put(filename, data)
 
 	w.WriteHeader(http.StatusOK)

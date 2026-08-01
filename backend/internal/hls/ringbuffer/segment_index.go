@@ -19,10 +19,16 @@ func NewSegmentIndex() *SegmentIndex {
 
 // AddSegment inserts a new segment into the index in sequence order.
 func (idx *SegmentIndex) AddSegment(seg *InternalSegment) {
+	if seg.ReservationIDs == nil {
+		seg.ReservationIDs = make(map[string]struct{})
+	}
 	service := seg.ID.ServiceRef
 	segments := idx.byService[service]
 	segments = append(segments, seg)
 	sort.Slice(segments, func(i, j int) bool {
+		if segments[i].Sequence == segments[j].Sequence {
+			return segments[i].ID.PartIndex < segments[j].ID.PartIndex
+		}
 		return segments[i].Sequence < segments[j].Sequence
 	})
 	idx.byService[service] = segments
@@ -34,12 +40,9 @@ func (idx *SegmentIndex) SelectRange(serviceRef string, start, end time.Time) []
 	var matched []*InternalSegment
 
 	for _, seg := range segments {
-		// Ignore segments marked for deletion or missing
 		if seg.State == SegmentDeleting || seg.State == SegmentMissing {
 			continue
 		}
-
-		// Check overlap with requested window
 		if seg.EndWallTime.After(start) && seg.StartWallTime.Before(end) {
 			matched = append(matched, seg)
 		}
@@ -62,20 +65,20 @@ func (idx *SegmentIndex) GetByID(id SegmentID) (*InternalSegment, bool) {
 	return nil, false
 }
 
-// MarkForDeletion transitions active, unreserved segments to SegmentDeleting state.
-func (idx *SegmentIndex) MarkForDeletion(id SegmentID) bool {
+// TryMarkDeleting atomically checks reservation status and transitions unreserved segments to SegmentDeleting.
+func (idx *SegmentIndex) TryMarkDeleting(id SegmentID) bool {
 	seg, ok := idx.GetByID(id)
 	if !ok {
-		return false
+		return true // Missing segment is safe to delete
 	}
-	if seg.State == SegmentReserved {
-		return false // Cannot delete a reserved segment
+	if seg.IsReserved() {
+		return false // Cannot delete reserved segment
 	}
 	seg.State = SegmentDeleting
 	return true
 }
 
-// RemoveSegment deletes a segment entry from the index after disk deletion.
+// RemoveSegment deletes a segment entry from the index after eviction.
 func (idx *SegmentIndex) RemoveSegment(id SegmentID) {
 	segments, ok := idx.byService[id.ServiceRef]
 	if !ok {
