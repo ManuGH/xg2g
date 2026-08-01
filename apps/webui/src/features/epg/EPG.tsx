@@ -703,9 +703,12 @@ export default function EPG({
       {selectedEvent && (
         <EpgEventDialog
           event={selectedEvent}
+          channel={channels.find((c) => c.serviceRef === selectedEvent.serviceRef || c.id === selectedEvent.serviceRef)}
+          currentTime={state.currentTime}
           onClose={() => setSelectedEvent(null)}
           onRecord={canManageDvr ? handleRecord : undefined}
           isRecorded={selectedEvent ? isRecorded(selectedEvent) : false}
+          onPlay={onPlay}
         />
       )}
     </div>
