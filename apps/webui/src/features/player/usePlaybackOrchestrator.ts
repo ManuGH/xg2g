@@ -236,6 +236,24 @@ export function usePlaybackOrchestrator(
     setTtffMetrics(null);
   }, []);
 
+  // Protection against accidental tab / window closure while playback/timeshift is active
+  useEffect(() => {
+    if (status !== 'playing' && status !== 'buffering' && status !== 'paused') {
+      return;
+    }
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [status]);
+
   const handlePlaybackMilestone = useCallback((milestone: 'manifest' | 'firstFrame') => {
     const startT0 = ttffStartT0Ref.current;
     if (startT0 === null) return;
