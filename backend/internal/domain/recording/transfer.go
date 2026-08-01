@@ -186,7 +186,7 @@ func (r *DiskTransferTaskRepository) SaveTaskLeased(ctx context.Context, task *T
 	return r.saveLocked(tasks)
 }
 
-// RenewTaskLease extends active worker lease duration returning new LeaseExpiresAt time.
+// RenewTaskLease extends active worker lease duration returning new LeaseExpiresAt time. Strictly requires TransferRunning state.
 func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID string, workerID string, leaseToken string, extension time.Duration) (time.Time, error) {
 	if err := ctx.Err(); err != nil {
 		return time.Time{}, err
@@ -209,6 +209,12 @@ func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID 
 	}
 
 	now := time.Now()
+
+	// RenewTaskLease is strictly forbidden on non-RUNNING or already COMPLETED tasks!
+	if existing.State != TransferRunning {
+		return time.Time{}, fmt.Errorf("%w: task state is %s, must be RUNNING to renew lease", ErrWorkerLeaseLost, existing.State)
+	}
+
 	if existing.LockedBy != workerID || existing.LeaseToken != leaseToken || now.After(existing.LeaseExpiresAt) {
 		return time.Time{}, fmt.Errorf("%w: cannot renew lease for worker '%s' (token: '%s')", ErrWorkerLeaseLost, workerID, leaseToken)
 	}

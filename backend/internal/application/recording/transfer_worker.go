@@ -110,6 +110,7 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 
 	stopHeartbeat := make(chan struct{})
 	var heartbeatWg sync.WaitGroup
+	var stopOnce sync.Once
 	heartbeatWg.Add(1)
 
 	go func() {
@@ -137,13 +138,10 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 	}()
 
 	stopHeartbeatAndJoin := func() {
-		select {
-		case <-stopHeartbeat:
-			// already closed
-		default:
+		stopOnce.Do(func() {
 			close(stopHeartbeat)
-			heartbeatWg.Wait()
-		}
+		})
+		heartbeatWg.Wait()
 	}
 
 	finishWithCheck := func(execErr error) error {
@@ -202,42 +200,49 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		}
 	}
 
+	// MANDATORY PRE-COMPLETION HEARTBEAT TEARDOWN:
+	// Stop & join heartbeat goroutine BEFORE executing persistent state transitions!
+	// If lease renewal failed, abort immediately before modifying Asset/Job/Task state.
+	if hbCheckErr := finishWithCheck(nil); hbCheckErr != nil {
+		return hbCheckErr
+	}
+
 	// 3. Transition Asset to AVAILABLE idempotently
-	asset, err := w.assetRepo.Get(transferCtx, task.AssetID)
+	asset, err := w.assetRepo.Get(ctx, task.AssetID)
 	if err != nil {
-		return finishWithCheck(fmt.Errorf("failed to fetch asset %s: %w", task.AssetID, err))
+		return fmt.Errorf("failed to fetch asset %s: %w", task.AssetID, err)
 	}
 
 	if asset.State != recording.AssetAvailable {
 		availableAsset, err := asset.TransitionState(recording.AssetAvailable)
 		if err != nil {
-			return finishWithCheck(fmt.Errorf("failed to transition asset to AVAILABLE: %w", err))
+			return fmt.Errorf("failed to transition asset to AVAILABLE: %w", err)
 		}
 		availableAsset.SizeBytes = targetInfo.SizeBytes
 		finTime := time.Now()
 		availableAsset.FinalizedAt = &finTime
 
-		if err := w.assetRepo.Save(transferCtx, availableAsset, asset.Version); err != nil {
-			return finishWithCheck(fmt.Errorf("failed to save AVAILABLE asset: %w", err))
+		if err := w.assetRepo.Save(ctx, availableAsset, asset.Version); err != nil {
+			return fmt.Errorf("failed to save AVAILABLE asset: %w", err)
 		}
 	}
 
 	// 4. Transition Job to COMPLETED idempotently
-	job, err := w.jobRepo.Get(transferCtx, task.JobID)
+	job, err := w.jobRepo.Get(ctx, task.JobID)
 	if err != nil {
-		return finishWithCheck(fmt.Errorf("failed to fetch job %s: %w", task.JobID, err))
+		return fmt.Errorf("failed to fetch job %s: %w", task.JobID, err)
 	}
 	if job.State != recording.StateCompleted {
 		job.State = recording.StateCompleted
-		if err := w.jobRepo.Save(transferCtx, job); err != nil {
-			return finishWithCheck(fmt.Errorf("failed to save COMPLETED job: %w", err))
+		if err := w.jobRepo.Save(ctx, job); err != nil {
+			return fmt.Errorf("failed to save COMPLETED job: %w", err)
 		}
 	}
 
 	// 5. Mark TransferTask COMPLETED under CAS lease ownership
 	task.State = recording.TransferCompleted
-	if err := w.taskRepo.SaveTaskLeased(transferCtx, task, w.workerID, task.LeaseToken); err != nil {
-		return finishWithCheck(fmt.Errorf("failed to save COMPLETED transfer task under lease: %w", err))
+	if err := w.taskRepo.SaveTaskLeased(ctx, task, w.workerID, task.LeaseToken); err != nil {
+		return fmt.Errorf("failed to save COMPLETED transfer task under lease: %w", err)
 	}
 
 	// 6. Safe Cleanup of Staged Workspace temporary subdirectories (logged warnings on failure)
@@ -249,5 +254,5 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		}
 	}
 
-	return finishWithCheck(nil)
+	return nil
 }

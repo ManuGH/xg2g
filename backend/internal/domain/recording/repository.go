@@ -23,6 +23,7 @@ var (
 type JobRepository interface {
 	Save(ctx context.Context, job *RecordingJob) error
 	Get(ctx context.Context, id string) (*RecordingJob, error)
+	ListAll(ctx context.Context) ([]*RecordingJob, error)
 	ListRecoverable(ctx context.Context) ([]*RecordingJob, error)
 	Delete(ctx context.Context, id string) error
 }
@@ -132,7 +133,48 @@ func (r *DiskJobRepository) Get(ctx context.Context, id string) (*RecordingJob, 
 	return &job, nil
 }
 
-// ListRecoverable inventories all active or non-terminal jobs requiring crash recovery after process restart.
+// ListAll scans and returns all RecordingJobs on disk.
+func (r *DiskJobRepository) ListAll(ctx context.Context) ([]*RecordingJob, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	jobsDir := filepath.Join(r.stagingRoot, "jobs")
+	if _, err := os.Stat(jobsDir); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	entries, err := os.ReadDir(jobsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read jobs dir: %w", err)
+	}
+
+	var allJobs []*RecordingJob
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		jobID := entry.Name()
+		manifestFile := filepath.Join(jobsDir, jobID, "manifest.json")
+		data, err := os.ReadFile(manifestFile)
+		if err != nil {
+			continue
+		}
+
+		var job RecordingJob
+		if err := json.Unmarshal(data, &job); err != nil {
+			continue
+		}
+		allJobs = append(allJobs, &job)
+	}
+
+	return allJobs, nil
+}
+
+// ListRecoverable scans and returns all non-terminal RecordingJobs requiring recovery.
 func (r *DiskJobRepository) ListRecoverable(ctx context.Context) ([]*RecordingJob, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

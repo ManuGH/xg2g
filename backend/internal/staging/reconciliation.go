@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/recording"
 	"github.com/ManuGH/xg2g/internal/infra/storage"
@@ -17,6 +18,7 @@ import (
 var (
 	ErrMultipleAssetsForJob = errors.New("multiple recording assets found for single job during reconciliation")
 	ErrUnverifiableTarget   = errors.New("expected target size <= 0; target cannot be verified")
+	ErrTargetSizeMismatch   = errors.New("target file size mismatch on storage backend during reconciliation")
 )
 
 // ObjectProbeState explicitly classifies physical target object status on storage backends.
@@ -27,6 +29,7 @@ const (
 	ProbeSizeMismatch
 	ProbeNotFound
 	ProbeBackendOffline
+	ProbeInvalidMetadata
 )
 
 // StartupReconciler scans jobs, assets, and transfer tasks on startup to recover orphaned states per the 5-case matrix.
@@ -75,10 +78,10 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 
 	var errs []error
 
-	// 1. Load All 3 Inventories
-	jobsList, err := r.jobRepo.ListRecoverable(ctx)
+	// 1. Load All Jobs in System
+	jobsList, err := r.jobRepo.ListAll(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list recoverable jobs during reconciliation: %w", err)
+		return fmt.Errorf("failed to list jobs during reconciliation: %w", err)
 	}
 
 	allAssets, err := r.assetRepo.List(ctx)
@@ -116,7 +119,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 		}
 	}
 
-	// 4. Resolve & Rank Tasks per JobID
+	// 4. Evidentiary Task Ranking per JobID incorporating Physical Probe Results
 	taskMap := make(map[string]*recording.TransferTask)
 	for jobID, tasks := range rawTasksMap {
 		var best *recording.TransferTask
@@ -125,13 +128,18 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 				best = t
 				continue
 			}
-			if rankTask(t) > rankTask(best) {
-				if recErr := r.taskRepo.RecoverTaskState(ctx, best.ID, nil, true, recording.TransferFailed, "superseded by higher progress rank task"); recErr != nil {
+
+			// Probe evidence score for task ranking
+			scoreT := r.scoreTaskEvidence(ctx, t, assetsMap[jobID])
+			scoreBest := r.scoreTaskEvidence(ctx, best, assetsMap[jobID])
+
+			if scoreT > scoreBest {
+				if recErr := r.taskRepo.RecoverTaskState(ctx, best.ID, nil, true, recording.TransferFailed, "superseded by higher evidentiary rank task"); recErr != nil {
 					errs = append(errs, fmt.Errorf("failed to resolve task conflict for task %s: %w", best.ID, recErr))
 				}
 				best = t
 			} else {
-				if recErr := r.taskRepo.RecoverTaskState(ctx, t.ID, nil, true, recording.TransferFailed, "superseded by higher progress rank task"); recErr != nil {
+				if recErr := r.taskRepo.RecoverTaskState(ctx, t.ID, nil, true, recording.TransferFailed, "superseded by higher evidentiary rank task"); recErr != nil {
 					errs = append(errs, fmt.Errorf("failed to resolve task conflict for task %s: %w", t.ID, recErr))
 				}
 			}
@@ -153,9 +161,9 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 		}
 
 		if len(jobAssets) == 0 {
-			// Orphaned Task without Asset or Job
+			// Orphaned Task without Asset
 			if task != nil && task.State != recording.TransferFailed {
-				if recErr := r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferFailed, "orphaned task without asset or job record"); recErr != nil {
+				if recErr := r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferFailed, "orphaned task without asset record"); recErr != nil {
 					errs = append(errs, fmt.Errorf("failed to recover orphaned task %s: %w", task.ID, recErr))
 				}
 			}
@@ -186,6 +194,15 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 		}
 
 		probe := r.probeTargetObject(ctx, targetBackendID, asset.ObjectKey, expectedSize)
+
+		if probe == ProbeSizeMismatch {
+			errs = append(errs, fmt.Errorf("%w for asset %s (expected %d)", ErrTargetSizeMismatch, asset.ID, expectedSize))
+			continue
+		}
+		if probe == ProbeInvalidMetadata {
+			errs = append(errs, fmt.Errorf("invalid metadata for asset %s (missing backend ID or object key); skipping recovery", asset.ID))
+			continue
+		}
 
 		// Resolve staged source file using asset's persistent SourceFilename
 		srcFilename := asset.SourceFilename
@@ -341,7 +358,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 
 func (r *StartupReconciler) probeTargetObject(ctx context.Context, backendID, objectKey string, expectedSize int64) ObjectProbeState {
 	if backendID == "" || objectKey == "" {
-		return ProbeNotFound
+		return ProbeInvalidMetadata
 	}
 	backend, ok := r.backends[backendID]
 	if !ok || backend == nil {
@@ -362,19 +379,40 @@ func (r *StartupReconciler) probeTargetObject(ctx context.Context, backendID, ob
 	return ProbeSizeMismatch
 }
 
-func rankTask(t *recording.TransferTask) int {
-	switch t.State {
-	case recording.TransferCompleted:
-		return 5
-	case recording.TransferRunning:
-		return 4
-	case recording.TransferRetrying:
-		return 3
-	case recording.TransferPending:
-		return 2
-	case recording.TransferFailed:
-		return 1
-	default:
-		return 0
+func (r *StartupReconciler) scoreTaskEvidence(ctx context.Context, t *recording.TransferTask, assets []*recording.RecordingAsset) int {
+	var asset *recording.RecordingAsset
+	if len(assets) == 1 {
+		asset = assets[0]
 	}
+
+	expectedSize := t.ExpectedSize
+	if expectedSize <= 0 && asset != nil {
+		expectedSize = asset.SizeBytes
+	}
+
+	backendID := t.TargetBackendID
+	objKey := t.TargetObjectKey
+	if backendID == "" && asset != nil {
+		backendID = asset.BackendID
+	}
+	if objKey == "" && asset != nil {
+		objKey = asset.ObjectKey
+	}
+
+	probe := r.probeTargetObject(ctx, backendID, objKey, expectedSize)
+
+	if t.State == recording.TransferCompleted && probe == ProbeValid {
+		return 100
+	}
+	now := time.Now()
+	if t.State == recording.TransferRunning && now.Before(t.LeaseExpiresAt) {
+		return 80
+	}
+	if t.State == recording.TransferPending || t.State == recording.TransferRetrying {
+		return 60
+	}
+	if t.State == recording.TransferCompleted && probe == ProbeNotFound {
+		return 20
+	}
+	return 10
 }
