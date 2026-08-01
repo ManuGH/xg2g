@@ -440,7 +440,7 @@ func (rs *ReservationStore) saveStateLocked() error {
 		return err
 	}
 
-	if dirFile, err := os.Open(dir); err == nil {
+	if dirFile, err := os.Open(dir); err == nil { //nolint:gosec // G304: dir is derived from operator-configured storagePath
 		_ = dirFile.Sync()
 		_ = dirFile.Close()
 	}
