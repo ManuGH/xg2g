@@ -54,6 +54,77 @@ func TestParseSegmentFilename(t *testing.T) {
 	}
 }
 
+func TestPartSegmentPurgingOnCompleteArrival(t *testing.T) {
+	reg, err := NewRegistryWithStorage(5, "")
+	if err != nil {
+		t.Fatalf("NewRegistryWithStorage failed: %v", err)
+	}
+	defer reg.Stop()
+
+	sessionID := "test_part_session"
+	buf := reg.GetOrCreate(sessionID, nil)
+
+	// Ingest partial segments for sequence 10
+	buf.Put("part_000010_0.m4s", []byte("part_data_0"))
+	buf.Put("part_000010_1.m4s", []byte("part_data_1"))
+	buf.Put("part_000010_2.m4s", []byte("part_data_2"))
+
+	buf.mu.RLock()
+	artCountBefore := len(buf.artifacts)
+	buf.mu.RUnlock()
+
+	if artCountBefore < 3 {
+		t.Errorf("Expected at least 3 parts in RAM artifacts, got %d", artCountBefore)
+	}
+
+	// Now put full segment seg_000010.ts
+	buf.Put("seg_000010.ts", []byte("complete_segment_data_10"))
+
+	buf.mu.RLock()
+	_, part0Exists := buf.artifacts["part_000010_0.m4s"]
+	_, seg10Exists := buf.artifacts["seg_000010.ts"]
+	buf.mu.RUnlock()
+
+	if part0Exists {
+		t.Errorf("Expected part_000010_0.m4s to be PURGED from artifacts upon full segment arrival!")
+	}
+	if !seg10Exists {
+		t.Errorf("Expected seg_000010.ts to exist in artifacts!")
+	}
+}
+
+func TestSnapshotReservation_RAM(t *testing.T) {
+	reg, err := NewRegistryWithStorage(5, "")
+	if err != nil {
+		t.Fatalf("NewRegistryWithStorage failed: %v", err)
+	}
+	defer reg.Stop()
+
+	sessionID := "test_snap_session"
+	buf := reg.GetOrCreate(sessionID, nil)
+
+	now := time.Now()
+	buf.Put("seg_000001.ts", []byte("ts_payload_1"))
+	buf.Put("seg_000002.ts", []byte("ts_payload_2"))
+
+	res, err := reg.Store().ReserveRange(sessionID, now.Add(-5*time.Minute), now.Add(5*time.Minute), "test_owner", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("ReserveRange failed: %v", err)
+	}
+
+	snapshots, err := reg.Store().SnapshotReservation(res.ID, reg)
+	if err != nil {
+		t.Fatalf("SnapshotReservation failed: %v", err)
+	}
+
+	if len(snapshots) != 2 {
+		t.Fatalf("Expected 2 segment snapshots, got %d", len(snapshots))
+	}
+	if string(snapshots[0].Data) != "ts_payload_1" {
+		t.Errorf("Expected payload 'ts_payload_1', got '%s'", string(snapshots[0].Data))
+	}
+}
+
 func TestProbeRange_Complete(t *testing.T) {
 	idx := NewSegmentIndex()
 	now := time.Now()
