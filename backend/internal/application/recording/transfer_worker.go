@@ -117,7 +117,7 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		for {
 			select {
 			case <-ticker.C:
-				newExpiry, renewErr := w.taskRepo.RenewTaskLease(ctx, task.ID, w.workerID, task.LeaseToken, 10*time.Minute)
+				_, renewErr := w.taskRepo.RenewTaskLease(ctx, task.ID, w.workerID, task.LeaseToken, 10*time.Minute)
 				if renewErr != nil {
 					// Store exact heartbeat failure error thread-safely
 					heartbeatErrMu.Lock()
@@ -128,8 +128,6 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 					cancelTransfer()
 					return
 				}
-				// Synchronize in-memory LeaseExpiresAt to match repository lease
-				task.LeaseExpiresAt = newExpiry
 			case <-stopHeartbeat:
 				return
 			case <-transferCtx.Done():
@@ -138,24 +136,13 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		}
 	}()
 
+	var executionErr error
+
+	// Deferred teardown: stop & join heartbeat goroutine BEFORE returning execution error
 	defer func() {
 		close(stopHeartbeat)
 		heartbeatWg.Wait()
 	}()
-
-	// Helper to report heartbeat error if context canceled
-	checkErr := func(err error) error {
-		if err == nil {
-			return nil
-		}
-		heartbeatErrMu.Lock()
-		hbErr := heartbeatErr
-		heartbeatErrMu.Unlock()
-		if hbErr != nil {
-			return fmt.Errorf("%w (underlying context error: %v)", hbErr, err)
-		}
-		return err
-	}
 
 	// 1. Idempotency Pre-Check: Check if target file already exists on backend
 	alreadyCommitted := false
@@ -173,68 +160,80 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		srcRel := filepath.Clean(filepath.Join("jobs", task.SourceWorkspaceID, "finalized", srcFilename))
 		srcAbsPath, err := recording.SanitizeAndValidateRelativePath(w.stagingRoot, srcRel)
 		if err != nil {
-			return checkErr(fmt.Errorf("failed to sanitize source staging path: %w", err))
+			executionErr = fmt.Errorf("failed to sanitize source staging path: %w", err)
+			return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 		}
 		fullSrcPath := filepath.Join(w.stagingRoot, srcAbsPath)
 
 		info, err := os.Stat(fullSrcPath)
 		if err != nil {
-			return checkErr(fmt.Errorf("source staged file not found: %w", err))
+			executionErr = fmt.Errorf("source staged file not found: %w", err)
+			return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 		}
 		if info.Size() != task.ExpectedSize {
-			return checkErr(fmt.Errorf("staged source size mismatch: got %d, expected %d", info.Size(), task.ExpectedSize))
+			executionErr = fmt.Errorf("staged source size mismatch: got %d, expected %d", info.Size(), task.ExpectedSize)
+			return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 		}
 
 		if err := backend.CommitFile(transferCtx, fullSrcPath, task.TargetObjectKey); err != nil {
-			return checkErr(fmt.Errorf("failed to commit file to backend: %w", err))
+			executionErr = fmt.Errorf("failed to commit file to backend: %w", err)
+			return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 		}
 
 		// Stat Verification on Target Backend
 		targetInfo, statErr = backend.Stat(transferCtx, task.TargetObjectKey)
 		if statErr != nil {
-			return checkErr(fmt.Errorf("failed to verify committed file via backend.Stat: %w", statErr))
+			executionErr = fmt.Errorf("failed to verify committed file via backend.Stat: %w", statErr)
+			return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 		}
 		if targetInfo.SizeBytes != task.ExpectedSize {
-			return checkErr(fmt.Errorf("target committed size mismatch: got %d, expected %d", targetInfo.SizeBytes, task.ExpectedSize))
+			executionErr = fmt.Errorf("target committed size mismatch: got %d, expected %d", targetInfo.SizeBytes, task.ExpectedSize)
+			return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 		}
 	}
 
 	// 3. Transition Asset to AVAILABLE idempotently
 	asset, err := w.assetRepo.Get(transferCtx, task.AssetID)
 	if err != nil {
-		return checkErr(fmt.Errorf("failed to fetch asset %s: %w", task.AssetID, err))
+		executionErr = fmt.Errorf("failed to fetch asset %s: %w", task.AssetID, err)
+		return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 	}
 
 	if asset.State != recording.AssetAvailable {
 		availableAsset, err := asset.TransitionState(recording.AssetAvailable)
 		if err != nil {
-			return checkErr(fmt.Errorf("failed to transition asset to AVAILABLE: %w", err))
+			executionErr = fmt.Errorf("failed to transition asset to AVAILABLE: %w", err)
+			return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 		}
 		availableAsset.SizeBytes = targetInfo.SizeBytes
 		finTime := time.Now()
 		availableAsset.FinalizedAt = &finTime
 
 		if err := w.assetRepo.Save(transferCtx, availableAsset, asset.Version); err != nil {
-			return checkErr(fmt.Errorf("failed to save AVAILABLE asset: %w", err))
+			executionErr = fmt.Errorf("failed to save AVAILABLE asset: %w", err)
+			return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 		}
 	}
 
 	// 4. Transition Job to COMPLETED idempotently
 	job, err := w.jobRepo.Get(transferCtx, task.JobID)
 	if err != nil {
-		return checkErr(fmt.Errorf("failed to fetch job %s: %w", task.JobID, err))
+		executionErr = fmt.Errorf("failed to fetch job %s: %w", task.JobID, err)
+		return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 	}
 	if job.State != recording.StateCompleted {
 		job.State = recording.StateCompleted
 		if err := w.jobRepo.Save(transferCtx, job); err != nil {
-			return checkErr(fmt.Errorf("failed to save COMPLETED job: %w", err))
+			executionErr = fmt.Errorf("failed to save COMPLETED job: %w", err)
+			return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 		}
 	}
 
 	// 5. Mark TransferTask COMPLETED under CAS lease ownership
 	task.State = recording.TransferCompleted
 	if err := w.taskRepo.SaveTaskLeased(transferCtx, task, w.workerID, task.LeaseToken); err != nil {
-		return checkErr(fmt.Errorf("failed to save COMPLETED transfer task under lease: %w", err))
+		executionErr = fmt.Errorf("failed to save COMPLETED transfer task under lease: %w", err)
+		return w.evaluateHeartbeatOrErr(executionErr, &heartbeatErrMu, &heartbeatErr)
 	}
 
 	// 6. Safe Cleanup of Staged Workspace temporary subdirectories (logged warnings on failure)
@@ -247,4 +246,14 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 	}
 
 	return nil
+}
+
+func (w *TransferWorker) evaluateHeartbeatOrErr(execErr error, mu *sync.Mutex, hbErr *error) error {
+	mu.Lock()
+	hErr := *hbErr
+	mu.Unlock()
+	if hErr != nil {
+		return fmt.Errorf("%w (execution error: %v)", hErr, execErr)
+	}
+	return execErr
 }

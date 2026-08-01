@@ -21,6 +21,7 @@ var (
 	ErrTransferTaskAlreadyExists = errors.New("transfer task already exists")
 	ErrNoTransferTaskToClaim     = errors.New("no pending transfer task available for claiming")
 	ErrWorkerLeaseLost           = errors.New("worker lease lost or task acquired by another worker")
+	ErrTaskLeaseActive           = errors.New("cannot recover task state while worker lease is actively running")
 )
 
 // TransferState defines the lifecycle states of background transfer retries.
@@ -85,7 +86,7 @@ type TransferTaskRepository interface {
 	CreateTask(ctx context.Context, task *TransferTask) error
 	SaveTaskLeased(ctx context.Context, task *TransferTask, workerID string, leaseToken string) error
 	RenewTaskLease(ctx context.Context, taskID string, workerID string, leaseToken string, extension time.Duration) (time.Time, error)
-	RecoverTaskState(ctx context.Context, taskID string, newState TransferState, lastError string) error
+	RecoverTaskState(ctx context.Context, taskID string, expectedStates []TransferState, requireLeaseExpired bool, newState TransferState, lastError string) error
 	Get(ctx context.Context, id string) (*TransferTask, error)
 	List(ctx context.Context) ([]*TransferTask, error)
 	ClaimTask(ctx context.Context, workerID string, leaseDuration time.Duration) (*TransferTask, error)
@@ -143,7 +144,7 @@ func (r *DiskTransferTaskRepository) CreateTask(ctx context.Context, task *Trans
 	return r.saveLocked(tasks)
 }
 
-// SaveTaskLeased updates a TransferTask verifying matching workerID, leaseToken, and active unexpired lease.
+// SaveTaskLeased updates a TransferTask verifying matching workerID and leaseToken, preserving lease fields directly from disk.
 func (r *DiskTransferTaskRepository) SaveTaskLeased(ctx context.Context, task *TransferTask, workerID string, leaseToken string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -175,6 +176,10 @@ func (r *DiskTransferTaskRepository) SaveTaskLeased(ctx context.Context, task *T
 	}
 
 	cp := *task
+	// Authoritatively preserve active lease fields directly from existing record (eliminates in-memory data races)
+	cp.LockedBy = existing.LockedBy
+	cp.LeaseToken = existing.LeaseToken
+	cp.LeaseExpiresAt = existing.LeaseExpiresAt
 	cp.UpdatedAt = now
 	tasks[cp.ID] = &cp
 
@@ -219,8 +224,15 @@ func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID 
 	return newExpiry, nil
 }
 
-// RecoverTaskState updates task state during startup reconciliation without requiring active lease.
-func (r *DiskTransferTaskRepository) RecoverTaskState(ctx context.Context, taskID string, newState TransferState, lastError string) error {
+// RecoverTaskState updates task state during startup reconciliation enforcing lease expiration & expected states.
+func (r *DiskTransferTaskRepository) RecoverTaskState(
+	ctx context.Context,
+	taskID string,
+	expectedStates []TransferState,
+	requireLeaseExpired bool,
+	newState TransferState,
+	lastError string,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -242,6 +254,26 @@ func (r *DiskTransferTaskRepository) RecoverTaskState(ctx context.Context, taskI
 	}
 
 	now := time.Now()
+
+	// Verify expected state match if specified
+	if len(expectedStates) > 0 {
+		matched := false
+		for _, st := range expectedStates {
+			if existing.State == st {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("task state %s does not match required expected states %v", existing.State, expectedStates)
+		}
+	}
+
+	// Verify lease is expired if requireLeaseExpired is true
+	if requireLeaseExpired && existing.State == TransferRunning && now.Before(existing.LeaseExpiresAt) {
+		return fmt.Errorf("%w: cannot recover task %s while active worker lease is running until %v", ErrTaskLeaseActive, taskID, existing.LeaseExpiresAt)
+	}
+
 	existing.State = newState
 	if lastError != "" {
 		existing.LastError = lastError
