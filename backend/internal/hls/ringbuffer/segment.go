@@ -65,18 +65,24 @@ type Gap struct {
 
 // InternalSegment holds complete metadata and mutable lifecycle state for a segment.
 type InternalSegment struct {
-	ID            SegmentID    `json:"id"`
-	Path          string       `json:"path"`
-	Sequence      uint64       `json:"sequence"`
-	StartPTS90k   int64        `json:"start_pts_90k"`
-	EndPTS90k     int64        `json:"end_pts_90k"`
-	PTSEpoch      uint32       `json:"pts_epoch"`
-	StartWallTime time.Time    `json:"start_wall_time"`
-	EndWallTime   time.Time    `json:"end_wall_time"`
-	SizeBytes     int64        `json:"size_bytes"`
-	Discontinuity bool         `json:"discontinuity"`
-	CodecHash     string       `json:"codec_hash"`
-	State         SegmentState `json:"state"`
+	ID             SegmentID           `json:"id"`
+	Path           string              `json:"path"`
+	Sequence       uint64              `json:"sequence"`
+	StartPTS90k    int64               `json:"start_pts_90k"`
+	EndPTS90k      int64               `json:"end_pts_90k"`
+	PTSEpoch       uint32              `json:"pts_epoch"`
+	StartWallTime  time.Time           `json:"start_wall_time"`
+	EndWallTime    time.Time           `json:"end_wall_time"`
+	SizeBytes      int64               `json:"size_bytes"`
+	Discontinuity  bool                `json:"discontinuity"`
+	CodecHash      string              `json:"codec_hash"`
+	State          SegmentState        `json:"state"`
+	ReservationIDs map[string]struct{} `json:"reservation_ids"`
+}
+
+// IsReserved returns true if one or more active reservations hold this segment.
+func (seg *InternalSegment) IsReserved() bool {
+	return len(seg.ReservationIDs) > 0
 }
 
 // SegmentHandle exposes immutable segment metadata to callers (reservations & jobs).

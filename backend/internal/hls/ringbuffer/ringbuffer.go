@@ -131,6 +131,7 @@ type Registry struct {
 	maxSegments int
 	closeCh     chan struct{}
 	closeOnce   sync.Once
+	lifecycle   *LifecycleManager
 }
 
 // NewRegistry initializes a Registry.
@@ -140,6 +141,10 @@ func NewRegistry(maxSegments int) *Registry {
 		maxSegments: maxSegments,
 		closeCh:     make(chan struct{}),
 	}
+	idx := NewSegmentIndex()
+	store := NewReservationStore(idx, DefaultReservationLimits(), "")
+	r.lifecycle = NewLifecycleManager(store, idx)
+	_ = r.lifecycle.RunRecovery()
 	go r.cleanupLoop()
 	return r
 }
@@ -196,6 +201,9 @@ func (r *Registry) Stop() {
 }
 
 func (r *Registry) cleanupLoop() {
+	// Block cleanup until startup recovery lifecycle reaches CLEANUP_ENABLED
+	r.lifecycle.WaitCleanupEnabled()
+
 	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 	for {

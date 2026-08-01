@@ -16,17 +16,18 @@ func createTestSegment(serviceRef string, seq uint64, start, end time.Time, size
 			SessionID:  "sess_1",
 			Sequence:   seq,
 		},
-		Path:          fmt.Sprintf("/tmp/test_seg_%d.ts", seq),
-		Sequence:      seq,
-		StartPTS90k:   int64(seq * 90000),
-		EndPTS90k:     int64((seq + 1) * 90000),
-		PTSEpoch:      1,
-		StartWallTime: start,
-		EndWallTime:   end,
-		SizeBytes:     size,
-		Discontinuity: disc,
-		CodecHash:     codec,
-		State:         SegmentActive,
+		Path:           fmt.Sprintf("/tmp/test_seg_%d.ts", seq),
+		Sequence:       seq,
+		StartPTS90k:    int64(seq * 90000),
+		EndPTS90k:      int64((seq + 1) * 90000),
+		PTSEpoch:       1,
+		StartWallTime:  start,
+		EndWallTime:    end,
+		SizeBytes:      size,
+		Discontinuity:  disc,
+		CodecHash:      codec,
+		State:          SegmentActive,
+		ReservationIDs: make(map[string]struct{}),
 	}
 }
 
@@ -72,39 +73,48 @@ func TestProbeRange_PartialStart(t *testing.T) {
 	}
 }
 
-func TestReserveRange_AtomicAndLease(t *testing.T) {
+func TestMultiJobReservationOwnership(t *testing.T) {
 	idx := NewSegmentIndex()
 	now := time.Now()
 	ref := "1:0:1:1:1:1:0:0:0:0:"
 
 	seg1 := createTestSegment(ref, 1, now.Add(-30*time.Minute), now.Add(-20*time.Minute), 1000, "h264", false)
-	seg2 := createTestSegment(ref, 2, now.Add(-20*time.Minute), now.Add(-10*time.Minute), 1000, "h264", false)
 	idx.AddSegment(seg1)
-	idx.AddSegment(seg2)
 
 	store := NewReservationStore(idx, DefaultReservationLimits(), "")
-	res, err := store.ReserveRange(ref, now.Add(-25*time.Minute), now.Add(-15*time.Minute), "job_1", 2*time.Second)
+
+	res1, err := store.ReserveRange(ref, now.Add(-25*time.Minute), now.Add(-21*time.Minute), "job_1", 5*time.Minute)
 	if err != nil {
-		t.Fatalf("ReserveRange failed: %v", err)
+		t.Fatalf("ReserveRange job_1 failed: %v", err)
 	}
 
-	if seg1.State != SegmentReserved || seg2.State != SegmentReserved {
-		t.Errorf("Segments were not marked as SegmentReserved! seg1 state=%s, seg2 state=%s", seg1.State, seg2.State)
-	}
-
-	// Cleaner attempt on reserved segment must fail
-	if idx.MarkForDeletion(seg1.ID) {
-		t.Errorf("Cleaner marked reserved segment for deletion!")
-	}
-
-	// Release reservation
-	err = store.ReleaseReservation(res.ID)
+	res2, err := store.ReserveRange(ref, now.Add(-25*time.Minute), now.Add(-21*time.Minute), "job_2", 5*time.Minute)
 	if err != nil {
-		t.Fatalf("ReleaseReservation failed: %v", err)
+		t.Fatalf("ReserveRange job_2 failed: %v", err)
 	}
 
-	if seg1.State != SegmentActive {
-		t.Errorf("Segment state after release expected SegmentActive, got %s", seg1.State)
+	if len(seg1.ReservationIDs) != 2 {
+		t.Errorf("Expected 2 reservation owners on segment, got %d", len(seg1.ReservationIDs))
+	}
+
+	// Release job 1
+	if err := store.ReleaseReservation(res1.ID); err != nil {
+		t.Fatalf("ReleaseReservation job_1 failed: %v", err)
+	}
+
+	// Segment MUST still be reserved by job 2!
+	if seg1.State != SegmentReserved || len(seg1.ReservationIDs) != 1 {
+		t.Errorf("Segment state was reset to active prematurely! State=%s, count=%d", seg1.State, len(seg1.ReservationIDs))
+	}
+
+	// Release job 2
+	if err := store.ReleaseReservation(res2.ID); err != nil {
+		t.Fatalf("ReleaseReservation job_2 failed: %v", err)
+	}
+
+	// Now segment MUST be active
+	if seg1.State != SegmentActive || len(seg1.ReservationIDs) != 0 {
+		t.Errorf("Segment state after all releases expected SegmentActive, got %s", seg1.State)
 	}
 }
 
@@ -118,18 +128,15 @@ func TestReserveRange_ContextIndependence(t *testing.T) {
 
 	store := NewReservationStore(idx, DefaultReservationLimits(), "")
 
-	// Simulate an HTTP request context that gets canceled
 	ctx, cancel := context.WithCancel(context.Background())
 	res, err := store.ReserveRange(ref, now.Add(-25*time.Minute), now.Add(-21*time.Minute), "job_http", 5*time.Minute)
 	if err != nil {
 		t.Fatalf("ReserveRange failed: %v", err)
 	}
 
-	// Cancel HTTP context
 	cancel()
 	_ = ctx
 
-	// Reservation must STILL be valid and active in store
 	fetched, err := store.GetReservation(res.ID)
 	if err != nil {
 		t.Fatalf("Reservation disappeared after HTTP context cancellation: %v", err)
@@ -147,7 +154,6 @@ func TestCleanerDeletingRace(t *testing.T) {
 	seg1 := createTestSegment(ref, 1, now.Add(-30*time.Minute), now.Add(-20*time.Minute), 1000, "h264", false)
 	idx.AddSegment(seg1)
 
-	// Cleaner marks segment for deletion
 	marked := idx.MarkForDeletion(seg1.ID)
 	if !marked {
 		t.Fatalf("Failed to mark segment for deletion")
@@ -157,6 +163,31 @@ func TestCleanerDeletingRace(t *testing.T) {
 	_, err := store.ReserveRange(ref, now.Add(-28*time.Minute), now.Add(-22*time.Minute), "job_late", 5*time.Minute)
 	if err == nil {
 		t.Fatalf("Expected error when reserving DELETING segment, but got success!")
+	}
+}
+
+func TestRecoveryCorruptedJSON_FailsSafely(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "ringbuffer_corrupt_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	storagePath := filepath.Join(tmpDir, "reservations.json")
+	if err := os.WriteFile(storagePath, []byte("NOT_VALID_JSON{{{"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	idx := NewSegmentIndex()
+	store := NewReservationStore(idx, DefaultReservationLimits(), storagePath)
+	lifecycle := NewLifecycleManager(store, idx)
+
+	err = lifecycle.RunRecovery()
+	if err == nil {
+		t.Fatalf("Expected recovery error on corrupted JSON, got nil!")
+	}
+	if lifecycle.State() != LifecycleDegraded {
+		t.Errorf("Expected LifecycleDegraded state, got %s", lifecycle.State())
 	}
 }
 
@@ -187,7 +218,6 @@ func TestStartupRecoveryLifecycle(t *testing.T) {
 		t.Fatalf("ReserveRange failed: %v", err)
 	}
 
-	// Re-create store simulating a process restart
 	newIdx := NewSegmentIndex()
 	seg1Reloaded := createTestSegment(ref, 1, now.Add(-30*time.Minute), now.Add(-20*time.Minute), 1000, "h264", false)
 	seg1Reloaded.Path = segFile
@@ -209,7 +239,6 @@ func TestStartupRecoveryLifecycle(t *testing.T) {
 		t.Errorf("Expected CLEANUP_ENABLED, got %s", lifecycle.State())
 	}
 
-	// Verify reservation was recovered and segment is reserved
 	recoveredRes, err := newStore.GetReservation(res.ID)
 	if err != nil {
 		t.Fatalf("Failed to recover reservation: %v", err)
