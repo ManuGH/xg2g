@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import type { EpgEvent } from '../types';
+import type { EpgEvent, EpgChannel } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
 import { Button } from '../../../components/ui';
 import styles from './EpgEventDialog.module.css';
