@@ -19,7 +19,7 @@ services:
       - "127.0.0.1:9091:9090"
     volumes:
       - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./infra/monitoring/alerts-xg2g-phase5-3.yml:/etc/prometheus/alerts-xg2g-phase5-3.yml:ro
+      - ./infra/monitoring/alerts-xg2g.yml:/etc/prometheus/alerts-xg2g.yml:ro
       - prometheus-data:/prometheus
     networks:
       - monitoring
