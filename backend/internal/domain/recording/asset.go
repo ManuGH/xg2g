@@ -41,30 +41,32 @@ const (
 
 // RecordingAsset is the permanent, versioned domain model for media library entries.
 type RecordingAsset struct {
-	ID                  string            `json:"id"`
-	JobID               string            `json:"job_id"`
-	ProfileID           string            `json:"profile_id,omitempty"`
-	Title               string            `json:"title"`
-	ServiceRef          string            `json:"service_ref"`
-	EventID             string            `json:"event_id,omitempty"`
-	State               AssetState        `json:"state"`
-	BackendID           string            `json:"backend_id"`
-	ObjectKey           string            `json:"object_key"` // Relative path inside storage backend
-	Container           ContainerFormat   `json:"container"`  // "ts", "mp4"
-	VideoCodec          string            `json:"video_codec"`
-	AudioCodecs         []string          `json:"audio_codecs"`
-	DurationSeconds     int               `json:"duration_seconds"`
-	SizeBytes           int64             `json:"size_bytes"`
-	RecordedStart       time.Time         `json:"recorded_start"`
-	RecordedEnd         time.Time         `json:"recorded_end"`
-	FinalizedAt         *time.Time        `json:"finalized_at,omitempty"`
-	Completeness        AssetCompleteness `json:"completeness"`
-	GapCount            int               `json:"gap_count"`
-	MissingStartSeconds int               `json:"missing_start_seconds"`
-	MissingEndSeconds   int               `json:"missing_end_seconds"`
-	Version             uint64            `json:"version"`
-	CreatedAt           time.Time         `json:"created_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
+	ID                  string              `json:"id"`
+	JobID               string              `json:"job_id"`
+	ProfileID           string              `json:"profile_id,omitempty"`
+	Title               string              `json:"title"`
+	ServiceRef          string              `json:"service_ref"`
+	EventID             string              `json:"event_id,omitempty"`
+	State               AssetState          `json:"state"`
+	BackendID           string              `json:"backend_id"`
+	ObjectKey           string              `json:"object_key"` // Relative path inside storage backend
+	Container           ContainerFormat     `json:"container"`  // "ts", "mp4"
+	VideoCodec          string              `json:"video_codec"`
+	AudioCodecs         []string            `json:"audio_codecs"`
+	DurationSeconds     int                 `json:"duration_seconds"`
+	SizeBytes           int64               `json:"size_bytes"`
+	RecordedStart       time.Time           `json:"recorded_start"`
+	RecordedEnd         time.Time           `json:"recorded_end"`
+	FinalizedAt         *time.Time          `json:"finalized_at,omitempty"`
+	Completeness        AssetCompleteness   `json:"completeness"`
+	GapCount            int                 `json:"gap_count"`
+	MissingStartSeconds int                 `json:"missing_start_seconds"`
+	MissingEndSeconds   int                 `json:"missing_end_seconds"`
+	ManagementMode      AssetManagementMode `json:"management_mode"`
+	DeletePolicy        DeletePolicy        `json:"delete_policy"`
+	Version             uint64              `json:"version"`
+	CreatedAt           time.Time           `json:"created_at"`
+	UpdatedAt           time.Time           `json:"updated_at"`
 }
 
 // NewRecordingAsset initializes a new RecordingAsset in IN_PROGRESS state.
@@ -74,18 +76,20 @@ func NewRecordingAsset(id, jobID, title, serviceRef, backendID, objectKey string
 	}
 	now := time.Now()
 	return &RecordingAsset{
-		ID:           id,
-		JobID:        jobID,
-		Title:        title,
-		ServiceRef:   serviceRef,
-		State:        AssetInProgress,
-		BackendID:    backendID,
-		ObjectKey:    objectKey,
-		Container:    format,
-		Completeness: AssetUnknown,
-		Version:      1,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:             id,
+		JobID:          jobID,
+		Title:          title,
+		ServiceRef:     serviceRef,
+		State:          AssetInProgress,
+		BackendID:      backendID,
+		ObjectKey:      objectKey,
+		Container:      format,
+		Completeness:   AssetUnknown,
+		ManagementMode: ManagementXG2GManaged,
+		DeletePolicy:   DeleteAssetAndFile,
+		Version:        1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}, nil
 }
 

@@ -67,6 +67,9 @@ func (b *LocalNVMeStorageBackend) Open(ctx context.Context, objectKey string) (s
 	}
 	f, err := os.Open(filepath.Join(b.baseRoot, fullPath))
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, storage.ErrObjectNotFound
+		}
 		return nil, err
 	}
 	info, err := f.Stat()
@@ -93,6 +96,60 @@ func (b *LocalNVMeStorageBackend) OpenRange(ctx context.Context, objectKey strin
 		Reader: io.LimitReader(reader, length),
 		Closer: reader,
 	}, nil
+}
+
+func (b *LocalNVMeStorageBackend) CommitFile(ctx context.Context, srcLocalPath string, targetObjectKey string) error {
+	fullPath, err := recording.SanitizeAndValidateRelativePath(b.baseRoot, targetObjectKey)
+	if err != nil {
+		return err
+	}
+	targetAbsPath := filepath.Join(b.baseRoot, fullPath)
+	if err := os.MkdirAll(filepath.Dir(targetAbsPath), 0755); err != nil {
+		return err
+	}
+
+	data, err := os.ReadFile(srcLocalPath)
+	if err != nil {
+		return err
+	}
+	tmpPath := targetAbsPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, targetAbsPath)
+}
+
+func (b *LocalNVMeStorageBackend) Stat(ctx context.Context, objectKey string) (storage.ObjectInfo, error) {
+	fullPath, err := recording.SanitizeAndValidateRelativePath(b.baseRoot, objectKey)
+	if err != nil {
+		return storage.ObjectInfo{}, err
+	}
+	absPath := filepath.Join(b.baseRoot, fullPath)
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return storage.ObjectInfo{}, storage.ErrObjectNotFound
+		}
+		return storage.ObjectInfo{}, err
+	}
+	return storage.ObjectInfo{
+		ObjectKey: fullPath,
+		SizeBytes: info.Size(),
+		UpdatedAt: info.ModTime(),
+	}, nil
+}
+
+func (b *LocalNVMeStorageBackend) DeleteFile(ctx context.Context, targetObjectKey string) error {
+	fullPath, err := recording.SanitizeAndValidateRelativePath(b.baseRoot, targetObjectKey)
+	if err != nil {
+		return err
+	}
+	absPath := filepath.Join(b.baseRoot, fullPath)
+	err = os.Remove(absPath)
+	if err != nil && os.IsNotExist(err) {
+		return storage.ErrObjectNotFound
+	}
+	return err
 }
 
 type LocalObjectReader struct {
@@ -185,27 +242,18 @@ func TestRecordingPipeline_EndToEndIntegration(t *testing.T) {
 
 	// 4. Commit finalized file to target StorageBackend
 	targetRelPath := "TV-Recordings/Tatort Wien.ts"
-	cleanRelPath, err := recording.SanitizeAndValidateRelativePath(storageRoot, targetRelPath)
-	if err != nil {
-		t.Fatalf("SanitizeAndValidateRelativePath failed: %v", err)
+	if err := backend.CommitFile(ctx, report.FinalizedPath, targetRelPath); err != nil {
+		t.Fatalf("backend.CommitFile failed: %v", err)
 	}
 
-	targetAbsPath := filepath.Join(storageRoot, cleanRelPath)
-	if err := os.MkdirAll(filepath.Dir(targetAbsPath), 0755); err != nil {
-		t.Fatalf("MkdirAll target dir failed: %v", err)
-	}
-
-	// Copy staged file to target backend storage
-	stagedData, err := os.ReadFile(report.FinalizedPath)
-	if err != nil {
-		t.Fatalf("ReadFile FinalizedPath failed: %v", err)
-	}
-	if err := os.WriteFile(targetAbsPath, stagedData, 0644); err != nil {
-		t.Fatalf("WriteFile targetAbsPath failed: %v", err)
+	// Stat verification
+	info, err := backend.Stat(ctx, targetRelPath)
+	if err != nil || info.SizeBytes != report.TotalBytes {
+		t.Fatalf("backend.Stat failed or size mismatch: %v (size: %d, expected: %d)", err, info.SizeBytes, report.TotalBytes)
 	}
 
 	// 5. Create RecordingAsset atomically in AssetRepository
-	asset, err := recording.NewRecordingAsset("asset_e2e_888", job.ID, job.Title, job.ServiceRef, backend.ID(), cleanRelPath, recording.ContainerTS)
+	asset, err := recording.NewRecordingAsset("asset_e2e_888", job.ID, job.Title, job.ServiceRef, backend.ID(), targetRelPath, recording.ContainerTS)
 	if err != nil {
 		t.Fatalf("NewRecordingAsset failed: %v", err)
 	}

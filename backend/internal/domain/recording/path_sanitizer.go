@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -15,10 +16,61 @@ var (
 	ErrPathOutsideBackendRoot = errors.New("relative path resolves outside backend root boundary")
 	ErrIllegalPathCharacter   = errors.New("relative path contains illegal characters")
 	ErrAbsolutePathNotAllowed = errors.New("absolute or volume path not allowed for relative target")
+	ErrObjectKeyTooLong       = errors.New("object key or component exceeds maximum allowed length")
+)
+
+// Maximum length limits for object keys
+const (
+	MaxObjectKeyLength       = 1024
+	MaxComponentKeyLength    = 255
 )
 
 // Illegal characters for POSIX/Windows filenames: \ : * ? " < > |
 var illegalChars = []string{"\\", ":", "*", "?", "\"", "<", ">", "|"}
+
+// JoinObjectKey performs a backend-neutral POSIX slash path join with strict length & bounds checks.
+func JoinObjectKey(parts ...string) (string, error) {
+	var cleanParts []string
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		// Reject backslashes, absolute leading slashes, volume markers
+		if strings.Contains(trimmed, "\\") || strings.HasPrefix(trimmed, "/") || (len(trimmed) >= 2 && trimmed[1] == ':') {
+			return "", fmt.Errorf("%w: '%s'", ErrAbsolutePathNotAllowed, trimmed)
+		}
+		// Component checks
+		comps := strings.Split(trimmed, "/")
+		for _, comp := range comps {
+			if comp == "." || comp == ".." {
+				return "", fmt.Errorf("%w: contains '%s'", ErrPathOutsideBackendRoot, comp)
+			}
+			if strings.ContainsRune(comp, '\x00') {
+				return "", fmt.Errorf("%w: contains real NUL byte", ErrIllegalPathCharacter)
+			}
+			if len(comp) > MaxComponentKeyLength {
+				return "", fmt.Errorf("%w: component '%s' exceeds %d bytes", ErrObjectKeyTooLong, comp, MaxComponentKeyLength)
+			}
+			for _, ch := range illegalChars {
+				if strings.Contains(comp, ch) {
+					return "", fmt.Errorf("%w: '%s' in '%s'", ErrIllegalPathCharacter, ch, comp)
+				}
+			}
+		}
+		cleanParts = append(cleanParts, trimmed)
+	}
+
+	joined := path.Clean(path.Join(cleanParts...))
+	if len(joined) > MaxObjectKeyLength {
+		return "", fmt.Errorf("%w: total key exceeds %d bytes", ErrObjectKeyTooLong, MaxObjectKeyLength)
+	}
+	if joined == "." || joined == ".." || strings.HasPrefix(joined, "../") {
+		return "", fmt.Errorf("%w: '%s'", ErrPathOutsideBackendRoot, joined)
+	}
+
+	return joined, nil
+}
 
 // SanitizeAndValidateRelativePath performs a component-based bounds check ensuring relPath stays within backendRoot.
 func SanitizeAndValidateRelativePath(backendRoot string, relPath string) (string, error) {

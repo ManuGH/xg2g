@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	ErrInvalidProfileID     = errors.New("invalid recording profile ID")
-	ErrUnsupportedContainer = errors.New("unsupported container format")
+	ErrInvalidProfileID        = errors.New("invalid recording profile ID")
+	ErrUnsupportedContainer    = errors.New("unsupported container format")
+	ErrDeletionPolicyForbidden = errors.New("physical file deletion forbidden by management mode or policy")
 )
 
 // ContainerFormat defines supported output file formats.
@@ -86,4 +87,18 @@ func NewRecordingProfile(id, name, backendID, relPath string, format ContainerFo
 		ManagementMode:  ManagementXG2GManaged,
 		DeletePolicy:    DeleteAssetAndFile,
 	}, nil
+}
+
+// CanDeletePhysicalFile enforces domain rules governing physical file deletion.
+func CanDeletePhysicalFile(mode AssetManagementMode, policy DeletePolicy, force bool) error {
+	if mode == ManagementExternal && !force {
+		return fmt.Errorf("%w: external assets cannot delete physical files without force", ErrDeletionPolicyForbidden)
+	}
+	if mode == ManagementShared && policy == DeleteAssetOnly && !force {
+		return fmt.Errorf("%w: shared assets with DeleteAssetOnly policy require explicit confirmation/force to delete physical files", ErrDeletionPolicyForbidden)
+	}
+	if policy == DeleteAssetOnly && !force {
+		return fmt.Errorf("%w: DeleteAssetOnly policy forbids physical file deletion without force", ErrDeletionPolicyForbidden)
+	}
+	return nil
 }

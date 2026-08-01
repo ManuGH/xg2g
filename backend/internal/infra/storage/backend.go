@@ -5,49 +5,51 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 )
 
-// StorageType identifies the physical or protocol type of a storage backend.
+var (
+	ErrObjectNotFound = errors.New("storage object not found")
+)
+
+// StorageType indicates the underlying storage engine mechanism.
 type StorageType string
 
 const (
-	StorageTypeLocal  StorageType = "LOCAL"
-	StorageTypeUSB    StorageType = "USB"
-	StorageTypeNFS    StorageType = "NFS"
-	StorageTypeCIFS   StorageType = "CIFS"
-	StorageTypeS3     StorageType = "S3"
-	StorageTypeWebDAV StorageType = "WEBDAV"
+	StorageTypeLocal StorageType = "LOCAL"
+	StorageTypeNFS   StorageType = "NFS"
+	StorageTypeCIFS  StorageType = "CIFS"
+	StorageTypeS3    StorageType = "S3"
 )
 
-// StorageRole identifies the functional role assigned to a storage backend.
+// StorageRole defines the operational purpose of a storage backend.
 type StorageRole string
 
 const (
 	RoleRetroDVR        StorageRole = "RETRO_DVR"
 	RoleStaging         StorageRole = "STAGING"
 	RoleRecordingTarget StorageRole = "RECORDING_TARGET"
-	RoleArchiveTarget   StorageRole = "ARCHIVE_TARGET"
+	RoleArchive         StorageRole = "ARCHIVE"
 )
 
-// HealthState represents the operational status of a storage target.
+// HealthState indicates operational readiness.
 type HealthState string
 
 const (
-	HealthStateHealthy     HealthState = "HEALTHY"
-	HealthStateDegraded    HealthState = "DEGRADED"
-	HealthStateUnavailable HealthState = "UNAVAILABLE"
+	HealthStateHealthy  HealthState = "HEALTHY"
+	HealthStateDegraded HealthState = "DEGRADED"
+	HealthStateOffline  HealthState = "OFFLINE"
 )
 
-// HealthStatus details the current health check result of a storage backend.
+// HealthStatus details current backend availability.
 type HealthStatus struct {
 	State        HealthState `json:"state"`
 	Readable     bool        `json:"readable"`
 	Writable     bool        `json:"writable"`
-	LatencyMs    int64       `json:"latency_ms"`
-	LastCheckTime time.Time   `json:"last_check_time"`
-	LastError    string      `json:"last_error,omitempty"`
+	ErrorMessage string      `json:"error_message,omitempty"`
+	CheckedAt    time.Time   `json:"checked_at"`
 }
 
 // CapacityInfo details total, used, and available bytes on a storage target.
@@ -55,6 +57,13 @@ type CapacityInfo struct {
 	TotalBytes     int64 `json:"total_bytes"`
 	UsedBytes      int64 `json:"used_bytes"`
 	AvailableBytes int64 `json:"available_bytes"`
+}
+
+// ObjectInfo details metadata of a stored object.
+type ObjectInfo struct {
+	ObjectKey string    `json:"object_key"`
+	SizeBytes int64     `json:"size_bytes"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // StorageCapabilities describes supported filesystem and I/O features.
@@ -84,4 +93,7 @@ type StorageBackend interface {
 	Capacity(ctx context.Context) (CapacityInfo, error)
 	Open(ctx context.Context, objectKey string) (ObjectReader, error)
 	OpenRange(ctx context.Context, objectKey string, offset, length int64) (io.ReadCloser, error)
+	CommitFile(ctx context.Context, srcLocalPath string, targetObjectKey string) error
+	Stat(ctx context.Context, objectKey string) (ObjectInfo, error)
+	DeleteFile(ctx context.Context, targetObjectKey string) error
 }
