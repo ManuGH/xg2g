@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
 	"html"
 	"net"
@@ -68,6 +69,12 @@ type Client struct {
 
 	// Circuit Breaker for fault tolerance (v2.2.0+)
 	cb *resilience.CircuitBreaker
+
+	// Timer list caching & request deduplication (2026 Resilience)
+	timerCacheMu sync.RWMutex
+	timerCache   []Timer
+	timerCacheAt time.Time
+	timerGroup   singleflight.Group
 }
 
 // Cacher provides caching capabilities for OpenWebIF requests.

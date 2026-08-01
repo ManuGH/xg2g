@@ -12,22 +12,77 @@ import (
 	"time"
 )
 
-// GetTimers retrieves the list of timers from the receiver.
+const defaultTimerCacheTTL = 5 * time.Second
+
+// InvalidateTimerCache clears the cached timer list (e.g. after a mutation).
+func (c *Client) InvalidateTimerCache() {
+	c.timerCacheMu.Lock()
+	c.timerCache = nil
+	c.timerCacheAt = time.Time{}
+	c.timerCacheMu.Unlock()
+}
+
+// GetTimers retrieves the list of timers from the receiver with 5s caching,
+// singleflight request deduplication, bounded timeout, and last-known-good fallback.
 func (c *Client) GetTimers(ctx context.Context) ([]Timer, error) {
-	// Timers change frequently, so we don't cache them aggressively
-	// or we use a very short TTL if we did. For now, no caching.
-	body, err := c.get(ctx, "/api/timerlist", "timers.list", nil)
+	c.timerCacheMu.RLock()
+	if c.timerCache != nil && time.Since(c.timerCacheAt) < defaultTimerCacheTTL {
+		cached := make([]Timer, len(c.timerCache))
+		copy(cached, c.timerCache)
+		c.timerCacheMu.RUnlock()
+		return cached, nil
+	}
+	c.timerCacheMu.RUnlock()
+
+	val, err, _ := c.timerGroup.Do("timers.list", func() (interface{}, error) {
+		c.timerCacheMu.RLock()
+		if c.timerCache != nil && time.Since(c.timerCacheAt) < defaultTimerCacheTTL {
+			cached := make([]Timer, len(c.timerCache))
+			copy(cached, c.timerCache)
+			c.timerCacheMu.RUnlock()
+			return cached, nil
+		}
+		c.timerCacheMu.RUnlock()
+
+		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		body, err := c.get(reqCtx, "/api/timerlist", "timers.list", nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var payload TimerListResponse
+		if err := json.Unmarshal(body, &payload); err != nil {
+			c.loggerFor(ctx).Error().Err(err).Str("event", "openwebif.decode").Str("operation", "timers.list").Msg("failed to decode timer list")
+			return nil, err
+		}
+
+		c.timerCacheMu.Lock()
+		c.timerCache = payload.Timers
+		c.timerCacheAt = time.Now()
+		c.timerCacheMu.Unlock()
+
+		return payload.Timers, nil
+	})
+
 	if err != nil {
+		c.timerCacheMu.RLock()
+		if c.timerCache != nil {
+			cached := make([]Timer, len(c.timerCache))
+			copy(cached, c.timerCache)
+			c.timerCacheMu.RUnlock()
+			c.loggerFor(ctx).Warn().Err(err).Msg("OpenWebIF timer fetch failed or timed out; serving Last-Known-Good cached timers")
+			return cached, nil
+		}
+		c.timerCacheMu.RUnlock()
 		return nil, err
 	}
 
-	var payload TimerListResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		c.loggerFor(ctx).Error().Err(err).Str("event", "openwebif.decode").Str("operation", "timers.list").Msg("failed to decode timer list")
-		return nil, err
-	}
-
-	return payload.Timers, nil
+	timers := val.([]Timer)
+	result := make([]Timer, len(timers))
+	copy(result, timers)
+	return result, nil
 }
 
 // AddTimer schedules a new recording.
@@ -59,6 +114,7 @@ func (c *Client) AddTimer(ctx context.Context, sRef string, begin, end int64, na
 		return timerOperationError("timers.add", http.StatusOK, resp.Message)
 	}
 
+	c.InvalidateTimerCache()
 	return nil
 }
 
@@ -85,6 +141,7 @@ func (c *Client) DeleteTimer(ctx context.Context, sRef string, begin, end int64)
 		return timerOperationError("timers.delete", http.StatusOK, resp.Message)
 	}
 
+	c.InvalidateTimerCache()
 	return nil
 }
 
@@ -107,6 +164,9 @@ func (c *Client) UpdateTimer(ctx context.Context, oldSRef string, oldBegin, oldE
 	nativeFlavor := TimerChangeFlavorUnknown
 
 	defer func() {
+		if result == "success" || result == "fallback_success" {
+			c.InvalidateTimerCache()
+		}
 		observeTimerUpdate(result, reason, nativeFlavor, cap)
 	}()
 
