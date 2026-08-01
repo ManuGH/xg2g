@@ -310,7 +310,6 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     channelName: input.channel?.name ?? null,
     programmeTitle: input.playbackMode === 'LIVE' ? input.liveNowPlaying.title : (input.channel?.name ?? null),
     programmeDesc: input.playbackMode === 'LIVE' ? input.liveNowPlaying.desc : null,
-    serviceRef: input.sRef || null,
     useOverlayLayout: Boolean(input.onClose),
     userIdle: input.isIdle,
     showCloseButton: Boolean(input.onClose),
