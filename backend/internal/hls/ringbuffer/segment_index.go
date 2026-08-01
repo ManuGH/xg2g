@@ -19,6 +19,9 @@ func NewSegmentIndex() *SegmentIndex {
 
 // AddSegment inserts a new segment into the index in sequence order.
 func (idx *SegmentIndex) AddSegment(seg *InternalSegment) {
+	if seg.ReservationIDs == nil {
+		seg.ReservationIDs = make(map[string]struct{})
+	}
 	service := seg.ID.ServiceRef
 	segments := idx.byService[service]
 	segments = append(segments, seg)
@@ -68,7 +71,7 @@ func (idx *SegmentIndex) MarkForDeletion(id SegmentID) bool {
 	if !ok {
 		return false
 	}
-	if seg.State == SegmentReserved {
+	if seg.IsReserved() {
 		return false // Cannot delete a reserved segment
 	}
 	seg.State = SegmentDeleting

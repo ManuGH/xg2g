@@ -2,6 +2,8 @@ package ringbuffer
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -14,6 +16,7 @@ const (
 	LifecycleRecovering
 	LifecycleReady
 	LifecycleCleanupEnabled
+	LifecycleDegraded
 )
 
 func (s LifecycleState) String() string {
@@ -26,10 +29,14 @@ func (s LifecycleState) String() string {
 		return "READY"
 	case LifecycleCleanupEnabled:
 		return "CLEANUP_ENABLED"
+	case LifecycleDegraded:
+		return "DEGRADED"
 	default:
 		return "UNKNOWN"
 	}
 }
+
+var ErrRecoveryFailed = errors.New("ringbuffer recovery failed: state degraded")
 
 // LifecycleManager controls startup recovery before enabling ringbuffer segment cleanup.
 type LifecycleManager struct {
@@ -56,41 +63,57 @@ func (lm *LifecycleManager) State() LifecycleState {
 	return lm.state
 }
 
-// RunRecovery executes the startup recovery sequence.
+// RunRecovery executes the fail-safe startup recovery sequence.
 func (lm *LifecycleManager) RunRecovery() error {
 	lm.mu.Lock()
 	lm.state = LifecycleRecovering
 	lm.mu.Unlock()
 
-	// Load persistent reservations
 	lm.store.mu.Lock()
 	defer lm.store.mu.Unlock()
 
 	if lm.store.storagePath != "" {
-		if data, err := os.ReadFile(lm.store.storagePath); err == nil {
+		data, err := os.ReadFile(lm.store.storagePath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				lm.mu.Lock()
+				lm.state = LifecycleDegraded
+				lm.mu.Unlock()
+				return fmt.Errorf("failed to read reservations state file: %w", err)
+			}
+		} else {
 			var loaded map[string]*Reservation
-			if err := json.Unmarshal(data, &loaded); err == nil {
-				now := time.Now()
-				for id, res := range loaded {
-					if now.After(res.ExpiresAt) {
-						continue // Skip expired reservations
-					}
-					// Verify segments exist and lock them
-					var validSegs []SegmentID
-					for _, segID := range res.SegmentIDs {
-						if seg, ok := lm.index.GetByID(segID); ok {
-							if _, err := os.Stat(seg.Path); err == nil {
-								seg.State = SegmentReserved
-								validSegs = append(validSegs, segID)
-							} else {
-								seg.State = SegmentMissing
-								res.Status = CompletenessGapped
+			if err := json.Unmarshal(data, &loaded); err != nil {
+				lm.mu.Lock()
+				lm.state = LifecycleDegraded
+				lm.mu.Unlock()
+				return fmt.Errorf("failed to unmarshal corrupted reservations JSON: %w", err)
+			}
+
+			now := time.Now()
+			for id, res := range loaded {
+				if now.After(res.ExpiresAt) {
+					continue // Skip expired reservations
+				}
+				// Verify segments exist and lock them
+				var validSegs []SegmentID
+				for _, segID := range res.SegmentIDs {
+					if seg, ok := lm.index.GetByID(segID); ok {
+						if _, err := os.Stat(seg.Path); err == nil {
+							if seg.ReservationIDs == nil {
+								seg.ReservationIDs = make(map[string]struct{})
 							}
+							seg.ReservationIDs[id] = struct{}{}
+							seg.State = SegmentReserved
+							validSegs = append(validSegs, segID)
+						} else {
+							seg.State = SegmentMissing
+							res.Status = CompletenessGapped
 						}
 					}
-					res.SegmentIDs = validSegs
-					lm.store.reservations[id] = res
 				}
+				res.SegmentIDs = validSegs
+				lm.store.reservations[id] = res
 			}
 		}
 	}
