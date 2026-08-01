@@ -42,7 +42,7 @@ func TestPathSanitizer_BoundsCheck(t *testing.T) {
 		"/absolute/path.ts",
 		"C:\\Windows\\system32",
 		"illegal:character.ts",
-		"null\x00byte.ts", // Real NUL byte!
+		"null" + string([]byte{0}) + "byte.ts", // Real NUL byte constructed unambiguously!
 	}
 	for _, p := range invalidPaths {
 		_, err := SanitizeAndValidateRelativePath(tmpDir, p)
@@ -104,12 +104,12 @@ func TestDiskAssetRepository_OptimisticConcurrency(t *testing.T) {
 		t.Fatalf("NewRecordingAsset failed: %v", err)
 	}
 
-	// New asset save requires expectedVersion 0 or 1
-	if err := repo.Save(ctx, asset, 1); err != nil {
+	// New asset save requires expectedVersion 0
+	if err := repo.Save(ctx, asset, 0); err != nil {
 		t.Fatalf("repo.Save initial failed: %v", err)
 	}
-	if asset.Version != 2 {
-		t.Fatalf("Expected saved asset version to be incremented to 2, got %d", asset.Version)
+	if asset.Version != 1 {
+		t.Fatalf("Expected saved asset version to be incremented to 1, got %d", asset.Version)
 	}
 
 	// Fetch asset
@@ -127,18 +127,38 @@ func TestDiskAssetRepository_OptimisticConcurrency(t *testing.T) {
 		t.Fatalf("TransitionState failed: %v", err)
 	}
 
-	// Save with exact expected version = 2
-	if err := repo.Save(ctx, updated, 2); err != nil {
-		t.Fatalf("repo.Save updated asset with version 2 failed: %v", err)
+	// Save with exact expected version = 1
+	if err := repo.Save(ctx, updated, 1); err != nil {
+		t.Fatalf("repo.Save updated asset with version 1 failed: %v", err)
 	}
-	if updated.Version != 3 {
-		t.Fatalf("Expected updated asset version to be incremented to 3, got %d", updated.Version)
+	if updated.Version != 2 {
+		t.Fatalf("Expected updated asset version to be incremented to 2, got %d", updated.Version)
 	}
 
-	// Concurrent save with outdated version = 2 (expected 3!) MUST FAIL
+	// Concurrent save with outdated version = 1 (expected 2!) MUST FAIL
 	outdated, _ := fetched.TransitionState(AssetOffline)
-	if err := repo.Save(ctx, outdated, 2); err == nil {
-		t.Errorf("Expected optimistic concurrency error for outdated version 2, got nil")
+	if err := repo.Save(ctx, outdated, 1); err == nil {
+		t.Errorf("Expected optimistic concurrency error for outdated version 1, got nil")
+	}
+}
+
+func TestRecordingAsset_DeepCloneIsolation(t *testing.T) {
+	finTime := time.Now()
+	orig := &RecordingAsset{
+		ID:          "asset_clone_1",
+		AudioCodecs: []string{"aac", "ac3"},
+		FinalizedAt: &finTime,
+	}
+
+	cloned := orig.Clone()
+	cloned.AudioCodecs[0] = "mp3"
+	*cloned.FinalizedAt = finTime.Add(1 * time.Hour)
+
+	if orig.AudioCodecs[0] == "mp3" {
+		t.Errorf("Mutating cloned AudioCodecs modified original asset!")
+	}
+	if orig.FinalizedAt.Equal(*cloned.FinalizedAt) {
+		t.Errorf("Mutating cloned FinalizedAt modified original asset!")
 	}
 }
 

@@ -72,8 +72,8 @@ func (r *DiskAssetRepository) Save(ctx context.Context, asset *RecordingAsset, e
 		if existing.Version != expectedVersion {
 			return fmt.Errorf("%w: existing version %d != expected version %d", ErrAssetConcurrency, existing.Version, expectedVersion)
 		}
-	} else if expectedVersion != 0 && expectedVersion != 1 {
-		return fmt.Errorf("%w: new asset requires expectedVersion 0 or 1, got %d", ErrAssetConcurrency, expectedVersion)
+	} else if expectedVersion != 0 {
+		return fmt.Errorf("%w: new asset requires expectedVersion 0, got %d", ErrAssetConcurrency, expectedVersion)
 	}
 
 	// Deep clone asset before storing
@@ -204,14 +204,17 @@ func (r *DiskAssetRepository) saveLocked(assets map[string]*RecordingAsset) erro
 		return fmt.Errorf("failed to rename asset repository file: %w", err)
 	}
 
-	// Parent directory fsync
+	// Parent directory fsync with explicit error propagation
 	dirPath := filepath.Dir(r.storagePath)
-	if pDir, err := os.Open(dirPath); err == nil {
-		if err := pDir.Sync(); err != nil {
-			_ = pDir.Close()
-			return fmt.Errorf("failed to fsync asset repository parent directory: %w", err)
-		}
-		_ = pDir.Close()
+	pDir, err := os.Open(dirPath)
+	if err != nil {
+		return fmt.Errorf("failed to open asset repository directory for fsync: %w", err)
 	}
+	if err := pDir.Sync(); err != nil {
+		_ = pDir.Close()
+		return fmt.Errorf("failed to fsync asset repository parent directory: %w", err)
+	}
+	_ = pDir.Close()
+
 	return nil
 }
