@@ -11,15 +11,15 @@ import (
 )
 
 var (
-	ErrReservationNotFound     = errors.New("reservation not found")
-	ErrReservationExpired      = errors.New("reservation expired")
-	ErrInvalidLeaseDuration    = errors.New("invalid lease duration: must be greater than 0")
-	ErrLimitExceededGlobal     = errors.New("global reservation byte/count limit exceeded")
-	ErrLimitExceededService    = errors.New("service reservation byte/count limit exceeded")
+	ErrReservationNotFound      = errors.New("reservation not found")
+	ErrReservationExpired       = errors.New("reservation expired")
+	ErrInvalidLeaseDuration     = errors.New("invalid lease duration: must be greater than 0")
+	ErrLimitExceededGlobal      = errors.New("global reservation byte/count limit exceeded")
+	ErrLimitExceededService     = errors.New("service reservation byte/count limit exceeded")
 	ErrLimitExceededMaxSegments = errors.New("reservation max segment limit exceeded")
-	ErrLeaseExceedsMaxDuration = errors.New("lease duration exceeds maximum allowed limit")
-	ErrNoSegmentsAvailable     = errors.New("no valid segments available in requested range")
-	ErrSegmentMissing          = errors.New("one or more reserved segments are missing or deleting")
+	ErrLeaseExceedsMaxDuration  = errors.New("lease duration exceeds maximum allowed limit")
+	ErrNoSegmentsAvailable      = errors.New("no valid segments available in requested range")
+	ErrSegmentMissing           = errors.New("one or more reserved segments are missing or deleting")
 )
 
 // ReservationStore provides atomic, thread-safe reservation management backed by SegmentIndex.
@@ -66,10 +66,32 @@ func (rs *ReservationStore) reaperLoop() {
 			return
 		case <-ticker.C:
 			rs.mu.Lock()
-			rs.purgeExpiredLocked()
+			purged := rs.purgeExpiredLocked()
+			if purged {
+				_ = rs.saveStateLocked()
+			}
 			rs.mu.Unlock()
 		}
 	}
+}
+
+// HasReservationsForSession checks if any active reservation belongs to sessionID.
+func (rs *ReservationStore) HasReservationsForSession(sessionID string) bool {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	now := time.Now()
+	for _, res := range rs.reservations {
+		if now.After(res.ExpiresAt) {
+			continue
+		}
+		for _, segID := range res.SegmentIDs {
+			if segID.SessionID == sessionID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ProbeRange evaluates ringbuffer segment completeness without creating a reservation.
@@ -167,7 +189,6 @@ func (rs *ReservationStore) ReserveRange(serviceRef string, start, end time.Time
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
-	// Clean up any expired reservations prior to evaluating limits
 	rs.purgeExpiredLocked()
 
 	if leaseDuration > rs.limits.MaxLeaseDuration {
@@ -185,7 +206,6 @@ func (rs *ReservationStore) ReserveRange(serviceRef string, start, end time.Time
 		return Reservation{}, ErrLimitExceededMaxSegments
 	}
 
-	// Evaluate global and per-service limits
 	var globalBytes int64
 	var globalCount int
 	var serviceBytes int64
@@ -236,9 +256,7 @@ func (rs *ReservationStore) ReserveRange(serviceRef string, start, end time.Time
 
 	rs.reservations[res.ID] = res
 
-	// Atomic persistence: If persistence fails, ROLL BACK segment locks!
 	if err := rs.saveStateLocked(); err != nil {
-		// Rollback locks
 		for _, seg := range segments {
 			delete(seg.ReservationIDs, resID)
 			if len(seg.ReservationIDs) == 0 {
@@ -288,7 +306,8 @@ func (rs *ReservationStore) ListReservedSegments(reservationID string) ([]Segmen
 		}
 		handles = append(handles, SegmentHandle{
 			ID:            seg.ID,
-			Path:          seg.Path,
+			Location:      seg.Location,
+			DurationSec:   seg.DurationSec,
 			Sequence:      seg.Sequence,
 			StartPTS90k:   seg.StartPTS90k,
 			EndPTS90k:     seg.EndPTS90k,
@@ -298,6 +317,7 @@ func (rs *ReservationStore) ListReservedSegments(reservationID string) ([]Segmen
 			SizeBytes:     seg.SizeBytes,
 			Discontinuity: seg.Discontinuity,
 			CodecHash:     seg.CodecHash,
+			Data:          seg.Data,
 		})
 	}
 
@@ -318,7 +338,6 @@ func (rs *ReservationStore) RenewReservation(reservationID string, leaseDuration
 		return ErrReservationNotFound
 	}
 
-	// Reject renewal if already expired
 	if time.Now().After(res.ExpiresAt) {
 		return ErrReservationExpired
 	}
@@ -368,16 +387,19 @@ func (rs *ReservationStore) releaseReservationLocked(res *Reservation) {
 	delete(rs.reservations, res.ID)
 }
 
-func (rs *ReservationStore) purgeExpiredLocked() {
+func (rs *ReservationStore) purgeExpiredLocked() bool {
 	now := time.Now()
+	purged := false
 	for _, res := range rs.reservations {
 		if now.After(res.ExpiresAt) {
 			if rs.onExpire != nil {
 				rs.onExpire(res)
 			}
 			rs.releaseReservationLocked(res)
+			purged = true
 		}
 	}
+	return purged
 }
 
 // Atomic file persistence (reservations.json.tmp -> fsync -> rename)
@@ -418,7 +440,6 @@ func (rs *ReservationStore) saveStateLocked() error {
 		return err
 	}
 
-	// Sync parent directory
 	if dirFile, err := os.Open(dir); err == nil {
 		_ = dirFile.Sync()
 		_ = dirFile.Close()

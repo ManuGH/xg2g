@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+// StorageKind indicates whether a segment payload resides in RAM or on disk.
+type StorageKind string
+
+const (
+	StorageKindRAM  StorageKind = "RAM"
+	StorageKindDisk StorageKind = "DISK"
+)
+
 // SegmentKind distinguishes full segments from LL-HLS partial segments.
 type SegmentKind string
 
@@ -51,6 +59,24 @@ func (id SegmentID) String() string {
 	return fmt.Sprintf("%s:%s:%s:%d:%d", id.ServiceRef, id.SessionID, id.Kind, id.Sequence, id.PartIndex)
 }
 
+// SegmentLocation describes the exact storage location and payload type for a segment.
+type SegmentLocation struct {
+	Kind     StorageKind `json:"kind"`
+	Filename string      `json:"filename"`
+	Path     string      `json:"path,omitempty"`
+}
+
+// SegmentMetadata contains media-derived timing, sequence, and codec info parsed from HLS playlists.
+type SegmentMetadata struct {
+	Duration      time.Duration
+	StartPTS90k   int64
+	EndPTS90k     int64
+	PTSEpoch      uint32
+	ProgramTime   *time.Time
+	Discontinuity bool
+	CodecHash     string
+}
+
 // Completeness describes the availability status of requested segments in the ringbuffer.
 type Completeness string
 
@@ -76,7 +102,7 @@ type Gap struct {
 // InternalSegment holds complete metadata and mutable lifecycle state for a segment.
 type InternalSegment struct {
 	ID             SegmentID           `json:"id"`
-	Path           string              `json:"path"`
+	Location       SegmentLocation     `json:"location"`
 	DurationSec    float64             `json:"duration_sec"`
 	Sequence       uint64              `json:"sequence"`
 	StartPTS90k    int64               `json:"start_pts_90k"`
@@ -89,6 +115,7 @@ type InternalSegment struct {
 	CodecHash      string              `json:"codec_hash"`
 	State          SegmentState        `json:"state"`
 	ReservationIDs map[string]struct{} `json:"reservation_ids"`
+	Data           []byte              `json:"-"` // Non-nil if StorageKindRAM
 }
 
 // IsReserved returns true if one or more active reservations hold this segment.
@@ -98,18 +125,19 @@ func (seg *InternalSegment) IsReserved() bool {
 
 // SegmentHandle exposes immutable segment metadata to callers (reservations & jobs).
 type SegmentHandle struct {
-	ID            SegmentID `json:"id"`
-	Path          string    `json:"path"`
-	DurationSec   float64   `json:"duration_sec"`
-	Sequence      uint64    `json:"sequence"`
-	StartPTS90k   int64     `json:"start_pts_90k"`
-	EndPTS90k     int64     `json:"end_pts_90k"`
-	PTSEpoch      uint32    `json:"pts_epoch"`
-	StartWallTime time.Time `json:"start_wall_time"`
-	EndWallTime   time.Time `json:"end_wall_time"`
-	SizeBytes     int64     `json:"size_bytes"`
-	Discontinuity bool      `json:"discontinuity"`
-	CodecHash     string    `json:"codec_hash"`
+	ID            SegmentID       `json:"id"`
+	Location      SegmentLocation `json:"location"`
+	DurationSec   float64         `json:"duration_sec"`
+	Sequence      uint64          `json:"sequence"`
+	StartPTS90k   int64           `json:"start_pts_90k"`
+	EndPTS90k     int64           `json:"end_pts_90k"`
+	PTSEpoch      uint32          `json:"pts_epoch"`
+	StartWallTime time.Time       `json:"start_wall_time"`
+	EndWallTime   time.Time       `json:"end_wall_time"`
+	SizeBytes     int64           `json:"size_bytes"`
+	Discontinuity bool            `json:"discontinuity"`
+	CodecHash     string          `json:"codec_hash"`
+	Data          []byte          `json:"-"` // Available if StorageKindRAM
 }
 
 // RangeProbe represents the result of probing segment availability over a time window.

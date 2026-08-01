@@ -99,7 +99,12 @@ func (lm *LifecycleManager) RunRecovery() error {
 				var validSegs []SegmentID
 				for _, segID := range res.SegmentIDs {
 					if seg, ok := lm.index.GetByID(segID); ok {
-						if _, err := os.Stat(seg.Path); err == nil {
+						exists := seg.Location.Kind == StorageKindRAM
+						if seg.Location.Kind == StorageKindDisk && seg.Location.Path != "" {
+							_, err := os.Stat(seg.Location.Path)
+							exists = (err == nil)
+						}
+						if exists {
 							if seg.ReservationIDs == nil {
 								seg.ReservationIDs = make(map[string]struct{})
 							}
