@@ -73,7 +73,7 @@ COPY --chown=root:root backend/scripts/ffprobe-wrapper.sh /usr/local/bin/ffprobe
 RUN chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
 
 # Stage 2: Build WebUI
-FROM node:24-slim AS webui-builder
+FROM node:26-slim AS webui-builder
 WORKDIR /apps/webui
 COPY apps/webui/package*.json ./
 RUN npm ci
