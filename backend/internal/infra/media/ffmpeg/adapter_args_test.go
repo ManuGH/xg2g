@@ -75,7 +75,10 @@ func TestBuildArgs_UsesOptionalVideoMap(t *testing.T) {
 	assert.Contains(t, args, "0:a:0?", "audio map should remain optional")
 }
 
-func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
+// The broadcaster's first track is the primary language by DVB convention, and
+// -ac 2 downmixes it, so a surround track is no reason to skip it. Preferring
+// "the first stereo stream" played German channels out in English.
+func TestBuildArgs_LiveAudioProbePrefersBroadcastPrimaryTrack(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
 		"ffprobe",
@@ -95,8 +98,8 @@ func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 	)
 	adapter.liveAudioProbeFn = func(context.Context, string) ([]liveAudioStream, error) {
 		return []liveAudioStream{
-			{Index: 2, CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)"},
-			{Index: 3, CodecType: "audio", CodecName: "ac3", Channels: 2, ChannelLayout: "stereo"},
+			{Index: 2, CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)", Tags: map[string]string{"language": "deu"}},
+			{Index: 3, CodecType: "audio", CodecName: "ac3", Channels: 2, ChannelLayout: "stereo", Tags: map[string]string{"language": "eng"}},
 		}, nil
 	}
 
@@ -106,11 +109,12 @@ func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			Container:      "fmp4",
-			VideoCodec:     "av1",
-			TranscodeVideo: true,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoCodec:       "av1",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0",
@@ -120,10 +124,49 @@ func TestBuildArgs_LiveAudioProbePrefersStereoTrack(t *testing.T) {
 
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
-	assert.Contains(t, args, "0:3?", "live audio selection should prefer the stereo AC3 source track")
-	assert.NotContains(t, args, "0:a:0?", "stereo probe result should replace blind first-audio mapping")
-	assert.Contains(t, args, "aac", "stereo AC3 track should be transcoded to AAC when transcoding video to maintain PTS sync")
+	assert.Contains(t, args, "0:2?", "the broadcaster's primary track wins even when it carries surround")
+	assert.NotContains(t, args, "0:a:0?", "probe result should replace blind first-audio mapping")
+	assert.Contains(t, args, "aac", "the track is transcoded to AAC when transcoding video to maintain PTS sync")
+	ac, ok := valueAfter(args, "-ac")
+	require.True(t, ok)
+	assert.Equal(t, "2", ac, "surround is downmixed, not skipped")
+}
 
+func TestBuildArgs_LiveAudioHonoursLanguagePreference(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "ffprobe", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	adapter.Config.LiveAudioLanguages = []string{"eng"}
+	adapter.liveAudioProbeFn = func(context.Context, string) ([]liveAudioStream, error) {
+		return []liveAudioStream{
+			{Index: 2, CodecType: "audio", CodecName: "ac3", Channels: 6, ChannelLayout: "5.1(side)", Tags: map[string]string{"language": "deu"}},
+			{Index: 3, CodecType: "audio", CodecName: "ac3", Channels: 2, ChannelLayout: "stereo", Tags: map[string]string{"language": "eng"}},
+		}, nil
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: "audio-language-preference",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Quality:   ports.QualityStandard,
+		Profile: model.ProfileSpec{
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoCodec:       "av1",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			AudioBitrateK:    192,
+		},
+		Source: ports.StreamSource{
+			ID:   "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0",
+			Type: ports.SourceURL,
+		},
+	}
+
+	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
+	require.NoError(t, err)
+	assert.Contains(t, args, "0:3?", "a configured language preference outranks broadcast order")
 }
 
 func TestBuildArgs_EmptyProfileLegacyUsesCopyDefaults(t *testing.T) {
@@ -216,10 +259,11 @@ func TestBuildArgs_SafariRuntimeProbePrefersVideoCopy(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari",
-			TranscodeVideo: true,
-			Container:      "fmp4",
-			AudioBitrateK:  192,
+			Name:             "safari",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			Container:        "fmp4",
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -268,6 +312,7 @@ func TestBuildArgsWithPlan_RecordsEffectiveRuntimeModeAfterRuntimeRemux(t *testi
 			Name:                "safari",
 			PolicyModeHint:      ports.RuntimeModeHQ25,
 			EffectiveModeSource: ports.RuntimeModeSourceResolve,
+			VideoSourceCodec:    "h264",
 			TranscodeVideo:      true,
 			Container:           "mpegts",
 			AudioBitrateK:       192,
@@ -312,10 +357,11 @@ func TestBuildArgs_SafariRuntimeProbeRetriesTransientStreamRelayStartup(t *testi
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari",
-			TranscodeVideo: true,
-			Container:      "fmp4",
-			AudioBitrateK:  192,
+			Name:             "safari",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			Container:        "fmp4",
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -368,10 +414,11 @@ func TestBuildArgs_SafariRuntimeProbeRetryUsesFreshTimeoutPerAttempt(t *testing.
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari",
-			TranscodeVideo: true,
-			Container:      "fmp4",
-			AudioBitrateK:  192,
+			Name:             "safari",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			Container:        "fmp4",
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -404,10 +451,11 @@ func TestBuildArgs_SafariRuntimeProbeCanForceCopyForAllowlistedServiceRef(t *tes
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari",
-			TranscodeVideo: true,
-			Container:      "mpegts",
-			AudioBitrateK:  192,
+			Name:             "safari",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			Container:        "mpegts",
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:11:6:85:C00000:0:0:0:",
@@ -449,10 +497,11 @@ func TestBuildArgs_SafariRuntimeProbeAllowlistMatchesCanonicalServiceRefWithoutT
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari",
-			TranscodeVideo: true,
-			Container:      "mpegts",
-			AudioBitrateK:  192,
+			Name:             "safari",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			Container:        "mpegts",
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:11:6:85:C00000:0:0:0",
@@ -492,6 +541,7 @@ func TestBuildArgs_SafariForceCopyAllowlistCanBeDisabledByProfile(t *testing.T) 
 		Profile: model.ProfileSpec{
 			Name:                   "safari",
 			DisableSafariForceCopy: true,
+			VideoSourceCodec:       "h264",
 			TranscodeVideo:         true,
 			Container:              "mpegts",
 			AudioBitrateK:          192,
@@ -526,10 +576,11 @@ func TestBuildArgs_SafariHQAllowlistUsesHighBitrate25pTranscode(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari",
-			TranscodeVideo: true,
-			Container:      "mpegts",
-			AudioBitrateK:  192,
+			Name:             "safari",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			Container:        "mpegts",
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:11:6:85:C00000:0:0:0",
@@ -669,17 +720,18 @@ func TestBuildArgs_SafariHQAllowlistCanForceProgressiveSourcesToHQ25(t *testing.
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:            profiles.ProfileSafariRuntimeHQ,
-			PolicyModeHint:  ports.RuntimeModeCopy,
-			ForceSafariHQ25: true,
-			TranscodeVideo:  true,
-			Container:       "mpegts",
-			VideoCodec:      "libx264",
-			VideoCRF:        16,
-			VideoMaxRateK:   12000,
-			VideoBufSizeK:   24000,
-			AudioBitrateK:   256,
-			Preset:          "veryfast",
+			Name:             profiles.ProfileSafariRuntimeHQ,
+			PolicyModeHint:   ports.RuntimeModeCopy,
+			ForceSafariHQ25:  true,
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			Container:        "mpegts",
+			VideoCodec:       "libx264",
+			VideoCRF:         16,
+			VideoMaxRateK:    12000,
+			VideoBufSizeK:    24000,
+			AudioBitrateK:    256,
+			Preset:           "veryfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -777,6 +829,7 @@ func TestBuildArgs_SafariHEVCHQ25ClampsProgressiveSourcesAndHardensBitstream(t *
 			PolicyModeHint:       ports.RuntimeModeHQ25,
 			EffectiveRuntimeMode: ports.RuntimeModeHQ25,
 			Container:            "fmp4",
+			VideoSourceCodec:     "h264",
 			TranscodeVideo:       true,
 			HWAccel:              "vaapi_encode_only",
 			VideoCodec:           "hevc",
@@ -854,6 +907,10 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
 	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true} // simulate passed preflight
+	// The full pipeline pins -hwaccel_output_format vaapi, so it is only offered
+	// for an input the GPU proved it decodes.
+	hardware.SetVAAPIDecodeCapabilities(map[string]bool{"h264": true})
+	t.Cleanup(func() { hardware.SetVAAPIDecodeCapabilities(nil) })
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-1",
@@ -861,14 +918,15 @@ func TestBuildArgs_VaapiH264Deinterlace(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "h264",
-			VideoQP:        20,
-			Deinterlace:    true,
-			VideoMaxRateK:  20000,
-			VideoBufSizeK:  40000,
-			AudioBitrateK:  192,
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "h264",
+			VideoQP:          20,
+			Deinterlace:      true,
+			VideoMaxRateK:    20000,
+			VideoBufSizeK:    40000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -932,15 +990,16 @@ func TestBuildArgs_VaapiEncodeOnlyUsesCPUDecodeAndHWUpload(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari_dirty",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi_encode_only",
-			VideoCodec:     "h264",
-			VideoQP:        20,
-			Deinterlace:    true,
-			VideoMaxRateK:  20000,
-			VideoBufSizeK:  40000,
-			AudioBitrateK:  192,
+			Name:             "safari_dirty",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi_encode_only",
+			VideoCodec:       "h264",
+			VideoQP:          20,
+			Deinterlace:      true,
+			VideoMaxRateK:    20000,
+			VideoBufSizeK:    40000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -989,14 +1048,15 @@ func TestBuildArgs_VaapiHEVC(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			Container:      "fmp4",
-			HWAccel:        "vaapi",
-			VideoCodec:     "hevc",
-			Deinterlace:    false,
-			VideoMaxRateK:  5000,
-			VideoBufSizeK:  10000,
-			AudioBitrateK:  192,
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			Container:        "fmp4",
+			HWAccel:          "vaapi",
+			VideoCodec:       "hevc",
+			Deinterlace:      false,
+			VideoMaxRateK:    5000,
+			VideoBufSizeK:    10000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1030,14 +1090,15 @@ func TestBuildArgs_VaapiHEVCMPEGTSDoesNotEmitHVC1OrFMP4Init(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			Container:      "mpegts",
-			HWAccel:        "vaapi",
-			VideoCodec:     "hevc",
-			Deinterlace:    false,
-			VideoMaxRateK:  5000,
-			VideoBufSizeK:  10000,
-			AudioBitrateK:  192,
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			Container:        "mpegts",
+			HWAccel:          "vaapi",
+			VideoCodec:       "hevc",
+			Deinterlace:      false,
+			VideoMaxRateK:    5000,
+			VideoBufSizeK:    10000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1066,6 +1127,8 @@ func TestBuildArgs_VaapiHEVCDeinterlaceFallsBackToH264UntilVerified(t *testing.T
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
 	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	hardware.SetVAAPIDecodeCapabilities(map[string]bool{"h264": true})
+	t.Cleanup(func() { hardware.SetVAAPIDecodeCapabilities(nil) })
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-hevc-deinterlace-encode-only",
@@ -1073,15 +1136,16 @@ func TestBuildArgs_VaapiHEVCDeinterlaceFallsBackToH264UntilVerified(t *testing.T
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari_hevc_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "hevc",
-			Deinterlace:    true,
-			VideoMaxRateK:  5000,
-			VideoBufSizeK:  10000,
-			AudioBitrateK:  192,
+			Name:             "safari_hevc_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "hevc",
+			Deinterlace:      true,
+			VideoMaxRateK:    5000,
+			VideoBufSizeK:    10000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1126,15 +1190,16 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesEncodeOnlyPathWhenVerified(t *testing
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari_hevc_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "hevc",
-			Deinterlace:    true,
-			VideoMaxRateK:  5000,
-			VideoBufSizeK:  10000,
-			AudioBitrateK:  192,
+			Name:             "safari_hevc_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "hevc",
+			Deinterlace:      true,
+			VideoMaxRateK:    5000,
+			VideoBufSizeK:    10000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1174,6 +1239,8 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
 	)
 	adapter.detector.vaapiEncoders = map[string]bool{"h264_vaapi": true, "hevc_vaapi": true}
+	hardware.SetVAAPIDecodeCapabilities(map[string]bool{"h264": true})
+	t.Cleanup(func() { hardware.SetVAAPIDecodeCapabilities(nil) })
 
 	spec := ports.StreamSpec{
 		SessionID: "vaapi-hevc-deinterlace-full",
@@ -1181,15 +1248,16 @@ func TestBuildArgs_VaapiHEVCDeinterlaceUsesFullPathWhenVerified(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari_hevc_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "hevc",
-			Deinterlace:    true,
-			VideoMaxRateK:  5000,
-			VideoBufSizeK:  10000,
-			AudioBitrateK:  192,
+			Name:             "safari_hevc_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "hevc",
+			Deinterlace:      true,
+			VideoMaxRateK:    5000,
+			VideoBufSizeK:    10000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1225,14 +1293,15 @@ func TestBuildArgs_SafariHEVCHWUsesShortStartupSegments(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari_hevc_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi_encode_only",
-			VideoCodec:     "hevc",
-			VideoMaxRateK:  5000,
-			VideoBufSizeK:  10000,
-			AudioBitrateK:  192,
+			Name:             "safari_hevc_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi_encode_only",
+			VideoCodec:       "hevc",
+			VideoMaxRateK:    5000,
+			VideoBufSizeK:    10000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1261,6 +1330,8 @@ func TestBuildArgs_SafariHEVCHWUsesShortStartupSegments(t *testing.T) {
 }
 
 func TestBuildArgs_HWProfileWithExplicitCPUFallbackDoesNotAutoPromoteHardware(t *testing.T) {
+	hardware.SetVAAPIDecodeCapabilities(map[string]bool{"h264": true})
+	t.Cleanup(func() { hardware.SetVAAPIDecodeCapabilities(nil) })
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "/dev/dri/renderD128",
@@ -1273,16 +1344,17 @@ func TestBuildArgs_HWProfileWithExplicitCPUFallbackDoesNotAutoPromoteHardware(t 
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari_hevc_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "",
-			VideoCodec:     "hevc",
-			VideoCRF:       22,
-			VideoMaxRateK:  5000,
-			VideoBufSizeK:  10000,
-			AudioBitrateK:  192,
-			Preset:         "superfast",
+			Name:             "safari_hevc_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "",
+			VideoCodec:       "hevc",
+			VideoCRF:         22,
+			VideoMaxRateK:    5000,
+			VideoBufSizeK:    10000,
+			AudioBitrateK:    192,
+			Preset:           "superfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1302,6 +1374,8 @@ func TestBuildArgs_HWProfileWithExplicitCPUFallbackDoesNotAutoPromoteHardware(t 
 }
 
 func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {
+	hardware.SetVAAPIDecodeCapabilities(map[string]bool{"h264": true})
+	t.Cleanup(func() { hardware.SetVAAPIDecodeCapabilities(nil) })
 	adapter := NewLocalAdapter(
 		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
 		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
@@ -1314,15 +1388,16 @@ func TestBuildArgs_NVENCEncodeOnlyUsesCPUFilters(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari_dirty",
-			TranscodeVideo: true,
-			HWAccel:        "nvenc",
-			VideoCodec:     "h264",
-			VideoQP:        20,
-			Deinterlace:    true,
-			VideoMaxRateK:  20000,
-			VideoBufSizeK:  40000,
-			AudioBitrateK:  192,
+			Name:             "safari_dirty",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "nvenc",
+			VideoCodec:       "h264",
+			VideoQP:          20,
+			Deinterlace:      true,
+			VideoMaxRateK:    20000,
+			VideoBufSizeK:    40000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1357,9 +1432,10 @@ func TestBuildArgs_VaapiNoPreflightFails(t *testing.T) {
 		SessionID: "vaapi-nopreflight",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "h264",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "h264",
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1382,9 +1458,10 @@ func TestBuildArgs_VaapiNoDeviceFails(t *testing.T) {
 		SessionID: "vaapi-nodevice",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "h264",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "h264",
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1408,9 +1485,10 @@ func TestBuildArgs_VaapiDefaultQuality(t *testing.T) {
 		SessionID: "vaapi-default-q",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "h264",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "h264",
 			// VideoMaxRateK is 0 (not set)
 		},
 		Source: ports.StreamSource{
@@ -1437,14 +1515,15 @@ func TestBuildArgs_CPUProfileDriven(t *testing.T) {
 		Mode:      ports.ModeLive,
 		Format:    ports.FormatHLS,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "libx264",
-			Deinterlace:    true,
-			VideoCRF:       18,
-			VideoMaxRateK:  8000,
-			VideoBufSizeK:  16000,
-			Preset:         "veryfast",
-			AudioBitrateK:  192,
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "libx264",
+			Deinterlace:      true,
+			VideoCRF:         18,
+			VideoMaxRateK:    8000,
+			VideoBufSizeK:    16000,
+			Preset:           "veryfast",
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1474,8 +1553,9 @@ func TestBuildArgs_IngestFlagsBeforeInput(t *testing.T) {
 		SessionID: "ingest-flags",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "libx264",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "libx264",
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1555,8 +1635,9 @@ func TestBuildArgs_HEVCTranscodeUsesStrictLiveIngest(t *testing.T) {
 		SessionID: "hevc-strict-ingest",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "hevc",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "hevc",
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1631,8 +1712,9 @@ func TestBuildArgs_StreamRelayTranscodeUsesRobustLiveProbe(t *testing.T) {
 		SessionID: "streamrelay-transcode-probe",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "h264",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "h264",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -1729,8 +1811,9 @@ func TestBuildArgs_FileInputsDoNotUseProtocolWhitelist(t *testing.T) {
 		SessionID: "file-no-whitelist",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "libx264",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "libx264",
 		},
 		Source: ports.StreamSource{
 			ID:   "/tmp/example.ts",
@@ -1764,8 +1847,9 @@ func TestBuildArgs_ResilientIngestToggleOff(t *testing.T) {
 		SessionID: "ingest-toggle-off",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "libx264",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "libx264",
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1800,8 +1884,9 @@ func TestBuildArgs_LiveInputOverridesDoNotAffectFileOrFPSProbe(t *testing.T) {
 		SessionID: "file-input",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "libx264",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "libx264",
 		},
 		Source: ports.StreamSource{
 			ID:   "/tmp/example.ts",
@@ -1841,8 +1926,9 @@ func TestBuildArgs_LiveInputNoBufferOptIn(t *testing.T) {
 		SessionID: "live-nobuffer",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "libx264",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "libx264",
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1870,13 +1956,14 @@ func TestBuildArgs_AV1HWFallbackWithoutProfileMutation(t *testing.T) {
 		SessionID: "av1-fallback",
 		Mode:      ports.ModeLive,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "av1",
-			VideoMaxRateK:  6000,
-			VideoBufSizeK:  12000,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "av1",
+			VideoMaxRateK:    6000,
+			VideoBufSizeK:    12000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1906,14 +1993,15 @@ func TestBuildArgs_AV1HWUsesMPEGTSSegmentsWhenExperimentalFlagEnabled(t *testing
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "av1",
-			Container:      "mpegts",
-			VideoMaxRateK:  6000,
-			VideoBufSizeK:  12000,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "av1",
+			Container:        "mpegts",
+			VideoMaxRateK:    6000,
+			VideoBufSizeK:    12000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -1956,6 +2044,7 @@ func TestBuildArgsWithPlan_AV1HWProgressiveProbePreservesAV1(t *testing.T) {
 		Profile: model.ProfileSpec{
 			Name:                "av1_hw",
 			EffectiveModeSource: ports.RuntimeModeSourceResolve,
+			VideoSourceCodec:    "h264",
 			TranscodeVideo:      true,
 			HWAccel:             "vaapi",
 			VideoCodec:          "av1",
@@ -1988,6 +2077,8 @@ func TestBuildArgsWithPlan_AV1HWProgressiveProbePreservesAV1(t *testing.T) {
 }
 
 func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T) {
+	hardware.SetVAAPIDecodeCapabilities(map[string]bool{"h264": true})
+	t.Cleanup(func() { hardware.SetVAAPIDecodeCapabilities(nil) })
 	hardware.SetPathCapabilities(nil)
 	t.Cleanup(func() {
 		hardware.SetPathCapabilities(nil)
@@ -2008,15 +2099,16 @@ func TestBuildArgs_AV1HWInterlacedFallsBackToH264WhenPathUnverified(t *testing.T
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "av1",
-			Deinterlace:    true,
-			VideoMaxRateK:  6000,
-			VideoBufSizeK:  12000,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "av1",
+			Deinterlace:      true,
+			VideoMaxRateK:    6000,
+			VideoBufSizeK:    12000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -2059,15 +2151,16 @@ func TestBuildArgs_AV1HWInterlacedUsesEncodeOnlyPathWhenVerified(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "av1",
-			Deinterlace:    true,
-			VideoMaxRateK:  6000,
-			VideoBufSizeK:  12000,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "av1",
+			Deinterlace:      true,
+			VideoMaxRateK:    6000,
+			VideoBufSizeK:    12000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -2131,16 +2224,17 @@ func TestBuildArgs_AV1HWHQ50ServiceRefPreserves50fpsMotion(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityHigh,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			PolicyModeHint: ports.RuntimeModeHQ25,
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "av1",
-			Deinterlace:    true,
-			VideoMaxRateK:  6000,
-			VideoBufSizeK:  12000,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			PolicyModeHint:   ports.RuntimeModeHQ25,
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "av1",
+			Deinterlace:      true,
+			VideoMaxRateK:    6000,
+			VideoBufSizeK:    12000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:91:4:85:C00000:0:0:0:",
@@ -2201,15 +2295,16 @@ func TestBuildArgs_AV1HWInterlacedDoesNotUseOnlyVerifiedFullPath(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "av1",
-			Deinterlace:    true,
-			VideoMaxRateK:  6000,
-			VideoBufSizeK:  12000,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "av1",
+			Deinterlace:      true,
+			VideoMaxRateK:    6000,
+			VideoBufSizeK:    12000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -2241,15 +2336,16 @@ func TestBuildArgs_AV1HWInterlacedExperimentalOverrideUsesAV1EncodeOnlyPath(t *t
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi",
-			VideoCodec:     "av1",
-			Deinterlace:    true,
-			VideoMaxRateK:  6000,
-			VideoBufSizeK:  12000,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi",
+			VideoCodec:       "av1",
+			Deinterlace:      true,
+			VideoMaxRateK:    6000,
+			VideoBufSizeK:    12000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -2286,14 +2382,15 @@ func TestBuildArgs_AV1HWUsesShortStartupSegments(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			HWAccel:        "vaapi_encode_only",
-			VideoCodec:     "av1",
-			VideoMaxRateK:  6000,
-			VideoBufSizeK:  12000,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			HWAccel:          "vaapi_encode_only",
+			VideoCodec:       "av1",
+			VideoMaxRateK:    6000,
+			VideoBufSizeK:    12000,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://example.com/stream",
@@ -2336,11 +2433,12 @@ func TestBuildArgs_UsesLastKnownFPSWhenProbeFails(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "h264",
-			Deinterlace:    false,
-			VideoCRF:       20,
-			Preset:         "veryfast",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "h264",
+			Deinterlace:      false,
+			VideoCRF:         20,
+			Preset:           "veryfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -2379,11 +2477,12 @@ func TestBuildArgs_CachesDetectedFPSAndReusesAfterProbeFailure(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "h264",
-			Deinterlace:    false,
-			VideoCRF:       20,
-			Preset:         "veryfast",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "h264",
+			Deinterlace:      false,
+			VideoCRF:         20,
+			Preset:           "veryfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:6F:D:85:C00000:0:0:0",
@@ -2420,11 +2519,12 @@ func TestBuildArgs_IgnoresOutOfRangeLastKnownFPS(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "h264",
-			Deinterlace:    false,
-			VideoCRF:       20,
-			Preset:         "veryfast",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "h264",
+			Deinterlace:      false,
+			VideoCRF:         20,
+			Preset:           "veryfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:13E:6:85:C00000:0:0:0",
@@ -2456,13 +2556,14 @@ func TestBuildArgs_SafariDirtyUsesShortStartupSegments(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "safari_dirty",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			VideoCodec:     "h264",
-			Deinterlace:    true,
-			VideoCRF:       18,
-			Preset:         "fast",
+			Name:             "safari_dirty",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "h264",
+			Deinterlace:      true,
+			VideoCRF:         18,
+			Preset:           "fast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -2521,13 +2622,14 @@ func TestBuildArgs_UsesFMP4SegmentsWhenContainerRequested(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "h264_fmp4",
-			Container:      "fmp4",
-			TranscodeVideo: true,
-			VideoCodec:     "h264",
-			Deinterlace:    true,
-			VideoCRF:       18,
-			Preset:         "veryfast",
+			Name:             "h264_fmp4",
+			Container:        "fmp4",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "h264",
+			Deinterlace:      true,
+			VideoCRF:         18,
+			Preset:           "veryfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -2570,10 +2672,11 @@ func TestBuildArgs_SkipsFPSProbeWhenValidCacheExists(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "h264",
-			VideoCRF:       20,
-			Preset:         "veryfast",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "h264",
+			VideoCRF:         20,
+			Preset:           "veryfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -2608,10 +2711,11 @@ func TestBuildArgs_SkipsFPSProbeForStreamRelayInput(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "h264",
-			VideoCRF:       20,
-			Preset:         "veryfast",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "h264",
+			VideoCRF:         20,
+			Preset:           "veryfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -2645,10 +2749,11 @@ func TestBuildArgs_UsesCachedFPSForStreamRelayInput(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			TranscodeVideo: true,
-			VideoCodec:     "h264",
-			VideoCRF:       20,
-			Preset:         "veryfast",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			VideoCodec:       "h264",
+			VideoCRF:         20,
+			Preset:           "veryfast",
 		},
 		Source: ports.StreamSource{
 			ID:   "1:0:19:132F:3EF:1:C00000:0:0:0",
@@ -2668,7 +2773,7 @@ func TestBuildArgs_UsesCachedFPSForStreamRelayInput(t *testing.T) {
 	assert.Contains(t, x264Params, "keyint=150:min-keyint=150:scenecut=0")
 }
 
-func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
+func TestBuildArgs_LiveMultipleAudioStreamsUseStereoMuxedTrack(t *testing.T) {
 	adapter := NewLocalAdapter(
 		"ffmpeg",
 		"ffprobe",
@@ -2699,11 +2804,12 @@ func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
 		Format:    ports.FormatHLS,
 		Quality:   ports.QualityStandard,
 		Profile: model.ProfileSpec{
-			Name:           "av1_hw",
-			Container:      "fmp4",
-			VideoCodec:     "av1",
-			TranscodeVideo: true,
-			AudioBitrateK:  192,
+			Name:             "av1_hw",
+			Container:        "fmp4",
+			VideoCodec:       "av1",
+			VideoSourceCodec: "h264",
+			TranscodeVideo:   true,
+			AudioBitrateK:    192,
 		},
 		Source: ports.StreamSource{
 			ID:   "http://10.10.55.64:17999/1:0:19:11:6:85:C00000:0:0:0",
@@ -2714,9 +2820,11 @@ func TestBuildArgs_LiveMultiAudioMasterPlaylist(t *testing.T) {
 	args, err := adapter.buildArgs(context.Background(), spec, spec.Source.ID)
 	require.NoError(t, err)
 
-	assert.Contains(t, args, "0:3?")
-	assert.Contains(t, args, "0:2?")
-	assert.Contains(t, args, "-master_pl_name")
-	assert.Contains(t, args, "index.m3u8")
-	assert.Contains(t, args, "-var_stream_map")
+	assert.Contains(t, args, "0:2?", "the broadcaster's primary track is the one muxed into the A/V playlist")
+	assert.NotContains(t, args, "0:3?", "additional renditions remain disabled until the master playlist can emit AUTOSELECT=YES")
+	assert.NotContains(t, args, "-master_pl_name")
+	assert.NotContains(t, args, "-var_stream_map")
+	require.NotEmpty(t, args)
+	assert.Contains(t, args[len(args)-1], "index.m3u8")
+	assert.NotContains(t, args, "stream_%v.m3u8")
 }

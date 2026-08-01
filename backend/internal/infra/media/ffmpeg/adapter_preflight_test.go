@@ -147,6 +147,12 @@ func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
 				Status:   hardware.PathStatusVerified,
 				Reason:   "synthetic yavg 119.1",
 			}, nil
+		case hardware.PathVAAPIFullInterlacedAV1:
+			return hardware.HardwarePathCapability{
+				Verified: true,
+				Status:   hardware.PathStatusVerified,
+				Reason:   "synthetic yavg 120.4",
+			}, nil
 		default:
 			return hardware.HardwarePathCapability{}, errors.New("unexpected path probe")
 		}
@@ -175,8 +181,15 @@ func TestPreflightPathCorrectness_PublishesMeasuredPathTruth(t *testing.T) {
 		t.Fatalf("unexpected hevc encode-only path capability: %#v", hevcEncodeOnlyCap)
 	}
 
-	if av1Cap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedAV1); ok {
-		t.Fatalf("unexpected full av1 path capability for intentionally unused path: %#v", av1Cap)
+	// The full-GPU AV1 path is probed now: pinning AV1 to encode-only cost every
+	// non-AMD host most of its throughput (measured 1.6x vs 7.6x realtime for
+	// 1080i25 -> 50p on an Intel iGPU). It stays gated on a verified probe.
+	av1FullCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIFullInterlacedAV1)
+	if !ok {
+		t.Fatal("expected published av1 full path correctness")
+	}
+	if !av1FullCap.Verified || av1FullCap.Status != hardware.PathStatusVerified {
+		t.Fatalf("unexpected av1 full path capability: %#v", av1FullCap)
 	}
 
 	av1EncodeOnlyCap, ok := hardware.HardwarePathCapabilityFor(hardware.PathVAAPIEncodeOnlyInterlacedAV1)

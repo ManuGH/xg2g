@@ -266,7 +266,7 @@ function supportsHighQualityPlayback(capabilities: CapabilitySnapshot): boolean 
 export function resolvePlaybackRequestProfile(
   context: PlaybackClientContext,
   capabilities: CapabilitySnapshot,
-  scope: 'live' | 'recording'
+  _scope: 'live' | 'recording'
 ): PlaybackRequestProfile | undefined {
   const network = context.network;
   if (network?.kind === 'offline') {
@@ -295,9 +295,11 @@ export function resolvePlaybackRequestProfile(
     supportsHighQualityPlayback(capabilities)
     && !network?.saveData
     && !network?.metered
-    && (network == null || network.kind === 'ethernet' || network.kind === 'wifi' || network.kind === 'browser' || network.kind === 'other')
+    // 'lan' and 'measured' are verdicts of the server-side probe and outrank
+    // anything the browser guesses; without them a probed client could only ever
+    // be demoted to 'bandwidth', never promoted to 'quality'.
+    && (network == null || network.kind === 'lan' || network.kind === 'measured' || network.kind === 'ethernet' || network.kind === 'wifi' || network.kind === 'browser' || network.kind === 'other')
     && (network?.downlinkMbps == null || network.downlinkMbps >= 35)
-    && (context.isTv || context.isNativePlayback || scope === 'recording')
   ) {
     return 'quality';
   }

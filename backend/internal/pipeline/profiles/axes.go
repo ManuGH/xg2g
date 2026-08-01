@@ -107,12 +107,24 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
-	case ProfileSafariHEVC, ProfileSafariHEVCHW, ProfileSafariHEVCHWLL:
+	case ProfileSafariHEVC:
 		return ProfileAxes{
 			Video:          VideoActionHEVC,
 			AudioBitrateK:  192,
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
+		}
+	// Hardware HEVC/AV1 keep the full 50 fields per second of interlaced
+	// broadcast: send_field costs encoder time these paths have (measured 7.6x
+	// realtime for 1080i25 -> 50p AV1 on a full-GPU chain), and collapsing 50i
+	// to 25p is the single most visible quality loss on sports and pans. The
+	// CPU-encoded profiles above stay at 25p, where that budget does not exist.
+	case ProfileSafariHEVCHW, ProfileSafariHEVCHWLL:
+		return ProfileAxes{
+			Video:          VideoActionHEVC,
+			AudioBitrateK:  192,
+			Container:      "fmp4",
+			PolicyModeHint: ports.RuntimeModeHQ50,
 		}
 	case ProfileAV1HW:
 		container := "fmp4"
@@ -123,7 +135,7 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 			Video:          VideoActionAV1,
 			AudioBitrateK:  192,
 			Container:      container,
-			PolicyModeHint: ports.RuntimeModeHQ25,
+			PolicyModeHint: ports.RuntimeModeHQ50,
 		}
 	case ProfileRepair:
 		return ProfileAxes{
@@ -229,8 +241,10 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 	case VideoActionHEVC:
 		spec.VideoCodec = "hevc"
 		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoMaxRateK = 5000
-		spec.VideoBufSizeK = 10000
+		// Must stay in step with playbackplanner.transcodeMaxVideoBitrateKbps;
+		// TestPlanAutoCodecRateControlMatchesExecutionProfiles enforces it.
+		spec.VideoMaxRateK = 10000
+		spec.VideoBufSizeK = 20000
 		switch canonical {
 		case ProfileSafariHEVC:
 			spec.VideoCRF = 22
@@ -246,10 +260,16 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 	case VideoActionAV1:
 		spec.VideoCodec = "av1"
 		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoMaxRateK = 6000
-		spec.VideoBufSizeK = 12000
+		spec.VideoMaxRateK = 24000
+		spec.VideoBufSizeK = 48000
 		if useGPU {
-			spec.HWAccel = requestedEncodeOnlyHWAccelProfile(gpuBackend, hwaccelMode)
+			// Ask for the full GPU chain, exactly like hardware HEVC above. This
+			// is an intent, not a guarantee: the FFmpeg layer still drops AV1 to
+			// encode-only for AMD/unknown GPUs and sub-720p sources, and the
+			// path-correctness matrix vetoes any full path whose probe did not
+			// verify. Requesting encode-only here made that decision twice and
+			// hid the cheaper path from the layer that can actually judge it.
+			spec.HWAccel = requestedHWAccelProfile(gpuBackend, hwaccelMode)
 		}
 	}
 }

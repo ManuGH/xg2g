@@ -90,71 +90,35 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		}
 	}
 
-	// Preserve original Enigma2 stream order so the primary track sent by Enigma2 is DEFAULT=YES
-	ordered := audioStreams
-
-	maps := make([]string, 0, len(ordered))
-	maxChannels := 2
-	for _, stream := range ordered {
-		if stream.Channels > maxChannels {
-			maxChannels = stream.Channels
-		}
+	// FFmpeg 8 cannot emit AUTOSELECT=YES for HLS audio renditions. Safari/HLS.js
+	// consequently leaves the external audio group unloaded. Keep live playback
+	// audible by muxing ONE track into the A/V playlist until the master-playlist
+	// writer can produce a standards-compliant rendition group.
+	//
+	// Which one is a language question, not a channel-count question. Picking the
+	// first 2-channel stream looked like a compatibility measure but was not one:
+	// appendLiveAudioArgs pins -ac 2 unconditionally, so a 5.1 source is
+	// downmixed either way. All that rule did was skip the broadcaster's primary
+	// track whenever it carried surround - a German channel with deu 5.1 plus eng
+	// stereo played out in English.
+	selected := audioStreams[0]
+	if preferred, ok := preferredAudioStream(audioStreams, a.Config.LiveAudioLanguages); ok {
+		selected = preferred
 	}
-	audioArgs := appendLiveAudioArgs(nil, spec, maxChannels)
-	varMapParts := []string{"v:0,agroup:audio"}
-
-	for idx, stream := range ordered {
-		maps = append(maps, fmt.Sprintf("0:%d?", stream.Index))
-		lang := extractAudioLanguage(stream.Tags)
-		defaultFlag := "no"
-		if idx == 0 {
-			defaultFlag = "yes"
-		}
-		varMapParts = append(varMapParts, fmt.Sprintf("a:%d,agroup:audio,default:%s,language:%s", idx, defaultFlag, lang))
-		title := extractAudioTitle(stream.Tags, idx, lang)
-		audioArgs = append(audioArgs, fmt.Sprintf("-metadata:s:a:%d", idx), fmt.Sprintf("title=%s", title))
-	}
-
-	a.Logger.Info().
+	mapArg := fmt.Sprintf("0:%d?", selected.Index)
+	audioArgs := appendLiveAudioArgs(nil, spec, selected.Channels)
+	a.Logger.Warn().
 		Str("session_id", spec.SessionID).
-		Str("startup_phase", "live_multi_audio_selected").
-		Int("audio_track_count", len(ordered)).
-		Str("var_stream_map", strings.Join(varMapParts, " ")).
-		Msg("selected multiple live audio streams for synchronized HLS Multi-Audio Master Playlist")
+		Str("startup_phase", "live_multi_audio_compatibility_fallback").
+		Int("source_audio_track_count", len(audioStreams)).
+		Int("selected_input_stream_index", selected.Index).
+		Str("audio_map", mapArg).
+		Msg("muxing one AAC track into live HLS playlist because external audio renditions are not Safari-compatible")
 
 	return liveAudioSelection{
-		Maps:         maps,
-		AudioArgs:    audioArgs,
-		IsMultiAudio: true,
-		VarStreamMap: strings.Join(varMapParts, " "),
+		Maps:      []string{mapArg},
+		AudioArgs: audioArgs,
 	}
-}
-
-func extractAudioLanguage(tags map[string]string) string {
-	for k, v := range tags {
-		if strings.EqualFold(k, "language") {
-			vClean := strings.ToUpper(strings.TrimSpace(v))
-			if len(vClean) >= 2 {
-				return vClean
-			}
-		}
-	}
-	return "GER"
-}
-
-func extractAudioTitle(tags map[string]string, idx int, lang string) string {
-	for k, v := range tags {
-		if strings.EqualFold(k, "title") {
-			vClean := strings.TrimSpace(v)
-			if vClean != "" {
-				return vClean
-			}
-		}
-	}
-	if idx == 0 {
-		return fmt.Sprintf("Stereo (%s)", lang)
-	}
-	return fmt.Sprintf("Audio %d (%s)", idx+1, lang)
 }
 
 func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]liveAudioStream, error) {
@@ -252,4 +216,23 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 		"-of", "json",
 		inputURL,
 	)
+}
+
+// preferredAudioStream picks the first stream whose language tag matches the
+// operator's preference list, in preference order. Without a configured
+// preference the caller keeps the broadcaster's first track, which is the
+// primary language by DVB convention.
+func preferredAudioStream(streams []liveAudioStream, languages []string) (liveAudioStream, bool) {
+	for _, want := range languages {
+		want = strings.ToLower(strings.TrimSpace(want))
+		if want == "" {
+			continue
+		}
+		for _, stream := range streams {
+			if strings.ToLower(strings.TrimSpace(stream.Tags["language"])) == want {
+				return stream, true
+			}
+		}
+	}
+	return liveAudioStream{}, false
 }

@@ -171,3 +171,102 @@ func TestSnapshotHostRuntime_LeavesBenchmarkEmptyWithoutMeasuredHardware(t *test
 		t.Fatalf("expected empty benchmark summary without measured hardware, got %#v", got.Benchmark)
 	}
 }
+
+// Staging shape after the 2026-07 move: only 4 cores, but the AV1 ASIC probes
+// faster than the HEVC one. Before the AV1 rung this host classified as "medium"
+// and the auto-codec policy could never pick AV1 for any client.
+func TestSnapshotHostRuntime_FastAV1HardwareLiftsSmallHostToHigh(t *testing.T) {
+	resetVaapiState(t)
+	SetVAAPIPreflightResult(true)
+	SetVAAPIEncoderCapabilities(map[string]VAAPIEncoderCapability{
+		"h264_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 69 * time.Millisecond},
+		"hevc_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 59 * time.Millisecond},
+		"av1_vaapi":  {Verified: true, AutoEligible: true, ProbeElapsed: 65 * time.Millisecond},
+	})
+
+	idle := admissionmonitor.MonitorSnapshot{
+		CPU: admissionmonitor.CPUSnapshot{
+			Load1m:        0.6,
+			CoreCount:     4,
+			SampleCount:   15,
+			WindowSeconds: 30,
+		},
+		MaxSessions:    8,
+		MaxVAAPITokens: 2,
+	}
+
+	got := SnapshotHostRuntime(true, true, admissionruntime.RuntimeState{
+		TunerSlots:       3,
+		SessionsActive:   1,
+		TranscodesActive: 1,
+	}, idle)
+	if got.PerformanceClass != "high" {
+		t.Fatalf("expected fast AV1 hardware to lift a 4-core host to high, got %#v", got.PerformanceClass)
+	}
+
+	// Load shedding is unchanged: a busy host still falls back to medium, which
+	// is where the auto-codec policy demotes AV1 to HEVC.
+	loaded := idle
+	loaded.CPU.Load1m = 4.4
+	busy := SnapshotHostRuntime(true, true, admissionruntime.RuntimeState{
+		TunerSlots:       3,
+		SessionsActive:   3,
+		TranscodesActive: 3,
+	}, loaded)
+	if busy.PerformanceClass != "medium" {
+		t.Fatalf("expected constrained cpu load to demote back to medium, got %#v", busy.PerformanceClass)
+	}
+}
+
+// Capacity is measurable, and a measurement outranks every inference from core
+// count: the same four-core host that the rungs call "medium" sustains 7.6x
+// realtime because the transcode runs on a fixed-function block.
+func TestSnapshotHostRuntime_MeasuredThroughputOutranksCoreCount(t *testing.T) {
+	resetVaapiState(t)
+	SetVAAPIPreflightResult(true)
+	SetVAAPIEncoderCapabilities(map[string]VAAPIEncoderCapability{
+		"av1_vaapi": {Verified: true, AutoEligible: true, ProbeElapsed: 65 * time.Millisecond},
+	})
+	SetVAAPIThroughput(map[string]EncoderThroughput{
+		"av1": {RealtimeX: 7.6, Geometry: "1920x1080i25->50p"},
+	})
+	t.Cleanup(func() { SetVAAPIThroughput(nil) })
+
+	idle := admissionmonitor.MonitorSnapshot{
+		CPU:            admissionmonitor.CPUSnapshot{Load1m: 0.5, CoreCount: 4, SampleCount: 15, WindowSeconds: 30},
+		MaxSessions:    8,
+		MaxVAAPITokens: 2,
+	}
+	got := SnapshotHostRuntime(true, true, admissionruntime.RuntimeState{TunerSlots: 3, SessionsActive: 1, TranscodesActive: 1}, idle)
+	if got.PerformanceClass != "ultra" {
+		t.Fatalf("expected 7.6x realtime to classify as ultra, got %#v", got.PerformanceClass)
+	}
+
+	// Load shedding still applies on top of the measurement: 4.4 over four
+	// cores is the constrained band, worth exactly one rung.
+	loaded := idle
+	loaded.CPU.Load1m = 4.4
+	busy := SnapshotHostRuntime(true, true, admissionruntime.RuntimeState{TunerSlots: 3, SessionsActive: 3, TranscodesActive: 3}, loaded)
+	if busy.PerformanceClass != "high" {
+		t.Fatalf("expected a loaded host to be demoted one rung, got %#v", busy.PerformanceClass)
+	}
+}
+
+func TestClassifyMeasuredHostPerformanceClass(t *testing.T) {
+	cases := []struct {
+		realtimeX float64
+		want      string
+	}{
+		{0, ""},  // never measured: caller keeps its heuristic
+		{-1, ""}, // ditto, not "too slow"
+		{0.8, "low"},
+		{1.6, "medium"},
+		{3.2, "high"},
+		{7.6, "ultra"},
+	}
+	for _, tc := range cases {
+		if got := classifyMeasuredHostPerformanceClass(tc.realtimeX); got != tc.want {
+			t.Fatalf("realtimeX %.1f: got %q, want %q", tc.realtimeX, got, tc.want)
+		}
+	}
+}

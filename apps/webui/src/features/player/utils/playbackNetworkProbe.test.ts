@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { measurePlaybackNetwork } from './playbackNetworkProbe';
+import { applyPlaybackNetworkProbe, measurePlaybackNetwork } from './playbackNetworkProbe';
+import type { CapabilitySnapshot } from './playbackCapabilities';
+import type { PlaybackClientContext } from './playbackRequestProfile';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -180,5 +182,47 @@ describe('measurePlaybackNetwork', () => {
         delete (navigator as Navigator & { connection?: unknown }).connection;
       }
     }
+  });
+});
+
+describe('applyPlaybackNetworkProbe', () => {
+  const capabilities = () => ({
+    capabilitiesVersion: 3,
+    container: ['fmp4'],
+    videoCodecs: ['av1', 'h264'],
+    audioCodecs: ['aac'],
+    supportsHls: true,
+    supportsRange: true,
+    allowTranscode: true,
+    runtimeProbeUsed: true,
+    networkContext: { kind: 'unknown', internetValidated: true },
+  }) as CapabilitySnapshot;
+
+  const context = (): PlaybackClientContext => ({
+    platform: 'macos',
+    isTv: false,
+    isNativePlayback: false,
+    // What Safari reports without navigator.connection: a resource-timing guess
+    // that reads far below the real LAN throughput.
+    network: { kind: 'browser', downlinkMbps: 22 },
+  });
+
+  it('records a LAN verdict and drops the browser bandwidth guess', () => {
+    const caps = capabilities();
+    const next = applyPlaybackNetworkProbe(caps, context(), { kind: 'lan' });
+
+    expect(next.network?.kind).toBe('lan');
+    expect(next.network?.downlinkMbps).toBeUndefined();
+    expect(caps.networkContext?.kind).toBe('lan');
+    expect(caps.networkContext?.downlinkKbps).toBeUndefined();
+  });
+
+  it('keeps a measured verdict authoritative', () => {
+    const caps = capabilities();
+    const next = applyPlaybackNetworkProbe(caps, context(), { kind: 'measured', downlinkMbps: 120 });
+
+    expect(next.network?.kind).toBe('measured');
+    expect(next.network?.downlinkMbps).toBe(120);
+    expect(caps.networkContext?.downlinkKbps).toBe(120000);
   });
 });

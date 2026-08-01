@@ -399,6 +399,11 @@ func ResolveWithConfig(requested, userAgent string, dvrWindowSec int, cap *scan.
 	if cap != nil && cap.Height > 0 {
 		spec.VideoSourceHeight = cap.Height
 	}
+	// The source codec decides whether the GPU can decode this input at all,
+	// which is what makes the full-GPU pipeline available (see plan_codec).
+	if cap != nil && strings.TrimSpace(cap.VideoCodec) != "" {
+		spec.VideoSourceCodec = cap.VideoCodec
+	}
 
 	// 1. Resolve base orthogonal axes (Video copy/transcode, Audio copy/transcode, Container ts/fmp4, Policy mode)
 	axes := resolveProfileAxes(canonical, isSafari, cap, cfg)

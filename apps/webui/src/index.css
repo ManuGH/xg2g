@@ -31,6 +31,12 @@
   /* Background Layers */
   --bg-base: #070b10;
   --bg-video: #010308;
+  /* The surface a moving picture sits on must be true black, not a themed
+     near-black. #010308 and #070b10 are indistinguishable from #000 on a
+     typical panel, but next to real video black (measured YMIN 13 on a live
+     AV1 segment) an XDR/OLED display shows them for what they are: a blue-grey
+     frame around the picture. Letterbox bars have to disappear, not tint. */
+  --bg-video-stage: #000000;
   --bg-elevated: rgba(18, 27, 37, 0.78);
   --bg-overlay: rgba(8, 13, 20, 0.9);
   --bg-hover: rgba(255, 255, 255, 0.09);

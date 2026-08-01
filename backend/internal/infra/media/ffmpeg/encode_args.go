@@ -2,9 +2,11 @@ package ffmpeg
 
 import (
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"strconv"
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
 )
 
 func usesLegacyCPUDefaults(spec ports.StreamSpec, outputCodec string) bool {
@@ -53,17 +55,30 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 
 	filters := make([]string, 0, 2)
 	if prof.Deinterlace {
-		filters = append(filters, "deinterlace_vaapi")
+		// rate=field emits one frame per field - the GPU equivalent of bwdif's
+		// send_field, and the only way this path reaches 50p. Without it
+		// deinterlace_vaapi defaults to one frame per field PAIR, so the full-GPU
+		// chain silently produced 25p no matter what the runtime mode said.
+		filters = append(filters, vaapiDeinterlaceFilter(spec))
 	}
-	scaleFilter := "scale_vaapi=format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709"
+	// AV1 encodes 10-bit (see vaapiEncodeOnlyFilter): the extra precision cuts
+	// encoder-introduced banding on gradients even from an 8-bit source. Forcing
+	// nv12 here threw that away the moment the full-GPU path became reachable -
+	// verified on a real segment, pix_fmt came back yuv420p instead of 10-bit.
+	hwFormat := "nv12"
+	if normalizeRequestedCodec(outputCodec) == "av1" {
+		hwFormat = "p010"
+	}
+	scaleFilter := fmt.Sprintf("scale_vaapi=format=%s:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", hwFormat)
 	if prof.VideoMaxWidth > 0 {
-		scaleFilter = fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", prof.VideoMaxWidth)
+		scaleFilter = fmt.Sprintf("scale_vaapi=w=%d:h=-2:format=%s:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709", prof.VideoMaxWidth, hwFormat)
 	}
 	filters = append(filters, scaleFilter)
 	args = append(args, "-vf", strings.Join(filters, ","))
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
 	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
+	args = appendVaapiBFrameArgs(args, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = appendVideoGOPArgs(args, gop, segmentSec)
@@ -71,19 +86,43 @@ func (a *LocalAdapter) buildVaapiVideoArgs(args []string, spec ports.StreamSpec,
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
 	} else {
-		args = appendAV1VAAPILevelArgs(args)
+		args = appendAV1VAAPILevelArgs(args, prof.VideoMaxRateK)
 	}
 	return args
 }
 
-// appendAV1VAAPILevelArgs pins the AV1 seq_level_idx to 5.0. The AMD VAAPI
-// encoder derives the level from picture size alone and ignores frame rate:
-// 1920x1088@50 gets level 4.1 (max ~70.8M samples/s) although it needs ~104M.
-// macOS decoders tolerate the violation; the iPhone hardware decoder does not
-// and never outputs a frame (endless buffering, then a decode error). Level
-// 5.0 covers 1088p50 10-bit with headroom.
-func appendAV1VAAPILevelArgs(args []string) []string {
-	return append(args, "-level", "5.0")
+// appendAV1VAAPILevelArgs pins the AV1 seq_level_idx, because the VAAPI encoder
+// derives it from picture size alone and ignores frame rate: 1920x1088@50 gets
+// level 4.1 (max ~70.8M samples/s) although it needs ~104M. macOS decoders
+// tolerate the violation; the iPhone hardware decoder does not and never
+// outputs a frame (endless buffering, then a decode error).
+//
+// The level also carries a Main-tier bitrate cap - 20 Mbps at 4.1, 30 at 5.0,
+// 40 at 5.1 - so a pin that ignores the configured bitrate reintroduces exactly
+// the violation it exists to prevent. Measured after the ceiling went to
+// 25 Mbps: real segments peaked at 27.4 Mbps, 91% of the level-5.0 cap, because
+// -bufsize deliberately allows short bursts above -maxrate. Pick the level from
+// the bitrate with room for those bursts.
+func appendAV1VAAPILevelArgs(args []string, maxRateK int) []string {
+	return append(args, "-level", av1LevelForMaxRateK(maxRateK))
+}
+
+// av1LevelForMaxRateK returns the lowest AV1 level whose Main-tier bitrate cap
+// covers the configured ceiling with burst headroom. Claiming a higher level
+// than needed is not free either: a decoder may refuse a level it does not
+// implement, so this steps up rather than pinning the maximum outright.
+func av1LevelForMaxRateK(maxRateK int) string {
+	// 25% headroom: measured on real segments, a 25 Mbps ceiling peaked at
+	// 27.4 Mbps, so the bursts -bufsize permits run about 10% over. 25% keeps
+	// margin without claiming a level the hardware may not implement.
+	switch required := maxRateK * 5 / 4; {
+	case required <= 30000:
+		return "5.0"
+	case required <= 40000:
+		return "5.1"
+	default:
+		return "6.0"
+	}
 }
 
 func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.StreamSpec, outputCodec string, gop, segmentSec int) []string {
@@ -104,13 +143,14 @@ func (a *LocalAdapter) buildVaapiEncodeOnlyVideoArgs(args []string, spec ports.S
 
 	args = append(args, "-c:v", vaapiEncoderForCodec(outputCodec))
 	args = appendVaapiRateControlArgs(args, prof, outputCodec, a.Config)
+	args = appendVaapiBFrameArgs(args, outputCodec)
 	args = appendConservativeHEVCVAAPIArgs(args, spec, outputCodec)
 
 	args = appendVideoGOPArgs(args, gop, segmentSec)
 	if normalizeRequestedCodec(outputCodec) != "av1" {
 		args = append(args, "-profile:v", "main")
 	} else {
-		args = appendAV1VAAPILevelArgs(args)
+		args = appendAV1VAAPILevelArgs(args, prof.VideoMaxRateK)
 	}
 	args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
 	return args
@@ -217,6 +257,17 @@ func av1VAAPIGeometryPadFilter() string {
 		"pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
 
+// appendVaapiBFrameArgs requests frame reordering where the driver proved it
+// accepts the option. Bits saved by B-frames are bits the rate control can
+// spend on the picture instead.
+func appendVaapiBFrameArgs(args []string, outputCodec string) []string {
+	encoder := vaapiEncoderForCodec(outputCodec)
+	if !hardware.VAAPIEncoderOptionVerified(encoder, hardware.OptionBFrames) {
+		return args
+	}
+	return append(args, "-bf", strconv.Itoa(vaapiBFrames))
+}
+
 func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCodec string, cfg AdapterConfig) []string {
 	isAV1 := normalizeRequestedCodec(outputCodec) == "av1"
 	if prof.VideoQP > 0 {
@@ -237,23 +288,36 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 	}
 
 	if prof.VideoMaxRateK > 0 {
-		// AMD VAAPI AV1 (Phoenix3 / VCN4) stalls the VCN ring when -b:v == -maxrate.
-		// Use a 25% target headroom (-b:v = 75% of -maxrate) to keep the ring stable.
+		// AMD VAAPI AV1 (Phoenix3 / VCN4) stalls the VCN ring when -b:v == -maxrate,
+		// so that stack gets a 25% target headroom (-b:v = 75% of -maxrate). AMD
+		// only: on other silicon the workaround simply hands back a quarter of the
+		// bitrate ceiling for a defect that is not there. Verified against the
+		// Intel iGPU this runs on, which encodes at b:v == maxrate without stalling.
 		bV := prof.VideoTargetRateK
 		if bV <= 0 {
 			bV = prof.VideoMaxRateK
 		}
-		if isAV1 && prof.VideoTargetRateK <= 0 {
+		if isAV1 && prof.VideoTargetRateK <= 0 && cfg.GPUVendor == string(hardware.GPUVendorAMD) {
 			bV = max((prof.VideoMaxRateK*3)/4, 1)
 		}
 		// AV1 QVBR: quality-targeted encode that still honours -maxrate as a hard
-		// ceiling. Verified on this AMD stack (Mesa 25.0.7 / VCN4): QVBR holds the
+		// ceiling. Verified on an AMD stack (Mesa 25.0.7 / VCN4): QVBR holds the
 		// cap, is sustained-stable, and is immune to the b:v==maxrate ring-stall
 		// that constrains plain VBR. QVBR REQUIRES -b:v ("Bitrate must be set for
 		// QVBR RC mode"), which is set above. Disable with XG2G_AV1_QVBR=false to
 		// fall back to implicit VBR; tune the quality target with
 		// XG2G_AV1_QVBR_QUALITY (AV1 scale 0-255, lower = higher quality).
-		av1QVBR := isAV1 && cfg.AV1QVBR
+		//
+		// Gated on a real probe, not on the GPU vendor: the startup preflight
+		// opens an encoder with -rc_mode QVBR once and records whether the driver
+		// took it (PreflightVAAPIRateControlModes). Intel iHD rejects QVBR and
+		// fails at encoder-open, killing the session before its first frame -
+		// but "Intel" is not the rule, "this driver said no" is. A stack that
+		// gains QVBR in a later release picks it up on the next restart, and a
+		// vendor nobody here has ever seen gets a correct answer too. Unprobed
+		// means unsupported: an unproven mode must not reach a live session.
+		av1QVBR := isAV1 && cfg.AV1QVBR &&
+			hardware.VAAPIRateControlVerified(vaapiEncoderForCodec(outputCodec), hardware.RateControlQVBR)
 		if av1QVBR {
 			args = append(args, "-rc_mode", "QVBR")
 		}
@@ -519,6 +583,22 @@ func (a *LocalAdapter) buildCPUVideoArgs(args []string, spec ports.StreamSpec, o
 
 func softwareScaleWidthFilter(width int) string {
 	return fmt.Sprintf("scale=w=%d:h=-2:flags=lanczos", width)
+}
+
+// vaapiDeinterlaceFilter mirrors deinterlaceFilterForProfile for the full-GPU
+// chain: HQ25 keeps one frame per field pair, everything else bobs to 50p.
+func vaapiDeinterlaceFilter(spec ports.StreamSpec) string {
+	filter := "deinterlace_vaapi"
+	if mode := hardware.BestVAAPIDeinterlaceMode(vaapiDeinterlaceModePreference); mode != "" {
+		filter += "=mode=" + mode
+	}
+	if effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeHQ25 {
+		return filter
+	}
+	if strings.Contains(filter, "=") {
+		return filter + ":rate=field"
+	}
+	return filter + "=rate=field"
 }
 
 func (a *LocalAdapter) deinterlaceFilterForProfile(spec ports.StreamSpec) string {

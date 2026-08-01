@@ -61,9 +61,21 @@ type Detector struct {
 
 	pathCorrectnessChecked bool
 	pathProbeFn            func(context.Context, pathProbeRequest) (hardware.HardwarePathCapability, error)
-	signalStatsYAvgFn      func(context.Context, string) (float64, error)
-	recordProcessDetail    func(ports.RunHandle, string)
-	terminateProcessGroup  func(*exec.Cmd, string)
+
+	rateControlChecked   bool
+	rateControlProbeFn   func(ctx context.Context, encoder, mode string) error
+	encoderOptionProbeFn func(ctx context.Context, encoder, option, value string) error
+
+	decodeChecked bool
+	decodeProbeFn func(ctx context.Context, codec string) error
+
+	throughputChecked bool
+	throughputProbeFn func(ctx context.Context, encoder string) (float64, error)
+
+	deinterlaceProbeFn    func(ctx context.Context, mode string) error
+	signalStatsYAvgFn     func(context.Context, string) (float64, error)
+	recordProcessDetail   func(ports.RunHandle, string)
+	terminateProcessGroup func(*exec.Cmd, string)
 
 	vaapiEncoders            map[string]bool
 	vaapiEncoderCaps         map[string]hardware.VAAPIEncoderCapability
@@ -388,7 +400,16 @@ func (d *Detector) PreflightTranscodeProfiles() {
 	}
 	d.profileBenchmarksChecked = true
 
-	d.Logger.Info().Msg("transcode profile preflight: starting")
+	// Log the detected silicon up front: encoder tuning (rate-control modes,
+	// level signalling, bitrate headroom) is vendor-specific, so an operator
+	// debugging a failed encode must be able to read the vendor off the startup
+	// log instead of inferring it from a driver error message.
+	gpu := hardware.DetectGPUVendor()
+	d.Logger.Info().
+		Str("gpu_vendor", string(gpu.Vendor)).
+		Str("gpu_device_id", gpu.DeviceID).
+		Str("gpu_driver", gpu.Driver).
+		Msg("transcode profile preflight: starting")
 
 	cpuSamples := d.measureProfileBenchmarks("cpu", "libx264")
 	hardware.SetCPUProfileBenchmarks(capability.DeriveProfileCapabilities(cpuSamples))
@@ -865,6 +886,7 @@ func (d *Detector) PreflightPathCorrectness() {
 	capabilities := make(map[string]hardware.HardwarePathCapability)
 	for _, req := range []pathProbeRequest{
 		{PathID: hardware.PathVAAPIFullInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
+		{PathID: hardware.PathVAAPIFullInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedHEVC, Backend: "vaapi", Encoder: "hevc_vaapi"},
 		{PathID: hardware.PathVAAPIEncodeOnlyInterlacedAV1, Backend: "vaapi", Encoder: "av1_vaapi"},
 	} {

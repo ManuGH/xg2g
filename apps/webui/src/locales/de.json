@@ -491,7 +491,10 @@
     "noDescription": "Keine Beschreibung verfügbar.",
     "record": "Aufnehmen",
     "recordingPlanned": "Aufnahme geplant",
-    "planRecording": "Aufnahme planen"
+    "planRecording": "Aufnahme planen",
+    "filterChannels": "Sender filtern (Name oder Nummer)",
+    "clearChannelFilter": "Senderfilter leeren",
+    "noChannelsMatchFilter": "Kein Sender passt zu „{{query}}“"
   },
   "recordings": {
     "seriesRulesAction": "Serienregeln",

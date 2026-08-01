@@ -92,30 +92,34 @@ export function isServiceAllowedForProfile(profile: HouseholdProfile, service: S
   return isServiceAllowedForNormalizedProfile(normalizeHouseholdProfile(profile), service);
 }
 
-export function filterServicesForProfile(profile: HouseholdProfile, services: Service[]): Service[] {
+export function filterServicesForProfile(profile: HouseholdProfile, services: Service[] | null | undefined): Service[] {
   const normalizedProfile = normalizeHouseholdProfile(profile);
-  return services.filter((service) => isServiceAllowedForNormalizedProfile(normalizedProfile, service));
+  const list = Array.isArray(services) ? services : [];
+  return list.filter((service) => isServiceAllowedForNormalizedProfile(normalizedProfile, service));
 }
 
 // Currently unused in the web slice. Keep this helper for planned server-side
 // bouquet filtering so the household access model stays symmetrical.
-export function filterBouquetsForProfile(profile: HouseholdProfile, bouquets: Bouquet[]): Bouquet[] {
+export function filterBouquetsForProfile(profile: HouseholdProfile, bouquets: Bouquet[] | null | undefined): Bouquet[] {
   const normalizedProfile = normalizeHouseholdProfile(profile);
+  const list = Array.isArray(bouquets) ? bouquets : [];
   if (normalizedProfile.allowedBouquets.length === 0) {
-    return bouquets;
+    return list;
   }
 
-  return bouquets.filter((bouquet) => normalizedProfile.allowedBouquets.includes(normalizeIdentifier(bouquet.name)));
+  return list.filter((bouquet) => normalizedProfile.allowedBouquets.includes(normalizeIdentifier(bouquet.name)));
 }
 
-export function filterRecordingsForProfile(profile: HouseholdProfile, recordings: RecordingItem[]): RecordingItem[] {
+export function filterRecordingsForProfile(profile: HouseholdProfile, recordings: RecordingItem[] | null | undefined): RecordingItem[] {
   const normalizedProfile = normalizeHouseholdProfile(profile);
-  return recordings.filter((recording) => isRecordingAllowedForNormalizedProfile(normalizedProfile, recording));
+  const list = Array.isArray(recordings) ? recordings : [];
+  return list.filter((recording) => isRecordingAllowedForNormalizedProfile(normalizedProfile, recording));
 }
 
-export function filterTimersForProfile(profile: HouseholdProfile, timers: Timer[]): Timer[] {
+export function filterTimersForProfile(profile: HouseholdProfile, timers: Timer[] | null | undefined): Timer[] {
   const normalizedProfile = normalizeHouseholdProfile(profile);
-  return timers.filter((timer) => isTimerAllowedForNormalizedProfile(normalizedProfile, timer));
+  const list = Array.isArray(timers) ? timers : [];
+  return list.filter((timer) => isTimerAllowedForNormalizedProfile(normalizedProfile, timer));
 }
 
 export function isRecordingAllowedForProfile(profile: HouseholdProfile, recording: RecordingLike | null | undefined): boolean {
@@ -130,11 +134,12 @@ export function isFavoriteService(profile: HouseholdProfile, serviceRef: string 
   return isFavoriteServiceForNormalizedProfile(normalizeHouseholdProfile(profile), serviceRef);
 }
 
-export function sortServicesForProfile(profile: HouseholdProfile, services: Service[]): Service[] {
+export function sortServicesForProfile(profile: HouseholdProfile, services: Service[] | null | undefined): Service[] {
   const normalizedProfile = normalizeHouseholdProfile(profile);
   const favoriteRefs = new Set(normalizedProfile.favoriteServiceRefs);
+  const list = Array.isArray(services) ? services : [];
 
-  return services
+  return list
     .map((service, index) => ({ service, index }))
     .sort((left, right) => {
       const leftRef = normalizeIdentifier(left.service.serviceRef || left.service.id);

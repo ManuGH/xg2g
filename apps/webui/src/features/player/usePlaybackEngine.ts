@@ -61,6 +61,22 @@ const HLSJS_RENDER_HEARTBEAT_MS = 30_000;
 // re-reporting after a cooldown instead.
 const PLAYBACK_WARNING_REPEAT_MS = 10_000;
 
+// hls.js leaves audioTrack at -1 until something selects a rendition. Streams
+// that carry several audio renditions then play whichever one the demuxer hit
+// first, which is not necessarily the one the manifest marks DEFAULT. Pick the
+// default rendition (falling back to the first) once, and only while nothing is
+// selected yet, so a later user switch is never overridden.
+export function selectInitialHlsAudioTrack(
+  currentTrackId: number,
+  tracks: ReadonlyArray<{ id: number; default?: boolean }>,
+): number | null {
+  if (currentTrackId >= 0 || tracks.length === 0) {
+    return null;
+  }
+  const selectedTrack = tracks.find((track) => track.default) ?? tracks[0];
+  return selectedTrack?.id ?? null;
+}
+
 interface UsePlaybackEngineProps {
   videoRef: RefObject<VideoElementRef>;
   hlsRef: MutableRefObject<HlsInstanceRef>;
@@ -969,10 +985,11 @@ export function usePlaybackEngine({
         }));
       });
 
-      hls.loadSource(url);
-      hls.attachMedia(video);
-
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
+        const initialTrackId = selectInitialHlsAudioTrack(hls.audioTrack, data.audioTracks ?? []);
+        if (initialTrackId !== null) {
+          hls.audioTrack = initialTrackId;
+        }
         if (data.audioTracks && onAudioTracksUpdated) {
           onAudioTracksUpdated(data.audioTracks.map(t => ({ id: t.id, name: t.name, language: t.lang, key: 'hls-' + t.id, engineIndex: t.id })));
         }
@@ -982,6 +999,9 @@ export function usePlaybackEngine({
           onAudioTrackSwitched(data.id);
         }
       });
+
+      hls.loadSource(url);
+      hls.attachMedia(video);
 
       let mediaRecoveryAttempted = false;
       let networkRetryCount = 0;
