@@ -18,7 +18,11 @@ func createTestSegment(serviceRef string, seq uint64, start, end time.Time, size
 			Sequence:   seq,
 			PartIndex:  0,
 		},
-		Path:           fmt.Sprintf("/tmp/test_seg_%d.ts", seq),
+		Location: SegmentLocation{
+			Kind:     StorageKindDisk,
+			Filename: fmt.Sprintf("test_seg_%d.ts", seq),
+			Path:     fmt.Sprintf("/tmp/test_seg_%d.ts", seq),
+		},
 		Sequence:       seq,
 		StartPTS90k:    int64(seq * 90000),
 		EndPTS90k:      int64((seq + 1) * 90000),
@@ -238,7 +242,7 @@ func TestStartupRecoveryLifecycle(t *testing.T) {
 	}
 
 	seg1 := createTestSegment(ref, 1, now.Add(-30*time.Minute), now.Add(-20*time.Minute), 1000, "h264", false)
-	seg1.Path = segFile
+	seg1.Location.Path = segFile
 	idx.AddSegment(seg1)
 
 	store := NewReservationStore(idx, DefaultReservationLimits(), storagePath)
@@ -250,7 +254,7 @@ func TestStartupRecoveryLifecycle(t *testing.T) {
 
 	newIdx := NewSegmentIndex()
 	seg1Reloaded := createTestSegment(ref, 1, now.Add(-30*time.Minute), now.Add(-20*time.Minute), 1000, "h264", false)
-	seg1Reloaded.Path = segFile
+	seg1Reloaded.Location.Path = segFile
 	newIdx.AddSegment(seg1Reloaded)
 
 	newStore := NewReservationStore(newIdx, DefaultReservationLimits(), storagePath)

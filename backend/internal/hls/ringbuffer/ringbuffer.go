@@ -27,7 +27,7 @@ type Buffer struct {
 	serviceRef  string
 	maxSegments int
 	mu          sync.RWMutex
-	segments    []string // ordered slice of segment filenames
+	segments    []string // ordered slice of complete segment filenames (seg_*)
 	artifacts   map[string]*Artifact
 	lastUpdated time.Time
 	dvrCb       DVRCallback
@@ -35,7 +35,6 @@ type Buffer struct {
 	closed      bool
 	store       *ReservationStore
 	index       *SegmentIndex
-	lastSeq     uint64
 }
 
 // NewBuffer creates a new ring buffer for a session.
@@ -119,6 +118,11 @@ func ParseSegmentFilename(serviceRef, sessionID, filename string) (SegmentID, bo
 
 // Put adds or replaces an artifact in the ring buffer.
 func (b *Buffer) Put(filename string, data []byte) {
+	b.PutWithMetadata(filename, data, SegmentMetadata{})
+}
+
+// PutWithMetadata adds a segment with extracted media duration, PTS, and discontinuity metadata.
+func (b *Buffer) PutWithMetadata(filename string, data []byte, meta SegmentMetadata) {
 	art := &Artifact{
 		Filename: filename,
 		Data:     data,
@@ -135,20 +139,42 @@ func (b *Buffer) Put(filename string, data []byte) {
 	b.artifacts[filename] = art
 
 	segID, isSegment := ParseSegmentFilename(b.serviceRef, b.sessionID, filename)
-	if isSegment && !exists {
+	// Variant A: Retro-DVR ONLY indexes and counts COMPLETE segments (seg_*)
+	if isSegment && segID.Kind == SegmentKindComplete && !exists {
 		b.segments = append(b.segments, filename)
 
-		// Register segment with authoritative index
+		durSec := meta.Duration.Seconds()
+		if durSec <= 0 {
+			durSec = 2.0 // Fallback
+		}
+
+		startWall := art.ModTime
+		if meta.ProgramTime != nil {
+			startWall = *meta.ProgramTime
+		}
+		endWall := startWall.Add(time.Duration(durSec * float64(time.Second)))
+
+		// Register segment with authoritative store
 		if b.store != nil {
 			b.store.mu.Lock()
 			b.index.AddSegment(&InternalSegment{
-				ID:            segID,
-				Path:          filename,
+				ID: segID,
+				Location: SegmentLocation{
+					Kind:     StorageKindRAM,
+					Filename: filename,
+				},
+				DurationSec:   durSec,
 				Sequence:      segID.Sequence,
-				StartWallTime: art.ModTime,
-				EndWallTime:   art.ModTime.Add(2 * time.Second),
+				StartPTS90k:   meta.StartPTS90k,
+				EndPTS90k:     meta.EndPTS90k,
+				PTSEpoch:      meta.PTSEpoch,
+				StartWallTime: startWall,
+				EndWallTime:   endWall,
 				SizeBytes:     int64(len(data)),
+				Discontinuity: meta.Discontinuity,
+				CodecHash:     meta.CodecHash,
 				State:         SegmentActive,
+				Data:          data,
 			})
 			b.store.mu.Unlock()
 		}
@@ -194,6 +220,19 @@ func (b *Buffer) Get(filename string) (*Artifact, bool) {
 	defer b.mu.RUnlock()
 	art, ok := b.artifacts[filename]
 	return art, ok
+}
+
+// ByteSnapshot returns an immutable byte slice copy of a RAM artifact for staging handover.
+func (b *Buffer) ByteSnapshot(filename string) ([]byte, bool) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	art, ok := b.artifacts[filename]
+	if !ok || len(art.Data) == 0 {
+		return nil, false
+	}
+	cp := make([]byte, len(art.Data))
+	copy(cp, art.Data)
+	return cp, true
 }
 
 // Close shuts down the buffer and its background DVR worker.
@@ -291,9 +330,13 @@ func (r *Registry) Get(sessionID string) (*Buffer, bool) {
 	return buf, ok
 }
 
-// Delete removes and closes the buffer for sessionID.
+// Delete removes and closes the buffer for sessionID if not reserved.
 func (r *Registry) Delete(sessionID string) {
 	r.mu.Lock()
+	if r.store != nil && r.store.HasReservationsForSession(sessionID) {
+		r.mu.Unlock()
+		return // DO NOT DELETE SESSION BUFFER IF RESERVED!
+	}
 	buf, ok := r.buffers[sessionID]
 	if ok {
 		delete(r.buffers, sessionID)
@@ -331,6 +374,10 @@ func (r *Registry) cleanupLoop() {
 				last := buf.lastUpdated
 				buf.mu.RUnlock()
 				if now.Sub(last) > 10*time.Minute {
+					// DO NOT DELETE SESSION BUFFER IF IT CONTAINS RESERVED SEGMENTS!
+					if r.store != nil && r.store.HasReservationsForSession(id) {
+						continue
+					}
 					delete(r.buffers, id)
 					buf.Close()
 				}
