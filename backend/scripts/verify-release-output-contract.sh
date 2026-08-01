@@ -41,8 +41,8 @@ RELEASE_INSTALL_FILES=(
   "backend/scripts/verify-runtime.sh"
   "docs/man/xg2g.1"
   "docs/man/xg2g-admin.8"
-  "docs/ops/xg2g-verifier.service"
-  "docs/ops/xg2g-verifier.timer"
+  "infra/systemd/xg2g-verifier.service"
+  "infra/systemd/xg2g-verifier.timer"
   "DIGESTS.lock"
 )
 
@@ -448,8 +448,8 @@ create_synthetic_bundle() {
     cp "${REPO_ROOT}/backend/scripts/verify-systemd-runtime-contract.sh" "${payload_root}/backend/scripts/"
     cp "${REPO_ROOT}/backend/scripts/verify-installation-contract.sh" "${payload_root}/backend/scripts/"
     cp "${REPO_ROOT}/backend/scripts/verify-runtime.sh" "${payload_root}/backend/scripts/"
-    cp "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "${payload_root}/docs/ops/"
-    cp "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "${payload_root}/docs/ops/"
+    # The verifier units ship inside infra/systemd, which the recursive copy above
+    # already places in the payload -- no separate copy needed.
     cp "${REPO_ROOT}/DIGESTS.lock" "${payload_root}/DIGESTS.lock"
 
     if [[ "${os}" == "windows" ]]; then

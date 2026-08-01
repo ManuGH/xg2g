@@ -49,8 +49,8 @@ ALLOWLIST=(
     "infra/systemd/xg2g.service"
     "docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md"
     "docs/ops/OPERATIONS_MODEL.md"
-    "docs/ops/xg2g-verifier.service"
-    "docs/ops/xg2g-verifier.timer"
+    "infra/systemd/xg2g-verifier.service"
+    "infra/systemd/xg2g-verifier.timer"
 )
 
 # 3. Get Diff

@@ -159,8 +159,8 @@ cp "${REPO_ROOT}/backend/VERSION" "${archive_root}/backend/VERSION"
 cp "${REPO_ROOT}/DIGESTS.lock" "${archive_root}/DIGESTS.lock"
 cp "${REPO_ROOT}/docs/man/xg2g.1" "${archive_root}/docs/man/xg2g.1"
 cp "${REPO_ROOT}/docs/man/xg2g-admin.8" "${archive_root}/docs/man/xg2g-admin.8"
-cp "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "${archive_root}/docs/ops/xg2g-verifier.service"
-cp "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "${archive_root}/docs/ops/xg2g-verifier.timer"
+# The verifier units live in infra/systemd, which the recursive copy above
+# already placed in the fixture archive.
 printf '#!/usr/bin/env sh\nexit 0\n' > "${archive_root}/xg2g"
 chmod 0755 "${archive_root}/xg2g"
 
