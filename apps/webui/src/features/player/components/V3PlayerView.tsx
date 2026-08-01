@@ -255,7 +255,7 @@ export function V3PlayerView({
                 <input
                   type="text"
                   className={styles.serviceInput}
-                  value={viewState.serviceRef}
+                  value={viewState.serviceRef || ''}
                   onChange={(e) => actions.updateServiceRef(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
