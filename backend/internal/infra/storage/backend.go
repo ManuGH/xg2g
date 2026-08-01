@@ -5,6 +5,7 @@ package storage
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -64,6 +65,15 @@ type StorageCapabilities struct {
 	RecommendedForRingbuffer bool `json:"recommended_for_ringbuffer"`
 }
 
+// ObjectReader represents a full seekable media object stream for local or mounted storage targets.
+type ObjectReader interface {
+	io.Reader
+	io.ReaderAt
+	io.Seeker
+	io.Closer
+	Size() int64
+}
+
 // StorageBackend defines the capability-based interface for all xg2g storage targets.
 type StorageBackend interface {
 	ID() string
@@ -72,4 +82,6 @@ type StorageBackend interface {
 	Capabilities() StorageCapabilities
 	Health(ctx context.Context) HealthStatus
 	Capacity(ctx context.Context) (CapacityInfo, error)
+	Open(ctx context.Context, objectKey string) (ObjectReader, error)
+	OpenRange(ctx context.Context, objectKey string, offset, length int64) (io.ReadCloser, error)
 }
