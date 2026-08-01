@@ -122,7 +122,7 @@ render "${BACKEND_ROOT}/templates/docs/ops/DEPLOYMENT_RUNTIME_CONTRACT.md.tmpl" 
 render "${BACKEND_ROOT}/templates/docs/ops/OPERATIONS_MODEL.md.tmpl" "${REPO_ROOT}/docs/ops/OPERATIONS_MODEL.md" "md"
 
 # 6. Continuous Verifier Units
-render "${BACKEND_ROOT}/templates/docs/ops/xg2g-verifier.service.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.service" "shell"
-render "${BACKEND_ROOT}/templates/docs/ops/xg2g-verifier.timer.tmpl" "${REPO_ROOT}/docs/ops/xg2g-verifier.timer" "shell"
+render "${BACKEND_ROOT}/templates/docs/ops/xg2g-verifier.service.tmpl" "${REPO_ROOT}/infra/systemd/xg2g-verifier.service" "shell"
+render "${BACKEND_ROOT}/templates/docs/ops/xg2g-verifier.timer.tmpl" "${REPO_ROOT}/infra/systemd/xg2g-verifier.timer" "shell"
 
 echo "✨ Documentation rendering complete (idempotent)."
