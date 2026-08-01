@@ -20,7 +20,6 @@ export interface V3PlayerViewState {
   channelName: string | null;
   programmeTitle: string | null;
   programmeDesc: string | null;
-  serviceRef: string | null;
   useOverlayLayout: boolean;
   userIdle: boolean;
   showCloseButton: boolean;
