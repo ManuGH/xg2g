@@ -27,7 +27,9 @@ type Buffer struct {
 	serviceRef  string
 	maxSegments int
 	mu          sync.RWMutex
-	segments    []string // ordered slice of complete segment filenames (seg_*)
+	segments    []string            // ordered slice of complete segment filenames (seg_*)
+	parts       map[uint64][]string // partial segments grouped by sequence number (part_<seq>_*)
+	partOrder   []string            // ordered slice of all partial segment filenames
 	artifacts   map[string]*Artifact
 	lastUpdated time.Time
 	dvrCb       DVRCallback
@@ -51,6 +53,7 @@ func NewBufferWithStore(serviceRef, sessionID string, maxSegments int, dvrCb DVR
 		serviceRef:  serviceRef,
 		sessionID:   sessionID,
 		maxSegments: maxSegments,
+		parts:       make(map[uint64][]string),
 		artifacts:   make(map[string]*Artifact),
 		lastUpdated: time.Now(),
 		dvrCb:       dvrCb,
@@ -139,70 +142,91 @@ func (b *Buffer) PutWithMetadata(filename string, data []byte, meta SegmentMetad
 	b.artifacts[filename] = art
 
 	segID, isSegment := ParseSegmentFilename(b.serviceRef, b.sessionID, filename)
-	// Variant A: Retro-DVR ONLY indexes and counts COMPLETE segments (seg_*)
-	if isSegment && segID.Kind == SegmentKindComplete && !exists {
-		b.segments = append(b.segments, filename)
 
-		durSec := meta.Duration.Seconds()
-		if durSec <= 0 {
-			durSec = 2.0 // Fallback
-		}
+	if isSegment {
+		if segID.Kind == SegmentKindPart && !exists {
+			// Track partial segments flüchtig in RAM
+			b.parts[segID.Sequence] = append(b.parts[segID.Sequence], filename)
+			b.partOrder = append(b.partOrder, filename)
 
-		startWall := art.ModTime
-		if meta.ProgramTime != nil {
-			startWall = *meta.ProgramTime
-		}
-		endWall := startWall.Add(time.Duration(durSec * float64(time.Second)))
-
-		// Register segment with authoritative store
-		if b.store != nil {
-			b.store.mu.Lock()
-			b.index.AddSegment(&InternalSegment{
-				ID: segID,
-				Location: SegmentLocation{
-					Kind:     StorageKindRAM,
-					Filename: filename,
-				},
-				DurationSec:   durSec,
-				Sequence:      segID.Sequence,
-				StartPTS90k:   meta.StartPTS90k,
-				EndPTS90k:     meta.EndPTS90k,
-				PTSEpoch:      meta.PTSEpoch,
-				StartWallTime: startWall,
-				EndWallTime:   endWall,
-				SizeBytes:     int64(len(data)),
-				Discontinuity: meta.Discontinuity,
-				CodecHash:     meta.CodecHash,
-				State:         SegmentActive,
-				Data:          data,
-			})
-			b.store.mu.Unlock()
-		}
-
-		var keptSegments []string
-		for idx, s := range b.segments {
-			if len(b.segments)-idx <= b.maxSegments {
-				keptSegments = append(keptSegments, s)
-				continue
+			// Enforce max un-assembled parts limit (50 max)
+			const maxPartsPerSession = 50
+			for len(b.partOrder) > maxPartsPerSession {
+				oldestPart := b.partOrder[0]
+				b.partOrder = b.partOrder[1:]
+				delete(b.artifacts, oldestPart)
+			}
+		} else if segID.Kind == SegmentKindComplete && !exists {
+			// Complete segment arrived: IMMEDIATELY PURGE corresponding transient part_* artifacts!
+			if partFiles, ok := b.parts[segID.Sequence]; ok {
+				for _, pf := range partFiles {
+					delete(b.artifacts, pf)
+				}
+				delete(b.parts, segID.Sequence)
 			}
 
-			candID, candOk := ParseSegmentFilename(b.serviceRef, b.sessionID, s)
-			if candOk && b.store != nil {
+			b.segments = append(b.segments, filename)
+
+			durSec := meta.Duration.Seconds()
+			if durSec <= 0 {
+				durSec = 2.0 // Fallback
+			}
+
+			startWall := art.ModTime
+			if meta.ProgramTime != nil {
+				startWall = *meta.ProgramTime
+			}
+			endWall := startWall.Add(time.Duration(durSec * float64(time.Second)))
+
+			// Register segment with authoritative store
+			if b.store != nil {
 				b.store.mu.Lock()
-				canEvict := b.index.TryMarkDeleting(candID)
-				if !canEvict {
-					// Reserved! Keep in buffer
-					b.store.mu.Unlock()
-					keptSegments = append(keptSegments, s)
-					continue
-				}
-				b.index.RemoveSegment(candID)
+				b.index.AddSegment(&InternalSegment{
+					ID: segID,
+					Location: SegmentLocation{
+						Kind:     StorageKindRAM,
+						Filename: filename,
+					},
+					DurationSec:   durSec,
+					Sequence:      segID.Sequence,
+					StartPTS90k:   meta.StartPTS90k,
+					EndPTS90k:     meta.EndPTS90k,
+					PTSEpoch:      meta.PTSEpoch,
+					StartWallTime: startWall,
+					EndWallTime:   endWall,
+					SizeBytes:     int64(len(data)),
+					Discontinuity: meta.Discontinuity,
+					CodecHash:     meta.CodecHash,
+					State:         SegmentActive,
+				})
 				b.store.mu.Unlock()
 			}
 
-			delete(b.artifacts, s)
+			var keptSegments []string
+			for idx, s := range b.segments {
+				if len(b.segments)-idx <= b.maxSegments {
+					keptSegments = append(keptSegments, s)
+					continue
+				}
+
+				candID, candOk := ParseSegmentFilename(b.serviceRef, b.sessionID, s)
+				if candOk && b.store != nil {
+					b.store.mu.Lock()
+					canEvict := b.index.TryMarkDeleting(candID)
+					if !canEvict {
+						// Reserved! Keep in buffer
+						b.store.mu.Unlock()
+						keptSegments = append(keptSegments, s)
+						continue
+					}
+					b.index.RemoveSegment(candID)
+					b.store.mu.Unlock()
+				}
+
+				delete(b.artifacts, s)
+			}
+			b.segments = keptSegments
 		}
-		b.segments = keptSegments
 	}
 
 	if b.dvrCh != nil {
@@ -374,7 +398,6 @@ func (r *Registry) cleanupLoop() {
 				last := buf.lastUpdated
 				buf.mu.RUnlock()
 				if now.Sub(last) > 10*time.Minute {
-					// DO NOT DELETE SESSION BUFFER IF IT CONTAINS RESERVED SEGMENTS!
 					if r.store != nil && r.store.HasReservationsForSession(id) {
 						continue
 					}

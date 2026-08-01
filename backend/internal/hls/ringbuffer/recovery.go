@@ -2,19 +2,18 @@ package ringbuffer
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 )
 
-type LifecycleState uint8
+// LifecycleState tracks startup, recovery, and cleanup states.
+type LifecycleState int
 
 const (
 	LifecycleStarting LifecycleState = iota
 	LifecycleRecovering
-	LifecycleReady
 	LifecycleCleanupEnabled
 	LifecycleDegraded
 )
@@ -25,8 +24,6 @@ func (s LifecycleState) String() string {
 		return "STARTING"
 	case LifecycleRecovering:
 		return "RECOVERING"
-	case LifecycleReady:
-		return "READY"
 	case LifecycleCleanupEnabled:
 		return "CLEANUP_ENABLED"
 	case LifecycleDegraded:
@@ -36,103 +33,126 @@ func (s LifecycleState) String() string {
 	}
 }
 
-var ErrRecoveryFailed = errors.New("ringbuffer recovery failed: state degraded")
-
-// LifecycleManager controls startup recovery before enabling ringbuffer segment cleanup.
+// LifecycleManager controls startup recovery and delays segment cleanup until recovery completes.
 type LifecycleManager struct {
-	mu           sync.Mutex
-	state        LifecycleState
-	store        *ReservationStore
-	index        *SegmentIndex
-	cleanupReady chan struct{}
+	mu        sync.RWMutex
+	state     LifecycleState
+	store     *ReservationStore
+	index     *SegmentIndex
+	readyCond *sync.Cond
 }
 
-// NewLifecycleManager creates a new instance managing ringbuffer startup recovery.
+// NewLifecycleManager initializes a LifecycleManager.
 func NewLifecycleManager(store *ReservationStore, index *SegmentIndex) *LifecycleManager {
-	return &LifecycleManager{
-		state:        LifecycleStarting,
-		store:        store,
-		index:        index,
-		cleanupReady: make(chan struct{}),
+	lm := &LifecycleManager{
+		state: LifecycleStarting,
+		store: store,
+		index: index,
 	}
+	lm.readyCond = sync.NewCond(&lm.mu)
+	return lm
 }
 
+// State returns the current lifecycle state.
 func (lm *LifecycleManager) State() LifecycleState {
-	lm.mu.Lock()
-	defer lm.mu.Unlock()
+	lm.mu.RLock()
+	defer lm.mu.RUnlock()
 	return lm.state
 }
 
-// RunRecovery executes the fail-safe startup recovery sequence.
+// WaitCleanupEnabled blocks until recovery completes successfully and cleanup is enabled.
+func (lm *LifecycleManager) WaitCleanupEnabled() {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	for lm.state != LifecycleCleanupEnabled {
+		lm.readyCond.Wait()
+	}
+}
+
+// RunRecovery performs startup recovery of persistent reservations.
 func (lm *LifecycleManager) RunRecovery() error {
 	lm.mu.Lock()
 	lm.state = LifecycleRecovering
 	lm.mu.Unlock()
 
-	lm.store.mu.Lock()
-	defer lm.store.mu.Unlock()
-
-	if lm.store.storagePath != "" {
-		data, err := os.ReadFile(lm.store.storagePath)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				lm.mu.Lock()
-				lm.state = LifecycleDegraded
-				lm.mu.Unlock()
-				return fmt.Errorf("failed to read reservations state file: %w", err)
-			}
-		} else {
-			var loaded map[string]*Reservation
-			if err := json.Unmarshal(data, &loaded); err != nil {
-				lm.mu.Lock()
-				lm.state = LifecycleDegraded
-				lm.mu.Unlock()
-				return fmt.Errorf("failed to unmarshal corrupted reservations JSON: %w", err)
-			}
-
-			now := time.Now()
-			for id, res := range loaded {
-				if now.After(res.ExpiresAt) {
-					continue // Skip expired reservations
-				}
-				// Verify segments exist and lock them
-				var validSegs []SegmentID
-				for _, segID := range res.SegmentIDs {
-					if seg, ok := lm.index.GetByID(segID); ok {
-						exists := seg.Location.Kind == StorageKindRAM
-						if seg.Location.Kind == StorageKindDisk && seg.Location.Path != "" {
-							_, err := os.Stat(seg.Location.Path)
-							exists = (err == nil)
-						}
-						if exists {
-							if seg.ReservationIDs == nil {
-								seg.ReservationIDs = make(map[string]struct{})
-							}
-							seg.ReservationIDs[id] = struct{}{}
-							seg.State = SegmentReserved
-							validSegs = append(validSegs, segID)
-						} else {
-							seg.State = SegmentMissing
-							res.Status = CompletenessGapped
-						}
-					}
-				}
-				res.SegmentIDs = validSegs
-				lm.store.reservations[id] = res
-			}
-		}
-	}
+	err := lm.performRecovery()
 
 	lm.mu.Lock()
-	lm.state = LifecycleReady
-	lm.state = LifecycleCleanupEnabled
-	close(lm.cleanupReady)
-	lm.mu.Unlock()
+	if err != nil {
+		lm.state = LifecycleDegraded
+		lm.mu.Unlock()
+		return fmt.Errorf("recovery failed, entering degraded state: %w", err)
+	}
 
+	lm.state = LifecycleCleanupEnabled
+	lm.readyCond.Broadcast()
+	lm.mu.Unlock()
 	return nil
 }
 
-// WaitCleanupEnabled blocks until the recovery lifecycle enters CLEANUP_ENABLED.
-func (lm *LifecycleManager) WaitCleanupEnabled() {
-	<-lm.cleanupReady
+func (lm *LifecycleManager) performRecovery() error {
+	lm.store.mu.Lock()
+	defer lm.store.mu.Unlock()
+
+	if lm.store.storagePath == "" {
+		return nil
+	}
+
+	if _, err := os.Stat(lm.store.storagePath); os.IsNotExist(err) {
+		return nil
+	}
+
+	data, err := os.ReadFile(lm.store.storagePath)
+	if err != nil {
+		return fmt.Errorf("failed to read reservations JSON: %w", err)
+	}
+
+	var loaded map[string]*Reservation
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		return fmt.Errorf("failed to unmarshal corrupted reservations JSON: %w", err)
+	}
+
+	now := time.Now()
+	for id, res := range loaded {
+		if now.After(res.ExpiresAt) {
+			continue // Skip expired reservations
+		}
+
+		var validSegs []SegmentID
+		for _, segID := range res.SegmentIDs {
+			seg, ok := lm.index.GetByID(segID)
+			if !ok {
+				continue
+			}
+
+			switch seg.Location.Kind {
+			case StorageKindDisk:
+				// Disk segments survive restart: stat file
+				if seg.Location.Path != "" {
+					if _, err := os.Stat(seg.Location.Path); err == nil {
+						if seg.ReservationIDs == nil {
+							seg.ReservationIDs = make(map[string]struct{})
+						}
+						seg.ReservationIDs[id] = struct{}{}
+						seg.State = SegmentReserved
+						validSegs = append(validSegs, segID)
+					} else {
+						seg.State = SegmentMissing
+					}
+				} else {
+					seg.State = SegmentMissing
+				}
+			case StorageKindRAM:
+				// RAM segments NEVER survive process restart!
+				seg.State = SegmentMissing
+			}
+		}
+
+		res.SegmentIDs = validSegs
+		if len(validSegs) > 0 {
+			lm.store.reservations[id] = res
+		}
+	}
+
+	return nil
 }

@@ -115,7 +115,6 @@ type InternalSegment struct {
 	CodecHash      string              `json:"codec_hash"`
 	State          SegmentState        `json:"state"`
 	ReservationIDs map[string]struct{} `json:"reservation_ids"`
-	Data           []byte              `json:"-"` // Non-nil if StorageKindRAM
 }
 
 // IsReserved returns true if one or more active reservations hold this segment.
@@ -137,7 +136,12 @@ type SegmentHandle struct {
 	SizeBytes     int64           `json:"size_bytes"`
 	Discontinuity bool            `json:"discontinuity"`
 	CodecHash     string          `json:"codec_hash"`
-	Data          []byte          `json:"-"` // Available if StorageKindRAM
+}
+
+// SegmentSnapshot holds an immutable metadata handle along with an isolated byte copy for staging.
+type SegmentSnapshot struct {
+	Handle SegmentHandle `json:"handle"`
+	Data   []byte        `json:"-"`
 }
 
 // RangeProbe represents the result of probing segment availability over a time window.
