@@ -238,7 +238,8 @@ export function usePlaybackOrchestrator(
 
   // Protection against accidental tab / window closure while playback/timeshift is active
   useEffect(() => {
-    if (status !== 'playing' && status !== 'buffering' && status !== 'paused') {
+    const currentStatus = playbackState.status;
+    if (currentStatus !== 'playing' && currentStatus !== 'buffering' && currentStatus !== 'paused') {
       return;
     }
 
@@ -252,7 +253,7 @@ export function usePlaybackOrchestrator(
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [status]);
+  }, [playbackState.status]);
 
   const handlePlaybackMilestone = useCallback((milestone: 'manifest' | 'firstFrame') => {
     const startT0 = ttffStartT0Ref.current;
