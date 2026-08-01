@@ -136,7 +136,7 @@ func validateRequest(w http.ResponseWriter, sessionID, filename string) (hlsRequ
 }
 
 func touchPlaylistAccessTime(ctx context.Context, store HLSStore, req hlsRequest, rec *model.SessionRecord) {
-	if !req.isPlaylist || rec == nil {
+	if rec == nil || !req.isPlaylist {
 		return
 	}
 
@@ -178,12 +178,22 @@ func touchSegmentAccessTime(ctx context.Context, store HLSStore, req hlsRequest,
 		return
 	}
 
+	now := time.Now()
+	if rec.PlaybackTrace != nil && rec.PlaybackTrace.HLS != nil {
+		trace := rec.PlaybackTrace.HLS
+		if trace.LastSegmentName == req.cleanName && trace.LastSegmentAtUnix > 0 {
+			lastSegmentAt := time.UnixMilli(trace.LastSegmentAtUnix)
+			if now.Sub(lastSegmentAt) < minSegmentAccessUpdateInterval {
+				return
+			}
+		}
+	}
+
 	updater, ok := store.(hlsSessionUpdater)
 	if !ok {
 		return
 	}
 
-	now := time.Now()
 	_, _ = updater.UpdateSession(ctx, req.sessionID, func(r *model.SessionRecord) error {
 		if r == nil {
 			return nil
