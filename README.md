@@ -8,6 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/ManuGH/xg2g?style=flat-square&color=0066CC)](https://github.com/ManuGH/xg2g/releases)
 [![Go Version](https://img.shields.io/badge/Go-1.26.5-00ADD8?style=flat-square&logo=go)](backend/go.mod)
 [![FFmpeg Pinned](https://img.shields.io/badge/FFmpeg-8.1.2-0078D7?style=flat-square&logo=ffmpeg)](docs/arch/CODEC_MATRIX.md)
+[![Sponsor](https://img.shields.io/badge/Sponsor-PayPal-003087?style=flat-square&logo=paypal)](https://www.paypal.me/manuelherma)
 [![License](https://img.shields.io/badge/license-PolyForm%20NC-6C5CE7?style=flat-square)](LICENSE)
 
 <br />
@@ -20,7 +21,7 @@
 
 xg2g connects to Enigma2 receivers (VU+, Dreambox, GigaBlue) and turns raw MPEG-TS satellite/cable streams into browser-ready HLS and fMP4 on the fly.
 
-[**Getting Started**](docs/guides/GETTING_STARTED.md) · [**Linux Setup**](docs/guides/INSTALLATION.md) · [**Quickstart**](#quickstart) · [**Documentation**](docs/README.md) · [**Codec Matrix**](docs/arch/CODEC_MATRIX.md) · [**Releases**](https://github.com/ManuGH/xg2g/releases)
+[**Getting Started**](docs/guides/GETTING_STARTED.md) · [**Linux Setup**](docs/guides/INSTALLATION.md) · [**Quickstart**](#quickstart) · [**Documentation**](docs/README.md) · [**Codec Matrix**](docs/arch/CODEC_MATRIX.md) · [**Sponsor**](https://www.paypal.me/manuelherma) · [**Releases**](https://github.com/ManuGH/xg2g/releases)
 
 </div>
 
