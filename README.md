@@ -1,126 +1,75 @@
 <!-- GENERATED FILE - DO NOT EDIT. Source: backend/templates/README.md.tmpl -->
 # xg2g
 
-[![CI](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
-[![Coverage](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
-[![Release](https://img.shields.io/github/v/release/ManuGH/xg2g)](https://github.com/ManuGH/xg2g/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ManuGH/xg2g)](https://goreportcard.com/report/github.com/ManuGH/xg2g)
-[![License](https://img.shields.io/badge/license-PolyForm%20NC-blue)](LICENSE)
+<div align="center">
+
+[![CI Status](https://img.shields.io/github/actions/workflow/status/ManuGH/xg2g/ci.yml?branch=main&style=flat-square&logo=github&label=CI)](https://github.com/ManuGH/xg2g/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/github/actions/workflow/status/ManuGH/xg2g/coverage.yml?branch=main&style=flat-square&label=coverage)](https://github.com/ManuGH/xg2g/actions/workflows/coverage.yml)
+[![Release](https://img.shields.io/github/v/release/ManuGH/xg2g?style=flat-square&color=0066CC)](https://github.com/ManuGH/xg2g/releases)
+[![Go Version](https://img.shields.io/badge/Go-1.26.5-00ADD8?style=flat-square&logo=go)](backend/go.mod)
+[![FFmpeg Pinned](https://img.shields.io/badge/FFmpeg-8.1.2-0078D7?style=flat-square&logo=ffmpeg)](docs/arch/CODEC_MATRIX.md)
+[![License](https://img.shields.io/badge/license-PolyForm%20NC-6C5CE7?style=flat-square)](LICENSE)
+
+<br />
 
 <p align="center">
   <img src="docs/assets/github/xg2g-github-hero.svg" alt="xg2g turns Enigma2 MPEG-TS into browser-ready HLS for Safari, iPhone, iPad, Chrome, and modern TVs." width="100%" />
 </p>
 
-<div align="center">
-  <strong>Watch your Enigma2 receiver's live TV and recordings in any browser —
-  no app to install.</strong><br />
-  Point xg2g at your VU+ / Dreambox and it streams to Safari, Chrome, iPhone,
-  iPad, Mac, PC, and TVs — picking direct-play, remux, or hardware transcode per
-  device so you never fiddle with codecs.
-  <br /><br />
-  Local access works out of the box; to use it from another device, serve it over
-  HTTPS via a reverse proxy — see Getting Started.
-  <br /><br />
-  <em>Self-hosted live-TV gateway for Enigma2 — MPEG-TS in, browser-ready HLS out.</em>
-  <br /><br />
-  <a href="docs/guides/GETTING_STARTED.md"><strong>Getting Started</strong></a> ·
-  <a href="#quickstart">Quickstart</a> ·
-  <a href="https://manugh.github.io/xg2g/">API Docs</a> ·
-  <a href="docs/README.md">Documentation</a> ·
-  <a href="docs/arch/CODEC_MATRIX.md">Codec Matrix</a> ·
-  <a href="https://github.com/ManuGH/xg2g/releases">Releases</a>
+### Watch live TV & recordings from your Enigma2 receiver in any browser — no apps required.
+
+xg2g connects to Enigma2 receivers (VU+, Dreambox, GigaBlue) and turns raw MPEG-TS satellite/cable streams into browser-ready HLS and fMP4 on the fly.
+
+[**Getting Started**](docs/guides/GETTING_STARTED.md) · [**Linux Setup**](docs/guides/INSTALLATION.md) · [**Quickstart**](#quickstart) · [**Documentation**](docs/README.md) · [**Codec Matrix**](docs/arch/CODEC_MATRIX.md) · [**Releases**](https://github.com/ManuGH/xg2g/releases)
+
 </div>
 
-## What xg2g Does
+---
 
-- **Live TV in the browser** — your receiver's channels play in Safari, Chrome, and on iPhone, iPad, Mac, PC, and modern TVs, with no native app.
-- **It just plays** — xg2g picks direct-play, remux, or hardware transcode per stream and per device, so you don't fiddle with codecs or formats.
-- **Your recordings, too** — browse and play the recordings on your receiver the same way.
-- **Built to run** — WebUI, a versioned `/api/v3`, health checks, Prometheus metrics, structured logs, and deployment runbooks.
+## Features
 
-It bridges Enigma2/OpenWebIF and serves standards-based HLS — see the pipeline below.
+- **Zero-App Browser Playback** — Stream live TV and DVR recordings in Safari, Chrome, Edge, iOS, Android, and Smart TVs without installing native apps.
+- **Dynamic Decision Engine** — Analyzes incoming codecs (H.264, HEVC, MPEG-2, AC3, AAC) and client capabilities to pick direct playback, remuxing, or transcoding per stream.
+- **Hardware Acceleration** — GPU offloading via VAAPI (Intel/AMD) and NVIDIA NVENC on x86 hosts to keep CPU usage low.
+- **DVR & Recordings** — Browse and stream receiver recordings with time-shift support.
+- **Production Ready** — Native systemd service, Docker container, token-scoped auth, `/readyz` health endpoints, and Prometheus metrics.
 
-## Playback Pipeline
+---
 
-```text
-Enigma2 / OpenWebIF
-  -> receiver-resolved stream URL
-  -> xg2g decision engine
-  -> ffmpeg: remux to HLS (transcode to H.264/AAC when needed)
-  -> browser, phone, tablet, TV, or operator client
+## Architecture Pipeline
+
+```mermaid
+flowchart LR
+    E2["Enigma2 Receiver\n(OpenWebIF / TS Stream)"] -->|"MPEG-TS"| DEC{"xg2g Engine\n(Decision Matrix)"}
+    DEC -->|"Direct Copy / Remux"| HLS["Low-Latency HLS\n(Browser Safe)"]
+    DEC -->|"VAAPI / NVENC / CPU"| FF["FFmpeg Transcoder\n(H.264 / AAC / fMP4)"]
+    FF --> HLS
+    HLS --> CLIENT["Browser / iOS / Android / TV\n(React WebUI)"]
+
+    style DEC fill:#0D2933,stroke:#36D1A7,color:#fff
+    style HLS fill:#102F3A,stroke:#5FB9E9,color:#fff
+    style CLIENT fill:#163A43,stroke:#FFB84D,color:#fff
 ```
 
-The decision engine evaluates **H.264, HEVC, AV1, MPEG-2, VP9** video and
-**AAC, AC3, E-AC3, MP2, MP3** audio at runtime. When direct playback is not
-safe, the universal fallback is **H.264 + AAC**. AV1/fMP4 is allowed only when
-the browser runtime probe and device policy both prove that the client can
-decode it safely.
+The decision engine evaluates **H.264, HEVC, AV1, MPEG-2, VP9** video and **AAC, AC3, E-AC3, MP2, MP3** audio at runtime. Remuxing is prioritized whenever streams are browser-safe. See the [Codec & Container Matrix](docs/arch/CODEC_MATRIX.md) for details.
 
-**FFmpeg is the playback engine for every browser stream** — it remuxes the
-receiver's MPEG-TS into HLS, copying audio/video when they are already
-browser-safe. Most broadcast channels are not: MPEG-2/HEVC video or AC3/MP2
-audio, and non-Safari browsers need H.264/AAC — so **playback usually also
-transcodes**, which costs real CPU. On x86 hosts xg2g offloads video encoding to
-a GPU/iGPU (VAAPI/NVENC); on arm64 it transcodes in software. FFmpeg is bundled
-in the Docker image; size your host for the concurrent streams you expect.
+---
 
-[Read the codec/container matrix](docs/arch/CODEC_MATRIX.md)
+## Quickstart
 
-## Guided Linux Install
+### 1. Guided Linux Installer (Recommended)
 
-For a persistent Linux installation, download the archive for your architecture
-from [GitHub Releases](https://github.com/ManuGH/xg2g/releases), verify it
-against `checksums.txt`, and confirm the archive contains
-`infra/systemd/setup-linux.sh`. Then extract it and run:
+For a persistent Linux server setup, download the release archive from [GitHub Releases](https://github.com/ManuGH/xg2g/releases) and run the installer:
 
 ```bash
 sudo ./infra/systemd/setup-linux.sh
 ```
 
-Releases from v3.9.2 also publish an SPDX SBOM for each archive, a keyless
-Sigstore bundle for `checksums.txt`, and GitHub build-provenance attestations.
-The complete installation guide shows the optional `cosign` and `gh
-attestation verify` commands.
+The installer handles secret generation, systemd service registration, automated backups, and an optional managed Caddy setup. Existing nginx, Traefik, Caddy, or other HTTPS proxies remain untouched. Run `sudo xg2g-admin doctor` after installation to verify the setup.
 
-Older archives may predate the guided installer. Do not combine current
-installer files with an older release image; the
-[complete installation guide](docs/guides/INSTALLATION.md) includes an
-availability check and the safe interim path.
+### 2. Local Docker Container
 
-Do not use GitHub's green **Code → Download ZIP** button for a server install;
-branch ZIPs are mutable source snapshots, not versioned release bundles.
-
-The assistant asks plain-language questions about the receiver, HTTPS/VPN
-access, DVR rewind window, simultaneous streams, storage, and GPU. **Caddy is
-optional and opt-in.** The default HTTPS choice keeps an existing same-host
-nginx, Traefik, Caddy, or other reverse proxy unchanged; setup only verifies
-the URL and xg2g's trusted-proxy contract. Managed public or LAN/VPN Caddy is a
-separate explicit choice for users who do not already have an HTTPS edge.
-
-Setup generates strong secrets, enables daily backups and runtime verification,
-and uses the same pinned systemd/Compose deployment contract as upgrades. It
-never partitions, formats, mounts, or deletes a disk.
-
-After installation, routine administration uses one command:
-
-```bash
-sudo xg2g-admin doctor
-```
-
-[Complete Linux installation](docs/guides/INSTALLATION.md) ·
-[Getting started](docs/guides/GETTING_STARTED.md)
-
-[Current 2026 system overview](docs/arch/SYSTEM_OVERVIEW_2026.md)
-
-## Local Evaluation Quickstart
-
-This single-container path is for evaluating xg2g from the same host. It is not
-the supported production installation or upgrade workflow. Production hosts use
-the pinned, systemd-supervised [deployment path](docs/ops/DEPLOYMENT.md).
-
-**Prerequisites:** Docker, `openssl`, an Enigma2 receiver reachable on your
-network, and a host with enough CPU for transcoding (x86 hosts can offload video
-encoding to a GPU/iGPU — see Playback Pipeline above)
+For testing xg2g on a local machine:
 
 ```bash
 docker run -d --name xg2g --restart unless-stopped -p 127.0.0.1:8088:8088 \
@@ -131,80 +80,53 @@ docker run -d --name xg2g --restart unless-stopped -p 127.0.0.1:8088:8088 \
   ghcr.io/manugh/xg2g:v3.9.7
 ```
 
-Check the service health:
+Check service readiness:
 
 ```bash
 curl -fsS http://localhost:8088/readyz
 ```
 
-Then open [http://localhost:8088/ui/](http://localhost:8088/ui/)
+Then open **[http://localhost:8088/ui/](http://localhost:8088/ui/)** in your browser.
 
-The published image is multi-architecture (`linux/amd64` and `linux/arm64`),
-so xg2g runs on x86-64 servers and on arm64 hosts (Raspberry Pi, arm64 NAS).
-Hardware transcoding (VAAPI/NVENC) is x86-only; on arm64, ffmpeg uses software
-encoding.
+> Note: `XG2G_DECISION_SECRET` is mandatory for signing playback sessions. If exposing xg2g across local networks or external domains, serve over HTTPS via a reverse proxy to allow session cookie minting.
 
-> `XG2G_DECISION_SECRET` is mandatory. xg2g refuses to start without a live
-> playback signing secret.
->
-> Local quickstart over `http://localhost:8088/ui/` is supported only from the
-> same host. If you access xg2g from another browser or device, you must expose
-> it via HTTPS or a trusted HTTPS proxy. Browser playback needs
-> `POST /api/v3/auth/session` to mint the `xg2g_session` cookie, and that
-> exchange is rejected over plain HTTP for non-loopback clients.
-
-**Next steps:**
-[Documentation](docs/README.md) •
-[Installation](docs/guides/INSTALLATION.md) •
-[Configuration](docs/guides/CONFIGURATION.md) •
-[Deployment](docs/ops/DEPLOYMENT.md) •
-[Security](docs/ops/SECURITY.md) •
-[Architecture](docs/arch/README.md) •
-[ADRs](docs/ADR/)
-
-**Local development:**
-
-```bash
-make install
-make dev-tools
-make doctor
-make start
-```
-
-Optional host bootstrap: `mise install` uses [mise.toml](mise.toml) to install
-the pinned Go and Node versions. Optional containerized bootstrap: reopen the
-repo in [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json).
-
-Use `make start RUNTIME=vaapi`, `make start RUNTIME=nvidia`, or `make dev-ui`
-only when you explicitly need a hardware-specific container path or frontend
-HMR. Make targets are development interfaces, not production deployment tools.
-
-If you are new to the repository layout, read the
-[Repository Map](docs/dev/REPO_MAP.md) before editing. Local runtime outputs
-such as `data/`, `logs/`, `artifacts/`, `test-results/`, `node_modules/`,
-`.venv/`, and `bin/` are intentionally ignored and should not be committed.
-
-## Status
-
-| Component | Status | Guarantee |
-| :--- | :--- | :--- |
-| **API** | Stable (v3) | SemVer |
-| **WebUI** | Stable | Thin Client |
-| **Streaming** | Production | Universal Policy |
-| **FFmpeg** | Pinned (8.1.2) | Bundled in Docker image |
-
-Structured logs, Prometheus metrics, OpenTelemetry traces (opt-in), fail-closed auth,
-Docker health checks, and CI-backed release automation are built in.
+---
 
 ## Documentation
 
-| | |
+| Category | Guides |
 | :--- | :--- |
-| **Get started** | [Documentation Portal](docs/README.md) · [10-Minute Intro](docs/dev/NEW_HERE.md) · [Repository Map](docs/dev/REPO_MAP.md) · [API Reference](https://manugh.github.io/xg2g/) |
-| **Operate** | [Ops Index](docs/ops/README.md) · [Configuration](docs/guides/CONFIGURATION.md) · [Deployment](docs/ops/DEPLOYMENT.md) · [Client Profiles](docs/ops/CLIENT_PROFILES.md) · [Security](docs/ops/SECURITY.md) |
-| **Develop** | [Dev Index](docs/dev/README.md) · [Architecture Index](docs/arch/README.md) · [Codec Matrix](docs/arch/CODEC_MATRIX.md) · [WebUI Index](docs/webui/README.md) · [CI Playbook](docs/ops/CI_FAILURE_PLAYBOOK.md) |
+| **Get Started** | [Documentation Overview](docs/README.md) · [Getting Started Guide](docs/guides/GETTING_STARTED.md) · [Linux Installation](docs/guides/INSTALLATION.md) |
+| **Operations** | [System Overview (2026)](docs/arch/SYSTEM_OVERVIEW_2026.md) · [Configuration Guide](docs/guides/CONFIGURATION.md) · [Deployment Runbook](docs/ops/DEPLOYMENT.md) · [Security Operations](docs/ops/SECURITY.md) |
+| **Architecture & Dev** | [Codec Matrix](docs/arch/CODEC_MATRIX.md) · [Repository Map](docs/dev/REPO_MAP.md) · [WebUI Contracts](docs/webui/README.md) · [ADRs](docs/ADR/) |
 
-## License & Trademark Protection
+---
+
+## Development
+
+```bash
+make install       # Install build tools & dependencies
+make dev-tools     # Verify toolchain
+make doctor        # Run environment diagnostics
+make start         # Start local development server
+```
+
+For hardware acceleration dev setups, use `make start RUNTIME=vaapi` or `make start RUNTIME=nvidia`. Read the [Repository Map](docs/dev/REPO_MAP.md) before submitting code.
+
+---
+
+## Status & Contracts
+
+| Component | Status | Guarantee |
+| :--- | :--- | :--- |
+| **API** | Stable (`v3`) | SemVer policy ([`openapi/v3.yaml`](openapi/v3.yaml)) |
+| **WebUI** | Stable | React thin client |
+| **Streaming** | Production | Universal fallback (H.264 / AAC) |
+| **FFmpeg Engine** | Pinned (`8.1.2`) | Hermetically bundled in release image |
+
+---
+
+## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE) — **Copyright (c) 2025-2026 ManuGH <https://github.com/ManuGH>. Original architecture & codebase directed by ManuGH.**
 

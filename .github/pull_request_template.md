@@ -73,7 +73,7 @@ make lint
 ## Checklist
 
 - [ ] Tests added/updated for changed behavior
-- [ ] Documentation updated (if needed)
+- [ ] Documentation updated & rendered (`./backend/scripts/render-docs.sh` if template modified)
 - [ ] No secrets or credentials introduced
 - [ ] Backward compatibility considered (or break documented)
 
