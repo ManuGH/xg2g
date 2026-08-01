@@ -18,6 +18,13 @@ export interface EpgToolbarProps {
   searchLoadState: EpgLoadState;
   extraActions?: React.ReactNode;
 
+  /** Live channel filter. Separate from filters.query on purpose: that one
+   *  searches programmes on the server and waits for Enter, this one narrows
+   *  the channel list as you type. Mixing them into one box would make the
+   *  Enter key mean two different things. */
+  channelQuery: string;
+  onChannelQueryChange: (value: string) => void;
+
   onFilterChange: (updates: Partial<EpgFilters>) => void;
   onRefresh: () => void;
   onToggleFavorites: () => void;
@@ -25,6 +32,8 @@ export interface EpgToolbarProps {
 }
 
 export function EpgToolbar({
+  channelQuery,
+  onChannelQueryChange,
   channelCount,
   favoriteCount,
   showFavoritesOnly,
@@ -126,6 +135,28 @@ export function EpgToolbar({
               className={styles.filterSearchClear}
               onClick={() => onFilterChange({ query: '' })}
               aria-label="Löschen"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        <div className={styles.filterSearchBox}>
+          <span className={styles.filterSearchIcon} aria-hidden="true">📺</span>
+          <input
+            type="text"
+            className={styles.filterSearchInput}
+            value={channelQuery}
+            onChange={(e) => onChannelQueryChange(e.target.value)}
+            placeholder={t('epg.filterChannels', { defaultValue: 'Sender filtern (Name oder Nummer)' })}
+            aria-label={t('epg.filterChannels', { defaultValue: 'Sender filtern (Name oder Nummer)' })}
+          />
+          {channelQuery && (
+            <button
+              type="button"
+              className={styles.filterSearchClear}
+              onClick={() => onChannelQueryChange('')}
+              aria-label={t('epg.clearChannelFilter', { defaultValue: 'Senderfilter leeren' })}
             >
               ✕
             </button>

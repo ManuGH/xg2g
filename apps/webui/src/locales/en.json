@@ -491,7 +491,10 @@
     "noDescription": "No description available.",
     "record": "Record",
     "recordingPlanned": "Recording scheduled",
-    "planRecording": "Schedule recording"
+    "planRecording": "Schedule recording",
+    "filterChannels": "Filter channels (name or number)",
+    "clearChannelFilter": "Clear channel filter",
+    "noChannelsMatchFilter": "No channel matches “{{query}}”"
   },
   "recordings": {
     "seriesRulesAction": "Series Rules",

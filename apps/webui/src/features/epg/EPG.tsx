@@ -6,7 +6,7 @@
 import React, { useReducer, useEffect, useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { epgReducer, createInitialEpgState } from './epgModel';
+import { epgReducer, createInitialEpgState, channelMatchesQuery } from './epgModel';
 import { fetchEpgEvents, fetchTimers } from './epgApi';
 import { addTimer } from '../../client-ts';
 import { throwOnClientResultError } from '../../services/clientWrapper';
@@ -134,6 +134,7 @@ export default function EPG({
   const { search } = useLocation();
   const { confirm, toast } = useUiOverlay();
   const uiSurface = useUiSurface();
+  const [channelQuery, setChannelQuery] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
     const stored = readStoredEpgViewMode();
     if (stored) return stored;
@@ -400,12 +401,14 @@ export default function EPG({
   );
 
   const visibleChannels = useMemo(() => {
-    if (!showFavoritesOnly) {
-      return channels;
-    }
-
-    return channels.filter((channel) => isFavoriteService(channel.serviceRef || channel.id || ''));
-  }, [channels, isFavoriteService, showFavoritesOnly]);
+    const needle = channelQuery;
+    return channels.filter((channel) => {
+      if (showFavoritesOnly && !isFavoriteService(channel.serviceRef || channel.id || '')) {
+        return false;
+      }
+      return channelMatchesQuery(channel, needle);
+    });
+  }, [channels, isFavoriteService, showFavoritesOnly, channelQuery]);
 
   const visibleFavoriteCount = useMemo(() => (
     channels.reduce((count, channel) => (
@@ -557,6 +560,8 @@ export default function EPG({
       {activeSection === 'guide' ? (
         <>
           <EpgToolbar
+            channelQuery={channelQuery}
+            onChannelQueryChange={setChannelQuery}
             channelCount={visibleChannels.length}
             favoriteCount={visibleFavoriteCount}
             showFavoritesOnly={showFavoritesOnly}

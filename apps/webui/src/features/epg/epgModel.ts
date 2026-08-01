@@ -59,6 +59,20 @@ export function isEventVisible(event: { start: number; end: number }, now: numbe
   return (event.end > now) && (event.start < to);
 }
 
+/** Narrows the channel list as the user types. Names match as a substring so
+ *  "orf" finds "ORF 1", numbers match as a prefix so "3" offers 3 and 301 but
+ *  not every channel with a 3 somewhere in its number. */
+export function channelMatchesQuery(
+  channel: { name?: string | null; id?: string | null; number?: string | number | null },
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const name = (channel.name || channel.id || '').toLowerCase();
+  const number = String(channel.number ?? '');
+  return name.includes(needle) || number.startsWith(needle);
+}
+
 function toggleSetValue(set: Set<string>, id: string): Set<string> {
   const next = new Set(set);
   if (next.has(id)) next.delete(id);

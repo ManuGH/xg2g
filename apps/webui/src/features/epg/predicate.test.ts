@@ -1,6 +1,6 @@
 
 import { describe, it, expect } from 'vitest';
-import { isEventVisible } from './epgModel';
+import { channelMatchesQuery, isEventVisible } from './epgModel';
 
 describe('EPG Visibility Predicate', () => {
   const now = 1000;
@@ -42,5 +42,42 @@ describe('EPG Visibility Predicate', () => {
     const maxTo = now + 336 * 3600;
     const veryFutureEvent = { start: now + 300 * 3600, end: now + 301 * 3600 };
     expect(isEventVisible(veryFutureEvent, now, maxTo)).toBe(true);
+  });
+});
+
+describe('channelMatchesQuery', () => {
+  const channels = [
+    { id: 'a', name: 'ORF 1', number: '1' },
+    { id: 'b', name: 'ORF 2', number: '2' },
+    { id: 'c', name: 'ServusTV HD', number: '3' },
+    { id: 'd', name: 'Sky Cinema', number: '301' },
+  ];
+  const matches = (query: string) =>
+    channels.filter((c) => channelMatchesQuery(c, query)).map((c) => c.name);
+
+  it('matches channel names case-insensitively, anywhere in the name', () => {
+    expect(matches('orf')).toEqual(['ORF 1', 'ORF 2']);
+    expect(matches('tv')).toEqual(['ServusTV HD']);
+  });
+
+  // Prefix, not substring: typing "3" offers 3 and 301, not every number
+  // containing a 3 somewhere.
+  it('matches channel numbers by prefix', () => {
+    expect(matches('3')).toEqual(['ServusTV HD', 'Sky Cinema']);
+    expect(matches('30')).toEqual(['Sky Cinema']);
+    expect(matches('1')).toEqual(['ORF 1']);
+  });
+
+  it('returns everything for an empty or whitespace query', () => {
+    expect(matches('')).toHaveLength(4);
+    expect(matches('   ')).toHaveLength(4);
+  });
+
+  it('returns nothing when no channel matches', () => {
+    expect(matches('zdf')).toEqual([]);
+  });
+
+  it('falls back to the id when a channel has no name', () => {
+    expect(channelMatchesQuery({ id: 'orf1.at', number: null }, 'orf1')).toBe(true);
   });
 });
