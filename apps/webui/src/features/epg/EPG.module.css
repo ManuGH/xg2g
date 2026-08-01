@@ -1231,7 +1231,7 @@
   left: var(--xg2g-timeline-left);
   position: absolute;
   top: 0;
-  bottom: -2000px; /* extends down into the body */
+  height: var(--xg2g-timeline-indicator-height, 100%);
   width: 2px;
   background: var(--status-error);
   z-index: 10;
