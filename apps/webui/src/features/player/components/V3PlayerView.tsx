@@ -1,4 +1,4 @@
-import { type RefObject } from 'react';
+import { useState, type RefObject } from 'react';
 import { Button, Card, StatusChip } from '../../../components/ui';
 import { useUiSurface } from '../../../context/UiSurfaceContext';
 import type { VideoElementRef } from '../../../types/v3-player';
@@ -9,6 +9,7 @@ import type {
 import styles from './V3Player.module.css';
 import { DvrScrubSlider } from './DvrScrubSlider';
 import { DropdownMenu } from './DropdownMenu';
+import { QuickRecordDialog } from './QuickRecordDialog';
 import { ChannelsGlyph, FullscreenGlyph, PipGlyph, StatsGlyph, VolumeGlyph, AudioTracksGlyph, SettingsGlyph, PlayGlyph, PauseGlyph, StopGlyph, SeekBackGlyph, SeekForwardGlyph } from './playerControlGlyphs';
 
 interface V3PlayerViewProps {
@@ -31,6 +32,7 @@ export function V3PlayerView({
   onOpenChannels,
   children,
 }: V3PlayerViewProps) {
+  const [showQuickRecord, setShowQuickRecord] = useState(false);
   // On phone-sized surfaces apply the compact mobile player layout (full-bleed
   // video, repositioned chrome). The styles existed in V3Player.module.css but
   // were never wired up, so the player rendered letterboxed on phones.
@@ -305,6 +307,19 @@ export function V3PlayerView({
                 </Button>
               )}
 
+              {viewState.serviceRef && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowQuickRecord(true)}
+                  title="Sendung aufnehmen (Retro-DVR)"
+                  aria-label="Sendung aufnehmen"
+                >
+                  <span style={{ color: '#f87171', fontWeight: 'bold', fontSize: '15px' }}>🔴</span>
+                  <span className="sr-only">Aufnehmen</span>
+                </Button>
+              )}
+
               {viewState.audioTracks && viewState.audioTracks.length > 1 && (
                 <DropdownMenu
                   icon={<AudioTracksGlyph />}
@@ -447,6 +462,15 @@ export function V3PlayerView({
             </div>
           </div>
         </div>
+      )}
+      {showQuickRecord && (
+        <QuickRecordDialog
+          channelName={viewState.channelName || undefined}
+          serviceRef={viewState.serviceRef || undefined}
+          programTitle={viewState.programmeTitle || undefined}
+          programDesc={viewState.programmeDesc || undefined}
+          onClose={() => setShowQuickRecord(false)}
+        />
       )}
       {/* Render children inside container to allow proper overlays (like ChannelSwitcher) */}
       {children}
