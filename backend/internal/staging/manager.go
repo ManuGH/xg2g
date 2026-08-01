@@ -143,12 +143,11 @@ func (sm *StagingManager) AssembleAndFinalize(ctx context.Context, jobID string,
 		return nil, fmt.Errorf("failed to fetch job for finalization: %w", err)
 	}
 
-	if err := job.CanTransitionTo(recording.StateFinalizing); err != nil {
+	finalizingJob, err := job.TransitionState(recording.StateFinalizing, "")
+	if err != nil {
 		return nil, err
 	}
-
-	job.State = recording.StateFinalizing
-	if err := sm.repo.Save(ctx, job); err != nil {
+	if err := sm.repo.Save(ctx, finalizingJob); err != nil {
 		return nil, fmt.Errorf("failed to update job state to FINALIZING: %w", err)
 	}
 
@@ -157,20 +156,24 @@ func (sm *StagingManager) AssembleAndFinalize(ctx context.Context, jobID string,
 
 	report, err := sm.finalizer.Finalize(ctx, jobID, segsDir, targetFilePath)
 	if err != nil {
-		job.State = recording.StateFailed
-		job.ErrorDetail = fmt.Sprintf("assembly failed: %v", err)
-		_ = sm.repo.Save(ctx, job)
+		failedJob, transErr := finalizingJob.TransitionState(recording.StateFailed, fmt.Sprintf("assembly failed: %v", err))
+		if transErr == nil {
+			_ = sm.repo.Save(ctx, failedJob)
+		}
 		return nil, err
 	}
 
-	job.FinalizedPath = report.FinalizedPath
-	if report.Complete {
-		job.State = recording.StateCompleted
-	} else {
-		job.State = recording.StatePartial
+	finalState := recording.StateCompleted
+	if !report.Complete {
+		finalState = recording.StatePartial
 	}
+	completedJob, err := finalizingJob.TransitionState(finalState, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to transition job to %s: %w", finalState, err)
+	}
+	completedJob.FinalizedPath = report.FinalizedPath
 
-	if err := sm.repo.Save(ctx, job); err != nil {
+	if err := sm.repo.Save(ctx, completedJob); err != nil {
 		return nil, fmt.Errorf("failed to save finalized job manifest: %w", err)
 	}
 

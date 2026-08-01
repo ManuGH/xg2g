@@ -323,12 +323,16 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	}
 
 	// 6. Update job state to STAGING & assemble output
-	job.State = recording.StateStaging
+	stagingJob, err := job.TransitionState(recording.StateStaging, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to transition job to STAGING: %w", err)
+	}
 	if e.jobRepo != nil {
-		if err := e.jobRepo.Save(ctx, job); err != nil {
+		if err := e.jobRepo.Save(ctx, stagingJob); err != nil {
 			return nil, fmt.Errorf("failed to update job to STAGING: %w", err)
 		}
 	}
+	currentJob := stagingJob
 
 	meta := recording.TemplateMetadata{
 		Title:     req.Title,
@@ -339,11 +343,10 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	formattedPath := recording.FormatMediaFilename(profile.NamingPreset, profile.FilenameTemplate, meta, profile.ContainerFormat)
 	baseOutFilename := filepath.Base(formattedPath)
 
-	report, err := e.stagingMgr.AssembleAndFinalize(ctx, job.ID, baseOutFilename)
+	report, err := e.stagingMgr.AssembleAndFinalize(ctx, currentJob.ID, baseOutFilename)
 	if err != nil {
-		job.State = recording.StateFailed
-		if e.jobRepo != nil {
-			_ = e.jobRepo.Save(ctx, job)
+		if failedJob, transErr := currentJob.TransitionState(recording.StateFailed, fmt.Sprintf("assembly failed: %v", err)); transErr == nil && e.jobRepo != nil {
+			_ = e.jobRepo.Save(ctx, failedJob)
 		}
 		return nil, fmt.Errorf("failed to assemble and finalize retro recording: %w", err)
 	}
@@ -351,19 +354,22 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	// 7. Join target object key securely using POSIX slashes
 	targetObjectKey, err := recording.JoinObjectKey(profile.Target.RelativePath, formattedPath)
 	if err != nil {
-		job.State = recording.StateFailed
-		if e.jobRepo != nil {
-			_ = e.jobRepo.Save(ctx, job)
+		if failedJob, transErr := currentJob.TransitionState(recording.StateFailed, fmt.Sprintf("invalid target object key: %v", err)); transErr == nil && e.jobRepo != nil {
+			_ = e.jobRepo.Save(ctx, failedJob)
 		}
 		return nil, fmt.Errorf("invalid recording target object key: %w", err)
 	}
 
-	job.State = recording.StateTransferring
+	transferringJob, err := currentJob.TransitionState(recording.StateTransferring, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to transition job to TRANSFERRING: %w", err)
+	}
 	if e.jobRepo != nil {
-		if err := e.jobRepo.Save(ctx, job); err != nil {
+		if err := e.jobRepo.Save(ctx, transferringJob); err != nil {
 			return nil, fmt.Errorf("failed to update job to TRANSFERRING: %w", err)
 		}
 	}
+	currentJob = transferringJob
 
 	// 8. Construct RecordingAsset with embedded profile policy snapshot
 	var recStart, recEnd time.Time
@@ -377,7 +383,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 
 	asset, err := recording.NewRecordingAsset(
 		req.AssetID,
-		job.ID,
+		currentJob.ID,
 		req.Title,
 		req.ServiceRef,
 		profile.Target.BackendID,
@@ -410,7 +416,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	// Save persistent FinalizationManifest inside finalized/ directory for crash reconstruction
 	finalManifest := FinalizationManifest{
 		AssetID:         asset.ID,
-		JobID:           job.ID,
+		JobID:           currentJob.ID,
 		ProfileID:       asset.ProfileID,
 		Title:           asset.Title,
 		ServiceRef:      asset.ServiceRef,
@@ -454,12 +460,16 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 			}
 		}
 
-		job.State = recording.StateWaitingTarget
+		waitingJob, transErr := currentJob.TransitionState(recording.StateWaitingTarget, "")
+		if transErr != nil {
+			return nil, fmt.Errorf("failed to transition job to WAITING_FOR_TARGET: %w", transErr)
+		}
 		if e.jobRepo != nil {
-			if err := e.jobRepo.Save(ctx, job); err != nil {
+			if err := e.jobRepo.Save(ctx, waitingJob); err != nil {
 				return nil, fmt.Errorf("failed to save WAITING_FOR_TARGET job: %w", err)
 			}
 		}
+		currentJob = waitingJob
 
 		if e.taskRepo == nil {
 			return nil, fmt.Errorf("%w: taskRepo is nil", ErrTransferTaskSaveFailed)
@@ -467,9 +477,9 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 
 		task, taskErr := recording.NewTransferTask(
 			"task_"+req.JobID,
-			job.ID,
+			currentJob.ID,
 			assetPending.ID,
-			job.ID, // SourceWorkspaceID = JobID
+			currentJob.ID, // SourceWorkspaceID = JobID
 			baseOutFilename,
 			profile.Target.BackendID,
 			targetObjectKey,
@@ -486,7 +496,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		}
 
 		return &RetroHandoverResult{
-			Job:                     job,
+			Job:                     currentJob,
 			Asset:                   assetPending,
 			AssemblyReport:          *report,
 			LiveContinuationPending: isLiveActive,
@@ -509,15 +519,18 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 		}
 	}
 
-	job.State = recording.StateCompleted
+	completedJob, err := currentJob.TransitionState(recording.StateCompleted, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to transition job to COMPLETED: %w", err)
+	}
 	if e.jobRepo != nil {
-		if err := e.jobRepo.Save(ctx, job); err != nil {
+		if err := e.jobRepo.Save(ctx, completedJob); err != nil {
 			return nil, fmt.Errorf("failed to update job to COMPLETED: %w", err)
 		}
 	}
 
 	return &RetroHandoverResult{
-		Job:                     job,
+		Job:                     completedJob,
 		Asset:                   availableAsset,
 		AssemblyReport:          *report,
 		LiveContinuationPending: isLiveActive,

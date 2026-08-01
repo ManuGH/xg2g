@@ -4,6 +4,7 @@
 package recording
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -11,9 +12,9 @@ import (
 )
 
 var (
-	ErrInvalidJobID                  = errors.New("invalid recording job ID")
-	ErrInvalidJobStateTransition     = errors.New("invalid recording job state transition")
-	ErrJobAlreadyTerminal            = errors.New("recording job is in terminal state")
+	ErrInvalidJobID              = errors.New("invalid recording job ID")
+	ErrInvalidJobStateTransition = errors.New("invalid recording job state transition")
+	ErrJobAlreadyTerminal        = errors.New("recording job is in terminal state")
 )
 
 var jobIDRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
@@ -25,12 +26,14 @@ const (
 	SourceLive      RecordingSource = "LIVE"
 	SourceRetro     RecordingSource = "RETRO"
 	SourceScheduled RecordingSource = "SCHEDULED"
+	SourceManual    RecordingSource = "MANUAL"
 )
 
 // RecordingState defines the authoritative lifecycle of a recording job.
 type RecordingState string
 
 const (
+	StatePending       RecordingState = "PENDING"
 	StatePreparing     RecordingState = "PREPARING"
 	StateRecording     RecordingState = "RECORDING"
 	StateStaging       RecordingState = "STAGING"
@@ -40,11 +43,13 @@ const (
 	StateCompleted     RecordingState = "COMPLETED"
 	StatePartial       RecordingState = "PARTIAL"
 	StateFailed        RecordingState = "FAILED"
+	StateCanceled      RecordingState = "CANCELED"
+	StateInterrupted   RecordingState = "INTERRUPTED"
 )
 
 // IsTerminal returns true if the job has reached a final state.
 func (s RecordingState) IsTerminal() bool {
-	return s == StateCompleted || s == StatePartial || s == StateFailed
+	return s == StateCompleted || s == StatePartial || s == StateFailed || s == StateCanceled || s == StateInterrupted
 }
 
 // ValidateJobID ensures job ID meets naming standards and prevents path traversal.
@@ -60,13 +65,19 @@ type RecordingJob struct {
 	ID               string          `json:"id"`
 	ServiceRef       string          `json:"service_ref"`
 	Title            string          `json:"title"`
+	EventID          string          `json:"event_id,omitempty"`
 	Source           RecordingSource `json:"source"`
+	SourceType       RecordingSource `json:"source_type,omitempty"`
 	State            RecordingState  `json:"state"`
 	StartTime        time.Time       `json:"start_time"`
 	EndTime          time.Time       `json:"end_time"`
+	ActualStart      *time.Time      `json:"actual_start,omitempty"`
+	ActualEnd        *time.Time      `json:"actual_end,omitempty"`
+	RecordedUntil    *time.Time      `json:"recorded_until,omitempty"`
 	RequestedStart   time.Time       `json:"requested_start,omitempty"`
 	RequestedEnd     time.Time       `json:"requested_end,omitempty"`
 	TargetBackendID  string          `json:"target_backend_id"`
+	LocalFallbackID  string          `json:"local_fallback_id,omitempty"`
 	LocalStagingPath string          `json:"local_staging_path,omitempty"`
 	FinalizedPath    string          `json:"finalized_path,omitempty"`
 	ErrorDetail      string          `json:"error_detail,omitempty"`
@@ -74,6 +85,33 @@ type RecordingJob struct {
 	UpdatedAt        time.Time       `json:"updated_at"`
 	FinishedAt       *time.Time      `json:"finished_at,omitempty"`
 	FailedAt         *time.Time      `json:"failed_at,omitempty"`
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for backward compatibility with legacy schema fields.
+func (j *RecordingJob) UnmarshalJSON(data []byte) error {
+	type Alias RecordingJob
+	aux := &struct {
+		*Alias
+		LegacySourceType RecordingSource `json:"source_type"`
+		LegacyFallback   string          `json:"local_fallback_id"`
+	}{
+		Alias: (*Alias)(j),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	if j.Source == "" && aux.LegacySourceType != "" {
+		j.Source = aux.LegacySourceType
+	}
+	if j.TargetBackendID == "" && aux.LegacyFallback != "" {
+		j.TargetBackendID = aux.LegacyFallback
+	}
+	if j.SourceType == "" {
+		j.SourceType = j.Source
+	}
+
+	return nil
 }
 
 // NewRecordingJob constructs a new RecordingJob.
@@ -90,6 +128,7 @@ func NewRecordingJob(id, serviceRef, title string, source RecordingSource, start
 		ServiceRef:      serviceRef,
 		Title:           title,
 		Source:          source,
+		SourceType:      source,
 		State:           StatePreparing,
 		StartTime:       start,
 		EndTime:         end,
@@ -107,10 +146,12 @@ func (j *RecordingJob) CanTransitionTo(newState RecordingState) error {
 
 	valid := false
 	switch j.State {
+	case StatePending:
+		valid = (newState == StatePreparing || newState == StateRecording || newState == StateStaging || newState == StateWaitingTarget || newState == StateFailed || newState == StateCanceled)
 	case StatePreparing:
-		valid = (newState == StateRecording || newState == StateStaging || newState == StateFinalizing || newState == StateWaitingTarget || newState == StateFailed)
+		valid = (newState == StateRecording || newState == StateStaging || newState == StateFinalizing || newState == StateWaitingTarget || newState == StateFailed || newState == StateCanceled)
 	case StateRecording:
-		valid = (newState == StateStaging || newState == StateFinalizing || newState == StateWaitingTarget || newState == StateFailed)
+		valid = (newState == StateStaging || newState == StateFinalizing || newState == StateWaitingTarget || newState == StateFailed || newState == StateInterrupted)
 	case StateStaging:
 		valid = (newState == StateFinalizing || newState == StateWaitingTarget || newState == StateTransferring || newState == StateCompleted || newState == StatePartial || newState == StateFailed)
 	case StateFinalizing:
@@ -118,7 +159,7 @@ func (j *RecordingJob) CanTransitionTo(newState RecordingState) error {
 	case StateWaitingTarget:
 		valid = (newState == StateTransferring || newState == StateCompleted || newState == StatePartial || newState == StateFailed)
 	case StateTransferring:
-		valid = (newState == StateCompleted || newState == StatePartial || newState == StateFailed)
+		valid = (newState == StateCompleted || newState == StatePartial || newState == StateWaitingTarget || newState == StateFailed)
 	}
 
 	if !valid {
@@ -139,7 +180,8 @@ func (j *RecordingJob) TransitionState(newState RecordingState, errDetail string
 
 	if newState == StateCompleted || newState == StatePartial {
 		cp.FinishedAt = &now
-	} else if newState == StateFailed {
+		cp.ActualEnd = &now
+	} else if newState == StateFailed || newState == StateCanceled || newState == StateInterrupted {
 		cp.FailedAt = &now
 		if errDetail != "" {
 			cp.ErrorDetail = errDetail

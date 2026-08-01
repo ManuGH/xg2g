@@ -40,7 +40,7 @@ type JobRepository interface {
 	Delete(ctx context.Context, id string) error
 }
 
-// DiskJobRepository implements JobRepository saving manifest.json per job under stagingRoot.
+// DiskJobRepository implements JobRepository saving job_manifest.json per job under stagingRoot.
 type DiskJobRepository struct {
 	mu          sync.RWMutex
 	stagingRoot string
@@ -59,13 +59,21 @@ func NewDiskJobRepository(stagingRoot string) (*DiskJobRepository, error) {
 	}, nil
 }
 
-// ManifestPath returns the absolute path to manifest.json for jobID.
+// ManifestPath returns the absolute path to job_manifest.json for jobID.
 func (r *DiskJobRepository) ManifestPath(jobID string) string {
+	return filepath.Join(r.stagingRoot, "jobs", jobID, "job_manifest.json")
+}
+
+// LegacyManifestPath returns the absolute path to legacy manifest.json for jobID.
+func (r *DiskJobRepository) LegacyManifestPath(jobID string) string {
 	return filepath.Join(r.stagingRoot, "jobs", jobID, "manifest.json")
 }
 
-// Save atomically writes manifest.json with .tmp -> fsync -> rename.
+// Save atomically writes job_manifest.json with .tmp -> fsync -> rename.
 func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob) error {
+	if job == nil {
+		return fmt.Errorf("cannot save nil RecordingJob")
+	}
 	if err := ValidateJobID(job.ID); err != nil {
 		return err
 	}
@@ -121,7 +129,7 @@ func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob) error {
 	return nil
 }
 
-// Get reads and parses manifest.json for jobID.
+// Get reads and parses job_manifest.json (or legacy manifest.json) for jobID.
 func (r *DiskJobRepository) Get(ctx context.Context, id string) (*RecordingJob, error) {
 	if err := ValidateJobID(id); err != nil {
 		return nil, err
@@ -134,14 +142,26 @@ func (r *DiskJobRepository) Get(ctx context.Context, id string) (*RecordingJob, 
 	data, err := os.ReadFile(manifestFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, ErrJobNotFound
+			// Fallback to legacy manifest.json
+			legacyFile := r.LegacyManifestPath(id)
+			data, err = os.ReadFile(legacyFile)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return nil, ErrJobNotFound
+				}
+				return nil, err
+			}
+		} else {
+			return nil, err
 		}
-		return nil, err
 	}
 
 	var job RecordingJob
 	if err := json.Unmarshal(data, &job); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrManifestCorrupt, err)
+	}
+	if job.ID == "" {
+		return nil, fmt.Errorf("%w: missing job ID in manifest", ErrManifestCorrupt)
 	}
 
 	return &job, nil
@@ -172,13 +192,26 @@ func (r *DiskJobRepository) ListAllInventory(ctx context.Context) (JobInventory,
 			continue
 		}
 		jobID := entry.Name()
-		manifestFile := filepath.Join(jobsDir, jobID, "manifest.json")
+		jobDir := filepath.Join(jobsDir, jobID)
+		manifestFile := filepath.Join(jobDir, "job_manifest.json")
 		data, err := os.ReadFile(manifestFile)
 		if err != nil {
-			if !os.IsNotExist(err) {
+			if os.IsNotExist(err) {
+				// Fallback to legacy manifest.json
+				legacyFile := filepath.Join(jobDir, "manifest.json")
+				data, err = os.ReadFile(legacyFile)
+				if err != nil {
+					// Job directory exists but job manifest is missing!
+					inventory.Issues = append(inventory.Issues, InventoryIssue{
+						Path:  jobDir,
+						Error: "job manifest missing (neither job_manifest.json nor manifest.json found)",
+					})
+					continue
+				}
+			} else {
 				inventory.Issues = append(inventory.Issues, InventoryIssue{Path: manifestFile, Error: err.Error()})
+				continue
 			}
-			continue
 		}
 
 		var job RecordingJob
@@ -186,6 +219,11 @@ func (r *DiskJobRepository) ListAllInventory(ctx context.Context) (JobInventory,
 			inventory.Issues = append(inventory.Issues, InventoryIssue{Path: manifestFile, Error: fmt.Sprintf("%v: %v", ErrManifestCorrupt, err)})
 			continue
 		}
+		if job.ID == "" {
+			inventory.Issues = append(inventory.Issues, InventoryIssue{Path: manifestFile, Error: fmt.Sprintf("%v: missing job ID", ErrManifestCorrupt)})
+			continue
+		}
+
 		allJob := job
 		inventory.Jobs = append(inventory.Jobs, &allJob)
 	}

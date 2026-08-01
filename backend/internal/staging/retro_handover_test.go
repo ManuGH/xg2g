@@ -542,3 +542,141 @@ func TestCrashMatrixMultiSaveRecovery(t *testing.T) {
 		t.Errorf("Crash Matrix 1: Expected task state COMPLETED after recovery, got %s", recTask.State)
 	}
 }
+
+func TestManifestFileIsolation_NoOverwrite(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "manifest_isolation_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	jobRepo, err := recording.NewDiskJobRepository(tmpDir)
+	if err != nil {
+		t.Fatalf("NewDiskJobRepository failed: %v", err)
+	}
+
+	job, _ := recording.NewRecordingJob("job_iso_100", "ref_100", "Isolated Show", recording.SourceRetro, time.Now(), time.Now().Add(1*time.Hour), "backend-1")
+	if err := jobRepo.Save(ctx, job); err != nil {
+		t.Fatalf("jobRepo.Save failed: %v", err)
+	}
+
+	// Write StagingManifest to staging/staging_manifest.json
+	stagingDir := filepath.Join(tmpDir, "jobs", job.ID, "staging")
+	_ = os.MkdirAll(stagingDir, 0755)
+	_ = os.WriteFile(filepath.Join(stagingDir, "staging_manifest.json"), []byte(`{"job_id":"job_iso_100","type":"staging"}`), 0644)
+
+	// Write FinalizationManifest to finalized/finalization_manifest.json
+	finalizedDir := filepath.Join(tmpDir, "jobs", job.ID, "finalized")
+	_ = os.MkdirAll(finalizedDir, 0755)
+	_ = os.WriteFile(filepath.Join(finalizedDir, "finalization_manifest.json"), []byte(`{"job_id":"job_iso_100","type":"finalization"}`), 0644)
+
+	// Verify JobRepository.Get(job.ID) still loads RecordingJob cleanly without corruption
+	loadedJob, err := jobRepo.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("JobRepository.Get failed after staging & finalization manifest saves: %v", err)
+	}
+
+	if loadedJob.Title != "Isolated Show" {
+		t.Errorf("Expected title 'Isolated Show', got '%s'", loadedJob.Title)
+	}
+	if loadedJob.State != recording.StatePreparing {
+		t.Errorf("Expected state PREPARING, got %s", loadedJob.State)
+	}
+}
+
+func TestLegacyJobManifestSchema_MigrationAndTransition(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "legacy_schema_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	jobRepo, err := recording.NewDiskJobRepository(tmpDir)
+	if err != nil {
+		t.Fatalf("NewDiskJobRepository failed: %v", err)
+	}
+
+	// Write legacy JSON manifest containing legacy fields: source_type, PENDING, local_fallback_id
+	legacyDir := filepath.Join(tmpDir, "jobs", "job_legacy_1")
+	_ = os.MkdirAll(legacyDir, 0755)
+	legacyJSON := `{
+		"id": "job_legacy_1",
+		"service_ref": "ref_legacy",
+		"title": "Legacy Show",
+		"source_type": "MANUAL",
+		"state": "PENDING",
+		"local_fallback_id": "local-nvme-legacy",
+		"start_time": "2026-08-01T12:00:00Z",
+		"end_time": "2026-08-01T13:00:00Z"
+	}`
+	_ = os.WriteFile(filepath.Join(legacyDir, "manifest.json"), []byte(legacyJSON), 0644)
+
+	// Read via JobRepository.Get (triggers legacy fallback & custom unmarshaler)
+	job, err := jobRepo.Get(ctx, "job_legacy_1")
+	if err != nil {
+		t.Fatalf("jobRepo.Get failed to unmarshal legacy manifest: %v", err)
+	}
+
+	if job.Source != recording.SourceManual {
+		t.Errorf("Expected Source MANUAL, got '%s'", job.Source)
+	}
+	if job.TargetBackendID != "local-nvme-legacy" {
+		t.Errorf("Expected TargetBackendID 'local-nvme-legacy', got '%s'", job.TargetBackendID)
+	}
+	if job.State != recording.StatePending {
+		t.Errorf("Expected State PENDING, got '%s'", job.State)
+	}
+
+	// Verify transition from PENDING is legal and works cleanly
+	preparingJob, err := job.TransitionState(recording.StatePreparing, "")
+	if err != nil {
+		t.Fatalf("Failed to transition legacy job from PENDING to PREPARING: %v", err)
+	}
+
+	if err := jobRepo.Save(ctx, preparingJob); err != nil {
+		t.Fatalf("Failed to save migrated job: %v", err)
+	}
+}
+
+func TestAtomicReplaceWithExistingTargetFile(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "atomic_replace_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	targetRoot := filepath.Join(tmpDir, "target")
+	backend, err := NewLocalNVMeStorageBackend("b1", targetRoot)
+	if err != nil {
+		t.Fatalf("NewLocalNVMeStorageBackend failed: %v", err)
+	}
+
+	// Create pre-existing truncated target file
+	targetKey := "movies/target_show.ts"
+	targetPath := filepath.Join(targetRoot, targetKey)
+	_ = os.MkdirAll(filepath.Dir(targetPath), 0755)
+	_ = os.WriteFile(targetPath, []byte("TRUNCATED"), 0644)
+
+	// Prepare new complete source file
+	srcPath := filepath.Join(tmpDir, "complete_source.ts")
+	newPayload := []byte("COMPLETE_REPLACEMENT_PAYLOAD_DATA_12345")
+	_ = os.WriteFile(srcPath, newPayload, 0644)
+
+	// Execute CommitFile
+	if err := backend.CommitFile(ctx, srcPath, targetKey); err != nil {
+		t.Fatalf("CommitFile atomic replace failed: %v", err)
+	}
+
+	// Stat verification
+	info, err := backend.Stat(ctx, targetKey)
+	if err != nil {
+		t.Fatalf("backend.Stat failed: %v", err)
+	}
+
+	if info.SizeBytes != int64(len(newPayload)) {
+		t.Errorf("Expected atomic replace target size %d, got %d", len(newPayload), info.SizeBytes)
+	}
+}

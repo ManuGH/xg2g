@@ -211,8 +211,12 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 					jobAssets = []*recording.RecordingAsset{reconstructedAsset}
 				} else {
 					if job.State != recording.StateFailed {
-						failedJob, _ := job.TransitionState(recording.StateFailed, "recovery requires manual intervention: finalization manifest or staged file unrecoverable")
-						_ = r.jobRepo.Save(ctx, failedJob)
+						failedJob, transErr := job.TransitionState(recording.StateFailed, "recovery requires manual intervention: finalization manifest or staged file unrecoverable")
+						if transErr == nil {
+							if saveErr := r.jobRepo.Save(ctx, failedJob); saveErr != nil {
+								errs = append(errs, fmt.Errorf("failed to save FAILED job %s: %w", jobID, saveErr))
+							}
+						}
 					}
 					errs = append(errs, fmt.Errorf("%w for job %s: %v", ErrManualIntervention, jobID, recErr))
 					continue
@@ -273,21 +277,31 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 			if stagedExists && backend != nil && backend.Capabilities().SupportsAtomicReplace {
 				// Capability supports atomic replace: set task RETRYING for re-commit
 				if task != nil {
-					_ = r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferRetrying, "target size mismatch: atomic re-commit scheduled")
+					if recErr := r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferRetrying, "target size mismatch: atomic re-commit scheduled"); recErr != nil {
+						errs = append(errs, fmt.Errorf("failed to recover task to RETRYING for asset %s: %w", asset.ID, recErr))
+					}
 				}
 				errs = append(errs, fmt.Errorf("%w for asset %s (scheduled atomic replace retry)", ErrTargetSizeMismatch, asset.ID))
 			} else {
 				// Atomic replace not supported or staging file missing: transition to AssetCorrupt, StateFailed
 				corruptAsset, transErr := asset.TransitionState(recording.AssetCorrupt)
 				if transErr == nil {
-					_ = r.assetRepo.Save(ctx, corruptAsset, asset.Version)
+					if saveErr := r.assetRepo.Save(ctx, corruptAsset, asset.Version); saveErr != nil {
+						errs = append(errs, fmt.Errorf("failed to save CORRUPT asset %s: %w", asset.ID, saveErr))
+					}
 				}
 				if job != nil {
-					failedJob, _ := job.TransitionState(recording.StateFailed, "target file size mismatch and atomic replace unrecoverable")
-					_ = r.jobRepo.Save(ctx, failedJob)
+					failedJob, transErr := job.TransitionState(recording.StateFailed, "target file size mismatch and atomic replace unrecoverable")
+					if transErr == nil {
+						if saveErr := r.jobRepo.Save(ctx, failedJob); saveErr != nil {
+							errs = append(errs, fmt.Errorf("failed to save FAILED job %s: %w", job.ID, saveErr))
+						}
+					}
 				}
 				if task != nil {
-					_ = r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferFailed, "target file size mismatch and atomic replace unrecoverable")
+					if recErr := r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferFailed, "target file size mismatch and atomic replace unrecoverable"); recErr != nil {
+						errs = append(errs, fmt.Errorf("failed to set FAILED task %s: %w", task.ID, recErr))
+					}
 				}
 				errs = append(errs, fmt.Errorf("%w for asset %s (marked CORRUPT / FAILED)", ErrTargetSizeMismatch, asset.ID))
 			}
