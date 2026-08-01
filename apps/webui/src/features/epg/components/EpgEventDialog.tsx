@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
@@ -43,7 +44,7 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEven
 
   const desc = event.desc ? normalizeEpgText(event.desc) : t('epg.noDescription', { defaultValue: 'No description available.' });
 
-  return (
+  return createPortal(
     <div
       className={styles.overlay}
       role="presentation"
@@ -82,6 +83,7 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEven
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
