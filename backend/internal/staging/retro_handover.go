@@ -27,6 +27,10 @@ var (
 
 // FinalizationManifest is written to finalized/finalization_manifest.json to allow crash reconstruction.
 type FinalizationManifest struct {
+	SchemaVersion   int                           `json:"schema_version"`
+	ManifestVersion int                           `json:"manifest_version"`
+	CreatedBy       string                        `json:"created_by"`
+	CreatedAt       time.Time                     `json:"created_at"`
 	AssetID         string                        `json:"asset_id"`
 	JobID           string                        `json:"job_id"`
 	ProfileID       string                        `json:"profile_id"`
@@ -426,6 +430,10 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 
 	// Save persistent FinalizationManifest inside finalized/ directory for crash reconstruction
 	finalManifest := FinalizationManifest{
+		SchemaVersion:   1,
+		ManifestVersion: 1,
+		CreatedBy:       "RetroDVRHandoverEngine",
+		CreatedAt:       time.Now(),
 		AssetID:         asset.ID,
 		JobID:           currentJob.ID,
 		ProfileID:       asset.ProfileID,

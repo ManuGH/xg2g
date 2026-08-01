@@ -862,3 +862,77 @@ func TestLegacyManifest_FallbackIsolation(t *testing.T) {
 		t.Errorf("Expected LocalFallbackID 'local-nvme-backup', got '%s'", job.LocalFallbackID)
 	}
 }
+
+func TestCrashAndWorkerRecovery_CASVersionValidation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "crash_cas_val_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	jobRepo, _ := recording.NewDiskJobRepository(tmpDir)
+
+	// Step 1: Initial Job creation
+	job, _ := recording.NewRecordingJob("job_crash_cas", "ref_cas", "CAS Crash Test", recording.SourceRetro, time.Now(), time.Now().Add(1*time.Hour), "b1")
+	if err := jobRepo.Save(ctx, job, 0); err != nil {
+		t.Fatalf("Initial save failed: %v", err)
+	}
+
+	// Advance version through legal state changes to simulate prior pipeline steps
+	states := []recording.RecordingState{
+		recording.StateRecording,
+		recording.StateStaging,
+		recording.StateFinalizing,
+		recording.StateWaitingTarget,
+		recording.StateTransferring,
+	}
+	for _, targetState := range states {
+		cur, _ := jobRepo.Get(ctx, job.ID)
+		st, err := cur.TransitionState(targetState, "")
+		if err != nil {
+			t.Fatalf("TransitionState to %s failed: %v", targetState, err)
+		}
+		if err := jobRepo.Save(ctx, st, cur.Version); err != nil {
+			t.Fatalf("Save %s failed: %v", targetState, err)
+		}
+	}
+
+	// At this point version is 7
+	snapV7, err := jobRepo.Get(ctx, job.ID)
+	if err != nil || snapV7.Version != 7 {
+		t.Fatalf("Expected version 7 before crash, got %d (err: %v)", snapV7.Version, err)
+	}
+
+	// Step 2: Simulating Reconciler / Recovery process advancing job state to WAITING_FOR_TARGET
+	recJob, _ := snapV7.TransitionState(recording.StateWaitingTarget, "")
+	if err := jobRepo.Save(ctx, recJob, snapV7.Version); err != nil {
+		t.Fatalf("Reconciler save failed: %v", err)
+	}
+	// Manifest on disk is now Version 8
+
+	// Step 3: Worker fetches fresh job instance (Version 8)
+	workerJob, err := jobRepo.Get(ctx, job.ID)
+	if err != nil || workerJob.Version != 8 {
+		t.Fatalf("Expected worker to fetch Version 8, got %d (err: %v)", workerJob.Version, err)
+	}
+
+	// Step 4: Worker successfully advances job state to COMPLETED with expectedVersion 8
+	compJob, _ := workerJob.TransitionState(recording.StateCompleted, "")
+	if err := jobRepo.Save(ctx, compJob, workerJob.Version); err != nil {
+		t.Fatalf("Worker COMPLETED save failed: %v", err)
+	}
+
+	// Manifest on disk is now Version 9
+	finalJob, _ := jobRepo.Get(ctx, job.ID)
+	if finalJob.Version != 9 {
+		t.Errorf("Expected final job Version 9, got %d", finalJob.Version)
+	}
+
+	// Step 5: Stale pre-crash snapshot (snapV7 with Version 7) attempts save -> MUST be rejected via ErrOptimisticLockConflict
+	staleMutation, _ := snapV7.TransitionState(recording.StateFailed, "stale update")
+	staleErr := jobRepo.Save(ctx, staleMutation, snapV7.Version)
+	if staleErr == nil || !errors.Is(staleErr, recording.ErrOptimisticLockConflict) {
+		t.Errorf("Expected ErrOptimisticLockConflict for stale Version 7 save attempt, got %v", staleErr)
+	}
+}
