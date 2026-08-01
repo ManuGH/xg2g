@@ -11,6 +11,9 @@ interface EpgEventDialogProps {
   onClose: () => void;
   onRecord?: (event: EpgEvent) => void;
   isRecorded?: boolean;
+  onPlay?: (channel: EpgChannel) => void;
+  channel?: EpgChannel;
+  currentTime?: number;
 }
 
 function formatDateTime(ts: number): string {
@@ -25,7 +28,7 @@ function formatTime(ts: number): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEventDialogProps) {
+export function EpgEventDialog({ event, onClose, onRecord, isRecorded, onPlay, channel, currentTime }: EpgEventDialogProps) {
   const { t } = useTranslation();
   useEffect(() => {
     // Lock body scroll
@@ -43,6 +46,8 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEven
   }, [onClose]);
 
   const desc = event.desc ? normalizeEpgText(event.desc) : t('epg.noDescription', { defaultValue: 'No description available.' });
+  const now = currentTime || Math.floor(Date.now() / 1000);
+  const inProgress = now >= event.start && now < event.end;
 
   return createPortal(
     <div
@@ -58,7 +63,7 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEven
             {event.title || t('epg.unknownTitle', { defaultValue: 'Unknown show' })}
           </h2>
           <div className={styles.time}>
-            {formatDateTime(event.start)} – {formatTime(event.end)}
+            {channel?.name ? `${channel.name} · ` : ''}{formatDateTime(event.start)} – {formatTime(event.end)}
           </div>
         </div>
 
@@ -67,19 +72,30 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded }: EpgEven
         </div>
 
         <div className={styles.footer}>
+          {inProgress && channel && onPlay && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                onPlay(channel);
+                onClose();
+              }}
+            >
+              ▶ {t('epg.playChannel', { defaultValue: 'Sendung schauen' })}
+            </Button>
+          )}
           {onRecord && (
             <Button
-              variant={isRecorded ? 'secondary' : 'primary'}
+              variant={inProgress && channel && onPlay ? 'secondary' : (isRecorded ? 'secondary' : 'primary')}
               onClick={() => {
                 onRecord(event);
                 onClose();
               }}
             >
-              {isRecorded ? t('epg.recordingPlanned', { defaultValue: 'Recording scheduled' }) : t('epg.record', { defaultValue: 'Record' })}
+              {isRecorded ? t('epg.recordingPlanned', { defaultValue: 'Aufnahme geplant' }) : t('epg.record', { defaultValue: 'Aufnehmen' })}
             </Button>
           )}
           <Button variant="secondary" onClick={onClose}>
-            {t('common.close', { defaultValue: 'Close' })}
+            {t('common.close', { defaultValue: 'Schließen' })}
           </Button>
         </div>
       </div>
