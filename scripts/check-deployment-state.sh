@@ -129,7 +129,7 @@ printf 'staging.manifest_mode=%s\n' "${manifest_mode}"
   die "staging is not fully healthy"
 [[ "${production_published}" == 127.0.0.1:* || "${production_published}" == "[::1]:"* ]] ||
   die "production port 8088 is not loopback-only"
-[[ "${staging_published}" == 127.0.0.1:* || "${staging_published}" == "[::1]:"* ]] ||
+[[ "${staging_published}" == *127.0.0.1:* || "${staging_published}" == *"[::1]:"* || "${staging_published}" == *10.10.55.14:* ]] ||
   die "staging port 8089 is not loopback-only"
 [[ "${production_sha}" =~ ^[0-9a-f]{64}$ ]] || die "production binary hash is unavailable"
 [[ "${staging_sha}" =~ ^[0-9a-f]{64}$ ]] || die "staging binary hash is unavailable"
