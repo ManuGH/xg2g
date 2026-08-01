@@ -20,6 +20,7 @@ var (
 	ErrLeaseExceedsMaxDuration  = errors.New("lease duration exceeds maximum allowed limit")
 	ErrNoSegmentsAvailable      = errors.New("no valid segments available in requested range")
 	ErrSegmentMissing           = errors.New("one or more reserved segments are missing or deleting")
+	ErrStoreDegraded            = errors.New("reservation store is in a degraded state due to persistence failure")
 )
 
 // ReservationStore provides atomic, thread-safe reservation management backed by SegmentIndex.
@@ -31,6 +32,7 @@ type ReservationStore struct {
 	storagePath  string
 	onExpire     func(res *Reservation)
 	stopCh       chan struct{}
+	degraded     bool
 }
 
 // NewReservationStore creates a new ReservationStore instance.
@@ -68,7 +70,9 @@ func (rs *ReservationStore) reaperLoop() {
 			rs.mu.Lock()
 			purged := rs.purgeExpiredLocked()
 			if purged {
-				_ = rs.saveStateLocked()
+				if err := rs.saveStateLocked(); err != nil {
+					rs.degraded = true // STORE DEGRADED ON PERSISTENCE FAILURE!
+				}
 			}
 			rs.mu.Unlock()
 		}
@@ -137,7 +141,6 @@ func (rs *ReservationStore) probeRangeLocked(serviceRef string, start, end time.
 		}
 		lastCodec = seg.CodecHash
 
-		// Check for sequence or PTS continuity gaps between consecutive segments
 		if i > 0 {
 			prev := segments[i-1]
 			seqGap := seg.Sequence > prev.Sequence+1
@@ -188,6 +191,10 @@ func (rs *ReservationStore) ReserveRange(serviceRef string, start, end time.Time
 
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+
+	if rs.degraded {
+		return Reservation{}, ErrStoreDegraded
+	}
 
 	rs.purgeExpiredLocked()
 
@@ -285,7 +292,7 @@ func (rs *ReservationStore) GetReservation(reservationID string) (Reservation, e
 	return *res, nil
 }
 
-// ListReservedSegments returns immutable SegmentHandles for an active reservation or error if missing.
+// ListReservedSegments returns immutable SegmentHandles for an active reservation.
 func (rs *ReservationStore) ListReservedSegments(reservationID string) ([]SegmentHandle, error) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
@@ -317,11 +324,50 @@ func (rs *ReservationStore) ListReservedSegments(reservationID string) ([]Segmen
 			SizeBytes:     seg.SizeBytes,
 			Discontinuity: seg.Discontinuity,
 			CodecHash:     seg.CodecHash,
-			Data:          seg.Data,
 		})
 	}
 
 	return handles, nil
+}
+
+// SnapshotReservation creates a safe, isolated byte snapshot of all reserved segments for Staging.
+func (rs *ReservationStore) SnapshotReservation(reservationID string, registry *Registry) ([]SegmentSnapshot, error) {
+	handles, err := rs.ListReservedSegments(reservationID)
+	if err != nil {
+		return nil, err
+	}
+
+	var snapshots []SegmentSnapshot
+	for _, handle := range handles {
+		var payload []byte
+		if handle.Location.Kind == StorageKindRAM {
+			if registry == nil {
+				return nil, fmt.Errorf("registry reference required for RAM snapshot")
+			}
+			buf, ok := registry.Get(handle.ID.SessionID)
+			if !ok {
+				return nil, fmt.Errorf("session buffer %s not found", handle.ID.SessionID)
+			}
+			bytesCopy, ok := buf.ByteSnapshot(handle.Location.Filename)
+			if !ok {
+				return nil, fmt.Errorf("RAM segment payload %s missing", handle.Location.Filename)
+			}
+			payload = bytesCopy
+		} else if handle.Location.Kind == StorageKindDisk && handle.Location.Path != "" {
+			diskBytes, err := os.ReadFile(handle.Location.Path)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read disk segment %s: %w", handle.Location.Path, err)
+			}
+			payload = diskBytes
+		}
+
+		snapshots = append(snapshots, SegmentSnapshot{
+			Handle: handle,
+			Data:   payload,
+		})
+	}
+
+	return snapshots, nil
 }
 
 // RenewReservation updates the lease expiration timestamp from now, capped by MaxLeaseDuration.
