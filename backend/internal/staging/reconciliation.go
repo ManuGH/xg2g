@@ -5,6 +5,7 @@ package staging
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -19,6 +20,7 @@ var (
 	ErrMultipleAssetsForJob = errors.New("multiple recording assets found for single job during reconciliation")
 	ErrUnverifiableTarget   = errors.New("expected target size <= 0; target cannot be verified")
 	ErrTargetSizeMismatch   = errors.New("target file size mismatch on storage backend during reconciliation")
+	ErrManualIntervention   = errors.New("recovery requires manual intervention: finalization manifest or staged file unrecoverable")
 )
 
 // ObjectProbeState explicitly classifies physical target object status on storage backends.
@@ -78,10 +80,13 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 
 	var errs []error
 
-	// 1. Load All Jobs in System
-	jobsList, err := r.jobRepo.ListAll(ctx)
+	// 1. Load Job Inventory with Explicit Manifest Error Reporting
+	inventory, err := r.jobRepo.ListAllInventory(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list jobs during reconciliation: %w", err)
+		return fmt.Errorf("failed to scan job inventory during reconciliation: %w", err)
+	}
+	for _, issue := range inventory.Issues {
+		errs = append(errs, fmt.Errorf("corrupted manifest issue at %s: %s", issue.Path, issue.Error))
 	}
 
 	allAssets, err := r.assetRepo.List(ctx)
@@ -97,7 +102,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 	// 2. Build UNION Set of All Job IDs across all 3 inventories
 	jobIDSet := make(map[string]bool)
 	jobsMap := make(map[string]*recording.RecordingJob)
-	for _, j := range jobsList {
+	for _, j := range inventory.Jobs {
 		jobIDSet[j.ID] = true
 		jobsMap[j.ID] = j
 	}
@@ -119,36 +124,69 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 		}
 	}
 
-	// 4. Evidentiary Task Ranking per JobID incorporating Physical Probe Results
+	// 4. Evidentiary Task Ranking per JobID incorporating Physical Probe & Staging Evidence + Tie Breakers
 	taskMap := make(map[string]*recording.TransferTask)
+	abortedJobIDs := make(map[string]bool)
+
 	for jobID, tasks := range rawTasksMap {
 		var best *recording.TransferTask
+		var conflictAborted bool
+
 		for _, t := range tasks {
 			if best == nil {
 				best = t
 				continue
 			}
 
-			// Probe evidence score for task ranking
 			scoreT := r.scoreTaskEvidence(ctx, t, assetsMap[jobID])
 			scoreBest := r.scoreTaskEvidence(ctx, best, assetsMap[jobID])
 
+			tIsBetter := false
 			if scoreT > scoreBest {
-				if recErr := r.taskRepo.RecoverTaskState(ctx, best.ID, nil, true, recording.TransferFailed, "superseded by higher evidentiary rank task"); recErr != nil {
-					errs = append(errs, fmt.Errorf("failed to resolve task conflict for task %s: %w", best.ID, recErr))
-				}
-				best = t
-			} else {
-				if recErr := r.taskRepo.RecoverTaskState(ctx, t.ID, nil, true, recording.TransferFailed, "superseded by higher evidentiary rank task"); recErr != nil {
-					errs = append(errs, fmt.Errorf("failed to resolve task conflict for task %s: %w", t.ID, recErr))
+				tIsBetter = true
+			} else if scoreT == scoreBest {
+				// Deterministic Tie-Breaker: score > UpdatedAt > CreatedAt > ID
+				if t.UpdatedAt.After(best.UpdatedAt) {
+					tIsBetter = true
+				} else if t.UpdatedAt.Equal(best.UpdatedAt) {
+					if t.CreatedAt.After(best.CreatedAt) {
+						tIsBetter = true
+					} else if t.CreatedAt.Equal(best.CreatedAt) && t.ID < best.ID {
+						tIsBetter = true
+					}
 				}
 			}
+
+			inferior := best
+			winner := t
+			if !tIsBetter {
+				inferior = t
+				winner = best
+			}
+
+			// Active Lease Conflict Abort Check: If inferior has active lease, ABORT reconciliation for this JobID!
+			recErr := r.taskRepo.RecoverTaskState(ctx, inferior.ID, nil, true, recording.TransferFailed, "superseded by higher evidentiary rank task")
+			if recErr != nil {
+				errs = append(errs, fmt.Errorf("active lease conflict on task %s for job %s: %w", inferior.ID, jobID, recErr))
+				conflictAborted = true
+				break
+			}
+			best = winner
 		}
-		taskMap[jobID] = best
+
+		if conflictAborted {
+			abortedJobIDs[jobID] = true
+		} else {
+			taskMap[jobID] = best
+		}
 	}
 
 	// 5. Process Union Set of Job IDs
 	for jobID := range jobIDSet {
+		if abortedJobIDs[jobID] {
+			continue // Abort processing for JobIDs with active lease conflicts
+		}
+
 		job := jobsMap[jobID]
 		jobAssets := assetsMap[jobID]
 		task := taskMap[jobID]
@@ -160,14 +198,34 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 			}
 		}
 
+		// Handle "Job Present, Asset Missing" vs "Orphaned Task"
 		if len(jobAssets) == 0 {
-			// Orphaned Task without Asset
-			if task != nil && task.State != recording.TransferFailed {
-				if recErr := r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferFailed, "orphaned task without asset record"); recErr != nil {
-					errs = append(errs, fmt.Errorf("failed to recover orphaned task %s: %w", task.ID, recErr))
+			if job != nil {
+				// Attempt asset reconstruction from FinalizationManifest if staged source exists
+				reconstructedAsset, recErr := r.attemptAssetReconstruction(ctx, job, task)
+				if recErr == nil && reconstructedAsset != nil {
+					if saveErr := r.assetRepo.Save(ctx, reconstructedAsset, 0); saveErr != nil {
+						errs = append(errs, fmt.Errorf("failed to save reconstructed asset for job %s: %w", jobID, saveErr))
+						continue
+					}
+					jobAssets = []*recording.RecordingAsset{reconstructedAsset}
+				} else {
+					if job.State != recording.StateFailed {
+						failedJob, _ := job.TransitionState(recording.StateFailed, "recovery requires manual intervention: finalization manifest or staged file unrecoverable")
+						_ = r.jobRepo.Save(ctx, failedJob)
+					}
+					errs = append(errs, fmt.Errorf("%w for job %s: %v", ErrManualIntervention, jobID, recErr))
+					continue
 				}
+			} else {
+				// True Orphaned Task without Job or Asset
+				if task != nil && task.State != recording.TransferFailed {
+					if recErr := r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferFailed, "orphaned task without asset or job record"); recErr != nil {
+						errs = append(errs, fmt.Errorf("failed to recover orphaned task %s: %w", task.ID, recErr))
+					}
+				}
+				continue
 			}
-			continue
 		}
 
 		if len(jobAssets) > 1 {
@@ -195,15 +253,6 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 
 		probe := r.probeTargetObject(ctx, targetBackendID, asset.ObjectKey, expectedSize)
 
-		if probe == ProbeSizeMismatch {
-			errs = append(errs, fmt.Errorf("%w for asset %s (expected %d)", ErrTargetSizeMismatch, asset.ID, expectedSize))
-			continue
-		}
-		if probe == ProbeInvalidMetadata {
-			errs = append(errs, fmt.Errorf("invalid metadata for asset %s (missing backend ID or object key); skipping recovery", asset.ID))
-			continue
-		}
-
 		// Resolve staged source file using asset's persistent SourceFilename
 		srcFilename := asset.SourceFilename
 		if srcFilename == "" && task != nil && task.SourceFilename != "" {
@@ -217,6 +266,38 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 		stagedAbsPath := filepath.Join(r.stagingRoot, stagedRelPath)
 		stagedInfo, stagedErr := os.Stat(stagedAbsPath)
 		stagedExists := (stagedErr == nil && stagedInfo.Size() == expectedSize)
+
+		// Capability-Based Actionable Policy for ProbeSizeMismatch
+		if probe == ProbeSizeMismatch {
+			backend := r.backends[targetBackendID]
+			if stagedExists && backend != nil && backend.Capabilities().SupportsAtomicReplace {
+				// Capability supports atomic replace: set task RETRYING for re-commit
+				if task != nil {
+					_ = r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferRetrying, "target size mismatch: atomic re-commit scheduled")
+				}
+				errs = append(errs, fmt.Errorf("%w for asset %s (scheduled atomic replace retry)", ErrTargetSizeMismatch, asset.ID))
+			} else {
+				// Atomic replace not supported or staging file missing: transition to AssetCorrupt, StateFailed
+				corruptAsset, transErr := asset.TransitionState(recording.AssetCorrupt)
+				if transErr == nil {
+					_ = r.assetRepo.Save(ctx, corruptAsset, asset.Version)
+				}
+				if job != nil {
+					failedJob, _ := job.TransitionState(recording.StateFailed, "target file size mismatch and atomic replace unrecoverable")
+					_ = r.jobRepo.Save(ctx, failedJob)
+				}
+				if task != nil {
+					_ = r.taskRepo.RecoverTaskState(ctx, task.ID, nil, true, recording.TransferFailed, "target file size mismatch and atomic replace unrecoverable")
+				}
+				errs = append(errs, fmt.Errorf("%w for asset %s (marked CORRUPT / FAILED)", ErrTargetSizeMismatch, asset.ID))
+			}
+			continue
+		}
+
+		if probe == ProbeInvalidMetadata {
+			errs = append(errs, fmt.Errorf("invalid metadata for asset %s (missing backend ID or object key); skipping recovery", asset.ID))
+			continue
+		}
 
 		// If backend is temporary offline, NEVER perform destructive state transitions
 		if probe == ProbeBackendOffline {
@@ -238,10 +319,12 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 			}
 
 			if job != nil {
-				job.State = recording.StateCompleted
-				if saveErr := r.jobRepo.Save(ctx, job); saveErr != nil {
-					errs = append(errs, fmt.Errorf("case 1 job save failed: %w", saveErr))
-					continue
+				completedJob, transErr := job.TransitionState(recording.StateCompleted, "")
+				if transErr == nil {
+					if saveErr := r.jobRepo.Save(ctx, completedJob); saveErr != nil {
+						errs = append(errs, fmt.Errorf("case 1 job save failed: %w", saveErr))
+						continue
+					}
 				}
 			}
 
@@ -257,9 +340,11 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 		if asset.State == recording.AssetAvailable && (job == nil || job.State != recording.StateCompleted) {
 			if probe == ProbeValid {
 				if job != nil {
-					job.State = recording.StateCompleted
-					if saveErr := r.jobRepo.Save(ctx, job); saveErr != nil {
-						errs = append(errs, fmt.Errorf("case 2 job save failed: %w", saveErr))
+					completedJob, transErr := job.TransitionState(recording.StateCompleted, "")
+					if transErr == nil {
+						if saveErr := r.jobRepo.Save(ctx, completedJob); saveErr != nil {
+							errs = append(errs, fmt.Errorf("case 2 job save failed: %w", saveErr))
+						}
 					}
 				}
 				if task != nil && task.State != recording.TransferCompleted {
@@ -314,9 +399,11 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 				}
 
 				if job != nil {
-					job.State = recording.StateCompleted
-					if saveErr := r.jobRepo.Save(ctx, job); saveErr != nil {
-						errs = append(errs, fmt.Errorf("case 4 job save failed: %w", saveErr))
+					completedJob, transErr := job.TransitionState(recording.StateCompleted, "")
+					if transErr == nil {
+						if saveErr := r.jobRepo.Save(ctx, completedJob); saveErr != nil {
+							errs = append(errs, fmt.Errorf("case 4 job save failed: %w", saveErr))
+						}
 					}
 				}
 			} else {
@@ -338,10 +425,12 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 			}
 
 			if job != nil {
-				job.State = recording.StateFailed
-				if saveErr := r.jobRepo.Save(ctx, job); saveErr != nil {
-					errs = append(errs, fmt.Errorf("case 5 job save failed: %w", saveErr))
-					continue
+				failedJob, transErr := job.TransitionState(recording.StateFailed, "staged source file and target backend object confirmed missing during recovery")
+				if transErr == nil {
+					if saveErr := r.jobRepo.Save(ctx, failedJob); saveErr != nil {
+						errs = append(errs, fmt.Errorf("case 5 job save failed: %w", saveErr))
+						continue
+					}
 				}
 			}
 
@@ -354,6 +443,42 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+func (r *StartupReconciler) attemptAssetReconstruction(ctx context.Context, job *recording.RecordingJob, task *recording.TransferTask) (*recording.RecordingAsset, error) {
+	manifestPath := filepath.Join(r.stagingRoot, "jobs", job.ID, "finalized", "finalization_manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("finalization manifest missing: %w", err)
+	}
+
+	var m FinalizationManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("finalization manifest corrupt: %w", err)
+	}
+
+	srcAbsPath := filepath.Join(r.stagingRoot, "jobs", job.ID, "finalized", m.SourceFilename)
+	info, err := os.Stat(srcAbsPath)
+	if err != nil || info.Size() != m.SizeBytes {
+		return nil, fmt.Errorf("staged source file missing or size mismatch")
+	}
+
+	asset, err := recording.NewRecordingAsset(m.AssetID, m.JobID, m.Title, m.ServiceRef, m.TargetBackendID, m.TargetObjectKey, m.Container)
+	if err != nil {
+		return nil, err
+	}
+	asset.ProfileID = m.ProfileID
+	asset.SourceFilename = m.SourceFilename
+	asset.SizeBytes = m.SizeBytes
+	asset.ManagementMode = m.ManagementMode
+	asset.DeletePolicy = m.DeletePolicy
+	asset.DurationSeconds = m.DurationSeconds
+	asset.RecordedStart = m.RecordedStart
+	asset.RecordedEnd = m.RecordedEnd
+	asset.Completeness = m.Completeness
+	asset.State = recording.AssetTransferPending
+
+	return asset, nil
 }
 
 func (r *StartupReconciler) probeTargetObject(ctx context.Context, backendID, objectKey string, expectedSize int64) ObjectProbeState {
@@ -400,16 +525,32 @@ func (r *StartupReconciler) scoreTaskEvidence(ctx context.Context, t *recording.
 	}
 
 	probe := r.probeTargetObject(ctx, backendID, objKey, expectedSize)
-
 	if t.State == recording.TransferCompleted && probe == ProbeValid {
 		return 100
 	}
+
 	now := time.Now()
 	if t.State == recording.TransferRunning && now.Before(t.LeaseExpiresAt) {
 		return 80
 	}
-	if t.State == recording.TransferPending || t.State == recording.TransferRetrying {
+
+	// Check if staged source file exists on disk with exact expected size
+	srcFilename := t.SourceFilename
+	if srcFilename == "" && asset != nil {
+		srcFilename = asset.SourceFilename
+	}
+	if srcFilename == "" {
+		srcFilename = filepath.Base(objKey)
+	}
+	srcAbsPath := filepath.Join(r.stagingRoot, "jobs", t.JobID, "finalized", srcFilename)
+	info, err := os.Stat(srcAbsPath)
+	stagedValid := (err == nil && info.Size() == expectedSize)
+
+	if (t.State == recording.TransferPending || t.State == recording.TransferRetrying) && stagedValid {
 		return 60
+	}
+	if t.State == recording.TransferPending || t.State == recording.TransferRetrying {
+		return 40
 	}
 	if t.State == recording.TransferCompleted && probe == ProbeNotFound {
 		return 20

@@ -19,11 +19,23 @@ var (
 	ErrManifestCorrupt = errors.New("recording job manifest corrupted")
 )
 
+// InventoryIssue captures explicit manifest corruption or read errors during inventory scanning.
+type InventoryIssue struct {
+	Path  string `json:"path"`
+	Error string `json:"error"`
+}
+
+// JobInventory returns all successfully read jobs alongside any manifest issues encountered.
+type JobInventory struct {
+	Jobs   []*RecordingJob  `json:"jobs"`
+	Issues []InventoryIssue `json:"issues"`
+}
+
 // JobRepository defines persistent CRUD operations for RecordingJobs.
 type JobRepository interface {
 	Save(ctx context.Context, job *RecordingJob) error
 	Get(ctx context.Context, id string) (*RecordingJob, error)
-	ListAll(ctx context.Context) ([]*RecordingJob, error)
+	ListAllInventory(ctx context.Context) (JobInventory, error)
 	ListRecoverable(ctx context.Context) ([]*RecordingJob, error)
 	Delete(ctx context.Context, id string) error
 }
@@ -64,7 +76,7 @@ func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob) error {
 	manifestFile := r.ManifestPath(job.ID)
 	jobDir := filepath.Dir(manifestFile)
 	if err := os.MkdirAll(jobDir, 0755); err != nil {
-		return fmt.Errorf("failed to create job dir: %w", err)
+		return fmt.Errorf("failed to create job directory: %w", err)
 	}
 
 	data, err := json.MarshalIndent(job, "", "  ")
@@ -72,42 +84,44 @@ func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob) error {
 		return fmt.Errorf("failed to marshal job manifest: %w", err)
 	}
 
-	tmpPath := manifestFile + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	tmpFile := manifestFile + ".tmp"
+	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open tmp manifest file: %w", err)
 	}
-
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("failed to write tmp manifest: %w", err)
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to write tmp manifest file: %w", err)
 	}
-
 	if err := f.Sync(); err != nil {
 		_ = f.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("failed to sync tmp manifest: %w", err)
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to fsync tmp manifest file: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("failed to close tmp manifest: %w", err)
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to close tmp manifest file cleanly: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, manifestFile); err != nil {
-		return fmt.Errorf("failed to rename manifest: %w", err)
+	if err := os.Rename(tmpFile, manifestFile); err != nil {
+		return fmt.Errorf("failed to rename manifest file: %w", err)
 	}
 
-	// Parent directory fsync to guarantee persistence across power outages
-	if parentDir, err := os.Open(jobDir); err == nil {
-		_ = parentDir.Sync()
-		_ = parentDir.Close()
+	pDir, err := os.Open(jobDir)
+	if err != nil {
+		return fmt.Errorf("failed to open job directory for fsync: %w", err)
 	}
+	if err := pDir.Sync(); err != nil {
+		_ = pDir.Close()
+		return fmt.Errorf("failed to fsync job directory: %w", err)
+	}
+	_ = pDir.Close()
 
 	return nil
 }
 
-// Get reads and unmarshals manifest.json for jobID.
+// Get reads and parses manifest.json for jobID.
 func (r *DiskJobRepository) Get(ctx context.Context, id string) (*RecordingJob, error) {
 	if err := ValidateJobID(id); err != nil {
 		return nil, err
@@ -133,26 +147,26 @@ func (r *DiskJobRepository) Get(ctx context.Context, id string) (*RecordingJob, 
 	return &job, nil
 }
 
-// ListAll scans and returns all RecordingJobs on disk.
-func (r *DiskJobRepository) ListAll(ctx context.Context) ([]*RecordingJob, error) {
+// ListAllInventory scans and returns all RecordingJobs on disk alongside explicit manifest corruption issues.
+func (r *DiskJobRepository) ListAllInventory(ctx context.Context) (JobInventory, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return JobInventory{}, err
 	}
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	var inventory JobInventory
 	jobsDir := filepath.Join(r.stagingRoot, "jobs")
 	if _, err := os.Stat(jobsDir); os.IsNotExist(err) {
-		return nil, nil
+		return inventory, nil
 	}
 
 	entries, err := os.ReadDir(jobsDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read jobs dir: %w", err)
+		return inventory, fmt.Errorf("failed to read jobs dir: %w", err)
 	}
 
-	var allJobs []*RecordingJob
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -161,54 +175,35 @@ func (r *DiskJobRepository) ListAll(ctx context.Context) ([]*RecordingJob, error
 		manifestFile := filepath.Join(jobsDir, jobID, "manifest.json")
 		data, err := os.ReadFile(manifestFile)
 		if err != nil {
+			if !os.IsNotExist(err) {
+				inventory.Issues = append(inventory.Issues, InventoryIssue{Path: manifestFile, Error: err.Error()})
+			}
 			continue
 		}
 
 		var job RecordingJob
 		if err := json.Unmarshal(data, &job); err != nil {
+			inventory.Issues = append(inventory.Issues, InventoryIssue{Path: manifestFile, Error: fmt.Sprintf("%v: %v", ErrManifestCorrupt, err)})
 			continue
 		}
-		allJobs = append(allJobs, &job)
+		allJob := job
+		inventory.Jobs = append(inventory.Jobs, &allJob)
 	}
 
-	return allJobs, nil
+	return inventory, nil
 }
 
 // ListRecoverable scans and returns all non-terminal RecordingJobs requiring recovery.
 func (r *DiskJobRepository) ListRecoverable(ctx context.Context) ([]*RecordingJob, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	jobsDir := filepath.Join(r.stagingRoot, "jobs")
-	if _, err := os.Stat(jobsDir); os.IsNotExist(err) {
-		return nil, nil
-	}
-
-	entries, err := os.ReadDir(jobsDir)
+	inventory, err := r.ListAllInventory(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read jobs dir: %w", err)
+		return nil, err
 	}
 
 	var recoverable []*RecordingJob
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		jobID := entry.Name()
-		manifestFile := filepath.Join(jobsDir, jobID, "manifest.json")
-		data, err := os.ReadFile(manifestFile)
-		if err != nil {
-			continue
-		}
-
-		var job RecordingJob
-		if err := json.Unmarshal(data, &job); err != nil {
-			continue
-		}
-
-		// Non-terminal jobs require crash recovery
+	for _, job := range inventory.Jobs {
 		if !job.State.IsTerminal() {
-			recoverable = append(recoverable, &job)
+			recoverable = append(recoverable, job)
 		}
 	}
 

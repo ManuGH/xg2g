@@ -25,6 +25,26 @@ var (
 	ErrSegmentSizeMismatch    = errors.New("staged segment size mismatch against reserved NVMe segment")
 )
 
+// FinalizationManifest is written to finalized/finalization_manifest.json to allow crash reconstruction.
+type FinalizationManifest struct {
+	AssetID         string                        `json:"asset_id"`
+	JobID           string                        `json:"job_id"`
+	ProfileID       string                        `json:"profile_id"`
+	Title           string                        `json:"title"`
+	ServiceRef      string                        `json:"service_ref"`
+	TargetBackendID string                        `json:"target_backend_id"`
+	TargetObjectKey string                        `json:"target_object_key"`
+	SourceFilename  string                        `json:"source_filename"`
+	Container       recording.ContainerFormat     `json:"container"`
+	SizeBytes       int64                         `json:"size_bytes"`
+	ManagementMode  recording.AssetManagementMode `json:"management_mode"`
+	DeletePolicy    recording.DeletePolicy        `json:"delete_policy"`
+	DurationSeconds int                           `json:"duration_seconds"`
+	RecordedStart   time.Time                     `json:"recorded_start"`
+	RecordedEnd     time.Time                     `json:"recorded_end"`
+	Completeness    recording.AssetCompleteness   `json:"completeness"`
+}
+
 // RetroDVRHandoverEngine orchestrates Retro-DVR recordings from NVMe segment reservations to finalized RecordingAssets.
 type RetroDVRHandoverEngine struct {
 	mu          sync.Mutex
@@ -385,6 +405,31 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	} else {
 		asset.Completeness = recording.AssetGapped
 		asset.GapCount = len(report.MissingRanges)
+	}
+
+	// Save persistent FinalizationManifest inside finalized/ directory for crash reconstruction
+	finalManifest := FinalizationManifest{
+		AssetID:         asset.ID,
+		JobID:           job.ID,
+		ProfileID:       asset.ProfileID,
+		Title:           asset.Title,
+		ServiceRef:      asset.ServiceRef,
+		TargetBackendID: asset.BackendID,
+		TargetObjectKey: asset.ObjectKey,
+		SourceFilename:  asset.SourceFilename,
+		Container:       asset.Container,
+		SizeBytes:       asset.SizeBytes,
+		ManagementMode:  asset.ManagementMode,
+		DeletePolicy:    asset.DeletePolicy,
+		DurationSeconds: asset.DurationSeconds,
+		RecordedStart:   asset.RecordedStart,
+		RecordedEnd:     asset.RecordedEnd,
+		Completeness:    asset.Completeness,
+	}
+	manifestData, mErr := json.MarshalIndent(finalManifest, "", "  ")
+	if mErr == nil {
+		finalManifestPath := filepath.Join(filepath.Dir(report.FinalizedPath), "finalization_manifest.json")
+		_ = os.WriteFile(finalManifestPath, manifestData, 0644)
 	}
 
 	// 9. Attempt StorageBackend CommitFile & Stat Verification

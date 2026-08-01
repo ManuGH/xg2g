@@ -43,6 +43,7 @@ func (b *LocalNVMeStorageBackend) Capabilities() storage.StorageCapabilities {
 		SupportsHardlink:         true,
 		SupportsReflink:          true,
 		SupportsAtomicRename:     true,
+		SupportsAtomicReplace:    true,
 		RecommendedForRingbuffer: true,
 	}
 }

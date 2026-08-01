@@ -16,6 +16,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/infra/storage"
 )
 
+const FinalizationLeaseDuration = 2 * time.Minute
+
 // TransferWorker processes persistent TransferTasks to commit staged files to target StorageBackends.
 type TransferWorker struct {
 	workerID    string
@@ -200,9 +202,15 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		}
 	}
 
-	// MANDATORY PRE-COMPLETION HEARTBEAT TEARDOWN:
-	// Stop & join heartbeat goroutine BEFORE executing persistent state transitions!
-	// If lease renewal failed, abort immediately before modifying Asset/Job/Task state.
+	// MANDATORY EXPLICIT FINALIZATION LEASE RENEWAL:
+	// Prior to stopping heartbeat, guarantee a full 2-minute finalization lease extension
+	_, finalRenewErr := w.taskRepo.RenewTaskLease(ctx, task.ID, w.workerID, task.LeaseToken, FinalizationLeaseDuration)
+	if finalRenewErr != nil {
+		stopHeartbeatAndJoin()
+		return fmt.Errorf("failed to secure finalization lease before saving completion states: %w", finalRenewErr)
+	}
+
+	// Stop & join heartbeat goroutine BEFORE executing persistent state transitions
 	if hbCheckErr := finishWithCheck(nil); hbCheckErr != nil {
 		return hbCheckErr
 	}
@@ -227,14 +235,17 @@ func (w *TransferWorker) executeTransfer(ctx context.Context, task *recording.Tr
 		}
 	}
 
-	// 4. Transition Job to COMPLETED idempotently
+	// 4. Transition Job to StateCompleted idempotently using domain transition
 	job, err := w.jobRepo.Get(ctx, task.JobID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch job %s: %w", task.JobID, err)
 	}
 	if job.State != recording.StateCompleted {
-		job.State = recording.StateCompleted
-		if err := w.jobRepo.Save(ctx, job); err != nil {
+		completedJob, err := job.TransitionState(recording.StateCompleted, "")
+		if err != nil {
+			return fmt.Errorf("failed to transition job to COMPLETED: %w", err)
+		}
+		if err := w.jobRepo.Save(ctx, completedJob); err != nil {
 			return fmt.Errorf("failed to save COMPLETED job: %w", err)
 		}
 	}

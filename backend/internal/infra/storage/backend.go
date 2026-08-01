@@ -71,6 +71,7 @@ type StorageCapabilities struct {
 	SupportsHardlink         bool `json:"supports_hardlink"`
 	SupportsReflink          bool `json:"supports_reflink"`
 	SupportsAtomicRename     bool `json:"supports_atomic_rename"`
+	SupportsAtomicReplace    bool `json:"supports_atomic_replace"`
 	RecommendedForRingbuffer bool `json:"recommended_for_ringbuffer"`
 }
 

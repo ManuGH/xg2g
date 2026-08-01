@@ -210,7 +210,7 @@ type FailingStorageBackend struct {
 func (f *FailingStorageBackend) ID() string { return f.id }
 func (f *FailingStorageBackend) Type() storage.StorageType { return storage.StorageTypeLocal }
 func (f *FailingStorageBackend) Roles() []storage.StorageRole { return []storage.StorageRole{storage.RoleRecordingTarget} }
-func (f *FailingStorageBackend) Capabilities() storage.StorageCapabilities { return storage.StorageCapabilities{} }
+func (f *FailingStorageBackend) Capabilities() storage.StorageCapabilities { return storage.StorageCapabilities{SupportsAtomicReplace: true} }
 func (f *FailingStorageBackend) Health(ctx context.Context) storage.HealthStatus { return storage.HealthStatus{} }
 func (f *FailingStorageBackend) Capacity(ctx context.Context) (storage.CapacityInfo, error) { return storage.CapacityInfo{}, nil }
 func (f *FailingStorageBackend) Open(ctx context.Context, objectKey string) (storage.ObjectReader, error) { return nil, storage.ErrObjectNotFound }
@@ -375,8 +375,8 @@ func TestStartupReconciler_5CaseRecoveryMatrix(t *testing.T) {
 
 	now := time.Now()
 	job1, _ := recording.NewRecordingJob("job_rec_1", "ref_1", "Show 1", recording.SourceRetro, now.Add(-1*time.Hour), now, backend.ID())
-	job1.State = recording.StateWaitingTarget
-	_ = jobRepo.Save(ctx, job1)
+	job1Pending, _ := job1.TransitionState(recording.StateWaitingTarget, "")
+	_ = jobRepo.Save(ctx, job1Pending)
 
 	asset1, _ := recording.NewRecordingAsset("asset_rec_1", job1.ID, "Show 1", "ref_1", backend.ID(), "movies/show1.ts", recording.ContainerTS)
 	asset1.SizeBytes = int64(len(payload))
@@ -443,5 +443,102 @@ func TestTransferWorker_LeaseOwnershipCASRejection(t *testing.T) {
 	freshTask, _ := taskRepo.Get(ctx, "task_cas_1")
 	if freshTask.LockedBy != "worker-B" {
 		t.Fatalf("Worker B's lease was corrupted by Worker A! Active lock: %s", freshTask.LockedBy)
+	}
+}
+
+func TestListAllInventory_CorruptedManifestResilience(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "inventory_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	jobRepo, err := recording.NewDiskJobRepository(tmpDir)
+	if err != nil {
+		t.Fatalf("NewDiskJobRepository failed: %v", err)
+	}
+
+	// 1. Create a valid job
+	job1, _ := recording.NewRecordingJob("job_valid_1", "ref_1", "Valid Show", recording.SourceRetro, time.Now(), time.Now().Add(1*time.Hour), "backend-1")
+	if err := jobRepo.Save(ctx, job1); err != nil {
+		t.Fatalf("jobRepo.Save failed: %v", err)
+	}
+
+	// 2. Create a corrupted manifest file
+	corruptDir := filepath.Join(tmpDir, "jobs", "job_corrupt_2")
+	_ = os.MkdirAll(corruptDir, 0755)
+	_ = os.WriteFile(filepath.Join(corruptDir, "manifest.json"), []byte("{invalid json payload..."), 0644)
+
+	// 3. Scan inventory
+	inventory, err := jobRepo.ListAllInventory(ctx)
+	if err != nil {
+		t.Fatalf("ListAllInventory failed: %v", err)
+	}
+
+	if len(inventory.Jobs) != 1 {
+		t.Errorf("Expected 1 valid job, got %d", len(inventory.Jobs))
+	}
+	if len(inventory.Issues) != 1 {
+		t.Errorf("Expected 1 issue reported, got %d", len(inventory.Issues))
+	}
+}
+
+func TestCrashMatrixMultiSaveRecovery(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "crash_matrix_test")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx := context.Background()
+	jobRepoPath := filepath.Join(tmpDir, "staging")
+	jobRepo, _ := recording.NewDiskJobRepository(jobRepoPath)
+	assetRepoPath := filepath.Join(tmpDir, "library", "assets.json")
+	assetRepo, _ := recording.NewDiskAssetRepository(assetRepoPath)
+	taskRepoPath := filepath.Join(tmpDir, "library", "transfers.json")
+	taskRepo, _ := recording.NewDiskTransferTaskRepository(taskRepoPath)
+
+	targetRoot := filepath.Join(tmpDir, "target_storage")
+	backend, _ := NewLocalNVMeStorageBackend("target-1", targetRoot)
+
+	targetFilePath := filepath.Join(targetRoot, "movies", "crash_show.ts")
+	_ = os.MkdirAll(filepath.Dir(targetFilePath), 0755)
+	payload := []byte("CRASH_TEST_PAYLOAD")
+	_ = os.WriteFile(targetFilePath, payload, 0644)
+
+	now := time.Now()
+	// Scenario: Crash 1 - Asset save succeeded (AVAILABLE), Job save crashed (TRANSFERRING), Task crashed (PENDING)
+	job, _ := recording.NewRecordingJob("job_crash_1", "ref_crash", "Crash Show", recording.SourceRetro, now.Add(-1*time.Hour), now, backend.ID())
+	jobWaiting, _ := job.TransitionState(recording.StateWaitingTarget, "")
+	jobTransferring, _ := jobWaiting.TransitionState(recording.StateTransferring, "")
+	if err := jobRepo.Save(ctx, jobTransferring); err != nil {
+		t.Fatalf("jobRepo.Save failed: %v", err)
+	}
+
+	asset, _ := recording.NewRecordingAsset("asset_crash_1", job.ID, "Crash Show", "ref_crash", backend.ID(), "movies/crash_show.ts", recording.ContainerTS)
+	asset.SizeBytes = int64(len(payload))
+	availAsset, _ := asset.TransitionState(recording.AssetAvailable)
+	_ = assetRepo.Save(ctx, availAsset, 0)
+
+	task, _ := recording.NewTransferTask("task_crash_1", job.ID, asset.ID, job.ID, "crash_show.ts", backend.ID(), "movies/crash_show.ts", int64(len(payload)))
+	_ = taskRepo.CreateTask(ctx, task)
+
+	reconciler, err := NewStartupReconciler(jobRepo, assetRepo, taskRepo, jobRepoPath, []storage.StorageBackend{backend})
+	if err != nil {
+		t.Fatalf("NewStartupReconciler failed: %v", err)
+	}
+
+	if err := reconciler.ReconcileAll(ctx); err != nil {
+		t.Fatalf("ReconcileAll failed: %v", err)
+	}
+
+	recJob, _ := jobRepo.Get(ctx, job.ID)
+	if recJob.State != recording.StateCompleted {
+		t.Errorf("Crash Matrix 1: Expected job state COMPLETED after recovery, got %s", recJob.State)
+	}
+	recTask, _ := taskRepo.Get(ctx, task.ID)
+	if recTask.State != recording.TransferCompleted {
+		t.Errorf("Crash Matrix 1: Expected task state COMPLETED after recovery, got %s", recTask.State)
 	}
 }
