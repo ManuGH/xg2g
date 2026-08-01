@@ -4,6 +4,7 @@
 package ringbuffer
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -30,10 +31,17 @@ type Buffer struct {
 	dvrCb       DVRCallback
 	dvrCh       chan *Artifact
 	closed      bool
+	store       *ReservationStore
+	index       *SegmentIndex
 }
 
 // NewBuffer creates a new ring buffer for a session.
 func NewBuffer(sessionID string, maxSegments int, dvrCb DVRCallback) *Buffer {
+	return NewBufferWithStore(sessionID, maxSegments, dvrCb, nil, nil)
+}
+
+// NewBufferWithStore creates a new ring buffer bound to an authoritative ReservationStore.
+func NewBufferWithStore(sessionID string, maxSegments int, dvrCb DVRCallback, store *ReservationStore, index *SegmentIndex) *Buffer {
 	if maxSegments <= 0 {
 		maxSegments = 20
 	}
@@ -43,6 +51,8 @@ func NewBuffer(sessionID string, maxSegments int, dvrCb DVRCallback) *Buffer {
 		artifacts:   make(map[string]*Artifact),
 		lastUpdated: time.Now(),
 		dvrCb:       dvrCb,
+		store:       store,
+		index:       index,
 	}
 	if dvrCb != nil {
 		b.dvrCh = make(chan *Artifact, 100)
@@ -65,7 +75,7 @@ func (b *Buffer) dvrWorker() {
 }
 
 // Put adds or replaces an artifact in the ring buffer. If the artifact is a segment
-// (e.g. seg_000001.ts or seg_000001.m4s) and the buffer exceeds maxSegments, the oldest segment is evicted.
+// (e.g. seg_000001.ts or seg_000001.m4s) and the buffer exceeds maxSegments, the oldest segment is evicted unless reserved.
 func (b *Buffer) Put(filename string, data []byte) {
 	art := &Artifact{
 		Filename: filename,
@@ -85,11 +95,61 @@ func (b *Buffer) Put(filename string, data []byte) {
 	isSegment := len(filename) >= 4 && (filename[:4] == "seg_" || filename[:5] == "part_")
 	if isSegment && !exists {
 		b.segments = append(b.segments, filename)
-		for len(b.segments) > b.maxSegments {
-			oldest := b.segments[0]
-			b.segments = b.segments[1:]
-			delete(b.artifacts, oldest)
+
+		// Parse sequence number if possible
+		var seq uint64
+		if len(filename) > 4 && filename[:4] == "seg_" {
+			_, _ = fmt.Sscanf(filename, "seg_%d", &seq)
 		}
+
+		segID := SegmentID{
+			ServiceRef: b.sessionID,
+			SessionID:  b.sessionID,
+			Sequence:   seq,
+		}
+
+		if b.index != nil {
+			b.index.AddSegment(&InternalSegment{
+				ID:            segID,
+				Path:          filename,
+				Sequence:      seq,
+				StartWallTime: art.ModTime,
+				EndWallTime:   art.ModTime.Add(2 * time.Second),
+				SizeBytes:     int64(len(data)),
+				State:         SegmentActive,
+			})
+		}
+
+		var keptSegments []string
+		for idx, s := range b.segments {
+			if len(b.segments)-idx <= b.maxSegments {
+				keptSegments = append(keptSegments, s)
+				continue
+			}
+
+			// Parse sequence for candidate eviction
+			var candidateSeq uint64
+			if len(s) > 4 && s[:4] == "seg_" {
+				_, _ = fmt.Sscanf(s, "seg_%d", &candidateSeq)
+			}
+			candID := SegmentID{
+				ServiceRef: b.sessionID,
+				SessionID:  b.sessionID,
+				Sequence:   candidateSeq,
+			}
+
+			// If segment is reserved in index, DO NOT EVICT!
+			if b.index != nil {
+				if seg, ok := b.index.GetByID(candID); ok && seg.IsReserved() {
+					keptSegments = append(keptSegments, s)
+					continue
+				}
+				b.index.MarkForDeletion(candID)
+			}
+
+			delete(b.artifacts, s)
+		}
+		b.segments = keptSegments
 	}
 
 	// Send to DVR channel while holding the lock so Close() cannot race
@@ -131,19 +191,26 @@ type Registry struct {
 	maxSegments int
 	closeCh     chan struct{}
 	closeOnce   sync.Once
+	store       *ReservationStore
+	index       *SegmentIndex
 	lifecycle   *LifecycleManager
 }
 
 // NewRegistry initializes a Registry.
 func NewRegistry(maxSegments int) *Registry {
+	return NewRegistryWithStorage(maxSegments, "")
+}
+
+// NewRegistryWithStorage initializes a Registry with a persistent storage location for reservations.
+func NewRegistryWithStorage(maxSegments int, storagePath string) *Registry {
 	r := &Registry{
 		buffers:     make(map[string]*Buffer),
 		maxSegments: maxSegments,
 		closeCh:     make(chan struct{}),
 	}
-	idx := NewSegmentIndex()
-	store := NewReservationStore(idx, DefaultReservationLimits(), "")
-	r.lifecycle = NewLifecycleManager(store, idx)
+	r.index = NewSegmentIndex()
+	r.store = NewReservationStore(r.index, DefaultReservationLimits(), storagePath)
+	r.lifecycle = NewLifecycleManager(r.store, r.index)
 	_ = r.lifecycle.RunRecovery()
 	go r.cleanupLoop()
 	return r
@@ -152,13 +219,23 @@ func NewRegistry(maxSegments int) *Registry {
 // DefaultRegistry is the global singleton registry for live sessions.
 var DefaultRegistry = NewRegistry(20)
 
+// Store returns the underlying ReservationStore.
+func (r *Registry) Store() *ReservationStore {
+	return r.store
+}
+
+// Index returns the underlying SegmentIndex.
+func (r *Registry) Index() *SegmentIndex {
+	return r.index
+}
+
 // GetOrCreate returns an existing buffer or creates a new one for sessionID.
 func (r *Registry) GetOrCreate(sessionID string, dvrCb DVRCallback) *Buffer {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	buf, ok := r.buffers[sessionID]
 	if !ok {
-		buf = NewBuffer(sessionID, r.maxSegments, dvrCb)
+		buf = NewBufferWithStore(sessionID, r.maxSegments, dvrCb, r.store, r.index)
 		r.buffers[sessionID] = buf
 	} else if dvrCb != nil && buf.dvrCb == nil {
 		buf.mu.Lock()
