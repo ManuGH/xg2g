@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import { useState, useEffect } from 'react';
-=======
-import React, { useState, useEffect } from 'react';
->>>>>>> 2a6599cd (feat(player): add in-player Quick-Recording dialog with Retro-DVR buffer presets)
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { addTimer } from '../../../client-ts';

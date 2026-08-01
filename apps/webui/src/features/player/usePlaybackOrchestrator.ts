@@ -236,24 +236,7 @@ export function usePlaybackOrchestrator(
     setTtffMetrics(null);
   }, []);
 
-  // Protection against accidental tab / window closure while playback/timeshift is active
-  useEffect(() => {
-    const currentStatus = playbackState.status;
-    if (currentStatus !== 'playing' && currentStatus !== 'buffering' && currentStatus !== 'paused') {
-      return;
-    }
 
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-      return '';
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [playbackState.status]);
 
   const handlePlaybackMilestone = useCallback((milestone: 'manifest' | 'firstFrame') => {
     const startT0 = ttffStartT0Ref.current;
@@ -297,6 +280,25 @@ export function usePlaybackOrchestrator(
     }, []),
   );
   const playbackStateRef = useRef(playbackState);
+
+  // Protection against accidental tab / window closure while playback/timeshift is active
+  useEffect(() => {
+    const currentStatus = playbackState.status;
+    if (currentStatus !== 'playing' && currentStatus !== 'buffering' && currentStatus !== 'paused') {
+      return;
+    }
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [playbackState.status]);
   const {
     playbackEpochRef,
     acceptedPlaybackEpochRef,
