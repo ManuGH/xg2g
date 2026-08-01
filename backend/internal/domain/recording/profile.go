@@ -31,23 +31,42 @@ const (
 	NamingPresetCustom    NamingPreset = "CUSTOM"
 )
 
+// AssetManagementMode defines ownership rules for assets and folders shared with external systems.
+type AssetManagementMode string
+
+const (
+	ManagementXG2GManaged AssetManagementMode = "XG2G_MANAGED"
+	ManagementShared      AssetManagementMode = "SHARED"
+	ManagementExternal    AssetManagementMode = "EXTERNAL"
+)
+
+// DeletePolicy defines default behavior when deleting an asset from xg2g UI.
+type DeletePolicy string
+
+const (
+	DeleteAssetAndFile DeletePolicy = "DELETE_ASSET_AND_FILE"
+	DeleteAssetOnly    DeletePolicy = "DELETE_ASSET_ONLY"
+)
+
 // RecordingTarget details the target storage backend and relative folder.
 type RecordingTarget struct {
 	BackendID    string `json:"backend_id"`
 	RelativePath string `json:"relative_path"`
 }
 
-// RecordingProfile holds persistent settings for target location, container format, and naming rules.
+// RecordingProfile holds persistent settings for target location, container format, and naming/ownership rules.
 type RecordingProfile struct {
-	ID               string          `json:"id"`
-	Name             string          `json:"name"`
-	Target           RecordingTarget `json:"target"`
-	ContainerFormat  ContainerFormat `json:"container_format"`
-	NamingPreset     NamingPreset    `json:"naming_preset"`
-	FilenameTemplate string          `json:"filename_template,omitempty"`
+	ID               string              `json:"id"`
+	Name             string              `json:"name"`
+	Target           RecordingTarget     `json:"target"`
+	ContainerFormat  ContainerFormat     `json:"container_format"`
+	NamingPreset     NamingPreset        `json:"naming_preset"`
+	FilenameTemplate string              `json:"filename_template,omitempty"`
+	ManagementMode   AssetManagementMode `json:"management_mode"`
+	DeletePolicy     DeletePolicy        `json:"delete_policy"`
 }
 
-// NewRecordingProfile initializes a RecordingProfile with defaults.
+// NewRecordingProfile initializes a RecordingProfile with safe defaults.
 func NewRecordingProfile(id, name, backendID, relPath string, format ContainerFormat, preset NamingPreset) (*RecordingProfile, error) {
 	if id == "" {
 		return nil, ErrInvalidProfileID
@@ -64,5 +83,7 @@ func NewRecordingProfile(id, name, backendID, relPath string, format ContainerFo
 		},
 		ContainerFormat: format,
 		NamingPreset:    preset,
+		ManagementMode:  ManagementXG2GManaged,
+		DeletePolicy:    DeleteAssetAndFile,
 	}, nil
 }

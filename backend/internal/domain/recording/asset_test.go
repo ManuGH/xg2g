@@ -162,7 +162,7 @@ func TestRecordingAsset_DeepCloneIsolation(t *testing.T) {
 	}
 }
 
-func TestDiskProfileRepository_CRUD(t *testing.T) {
+func TestDiskProfileRepository_ManagementModeAndPolicies(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "profile_repo_test")
 	if err != nil {
 		t.Fatalf("MkdirTemp failed: %v", err)
@@ -181,16 +181,30 @@ func TestDiskProfileRepository_CRUD(t *testing.T) {
 		t.Fatalf("NewRecordingProfile failed: %v", err)
 	}
 
+	if prof.ManagementMode != ManagementXG2GManaged {
+		t.Errorf("Expected default ManagementMode XG2G_MANAGED, got %s", prof.ManagementMode)
+	}
+	if prof.DeletePolicy != DeleteAssetAndFile {
+		t.Errorf("Expected default DeletePolicy DELETE_ASSET_AND_FILE, got %s", prof.DeletePolicy)
+	}
+
+	// Update management mode for shared Plex folder
+	prof.ManagementMode = ManagementShared
+	prof.DeletePolicy = DeleteAssetOnly
+
 	if err := repo.Save(ctx, prof); err != nil {
 		t.Fatalf("repo.Save profile failed: %v", err)
 	}
 
-	list, err := repo.List(ctx)
-	if err != nil || len(list) != 1 {
-		t.Fatalf("repo.List expected 1 profile, got %d (err: %v)", len(list), err)
+	fetched, err := repo.Get(ctx, prof.ID)
+	if err != nil {
+		t.Fatalf("repo.Get profile failed: %v", err)
 	}
 
-	if list[0].Name != "Plex Movies" {
-		t.Errorf("Expected profile name 'Plex Movies', got '%s'", list[0].Name)
+	if fetched.ManagementMode != ManagementShared {
+		t.Errorf("Expected ManagementMode SHARED, got %s", fetched.ManagementMode)
+	}
+	if fetched.DeletePolicy != DeleteAssetOnly {
+		t.Errorf("Expected DeletePolicy DELETE_ASSET_ONLY, got %s", fetched.DeletePolicy)
 	}
 }
