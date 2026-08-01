@@ -1233,10 +1233,22 @@
   top: 0;
   height: var(--xg2g-timeline-indicator-height, 100%);
   width: 2px;
-  background: var(--status-error);
-  z-index: 10;
+  background: linear-gradient(180deg, #ff4d4d 0%, #f87171 100%);
+  z-index: 60;
   pointer-events: none;
-  box-shadow: var(--shadow-epg-current-time);
+  box-shadow: 0 0 8px rgba(255, 77, 77, 0.6), 0 0 2px rgba(255, 77, 77, 0.9);
+}
+
+.timelineCurrentTimeKnob {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -3px);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4d4d;
+  box-shadow: 0 0 10px #ff4d4d, 0 0 4px #ffffff;
 }
 
 .timelineBody {

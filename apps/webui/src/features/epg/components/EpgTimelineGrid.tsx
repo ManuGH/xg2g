@@ -45,7 +45,7 @@ export function EpgTimelineGrid({
   }
 
   const nowLeftPx = ((currentTime * 1000 - startTimestampMs) / (60 * 60 * 1000)) * PIXELS_PER_HOUR;
-  const totalIndicatorHeight = 36 + channels.length * 54 + 60;
+  const exactGridHeight = 36 + channels.length * 54;
 
   return (
     <div className={styles.timelineContainer} ref={containerRef} role="grid" aria-label="EPG Timeline">
@@ -63,9 +63,11 @@ export function EpgTimelineGrid({
               className={styles.timelineCurrentTimeIndicator}
               style={{
                 '--xg2g-timeline-left': `${nowLeftPx}px`,
-                '--xg2g-timeline-indicator-height': `${totalIndicatorHeight}px`,
+                '--xg2g-timeline-indicator-height': `${exactGridHeight}px`,
               } as CSSProperties}
-            />
+            >
+              <div className={styles.timelineCurrentTimeKnob} />
+            </div>
           )}
         </div>
       </div>
