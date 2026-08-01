@@ -54,7 +54,12 @@ describe('measurePlaybackNetwork', () => {
     }
   });
 
-  it('does not reuse positive bandwidth evidence when the browser exposes no network fingerprint', async () => {
+  // Safari ships no Network Information API, so there is no fingerprint to key
+  // the cache on. Refusing to reuse the verdict at all meant every Apple client
+  // re-measured on every playback start — and since the reading picks the
+  // encoder profile, and the output has no ABR ladder, a noisy re-measure cost
+  // a whole new transcode. Reuse is bounded by a short TTL instead.
+  it('reuses bandwidth evidence when the browser exposes no network fingerprint', async () => {
     const connectionDescriptor = Object.getOwnPropertyDescriptor(navigator, 'connection');
     delete (navigator as Navigator & { connection?: unknown }).connection;
     const fetchMock = vi.fn(async () => new Response(new Uint8Array(512 * 1024), {
@@ -62,16 +67,17 @@ describe('measurePlaybackNetwork', () => {
       headers: { 'X-XG2G-Playback-Probe': 'measured' },
     }));
     vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(performance, 'now')
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(100)
-      .mockReturnValueOnce(200)
-      .mockReturnValueOnce(300);
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => {
+      now += 100;
+      return now;
+    });
 
     try {
-      await measurePlaybackNetwork('/api/test-network-handoff');
-      await measurePlaybackNetwork('/api/test-network-handoff');
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const first = await measurePlaybackNetwork('/api/test-network-handoff');
+      const second = await measurePlaybackNetwork('/api/test-network-handoff');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(second).toEqual(first);
     } finally {
       if (connectionDescriptor) {
         Object.defineProperty(navigator, 'connection', connectionDescriptor);
@@ -98,11 +104,11 @@ describe('measurePlaybackNetwork', () => {
       headers: { 'X-XG2G-Playback-Probe': 'measured' },
     }));
     vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(performance, 'now')
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(100)
-      .mockReturnValueOnce(200)
-      .mockReturnValueOnce(300);
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => {
+      now += 100;
+      return now;
+    });
 
     try {
       await measurePlaybackNetwork('/api/test-connection-identity');
@@ -143,11 +149,11 @@ describe('measurePlaybackNetwork', () => {
       .mockReturnValueOnce(firstResponse)
       .mockReturnValueOnce(secondResponse);
     vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(performance, 'now')
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(100)
-      .mockReturnValueOnce(200)
-      .mockReturnValueOnce(300);
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => {
+      now += 100;
+      return now;
+    });
 
     try {
       const oldProbe = measurePlaybackNetwork('/api/test-inflight-handoff');
@@ -173,7 +179,7 @@ describe('measurePlaybackNetwork', () => {
       }));
       await expect(replacementProbe).resolves.toEqual({
         kind: 'measured',
-        downlinkMbps: 20.97152,
+        downlinkMbps: 41.94304,
       });
     } finally {
       if (connectionDescriptor) {

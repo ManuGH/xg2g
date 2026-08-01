@@ -4,6 +4,7 @@ import V3Player from '../src/features/player/components/V3Player';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import * as sdk from '../src/client-ts';
 import { suppressExpectedConsoleNoise } from './helpers/consoleNoise';
+import { MAX_SESSION_RESTARTS } from '../src/features/player/orchestrator/recoveryLadder';
 
 vi.mock('../src/client-ts', async () => {
   const actual = await vi.importActual<any>('../src/client-ts');
@@ -446,7 +447,11 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
     }
   });
 
-  it('tears down on 410 GONE (Session Expired) during heartbeat', async () => {
+  // A lease that lapses under a session which was actually playing is what a
+  // tunnel or a dead spot produces. Surfacing it as a terminal error stranded
+  // the viewer on a Retry button; the player re-establishes it instead, and
+  // only tells the user once the bounded restart budget is spent.
+  it('re-establishes a lease reaped during playback, with a bounded restart budget', async () => {
     let heartbeatCount = 0;
 
     (globalThis.fetch as any).mockImplementation((url: string) => {
@@ -517,16 +522,54 @@ describe('V3Player Error Semantics (UI-ERR-PLAYER-001)', () => {
         await flushMicrotasks();
       });
 
-      // Trigger second heartbeat (410) + flush the async interval callback.
+      // Trigger second heartbeat (410) + flush the async callback.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1100);
         await flushMicrotasks();
       });
 
+      // The reap is absorbed, not reported: no error text, and the ladder has
+      // scheduled a restart rather than ending the viewing session.
       // With fake timers enabled, avoid waitFor here (it schedules timeouts).
-      expect(screen.getByText(/player\.sessionExpired|Session expired/i)).toBeInTheDocument();
-      expect(screen.queryByText('sess-123')).not.toBeInTheDocument();
-      expect(screen.getByText('Session').closest('div')).toHaveTextContent('Session-');
+      expect(screen.queryByText(/player\.sessionExpired|Session expired/i)).not.toBeInTheDocument();
+
+      const startIntents = () => (globalThis.fetch as any).mock.calls
+        .filter((c: any[]) => {
+          if (!String(c[0]).endsWith('/intents')) return false;
+          const body = c[1]?.body ? JSON.parse(String(c[1].body)) : {};
+          return body?.type !== 'stream.stop';
+        }).length;
+      const intentsBeforeRestart = startIntents();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+        await flushMicrotasks();
+      });
+
+      // A fresh start intent is the proof the lease was re-established rather
+      // than handed to the user as an error.
+      expect(startIntents()).toBeGreaterThan(intentsBeforeRestart);
+
+      // This fixture reaps every session it hands out, so the ladder must stop
+      // rather than spin the backend through encoder starts forever. (That the
+      // exhausted budget then surfaces the error is pinned deterministically in
+      // recoveryLadder.test.ts, without fake-timer scheduling in the way.)
+      await act(async () => {
+        for (let i = 0; i < 12; i++) {
+          await vi.advanceTimersByTimeAsync(3000);
+          await flushMicrotasks();
+        }
+      });
+      const startsAfterBudget = startIntents();
+      expect(startsAfterBudget).toBe(intentsBeforeRestart + MAX_SESSION_RESTARTS);
+
+      await act(async () => {
+        for (let i = 0; i < 12; i++) {
+          await vi.advanceTimersByTimeAsync(3000);
+          await flushMicrotasks();
+        }
+      });
+      expect(startIntents()).toBe(startsAfterBudget);
     } finally {
       vi.useRealTimers();
     }

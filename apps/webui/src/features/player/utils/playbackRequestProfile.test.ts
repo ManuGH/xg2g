@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  NETWORK_DOWNGRADE_HOLD_MS,
   buildPlaybackProfileHeaders,
+  clearNetworkStarvationHold,
+  createAutomaticProfileMemory,
   normalizePlaybackProfileSelection,
+  noteNetworkStarvation,
   resolvePlaybackProfileForPreflight,
   resolvePlaybackRequestProfile,
   type PlaybackClientContext,
@@ -244,5 +248,68 @@ describe('planner-bound profile selection', () => {
     expect(resolvePlaybackProfileForPreflight('repair', 'quality')).toBe('repair');
     expect(resolvePlaybackProfileForPreflight('auto', 'bandwidth')).toBe('bandwidth');
     expect(resolvePlaybackProfileForPreflight('auto')).toBeUndefined();
+  });
+});
+
+// A single-rendition output means every profile change is a new encoder
+// session. On mobile the measured downlink walks across the thresholds
+// continuously, so without memory the resolver turns ordinary cellular jitter
+// into repeated transcode restarts.
+describe('resolvePlaybackRequestProfile memory', () => {
+  const mobile = (downlinkMbps: number) => buildContext({
+    platform: 'ios',
+    isTv: false,
+    isNativePlayback: false,
+    network: { kind: 'measured', downlinkMbps },
+  });
+
+  it('keeps quality through a dip that a bare threshold would have flipped', () => {
+    const memory = createAutomaticProfileMemory();
+    expect(resolvePlaybackRequestProfile(mobile(40), buildCapabilities(), 'live', memory)).toBe('quality');
+    // 30 is below the entry threshold of 35 but above the exit threshold of 28.
+    expect(resolvePlaybackRequestProfile(mobile(30), buildCapabilities(), 'live', memory)).toBe('quality');
+  });
+
+  it('still gives quality up on a genuine drop', () => {
+    const memory = createAutomaticProfileMemory();
+    resolvePlaybackRequestProfile(mobile(40), buildCapabilities(), 'live', memory);
+    expect(resolvePlaybackRequestProfile(mobile(25), buildCapabilities(), 'live', memory)).toBeUndefined();
+  });
+
+  it('does not climb out of bandwidth on a marginal improvement', () => {
+    const memory = createAutomaticProfileMemory();
+    expect(resolvePlaybackRequestProfile(mobile(12), buildCapabilities(), 'live', memory)).toBe('bandwidth');
+    // 18 clears the 15 entry threshold but not the 20 exit threshold.
+    expect(resolvePlaybackRequestProfile(mobile(18), buildCapabilities(), 'live', memory)).toBe('bandwidth');
+    expect(resolvePlaybackRequestProfile(mobile(22), buildCapabilities(), 'live', memory)).toBeUndefined();
+  });
+
+  it('behaves exactly as before when no memory is supplied', () => {
+    expect(resolvePlaybackRequestProfile(mobile(30), buildCapabilities(), 'live')).toBeUndefined();
+    expect(resolvePlaybackRequestProfile(mobile(18), buildCapabilities(), 'live')).toBeUndefined();
+    expect(resolvePlaybackRequestProfile(mobile(12), buildCapabilities(), 'live')).toBe('bandwidth');
+  });
+
+  it('holds the safe rung after playback died of starvation, whatever the probe now claims', () => {
+    const memory = createAutomaticProfileMemory();
+    noteNetworkStarvation(memory, 1_000);
+    expect(resolvePlaybackRequestProfile(mobile(120), buildCapabilities(), 'live', memory, 2_000))
+      .toBe('bandwidth');
+  });
+
+  it('lets the hold lapse', () => {
+    const memory = createAutomaticProfileMemory();
+    noteNetworkStarvation(memory, 1_000);
+    const afterHold = 1_000 + NETWORK_DOWNGRADE_HOLD_MS + 1;
+    expect(resolvePlaybackRequestProfile(mobile(120), buildCapabilities(), 'live', memory, afterHold))
+      .toBe('quality');
+  });
+
+  it('releases the hold when the viewing intent changes', () => {
+    const memory = createAutomaticProfileMemory();
+    noteNetworkStarvation(memory, 1_000);
+    clearNetworkStarvationHold(memory);
+    expect(resolvePlaybackRequestProfile(mobile(120), buildCapabilities(), 'live', memory, 2_000))
+      .toBe('quality');
   });
 });

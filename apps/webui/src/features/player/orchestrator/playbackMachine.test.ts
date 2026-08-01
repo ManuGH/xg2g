@@ -156,6 +156,7 @@ describe('playbackMachine', () => {
       epoch: 2,
       delayMs: 250,
       profile: 'repair',
+      holdBandwidth: false,
       failureCode: 'DECODE_EXHAUSTED',
       failureClass: 'media',
     }]);
