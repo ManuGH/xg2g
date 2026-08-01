@@ -2,7 +2,7 @@
 # Quality Assurance Targets
 # ===================================================================================================
 
-.PHONY: lint lint-fix test test-race test-race-pr test-cover print-coverage-threshold cover test-all test-integration performance-gate smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools pre-push hooks-install
+.PHONY: lint lint-fix test test-race test-race-pr test-cover print-coverage-threshold cover test-all test-integration test-integration-fast performance-gate smoke-test codex security security-closure security-scan security-audit sbom quality-gates quality-gates-offline quality-gates-online lint-invariants verify-client-wrapper webui-test webui-browser-smoke ci-pr ci-nightly bootstrap-python-tools pre-push hooks-install
 
 pre-push: ## Fast local guard against the PR gate's cheapest failures (gofmt, vet, build) — seconds, not minutes
 	@echo "Checking gofmt..."
@@ -58,6 +58,18 @@ test: ## Run all unit tests
 	@echo "Running unit tests..."
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test ./... -v -count=1 -timeout=$(GO_TEST_TIMEOUT)
 	@echo "✅ Unit tests passed"
+
+test-integration-fast: ## Run the fast build-tagged integration and contract tests
+	@echo "Running fast integration tests..."
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test -tags=integration_fast -count=1 -timeout=$(GO_TEST_TIMEOUT) ./test/integration/... ./test/contract/...
+	@echo "✅ Fast integration tests passed"
+
+test-integration: ## Run all build-tagged integration, contract, and slow integration tests
+	@echo "Running integration tests..."
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test -tags=integration -count=1 -timeout=$(GO_TEST_TIMEOUT) ./test/integration/... ./test/contract/...
+	@echo "Running slow integration tests..."
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test -tags=integration_slow -count=1 -timeout=$(GO_TEST_TIMEOUT) ./test/integration/...
+	@echo "✅ Integration tests passed"
 
 test-race: ## Run tests with race detection
 	@echo "Running tests with race detection..."

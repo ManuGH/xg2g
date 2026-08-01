@@ -51,7 +51,7 @@ func TestSlow_RefreshWithTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := jobs.Refresh(ctx, cfg)
+	_, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 
 	require.Error(t, err, "Should timeout")
 	assert.Contains(t, err.Error(), "deadline exceeded", "Error should mention timeout")
@@ -88,7 +88,7 @@ func TestSlow_ContextCancellation(t *testing.T) {
 	defer cancel()
 
 	startTime := time.Now()
-	_, err := jobs.Refresh(ctx, cfg)
+	_, err := jobs.Refresh(ctx, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 	duration := time.Since(startTime)
 
 	require.Error(t, err)
@@ -135,7 +135,7 @@ func TestSlow_RecoveryAfterFailure(t *testing.T) {
 	ctx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel1()
 
-	_, err := jobs.Refresh(ctx1, cfg)
+	_, err := jobs.Refresh(ctx1, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 	require.Error(t, err, "Should fail when backend unhealthy")
 	t.Logf("Phase 1 (unhealthy): Failed as expected - %v", err)
 
@@ -147,7 +147,7 @@ func TestSlow_RecoveryAfterFailure(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel2()
 
-	status, err := jobs.Refresh(ctx2, cfg)
+	status, err := jobs.Refresh(ctx2, config.BuildSnapshot(cfg, config.ReadOSRuntimeEnvOrDefault()))
 
 	if err == nil {
 		require.NotNil(t, status)

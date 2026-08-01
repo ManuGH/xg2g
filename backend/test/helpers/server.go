@@ -11,6 +11,7 @@ package helpers
 
 import (
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -18,13 +19,31 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 )
 
+// TestDecisionSecret is the signing key handed to the v3 subsystem when a test
+// does not bring its own. api.New hard-fails without it (live-stream JWTs
+// cannot be signed), so every test server — in-process or spawned daemon —
+// needs one.
+const TestDecisionSecret = "test-decision-secret-for-integration-tests"
+
+// EnsureDecisionSecret gives the server under test a decision secret unless the
+// caller already set one, so a test that cares about the value keeps control.
+// Call it before api.New in tests that build a server without NewTestServer.
+// t.Setenv restores the previous value when the test ends.
+func EnsureDecisionSecret(t *testing.T) {
+	t.Helper()
+	if _, ok := os.LookupEnv("XG2G_DECISION_SECRET"); !ok {
+		t.Setenv("XG2G_DECISION_SECRET", TestDecisionSecret)
+	}
+}
+
 // TestServerOptions configures the test server setup
 type TestServerOptions struct {
-	DataDir    string
-	OWIBase    string
-	StreamPort int
-	APIToken   string
-	Bouquet    string
+	DataDir        string
+	OWIBase        string
+	StreamPort     int
+	APIToken       string
+	APITokenScopes []string
+	Bouquet        string
 }
 
 // TestServer wraps a test HTTP server with its configuration
@@ -53,6 +72,7 @@ func (ts *TestServer) Close() {
 //	defer ts.Close()
 func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 	t.Helper()
+	EnsureDecisionSecret(t)
 
 	// Apply defaults
 	if opts.DataDir == "" {
@@ -74,8 +94,9 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 			BaseURL:    opts.OWIBase,
 			StreamPort: opts.StreamPort,
 		},
-		APIToken: opts.APIToken,
-		Bouquet:  opts.Bouquet,
+		APIToken:       opts.APIToken,
+		APITokenScopes: opts.APITokenScopes,
+		Bouquet:        opts.Bouquet,
 	}
 
 	cfgMgr := config.NewManager(filepath.Join(cfg.DataDir, "config.yaml"))
@@ -97,6 +118,7 @@ func NewTestServer(t *testing.T, opts TestServerOptions) *TestServer {
 // Use this when you need full control over the config structure.
 func NewTestServerWithConfig(t *testing.T, cfg config.AppConfig) *TestServer {
 	t.Helper()
+	EnsureDecisionSecret(t)
 
 	if cfg.DataDir == "" {
 		cfg.DataDir = t.TempDir()
