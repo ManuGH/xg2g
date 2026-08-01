@@ -84,7 +84,8 @@ func NewTransferTask(id, jobID, assetID, workspaceID, sourceFilename, backendID,
 type TransferTaskRepository interface {
 	CreateTask(ctx context.Context, task *TransferTask) error
 	SaveTaskLeased(ctx context.Context, task *TransferTask, workerID string, leaseToken string) error
-	RenewTaskLease(ctx context.Context, taskID string, workerID string, leaseToken string, extension time.Duration) error
+	RenewTaskLease(ctx context.Context, taskID string, workerID string, leaseToken string, extension time.Duration) (time.Time, error)
+	RecoverTaskState(ctx context.Context, taskID string, newState TransferState, lastError string) error
 	Get(ctx context.Context, id string) (*TransferTask, error)
 	List(ctx context.Context) ([]*TransferTask, error)
 	ClaimTask(ctx context.Context, workerID string, leaseDuration time.Duration) (*TransferTask, error)
@@ -180,13 +181,51 @@ func (r *DiskTransferTaskRepository) SaveTaskLeased(ctx context.Context, task *T
 	return r.saveLocked(tasks)
 }
 
-// RenewTaskLease extends the active worker lease duration for a RUNNING task requiring matching leaseToken.
-func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID string, workerID string, leaseToken string, extension time.Duration) error {
+// RenewTaskLease extends active worker lease duration returning new LeaseExpiresAt time.
+func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID string, workerID string, leaseToken string, extension time.Duration) (time.Time, error) {
+	if err := ctx.Err(); err != nil {
+		return time.Time{}, err
+	}
+	if taskID == "" || workerID == "" || leaseToken == "" || extension <= 0 {
+		return time.Time{}, fmt.Errorf("invalid RenewTaskLease parameters")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tasks, err := r.loadLocked()
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	existing, ok := tasks[taskID]
+	if !ok {
+		return time.Time{}, ErrTransferTaskNotFound
+	}
+
+	now := time.Now()
+	if existing.LockedBy != workerID || existing.LeaseToken != leaseToken || now.After(existing.LeaseExpiresAt) {
+		return time.Time{}, fmt.Errorf("%w: cannot renew lease for worker '%s' (token: '%s')", ErrWorkerLeaseLost, workerID, leaseToken)
+	}
+
+	newExpiry := now.Add(extension)
+	existing.LeaseExpiresAt = newExpiry
+	existing.UpdatedAt = now
+
+	if err := r.saveLocked(tasks); err != nil {
+		return time.Time{}, err
+	}
+
+	return newExpiry, nil
+}
+
+// RecoverTaskState updates task state during startup reconciliation without requiring active lease.
+func (r *DiskTransferTaskRepository) RecoverTaskState(ctx context.Context, taskID string, newState TransferState, lastError string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if taskID == "" || workerID == "" || leaseToken == "" || extension <= 0 {
-		return fmt.Errorf("invalid RenewTaskLease parameters")
+	if taskID == "" {
+		return fmt.Errorf("taskID cannot be empty")
 	}
 
 	r.mu.Lock()
@@ -203,12 +242,15 @@ func (r *DiskTransferTaskRepository) RenewTaskLease(ctx context.Context, taskID 
 	}
 
 	now := time.Now()
-	if existing.LockedBy != workerID || existing.LeaseToken != leaseToken || now.After(existing.LeaseExpiresAt) {
-		return fmt.Errorf("%w: cannot renew lease for worker '%s' (token: '%s')", ErrWorkerLeaseLost, workerID, leaseToken)
+	existing.State = newState
+	if lastError != "" {
+		existing.LastError = lastError
 	}
-
-	existing.LeaseExpiresAt = now.Add(extension)
+	existing.LockedBy = ""
+	existing.LeaseToken = ""
 	existing.UpdatedAt = now
+
+	tasks[existing.ID] = existing
 
 	return r.saveLocked(tasks)
 }

@@ -5,6 +5,7 @@ package staging
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,11 +52,13 @@ func NewStartupReconciler(
 	}, nil
 }
 
-// ReconcileAll scans and resolves all incomplete job and asset states across the system.
+// ReconcileAll scans and resolves all incomplete job and asset states across the system without error swallowing.
 func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	var errs []error
 
 	jobs, err := r.jobRepo.ListRecoverable(ctx)
 	if err != nil {
@@ -77,9 +80,26 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 		return fmt.Errorf("failed to list transfer tasks during reconciliation: %w", err)
 	}
 
+	// Deterministic Task Resolution: group tasks by JobID, keeping the latest task and marking duplicate tasks FAILED
 	taskMap := make(map[string]*recording.TransferTask)
 	for _, t := range tasksList {
-		taskMap[t.JobID] = t
+		if existing, ok := taskMap[t.JobID]; ok {
+			// Duplicate task detected: keep newer, mark older FAILED
+			older := existing
+			newer := t
+			if t.CreatedAt.Before(existing.CreatedAt) {
+				older = t
+				newer = existing
+			}
+			taskMap[t.JobID] = newer
+			if older.State != recording.TransferFailed {
+				if recErr := r.taskRepo.RecoverTaskState(ctx, older.ID, recording.TransferFailed, "duplicate task resolved during startup reconciliation"); recErr != nil {
+					errs = append(errs, fmt.Errorf("failed to mark duplicate task %s FAILED: %w", older.ID, recErr))
+				}
+			}
+		} else {
+			taskMap[t.JobID] = t
+		}
 	}
 
 	for _, job := range jobs {
@@ -104,25 +124,52 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 			}
 		}
 
-		stagedRelPath := filepath.Join("jobs", job.ID, "finalized", filepath.Base(asset.ObjectKey))
+		// Determine expected size for strict target validation
+		expectedSize := asset.SizeBytes
+		task := taskMap[job.ID]
+		if task != nil && task.ExpectedSize > 0 {
+			expectedSize = task.ExpectedSize
+		}
+
+		targetValid := (targetExists && (expectedSize == 0 || targetSize == expectedSize))
+
+		// Resolve staged source file using asset's persistent SourceFilename
+		srcFilename := asset.SourceFilename
+		if srcFilename == "" && task != nil && task.SourceFilename != "" {
+			srcFilename = task.SourceFilename
+		}
+		if srcFilename == "" {
+			srcFilename = filepath.Base(asset.ObjectKey)
+		}
+
+		stagedRelPath := filepath.Join("jobs", job.ID, "finalized", srcFilename)
 		stagedAbsPath := filepath.Join(r.stagingRoot, stagedRelPath)
 		stagedInfo, stagedErr := os.Stat(stagedAbsPath)
 		stagedExists := (stagedErr == nil && stagedInfo.Size() > 0)
 
-		task := taskMap[job.ID]
-
-		// Case 1: Target file exists with expected size + Asset TRANSFER_PENDING
-		if targetExists && asset.State == recording.AssetTransferPending {
-			availAsset, _ := asset.TransitionState(recording.AssetAvailable)
+		// Case 1: Target file exists with exact expected size + Asset TRANSFER_PENDING
+		if targetValid && asset.State == recording.AssetTransferPending {
+			availAsset, transErr := asset.TransitionState(recording.AssetAvailable)
+			if transErr != nil {
+				errs = append(errs, fmt.Errorf("case 1 asset transition failed: %w", transErr))
+				continue
+			}
 			availAsset.SizeBytes = targetSize
-			_ = r.assetRepo.Save(ctx, availAsset, asset.Version)
+			if saveErr := r.assetRepo.Save(ctx, availAsset, asset.Version); saveErr != nil {
+				errs = append(errs, fmt.Errorf("case 1 asset save failed: %w", saveErr))
+				continue
+			}
 
 			job.State = recording.StateCompleted
-			_ = r.jobRepo.Save(ctx, job)
+			if saveErr := r.jobRepo.Save(ctx, job); saveErr != nil {
+				errs = append(errs, fmt.Errorf("case 1 job save failed: %w", saveErr))
+				continue
+			}
 
 			if task != nil && task.State != recording.TransferCompleted {
-				task.State = recording.TransferCompleted
-				_ = r.taskRepo.SaveTaskLeased(ctx, task, task.LockedBy, task.LeaseToken)
+				if recErr := r.taskRepo.RecoverTaskState(ctx, task.ID, recording.TransferCompleted, ""); recErr != nil {
+					errs = append(errs, fmt.Errorf("case 1 task recover failed: %w", recErr))
+				}
 			}
 			continue
 		}
@@ -130,7 +177,9 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 		// Case 2: Asset AVAILABLE + Job TRANSFERRING / WAITING_FOR_TARGET
 		if asset.State == recording.AssetAvailable && job.State != recording.StateCompleted {
 			job.State = recording.StateCompleted
-			_ = r.jobRepo.Save(ctx, job)
+			if saveErr := r.jobRepo.Save(ctx, job); saveErr != nil {
+				errs = append(errs, fmt.Errorf("case 2 job save failed: %w", saveErr))
+			}
 			continue
 		}
 
@@ -141,43 +190,66 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 				job.ID,
 				asset.ID,
 				job.ID,
-				filepath.Base(asset.ObjectKey),
+				srcFilename,
 				job.TargetBackendID,
 				asset.ObjectKey,
 				stagedInfo.Size(),
 			)
-			if taskErr == nil {
-				_ = r.taskRepo.CreateTask(ctx, newTask)
+			if taskErr != nil {
+				errs = append(errs, fmt.Errorf("case 3 new task creation failed: %w", taskErr))
+				continue
+			}
+			if createErr := r.taskRepo.CreateTask(ctx, newTask); createErr != nil {
+				errs = append(errs, fmt.Errorf("case 3 task repo CreateTask failed: %w", createErr))
 			}
 			continue
 		}
 
 		// Case 4: Task COMPLETED + Asset TRANSFER_PENDING
 		if task != nil && task.State == recording.TransferCompleted && asset.State != recording.AssetAvailable {
-			availAsset, _ := asset.TransitionState(recording.AssetAvailable)
+			availAsset, transErr := asset.TransitionState(recording.AssetAvailable)
+			if transErr != nil {
+				errs = append(errs, fmt.Errorf("case 4 asset transition failed: %w", transErr))
+				continue
+			}
 			availAsset.SizeBytes = task.ExpectedSize
-			_ = r.assetRepo.Save(ctx, availAsset, asset.Version)
+			if saveErr := r.assetRepo.Save(ctx, availAsset, asset.Version); saveErr != nil {
+				errs = append(errs, fmt.Errorf("case 4 asset save failed: %w", saveErr))
+				continue
+			}
 
 			job.State = recording.StateCompleted
-			_ = r.jobRepo.Save(ctx, job)
+			if saveErr := r.jobRepo.Save(ctx, job); saveErr != nil {
+				errs = append(errs, fmt.Errorf("case 4 job save failed: %w", saveErr))
+			}
 			continue
 		}
 
-		// Case 5: Staging output missing AND target missing + Asset TRANSFER_PENDING
-		if !stagedExists && !targetExists && asset.State == recording.AssetTransferPending {
-			corruptAsset, _ := asset.TransitionState(recording.AssetMissing)
-			_ = r.assetRepo.Save(ctx, corruptAsset, asset.Version)
+		// Case 5: Staging output missing AND target missing/invalid + Asset TRANSFER_PENDING
+		if !stagedExists && !targetValid && asset.State == recording.AssetTransferPending {
+			corruptAsset, transErr := asset.TransitionState(recording.AssetMissing)
+			if transErr != nil {
+				errs = append(errs, fmt.Errorf("case 5 asset transition failed: %w", transErr))
+				continue
+			}
+			if saveErr := r.assetRepo.Save(ctx, corruptAsset, asset.Version); saveErr != nil {
+				errs = append(errs, fmt.Errorf("case 5 asset save failed: %w", saveErr))
+				continue
+			}
 
 			job.State = recording.StateFailed
-			_ = r.jobRepo.Save(ctx, job)
+			if saveErr := r.jobRepo.Save(ctx, job); saveErr != nil {
+				errs = append(errs, fmt.Errorf("case 5 job save failed: %w", saveErr))
+				continue
+			}
 
 			if task != nil {
-				task.State = recording.TransferFailed
-				task.LastError = "staged source file and target backend object both missing during recovery"
-				_ = r.taskRepo.SaveTaskLeased(ctx, task, task.LockedBy, task.LeaseToken)
+				if recErr := r.taskRepo.RecoverTaskState(ctx, task.ID, recording.TransferFailed, "staged source file and target backend object both missing/invalid during recovery"); recErr != nil {
+					errs = append(errs, fmt.Errorf("case 5 task recover failed: %w", recErr))
+				}
 			}
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }

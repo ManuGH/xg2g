@@ -319,7 +319,6 @@ func TestRetroDVRHandoverEngine_TargetFailureFallbackAndWorkerRetry(t *testing.T
 	if err := taskRepo.CreateTask(ctx, tasks[0]); err != nil && !errors.Is(err, recording.ErrTransferTaskAlreadyExists) {
 		t.Fatalf("taskRepo.CreateTask failed: %v", err)
 	}
-	// Re-save taskToUpdate directly
 	taskToSave := tasks[0]
 	taskToSave.TargetBackendID = healthyBackend.ID()
 	_ = taskRepo.Delete(ctx, taskToSave.ID)
@@ -371,7 +370,8 @@ func TestStartupReconciler_5CaseRecoveryMatrix(t *testing.T) {
 	// Case 1: Target file exists + Asset TRANSFER_PENDING -> AVAILABLE & COMPLETED
 	targetFilePath := filepath.Join(targetRoot, "movies", "show1.ts")
 	_ = os.MkdirAll(filepath.Dir(targetFilePath), 0755)
-	_ = os.WriteFile(targetFilePath, []byte("SHOW1_PAYLOAD"), 0644)
+	payload := []byte("SHOW1_PAYLOAD")
+	_ = os.WriteFile(targetFilePath, payload, 0644)
 
 	now := time.Now()
 	job1, _ := recording.NewRecordingJob("job_rec_1", "ref_1", "Show 1", recording.SourceRetro, now.Add(-1*time.Hour), now, backend.ID())
@@ -379,6 +379,7 @@ func TestStartupReconciler_5CaseRecoveryMatrix(t *testing.T) {
 	_ = jobRepo.Save(ctx, job1)
 
 	asset1, _ := recording.NewRecordingAsset("asset_rec_1", job1.ID, "Show 1", "ref_1", backend.ID(), "movies/show1.ts", recording.ContainerTS)
+	asset1.SizeBytes = int64(len(payload))
 	asset1Pending, _ := asset1.TransitionState(recording.AssetTransferPending)
 	_ = assetRepo.Save(ctx, asset1Pending, 0)
 

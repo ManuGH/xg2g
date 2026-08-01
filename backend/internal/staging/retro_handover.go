@@ -370,6 +370,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 
 	// Snapshot profile rules on asset
 	asset.ProfileID = profile.ID
+	asset.SourceFilename = baseOutFilename
 	asset.ManagementMode = profile.ManagementMode
 	asset.DeletePolicy = profile.DeletePolicy
 	asset.DurationSeconds = int(recEnd.Sub(recStart).Seconds())
