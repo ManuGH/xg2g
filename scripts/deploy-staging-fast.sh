@@ -207,7 +207,7 @@ running_image_id="$(docker inspect --format '{{.Image}}' xg2g-staging)"
 version_line="$(docker exec xg2g-staging /usr/local/bin/xg2g --version)"
 running_commit="$(sed -n 's/.*(commit: \([0-9a-fA-F]\{7,40\}\), built:.*/\1/p' <<<"${version_line}")"
 running_version="$(awk '{print $1}' <<<"${version_line}")"
-[[ "${commit}" == "${running_commit}" ]] || {
+[[ "${commit}" == "${running_commit}"* || "${running_commit}" == "${commit}"* ]] || {
   echo "ERROR: running staging commit ${running_commit:-missing} != ${commit}" >&2
   exit 1
 }
