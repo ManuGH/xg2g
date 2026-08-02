@@ -32,19 +32,19 @@ Every attribute, topology claim, and API contract is tagged with one of six evid
 
 | Item ID | Fact Description | Exact Source Reference | Classification |
 | :--- | :--- | :--- | :--- |
-| **SPEC-01** | OpenWebif API endpoints (`/api/about`, `/api/statusinfo`, `/api/tunersignal`, `/api/timerlist`, `/api/getallservices`) return HTTP 200 JSON/XML. | OpenWebif REST API Specification | `VERIFIED_BY_SPEC` |
-| **SPEC-02** | Enigma2 Service Reference string (`1:0:19:283D:3FB:1:C00000:0:0:0:`) encodes Service ID, TSID, ONID, and Satellite Namespace. | Enigma2 OpenWebif Source Documentation | `VERIFIED_BY_SPEC` |
-| **SPEC-03** | DVB-S2 satellite signals are physically divided into 4 polarization/band quadrants: VL (Vertical Low), VH (Vertical High), HL (Horizontal Low), HH (Horizontal High). | ETSI EN 302 307 DVB-S2 Specification | `VERIFIED_BY_SPEC` |
-| **SPEC-04** | Unicable I (Single Cable Distribution) is defined by CENELEC EN50494; Unicable II / JESS is defined by CENELEC EN50607. | CENELEC EN50494 / EN50607 Standards | `VERIFIED_BY_SPEC` |
+| **SPEC-01** | Enigma2 Service Reference string (`1:0:19:283D:3FB:1:C00000:0:0:0:`) encodes Service ID, TSID, ONID, and Satellite Namespace. | Enigma2 OpenWebif Source Documentation | `VERIFIED_BY_SPEC` |
+| **SPEC-02** | DVB-S2 satellite signals are physically divided into 4 polarization/band quadrants: VL (Vertical Low), VH (Vertical High), HL (Horizontal Low), HH (Horizontal High). | ETSI EN 302 307 DVB-S2 Specification | `VERIFIED_BY_SPEC` |
+| **SPEC-03** | Unicable I (Single Cable Distribution) is defined by CENELEC EN50494; Unicable II / JESS is defined by CENELEC EN50607. | CENELEC EN50494 / EN50607 Standards | `VERIFIED_BY_SPEC` |
 
 ---
 
-## Part B: Hypotheses to Verify (Pending Receiver Measurement)
+## Part B: Hypotheses & Capability Probes to Verify (Pending Receiver Measurement)
 
-> Items in Part B are UNVERIFIED HYPOTHESES. They **MUST NOT** be used for policy enforcement or preemption decisions until assigned `VERIFIED_BY_RECEIVER` or `VERIFIED_BY_RUNTIME_TEST`. Production Usable: **NO**.
+> Items in Part B are UNVERIFIED HYPOTHESES or CAPABILITY PROBES. They **MUST NOT** be used for policy enforcement or preemption decisions until assigned `VERIFIED_BY_RECEIVER` or `VERIFIED_BY_RUNTIME_TEST`. Production Usable: **NO**.
 
-| Hypothesis ID | Statement | Verification Method | Source Endpoint / Path | Current Status |
+| Hypothesis ID | Statement / Probe | Verification Method | Source Endpoint / Path | Current Status |
 | :--- | :--- | :--- | :--- | :--- |
+| **PROBE-01** | OpenWebif API endpoints (`/api/about`, `/api/statusinfo`, `/api/tunersignal`, `/api/timerlist`, `/api/getallservices`) exist and return HTTP 200 JSON/XML. | Passive HTTP capability probe | OpenWebif REST API | `CONFIGURED_BUT_UNVERIFIED` |
 | **HYP-01** | Tuners A and B are physical root frontends; Tuners C–H are dynamic child demodulators. | Inspection & empirical lock test | `/proc/bus/nim_sockets`, `/sys/class/dvb` | `HYPOTHESIS` |
 | **HYP-02** | Channels on the exact same transponder require 0 extra demodulators and 0 extra RF inputs. | Test 2 (Same transponder stream test) | OpenWebif `/api/subservices` | `HYPOTHESIS` |
 | **HYP-03** | Max 2 legacy LNB cables permit max 2 distinct SAT quadrants simultaneously across all 8 demodulators. | Test 4 & Test 5 (Quadrant limits) | `/proc/stb/frontend/0/` | `HYPOTHESIS` |
@@ -209,9 +209,19 @@ type ReceiverModel struct {
 
 ---
 
-## Part F: Controlled Empirical Receiver Observation Protocols
+## Part F: Empirical Receiver Observation Protocols
 
-To convert Part B hypotheses into Part A verified facts, the following read-only, non-destructive test matrix will be executed on the target Vu+ receiver:
+Observation is strictly divided into two operational phases:
+
+### Phase 1: PASSIVE_COLLECTION (Read-Only Diagnostic Probe)
+- **Tool:** `scripts/collect_receiver_diagnostics.sh`
+- **Output Target:** `var/diagnostics/enigma2/<UTC_TIMESTAMP>/` (gitignored, restrictive `0700` umask)
+- **Allowed Actions:** Read-only HTTP GET queries to allowlisted OpenWebif endpoints; read-only file reads of `/proc`, `/sys`, and `/etc/enigma2/`.
+- **Forbidden Actions:** NO Zapping, NO Channel Switching, NO Stream Start, NO PiP, NO Timer Creation, NO Recording Start, NO Config Mutation, NO Enigma2 Restart.
+
+### Phase 2: CONTROLLED_RUNTIME_TEST — REQUIRES EXPLICIT USER APPROVAL
+- **Tool:** `scripts/run_receiver_runtime_tests.sh` (Future tool)
+- **Pre-requisite:** Requires explicit user approval before execution.
 
 | Test ID | Test Scenario | Controlled Action | Target Observation Artifacts | Verification Goal |
 | :--- | :--- | :--- | :--- | :--- |
@@ -225,10 +235,56 @@ To convert Part B hypotheses into Part A verified facts, the following read-only
 
 ---
 
+## Part G: Configuration Drift Detection & Capability Revalidation Protocol
+
+Even after initial empirical verification, receiver physical environment or Enigma2 tuner configurations can drift (e.g. moving receiver to a new location, replacing SAT cables, changing from Legacy to Unicable/JESS, modifying SCR frequencies, or disconnecting a tuner cable).
+
+```
+                      ┌────────────────────────────────────────┐
+                      │ Receiver Startup / Periodic Check      │
+                      └──────────────────┬─────────────────────┘
+                                         │
+                   Compute ReceiverConfigFingerprint (SHA-256)
+                                         │
+                    Fingerprint Matches Cached Baseline?
+                   ├── YES ──► Continue Current Mode (Audit-Only / Enforce)
+                   └── NO
+                                         │
+                                         ▼
+                     DRIFT DETECTED: FBC SETUP CHANGED
+                     ├─ Mark Hardware Model STALE_NEED_REVALIDATION
+                     ├─ Lock Automated Preemption (Force AUDIT_ONLY)
+                     ├─ Trigger Phase 1 Passive Diagnostic Collector
+                     └─ Demand Controlled Phase 2 Revalidation
+```
+
+### G.1 `ReceiverConfigFingerprint` Specification
+
+At startup or periodic intervals, `xg2g` computes a canonical SHA-256 fingerprint over:
+1. Receiver Hardware Model & Nim Sockets (`/proc/bus/nim_sockets`)
+2. Enigma2 Tuner Settings (`/etc/enigma2/settings`)
+3. Configured Unicable SCR Frequencies & User Bands
+4. Configured Satellite Orbital Positions & DiSEqC Setup
+5. Image Build & OpenWebif API Version (`/api/about`)
+
+### G.2 Two-Level Drift Safeguard Protocol
+
+1. **Level 1 — Configuration Drift Detection:**
+   - Detects any change in receiver model, NIM sockets, tuner mode, SCR frequencies, or connected satellite positions.
+   - Instantly revokes valid baseline status and locks preemption.
+2. **Level 2 — Capability Revalidation:**
+   - Detects physical wiring mismatch (e.g. 2nd cable configured in Enigma2 but physically disconnected).
+   - Executes Phase 1 Passive Collection (`scripts/collect_receiver_diagnostics.sh`) followed by Phase 2 Controlled Runtime Revalidation before re-enabling automated preemption.
+
+---
+
 ## Conclusion & Next Steps
 
-This document serves strictly as an **Observation Model and Hypothesis Catalog**.
+This document serves strictly as an **Observation Model, Hypothesis Catalog, and Drift Safeguard Protocol**.
 
 1. **Phase E Step E2 (Current):** Policy Engine operates in `audit-only` mode against existing tuner leases with zero mutations (`AUDIT_ONLY`).
-2. **Read-Only Collector Package:** Construct a read-only diagnostic collector script to gather raw evidence files into `docs/architecture/enigma2-observations/`.
-3. **Phase E Step E3 (Future):** Hardware-aware preemption rules will **ONLY** be enabled after Part B hypotheses are 100% resolved and assigned `VERIFIED_BY_RECEIVER` or `VERIFIED_BY_RUNTIME_TEST`.
+2. **Phase 1 Passive Diagnostic Collector:** Execute `scripts/collect_receiver_diagnostics.sh` to gather raw evidence files into `var/diagnostics/enigma2/` (gitignored, restrictive `0700` umask).
+3. **Phase 2 Runtime Testing:** Execute controlled runtime tests ONLY after receiving explicit user approval.
+4. **Configuration Drift Safeguard:** Enforce `ReceiverConfigFingerprint` check before allowing future hardware-aware preemption in Phase E Step E3.
+
+

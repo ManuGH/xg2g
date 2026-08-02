@@ -1,77 +1,119 @@
 #!/usr/bin/env bash
+# Copyright (c) 2025 ManuGH
+# Licensed under the PolyForm Noncommercial License 1.0.0
+
 set -euo pipefail
+umask 077
 
-# collect_receiver_diagnostics.sh
-# Read-only, non-destructive diagnostic collection tool for Enigma2 / OpenWebif.
-# Usage: ./scripts/collect_receiver_diagnostics.sh <OPENWEBIF_HOST_OR_IP> [SSH_USER@SSH_HOST]
+# Passive Diagnostic Collector (Phase 1)
+# Purely read-only diagnostic collection for Enigma2 / OpenWebif.
+# Strictly FORBIDDEN from performing zapping, streaming, timer creation,
+# recording start, config mutation, or Enigma2 restarts.
 
+COLLECTOR_VERSION="1.0.0"
 RECEIVER_HOST="${1:-10.10.55.2}"
 SSH_TARGET="${2:-}"
-OUTPUT_DIR="$(pwd)/docs/architecture/enigma2-observations"
-DATE_STAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
 
-echo "=== xg2g Read-Only Receiver Diagnostic Collector ==="
+# Base output directory - ALWAYS in gitignored var/diagnostics/
+BASE_DIR="$(pwd)/var/diagnostics/enigma2/${TIMESTAMP}"
+OPENWEBIF_DIR="${BASE_DIR}/openwebif"
+SYS_DIR="${BASE_DIR}/sys"
+
+mkdir -p "${OPENWEBIF_DIR}" "${SYS_DIR}"
+
+echo "=== xg2g Passive Diagnostic Collector v${COLLECTOR_VERSION} ==="
 echo "Target OpenWebif: ${RECEIVER_HOST}"
-echo "Output Directory: ${OUTPUT_DIR}"
-echo "Observation Date: ${DATE_STAMP}"
+echo "Output Directory: ${BASE_DIR}"
+echo "Observation Time: ${TIMESTAMP}"
 echo ""
 
-mkdir -p "${OUTPUT_DIR}/openwebif"
-mkdir -p "${OUTPUT_DIR}/sys"
+PROBE_RESULTS="{}"
 
-# Function to fetch and redact OpenWebif JSON endpoint
-fetch_endpoint() {
+# Redaction helper: Redacts sensitive parameters, tokens, credentials, and IP addresses
+redact_content() {
+    sed -E \
+        -e 's/("pin"|"password"|"token"|"auth"|"sessionid"|"pass"): *"[^"]+"/\1: "[REDACTED]"/g' \
+        -e 's/([?&](pin|password|token|auth|pass)=)[^&]+/\1[REDACTED]/g' \
+        -e 's/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/[REDACTED_EMAIL]/g' \
+        -e 's/Authorization: [^\r\n]+/Authorization: [REDACTED]/g'
+}
+
+# Allowlisted OpenWebif Probe Runner
+probe_http_endpoint() {
     local endpoint="$1"
     local filename="$2"
-    echo "[HTTP] Fetching http://${RECEIVER_HOST}${endpoint}..."
-    if curl -sS --connect-timeout 5 "http://${RECEIVER_HOST}${endpoint}" > "${OUTPUT_DIR}/openwebif/${filename}.raw"; then
-        # Redact potentially sensitive keys (tokens, pins, passwords)
-        sed -E 's/("pin"|"password"|"token"|"auth"): *"[^"]+"/\1: "[REDACTED]"/g' "${OUTPUT_DIR}/openwebif/${filename}.raw" > "${OUTPUT_DIR}/openwebif/${filename}.json"
-        rm -f "${OUTPUT_DIR}/openwebif/${filename}.raw"
-        echo "  -> Saved ${filename}.json"
+    local target_url="http://${RECEIVER_HOST}${endpoint}"
+    local out_file="${OPENWEBIF_DIR}/${filename}.json"
+    local err_file="${OPENWEBIF_DIR}/${filename}.error.log"
+
+    echo "[PASSIVE_HTTP] Probing ${endpoint}..."
+
+    # Enforce strict bounded HTTP timeouts: connect 5s, max-time 10s
+    if curl -sS --fail --connect-timeout 5 --max-time 10 "${target_url}" 2> "${err_file}" | redact_content > "${out_file}"; then
+        rm -f "${err_file}"
+        echo "  -> SUCCESS: ${filename}.json"
+        PROBE_RESULTS="$(echo "${PROBE_RESULTS}" | jq ". + {\"${filename}\": \"SUCCESS\"}" 2>/dev/null || echo "${PROBE_RESULTS}")"
     else
-        echo "  [WARNING] Failed to fetch http://${RECEIVER_HOST}${endpoint}"
+        echo "  [PROBE_FAILED] ${endpoint} (see ${filename}.error.log)"
+        rm -f "${out_file}"
+        PROBE_RESULTS="$(echo "${PROBE_RESULTS}" | jq ". + {\"${filename}\": \"FAILED\"}" 2>/dev/null || echo "${PROBE_RESULTS}")"
     fi
 }
 
-echo "--- 1. Fetching OpenWebif Endpoints ---"
-fetch_endpoint "/api/about" "about"
-fetch_endpoint "/api/deviceinfo" "deviceinfo"
-fetch_endpoint "/api/statusinfo" "statusinfo"
-fetch_endpoint "/api/tunersignal" "tunersignal"
-fetch_endpoint "/api/timerlist" "timerlist"
-fetch_endpoint "/api/getallservices" "getallservices"
-fetch_endpoint "/api/subservices" "subservices"
-fetch_endpoint "/api/getcurrent" "getcurrent"
+echo "--- Phase 1: Passive OpenWebif HTTP Probes ---"
+# Allowlist of read-only endpoints ONLY
+probe_http_endpoint "/api/about" "about"
+probe_http_endpoint "/api/deviceinfo" "deviceinfo"
+probe_http_endpoint "/api/statusinfo" "statusinfo"
+probe_http_endpoint "/api/tunersignal" "tunersignal"
+probe_http_endpoint "/api/timerlist" "timerlist"
+probe_http_endpoint "/api/getallservices" "getallservices"
+probe_http_endpoint "/api/subservices" "subservices"
+probe_http_endpoint "/api/getcurrent" "getcurrent"
 
-# Metadata manifest
-cat << EOF > "${OUTPUT_DIR}/manifest.json"
+# SSH Passive File Probe Runner (only executed if SSH_TARGET is provided)
+if [ -n "${SSH_TARGET}" ]; then
+    echo ""
+    echo "--- Phase 1: Passive Kernel & System Probes via SSH ---"
+
+    probe_ssh_read() {
+        local remote_cmd="$1"
+        local filename="$2"
+        local out_file="${SYS_DIR}/${filename}.txt"
+        local err_file="${SYS_DIR}/${filename}.error.log"
+
+        echo "[PASSIVE_SSH] Reading ${filename}..."
+        if ssh -o ConnectTimeout=5 -o BatchMode=yes "${SSH_TARGET}" "${remote_cmd}" 2> "${err_file}" | redact_content > "${out_file}"; then
+            rm -f "${err_file}"
+            echo "  -> SUCCESS: ${filename}.txt"
+        else
+            echo "  [PROBE_FAILED] ${filename} via SSH"
+        fi
+    }
+
+    # Explicit allowlist of read-only file inspections
+    probe_ssh_read "cat /etc/image-version /etc/issue 2>/dev/null; uname -a" "receiver_identity"
+    probe_ssh_read "cat /proc/bus/nim_sockets 2>/dev/null" "nim_sockets"
+    probe_ssh_read "find /sys/class/dvb -maxdepth 3 -type f 2>/dev/null | sort" "sys_dvb_class"
+    probe_ssh_read "find /proc/stb/frontend -maxdepth 3 -type f 2>/dev/null | sort" "proc_stb_frontend"
+    probe_ssh_read "ls -la /dev/dvb/adapter* 2>/dev/null" "dev_dvb_adapters"
+    probe_ssh_read "cat /etc/enigma2/settings 2>/dev/null" "enigma2_settings"
+fi
+
+# Generate Collector Manifest
+cat << EOF > "${BASE_DIR}/manifest.json"
 {
-  "observed_at": "${DATE_STAMP}",
+  "collector_version": "${COLLECTOR_VERSION}",
+  "timestamp_utc": "${TIMESTAMP}",
   "receiver_host": "${RECEIVER_HOST}",
   "ssh_target": "${SSH_TARGET}",
-  "evidence_classification": "VERIFIED_BY_RECEIVER"
+  "probe_phase": "PASSIVE_COLLECTION",
+  "probe_results": ${PROBE_RESULTS}
 }
 EOF
 
-# Fetch SSH proc/sys data if SSH target provided
-if [ -n "${SSH_TARGET}" ]; then
-    echo ""
-    echo "--- 2. Fetching Kernel & Hardware Proc/Sys Data via SSH (${SSH_TARGET}) ---"
-    ssh -o ConnectTimeout=5 "${SSH_TARGET}" "
-        cat /etc/image-version 2>/dev/null || true
-        echo '--- ISSUE ---'
-        cat /etc/issue 2>/dev/null || true
-        echo '--- UNAME ---'
-        uname -a 2>/dev/null || true
-    " > "${OUTPUT_DIR}/sys/receiver-identity.txt" || echo "  [WARNING] SSH identity fetch failed"
-
-    ssh -o ConnectTimeout=5 "${SSH_TARGET}" "cat /proc/bus/nim_sockets 2>/dev/null || true" > "${OUTPUT_DIR}/sys/nim_sockets.txt" || echo "  [WARNING] SSH nim_sockets fetch failed"
-    ssh -o ConnectTimeout=5 "${SSH_TARGET}" "find /sys/class/dvb -maxdepth 3 -type f 2>/dev/null | sort" > "${OUTPUT_DIR}/sys/sys_dvb_class.txt" || echo "  [WARNING] SSH sys_dvb fetch failed"
-    ssh -o ConnectTimeout=5 "${SSH_TARGET}" "find /proc/stb/frontend -maxdepth 3 -type f 2>/dev/null | sort" > "${OUTPUT_DIR}/sys/proc_stb_frontend.txt" || echo "  [WARNING] SSH proc_stb fetch failed"
-    ssh -o ConnectTimeout=5 "${SSH_TARGET}" "ls -la /dev/dvb/adapter* 2>/dev/null || true" > "${OUTPUT_DIR}/sys/dev_dvb_adapters.txt" || echo "  [WARNING] SSH dev_dvb fetch failed"
-fi
-
 echo ""
-echo "=== Diagnostic Collection Complete ==="
-echo "Raw evidence persisted in: ${OUTPUT_DIR}"
+echo "=== Passive Collection Complete ==="
+echo "Manifest: ${BASE_DIR}/manifest.json"
+echo "Output Directory: ${BASE_DIR}"
