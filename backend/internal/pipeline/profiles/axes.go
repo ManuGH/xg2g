@@ -53,14 +53,14 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 	case ProfileHigh:
 		return ProfileAxes{
 			Video:          VideoActionCopy,
-			AudioBitrateK:  192,
+			AudioBitrateK:  320,
 			Container:      "",
 			PolicyModeHint: ports.RuntimeModeCopy,
 		}
 	case ProfileAndroid:
 		return ProfileAxes{
 			Video:          VideoActionCopy,
-			AudioBitrateK:  192,
+			AudioBitrateK:  320,
 			Container:      "mpegts",
 			PolicyModeHint: ports.RuntimeModeCopy,
 		}
@@ -68,14 +68,14 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 		if cap != nil && !cap.Interlaced {
 			return ProfileAxes{
 				Video:          VideoActionCopy,
-				AudioBitrateK:  192,
+				AudioBitrateK:  320,
 				Container:      safariFamilyContainer(isSafari),
 				PolicyModeHint: ports.RuntimeModeCopy,
 			}
 		}
 		return ProfileAxes{
 			Video:          VideoActionH264,
-			AudioBitrateK:  192,
+			AudioBitrateK:  320,
 			Container:      safariFamilyContainer(isSafari),
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
@@ -96,21 +96,21 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 	case ProfileSafariDVR:
 		return ProfileAxes{
 			Video:          VideoActionH264,
-			AudioBitrateK:  192,
+			AudioBitrateK:  320,
 			Container:      "",
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
 	case ProfileH264FMP4:
 		return ProfileAxes{
 			Video:          VideoActionH264,
-			AudioBitrateK:  192,
+			AudioBitrateK:  320,
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
 	case ProfileSafariHEVC:
 		return ProfileAxes{
 			Video:          VideoActionHEVC,
-			AudioBitrateK:  192,
+			AudioBitrateK:  320,
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ25,
 		}
@@ -122,7 +122,7 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 	case ProfileSafariHEVCHW, ProfileSafariHEVCHWLL:
 		return ProfileAxes{
 			Video:          VideoActionHEVC,
-			AudioBitrateK:  192,
+			AudioBitrateK:  320,
 			Container:      "fmp4",
 			PolicyModeHint: ports.RuntimeModeHQ50,
 		}
@@ -133,14 +133,14 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 		}
 		return ProfileAxes{
 			Video:          VideoActionAV1,
-			AudioBitrateK:  192,
+			AudioBitrateK:  320,
 			Container:      container,
 			PolicyModeHint: ports.RuntimeModeHQ50,
 		}
 	case ProfileRepair:
 		return ProfileAxes{
 			Video:          VideoActionH264,
-			AudioBitrateK:  192,
+			AudioBitrateK:  320,
 			Container:      "",
 			PolicyModeHint: ports.RuntimeModeSafe,
 		}

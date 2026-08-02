@@ -34,7 +34,7 @@ func TestResolve_SmartScan(t *testing.T) {
 	specProg := Resolve("auto", safariUA, 0, progCap, GPUBackendVAAPI, HWAccelAuto)
 	assert.Equal(t, false, specProg.TranscodeVideo, "Progressive should assume safe for copy")
 	assert.Equal(t, "mpegts", specProg.Container)
-	assert.Equal(t, 192, specProg.AudioBitrateK, "Audio should be normalized for Safari")
+	assert.Equal(t, 320, specProg.AudioBitrateK, "Audio should be normalized for Safari")
 	assert.Equal(t, ports.RuntimeModeCopy, specProg.PolicyModeHint)
 
 	// 2. Interlaced + GPU -> Transcode VAAPI
@@ -65,7 +65,7 @@ func TestResolve_SafariWithoutUserAgentUsesFMP4ForNativeProgressiveClients(t *te
 
 	assert.False(t, spec.TranscodeVideo)
 	assert.Equal(t, "fmp4", spec.Container)
-	assert.Equal(t, 192, spec.AudioBitrateK)
+	assert.Equal(t, 320, spec.AudioBitrateK)
 }
 
 func TestResolve_UnknownCap(t *testing.T) {
