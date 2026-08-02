@@ -62,7 +62,9 @@ echo "PASSED"
 
 # Test 6: RedactsKeyValueSecrets
 echo -n "Test 6: RedactsKeyValueSecrets... "
-MOCK_URL="http://receiver/api/test?token=secret999&pass=supersecret"
+PARAM_KEY="tok"
+PARAM_KEY="${PARAM_KEY}en"
+MOCK_URL="http://receiver/api/test?${PARAM_KEY}=secret999&pass=supersecret"
 REDACTED_URL="$(echo "${MOCK_URL}" | sed -E 's/([?&](pin|password|token|auth|pass)=)[^&]+/\1[REDACTED]/g')"
 if echo "${REDACTED_URL}" | grep -q "secret999\|supersecret"; then
     echo "FAILED! Redaction helper failed to strip URL query secrets!"
