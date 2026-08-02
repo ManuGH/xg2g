@@ -50,4 +50,20 @@ if ! grep -q "set -euo pipefail" "${SCRIPT_UNDER_TEST}" || ! grep -q "umask 077"
 fi
 echo "PASSED"
 
+# Test 6: Verify fails without explicit target argument (Usage check)
+echo -n "Test 6: FailsWithoutExplicitTargetArgument... "
+if "${SCRIPT_UNDER_TEST}" >/dev/null 2>&1; then
+    echo "FAILED! Script executed without target argument! Expected non-zero exit code."
+    exit 1
+fi
+echo "PASSED"
+
+# Test 7: Verify NO hardcoded fallback IP addresses exist in script
+echo -n "Test 7: NoHardcodedDefaultIP... "
+if grep -E '10\.10\.55\.[0-9]+' "${SCRIPT_UNDER_TEST}" | grep -v "#"; then
+    echo "FAILED! Found hardcoded 10.10.55.x IP address in collector script!"
+    exit 1
+fi
+echo "PASSED"
+
 echo "=== All Passive Collector Safety Tests PASSED ==="

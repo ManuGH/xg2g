@@ -11,9 +11,29 @@ umask 077
 # recording start, config mutation, or Enigma2 restarts.
 
 COLLECTOR_VERSION="1.0.0"
-RECEIVER_HOST="${1:-10.10.55.2}"
+
+# Usage check: Target MUST be passed explicitly. No default IP allowed.
+if [ -z "${1:-}" ]; then
+    echo "ERROR: Target OpenWebif URL or host must be specified explicitly!"
+    echo "Usage: $0 <OPENWEBIF_HOST_OR_URL> [SSH_TARGET]"
+    echo "Examples:"
+    echo "  $0 192.168.1.100"
+    echo "  $0 http://192.168.1.100:80"
+    echo "  $0 192.168.1.100 root@192.168.1.100"
+    exit 1
+fi
+
+RAW_TARGET="$1"
 SSH_TARGET="${2:-}"
 TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
+
+# Normalize Target URL / Host
+TARGET_URL="${RAW_TARGET}"
+if [[ "${TARGET_URL}" != http://* ]] && [[ "${TARGET_URL}" != https://* ]]; then
+    TARGET_URL="http://${RAW_TARGET}"
+fi
+# Strip trailing slashes
+TARGET_URL="${TARGET_URL%/}"
 
 # Base output directory - ALWAYS in gitignored var/diagnostics/
 BASE_DIR="$(pwd)/var/diagnostics/enigma2/${TIMESTAMP}"
@@ -23,7 +43,12 @@ SYS_DIR="${BASE_DIR}/sys"
 mkdir -p "${OPENWEBIF_DIR}" "${SYS_DIR}"
 
 echo "=== xg2g Passive Diagnostic Collector v${COLLECTOR_VERSION} ==="
-echo "Target OpenWebif: ${RECEIVER_HOST}"
+echo "Target OpenWebif: ${TARGET_URL}"
+if [ -n "${SSH_TARGET}" ]; then
+    echo "SSH Target: ${SSH_TARGET}"
+else
+    echo "SSH Target: None (Passive HTTP Only - proc/sys requires SSH)"
+fi
 echo "Output Directory: ${BASE_DIR}"
 echo "Observation Time: ${TIMESTAMP}"
 echo ""
@@ -33,6 +58,7 @@ PROBE_RESULTS="{}"
 # Redaction helper: Redacts sensitive parameters, tokens, credentials, and IP addresses
 redact_content() {
     sed -E \
+        -e 's|http(s)?://[^:@]+:[^@]+@|http\1://[REDACTED_AUTH]@|g' \
         -e 's/("pin"|"password"|"token"|"auth"|"sessionid"|"pass"): *"[^"]+"/\1: "[REDACTED]"/g' \
         -e 's/([?&](pin|password|token|auth|pass)=)[^&]+/\1[REDACTED]/g' \
         -e 's/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/[REDACTED_EMAIL]/g' \
@@ -43,14 +69,14 @@ redact_content() {
 probe_http_endpoint() {
     local endpoint="$1"
     local filename="$2"
-    local target_url="http://${RECEIVER_HOST}${endpoint}"
+    local full_url="${TARGET_URL}${endpoint}"
     local out_file="${OPENWEBIF_DIR}/${filename}.json"
     local err_file="${OPENWEBIF_DIR}/${filename}.error.log"
 
     echo "[PASSIVE_HTTP] Probing ${endpoint}..."
 
     # Enforce strict bounded HTTP timeouts: connect 5s, max-time 10s
-    if curl -sS --fail --connect-timeout 5 --max-time 10 "${target_url}" 2> "${err_file}" | redact_content > "${out_file}"; then
+    if curl -sS --fail --connect-timeout 5 --max-time 10 "${full_url}" 2> "${err_file}" | redact_content > "${out_file}"; then
         rm -f "${err_file}"
         echo "  -> SUCCESS: ${filename}.json"
         PROBE_RESULTS="$(echo "${PROBE_RESULTS}" | jq ". + {\"${filename}\": \"SUCCESS\"}" 2>/dev/null || echo "${PROBE_RESULTS}")"
@@ -106,7 +132,7 @@ cat << EOF > "${BASE_DIR}/manifest.json"
 {
   "collector_version": "${COLLECTOR_VERSION}",
   "timestamp_utc": "${TIMESTAMP}",
-  "receiver_host": "${RECEIVER_HOST}",
+  "target_url": "${TARGET_URL}",
   "ssh_target": "${SSH_TARGET}",
   "probe_phase": "PASSIVE_COLLECTION",
   "probe_results": ${PROBE_RESULTS}
