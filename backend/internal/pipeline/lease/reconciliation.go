@@ -22,10 +22,11 @@ var (
 type IntentState string
 
 const (
-	IntentStatePending   IntentState = "PENDING"
-	IntentStateActive    IntentState = "ACTIVE"
-	IntentStateReleasing IntentState = "RELEASING"
-	IntentStateTerminal  IntentState = "TERMINAL"
+	IntentStatePending          IntentState = "PENDING"
+	IntentStateActive           IntentState = "ACTIVE"
+	IntentStateReleasing        IntentState = "RELEASING"
+	IntentStateTerminal         IntentState = "TERMINAL"
+	IntentStateRecoveryRequired IntentState = "RECOVERY_REQUIRED"
 )
 
 // LeaseIntent represents an intended or tracked lease reservation in the IntentStore.
@@ -713,9 +714,29 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 		}
 	}
 
-	return &ReconciliationReport{
+	return cloneReconciliationReport(&ReconciliationReport{
 		Timestamp: now,
 		Summary:   summary,
 		Items:     items,
-	}, nil
+	}), nil
+}
+
+// cloneReconciliationReport creates a deep-copy snapshot of a ReconciliationReport.
+func cloneReconciliationReport(report *ReconciliationReport) *ReconciliationReport {
+	if report == nil {
+		return nil
+	}
+	cp := &ReconciliationReport{
+		Timestamp: report.Timestamp,
+		Summary:   report.Summary,
+	}
+	if report.Summary.Composites != nil {
+		cp.Summary.Composites = make([]CompositeReconciliationSummary, len(report.Summary.Composites))
+		copy(cp.Summary.Composites, report.Summary.Composites)
+	}
+	if report.Items != nil {
+		cp.Items = make([]ReconciliationItem, len(report.Items))
+		copy(cp.Items, report.Items)
+	}
+	return cp
 }

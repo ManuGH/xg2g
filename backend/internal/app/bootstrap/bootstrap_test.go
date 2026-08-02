@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/openwebif"
+	pipelinelease "github.com/ManuGH/xg2g/internal/pipeline/lease"
 	pipebus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -35,6 +36,8 @@ type Container struct {
 	Server        *api.Server
 	Daemon        daemon.Manager
 	App           *daemon.App
+
+	IntentStore pipelinelease.IntentStore
 
 	// Dependencies enabling test observation
 	Deps daemon.Deps
@@ -196,6 +199,7 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 	}
 
 	app := daemon.NewApp(log.WithComponent("app"), mgr, cfgHolder, s, false)
+	intentStore := pipelinelease.NewInMemoryIntentStore()
 
 	return &Container{
 		Config:        cfg,
@@ -204,6 +208,7 @@ func WireServices(ctx context.Context, version, commit, buildDate string, explic
 		Server:        s,
 		Daemon:        mgr,
 		App:           app,
+		IntentStore:   intentStore,
 		Deps:          deps,
 	}, nil
 }

@@ -48,6 +48,8 @@ type Orchestrator struct {
 	HeartbeatSource SegmentHeartbeatSource // PR-P3-2: Pluggable truth source
 	LeaseKeyFunc    func(model.StartSessionEvent) string
 
+	TunerLeaseController lease.TunerLeaseController
+
 	PipelineStopTimeout time.Duration
 	OutboundPolicy      platformnet.OutboundPolicy
 	// RecoveryProfileResolver freezes the narrow profile-building capability
@@ -528,11 +530,33 @@ func (o *Orchestrator) unregisterActive(id string) {
 }
 
 func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, handle *lease.TunerLeaseHandle, ok bool, err error) {
-	controller := lease.NewSessionStoreTunerLeaseController(o.Store)
+	var ctrl lease.TunerLeaseController = o.TunerLeaseController
+	var storeAdapter *lease.SessionStoreTunerLeaseController
+	if ctrl != nil {
+		if sa, isSA := ctrl.(*lease.SessionStoreTunerLeaseController); isSA {
+			storeAdapter = sa
+		}
+	} else {
+		storeAdapter = lease.NewSessionStoreTunerLeaseController(o.Store)
+		ctrl = storeAdapter
+	}
+
 	for _, s := range slots {
-		h, storeLease, e := controller.AcquireWithLease(ctx, lease.Owner(owner), s, o.LeaseTTL)
+		if storeAdapter != nil {
+			h, storeLease, e := storeAdapter.AcquireWithLease(ctx, lease.Owner(owner), s, o.LeaseTTL)
+			if e == nil {
+				return s, storeLease, h, true, nil
+			}
+			if errors.Is(e, lease.ErrScopeConflict) {
+				continue
+			}
+			return 0, nil, nil, false, e
+		}
+
+		h, e := ctrl.Acquire(ctx, lease.Owner(owner), s, o.LeaseTTL)
 		if e == nil {
-			return s, storeLease, h, true, nil
+			sl, _, _ := o.Store.GetLease(ctx, string(h.Scope))
+			return s, sl, h, true, nil
 		}
 		if errors.Is(e, lease.ErrScopeConflict) {
 			continue

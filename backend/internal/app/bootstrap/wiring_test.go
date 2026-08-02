@@ -1,4 +1,4 @@
-package bootstrap_test
+package bootstrap
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	pipelinelease "github.com/ManuGH/xg2g/internal/pipeline/lease"
+	paths "github.com/ManuGH/xg2g/internal/platform/paths"
 )
 
 // TestWiring_BootsMinimalStack is the mechanical proof for P2 Components Wiring.
@@ -28,6 +30,8 @@ func TestWiring_BootsMinimalStack(t *testing.T) {
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	t.Setenv("XG2G_API_TOKEN", "test-token-1234567890123456")
+	t.Setenv("XG2G_API_TOKEN_SCOPES", "v3:read,v3:write")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-wiring-*")
 	require.NoError(t, err)
@@ -95,6 +99,8 @@ func TestWiring_MetricsDefaultBindsLocalhost(t *testing.T) {
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	t.Setenv("XG2G_API_TOKEN", "test-token-1234567890123456")
+	t.Setenv("XG2G_API_TOKEN_SCOPES", "v3:read,v3:write")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-metrics-*")
 	require.NoError(t, err)
@@ -130,6 +136,8 @@ func TestWiring_TLSEnabledForcesHTTPSByDefault(t *testing.T) {
 	t.Setenv("XG2G_STORE_PATH", t.TempDir())
 	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
 	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	t.Setenv("XG2G_API_TOKEN", "test-token-1234567890123456")
+	t.Setenv("XG2G_API_TOKEN_SCOPES", "v3:read,v3:write")
 
 	tmpDir, err := os.MkdirTemp("", "xg2g-tls-forcehttps-*")
 	require.NoError(t, err)
@@ -157,4 +165,59 @@ tls:
 	container, err := WireServices(ctx, "test-v3", "test-commit", "now", configPath)
 	require.NoError(t, err)
 	require.True(t, container.Config.ForceHTTPS)
+}
+
+func TestBootstrap_WiresTrackedTunerLeaseControllerAndEnforcesStartupGate(t *testing.T) {
+	skipIfNoFFmpeg(t)
+	t.Setenv("XG2G_INITIAL_REFRESH", "false")
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	t.Setenv("XG2G_API_TOKEN", "test-token-1234567890123456")
+	t.Setenv("XG2G_API_TOKEN_SCOPES", "v3:read,v3:write")
+
+	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", tmpDir)
+
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	content := `
+version: v3
+dataDir: ` + tmpDir + `
+store:
+  backend: sqlite
+  path: ` + tmpDir + `
+api:
+  listenAddr: ":0"
+engine:
+  tunerSlots: [0]
+enigma2:
+  baseUrl: http://mock-receiver
+`
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 1. Clean startup MUST succeed via WireServices
+	container, err := WireServices(ctx, "test-v3", "test-commit", "now", configPath)
+	require.NoError(t, err)
+	require.NotNil(t, container)
+	if fs, ok := container.IntentStore.(*pipelinelease.FileIntentStore); ok {
+		_ = fs.Close()
+	}
+
+	// 2. Seed a missing active intent into intents.json
+	intentsPath, err := paths.ResolveDataFilePath(tmpDir, "intents.json", true)
+	require.NoError(t, err)
+	corruptIntentContent := `{"intent-missing-1":{"intent_id":"intent-missing-1","lease_id":"lse-missing","owner":"session-missing","scope":"tuner:0","state":"ACTIVE","revision":1,"created_at":"2026-08-02T10:00:00Z","updated_at":"2026-08-02T10:00:00Z"}}`
+	err = os.WriteFile(intentsPath, []byte(corruptIntentContent), 0600)
+	require.NoError(t, err)
+
+	// 3. Restart WireServices -> MUST fail during ExecuteStartupReconciliation
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel2()
+
+	_, err = WireServices(ctx2, "test-v3", "test-commit", "now", configPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mandatory startup reconciliation failed")
 }

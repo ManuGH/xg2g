@@ -19,6 +19,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/infra/media/stub"
 	"github.com/ManuGH/xg2g/internal/infra/platform"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	lease "github.com/ManuGH/xg2g/internal/pipeline/lease"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
@@ -97,13 +98,15 @@ func buildMediaPipeline(cfg config.AppConfig, e2Client *enigma2.Client, logger z
 	return adapter
 }
 
-type v3OrchestratorFactory struct{}
-
-func buildV3OrchestratorFactory() daemon.V3OrchestratorFactory {
-	return v3OrchestratorFactory{}
+type v3OrchestratorFactory struct {
+	tunerController lease.TunerLeaseController
 }
 
-func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3OrchestratorInputs) (daemon.V3Orchestrator, error) {
+func buildV3OrchestratorFactory(tunerCtrl lease.TunerLeaseController) daemon.V3OrchestratorFactory {
+	return v3OrchestratorFactory{tunerController: tunerCtrl}
+}
+
+func (f v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3OrchestratorInputs) (daemon.V3Orchestrator, error) {
 	if inputs.Bus == nil {
 		return nil, fmt.Errorf("v3 orchestrator input bus is required")
 	}
@@ -119,14 +122,15 @@ func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orchest
 	profileResolver := profiles.LoadResolver()
 
 	orch := &worker.Orchestrator{
-		Store:               inputs.Store,
-		Bus:                 bus.NewAdapter(inputs.Bus),
-		Platform:            platform.NewOSPlatform(),
-		HeartbeatSource:     &worker.FSWatcherHeartbeatSource{HLSRoot: cfg.HLS.Root},
-		LeaseTTL:            30 * time.Second,
-		HeartbeatEvery:      10 * time.Second,
-		Owner:               workerOwner,
-		TunerSlots:          cfg.Engine.TunerSlots,
+		Store:                inputs.Store,
+		Bus:                  bus.NewAdapter(inputs.Bus),
+		Platform:             platform.NewOSPlatform(),
+		HeartbeatSource:      &worker.FSWatcherHeartbeatSource{HLSRoot: cfg.HLS.Root},
+		LeaseTTL:             30 * time.Second,
+		HeartbeatEvery:       10 * time.Second,
+		Owner:                workerOwner,
+		TunerSlots:           cfg.Engine.TunerSlots,
+		TunerLeaseController: f.tunerController,
 		HLSRoot:             cfg.HLS.Root,
 		LiveReadySegments:   cfg.HLS.ReadySegments,
 		PipelineStopTimeout: 5 * time.Second,

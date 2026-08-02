@@ -69,7 +69,10 @@ func (o *Orchestrator) acquireLeases(
 		res.ReleaseTuner = func() {
 			ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			controller := pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
+			controller := o.TunerLeaseController
+			if controller == nil {
+				controller = pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
+			}
 			if err := controller.Release(ctxRel, res.TunerHandle, pipelineLease.ReasonReleasedByOwner); err != nil {
 				logger.Error().Err(err).
 					Str("lease_key", string(res.TunerHandle.Scope)).
@@ -95,7 +98,10 @@ func (o *Orchestrator) acquireLeases(
 				case <-hbCtx.Done():
 					return
 				case <-t.C:
-					controller := pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
+					controller := o.TunerLeaseController
+					if controller == nil {
+						controller = pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
+					}
 					err := controller.Renew(hbCtx, res.TunerHandle, o.LeaseTTL)
 					if err != nil {
 						if errors.Is(err, pipelineLease.ErrLeaseInactive) || errors.Is(err, pipelineLease.ErrNotFound) {

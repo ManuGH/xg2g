@@ -32,6 +32,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
+	pipelinelease "github.com/ManuGH/xg2g/internal/pipeline/lease"
 	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
 	"github.com/ManuGH/xg2g/internal/platform/paths"
 	"github.com/ManuGH/xg2g/internal/receipts"
@@ -54,6 +55,9 @@ type Container struct {
 	Server        *api.Server
 	Manager       daemon.Manager
 	App           *daemon.App
+
+	IntentStore pipelinelease.IntentStore
+	Deps        daemon.Deps
 
 	snapshot         config.Snapshot
 	piconPool        *jobs.PiconPool
@@ -203,6 +207,46 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	metricsAddr := resolveMetricsAddr(cfg)
 
+	intentStorePath, err := paths.ResolveDataFilePath(cfg.DataDir, "intents.json", true)
+	if err != nil {
+		return nil, fmt.Errorf("resolve intent store path: %w", err)
+	}
+	var intentStore pipelinelease.IntentStore
+	if cfg.Store.Backend == "memory" {
+		intentStore = pipelinelease.NewInMemoryIntentStore()
+	} else {
+		fileStore, fErr := pipelinelease.NewFileIntentStore(intentStorePath)
+		if fErr != nil {
+			return nil, fmt.Errorf("initialize file intent store: %w", fErr)
+		}
+		intentStore = fileStore
+	}
+
+	leaseBackendManager := pipelinelease.NewManager(pipelinelease.ManagerConfig{SweepInterval: 1 * time.Hour})
+	sessionStoreController := pipelinelease.NewSessionStoreTunerLeaseController(v3Store)
+	trackedTunerController, err := pipelinelease.NewIntentTrackedTunerLeaseControllerWithConfig(pipelinelease.IntentTrackedControllerConfig{
+		Controller:    sessionStoreController,
+		IntentStore:   intentStore,
+		StartupPolicy: pipelinelease.DefaultStartupPolicy{AllowAuditOnlyOrphans: false},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize tracked tuner lease controller: %w", err)
+	}
+
+	startupReport, err := trackedTunerController.ExecuteStartupReconciliation(ctx, pipelinelease.ReconcilerConfig{
+		IntentStore: intentStore,
+		Backend:     leaseBackendManager,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("mandatory startup reconciliation failed: %w", err)
+	}
+	logger.Info().
+		Int("confirmed", startupReport.Summary.Confirmed).
+		Int("released", startupReport.Summary.Released).
+		Int("orphaned", startupReport.Summary.Orphaned).
+		Int("missing", startupReport.Summary.Missing).
+		Msg("mandatory startup reconciliation completed successfully")
+
 	deps := daemon.Deps{
 		Logger:                logger,
 		Config:                cfg,
@@ -218,7 +262,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		ScanManager:           v3Scan,
 		ReceiverHealthCheck:   newReceiverHealthCheck(cfg, e2Client),
 		MediaPipeline:         mediaPipeline,
-		V3OrchestratorFactory: buildV3OrchestratorFactory(),
+		V3OrchestratorFactory: buildV3OrchestratorFactory(trackedTunerController),
 	}
 
 	mgr, err := daemon.NewManager(serverCfg, deps)
@@ -240,6 +284,8 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		Server:           s,
 		Manager:          mgr,
 		App:              app,
+		IntentStore:      intentStore,
+		Deps:             deps,
 		snapshot:         snap,
 		scanManager:      v3Scan,
 		verificationWork: verifyWorker,

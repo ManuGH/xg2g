@@ -208,7 +208,7 @@ func validateIntent(intent LeaseIntent) error {
 	}
 
 	switch intent.State {
-	case IntentStatePending, IntentStateActive, IntentStateReleasing, IntentStateTerminal:
+	case IntentStatePending, IntentStateActive, IntentStateReleasing, IntentStateTerminal, IntentStateRecoveryRequired:
 	default:
 		return fmt.Errorf("%w: invalid intent state %q", ErrInvalidIntent, intent.State)
 	}
