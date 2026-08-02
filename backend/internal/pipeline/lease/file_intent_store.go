@@ -6,6 +6,7 @@ package lease
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,13 +14,26 @@ import (
 	"time"
 )
 
+var (
+	ErrIntentStoreAlreadyOpen    = errors.New("intent store for file path is already open")
+	ErrIntentStoreCorrupt        = errors.New("intent store file is corrupt or invalid")
+	ErrIntentDurabilityUncertain = errors.New("intent store persistence durability is uncertain")
+)
+
+var (
+	openStorePathsMu sync.Mutex
+	openStorePaths   = make(map[string]bool)
+)
+
 // FileIntentStore is a thread-safe persistent implementation of IntentStore that persists LeaseIntents to a JSON file.
-// Designed for single-writer process ownership with atomic file replacement and fsync durability.
+// Enforces single-writer process ownership per file path with atomic file replacement and fsync durability.
 type FileIntentStore struct {
-	mu       sync.RWMutex
-	filePath string
-	intents  map[ID]LeaseIntent
-	nowFunc  func() time.Time
+	mu        sync.RWMutex
+	filePath  string
+	cleanPath string
+	intents   map[ID]LeaseIntent
+	nowFunc   func() time.Time
+	closed    bool
 }
 
 // FileIntentStoreConfig configures FileIntentStore options.
@@ -39,8 +53,21 @@ func NewFileIntentStoreWithConfig(cfg FileIntentStoreConfig) (*FileIntentStore, 
 		return nil, fmt.Errorf("%w: file path cannot be empty", ErrInvalidIntent)
 	}
 
-	dir := filepath.Dir(cfg.FilePath)
+	clean := filepath.Clean(cfg.FilePath)
+
+	openStorePathsMu.Lock()
+	if openStorePaths[clean] {
+		openStorePathsMu.Unlock()
+		return nil, fmt.Errorf("%w: %s", ErrIntentStoreAlreadyOpen, clean)
+	}
+	openStorePaths[clean] = true
+	openStorePathsMu.Unlock()
+
+	dir := filepath.Dir(clean)
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		openStorePathsMu.Lock()
+		delete(openStorePaths, clean)
+		openStorePathsMu.Unlock()
 		return nil, fmt.Errorf("failed to create intent store directory: %w", err)
 	}
 
@@ -50,16 +77,34 @@ func NewFileIntentStoreWithConfig(cfg FileIntentStoreConfig) (*FileIntentStore, 
 	}
 
 	store := &FileIntentStore{
-		filePath: cfg.FilePath,
-		intents:  make(map[ID]LeaseIntent),
-		nowFunc:  clock,
+		filePath:  cfg.FilePath,
+		cleanPath: clean,
+		intents:   make(map[ID]LeaseIntent),
+		nowFunc:   clock,
 	}
 
 	if err := store.load(); err != nil {
+		_ = store.Close()
 		return nil, err
 	}
 
 	return store, nil
+}
+
+func (s *FileIntentStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+
+	openStorePathsMu.Lock()
+	delete(openStorePaths, s.cleanPath)
+	openStorePathsMu.Unlock()
+
+	return nil
 }
 
 func (s *FileIntentStore) load() error {
@@ -77,10 +122,25 @@ func (s *FileIntentStore) load() error {
 
 	var rawMap map[ID]LeaseIntent
 	if err := json.Unmarshal(data, &rawMap); err != nil {
-		return fmt.Errorf("failed to parse intent store JSON: %w", err)
+		return fmt.Errorf("%w: failed to parse intent store JSON: %v", ErrIntentStoreCorrupt, err)
 	}
 
-	s.intents = rawMap
+	// Validate loaded entries for data integrity
+	validated := make(map[ID]LeaseIntent, len(rawMap))
+	for key, intent := range rawMap {
+		if key != intent.IntentID {
+			return fmt.Errorf("%w: map key %q does not match intent ID %q", ErrIntentStoreCorrupt, key, intent.IntentID)
+		}
+		if intent.Revision < 1 {
+			return fmt.Errorf("%w: intent %s has invalid revision %d", ErrIntentStoreCorrupt, intent.IntentID, intent.Revision)
+		}
+		if err := validateIntent(intent); err != nil {
+			return fmt.Errorf("%w: intent %s validation failed: %v", ErrIntentStoreCorrupt, intent.IntentID, err)
+		}
+		validated[key] = intent
+	}
+
+	s.intents = validated
 	return nil
 }
 
@@ -120,11 +180,17 @@ func (s *FileIntentStore) persistLocked(intentsMap map[ID]LeaseIntent) error {
 		return fmt.Errorf("failed to rename intent store file: %w", err)
 	}
 
-	// fsync parent directory to ensure directory entry durability
+	// fsync parent directory to guarantee directory entry durability
 	d, err := os.Open(dir)
-	if err == nil {
-		_ = d.Sync()
+	if err != nil {
+		return fmt.Errorf("%w: open parent directory for fsync: %v", ErrIntentDurabilityUncertain, err)
+	}
+	if err := d.Sync(); err != nil {
 		_ = d.Close()
+		return fmt.Errorf("%w: fsync parent directory: %v", ErrIntentDurabilityUncertain, err)
+	}
+	if err := d.Close(); err != nil {
+		return fmt.Errorf("%w: close parent directory: %v", ErrIntentDurabilityUncertain, err)
 	}
 
 	return nil
@@ -181,6 +247,10 @@ func (s *FileIntentStore) SaveIntent(ctx context.Context, intent LeaseIntent) er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.closed {
+		return ErrManagerClosed
+	}
+
 	now := s.nowFunc()
 	existing, exists := s.intents[intent.IntentID]
 
@@ -227,6 +297,10 @@ func (s *FileIntentStore) GetIntent(ctx context.Context, intentID ID) (*LeaseInt
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	if s.closed {
+		return nil, ErrManagerClosed
+	}
+
 	intent, exists := s.intents[intentID]
 	if !exists {
 		return nil, fmt.Errorf("%w: intent %s", ErrIntentNotFound, intentID)
@@ -241,6 +315,10 @@ func (s *FileIntentStore) ListIntents(ctx context.Context) ([]LeaseIntent, error
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	if s.closed {
+		return nil, ErrManagerClosed
+	}
 
 	res := make([]LeaseIntent, 0, len(s.intents))
 	for _, intent := range s.intents {
@@ -257,6 +335,10 @@ func (s *FileIntentStore) DeleteIntent(ctx context.Context, intentID ID) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.closed {
+		return ErrManagerClosed
+	}
 
 	if _, exists := s.intents[intentID]; !exists {
 		return nil // Idempotent delete

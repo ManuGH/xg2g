@@ -17,17 +17,13 @@ Without a deterministic reconciliation mechanism:
 ## Decision Drivers
 
 1. **Separation of Intent and Reality:** An intent (`LeaseIntent`) represents a requested or active allocation attempt. A lease (`Lease`) represents the confirmed backend state.
-2. **Persistence Across Restarts & Crash Durability:** Intents are persisted to non-volatile JSON storage (`FileIntentStore`) using atomic file replacement (`.tmp` write, `fsync`, `f.Close()`, `os.Rename`, parent directory `fsync`).
-3. **Single-Writer Process Boundary:** `FileIntentStore` guarantees thread-safety within a single process via `sync.RWMutex`. Multi-process concurrency requires explicit single-writer ownership per file path or an underlying relational store.
+2. **Persistence Across Restarts & Durability:** Intents are persisted to non-volatile JSON storage (`FileIntentStore`) using atomic file replacement (`.tmp` write, `f.Sync()`, `f.Close()`, `os.Rename`, parent directory `d.Sync()`). File corruption triggers `ErrIntentStoreCorrupt`; directory sync failures surface `ErrIntentDurabilityUncertain`.
+3. **Single-Writer Enforcement:** `FileIntentStore` enforces a process-wide path registry returning `ErrIntentStoreAlreadyOpen` if the same file path is opened concurrently.
 4. **CAS Revision Safety:** Updates to existing intents enforce strict Compare-and-Swap (CAS) revision increments (`incoming.Revision == existing.Revision + 1`).
-5. **Deterministic 5-State Classification Model:** Every inspected resource scope/intent pair is categorized into exactly one of:
-   - `confirmed`: Active intent matches active backend lease (`LeaseID`, `Owner`, `Scope`).
-   - `released`: Both intent and backend agree the lease is released or expired.
-   - `orphaned`: Backend holds an active lease for a scope, but no matching active intent exists in the Intent Store.
-   - `missing`: Intent expects an active lease, but the backend does not hold an active lease for the scope.
-   - `manual-intervention-required`: Ambiguous conflicts exist (e.g. duplicate active intents for the same scope, duplicate backend leases, owner/ID mismatches).
-6. **Stale-Safe Compare-Before-Act Auto-Remediation:** Before releasing an orphaned backend lease, the engine re-verifies backend and intent state immediately prior to executing the release using a detached, bounded context (`RemediationTimeout`) and `LEASE_RECONCILIATION_ORPHAN_CLEANUP` reason code. Release success is confirmed via a post-release backend query before reporting `SUCCEEDED`.
-7. **Deterministic Output & Composite Visibility:** Output items and summary reports are sorted deterministically (`Scope` $\to$ `IntentID` $\to$ `BackendID` $\to$ `Status` $\to$ `ReasonCode`). Composite leases are aggregated into composite status summaries.
+5. **Authoritative Scope Intent Selection:** When classifying a scope, non-terminal intents (`PENDING`, `ACTIVE`, `RELEASING`) take precedence over historical `TERMINAL` intents. Multiple non-terminal intents trigger `MANUAL_INTERVENTION_REQUIRED`.
+6. **Explicit Observed vs Final Status:** `ReconciliationItem` tracks both `ObservedStatus` (initial snapshot observation) and `FinalStatus` (post-remediation state).
+7. **Stale-Safe Compare-Before-Act Auto-Remediation:** Before releasing an orphaned backend lease, the engine re-verifies backend and intent state immediately prior to executing the release using a detached, bounded context (`RemediationTimeout`) and `LEASE_RECONCILIATION_ORPHAN_CLEANUP` reason code. Release success is confirmed via a post-release backend query before reporting `SUCCEEDED` and setting `FinalStatus = released`.
+8. **Production Wiring:** Production lease controllers wrap lease acquisition with persistent `LeaseIntent` lifecycle tracking (`PENDING` $\to$ `ACTIVE` $\to$ `RELEASING` $\to$ `TERMINAL`) and execute audit reconciliation at startup.
 
 ## Consequences
 

@@ -42,11 +42,17 @@ func TestFileIntentStore_RestartPersistenceRecovery(t *testing.T) {
 		t.Fatalf("SaveIntent failed: %v", err)
 	}
 
+	// Close store1 to release path lock
+	if err := store1.Close(); err != nil {
+		t.Fatalf("store1 Close failed: %v", err)
+	}
+
 	// 2. Simulate process restart: Re-open with store2 on same file
 	store2, err := NewFileIntentStore(storePath)
 	if err != nil {
 		t.Fatalf("failed to re-open store2: %v", err)
 	}
+	defer store2.Close()
 
 	got, err := store2.GetIntent(ctx, "intent-persist-1")
 	if err != nil {
@@ -88,6 +94,33 @@ func TestFileIntentStore_RestartPersistenceRecovery(t *testing.T) {
 	}
 }
 
+// TestFileIntentStore_SingleWriterPathRegistry verifies process-wide single-writer protection.
+func TestFileIntentStore_SingleWriterPathRegistry(t *testing.T) {
+	tmpDir := t.TempDir()
+	storePath := filepath.Join(tmpDir, "intents_single_writer.json")
+
+	store1, err := NewFileIntentStore(storePath)
+	if err != nil {
+		t.Fatalf("failed to create store1: %v", err)
+	}
+
+	// Second open on same path must fail with ErrIntentStoreAlreadyOpen
+	_, err = NewFileIntentStore(storePath)
+	if !errors.Is(err, ErrIntentStoreAlreadyOpen) {
+		t.Errorf("expected ErrIntentStoreAlreadyOpen, got %v", err)
+	}
+
+	// Close store1
+	_ = store1.Close()
+
+	// Re-open after Close must succeed
+	store2, err := NewFileIntentStore(storePath)
+	if err != nil {
+		t.Fatalf("failed to re-open store2 after Close: %v", err)
+	}
+	_ = store2.Close()
+}
+
 // TestFileIntentStore_CASRevisionProtection verifies CAS revision enforcement.
 func TestFileIntentStore_CASRevisionProtection(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -98,6 +131,7 @@ func TestFileIntentStore_CASRevisionProtection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
+	defer store.Close()
 
 	intent := LeaseIntent{
 		IntentID: "intent-cas-1",
@@ -126,6 +160,58 @@ func TestFileIntentStore_CASRevisionProtection(t *testing.T) {
 	}
 }
 
+// TestReconciler_MixedStateAuthoritativeSelection verifies that when a TERMINAL intent-a and an ACTIVE intent-b
+// exist for the same scope with a matching backend lease-b, ACTIVE intent-b is authoritatively selected.
+func TestReconciler_MixedStateAuthoritativeSelection(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+	ctx := context.Background()
+
+	lB, _ := mgr.Acquire(ctx, "worker-B", "res:MIXED_SCOPE", 10*time.Minute)
+
+	// Historical TERMINAL intent-a
+	_ = store.SaveIntent(ctx, LeaseIntent{
+		IntentID:  "intent-A-terminal",
+		Owner:     "worker-A",
+		Scope:     "res:MIXED_SCOPE",
+		State:     IntentStateTerminal,
+		Revision:  1,
+		UpdatedAt: time.Now().Add(-1 * time.Hour),
+	})
+
+	// Active intent-b
+	_ = store.SaveIntent(ctx, LeaseIntent{
+		IntentID:  "intent-B-active",
+		LeaseID:   lB.ID,
+		Owner:     "worker-B",
+		Scope:     "res:MIXED_SCOPE",
+		State:     IntentStateActive,
+		Revision:  1,
+		UpdatedAt: time.Now(),
+	})
+
+	reconciler, _ := NewReconciler(ReconcilerConfig{
+		IntentStore: store,
+		Backend:     mgr,
+	})
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item for scope, got %d", len(report.Items))
+	}
+	if report.Items[0].IntentID != "intent-B-active" {
+		t.Errorf("expected authoritative intent to be intent-B-active, got %s", report.Items[0].IntentID)
+	}
+	if report.Items[0].ObservedStatus != ReconciliationStatusConfirmed {
+		t.Errorf("expected status CONFIRMED, got %s", report.Items[0].ObservedStatus)
+	}
+}
+
 // TestReconciler_OrphanConfirmationFailure verifies that if release returns nil error
 // but confirmation ListLeases returns an error, RemediationOutcome is set to RemediationFailed.
 func TestReconciler_OrphanConfirmationFailure(t *testing.T) {
@@ -136,11 +222,10 @@ func TestReconciler_OrphanConfirmationFailure(t *testing.T) {
 
 	lOrphan, _ := mgr.Acquire(ctx, "worker-orphan", "res:CONFIRM_FAIL", 10*time.Minute)
 
-	// Custom backend that fails ListLeases on the confirmation call
 	failBackend := &confirmFailBackend{
-		mgr:       mgr,
-		orphanID:  lOrphan.ID,
-		failOnCall: 3, // Initial ListLeases (1), Compare-before-act ListLeases (2), Confirmation ListLeases (3)
+		mgr:        mgr,
+		orphanID:   lOrphan.ID,
+		failOnCall: 3,
 	}
 
 	reconciler, _ := NewReconciler(ReconcilerConfig{
@@ -203,7 +288,6 @@ func TestReconciler_ParentCanceledDetachedRemediationConfirmation(t *testing.T) 
 
 	lOrphan, _ := mgr.Acquire(context.Background(), "worker-orphan", "res:DETACHED_CANCEL", 10*time.Minute)
 
-	// Cancel parentCtx right when Release is invoked
 	cancelBackend := &cancelHookBackend{
 		mgr: mgr,
 		onRelease: func() {
@@ -228,6 +312,10 @@ func TestReconciler_ParentCanceledDetachedRemediationConfirmation(t *testing.T) 
 	if report.Items[0].RemediationOutcome != RemediationSucceeded {
 		t.Errorf("expected RemediationOutcome SUCCEEDED despite parent context cancellation, got %s (err=%s)",
 			report.Items[0].RemediationOutcome, report.Items[0].Diagnostic)
+	}
+	if report.Items[0].ObservedStatus != ReconciliationStatusOrphaned || report.Items[0].FinalStatus != ReconciliationStatusReleased {
+		t.Errorf("expected ObservedStatus=ORPHANED, FinalStatus=RELEASED, got Observed=%s, Final=%s",
+			report.Items[0].ObservedStatus, report.Items[0].FinalStatus)
 	}
 
 	lCheck, _ := mgr.Get(lOrphan.ID)
@@ -373,19 +461,16 @@ func TestReconciler_IntentStateMatrix(t *testing.T) {
 		t.Fatalf("expected 3 items, got %d", len(report.Items))
 	}
 
-	// Verify res:PENDING_FREE -> confirmed, RECONCILIATION_PENDING_ACQUISITION
 	itemPending := report.Items[0]
 	if itemPending.Scope != "res:PENDING_FREE" || itemPending.ReasonCode != ReasonReconciliationPendingAcquisition {
 		t.Errorf("unexpected itemPending: %+v", itemPending)
 	}
 
-	// Verify res:RELEASING_ACTIVE -> confirmed, RECONCILIATION_RELEASE_PENDING
 	itemReleasing := report.Items[1]
 	if itemReleasing.Scope != "res:RELEASING_ACTIVE" || itemReleasing.ReasonCode != ReasonReconciliationReleasePending {
 		t.Errorf("unexpected itemReleasing: %+v", itemReleasing)
 	}
 
-	// Verify res:TERMINAL_FREE -> released, RECONCILIATION_RELEASED
 	itemTerminal := report.Items[2]
 	if itemTerminal.Scope != "res:TERMINAL_FREE" || itemTerminal.ReasonCode != ReasonReconciliationReleased {
 		t.Errorf("unexpected itemTerminal: %+v", itemTerminal)
@@ -576,11 +661,10 @@ func TestReconciler_CompositeGrouping(t *testing.T) {
 
 	_ = store.SaveIntent(ctx, LeaseIntent{
 		IntentID:    "intent-comp-B",
-		LeaseID:     "lse-missing-B",
 		Owner:       "worker-1",
 		Scope:       "res:B",
 		CompositeID: "comp-batch-100",
-		State:       IntentStateActive,
+		State:       IntentStatePending,
 		Revision:    1,
 	})
 
@@ -602,11 +686,54 @@ func TestReconciler_CompositeGrouping(t *testing.T) {
 	if compSum.CompositeID != "comp-batch-100" {
 		t.Errorf("expected CompositeID comp-batch-100, got %s", compSum.CompositeID)
 	}
-	if compSum.Confirmed != 1 || compSum.Missing != 1 {
-		t.Errorf("expected 1 confirmed and 1 missing member in composite summary, got %+v", compSum)
+	if compSum.Confirmed != 1 || compSum.Pending != 1 {
+		t.Errorf("expected 1 confirmed and 1 pending member in composite summary, got %+v", compSum)
 	}
-	if compSum.Status != ReconciliationStatusManualInterventionRequired {
-		t.Errorf("expected composite status manual-intervention-required due to missing member, got %s", compSum.Status)
+}
+
+// TestProductionWiring_IntentTrackedTunerLeaseController verifies production wiring lifecycle and startup reconciliation.
+func TestProductionWiring_IntentTrackedTunerLeaseController(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+	ctx := context.Background()
+
+	tb := NewTunerBinding(mgr)
+	controller := NewTunerBindingController(tb)
+	trackedCtrl, err := NewIntentTrackedTunerLeaseController(controller, store)
+	if err != nil {
+		t.Fatalf("failed to create IntentTrackedTunerLeaseController: %v", err)
+	}
+
+	// 1. Acquire lease via production-wired tracked controller
+	handle, err := trackedCtrl.Acquire(ctx, "session-wired-1", 0, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("Acquire failed: %v", err)
+	}
+	if handle == nil || handle.LeaseID == "" {
+		t.Fatalf("expected handle to have non-empty LeaseID")
+	}
+
+	// 2. Verify intent is persisted in store as ACTIVE with LeaseID
+	intents, _ := store.ListIntents(ctx)
+	if len(intents) != 1 {
+		t.Fatalf("expected 1 intent in store, got %d", len(intents))
+	}
+	if intents[0].State != IntentStateActive || intents[0].LeaseID != handle.LeaseID {
+		t.Errorf("unexpected intent state: %+v", intents[0])
+	}
+
+	// 3. Run startup reconciliation check
+	report, err := RunStartupReconciliation(ctx, ReconcilerConfig{
+		IntentStore: store,
+		Backend:     mgr,
+	})
+	if err != nil {
+		t.Fatalf("RunStartupReconciliation failed: %v", err)
+	}
+
+	if report.Summary.Confirmed != 1 {
+		t.Errorf("expected 1 confirmed item in startup reconciliation report, got summary: %+v", report.Summary)
 	}
 }
 

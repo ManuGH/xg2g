@@ -218,7 +218,8 @@ type ReconciliationItem struct {
 	BackendID          ID                       `json:"backend_id,omitempty"`
 	IntentOwner        Owner                    `json:"intent_owner,omitempty"`
 	BackendOwner       Owner                    `json:"backend_owner,omitempty"`
-	Status             ReconciliationStatus     `json:"status"`
+	ObservedStatus     ReconciliationStatus     `json:"observed_status"`
+	FinalStatus        ReconciliationStatus     `json:"final_status"`
 	ReasonCode         ReconciliationReasonCode `json:"reason_code"`
 	RemediationOutcome RemediationOutcome       `json:"remediation_outcome"`
 	RemediationDetails string                   `json:"remediation_details,omitempty"`
@@ -353,7 +354,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 	processedScopes := make(map[Scope]bool)
 	compositeTracker := make(map[ID]*CompositeReconciliationSummary)
 
-	trackComposite := func(compID ID, status ReconciliationStatus) {
+	trackComposite := func(compID ID, state IntentState, status ReconciliationStatus) {
 		if compID == "" {
 			return
 		}
@@ -362,46 +363,64 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 			comp = &CompositeReconciliationSummary{CompositeID: compID}
 			compositeTracker[compID] = comp
 		}
-		switch status {
-		case ReconciliationStatusConfirmed:
-			comp.Confirmed++
-		case ReconciliationStatusMissing:
-			comp.Missing++
-		case ReconciliationStatusReleased:
-			comp.Released++
-		default:
+		if status == ReconciliationStatusManualInterventionRequired {
 			comp.Conflicted++
+			return
+		}
+		switch state {
+		case IntentStatePending, IntentStateReleasing:
+			comp.Pending++
+		case IntentStateActive:
+			if status == ReconciliationStatusConfirmed {
+				comp.Confirmed++
+			} else if status == ReconciliationStatusMissing {
+				comp.Missing++
+			} else {
+				comp.Conflicted++
+			}
+		case IntentStateTerminal:
+			if status == ReconciliationStatusReleased {
+				comp.Released++
+			} else {
+				comp.Conflicted++
+			}
 		}
 	}
 
-	// 1. Process all intents grouped by Scope
-	for _, intent := range intents {
-		scope := intent.Scope
+	// 1. Process all scopes derived from intents
+	for _, rawIntent := range intents {
+		scope := rawIntent.Scope
 		if processedScopes[scope] {
 			continue
 		}
 		processedScopes[scope] = true
 
 		scopeIntents := intentsByScope[scope]
-		activeIntents := make([]LeaseIntent, 0)
+
+		// Authoritative Scope Intent Selection: Filter non-terminal intents (PENDING, ACTIVE, RELEASING)
+		nonTerminalIntents := make([]LeaseIntent, 0)
+		terminalIntents := make([]LeaseIntent, 0)
 		for _, in := range scopeIntents {
-			if in.State == IntentStateActive || in.State == IntentStatePending {
-				activeIntents = append(activeIntents, in)
+			if in.State == IntentStateActive || in.State == IntentStatePending || in.State == IntentStateReleasing {
+				nonTerminalIntents = append(nonTerminalIntents, in)
+			} else {
+				terminalIntents = append(terminalIntents, in)
 			}
 		}
 
 		bLeases := backendByScope[scope]
 
-		// Check for duplicate active intents on same scope
-		if len(activeIntents) > 1 {
+		// Check for multiple non-terminal intents on same scope (Conflict)
+		if len(nonTerminalIntents) > 1 {
 			item := ReconciliationItem{
 				Scope:              scope,
-				IntentID:           intent.IntentID,
-				IntentOwner:        intent.Owner,
-				Status:             ReconciliationStatusManualInterventionRequired,
+				IntentID:           nonTerminalIntents[0].IntentID,
+				IntentOwner:        nonTerminalIntents[0].Owner,
+				ObservedStatus:     ReconciliationStatusManualInterventionRequired,
+				FinalStatus:        ReconciliationStatusManualInterventionRequired,
 				ReasonCode:         ReasonReconciliationDuplicateIntents,
 				RemediationOutcome: RemediationNotAttempted,
-				Diagnostic:         fmt.Sprintf("multiple active/pending intents (%d) exist for scope %s", len(activeIntents), scope),
+				Diagnostic:         fmt.Sprintf("multiple non-terminal intents (%d) exist for scope %s", len(nonTerminalIntents), scope),
 			}
 			if len(bLeases) > 0 {
 				item.BackendID = bLeases[0].ID
@@ -409,27 +428,46 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 			}
 			items = append(items, item)
 			summary.ManualInterventionRequired++
-			trackComposite(intent.CompositeID, item.Status)
+			trackComposite(nonTerminalIntents[0].CompositeID, nonTerminalIntents[0].State, item.ObservedStatus)
 			continue
 		}
 
-		// Check for duplicate active backend leases on same scope
+		// Check for duplicate active backend leases on same scope (Conflict)
 		if len(bLeases) > 1 {
+			targetIntent := rawIntent
+			if len(nonTerminalIntents) == 1 {
+				targetIntent = nonTerminalIntents[0]
+			}
 			item := ReconciliationItem{
 				Scope:              scope,
-				IntentID:           intent.IntentID,
+				IntentID:           targetIntent.IntentID,
 				BackendID:          bLeases[0].ID,
-				IntentOwner:        intent.Owner,
+				IntentOwner:        targetIntent.Owner,
 				BackendOwner:       bLeases[0].Owner,
-				Status:             ReconciliationStatusManualInterventionRequired,
+				ObservedStatus:     ReconciliationStatusManualInterventionRequired,
+				FinalStatus:        ReconciliationStatusManualInterventionRequired,
 				ReasonCode:         ReasonReconciliationDuplicateBackendLeases,
 				RemediationOutcome: RemediationNotAttempted,
 				Diagnostic:         fmt.Sprintf("multiple active backend leases (%d) exist for scope %s", len(bLeases), scope),
 			}
 			items = append(items, item)
 			summary.ManualInterventionRequired++
-			trackComposite(intent.CompositeID, item.Status)
+			trackComposite(targetIntent.CompositeID, targetIntent.State, item.ObservedStatus)
 			continue
+		}
+
+		// Select authoritative intent: if exactly one non-terminal exists, use it; otherwise use latest terminal intent
+		var intent LeaseIntent
+		if len(nonTerminalIntents) == 1 {
+			intent = nonTerminalIntents[0]
+		} else if len(terminalIntents) > 0 {
+			// Sort terminal intents by UpdatedAt desc to pick latest
+			sort.Slice(terminalIntents, func(i, j int) bool {
+				return terminalIntents[i].UpdatedAt.After(terminalIntents[j].UpdatedAt)
+			})
+			intent = terminalIntents[0]
+		} else {
+			intent = rawIntent
 		}
 
 		item := ReconciliationItem{
@@ -450,12 +488,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 		switch intent.State {
 		case IntentStatePending:
 			if bLease == nil {
-				item.Status = ReconciliationStatusConfirmed
+				item.ObservedStatus = ReconciliationStatusConfirmed
 				item.ReasonCode = ReasonReconciliationPendingAcquisition
 				item.Diagnostic = "intent is PENDING lease acquisition; no backend lease present yet"
 				summary.Confirmed++
 			} else {
-				item.Status = ReconciliationStatusManualInterventionRequired
+				item.ObservedStatus = ReconciliationStatusManualInterventionRequired
 				item.ReasonCode = ReasonReconciliationOwnerMismatch
 				item.Diagnostic = fmt.Sprintf("intent state is PENDING, but backend lease ID %s is already active (owner %s)", bLease.ID, bLease.Owner)
 				summary.ManualInterventionRequired++
@@ -463,22 +501,22 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 
 		case IntentStateActive:
 			if bLease == nil {
-				item.Status = ReconciliationStatusMissing
+				item.ObservedStatus = ReconciliationStatusMissing
 				item.ReasonCode = ReasonReconciliationLeaseMissing
 				item.Diagnostic = fmt.Sprintf("active intent expects lease ID %s, missing in backend", intent.LeaseID)
 				summary.Missing++
 			} else {
 				if bLease.ID == intent.LeaseID && bLease.Owner == intent.Owner {
-					item.Status = ReconciliationStatusConfirmed
+					item.ObservedStatus = ReconciliationStatusConfirmed
 					item.ReasonCode = ReasonReconciliationMatchConfirmed
 					summary.Confirmed++
 				} else if bLease.Owner != intent.Owner {
-					item.Status = ReconciliationStatusManualInterventionRequired
+					item.ObservedStatus = ReconciliationStatusManualInterventionRequired
 					item.ReasonCode = ReasonReconciliationOwnerMismatch
 					item.Diagnostic = fmt.Sprintf("owner mismatch: intent owner=%s, backend owner=%s", intent.Owner, bLease.Owner)
 					summary.ManualInterventionRequired++
 				} else {
-					item.Status = ReconciliationStatusManualInterventionRequired
+					item.ObservedStatus = ReconciliationStatusManualInterventionRequired
 					item.ReasonCode = ReasonReconciliationLeaseIDMismatch
 					item.Diagnostic = fmt.Sprintf("lease ID mismatch: intent leaseID=%s, backend leaseID=%s", intent.LeaseID, bLease.ID)
 					summary.ManualInterventionRequired++
@@ -487,30 +525,31 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 
 		case IntentStateReleasing:
 			if bLease != nil {
-				item.Status = ReconciliationStatusConfirmed
+				item.ObservedStatus = ReconciliationStatusConfirmed
 				item.ReasonCode = ReasonReconciliationReleasePending
 				item.Diagnostic = fmt.Sprintf("intent is RELEASING; backend lease ID %s release is in progress", bLease.ID)
 				summary.Confirmed++
 			} else {
-				item.Status = ReconciliationStatusReleased
+				item.ObservedStatus = ReconciliationStatusReleased
 				item.ReasonCode = ReasonReconciliationReleased
 				summary.Released++
 			}
 
 		case IntentStateTerminal:
 			if bLease == nil {
-				item.Status = ReconciliationStatusReleased
+				item.ObservedStatus = ReconciliationStatusReleased
 				item.ReasonCode = ReasonReconciliationReleased
 				summary.Released++
 			} else {
-				item.Status = ReconciliationStatusManualInterventionRequired
+				item.ObservedStatus = ReconciliationStatusManualInterventionRequired
 				item.ReasonCode = ReasonReconciliationOwnerMismatch
 				item.Diagnostic = fmt.Sprintf("intent state is TERMINAL, but backend holds active lease ID %s (owner %s)", bLease.ID, bLease.Owner)
 				summary.ManualInterventionRequired++
 			}
 		}
 
-		trackComposite(intent.CompositeID, item.Status)
+		item.FinalStatus = item.ObservedStatus
+		trackComposite(intent.CompositeID, intent.State, item.ObservedStatus)
 		items = append(items, item)
 	}
 
@@ -528,7 +567,8 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 				Scope:              scope,
 				BackendID:          bLease.ID,
 				BackendOwner:       bLease.Owner,
-				Status:             ReconciliationStatusManualInterventionRequired,
+				ObservedStatus:     ReconciliationStatusManualInterventionRequired,
+				FinalStatus:        ReconciliationStatusManualInterventionRequired,
 				ReasonCode:         ReasonReconciliationDuplicateBackendLeases,
 				RemediationOutcome: RemediationNotAttempted,
 				Diagnostic:         fmt.Sprintf("multiple active backend leases (%d) exist for scope %s", len(bLeasesOnScope), scope),
@@ -542,7 +582,8 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 			Scope:              scope,
 			BackendID:          bLease.ID,
 			BackendOwner:       bLease.Owner,
-			Status:             ReconciliationStatusOrphaned,
+			ObservedStatus:     ReconciliationStatusOrphaned,
+			FinalStatus:        ReconciliationStatusOrphaned,
 			ReasonCode:         ReasonReconciliationOrphaned,
 			RemediationOutcome: RemediationNotAttempted,
 		}
@@ -610,6 +651,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 							}
 							if !leaseStillActive {
 								item.RemediationOutcome = RemediationSucceeded
+								item.FinalStatus = ReconciliationStatusReleased
 								item.RemediationDetails = fmt.Sprintf("successfully released orphaned backend lease ID %s", bLease.ID)
 								summary.RemediatedOrphans++
 							} else {
@@ -627,7 +669,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 		items = append(items, item)
 	}
 
-	// Deterministically sort final report items by Scope -> IntentID -> BackendID -> Status -> ReasonCode
+	// Deterministically sort final report items by Scope -> IntentID -> BackendID -> ObservedStatus -> ReasonCode
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Scope != items[j].Scope {
 			return items[i].Scope < items[j].Scope
@@ -638,8 +680,8 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 		if items[i].BackendID != items[j].BackendID {
 			return items[i].BackendID < items[j].BackendID
 		}
-		if items[i].Status != items[j].Status {
-			return items[i].Status < items[j].Status
+		if items[i].ObservedStatus != items[j].ObservedStatus {
+			return items[i].ObservedStatus < items[j].ObservedStatus
 		}
 		return items[i].ReasonCode < items[j].ReasonCode
 	})
@@ -658,7 +700,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 			comp := compositeTracker[k]
 			if comp.Conflicted > 0 || comp.Missing > 0 {
 				comp.Status = ReconciliationStatusManualInterventionRequired
-			} else if comp.Confirmed > 0 {
+			} else if comp.Confirmed > 0 || comp.Pending > 0 {
 				comp.Status = ReconciliationStatusConfirmed
 			} else {
 				comp.Status = ReconciliationStatusReleased
