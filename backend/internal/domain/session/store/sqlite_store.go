@@ -569,7 +569,7 @@ func (s *SqliteStore) ListLeases(ctx context.Context) ([]Lease, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list leases: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var leases []Lease
 	for rows.Next() {

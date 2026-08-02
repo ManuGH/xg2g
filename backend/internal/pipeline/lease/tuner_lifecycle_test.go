@@ -15,7 +15,7 @@ import (
 
 // MockRenewalScheduler allows manual deterministic ticking without time.Sleep.
 type MockRenewalScheduler struct {
-	tickCh chan time.Time
+	tickCh  chan time.Time
 	stopped atomic.Bool
 }
 

@@ -14,14 +14,14 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("lease not found")
-	ErrOwnerMismatch = errors.New("lease owner mismatch")
-	ErrScopeConflict = errors.New("lease scope conflict")
-	ErrInvalidTTL    = errors.New("lease invalid TTL")
-	ErrInvalidOwner  = errors.New("lease invalid owner")
-	ErrInvalidScope  = errors.New("lease invalid scope")
-	ErrLeaseInactive     = errors.New("lease inactive or expired")
-	ErrManagerClosed     = errors.New("lease manager closed")
+	ErrNotFound           = errors.New("lease not found")
+	ErrOwnerMismatch      = errors.New("lease owner mismatch")
+	ErrScopeConflict      = errors.New("lease scope conflict")
+	ErrInvalidTTL         = errors.New("lease invalid TTL")
+	ErrInvalidOwner       = errors.New("lease invalid owner")
+	ErrInvalidScope       = errors.New("lease invalid scope")
+	ErrLeaseInactive      = errors.New("lease inactive or expired")
+	ErrManagerClosed      = errors.New("lease manager closed")
 	ErrBindingUnavailable = errors.New("tuner lease binding unavailable")
 )
 

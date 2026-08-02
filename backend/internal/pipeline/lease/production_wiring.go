@@ -502,14 +502,17 @@ type SessionStoreObservableBackend struct {
 }
 
 func (b SessionStoreObservableBackend) ListLeases(ctx context.Context) ([]Lease, error) {
+	if b.SessionStoreTunerLeaseController == nil {
+		return nil, ErrBindingUnavailable
+	}
 	return b.SessionStoreTunerLeaseController.ListLeases(ctx)
 }
 
 func (b SessionStoreObservableBackend) Acquire(ctx context.Context, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
-	if b.SessionStoreTunerLeaseController == nil || b.SessionStoreTunerLeaseController.Store == nil {
+	if b.SessionStoreTunerLeaseController == nil || b.Store == nil {
 		return nil, ErrBindingUnavailable
 	}
-	l, ok, err := b.SessionStoreTunerLeaseController.Store.TryAcquireLease(ctx, string(scope), string(owner), ttl)
+	l, ok, err := b.Store.TryAcquireLease(ctx, string(scope), string(owner), ttl)
 	if err != nil {
 		return nil, err
 	}
@@ -527,10 +530,10 @@ func (b SessionStoreObservableBackend) Acquire(ctx context.Context, owner Owner,
 }
 
 func (b SessionStoreObservableBackend) Renew(ctx context.Context, id ID, owner Owner, ttl time.Duration) (*Lease, error) {
-	if b.SessionStoreTunerLeaseController == nil || b.SessionStoreTunerLeaseController.Store == nil {
+	if b.SessionStoreTunerLeaseController == nil || b.Store == nil {
 		return nil, ErrBindingUnavailable
 	}
-	l, ok, err := b.SessionStoreTunerLeaseController.Store.RenewLease(ctx, string(id), string(owner), ttl)
+	l, ok, err := b.Store.RenewLease(ctx, string(id), string(owner), ttl)
 	if err != nil {
 		return nil, err
 	}
@@ -548,10 +551,10 @@ func (b SessionStoreObservableBackend) Renew(ctx context.Context, id ID, owner O
 }
 
 func (b SessionStoreObservableBackend) Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
-	if b.SessionStoreTunerLeaseController == nil || b.SessionStoreTunerLeaseController.Store == nil {
+	if b.SessionStoreTunerLeaseController == nil || b.Store == nil {
 		return nil, ErrBindingUnavailable
 	}
-	err := b.SessionStoreTunerLeaseController.Store.ReleaseLease(ctx, string(id), string(owner))
+	err := b.Store.ReleaseLease(ctx, string(id), string(owner))
 	if err != nil {
 		return nil, err
 	}
@@ -563,5 +566,3 @@ func (b SessionStoreObservableBackend) Release(ctx context.Context, id ID, owner
 		ReasonCode: reason,
 	}, nil
 }
-
-

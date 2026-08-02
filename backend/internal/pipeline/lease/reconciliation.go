@@ -177,31 +177,31 @@ type ObservableLeaseBackend interface {
 type ReconciliationStatus string
 
 const (
-	ReconciliationStatusConfirmed                 ReconciliationStatus = "confirmed"
-	ReconciliationStatusReleased                  ReconciliationStatus = "released"
-	ReconciliationStatusOrphaned                  ReconciliationStatus = "orphaned"
-	ReconciliationStatusMissing                   ReconciliationStatus = "missing"
+	ReconciliationStatusConfirmed                  ReconciliationStatus = "confirmed"
+	ReconciliationStatusReleased                   ReconciliationStatus = "released"
+	ReconciliationStatusOrphaned                   ReconciliationStatus = "orphaned"
+	ReconciliationStatusMissing                    ReconciliationStatus = "missing"
 	ReconciliationStatusManualInterventionRequired ReconciliationStatus = "manual-intervention-required"
-	CompositeStatusBroken                         ReconciliationStatus = "broken"
+	CompositeStatusBroken                          ReconciliationStatus = "broken"
 )
 
 // ReconciliationReasonCode provides structured machine-readable explanation for reconciliation items.
 type ReconciliationReasonCode string
 
 const (
-	ReasonReconciliationMatchConfirmed        ReconciliationReasonCode = "RECONCILIATION_MATCH_CONFIRMED"
-	ReasonReconciliationReleased              ReconciliationReasonCode = "RECONCILIATION_RELEASED"
-	ReasonReconciliationLeaseMissing          ReconciliationReasonCode = "RECONCILIATION_LEASE_MISSING"
-	ReasonReconciliationOrphaned              ReconciliationReasonCode = "RECONCILIATION_ORPHANED"
-	ReasonReconciliationOwnerMismatch         ReconciliationReasonCode = "RECONCILIATION_OWNER_MISMATCH"
-	ReasonReconciliationLeaseIDMismatch       ReconciliationReasonCode = "RECONCILIATION_LEASE_ID_MISMATCH"
-	ReasonReconciliationDuplicateIntents      ReconciliationReasonCode = "RECONCILIATION_DUPLICATE_INTENTS"
+	ReasonReconciliationMatchConfirmed         ReconciliationReasonCode = "RECONCILIATION_MATCH_CONFIRMED"
+	ReasonReconciliationReleased               ReconciliationReasonCode = "RECONCILIATION_RELEASED"
+	ReasonReconciliationLeaseMissing           ReconciliationReasonCode = "RECONCILIATION_LEASE_MISSING"
+	ReasonReconciliationOrphaned               ReconciliationReasonCode = "RECONCILIATION_ORPHANED"
+	ReasonReconciliationOwnerMismatch          ReconciliationReasonCode = "RECONCILIATION_OWNER_MISMATCH"
+	ReasonReconciliationLeaseIDMismatch        ReconciliationReasonCode = "RECONCILIATION_LEASE_ID_MISMATCH"
+	ReasonReconciliationDuplicateIntents       ReconciliationReasonCode = "RECONCILIATION_DUPLICATE_INTENTS"
 	ReasonReconciliationDuplicateBackendLeases ReconciliationReasonCode = "RECONCILIATION_DUPLICATE_BACKEND_LEASES"
-	ReasonReconciliationOrphanReleaseFailed   ReconciliationReasonCode = "RECONCILIATION_ORPHAN_RELEASE_FAILED"
-	ReasonReconciliationRevalidationFailed    ReconciliationReasonCode = "RECONCILIATION_REVALIDATION_FAILED"
-	ReasonReconciliationPendingAcquisition   ReconciliationReasonCode = "RECONCILIATION_PENDING_ACQUISITION"
-	ReasonReconciliationReleasePending       ReconciliationReasonCode = "RECONCILIATION_RELEASE_PENDING"
-	ReasonReconciliationBrokenComposite       ReconciliationReasonCode = "RECONCILIATION_BROKEN_COMPOSITE"
+	ReasonReconciliationOrphanReleaseFailed    ReconciliationReasonCode = "RECONCILIATION_ORPHAN_RELEASE_FAILED"
+	ReasonReconciliationRevalidationFailed     ReconciliationReasonCode = "RECONCILIATION_REVALIDATION_FAILED"
+	ReasonReconciliationPendingAcquisition     ReconciliationReasonCode = "RECONCILIATION_PENDING_ACQUISITION"
+	ReasonReconciliationReleasePending         ReconciliationReasonCode = "RECONCILIATION_RELEASE_PENDING"
+	ReasonReconciliationBrokenComposite        ReconciliationReasonCode = "RECONCILIATION_BROKEN_COMPOSITE"
 )
 
 // RemediationOutcome describes the result of an automated remediation attempt.
@@ -375,11 +375,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 		case IntentStatePending, IntentStateReleasing:
 			comp.Pending++
 		case IntentStateActive:
-			if status == ReconciliationStatusConfirmed {
+			switch status {
+			case ReconciliationStatusConfirmed:
 				comp.Confirmed++
-			} else if status == ReconciliationStatusMissing {
+			case ReconciliationStatusMissing:
 				comp.Missing++
-			} else {
+			default:
 				comp.Conflicted++
 			}
 		case IntentStateTerminal:

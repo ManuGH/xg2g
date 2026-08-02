@@ -64,7 +64,7 @@ func NewFileIntentStoreWithConfig(cfg FileIntentStoreConfig) (*FileIntentStore, 
 	openStorePathsMu.Unlock()
 
 	dir := filepath.Dir(clean)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		openStorePathsMu.Lock()
 		delete(openStorePaths, clean)
 		openStorePathsMu.Unlock()
@@ -153,7 +153,7 @@ func (s *FileIntentStore) persistLocked(intentsMap map[ID]LeaseIntent) error {
 	dir := filepath.Dir(s.filePath)
 	tmpFile := s.filePath + ".tmp"
 
-	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //nolint:gosec // G304: internal tmp file
 	if err != nil {
 		return fmt.Errorf("failed to open temp intent file: %w", err)
 	}
@@ -181,7 +181,7 @@ func (s *FileIntentStore) persistLocked(intentsMap map[ID]LeaseIntent) error {
 	}
 
 	// fsync parent directory to guarantee directory entry durability
-	d, err := os.Open(dir)
+	d, err := os.Open(dir) //nolint:gosec // G304: directory path
 	if err != nil {
 		return fmt.Errorf("%w: open parent directory for fsync: %v", ErrIntentDurabilityUncertain, err)
 	}

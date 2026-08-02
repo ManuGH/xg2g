@@ -36,10 +36,10 @@ type RecordingLeaseBackend struct {
 func NewRecordingLeaseBackend(realBackend LeaseBackend) *RecordingLeaseBackend {
 	return &RecordingLeaseBackend{
 		backend:              realBackend,
-		failAcquireScope:    make(map[Scope]error),
-		failRenewScope:      make(map[Scope]error),
-		failReleaseScope:    make(map[Scope]error),
-		failReleaseOwner:    make(map[Owner]error),
+		failAcquireScope:     make(map[Scope]error),
+		failRenewScope:       make(map[Scope]error),
+		failReleaseScope:     make(map[Scope]error),
+		failReleaseOwner:     make(map[Owner]error),
 		overrideAcquireLease: make(map[Scope]*Lease),
 		overrideRenewLease:   make(map[ID]*Lease),
 	}
