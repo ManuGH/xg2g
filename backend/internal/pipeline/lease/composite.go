@@ -42,6 +42,7 @@ type LeaseToken struct {
 type acquiredResource struct {
 	RequestedScope Scope
 	Token          LeaseToken
+	Snapshot       Lease
 }
 
 // CompositeState represents the lifecycle status of an acquired multi-resource composite lease.
@@ -319,6 +320,7 @@ func (cm *CompositeManager) AcquireComposite(ctx context.Context, owner Owner, r
 			acquiredWithReturned := append(acquired, acquiredResource{
 				RequestedScope: req.Scope,
 				Token:          tok,
+				Snapshot:       *l,
 			})
 			cCtx, cancel := getCleanupCtx()
 			defer cancel()
@@ -328,6 +330,7 @@ func (cm *CompositeManager) AcquireComposite(ctx context.Context, owner Owner, r
 		acquired = append(acquired, acquiredResource{
 			RequestedScope: req.Scope,
 			Token:          tok,
+			Snapshot:       *l,
 		})
 	}
 
@@ -357,13 +360,7 @@ func (cm *CompositeManager) AcquireComposite(ctx context.Context, owner Owner, r
 	members := make([]*CompositeMember, len(acquired))
 	for i, res := range acquired {
 		members[i] = &CompositeMember{
-			Lease: Lease{
-				ID:        res.Token.ID,
-				Owner:     res.Token.Owner,
-				Scope:     res.Token.Scope,
-				State:     StateAcquired,
-				AcquiredAt: time.Now(),
-			},
+			Lease:    res.Snapshot,
 			Released: false,
 		}
 	}

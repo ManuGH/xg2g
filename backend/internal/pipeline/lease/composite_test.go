@@ -638,3 +638,133 @@ func TestCompositeManager_RaceConditions(t *testing.T) {
 
 	wg.Wait()
 }
+
+// TestCompositeManager_PreservesBackendLeaseSnapshot verifies that AcquiredAt, ExpiresAt, ReasonCode,
+// and State of the backend-returned Lease are preserved verbatim without synthesizing fields.
+func TestCompositeManager_PreservesBackendLeaseSnapshot(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	rec := NewRecordingLeaseBackend(mgr)
+
+	fixedAcquiredAt := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	fixedExpiresAt := fixedAcquiredAt.Add(90 * time.Second)
+
+	customLease := &Lease{
+		ID:         "lease-custom-123",
+		Owner:      "worker-1",
+		Scope:      "res:A",
+		State:      StateAcquired,
+		ReasonCode: ReasonAcquired,
+		AcquiredAt: fixedAcquiredAt,
+		ExpiresAt:  fixedExpiresAt,
+	}
+
+	rec.overrideAcquireLease["res:A"] = customLease
+
+	cm := NewCompositeManager(CompositeManagerConfig{Backend: rec})
+	ctx := context.Background()
+
+	handle, err := cm.AcquireComposite(ctx, "worker-1", []ResourceRequest{{Scope: "res:A", TTL: 90 * time.Second}})
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	members := handle.Members()
+	if len(members) != 1 {
+		t.Fatalf("expected 1 member, got %d", len(members))
+	}
+
+	lSnapshot := members[0].Lease
+	if lSnapshot.ID != "lease-custom-123" {
+		t.Errorf("expected ID lease-custom-123, got %s", lSnapshot.ID)
+	}
+	if !lSnapshot.AcquiredAt.Equal(fixedAcquiredAt) {
+		t.Errorf("expected AcquiredAt %v, got %v", fixedAcquiredAt, lSnapshot.AcquiredAt)
+	}
+	if !lSnapshot.ExpiresAt.Equal(fixedExpiresAt) {
+		t.Errorf("expected ExpiresAt %v, got %v", fixedExpiresAt, lSnapshot.ExpiresAt)
+	}
+	if lSnapshot.ReasonCode != ReasonAcquired {
+		t.Errorf("expected ReasonCode %s, got %s", ReasonAcquired, lSnapshot.ReasonCode)
+	}
+	if lSnapshot.State != StateAcquired {
+		t.Errorf("expected State %s, got %s", StateAcquired, lSnapshot.State)
+	}
+}
+
+// TestCompositeManager_MembersAndLeasesDeepCopy verifies that mutating returned slices or elements
+// does NOT mutate the internal handle state.
+func TestCompositeManager_MembersAndLeasesDeepCopy(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	cm := NewCompositeManager(CompositeManagerConfig{Backend: mgr})
+
+	ctx := context.Background()
+	handle, err := cm.AcquireComposite(ctx, "worker-1", []ResourceRequest{{Scope: "res:A", TTL: 5 * time.Minute}})
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	// Mutate Members() result
+	members := handle.Members()
+	members[0].Lease.Owner = "hacked-owner"
+	members[0].Released = true
+
+	// Mutate Leases() result
+	leases := handle.Leases()
+	leases[0].Scope = "hacked-scope"
+
+	// Verify internal handle state is untouched
+	freshMembers := handle.Members()
+	if freshMembers[0].Lease.Owner != "worker-1" {
+		t.Errorf("internal handle owner was mutated! got %s", freshMembers[0].Lease.Owner)
+	}
+	if freshMembers[0].Released {
+		t.Errorf("internal handle release state was mutated!")
+	}
+	if freshMembers[0].Lease.Scope != "res:A" {
+		t.Errorf("internal handle scope was mutated! got %s", freshMembers[0].Lease.Scope)
+	}
+}
+
+// TestCompositeManager_RenewUpdatesSnapshotWithBackendLease verifies that RenewComposite replaces
+// member Lease snapshot exclusively with the validated backend-returned Lease.
+func TestCompositeManager_RenewUpdatesSnapshotWithBackendLease(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	rec := NewRecordingLeaseBackend(mgr)
+	cm := NewCompositeManager(CompositeManagerConfig{Backend: rec})
+
+	ctx := context.Background()
+	handle, err := cm.AcquireComposite(ctx, "worker-1", []ResourceRequest{{Scope: "res:A", TTL: 5 * time.Minute}})
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	originalLease := handle.Leases()[0]
+	renewedExpiresAt := time.Now().Add(20 * time.Minute)
+
+	renewedLease := &Lease{
+		ID:         originalLease.ID,
+		Owner:      originalLease.Owner,
+		Scope:      originalLease.Scope,
+		State:      StateAcquired,
+		ReasonCode: ReasonAcquired,
+		AcquiredAt: originalLease.AcquiredAt,
+		ExpiresAt:  renewedExpiresAt,
+	}
+
+	rec.overrideRenewLease[originalLease.ID] = renewedLease
+
+	if err := cm.RenewComposite(ctx, handle, 20*time.Minute); err != nil {
+		t.Fatalf("renew failed: %v", err)
+	}
+
+	updatedLeases := handle.Leases()
+	if !updatedLeases[0].ExpiresAt.Equal(renewedExpiresAt) {
+		t.Errorf("expected ExpiresAt %v after renew, got %v", renewedExpiresAt, updatedLeases[0].ExpiresAt)
+	}
+	if updatedLeases[0].ReasonCode != ReasonAcquired {
+		t.Errorf("expected ReasonCode %s after renew, got %s", ReasonAcquired, updatedLeases[0].ReasonCode)
+	}
+}
