@@ -14,27 +14,45 @@ import (
 )
 
 // FileIntentStore is a thread-safe persistent implementation of IntentStore that persists LeaseIntents to a JSON file.
-// Intents survive process restarts and crashes.
+// Designed for single-writer process ownership with atomic file replacement and fsync durability.
 type FileIntentStore struct {
 	mu       sync.RWMutex
 	filePath string
 	intents  map[ID]LeaseIntent
+	nowFunc  func() time.Time
+}
+
+// FileIntentStoreConfig configures FileIntentStore options.
+type FileIntentStoreConfig struct {
+	FilePath string
+	Clock    func() time.Time
 }
 
 // NewFileIntentStore creates or opens a FileIntentStore at the given filePath.
 func NewFileIntentStore(filePath string) (*FileIntentStore, error) {
-	if filePath == "" {
+	return NewFileIntentStoreWithConfig(FileIntentStoreConfig{FilePath: filePath})
+}
+
+// NewFileIntentStoreWithConfig creates or opens a FileIntentStore using configuration options.
+func NewFileIntentStoreWithConfig(cfg FileIntentStoreConfig) (*FileIntentStore, error) {
+	if cfg.FilePath == "" {
 		return nil, fmt.Errorf("%w: file path cannot be empty", ErrInvalidIntent)
 	}
 
-	dir := filepath.Dir(filePath)
+	dir := filepath.Dir(cfg.FilePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create intent store directory: %w", err)
 	}
 
+	clock := cfg.Clock
+	if clock == nil {
+		clock = time.Now
+	}
+
 	store := &FileIntentStore{
-		filePath: filePath,
+		filePath: cfg.FilePath,
 		intents:  make(map[ID]LeaseIntent),
+		nowFunc:  clock,
 	}
 
 	if err := store.load(); err != nil {
@@ -66,19 +84,47 @@ func (s *FileIntentStore) load() error {
 	return nil
 }
 
-func (s *FileIntentStore) saveLocked() error {
-	data, err := json.MarshalIndent(s.intents, "", "  ")
+func (s *FileIntentStore) persistLocked(intentsMap map[ID]LeaseIntent) error {
+	data, err := json.MarshalIndent(intentsMap, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal intents: %w", err)
 	}
 
+	dir := filepath.Dir(s.filePath)
 	tmpFile := s.filePath + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+
+	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open temp intent file: %w", err)
+	}
+
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
 		return fmt.Errorf("failed to write temp intent file: %w", err)
 	}
 
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to fsync temp intent file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to close temp intent file: %w", err)
+	}
+
 	if err := os.Rename(tmpFile, s.filePath); err != nil {
+		_ = os.Remove(tmpFile)
 		return fmt.Errorf("failed to rename intent store file: %w", err)
+	}
+
+	// fsync parent directory to ensure directory entry durability
+	d, err := os.Open(dir)
+	if err == nil {
+		_ = d.Sync()
+		_ = d.Close()
 	}
 
 	return nil
@@ -94,16 +140,36 @@ func validateIntent(intent LeaseIntent) error {
 	if intent.Scope == "" {
 		return fmt.Errorf("%w: scope cannot be empty", ErrInvalidScope)
 	}
-	if intent.State == "" {
-		return fmt.Errorf("%w: state cannot be empty", ErrInvalidIntent)
+
+	switch intent.State {
+	case IntentStatePending, IntentStateActive, IntentStateReleasing, IntentStateTerminal:
+	default:
+		return fmt.Errorf("%w: invalid intent state %q", ErrInvalidIntent, intent.State)
 	}
+
 	if intent.State == IntentStateActive && intent.LeaseID == "" {
 		return fmt.Errorf("%w: ACTIVE intent requires non-empty LeaseID", ErrInvalidIntent)
 	}
+	if intent.State == IntentStatePending && intent.LeaseID != "" {
+		return fmt.Errorf("%w: PENDING intent cannot have LeaseID", ErrInvalidIntent)
+	}
+	if !intent.CreatedAt.IsZero() && !intent.UpdatedAt.IsZero() && intent.UpdatedAt.Before(intent.CreatedAt) {
+		return fmt.Errorf("%w: UpdatedAt (%v) cannot be before CreatedAt (%v)", ErrInvalidIntent, intent.UpdatedAt, intent.CreatedAt)
+	}
+
 	return nil
 }
 
-// SaveIntent persists an intent. Rejects updates with a lower revision than the existing intent.
+func cloneIntentMap(m map[ID]LeaseIntent) map[ID]LeaseIntent {
+	cp := make(map[ID]LeaseIntent, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
+}
+
+// SaveIntent persists an intent enforcing CAS revision increments.
+// Memory map is updated ONLY after disk persistence succeeds.
 func (s *FileIntentStore) SaveIntent(ctx context.Context, intent LeaseIntent) error {
 	if ctx != nil && ctx.Err() != nil {
 		return ctx.Err()
@@ -115,26 +181,42 @@ func (s *FileIntentStore) SaveIntent(ctx context.Context, intent LeaseIntent) er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	now := s.nowFunc()
 	existing, exists := s.intents[intent.IntentID]
-	if exists {
-		if intent.Revision < existing.Revision {
-			return fmt.Errorf("%w: intent revision %d is lower than existing revision %d", ErrIntentConflict, intent.Revision, existing.Revision)
-		}
-	}
 
-	if intent.CreatedAt.IsZero() {
-		if exists {
+	if !exists {
+		if intent.Revision == 0 {
+			intent.Revision = 1
+		} else if intent.Revision != 1 {
+			return fmt.Errorf("%w: new intent must start at revision 1, got %d", ErrIntentConflict, intent.Revision)
+		}
+		if intent.CreatedAt.IsZero() {
+			intent.CreatedAt = now
+		}
+	} else {
+		if intent.Revision != existing.Revision+1 {
+			return fmt.Errorf("%w: intent update revision must be exactly existing revision+1 (%d), got %d",
+				ErrIntentConflict, existing.Revision+1, intent.Revision)
+		}
+		if intent.CreatedAt.IsZero() {
 			intent.CreatedAt = existing.CreatedAt
-		} else {
-			intent.CreatedAt = time.Now()
 		}
 	}
-	if intent.UpdatedAt.IsZero() {
-		intent.UpdatedAt = time.Now()
+
+	if intent.UpdatedAt.IsZero() || intent.UpdatedAt.Before(intent.CreatedAt) {
+		intent.UpdatedAt = now
 	}
 
-	s.intents[intent.IntentID] = intent
-	return s.saveLocked()
+	// Copy-on-write memory safety
+	nextMap := cloneIntentMap(s.intents)
+	nextMap[intent.IntentID] = intent
+
+	if err := s.persistLocked(nextMap); err != nil {
+		return err
+	}
+
+	s.intents = nextMap
+	return nil
 }
 
 // GetIntent retrieves an intent by IntentID.
@@ -168,6 +250,7 @@ func (s *FileIntentStore) ListIntents(ctx context.Context) ([]LeaseIntent, error
 }
 
 // DeleteIntent removes an intent by IntentID.
+// Memory map is updated ONLY after disk persistence succeeds.
 func (s *FileIntentStore) DeleteIntent(ctx context.Context, intentID ID) error {
 	if ctx != nil && ctx.Err() != nil {
 		return ctx.Err()
@@ -179,6 +262,13 @@ func (s *FileIntentStore) DeleteIntent(ctx context.Context, intentID ID) error {
 		return nil // Idempotent delete
 	}
 
-	delete(s.intents, intentID)
-	return s.saveLocked()
+	nextMap := cloneIntentMap(s.intents)
+	delete(nextMap, intentID)
+
+	if err := s.persistLocked(nextMap); err != nil {
+		return err
+	}
+
+	s.intents = nextMap
+	return nil
 }

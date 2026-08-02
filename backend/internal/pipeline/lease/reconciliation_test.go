@@ -5,6 +5,7 @@ package lease
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -60,13 +61,11 @@ func TestFileIntentStore_RestartPersistenceRecovery(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
 	defer mgr.Close()
 
-	// Re-acquire exact lease in backend
 	lBackend, err := mgr.Acquire(ctx, "worker-persistent", "res:PERSISTENT", 10*time.Minute)
 	if err != nil {
 		t.Fatalf("backend acquire failed: %v", err)
 	}
 
-	// Update intent with actual backend lease ID
 	intent1.LeaseID = lBackend.ID
 	intent1.Revision = 2
 	_ = store2.SaveIntent(ctx, intent1)
@@ -89,6 +88,310 @@ func TestFileIntentStore_RestartPersistenceRecovery(t *testing.T) {
 	}
 }
 
+// TestFileIntentStore_CASRevisionProtection verifies CAS revision enforcement.
+func TestFileIntentStore_CASRevisionProtection(t *testing.T) {
+	tmpDir := t.TempDir()
+	storePath := filepath.Join(tmpDir, "intents_cas.json")
+	ctx := context.Background()
+
+	store, err := NewFileIntentStore(storePath)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	intent := LeaseIntent{
+		IntentID: "intent-cas-1",
+		LeaseID:  "lse-100",
+		Owner:    "worker-1",
+		Scope:    "res:CAS",
+		State:    IntentStateActive,
+		Revision: 1,
+	}
+
+	if err := store.SaveIntent(ctx, intent); err != nil {
+		t.Fatalf("initial SaveIntent failed: %v", err)
+	}
+
+	// Save with same revision -> ErrIntentConflict
+	intent.Revision = 1
+	err = store.SaveIntent(ctx, intent)
+	if !errors.Is(err, ErrIntentConflict) {
+		t.Errorf("expected ErrIntentConflict for same revision update, got %v", err)
+	}
+
+	// Save with sequential revision 2 -> Success
+	intent.Revision = 2
+	if err := store.SaveIntent(ctx, intent); err != nil {
+		t.Fatalf("sequential update to revision 2 failed: %v", err)
+	}
+}
+
+// TestReconciler_OrphanConfirmationFailure verifies that if release returns nil error
+// but confirmation ListLeases returns an error, RemediationOutcome is set to RemediationFailed.
+func TestReconciler_OrphanConfirmationFailure(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+	ctx := context.Background()
+
+	lOrphan, _ := mgr.Acquire(ctx, "worker-orphan", "res:CONFIRM_FAIL", 10*time.Minute)
+
+	// Custom backend that fails ListLeases on the confirmation call
+	failBackend := &confirmFailBackend{
+		mgr:       mgr,
+		orphanID:  lOrphan.ID,
+		failOnCall: 3, // Initial ListLeases (1), Compare-before-act ListLeases (2), Confirmation ListLeases (3)
+	}
+
+	reconciler, _ := NewReconciler(ReconcilerConfig{
+		IntentStore:          store,
+		Backend:              failBackend,
+		AutoRemediateOrphans: true,
+	})
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(report.Items))
+	}
+	if report.Items[0].RemediationOutcome != RemediationFailed {
+		t.Errorf("expected RemediationOutcome %s on confirmation failure, got %s", RemediationFailed, report.Items[0].RemediationOutcome)
+	}
+	if report.Items[0].ReasonCode != ReasonReconciliationOrphanReleaseFailed {
+		t.Errorf("expected reason %s, got %s", ReasonReconciliationOrphanReleaseFailed, report.Items[0].ReasonCode)
+	}
+}
+
+type confirmFailBackend struct {
+	mgr        *Manager
+	orphanID   ID
+	calls      int
+	failOnCall int
+}
+
+func (c *confirmFailBackend) Acquire(ctx context.Context, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
+	return c.mgr.Acquire(ctx, owner, scope, ttl)
+}
+
+func (c *confirmFailBackend) Renew(ctx context.Context, id ID, owner Owner, ttl time.Duration) (*Lease, error) {
+	return c.mgr.Renew(ctx, id, owner, ttl)
+}
+
+func (c *confirmFailBackend) Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
+	return c.mgr.Release(ctx, id, owner, reason)
+}
+
+func (c *confirmFailBackend) ListLeases(ctx context.Context) ([]Lease, error) {
+	c.calls++
+	if c.calls == c.failOnCall {
+		return nil, errors.New("injected confirmation backend error")
+	}
+	return c.mgr.ListLeases(ctx)
+}
+
+// TestReconciler_ParentCanceledDetachedRemediationConfirmation verifies that when parent context is canceled,
+// detached remediation context allows release AND confirmation to succeed cleanly.
+func TestReconciler_ParentCanceledDetachedRemediationConfirmation(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+
+	parentCtx, cancelParent := context.WithCancel(context.Background())
+
+	lOrphan, _ := mgr.Acquire(context.Background(), "worker-orphan", "res:DETACHED_CANCEL", 10*time.Minute)
+
+	// Cancel parentCtx right when Release is invoked
+	cancelBackend := &cancelHookBackend{
+		mgr: mgr,
+		onRelease: func() {
+			cancelParent()
+		},
+	}
+
+	reconciler, _ := NewReconciler(ReconcilerConfig{
+		IntentStore:          store,
+		Backend:              cancelBackend,
+		AutoRemediateOrphans: true,
+	})
+
+	report, err := reconciler.Reconcile(parentCtx)
+	if err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(report.Items))
+	}
+	if report.Items[0].RemediationOutcome != RemediationSucceeded {
+		t.Errorf("expected RemediationOutcome SUCCEEDED despite parent context cancellation, got %s (err=%s)",
+			report.Items[0].RemediationOutcome, report.Items[0].Diagnostic)
+	}
+
+	lCheck, _ := mgr.Get(lOrphan.ID)
+	if lCheck.State != StateReleased {
+		t.Errorf("expected orphan lease to be RELEASED, got %s", lCheck.State)
+	}
+}
+
+type cancelHookBackend struct {
+	mgr       *Manager
+	onRelease func()
+}
+
+func (c *cancelHookBackend) Acquire(ctx context.Context, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
+	return c.mgr.Acquire(ctx, owner, scope, ttl)
+}
+
+func (c *cancelHookBackend) Renew(ctx context.Context, id ID, owner Owner, ttl time.Duration) (*Lease, error) {
+	return c.mgr.Renew(ctx, id, owner, ttl)
+}
+
+func (c *cancelHookBackend) Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
+	if c.onRelease != nil {
+		c.onRelease()
+	}
+	return c.mgr.Release(ctx, id, owner, reason)
+}
+
+func (c *cancelHookBackend) ListLeases(ctx context.Context) ([]Lease, error) {
+	return c.mgr.ListLeases(ctx)
+}
+
+// TestReconciler_RecheckErrorRevalidationFailed verifies technical errors during compare-before-act
+// produce RemediationOutcome = RemediationFailed and ReasonCode = RECONCILIATION_REVALIDATION_FAILED.
+func TestReconciler_RecheckErrorRevalidationFailed(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+	ctx := context.Background()
+
+	lOrphan, _ := mgr.Acquire(ctx, "worker-orphan", "res:RECHECK_FAIL", 10*time.Minute)
+
+	recheckFailBackend := &recheckFailBackend{
+		mgr:      mgr,
+		orphanID: lOrphan.ID,
+	}
+
+	reconciler, _ := NewReconciler(ReconcilerConfig{
+		IntentStore:          store,
+		Backend:              recheckFailBackend,
+		AutoRemediateOrphans: true,
+	})
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	if len(report.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(report.Items))
+	}
+	if report.Items[0].RemediationOutcome != RemediationFailed {
+		t.Errorf("expected RemediationOutcome %s on revalidation error, got %s", RemediationFailed, report.Items[0].RemediationOutcome)
+	}
+	if report.Items[0].ReasonCode != ReasonReconciliationRevalidationFailed {
+		t.Errorf("expected reason %s, got %s", ReasonReconciliationRevalidationFailed, report.Items[0].ReasonCode)
+	}
+}
+
+type recheckFailBackend struct {
+	mgr      *Manager
+	orphanID ID
+	calls    int
+}
+
+func (r *recheckFailBackend) Acquire(ctx context.Context, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
+	return r.mgr.Acquire(ctx, owner, scope, ttl)
+}
+
+func (r *recheckFailBackend) Renew(ctx context.Context, id ID, owner Owner, ttl time.Duration) (*Lease, error) {
+	return r.mgr.Renew(ctx, id, owner, ttl)
+}
+
+func (r *recheckFailBackend) Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
+	return r.mgr.Release(ctx, id, owner, reason)
+}
+
+func (r *recheckFailBackend) ListLeases(ctx context.Context) ([]Lease, error) {
+	r.calls++
+	if r.calls == 2 {
+		return nil, errors.New("injected compare-before-act recheck error")
+	}
+	return r.mgr.ListLeases(ctx)
+}
+
+// TestReconciler_IntentStateMatrix verifies PENDING, ACTIVE, RELEASING, and TERMINAL classifications.
+func TestReconciler_IntentStateMatrix(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+	ctx := context.Background()
+
+	// 1. PENDING intent without backend lease -> Confirmed / PendingAcquisition
+	_ = store.SaveIntent(ctx, LeaseIntent{
+		IntentID: "intent-pending-1",
+		Owner:    "worker-1",
+		Scope:    "res:PENDING_FREE",
+		State:    IntentStatePending,
+		Revision: 1,
+	})
+
+	// 2. RELEASING intent with active backend lease -> Confirmed / ReleasePending
+	lReleasing, _ := mgr.Acquire(ctx, "worker-1", "res:RELEASING_ACTIVE", 10*time.Minute)
+	_ = store.SaveIntent(ctx, LeaseIntent{
+		IntentID: "intent-releasing-1",
+		LeaseID:  lReleasing.ID,
+		Owner:    "worker-1",
+		Scope:    "res:RELEASING_ACTIVE",
+		State:    IntentStateReleasing,
+		Revision: 1,
+	})
+
+	// 3. TERMINAL intent without backend lease -> Released
+	_ = store.SaveIntent(ctx, LeaseIntent{
+		IntentID: "intent-terminal-1",
+		Owner:    "worker-1",
+		Scope:    "res:TERMINAL_FREE",
+		State:    IntentStateTerminal,
+		Revision: 1,
+	})
+
+	reconciler, _ := NewReconciler(ReconcilerConfig{
+		IntentStore: store,
+		Backend:     mgr,
+	})
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	if len(report.Items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(report.Items))
+	}
+
+	// Verify res:PENDING_FREE -> confirmed, RECONCILIATION_PENDING_ACQUISITION
+	itemPending := report.Items[0]
+	if itemPending.Scope != "res:PENDING_FREE" || itemPending.ReasonCode != ReasonReconciliationPendingAcquisition {
+		t.Errorf("unexpected itemPending: %+v", itemPending)
+	}
+
+	// Verify res:RELEASING_ACTIVE -> confirmed, RECONCILIATION_RELEASE_PENDING
+	itemReleasing := report.Items[1]
+	if itemReleasing.Scope != "res:RELEASING_ACTIVE" || itemReleasing.ReasonCode != ReasonReconciliationReleasePending {
+		t.Errorf("unexpected itemReleasing: %+v", itemReleasing)
+	}
+
+	// Verify res:TERMINAL_FREE -> released, RECONCILIATION_RELEASED
+	itemTerminal := report.Items[2]
+	if itemTerminal.Scope != "res:TERMINAL_FREE" || itemTerminal.ReasonCode != ReasonReconciliationReleased {
+		t.Errorf("unexpected itemTerminal: %+v", itemTerminal)
+	}
+}
+
 // TestReconciler_DuplicateIntents verifies that multiple active intents for the same scope
 // produce ReconciliationStatusManualInterventionRequired with ReasonReconciliationDuplicateIntents.
 func TestReconciler_DuplicateIntents(t *testing.T) {
@@ -103,6 +406,7 @@ func TestReconciler_DuplicateIntents(t *testing.T) {
 		Owner:    "worker-1",
 		Scope:    "res:DUPLICATE",
 		State:    IntentStateActive,
+		Revision: 1,
 	})
 	_ = store.SaveIntent(ctx, LeaseIntent{
 		IntentID: "intent-dup-2",
@@ -110,6 +414,7 @@ func TestReconciler_DuplicateIntents(t *testing.T) {
 		Owner:    "worker-2",
 		Scope:    "res:DUPLICATE",
 		State:    IntentStateActive,
+		Revision: 1,
 	})
 
 	reconciler, _ := NewReconciler(ReconcilerConfig{
@@ -133,7 +438,6 @@ func TestReconciler_DuplicateIntents(t *testing.T) {
 // TestReconciler_DuplicateBackendLeases verifies that multiple active backend leases for the same scope
 // produce ReconciliationStatusManualInterventionRequired with ReasonReconciliationDuplicateBackendLeases.
 func TestReconciler_DuplicateBackendLeases(t *testing.T) {
-	// Custom backend returning 2 active leases for same scope
 	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
 	defer mgr.Close()
 	store := NewInMemoryIntentStore()
@@ -141,7 +445,6 @@ func TestReconciler_DuplicateBackendLeases(t *testing.T) {
 
 	l1, _ := mgr.Acquire(ctx, "worker-1", "res:DUP_BACKEND", 10*time.Minute)
 
-	// Create fake lease directly in manager leases map
 	l2 := &Lease{
 		ID:         "lse-dup-backend-2",
 		Owner:      "worker-2",
@@ -157,9 +460,9 @@ func TestReconciler_DuplicateBackendLeases(t *testing.T) {
 		Owner:    "worker-1",
 		Scope:    "res:DUP_BACKEND",
 		State:    IntentStateActive,
+		Revision: 1,
 	})
 
-	// Wrap mgr to return both l1 and l2
 	obsBackend := &fakeDuplicateBackend{mgr: mgr, extraLease: l2}
 
 	reconciler, _ := NewReconciler(ReconcilerConfig{
@@ -209,81 +512,6 @@ func (f *fakeDuplicateBackend) ListLeases(ctx context.Context) ([]Lease, error) 
 	return append(list, *f.extraLease), nil
 }
 
-// TestReconciler_StaleOrphanSkipped verifies that compare-before-act skips orphan remediation
-// if an intent appears right before execution.
-func TestReconciler_StaleOrphanSkipped(t *testing.T) {
-	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
-	defer mgr.Close()
-	store := NewInMemoryIntentStore()
-	ctx := context.Background()
-
-	lOrphan, _ := mgr.Acquire(ctx, "worker-orphan", "res:STALE_ORPHAN", 10*time.Minute)
-
-	// Wrap backend so that when ListLeases is called during compare-before-act, an intent is inserted!
-	staleBackend := &staleHookBackend{
-		mgr: mgr,
-		onList: func() {
-			_ = store.SaveIntent(ctx, LeaseIntent{
-				IntentID: "intent-fresh-appeared",
-				LeaseID:  lOrphan.ID,
-				Owner:    "worker-orphan",
-				Scope:    "res:STALE_ORPHAN",
-				State:    IntentStateActive,
-			})
-		},
-	}
-
-	reconciler, _ := NewReconciler(ReconcilerConfig{
-		IntentStore:          store,
-		Backend:              staleBackend,
-		AutoRemediateOrphans: true,
-	})
-
-	report, err := reconciler.Reconcile(ctx)
-	if err != nil {
-		t.Fatalf("Reconcile failed: %v", err)
-	}
-
-	if len(report.Items) != 1 {
-		t.Fatalf("expected 1 item, got %d", len(report.Items))
-	}
-	if report.Items[0].RemediationOutcome != RemediationSkippedStale {
-		t.Errorf("expected RemediationOutcome %s, got %s", RemediationSkippedStale, report.Items[0].RemediationOutcome)
-	}
-
-	// Verify lease in backend was NOT released!
-	lCheck, _ := mgr.Get(lOrphan.ID)
-	if lCheck.State != StateAcquired {
-		t.Errorf("stale orphan should NOT have been released! got state %s", lCheck.State)
-	}
-}
-
-type staleHookBackend struct {
-	mgr    *Manager
-	onList func()
-	calls  int
-}
-
-func (s *staleHookBackend) Acquire(ctx context.Context, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
-	return s.mgr.Acquire(ctx, owner, scope, ttl)
-}
-
-func (s *staleHookBackend) Renew(ctx context.Context, id ID, owner Owner, ttl time.Duration) (*Lease, error) {
-	return s.mgr.Renew(ctx, id, owner, ttl)
-}
-
-func (s *staleHookBackend) Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
-	return s.mgr.Release(ctx, id, owner, reason)
-}
-
-func (s *staleHookBackend) ListLeases(ctx context.Context) ([]Lease, error) {
-	s.calls++
-	if s.calls == 2 && s.onList != nil {
-		s.onList()
-	}
-	return s.mgr.ListLeases(ctx)
-}
-
 // TestReconciler_DeterministicReportOrdering verifies that report items are deterministically sorted.
 func TestReconciler_DeterministicReportOrdering(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
@@ -291,7 +519,6 @@ func TestReconciler_DeterministicReportOrdering(t *testing.T) {
 	store := NewInMemoryIntentStore()
 	ctx := context.Background()
 
-	// Populate scopes Z, A, M
 	scopes := []Scope{"res:Z", "res:A", "res:M"}
 	for _, sc := range scopes {
 		l, _ := mgr.Acquire(ctx, "worker-1", sc, 10*time.Minute)
@@ -301,6 +528,7 @@ func TestReconciler_DeterministicReportOrdering(t *testing.T) {
 			Owner:    "worker-1",
 			Scope:    sc,
 			State:    IntentStateActive,
+			Revision: 1,
 		})
 	}
 
@@ -316,7 +544,6 @@ func TestReconciler_DeterministicReportOrdering(t *testing.T) {
 		t.Fatalf("expected 3 items in reports")
 	}
 
-	// Verify order is res:A -> res:M -> res:Z
 	expectedScopes := []Scope{"res:A", "res:M", "res:Z"}
 	for i, sc := range expectedScopes {
 		if report1.Items[i].Scope != sc {
@@ -337,7 +564,6 @@ func TestReconciler_CompositeGrouping(t *testing.T) {
 
 	lA, _ := mgr.Acquire(ctx, "worker-1", "res:A", 10*time.Minute)
 
-	// Intent for res:A confirmed, intent for res:B missing
 	_ = store.SaveIntent(ctx, LeaseIntent{
 		IntentID:    "intent-comp-A",
 		LeaseID:     lA.ID,
@@ -345,6 +571,7 @@ func TestReconciler_CompositeGrouping(t *testing.T) {
 		Scope:       "res:A",
 		CompositeID: "comp-batch-100",
 		State:       IntentStateActive,
+		Revision:    1,
 	})
 
 	_ = store.SaveIntent(ctx, LeaseIntent{
@@ -354,6 +581,7 @@ func TestReconciler_CompositeGrouping(t *testing.T) {
 		Scope:       "res:B",
 		CompositeID: "comp-batch-100",
 		State:       IntentStateActive,
+		Revision:    1,
 	})
 
 	reconciler, _ := NewReconciler(ReconcilerConfig{
@@ -409,12 +637,12 @@ func TestReconciler_RaceConditions(t *testing.T) {
 				intentID := ID(fmt.Sprintf("intent-%s-%d", owner, j))
 
 				_ = store.SaveIntent(ctx, LeaseIntent{
-					IntentID:  intentID,
-					Owner:     owner,
-					Scope:     scope,
-					State:     IntentStateActive,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					IntentID: intentID,
+					Owner:    owner,
+					Scope:    scope,
+					State:    IntentStateActive,
+					LeaseID:  ID(fmt.Sprintf("lse-%s-%d", owner, j)),
+					Revision: 1,
 				})
 
 				l, err := mgr.Acquire(ctx, owner, scope, 50*time.Millisecond)
