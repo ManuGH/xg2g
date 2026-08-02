@@ -9,12 +9,12 @@ import (
 )
 
 var (
-	ErrInvalidWindowSeconds        = errors.New("selected window seconds must be greater than 0")
-	ErrWindowExceedsAdminMax       = errors.New("selected window seconds exceeds administrator maximum")
-	ErrInvalidStorageBudget        = errors.New("storage budget bytes must be greater than 0")
+	ErrInvalidWindowSeconds         = errors.New("selected window seconds must be greater than 0")
+	ErrWindowExceedsAdminMax        = errors.New("selected window seconds exceeds administrator maximum")
+	ErrInvalidStorageBudget         = errors.New("storage budget bytes must be greater than 0")
 	ErrStorageBudgetExceedsAdminMax = errors.New("storage budget bytes exceeds administrator maximum")
-	ErrInvalidEmergencyFreeSpace   = errors.New("emergency free space bytes must be less than minimum free space bytes")
-	ErrUnsatisfiableStorageConfig = errors.New("storage budget plus minimum free space exceeds total usable capacity")
+	ErrInvalidEmergencyFreeSpace    = errors.New("emergency free space bytes must be less than minimum free space bytes")
+	ErrUnsatisfiableStorageConfig   = errors.New("storage budget plus minimum free space exceeds total usable capacity")
 )
 
 // RetroDVRMode defines how streams are buffered on NVMe for Retro-DVR.

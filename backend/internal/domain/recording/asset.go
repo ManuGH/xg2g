@@ -49,9 +49,9 @@ type RecordingAsset struct {
 	EventID             string              `json:"event_id,omitempty"`
 	State               AssetState          `json:"state"`
 	BackendID           string              `json:"backend_id"`
-	ObjectKey           string              `json:"object_key"`     // Relative path inside storage backend
+	ObjectKey           string              `json:"object_key"`      // Relative path inside storage backend
 	SourceFilename      string              `json:"source_filename"` // Staged filename inside finalized/
-	Container           ContainerFormat     `json:"container"`      // "ts", "mp4"
+	Container           ContainerFormat     `json:"container"`       // "ts", "mp4"
 	VideoCodec          string              `json:"video_codec"`
 	AudioCodecs         []string            `json:"audio_codecs"`
 	DurationSeconds     int                 `json:"duration_seconds"`

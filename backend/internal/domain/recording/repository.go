@@ -52,7 +52,7 @@ func NewDiskJobRepository(stagingRoot string) (*DiskJobRepository, error) {
 	if stagingRoot == "" {
 		return nil, fmt.Errorf("stagingRoot cannot be empty")
 	}
-	if err := os.MkdirAll(stagingRoot, 0755); err != nil {
+	if err := os.MkdirAll(stagingRoot, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create stagingRoot: %w", err)
 	}
 	return &DiskJobRepository{
@@ -84,12 +84,12 @@ func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob, expecte
 
 	manifestFile := r.ManifestPath(job.ID)
 	jobDir := filepath.Dir(manifestFile)
-	if err := os.MkdirAll(jobDir, 0755); err != nil {
+	if err := os.MkdirAll(jobDir, 0750); err != nil {
 		return fmt.Errorf("failed to create job directory: %w", err)
 	}
 
 	// Optimistic Concurrency Control Check
-	if data, err := os.ReadFile(manifestFile); err == nil {
+	if data, err := os.ReadFile(manifestFile); err == nil { //nolint:gosec // G304: manifest file path
 		var existing RecordingJob
 		if err := json.Unmarshal(data, &existing); err == nil && existing.ID == job.ID {
 			if expectedVersion > 0 && existing.Version != expectedVersion {
@@ -110,7 +110,7 @@ func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob, expecte
 	}
 
 	tmpFile := manifestFile + ".tmp"
-	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //nolint:gosec // G304: manifest tmp file path
 	if err != nil {
 		return fmt.Errorf("failed to open tmp manifest file: %w", err)
 	}
@@ -133,7 +133,7 @@ func (r *DiskJobRepository) Save(ctx context.Context, job *RecordingJob, expecte
 		return fmt.Errorf("failed to rename manifest file: %w", err)
 	}
 
-	pDir, err := os.Open(jobDir)
+	pDir, err := os.Open(jobDir) //nolint:gosec // G304: job dir path
 	if err != nil {
 		return fmt.Errorf("failed to open job directory for fsync: %w", err)
 	}
@@ -159,12 +159,12 @@ func (r *DiskJobRepository) Get(ctx context.Context, id string) (*RecordingJob, 
 	defer r.mu.RUnlock()
 
 	manifestFile := r.ManifestPath(id)
-	data, err := os.ReadFile(manifestFile)
+	data, err := os.ReadFile(manifestFile) //nolint:gosec // G304: manifest path
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Fallback to legacy manifest.json
 			legacyFile := r.LegacyManifestPath(id)
-			data, err = os.ReadFile(legacyFile)
+			data, err = os.ReadFile(legacyFile) //nolint:gosec // G304: legacy manifest path
 			if err != nil {
 				if os.IsNotExist(err) {
 					return nil, ErrJobNotFound
@@ -214,12 +214,12 @@ func (r *DiskJobRepository) ListAllInventory(ctx context.Context) (JobInventory,
 		jobID := entry.Name()
 		jobDir := filepath.Join(jobsDir, jobID)
 		manifestFile := filepath.Join(jobDir, "job_manifest.json")
-		data, err := os.ReadFile(manifestFile)
+		data, err := os.ReadFile(manifestFile) //nolint:gosec // G304: manifest path
 		if err != nil {
 			if os.IsNotExist(err) {
 				// Fallback to legacy manifest.json
 				legacyFile := filepath.Join(jobDir, "manifest.json")
-				data, err = os.ReadFile(legacyFile)
+				data, err = os.ReadFile(legacyFile) //nolint:gosec // G304: legacy manifest path
 				if err != nil {
 					// Job directory exists but job manifest is missing!
 					inventory.Issues = append(inventory.Issues, InventoryIssue{

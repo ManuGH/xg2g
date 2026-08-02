@@ -461,7 +461,7 @@ func (r *StartupReconciler) ReconcileAll(ctx context.Context) error {
 
 func (r *StartupReconciler) attemptAssetReconstruction(ctx context.Context, job *recording.RecordingJob, task *recording.TransferTask) (*recording.RecordingAsset, error) {
 	manifestPath := filepath.Join(r.stagingRoot, "jobs", job.ID, "finalized", "finalization_manifest.json")
-	data, err := os.ReadFile(manifestPath)
+	data, err := os.ReadFile(manifestPath) //nolint:gosec // G304: manifest path
 	if err != nil {
 		return nil, fmt.Errorf("finalization manifest missing: %w", err)
 	}

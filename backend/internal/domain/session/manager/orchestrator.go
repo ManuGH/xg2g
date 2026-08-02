@@ -530,7 +530,7 @@ func (o *Orchestrator) unregisterActive(id string) {
 }
 
 func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, handle *lease.TunerLeaseHandle, ok bool, err error) {
-	var ctrl lease.TunerLeaseController = o.TunerLeaseController
+	ctrl := o.TunerLeaseController
 	var storeAdapter *lease.SessionStoreTunerLeaseController
 	if ctrl != nil {
 		if sa, isSA := ctrl.(*lease.SessionStoreTunerLeaseController); isSA {

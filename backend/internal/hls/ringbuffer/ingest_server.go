@@ -214,7 +214,7 @@ func (s *IngestServer) persistToDisk(sessionID, filename string, data []byte) {
 	filePath := filepath.Join(sessionDir, filename)
 	tmpPath := filePath + ".tmp"
 
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //nolint:gosec // G304: session tmp path
 	if err != nil {
 		s.logger.Error().Err(err).Str("path", filePath).Msg("async dvr write open failed")
 		return

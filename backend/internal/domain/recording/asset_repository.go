@@ -39,7 +39,7 @@ func NewDiskAssetRepository(storagePath string) (*DiskAssetRepository, error) {
 		return nil, fmt.Errorf("storagePath cannot be empty")
 	}
 	dir := filepath.Dir(storagePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create directory for asset repository: %w", err)
 	}
 	return &DiskAssetRepository{
@@ -181,7 +181,7 @@ func (r *DiskAssetRepository) saveLocked(assets map[string]*RecordingAsset) erro
 	}
 
 	tmpPath := r.storagePath + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //nolint:gosec // G304: asset repo storage path
 	if err != nil {
 		return fmt.Errorf("failed to open tmp asset file: %w", err)
 	}
@@ -206,7 +206,7 @@ func (r *DiskAssetRepository) saveLocked(assets map[string]*RecordingAsset) erro
 
 	// Parent directory fsync with explicit error propagation
 	dirPath := filepath.Dir(r.storagePath)
-	pDir, err := os.Open(dirPath)
+	pDir, err := os.Open(dirPath) //nolint:gosec // G304: asset repo dir path
 	if err != nil {
 		return fmt.Errorf("failed to open asset repository directory for fsync: %w", err)
 	}

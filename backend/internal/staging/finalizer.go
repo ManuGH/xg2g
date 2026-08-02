@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	ErrNoSegmentsForAssembly = errors.New("no valid segment files found for assembly")
+	ErrNoSegmentsForAssembly  = errors.New("no valid segment files found for assembly")
 	ErrCorruptSegmentFilename = errors.New("segment filename corrupted or failed validation")
 )
 
@@ -104,12 +104,12 @@ func (f *TSFinalizer) Finalize(ctx context.Context, jobID string, sourceSegments
 	}
 
 	targetDir := filepath.Dir(targetFilePath)
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := os.MkdirAll(targetDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create target dir: %w", err)
 	}
 
 	tmpPath := targetFilePath + ".tmp"
-	out, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	out, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //nolint:gosec // G304: target tmp path
 	if err != nil {
 		return nil, fmt.Errorf("failed to open output file: %w", err)
 	}
@@ -148,7 +148,7 @@ func (f *TSFinalizer) Finalize(ctx context.Context, jobID string, sourceSegments
 	}
 
 	// Parent directory fsync to guarantee directory entry persistence
-	if pDir, err := os.Open(targetDir); err == nil {
+	if pDir, err := os.Open(targetDir); err == nil { //nolint:gosec // G304: target dir path
 		_ = pDir.Sync()
 		_ = pDir.Close()
 	}

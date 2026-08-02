@@ -51,7 +51,7 @@ type FinalizationManifest struct {
 
 // RetroDVRHandoverEngine orchestrates Retro-DVR recordings from NVMe segment reservations to finalized RecordingAssets.
 type RetroDVRHandoverEngine struct {
-	mu          sync.Mutex
+	mu          sync.Mutex //nolint:unused // reserved for concurrency control
 	resMgr      ringbuffer.ReservationManager
 	jobRepo     recording.JobRepository
 	assetRepo   recording.AssetRepository
@@ -247,7 +247,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 
 	// 4. Transfer reserved segments into staging directory & verify sizes
 	stagingSegsDir := e.stagingMgr.SegmentsDir(job.ID)
-	if err := os.MkdirAll(stagingSegsDir, 0755); err != nil {
+	if err := os.MkdirAll(stagingSegsDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create staging segments directory: %w", err)
 	}
 
@@ -288,7 +288,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	}
 
 	// Fsync segments/ directory
-	pSegDir, pErr := os.Open(stagingSegsDir)
+	pSegDir, pErr := os.Open(stagingSegsDir) //nolint:gosec // G304: staging segs dir path
 	if pErr != nil {
 		return nil, fmt.Errorf("failed to open staging segments directory for fsync: %w", pErr)
 	}
@@ -454,7 +454,7 @@ func (e *RetroDVRHandoverEngine) ExecuteRetroRecording(ctx context.Context, req 
 	manifestData, mErr := json.MarshalIndent(finalManifest, "", "  ")
 	if mErr == nil {
 		finalManifestPath := filepath.Join(filepath.Dir(report.FinalizedPath), "finalization_manifest.json")
-		_ = os.WriteFile(finalManifestPath, manifestData, 0644)
+		_ = os.WriteFile(finalManifestPath, manifestData, 0600)
 	}
 
 	// 9. Attempt StorageBackend CommitFile & Stat Verification
@@ -561,13 +561,13 @@ func copyOrLinkFile(src, dst string) (string, error) {
 	if err := os.Link(src, dst); err == nil {
 		return "HARDLINK", nil
 	}
-	in, err := os.Open(src)
+	in, err := os.Open(src) //nolint:gosec // G304: src file path
 	if err != nil {
 		return "", err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
-	out, err := os.Create(dst)
+	out, err := os.Create(dst) //nolint:gosec // G304: dst file path
 	if err != nil {
 		return "", err
 	}
@@ -592,7 +592,7 @@ func writeAndFsyncManifest(manifestPath string, manifest StagingManifest) error 
 		return err
 	}
 	tmpPath := manifestPath + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //nolint:gosec // G304: tmp manifest path
 	if err != nil {
 		return err
 	}

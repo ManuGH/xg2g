@@ -615,16 +615,16 @@ func (ds *DiskSegmentStore) RecoverFromDisk() error {
 			}
 
 			ds.byID[segID.String()] = &DiskSegment{
-				ID:            segID,
-				ServiceRef:    sessionID,
-				SessionID:     sessionID,
-				Path:          filePath,
-				Sequence:      seq,
-				StartWallTime: info.ModTime().Add(-2 * time.Second),
-				EndWallTime:   info.ModTime(),
-				DurationSec:   2.0,
-				SizeBytes:     info.Size(),
-				State:         SegmentActive,
+				ID:             segID,
+				ServiceRef:     sessionID,
+				SessionID:      sessionID,
+				Path:           filePath,
+				Sequence:       seq,
+				StartWallTime:  info.ModTime().Add(-2 * time.Second),
+				EndWallTime:    info.ModTime(),
+				DurationSec:    2.0,
+				SizeBytes:      info.Size(),
+				State:          SegmentActive,
 				ReservationIDs: make(map[string]struct{}),
 			}
 		}
@@ -659,7 +659,7 @@ func (ds *DiskSegmentStore) saveStateLocked() error {
 	}
 
 	dir := filepath.Dir(ds.storagePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return err
 	}
 
@@ -669,7 +669,7 @@ func (ds *DiskSegmentStore) saveStateLocked() error {
 		return err
 	}
 
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		return err
 	}
 	return os.Rename(tmpPath, ds.storagePath)

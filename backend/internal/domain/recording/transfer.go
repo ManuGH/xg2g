@@ -41,7 +41,7 @@ type TransferTask struct {
 	JobID             string        `json:"job_id"`
 	AssetID           string        `json:"asset_id"`
 	SourceWorkspaceID string        `json:"source_workspace_id"` // Matches JobID
-	SourceFilename    string        `json:"source_filename"`    // Filename inside finalized/ directory
+	SourceFilename    string        `json:"source_filename"`     // Filename inside finalized/ directory
 	TargetBackendID   string        `json:"target_backend_id"`
 	TargetObjectKey   string        `json:"target_object_key"`
 	ExpectedSize      int64         `json:"expected_size"`
@@ -105,7 +105,7 @@ func NewDiskTransferTaskRepository(storagePath string) (*DiskTransferTaskReposit
 		return nil, fmt.Errorf("storagePath cannot be empty")
 	}
 	dir := filepath.Dir(storagePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create directory for transfer task repository: %w", err)
 	}
 	return &DiskTransferTaskRepository{
@@ -443,7 +443,7 @@ func (r *DiskTransferTaskRepository) saveLocked(tasks map[string]*TransferTask) 
 	}
 
 	tmpPath := r.storagePath + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //nolint:gosec // G304: transfer storage path
 	if err != nil {
 		return fmt.Errorf("failed to open tmp transfer file: %w", err)
 	}
@@ -467,7 +467,7 @@ func (r *DiskTransferTaskRepository) saveLocked(tasks map[string]*TransferTask) 
 	}
 
 	dirPath := filepath.Dir(r.storagePath)
-	pDir, err := os.Open(dirPath)
+	pDir, err := os.Open(dirPath) //nolint:gosec // G304: transfer dir path
 	if err != nil {
 		return fmt.Errorf("failed to open transfer repository directory for fsync: %w", err)
 	}

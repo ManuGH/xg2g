@@ -34,7 +34,7 @@ func (c *Client) GetTimers(ctx context.Context) ([]Timer, error) {
 	}
 	c.timerCacheMu.RUnlock()
 
-	val, err, _ := c.timerGroup.Do("timers.list", func() (interface{}, error) {
+	val, err, _ := c.timerGroup.Do("timers.list", func() (any, error) {
 		c.timerCacheMu.RLock()
 		if c.timerCache != nil && time.Since(c.timerCacheAt) < defaultTimerCacheTTL {
 			cached := make([]Timer, len(c.timerCache))

@@ -182,10 +182,11 @@ func (j *RecordingJob) TransitionState(newState RecordingState, errDetail string
 	now := time.Now()
 	cp.UpdatedAt = now
 
-	if newState == StateCompleted || newState == StatePartial {
+	switch newState {
+	case StateCompleted, StatePartial:
 		cp.FinishedAt = &now
 		cp.ActualEnd = &now
-	} else if newState == StateFailed || newState == StateCanceled || newState == StateInterrupted {
+	case StateFailed, StateCanceled, StateInterrupted:
 		cp.FailedAt = &now
 		if errDetail != "" {
 			cp.ErrorDetail = errDetail

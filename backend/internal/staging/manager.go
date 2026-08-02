@@ -37,7 +37,7 @@ func NewStagingManager(stagingRoot string, repo recording.JobRepository) (*Stagi
 	if repo == nil {
 		return nil, fmt.Errorf("job repository cannot be nil")
 	}
-	if err := os.MkdirAll(stagingRoot, 0755); err != nil {
+	if err := os.MkdirAll(stagingRoot, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create stagingRoot: %w", err)
 	}
 	return &StagingManager{
@@ -102,13 +102,13 @@ func (sm *StagingManager) PrepareWorkspace(ctx context.Context, job *recording.R
 	workDir := filepath.Join(jobDir, "work")
 	finDir := sm.FinalizedDir(job.ID)
 
-	if err := os.MkdirAll(segsDir, 0755); err != nil {
+	if err := os.MkdirAll(segsDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create segments dir: %w", err)
 	}
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create work dir: %w", err)
 	}
-	if err := os.MkdirAll(finDir, 0755); err != nil {
+	if err := os.MkdirAll(finDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create finalized dir: %w", err)
 	}
 
