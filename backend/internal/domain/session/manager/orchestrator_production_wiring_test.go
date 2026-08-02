@@ -89,6 +89,18 @@ func (f *ThreadSafeFakeMediaPipeline) StoppedHandles() []ports.RunHandle {
 	return cp
 }
 
+func receiveOrFail[T any](t *testing.T, ctx context.Context, ch <-chan T, what string) T {
+	t.Helper()
+	select {
+	case value := <-ch:
+		return value
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for %s: %v", what, ctx.Err())
+		var zero T
+		return zero
+	}
+}
+
 // TestProductionWiring_SingleSourceOfTruth verifies that Orchestrator uses SessionStoreTunerLeaseController
 // on o.Store, enforcing a single source of truth for tuner leases.
 func TestProductionWiring_SingleSourceOfTruth(t *testing.T) {
@@ -177,6 +189,9 @@ func TestProductionWiring_TunerLeaseLossStopsPipeline(t *testing.T) {
 		t.Fatalf("failed to put session record: %v", err)
 	}
 
+	testCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	startErrCh := make(chan error, 1)
 	go func() {
 		startErrCh <- orch.handleStart(ctx, model.StartSessionEvent{
@@ -186,8 +201,8 @@ func TestProductionWiring_TunerLeaseLossStopsPipeline(t *testing.T) {
 		})
 	}()
 
-	// 1. Wait until FakeMediaPipeline.Start() executes (channel receive)
-	<-fakePipeline.startCalled
+	// 1. Wait until FakeMediaPipeline.Start() executes (channel receive with bounded timeout helper)
+	receiveOrFail(t, testCtx, fakePipeline.startCalled, "pipeline start")
 
 	if fakePipeline.StartedCount() != 1 {
 		t.Fatalf("expected exactly 1 pipeline start, got %d", fakePipeline.StartedCount())
@@ -200,8 +215,11 @@ func TestProductionWiring_TunerLeaseLossStopsPipeline(t *testing.T) {
 		t.Fatalf("failed to revoke tuner lease in store: %v", err)
 	}
 
-	// 3. Wait for handleStart to complete after lease loss detection
-	_ = <-startErrCh
+	// 3. Wait for handleStart to complete after lease loss detection and assert returning error
+	startErr := receiveOrFail(t, testCtx, startErrCh, "session termination")
+	if startErr == nil {
+		t.Fatal("expected handleStart to return a lease-loss error, got nil")
+	}
 
 	// 4. Assert FakeMediaPipeline.Stop() was called with the exact RunHandle
 	if fakePipeline.StoppedCount() != 1 {
@@ -228,5 +246,15 @@ func TestProductionWiring_TunerLeaseLossStopsPipeline(t *testing.T) {
 	handle2, err := controller.Acquire(ctx, "session-2", 0, 5*time.Minute)
 	if err != nil || handle2 == nil {
 		t.Fatalf("expected tuner slot 0 to be acquireable by session-2 after teardown, got err=%v, handle=%v", err, handle2)
+	}
+
+	// 7. Assert no active session / worker goroutine remains in Orchestrator registry
+	orch.mu.Lock()
+	activeCount := len(orch.active)
+	_, stillActive := orch.active[sessID]
+	orch.mu.Unlock()
+
+	if activeCount != 0 || stillActive {
+		t.Fatalf("expected 0 active sessions in orchestrator registry after teardown, got count=%d, stillActive=%v", activeCount, stillActive)
 	}
 }
