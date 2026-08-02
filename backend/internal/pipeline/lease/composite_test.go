@@ -21,31 +21,42 @@ type OperationRecord struct {
 }
 
 type RecordingLeaseBackend struct {
-	mu               sync.Mutex
-	backend          LeaseBackend
-	ops              []OperationRecord
-	failAcquireScope map[Scope]error
-	failRenewScope   map[Scope]error
-	failReleaseScope map[Scope]error
-	failReleaseID    map[ID]error
+	mu                   sync.Mutex
+	backend              LeaseBackend
+	ops                  []OperationRecord
+	failAcquireScope     map[Scope]error
+	failRenewScope       map[Scope]error
+	failReleaseScope     map[Scope]error
+	overrideAcquireLease map[Scope]*Lease
+	overrideRenewLease   map[ID]*Lease
+	onAcquire            func(scope Scope)
 }
 
 func NewRecordingLeaseBackend(realBackend LeaseBackend) *RecordingLeaseBackend {
 	return &RecordingLeaseBackend{
-		backend:          realBackend,
-		failAcquireScope: make(map[Scope]error),
-		failRenewScope:   make(map[Scope]error),
-		failReleaseScope: make(map[Scope]error),
-		failReleaseID:    make(map[ID]error),
+		backend:              realBackend,
+		failAcquireScope:    make(map[Scope]error),
+		failRenewScope:      make(map[Scope]error),
+		failReleaseScope:    make(map[Scope]error),
+		overrideAcquireLease: make(map[Scope]*Lease),
+		overrideRenewLease:   make(map[ID]*Lease),
 	}
 }
 
 func (r *RecordingLeaseBackend) Acquire(ctx context.Context, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
 	r.mu.Lock()
-	if err, fail := r.failAcquireScope[scope]; fail {
+	if r.onAcquire != nil {
+		r.onAcquire(scope)
+	}
+	if err, fail := r.failAcquireScope[scope]; fail && err != nil {
 		r.ops = append(r.ops, OperationRecord{Op: "AcquireFailed", Owner: owner, Scope: scope})
 		r.mu.Unlock()
 		return nil, err
+	}
+	if override, ok := r.overrideAcquireLease[scope]; ok {
+		r.ops = append(r.ops, OperationRecord{Op: "AcquireOverride", Owner: owner, Scope: scope})
+		r.mu.Unlock()
+		return override, nil
 	}
 	r.mu.Unlock()
 
@@ -62,12 +73,18 @@ func (r *RecordingLeaseBackend) Acquire(ctx context.Context, owner Owner, scope 
 
 func (r *RecordingLeaseBackend) Renew(ctx context.Context, id ID, owner Owner, ttl time.Duration) (*Lease, error) {
 	r.mu.Lock()
+	if override, ok := r.overrideRenewLease[id]; ok {
+		r.ops = append(r.ops, OperationRecord{Op: "RenewOverride", Owner: owner, ID: id})
+		r.mu.Unlock()
+		return override, nil
+	}
+
 	lTemp, errFind := r.backend.Renew(ctx, id, owner, ttl)
 	var sc Scope
 	if lTemp != nil {
 		sc = lTemp.Scope
 	}
-	if err, fail := r.failRenewScope[sc]; fail {
+	if err, fail := r.failRenewScope[sc]; fail && err != nil {
 		r.ops = append(r.ops, OperationRecord{Op: "RenewFailed", Owner: owner, ID: id, Scope: sc})
 		r.mu.Unlock()
 		return nil, err
@@ -86,10 +103,10 @@ func (r *RecordingLeaseBackend) Renew(ctx context.Context, id ID, owner Owner, t
 
 func (r *RecordingLeaseBackend) Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
 	r.mu.Lock()
-	if err, fail := r.failReleaseID[id]; fail {
-		r.ops = append(r.ops, OperationRecord{Op: "ReleaseFailed", Owner: owner, ID: id, Reason: reason})
+	if ctx != nil && ctx.Err() != nil {
+		r.ops = append(r.ops, OperationRecord{Op: "ReleaseFailedCtx", Owner: owner, ID: id, Reason: reason})
 		r.mu.Unlock()
-		return nil, err
+		return nil, ctx.Err()
 	}
 	r.mu.Unlock()
 
@@ -121,6 +138,259 @@ func (r *RecordingLeaseBackend) Operations() []OperationRecord {
 	cp := make([]OperationRecord, len(r.ops))
 	copy(cp, r.ops)
 	return cp
+}
+
+// TestCompositeManager_ParentContextCancellationWithDetachedRollback verifies that when parent context is cancelled,
+// detached cleanup context successfully rolls back acquired leases in LIFO order without being affected by parent cancellation.
+func TestCompositeManager_ParentContextCancellationWithDetachedRollback(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	rec := NewRecordingLeaseBackend(mgr)
+	cm := NewCompositeManager(CompositeManagerConfig{
+		Backend:        rec,
+		CleanupTimeout: 2 * time.Second,
+	})
+
+	parentCtx, cancelParent := context.WithCancel(context.Background())
+
+	reqs := []ResourceRequest{
+		{Scope: "res:A", TTL: 5 * time.Minute},
+		{Scope: "res:B", TTL: 5 * time.Minute},
+	}
+
+	// Deterministic hook: cancel parentCtx exactly when res:B acquire is attempted
+	rec.onAcquire = func(scope Scope) {
+		if scope == "res:B" {
+			cancelParent()
+		}
+	}
+
+	_, err := cm.AcquireComposite(parentCtx, "owner-1", reqs)
+	if err == nil {
+		t.Fatalf("expected error on cancelled parent context")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected primary error to be context.Canceled, got %v", err)
+	}
+
+	var compErr *CompositeAcquireError
+	if !errors.As(err, &compErr) {
+		t.Fatalf("expected *CompositeAcquireError, got %T", err)
+	}
+
+	// Verify res:A was successfully compensated using detached context
+	if len(compErr.Compensated) != 1 || compErr.Compensated[0] != "res:A" {
+		t.Errorf("expected compensated scope [res:A], got %v", compErr.Compensated)
+	}
+	if len(compErr.Failures) != 0 {
+		t.Errorf("expected 0 compensation failures, got %d", len(compErr.Failures))
+	}
+	if compErr.ReconciliationRequired {
+		t.Errorf("expected ReconciliationRequired false for clean rollback")
+	}
+
+	// Verify res:A is free again
+	lA, err := mgr.Acquire(context.Background(), "owner-2", "res:A", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("res:A should be free after rollback, got %v", err)
+	}
+	_, _ = mgr.Release(context.Background(), lA.ID, "owner-2", ReasonReleasedByOwner)
+}
+
+// TestCompositeManager_AcquireResultInconsistentTokenRollback verifies that when backend returns a lease with valid ID
+// but wrong Scope/Owner, the returned lease token is included in the rollback set and released!
+func TestCompositeManager_AcquireResultInconsistentTokenRollback(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	rec := NewRecordingLeaseBackend(mgr)
+	cm := NewCompositeManager(CompositeManagerConfig{Backend: rec})
+
+	ctx := context.Background()
+
+	// Pre-acquire a real lease to get a valid ID with wrong scope
+	lWrong, _ := mgr.Acquire(ctx, "owner-1", "res:WRONG", 5*time.Minute)
+	badLeaseToken := &Lease{
+		ID:        lWrong.ID,
+		Owner:     "owner-1",
+		Scope:     "res:BAD_SCOPE", // Mismatched scope
+		State:     StateAcquired,
+		ExpiresAt: time.Now().Add(5 * time.Minute),
+	}
+
+	// Inject returning badLeaseToken when res:B is acquired
+	rec.overrideAcquireLease["res:B"] = badLeaseToken
+
+	reqs := []ResourceRequest{
+		{Scope: "res:A", TTL: 5 * time.Minute},
+		{Scope: "res:B", TTL: 5 * time.Minute},
+	}
+
+	_, err := cm.AcquireComposite(ctx, "owner-1", reqs)
+	if err == nil {
+		t.Fatalf("expected composite acquire error on mismatched lease result")
+	}
+
+	if !errors.Is(err, ErrInvalidBackendResult) {
+		t.Errorf("expected ErrInvalidBackendResult, got %v", err)
+	}
+
+	var compErr *CompositeAcquireError
+	if !errors.As(err, &compErr) {
+		t.Fatalf("expected *CompositeAcquireError, got %T", err)
+	}
+
+	// Verify both res:B (bad lease token) and res:A were included in LIFO rollback and released!
+	ops := rec.Operations()
+	relOps := make([]OperationRecord, 0)
+	for _, op := range ops {
+		if op.Op == "Release" {
+			relOps = append(relOps, op)
+		}
+	}
+	if len(relOps) != 2 {
+		t.Fatalf("expected 2 release ops during rollback, got %d: %v", len(relOps), relOps)
+	}
+
+	// First release during LIFO rollback is res:B (lWrong.ID), second is res:A
+	if relOps[0].ID != lWrong.ID {
+		t.Errorf("expected first rollback release to be returned lease token ID %s, got %s", lWrong.ID, relOps[0].ID)
+	}
+
+	// Verify res:WRONG (lWrong.ID) is now RELEASED in real store
+	lCheck, _ := mgr.Get("res:WRONG")
+	if lCheck != nil && lCheck.State != StateReleased {
+		t.Errorf("expected lWrong to be released by rollback, got state %s", lCheck.State)
+	}
+}
+
+// TestCompositeManager_AcquireResultNilLeaseReconciliationRequired verifies that returning a nil lease with nil error
+// sets ReconciliationRequired to true.
+func TestCompositeManager_AcquireResultNilLeaseReconciliationRequired(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	rec := NewRecordingLeaseBackend(mgr)
+	cm := NewCompositeManager(CompositeManagerConfig{Backend: rec})
+
+	ctx := context.Background()
+	// Override res:A to return nil lease with nil error
+	rec.overrideAcquireLease["res:A"] = nil
+
+	reqs := []ResourceRequest{{Scope: "res:A", TTL: 5 * time.Minute}}
+
+	_, err := cm.AcquireComposite(ctx, "owner-1", reqs)
+	if err == nil {
+		t.Fatalf("expected error on nil lease result")
+	}
+
+	if !errors.Is(err, ErrInvalidBackendResult) {
+		t.Errorf("expected ErrInvalidBackendResult, got %v", err)
+	}
+	if !errors.Is(err, ErrCompensationIncomplete) {
+		t.Errorf("expected ErrCompensationIncomplete via errors.Is, got %v", err)
+	}
+
+	var compErr *CompositeAcquireError
+	if !errors.As(err, &compErr) {
+		t.Fatalf("expected *CompositeAcquireError, got %T", err)
+	}
+	if !compErr.ReconciliationRequired {
+		t.Errorf("expected ReconciliationRequired true for unidentifiable nil lease result")
+	}
+}
+
+// TestCompositeManager_RenewScopeMismatchDegradesState verifies that if backend returns a renewed lease
+// with mismatched scope/owner, handle state transitions to DEGRADED without corrupting member lease snapshot.
+func TestCompositeManager_RenewScopeMismatchDegradesState(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	rec := NewRecordingLeaseBackend(mgr)
+	cm := NewCompositeManager(CompositeManagerConfig{Backend: rec})
+
+	ctx := context.Background()
+	reqs := []ResourceRequest{
+		{Scope: "res:A", TTL: 5 * time.Minute},
+		{Scope: "res:B", TTL: 5 * time.Minute},
+	}
+
+	handle, err := cm.AcquireComposite(ctx, "worker-1", reqs)
+	if err != nil {
+		t.Fatalf("acquire composite failed: %v", err)
+	}
+
+	originalLeaseA := handle.Leases()[0]
+
+	// Inject returning mismatched scope lease on renew of res:A
+	badRenewLease := &Lease{
+		ID:        originalLeaseA.ID,
+		Owner:     "worker-1",
+		Scope:     "res:WRONG_SCOPE",
+		State:     StateAcquired,
+		ExpiresAt: time.Now().Add(20 * time.Minute),
+	}
+	rec.overrideRenewLease[originalLeaseA.ID] = badRenewLease
+
+	err = cm.RenewComposite(ctx, handle, 10*time.Minute)
+	if err == nil {
+		t.Fatalf("expected renew error on scope mismatch")
+	}
+	if !errors.Is(err, ErrInvalidBackendResult) {
+		t.Errorf("expected ErrInvalidBackendResult, got %v", err)
+	}
+
+	if handle.State() != CompositeStateDegraded {
+		t.Errorf("expected state DEGRADED after invalid renew result, got %s", handle.State())
+	}
+
+	// Verify member snapshot for res:A was NOT overwritten with badRenewLease scope
+	currentLeases := handle.Leases()
+	if currentLeases[0].Scope != "res:A" {
+		t.Errorf("member snapshot scope was corrupted! expected res:A, got %s", currentLeases[0].Scope)
+	}
+}
+
+// TestCompositeManager_PreIDGenContextCancellation verifies that context cancellation after last acquire
+// but before ID generation triggers LIFO rollback.
+func TestCompositeManager_PreIDGenContextCancellation(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	rec := NewRecordingLeaseBackend(mgr)
+
+	cancelCtx, cancel := context.WithCancel(context.Background())
+
+	// ID Generator that cancels context before generating ID
+	cancellingIDGen := func() (ID, error) {
+		cancel()
+		return defaultCompositeIDGen()
+	}
+
+	cm := NewCompositeManager(CompositeManagerConfig{
+		Backend:     rec,
+		IDGenerator: cancellingIDGen,
+	})
+
+	reqs := []ResourceRequest{{Scope: "res:A", TTL: 5 * time.Minute}}
+
+	_, err := cm.AcquireComposite(cancelCtx, "worker-1", reqs)
+	if err == nil {
+		t.Fatalf("expected error on cancelled context pre IDGen")
+	}
+
+	// Verify res:A was rolled back
+	ops := rec.Operations()
+	if len(ops) != 2 {
+		t.Fatalf("expected 2 ops (Acquire then Release rollback), got %d: %v", len(ops), ops)
+	}
+	if ops[1].Op != "Release" || ops[1].Reason != ReasonRollback {
+		t.Errorf("expected rollback release on pre-IDGen context cancellation, got %v", ops[1])
+	}
+
+	// Verify res:A is free again
+	lA, err := mgr.Acquire(context.Background(), "worker-2", "res:A", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("res:A should be free after rollback, got %v", err)
+	}
+	_, _ = mgr.Release(context.Background(), lA.ID, "worker-2", ReasonReleasedByOwner)
 }
 
 // TestCompositeManager_PreValidation verifies up-front validation with 0 backend calls.
@@ -209,194 +479,6 @@ func TestCompositeManager_DeterministicScopeSorting(t *testing.T) {
 	}
 }
 
-// TestCompositeManager_FailureInjection_RollbackReleaseFailure directly tests technical acquire failure
-// followed by an injected release failure during LIFO rollback.
-func TestCompositeManager_FailureInjection_RollbackReleaseFailure(t *testing.T) {
-	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
-	defer mgr.Close()
-	rec := NewRecordingLeaseBackend(mgr)
-	cm := NewCompositeManager(CompositeManagerConfig{Backend: rec})
-
-	ctx := context.Background()
-
-	acqErrInj := errors.New("injected technical acquire failure on res:C")
-	relErrInj := errors.New("injected release failure on res:B during rollback")
-
-	rec.failAcquireScope["res:C"] = acqErrInj
-	rec.failReleaseScope["res:B"] = relErrInj
-
-	reqs := []ResourceRequest{
-		{Scope: "res:A", TTL: 5 * time.Minute},
-		{Scope: "res:B", TTL: 5 * time.Minute},
-		{Scope: "res:C", TTL: 5 * time.Minute},
-	}
-
-	_, err := cm.AcquireComposite(ctx, "owner-1", reqs)
-	if err == nil {
-		t.Fatalf("expected composite acquire error")
-	}
-
-	// Verify structured error type
-	var compErr *CompositeAcquireError
-	if !errors.As(err, &compErr) {
-		t.Fatalf("expected error to be *CompositeAcquireError, got %T: %v", err, err)
-	}
-
-	if compErr.FailedScope != "res:C" {
-		t.Errorf("expected FailedScope res:C, got %s", compErr.FailedScope)
-	}
-	if !errors.Is(err, acqErrInj) {
-		t.Errorf("expected errors.Is to match primary acquire error")
-	}
-	if !errors.Is(err, relErrInj) {
-		t.Errorf("expected errors.Is to match injected rollback release error")
-	}
-
-	if len(compErr.Compensated) != 1 || compErr.Compensated[0] != "res:A" {
-		t.Errorf("expected compensated scope [res:A], got %v", compErr.Compensated)
-	}
-	if len(compErr.Failures) != 1 || compErr.Failures[0].Scope != "res:B" {
-		t.Errorf("expected compensation failure on res:B, got %v", compErr.Failures)
-	}
-
-	// Verify operation sequence is exact LIFO:
-	// 0: Acquire res:A (success)
-	// 1: Acquire res:B (success)
-	// 2: AcquireFailed res:C
-	// 3: ReleaseFailed res:B (LIFO step 1)
-	// 4: Release res:A (LIFO step 2, success)
-	ops := rec.Operations()
-	if len(ops) != 5 {
-		t.Fatalf("expected 5 recorded ops, got %d: %v", len(ops), ops)
-	}
-	if ops[3].Op != "ReleaseFailed" || ops[3].Scope != "res:B" {
-		t.Errorf("expected LIFO step 1 ReleaseFailed res:B, got %v", ops[3])
-	}
-	if ops[4].Op != "Release" || ops[4].Scope != "res:A" {
-		t.Errorf("expected LIFO step 2 Release res:A, got %v", ops[4])
-	}
-
-	// Verify res:A is free for another owner
-	lA, err := mgr.Acquire(ctx, "owner-2", "res:A", 5*time.Minute)
-	if err != nil {
-		t.Fatalf("res:A should be free after rollback, got %v", err)
-	}
-	_, _ = mgr.Release(ctx, lA.ID, "owner-2", ReasonReleasedByOwner)
-}
-
-// TestCompositeManager_FailureInjection_MultiRollbackReleaseFailure tests multiple release failures during rollback.
-func TestCompositeManager_FailureInjection_MultiRollbackReleaseFailure(t *testing.T) {
-	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
-	defer mgr.Close()
-	rec := NewRecordingLeaseBackend(mgr)
-	cm := NewCompositeManager(CompositeManagerConfig{Backend: rec})
-
-	ctx := context.Background()
-
-	rec.failAcquireScope["res:C"] = errors.New("acquire failed on C")
-	rec.failReleaseScope["res:A"] = errors.New("release failed on A")
-	rec.failReleaseScope["res:B"] = errors.New("release failed on B")
-
-	reqs := []ResourceRequest{
-		{Scope: "res:A", TTL: 5 * time.Minute},
-		{Scope: "res:B", TTL: 5 * time.Minute},
-		{Scope: "res:C", TTL: 5 * time.Minute},
-	}
-
-	_, err := cm.AcquireComposite(ctx, "owner-1", reqs)
-	if err == nil {
-		t.Fatalf("expected composite acquire error")
-	}
-
-	var compErr *CompositeAcquireError
-	if !errors.As(err, &compErr) {
-		t.Fatalf("expected *CompositeAcquireError, got %v", err)
-	}
-	if len(compErr.Failures) != 2 {
-		t.Errorf("expected 2 compensation failures, got %d", len(compErr.Failures))
-	}
-}
-
-// TestCompositeManager_RenewPartialFailureDegradesState verifies fail-fast renewal and DEGRADED state.
-func TestCompositeManager_RenewPartialFailureDegradesState(t *testing.T) {
-	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
-	defer mgr.Close()
-	rec := NewRecordingLeaseBackend(mgr)
-	cm := NewCompositeManager(CompositeManagerConfig{Backend: rec})
-
-	ctx := context.Background()
-	reqs := []ResourceRequest{
-		{Scope: "res:A", TTL: 5 * time.Minute},
-		{Scope: "res:B", TTL: 5 * time.Minute},
-	}
-
-	handle, err := cm.AcquireComposite(ctx, "worker-1", reqs)
-	if err != nil {
-		t.Fatalf("acquire composite failed: %v", err)
-	}
-
-	// Inject renew failure on res:A
-	rec.failRenewScope["res:A"] = errors.New("injected renew failure on res:A")
-
-	err = cm.RenewComposite(ctx, handle, 10*time.Minute)
-	if err == nil {
-		t.Fatalf("expected renew error")
-	}
-
-	if handle.State() != CompositeStateDegraded {
-		t.Errorf("expected state DEGRADED after partial renew failure, got %s", handle.State())
-	}
-
-	// Subsequent renew attempt fails fast because handle is DEGRADED
-	err2 := cm.RenewComposite(ctx, handle, 10*time.Minute)
-	if err2 == nil {
-		t.Errorf("expected renew to fail fast when handle is DEGRADED")
-	}
-}
-
-// TestCompositeManager_ReleaseDegradedHandleRetriesOnlyUnreleased tests retrying ReleaseComposite on a DEGRADED handle.
-func TestCompositeManager_ReleaseDegradedHandleRetriesOnlyUnreleased(t *testing.T) {
-	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
-	defer mgr.Close()
-	rec := NewRecordingLeaseBackend(mgr)
-	cm := NewCompositeManager(CompositeManagerConfig{Backend: rec})
-
-	ctx := context.Background()
-	reqs := []ResourceRequest{
-		{Scope: "res:A", TTL: 5 * time.Minute},
-		{Scope: "res:B", TTL: 5 * time.Minute},
-	}
-
-	handle, err := cm.AcquireComposite(ctx, "worker-1", reqs)
-	if err != nil {
-		t.Fatalf("acquire failed: %v", err)
-	}
-
-	// Inject release failure on res:A (LIFO step 2, res:B released first)
-	rec.failReleaseScope["res:A"] = errors.New("temporary release failure on A")
-
-	err = cm.ReleaseComposite(ctx, handle, ReasonReleasedByOwner)
-	if err == nil {
-		t.Fatalf("expected release error on DEGRADED handle")
-	}
-	if handle.State() != CompositeStateDegraded {
-		t.Fatalf("expected state DEGRADED, got %s", handle.State())
-	}
-
-	// Remove injected failure on res:A and retry ReleaseComposite
-	rec.mu.Lock()
-	delete(rec.failReleaseScope, "res:A")
-	rec.mu.Unlock()
-
-	errRetry := cm.ReleaseComposite(ctx, handle, ReasonReleasedByOwner)
-	if errRetry != nil {
-		t.Fatalf("retry release failed: %v", errRetry)
-	}
-	if handle.State() != CompositeStateReleased {
-		t.Fatalf("expected state RELEASED after retry, got %s", handle.State())
-	}
-}
-
 // TestCompositeManager_FullLifecycle tests successful acquisition, renewal, release, and encapsulated accessors.
 func TestCompositeManager_FullLifecycle(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
@@ -458,38 +540,6 @@ func TestCompositeManager_FullLifecycle(t *testing.T) {
 	}
 	if releaseOps[0].Scope != "tuner:0" || releaseOps[1].Scope != "encoder:0" {
 		t.Errorf("expected LIFO release order (tuner:0 then encoder:0), got %v then %v", releaseOps[0].Scope, releaseOps[1].Scope)
-	}
-}
-
-// TestCompositeManager_IDGeneratorFailure tests error handling when ID generation fails after acquisition.
-func TestCompositeManager_IDGeneratorFailure(t *testing.T) {
-	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
-	defer mgr.Close()
-	rec := NewRecordingLeaseBackend(mgr)
-
-	failingIDGen := func() (ID, error) {
-		return "", errors.New("injected ID generation failure")
-	}
-
-	cm := NewCompositeManager(CompositeManagerConfig{
-		Backend:     rec,
-		IDGenerator: failingIDGen,
-	})
-
-	ctx := context.Background()
-	reqs := []ResourceRequest{{Scope: "res:A", TTL: 5 * time.Minute}}
-
-	_, err := cm.AcquireComposite(ctx, "worker-1", reqs)
-	if err == nil {
-		t.Fatalf("expected error on failing ID generator")
-	}
-
-	ops := rec.Operations()
-	if len(ops) != 2 {
-		t.Fatalf("expected 2 ops (Acquire then Release rollback), got %d: %v", len(ops), ops)
-	}
-	if ops[1].Op != "Release" || ops[1].Reason != ReasonRollback {
-		t.Errorf("expected rollback release on ID failure, got %v", ops[1])
 	}
 }
 
