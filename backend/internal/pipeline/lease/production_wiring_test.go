@@ -780,7 +780,7 @@ func TestSaga_Renew_NoActiveIntent_ReturnsErrTrackedIntentNotFound(t *testing.T)
 	}
 }
 
-// 16. Acquire returns nil handle without error -> intent becomes RECOVERY_REQUIRED and returns ErrInvalidBackendResult.
+// 16. Acquire returns nil handle without error -> returns ErrInvalidBackendResult + ErrReconciliationRequired and marks intent RECOVERY_REQUIRED.
 func TestSaga_Acquire_NilHandleWithoutError_IntentRecoveryRequired(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
 	defer mgr.Close()
@@ -799,6 +799,9 @@ func TestSaga_Acquire_NilHandleWithoutError_IntentRecoveryRequired(t *testing.T)
 	if !errors.Is(err, ErrInvalidBackendResult) {
 		t.Fatalf("expected ErrInvalidBackendResult, got %v", err)
 	}
+	if !errors.Is(err, ErrReconciliationRequired) {
+		t.Fatalf("expected ErrReconciliationRequired, got %v", err)
+	}
 	if h != nil {
 		t.Fatalf("expected nil handle, got %v", h)
 	}
@@ -809,6 +812,38 @@ func TestSaga_Acquire_NilHandleWithoutError_IntentRecoveryRequired(t *testing.T)
 	}
 	if intents[0].State != IntentStateRecoveryRequired {
 		t.Errorf("expected intent state RECOVERY_REQUIRED, got %s", intents[0].State)
+	}
+}
+
+// 16b. Acquire returns nil handle + RECOVERY_REQUIRED save fails -> all errors transparently preserved in errors.Join.
+func TestSaga_Acquire_NilHandleWithoutError_RecoverySaveFails(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	tb := NewTunerBinding(mgr)
+	baseCtrl := NewTunerBindingController(tb)
+	spy := &spyBackendController{
+		TunerLeaseController: baseCtrl,
+		acquireNilHandle:     true,
+	}
+
+	mockStore := newMockFailIntentStore()
+	mockStore.failSaveStates[IntentStateRecoveryRequired] = errors.New("simulated RECOVERY_REQUIRED save failure")
+
+	trackedCtrl, _ := NewIntentTrackedTunerLeaseController(spy, mockStore)
+	_, _ = trackedCtrl.ExecuteStartupReconciliation(context.Background(), ReconcilerConfig{IntentStore: mockStore, Backend: mgr})
+
+	h, err := trackedCtrl.Acquire(context.Background(), "session-nil-handle-fail-save", 0, 10*time.Minute)
+	if !errors.Is(err, ErrInvalidBackendResult) {
+		t.Fatalf("expected ErrInvalidBackendResult, got %v", err)
+	}
+	if !errors.Is(err, ErrReconciliationRequired) {
+		t.Fatalf("expected ErrReconciliationRequired, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "simulated RECOVERY_REQUIRED save failure") {
+		t.Errorf("expected save error to be preserved in error chain, got %v", err)
+	}
+	if h != nil {
+		t.Fatalf("expected nil handle, got %v", h)
 	}
 }
 
@@ -831,5 +866,42 @@ func TestBackend_NilObservableBackend_ReturnsErrBindingUnavailable(t *testing.T)
 	})
 	if err == nil {
 		t.Fatalf("expected startup reconciliation failure with nil observable backend")
+	}
+}
+
+// 18. Observable Acquire does not invent synthetic AcquiredAt timestamp.
+func TestBackend_ObservableAcquire_DoesNotInventAcquiredAt(t *testing.T) {
+	memStore := sessionstore.NewMemoryStore()
+	ctrl := NewSessionStoreTunerLeaseController(memStore)
+	obs := SessionStoreObservableBackend{SessionStoreTunerLeaseController: ctrl}
+
+	l, err := obs.Acquire(context.Background(), "owner-1", "tuner:0", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("Acquire failed: %v", err)
+	}
+
+	if !l.AcquiredAt.IsZero() {
+		t.Errorf("expected AcquiredAt to remain zero value (un-synthesized), got %v", l.AcquiredAt)
+	}
+}
+
+// 19. Observable Renew does not invent or overwrite synthetic AcquiredAt timestamp.
+func TestBackend_ObservableRenew_DoesNotInventAcquiredAt(t *testing.T) {
+	memStore := sessionstore.NewMemoryStore()
+	ctrl := NewSessionStoreTunerLeaseController(memStore)
+	obs := SessionStoreObservableBackend{SessionStoreTunerLeaseController: ctrl}
+
+	_, err := obs.Acquire(context.Background(), "owner-1", "tuner:0", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("Acquire failed: %v", err)
+	}
+
+	renewed, err := obs.Renew(context.Background(), "tuner:0", "owner-1", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("Renew failed: %v", err)
+	}
+
+	if !renewed.AcquiredAt.IsZero() {
+		t.Errorf("expected Renew AcquiredAt to remain zero value (un-synthesized), got %v", renewed.AcquiredAt)
 	}
 }

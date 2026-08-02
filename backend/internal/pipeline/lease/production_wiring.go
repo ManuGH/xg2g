@@ -36,6 +36,7 @@ var (
 	ErrStartupReconciliationFailed   = errors.New("startup reconciliation refused startup due to policy evaluation")
 	ErrStartupGateAlreadyResolved    = errors.New("startup gate has already been resolved and cannot be re-evaluated")
 	ErrTrackedIntentNotFound         = errors.New("tracked lease intent not found")
+	ErrReconciliationRequired        = errors.New("reconciliation required due to ambiguous backend state")
 )
 
 // StartupPolicyResult holds the decision and diagnostic reason for a startup policy evaluation.
@@ -305,8 +306,14 @@ func (c *IntentTrackedTunerLeaseController) Acquire(ctx context.Context, owner O
 		intent.State = IntentStateRecoveryRequired
 		intent.Revision = 2
 		intent.UpdatedAt = c.nowFunc()
-		_ = c.intentStore.SaveIntent(cleanupCtx, intent)
-		return nil, ErrInvalidBackendResult
+		recoverySaveErr := c.intentStore.SaveIntent(cleanupCtx, intent)
+
+		var errs []error
+		errs = append(errs, ErrInvalidBackendResult, ErrReconciliationRequired)
+		if recoverySaveErr != nil {
+			errs = append(errs, fmt.Errorf("persist RECOVERY_REQUIRED after invalid backend result: %w", recoverySaveErr))
+		}
+		return nil, errors.Join(errs...)
 	}
 
 	// 3. Mark intent ACTIVE on acquisition success
@@ -514,7 +521,6 @@ func (b SessionStoreObservableBackend) Acquire(ctx context.Context, owner Owner,
 		Owner:      Owner(l.Owner()),
 		Scope:      Scope(l.Key()),
 		State:      StateAcquired,
-		AcquiredAt: time.Now(),
 		ExpiresAt:  l.ExpiresAt(),
 		ReasonCode: ReasonAcquired,
 	}, nil
@@ -536,7 +542,6 @@ func (b SessionStoreObservableBackend) Renew(ctx context.Context, id ID, owner O
 		Owner:      Owner(l.Owner()),
 		Scope:      Scope(l.Key()),
 		State:      StateAcquired,
-		AcquiredAt: time.Now(),
 		ExpiresAt:  l.ExpiresAt(),
 		ReasonCode: ReasonAcquired,
 	}, nil

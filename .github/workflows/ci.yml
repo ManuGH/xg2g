@@ -3,9 +3,9 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/retro-dvr-engine]
   pull_request:
-    branches: [main]
+    branches: [main, feature/retro-dvr-engine]
     # This workflow emits a branch-protection-required check. It must run for
     # every PR; path filters would leave unmatched PRs permanently "Expected".
 
