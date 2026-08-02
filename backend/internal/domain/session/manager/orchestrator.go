@@ -22,6 +22,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
+	pipelinePolicy "github.com/ManuGH/xg2g/internal/pipeline/policy"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 )
@@ -49,6 +50,7 @@ type Orchestrator struct {
 	LeaseKeyFunc    func(model.StartSessionEvent) string
 
 	TunerLeaseController lease.TunerLeaseController
+	AuditEvaluator       pipelinePolicy.AuditEvaluator
 
 	PipelineStopTimeout time.Duration
 	OutboundPolicy      platformnet.OutboundPolicy

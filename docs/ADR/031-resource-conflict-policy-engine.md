@@ -45,8 +45,18 @@ To prevent ad-hoc priority comparisons and ensure long-term maintainability, the
 7. **Strict Separation of Decision and Execution:**
    The domain package (`internal/domain/policy`) contains only decision outcomes (`DecisionGrant`, `DecisionReject`, `DecisionPreemptionRequired`) and policy reason codes (`POLICY_*` registered in [`REASON_CODES.md`](../guides/REASON_CODES.md) and [`POLICY_REASON_CODES.md`](../guides/POLICY_REASON_CODES.md)). Preemption eviction execution (`PREEMPTION_EVICTION_*`) is isolated in the pipeline orchestration layer (`internal/pipeline/policy`).
 
-7. **Candidate Capability & Availability Evaluation:**
-   Free capacity alone is insufficient for a `GRANT` decision. A `GRANT` decision requires a concrete `ResourceCandidate` that is `Available == true`, `Compatible == true`, and compatible with `TargetScope`. If capacity exists but no matching candidate is available, the request is rejected with `POLICY_REJECTED_NO_COMPATIBLE_CANDIDATE`.
+8. **Step E2 Audit-Only Integration Sequence:**
+   In Step E2, policy evaluation occurs **ONLY** upon an authoritative tuner slot conflict (`ErrScopeConflict`) during session orchestrator tuner lease acquisition.
+   - **Preemption Mode:** `XG2G_POLICY_PREEMPTION_MODE` supports `disabled` (default) and `audit-only`. Mode `enforce` or invalid modes trigger startup error.
+   - **Bypass in `disabled` Mode:** When mode is `disabled`, zero candidate/allocation reads, policy calls, or audit emissions take place.
+   - **Conflict Path Trigger:** On tuner acquire conflict in `audit-only` mode:
+     1. Build typed snapshot using separate `CandidateProvider` (hardware scopes) and `AllocationProvider` (active allocations with explicit `policy.ConsumerType` metadata).
+     2. Calculate canonical deterministic `SnapshotRevision` hash.
+     3. Evaluate `PolicyEngine.Evaluate()`.
+     4. Emit `EvaluationAuditEvent` (`EnforcementMode = "audit-only"`).
+     5. Log technical errors structurally if snapshot building, evaluation, or audit emission fails (emits `POLICY_EVALUATION_FAILED`).
+     6. Return original `ErrScopeConflict` **UNCHANGED**.
+   - **ZERO Side Effects:** Step E2 executes **ZERO** preemption, lease release, session revocation, or intent mutation (`Release = 0`, `Revoke = 0`, `Stop = 0`).
 
 8. **Sacrosanct Non-Preemption Invariants:**
    - Active `ConsumerScheduledRecording` allocations are sacrosanct and cannot be preempted by any consumer.

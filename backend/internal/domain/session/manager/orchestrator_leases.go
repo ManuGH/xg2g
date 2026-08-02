@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	domainPolicy "github.com/ManuGH/xg2g/internal/domain/policy"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -61,7 +62,27 @@ func (o *Orchestrator) acquireLeases(
 		if !ok {
 			res.ReleaseDedup()
 			tunerBusyTotal.WithLabelValues().Inc()
-			return nil, newReasonError(model.RLeaseBusy, "no tuner slots available", nil)
+			origErr := newReasonError(model.RLeaseBusy, "no tuner slots available", nil)
+
+			if o.AuditEvaluator != nil {
+				consumer := domainPolicy.ConsumerLiveTV
+				if sessionCtx.Mode == model.ModeRecording {
+					consumer = domainPolicy.ConsumerScheduledRecording
+				}
+				evalReq := domainPolicy.EvaluationRequest{
+					Consumer:     consumer,
+					ResourceKind: domainPolicy.ResourceTuner,
+					Owner:        leaseOwner,
+					ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
+					EvaluatedAt:  time.Now(),
+				}
+				_, auditErr := o.AuditEvaluator.EvaluateConflict(ctx, event.SessionID, evalReq, origErr)
+				if auditErr != nil {
+					logger.Error().Err(auditErr).Str("session_id", event.SessionID).Msg("policy audit evaluation failed")
+				}
+			}
+
+			return nil, origErr
 		}
 		res.Slot = slot
 		res.TunerLease = tunerLease
