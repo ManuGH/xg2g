@@ -155,7 +155,11 @@ func (m *Manager) Acquire(ctx context.Context, owner Owner, scope Scope, ttl tim
 }
 
 // Release idempotently releases a lease held by the given owner.
-func (m *Manager) Release(id ID, owner Owner, reason ReasonCode) (*Lease, error) {
+func (m *Manager) Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -194,7 +198,10 @@ func (m *Manager) Release(id ID, owner Owner, reason ReasonCode) (*Lease, error)
 }
 
 // Renew extends the expiration time of an active lease.
-func (m *Manager) Renew(id ID, owner Owner, ttl time.Duration) (*Lease, error) {
+func (m *Manager) Renew(ctx context.Context, id ID, owner Owner, ttl time.Duration) (*Lease, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if ttl <= 0 {
 		return nil, fmt.Errorf("%w: TTL must be greater than 0", ErrInvalidTTL)
 	}

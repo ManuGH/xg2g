@@ -33,9 +33,9 @@ func TestManagerRaceConditions(t *testing.T) {
 					// Simulate short work
 					time.Sleep(1 * time.Millisecond)
 					if j%2 == 0 {
-						_, _ = mgr.Renew(l.ID, wOwner, 100*time.Millisecond)
+						_, _ = mgr.Renew(ctx, l.ID, wOwner, 100*time.Millisecond)
 					}
-					_, _ = mgr.Release(l.ID, wOwner, ReasonReleasedByOwner)
+					_, _ = mgr.Release(ctx, l.ID, wOwner, ReasonReleasedByOwner)
 				} else {
 					// Query active leases
 					_ = mgr.ActiveLeases(wScope)

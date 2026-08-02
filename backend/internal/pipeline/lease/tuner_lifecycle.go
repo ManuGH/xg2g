@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -28,33 +27,29 @@ type TunerLeaseController interface {
 	Release(ctx context.Context, handle *TunerLeaseHandle, reason ReasonCode) error
 }
 
-// SourceClassifier determines whether a given stream URL requires a hardware tuner lease.
-type SourceClassifier interface {
-	IsTunerBound(sourceURL string) bool
+// RenewalScheduler abstracts periodic ticker scheduling for deterministic testing without real time.Sleep.
+type RenewalScheduler interface {
+	C() <-chan time.Time
+	Stop()
 }
 
-// DefaultSourceClassifier checks whether a source URL requires hardware tuner allocation.
-type DefaultSourceClassifier struct{}
+// RealRenewalScheduler is the production implementation of RenewalScheduler backed by time.Ticker.
+type RealRenewalScheduler struct {
+	ticker *time.Ticker
+}
 
-// IsTunerBound returns true if the URL represents a tuner-dependent Enigma2 live service,
-// and false for direct HTTP streams, VOD files, file:// paths, or recorded assets.
-func (d DefaultSourceClassifier) IsTunerBound(sourceURL string) bool {
-	s := strings.TrimSpace(sourceURL)
-	if s == "" {
-		return false
+func NewRealRenewalScheduler(d time.Duration) *RealRenewalScheduler {
+	return &RealRenewalScheduler{ticker: time.NewTicker(d)}
+}
+
+func (r *RealRenewalScheduler) C() <-chan time.Time {
+	return r.ticker.C
+}
+
+func (r *RealRenewalScheduler) Stop() {
+	if r.ticker != nil {
+		r.ticker.Stop()
 	}
-	sLower := strings.ToLower(s)
-	if strings.HasPrefix(sLower, "file://") {
-		return false
-	}
-	if strings.HasSuffix(sLower, ".mp4") || strings.HasSuffix(sLower, ".mkv") || strings.Contains(sLower, "/file/") || strings.Contains(sLower, "/vod/") {
-		return false
-	}
-	// Enigma2 live service references contain colons ("1:0:"), /web/zap, /web/stream, or TS stream ports 8001/8002
-	if strings.Contains(s, "1:0:") || strings.Contains(sLower, "/web/zap") || strings.Contains(sLower, "/web/stream") || strings.Contains(sLower, ":8001") || strings.Contains(sLower, ":8002") {
-		return true
-	}
-	return false
 }
 
 // TunerBindingController implements TunerLeaseController wrapping TunerBinding.
@@ -90,7 +85,7 @@ func (c *TunerBindingController) Renew(ctx context.Context, handle *TunerLeaseHa
 	if handle == nil || handle.LeaseID == "" {
 		return ErrNotFound
 	}
-	_, err := c.tb.RenewTunerSlot(handle.LeaseID, handle.Owner, ttl)
+	_, err := c.tb.RenewTunerSlot(ctx, handle.LeaseID, handle.Owner, ttl)
 	return err
 }
 
@@ -101,56 +96,75 @@ func (c *TunerBindingController) Release(ctx context.Context, handle *TunerLease
 	if handle == nil || handle.LeaseID == "" {
 		return nil
 	}
-	_, err := c.tb.ReleaseTunerSlot(handle.LeaseID, handle.Owner)
+	_, err := c.tb.ReleaseTunerSlot(ctx, handle.LeaseID, handle.Owner, reason)
 	return err
+}
+
+// RunnerConfig configures TunerLifecycleRunner with explicit validations.
+type RunnerConfig struct {
+	Controller     TunerLeaseController
+	TTL            time.Duration
+	RenewInterval  time.Duration
+	CleanupTimeout time.Duration
+	SchedulerFunc  func(d time.Duration) RenewalScheduler
 }
 
 // TunerLifecycleRunner orchestrates full active session/worker tuner leases,
 // bounded renewal loops, startup failure compensation, and cancellation.
 type TunerLifecycleRunner struct {
-	controller TunerLeaseController
-	classifier SourceClassifier
-
-	TTL           time.Duration
-	RenewInterval time.Duration
+	controller     TunerLeaseController
+	TTL            time.Duration
+	RenewInterval  time.Duration
 	CleanupTimeout time.Duration
-	Clock         func() time.Time
+	schedulerFunc  func(d time.Duration) RenewalScheduler
 }
 
-// NewTunerLifecycleRunner creates a TunerLifecycleRunner.
-func NewTunerLifecycleRunner(controller TunerLeaseController, classifier SourceClassifier) *TunerLifecycleRunner {
-	if classifier == nil {
-		classifier = DefaultSourceClassifier{}
+// NewTunerLifecycleRunner creates a TunerLifecycleRunner with validated parameters.
+func NewTunerLifecycleRunner(cfg RunnerConfig) (*TunerLifecycleRunner, error) {
+	if cfg.Controller == nil {
+		return nil, fmt.Errorf("%w: controller must not be nil", ErrBindingUnavailable)
 	}
+	if cfg.TTL <= 0 {
+		return nil, fmt.Errorf("%w: TTL must be greater than 0", ErrInvalidTTL)
+	}
+	if cfg.RenewInterval <= 0 {
+		return nil, fmt.Errorf("%w: renew interval must be greater than 0", ErrInvalidTTL)
+	}
+	if cfg.RenewInterval >= cfg.TTL {
+		return nil, fmt.Errorf("%w: renew interval (%v) must be strictly less than TTL (%v)", ErrInvalidTTL, cfg.RenewInterval, cfg.TTL)
+	}
+	if cfg.CleanupTimeout <= 0 {
+		return nil, fmt.Errorf("%w: cleanup timeout must be greater than 0", ErrInvalidTTL)
+	}
+
+	schedulerFunc := cfg.SchedulerFunc
+	if schedulerFunc == nil {
+		schedulerFunc = func(d time.Duration) RenewalScheduler {
+			return NewRealRenewalScheduler(d)
+		}
+	}
+
 	return &TunerLifecycleRunner{
-		controller:    controller,
-		classifier:    classifier,
-		TTL:           30 * time.Second,
-		RenewInterval: 10 * time.Second,
-		CleanupTimeout: 3 * time.Second,
-		Clock:         time.Now,
-	}
-}
-
-func (r *TunerLifecycleRunner) now() time.Time {
-	if r.Clock != nil {
-		return r.Clock()
-	}
-	return time.Now()
+		controller:     cfg.Controller,
+		TTL:            cfg.TTL,
+		RenewInterval:  cfg.RenewInterval,
+		CleanupTimeout: cfg.CleanupTimeout,
+		schedulerFunc:  schedulerFunc,
+	}, nil
 }
 
 // RunSession manages the complete tuner session lifecycle:
-// 1. Checks if sourceURL requires a tuner lease. If false, bypasses tuner lease.
+// 1. Checks requiresTuner. If false, bypasses tuner lease completely.
 // 2. Acquires tuner lease BEFORE any hardware zap or stream start. If ErrScopeConflict, zero hardware operations occur.
-// 3. Executes tuneFn (Zap / Readiness). If tuneFn fails, performs compensatory lease release.
+// 3. Executes tuneFn (Zap / Readiness). If tuneFn fails, performs compensatory lease release with errors.Join.
 // 4. Executes runFn (active streaming / FFmpeg) while launching a background renewal ticker.
 // 5. If renewal fails or lease is revoked/expired, cancels runFn context immediately.
-// 6. Releases lease idempotently upon termination using a detached bounded context.
+// 6. Releases lease idempotently upon termination using a detached bounded context and preserves explicit reason code.
 func (r *TunerLifecycleRunner) RunSession(
 	parentCtx context.Context,
 	owner Owner,
 	slot int,
-	sourceURL string,
+	requiresTuner bool,
 	tuneFn func(ctx context.Context) error,
 	runFn func(ctx context.Context) error,
 ) error {
@@ -158,15 +172,15 @@ func (r *TunerLifecycleRunner) RunSession(
 		parentCtx = context.Background()
 	}
 
-	// Non-tuner bound sources bypass tuner lease completely
-	if !r.classifier.IsTunerBound(sourceURL) {
+	// Non-tuner bound workloads bypass tuner lease completely
+	if !requiresTuner {
 		if runFn != nil {
 			return runFn(parentCtx)
 		}
 		return nil
 	}
 
-	if r.controller == nil {
+	if r == nil || r.controller == nil {
 		return ErrBindingUnavailable
 	}
 
@@ -177,44 +191,43 @@ func (r *TunerLifecycleRunner) RunSession(
 		return err
 	}
 
-	// Helper for detached bounded cleanup
-	releaseCleanup := func(reason ReasonCode) {
+	// Helper for detached bounded cleanup returning any release error
+	releaseCleanup := func(reason ReasonCode) error {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), r.CleanupTimeout)
 		defer cancel()
-		_ = r.controller.Release(cleanupCtx, handle, reason)
+		return r.controller.Release(cleanupCtx, handle, reason)
 	}
 
 	// 2. Execute Tune (Zap / Readiness) with compensation on failure
 	if tuneFn != nil {
 		if err := tuneFn(parentCtx); err != nil {
-			releaseCleanup(ReasonReleasedByOwner)
-			return fmt.Errorf("tuner prep failed: %w", err)
+			relErr := releaseCleanup(ReasonReleasedByOwner)
+			return errors.Join(fmt.Errorf("tuner prep failed: %w", err), relErr)
 		}
 	}
 
 	// Check if context was canceled during tune
 	if parentCtx.Err() != nil {
-		releaseCleanup(ReasonReleasedByOwner)
-		return parentCtx.Err()
+		relErr := releaseCleanup(ReasonReleasedByOwner)
+		return errors.Join(parentCtx.Err(), relErr)
 	}
 
 	// 3. Active Usage with Bounded Renewal Loop
 	sessionCtx, cancelSession := context.WithCancel(parentCtx)
-	defer cancelSession()
 
 	renewDone := make(chan struct{})
 	var renewErr error
 
 	go func() {
 		defer close(renewDone)
-		ticker := time.NewTicker(r.RenewInterval)
-		defer ticker.Stop()
+		scheduler := r.schedulerFunc(r.RenewInterval)
+		defer scheduler.Stop()
 
 		for {
 			select {
 			case <-sessionCtx.Done():
 				return
-			case <-ticker.C:
+			case <-scheduler.C():
 				if err := r.controller.Renew(sessionCtx, handle, r.TTL); err != nil {
 					renewErr = err
 					cancelSession() // Revoke / Expire / Error: abort active usage context immediately!
@@ -242,13 +255,21 @@ func (r *TunerLifecycleRunner) RunSession(
 		}
 	}
 
-	releaseCleanup(releaseReason)
+	releaseErr := releaseCleanup(releaseReason)
 
-	if runErr != nil {
-		return runErr
+	if runErr != nil || renewErr != nil || releaseErr != nil {
+		var errs []error
+		if runErr != nil {
+			errs = append(errs, runErr)
+		}
+		if renewErr != nil {
+			errs = append(errs, fmt.Errorf("tuner lease lost during active session: %w", renewErr))
+		}
+		if releaseErr != nil {
+			errs = append(errs, fmt.Errorf("tuner lease release failed: %w", releaseErr))
+		}
+		return errors.Join(errs...)
 	}
-	if renewErr != nil {
-		return fmt.Errorf("tuner lease lost during active session: %w", renewErr)
-	}
+
 	return nil
 }

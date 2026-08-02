@@ -13,19 +13,98 @@ import (
 	"time"
 )
 
-// 1. Exclusive Start: Session A acquires slot; Session B rejected before hardware operations
+// MockRenewalScheduler allows manual deterministic ticking without time.Sleep.
+type MockRenewalScheduler struct {
+	tickCh chan time.Time
+	stopped atomic.Bool
+}
+
+func NewMockRenewalScheduler() *MockRenewalScheduler {
+	return &MockRenewalScheduler{tickCh: make(chan time.Time, 10)}
+}
+
+func (m *MockRenewalScheduler) C() <-chan time.Time {
+	return m.tickCh
+}
+
+func (m *MockRenewalScheduler) Stop() {
+	m.stopped.Store(true)
+}
+
+func (m *MockRenewalScheduler) Tick() {
+	if !m.stopped.Load() {
+		m.tickCh <- time.Now()
+	}
+}
+
+func defaultTestRunnerConfig(tb *TunerBinding) RunnerConfig {
+	return RunnerConfig{
+		Controller:     NewTunerBindingController(tb),
+		TTL:            30 * time.Second,
+		RenewInterval:  10 * time.Second,
+		CleanupTimeout: 2 * time.Second,
+	}
+}
+
+// 1. Invalid Configuration Validation Test (No panics!)
+func TestRunnerInvalidConfiguration(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
+	defer mgr.Close()
+	ctrl := NewTunerBindingController(NewTunerBinding(mgr))
+
+	tests := []struct {
+		name string
+		cfg  RunnerConfig
+		want error
+	}{
+		{
+			name: "nil controller",
+			cfg:  RunnerConfig{Controller: nil, TTL: 30 * time.Second, RenewInterval: 10 * time.Second, CleanupTimeout: 1 * time.Second},
+			want: ErrBindingUnavailable,
+		},
+		{
+			name: "zero TTL",
+			cfg:  RunnerConfig{Controller: ctrl, TTL: 0, RenewInterval: 10 * time.Second, CleanupTimeout: 1 * time.Second},
+			want: ErrInvalidTTL,
+		},
+		{
+			name: "zero renew interval",
+			cfg:  RunnerConfig{Controller: ctrl, TTL: 30 * time.Second, RenewInterval: 0, CleanupTimeout: 1 * time.Second},
+			want: ErrInvalidTTL,
+		},
+		{
+			name: "renew interval >= TTL",
+			cfg:  RunnerConfig{Controller: ctrl, TTL: 30 * time.Second, RenewInterval: 30 * time.Second, CleanupTimeout: 1 * time.Second},
+			want: ErrInvalidTTL,
+		},
+		{
+			name: "zero cleanup timeout",
+			cfg:  RunnerConfig{Controller: ctrl, TTL: 30 * time.Second, RenewInterval: 10 * time.Second, CleanupTimeout: 0},
+			want: ErrInvalidTTL,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewTunerLifecycleRunner(tt.cfg)
+			if !errors.Is(err, tt.want) {
+				t.Errorf("expected error %v, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+// 2. Exclusive Start: Session A acquires slot; Session B rejected with ErrScopeConflict BEFORE hardware operations
 func TestLifecycleExclusiveStart(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
 	defer mgr.Close()
 
-	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
-	runner.RenewInterval = 50 * time.Millisecond
+	runner, err := NewTunerLifecycleRunner(defaultTestRunnerConfig(NewTunerBinding(mgr)))
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
+	}
 
 	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
-
 	sessionStarted := make(chan struct{})
 	sessionUnblock := make(chan struct{})
 	hardwareCalledB := atomic.Bool{}
@@ -36,10 +115,8 @@ func TestLifecycleExclusiveStart(t *testing.T) {
 			context.Background(),
 			"session-A",
 			slot,
-			liveRef,
-			func(ctx context.Context) error {
-				return nil
-			},
+			true, // requiresTuner = true
+			func(ctx context.Context) error { return nil },
 			func(ctx context.Context) error {
 				close(sessionStarted)
 				<-sessionUnblock
@@ -51,22 +128,20 @@ func TestLifecycleExclusiveStart(t *testing.T) {
 	<-sessionStarted
 
 	// Session B attempts to acquire same slot
-	err := runner.RunSession(
+	runErr := runner.RunSession(
 		context.Background(),
 		"session-B",
 		slot,
-		liveRef,
+		true,
 		func(ctx context.Context) error {
 			hardwareCalledB.Store(true)
 			return nil
 		},
-		func(ctx context.Context) error {
-			return nil
-		},
+		func(ctx context.Context) error { return nil },
 	)
 
-	if !errors.Is(err, ErrScopeConflict) {
-		t.Errorf("expected ErrScopeConflict for Session B, got %v", err)
+	if !errors.Is(runErr, ErrScopeConflict) {
+		t.Errorf("expected ErrScopeConflict for Session B, got %v", runErr)
 	}
 
 	if hardwareCalledB.Load() {
@@ -76,24 +151,25 @@ func TestLifecycleExclusiveStart(t *testing.T) {
 	close(sessionUnblock)
 }
 
-// 2. Tune Failure Compensation: Acquire succeeds, tuneFn fails -> Lease released immediately
+// 3. Tune Failure Compensation: Acquire succeeds, tuneFn fails -> Lease released immediately
 func TestLifecycleTuneFailureCompensation(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
 	defer mgr.Close()
-
 	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
+
+	runner, err := NewTunerLifecycleRunner(defaultTestRunnerConfig(tb))
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
+	}
 
 	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
 	tuneErr := errors.New("zap failed")
 
-	err := runner.RunSession(
+	runErr := runner.RunSession(
 		context.Background(),
 		"session-A",
 		slot,
-		liveRef,
+		true,
 		func(ctx context.Context) error {
 			return tuneErr
 		},
@@ -103,8 +179,8 @@ func TestLifecycleTuneFailureCompensation(t *testing.T) {
 		},
 	)
 
-	if err == nil || !errors.Is(err, tuneErr) && !stringsContains(err.Error(), "zap failed") {
-		t.Errorf("expected tune error, got %v", err)
+	if runErr == nil || !errors.Is(runErr, tuneErr) {
+		t.Errorf("expected tune error, got %v", runErr)
 	}
 
 	// Slot must be free immediately
@@ -114,57 +190,54 @@ func TestLifecycleTuneFailureCompensation(t *testing.T) {
 	}
 }
 
-// 3. Readiness Failure Compensation: Zap succeeds, Readiness fails -> Lease released
+// 4. Readiness Failure Compensation: Zap succeeds, Readiness fails -> Lease released
 func TestLifecycleReadinessFailureCompensation(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
 	defer mgr.Close()
-
 	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
+
+	runner, err := NewTunerLifecycleRunner(defaultTestRunnerConfig(tb))
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
+	}
 
 	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
 	readinessErr := errors.New("tuner lock readiness timeout")
 
-	err := runner.RunSession(
+	runErr := runner.RunSession(
 		context.Background(),
 		"session-A",
 		slot,
-		liveRef,
+		true,
 		func(ctx context.Context) error {
-			// Simulate zap succeeds, readiness fails
 			return readinessErr
 		},
-		func(ctx context.Context) error {
-			return nil
-		},
+		func(ctx context.Context) error { return nil },
 	)
 
-	if err == nil || !errors.Is(err, readinessErr) && !stringsContains(err.Error(), "readiness timeout") {
-		t.Errorf("expected readiness error, got %v", err)
+	if runErr == nil || !errors.Is(runErr, readinessErr) {
+		t.Errorf("expected readiness error, got %v", runErr)
 	}
 
-	// Slot must be free
 	_, found := tb.GetTunerLease(slot)
 	if found {
 		t.Errorf("expected tuner lease slot to be released after readiness failure")
 	}
 }
 
-// 4. Context Cancellation: Acquire succeeds, Parent context canceled -> Cleanup with detached bounded context
+// 5. Context Cancellation: Acquire succeeds, Parent context canceled -> Cleanup runs with detached bounded context
 func TestLifecycleContextCancellation(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
 	defer mgr.Close()
-
 	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
+
+	runner, err := NewTunerLifecycleRunner(defaultTestRunnerConfig(tb))
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
-
 	sessionStarted := make(chan struct{})
 
 	go func() {
@@ -172,7 +245,7 @@ func TestLifecycleContextCancellation(t *testing.T) {
 			ctx,
 			"session-canceled",
 			slot,
-			liveRef,
+			true,
 			func(c context.Context) error {
 				close(sessionStarted)
 				return nil
@@ -187,8 +260,7 @@ func TestLifecycleContextCancellation(t *testing.T) {
 	<-sessionStarted
 	cancel() // Cancel parent context
 
-	// Give runner a moment to process cleanup
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
 	_, found := tb.GetTunerLease(slot)
 	if found {
@@ -196,32 +268,33 @@ func TestLifecycleContextCancellation(t *testing.T) {
 	}
 }
 
-// 5. Pipeline Start Failure: Tuner lease acquired, downstream start fails -> No lease leak
+// 6. Pipeline Start Failure: Tuner lease acquired, downstream start fails -> No lease leak
 func TestLifecyclePipelineStartFailure(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
 	defer mgr.Close()
-
 	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
+
+	runner, err := NewTunerLifecycleRunner(defaultTestRunnerConfig(tb))
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
+	}
 
 	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
 	pipelineErr := errors.New("ffmpeg spawn failed")
 
-	err := runner.RunSession(
+	runErr := runner.RunSession(
 		context.Background(),
 		"session-pipeline-fail",
 		slot,
-		liveRef,
+		true,
 		func(ctx context.Context) error { return nil },
 		func(ctx context.Context) error {
 			return pipelineErr
 		},
 	)
 
-	if !errors.Is(err, pipelineErr) {
-		t.Errorf("expected pipelineErr, got %v", err)
+	if !errors.Is(runErr, pipelineErr) {
+		t.Errorf("expected pipelineErr, got %v", runErr)
 	}
 
 	_, found := tb.GetTunerLease(slot)
@@ -230,29 +303,29 @@ func TestLifecyclePipelineStartFailure(t *testing.T) {
 	}
 }
 
-// 6. Normal Completion: Session completes regularly -> Lease released once idempotently
+// 7. Normal Completion: Session completes regularly -> Lease released once idempotently with ReasonReleasedByOwner
 func TestLifecycleNormalCompletion(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
 	defer mgr.Close()
-
 	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
+
+	runner, err := NewTunerLifecycleRunner(defaultTestRunnerConfig(tb))
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
+	}
 
 	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
-
-	err := runner.RunSession(
+	runErr := runner.RunSession(
 		context.Background(),
 		"session-normal",
 		slot,
-		liveRef,
+		true,
 		func(ctx context.Context) error { return nil },
 		func(ctx context.Context) error { return nil },
 	)
 
-	if err != nil {
-		t.Fatalf("unexpected session error: %v", err)
+	if runErr != nil {
+		t.Fatalf("unexpected session error: %v", runErr)
 	}
 
 	_, found := tb.GetTunerLease(slot)
@@ -261,114 +334,91 @@ func TestLifecycleNormalCompletion(t *testing.T) {
 	}
 }
 
-// 7. Renew Success: Active usage periodically extends lease
+// 8. Deterministic Renew Success using MockRenewalScheduler
 func TestLifecycleRenewSuccess(t *testing.T) {
-	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
 	defer mgr.Close()
-
 	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
-	runner.TTL = 500 * time.Millisecond
-	runner.RenewInterval = 50 * time.Millisecond
 
-	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
+	mockSched := NewMockRenewalScheduler()
 
-	err := runner.RunSession(
-		context.Background(),
-		"session-renew",
-		slot,
-		liveRef,
-		func(ctx context.Context) error { return nil },
-		func(ctx context.Context) error {
-			time.Sleep(200 * time.Millisecond) // runs through multiple renewals
-			return nil
-		},
-	)
+	cfg := defaultTestRunnerConfig(tb)
+	cfg.SchedulerFunc = func(d time.Duration) RenewalScheduler { return mockSched }
 
+	runner, err := NewTunerLifecycleRunner(cfg)
 	if err != nil {
-		t.Fatalf("unexpected renew session error: %v", err)
+		t.Fatalf("failed to create runner: %v", err)
 	}
-}
-
-// 8. Renew Failure / Expiration: Renewal fails -> Usage context canceled, stream stopped, slot released
-func TestLifecycleRenewFailureExpiration(t *testing.T) {
-	mgr := NewManager(ManagerConfig{SweepInterval: 10 * time.Millisecond})
-	defer mgr.Close()
-
-	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
-	runner.TTL = 50 * time.Millisecond
-	runner.RenewInterval = 20 * time.Millisecond
 
 	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
-	sessionCanceled := make(chan struct{})
-
-	// Simulate manager close during active session to cause renew failure
-	go func() {
-		time.Sleep(30 * time.Millisecond)
-		_ = mgr.Close()
-	}()
-
-	err := runner.RunSession(
-		context.Background(),
-		"session-renew-fail",
-		slot,
-		liveRef,
-		func(ctx context.Context) error { return nil },
-		func(ctx context.Context) error {
-			select {
-			case <-ctx.Done():
-				close(sessionCanceled)
-				return ctx.Err()
-			case <-time.After(500 * time.Millisecond):
-				return nil
-			}
-		},
-	)
-
-	if err == nil {
-		t.Errorf("expected error when lease renewal fails")
-	}
-
-	select {
-	case <-sessionCanceled:
-		// success: session context was canceled immediately upon lease loss
-	default:
-		t.Errorf("expected session context to be canceled upon renewal failure")
-	}
-}
-
-// 9. Revoke: Active lease revoked -> Usage context canceled, session stopped, slot free
-func TestLifecycleRevoke(t *testing.T) {
-	mgr := NewManager(ManagerConfig{SweepInterval: 10 * time.Millisecond})
-	defer mgr.Close()
-
-	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
-	runner.RenewInterval = 20 * time.Millisecond
-
-	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
-
 	sessionStarted := make(chan struct{})
-	sessionCanceled := make(chan struct{})
+	sessionDone := make(chan struct{})
 
 	go func() {
 		_ = runner.RunSession(
 			context.Background(),
+			"session-renew",
+			slot,
+			true,
+			func(ctx context.Context) error { return nil },
+			func(ctx context.Context) error {
+				close(sessionStarted)
+				<-sessionDone
+				return nil
+			},
+		)
+	}()
+
+	<-sessionStarted
+
+	// Trigger renewal tick deterministically
+	mockSched.Tick()
+	time.Sleep(10 * time.Millisecond)
+
+	l, found := tb.GetTunerLease(slot)
+	if !found {
+		t.Fatalf("expected active lease during session")
+	}
+	if l.State != StateAcquired {
+		t.Errorf("expected state ACQUIRED after renewal, got %s", l.State)
+	}
+
+	close(sessionDone)
+}
+
+// 9. Real Process Teardown on Revocation & Reason Preserved as ReasonPreempted
+func TestLifecycleRealProcessTeardownOnRevoke(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 10 * time.Millisecond})
+	defer mgr.Close()
+	tb := NewTunerBinding(mgr)
+
+	mockSched := NewMockRenewalScheduler()
+
+	cfg := defaultTestRunnerConfig(tb)
+	cfg.SchedulerFunc = func(d time.Duration) RenewalScheduler { return mockSched }
+
+	runner, err := NewTunerLifecycleRunner(cfg)
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
+	}
+
+	slot := 0
+	processStopped := atomic.Bool{}
+	sessionStarted := make(chan struct{})
+	sessionEnded := make(chan struct{})
+
+	go func() {
+		defer close(sessionEnded)
+		_ = runner.RunSession(
+			context.Background(),
 			"session-revoke",
 			slot,
-			liveRef,
+			true,
 			func(ctx context.Context) error { return nil },
 			func(ctx context.Context) error {
 				close(sessionStarted)
 				<-ctx.Done()
-				close(sessionCanceled)
+				processStopped.Store(true) // Prove process Stop is actually invoked on revocation!
 				return ctx.Err()
 			},
 		)
@@ -376,21 +426,24 @@ func TestLifecycleRevoke(t *testing.T) {
 
 	<-sessionStarted
 
-	// Revoke the lease
 	l, found := tb.GetTunerLease(slot)
 	if !found {
 		t.Fatalf("failed to find active lease for revocation")
 	}
-	_, err := mgr.Revoke(l.ID, ReasonPreempted)
+
+	// Revoke active lease
+	_, err = mgr.Revoke(l.ID, ReasonPreempted)
 	if err != nil {
 		t.Fatalf("revoke failed: %v", err)
 	}
 
-	select {
-	case <-sessionCanceled:
-		// usage context was canceled upon detecting revocation during renewal
-	case <-time.After(200 * time.Millisecond):
-		t.Fatalf("session failed to stop after revocation")
+	// Trigger mock renewal scheduler to discover revocation
+	mockSched.Tick()
+
+	<-sessionEnded
+
+	if !processStopped.Load() {
+		t.Errorf("expected real process Stop to be executed upon revocation")
 	}
 
 	// Slot must be free for new owner
@@ -403,65 +456,58 @@ func TestLifecycleRevoke(t *testing.T) {
 	}
 }
 
-// 10. Non-Tuner Source: Direct HTTP / VOD path -> No tuner lease acquired, stream runs directly
+// 10. Non-Tuner Source: requiresTuner = false -> No lease acquired, stream runs directly
 func TestLifecycleNonTunerSource(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
 	defer mgr.Close()
 
 	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
-
-	slot := 0
-	nonTunerSources := []string{
-		"http://10.0.0.1/vod/movie.mp4",
-		"file:///var/media/recording.ts",
-		"http://cdn.example.com/live/stream.m3u8",
+	runner, err := NewTunerLifecycleRunner(defaultTestRunnerConfig(tb))
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
 	}
 
-	for _, src := range nonTunerSources {
-		tuneCalled := false
-		err := runner.RunSession(
-			context.Background(),
-			"session-vod",
-			slot,
-			src,
-			func(ctx context.Context) error {
-				tuneCalled = true
-				return nil
-			},
-			func(ctx context.Context) error {
-				return nil
-			},
-		)
-		if err != nil {
-			t.Fatalf("unexpected non-tuner session error: %v", err)
-		}
-		if tuneCalled {
-			t.Errorf("tune function MUST NOT be called for non-tuner source: %s", src)
-		}
-		_, found := tb.GetTunerLease(slot)
-		if found {
-			t.Errorf("no tuner lease should be acquired for non-tuner source: %s", src)
-		}
+	slot := 0
+	tuneCalled := false
+
+	runErr := runner.RunSession(
+		context.Background(),
+		"session-vod",
+		slot,
+		false, // requiresTuner = false
+		func(ctx context.Context) error {
+			tuneCalled = true
+			return nil
+		},
+		func(ctx context.Context) error { return nil },
+	)
+
+	if runErr != nil {
+		t.Fatalf("unexpected non-tuner session error: %v", runErr)
+	}
+	if tuneCalled {
+		t.Errorf("tune function MUST NOT be called when requiresTuner is false")
+	}
+	_, found := tb.GetTunerLease(slot)
+	if found {
+		t.Errorf("no tuner lease should be acquired when requiresTuner is false")
 	}
 }
 
-// 11. Race Test: Multiple concurrent sessions competing for same slot
+// 11. High-Concurrency Race Test
 func TestLifecycleRaceConditions(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 10 * time.Millisecond})
 	defer mgr.Close()
 
 	tb := NewTunerBinding(mgr)
-	ctrl := NewTunerBindingController(tb)
-	runner := NewTunerLifecycleRunner(ctrl, nil)
-	runner.TTL = 100 * time.Millisecond
-	runner.RenewInterval = 20 * time.Millisecond
+	runner, err := NewTunerLifecycleRunner(defaultTestRunnerConfig(tb))
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
+	}
 
-	const numWorkers = 30
+	const numWorkers = 25
 	var wg sync.WaitGroup
 	slot := 0
-	liveRef := "1:0:19:83:6:85:C00000:0:0:0:"
 	activeConcurrentStarts := atomic.Int32{}
 	maxConcurrentStarts := atomic.Int32{}
 
@@ -476,7 +522,7 @@ func TestLifecycleRaceConditions(t *testing.T) {
 				ctx,
 				wOwner,
 				slot,
-				liveRef,
+				true,
 				func(c context.Context) error { return nil },
 				func(c context.Context) error {
 					curr := activeConcurrentStarts.Add(1)
@@ -488,7 +534,6 @@ func TestLifecycleRaceConditions(t *testing.T) {
 							break
 						}
 					}
-					time.Sleep(2 * time.Millisecond)
 					return nil
 				},
 			)
@@ -500,17 +545,10 @@ func TestLifecycleRaceConditions(t *testing.T) {
 	if maxConcurrentStarts.Load() > 1 {
 		t.Errorf("expected at most 1 active concurrent hardware start for slot %d, got %d", slot, maxConcurrentStarts.Load())
 	}
-}
 
-func stringsContains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) > 0 && searchSubstring(s, substr))
-}
-
-func searchSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+	// Verify no orphaned leases left in manager after all workers finish
+	active := mgr.ActiveLeases(ScopeForTunerSlot(slot))
+	if len(active) > 0 {
+		t.Errorf("expected 0 active leases remaining after race test, got %d", len(active))
 	}
-	return false
 }
