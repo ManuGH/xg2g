@@ -181,6 +181,7 @@ const (
 	ReconciliationStatusOrphaned                  ReconciliationStatus = "orphaned"
 	ReconciliationStatusMissing                   ReconciliationStatus = "missing"
 	ReconciliationStatusManualInterventionRequired ReconciliationStatus = "manual-intervention-required"
+	CompositeStatusBroken                         ReconciliationStatus = "broken"
 )
 
 // ReconciliationReasonCode provides structured machine-readable explanation for reconciliation items.
@@ -199,6 +200,7 @@ const (
 	ReasonReconciliationRevalidationFailed    ReconciliationReasonCode = "RECONCILIATION_REVALIDATION_FAILED"
 	ReasonReconciliationPendingAcquisition   ReconciliationReasonCode = "RECONCILIATION_PENDING_ACQUISITION"
 	ReasonReconciliationReleasePending       ReconciliationReasonCode = "RECONCILIATION_RELEASE_PENDING"
+	ReasonReconciliationBrokenComposite       ReconciliationReasonCode = "RECONCILIATION_BROKEN_COMPOSITE"
 )
 
 // RemediationOutcome describes the result of an automated remediation attempt.
@@ -698,7 +700,9 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 
 		for _, k := range compKeys {
 			comp := compositeTracker[k]
-			if comp.Conflicted > 0 || comp.Missing > 0 {
+			if comp.Conflicted > 0 || (comp.Confirmed > 0 && comp.Missing > 0) {
+				comp.Status = CompositeStatusBroken
+			} else if comp.Missing > 0 {
 				comp.Status = ReconciliationStatusManualInterventionRequired
 			} else if comp.Confirmed > 0 || comp.Pending > 0 {
 				comp.Status = ReconciliationStatusConfirmed

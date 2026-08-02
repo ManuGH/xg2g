@@ -705,7 +705,11 @@ func TestProductionWiring_IntentTrackedTunerLeaseController(t *testing.T) {
 		t.Fatalf("failed to create IntentTrackedTunerLeaseController: %v", err)
 	}
 
-	// 1. Acquire lease via production-wired tracked controller
+	// 1. Acquire lease via production-wired tracked controller after startup gate
+	_, _ = trackedCtrl.ExecuteStartupReconciliation(ctx, ReconcilerConfig{
+		IntentStore: store,
+		Backend:     mgr,
+	})
 	handle, err := trackedCtrl.Acquire(ctx, "session-wired-1", 0, 10*time.Minute)
 	if err != nil {
 		t.Fatalf("Acquire failed: %v", err)
@@ -734,6 +738,136 @@ func TestProductionWiring_IntentTrackedTunerLeaseController(t *testing.T) {
 
 	if report.Summary.Confirmed != 1 {
 		t.Errorf("expected 1 confirmed item in startup reconciliation report, got summary: %+v", report.Summary)
+	}
+}
+
+// TestReconciler_IdempotentFixpoint verifies that running Reconciliation multiple times
+// sequentially after remediation yields Report #2 == Report #3 with zero side-effects.
+func TestReconciler_IdempotentFixpoint(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+	ctx := context.Background()
+
+	// Seed 1 active matching intent/lease, 1 orphan lease, 1 missing intent
+	lActive, _ := mgr.Acquire(ctx, "worker-1", "res:ACTIVE", 10*time.Minute)
+	_ = store.SaveIntent(ctx, LeaseIntent{
+		IntentID: "intent-active",
+		LeaseID:  lActive.ID,
+		Owner:    "worker-1",
+		Scope:    "res:ACTIVE",
+		State:    IntentStateActive,
+		Revision: 1,
+	})
+
+	// Orphan backend lease (no intent)
+	_, _ = mgr.Acquire(ctx, "worker-orphan", "res:ORPHAN", 10*time.Minute)
+
+	// Missing intent (no backend lease)
+	_ = store.SaveIntent(ctx, LeaseIntent{
+		IntentID: "intent-missing",
+		Owner:    "worker-2",
+		Scope:    "res:MISSING",
+		State:    IntentStateActive,
+		Revision: 1,
+	})
+
+	reconciler, _ := NewReconciler(ReconcilerConfig{
+		IntentStore:          store,
+		Backend:              mgr,
+		AutoRemediateOrphans: true,
+	})
+
+	// Run #1: Auto-remediates orphan
+	report1, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("Reconcile 1 failed: %v", err)
+	}
+	if report1.Summary.RemediatedOrphans != 1 {
+		t.Errorf("expected 1 remediated orphan on Run 1, got %d", report1.Summary.RemediatedOrphans)
+	}
+
+	// Run #2: Must be stable fixpoint (no new remediations)
+	report2, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("Reconcile 2 failed: %v", err)
+	}
+	if report2.Summary.RemediatedOrphans != 0 {
+		t.Errorf("expected 0 remediated orphans on Run 2, got %d", report2.Summary.RemediatedOrphans)
+	}
+
+	// Run #3: Must be identical to Run #2
+	report3, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("Reconcile 3 failed: %v", err)
+	}
+	if report3.Summary.RemediatedOrphans != 0 {
+		t.Errorf("expected 0 remediated orphans on Run 3, got %d", report3.Summary.RemediatedOrphans)
+	}
+
+	// Verify Report #2 == Report #3
+	if len(report2.Items) != len(report3.Items) {
+		t.Fatalf("expected identical item counts: Report2=%d, Report3=%d", len(report2.Items), len(report3.Items))
+	}
+	for i := range report2.Items {
+		if report2.Items[i].Scope != report3.Items[i].Scope ||
+			report2.Items[i].ObservedStatus != report3.Items[i].ObservedStatus ||
+			report2.Items[i].FinalStatus != report3.Items[i].FinalStatus {
+			t.Errorf("mismatch at item %d:\nReport2: %+v\nReport3: %+v", i, report2.Items[i], report3.Items[i])
+		}
+	}
+}
+
+// TestReconciler_CompositeBrokenStatus verifies that a multi-resource composite lease
+// with a missing member is marked with aggregate status CompositeStatusBroken.
+func TestReconciler_CompositeBrokenStatus(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+	ctx := context.Background()
+
+	// Member 1: Tuner (Confirmed active)
+	lTuner, _ := mgr.Acquire(ctx, "session-comp-1", "tuner:0", 10*time.Minute)
+	_ = store.SaveIntent(ctx, LeaseIntent{
+		IntentID:    "intent-tuner",
+		LeaseID:     lTuner.ID,
+		Owner:       "session-comp-1",
+		Scope:       "tuner:0",
+		CompositeID: "comp-session-100",
+		State:       IntentStateActive,
+		Revision:    1,
+	})
+
+	// Member 2: Encoder (Missing in backend)
+	_ = store.SaveIntent(ctx, LeaseIntent{
+		IntentID:    "intent-encoder",
+		LeaseID:     "lse-encoder-missing",
+		Owner:       "session-comp-1",
+		Scope:       "encoder:0",
+		CompositeID: "comp-session-100",
+		State:       IntentStateActive,
+		Revision:    1,
+	})
+
+	reconciler, _ := NewReconciler(ReconcilerConfig{
+		IntentStore: store,
+		Backend:     mgr,
+	})
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	if len(report.Summary.Composites) != 1 {
+		t.Fatalf("expected 1 composite summary, got %d", len(report.Summary.Composites))
+	}
+	compSum := report.Summary.Composites[0]
+	if compSum.CompositeID != "comp-session-100" {
+		t.Errorf("expected CompositeID comp-session-100, got %s", compSum.CompositeID)
+	}
+	if compSum.Status != CompositeStatusBroken {
+		t.Errorf("expected aggregate status CompositeStatusBroken ('broken'), got %s", compSum.Status)
 	}
 }
 

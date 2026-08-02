@@ -5,15 +5,36 @@ package lease
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
+)
+
+// StartupGateState represents the mandatory gate status for lease acquisitions.
+type StartupGateState string
+
+const (
+	GatePending  StartupGateState = "GATE_PENDING"
+	GateAccepted StartupGateState = "GATE_ACCEPTED"
+	GateRefused  StartupGateState = "GATE_REFUSED"
+)
+
+var (
+	ErrStartupReconciliationRequired = errors.New("startup reconciliation required before acquiring leases")
+	ErrStartupReconciliationFailed   = errors.New("startup reconciliation refused startup due to manual intervention requirement")
 )
 
 // IntentTrackedTunerLeaseController wraps a TunerLeaseController and persists LeaseIntents
 // to an IntentStore throughout the lease lifecycle (PENDING -> ACTIVE -> RELEASING -> TERMINAL).
+// It enforces a mandatory startup gate requiring successful reconciliation before accepting acquisitions.
 type IntentTrackedTunerLeaseController struct {
 	controller  TunerLeaseController
 	intentStore IntentStore
+
+	gateMu               sync.RWMutex
+	gateState            StartupGateState
+	reconciliationReport *ReconciliationReport
 }
 
 // NewIntentTrackedTunerLeaseController creates a new IntentTrackedTunerLeaseController instance.
@@ -27,11 +48,71 @@ func NewIntentTrackedTunerLeaseController(controller TunerLeaseController, store
 	return &IntentTrackedTunerLeaseController{
 		controller:  controller,
 		intentStore: store,
+		gateState:   GatePending,
 	}, nil
 }
 
-// Acquire wraps tuner lease acquisition with intent lifecycle tracking.
+// ExecuteStartupReconciliation performs mandatory startup reconciliation audit and sets the gate state.
+func (c *IntentTrackedTunerLeaseController) ExecuteStartupReconciliation(ctx context.Context, cfg ReconcilerConfig) (*ReconciliationReport, error) {
+	c.gateMu.Lock()
+	defer c.gateMu.Unlock()
+
+	reconciler, err := NewReconciler(cfg)
+	if err != nil {
+		c.gateState = GateRefused
+		return nil, fmt.Errorf("%w: failed to initialize reconciler: %v", ErrStartupReconciliationFailed, err)
+	}
+
+	report, err := reconciler.Reconcile(ctx)
+	if err != nil {
+		c.gateState = GateRefused
+		return nil, fmt.Errorf("%w: reconciliation execution failed: %v", ErrStartupReconciliationFailed, err)
+	}
+
+	c.reconciliationReport = report
+	if report.Summary.ManualInterventionRequired > 0 {
+		c.gateState = GateRefused
+		return report, fmt.Errorf("%w: %d items require manual intervention", ErrStartupReconciliationFailed, report.Summary.ManualInterventionRequired)
+	}
+
+	for _, comp := range report.Summary.Composites {
+		if comp.Status == CompositeStatusBroken || comp.Status == ReconciliationStatusManualInterventionRequired {
+			c.gateState = GateRefused
+			return report, fmt.Errorf("%w: composite %s is broken", ErrStartupReconciliationFailed, comp.CompositeID)
+		}
+	}
+
+	c.gateState = GateAccepted
+	return report, nil
+}
+
+// GateState returns the current startup gate state.
+func (c *IntentTrackedTunerLeaseController) GateState() StartupGateState {
+	c.gateMu.RLock()
+	defer c.gateMu.RUnlock()
+	return c.gateState
+}
+
+// ReconciliationReport returns the report from startup reconciliation, if executed.
+func (c *IntentTrackedTunerLeaseController) ReconciliationReport() *ReconciliationReport {
+	c.gateMu.RLock()
+	defer c.gateMu.RUnlock()
+	return c.reconciliationReport
+}
+
+// Acquire wraps tuner lease acquisition with intent lifecycle tracking and mandatory startup gate enforcement.
 func (c *IntentTrackedTunerLeaseController) Acquire(ctx context.Context, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
+	c.gateMu.RLock()
+	gState := c.gateState
+	c.gateMu.RUnlock()
+
+	if gState == GatePending {
+		return nil, ErrStartupReconciliationRequired
+	}
+	if gState == GateRefused {
+		return nil, ErrStartupReconciliationFailed
+	}
+
 	scope := ScopeForTunerSlot(slot)
 	intentID := ID(fmt.Sprintf("intent-%s-%s-%d", owner, scope, time.Now().UnixNano()))
 
@@ -121,3 +202,4 @@ func RunStartupReconciliation(ctx context.Context, cfg ReconcilerConfig) (*Recon
 
 	return report, nil
 }
+
