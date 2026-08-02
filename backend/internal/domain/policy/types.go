@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// ConsumerType identifies the nature and operational priority of a tuner resource consumer.
+// ConsumerType identifies the operational classification of a resource consumer.
 type ConsumerType string
 
 const (
@@ -17,24 +17,14 @@ const (
 	ConsumerBackgroundTransfer ConsumerType = "BACKGROUND_TRANSFER"
 )
 
-// PriorityWeight returns the numeric priority weight for a consumer type (higher = higher priority).
-func (c ConsumerType) PriorityWeight() int {
-	switch c {
-	case ConsumerScheduledRecording:
-		return 60
-	case ConsumerManualRecording:
-		return 50
-	case ConsumerLiveTV:
-		return 40
-	case ConsumerRetroDVR:
-		return 30
-	case ConsumerChannelScan:
-		return 20
-	case ConsumerBackgroundTransfer:
-		return 10
-	default:
-		return 0
-	}
+// AllConsumerTypes lists all supported consumer types for matrix completeness verification.
+var AllConsumerTypes = []ConsumerType{
+	ConsumerScheduledRecording,
+	ConsumerManualRecording,
+	ConsumerLiveTV,
+	ConsumerRetroDVR,
+	ConsumerChannelScan,
+	ConsumerBackgroundTransfer,
 }
 
 // IsValid checks whether the consumer type is a recognized system consumer.
@@ -48,60 +38,132 @@ func (c ConsumerType) IsValid() bool {
 	}
 }
 
+// LossClass returns the relative loss cost rank for tie-breaking candidate selection (lower = lower loss, preempt first).
+func (c ConsumerType) LossClass() int {
+	switch c {
+	case ConsumerBackgroundTransfer:
+		return 10
+	case ConsumerChannelScan:
+		return 20
+	case ConsumerRetroDVR:
+		return 30
+	case ConsumerLiveTV:
+		return 40
+	case ConsumerManualRecording:
+		return 50
+	case ConsumerScheduledRecording:
+		return 60
+	default:
+		return 0
+	}
+}
+
+// ResourceKind identifies the discrete hardware or system resource type being evaluated.
+type ResourceKind string
+
+const (
+	ResourceTuner       ResourceKind = "TUNER"
+	ResourceDemuxer     ResourceKind = "DEMUXER"
+	ResourceEncoderSlot ResourceKind = "ENCODER_SLOT"
+	ResourceStorageIO   ResourceKind = "STORAGE_IO"
+)
+
+// IsValid checks whether the resource kind is a recognized system resource.
+func (r ResourceKind) IsValid() bool {
+	switch r {
+	case ResourceTuner, ResourceDemuxer, ResourceEncoderSlot, ResourceStorageIO:
+		return true
+	default:
+		return false
+	}
+}
+
+// RequiresResource returns whether a consumer type competes for the specified resource kind.
+func RequiresResource(consumer ConsumerType, kind ResourceKind) bool {
+	switch kind {
+	case ResourceTuner, ResourceDemuxer:
+		// Background transfers work directly with storage and do NOT occupy tuners/demuxers
+		return consumer != ConsumerBackgroundTransfer
+	case ResourceEncoderSlot:
+		return consumer == ConsumerLiveTV || consumer == ConsumerManualRecording || consumer == ConsumerScheduledRecording
+	case ResourceStorageIO:
+		return true
+	default:
+		return false
+	}
+}
+
 // PreemptionDecision defines the action decreed by the PolicyEngine.
 type PreemptionDecision string
 
 const (
-	DecisionGrant            PreemptionDecision = "GRANT"
-	DecisionPreempt          PreemptionDecision = "PREEMPT"
-	DecisionReject           PreemptionDecision = "REJECT"
-	DecisionOfferAlternative PreemptionDecision = "OFFER_ALTERNATIVE"
+	DecisionGrant              PreemptionDecision = "GRANT"
+	DecisionReject             PreemptionDecision = "REJECT"
+	DecisionPreemptionRequired PreemptionDecision = "PREEMPTION_REQUIRED"
 )
 
-// Policy Reason Codes for Audit Governance
+// ReasonCode defines typed, machine-readable audit reason codes for policy evaluations.
+type ReasonCode string
+
 const (
-	ReasonPolicyGrantedAvailable      = "POLICY_GRANTED_AVAILABLE_TUNER"
-	ReasonPolicyGrantedPreempted      = "POLICY_GRANTED_PREEMPTED_LOWER_PRIORITY"
-	ReasonPolicyRejectedHigherActive  = "POLICY_REJECTED_HIGHER_PRIORITY_ACTIVE"
-	ReasonPolicyRejectedSamePriority  = "POLICY_REJECTED_SAME_PRIORITY_ACTIVE"
-	ReasonPolicyOfferedAlternative    = "POLICY_OFFERED_ALTERNATIVE_STREAM"
-	ReasonPreemptionEvictionInitiated = "PREEMPTION_EVICTION_INITIATED"
-	ReasonPreemptionEvictionCompleted = "PREEMPTION_EVICTION_COMPLETED"
-	ReasonPreemptionFailedRollback    = "PREEMPTION_FAILED_ROLLBACK_SUCCESSFUL"
+	ReasonPolicyGrantedResourceAvailable     ReasonCode = "POLICY_GRANTED_RESOURCE_AVAILABLE"
+	ReasonPolicyRejectedProtectedActivity    ReasonCode = "POLICY_REJECTED_PROTECTED_ACTIVITY"
+	ReasonPolicyRejectedEqualOrLowerPriority ReasonCode = "POLICY_REJECTED_EQUAL_OR_LOWER_PRIORITY"
+	ReasonPolicyRejectedResourceNotRequired  ReasonCode = "POLICY_REJECTED_RESOURCE_NOT_REQUIRED"
+	ReasonPolicyPreemptionRequired           ReasonCode = "POLICY_PREEMPTION_REQUIRED"
+	ReasonPolicyInvalidInput                 ReasonCode = "POLICY_INVALID_INPUT"
 )
 
 var (
-	ErrInvalidConsumerType  = errors.New("invalid or unrecognized consumer type")
-	ErrNilEvaluationRequest = errors.New("evaluation request cannot be nil")
+	ErrEvaluationTimeRequired  = errors.New("evaluating timestamp (EvaluatedAt) is required")
+	ErrInvalidConsumerType     = errors.New("invalid or unrecognized consumer type")
+	ErrInvalidResourceKind     = errors.New("invalid or unrecognized resource kind")
+	ErrInvalidOwner            = errors.New("request owner cannot be empty")
+	ErrInvalidAllocationID     = errors.New("allocation ID cannot be empty or duplicate")
+	ErrInvalidSnapshotCapacity = errors.New("invalid snapshot capacity or active count exceeds capacity")
 )
 
-// ActiveLeaseState captures the current state of an active lease for policy evaluation.
-type ActiveLeaseState struct {
-	LeaseID      string
+// ResourceCandidate represents a physical or logical resource option.
+type ResourceCandidate struct {
+	Scope      string
+	Compatible bool
+	Available  bool
+}
+
+// ResourceAllocation captures an existing active allocation for policy evaluation.
+type ResourceAllocation struct {
+	AllocationID string
 	Consumer     ConsumerType
 	Owner        string
 	Scope        string
 	AcquiredAt   time.Time
-	ExpiresAt    time.Time
 	IsSacrosanct bool
 	IsReleasing  bool
 }
 
-// EvaluationRequest represents an incoming request for a tuner resource.
+// ResourceSnapshot is an externally-assembled, typed snapshot of resource state.
+type ResourceSnapshot struct {
+	Kind       ResourceKind
+	Capacity   int
+	Candidates []ResourceCandidate
+	Active     []ResourceAllocation
+}
+
+// EvaluationRequest represents an incoming request for a resource.
 type EvaluationRequest struct {
-	Consumer    ConsumerType
-	Owner       string
-	TargetScope string
-	RequestedAt time.Time
-	TTL         time.Duration
+	Consumer     ConsumerType
+	ResourceKind ResourceKind
+	Owner        string
+	TargetScope  string
+	EvaluatedAt  time.Time
+	TTL          time.Duration
 }
 
 // EvaluationResult represents the pure decision returned by the PolicyEngine.
 type EvaluationResult struct {
-	Decision         PreemptionDecision
-	ReasonCode       string
-	ReasonDetail     string
-	TargetLeaseID    string // Lease to be preempted if Decision == DecisionPreempt
-	AlternativeScope string // Alternative tuner/stream scope if Decision == DecisionOfferAlternative
-	EvaluatedAt      time.Time
+	Decision           PreemptionDecision
+	ReasonCode         ReasonCode
+	ReasonDetail       string
+	TargetAllocationID string // Allocation to be preempted if Decision == DecisionPreemptionRequired
+	EvaluatedAt        time.Time
 }
