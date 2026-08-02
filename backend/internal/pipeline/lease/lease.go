@@ -41,6 +41,8 @@ const (
 	ReasonAlreadyExpired      ReasonCode = "LEASE_ALREADY_EXPIRED"
 	ReasonScopeConflict       ReasonCode = "LEASE_SCOPE_CONFLICT"
 	ReasonInvalidTTL          ReasonCode = "LEASE_INVALID_TTL"
+	ReasonInvalidOwner        ReasonCode = "LEASE_INVALID_OWNER"
+	ReasonInvalidScope        ReasonCode = "LEASE_INVALID_SCOPE"
 	ReasonNotFound            ReasonCode = "LEASE_NOT_FOUND"
 )
 

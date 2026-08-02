@@ -6,6 +6,7 @@ package lease
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -147,21 +148,31 @@ func TestManagerReleaseOwnerMismatch(t *testing.T) {
 }
 
 func TestManagerExpirationSweep(t *testing.T) {
+	var mockMu sync.Mutex
 	mockTime := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
-	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour}) // disable auto ticker
-	defer mgr.Close()
+	getMockTime := func() time.Time {
+		mockMu.Lock()
+		defer mockMu.Unlock()
+		return mockTime
+	}
 
-	mgr.nowFunc = func() time.Time { return mockTime }
+	mgr := NewManager(ManagerConfig{
+		SweepInterval: 1 * time.Hour,
+		Clock:         getMockTime,
+	})
+	defer mgr.Close()
 
 	l, err := mgr.Acquire(context.Background(), "owner-1", "tuner:0", 10*time.Second)
 	if err != nil {
 		t.Fatalf("acquire failed: %v", err)
 	}
 
-	// Advance time past expiration
+	mockMu.Lock()
 	mockTime = mockTime.Add(15 * time.Second)
+	currTime := mockTime
+	mockMu.Unlock()
 
-	expiredCount := mgr.Sweep(mockTime)
+	expiredCount := mgr.Sweep(currTime)
 	if expiredCount != 1 {
 		t.Errorf("expected 1 expired lease, got %d", expiredCount)
 	}
@@ -187,11 +198,79 @@ func TestManagerExpirationSweep(t *testing.T) {
 	}
 }
 
-func TestManagerRenew(t *testing.T) {
+func TestExpiredButUnsweptConsistency(t *testing.T) {
+	var mockMu sync.Mutex
 	mockTime := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
-	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	getMockTime := func() time.Time {
+		mockMu.Lock()
+		defer mockMu.Unlock()
+		return mockTime
+	}
+
+	mgr := NewManager(ManagerConfig{
+		SweepInterval: 1 * time.Hour, // Sweep hasn't run yet!
+		Clock:         getMockTime,
+	})
 	defer mgr.Close()
-	mgr.nowFunc = func() time.Time { return mockTime }
+
+	l, err := mgr.Acquire(context.Background(), "owner-1", "tuner:0", 10*time.Second)
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	// Advance clock past expiration WITHOUT calling Sweep()
+	mockMu.Lock()
+	mockTime = mockTime.Add(15 * time.Second)
+	mockMu.Unlock()
+
+	// 1. Get() must return EXPIRED consistently
+	g, ok := mgr.Get(l.ID)
+	if !ok {
+		t.Fatalf("expected lease to exist")
+	}
+	if g.State != StateExpired {
+		t.Errorf("expected Get() state EXPIRED for unswept lease, got %s", g.State)
+	}
+
+	// 2. Renew() must fail with ErrLeaseInactive
+	_, err = mgr.Renew(l.ID, "owner-1", 10*time.Minute)
+	if !errors.Is(err, ErrLeaseInactive) {
+		t.Errorf("expected ErrLeaseInactive on renew expired unswept lease, got %v", err)
+	}
+
+	// 3. Release() must return state EXPIRED idempotently without marking it RELEASED
+	rel, err := mgr.Release(l.ID, "owner-1", ReasonReleasedByOwner)
+	if err != nil {
+		t.Fatalf("unexpected release error: %v", err)
+	}
+	if rel.State != StateExpired {
+		t.Errorf("expected Release() to preserve state EXPIRED, got %s", rel.State)
+	}
+
+	// 4. Acquire on scope must succeed immediately because scope index was cleared upon expiration
+	l2, err := mgr.Acquire(context.Background(), "owner-2", "tuner:0", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("expected Acquire on expired scope to succeed, got %v", err)
+	}
+	if l2.Owner != "owner-2" {
+		t.Errorf("expected owner-2, got %s", l2.Owner)
+	}
+}
+
+func TestManagerRenew(t *testing.T) {
+	var mockMu sync.Mutex
+	mockTime := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	getMockTime := func() time.Time {
+		mockMu.Lock()
+		defer mockMu.Unlock()
+		return mockTime
+	}
+
+	mgr := NewManager(ManagerConfig{
+		SweepInterval: 1 * time.Hour,
+		Clock:         getMockTime,
+	})
+	defer mgr.Close()
 
 	l, err := mgr.Acquire(context.Background(), "owner-1", "tuner:0", 10*time.Minute)
 	if err != nil {
@@ -243,33 +322,32 @@ func TestManagerInvalidParams(t *testing.T) {
 
 	ctx = context.Background()
 	_, err = mgr.Acquire(ctx, "", "tuner:0", 5*time.Minute)
-	if !errors.Is(err, ErrInvalidTTL) {
-		t.Errorf("expected ErrInvalidTTL on empty owner")
+	if !errors.Is(err, ErrInvalidOwner) {
+		t.Errorf("expected ErrInvalidOwner on empty owner, got %v", err)
 	}
 
 	_, err = mgr.Acquire(ctx, "owner-1", "", 5*time.Minute)
-	if !errors.Is(err, ErrInvalidTTL) {
-		t.Errorf("expected ErrInvalidTTL on empty scope")
+	if !errors.Is(err, ErrInvalidScope) {
+		t.Errorf("expected ErrInvalidScope on empty scope, got %v", err)
 	}
 
 	_, err = mgr.Acquire(ctx, "owner-1", "tuner:0", -1*time.Minute)
 	if !errors.Is(err, ErrInvalidTTL) {
-		t.Errorf("expected ErrInvalidTTL on negative TTL")
+		t.Errorf("expected ErrInvalidTTL on negative TTL, got %v", err)
 	}
 
 	_, err = mgr.Renew("non-existent-id", "owner-1", 5*time.Minute)
 	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("expected ErrNotFound on renew non-existent lease")
+		t.Errorf("expected ErrNotFound on renew non-existent lease, got %v", err)
 	}
 
 	_, err = mgr.Renew("non-existent-id", "owner-1", -1*time.Minute)
 	if !errors.Is(err, ErrInvalidTTL) {
-		t.Errorf("expected ErrInvalidTTL on renew negative TTL")
+		t.Errorf("expected ErrInvalidTTL on renew negative TTL, got %v", err)
 	}
 
 	_, err = mgr.Revoke("non-existent-id", ReasonRevokedByAdmin)
 	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("expected ErrNotFound on revoke non-existent lease")
+		t.Errorf("expected ErrNotFound on revoke non-existent lease, got %v", err)
 	}
 }
-

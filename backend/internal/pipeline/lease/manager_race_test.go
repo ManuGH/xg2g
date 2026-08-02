@@ -13,7 +13,6 @@ import (
 
 func TestManagerRaceConditions(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 10 * time.Millisecond})
-	defer mgr.Close()
 
 	const numWorkers = 50
 	const opsPerWorker = 100
@@ -46,4 +45,15 @@ func TestManagerRaceConditions(t *testing.T) {
 	}
 
 	wg.Wait()
+
+	// Concurrent Close() invocation test: multiple goroutines calling Close() simultaneously must not panic
+	var closeWg sync.WaitGroup
+	for c := 0; c < 10; c++ {
+		closeWg.Add(1)
+		go func() {
+			defer closeWg.Done()
+			_ = mgr.Close()
+		}()
+	}
+	closeWg.Wait()
 }
