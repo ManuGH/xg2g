@@ -44,7 +44,7 @@ func TestTunerBindingAcquireAndRelease(t *testing.T) {
 	}
 
 	// 4. Release Tuner Slot
-	rel, err := tb.ReleaseTunerSlot(ctx, l.ID, owner, ReasonReleasedByOwner)
+	rel, err := tb.ReleaseTunerSlot(l.ID, owner, ReasonReleasedByOwner)
 	if err != nil {
 		t.Fatalf("release failed: %v", err)
 	}
@@ -135,12 +135,12 @@ func TestTunerBindingNilManager(t *testing.T) {
 		t.Errorf("expected ErrBindingUnavailable for nil TunerBinding, got %v", err)
 	}
 
-	_, err = tb.ReleaseTunerSlot(context.Background(), "id", "worker", ReasonReleasedByOwner)
+	_, err = tb.ReleaseTunerSlot("id", "worker", ReasonReleasedByOwner)
 	if !errors.Is(err, ErrBindingUnavailable) {
 		t.Errorf("expected ErrBindingUnavailable for nil TunerBinding Release, got %v", err)
 	}
 
-	_, err = tb.RenewTunerSlot(context.Background(), "id", "worker", 5*time.Minute)
+	_, err = tb.RenewTunerSlot("id", "worker", 5*time.Minute)
 	if !errors.Is(err, ErrBindingUnavailable) {
 		t.Errorf("expected ErrBindingUnavailable for nil TunerBinding Renew, got %v", err)
 	}
@@ -174,9 +174,9 @@ func TestTunerBindingRaceConditions(t *testing.T) {
 				if err == nil && l != nil {
 					time.Sleep(1 * time.Millisecond)
 					if j%2 == 0 {
-						_, _ = tb.RenewTunerSlot(ctx, l.ID, wOwner, 50*time.Millisecond)
+						_, _ = tb.RenewTunerSlot(l.ID, wOwner, 50*time.Millisecond)
 					}
-					_, _ = tb.ReleaseTunerSlot(ctx, l.ID, wOwner, ReasonReleasedByOwner)
+					_, _ = tb.ReleaseTunerSlot(l.ID, wOwner, ReasonReleasedByOwner)
 				} else {
 					_, _ = tb.GetTunerLease(wSlot)
 				}

@@ -38,22 +38,22 @@ func (tb *TunerBinding) AcquireTunerSlot(ctx context.Context, owner Owner, slot 
 }
 
 // ReleaseTunerSlot idempotently releases a tuner slot lease held by the owner with an explicit reason code.
-func (tb *TunerBinding) ReleaseTunerSlot(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
+func (tb *TunerBinding) ReleaseTunerSlot(id ID, owner Owner, reason ReasonCode) (*Lease, error) {
 	if tb == nil || tb.mgr == nil {
 		return nil, fmt.Errorf("%w: tuner binding manager is nil", ErrBindingUnavailable)
 	}
 	if reason == "" {
 		reason = ReasonReleasedByOwner
 	}
-	return tb.mgr.Release(ctx, id, owner, reason)
+	return tb.mgr.Release(id, owner, reason)
 }
 
 // RenewTunerSlot extends the expiration time of an active tuner slot lease.
-func (tb *TunerBinding) RenewTunerSlot(ctx context.Context, id ID, owner Owner, ttl time.Duration) (*Lease, error) {
+func (tb *TunerBinding) RenewTunerSlot(id ID, owner Owner, ttl time.Duration) (*Lease, error) {
 	if tb == nil || tb.mgr == nil {
 		return nil, fmt.Errorf("%w: tuner binding manager is nil", ErrBindingUnavailable)
 	}
-	return tb.mgr.Renew(ctx, id, owner, ttl)
+	return tb.mgr.Renew(id, owner, ttl)
 }
 
 // GetTunerLease retrieves the active lease for a tuner slot, if present.

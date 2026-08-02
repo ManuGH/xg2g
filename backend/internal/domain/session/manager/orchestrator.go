@@ -21,6 +21,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/pipeline/lease"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 )
@@ -527,15 +528,17 @@ func (o *Orchestrator) unregisterActive(id string) {
 }
 
 func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, ok bool, err error) {
+	controller := lease.NewSessionStoreTunerLeaseController(o.Store)
 	for _, s := range slots {
-		k := model.LeaseKeyTunerSlot(s)
-		l, got, e := o.Store.TryAcquireLease(ctx, k, owner, o.LeaseTTL)
-		if e != nil {
-			return 0, nil, false, e
+		handle, e := controller.Acquire(ctx, lease.Owner(owner), s, o.LeaseTTL)
+		if e == nil {
+			gotLease, _, _ := o.Store.GetLease(ctx, string(handle.Scope))
+			return s, gotLease, true, nil
 		}
-		if got {
-			return s, l, true, nil
+		if errors.Is(e, lease.ErrScopeConflict) {
+			continue
 		}
+		return 0, nil, false, e
 	}
 	return 0, nil, false, nil
 }
