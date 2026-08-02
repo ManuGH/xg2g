@@ -104,7 +104,7 @@ func TestManagerIdempotentRelease(t *testing.T) {
 	}
 
 	// First release
-	rel1, err := mgr.Release(l.ID, owner, ReasonReleasedByOwner)
+	rel1, err := mgr.Release(ctx, l.ID, owner, ReasonReleasedByOwner)
 	if err != nil {
 		t.Fatalf("first release failed: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestManagerIdempotentRelease(t *testing.T) {
 	}
 
 	// Second release (Idempotency check: must succeed cleanly without error)
-	rel2, err := mgr.Release(l.ID, owner, ReasonReleasedByOwner)
+	rel2, err := mgr.Release(ctx, l.ID, owner, ReasonReleasedByOwner)
 	if err != nil {
 		t.Fatalf("second release failed: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestManagerReleaseOwnerMismatch(t *testing.T) {
 		t.Fatalf("acquire failed: %v", err)
 	}
 
-	_, err = mgr.Release(l.ID, "wrong-owner", ReasonReleasedByOwner)
+	_, err = mgr.Release(ctx, l.ID, "wrong-owner", ReasonReleasedByOwner)
 	if !errors.Is(err, ErrOwnerMismatch) {
 		t.Errorf("expected ErrOwnerMismatch, got %v", err)
 	}
@@ -232,14 +232,16 @@ func TestExpiredButUnsweptConsistency(t *testing.T) {
 		t.Errorf("expected Get() state EXPIRED for unswept lease, got %s", g.State)
 	}
 
+	ctx := context.Background()
+
 	// 2. Renew() must fail with ErrLeaseInactive
-	_, err = mgr.Renew(l.ID, "owner-1", 10*time.Minute)
+	_, err = mgr.Renew(ctx, l.ID, "owner-1", 10*time.Minute)
 	if !errors.Is(err, ErrLeaseInactive) {
 		t.Errorf("expected ErrLeaseInactive on renew expired unswept lease, got %v", err)
 	}
 
 	// 3. Release() must return state EXPIRED idempotently without marking it RELEASED
-	rel, err := mgr.Release(l.ID, "owner-1", ReasonReleasedByOwner)
+	rel, err := mgr.Release(ctx, l.ID, "owner-1", ReasonReleasedByOwner)
 	if err != nil {
 		t.Fatalf("unexpected release error: %v", err)
 	}
@@ -272,12 +274,13 @@ func TestManagerRenew(t *testing.T) {
 	})
 	defer mgr.Close()
 
-	l, err := mgr.Acquire(context.Background(), "owner-1", "tuner:0", 10*time.Minute)
+	ctx := context.Background()
+	l, err := mgr.Acquire(ctx, "owner-1", "tuner:0", 10*time.Minute)
 	if err != nil {
 		t.Fatalf("acquire failed: %v", err)
 	}
 
-	renewed, err := mgr.Renew(l.ID, "owner-1", 20*time.Minute)
+	renewed, err := mgr.Renew(ctx, l.ID, "owner-1", 20*time.Minute)
 	if err != nil {
 		t.Fatalf("renew failed: %v", err)
 	}
@@ -336,12 +339,12 @@ func TestManagerInvalidParams(t *testing.T) {
 		t.Errorf("expected ErrInvalidTTL on negative TTL, got %v", err)
 	}
 
-	_, err = mgr.Renew("non-existent-id", "owner-1", 5*time.Minute)
+	_, err = mgr.Renew(ctx, "non-existent-id", "owner-1", 5*time.Minute)
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound on renew non-existent lease, got %v", err)
 	}
 
-	_, err = mgr.Renew("non-existent-id", "owner-1", -1*time.Minute)
+	_, err = mgr.Renew(ctx, "non-existent-id", "owner-1", -1*time.Minute)
 	if !errors.Is(err, ErrInvalidTTL) {
 		t.Errorf("expected ErrInvalidTTL on renew negative TTL, got %v", err)
 	}
@@ -355,7 +358,8 @@ func TestManagerInvalidParams(t *testing.T) {
 func TestManagerRejectsOperationsAfterClose(t *testing.T) {
 	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
 
-	l, err := mgr.Acquire(context.Background(), "owner-1", "tuner:0", 5*time.Minute)
+	ctx := context.Background()
+	l, err := mgr.Acquire(ctx, "owner-1", "tuner:0", 5*time.Minute)
 	if err != nil {
 		t.Fatalf("acquire failed: %v", err)
 	}
@@ -365,19 +369,19 @@ func TestManagerRejectsOperationsAfterClose(t *testing.T) {
 	}
 
 	// 1. Acquire after Close() must return ErrManagerClosed
-	_, err = mgr.Acquire(context.Background(), "owner-2", "tuner:1", 5*time.Minute)
+	_, err = mgr.Acquire(ctx, "owner-2", "tuner:1", 5*time.Minute)
 	if !errors.Is(err, ErrManagerClosed) {
 		t.Errorf("expected ErrManagerClosed on Acquire after Close(), got %v", err)
 	}
 
 	// 2. Renew after Close() must return ErrManagerClosed
-	_, err = mgr.Renew(l.ID, "owner-1", 10*time.Minute)
+	_, err = mgr.Renew(ctx, l.ID, "owner-1", 10*time.Minute)
 	if !errors.Is(err, ErrManagerClosed) {
 		t.Errorf("expected ErrManagerClosed on Renew after Close(), got %v", err)
 	}
 
 	// 3. Release of existing lease after Close() remains allowed for cleanup
-	rel, err := mgr.Release(l.ID, "owner-1", ReasonReleasedByOwner)
+	rel, err := mgr.Release(ctx, l.ID, "owner-1", ReasonReleasedByOwner)
 	if err != nil {
 		t.Fatalf("release after Close() should be allowed for cleanup, got %v", err)
 	}

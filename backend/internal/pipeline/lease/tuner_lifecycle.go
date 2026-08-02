@@ -85,7 +85,7 @@ func (c *TunerBindingController) Renew(ctx context.Context, handle *TunerLeaseHa
 	if handle == nil || handle.LeaseID == "" {
 		return ErrNotFound
 	}
-	_, err := c.tb.RenewTunerSlot(handle.LeaseID, handle.Owner, ttl)
+	_, err := c.tb.RenewTunerSlot(ctx, handle.LeaseID, handle.Owner, ttl)
 	return err
 }
 
@@ -96,7 +96,7 @@ func (c *TunerBindingController) Release(ctx context.Context, handle *TunerLease
 	if handle == nil || handle.LeaseID == "" {
 		return nil
 	}
-	_, err := c.tb.ReleaseTunerSlot(handle.LeaseID, handle.Owner, reason)
+	_, err := c.tb.ReleaseTunerSlot(ctx, handle.LeaseID, handle.Owner, reason)
 	return err
 }
 
