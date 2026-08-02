@@ -44,13 +44,16 @@ To prevent ad-hoc priority comparisons and ensure long-term maintainability, the
    - For identical inputs, it produces 100% byte-for-byte identical results.
 
 6. **Strict Separation of Decision and Execution:**
-   The domain package (`internal/domain/policy`) contains only decision outcomes (`DecisionGrant`, `DecisionReject`, `DecisionPreemptionRequired`) and policy reason codes (`POLICY_*`). Preemption eviction execution (`PREEMPTION_EVICTION_*`) is isolated in the pipeline orchestration layer (`internal/pipeline/policy`).
+   The domain package (`internal/domain/policy`) contains only decision outcomes (`DecisionGrant`, `DecisionReject`, `DecisionPreemptionRequired`) and policy reason codes (`POLICY_*` registered in [`POLICY_REASON_CODES.md`](../guides/POLICY_REASON_CODES.md)). Preemption eviction execution (`PREEMPTION_EVICTION_*`) is isolated in the pipeline orchestration layer (`internal/pipeline/policy`).
 
-7. **Sacrosanct Non-Preemption Invariants:**
+7. **Candidate Capability & Availability Evaluation:**
+   Free capacity alone is insufficient for a `GRANT` decision. A `GRANT` decision requires a concrete `ResourceCandidate` that is `Available == true`, `Compatible == true`, and compatible with `TargetScope`. If capacity exists but no matching candidate is available, the request is rejected with `POLICY_REJECTED_NO_COMPATIBLE_CANDIDATE`.
+
+8. **Sacrosanct Non-Preemption Invariants:**
    - Active `ConsumerScheduledRecording` allocations are sacrosanct and cannot be preempted by any consumer.
    - Allocations marked `IsSacrosanct == true` or `IsReleasing == true` are protected against preemption.
 
-8. **Deterministic Preemption Candidate Tie-Breaking:**
+9. **Deterministic Preemption Candidate Tie-Breaking:**
    If a matrix match permits preemption and multiple active allocations are eligible, candidate selection follows a strict 3-tier tie-breaker:
    1. Lowest `LossClass` (Consumer priority rank)
    2. Oldest `AcquiredAt` timestamp

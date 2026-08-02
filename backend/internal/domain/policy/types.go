@@ -38,25 +38,17 @@ func (c ConsumerType) IsValid() bool {
 	}
 }
 
-// LossClass returns the relative loss cost rank for tie-breaking candidate selection (lower = lower loss, preempt first).
-func (c ConsumerType) LossClass() int {
-	switch c {
-	case ConsumerBackgroundTransfer:
-		return 10
-	case ConsumerChannelScan:
-		return 20
-	case ConsumerRetroDVR:
-		return 30
-	case ConsumerLiveTV:
-		return 40
-	case ConsumerManualRecording:
-		return 50
-	case ConsumerScheduledRecording:
-		return 60
-	default:
-		return 0
-	}
-}
+// LossClass defines a typed loss cost rank for candidate tie-breaking (lower = lower loss, preempt first).
+type LossClass uint8
+
+const (
+	LossBackground LossClass = 10
+	LossScan       LossClass = 20
+	LossRetroDVR   LossClass = 30
+	LossLiveTV     LossClass = 40
+	LossManual     LossClass = 50
+	LossScheduled  LossClass = 60
+)
 
 // ResourceKind identifies the discrete hardware or system resource type being evaluated.
 type ResourceKind string
@@ -106,21 +98,33 @@ const (
 type ReasonCode string
 
 const (
-	ReasonPolicyGrantedResourceAvailable     ReasonCode = "POLICY_GRANTED_RESOURCE_AVAILABLE"
-	ReasonPolicyRejectedProtectedActivity    ReasonCode = "POLICY_REJECTED_PROTECTED_ACTIVITY"
-	ReasonPolicyRejectedEqualOrLowerPriority ReasonCode = "POLICY_REJECTED_EQUAL_OR_LOWER_PRIORITY"
-	ReasonPolicyRejectedResourceNotRequired  ReasonCode = "POLICY_REJECTED_RESOURCE_NOT_REQUIRED"
-	ReasonPolicyPreemptionRequired           ReasonCode = "POLICY_PREEMPTION_REQUIRED"
-	ReasonPolicyInvalidInput                 ReasonCode = "POLICY_INVALID_INPUT"
+	ReasonPolicyGrantedResourceAvailable      ReasonCode = "POLICY_GRANTED_RESOURCE_AVAILABLE"
+	ReasonPolicyRejectedProtectedActivity     ReasonCode = "POLICY_REJECTED_PROTECTED_ACTIVITY"
+	ReasonPolicyRejectedEqualOrLowerPriority  ReasonCode = "POLICY_REJECTED_EQUAL_OR_LOWER_PRIORITY"
+	ReasonPolicyRejectedResourceNotRequired   ReasonCode = "POLICY_REJECTED_RESOURCE_NOT_REQUIRED"
+	ReasonPolicyRejectedNoCompatibleCandidate ReasonCode = "POLICY_REJECTED_NO_COMPATIBLE_CANDIDATE"
+	ReasonPolicyPreemptionRequired            ReasonCode = "POLICY_PREEMPTION_REQUIRED"
+	ReasonPolicyInvalidInput                  ReasonCode = "POLICY_INVALID_INPUT"
 )
 
 var (
-	ErrEvaluationTimeRequired  = errors.New("evaluating timestamp (EvaluatedAt) is required")
-	ErrInvalidConsumerType     = errors.New("invalid or unrecognized consumer type")
-	ErrInvalidResourceKind     = errors.New("invalid or unrecognized resource kind")
-	ErrInvalidOwner            = errors.New("request owner cannot be empty")
-	ErrInvalidAllocationID     = errors.New("allocation ID cannot be empty or duplicate")
-	ErrInvalidSnapshotCapacity = errors.New("invalid snapshot capacity or active count exceeds capacity")
+	ErrEvaluationTimeRequired         = errors.New("evaluating timestamp (EvaluatedAt) is required")
+	ErrInvalidConsumerType            = errors.New("invalid or unrecognized consumer type")
+	ErrInvalidResourceKind            = errors.New("invalid or unrecognized resource kind")
+	ErrResourceKindMismatch           = errors.New("request resource kind does not match snapshot resource kind")
+	ErrInvalidOwner                   = errors.New("request owner cannot be empty")
+	ErrInvalidCandidateScope          = errors.New("candidate scope cannot be empty")
+	ErrDuplicateCandidateScope        = errors.New("duplicate candidate scope")
+	ErrMissingAllocationOwner         = errors.New("allocation owner cannot be empty")
+	ErrMissingAllocationScope         = errors.New("allocation scope cannot be empty")
+	ErrAllocationScopeNotFound        = errors.New("allocation scope not found in snapshot candidates")
+	ErrInconsistentCandidateState     = errors.New("candidate marked available despite active allocation on scope")
+	ErrMultipleActiveOnExclusiveScope = errors.New("multiple active allocations on exclusive candidate scope")
+	ErrZeroAcquiredAtTimestamp        = errors.New("allocation AcquiredAt timestamp cannot be zero")
+	ErrTargetScopeNotFound            = errors.New("target scope not found in snapshot candidates")
+	ErrTargetScopeIncompatible        = errors.New("target scope is marked incompatible")
+	ErrInvalidAllocationID            = errors.New("allocation ID cannot be empty or duplicate")
+	ErrInvalidSnapshotCapacity        = errors.New("invalid snapshot capacity or active count exceeds capacity")
 )
 
 // ResourceCandidate represents a physical or logical resource option.
@@ -161,9 +165,11 @@ type EvaluationRequest struct {
 
 // EvaluationResult represents the pure decision returned by the PolicyEngine.
 type EvaluationResult struct {
-	Decision           PreemptionDecision
-	ReasonCode         ReasonCode
-	ReasonDetail       string
-	TargetAllocationID string // Allocation to be preempted if Decision == DecisionPreemptionRequired
-	EvaluatedAt        time.Time
+	Decision              PreemptionDecision
+	ReasonCode            ReasonCode
+	ReasonDetail          string
+	SelectedScope         string   // Scope assigned if Decision == DecisionGrant or DecisionPreemptionRequired
+	TargetAllocationID    string   // Allocation to be preempted if Decision == DecisionPreemptionRequired
+	BlockingAllocationIDs []string // Active allocations preventing immediate grant or preemption
+	EvaluatedAt           time.Time
 }

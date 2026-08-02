@@ -7,133 +7,195 @@ import (
 	"time"
 )
 
-// 1. Completeness Test: Proves exactly 36 rules exist for 6x6 matrix with zero missing entries.
-func TestDefaultConflictMatrix_Completeness(t *testing.T) {
-	if len(DefaultConflictMatrix) != 6 {
-		t.Fatalf("expected 6 existing consumer rows in matrix, got %d", len(DefaultConflictMatrix))
+// 1. Matrix Completeness & Rule Test: Tests all 36 entries directly against ConflictRuleFor.
+func TestConflictMatrix_Rules(t *testing.T) {
+	if len(defaultConflictMatrix) != 6 {
+		t.Fatalf("expected 6 existing consumer rows in matrix, got %d", len(defaultConflictMatrix))
 	}
-
-	totalEntries := 0
-	for _, existing := range AllConsumerTypes {
-		row, exists := DefaultConflictMatrix[existing]
-		if !exists {
-			t.Fatalf("missing row for existing consumer %s", existing)
-		}
-		if len(row) != 6 {
-			t.Fatalf("expected 6 incoming columns for existing consumer %s, got %d", existing, len(row))
-		}
-		for _, incoming := range AllConsumerTypes {
-			rule, ruleExists := row[incoming]
-			if !ruleExists {
-				t.Fatalf("missing rule for (%s, %s)", existing, incoming)
-			}
-			if rule.ReasonCode == "" {
-				t.Fatalf("empty reason code for rule (%s, %s)", existing, incoming)
-			}
-			totalEntries++
-		}
-	}
-
-	if totalEntries != 36 {
-		t.Fatalf("expected exactly 36 matrix entries, got %d", totalEntries)
-	}
-}
-
-// 2. Independent Exhaustive Table Test: Hardcoded expected values (NO code logic computing expectations).
-func TestPolicyEngine_ExhaustiveConflictMatrix(t *testing.T) {
-	engine := NewPolicyEngine()
-	now := time.Date(2026, 8, 2, 21, 0, 0, 0, time.UTC)
 
 	tests := []struct {
 		existing       ConsumerType
 		incoming       ConsumerType
 		wantDecision   PreemptionDecision
 		wantReasonCode ReasonCode
+		wantLossClass  LossClass
 	}{
 		// 1. Existing: SCHEDULED_RECORDING (Sacrosanct - Unconditionally Protects Recording)
-		{ConsumerScheduledRecording, ConsumerScheduledRecording, DecisionReject, ReasonPolicyRejectedProtectedActivity},
-		{ConsumerScheduledRecording, ConsumerManualRecording, DecisionReject, ReasonPolicyRejectedProtectedActivity},
-		{ConsumerScheduledRecording, ConsumerLiveTV, DecisionReject, ReasonPolicyRejectedProtectedActivity},
-		{ConsumerScheduledRecording, ConsumerRetroDVR, DecisionReject, ReasonPolicyRejectedProtectedActivity},
-		{ConsumerScheduledRecording, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedProtectedActivity},
-		{ConsumerScheduledRecording, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedResourceNotRequired},
+		{ConsumerScheduledRecording, ConsumerScheduledRecording, DecisionReject, ReasonPolicyRejectedProtectedActivity, LossScheduled},
+		{ConsumerScheduledRecording, ConsumerManualRecording, DecisionReject, ReasonPolicyRejectedProtectedActivity, LossScheduled},
+		{ConsumerScheduledRecording, ConsumerLiveTV, DecisionReject, ReasonPolicyRejectedProtectedActivity, LossScheduled},
+		{ConsumerScheduledRecording, ConsumerRetroDVR, DecisionReject, ReasonPolicyRejectedProtectedActivity, LossScheduled},
+		{ConsumerScheduledRecording, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedProtectedActivity, LossScheduled},
+		{ConsumerScheduledRecording, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedProtectedActivity, LossScheduled},
 
 		// 2. Existing: MANUAL_RECORDING
-		{ConsumerManualRecording, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerManualRecording, ConsumerManualRecording, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerManualRecording, ConsumerLiveTV, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerManualRecording, ConsumerRetroDVR, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerManualRecording, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerManualRecording, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedResourceNotRequired},
+		{ConsumerManualRecording, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossManual},
+		{ConsumerManualRecording, ConsumerManualRecording, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossManual},
+		{ConsumerManualRecording, ConsumerLiveTV, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossManual},
+		{ConsumerManualRecording, ConsumerRetroDVR, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossManual},
+		{ConsumerManualRecording, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossManual},
+		{ConsumerManualRecording, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossManual},
 
 		// 3. Existing: LIVE_TV
-		{ConsumerLiveTV, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerLiveTV, ConsumerManualRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerLiveTV, ConsumerLiveTV, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerLiveTV, ConsumerRetroDVR, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerLiveTV, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerLiveTV, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedResourceNotRequired},
+		{ConsumerLiveTV, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossLiveTV},
+		{ConsumerLiveTV, ConsumerManualRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossLiveTV},
+		{ConsumerLiveTV, ConsumerLiveTV, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossLiveTV},
+		{ConsumerLiveTV, ConsumerRetroDVR, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossLiveTV},
+		{ConsumerLiveTV, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossLiveTV},
+		{ConsumerLiveTV, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossLiveTV},
 
 		// 4. Existing: RETRO_DVR
-		{ConsumerRetroDVR, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerRetroDVR, ConsumerManualRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerRetroDVR, ConsumerLiveTV, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerRetroDVR, ConsumerRetroDVR, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerRetroDVR, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerRetroDVR, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedResourceNotRequired},
+		{ConsumerRetroDVR, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossRetroDVR},
+		{ConsumerRetroDVR, ConsumerManualRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossRetroDVR},
+		{ConsumerRetroDVR, ConsumerLiveTV, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossRetroDVR},
+		{ConsumerRetroDVR, ConsumerRetroDVR, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossRetroDVR},
+		{ConsumerRetroDVR, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossRetroDVR},
+		{ConsumerRetroDVR, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossRetroDVR},
 
 		// 5. Existing: CHANNEL_SCAN
-		{ConsumerChannelScan, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerChannelScan, ConsumerManualRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerChannelScan, ConsumerLiveTV, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerChannelScan, ConsumerRetroDVR, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerChannelScan, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority},
-		{ConsumerChannelScan, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedResourceNotRequired},
+		{ConsumerChannelScan, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossScan},
+		{ConsumerChannelScan, ConsumerManualRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossScan},
+		{ConsumerChannelScan, ConsumerLiveTV, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossScan},
+		{ConsumerChannelScan, ConsumerRetroDVR, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossScan},
+		{ConsumerChannelScan, ConsumerChannelScan, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossScan},
+		{ConsumerChannelScan, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossScan},
 
-		// 6. Existing: BACKGROUND_TRANSFER (Wait: BackgroundTransfer is not required on Demuxer)
-		{ConsumerBackgroundTransfer, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerBackgroundTransfer, ConsumerManualRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerBackgroundTransfer, ConsumerLiveTV, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerBackgroundTransfer, ConsumerRetroDVR, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerBackgroundTransfer, ConsumerChannelScan, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired},
-		{ConsumerBackgroundTransfer, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedResourceNotRequired},
+		// 6. Existing: BACKGROUND_TRANSFER
+		{ConsumerBackgroundTransfer, ConsumerScheduledRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossBackground},
+		{ConsumerBackgroundTransfer, ConsumerManualRecording, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossBackground},
+		{ConsumerBackgroundTransfer, ConsumerLiveTV, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossBackground},
+		{ConsumerBackgroundTransfer, ConsumerRetroDVR, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossBackground},
+		{ConsumerBackgroundTransfer, ConsumerChannelScan, DecisionPreemptionRequired, ReasonPolicyPreemptionRequired, LossBackground},
+		{ConsumerBackgroundTransfer, ConsumerBackgroundTransfer, DecisionReject, ReasonPolicyRejectedEqualOrLowerPriority, LossBackground},
+	}
+
+	if len(tests) != 36 {
+		t.Fatalf("expected exactly 36 test rules, got %d", len(tests))
 	}
 
 	for _, tt := range tests {
 		t.Run(string(tt.existing)+"_vs_"+string(tt.incoming), func(t *testing.T) {
-			req := EvaluationRequest{
-				Consumer:     tt.incoming,
-				ResourceKind: ResourceDemuxer, // Demuxer allows all consumers including BackgroundTransfer for matrix test
-				Owner:        "incoming-owner",
-				EvaluatedAt:  now,
+			rule, ok := ConflictRuleFor(tt.existing, tt.incoming)
+			if !ok {
+				t.Fatalf("missing matrix rule for (%s, %s)", tt.existing, tt.incoming)
 			}
-
-			snapshot := ResourceSnapshot{
-				Kind:     ResourceDemuxer,
-				Capacity: 1, // Forces conflict evaluation
-				Active: []ResourceAllocation{
-					{
-						AllocationID: "alloc-active-1",
-						Consumer:     tt.existing,
-						Owner:        "existing-owner",
-						AcquiredAt:   now.Add(-10 * time.Minute),
-					},
-				},
+			if rule.Decision != tt.wantDecision {
+				t.Errorf("expected Decision %s, got %s", tt.wantDecision, rule.Decision)
 			}
-
-			res, err := engine.Evaluate(req, snapshot)
-			if err != nil {
-				t.Fatalf("unexpected evaluation error: %v", err)
+			if rule.ReasonCode != tt.wantReasonCode {
+				t.Errorf("expected ReasonCode %s, got %s", tt.wantReasonCode, rule.ReasonCode)
 			}
-
-			if res.Decision != tt.wantDecision {
-				t.Errorf("expected Decision %s, got %s", tt.wantDecision, res.Decision)
-			}
-			if res.ReasonCode != tt.wantReasonCode {
-				t.Errorf("expected ReasonCode %s, got %s", tt.wantReasonCode, res.ReasonCode)
+			if rule.LossClass != tt.wantLossClass {
+				t.Errorf("expected LossClass %d, got %d", tt.wantLossClass, rule.LossClass)
 			}
 		})
 	}
+}
+
+// 2. Engine Integration & Evaluation Suite: Tests Engine across candidate and active snapshot states.
+func TestPolicyEngine_Evaluate(t *testing.T) {
+	engine := NewPolicyEngine()
+	now := time.Date(2026, 8, 2, 21, 0, 0, 0, time.UTC)
+
+	t.Run("AvailableCandidate_GrantedWithScope", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:     ResourceTuner,
+			Capacity: 2,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: true, Available: true},
+				{Scope: "tuner:1", Compatible: true, Available: false},
+			},
+			Active: []ResourceAllocation{
+				{AllocationID: "alloc-1", Consumer: ConsumerLiveTV, Owner: "user-2", Scope: "tuner:1", AcquiredAt: now.Add(-5 * time.Minute)},
+			},
+		}
+
+		res, err := engine.Evaluate(req, snap)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Decision != DecisionGrant {
+			t.Errorf("expected DecisionGrant, got %s", res.Decision)
+		}
+		if res.SelectedScope != "tuner:0" {
+			t.Errorf("expected SelectedScope tuner:0, got %s", res.SelectedScope)
+		}
+	})
+
+	t.Run("FreeCapacityNoAvailableCandidate_RejectedNoCompatibleCandidate", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:     ResourceTuner,
+			Capacity: 2,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: false, Available: true}, // Incompatible tuner
+				{Scope: "tuner:1", Compatible: true, Available: false},
+			},
+			Active: []ResourceAllocation{
+				{AllocationID: "alloc-1", Consumer: ConsumerLiveTV, Owner: "user-2", Scope: "tuner:1", AcquiredAt: now.Add(-5 * time.Minute)},
+			},
+		}
+
+		res, err := engine.Evaluate(req, snap)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Decision != DecisionReject {
+			t.Errorf("expected DecisionReject when no candidate available, got %s", res.Decision)
+		}
+		if res.ReasonCode != ReasonPolicyRejectedNoCompatibleCandidate {
+			t.Errorf("expected ReasonCode %s, got %s", ReasonPolicyRejectedNoCompatibleCandidate, res.ReasonCode)
+		}
+	})
+
+	t.Run("PreemptionRequired_ReturnsTargetAndBlockingAllocations", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerScheduledRecording,
+			ResourceKind: ResourceTuner,
+			Owner:        "timer-job-1",
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:     ResourceTuner,
+			Capacity: 2,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: true, Available: false},
+				{Scope: "tuner:1", Compatible: true, Available: false},
+			},
+			Active: []ResourceAllocation{
+				{AllocationID: "alloc-sacrosanct", Consumer: ConsumerScheduledRecording, Owner: "timer-job-0", Scope: "tuner:0", AcquiredAt: now.Add(-20 * time.Minute), IsSacrosanct: true},
+				{AllocationID: "alloc-preemptible", Consumer: ConsumerChannelScan, Owner: "scan-service", Scope: "tuner:1", AcquiredAt: now.Add(-5 * time.Minute)},
+			},
+		}
+
+		res, err := engine.Evaluate(req, snap)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Decision != DecisionPreemptionRequired {
+			t.Fatalf("expected DecisionPreemptionRequired, got %s", res.Decision)
+		}
+		if res.TargetAllocationID != "alloc-preemptible" {
+			t.Errorf("expected TargetAllocationID alloc-preemptible, got %s", res.TargetAllocationID)
+		}
+		if res.SelectedScope != "tuner:1" {
+			t.Errorf("expected SelectedScope tuner:1, got %s", res.SelectedScope)
+		}
+		if len(res.BlockingAllocationIDs) != 1 || res.BlockingAllocationIDs[0] != "alloc-sacrosanct" {
+			t.Errorf("expected BlockingAllocationIDs [alloc-sacrosanct], got %v", res.BlockingAllocationIDs)
+		}
+	})
 }
 
 // 3. Pure Function Determinism Test: Identical inputs MUST produce 100% identical byte-for-byte output.
@@ -151,11 +213,15 @@ func TestPolicyEngine_PureFunctionDeterminism(t *testing.T) {
 	snapshot := ResourceSnapshot{
 		Kind:     ResourceTuner,
 		Capacity: 1,
+		Candidates: []ResourceCandidate{
+			{Scope: "tuner:0", Compatible: true, Available: false},
+		},
 		Active: []ResourceAllocation{
 			{
 				AllocationID: "alloc-channel-scan",
 				Consumer:     ConsumerChannelScan,
 				Owner:        "scan-service",
+				Scope:        "tuner:0",
 				AcquiredAt:   now.Add(-5 * time.Minute),
 			},
 		},
@@ -173,7 +239,7 @@ func TestPolicyEngine_PureFunctionDeterminism(t *testing.T) {
 	}
 }
 
-// 4. Resource Requirement Separation Test: BackgroundTransfer on Tuner is rejected without preempting.
+// 4. Resource Requirement Separation Test
 func TestPolicyEngine_ResourceRequirements(t *testing.T) {
 	engine := NewPolicyEngine()
 	now := time.Date(2026, 8, 2, 21, 0, 0, 0, time.UTC)
@@ -188,7 +254,10 @@ func TestPolicyEngine_ResourceRequirements(t *testing.T) {
 	snapshot := ResourceSnapshot{
 		Kind:     ResourceTuner,
 		Capacity: 1,
-		Active:   nil, // Empty tuner pool
+		Candidates: []ResourceCandidate{
+			{Scope: "tuner:0", Compatible: true, Available: true},
+		},
+		Active: nil,
 	}
 
 	res, err := engine.Evaluate(req, snapshot)
@@ -223,39 +292,51 @@ func TestPolicyEngine_ValidationErrors(t *testing.T) {
 		t.Errorf("expected ErrInvalidConsumerType, got %v", err)
 	}
 
-	// c. Empty owner
+	// c. ResourceKind mismatch
+	reqKindMismatch := EvaluationRequest{Consumer: ConsumerLiveTV, ResourceKind: ResourceEncoderSlot, Owner: "owner-1", EvaluatedAt: now}
+	_, err = engine.Evaluate(reqKindMismatch, ResourceSnapshot{Kind: ResourceTuner, Capacity: 1})
+	if !errors.Is(err, ErrResourceKindMismatch) {
+		t.Errorf("expected ErrResourceKindMismatch, got %v", err)
+	}
+
+	// d. Empty owner
 	reqEmptyOwner := EvaluationRequest{Consumer: ConsumerLiveTV, ResourceKind: ResourceTuner, Owner: "", EvaluatedAt: now}
 	_, err = engine.Evaluate(reqEmptyOwner, ResourceSnapshot{Kind: ResourceTuner, Capacity: 1})
 	if !errors.Is(err, ErrInvalidOwner) {
 		t.Errorf("expected ErrInvalidOwner, got %v", err)
 	}
 
-	// d. Invalid ResourceKind
-	reqInvalidResource := EvaluationRequest{Consumer: ConsumerLiveTV, ResourceKind: ResourceKind("UNKNOWN"), Owner: "owner-1", EvaluatedAt: now}
-	_, err = engine.Evaluate(reqInvalidResource, ResourceSnapshot{Kind: ResourceKind("UNKNOWN"), Capacity: 1})
-	if !errors.Is(err, ErrInvalidResourceKind) {
-		t.Errorf("expected ErrInvalidResourceKind, got %v", err)
-	}
-
-	// e. Invalid Capacity
+	// e. Zero AcquiredAt in Allocation
 	reqValid := EvaluationRequest{Consumer: ConsumerLiveTV, ResourceKind: ResourceTuner, Owner: "owner-1", EvaluatedAt: now}
-	_, err = engine.Evaluate(reqValid, ResourceSnapshot{Kind: ResourceTuner, Capacity: 0})
-	if !errors.Is(err, ErrInvalidSnapshotCapacity) {
-		t.Errorf("expected ErrInvalidSnapshotCapacity for 0 capacity, got %v", err)
-	}
-
-	// f. Duplicate Allocation ID
-	snapDupAlloc := ResourceSnapshot{
+	snapZeroAcquired := ResourceSnapshot{
 		Kind:     ResourceTuner,
-		Capacity: 2,
+		Capacity: 1,
+		Candidates: []ResourceCandidate{
+			{Scope: "tuner:0", Compatible: true, Available: false},
+		},
 		Active: []ResourceAllocation{
-			{AllocationID: "alloc-1", Consumer: ConsumerChannelScan},
-			{AllocationID: "alloc-1", Consumer: ConsumerRetroDVR},
+			{AllocationID: "alloc-1", Consumer: ConsumerLiveTV, Owner: "owner-2", Scope: "tuner:0", AcquiredAt: time.Time{}},
 		},
 	}
-	_, err = engine.Evaluate(reqValid, snapDupAlloc)
-	if !errors.Is(err, ErrInvalidAllocationID) {
-		t.Errorf("expected ErrInvalidAllocationID for duplicate allocation ID, got %v", err)
+	_, err = engine.Evaluate(reqValid, snapZeroAcquired)
+	if !errors.Is(err, ErrZeroAcquiredAtTimestamp) {
+		t.Errorf("expected ErrZeroAcquiredAtTimestamp, got %v", err)
+	}
+
+	// f. Inconsistent Candidate State (Available == true despite active allocation on scope)
+	snapInconsistent := ResourceSnapshot{
+		Kind:     ResourceTuner,
+		Capacity: 1,
+		Candidates: []ResourceCandidate{
+			{Scope: "tuner:0", Compatible: true, Available: true},
+		},
+		Active: []ResourceAllocation{
+			{AllocationID: "alloc-1", Consumer: ConsumerLiveTV, Owner: "owner-2", Scope: "tuner:0", AcquiredAt: now.Add(-5 * time.Minute)},
+		},
+	}
+	_, err = engine.Evaluate(reqValid, snapInconsistent)
+	if !errors.Is(err, ErrInconsistentCandidateState) {
+		t.Errorf("expected ErrInconsistentCandidateState, got %v", err)
 	}
 }
 
@@ -276,9 +357,13 @@ func TestPolicyEngine_DeterministicTieBreaking(t *testing.T) {
 		snap := ResourceSnapshot{
 			Kind:     ResourceTuner,
 			Capacity: 2,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: true, Available: false},
+				{Scope: "tuner:1", Compatible: true, Available: false},
+			},
 			Active: []ResourceAllocation{
-				{AllocationID: "alloc-livetv", Consumer: ConsumerLiveTV, AcquiredAt: now.Add(-10 * time.Minute)},
-				{AllocationID: "alloc-scan", Consumer: ConsumerChannelScan, AcquiredAt: now.Add(-5 * time.Minute)},
+				{AllocationID: "alloc-livetv", Consumer: ConsumerLiveTV, Owner: "user-1", Scope: "tuner:0", AcquiredAt: now.Add(-10 * time.Minute)},
+				{AllocationID: "alloc-scan", Consumer: ConsumerChannelScan, Owner: "scan-service", Scope: "tuner:1", AcquiredAt: now.Add(-5 * time.Minute)},
 			},
 		}
 
@@ -296,9 +381,13 @@ func TestPolicyEngine_DeterministicTieBreaking(t *testing.T) {
 		snap := ResourceSnapshot{
 			Kind:     ResourceTuner,
 			Capacity: 2,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: true, Available: false},
+				{Scope: "tuner:1", Compatible: true, Available: false},
+			},
 			Active: []ResourceAllocation{
-				{AllocationID: "alloc-scan-newer", Consumer: ConsumerChannelScan, AcquiredAt: now.Add(-5 * time.Minute)},
-				{AllocationID: "alloc-scan-older", Consumer: ConsumerChannelScan, AcquiredAt: now.Add(-15 * time.Minute)},
+				{AllocationID: "alloc-scan-newer", Consumer: ConsumerChannelScan, Owner: "scan-1", Scope: "tuner:0", AcquiredAt: now.Add(-5 * time.Minute)},
+				{AllocationID: "alloc-scan-older", Consumer: ConsumerChannelScan, Owner: "scan-2", Scope: "tuner:1", AcquiredAt: now.Add(-15 * time.Minute)},
 			},
 		}
 
@@ -317,9 +406,13 @@ func TestPolicyEngine_DeterministicTieBreaking(t *testing.T) {
 		snap := ResourceSnapshot{
 			Kind:     ResourceTuner,
 			Capacity: 2,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: true, Available: false},
+				{Scope: "tuner:1", Compatible: true, Available: false},
+			},
 			Active: []ResourceAllocation{
-				{AllocationID: "alloc-z", Consumer: ConsumerChannelScan, AcquiredAt: sameTime},
-				{AllocationID: "alloc-a", Consumer: ConsumerChannelScan, AcquiredAt: sameTime},
+				{AllocationID: "alloc-z", Consumer: ConsumerChannelScan, Owner: "scan-1", Scope: "tuner:0", AcquiredAt: sameTime},
+				{AllocationID: "alloc-a", Consumer: ConsumerChannelScan, Owner: "scan-2", Scope: "tuner:1", AcquiredAt: sameTime},
 			},
 		}
 

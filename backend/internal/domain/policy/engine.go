@@ -13,11 +13,16 @@ func NewPolicyEngine() *PolicyEngine {
 	return &PolicyEngine{}
 }
 
+type preemptibleMatch struct {
+	alloc ResourceAllocation
+	rule  ConflictRule
+}
+
 // Evaluate performs a pure functional decision evaluation for an incoming resource request.
 // It returns an EvaluationResult and does NOT mutate state, perform network I/O, or execute side effects.
 // Pure function guarantee: For identical inputs (req, snapshot), it produces 100% byte-for-byte identical results.
 func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot) (EvaluationResult, error) {
-	// 1. Strict Input & Snapshot Validation
+	// 1. Request & ResourceKind Validation
 	if req.EvaluatedAt.IsZero() {
 		return EvaluationResult{
 			Decision:     DecisionReject,
@@ -35,13 +40,13 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}, ErrInvalidConsumerType
 	}
 
-	if req.Owner == "" {
+	if !req.ResourceKind.IsValid() {
 		return EvaluationResult{
 			Decision:     DecisionReject,
 			ReasonCode:   ReasonPolicyInvalidInput,
-			ReasonDetail: "request owner cannot be empty",
+			ReasonDetail: fmt.Sprintf("invalid request resource kind %q", req.ResourceKind),
 			EvaluatedAt:  req.EvaluatedAt,
-		}, ErrInvalidOwner
+		}, ErrInvalidResourceKind
 	}
 
 	if !snapshot.Kind.IsValid() {
@@ -53,6 +58,24 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}, ErrInvalidResourceKind
 	}
 
+	if req.ResourceKind != snapshot.Kind {
+		return EvaluationResult{
+			Decision:     DecisionReject,
+			ReasonCode:   ReasonPolicyInvalidInput,
+			ReasonDetail: fmt.Sprintf("request resource kind %q does not match snapshot kind %q", req.ResourceKind, snapshot.Kind),
+			EvaluatedAt:  req.EvaluatedAt,
+		}, ErrResourceKindMismatch
+	}
+
+	if req.Owner == "" {
+		return EvaluationResult{
+			Decision:     DecisionReject,
+			ReasonCode:   ReasonPolicyInvalidInput,
+			ReasonDetail: "request owner cannot be empty",
+			EvaluatedAt:  req.EvaluatedAt,
+		}, ErrInvalidOwner
+	}
+
 	if snapshot.Capacity <= 0 || len(snapshot.Active) > snapshot.Capacity {
 		return EvaluationResult{
 			Decision:     DecisionReject,
@@ -62,7 +85,52 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}, ErrInvalidSnapshotCapacity
 	}
 
+	// 2. Candidate Structural Validation
+	candidateMap := make(map[string]ResourceCandidate, len(snapshot.Candidates))
+	for _, cand := range snapshot.Candidates {
+		if cand.Scope == "" {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: "candidate scope cannot be empty",
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrInvalidCandidateScope
+		}
+		if _, exists := candidateMap[cand.Scope]; exists {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("duplicate candidate scope %q", cand.Scope),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrDuplicateCandidateScope
+		}
+		candidateMap[cand.Scope] = cand
+	}
+
+	if req.TargetScope != "" {
+		cand, exists := candidateMap[req.TargetScope]
+		if !exists {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("target scope %q not found in snapshot candidates", req.TargetScope),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrTargetScopeNotFound
+		}
+		if !cand.Compatible {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("target scope %q is marked incompatible", req.TargetScope),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrTargetScopeIncompatible
+		}
+	}
+
+	// 3. Active Allocation Validation & Scope Mapping
 	seenAllocIDs := make(map[string]bool, len(snapshot.Active))
+	activeCountByScope := make(map[string]int, len(snapshot.Active))
+
 	for _, alloc := range snapshot.Active {
 		if alloc.AllocationID == "" || seenAllocIDs[alloc.AllocationID] {
 			return EvaluationResult{
@@ -82,9 +150,66 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 				EvaluatedAt:  req.EvaluatedAt,
 			}, ErrInvalidConsumerType
 		}
+
+		if alloc.Owner == "" {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("allocation %s owner cannot be empty", alloc.AllocationID),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrMissingAllocationOwner
+		}
+
+		if alloc.Scope == "" {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("allocation %s scope cannot be empty", alloc.AllocationID),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrMissingAllocationScope
+		}
+
+		cand, exists := candidateMap[alloc.Scope]
+		if len(snapshot.Candidates) > 0 && !exists {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("allocation %s scope %q not found in candidates", alloc.AllocationID, alloc.Scope),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrAllocationScopeNotFound
+		}
+
+		if alloc.AcquiredAt.IsZero() {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("allocation %s AcquiredAt timestamp cannot be zero", alloc.AllocationID),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrZeroAcquiredAtTimestamp
+		}
+
+		if !alloc.IsReleasing {
+			if len(snapshot.Candidates) > 0 && cand.Available {
+				return EvaluationResult{
+					Decision:     DecisionReject,
+					ReasonCode:   ReasonPolicyInvalidInput,
+					ReasonDetail: fmt.Sprintf("candidate scope %q marked available despite active allocation %s", alloc.Scope, alloc.AllocationID),
+					EvaluatedAt:  req.EvaluatedAt,
+				}, ErrInconsistentCandidateState
+			}
+			activeCountByScope[alloc.Scope]++
+			if activeCountByScope[alloc.Scope] > 1 {
+				return EvaluationResult{
+					Decision:     DecisionReject,
+					ReasonCode:   ReasonPolicyInvalidInput,
+					ReasonDetail: fmt.Sprintf("multiple active allocations on exclusive candidate scope %q", alloc.Scope),
+					EvaluatedAt:  req.EvaluatedAt,
+				}, ErrMultipleActiveOnExclusiveScope
+			}
+		}
 	}
 
-	// 2. Check if the incoming consumer actually requires this resource kind
+	// 4. Resource Requirement Check
 	if !RequiresResource(req.Consumer, snapshot.Kind) {
 		return EvaluationResult{
 			Decision:     DecisionReject,
@@ -94,71 +219,108 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}, nil
 	}
 
-	// 3. Capacity Check: Available capacity exists
+	// 5. Available Capacity Check with Candidate Evaluation
+	var eligibleFreeCandidates []ResourceCandidate
+	for _, cand := range snapshot.Candidates {
+		if cand.Available && cand.Compatible {
+			if req.TargetScope != "" && cand.Scope != req.TargetScope {
+				continue
+			}
+			eligibleFreeCandidates = append(eligibleFreeCandidates, cand)
+		}
+	}
+
+	sort.Slice(eligibleFreeCandidates, func(i, j int) bool {
+		return eligibleFreeCandidates[i].Scope < eligibleFreeCandidates[j].Scope
+	})
+
 	if len(snapshot.Active) < snapshot.Capacity {
+		if len(eligibleFreeCandidates) > 0 {
+			selected := eligibleFreeCandidates[0]
+			return EvaluationResult{
+				Decision:      DecisionGrant,
+				ReasonCode:    ReasonPolicyGrantedResourceAvailable,
+				ReasonDetail:  fmt.Sprintf("resource %s scope %q available (active: %d, capacity: %d)", snapshot.Kind, selected.Scope, len(snapshot.Active), snapshot.Capacity),
+				SelectedScope: selected.Scope,
+				EvaluatedAt:   req.EvaluatedAt,
+			}, nil
+		}
+
+		// Capacity unallocated, but no available/compatible candidate exists
 		return EvaluationResult{
-			Decision:     DecisionGrant,
-			ReasonCode:   ReasonPolicyGrantedResourceAvailable,
-			ReasonDetail: fmt.Sprintf("resource %s available (active: %d, capacity: %d)", snapshot.Kind, len(snapshot.Active), snapshot.Capacity),
+			Decision:     DecisionReject,
+			ReasonCode:   ReasonPolicyRejectedNoCompatibleCandidate,
+			ReasonDetail: fmt.Sprintf("free capacity exists on %s (%d/%d), but no compatible available candidate was found", snapshot.Kind, len(snapshot.Active), snapshot.Capacity),
 			EvaluatedAt:  req.EvaluatedAt,
 		}, nil
 	}
 
-	// 4. Capacity Exhausted -> Evaluate Conflict Matrix for Preemptible Candidates
-	var candidates []ResourceAllocation
+	// 6. Capacity Exhausted -> Evaluate Conflict Matrix for Active Allocations
+	var preemptibleCandidates []preemptibleMatch
+	var blockingAllocations []string
 	hasProtectedActivity := false
 
 	for _, alloc := range snapshot.Active {
-		if alloc.IsSacrosanct || alloc.IsReleasing || alloc.Consumer == ConsumerScheduledRecording {
-			hasProtectedActivity = true
-			continue
+		rule, ok := ConflictRuleFor(alloc.Consumer, req.Consumer)
+		if !ok {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("unknown conflict rule for (%s, %s)", alloc.Consumer, req.Consumer),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrInvalidConsumerType
 		}
 
-		rule, exists := DefaultConflictMatrix[alloc.Consumer][req.Consumer]
-		if exists && rule.Preemptible {
-			candidates = append(candidates, alloc)
+		if alloc.IsSacrosanct || alloc.IsReleasing || alloc.Consumer == ConsumerScheduledRecording || rule.Decision != DecisionPreemptionRequired {
+			hasProtectedActivity = hasProtectedActivity || alloc.IsSacrosanct || alloc.Consumer == ConsumerScheduledRecording
+			blockingAllocations = append(blockingAllocations, alloc.AllocationID)
+		} else {
+			preemptibleCandidates = append(preemptibleCandidates, preemptibleMatch{alloc: alloc, rule: rule})
 		}
 	}
 
-	// 5. If no candidates match, determine rejection reason code
-	if len(candidates) == 0 {
-		reasonCode := ReasonPolicyRejectedEqualOrLowerPriority
+	sort.Strings(blockingAllocations)
+
+	if len(preemptibleCandidates) == 0 {
+		primaryReason := ReasonPolicyRejectedEqualOrLowerPriority
 		if hasProtectedActivity {
-			reasonCode = ReasonPolicyRejectedProtectedActivity
+			primaryReason = ReasonPolicyRejectedProtectedActivity
 		}
 
 		return EvaluationResult{
-			Decision:     DecisionReject,
-			ReasonCode:   reasonCode,
-			ReasonDetail: fmt.Sprintf("all %d allocations protected or equal/higher priority for resource %s", len(snapshot.Active), snapshot.Kind),
-			EvaluatedAt:  req.EvaluatedAt,
+			Decision:              DecisionReject,
+			ReasonCode:            primaryReason,
+			ReasonDetail:          fmt.Sprintf("all %d active allocations protected or equal/higher priority for resource %s", len(snapshot.Active), snapshot.Kind),
+			BlockingAllocationIDs: blockingAllocations,
+			EvaluatedAt:           req.EvaluatedAt,
 		}, nil
 	}
 
-	// 6. Candidates Found -> Perform Deterministic 3-Tier Tie-Breaking
-	// Sort Order:
+	// 7. Deterministic 3-Tier Tie-Breaking for Preemption Target Selection
 	// Tier 1: Lowest LossClass (preempt lowest loss class first)
-	// Tier 2: Oldest AcquiredAt (preempt oldest allocation first)
+	// Tier 2: Oldest AcquiredAt timestamp (preempt oldest active allocation first)
 	// Tier 3: Lexicographical AllocationID (absolute deterministic tie-breaker)
-	sort.Slice(candidates, func(i, j int) bool {
-		lcI := candidates[i].Consumer.LossClass()
-		lcJ := candidates[j].Consumer.LossClass()
+	sort.Slice(preemptibleCandidates, func(i, j int) bool {
+		lcI := preemptibleCandidates[i].rule.LossClass
+		lcJ := preemptibleCandidates[j].rule.LossClass
 		if lcI != lcJ {
 			return lcI < lcJ
 		}
-		if !candidates[i].AcquiredAt.Equal(candidates[j].AcquiredAt) {
-			return candidates[i].AcquiredAt.Before(candidates[j].AcquiredAt)
+		if !preemptibleCandidates[i].alloc.AcquiredAt.Equal(preemptibleCandidates[j].alloc.AcquiredAt) {
+			return preemptibleCandidates[i].alloc.AcquiredAt.Before(preemptibleCandidates[j].alloc.AcquiredAt)
 		}
-		return candidates[i].AllocationID < candidates[j].AllocationID
+		return preemptibleCandidates[i].alloc.AllocationID < preemptibleCandidates[j].alloc.AllocationID
 	})
 
-	target := candidates[0]
+	target := preemptibleCandidates[0]
 
 	return EvaluationResult{
-		Decision:           DecisionPreemptionRequired,
-		ReasonCode:         ReasonPolicyPreemptionRequired,
-		ReasonDetail:       fmt.Sprintf("preemption required for allocation %s (consumer: %s, loss_class: %d)", target.AllocationID, target.Consumer, target.Consumer.LossClass()),
-		TargetAllocationID: target.AllocationID,
-		EvaluatedAt:        req.EvaluatedAt,
+		Decision:              DecisionPreemptionRequired,
+		ReasonCode:            ReasonPolicyPreemptionRequired,
+		ReasonDetail:          fmt.Sprintf("preemption required for allocation %s (consumer: %s, loss_class: %d)", target.alloc.AllocationID, target.alloc.Consumer, target.rule.LossClass),
+		SelectedScope:         target.alloc.Scope,
+		TargetAllocationID:    target.alloc.AllocationID,
+		BlockingAllocationIDs: blockingAllocations,
+		EvaluatedAt:           req.EvaluatedAt,
 	}, nil
 }
