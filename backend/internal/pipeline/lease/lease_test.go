@@ -351,3 +351,37 @@ func TestManagerInvalidParams(t *testing.T) {
 		t.Errorf("expected ErrNotFound on revoke non-existent lease, got %v", err)
 	}
 }
+
+func TestManagerRejectsOperationsAfterClose(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
+
+	l, err := mgr.Acquire(context.Background(), "owner-1", "tuner:0", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+
+	// 1. Acquire after Close() must return ErrManagerClosed
+	_, err = mgr.Acquire(context.Background(), "owner-2", "tuner:1", 5*time.Minute)
+	if !errors.Is(err, ErrManagerClosed) {
+		t.Errorf("expected ErrManagerClosed on Acquire after Close(), got %v", err)
+	}
+
+	// 2. Renew after Close() must return ErrManagerClosed
+	_, err = mgr.Renew(l.ID, "owner-1", 10*time.Minute)
+	if !errors.Is(err, ErrManagerClosed) {
+		t.Errorf("expected ErrManagerClosed on Renew after Close(), got %v", err)
+	}
+
+	// 3. Release of existing lease after Close() remains allowed for cleanup
+	rel, err := mgr.Release(l.ID, "owner-1", ReasonReleasedByOwner)
+	if err != nil {
+		t.Fatalf("release after Close() should be allowed for cleanup, got %v", err)
+	}
+	if rel.State != StateReleased {
+		t.Errorf("expected state RELEASED, got %s", rel.State)
+	}
+}

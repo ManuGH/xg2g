@@ -21,6 +21,7 @@ var (
 	ErrInvalidOwner  = errors.New("lease invalid owner")
 	ErrInvalidScope  = errors.New("lease invalid scope")
 	ErrLeaseInactive = errors.New("lease inactive or expired")
+	ErrManagerClosed = errors.New("lease manager closed")
 )
 
 // ManagerConfig holds configuration for the Lease Manager.
@@ -37,6 +38,7 @@ type Manager struct {
 
 	sweepInterval time.Duration
 	nowFunc       func() time.Time
+	closed        bool
 	stopCh        chan struct{}
 	closeOnce     sync.Once
 	wg            sync.WaitGroup
@@ -109,6 +111,10 @@ func (m *Manager) Acquire(ctx context.Context, owner Owner, scope Scope, ttl tim
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if m.closed {
+		return nil, fmt.Errorf("%w: cannot acquire lease on closed manager", ErrManagerClosed)
+	}
 
 	now := m.now()
 	m.sweepLocked(now)
@@ -194,6 +200,10 @@ func (m *Manager) Renew(id ID, owner Owner, ttl time.Duration) (*Lease, error) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if m.closed {
+		return nil, fmt.Errorf("%w: cannot renew lease on closed manager", ErrManagerClosed)
+	}
 
 	l, ok := m.leases[id]
 	if !ok {
@@ -326,9 +336,12 @@ func (m *Manager) startSweeper() {
 	}()
 }
 
-// Close cleanly and idempotently stops the background sweeper loop. Safe for concurrent invocations.
+// Close cleanly and idempotently stops the background sweeper loop and marks the manager closed.
 func (m *Manager) Close() error {
 	m.closeOnce.Do(func() {
+		m.mu.Lock()
+		m.closed = true
+		m.mu.Unlock()
 		close(m.stopCh)
 	})
 	m.wg.Wait()
