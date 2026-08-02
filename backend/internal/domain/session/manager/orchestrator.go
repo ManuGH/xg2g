@@ -527,20 +527,19 @@ func (o *Orchestrator) unregisterActive(id string) {
 	log.L().Info().Str("session_id", id).Msg("session_removed")
 }
 
-func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, ok bool, err error) {
+func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, handle *lease.TunerLeaseHandle, ok bool, err error) {
 	controller := lease.NewSessionStoreTunerLeaseController(o.Store)
 	for _, s := range slots {
-		handle, e := controller.Acquire(ctx, lease.Owner(owner), s, o.LeaseTTL)
+		h, storeLease, e := controller.AcquireWithLease(ctx, lease.Owner(owner), s, o.LeaseTTL)
 		if e == nil {
-			gotLease, _, _ := o.Store.GetLease(ctx, string(handle.Scope))
-			return s, gotLease, true, nil
+			return s, storeLease, h, true, nil
 		}
 		if errors.Is(e, lease.ErrScopeConflict) {
 			continue
 		}
-		return 0, nil, false, e
+		return 0, nil, nil, false, e
 	}
-	return 0, nil, false, nil
+	return 0, nil, nil, false, nil
 }
 
 func (o *Orchestrator) recordTransition(ctx context.Context, sessionID string, from, to model.SessionState, reason model.ReasonCode) {

@@ -53,7 +53,7 @@ func (o *Orchestrator) acquireLeases(
 	}
 
 	if sessionCtx.Mode == model.ModeLive {
-		slot, tunerLease, ok, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
+		slot, tunerLease, tunerHandle, ok, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
 		if err != nil {
 			res.ReleaseDedup()
 			return nil, err
@@ -65,20 +65,16 @@ func (o *Orchestrator) acquireLeases(
 		}
 		res.Slot = slot
 		res.TunerLease = tunerLease
+		res.TunerHandle = tunerHandle
 		res.ReleaseTuner = func() {
 			ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			controller := pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
-			handle := &pipelineLease.TunerLeaseHandle{
-				LeaseID: pipelineLease.ID(tunerLease.Key()),
-				Owner:   pipelineLease.Owner(tunerLease.Owner()),
-				Slot:    slot,
-				Scope:   pipelineLease.Scope(tunerLease.Key()),
-			}
-			if err := controller.Release(ctxRel, handle, pipelineLease.ReasonReleasedByOwner); err != nil {
+			if err := controller.Release(ctxRel, res.TunerHandle, pipelineLease.ReasonReleasedByOwner); err != nil {
 				logger.Error().Err(err).
-					Str("lease_key", tunerLease.Key()).
-					Str("owner", tunerLease.Owner()).
+					Str("lease_key", string(res.TunerHandle.Scope)).
+					Str("owner", string(res.TunerHandle.Owner)).
+					Int("slot", res.TunerHandle.Slot).
 					Msg("failed to release tuner lease")
 			}
 		}
@@ -100,16 +96,10 @@ func (o *Orchestrator) acquireLeases(
 					return
 				case <-t.C:
 					controller := pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
-					handle := &pipelineLease.TunerLeaseHandle{
-						LeaseID: pipelineLease.ID(res.TunerLease.Key()),
-						Owner:   pipelineLease.Owner(res.TunerLease.Owner()),
-						Slot:    res.Slot,
-						Scope:   pipelineLease.Scope(res.TunerLease.Key()),
-					}
-					err := controller.Renew(hbCtx, handle, o.LeaseTTL)
+					err := controller.Renew(hbCtx, res.TunerHandle, o.LeaseTTL)
 					if err != nil {
 						if errors.Is(err, pipelineLease.ErrLeaseInactive) || errors.Is(err, pipelineLease.ErrNotFound) {
-							logger.Warn().Str("lease", res.TunerLease.Key()).Str("sid", event.SessionID).Msg("tuner lease lost, aborting")
+							logger.Warn().Str("lease", string(res.TunerHandle.Scope)).Str("sid", event.SessionID).Msg("tuner lease lost, aborting")
 							leaseLostTotalLegacy.WithLabelValues().Inc()
 							_, _ = o.Store.UpdateSession(hbCtx, event.SessionID, func(r *model.SessionRecord) error {
 								if !r.State.IsTerminal() {
@@ -129,17 +119,17 @@ func (o *Orchestrator) acquireLeases(
 		if !started {
 			res.HBCancel()
 			res.ReleaseDedup()
-			if res.Slot >= 0 {
+			if res.TunerHandle != nil {
 				ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 				defer cancel()
 				controller := pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
-				handle := &pipelineLease.TunerLeaseHandle{
-					LeaseID: pipelineLease.ID(res.TunerLease.Key()),
-					Owner:   pipelineLease.Owner(res.TunerLease.Owner()),
-					Slot:    res.Slot,
-					Scope:   pipelineLease.Scope(res.TunerLease.Key()),
+				if err := controller.Release(ctxRel, res.TunerHandle, pipelineLease.ReasonReleasedByOwner); err != nil {
+					logger.Error().Err(err).
+						Str("lease_key", string(res.TunerHandle.Scope)).
+						Str("owner", string(res.TunerHandle.Owner)).
+						Int("slot", res.TunerHandle.Slot).
+						Msg("failed to release tuner lease on worker start failure")
 				}
-				_ = controller.Release(ctxRel, handle, pipelineLease.ReasonReleasedByOwner)
 			}
 			return nil, newReasonError(model.RCancelled, "orchestrator shutting down", nil)
 		}

@@ -13,6 +13,10 @@ import (
 
 // SessionStoreTunerLeaseController adapts the production store.LeaseStore
 // to the TunerLeaseController interface, maintaining a single source of truth.
+//
+// Operational Note:
+// store.LeaseStore tracks ownership, scope keys, and TTL liveness.
+// Higher-level session lifecycle management and audit logs record specific terminal domain ReasonCodes.
 type SessionStoreTunerLeaseController struct {
 	Store store.LeaseStore
 }
@@ -22,27 +26,34 @@ func NewSessionStoreTunerLeaseController(st store.LeaseStore) *SessionStoreTuner
 	return &SessionStoreTunerLeaseController{Store: st}
 }
 
-func (c *SessionStoreTunerLeaseController) Acquire(ctx context.Context, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
+// AcquireWithLease acquires a tuner slot lease and returns both the TunerLeaseHandle and store.Lease atomically.
+func (c *SessionStoreTunerLeaseController) AcquireWithLease(ctx context.Context, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, store.Lease, error) {
 	if c == nil || c.Store == nil {
-		return nil, ErrBindingUnavailable
+		return nil, nil, ErrBindingUnavailable
 	}
 	if slot < 0 {
-		return nil, fmt.Errorf("%w: tuner slot must be non-negative", ErrInvalidScope)
+		return nil, nil, fmt.Errorf("%w: tuner slot must be non-negative", ErrInvalidScope)
 	}
 	key := string(ScopeForTunerSlot(slot))
 	l, ok, err := c.Store.TryAcquireLease(ctx, key, string(owner), ttl)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !ok {
-		return nil, ErrScopeConflict
+		return nil, nil, ErrScopeConflict
 	}
-	return &TunerLeaseHandle{
+	handle := &TunerLeaseHandle{
 		LeaseID: ID(l.Key()),
 		Owner:   Owner(l.Owner()),
 		Slot:    slot,
 		Scope:   Scope(l.Key()),
-	}, nil
+	}
+	return handle, l, nil
+}
+
+func (c *SessionStoreTunerLeaseController) Acquire(ctx context.Context, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
+	handle, _, err := c.AcquireWithLease(ctx, owner, slot, ttl)
+	return handle, err
 }
 
 func (c *SessionStoreTunerLeaseController) Renew(ctx context.Context, handle *TunerLeaseHandle, ttl time.Duration) error {
