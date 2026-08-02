@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -298,11 +300,21 @@ func (m *mockFailIntentStore) ListIntents(ctx context.Context) ([]LeaseIntent, e
 
 type spyBackendController struct {
 	TunerLeaseController
-	releaseCalled bool
-	releaseErr    error
+	releaseCalledCount int
+	releaseCalled      bool
+	releaseErr         error
+	acquireNilHandle   bool
+}
+
+func (s *spyBackendController) Acquire(ctx context.Context, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
+	if s.acquireNilHandle {
+		return nil, nil
+	}
+	return s.TunerLeaseController.Acquire(ctx, owner, slot, ttl)
 }
 
 func (s *spyBackendController) Release(ctx context.Context, handle *TunerLeaseHandle, reason ReasonCode) error {
+	s.releaseCalledCount++
 	s.releaseCalled = true
 	if s.releaseErr != nil {
 		return s.releaseErr
@@ -618,5 +630,206 @@ func TestBackendIdentity_ReconcilerAndProductionControllerShareBackend(t *testin
 
 	if report.Summary.Orphaned != 1 {
 		t.Errorf("expected reconciler to observe 1 orphaned lease in shared v3Store backend, got %d", report.Summary.Orphaned)
+	}
+}
+
+// 11. 20 parallel ExecuteStartupReconciliation calls: exactly 1 executes reconciliation, 19 return ErrStartupGateAlreadyResolved.
+func TestGate_ParallelExecution20(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+
+	tb := NewTunerBinding(mgr)
+	baseCtrl := NewTunerBindingController(tb)
+	trackedCtrl, _ := NewIntentTrackedTunerLeaseController(baseCtrl, store)
+
+	var wg sync.WaitGroup
+	var resolvedCount atomic.Int32
+	var successCount atomic.Int32
+
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := trackedCtrl.ExecuteStartupReconciliation(context.Background(), ReconcilerConfig{IntentStore: store, Backend: mgr})
+			if err == nil {
+				successCount.Add(1)
+			} else if errors.Is(err, ErrStartupGateAlreadyResolved) {
+				resolvedCount.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if successCount.Load() != 1 {
+		t.Errorf("expected exactly 1 successful reconciliation, got %d", successCount.Load())
+	}
+	if resolvedCount.Load() != 19 {
+		t.Errorf("expected exactly 19 ErrStartupGateAlreadyResolved responses, got %d", resolvedCount.Load())
+	}
+}
+
+// 12. Gate state can never transition from GateAccepted to GateRefused.
+func TestGate_StateNeverTransitionsAcceptedToRefused(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	store := NewInMemoryIntentStore()
+
+	tb := NewTunerBinding(mgr)
+	baseCtrl := NewTunerBindingController(tb)
+	trackedCtrl, _ := NewIntentTrackedTunerLeaseController(baseCtrl, store)
+
+	_, err := trackedCtrl.ExecuteStartupReconciliation(context.Background(), ReconcilerConfig{IntentStore: store, Backend: mgr})
+	if err != nil {
+		t.Fatalf("first startup reconciliation failed: %v", err)
+	}
+
+	if trackedCtrl.GateState() != GateAccepted {
+		t.Fatalf("expected GateState GateAccepted, got %s", trackedCtrl.GateState())
+	}
+
+	// Attempt second reconciliation call which fails
+	_, err2 := trackedCtrl.ExecuteStartupReconciliation(context.Background(), ReconcilerConfig{IntentStore: store, Backend: nil})
+	if !errors.Is(err2, ErrStartupGateAlreadyResolved) {
+		t.Fatalf("expected ErrStartupGateAlreadyResolved, got %v", err2)
+	}
+
+	if trackedCtrl.GateState() != GateAccepted {
+		t.Errorf("expected GateState to remain GateAccepted, but transitioned to %s", trackedCtrl.GateState())
+	}
+}
+
+// 13. Release lookup error aborts immediately and does NOT mutate backend.
+func TestSaga_Release_LookupFails_BackendNotMutated(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	tb := NewTunerBinding(mgr)
+	baseCtrl := NewTunerBindingController(tb)
+	spy := &spyBackendController{TunerLeaseController: baseCtrl}
+
+	store := newMockFailIntentStore()
+	trackedCtrl, _ := NewIntentTrackedTunerLeaseController(spy, store)
+	_, _ = trackedCtrl.ExecuteStartupReconciliation(context.Background(), ReconcilerConfig{IntentStore: store, Backend: mgr})
+
+	handle, err := trackedCtrl.Acquire(context.Background(), "session-lookup-fail", 0, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	// Set ListIntents to fail
+	store.failList = errors.New("simulated ListIntents lookup error")
+
+	relErr := trackedCtrl.Release(context.Background(), handle, ReasonReleasedByOwner)
+	if relErr == nil {
+		t.Fatalf("expected error from Release when lookup fails, got nil")
+	}
+
+	if spy.releaseCalledCount > 0 {
+		t.Errorf("backend Release MUST NOT be called when intent lookup fails")
+	}
+}
+
+// 14. Release without active intent aborts immediately and does NOT mutate backend.
+func TestSaga_Release_NoActiveIntent_BackendNotMutated(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	tb := NewTunerBinding(mgr)
+	baseCtrl := NewTunerBindingController(tb)
+	spy := &spyBackendController{TunerLeaseController: baseCtrl}
+
+	store := NewInMemoryIntentStore()
+	trackedCtrl, _ := NewIntentTrackedTunerLeaseController(spy, store)
+	_, _ = trackedCtrl.ExecuteStartupReconciliation(context.Background(), ReconcilerConfig{IntentStore: store, Backend: mgr})
+
+	fakeHandle := &TunerLeaseHandle{
+		LeaseID: "non-existent-lease-id",
+		Scope:   ScopeForTunerSlot(0),
+		Owner:   "owner-unknown",
+	}
+
+	relErr := trackedCtrl.Release(context.Background(), fakeHandle, ReasonReleasedByOwner)
+	if !errors.Is(relErr, ErrTrackedIntentNotFound) {
+		t.Fatalf("expected ErrTrackedIntentNotFound, got %v", relErr)
+	}
+
+	if spy.releaseCalledCount > 0 {
+		t.Errorf("backend Release MUST NOT be called when no active intent is found")
+	}
+}
+
+// 15. Renew without active intent returns ErrTrackedIntentNotFound.
+func TestSaga_Renew_NoActiveIntent_ReturnsErrTrackedIntentNotFound(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	tb := NewTunerBinding(mgr)
+	baseCtrl := NewTunerBindingController(tb)
+
+	store := NewInMemoryIntentStore()
+	trackedCtrl, _ := NewIntentTrackedTunerLeaseController(baseCtrl, store)
+	_, _ = trackedCtrl.ExecuteStartupReconciliation(context.Background(), ReconcilerConfig{IntentStore: store, Backend: mgr})
+
+	fakeHandle := &TunerLeaseHandle{
+		LeaseID: "non-existent-lease-id",
+		Scope:   ScopeForTunerSlot(0),
+		Owner:   "owner-unknown",
+	}
+
+	renewErr := trackedCtrl.Renew(context.Background(), fakeHandle, 10*time.Minute)
+	if !errors.Is(renewErr, ErrTrackedIntentNotFound) {
+		t.Fatalf("expected ErrTrackedIntentNotFound, got %v", renewErr)
+	}
+}
+
+// 16. Acquire returns nil handle without error -> intent becomes RECOVERY_REQUIRED and returns ErrInvalidBackendResult.
+func TestSaga_Acquire_NilHandleWithoutError_IntentRecoveryRequired(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 1 * time.Hour})
+	defer mgr.Close()
+	tb := NewTunerBinding(mgr)
+	baseCtrl := NewTunerBindingController(tb)
+	spy := &spyBackendController{
+		TunerLeaseController: baseCtrl,
+		acquireNilHandle:     true,
+	}
+
+	store := NewInMemoryIntentStore()
+	trackedCtrl, _ := NewIntentTrackedTunerLeaseController(spy, store)
+	_, _ = trackedCtrl.ExecuteStartupReconciliation(context.Background(), ReconcilerConfig{IntentStore: store, Backend: mgr})
+
+	h, err := trackedCtrl.Acquire(context.Background(), "session-nil-handle", 0, 10*time.Minute)
+	if !errors.Is(err, ErrInvalidBackendResult) {
+		t.Fatalf("expected ErrInvalidBackendResult, got %v", err)
+	}
+	if h != nil {
+		t.Fatalf("expected nil handle, got %v", h)
+	}
+
+	intents, _ := store.ListIntents(context.Background())
+	if len(intents) != 1 {
+		t.Fatalf("expected 1 intent, got %d", len(intents))
+	}
+	if intents[0].State != IntentStateRecoveryRequired {
+		t.Errorf("expected intent state RECOVERY_REQUIRED, got %s", intents[0].State)
+	}
+}
+
+// 17. Nil observable backend returns ErrBindingUnavailable and refuses startup.
+func TestBackend_NilObservableBackend_ReturnsErrBindingUnavailable(t *testing.T) {
+	nilBackend := SessionStoreObservableBackend{SessionStoreTunerLeaseController: nil}
+	ctx := context.Background()
+
+	_, err := nilBackend.ListLeases(ctx)
+	if !errors.Is(err, ErrBindingUnavailable) {
+		t.Errorf("expected ErrBindingUnavailable from nil ListLeases, got %v", err)
+	}
+
+	store := NewInMemoryIntentStore()
+	trackedCtrl, _ := NewIntentTrackedTunerLeaseController(NewSessionStoreTunerLeaseController(sessionstore.NewMemoryStore()), store)
+
+	_, err = trackedCtrl.ExecuteStartupReconciliation(ctx, ReconcilerConfig{
+		IntentStore: store,
+		Backend:     nilBackend,
+	})
+	if err == nil {
+		t.Fatalf("expected startup reconciliation failure with nil observable backend")
 	}
 }

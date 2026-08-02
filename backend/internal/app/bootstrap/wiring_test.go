@@ -310,3 +310,57 @@ enigma2:
 		_ = container.Close()
 	})
 }
+
+func TestBootstrap_ErrorFreesFileLock(t *testing.T) {
+	skipIfNoFFmpeg(t)
+	t.Setenv("XG2G_INITIAL_REFRESH", "false")
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	t.Setenv("XG2G_API_TOKEN", "test-token-1234567890123456")
+	t.Setenv("XG2G_API_TOKEN_SCOPES", "v3:read,v3:write")
+
+	tmpDir := t.TempDir()
+	t.Setenv("XG2G_STORE_PATH", tmpDir)
+
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	content := `
+version: v3
+dataDir: ` + tmpDir + `
+store:
+  backend: sqlite
+  path: ` + tmpDir + `
+api:
+  listenAddr: ":0"
+engine:
+  tunerSlots: [0]
+enigma2:
+  baseUrl: http://mock-receiver
+`
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Seed orphaned lease in sessions.sqlite
+	st, err := store.NewSqliteStore(filepath.Join(tmpDir, "sessions.sqlite"))
+	require.NoError(t, err)
+	_, ok, err := st.TryAcquireLease(ctx, "tuner:0", "orphan-owner", 10*time.Minute)
+	require.NoError(t, err)
+	require.True(t, ok)
+	_ = st.Close()
+
+	// 1. WireServices fails due to reconciliation refusal
+	_, err = WireServices(ctx, "test-v3", "test-commit", "now", configPath)
+	require.Error(t, err)
+
+	// 2. Immediately open FileIntentStore on exact same intents.json path.
+	// If WireServices failed to close intentStore, NewFileIntentStore would fail with "already open".
+	intentsPath, err := paths.ResolveDataFilePath(tmpDir, "intents.json", true)
+	require.NoError(t, err)
+
+	fs, err := pipelinelease.NewFileIntentStore(intentsPath)
+	require.NoError(t, err, "FileIntentStore MUST be re-openable immediately after failed WireServices")
+	require.NotNil(t, fs)
+	_ = fs.Close()
+}

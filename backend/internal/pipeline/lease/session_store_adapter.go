@@ -85,7 +85,7 @@ func (c *SessionStoreTunerLeaseController) Release(ctx context.Context, handle *
 
 func (c *SessionStoreTunerLeaseController) ListLeases(ctx context.Context) ([]Lease, error) {
 	if c == nil || c.Store == nil {
-		return nil, nil
+		return nil, ErrBindingUnavailable
 	}
 	sls, err := c.Store.ListLeases(ctx)
 	if err != nil {
@@ -102,7 +102,6 @@ func (c *SessionStoreTunerLeaseController) ListLeases(ctx context.Context) ([]Le
 			Owner:      Owner(sl.Owner()),
 			Scope:      Scope(sl.Key()),
 			State:      StateAcquired,
-			AcquiredAt: now,
 			ExpiresAt:  sl.ExpiresAt(),
 			ReasonCode: ReasonAcquired,
 		})

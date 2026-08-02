@@ -213,7 +213,17 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	if err != nil {
 		return nil, fmt.Errorf("resolve intent store path: %w", err)
 	}
+
 	var intentStore pipelinelease.IntentStore
+	var wireSuccess bool
+	defer func() {
+		if !wireSuccess && intentStore != nil {
+			if closer, ok := intentStore.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		}
+	}()
+
 	if cfg.Store.Backend == "memory" {
 		intentStore = pipelinelease.NewInMemoryIntentStore()
 	} else {
@@ -277,6 +287,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	app := daemon.NewApp(logger, mgr, cfgHolder, s, false)
 
+	wireSuccess = true
 	return &Container{
 		Config:           cfg,
 		ConfigManager:    configMgr,
