@@ -45,6 +45,7 @@ const (
 	ReasonInvalidScope        ReasonCode = "LEASE_INVALID_SCOPE"
 	ReasonNotFound            ReasonCode = "LEASE_NOT_FOUND"
 	ReasonManagerClosed       ReasonCode = "LEASE_MANAGER_CLOSED"
+	ReasonRollback            ReasonCode = "LEASE_ROLLBACK"
 )
 
 // Lease represents a time-bounded reservation for a specific resource scope.
