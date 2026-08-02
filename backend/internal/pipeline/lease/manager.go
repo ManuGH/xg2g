@@ -154,6 +154,10 @@ func (m *Manager) Acquire(ctx context.Context, owner Owner, scope Scope, ttl tim
 	return &cp, nil
 }
 
+func (m *Manager) ReleaseBackendLease(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
+	return m.Release(ctx, id, owner, reason)
+}
+
 // Release idempotently releases a lease held by the given owner.
 func (m *Manager) Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
 	if ctx != nil && ctx.Err() != nil {

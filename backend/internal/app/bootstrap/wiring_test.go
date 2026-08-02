@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	controlhttp "github.com/ManuGH/xg2g/internal/control/http"
+	store "github.com/ManuGH/xg2g/internal/domain/session/store"
 	pipelinelease "github.com/ManuGH/xg2g/internal/pipeline/lease"
 	paths "github.com/ManuGH/xg2g/internal/platform/paths"
 )
@@ -220,4 +221,92 @@ enigma2:
 	_, err = WireServices(ctx2, "test-v3", "test-commit", "now", configPath)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mandatory startup reconciliation failed")
+}
+
+func TestBootstrap_EnforcesBackendIdentityAndRestartRecovery(t *testing.T) {
+	skipIfNoFFmpeg(t)
+	t.Setenv("XG2G_INITIAL_REFRESH", "false")
+	t.Setenv("XG2G_DECISION_SECRET", "test-decision-secret-for-bootstrap-tests")
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "abcdefghijklmnopqrstuvwxyz0123456789ABCDE1")
+	t.Setenv("XG2G_API_TOKEN", "test-token-1234567890123456")
+	t.Setenv("XG2G_API_TOKEN_SCOPES", "v3:read,v3:write")
+
+	t.Run("OrphanedLease_Refused", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		t.Setenv("XG2G_STORE_PATH", tmpDir)
+
+		configPath := filepath.Join(tmpDir, "config.yaml")
+		content := `
+version: v3
+dataDir: ` + tmpDir + `
+store:
+  backend: sqlite
+  path: ` + tmpDir + `
+api:
+  listenAddr: ":0"
+engine:
+  tunerSlots: [0]
+enigma2:
+  baseUrl: http://mock-receiver
+`
+		err := os.WriteFile(configPath, []byte(content), 0600)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		st, err := store.NewSqliteStore(filepath.Join(tmpDir, "sessions.sqlite"))
+		require.NoError(t, err)
+		_, ok, err := st.TryAcquireLease(ctx, "tuner:0", "untracked-orphan-owner", 10*time.Minute)
+		require.NoError(t, err)
+		require.True(t, ok)
+		_ = st.Close()
+
+		_, err = WireServices(ctx, "test-v3", "test-commit", "now", configPath)
+		require.Error(t, err, "WireServices MUST fail when reconciler observes orphaned lease in backend store")
+		assert.Contains(t, err.Error(), "mandatory startup reconciliation failed")
+	})
+
+	t.Run("MatchingIntent_Accepted", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		t.Setenv("XG2G_STORE_PATH", tmpDir)
+
+		configPath := filepath.Join(tmpDir, "config.yaml")
+		content := `
+version: v3
+dataDir: ` + tmpDir + `
+store:
+  backend: sqlite
+  path: ` + tmpDir + `
+api:
+  listenAddr: ":0"
+engine:
+  tunerSlots: [0]
+enigma2:
+  baseUrl: http://mock-receiver
+`
+		err := os.WriteFile(configPath, []byte(content), 0600)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		st, err := store.NewSqliteStore(filepath.Join(tmpDir, "sessions.sqlite"))
+		require.NoError(t, err)
+		_, ok, err := st.TryAcquireLease(ctx, "tuner:0", "untracked-orphan-owner", 10*time.Minute)
+		require.NoError(t, err)
+		require.True(t, ok)
+		_ = st.Close()
+
+		intentsPath, err := paths.ResolveDataFilePath(tmpDir, "intents.json", true)
+		require.NoError(t, err)
+		matchingIntent := `{"intent-matching-1":{"intent_id":"intent-matching-1","lease_id":"tuner:0","owner":"untracked-orphan-owner","scope":"tuner:0","state":"ACTIVE","revision":1,"created_at":"2026-08-02T10:00:00Z","updated_at":"2026-08-02T10:00:00Z"}}`
+		err = os.WriteFile(intentsPath, []byte(matchingIntent), 0600)
+		require.NoError(t, err)
+
+		container, err := WireServices(ctx, "test-v3", "test-commit", "now", configPath)
+		require.NoError(t, err, "WireServices MUST succeed when intent and backend lease match")
+		require.NotNil(t, container)
+		_ = container.Close()
+	})
 }

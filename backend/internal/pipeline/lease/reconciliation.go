@@ -218,6 +218,7 @@ const (
 type ReconciliationItem struct {
 	Scope              Scope                    `json:"scope"`
 	IntentID           ID                       `json:"intent_id,omitempty"`
+	IntentState        IntentState              `json:"intent_state,omitempty"`
 	BackendID          ID                       `json:"backend_id,omitempty"`
 	IntentOwner        Owner                    `json:"intent_owner,omitempty"`
 	BackendOwner       Owner                    `json:"backend_owner,omitempty"`
@@ -476,6 +477,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) (*ReconciliationReport, erro
 		item := ReconciliationItem{
 			Scope:              scope,
 			IntentID:           intent.IntentID,
+			IntentState:        intent.State,
 			IntentOwner:        intent.Owner,
 			RemediationOutcome: RemediationNotAttempted,
 		}

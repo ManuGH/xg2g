@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -222,7 +224,6 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		intentStore = fileStore
 	}
 
-	leaseBackendManager := pipelinelease.NewManager(pipelinelease.ManagerConfig{SweepInterval: 1 * time.Hour})
 	sessionStoreController := pipelinelease.NewSessionStoreTunerLeaseController(v3Store)
 	trackedTunerController, err := pipelinelease.NewIntentTrackedTunerLeaseControllerWithConfig(pipelinelease.IntentTrackedControllerConfig{
 		Controller:    sessionStoreController,
@@ -235,7 +236,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	startupReport, err := trackedTunerController.ExecuteStartupReconciliation(ctx, pipelinelease.ReconcilerConfig{
 		IntentStore: intentStore,
-		Backend:     leaseBackendManager,
+		Backend:     pipelinelease.SessionStoreObservableBackend{SessionStoreTunerLeaseController: sessionStoreController},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mandatory startup reconciliation failed: %w", err)
@@ -290,6 +291,20 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		scanManager:      v3Scan,
 		verificationWork: verifyWorker,
 	}, nil
+}
+
+// Close closes any underlying resources in the container (such as IntentStore if it implements io.Closer).
+func (c *Container) Close() error {
+	if c == nil {
+		return nil
+	}
+	var errs []error
+	if closer, ok := c.IntentStore.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close intent store: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // monetizationServices bundles the entitlement, household and receipt services

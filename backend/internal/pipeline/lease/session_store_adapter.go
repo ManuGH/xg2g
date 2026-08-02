@@ -82,3 +82,47 @@ func (c *SessionStoreTunerLeaseController) Release(ctx context.Context, handle *
 	}
 	return c.Store.ReleaseLease(ctx, string(handle.Scope), string(handle.Owner))
 }
+
+func (c *SessionStoreTunerLeaseController) ListLeases(ctx context.Context) ([]Lease, error) {
+	if c == nil || c.Store == nil {
+		return nil, nil
+	}
+	sls, err := c.Store.ListLeases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	res := make([]Lease, 0, len(sls))
+	for _, sl := range sls {
+		if now.After(sl.ExpiresAt()) {
+			continue
+		}
+		res = append(res, Lease{
+			ID:         ID(sl.Key()),
+			Owner:      Owner(sl.Owner()),
+			Scope:      Scope(sl.Key()),
+			State:      StateAcquired,
+			AcquiredAt: now,
+			ExpiresAt:  sl.ExpiresAt(),
+			ReasonCode: ReasonAcquired,
+		})
+	}
+	return res, nil
+}
+
+func (c *SessionStoreTunerLeaseController) ReleaseBackendLease(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
+	if c == nil || c.Store == nil {
+		return nil, ErrBindingUnavailable
+	}
+	err := c.Store.ReleaseLease(ctx, string(id), string(owner))
+	if err != nil {
+		return nil, err
+	}
+	return &Lease{
+		ID:         id,
+		Owner:      owner,
+		Scope:      Scope(id),
+		State:      StateReleased,
+		ReasonCode: reason,
+	}, nil
+}

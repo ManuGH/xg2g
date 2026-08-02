@@ -33,6 +33,7 @@ const (
 var (
 	ErrStartupReconciliationRequired = errors.New("startup reconciliation required before acquiring leases")
 	ErrStartupReconciliationFailed   = errors.New("startup reconciliation refused startup due to policy evaluation")
+	ErrStartupGateAlreadyResolved    = errors.New("startup gate has already been resolved and cannot be re-evaluated")
 )
 
 // StartupPolicyResult holds the decision and diagnostic reason for a startup policy evaluation.
@@ -77,6 +78,12 @@ func (p DefaultStartupPolicy) Evaluate(report ReconciliationReport) StartupPolic
 	}
 
 	for _, item := range report.Items {
+		if item.IntentState == IntentStateRecoveryRequired {
+			return StartupPolicyResult{
+				Decision: StartupRefused,
+				Reason:   fmt.Sprintf("intent for scope %s is in RECOVERY_REQUIRED state", item.Scope),
+			}
+		}
 		if item.RemediationOutcome == RemediationFailed {
 			return StartupPolicyResult{
 				Decision: StartupRefused,
@@ -176,20 +183,36 @@ func defaultCryptographicIDGen() (ID, error) {
 }
 
 // ExecuteStartupReconciliation performs mandatory startup reconciliation audit and sets the gate state idempotently.
+// If the gate has already been resolved, it returns ErrStartupGateAlreadyResolved.
 func (c *IntentTrackedTunerLeaseController) ExecuteStartupReconciliation(ctx context.Context, cfg ReconcilerConfig) (*ReconciliationReport, error) {
 	c.gateMu.Lock()
-	defer c.gateMu.Unlock()
+	if c.gateState != GatePending {
+		c.gateMu.Unlock()
+		return nil, ErrStartupGateAlreadyResolved
+	}
+	c.gateMu.Unlock()
 
 	reconciler, err := NewReconciler(cfg)
 	if err != nil {
+		c.gateMu.Lock()
 		c.gateState = GateRefused
+		c.gateMu.Unlock()
 		return nil, fmt.Errorf("%w: failed to initialize reconciler: %v", ErrStartupReconciliationFailed, err)
 	}
 
 	report, err := reconciler.Reconcile(ctx)
 	if err != nil {
+		c.gateMu.Lock()
 		c.gateState = GateRefused
+		c.gateMu.Unlock()
 		return nil, fmt.Errorf("%w: reconciliation execution failed: %v", ErrStartupReconciliationFailed, err)
+	}
+
+	c.gateMu.Lock()
+	defer c.gateMu.Unlock()
+
+	if c.gateState != GatePending {
+		return nil, ErrStartupGateAlreadyResolved
 	}
 
 	c.reconciliationReport = cloneReconciliationReport(report)
@@ -261,10 +284,14 @@ func (c *IntentTrackedTunerLeaseController) Acquire(ctx context.Context, owner O
 		intent.State = IntentStateTerminal
 		intent.Revision = 2
 		intent.UpdatedAt = c.nowFunc()
-		if saveErr := c.intentStore.SaveIntent(cleanupCtx, intent); saveErr != nil {
-			return nil, errors.Join(fmt.Errorf("acquire tuner lease failed: %w", acqErr), fmt.Errorf("failed to persist TERMINAL intent after acquire failure: %w", saveErr))
+		saveErr := c.intentStore.SaveIntent(cleanupCtx, intent)
+
+		var errs []error
+		errs = append(errs, acqErr)
+		if saveErr != nil {
+			errs = append(errs, fmt.Errorf("failed to mark intent TERMINAL after acquire failure: %w", saveErr))
 		}
-		return nil, acqErr
+		return nil, errors.Join(errs...)
 	}
 
 	// 3. Mark intent ACTIVE on acquisition success
@@ -280,12 +307,29 @@ func (c *IntentTrackedTunerLeaseController) Acquire(ctx context.Context, owner O
 
 			relErr := c.controller.Release(cleanupCtx, handle, ReasonRollback)
 
-			intent.State = IntentStateRecoveryRequired
-			intent.Revision = 3
-			intent.UpdatedAt = c.nowFunc()
-			_ = c.intentStore.SaveIntent(cleanupCtx, intent)
+			var recoverySaveErr error
+			if storedIntent, getErr := c.intentStore.GetIntent(cleanupCtx, intent.IntentID); getErr == nil && storedIntent != nil {
+				recIntent := *storedIntent
+				recIntent.State = IntentStateRecoveryRequired
+				recIntent.Revision++
+				recIntent.UpdatedAt = c.nowFunc()
+				recoverySaveErr = c.intentStore.SaveIntent(cleanupCtx, recIntent)
+			} else {
+				intent.State = IntentStateRecoveryRequired
+				intent.Revision = 2
+				intent.UpdatedAt = c.nowFunc()
+				recoverySaveErr = c.intentStore.SaveIntent(cleanupCtx, intent)
+			}
 
-			return nil, errors.Join(fmt.Errorf("failed to persist ACTIVE intent: %w", saveErr), fmt.Errorf("rollback release result: %v", relErr))
+			var errs []error
+			errs = append(errs, fmt.Errorf("failed to persist ACTIVE intent: %w", saveErr))
+			if relErr != nil {
+				errs = append(errs, fmt.Errorf("rollback release: %w", relErr))
+			}
+			if recoverySaveErr != nil {
+				errs = append(errs, fmt.Errorf("persist RECOVERY_REQUIRED: %w", recoverySaveErr))
+			}
+			return nil, errors.Join(errs...)
 		}
 	}
 
@@ -299,23 +343,34 @@ func (c *IntentTrackedTunerLeaseController) Renew(ctx context.Context, handle *T
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(nonNilContext(ctx)), c.cleanupTimeout)
 		defer cancel()
 
-		intents, err := c.intentStore.ListIntents(cleanupCtx)
-		if err == nil {
+		intents, lookupErr := c.intentStore.ListIntents(cleanupCtx)
+		var recoverySaveErr error
+		if lookupErr == nil {
 			for _, in := range intents {
 				if in.LeaseID == handle.LeaseID && in.State == IntentStateActive {
 					in.State = IntentStateRecoveryRequired
 					in.Revision++
 					in.UpdatedAt = c.nowFunc()
-					_ = c.intentStore.SaveIntent(cleanupCtx, in)
+					recoverySaveErr = c.intentStore.SaveIntent(cleanupCtx, in)
 					break
 				}
 			}
 		}
+
+		var errs []error
+		errs = append(errs, renewErr)
+		if lookupErr != nil {
+			errs = append(errs, fmt.Errorf("list intents during renew recovery: %w", lookupErr))
+		}
+		if recoverySaveErr != nil {
+			errs = append(errs, fmt.Errorf("persist RECOVERY_REQUIRED on renew failure: %w", recoverySaveErr))
+		}
+		return errors.Join(errs...)
 	}
 	return renewErr
 }
 
-// Release updates the intent to RELEASING then TERMINAL upon confirmed release.
+// Release updates the intent to RELEASING then TERMINAL upon confirmed release using a detached cleanup context.
 func (c *IntentTrackedTunerLeaseController) Release(ctx context.Context, handle *TunerLeaseHandle, reason ReasonCode) error {
 	if handle == nil || handle.LeaseID == "" {
 		return c.controller.Release(ctx, handle, reason)
@@ -324,11 +379,11 @@ func (c *IntentTrackedTunerLeaseController) Release(ctx context.Context, handle 
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(nonNilContext(ctx)), c.cleanupTimeout)
 	defer cancel()
 
-	intents, err := c.intentStore.ListIntents(ctx)
+	intents, lookupErr := c.intentStore.ListIntents(cleanupCtx)
 	var activeIntent *LeaseIntent
-	if err == nil {
+	if lookupErr == nil {
 		for _, in := range intents {
-			if in.LeaseID == handle.LeaseID && in.State == IntentStateActive {
+			if in.LeaseID == handle.LeaseID && (in.State == IntentStateActive || in.State == IntentStateReleasing) {
 				inCopy := in
 				activeIntent = &inCopy
 				break
@@ -336,31 +391,66 @@ func (c *IntentTrackedTunerLeaseController) Release(ctx context.Context, handle 
 		}
 	}
 
+	// 1. Persist RELEASING state before mutating backend
 	if activeIntent != nil {
 		activeIntent.State = IntentStateReleasing
 		activeIntent.Revision++
 		activeIntent.UpdatedAt = c.nowFunc()
-		_ = c.intentStore.SaveIntent(ctx, *activeIntent)
+		if releasingSaveErr := c.intentStore.SaveIntent(cleanupCtx, *activeIntent); releasingSaveErr != nil {
+			// CRITICAL GATE: If RELEASING save fails, DO NOT mutate backend!
+			var errs []error
+			if lookupErr != nil {
+				errs = append(errs, fmt.Errorf("lookup intent during release: %w", lookupErr))
+			}
+			errs = append(errs, fmt.Errorf("failed to persist RELEASING intent prior to backend mutation: %w", releasingSaveErr))
+			return errors.Join(errs...)
+		}
 	}
 
-	relErr := c.controller.Release(ctx, handle, reason)
+	// 2. Perform backend release
+	relErr := c.controller.Release(cleanupCtx, handle, reason)
 	if relErr != nil {
 		if activeIntent != nil {
 			activeIntent.State = IntentStateRecoveryRequired
 			activeIntent.Revision++
 			activeIntent.UpdatedAt = c.nowFunc()
-			_ = c.intentStore.SaveIntent(cleanupCtx, *activeIntent)
+			recoverySaveErr := c.intentStore.SaveIntent(cleanupCtx, *activeIntent)
+			var errs []error
+			errs = append(errs, relErr)
+			if recoverySaveErr != nil {
+				errs = append(errs, fmt.Errorf("persist RECOVERY_REQUIRED on backend release failure: %w", recoverySaveErr))
+			}
+			return errors.Join(errs...)
 		}
 		return relErr
 	}
 
-	// ONLY persist TERMINAL after confirmed successful backend release!
+	// 3. Backend release confirmed success -> Persist TERMINAL state
 	if activeIntent != nil {
 		activeIntent.State = IntentStateTerminal
 		activeIntent.Revision++
 		activeIntent.UpdatedAt = c.nowFunc()
-		if saveErr := c.intentStore.SaveIntent(cleanupCtx, *activeIntent); saveErr != nil {
-			return fmt.Errorf("failed to persist TERMINAL intent after backend release: %w", saveErr)
+		if terminalSaveErr := c.intentStore.SaveIntent(cleanupCtx, *activeIntent); terminalSaveErr != nil {
+			var recoverySaveErr error
+			if storedIntent, getErr := c.intentStore.GetIntent(cleanupCtx, activeIntent.IntentID); getErr == nil && storedIntent != nil {
+				recIntent := *storedIntent
+				recIntent.State = IntentStateRecoveryRequired
+				recIntent.Revision++
+				recIntent.UpdatedAt = c.nowFunc()
+				recoverySaveErr = c.intentStore.SaveIntent(cleanupCtx, recIntent)
+			} else {
+				activeIntent.State = IntentStateRecoveryRequired
+				activeIntent.Revision++
+				activeIntent.UpdatedAt = c.nowFunc()
+				recoverySaveErr = c.intentStore.SaveIntent(cleanupCtx, *activeIntent)
+			}
+
+			var errs []error
+			errs = append(errs, fmt.Errorf("failed to persist TERMINAL intent after backend release: %w", terminalSaveErr))
+			if recoverySaveErr != nil {
+				errs = append(errs, fmt.Errorf("persist RECOVERY_REQUIRED after terminal save failure: %w", recoverySaveErr))
+			}
+			return errors.Join(errs...)
 		}
 	}
 
@@ -380,6 +470,76 @@ func RunStartupReconciliation(ctx context.Context, cfg ReconcilerConfig) (*Recon
 	}
 
 	return cloneReconciliationReport(report), nil
+}
+
+// SessionStoreObservableBackend adapts SessionStoreTunerLeaseController to ObservableLeaseBackend.
+type SessionStoreObservableBackend struct {
+	*SessionStoreTunerLeaseController
+}
+
+func (b SessionStoreObservableBackend) ListLeases(ctx context.Context) ([]Lease, error) {
+	return b.SessionStoreTunerLeaseController.ListLeases(ctx)
+}
+
+func (b SessionStoreObservableBackend) Acquire(ctx context.Context, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
+	if b.SessionStoreTunerLeaseController == nil || b.SessionStoreTunerLeaseController.Store == nil {
+		return nil, ErrBindingUnavailable
+	}
+	l, ok, err := b.SessionStoreTunerLeaseController.Store.TryAcquireLease(ctx, string(scope), string(owner), ttl)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrScopeConflict
+	}
+	return &Lease{
+		ID:         ID(l.Key()),
+		Owner:      Owner(l.Owner()),
+		Scope:      Scope(l.Key()),
+		State:      StateAcquired,
+		AcquiredAt: time.Now(),
+		ExpiresAt:  l.ExpiresAt(),
+		ReasonCode: ReasonAcquired,
+	}, nil
+}
+
+func (b SessionStoreObservableBackend) Renew(ctx context.Context, id ID, owner Owner, ttl time.Duration) (*Lease, error) {
+	if b.SessionStoreTunerLeaseController == nil || b.SessionStoreTunerLeaseController.Store == nil {
+		return nil, ErrBindingUnavailable
+	}
+	l, ok, err := b.SessionStoreTunerLeaseController.Store.RenewLease(ctx, string(id), string(owner), ttl)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrLeaseInactive
+	}
+	return &Lease{
+		ID:         ID(l.Key()),
+		Owner:      Owner(l.Owner()),
+		Scope:      Scope(l.Key()),
+		State:      StateAcquired,
+		AcquiredAt: time.Now(),
+		ExpiresAt:  l.ExpiresAt(),
+		ReasonCode: ReasonAcquired,
+	}, nil
+}
+
+func (b SessionStoreObservableBackend) Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error) {
+	if b.SessionStoreTunerLeaseController == nil || b.SessionStoreTunerLeaseController.Store == nil {
+		return nil, ErrBindingUnavailable
+	}
+	err := b.SessionStoreTunerLeaseController.Store.ReleaseLease(ctx, string(id), string(owner))
+	if err != nil {
+		return nil, err
+	}
+	return &Lease{
+		ID:         id,
+		Owner:      owner,
+		Scope:      Scope(id),
+		State:      StateReleased,
+		ReasonCode: reason,
+	}, nil
 }
 
 
