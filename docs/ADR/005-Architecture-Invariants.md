@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (2026-01-06)
+Accepted (2026-01-06) - Superseded in part by [Engineering Charter](../ENGINEERING_CHARTER.md) (v1.0.0). This ADR documents the original 2026 rationale; the Engineering Charter is now the normative source for project-wide engineering invariants.
+
 
 ## Context
 

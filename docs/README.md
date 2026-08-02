@@ -49,6 +49,7 @@ make ci-pr
 
 | Document | Description |
 | :--- | :--- |
+| [**Engineering Charter**](ENGINEERING_CHARTER.md) | Governing system principles, invariants, and review gate. |
 | [**Repository Map**](dev/REPO_MAP.md) | Codebase layout, modules, and file responsibilities. |
 | [**Codec & Container Matrix**](arch/CODEC_MATRIX.md) | FFmpeg remux & transcode logic, hardware acceleration (VAAPI/NVENC). |
 | [**WebUI Architecture**](webui/README.md) | React frontend layout, state management, and player telemetry. |

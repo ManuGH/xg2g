@@ -1,7 +1,7 @@
 # Architecture Decision Records (ADRs)
 
 This directory contains versioned design decisions for `xg2g`.
-ADRs are stable reference points for maintainers.
+ADRs are stable reference points for maintainers and operationalize the [Engineering Charter](../ENGINEERING_CHARTER.md).
 
 ## Active ADRs
 
@@ -19,9 +19,10 @@ ADRs are stable reference points for maintainers.
 | [ADR-026](026-native-webkit-hls-hevc-copy.md) | Native WebKit HLS for HEVC Live Sources | ✅ ACTIVE |
 | [ADR-027](027-openapi-operation-catalog.md) | OpenAPI Operation Catalog | ✅ ACTIVE |
 | [ADR-028](028-playback-capability-claims.md) | Playback Capability Claims and Verified Truth | ✅ ACTIVE |
+| [ADR-029](029-resource-arbitration-composite-lease-model.md) | Resource Arbitration and Composite Lease Model | ✅ ACTIVE |
 
 ## Decision Rules
 
-1. **Mandatory for**: Patterns, contracts, security, state machines.
-2. **Authority**: CTO (Design Authority). No escalation.
+1. **Mandatory for**: Patterns, contracts, security, state machines, and changes to Engineering Invariants.
+2. **Authority**: CTO / Architecture Maintainers. No escalation.
 3. **Drafting**: Use the standardized ADR template.
