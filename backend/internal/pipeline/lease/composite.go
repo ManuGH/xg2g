@@ -32,6 +32,18 @@ type LeaseBackend interface {
 	Release(ctx context.Context, id ID, owner Owner, reason ReasonCode) (*Lease, error)
 }
 
+// LeaseToken represents the immutable release token returned by a backend lease operation.
+type LeaseToken struct {
+	ID    ID
+	Owner Owner
+	Scope Scope
+}
+
+type acquiredResource struct {
+	RequestedScope Scope
+	Token          LeaseToken
+}
+
 // CompositeState represents the lifecycle status of an acquired multi-resource composite lease.
 type CompositeState string
 
@@ -194,6 +206,10 @@ type CompositeManagerConfig struct {
 
 // CompositeManager orchestrates multi-resource acquisitions with deterministic scope ordering,
 // LIFO rollback compensation, explicit state tracking, and failure injection support.
+//
+// All identifiable partial resources are compensated using a detached, bounded cleanup context.
+// Incomplete or impossible compensation is surfaced through CompositeAcquireError.ReconciliationRequired
+// and ErrCompensationIncomplete.
 type CompositeManager struct {
 	backend        LeaseBackend
 	idGen          IDGenerator
@@ -265,7 +281,7 @@ func (cm *CompositeManager) AcquireComposite(ctx context.Context, owner Owner, r
 		return sortedReqs[i].Scope < sortedReqs[j].Scope
 	})
 
-	acquired := make([]*Lease, 0, len(sortedReqs))
+	acquired := make([]acquiredResource, 0, len(sortedReqs))
 
 	getCleanupCtx := func() (context.Context, context.CancelFunc) {
 		return context.WithTimeout(context.WithoutCancel(nonNilContext(ctx)), cm.cleanupTimeout)
@@ -293,19 +309,36 @@ func (cm *CompositeManager) AcquireComposite(ctx context.Context, owner Owner, r
 			defer cancel()
 			return nil, cm.rollbackAcquired(cCtx, owner, req.Scope, backendErr, acquired, true)
 		}
+
+		tok := LeaseToken{ID: l.ID, Owner: l.Owner, Scope: l.Scope}
+
 		if l.Owner != owner || l.Scope != req.Scope {
 			backendErr := fmt.Errorf("%w: requested owner=%q scope=%q, got owner=%q scope=%q",
 				ErrInvalidBackendResult, owner, req.Scope, l.Owner, l.Scope)
-			// Include returned lease token in rollback set so its ID is also released!
-			acquiredWithReturned := append(acquired, l)
+			// Include returned token with actual returned Owner/Scope in rollback set!
+			acquiredWithReturned := append(acquired, acquiredResource{
+				RequestedScope: req.Scope,
+				Token:          tok,
+			})
 			cCtx, cancel := getCleanupCtx()
 			defer cancel()
 			return nil, cm.rollbackAcquired(cCtx, owner, req.Scope, backendErr, acquiredWithReturned, false)
 		}
 
-		acquired = append(acquired, l)
+		acquired = append(acquired, acquiredResource{
+			RequestedScope: req.Scope,
+			Token:          tok,
+		})
 	}
 
+	// 4. Pre-IDGen Context Check
+	if ctx != nil && ctx.Err() != nil {
+		cCtx, cancel := getCleanupCtx()
+		defer cancel()
+		return nil, cm.rollbackAcquired(cCtx, owner, "Pre-IDGen", ctx.Err(), acquired, false)
+	}
+
+	// 5. ID Generation
 	compID, err := cm.idGen()
 	if err != nil {
 		idErr := fmt.Errorf("ID generation failed: %w", err)
@@ -314,7 +347,7 @@ func (cm *CompositeManager) AcquireComposite(ctx context.Context, owner Owner, r
 		return nil, cm.rollbackAcquired(cCtx, owner, "IDGen", idErr, acquired, false)
 	}
 
-	// Final Context Check before Commit
+	// 6. Post-IDGen / Pre-Commit Context Check
 	if ctx != nil && ctx.Err() != nil {
 		cCtx, cancel := getCleanupCtx()
 		defer cancel()
@@ -322,9 +355,15 @@ func (cm *CompositeManager) AcquireComposite(ctx context.Context, owner Owner, r
 	}
 
 	members := make([]*CompositeMember, len(acquired))
-	for i, l := range acquired {
+	for i, res := range acquired {
 		members[i] = &CompositeMember{
-			Lease:    *l,
+			Lease: Lease{
+				ID:        res.Token.ID,
+				Owner:     res.Token.Owner,
+				Scope:     res.Token.Scope,
+				State:     StateAcquired,
+				AcquiredAt: time.Now(),
+			},
 			Released: false,
 		}
 	}
@@ -337,22 +376,23 @@ func (cm *CompositeManager) AcquireComposite(ctx context.Context, owner Owner, r
 	}, nil
 }
 
-func (cm *CompositeManager) rollbackAcquired(cleanupCtx context.Context, owner Owner, failedScope Scope, cause error, acquired []*Lease, unidentifiableLeak bool) error {
+func (cm *CompositeManager) rollbackAcquired(cleanupCtx context.Context, requestedOwner Owner, failedScope Scope, cause error, acquired []acquiredResource, unidentifiableLeak bool) error {
 	compensated := make([]Scope, 0, len(acquired))
 	var compFailures []CompensationFailure
 
-	// LIFO rollback loop (reverse acquisition order)
+	// LIFO rollback loop (reverse acquisition order using actual returned LeaseToken identity)
 	for j := len(acquired) - 1; j >= 0; j-- {
-		l := acquired[j]
-		_, relErr := cm.backend.Release(cleanupCtx, l.ID, owner, ReasonRollback)
+		res := acquired[j]
+		tok := res.Token
+		_, relErr := cm.backend.Release(cleanupCtx, tok.ID, tok.Owner, ReasonRollback)
 		if relErr != nil {
 			compFailures = append(compFailures, CompensationFailure{
-				Scope: l.Scope,
-				ID:    l.ID,
+				Scope: tok.Scope,
+				ID:    tok.ID,
 				Err:   relErr,
 			})
 		} else {
-			compensated = append(compensated, l.Scope)
+			compensated = append(compensated, tok.Scope)
 		}
 	}
 
@@ -404,7 +444,6 @@ func (cm *CompositeManager) ReleaseComposite(ctx context.Context, handle *Compos
 			workList = append(workList, releaseWork{index: i, lease: m.Lease})
 		}
 	}
-	owner := handle.owner
 	handle.mu.Unlock()
 
 	// 2. Perform backend I/O OUTSIDE handle lock
@@ -418,7 +457,7 @@ func (cm *CompositeManager) ReleaseComposite(ctx context.Context, handle *Compos
 			results = append(results, workResult{index: w.index, err: ctx.Err()})
 			continue
 		}
-		_, err := cm.backend.Release(ctx, w.lease.ID, owner, reason)
+		_, err := cm.backend.Release(ctx, w.lease.ID, w.lease.Owner, reason)
 		results = append(results, workResult{index: w.index, err: err})
 	}
 
@@ -494,7 +533,6 @@ func (cm *CompositeManager) RenewComposite(ctx context.Context, handle *Composit
 			workList = append(workList, renewWork{index: i, lease: m.Lease})
 		}
 	}
-	owner := handle.owner
 	handle.mu.Unlock()
 
 	// 2. Perform backend I/O OUTSIDE handle lock
@@ -509,10 +547,10 @@ func (cm *CompositeManager) RenewComposite(ctx context.Context, handle *Composit
 			results = append(results, renewResult{index: w.index, err: ctx.Err()})
 			break
 		}
-		rLease, err := cm.backend.Renew(ctx, w.lease.ID, owner, ttl)
+		rLease, err := cm.backend.Renew(ctx, w.lease.ID, w.lease.Owner, ttl)
 		if err == nil {
-			if rLease == nil || rLease.ID != w.lease.ID || rLease.Owner != owner || rLease.Scope != w.lease.Scope {
-				err = fmt.Errorf("%w: renewed lease scope/owner mismatch (expected scope=%s owner=%s)", ErrInvalidBackendResult, w.lease.Scope, owner)
+			if rLease == nil || rLease.ID != w.lease.ID || rLease.Owner != w.lease.Owner || rLease.Scope != w.lease.Scope {
+				err = fmt.Errorf("%w: renewed lease scope/owner mismatch (expected scope=%s owner=%s)", ErrInvalidBackendResult, w.lease.Scope, w.lease.Owner)
 			}
 		}
 		results = append(results, renewResult{index: w.index, renewed: rLease, err: err})
