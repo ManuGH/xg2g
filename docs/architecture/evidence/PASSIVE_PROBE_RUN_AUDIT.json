@@ -1,0 +1,21 @@
+{
+  "audit_version": "1.0.0",
+  "collector_version": "1.0.0",
+  "commit_sha": "01aac9cee426541c119a7067b701900367834995",
+  "timestamp_utc": "2026-08-02T22:14:59Z",
+  "target_url_fingerprint": "747ac6c9a35f4aa07c2c7d0739d46ffe26fd45c25547c2d88752c4b0d28a24f6",
+  "ssh_enabled": false,
+  "probe_phase": "PASSIVE_COLLECTION",
+  "manifest_validation": "PASSED",
+  "redaction_verification": "PASSED",
+  "probes": [
+    { "probe_id": "about", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/about.error.log" },
+    { "probe_id": "deviceinfo", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/deviceinfo.error.log" },
+    { "probe_id": "statusinfo", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/statusinfo.error.log" },
+    { "probe_id": "tunersignal", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/tunersignal.error.log" },
+    { "probe_id": "timerlist", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/timerlist.error.log" },
+    { "probe_id": "getallservices", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/getallservices.error.log" },
+    { "probe_id": "subservices", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/subservices.error.log" },
+    { "probe_id": "getcurrent", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/getcurrent.error.log" }
+  ]
+}

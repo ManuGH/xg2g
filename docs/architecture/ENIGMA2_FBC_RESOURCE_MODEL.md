@@ -237,6 +237,10 @@ Observation is strictly divided into two operational phases:
 
 ## Part G: Configuration Drift Detection & Capability Revalidation Protocol
 
+> [!WARNING]
+> **Implementation Status: PROPOSED — NOT YET IMPLEMENTED**  
+> Automatic configuration drift detection and baseline revocation is a proposed architecture for Phase E Step E3. Automated hardware preemption remains locked in `AUDIT_ONLY` mode until runtime fingerprint baseline evaluation is implemented in `xg2g` codebase.
+
 Even after initial empirical verification, receiver physical environment or Enigma2 tuner configurations can drift (e.g. moving receiver to a new location, replacing SAT cables, changing from Legacy to Unicable/JESS, modifying SCR frequencies, or disconnecting a tuner cable).
 
 ```
