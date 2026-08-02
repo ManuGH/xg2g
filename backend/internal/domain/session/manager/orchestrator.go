@@ -230,7 +230,11 @@ func (o *Orchestrator) Run(ctx context.Context) (runErr error) {
 					defer func() { <-o.startSem }()
 					telemetry.GetStartupTracer(evt.SessionID).MarkOnce(telemetry.MilestoneP4, "worker_acquired")
 					if err := o.handleStart(ctx, evt); err != nil {
-						log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start failed")
+						if errors.Is(err, context.Canceled) || strings.Contains(err.Error(), string(model.RClientStop)) {
+							log.L().Info().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start cancelled by client")
+						} else {
+							log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start failed")
+						}
 					}
 				}) {
 					log.L().Warn().Str("sid", evt.SessionID).Msg("session worker registry closing; dropping start")
