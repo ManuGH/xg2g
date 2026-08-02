@@ -67,6 +67,16 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}, ErrResourceKindMismatch
 	}
 
+	// Discrete exclusive pool limitation: ResourceStorageIO is a quantitative shared resource
+	if req.ResourceKind == ResourceStorageIO || snapshot.Kind == ResourceStorageIO {
+		return EvaluationResult{
+			Decision:     DecisionReject,
+			ReasonCode:   ReasonPolicyInvalidInput,
+			ReasonDetail: "ResourceStorageIO uses a shared quantitative capacity model not supported in Step E1 discrete evaluation",
+			EvaluatedAt:  req.EvaluatedAt,
+		}, ErrUnsupportedResourceModel
+	}
+
 	if req.Owner == "" {
 		return EvaluationResult{
 			Decision:     DecisionReject,
@@ -127,7 +137,7 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}
 	}
 
-	// 3. Active Allocation Validation & Scope Mapping
+	// 3. Active Allocation Validation & Strict Candidate Availability Invariant Check
 	seenAllocIDs := make(map[string]bool, len(snapshot.Active))
 	activeCountByScope := make(map[string]int, len(snapshot.Active))
 
@@ -188,15 +198,17 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 			}, ErrZeroAcquiredAtTimestamp
 		}
 
+		// Strict Invariant: Solange eine Allocation (auch IsReleasing == true) im Snapshot existiert, ist ihr Candidate NICHT verfügbar
+		if len(snapshot.Candidates) > 0 && cand.Available {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("candidate scope %q marked available despite active allocation %s (releasing: %v)", alloc.Scope, alloc.AllocationID, alloc.IsReleasing),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrInconsistentCandidateState
+		}
+
 		if !alloc.IsReleasing {
-			if len(snapshot.Candidates) > 0 && cand.Available {
-				return EvaluationResult{
-					Decision:     DecisionReject,
-					ReasonCode:   ReasonPolicyInvalidInput,
-					ReasonDetail: fmt.Sprintf("candidate scope %q marked available despite active allocation %s", alloc.Scope, alloc.AllocationID),
-					EvaluatedAt:  req.EvaluatedAt,
-				}, ErrInconsistentCandidateState
-			}
 			activeCountByScope[alloc.Scope]++
 			if activeCountByScope[alloc.Scope] > 1 {
 				return EvaluationResult{
@@ -219,11 +231,14 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}, nil
 	}
 
+	// Determine Scope Selection Mode
+	isExactScopeMode := (req.TargetScope != "") || (req.ScopeMode == ScopeSelectionExact)
+
 	// 5. Available Capacity Check with Candidate Evaluation
 	var eligibleFreeCandidates []ResourceCandidate
 	for _, cand := range snapshot.Candidates {
 		if cand.Available && cand.Compatible {
-			if req.TargetScope != "" && cand.Scope != req.TargetScope {
+			if isExactScopeMode && cand.Scope != req.TargetScope {
 				continue
 			}
 			eligibleFreeCandidates = append(eligibleFreeCandidates, cand)
@@ -246,11 +261,11 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 			}, nil
 		}
 
-		// Capacity unallocated, but no available/compatible candidate exists
+		// Unallocated capacity exists, but no matching available/compatible candidate exists for the scope mode
 		return EvaluationResult{
 			Decision:     DecisionReject,
 			ReasonCode:   ReasonPolicyRejectedNoCompatibleCandidate,
-			ReasonDetail: fmt.Sprintf("free capacity exists on %s (%d/%d), but no compatible available candidate was found", snapshot.Kind, len(snapshot.Active), snapshot.Capacity),
+			ReasonDetail: fmt.Sprintf("free capacity exists on %s (%d/%d), but no compatible available candidate was found for scope filter", snapshot.Kind, len(snapshot.Active), snapshot.Capacity),
 			EvaluatedAt:  req.EvaluatedAt,
 		}, nil
 	}
@@ -261,6 +276,11 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 	hasProtectedActivity := false
 
 	for _, alloc := range snapshot.Active {
+		// Strict Exact-Target Rule: In exact mode, ONLY evaluate the allocation occupying req.TargetScope
+		if isExactScopeMode && alloc.Scope != req.TargetScope {
+			continue
+		}
+
 		rule, ok := ConflictRuleFor(alloc.Consumer, req.Consumer)
 		if !ok {
 			return EvaluationResult{
@@ -290,7 +310,7 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		return EvaluationResult{
 			Decision:              DecisionReject,
 			ReasonCode:            primaryReason,
-			ReasonDetail:          fmt.Sprintf("all %d active allocations protected or equal/higher priority for resource %s", len(snapshot.Active), snapshot.Kind),
+			ReasonDetail:          fmt.Sprintf("active allocations protected or equal/higher priority for resource %s", snapshot.Kind),
 			BlockingAllocationIDs: blockingAllocations,
 			EvaluatedAt:           req.EvaluatedAt,
 		}, nil

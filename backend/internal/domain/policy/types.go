@@ -17,14 +17,16 @@ const (
 	ConsumerBackgroundTransfer ConsumerType = "BACKGROUND_TRANSFER"
 )
 
-// AllConsumerTypes lists all supported consumer types for matrix completeness verification.
-var AllConsumerTypes = []ConsumerType{
-	ConsumerScheduledRecording,
-	ConsumerManualRecording,
-	ConsumerLiveTV,
-	ConsumerRetroDVR,
-	ConsumerChannelScan,
-	ConsumerBackgroundTransfer,
+// AllConsumerTypes returns a copy of all supported consumer types for matrix completeness verification.
+func AllConsumerTypes() []ConsumerType {
+	return []ConsumerType{
+		ConsumerScheduledRecording,
+		ConsumerManualRecording,
+		ConsumerLiveTV,
+		ConsumerRetroDVR,
+		ConsumerChannelScan,
+		ConsumerBackgroundTransfer,
+	}
 }
 
 // IsValid checks whether the consumer type is a recognized system consumer.
@@ -85,6 +87,14 @@ func RequiresResource(consumer ConsumerType, kind ResourceKind) bool {
 	}
 }
 
+// ScopeSelectionMode defines how target resource scope filtering is evaluated.
+type ScopeSelectionMode string
+
+const (
+	ScopeSelectionAnyCompatible ScopeSelectionMode = "ANY_COMPATIBLE"
+	ScopeSelectionExact         ScopeSelectionMode = "EXACT"
+)
+
 // PreemptionDecision defines the action decreed by the PolicyEngine.
 type PreemptionDecision string
 
@@ -112,6 +122,7 @@ var (
 	ErrInvalidConsumerType            = errors.New("invalid or unrecognized consumer type")
 	ErrInvalidResourceKind            = errors.New("invalid or unrecognized resource kind")
 	ErrResourceKindMismatch           = errors.New("request resource kind does not match snapshot resource kind")
+	ErrUnsupportedResourceModel       = errors.New("resource kind uses shared quantitative capacity model not supported in discrete pool evaluation")
 	ErrInvalidOwner                   = errors.New("request owner cannot be empty")
 	ErrInvalidCandidateScope          = errors.New("candidate scope cannot be empty")
 	ErrDuplicateCandidateScope        = errors.New("duplicate candidate scope")
@@ -159,8 +170,8 @@ type EvaluationRequest struct {
 	ResourceKind ResourceKind
 	Owner        string
 	TargetScope  string
+	ScopeMode    ScopeSelectionMode
 	EvaluatedAt  time.Time
-	TTL          time.Duration
 }
 
 // EvaluationResult represents the pure decision returned by the PolicyEngine.

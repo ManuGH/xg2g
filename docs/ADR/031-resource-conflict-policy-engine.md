@@ -26,25 +26,24 @@ To prevent ad-hoc priority comparisons and ensure long-term maintainability, the
    - `ConsumerChannelScan`: EPG and transponder background scanning.
    - `ConsumerBackgroundTransfer`: Non-realtime media sync or export.
 
-3. **Explicit Resource Kind Modeling:**
-   Requests must specify the target `ResourceKind`:
-   - `ResourceTuner` (hardware tuner slots `tuner:0`, `tuner:1`)
-   - `ResourceDemuxer` (demuxer streams)
-   - `ResourceEncoderSlot` (GPU hardware transcode sessions)
-   - `ResourceStorageIO` (disk write bandwidth)
+3. **Explicit Resource Kind & Discrete Pool Model:**
+   Step E1 supports discrete exclusive resource pools (`ResourceTuner`, `ResourceDemuxer`, `ResourceEncoderSlot`) with single-allocation-per-scope semantics. Shared quantitative resources (e.g. `ResourceStorageIO` bandwidth/IOPS) require a separate capacity model and return `ErrUnsupportedResourceModel` in Step E1.
    
    A consumer resource mapping (`RequiresResource(consumer, resourceKind)`) enforces that non-tuner workloads (e.g. `ConsumerBackgroundTransfer`) do not compete for tuner capacity.
 
-4. **Typed Resource Snapshot Contract:**
+4. **Scope Selection Mode & Exact Target Semantics:**
+   Evaluation requests specify `ScopeSelectionMode` (`ScopeSelectionAnyCompatible` or `ScopeSelectionExact`). If `req.TargetScope` is non-empty or mode is `EXACT`, the engine evaluates ONLY the candidate and active allocation matching `req.TargetScope`. Deflection to another tuner slot is strictly forbidden.
+
+5. **Typed Resource Snapshot Contract:**
    The pure domain engine receives a pre-built, typed `ResourceSnapshot` containing capacity, candidate capabilities, and active allocations. The domain engine performs no hardware calls, openwebif requests, or I/O.
 
-5. **Pure Stateless Decision Engine:**
+6. **Pure Stateless Decision Engine:**
    `PolicyEngine.Evaluate(req EvaluationRequest, snapshot ResourceSnapshot)` is a pure, stateless function.
    - It requires an explicit timestamp (`req.EvaluatedAt`). Calling `time.Now()` internally is strictly forbidden.
    - For identical inputs, it produces 100% byte-for-byte identical results.
 
-6. **Strict Separation of Decision and Execution:**
-   The domain package (`internal/domain/policy`) contains only decision outcomes (`DecisionGrant`, `DecisionReject`, `DecisionPreemptionRequired`) and policy reason codes (`POLICY_*` registered in [`POLICY_REASON_CODES.md`](../guides/POLICY_REASON_CODES.md)). Preemption eviction execution (`PREEMPTION_EVICTION_*`) is isolated in the pipeline orchestration layer (`internal/pipeline/policy`).
+7. **Strict Separation of Decision and Execution:**
+   The domain package (`internal/domain/policy`) contains only decision outcomes (`DecisionGrant`, `DecisionReject`, `DecisionPreemptionRequired`) and policy reason codes (`POLICY_*` registered in [`REASON_CODES.md`](../guides/REASON_CODES.md) and [`POLICY_REASON_CODES.md`](../guides/POLICY_REASON_CODES.md)). Preemption eviction execution (`PREEMPTION_EVICTION_*`) is isolated in the pipeline orchestration layer (`internal/pipeline/policy`).
 
 7. **Candidate Capability & Availability Evaluation:**
    Free capacity alone is insufficient for a `GRANT` decision. A `GRANT` decision requires a concrete `ResourceCandidate` that is `Available == true`, `Compatible == true`, and compatible with `TargetScope`. If capacity exists but no matching candidate is available, the request is rejected with `POLICY_REJECTED_NO_COMPATIBLE_CANDIDATE`.
