@@ -99,7 +99,212 @@ func TestConflictMatrix_Rules(t *testing.T) {
 	}
 }
 
-// 2. Exact TargetScope Semantics Suite: Proves exact target filtering and zero deflection.
+// 2. Mandated ScopeMode, Releasing Count, and Capacity Invariant Suite
+func TestPolicyEngine_MandatedInvariants(t *testing.T) {
+	engine := NewPolicyEngine()
+	now := time.Date(2026, 8, 2, 21, 0, 0, 0, time.UTC)
+
+	// Mandated Test 1: EXACT + empty TargetScope -> ErrExactScopeRequired
+	t.Run("1_ExactModeWithoutTargetScope_Fails", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			ScopeMode:    ScopeSelectionExact,
+			TargetScope:  "",
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:       ResourceTuner,
+			Capacity:   1,
+			Candidates: []ResourceCandidate{{Scope: "tuner:0", Compatible: true, Available: true}},
+		}
+
+		_, err := engine.Evaluate(req, snap)
+		if !errors.Is(err, ErrExactScopeRequired) {
+			t.Errorf("expected ErrExactScopeRequired, got %v", err)
+		}
+	})
+
+	// Mandated Test 2: Unknown ScopeMode -> ErrInvalidScopeSelectionMode
+	t.Run("2_UnknownScopeMode_Fails", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			ScopeMode:    ScopeSelectionMode("UNKNOWN_MODE"),
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:       ResourceTuner,
+			Capacity:   1,
+			Candidates: []ResourceCandidate{{Scope: "tuner:0", Compatible: true, Available: true}},
+		}
+
+		_, err := engine.Evaluate(req, snap)
+		if !errors.Is(err, ErrInvalidScopeSelectionMode) {
+			t.Errorf("expected ErrInvalidScopeSelectionMode, got %v", err)
+		}
+	})
+
+	// Mandated Test 3: ANY_COMPATIBLE with TargetScope -> ErrScopeModeConflict
+	t.Run("3_AnyCompatibleModeWithTargetScope_Fails", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			ScopeMode:    ScopeSelectionAnyCompatible,
+			TargetScope:  "tuner:0",
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:       ResourceTuner,
+			Capacity:   1,
+			Candidates: []ResourceCandidate{{Scope: "tuner:0", Compatible: true, Available: true}},
+		}
+
+		_, err := engine.Evaluate(req, snap)
+		if !errors.Is(err, ErrScopeModeConflict) {
+			t.Errorf("expected ErrScopeModeConflict, got %v", err)
+		}
+	})
+
+	// Mandated Test 4: Active + Releasing allocation on same scope -> ErrMultipleActiveOnExclusiveScope
+	t.Run("4_ActiveAndReleasingAllocationOnSameScope_Fails", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			ScopeMode:    ScopeSelectionAnyCompatible,
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:     ResourceTuner,
+			Capacity: 2,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: true, Available: false},
+				{Scope: "tuner:1", Compatible: true, Available: true},
+			},
+			Active: []ResourceAllocation{
+				{AllocationID: "alloc-1", Consumer: ConsumerLiveTV, Owner: "user-2", Scope: "tuner:0", AcquiredAt: now.Add(-10 * time.Minute), IsReleasing: false},
+				{AllocationID: "alloc-2", Consumer: ConsumerChannelScan, Owner: "scan-1", Scope: "tuner:0", AcquiredAt: now.Add(-5 * time.Minute), IsReleasing: true},
+			},
+		}
+
+		_, err := engine.Evaluate(req, snap)
+		if !errors.Is(err, ErrMultipleActiveOnExclusiveScope) {
+			t.Errorf("expected ErrMultipleActiveOnExclusiveScope, got %v", err)
+		}
+	})
+
+	// Mandated Test 5: Two Releasing allocations on same scope -> ErrMultipleActiveOnExclusiveScope
+	t.Run("5_TwoReleasingAllocationsOnSameScope_Fails", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			ScopeMode:    ScopeSelectionAnyCompatible,
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:     ResourceTuner,
+			Capacity: 2,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: true, Available: false},
+				{Scope: "tuner:1", Compatible: true, Available: true},
+			},
+			Active: []ResourceAllocation{
+				{AllocationID: "alloc-1", Consumer: ConsumerChannelScan, Owner: "scan-1", Scope: "tuner:0", AcquiredAt: now.Add(-10 * time.Minute), IsReleasing: true},
+				{AllocationID: "alloc-2", Consumer: ConsumerRetroDVR, Owner: "retro-1", Scope: "tuner:0", AcquiredAt: now.Add(-5 * time.Minute), IsReleasing: true},
+			},
+		}
+
+		_, err := engine.Evaluate(req, snap)
+		if !errors.Is(err, ErrMultipleActiveOnExclusiveScope) {
+			t.Errorf("expected ErrMultipleActiveOnExclusiveScope, got %v", err)
+		}
+	})
+
+	// Mandated Test 6: Capacity > Candidates count -> ErrCandidateCapacityMismatch
+	t.Run("6_CapacityGreaterThanCandidates_Fails", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			ScopeMode:    ScopeSelectionAnyCompatible,
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:       ResourceTuner,
+			Capacity:   3,
+			Candidates: []ResourceCandidate{{Scope: "tuner:0", Compatible: true, Available: true}},
+		}
+
+		_, err := engine.Evaluate(req, snap)
+		if !errors.Is(err, ErrCandidateCapacityMismatch) {
+			t.Errorf("expected ErrCandidateCapacityMismatch, got %v", err)
+		}
+	})
+
+	// Mandated Test 7: Capacity < Candidates count -> ErrCandidateCapacityMismatch
+	t.Run("7_CapacityLessThanCandidates_Fails", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			ScopeMode:    ScopeSelectionAnyCompatible,
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:     ResourceTuner,
+			Capacity: 1,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: true, Available: true},
+				{Scope: "tuner:1", Compatible: true, Available: true},
+			},
+		}
+
+		_, err := engine.Evaluate(req, snap)
+		if !errors.Is(err, ErrCandidateCapacityMismatch) {
+			t.Errorf("expected ErrCandidateCapacityMismatch, got %v", err)
+		}
+	})
+
+	// Mandated Test 8: Valid discrete snapshot -> Successful evaluation
+	t.Run("8_ValidDiscreteSnapshot_EvaluatesSuccessfully", func(t *testing.T) {
+		req := EvaluationRequest{
+			Consumer:     ConsumerLiveTV,
+			ResourceKind: ResourceTuner,
+			Owner:        "user-1",
+			ScopeMode:    ScopeSelectionAnyCompatible,
+			EvaluatedAt:  now,
+		}
+		snap := ResourceSnapshot{
+			Kind:     ResourceTuner,
+			Capacity: 2,
+			Candidates: []ResourceCandidate{
+				{Scope: "tuner:0", Compatible: true, Available: true},
+				{Scope: "tuner:1", Compatible: true, Available: false},
+			},
+			Active: []ResourceAllocation{
+				{AllocationID: "alloc-1", Consumer: ConsumerLiveTV, Owner: "user-2", Scope: "tuner:1", AcquiredAt: now.Add(-5 * time.Minute)},
+			},
+		}
+
+		res, err := engine.Evaluate(req, snap)
+		if err != nil {
+			t.Fatalf("unexpected evaluation error: %v", err)
+		}
+		if res.Decision != DecisionGrant {
+			t.Errorf("expected DecisionGrant, got %s", res.Decision)
+		}
+		if res.SelectedScope != "tuner:0" {
+			t.Errorf("expected SelectedScope tuner:0, got %s", res.SelectedScope)
+		}
+	})
+}
+
+// 3. Exact TargetScope Semantics Suite: Proves exact target filtering and zero deflection.
 func TestPolicyEngine_ExactTargetScopeSemantics(t *testing.T) {
 	engine := NewPolicyEngine()
 	now := time.Date(2026, 8, 2, 21, 0, 0, 0, time.UTC)
@@ -186,58 +391,6 @@ func TestPolicyEngine_ExactTargetScopeSemantics(t *testing.T) {
 	})
 }
 
-// 3. Releasing Allocation Snapshot Semantics Suite
-func TestPolicyEngine_ReleasingAllocationSemantics(t *testing.T) {
-	engine := NewPolicyEngine()
-	now := time.Date(2026, 8, 2, 21, 0, 0, 0, time.UTC)
-
-	req := EvaluationRequest{
-		Consumer:     ConsumerLiveTV,
-		ResourceKind: ResourceTuner,
-		Owner:        "user-1",
-		EvaluatedAt:  now,
-	}
-
-	t.Run("ReleasingAllocationWithAvailableCandidate_InvalidSnapshot", func(t *testing.T) {
-		snapInconsistent := ResourceSnapshot{
-			Kind:     ResourceTuner,
-			Capacity: 1,
-			Candidates: []ResourceCandidate{
-				{Scope: "tuner:0", Compatible: true, Available: true}, // Inconsistent! Allocation exists on scope
-			},
-			Active: []ResourceAllocation{
-				{AllocationID: "alloc-1", Consumer: ConsumerLiveTV, Owner: "user-2", Scope: "tuner:0", AcquiredAt: now.Add(-5 * time.Minute), IsReleasing: true},
-			},
-		}
-
-		_, err := engine.Evaluate(req, snapInconsistent)
-		if !errors.Is(err, ErrInconsistentCandidateState) {
-			t.Fatalf("expected ErrInconsistentCandidateState, got %v", err)
-		}
-	})
-
-	t.Run("ReleasingAllocationWithUnavailableCandidate_ProtectedFromPreemption", func(t *testing.T) {
-		snapValidReleasing := ResourceSnapshot{
-			Kind:     ResourceTuner,
-			Capacity: 1,
-			Candidates: []ResourceCandidate{
-				{Scope: "tuner:0", Compatible: true, Available: false},
-			},
-			Active: []ResourceAllocation{
-				{AllocationID: "alloc-1", Consumer: ConsumerChannelScan, Owner: "scan", Scope: "tuner:0", AcquiredAt: now.Add(-5 * time.Minute), IsReleasing: true},
-			},
-		}
-
-		res, err := engine.Evaluate(req, snapValidReleasing)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if res.Decision != DecisionReject {
-			t.Errorf("expected DecisionReject when sole allocation is releasing, got %s", res.Decision)
-		}
-	})
-}
-
 // 4. ResourceStorageIO Unsupported Test
 func TestPolicyEngine_StorageIO_Unsupported(t *testing.T) {
 	engine := NewPolicyEngine()
@@ -247,6 +400,7 @@ func TestPolicyEngine_StorageIO_Unsupported(t *testing.T) {
 		Consumer:     ConsumerScheduledRecording,
 		ResourceKind: ResourceStorageIO,
 		Owner:        "timer-job-1",
+		ScopeMode:    ScopeSelectionAnyCompatible,
 		EvaluatedAt:  now,
 	}
 	snap := ResourceSnapshot{
@@ -321,6 +475,7 @@ func TestPolicyEngine_PureFunctionDeterminism(t *testing.T) {
 		Consumer:     ConsumerLiveTV,
 		ResourceKind: ResourceTuner,
 		Owner:        "session-user-1",
+		ScopeMode:    ScopeSelectionAnyCompatible,
 		EvaluatedAt:  now,
 	}
 

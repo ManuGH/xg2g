@@ -95,6 +95,16 @@ const (
 	ScopeSelectionExact         ScopeSelectionMode = "EXACT"
 )
 
+// IsValid checks whether the scope selection mode is a recognized system mode.
+func (m ScopeSelectionMode) IsValid() bool {
+	switch m {
+	case ScopeSelectionAnyCompatible, ScopeSelectionExact:
+		return true
+	default:
+		return false
+	}
+}
+
 // PreemptionDecision defines the action decreed by the PolicyEngine.
 type PreemptionDecision string
 
@@ -123,6 +133,9 @@ var (
 	ErrInvalidResourceKind            = errors.New("invalid or unrecognized resource kind")
 	ErrResourceKindMismatch           = errors.New("request resource kind does not match snapshot resource kind")
 	ErrUnsupportedResourceModel       = errors.New("resource kind uses shared quantitative capacity model not supported in discrete pool evaluation")
+	ErrInvalidScopeSelectionMode      = errors.New("invalid or unrecognized scope selection mode")
+	ErrExactScopeRequired             = errors.New("TargetScope is required when ScopeMode is EXACT")
+	ErrScopeModeConflict              = errors.New("TargetScope must be empty when ScopeMode is ANY_COMPATIBLE")
 	ErrInvalidOwner                   = errors.New("request owner cannot be empty")
 	ErrInvalidCandidateScope          = errors.New("candidate scope cannot be empty")
 	ErrDuplicateCandidateScope        = errors.New("duplicate candidate scope")
@@ -136,6 +149,7 @@ var (
 	ErrTargetScopeIncompatible        = errors.New("target scope is marked incompatible")
 	ErrInvalidAllocationID            = errors.New("allocation ID cannot be empty or duplicate")
 	ErrInvalidSnapshotCapacity        = errors.New("invalid snapshot capacity or active count exceeds capacity")
+	ErrCandidateCapacityMismatch      = errors.New("snapshot capacity must match candidate count in discrete resource pools")
 )
 
 // ResourceCandidate represents a physical or logical resource option.

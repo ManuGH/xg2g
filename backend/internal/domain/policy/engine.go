@@ -22,7 +22,7 @@ type preemptibleMatch struct {
 // It returns an EvaluationResult and does NOT mutate state, perform network I/O, or execute side effects.
 // Pure function guarantee: For identical inputs (req, snapshot), it produces 100% byte-for-byte identical results.
 func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot) (EvaluationResult, error) {
-	// 1. Request & ResourceKind Validation
+	// 1. Request & ScopeSelectionMode Validation
 	if req.EvaluatedAt.IsZero() {
 		return EvaluationResult{
 			Decision:     DecisionReject,
@@ -77,6 +77,33 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}, ErrUnsupportedResourceModel
 	}
 
+	if !req.ScopeMode.IsValid() {
+		return EvaluationResult{
+			Decision:     DecisionReject,
+			ReasonCode:   ReasonPolicyInvalidInput,
+			ReasonDetail: fmt.Sprintf("invalid scope selection mode %q", req.ScopeMode),
+			EvaluatedAt:  req.EvaluatedAt,
+		}, ErrInvalidScopeSelectionMode
+	}
+
+	if req.ScopeMode == ScopeSelectionExact && req.TargetScope == "" {
+		return EvaluationResult{
+			Decision:     DecisionReject,
+			ReasonCode:   ReasonPolicyInvalidInput,
+			ReasonDetail: "TargetScope cannot be empty when ScopeMode is EXACT",
+			EvaluatedAt:  req.EvaluatedAt,
+		}, ErrExactScopeRequired
+	}
+
+	if req.ScopeMode == ScopeSelectionAnyCompatible && req.TargetScope != "" {
+		return EvaluationResult{
+			Decision:     DecisionReject,
+			ReasonCode:   ReasonPolicyInvalidInput,
+			ReasonDetail: fmt.Sprintf("TargetScope %q must be empty when ScopeMode is ANY_COMPATIBLE", req.TargetScope),
+			EvaluatedAt:  req.EvaluatedAt,
+		}, ErrScopeModeConflict
+	}
+
 	if req.Owner == "" {
 		return EvaluationResult{
 			Decision:     DecisionReject,
@@ -93,6 +120,16 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 			ReasonDetail: fmt.Sprintf("invalid capacity %d for active count %d", snapshot.Capacity, len(snapshot.Active)),
 			EvaluatedAt:  req.EvaluatedAt,
 		}, ErrInvalidSnapshotCapacity
+	}
+
+	// Discrete Pool Invariant: snapshot.Capacity MUST equal len(snapshot.Candidates)
+	if len(snapshot.Candidates) == 0 || snapshot.Capacity != len(snapshot.Candidates) {
+		return EvaluationResult{
+			Decision:     DecisionReject,
+			ReasonCode:   ReasonPolicyInvalidInput,
+			ReasonDetail: fmt.Sprintf("snapshot capacity %d does not match candidate count %d", snapshot.Capacity, len(snapshot.Candidates)),
+			EvaluatedAt:  req.EvaluatedAt,
+		}, ErrCandidateCapacityMismatch
 	}
 
 	// 2. Candidate Structural Validation
@@ -137,7 +174,7 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}
 	}
 
-	// 3. Active Allocation Validation & Strict Candidate Availability Invariant Check
+	// 3. Active Allocation Validation & Exclusive Scope Counting Invariant Check
 	seenAllocIDs := make(map[string]bool, len(snapshot.Active))
 	activeCountByScope := make(map[string]int, len(snapshot.Active))
 
@@ -208,16 +245,15 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 			}, ErrInconsistentCandidateState
 		}
 
-		if !alloc.IsReleasing {
-			activeCountByScope[alloc.Scope]++
-			if activeCountByScope[alloc.Scope] > 1 {
-				return EvaluationResult{
-					Decision:     DecisionReject,
-					ReasonCode:   ReasonPolicyInvalidInput,
-					ReasonDetail: fmt.Sprintf("multiple active allocations on exclusive candidate scope %q", alloc.Scope),
-					EvaluatedAt:  req.EvaluatedAt,
-				}, ErrMultipleActiveOnExclusiveScope
-			}
+		// Count ALL allocations per scope for exclusivity invariant (including releasing allocations)
+		activeCountByScope[alloc.Scope]++
+		if activeCountByScope[alloc.Scope] > 1 {
+			return EvaluationResult{
+				Decision:     DecisionReject,
+				ReasonCode:   ReasonPolicyInvalidInput,
+				ReasonDetail: fmt.Sprintf("multiple active allocations on exclusive candidate scope %q", alloc.Scope),
+				EvaluatedAt:  req.EvaluatedAt,
+			}, ErrMultipleActiveOnExclusiveScope
 		}
 	}
 
@@ -231,14 +267,11 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 		}, nil
 	}
 
-	// Determine Scope Selection Mode
-	isExactScopeMode := (req.TargetScope != "") || (req.ScopeMode == ScopeSelectionExact)
-
 	// 5. Available Capacity Check with Candidate Evaluation
 	var eligibleFreeCandidates []ResourceCandidate
 	for _, cand := range snapshot.Candidates {
 		if cand.Available && cand.Compatible {
-			if isExactScopeMode && cand.Scope != req.TargetScope {
+			if req.ScopeMode == ScopeSelectionExact && cand.Scope != req.TargetScope {
 				continue
 			}
 			eligibleFreeCandidates = append(eligibleFreeCandidates, cand)
@@ -276,8 +309,8 @@ func (e *PolicyEngine) Evaluate(req EvaluationRequest, snapshot ResourceSnapshot
 	hasProtectedActivity := false
 
 	for _, alloc := range snapshot.Active {
-		// Strict Exact-Target Rule: In exact mode, ONLY evaluate the allocation occupying req.TargetScope
-		if isExactScopeMode && alloc.Scope != req.TargetScope {
+		// Strict Exact-Target Rule: In EXACT mode, ONLY evaluate the allocation occupying req.TargetScope
+		if req.ScopeMode == ScopeSelectionExact && alloc.Scope != req.TargetScope {
 			continue
 		}
 
