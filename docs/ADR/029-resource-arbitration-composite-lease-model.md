@@ -35,7 +35,13 @@ We establish a centralized **Resource Arbitration Engine** based on **Composite 
    `Plan → Pre-Reservation → External Setup → Commit Lease`
    If setup of any sub-resource fails mid-flight (e.g. tuner acquired, but HW encoder session fails), all previously pre-reserved sub-resources are compensatorily released immediately.
 
-4. **Reconciliation:**
+4. **Tuner Resource Scope & OpenWebIF Demuxer Realities (Phase B):**
+   - Tuner slots are represented as `tuner:<slot>` (e.g. `tuner:0`, `tuner:1`).
+   - `Slot` represents the logical tuner/demuxer capacity slot on the target receiver.
+   - Tuner leases protect the **entire active lifecycle** of a session or recording (from pre-zap, through active streaming/FFmpeg execution, until explicit teardown or revocation).
+   - Direct HTTP media streams (VOD, local recording files, external non-tuner HTTP URLs) do not occupy tuner capacity and bypass tuner lease acquisition.
+
+5. **Reconciliation:**
    A background reconciliation loop continuously verifies active operational resources (running FFmpeg PIDs, open stream handles) against persisted lease deadlines to clean up orphaned leases caused by hard process crashes.
 
 ## Alternatives Considered

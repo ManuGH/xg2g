@@ -20,8 +20,9 @@ var (
 	ErrInvalidTTL    = errors.New("lease invalid TTL")
 	ErrInvalidOwner  = errors.New("lease invalid owner")
 	ErrInvalidScope  = errors.New("lease invalid scope")
-	ErrLeaseInactive = errors.New("lease inactive or expired")
-	ErrManagerClosed = errors.New("lease manager closed")
+	ErrLeaseInactive     = errors.New("lease inactive or expired")
+	ErrManagerClosed     = errors.New("lease manager closed")
+	ErrBindingUnavailable = errors.New("tuner lease binding unavailable")
 )
 
 // ManagerConfig holds configuration for the Lease Manager.

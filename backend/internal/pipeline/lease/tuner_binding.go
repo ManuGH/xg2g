@@ -30,7 +30,7 @@ func (tb *TunerBinding) AcquireTunerSlot(ctx context.Context, owner Owner, slot 
 		return nil, fmt.Errorf("%w: tuner slot must be non-negative", ErrInvalidScope)
 	}
 	if tb == nil || tb.mgr == nil {
-		return nil, fmt.Errorf("%w: tuner binding manager is nil", ErrManagerClosed)
+		return nil, fmt.Errorf("%w: tuner binding manager is nil", ErrBindingUnavailable)
 	}
 	scope := ScopeForTunerSlot(slot)
 	return tb.mgr.Acquire(ctx, owner, scope, ttl)
@@ -39,7 +39,7 @@ func (tb *TunerBinding) AcquireTunerSlot(ctx context.Context, owner Owner, slot 
 // ReleaseTunerSlot idempotently releases a tuner slot lease held by the owner.
 func (tb *TunerBinding) ReleaseTunerSlot(id ID, owner Owner) (*Lease, error) {
 	if tb == nil || tb.mgr == nil {
-		return nil, fmt.Errorf("%w: tuner binding manager is nil", ErrManagerClosed)
+		return nil, fmt.Errorf("%w: tuner binding manager is nil", ErrBindingUnavailable)
 	}
 	return tb.mgr.Release(id, owner, ReasonReleasedByOwner)
 }
@@ -47,7 +47,7 @@ func (tb *TunerBinding) ReleaseTunerSlot(id ID, owner Owner) (*Lease, error) {
 // RenewTunerSlot extends the expiration time of an active tuner slot lease.
 func (tb *TunerBinding) RenewTunerSlot(id ID, owner Owner, ttl time.Duration) (*Lease, error) {
 	if tb == nil || tb.mgr == nil {
-		return nil, fmt.Errorf("%w: tuner binding manager is nil", ErrManagerClosed)
+		return nil, fmt.Errorf("%w: tuner binding manager is nil", ErrBindingUnavailable)
 	}
 	return tb.mgr.Renew(id, owner, ttl)
 }

@@ -131,18 +131,18 @@ func TestTunerBindingInvalidSlot(t *testing.T) {
 func TestTunerBindingNilManager(t *testing.T) {
 	var tb *TunerBinding
 	_, err := tb.AcquireTunerSlot(context.Background(), "worker", 0, 5*time.Minute)
-	if !errors.Is(err, ErrManagerClosed) {
-		t.Errorf("expected ErrManagerClosed for nil TunerBinding, got %v", err)
+	if !errors.Is(err, ErrBindingUnavailable) {
+		t.Errorf("expected ErrBindingUnavailable for nil TunerBinding, got %v", err)
 	}
 
 	_, err = tb.ReleaseTunerSlot("id", "worker")
-	if !errors.Is(err, ErrManagerClosed) {
-		t.Errorf("expected ErrManagerClosed for nil TunerBinding Release, got %v", err)
+	if !errors.Is(err, ErrBindingUnavailable) {
+		t.Errorf("expected ErrBindingUnavailable for nil TunerBinding Release, got %v", err)
 	}
 
 	_, err = tb.RenewTunerSlot("id", "worker", 5*time.Minute)
-	if !errors.Is(err, ErrManagerClosed) {
-		t.Errorf("expected ErrManagerClosed for nil TunerBinding Renew, got %v", err)
+	if !errors.Is(err, ErrBindingUnavailable) {
+		t.Errorf("expected ErrBindingUnavailable for nil TunerBinding Renew, got %v", err)
 	}
 
 	_, found := tb.GetTunerLease(0)
