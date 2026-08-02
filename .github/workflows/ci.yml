@@ -122,3 +122,11 @@ jobs:
         # full ./... -race run (ci-deep-scheduled.yml) — too late to block a
         # regression merging. Scoped + deterministic (no ffmpeg binary needed).
         run: make test-race-pr
+
+      - name: Run Phase D verification suite
+        run: |
+          set -euo pipefail
+          cd backend
+          go test -count=1 -race ./internal/pipeline/lease/...
+          go test -count=1 -race ./internal/app/bootstrap/... ./internal/domain/session/manager/... ./internal/domain/session/store/...
+          go test -count=1 ./...
