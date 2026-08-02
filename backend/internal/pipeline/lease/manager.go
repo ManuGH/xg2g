@@ -283,6 +283,23 @@ func (m *Manager) Get(id ID) (*Lease, bool) {
 	return &cp, true
 }
 
+// ListLeases returns copies of all leases in the manager with deterministic state resolution.
+func (m *Manager) ListLeases(ctx context.Context) ([]Lease, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := m.now()
+	result := make([]Lease, 0, len(m.leases))
+	for _, l := range m.leases {
+		m.resolveStateLocked(l, now)
+		result = append(result, *l)
+	}
+	return result, nil
+}
+
 // ActiveLeases returns all currently active leases for a given scope (or all active if scope is empty).
 func (m *Manager) ActiveLeases(scope Scope) []*Lease {
 	m.mu.Lock()
