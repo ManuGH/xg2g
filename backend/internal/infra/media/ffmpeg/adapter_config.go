@@ -155,6 +155,13 @@ func LoadAdapterConfig(analyzeDuration, probeSize string) AdapterConfig {
 	// keeping margin for slower/burstier relays. (3s was verified clean on a 4K
 	// relay.) Raise XG2G_STREAMRELAY_ANALYZE_DURATION if a relay needs deeper
 	// probing; lower it (e.g. 3000000) for the fastest start.
+	//
+	// DEPRECATED: the relay input path is scheduled for removal after
+	// config.RelayInputRemoveAfter. Receivers serve the same content on their
+	// standard streaming port, which needs no relay-specific probe tuning.
+	// XG2G_STREAMRELAY_ANALYZE_DURATION and XG2G_STREAMRELAY_PROBE_SIZE are
+	// kept working until then; they are read directly rather than via the
+	// config registry, so they carry no generated merge/validation surface.
 	streamRelayAnalyzeDuration := strings.TrimSpace(config.ParseString("XG2G_STREAMRELAY_ANALYZE_DURATION", ""))
 	if streamRelayAnalyzeDuration == "" {
 		streamRelayAnalyzeDuration = "5000000" // 5s
