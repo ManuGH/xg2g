@@ -737,6 +737,7 @@ export type ConfigUpdate = {
      */
     logLevel?: string;
     household?: HouseholdConfigUpdate;
+    receiverUsagePolicy?: ReceiverUsagePolicyConfig;
 };
 
 export type AppConfig = {
@@ -752,6 +753,42 @@ export type AppConfig = {
     verification?: VerificationConfig;
     household?: HouseholdStatus;
     connectivity?: ConnectivityConfig;
+    receiverUsagePolicy?: ReceiverUsagePolicyConfig;
+};
+
+export type ReceiverUsagePolicyConfig = {
+    /**
+     * Usage protection enforcement mode: disabled (default), audit-only (log), enforce (strict).
+     */
+    mode?: 'disabled' | 'audit-only' | 'enforce';
+    /**
+     * Maximum simultaneous live TV streaming sessions.
+     */
+    maxLiveSessions?: number;
+    /**
+     * Maximum simultaneous recording sessions.
+     */
+    maxRecordingSessions?: number;
+    /**
+     * Maximum simultaneous restricted access slots.
+     */
+    maxRestrictedAccessSessions?: number;
+    /**
+     * Allow live TV session while a recording is active.
+     */
+    allowLiveWithRecording?: boolean;
+    /**
+     * Allow timeshift sessions.
+     */
+    allowTimeshift?: boolean;
+    /**
+     * Allow retro-DVR for restricted access services when fetched from local buffer.
+     */
+    allowRetroDVRRestricted?: boolean;
+    /**
+     * Policy handling for unclassified channel access requirements.
+     */
+    unknownAccessHandling?: 'count_as_restricted' | 'count_as_none' | 'reject';
 };
 
 export type HouseholdConfigUpdate = {

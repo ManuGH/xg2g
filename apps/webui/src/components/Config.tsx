@@ -226,7 +226,8 @@ function Config(props: ConfigProps = { showTitle: true }) {
         ...(config.openWebIF ? { openWebIF: config.openWebIF } : {}),
         ...(config.bouquets ? { bouquets: config.bouquets } : {}),
         ...(config.epg ? { epg: config.epg } : {}),
-        ...(config.picons !== undefined ? { picons: config.picons } : {})
+        ...(config.picons !== undefined ? { picons: config.picons } : {}),
+        ...(config.receiverUsagePolicy ? { receiverUsagePolicy: config.receiverUsagePolicy } : {})
       };
 
       const result = await putSystemConfig({ body: payload });
@@ -378,6 +379,135 @@ function Config(props: ConfigProps = { showTitle: true }) {
               {t('setup.step3.hint')}
             </small>
           </div>
+        </section>
+
+        <section className={styles.section}>
+          <h2>Receiver Usage Protection</h2>
+          <p className={styles.hintText}>
+            Configure concurrency limits and decryption capacity protection to prevent unexpected receiver crashes.
+          </p>
+
+          <div className={styles.formGroup}>
+            <label>Enforcement Mode</label>
+            <select
+              value={config.receiverUsagePolicy?.mode || 'disabled'}
+              onChange={e => {
+                const val = e.target.value as any;
+                setConfig(prev => prev ? ({
+                  ...prev,
+                  receiverUsagePolicy: {
+                    ...(prev.receiverUsagePolicy || {
+                      maxLiveSessions: 1,
+                      maxRecordingSessions: 1,
+                      maxRestrictedAccessSessions: 1,
+                      allowLiveWithRecording: false,
+                      allowTimeshift: true,
+                      allowRetroDVRRestricted: true,
+                      unknownAccessHandling: 'count_as_restricted',
+                    }),
+                    mode: val,
+                  }
+                }) : null);
+              }}
+            >
+              <option value="disabled">Disabled (Default - No protection limits)</option>
+              <option value="audit-only">Audit-Only (Log & measure decisions without blocking)</option>
+              <option value="enforce">Enforce (Strict active receiver protection)</option>
+            </select>
+          </div>
+
+          {(config.receiverUsagePolicy?.mode === 'audit-only' || config.receiverUsagePolicy?.mode === 'enforce') && (
+            <>
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label>Max Parallels Live TV Sessions</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={config.receiverUsagePolicy?.maxLiveSessions ?? 1}
+                    onChange={e => {
+                      const v = parseInt(e.target.value, 10) || 0;
+                      setConfig(prev => prev ? ({
+                        ...prev,
+                        receiverUsagePolicy: { ...(prev.receiverUsagePolicy || {}), maxLiveSessions: v }
+                      }) : null);
+                    }}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Max Parallel Recordings</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={config.receiverUsagePolicy?.maxRecordingSessions ?? 1}
+                    onChange={e => {
+                      const v = parseInt(e.target.value, 10) || 0;
+                      setConfig(prev => prev ? ({
+                        ...prev,
+                        receiverUsagePolicy: { ...(prev.receiverUsagePolicy || {}), maxRecordingSessions: v }
+                      }) : null);
+                    }}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Max Restricted Access Slots</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={config.receiverUsagePolicy?.maxRestrictedAccessSessions ?? 1}
+                    onChange={e => {
+                      const v = parseInt(e.target.value, 10) || 0;
+                      setConfig(prev => prev ? ({
+                        ...prev,
+                        receiverUsagePolicy: { ...(prev.receiverUsagePolicy || {}), maxRestrictedAccessSessions: v }
+                      }) : null);
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className={cx(styles.formGroup, styles.checkboxGroup)}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={config.receiverUsagePolicy?.allowLiveWithRecording ?? false}
+                    onChange={e => {
+                      const c = e.target.checked;
+                      setConfig(prev => prev ? ({
+                        ...prev,
+                        receiverUsagePolicy: { ...(prev.receiverUsagePolicy || {}), allowLiveWithRecording: c }
+                      }) : null);
+                    }}
+                  />
+                  Allow Live TV while Recording
+                </label>
+              </div>
+
+              <div className={styles.validationActions} style={{ marginTop: '12px' }}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setConfig(prev => prev ? ({
+                      ...prev,
+                      receiverUsagePolicy: {
+                        mode: 'enforce',
+                        maxLiveSessions: 1,
+                        maxRecordingSessions: 1,
+                        maxRestrictedAccessSessions: 1,
+                        allowLiveWithRecording: false,
+                        allowTimeshift: true,
+                        allowRetroDVRRestricted: true,
+                        unknownAccessHandling: 'count_as_restricted',
+                      }
+                    }) : null);
+                  }}
+                >
+                  Apply Conservative Single-Use Preset
+                </Button>
+              </div>
+            </>
+          )}
         </section>
 
         <div className={cx(styles.formActions, styles.stickyFooter)}>

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 )
 
 // RecordingPlaybackConfig holds recording playback configuration
@@ -35,23 +37,24 @@ type FileConfig struct {
 	// emitted on save — the loader hard-rejects any file containing this key, so
 	// writing it would brick reload/restart. omitempty + an empty value on save
 	// guarantees the key is dropped.
-	OpenWebIF             OpenWebIFConfig         `yaml:"openWebIF,omitempty"`
-	Enigma2               Enigma2Config           `yaml:"enigma2,omitempty"`
-	Bouquets              []string                `yaml:"bouquets,omitempty"`
-	EPG                   EPGConfig               `yaml:"epg"`
-	Recording             map[string]string       `yaml:"recording_roots,omitempty"`
-	RecordingPlayback     RecordingPlaybackConfig `yaml:"recording_playback,omitempty"`
-	API                   APIConfig               `yaml:"api"`
-	Server                *ServerFileConfig       `yaml:"server,omitempty"`
-	Network               NetworkFileConfig       `yaml:"network,omitempty"`
-	Connectivity          *ConnectivityFileConfig `yaml:"connectivity,omitempty"`
-	Metrics               MetricsConfig           `yaml:"metrics,omitempty"`
-	Picons                PiconsConfig            `yaml:"picons,omitempty"`
-	HDHR                  HDHRConfig              `yaml:"hdhr,omitempty"`
-	Engine                EngineFileConfig        `yaml:"engine,omitempty"`
-	TLS                   TLSConfig               `yaml:"tls,omitempty"`
-	Library               LibraryFileConfig       `yaml:"library,omitempty"`
-	RecordingPathMappings []RecordingPathMapping  `yaml:"recordingPathMappings,omitempty"`
+	OpenWebIF             OpenWebIFConfig                   `yaml:"openWebIF,omitempty"`
+	Enigma2               Enigma2Config                     `yaml:"enigma2,omitempty"`
+	Bouquets              []string                          `yaml:"bouquets,omitempty"`
+	EPG                   EPGConfig                         `yaml:"epg"`
+	Recording             map[string]string                 `yaml:"recording_roots,omitempty"`
+	RecordingPlayback     RecordingPlaybackConfig           `yaml:"recording_playback,omitempty"`
+	API                   APIConfig                         `yaml:"api"`
+	Server                *ServerFileConfig                 `yaml:"server,omitempty"`
+	Network               NetworkFileConfig                 `yaml:"network,omitempty"`
+	Connectivity          *ConnectivityFileConfig           `yaml:"connectivity,omitempty"`
+	Metrics               MetricsConfig                     `yaml:"metrics,omitempty"`
+	Picons                PiconsConfig                      `yaml:"picons,omitempty"`
+	HDHR                  HDHRConfig                        `yaml:"hdhr,omitempty"`
+	ReceiverUsage         receiverusage.ReceiverUsagePolicy `yaml:"receiver_usage,omitempty"`
+	Engine                EngineFileConfig                  `yaml:"engine,omitempty"`
+	TLS                   TLSConfig                         `yaml:"tls,omitempty"`
+	Library               LibraryFileConfig                 `yaml:"library,omitempty"`
+	RecordingPathMappings []RecordingPathMapping            `yaml:"recordingPathMappings,omitempty"`
 
 	// Advanced/internal configuration (Registry-exposed)
 	FFmpeg         *FFmpegConfig             `yaml:"ffmpeg,omitempty"`
@@ -570,7 +573,8 @@ type AppConfig struct {
 	HLS    HLSConfig
 
 	// Enigma2 Config (Runtime settings with Durations)
-	Enigma2 Enigma2Settings
+	Enigma2       Enigma2Settings
+	ReceiverUsage receiverusage.ReceiverUsagePolicy
 
 	// FFmpeg Config
 	FFmpeg FFmpegConfig

@@ -118,3 +118,47 @@ func TestPutSystemConfigDoesNotAliasCurrent(t *testing.T) {
 	// Assert "before" was NOT mutated (alias safety)
 	require.Empty(t, before.Bouquet, "original config must not be mutated by update (aliasing)")
 }
+
+func TestReceiverUsagePolicyConfig_Roundtrip(t *testing.T) {
+	t.Setenv("XG2G_E2_HOST", "http://example.com")
+	t.Setenv("XG2G_STORE_PATH", t.TempDir())
+	t.Setenv("XG2G_RECORDINGS_TARGET_SIGNING_KEY", "12345678901234567890123456789012")
+	cfg, err := config.NewLoader("", "test").Load()
+	require.NoError(t, err)
+	cfg.DataDir = t.TempDir()
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	srv := NewServer(cfg, config.NewManager(configPath), nil)
+
+	// 1. Initial state: mode is empty/disabled, ReceiverUsagePolicy omitted in GetSystemConfig
+	reqGet1 := httptest.NewRequest(http.MethodGet, "/api/v3/system/config", nil)
+	wGet1 := httptest.NewRecorder()
+	srv.GetSystemConfig(wGet1, reqGet1)
+	require.Equal(t, http.StatusOK, wGet1.Code)
+
+	var resp1 AppConfig
+	require.NoError(t, json.NewDecoder(wGet1.Body).Decode(&resp1))
+	require.NotNil(t, resp1.ReceiverUsagePolicy)
+	require.Equal(t, ReceiverUsagePolicyConfigMode("disabled"), *resp1.ReceiverUsagePolicy.Mode)
+
+	// 2. PutSystemConfig update with enforce mode and limits
+	policyUpdate := `{"receiverUsagePolicy":{"mode":"enforce","maxLiveSessions":2,"maxRecordingSessions":1,"maxRestrictedAccessSessions":1,"allowLiveWithRecording":true}}`
+	reqPut := httptest.NewRequest(http.MethodPut, "/api/v3/system/config", strings.NewReader(policyUpdate))
+	wPut := httptest.NewRecorder()
+	srv.requestShutdown = func(ctx context.Context) error { return nil }
+	srv.PutSystemConfig(wPut, reqPut)
+	require.Contains(t, []int{http.StatusOK, http.StatusAccepted}, wPut.Code)
+
+	// 3. GetSystemConfig after update returns the configured ReceiverUsagePolicy
+	reqGet2 := httptest.NewRequest(http.MethodGet, "/api/v3/system/config", nil)
+	wGet2 := httptest.NewRecorder()
+	srv.GetSystemConfig(wGet2, reqGet2)
+	require.Equal(t, http.StatusOK, wGet2.Code)
+
+	var resp2 AppConfig
+	require.NoError(t, json.NewDecoder(wGet2.Body).Decode(&resp2))
+	require.NotNil(t, resp2.ReceiverUsagePolicy)
+	require.Equal(t, ReceiverUsagePolicyConfigMode("enforce"), *resp2.ReceiverUsagePolicy.Mode)
+	require.Equal(t, 2, *resp2.ReceiverUsagePolicy.MaxLiveSessions)
+	require.Equal(t, true, *resp2.ReceiverUsagePolicy.AllowLiveWithRecording)
+}

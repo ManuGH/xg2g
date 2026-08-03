@@ -292,6 +292,18 @@ func buildRegistry() (*Registry, error) {
 		{Path: "hdhr.tunerCount", Env: "", FieldPath: "HDHR.TunerCount", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "hdhr.plexForceHls", Env: "", FieldPath: "HDHR.PlexForceHLS", Profile: ProfileAdvanced, Status: StatusActive},
 
+		// --- RECEIVER USAGE POLICY ---
+		{Path: "receiver_usage.mode", Env: "", FieldPath: "ReceiverUsage.Mode", Profile: ProfileAdvanced, Status: StatusActive, Default: "disabled"},
+		{Path: "receiver_usage.max_live_sessions", Env: "", FieldPath: "ReceiverUsage.MaxLiveSessions", Profile: ProfileAdvanced, Status: StatusActive, Default: 1},
+		{Path: "receiver_usage.max_recording_sessions", Env: "", FieldPath: "ReceiverUsage.MaxRecordingSessions", Profile: ProfileAdvanced, Status: StatusActive, Default: 1},
+		{Path: "receiver_usage.max_restricted_access_sessions", Env: "", FieldPath: "ReceiverUsage.MaxRestrictedAccessSessions", Profile: ProfileAdvanced, Status: StatusActive, Default: 1},
+		{Path: "receiver_usage.allow_live_with_recording", Env: "", FieldPath: "ReceiverUsage.AllowLiveWithRecording", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
+		{Path: "receiver_usage.allow_timeshift", Env: "", FieldPath: "ReceiverUsage.AllowTimeshift", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
+		{Path: "receiver_usage.allow_retro_dvr_restricted", Env: "", FieldPath: "ReceiverUsage.AllowRetroDVRRestricted", Profile: ProfileAdvanced, Status: StatusActive, Default: true},
+		{Path: "receiver_usage.unknown_access_handling", Env: "", FieldPath: "ReceiverUsage.UnknownAccessHandling", Profile: ProfileAdvanced, Status: StatusActive, Default: "count_as_restricted"},
+		{Path: "receiver_usage.channel_change_limiter.minimum_interval", Env: "", FieldPath: "ReceiverUsage.ChannelChangeLimiter.MinimumInterval", Profile: ProfileAdvanced, Status: StatusActive, Default: 0 * time.Second},
+		{Path: "receiver_usage.channel_change_limiter.duplicate_window", Env: "", FieldPath: "ReceiverUsage.ChannelChangeLimiter.DuplicateWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 0 * time.Second},
+
 		// --- LIBRARY ---
 		{Path: "library.enabled", Env: "", FieldPath: "Library.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "library.db_path", Env: "", FieldPath: "Library.DBPath", Profile: ProfileAdvanced, Status: StatusActive},
