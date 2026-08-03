@@ -27,6 +27,22 @@ const (
 	ReasonRejectedInsufficientPriority PreemptionReasonCode = "PREEMPTION_REJECTED_INSUFFICIENT_PRIORITY"
 	ReasonRejectedRevisionMismatch     PreemptionReasonCode = "PREEMPTION_REJECTED_REVISION_MISMATCH"
 	ReasonRejectedInvalidProof         PreemptionReasonCode = "PREEMPTION_REJECTED_INVALID_PROOF"
+	ReasonRejectedStaleHardware        PreemptionReasonCode = "PREEMPTION_REJECTED_STALE_HARDWARE"
+)
+
+const (
+	MaxCandidateAllocations = 16
+	MaxVictimsPerPlan       = 4
+)
+
+// HardwareProfileStatus indicates health of the receiver's hardware profile snapshot.
+type HardwareProfileStatus string
+
+const (
+	HardwareProfileValid      HardwareProfileStatus = "VALID"
+	HardwareProfileStale      HardwareProfileStatus = "STALE"
+	HardwareProfileUnverified HardwareProfileStatus = "UNVERIFIED"
+	HardwareProfileUnknown    HardwareProfileStatus = "UNKNOWN"
 )
 
 // ResourceKind identifies physical or virtual capacity.
@@ -100,6 +116,7 @@ type ConflictResolutionProof struct {
 	ReceiverID              string                      `json:"receiverId"`
 	SnapshotRevision        string                      `json:"snapshotRevision"`
 	HardwareProfileRevision string                      `json:"hardwareProfileRevision"`
+	HardwareProfileStatus   HardwareProfileStatus       `json:"hardwareProfileStatus"`
 	RequestedResources      []ResourceClaim             `json:"requestedResources"`
 	AllocationMappings      []AllocationResourceMapping `json:"allocationMappings"`
 	FreedResourcesByTarget  map[string][]ResourceClaim `json:"freedResourcesByTarget"`

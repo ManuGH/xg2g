@@ -7,6 +7,7 @@ package preemption
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -41,6 +42,12 @@ func (e *Evaluator) SelectPlan(req PreemptionRequest, snapshot ResourceSnapshot,
 				Reason:   ReasonRejectedRevisionMismatch,
 			}, nil
 		}
+		if errorsIsStaleHardware(err) {
+			return SelectionResult{
+				Decision: DecisionRejected,
+				Reason:   ReasonRejectedStaleHardware,
+			}, nil
+		}
 		return SelectionResult{
 			Decision: DecisionRejected,
 			Reason:   ReasonRejectedInvalidProof,
@@ -62,6 +69,12 @@ func (e *Evaluator) SelectPlan(req PreemptionRequest, snapshot ResourceSnapshot,
 			Reason:   ReasonRejectedNoEligibleVictim,
 		}, nil
 	}
+	if len(eligibleMap) > MaxCandidateAllocations {
+		return SelectionResult{
+			Decision: DecisionRejected,
+			Reason:   ReasonRejectedNoEligibleVictim,
+		}, nil
+	}
 
 	// 3. Find candidate sets of targets that satisfy requested resources according to the hardware proof mappings
 	// Build map of allocationID -> freed resources from proof
@@ -78,8 +91,8 @@ func (e *Evaluator) SelectPlan(req PreemptionRequest, snapshot ResourceSnapshot,
 	sort.Strings(eligibleIDs)
 
 	var validCandidateSets [][]string
-	// Power set of eligibleIDs up to max candidate set size 4
-	powerSet := generateSubsets(eligibleIDs, 4)
+	// Power set of eligibleIDs up to MaxVictimsPerPlan
+	powerSet := generateSubsets(eligibleIDs, MaxVictimsPerPlan)
 	for _, candidateSet := range powerSet {
 		// Calculate total freed claims for this candidate set
 		var combinedFreed []ResourceClaim
@@ -219,7 +232,11 @@ func (e *Evaluator) SelectPlan(req PreemptionRequest, snapshot ResourceSnapshot,
 }
 
 func errorsIsProofMismatch(err error) bool {
-	return strings.Contains(err.Error(), "revision") || strings.Contains(err.Error(), "receiver")
+	return errors.Is(err, ErrProofReceiverMismatch) || errors.Is(err, ErrProofRevisionMismatch)
+}
+
+func errorsIsStaleHardware(err error) bool {
+	return errors.Is(err, ErrProofStaleHardware)
 }
 
 func generateSubsets(set []string, maxLen int) [][]string {
