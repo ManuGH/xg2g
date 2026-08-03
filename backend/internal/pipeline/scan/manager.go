@@ -24,8 +24,19 @@ import (
 const (
 	backgroundScanTimeout = 30 * time.Minute
 	resolveM3UTimeout     = 2 * time.Second
-	defaultProbeTimeout   = 8 * time.Second
-	extendedProbeTimeout  = 20 * time.Second
+	// defaultProbeTimeout must cover a cold tune plus stream lock, not just a
+	// warm read. Measured across 10 encrypted broadcast channels on an otherwise
+	// idle receiver: median 6.1s, max 10.8s -- every one of them returned
+	// complete media truth when allowed to finish. At the previous 8s budget two
+	// of those ten were killed mid-probe and recorded as failures, which then
+	// held them behind the 24h failureRetryWindow.
+	//
+	// Sized for headroom rather than fitted to that sample: a real scan runs
+	// probes back to back with tuner contention, so the slow tail is longer than
+	// an idle-box measurement suggests. It stays clearly below
+	// extendedProbeTimeout so the two budgets remain distinct tiers.
+	defaultProbeTimeout  = 15 * time.Second
+	extendedProbeTimeout = 20 * time.Second
 
 	extendedProbeAnalyzeDuration = 15 * time.Second
 	extendedProbeSizeBytes       = 8 << 20
