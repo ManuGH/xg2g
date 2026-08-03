@@ -18,10 +18,12 @@ func TestTeardownPreparer_ValidPreparation_ClampsTTLAndHashes(t *testing.T) {
 	now := time.Now().UTC()
 
 	req := PreemptionRequest{
-		RequestID:         "req-prep-1",
-		ReceiverID:        "rec-1",
-		RequesterOwner:    "client-A",
-		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestID:             "req-prep-1",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-req-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
 		RequestedResources: []ResourceClaim{
 			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
 		},
@@ -85,10 +87,12 @@ func TestTeardownPreparer_RejectsInferredEvidence(t *testing.T) {
 	now := time.Now().UTC()
 
 	req := PreemptionRequest{
-		RequestID:         "req-prep-2",
-		ReceiverID:        "rec-1",
-		RequesterOwner:    "client-A",
-		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestID:             "req-prep-2",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-req-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
 		RequestedResources: []ResourceClaim{
 			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
 		},
@@ -134,10 +138,12 @@ func TestTeardownPreparer_RejectsStaleHardwareStatus(t *testing.T) {
 	now := time.Now().UTC()
 
 	req := PreemptionRequest{
-		RequestID:         "req-prep-3",
-		ReceiverID:        "rec-1",
-		RequesterOwner:    "client-A",
-		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestID:             "req-prep-3",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-req-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
 		RequestedResources: []ResourceClaim{
 			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
 		},
@@ -183,10 +189,12 @@ func TestTeardownPreparer_FineGrainedRevisionMismatches(t *testing.T) {
 	now := time.Now().UTC()
 
 	req := PreemptionRequest{
-		RequestID:         "req-rev",
-		ReceiverID:        "rec-1",
-		RequesterOwner:    "client-A",
-		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestID:             "req-rev",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-req-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
 		RequestedResources: []ResourceClaim{
 			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
 		},
@@ -244,10 +252,12 @@ func TestTeardownPreparer_AllOrNothingTargetValidation(t *testing.T) {
 	now := time.Now().UTC()
 
 	req := PreemptionRequest{
-		RequestID:         "req-multi",
-		ReceiverID:        "rec-1",
-		RequesterOwner:    "client-A",
-		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestID:             "req-multi",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-req-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
 		RequestedResources: []ResourceClaim{
 			{Kind: ResourceKindRestrictedAccessSlot, Resource: "slot-1", Quantity: 1},
 			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
@@ -350,10 +360,12 @@ func TestPrepareTeardown_DoesNotMutateInputData(t *testing.T) {
 	now := time.Now().UTC()
 
 	req := PreemptionRequest{
-		RequestID:         "req-mutate",
-		ReceiverID:        "rec-1",
-		RequesterOwner:    "client-A",
-		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestID:             "req-mutate",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-req-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
 		RequestedResources: []ResourceClaim{
 			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
 		},
@@ -400,4 +412,71 @@ func TestPrepareTeardown_DoesNotMutateInputData(t *testing.T) {
 	require.Equal(t, string(contractJSONBefore), string(contractJSONAfter), "Contract must not be mutated")
 	require.Equal(t, string(snapshotJSONBefore), string(snapshotJSONAfter), "ResourceSnapshot must not be mutated")
 	require.Equal(t, string(proofJSONBefore), string(proofJSONAfter), "ConflictResolutionProof must not be mutated")
+}
+
+func TestTeardownPreparer_RejectsExpectedFreedMismatch(t *testing.T) {
+	eval := NewEvaluator()
+	preparer := NewTeardownPreparer()
+	now := time.Now().UTC()
+
+	req := PreemptionRequest{
+		RequestID:             "req-mismatch",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-req-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
+		RequestedResources: []ResourceClaim{
+			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
+		},
+	}
+
+	snapshot := ResourceSnapshot{
+		ReceiverID:       "rec-1",
+		SnapshotRevision: "rev-100",
+		ObservedAt:       now,
+		Allocations: []ActiveAllocation{
+			{
+				AllocationID: "alloc-1",
+				Owner:        "client-B",
+				Priority:     PriorityAttributes{BasePriority: 50},
+				Claims: []ResourceClaim{
+					{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
+					{Kind: ResourceKindDemux, Resource: "demux-7", Quantity: 1},
+				},
+			},
+		},
+	}
+
+	proof := ConflictResolutionProof{
+		ReceiverID:              "rec-1",
+		SnapshotRevision:        "rev-100",
+		HardwareProfileRevision: "hw-rev-1",
+		HardwareProfileStatus:   HardwareProfileValid,
+		EvidenceClassification:  EvidenceDirectObservation,
+		RequestedResources:      req.RequestedResources,
+		AllocationMappings: []AllocationResourceMapping{
+			{AllocationID: "alloc-1", FreedResources: req.RequestedResources},
+		},
+	}
+
+	selRes, err := eval.SelectPlan(req, snapshot, proof, now)
+	require.NoError(t, err)
+
+	// Mutate proof freed resources to tuner-1 + demux-7 (satisfies request, but does NOT match contract ExpectedFreedResources!)
+	proofMutated := proof
+	proofMutated.AllocationMappings = []AllocationResourceMapping{
+		{
+			AllocationID: "alloc-1",
+			FreedResources: []ResourceClaim{
+				{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
+				{Kind: ResourceKindDemux, Resource: "demux-7", Quantity: 1},
+			},
+		},
+	}
+
+	prepRes, err := preparer.PrepareTeardown(selRes.Contract, snapshot, proofMutated, now)
+	require.NoError(t, err)
+	require.Equal(t, DecisionRejected, prepRes.Decision)
+	require.Equal(t, ReasonTeardownTargetStateMutated, prepRes.Reason)
 }

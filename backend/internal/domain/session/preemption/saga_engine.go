@@ -190,33 +190,9 @@ func (e *PreemptionSagaEngine) RevalidateAndTransition(
 }
 
 // AttemptTeardownTransition verifies Phase E3.3a boundary enforcement.
-// ALL attempts to transition to TEARDOWN_REQUESTED or beyond are strictly rejected with ErrMutationPhaseDisabled!
+// ALL attempts to transition to TEARDOWN_REQUESTED or beyond are strictly rejected at engine entry with ErrMutationPhaseDisabled!
 func (e *PreemptionSagaEngine) AttemptTeardownTransition(ctx context.Context, sagaID string, receiverID string, fencingToken uint64) (PreemptionSagaRecord, error) {
-	saga, err := e.store.GetSaga(ctx, sagaID)
-	if err != nil {
-		return PreemptionSagaRecord{}, err
-	}
-
-	if saga.ReceiverID != receiverID {
-		return PreemptionSagaRecord{}, fmt.Errorf("%w: requested receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
-	}
-
-	trans := SagaTransition{
-		From:       saga.State,
-		To:         StateTeardownRequested,
-		ReasonCode: SagaReasonPhaseNotEnabled,
-		OccurredAt: time.Now().UTC(),
-		Actor:      "preemption_engine",
-	}
-
-	// Attempt store transition to TEARDOWN_REQUESTED (MUST return ErrMutationPhaseDisabled)
-	res, err := e.store.CompareAndSwapState(ctx, sagaID, saga.Version, receiverID, fencingToken, saga.State, StateTeardownRequested, trans)
-	if err != nil {
-		// Do not mask underlying store / fencing errors as ErrMutationPhaseDisabled unless it is ErrMutationPhaseDisabled
-		return res, err
-	}
-
-	return res, ErrMutationPhaseDisabled
+	return PreemptionSagaRecord{}, ErrMutationPhaseDisabled
 }
 
 func (e *PreemptionSagaEngine) validateRequesterReservation(res RequesterReservation, contract *PreemptionExecutionContract, prepared *PreparedTeardown, now time.Time) error {
@@ -232,11 +208,11 @@ func (e *PreemptionSagaEngine) validateRequesterReservation(res RequesterReserva
 	if strings.TrimSpace(res.Owner) == "" || res.Owner != contract.RequesterOwner {
 		return fmt.Errorf("reservation owner '%s' != contract owner '%s'", res.Owner, contract.RequesterOwner)
 	}
-	if strings.TrimSpace(res.RequesterAllocationID) == "" {
-		return fmt.Errorf("empty requester allocation ID")
+	if strings.TrimSpace(res.RequesterAllocationID) == "" || res.RequesterAllocationID != contract.RequesterAllocationID {
+		return fmt.Errorf("reservation requester allocation ID '%s' != contract requester allocation ID '%s'", res.RequesterAllocationID, contract.RequesterAllocationID)
 	}
-	if strings.TrimSpace(res.Revision) == "" {
-		return fmt.Errorf("empty reservation revision")
+	if strings.TrimSpace(res.Revision) == "" || res.Revision != contract.RequesterRevision {
+		return fmt.Errorf("reservation revision '%s' != contract requester revision '%s'", res.Revision, contract.RequesterRevision)
 	}
 	if res.ContractID != contract.ContractID {
 		return fmt.Errorf("reservation contract ID '%s' != contract '%s'", res.ContractID, contract.ContractID)
