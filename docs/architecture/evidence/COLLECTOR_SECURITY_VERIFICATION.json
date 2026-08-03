@@ -3,7 +3,7 @@
   "verification_type": "COLLECTOR_SECURITY_VERIFICATION",
   "collector_script": "scripts/collect_receiver_diagnostics.sh",
   "collector_script_version": "1.4.0",
-  "tested_commit_sha": "PENDING_COMMIT_SHA",
+  "tested_commit_sha": "ddcdefbc3e1208fbdbdeff5fbffb7d5ee756c9a3",
   "verification_timestamp_utc": "2026-08-03T09:00:00Z",
   "cli_interface_contract": {
     "openwebif_url_required": true,
