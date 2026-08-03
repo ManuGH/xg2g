@@ -5,58 +5,189 @@
 set -euo pipefail
 umask 077
 
-# Passive Diagnostic Collector (Phase 1)
+# Passive Diagnostic Collector (Phase 1 Baseline & Optional Phase 2 SSH)
 # Purely read-only diagnostic collection for Enigma2 / OpenWebif.
 # Strictly FORBIDDEN from performing zapping, streaming, timer creation,
 # recording start, config mutation, or Enigma2 restarts.
 
-COLLECTOR_VERSION="1.3.0"
+COLLECTOR_VERSION="1.4.0"
 
 # Determine script & repository root paths reliably regardless of PWD
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 
-# Create secure temporary directory for transient execution artifacts
-TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/xg2g_collector_XXXXXX")"
-chmod 700 "${TEMP_DIR}"
+# -------------------------------------------------------------------
+# STEP 1: Parse CLI Named Arguments
+# -------------------------------------------------------------------
+RAW_TARGET=""
+CREDENTIALS_FILE=""
+ENABLE_SSH=false
+SSH_TARGET=""
 
-# Robust Signal Traps: Ensures temporary directory is deleted & script exits with appropriate code
-cleanup() {
-    rm -rf "${TEMP_DIR}"
+usage() {
+    echo "Usage: $0 --openwebif-url <URL> [--credentials-file <PATH>] [--enable-ssh --ssh-target <USER@HOST>]" >&2
+    echo "Options:" >&2
+    echo "  --openwebif-url <url>      Mandatory OpenWebif base URL (e.g. http://10.10.55.64)" >&2
+    echo "  --credentials-file <path>   Optional credentials file (0600 permissions)" >&2
+    echo "  --enable-ssh               Explicitly enable optional Phase 2 SSH probes" >&2
+    echo "  --ssh-target <user@host>   SSH destination target (requires --enable-ssh)" >&2
 }
-trap cleanup EXIT
-trap 'cleanup; exit 130' INT
-trap 'cleanup; exit 143' TERM
-trap 'cleanup; exit 129' HUP
 
-# Mandatory dependency check: jq MUST be present
-if ! command -v jq >/dev/null 2>&1; then
-    echo "ERROR: 'jq' is required for safe JSON manifest generation but is missing." >&2
+# Support both named flags (--openwebif-url) and fallback positional parameters
+if [[ $# -eq 0 ]]; then
+    usage
     exit 1
 fi
 
-# Usage check: Target MUST be passed explicitly. No default IP allowed.
-if [ -z "${1:-}" ]; then
-    echo "ERROR: Target OpenWebif URL or host must be specified explicitly!" >&2
-    echo "Usage: $0 <OPENWEBIF_HOST_OR_URL> [SSH_TARGET] [CREDENTIALS_FILE]" >&2
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --openwebif-url|-u)
+            if [[ -z "${2:-}" ]]; then echo "ERROR: --openwebif-url requires a value!" >&2; exit 1; fi
+            RAW_TARGET="$2"
+            shift 2
+            ;;
+        --credentials-file|-c)
+            if [[ -z "${2:-}" ]]; then echo "ERROR: --credentials-file requires a value!" >&2; exit 1; fi
+            CREDENTIALS_FILE="$2"
+            shift 2
+            ;;
+        --enable-ssh)
+            ENABLE_SSH=true
+            shift
+            ;;
+        --ssh-target|-s)
+            if [[ -z "${2:-}" ]]; then echo "ERROR: --ssh-target requires a value!" >&2; exit 1; fi
+            SSH_TARGET="$2"
+            shift 2
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        -*)
+            echo "ERROR: Unknown option '$1'!" >&2
+            usage
+            exit 1
+            ;;
+        *)
+            # Legacy positional fallback handling for backward compatibility
+            if [ -z "${RAW_TARGET}" ]; then
+                RAW_TARGET="$1"
+            elif [ -z "${SSH_TARGET}" ]; then
+                SSH_TARGET="$1"
+            elif [ -z "${CREDENTIALS_FILE}" ]; then
+                CREDENTIALS_FILE="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# -------------------------------------------------------------------
+# STEP 2: Validate CLI Parameters BEFORE Creating Temp / Output Dirs
+# -------------------------------------------------------------------
+if [ -z "${RAW_TARGET}" ]; then
+    echo "ERROR: Target OpenWebif URL must be specified!" >&2
+    usage
     exit 1
 fi
 
-RAW_TARGET="$1"
-SSH_TARGET="${2:-}"
-CREDENTIALS_FILE="${3:-}"
-
-# SECURITY RULE 1: Reject credential-bearing URLs immediately (e.g. http://user:pass@host)
-if [[ "${RAW_TARGET}" =~ @ ]]; then
-    echo "SECURITY ERROR: URLs with embedded credentials (user:password@) are strictly forbidden!" >&2
-    echo "Command-line arguments are visible in process lists and shell history." >&2
-    echo "Use a secure credentials file (0600 permissions) via the 3rd argument instead." >&2
+if [ -n "${SSH_TARGET}" ] && [ "${ENABLE_SSH}" = "false" ]; then
+    echo "SECURITY ERROR: --ssh-target was supplied without explicit --enable-ssh flag!" >&2
     exit 1
 fi
 
-# SECURITY RULE 2: Validate SSH_TARGET to prevent option injection (e.g. -oProxyCommand=...)
-SSH_ENABLED=false
-if [ -n "${SSH_TARGET}" ]; then
+if [ "${ENABLE_SSH}" = "true" ] && [ -z "${SSH_TARGET}" ]; then
+    echo "SECURITY ERROR: --enable-ssh was specified but --ssh-target is missing!" >&2
+    exit 1
+fi
+
+# Mandatory dependency check: jq, curl, python3
+for dep in jq curl python3; do
+    if ! command -v "${dep}" >/dev/null 2>&1; then
+        echo "ERROR: Required dependency '${dep}' is missing." >&2
+        exit 1
+    fi
+done
+
+# Strict URL & Target Validation via Python urllib.parse
+PARSED_URL_JSON="$(python3 -c '
+import sys, json
+from urllib.parse import urlparse, parse_qs
+
+raw = sys.argv[1].strip()
+if "://" in raw:
+    if not raw.startswith(("http://", "https://")):
+        print(json.dumps({"error": f"Invalid scheme in URL: {raw}"}))
+        sys.exit(1)
+else:
+    raw = "http://" + raw
+
+try:
+    p = urlparse(raw)
+    port = p.port
+except Exception as e:
+    print(json.dumps({"error": f"Invalid URL or port: {e}"}))
+    sys.exit(1)
+
+if p.scheme not in ("http", "https"):
+    print(json.dumps({"error": f"Invalid scheme: {p.scheme}"}))
+    sys.exit(1)
+
+if not p.hostname:
+    print(json.dumps({"error": "Missing hostname in URL"}))
+    sys.exit(1)
+
+if p.username or p.password:
+    print(json.dumps({"error": "URLs with embedded credentials (user:password@) are strictly forbidden!"}))
+    sys.exit(1)
+
+if p.fragment:
+    print(json.dumps({"error": "URL fragments (#) are not supported"}))
+    sys.exit(1)
+
+if port is None:
+    port = 443 if p.scheme == "https" else 80
+
+if port < 1 or port > 65535:
+    print(json.dumps({"error": f"Invalid port: {port}"}))
+    sys.exit(1)
+
+# Check query parameters for sensitive keys
+forbidden_keys = {"token", "access_token", "auth", "jwt", "bearer", "password", "pass", "sessionid", "pin", "secret", "key"}
+qs = parse_qs(p.query)
+query_keys = {k.lower() for k in qs.keys()}
+matched_forbidden = query_keys.intersection(forbidden_keys)
+if matched_forbidden:
+    print(json.dumps({"error": f"Target URL contains sensitive query parameters: {sorted(list(matched_forbidden))}"}))
+    sys.exit(1)
+
+target_url = f"{p.scheme}://{p.hostname}"
+if (p.scheme == "http" and port != 80) or (p.scheme == "https" and port != 443):
+    target_url += f":{port}"
+if p.path and p.path != "/":
+    target_url += p.path.rstrip("/")
+
+print(json.dumps({
+    "scheme": p.scheme,
+    "hostname": p.hostname,
+    "port": port,
+    "target_url": target_url
+}))
+' "${RAW_TARGET}")"
+
+URL_ERR="$(echo "${PARSED_URL_JSON}" | jq -r '.error // empty')"
+if [ -n "${URL_ERR}" ]; then
+    echo "SECURITY ERROR: ${URL_ERR}" >&2
+    exit 1
+fi
+
+SCHEME="$(echo "${PARSED_URL_JSON}" | jq -r '.scheme')"
+PORT="$(echo "${PARSED_URL_JSON}" | jq -r '.port')"
+TARGET_URL="$(echo "${PARSED_URL_JSON}" | jq -r '.target_url')"
+
+# Validate SSH_TARGET if enabled
+if [ "${ENABLE_SSH}" = "true" ]; then
     if [[ "${SSH_TARGET}" =~ ^- ]]; then
         echo "SECURITY ERROR: SSH target must not start with a dash (-)!" >&2
         exit 1
@@ -69,43 +200,10 @@ if [ -n "${SSH_TARGET}" ]; then
         echo "SECURITY ERROR: Invalid SSH target format! Must match [user@]host." >&2
         exit 1
     fi
-    SSH_ENABLED=true
 fi
 
-TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
-
-# Normalize Target URL
-TARGET_URL="${RAW_TARGET}"
-if [[ "${TARGET_URL}" != http://* ]] && [[ "${TARGET_URL}" != https://* ]]; then
-    TARGET_URL="http://${RAW_TARGET}"
-fi
-TARGET_URL="${TARGET_URL%/}"
-
-# Extract scheme and port for safe, unidentifiable metadata logging
-SCHEME="$(echo "${TARGET_URL}" | grep -oE '^(http|https)')"
-PORT="$(echo "${TARGET_URL}" | sed -E 's|^https?://[^/:]+:?([0-9]*).*|\1|')"
-if [ -z "${PORT}" ]; then
-    if [ "${SCHEME}" = "https" ]; then PORT="443"; else PORT="80"; fi
-fi
-
-# Compute SHA-256 pseudonym fingerprint of target URL (never output or log raw target IP/host)
-if command -v shasum >/dev/null 2>&1; then
-    PSEUDONYM_FINGERPRINT="$(printf "%s" "${TARGET_URL}" | shasum -a 256 | awk '{print $1}')"
-else
-    PSEUDONYM_FINGERPRINT="$(printf "%s" "${TARGET_URL}" | sha256sum | awk '{print $1}')"
-fi
-
-# Base output directory - ALWAYS inside REPO_ROOT/var/diagnostics/enigma2/
-BASE_DIR="${REPO_ROOT}/var/diagnostics/enigma2/${TIMESTAMP}"
-OPENWEBIF_DIR="${BASE_DIR}/openwebif"
-SYS_DIR="${BASE_DIR}/sys"
-
-mkdir -p "${OPENWEBIF_DIR}" "${SYS_DIR}"
-
-# SECURITY RULE 3: Validate Credentials File & Translate safely to secure netrc
+# Validate Credentials File if provided
 CURL_AUTH_ARGS=()
-SECURE_NETRC="${TEMP_DIR}/collector.netrc"
-
 if [ -n "${CREDENTIALS_FILE}" ]; then
     if [ ! -f "${CREDENTIALS_FILE}" ]; then
         echo "ERROR: Specified credentials file '${CREDENTIALS_FILE}' does not exist!" >&2
@@ -117,7 +215,7 @@ if [ -n "${CREDENTIALS_FILE}" ]; then
         exit 1
     fi
 
-    # SECURITY CHECK: Reject dangerous curl options
+    # Check for forbidden curl configuration options
     if grep -iE '^\s*(url|upload-file|data|request|output|proxy|header|cookie)\s*=' "${CREDENTIALS_FILE}" >/dev/null 2>&1; then
         echo "SECURITY ERROR: Credentials file contains illegal curl configuration options!" >&2
         exit 1
@@ -132,70 +230,109 @@ if [ -n "${CREDENTIALS_FILE}" ]; then
         HAS_NETRC=true
     fi
 
-    # Format Validation: Must be strictly Key-Value OR Netrc, no mixed formats
     if [ "${HAS_KV}" = "true" ] && [ "${HAS_NETRC}" = "true" ]; then
         echo "SECURITY ERROR: Mixed credentials format detected! Must be strictly Key-Value OR Netrc format." >&2
         exit 1
     fi
 
+    # Validate non-empty, non-comment lines
+    CLEAN_LINES="$(grep -v '^\s*$' "${CREDENTIALS_FILE}" | grep -v '^\s*#' || true)"
+    if [ -z "${CLEAN_LINES}" ]; then
+        echo "SECURITY ERROR: Credentials file is empty or contains only comments!" >&2
+        exit 1
+    fi
+
     if [ "${HAS_KV}" = "true" ]; then
-        # Check for unknown keys in Key-Value mode
-        NON_EMPTY_LINES="$(grep -v '^\s*$' "${CREDENTIALS_FILE}" | grep -v '^\s*#' || true)"
-        INVALID_LINES="$(echo "${NON_EMPTY_LINES}" | grep -vE '^\s*(username|user|login|password|pass)\s*=' || true)"
+        INVALID_LINES="$(echo "${CLEAN_LINES}" | grep -vE '^\s*(username|user|login|password|pass)\s*=' || true)"
         if [ -n "${INVALID_LINES}" ]; then
-            echo "SECURITY ERROR: Credentials file contains unknown key-value pairs!" >&2
+            echo "SECURITY ERROR: Credentials file contains unknown or invalid key-value pairs!" >&2
             exit 1
         fi
 
-        # Extract values
-        USER_VAL="$(grep -E '^\s*(username|user|login)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | sed -E 's/^\s*(username|user|login)\s*=\s*//' | sed -E 's/^["'\''](.*)["'\'']$/\1/' || true)"
-        PASS_VAL="$(grep -E '^\s*(password|pass)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | sed -E 's/^\s*(password|pass)\s*=\s*//' | sed -E 's/^["'\''](.*)["'\'']$/\1/' || true)"
+        # Check for duplicate key assignments
+        USER_COUNT="$(echo "${CLEAN_LINES}" | grep -cE '^\s*(username|user|login)\s*=' || true)"
+        PASS_COUNT="$(echo "${CLEAN_LINES}" | grep -cE '^\s*(password|pass)\s*=' || true)"
+        if [ "${USER_COUNT}" -gt 1 ] || [ "${PASS_COUNT}" -gt 1 ]; then
+            echo "SECURITY ERROR: Duplicate username or password keys in credentials file!" >&2
+            exit 1
+        fi
+
+        USER_VAL="$(echo "${CLEAN_LINES}" | grep -E '^\s*(username|user|login)\s*=' | head -n 1 | sed -E 's/^\s*(username|user|login)\s*=\s*//')"
+        PASS_VAL="$(echo "${CLEAN_LINES}" | grep -E '^\s*(password|pass)\s*=' | head -n 1 | sed -E 's/^\s*(password|pass)\s*=\s*//')"
 
         if [ -z "${USER_VAL}" ] || [ -z "${PASS_VAL}" ]; then
             echo "SECURITY ERROR: Key-Value credentials file must specify both username and password!" >&2
             exit 1
         fi
 
-        # Reject spaces, quotes, newlines, or backslashes in credentials values to prevent netrc corruption
+        # Reject spaces, quotes, control characters, or backslashes
         if [[ "${USER_VAL}" =~ [[:space:]\'\"\\] ]] || [[ "${PASS_VAL}" =~ [[:space:]\'\"\\] ]]; then
-            echo "SECURITY ERROR: Credential values containing spaces, quotes, or backslashes are forbidden!" >&2
+            echo "SECURITY ERROR: Credential values containing spaces, quotes, or backslashes are forbidden in netrc format." >&2
             exit 1
         fi
+    fi
+fi
 
+# -------------------------------------------------------------------
+# STEP 3: Setup Transient Temp Dir & Output Directory AFTER Validation
+# -------------------------------------------------------------------
+TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/xg2g_collector_XXXXXX")"
+chmod 700 "${TEMP_DIR}"
+
+cleanup() {
+    rm -rf "${TEMP_DIR}"
+}
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
+
+SECURE_NETRC="${TEMP_DIR}/collector.netrc"
+if [ -n "${CREDENTIALS_FILE}" ]; then
+    if [ "${HAS_KV:-false}" = "true" ]; then
         cat << EOF > "${SECURE_NETRC}"
 default
 login ${USER_VAL}
 password ${PASS_VAL}
 EOF
-        chmod 600 "${SECURE_NETRC}"
-        CURL_AUTH_ARGS=(--netrc-file "${SECURE_NETRC}")
-    elif [ "${HAS_NETRC}" = "true" ]; then
-        # Netrc mode: verify no equal signs in directives
-        if grep '=' "${CREDENTIALS_FILE}" >/dev/null 2>&1; then
-            echo "SECURITY ERROR: Netrc syntax file cannot contain key-value '=' assignments!" >&2
-            exit 1
-        fi
-        cp "${CREDENTIALS_FILE}" "${SECURE_NETRC}"
-        chmod 600 "${SECURE_NETRC}"
-        CURL_AUTH_ARGS=(--netrc-file "${SECURE_NETRC}")
     else
-        echo "SECURITY ERROR: Credentials file format unrecognized. Must be Key-Value or Netrc." >&2
-        exit 1
+        cp "${CREDENTIALS_FILE}" "${SECURE_NETRC}"
     fi
+    chmod 600 "${SECURE_NETRC}"
+    CURL_AUTH_ARGS=(--netrc-file "${SECURE_NETRC}")
+fi
+
+TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
+
+if command -v shasum >/dev/null 2>&1; then
+    PSEUDONYM_FINGERPRINT="$(printf "%s" "${TARGET_URL}" | shasum -a 256 | awk '{print $1}')"
+else
+    PSEUDONYM_FINGERPRINT="$(printf "%s" "${TARGET_URL}" | sha256sum | awk '{print $1}')"
+fi
+
+BASE_DIR="${REPO_ROOT}/var/diagnostics/enigma2/${TIMESTAMP}"
+OPENWEBIF_DIR="${BASE_DIR}/openwebif"
+mkdir -p "${OPENWEBIF_DIR}"
+
+SSH_EXECUTED=false
+if [ "${ENABLE_SSH}" = "true" ]; then
+    SYS_DIR="${BASE_DIR}/sys"
+    mkdir -p "${SYS_DIR}"
+    SSH_EXECUTED=true
 fi
 
 echo "=== xg2g Passive Diagnostic Collector v${COLLECTOR_VERSION} ==="
 echo "Scheme: ${SCHEME} | Port: ${PORT}"
 echo "Pseudonym Fingerprint: ${PSEUDONYM_FINGERPRINT:0:16}..."
-echo "SSH Enabled: ${SSH_ENABLED}"
+echo "OpenWebif Enabled: true"
+echo "SSH Requested: ${ENABLE_SSH}"
+echo "SSH Executed: ${SSH_EXECUTED}"
 echo "Output Directory: ${BASE_DIR}"
 echo "Observation Time: ${TIMESTAMP}"
 echo ""
 
-# Initialize empty JSON array for structured probe entries
 PROBES_JSON="[]"
 
-# Comprehensive Redaction helper for STDOUT and STDERR
 redact_content() {
     sed -E \
         -e 's|http(s)?://[^:@]+:[^@]+@|http\1://[REDACTED_AUTH]@|g' \
@@ -208,18 +345,10 @@ redact_content() {
         -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/[REDACTED_IP]/g'
 }
 
-# Portable millisecond timestamp helper
 get_timestamp_ms() {
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import time; print(int(time.time() * 1000))'
-    elif command -v perl >/dev/null 2>&1; then
-        perl -MTime::HiRes=time -e 'printf("%d\n", time()*1000)'
-    else
-        echo "$(date +%s)000"
-    fi
+    python3 -c 'import time; print(int(time.time() * 1000))'
 }
 
-# Allowlisted OpenWebif Probe Runner
 probe_http_endpoint() {
     local probe_id="$1"
     local endpoint="$2"
@@ -241,8 +370,6 @@ probe_http_endpoint() {
     local rel_out_path=""
     local rel_err_path=""
 
-    # Enforce STRICT BOUNDED HTTP timeouts: connect 5s, max-time 10s
-    # Capture exit code, HTTP status, and actual response Content-Type separately
     curl -sS \
         "${CURL_AUTH_ARGS[@]}" \
         --connect-timeout 5 \
@@ -253,7 +380,6 @@ probe_http_endpoint() {
         2>"${raw_err_file}" \
         >"${raw_meta_file}" || curl_exit=$?
 
-    # Immediately exit on signal termination (SIGINT=130, SIGTERM=143, SIGHUP=129)
     if [ ${curl_exit} -eq 130 ] || [ ${curl_exit} -eq 143 ] || [ ${curl_exit} -eq 129 ]; then
         cleanup
         exit ${curl_exit}
@@ -283,7 +409,6 @@ probe_http_endpoint() {
         echo "  -> SUCCESS (HTTP 200, ${content_type}, ${duration_ms}ms)"
     else
         status="FAILED"
-        # Preserve redacted error response body AND stderr into error log
         {
             echo "--- HTTP Response Code: ${http_status} ---"
             echo "--- Content-Type: ${content_type} ---"
@@ -302,7 +427,6 @@ probe_http_endpoint() {
         echo "  [PROBE_FAILED] ${endpoint} (HTTP ${http_status}, ${content_type}, see ${probe_id}.error.log)"
     fi
 
-    # Append structured probe record via safe jq construction
     PROBES_JSON="$(jq -n \
         --argjson probes "${PROBES_JSON}" \
         --arg id "${probe_id}" \
@@ -326,7 +450,6 @@ probe_http_endpoint() {
 }
 
 echo "--- Phase 1: Passive OpenWebif HTTP Probes ---"
-# Allowlist of read-only endpoints ONLY
 probe_http_endpoint "about" "/api/about"
 probe_http_endpoint "deviceinfo" "/api/deviceinfo"
 probe_http_endpoint "statusinfo" "/api/statusinfo"
@@ -336,10 +459,10 @@ probe_http_endpoint "getallservices" "/api/getallservices"
 probe_http_endpoint "subservices" "/api/subservices"
 probe_http_endpoint "getcurrent" "/api/getcurrent"
 
-# SSH Passive File Probe Runner (only executed if SSH_TARGET is provided)
-if [ -n "${SSH_TARGET}" ]; then
+# Phase 2: SSH Probes (ONLY executed if --enable-ssh was explicitly supplied)
+if [ "${ENABLE_SSH}" = "true" ] && [ -n "${SSH_TARGET}" ]; then
     echo ""
-    echo "--- Phase 1: Passive Kernel & System Probes via SSH ---"
+    echo "--- Phase 2: Optional Passive Kernel & System Probes via SSH ---"
 
     probe_ssh_read() {
         local probe_id="$1"
@@ -357,7 +480,6 @@ if [ -n "${SSH_TARGET}" ]; then
         local rel_out_path=""
         local rel_err_path=""
 
-        # Enforce bounded SSH timeout & pass -- to prevent option injection: timeout 15s ssh ... -- "${SSH_TARGET}"
         if timeout 15s ssh \
             -o BatchMode=yes \
             -o ConnectTimeout=5 \
@@ -373,7 +495,6 @@ if [ -n "${SSH_TARGET}" ]; then
             echo "  -> SUCCESS: sys/${probe_id}.txt"
         else
             status="FAILED"
-            # Preserve BOTH redacted stdout and stderr on SSH failure
             {
                 echo "--- SSH PROBE FAILED ---"
                 if [ -f "${raw_out_file}" ] && [ -s "${raw_out_file}" ]; then
@@ -414,7 +535,6 @@ if [ -n "${SSH_TARGET}" ]; then
             }]')"
     }
 
-    # Explicit allowlist of read-only file inspections (filtering /etc/enigma2/settings for tuner/SEC keys ONLY)
     probe_ssh_read "receiver_identity" "cat /etc/image-version /etc/issue 2>/dev/null; uname -a"
     probe_ssh_read "nim_sockets" "cat /proc/bus/nim_sockets 2>/dev/null"
     probe_ssh_read "sys_dvb_class" "find /sys/class/dvb -maxdepth 3 -type f 2>/dev/null | sort"
@@ -430,7 +550,9 @@ jq -n \
     --arg scheme "${SCHEME}" \
     --argjson port "${PORT}" \
     --arg fingerprint "${PSEUDONYM_FINGERPRINT}" \
-    --argjson ssh_enabled "${SSH_ENABLED}" \
+    --argjson openwebif_enabled true \
+    --argjson ssh_requested "${ENABLE_SSH}" \
+    --argjson ssh_executed "${SSH_EXECUTED}" \
     --arg phase "PASSIVE_COLLECTION" \
     --argjson probes "${PROBES_JSON}" \
     '{
@@ -439,7 +561,9 @@ jq -n \
         scheme: $scheme,
         port: $port,
         pseudonym_fingerprint: $fingerprint,
-        ssh_enabled: $ssh_enabled,
+        openwebif_enabled: $openwebif_enabled,
+        ssh_requested: $ssh_requested,
+        ssh_executed: $ssh_executed,
         probe_phase: $phase,
         probes: $probes
     }' > "${BASE_DIR}/manifest.json"
