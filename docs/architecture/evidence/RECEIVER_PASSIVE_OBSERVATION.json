@@ -1,0 +1,54 @@
+{
+  "observation_version": "1.5.0",
+  "observation_type": "RECEIVER_PASSIVE_OBSERVATION",
+  "observation_timestamp_utc": "2026-08-03T07:40:36Z",
+  "collector_version": "1.5.0",
+  "collector_script": "scripts/collect_receiver_diagnostics.sh",
+  "target_metadata": {
+    "scheme": "http",
+    "port": 80,
+    "pseudonym_fingerprint": "436bb1bed0ef8cf856b3e95085dcf7ee4f141fb15494f6fdfedae986d4982631",
+    "openwebif_enabled": true,
+    "ssh_requested": false,
+    "ssh_executed": false
+  },
+  "observed_receiver_hardware": {
+    "brand": "Vu+",
+    "model": "Uno4K",
+    "boxtype": "vuuno4k",
+    "chipset": "7252s",
+    "image_distro": "openatv",
+    "image_version": "8.0.0-beta.20260801",
+    "enigma_version": "2026-08-01",
+    "webif_version": "OWIF 2.3.3",
+    "kernel_version": "3.14.28",
+    "tuner_count": 8,
+    "tuner_hardware_type": "Vuplus DVB-S NIM(45208 FBC) (DVB-S2)",
+    "tuner_inventory": [
+      "Tuner A", "Tuner B", "Tuner C", "Tuner D",
+      "Tuner E", "Tuner F", "Tuner G", "Tuner H"
+    ]
+  },
+  "observed_receiver_state": {
+    "in_standby": true,
+    "is_recording": false,
+    "is_streaming": false,
+    "active_timers_count": 0,
+    "http_auth_required": true,
+    "http_auth_mechanism": "HTTP Basic Auth (TwistedWeb/26.4.0)"
+  },
+  "openwebif_capability_matrix": {
+    "all_8_endpoints_succeeded": true,
+    "tuner_live_rec_stream_status_available": true,
+    "timer_and_recording_list_available": true,
+    "service_and_bouquet_inventory_available": true,
+    "unicable_scr_frequency_mapping_available": false,
+    "physical_frontend_demux_binding_available": false
+  },
+  "hardware_topology_status": {
+    "physical_demodulator_binding": "HYPOTHESIS_UNPROVEN",
+    "virtual_frontend_demux_mapping": "HYPOTHESIS_UNPROVEN",
+    "empirical_fact": "OpenWebif meldet 8 Tunerinstanzen (Tuner A bis H) desselben NIM-Typs Vuplus DVB-S NIM(45208 FBC). Die genaue Zuordnung zu physischen Root-Eingängen oder virtuellen Child-Demux-Instanzen ist im OpenWebif-Antwortpaket nicht enthalten."
+  },
+  "empirical_finding": "Die bisher bekannten OpenWebif-Endpunkte liefern Timer-, Aufnahme- und Serviceinformationen, aber es ist noch nicht empirisch belegt, ob sie sämtliche aktiven FBC-Tuner-, Demodulator- und internen Enigma2-Belegungen vollständig und atomar abbilden. Für erweiterte Unicable/LNB-Frequenz-Zuordnungen bleibt SSH als optionale Diagnose-Eskalation definiert."
+}

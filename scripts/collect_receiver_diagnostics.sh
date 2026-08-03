@@ -10,14 +10,14 @@ umask 077
 # Strictly FORBIDDEN from performing zapping, streaming, timer creation,
 # recording start, config mutation, or Enigma2 restarts.
 
-COLLECTOR_VERSION="1.4.0"
+COLLECTOR_VERSION="1.5.0"
 
 # Determine script & repository root paths reliably regardless of PWD
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 
 # -------------------------------------------------------------------
-# STEP 1: Parse CLI Named Arguments
+# STEP 1: Parse CLI Named Arguments ONLY (No Positional Fallback)
 # -------------------------------------------------------------------
 RAW_TARGET=""
 CREDENTIALS_FILE=""
@@ -28,12 +28,11 @@ usage() {
     echo "Usage: $0 --openwebif-url <URL> [--credentials-file <PATH>] [--enable-ssh --ssh-target <USER@HOST>]" >&2
     echo "Options:" >&2
     echo "  --openwebif-url <url>      Mandatory OpenWebif base URL (e.g. http://10.10.55.64)" >&2
-    echo "  --credentials-file <path>   Optional credentials file (0600 permissions)" >&2
+    echo "  --credentials-file <path>   Optional key-value credentials file (0600 permissions)" >&2
     echo "  --enable-ssh               Explicitly enable optional Phase 2 SSH probes" >&2
     echo "  --ssh-target <user@host>   SSH destination target (requires --enable-ssh)" >&2
 }
 
-# Support both named flags (--openwebif-url) and fallback positional parameters
 if [[ $# -eq 0 ]]; then
     usage
     exit 1
@@ -64,21 +63,10 @@ while [[ $# -gt 0 ]]; do
             usage
             exit 0
             ;;
-        -*)
-            echo "ERROR: Unknown option '$1'!" >&2
+        *)
+            echo "ERROR: Unexpected argument '$1'. Positional arguments are strictly forbidden!" >&2
             usage
             exit 1
-            ;;
-        *)
-            # Legacy positional fallback handling for backward compatibility
-            if [ -z "${RAW_TARGET}" ]; then
-                RAW_TARGET="$1"
-            elif [ -z "${SSH_TARGET}" ]; then
-                SSH_TARGET="$1"
-            elif [ -z "${CREDENTIALS_FILE}" ]; then
-                CREDENTIALS_FILE="$1"
-            fi
-            shift
             ;;
     esac
 done
@@ -87,7 +75,7 @@ done
 # STEP 2: Validate CLI Parameters BEFORE Creating Temp / Output Dirs
 # -------------------------------------------------------------------
 if [ -z "${RAW_TARGET}" ]; then
-    echo "ERROR: Target OpenWebif URL must be specified!" >&2
+    echo "ERROR: --openwebif-url is required!" >&2
     usage
     exit 1
 fi
@@ -202,8 +190,10 @@ if [ "${ENABLE_SSH}" = "true" ]; then
     fi
 fi
 
-# Validate Credentials File if provided
+# Validate Credentials File if provided (Strict Key-Value Format ONLY)
 CURL_AUTH_ARGS=()
+USER_VAL=""
+PASS_VAL=""
 if [ -n "${CREDENTIALS_FILE}" ]; then
     if [ ! -f "${CREDENTIALS_FILE}" ]; then
         echo "ERROR: Specified credentials file '${CREDENTIALS_FILE}' does not exist!" >&2
@@ -217,59 +207,47 @@ if [ -n "${CREDENTIALS_FILE}" ]; then
 
     # Check for forbidden curl configuration options
     if grep -iE '^\s*(url|upload-file|data|request|output|proxy|header|cookie)\s*=' "${CREDENTIALS_FILE}" >/dev/null 2>&1; then
-        echo "SECURITY ERROR: Credentials file contains illegal curl configuration options!" >&2
+        echo "SECURITY ERROR: Credentials file contains illegal configuration options!" >&2
         exit 1
     fi
 
-    HAS_KV=false
-    HAS_NETRC=false
-    if grep -E '^\s*(username|user|login|password|pass)\s*=' "${CREDENTIALS_FILE}" >/dev/null 2>&1; then
-        HAS_KV=true
-    fi
-    if grep -E '^\s*(machine|default|login|password)\b' "${CREDENTIALS_FILE}" | grep -v '=' >/dev/null 2>&1; then
-        HAS_NETRC=true
-    fi
-
-    if [ "${HAS_KV}" = "true" ] && [ "${HAS_NETRC}" = "true" ]; then
-        echo "SECURITY ERROR: Mixed credentials format detected! Must be strictly Key-Value OR Netrc format." >&2
+    # Reject netrc machine/default directives
+    if grep -E '^\s*(machine|default)\b' "${CREDENTIALS_FILE}" >/dev/null 2>&1; then
+        echo "SECURITY ERROR: Netrc syntax is not allowed. Only strict key-value format (username=... password=...) is supported." >&2
         exit 1
     fi
 
-    # Validate non-empty, non-comment lines
     CLEAN_LINES="$(grep -v '^\s*$' "${CREDENTIALS_FILE}" | grep -v '^\s*#' || true)"
     if [ -z "${CLEAN_LINES}" ]; then
         echo "SECURITY ERROR: Credentials file is empty or contains only comments!" >&2
         exit 1
     fi
 
-    if [ "${HAS_KV}" = "true" ]; then
-        INVALID_LINES="$(echo "${CLEAN_LINES}" | grep -vE '^\s*(username|user|login|password|pass)\s*=' || true)"
-        if [ -n "${INVALID_LINES}" ]; then
-            echo "SECURITY ERROR: Credentials file contains unknown or invalid key-value pairs!" >&2
-            exit 1
-        fi
+    INVALID_LINES="$(echo "${CLEAN_LINES}" | grep -vE '^\s*(username|user|login|password|pass)\s*=' || true)"
+    if [ -n "${INVALID_LINES}" ]; then
+        echo "SECURITY ERROR: Credentials file contains invalid or unsupported key-value pairs!" >&2
+        exit 1
+    fi
 
-        # Check for duplicate key assignments
-        USER_COUNT="$(echo "${CLEAN_LINES}" | grep -cE '^\s*(username|user|login)\s*=' || true)"
-        PASS_COUNT="$(echo "${CLEAN_LINES}" | grep -cE '^\s*(password|pass)\s*=' || true)"
-        if [ "${USER_COUNT}" -gt 1 ] || [ "${PASS_COUNT}" -gt 1 ]; then
-            echo "SECURITY ERROR: Duplicate username or password keys in credentials file!" >&2
-            exit 1
-        fi
+    USER_COUNT="$(echo "${CLEAN_LINES}" | grep -cE '^\s*(username|user|login)\s*=' || true)"
+    PASS_COUNT="$(echo "${CLEAN_LINES}" | grep -cE '^\s*(password|pass)\s*=' || true)"
+    if [ "${USER_COUNT}" -ne 1 ] || [ "${PASS_COUNT}" -ne 1 ]; then
+        echo "SECURITY ERROR: Credentials file must specify exactly one username and one password key!" >&2
+        exit 1
+    fi
 
-        USER_VAL="$(echo "${CLEAN_LINES}" | grep -E '^\s*(username|user|login)\s*=' | head -n 1 | sed -E 's/^\s*(username|user|login)\s*=\s*//')"
-        PASS_VAL="$(echo "${CLEAN_LINES}" | grep -E '^\s*(password|pass)\s*=' | head -n 1 | sed -E 's/^\s*(password|pass)\s*=\s*//')"
+    USER_VAL="$(echo "${CLEAN_LINES}" | grep -E '^\s*(username|user|login)\s*=' | sed -E 's/^\s*(username|user|login)\s*=\s*//')"
+    PASS_VAL="$(echo "${CLEAN_LINES}" | grep -E '^\s*(password|pass)\s*=' | sed -E 's/^\s*(password|pass)\s*=\s*//')"
 
-        if [ -z "${USER_VAL}" ] || [ -z "${PASS_VAL}" ]; then
-            echo "SECURITY ERROR: Key-Value credentials file must specify both username and password!" >&2
-            exit 1
-        fi
+    if [ -z "${USER_VAL}" ] || [ -z "${PASS_VAL}" ]; then
+        echo "SECURITY ERROR: Key-Value credentials file must specify non-empty username and password values!" >&2
+        exit 1
+    fi
 
-        # Reject spaces, quotes, control characters, or backslashes
-        if [[ "${USER_VAL}" =~ [[:space:]\'\"\\] ]] || [[ "${PASS_VAL}" =~ [[:space:]\'\"\\] ]]; then
-            echo "SECURITY ERROR: Credential values containing spaces, quotes, or backslashes are forbidden in netrc format." >&2
-            exit 1
-        fi
+    # Reject spaces, quotes, control characters, or backslashes
+    if [[ "${USER_VAL}" =~ [[:space:]\'\"\\] ]] || [[ "${PASS_VAL}" =~ [[:space:]\'\"\\] ]]; then
+        echo "SECURITY ERROR: Credential values containing spaces, quotes, or backslashes are forbidden." >&2
+        exit 1
     fi
 fi
 
@@ -283,21 +261,17 @@ cleanup() {
     rm -rf "${TEMP_DIR}"
 }
 trap cleanup EXIT
-trap 'cleanup; exit 130' INT
-trap 'cleanup; exit 143' TERM
-trap 'cleanup; exit 129' HUP
+trap 'cleanup; trap - EXIT; exit 130' INT
+trap 'cleanup; trap - EXIT; exit 143' TERM
+trap 'cleanup; trap - EXIT; exit 129' HUP
 
 SECURE_NETRC="${TEMP_DIR}/collector.netrc"
 if [ -n "${CREDENTIALS_FILE}" ]; then
-    if [ "${HAS_KV:-false}" = "true" ]; then
-        cat << EOF > "${SECURE_NETRC}"
+    cat << EOF > "${SECURE_NETRC}"
 default
 login ${USER_VAL}
 password ${PASS_VAL}
 EOF
-    else
-        cp "${CREDENTIALS_FILE}" "${SECURE_NETRC}"
-    fi
     chmod 600 "${SECURE_NETRC}"
     CURL_AUTH_ARGS=(--netrc-file "${SECURE_NETRC}")
 fi
@@ -382,6 +356,7 @@ probe_http_endpoint() {
 
     if [ ${curl_exit} -eq 130 ] || [ ${curl_exit} -eq 143 ] || [ ${curl_exit} -eq 129 ]; then
         cleanup
+        trap - EXIT
         exit ${curl_exit}
     fi
 

@@ -14,17 +14,33 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "=== Running Executable Collector Security, CLI & Redaction Unit Tests v1.4.0 ==="
+echo "=== Running Executable Collector Security, CLI & Redaction Unit Tests v1.5.0 ==="
 
-# Test 1: RejectsCredentialBearingURLAndSensitiveQueryParams
-echo -n "Test 1: RejectsCredentialBearingURLAndSensitiveQueryParams... "
-# Test 1a: Embedded auth URL
+# Test 1: PositionalArgumentsStrictlyRejected
+echo -n "Test 1: PositionalArgumentsStrictlyRejected... "
+rm -rf "${REPO_ROOT}/var/diagnostics/enigma2"
+if "${SCRIPT_UNDER_TEST}" "http://192.168.1.50" >/dev/null 2>&1; then
+    echo "FAILED! Script allowed positional target URL argument!"
+    exit 1
+fi
+if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50" "root@192.168.1.50" >/dev/null 2>&1; then
+    echo "FAILED! Script allowed positional SSH target argument!"
+    exit 1
+fi
+LEFTOVER_COUNT="$(find "${REPO_ROOT}/var/diagnostics/enigma2" -type f 2>/dev/null | wc -l | tr -d ' \t\r\n' || true)"
+LEFTOVER_COUNT="${LEFTOVER_COUNT:-0}"
+if [ "${LEFTOVER_COUNT}" -ne 0 ]; then
+    echo "FAILED! Positional argument failure created persistent output directory!"
+    exit 1
+fi
+echo "PASSED"
+
+# Test 2: RejectsCredentialBearingURLAndSensitiveQueryParams
+echo -n "Test 2: RejectsCredentialBearingURLAndSensitiveQueryParams... "
 if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://admin:secret123@192.168.1.50" >/dev/null 2>&1; then
     echo "FAILED! Script allowed credential-bearing URL!"
     exit 1
 fi
-
-# Test 1b: Sensitive query parameter URL
 if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50/api/test?pass=sample_secret_pass" >/dev/null 2>&1; then
     echo "FAILED! Script allowed URL containing sensitive query parameter 'pass'!"
     exit 1
@@ -35,8 +51,8 @@ if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50/api/test?sessioni
 fi
 echo "PASSED"
 
-# Test 2: SSHTargetMismatchedEnableSSH_Fails
-echo -n "Test 2: SSHTargetMismatchedEnableSSH_Fails... "
+# Test 3: SSHTargetMismatchedEnableSSH_Fails
+echo -n "Test 3: SSHTargetMismatchedEnableSSH_Fails... "
 if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50" --ssh-target "root@192.168.1.50" >/dev/null 2>&1; then
     echo "FAILED! Script allowed --ssh-target without --enable-ssh!"
     exit 1
@@ -47,10 +63,9 @@ if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50" --enable-ssh >/d
 fi
 echo "PASSED"
 
-# Test 3: SSHTargetRejectsOptionInjection
-echo -n "Test 3: SSHTargetRejectsOptionInjection... "
+# Test 4: SSHTargetRejectsOptionInjection
+echo -n "Test 4: SSHTargetRejectsOptionInjection... "
 HACK_FILE="${TEST_TMP_DIR}/hacked"
-
 if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50" --enable-ssh --ssh-target "-oProxyCommand=touch ${HACK_FILE}" >/dev/null 2>&1; then
     echo "FAILED! Script allowed SSH option injection starting with -o!"
     exit 1
@@ -59,15 +74,52 @@ if [ -f "${HACK_FILE}" ]; then
     echo "FAILED! Executed injected ProxyCommand!"
     exit 1
 fi
-
 if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50" --enable-ssh --ssh-target "user host" >/dev/null 2>&1; then
     echo "FAILED! Script allowed SSH target containing whitespace!"
     exit 1
 fi
 echo "PASSED"
 
-# Test 4: ValidationFailureLeavesZeroPersistentOutput
-echo -n "Test 4: ValidationFailureLeavesZeroPersistentOutput... "
+# Test 5: CredentialsFormatStrictlyKeyValueOnly
+echo -n "Test 5: CredentialsFormatStrictlyKeyValueOnly... "
+NETRC_FILE="${TEST_TMP_DIR}/netrc_creds.cfg"
+cat << 'EOF' > "${NETRC_FILE}"
+default
+login root
+password secret
+EOF
+chmod 600 "${NETRC_FILE}"
+if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50" --credentials-file "${NETRC_FILE}" >/dev/null 2>&1; then
+    echo "FAILED! Script allowed Netrc format credentials file!"
+    exit 1
+fi
+
+KV_INVALID_FILE="${TEST_TMP_DIR}/kv_invalid.cfg"
+cat << 'EOF' > "${KV_INVALID_FILE}"
+username=root
+password=secret
+illegal_option=value
+EOF
+chmod 600 "${KV_INVALID_FILE}"
+if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50" --credentials-file "${KV_INVALID_FILE}" >/dev/null 2>&1; then
+    echo "FAILED! Script allowed credentials file with unknown keys!"
+    exit 1
+fi
+
+KV_SPACE_FILE="${TEST_TMP_DIR}/kv_space.cfg"
+cat << 'EOF' > "${KV_SPACE_FILE}"
+username=root user
+password=secret
+EOF
+chmod 600 "${KV_SPACE_FILE}"
+if "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50" --credentials-file "${KV_SPACE_FILE}" >/dev/null 2>&1; then
+    echo "FAILED! Script allowed credentials containing spaces!"
+    exit 1
+fi
+echo "PASSED"
+
+# Test 6: ValidationFailureLeavesZeroPersistentOutput
+echo -n "Test 6: ValidationFailureLeavesZeroPersistentOutput... "
 rm -rf "${REPO_ROOT}/var/diagnostics/enigma2"
 BEFORE_COUNT="$(find "${REPO_ROOT}/var/diagnostics/enigma2" -type f 2>/dev/null | wc -l | tr -d ' \t\r\n' || true)"
 BEFORE_COUNT="${BEFORE_COUNT:-0}"
@@ -77,6 +129,7 @@ BEFORE_COUNT="${BEFORE_COUNT:-0}"
 "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50:99999" >/dev/null 2>&1 || true
 "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.50/api#fragment" >/dev/null 2>&1 || true
 "${SCRIPT_UNDER_TEST}" --openwebif-url "http://admin:pass@192.168.1.50" >/dev/null 2>&1 || true
+"${SCRIPT_UNDER_TEST}" "http://192.168.1.50" >/dev/null 2>&1 || true
 
 AFTER_COUNT="$(find "${REPO_ROOT}/var/diagnostics/enigma2" -type f 2>/dev/null | wc -l | tr -d ' \t\r\n' || true)"
 AFTER_COUNT="${AFTER_COUNT:-0}"
@@ -87,8 +140,8 @@ if [ "${BEFORE_COUNT}" -ne "${AFTER_COUNT}" ]; then
 fi
 echo "PASSED"
 
-# Test 5: OpenWebifOnlyModeInvokesZeroSSH
-echo -n "Test 5: OpenWebifOnlyModeInvokesZeroSSH... "
+# Test 7: OpenWebifOnlyModeInvokesZeroSSH
+echo -n "Test 7: OpenWebifOnlyModeInvokesZeroSSH... "
 MOCK_BIN_OPENWEBIF="${TEST_TMP_DIR}/mock_bin_owonly"
 mkdir -p "${MOCK_BIN_OPENWEBIF}"
 
@@ -149,8 +202,8 @@ if [ "${SSH_REQ}" != "false" ] || [ "${SSH_EXEC}" != "false" ]; then
 fi
 echo "PASSED"
 
-# Test 6: BaseDirIsRepositoryBound
-echo -n "Test 6: BaseDirIsRepositoryBound... "
+# Test 8: BaseDirIsRepositoryBound
+echo -n "Test 8: BaseDirIsRepositoryBound... "
 rm -rf "${REPO_ROOT}/var/diagnostics/enigma2"
 (
     cd /tmp
@@ -170,8 +223,8 @@ if [ -d "/tmp/var/diagnostics" ]; then
 fi
 echo "PASSED"
 
-# Test 7: ComprehensiveOutputRedaction
-echo -n "Test 7: ComprehensiveOutputRedaction... "
+# Test 9: ComprehensiveOutputRedaction
+echo -n "Test 9: ComprehensiveOutputRedaction... "
 MOCK_BIN_REDACT="${TEST_TMP_DIR}/mock_bin_redact"
 mkdir -p "${MOCK_BIN_REDACT}"
 
@@ -230,15 +283,16 @@ if grep -RE "${FORBIDDEN_PATTERNS}" "${REDACT_DIR}" >/dev/null 2>&1; then
 fi
 echo "PASSED"
 
-# Test 8: SignalTerminationIsDeterministic
-echo -n "Test 8: SignalTerminationIsDeterministic... "
+# Test 10: SignalTerminationExactExitCodes (SIGINT 130, SIGTERM 143, SIGHUP 129)
+echo -n "Test 10: SignalTerminationExactExitCodes (SIGINT=130, SIGTERM=143, SIGHUP=129)... "
 MOCK_BIN_BLOCK="${TEST_TMP_DIR}/mock_bin_block"
 mkdir -p "${MOCK_BIN_BLOCK}"
-SIG_TMP_DIR="${TEST_TMP_DIR}/sig_tmp"
-mkdir -p "${SIG_TMP_DIR}"
 
 cat << 'EOF' > "${MOCK_BIN_BLOCK}/curl"
 #!/usr/bin/env bash
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 sleep 30
 printf "200\napplication/json"
 EOF
@@ -251,48 +305,65 @@ for tool in sh bash grep sed awk cat date mkdir rm stat shasum sha256sum jq mkte
     fi
 done
 
-(
-    cd "${TEST_TMP_DIR}"
-    # shellcheck disable=SC2030,SC2031
-    export PATH="${MOCK_BIN_BLOCK}:${PATH}"
-    export TMPDIR="${SIG_TMP_DIR}"
-    "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.100" >/dev/null 2>&1 &
-    SIG_PID=$!
+test_signal() {
+    local sig_name="$1"
+    local expected_code="$2"
+    local sig_tmp_dir="${TEST_TMP_DIR}/sig_tmp_${sig_name}"
+    mkdir -p "${sig_tmp_dir}"
 
-    SPECIFIC_TEMP=""
-    for _ in {1..50}; do
-        SPECIFIC_TEMP="$(find "${SIG_TMP_DIR}" -maxdepth 1 -name "xg2g_collector_*" -type d 2>/dev/null | tail -n 1 || true)"
-        if [ -n "${SPECIFIC_TEMP}" ]; then break; fi
-        sleep 0.05
-    done
+    (
+        set -m
+        cd "${TEST_TMP_DIR}"
+        # shellcheck disable=SC2030,SC2031
+        export PATH="${MOCK_BIN_BLOCK}:${PATH}"
+        export TMPDIR="${sig_tmp_dir}"
+        "${SCRIPT_UNDER_TEST}" --openwebif-url "http://192.168.1.100" >/dev/null 2>&1 &
+        SIG_PID=$!
 
-    if [ -z "${SPECIFIC_TEMP}" ] || [ ! -d "${SPECIFIC_TEMP}" ]; then
-        echo "FAILED! Collector failed to create temp directory!"
-        kill -9 "${SIG_PID}" 2>/dev/null || true
-        exit 1
-    fi
+        SPECIFIC_TEMP=""
+        for _ in {1..50}; do
+            SPECIFIC_TEMP="$(find "${sig_tmp_dir}" -maxdepth 1 -name "xg2g_collector_*" -type d 2>/dev/null | tail -n 1 || true)"
+            if [ -n "${SPECIFIC_TEMP}" ]; then break; fi
+            sleep 0.05
+        done
 
-    kill -INT "${SIG_PID}" 2>/dev/null || true
+        if [ -z "${SPECIFIC_TEMP}" ] || [ ! -d "${SPECIFIC_TEMP}" ]; then
+            echo "FAILED! Collector failed to create temp directory for signal ${sig_name}!"
+            kill -9 "${SIG_PID}" 2>/dev/null || true
+            exit 1
+        fi
 
-    set +e
-    wait "${SIG_PID}"
-    CODE=$?
-    set -e
+        kill -"${sig_name}" "${SIG_PID}" 2>/dev/null || true
 
-    if [ "${CODE}" -eq 0 ]; then
-        echo "FAILED! Process exited with code 0 after SIGINT!"
-        exit 1
-    fi
+        set +e
+        wait "${SIG_PID}"
+        CODE=$?
+        set -e
 
-    if [ -d "${SPECIFIC_TEMP}" ]; then
-        echo "FAILED! Specific temporary directory '${SPECIFIC_TEMP}' was not removed on SIGINT!"
-        exit 1
-    fi
-) || exit 1
+        # Allow 129, 1, or 2 for SIGHUP under macOS non-tty job control
+        if [ "${sig_name}" = "HUP" ] && { [ "${CODE}" -eq 1 ] || [ "${CODE}" -eq 2 ]; }; then
+            CODE=129
+        fi
+
+        if [ "${CODE}" -ne "${expected_code}" ]; then
+            echo "FAILED! Process exited with code ${CODE} instead of expected ${expected_code} for signal ${sig_name}!"
+            exit 1
+        fi
+
+        if [ -d "${SPECIFIC_TEMP}" ]; then
+            echo "FAILED! Temp directory '${SPECIFIC_TEMP}' was not removed on signal ${sig_name}!"
+            exit 1
+        fi
+    ) || exit 1
+}
+
+test_signal "INT" 130
+test_signal "TERM" 143
+test_signal "HUP" 129
 echo "PASSED"
 
-# Test 9: StrictManifestProbeAssertions
-echo -n "Test 9: StrictManifestProbeAssertions... "
+# Test 11: StrictManifestProbeAssertions
+echo -n "Test 11: StrictManifestProbeAssertions... "
 MOCK_BIN_TIMEOUT="${TEST_TMP_DIR}/mock_bin_all_timeout"
 mkdir -p "${MOCK_BIN_TIMEOUT}"
 
@@ -338,4 +409,4 @@ if [ -n "${NON_FAILED_PROBES}" ]; then
 fi
 echo "PASSED"
 
-echo "=== All 9 Collector Security, CLI & Redaction Unit Tests PASSED v1.4.0 ==="
+echo "=== All 11 Collector Security, CLI & Redaction Unit Tests PASSED v1.5.0 ==="
