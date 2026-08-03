@@ -206,7 +206,7 @@ func evaluateLifecycleRuntimeEnvSurfaces(assessment *LifecycleUpgradeAssessment,
 			Contract: "upgrade_migration_contract",
 			Field:    "runtime.env",
 			Summary:  "runtime env file still configures a deprecated key",
-			Detail:   key,
+			Detail:   config.DescribeDeprecatedSurface(key),
 		})
 	}
 }
@@ -276,7 +276,7 @@ func evaluateLifecycleFileConfigUpgrade(assessment *LifecycleUpgradeAssessment, 
 			Contract: "upgrade_migration_contract",
 			Field:    path,
 			Summary:  "config file still uses a deprecated path",
-			Detail:   path,
+			Detail:   config.DescribeDeprecatedSurface(path),
 		})
 	}
 }

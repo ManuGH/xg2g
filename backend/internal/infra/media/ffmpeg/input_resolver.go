@@ -793,6 +793,16 @@ func isTunerPort(port int) bool {
 	}
 }
 
+// isStreamRelayURL reports whether an input URL points at the relay port.
+//
+// DEPRECATED: the relay input path is scheduled for removal after
+// config.RelayInputRemoveAfter. A receiver that serves the same content on its
+// standard streaming port never produces such a URL, so on current setups this
+// returns false for every input and the relay-specific branches it guards are
+// inert. Do not add new callers; new input handling belongs on the default
+// path. Note the port alone was never a reliable marker of a distinct upstream
+// mode — a receiver can be configured to hand out the relay port for all
+// services, including ones that need no relay at all.
 func isStreamRelayURL(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil {

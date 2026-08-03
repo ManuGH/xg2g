@@ -46,7 +46,34 @@ func DeprecatedFileConfigPaths(cfg FileConfig) []string {
 			if cfg.Enigma2.UseWebIF != nil {
 				out = append(out, entry.Path)
 			}
+		case "enigma2.fallbackTo8001":
+			if cfg.Enigma2.FallbackTo8001 != nil {
+				out = append(out, entry.Path)
+			}
 		}
 	}
 	return out
+}
+
+// EndOfLifeFor returns the announced removal date for a deprecated surface,
+// addressed by either its registry path or its environment variable name.
+// The boolean is false when the surface is unknown, still active, or has no
+// announced date.
+func EndOfLifeFor(pathOrEnv string) (string, bool) {
+	for _, entry := range DeprecatedRegistryEntries() {
+		if entry.Path == pathOrEnv || (entry.Env != "" && entry.Env == pathOrEnv) {
+			return entry.EndOfLife()
+		}
+	}
+	return "", false
+}
+
+// DescribeDeprecatedSurface renders a surface with its end-of-life date when
+// one has been announced, e.g. "enigma2.streamPort (removal after 2027-02-01)".
+// Surfaces without an announced date are returned unchanged.
+func DescribeDeprecatedSurface(pathOrEnv string) string {
+	if date, ok := EndOfLifeFor(pathOrEnv); ok {
+		return pathOrEnv + " (removal after " + date + ")"
+	}
+	return pathOrEnv
 }
