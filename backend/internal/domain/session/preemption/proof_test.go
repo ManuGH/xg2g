@@ -109,3 +109,36 @@ func TestValidateConflictProof_StrictBijectionFreedResourcesByTarget(t *testing.
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "contradicts AllocationMappings")
 }
+
+func TestFormatCanonicalClaims_AggregationAndOverflow(t *testing.T) {
+	// 1. Verify [{tuner:A, 1}, {tuner:A, 1}] is identical to [{tuner:A, 2}]
+	splitClaims := []ResourceClaim{
+		{Kind: ResourceKindTunerSlot, Resource: "tuner-A", Quantity: 1},
+		{Kind: ResourceKindTunerSlot, Resource: "tuner-A", Quantity: 1},
+	}
+	combinedClaim := []ResourceClaim{
+		{Kind: ResourceKindTunerSlot, Resource: "tuner-A", Quantity: 2},
+	}
+
+	strSplit, err1 := formatCanonicalClaimsStrict(splitClaims)
+	require.NoError(t, err1)
+	strCombined, err2 := formatCanonicalClaimsStrict(combinedClaim)
+	require.NoError(t, err2)
+
+	require.Equal(t, "TUNER_SLOT:tuner-A:2", strSplit)
+	require.Equal(t, strCombined, strSplit)
+
+	// 2. Reject negative quantities
+	negativeClaims := []ResourceClaim{
+		{Kind: ResourceKindTunerSlot, Resource: "tuner-A", Quantity: -1},
+	}
+	_, errNeg := formatCanonicalClaimsStrict(negativeClaims)
+	require.Error(t, errNeg)
+
+	// 3. Reject quantity overflow
+	overflowClaims := []ResourceClaim{
+		{Kind: ResourceKindTunerSlot, Resource: "tuner-A", Quantity: MaxClaimQuantitySum + 1},
+	}
+	_, errOverflow := formatCanonicalClaimsStrict(overflowClaims)
+	require.Error(t, errOverflow)
+}

@@ -79,8 +79,8 @@ func (e *PipelineAuditEvaluator) AuditTunerConflict(
 	if e.IDGen == nil {
 		e.TechLogger.Error().Msg("IDGen generator is nil")
 		failEvent := e.makeFailureEvent("", req.RequestID, domainReq, evalTime, "ID_GENERATION", "IDGen generator is nil")
-		e.emitFailureEvent(ctx, failEvent)
-		return ErrInvalidEventID
+		emitErr := e.emitFailureEvent(ctx, failEvent)
+		return errors.Join(ErrInvalidEventID, emitErr)
 	}
 
 	// 2. Generate Event ID
@@ -88,24 +88,24 @@ func (e *PipelineAuditEvaluator) AuditTunerConflict(
 	if err != nil || eventID == "" {
 		e.TechLogger.Error().Err(err).Str("request_id", req.RequestID).Msg("event ID generator failed or produced empty ID")
 		failEvent := e.makeFailureEvent("", req.RequestID, domainReq, evalTime, "ID_GENERATION", "event ID generation failed")
-		e.emitFailureEvent(ctx, failEvent)
-		return ErrInvalidEventID
+		emitErr := e.emitFailureEvent(ctx, failEvent)
+		return errors.Join(ErrInvalidEventID, emitErr)
 	}
 
 	// 3. Build Resource Snapshot from Read-Only Providers
 	if e.SnapshotBuilder == nil {
 		e.TechLogger.Error().Str("request_id", req.RequestID).Msg("SnapshotBuilder is nil")
 		failEvent := e.makeFailureEvent(eventID, req.RequestID, domainReq, evalTime, "SNAPSHOT_BUILD", "SnapshotBuilder is nil")
-		e.emitFailureEvent(ctx, failEvent)
-		return ErrSnapshotBuildFailed
+		emitErr := e.emitFailureEvent(ctx, failEvent)
+		return errors.Join(ErrSnapshotBuildFailed, emitErr)
 	}
 
 	snap, rev, err := e.SnapshotBuilder.BuildSnapshot(ctx, domainReq)
 	if err != nil {
 		e.TechLogger.Error().Err(err).Str("request_id", req.RequestID).Msg("failed to build resource snapshot for audit evaluation")
 		failEvent := e.makeFailureEvent(eventID, req.RequestID, domainReq, evalTime, "SNAPSHOT_BUILD", fmt.Sprintf("snapshot build failed: %v", err))
-		e.emitFailureEvent(ctx, failEvent)
-		return fmt.Errorf("%w: %v", ErrSnapshotBuildFailed, err)
+		emitErr := e.emitFailureEvent(ctx, failEvent)
+		return errors.Join(fmt.Errorf("%w: %v", ErrSnapshotBuildFailed, err), emitErr)
 	}
 
 	// 4. Policy Engine Functional Evaluation
@@ -113,8 +113,8 @@ func (e *PipelineAuditEvaluator) AuditTunerConflict(
 		e.TechLogger.Error().Str("request_id", req.RequestID).Msg("PolicyEngine is nil")
 		failEvent := e.makeFailureEvent(eventID, req.RequestID, domainReq, evalTime, "POLICY_EVALUATION", "PolicyEngine is nil")
 		failEvent.SnapshotRevision = rev
-		e.emitFailureEvent(ctx, failEvent)
-		return ErrPolicyEvaluationFailed
+		emitErr := e.emitFailureEvent(ctx, failEvent)
+		return errors.Join(ErrPolicyEvaluationFailed, emitErr)
 	}
 
 	res, evalErr := e.Engine.Evaluate(domainReq, snap)
@@ -122,8 +122,8 @@ func (e *PipelineAuditEvaluator) AuditTunerConflict(
 		e.TechLogger.Error().Err(evalErr).Str("request_id", req.RequestID).Str("snapshot_rev", rev).Msg("policy engine evaluation returned an error")
 		failEvent := e.makeFailureEvent(eventID, req.RequestID, domainReq, evalTime, "POLICY_EVALUATION", fmt.Sprintf("policy engine evaluation failed: %v", evalErr))
 		failEvent.SnapshotRevision = rev
-		e.emitFailureEvent(ctx, failEvent)
-		return fmt.Errorf("%w: %v", ErrPolicyEvaluationFailed, evalErr)
+		emitErr := e.emitFailureEvent(ctx, failEvent)
+		return errors.Join(fmt.Errorf("%w: %v", ErrPolicyEvaluationFailed, evalErr), emitErr)
 	}
 
 	// 5. Construct Audit Event
@@ -152,6 +152,8 @@ func (e *PipelineAuditEvaluator) AuditTunerConflict(
 			e.TechLogger.Error().Err(emitErr).Str("event_id", eventID).Str("request_id", req.RequestID).Msg("failed to emit evaluation audit event")
 			return fmt.Errorf("%w: %v", ErrAuditEmissionFailed, emitErr)
 		}
+	} else {
+		return ErrAuditEmissionFailed
 	}
 
 	return nil
@@ -175,8 +177,13 @@ func (e *PipelineAuditEvaluator) makeFailureEvent(eventID, requestID string, req
 	}
 }
 
-func (e *PipelineAuditEvaluator) emitFailureEvent(ctx context.Context, event EvaluationAuditEvent) {
+func (e *PipelineAuditEvaluator) emitFailureEvent(ctx context.Context, event EvaluationAuditEvent) error {
 	if e.Logger != nil {
-		_ = e.Logger.Emit(ctx, event)
+		if err := e.Logger.Emit(ctx, event); err != nil {
+			e.TechLogger.Error().Err(err).Str("request_id", event.RequestID).Msg("failed to emit failure audit event")
+			return fmt.Errorf("%w: %v", ErrAuditEmissionFailed, err)
+		}
+		return nil
 	}
+	return ErrAuditEmissionFailed
 }
