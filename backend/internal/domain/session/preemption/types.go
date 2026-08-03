@@ -137,6 +137,7 @@ type PreemptionExecutionContract struct {
 	ContractID              string          `json:"contractId"`
 	ReceiverID              string          `json:"receiverId"`
 	RequestID               string          `json:"requestId"`
+	RequesterOwner          string          `json:"requesterOwner"`
 	TargetAllocationIDs     []string        `json:"targetAllocationIds"`
 	RequestedResources      []ResourceClaim `json:"requestedResources"`
 	ExpectedFreedResources  []ResourceClaim `json:"expectedFreedResources"`

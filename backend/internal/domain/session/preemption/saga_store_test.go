@@ -6,6 +6,7 @@ package preemption
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -86,6 +87,11 @@ func RunUnifiedSagaStoreContractTests(t *testing.T, storeFactory func(t *testing
 		require.Equal(t, uint64(2), s1.Version)
 		require.Equal(t, uint64(1), c1.FencingToken)
 
+		// Verify History From state is PREPARED (not EXECUTION_CLAIMED)
+		require.Len(t, s1.History, 1)
+		require.Equal(t, StatePrepared, s1.History[0].From)
+		require.Equal(t, StateExecutionClaimed, s1.History[0].To)
+
 		// Worker 2 attempts parallel claim for different saga on same active lock -> ErrReceiverClaimLocked
 		rec2 := PreemptionSagaRecord{
 			SagaID:               "saga-claim-2",
@@ -119,15 +125,15 @@ func RunUnifiedSagaStoreContractTests(t *testing.T, storeFactory func(t *testing
 		require.ErrorIs(t, err, ErrFencingTokenMismatch)
 	})
 
-	t.Run("FencingTokenPreservedAcrossRelease", func(t *testing.T) {
+	t.Run("TransitionAndReleaseClaim_InvalidTokenPerformsZeroMutation", func(t *testing.T) {
 		store := storeFactory(t)
 		now := time.Now().UTC()
 
 		rec := PreemptionSagaRecord{
-			SagaID:               "saga-rel-1",
-			ReceiverID:           "rec-release",
-			ContractID:           "c-rel",
-			PreparedTeardownHash: "h-rel",
+			SagaID:               "saga-trans-zero",
+			ReceiverID:           "rec-zero",
+			ContractID:           "c-zero",
+			PreparedTeardownHash: "h-zero",
 			State:                StatePrepared,
 			Mode:                 PreemptionModeEnforce,
 			Version:              1,
@@ -139,21 +145,44 @@ func RunUnifiedSagaStoreContractTests(t *testing.T, storeFactory func(t *testing
 		require.NoError(t, err)
 
 		t1 := SagaTransition{ReasonCode: SagaReasonReceiverClaimed, OccurredAt: now, Actor: "worker-1"}
-		s1, c1, err := store.ClaimSagaExecution(ctx, "saga-rel-1", 1, "rec-release", now, now.Add(10*time.Second), t1)
+		s1, c1, err := store.ClaimSagaExecution(ctx, "saga-trans-zero", 1, "rec-zero", now, now.Add(10*time.Second), t1)
 		require.NoError(t, err)
 		require.Equal(t, uint64(1), c1.FencingToken)
 
-		// Terminate saga and release claim
-		tRel := SagaTransition{ReasonCode: SagaReasonRequesterDropped, OccurredAt: now, Actor: "worker-1"}
-		_, err = store.TransitionAndReleaseClaim(ctx, "saga-rel-1", s1.Version, "rec-release", c1.FencingToken, StateFailedBeforeMutation, tRel)
+		// Snapshot saga and claim before invalid transition
+		sagaBefore, err := store.GetSaga(ctx, "saga-trans-zero")
 		require.NoError(t, err)
+		claimBefore, err := store.GetReceiverClaim(ctx, "rec-zero")
+		require.NoError(t, err)
+		sagaJSONBefore, _ := json.Marshal(sagaBefore)
+		claimJSONBefore, _ := json.Marshal(claimBefore)
 
-		// Next claim for rec-release MUST generate FencingToken 2 (not reset to 1!)
-		rec2 := PreemptionSagaRecord{
-			SagaID:               "saga-rel-2",
-			ReceiverID:           "rec-release",
-			ContractID:           "c-rel-2",
-			PreparedTeardownHash: "h-rel-2",
+		// Call TransitionAndReleaseClaim with INVALID FencingToken (999 != 1)
+		tFail := SagaTransition{ReasonCode: SagaReasonRequesterDropped, OccurredAt: now, Actor: "worker-impostor"}
+		_, err = store.TransitionAndReleaseClaim(ctx, "saga-trans-zero", s1.Version, "rec-zero", 999, StateFailedBeforeMutation, tFail)
+		require.ErrorIs(t, err, ErrFencingTokenMismatch)
+
+		// Verify ZERO MUTATION on both saga and receiver claim!
+		sagaAfter, err := store.GetSaga(ctx, "saga-trans-zero")
+		require.NoError(t, err)
+		claimAfter, err := store.GetReceiverClaim(ctx, "rec-zero")
+		require.NoError(t, err)
+		sagaJSONAfter, _ := json.Marshal(sagaAfter)
+		claimJSONAfter, _ := json.Marshal(claimAfter)
+
+		require.Equal(t, string(sagaJSONBefore), string(sagaJSONAfter), "Saga MUST NOT be mutated when fencing token is invalid")
+		require.Equal(t, string(claimJSONBefore), string(claimJSONAfter), "Receiver claim MUST NOT be released when fencing token is invalid")
+	})
+
+	t.Run("TransitionAndReleaseClaim_RecordsCorrectFromState", func(t *testing.T) {
+		store := storeFactory(t)
+		now := time.Now().UTC()
+
+		rec := PreemptionSagaRecord{
+			SagaID:               "saga-hist-test",
+			ReceiverID:           "rec-hist",
+			ContractID:           "c-hist",
+			PreparedTeardownHash: "h-hist",
 			State:                StatePrepared,
 			Mode:                 PreemptionModeEnforce,
 			Version:              1,
@@ -161,13 +190,61 @@ func RunUnifiedSagaStoreContractTests(t *testing.T, storeFactory func(t *testing
 			UpdatedAt:            now,
 			ExpiresAt:            now.Add(30 * time.Second),
 		}
-		_, _, err = store.CreateSaga(ctx, rec2)
+		_, _, err := store.CreateSaga(ctx, rec)
 		require.NoError(t, err)
 
-		t2 := SagaTransition{ReasonCode: SagaReasonReceiverClaimed, OccurredAt: now, Actor: "worker-2"}
-		_, c2, err := store.ClaimSagaExecution(ctx, "saga-rel-2", 1, "rec-release", now, now.Add(10*time.Second), t2)
+		t1 := SagaTransition{ReasonCode: SagaReasonReceiverClaimed, OccurredAt: now, Actor: "worker-1"}
+		s1, c1, err := store.ClaimSagaExecution(ctx, "saga-hist-test", 1, "rec-hist", now, now.Add(10*time.Second), t1)
 		require.NoError(t, err)
-		require.Equal(t, uint64(2), c2.FencingToken, "FencingToken MUST NOT reset to 1 after release")
+
+		// Release claim and transition to FAILED_BEFORE_MUTATION
+		tRel := SagaTransition{ReasonCode: SagaReasonRequesterDropped, OccurredAt: now, Actor: "worker-1"}
+		s2, err := store.TransitionAndReleaseClaim(ctx, "saga-hist-test", s1.Version, "rec-hist", c1.FencingToken, StateFailedBeforeMutation, tRel)
+		require.NoError(t, err)
+
+		// Verify History: last transition MUST have From = StateExecutionClaimed and To = StateFailedBeforeMutation
+		require.GreaterOrEqual(t, len(s2.History), 1)
+		lastTrans := s2.History[len(s2.History)-1]
+		require.Equal(t, StateExecutionClaimed, lastTrans.From)
+		require.Equal(t, StateFailedBeforeMutation, lastTrans.To)
+	})
+
+	t.Run("QuarantineReceiverClaim_RequiresValidOwnerAndFencingToken", func(t *testing.T) {
+		store := storeFactory(t)
+		now := time.Now().UTC()
+
+		rec := PreemptionSagaRecord{
+			SagaID:               "saga-quar-1",
+			ReceiverID:           "rec-quar",
+			ContractID:           "c-quar",
+			PreparedTeardownHash: "h-quar",
+			State:                StatePrepared,
+			Mode:                 PreemptionModeEnforce,
+			Version:              1,
+			CreatedAt:            now,
+			UpdatedAt:            now,
+			ExpiresAt:            now.Add(30 * time.Second),
+		}
+		_, _, err := store.CreateSaga(ctx, rec)
+		require.NoError(t, err)
+
+		t1 := SagaTransition{ReasonCode: SagaReasonReceiverClaimed, OccurredAt: now, Actor: "worker-1"}
+		_, c1, err := store.ClaimSagaExecution(ctx, "saga-quar-1", 1, "rec-quar", now, now.Add(10*time.Second), t1)
+		require.NoError(t, err)
+
+		// Quarantine attempt with invalid token -> ErrFencingTokenMismatch
+		_, err = store.QuarantineReceiverClaim(ctx, "rec-quar", "saga-quar-1", 999, "stale token test", now)
+		require.ErrorIs(t, err, ErrFencingTokenMismatch)
+
+		// Quarantine attempt with invalid saga ID -> error
+		_, err = store.QuarantineReceiverClaim(ctx, "rec-quar", "saga-impostor", c1.FencingToken, "impostor saga test", now)
+		require.Error(t, err)
+
+		// Quarantine attempt with valid token and owner -> SUCCESS
+		quarClaim, err := store.QuarantineReceiverClaim(ctx, "rec-quar", "saga-quar-1", c1.FencingToken, "hardware fault", now)
+		require.NoError(t, err)
+		require.Equal(t, ClaimStatusQuarantined, quarClaim.Status)
+		require.Equal(t, c1.FencingToken, quarClaim.FencingToken, "Quarantine MUST preserve the per-receiver FencingToken")
 	})
 
 	t.Run("RenewReceiverClaim_ValidAndInvalidScenarios", func(t *testing.T) {

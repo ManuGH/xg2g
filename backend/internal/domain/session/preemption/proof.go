@@ -24,6 +24,9 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 	if strings.TrimSpace(proof.ReceiverID) == "" || proof.ReceiverID != req.ReceiverID {
 		return fmt.Errorf("%w: proof receiver '%s' != request receiver '%s'", ErrProofReceiverMismatch, proof.ReceiverID, req.ReceiverID)
 	}
+	if strings.TrimSpace(snapshot.ReceiverID) == "" || snapshot.ReceiverID != req.ReceiverID {
+		return fmt.Errorf("%w: snapshot receiver '%s' != request receiver '%s'", ErrProofReceiverMismatch, snapshot.ReceiverID, req.ReceiverID)
+	}
 	if strings.TrimSpace(proof.SnapshotRevision) == "" || proof.SnapshotRevision != snapshot.SnapshotRevision {
 		return fmt.Errorf("%w: proof revision '%s' != snapshot revision '%s'", ErrProofRevisionMismatch, proof.SnapshotRevision, snapshot.SnapshotRevision)
 	}
@@ -37,8 +40,14 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 		return fmt.Errorf("%w: proof contains zero requested resources", ErrInvalidProof)
 	}
 
+	// Verify proof requested resources canonically match request requested resources
+	if formatCanonicalClaims(proof.RequestedResources) != formatCanonicalClaims(req.RequestedResources) {
+		return fmt.Errorf("%w: proof requested resources do not match request requested resources", ErrInvalidProof)
+	}
+
 	// Verify all target allocation mappings correspond to active allocations in snapshot
 	activeMap := make(map[string]ActiveAllocation, len(snapshot.Allocations))
+	seenAllocIDs := make(map[string]struct{}, len(snapshot.Allocations))
 	for _, alloc := range snapshot.Allocations {
 		activeMap[alloc.AllocationID] = alloc
 	}
@@ -47,6 +56,11 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 		if strings.TrimSpace(mapping.AllocationID) == "" {
 			return fmt.Errorf("%w: empty allocation ID in proof mapping", ErrInvalidProof)
 		}
+		if _, duplicate := seenAllocIDs[mapping.AllocationID]; duplicate {
+			return fmt.Errorf("%w: duplicate allocation ID '%s' in proof mappings", ErrInvalidProof, mapping.AllocationID)
+		}
+		seenAllocIDs[mapping.AllocationID] = struct{}{}
+
 		alloc, ok := activeMap[mapping.AllocationID]
 		if !ok {
 			return fmt.Errorf("%w: allocation '%s' in proof is not active in snapshot", ErrProofUnmappedAllocation, mapping.AllocationID)
@@ -54,14 +68,44 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 		if len(mapping.FreedResources) == 0 {
 			return fmt.Errorf("%w: mapping for allocation '%s' contains zero freed resources", ErrInvalidProof, mapping.AllocationID)
 		}
-		allocClaimMap := make(map[string]struct{})
+
+		// Strictly check target allocation claims ownership (NO physical tuner / demux bypass!)
+		allocClaimMap := make(map[string]int)
 		for _, claim := range alloc.Claims {
-			allocClaimMap[fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)] = struct{}{}
+			if claim.Quantity <= 0 {
+				return fmt.Errorf("%w: allocation '%s' contains non-positive claim quantity %d", ErrInvalidProof, mapping.AllocationID, claim.Quantity)
+			}
+			key := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
+			allocClaimMap[key] += claim.Quantity
 		}
 		for _, freed := range mapping.FreedResources {
+			if freed.Quantity <= 0 {
+				return fmt.Errorf("%w: freed claim for '%s' contains non-positive quantity %d", ErrInvalidProof, mapping.AllocationID, freed.Quantity)
+			}
 			key := fmt.Sprintf("%s:%s", freed.Kind, freed.Resource)
-			if _, hasClaim := allocClaimMap[key]; !hasClaim && freed.Kind != ResourceKindPhysicalTuner && freed.Kind != ResourceKindDemux {
-				return fmt.Errorf("%w: freed claim '%s' not owned by target allocation '%s'", ErrInvalidProof, key, mapping.AllocationID)
+			ownedQty, hasClaim := allocClaimMap[key]
+			if !hasClaim || ownedQty < freed.Quantity {
+				return fmt.Errorf("%w: freed claim '%s' (qty %d) not owned by target allocation '%s' (owned %d)", ErrInvalidProof, key, freed.Quantity, mapping.AllocationID, ownedQty)
+			}
+		}
+	}
+
+	// Consolidate and cross-validate FreedResourcesByTarget if present
+	if proof.FreedResourcesByTarget != nil {
+		for targetID, freedClaims := range proof.FreedResourcesByTarget {
+			// Find matching mapping
+			var matchingMapping *AllocationResourceMapping
+			for i := range proof.AllocationMappings {
+				if proof.AllocationMappings[i].AllocationID == targetID {
+					matchingMapping = &proof.AllocationMappings[i]
+					break
+				}
+			}
+			if matchingMapping == nil {
+				return fmt.Errorf("%w: FreedResourcesByTarget contains unmapped target '%s'", ErrInvalidProof, targetID)
+			}
+			if formatCanonicalClaims(freedClaims) != formatCanonicalClaims(matchingMapping.FreedResources) {
+				return fmt.Errorf("%w: FreedResourcesByTarget for '%s' contradicts AllocationMappings", ErrInvalidProof, targetID)
 			}
 		}
 	}

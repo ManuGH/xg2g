@@ -33,8 +33,6 @@ func NewTeardownPreparer() *TeardownPreparer {
 }
 
 // PrepareTeardown re-evaluates the contract, live snapshot, and conflict proof, returning TeardownPreparationResult.
-// Domain rejections return a non-nil TeardownPreparationResult with error == nil.
-// Technical errors (hash computation failures) return a Go error.
 func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract, snapshot ResourceSnapshot, proof ConflictResolutionProof, now time.Time) (TeardownPreparationResult, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -51,6 +49,14 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 		return TeardownPreparationResult{
 			Decision: DecisionRejected,
 			Reason:   ReasonTeardownContractHashInvalid,
+		}, nil
+	}
+
+	// Receiver ID alignment check
+	if contract.ReceiverID != snapshot.ReceiverID || contract.ReceiverID != proof.ReceiverID {
+		return TeardownPreparationResult{
+			Decision: DecisionRejected,
+			Reason:   ReasonTeardownInvalidProof,
 		}, nil
 	}
 
@@ -99,6 +105,8 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 		freedByAllocation[mapping.AllocationID] = mapping.FreedResources
 	}
 
+	var combinedFreedClaims []ResourceClaim
+
 	for _, targetID := range contract.TargetAllocationIDs {
 		alloc, ok := activeMap[targetID]
 		if !ok {
@@ -117,7 +125,7 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 			}, nil
 		}
 
-		// Re-verify freed resources claimed for targetID still match contract expected claims
+		// Re-verify freed resources claimed for targetID exist and are owned by alloc
 		freed := freedByAllocation[targetID]
 		if len(freed) == 0 {
 			return TeardownPreparationResult{
@@ -125,6 +133,32 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 				Reason:   ReasonTeardownTargetStateMutated,
 			}, nil
 		}
+
+		// Check alloc owns freed claims
+		allocClaimMap := make(map[string]int)
+		for _, claim := range alloc.Claims {
+			key := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
+			allocClaimMap[key] += claim.Quantity
+		}
+		for _, fClaim := range freed {
+			key := fmt.Sprintf("%s:%s", fClaim.Kind, fClaim.Resource)
+			if allocClaimMap[key] < fClaim.Quantity {
+				return TeardownPreparationResult{
+					Decision: DecisionRejected,
+					Reason:   ReasonTeardownTargetStateMutated,
+				}, nil
+			}
+		}
+
+		combinedFreedClaims = append(combinedFreedClaims, freed...)
+	}
+
+	// Verify combined freed claims satisfy contract requested resources
+	if !SatisfiesResources(contract.RequestedResources, combinedFreedClaims) {
+		return TeardownPreparationResult{
+			Decision: DecisionRejected,
+			Reason:   ReasonTeardownTargetStateMutated,
+		}, nil
 	}
 
 	// 5. Expiration time clamping: min(contract.ExpiresAt, now + TTL)
@@ -145,6 +179,8 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 	prepared := &PreparedTeardown{
 		TeardownID:              teardownID,
 		ContractID:              contract.ContractID,
+		ReceiverID:              contract.ReceiverID,
+		RequestID:               contract.RequestID,
 		ContractHash:            contract.ContractHash,
 		TargetAllocationIDs:     sortedTargets,
 		SnapshotRevision:        snapshot.SnapshotRevision,
@@ -178,11 +214,20 @@ func ValidatePreparedTeardown(p *PreparedTeardown, now time.Time) error {
 	if strings.TrimSpace(p.ContractID) == "" {
 		return fmt.Errorf("%w: empty contract ID", ErrInvalidPreparedTeardown)
 	}
+	if strings.TrimSpace(p.ReceiverID) == "" {
+		return fmt.Errorf("%w: empty receiver ID", ErrInvalidPreparedTeardown)
+	}
+	if strings.TrimSpace(p.RequestID) == "" {
+		return fmt.Errorf("%w: empty request ID", ErrInvalidPreparedTeardown)
+	}
 	if strings.TrimSpace(p.ContractHash) == "" {
 		return fmt.Errorf("%w: empty contract hash", ErrInvalidPreparedTeardown)
 	}
 	if len(p.TargetAllocationIDs) == 0 {
 		return fmt.Errorf("%w: empty target allocation IDs", ErrInvalidPreparedTeardown)
+	}
+	if !p.PreparedAt.Before(p.ExpiresAt) {
+		return fmt.Errorf("%w: PreparedAt %s must be before ExpiresAt %s", ErrInvalidPreparedTeardown, p.PreparedAt, p.ExpiresAt)
 	}
 
 	// Check canonical sorting & uniqueness
@@ -227,6 +272,8 @@ func ComputePreparedTeardownHash(p *PreparedTeardown) (string, error) {
 	h := sha256.New()
 	_, _ = fmt.Fprintf(h, "teardown_id=%s\n", p.TeardownID)
 	_, _ = fmt.Fprintf(h, "contract_id=%s\n", p.ContractID)
+	_, _ = fmt.Fprintf(h, "receiver_id=%s\n", p.ReceiverID)
+	_, _ = fmt.Fprintf(h, "request_id=%s\n", p.RequestID)
 	_, _ = fmt.Fprintf(h, "contract_hash=%s\n", p.ContractHash)
 	_, _ = fmt.Fprintf(h, "targets=%s\n", strings.Join(sortedTargets, ","))
 	_, _ = fmt.Fprintf(h, "snapshot_rev=%s\n", p.SnapshotRevision)

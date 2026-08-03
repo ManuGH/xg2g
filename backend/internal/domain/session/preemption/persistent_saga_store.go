@@ -7,6 +7,7 @@ package preemption
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -128,18 +129,18 @@ func (p *PersistentSagaStore) CreateSaga(ctx context.Context, record PreemptionS
 	defer func() { _ = tx.Rollback() }()
 
 	// 1. Check existing SagaID
-	var existingContractID, existingHash string
-	err = tx.QueryRowContext(ctx, "SELECT contract_id, prepared_teardown_hash FROM preemption_sagas WHERE saga_id = ?", record.SagaID).Scan(&existingContractID, &existingHash)
+	var existingRec PreemptionSagaRecord
+	existingRec, err = p.getSagaTx(ctx, tx, record.SagaID)
 	if err == nil {
-		if existingContractID == record.ContractID && existingHash == record.PreparedTeardownHash {
-			fullExisting, getErr := p.getSagaTx(ctx, tx, record.SagaID)
-			if getErr != nil {
-				return PreemptionSagaRecord{}, false, getErr
-			}
-			return fullExisting, false, nil
+		if existingRec.ContractID == record.ContractID &&
+			existingRec.PreparedTeardownHash == record.PreparedTeardownHash &&
+			existingRec.ReceiverID == record.ReceiverID &&
+			existingRec.Mode == record.Mode &&
+			existingRec.ExpiresAt.Equal(record.ExpiresAt) {
+			return existingRec, false, nil
 		}
 		return PreemptionSagaRecord{}, false, fmt.Errorf("%w: saga '%s' exists with mismatched content", ErrSagaIdentityConflict, record.SagaID)
-	} else if err != sql.ErrNoRows {
+	} else if !errors.Is(err, ErrSagaNotFound) {
 		return PreemptionSagaRecord{}, false, err
 	}
 
@@ -189,6 +190,19 @@ func (p *PersistentSagaStore) CreateSaga(ctx context.Context, record PreemptionS
 		return PreemptionSagaRecord{}, false, err
 	}
 
+	for _, t := range record.History {
+		insertTransQuery := `
+		INSERT INTO preemption_saga_transitions (saga_id, sequence, from_state, to_state, reason_code, occurred_at, actor, details)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+		`
+		_, err = tx.ExecContext(ctx, insertTransQuery,
+			record.SagaID, t.Sequence, string(t.From), string(t.To),
+			string(t.ReasonCode), t.OccurredAt.Format(time.RFC3339Nano), t.Actor, t.Details)
+		if err != nil {
+			return PreemptionSagaRecord{}, false, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return PreemptionSagaRecord{}, false, err
 	}
@@ -234,6 +248,10 @@ func (p *PersistentSagaStore) ClaimSagaExecution(
 	saga, err := p.getSagaTx(ctx, tx, sagaID)
 	if err != nil {
 		return PreemptionSagaRecord{}, ReceiverClaim{}, err
+	}
+
+	if saga.ReceiverID != receiverID {
+		return PreemptionSagaRecord{}, ReceiverClaim{}, fmt.Errorf("%w: receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
 	}
 
 	if saga.Version != expectedVersion {
@@ -311,12 +329,13 @@ func (p *PersistentSagaStore) ClaimSagaExecution(
 		return PreemptionSagaRecord{}, ReceiverClaim{}, err
 	}
 
-	// Update saga
+	// Update saga (save original state for history!)
+	originalState := saga.State
 	saga.State = StateExecutionClaimed
 	saga.Version++
 	saga.UpdatedAt = now
 	transition.Sequence = uint64(len(saga.History) + 1)
-	transition.From = StatePrepared
+	transition.From = originalState
 	transition.To = StateExecutionClaimed
 	transition.OccurredAt = now
 
@@ -374,6 +393,10 @@ func (p *PersistentSagaStore) CompareAndSwapState(
 		return PreemptionSagaRecord{}, err
 	}
 
+	if saga.ReceiverID != receiverID {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
+	}
+
 	if saga.Version != expectedVersion {
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: saga version %d != expected %d", ErrSagaVersionConflict, saga.Version, expectedVersion)
 	}
@@ -381,7 +404,7 @@ func (p *PersistentSagaStore) CompareAndSwapState(
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: current state %s != expected %s", ErrInvalidStateTransition, saga.State, fromState)
 	}
 
-	// Verify receiver claim & fencing token
+	// Verify receiver claim & fencing token strictly
 	var currentSagaID, currentStatus string
 	var currentToken uint64
 	err = tx.QueryRowContext(ctx, "SELECT saga_id, status, fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(&currentSagaID, &currentStatus, &currentToken)
@@ -389,6 +412,7 @@ func (p *PersistentSagaStore) CompareAndSwapState(
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: claim mismatch for receiver '%s' (token %d)", ErrFencingTokenMismatch, receiverID, fencingToken)
 	}
 
+	originalState := saga.State
 	saga.State = toState
 	saga.Version++
 	saga.UpdatedAt = transition.OccurredAt
@@ -403,7 +427,7 @@ func (p *PersistentSagaStore) CompareAndSwapState(
 	}
 
 	transition.Sequence = uint64(len(saga.History) + 1)
-	transition.From = fromState
+	transition.From = originalState
 	transition.To = toState
 	if transition.OccurredAt.IsZero() {
 		transition.OccurredAt = saga.UpdatedAt
@@ -512,18 +536,29 @@ func (p *PersistentSagaStore) TransitionAndReleaseClaim(
 		return PreemptionSagaRecord{}, err
 	}
 
+	if saga.ReceiverID != receiverID {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
+	}
+
 	if saga.Version != expectedVersion {
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: saga version %d != expected %d", ErrSagaVersionConflict, saga.Version, expectedVersion)
 	}
 
-	// Release claim if fencing token matches (preserve fencing_token counter!)
+	// Strictly verify claim ownership, status, and fencing token! If mismatch -> ZERO MUTATIONS!
 	var currentSagaID, currentStatus string
 	var currentToken uint64
 	err = tx.QueryRowContext(ctx, "SELECT saga_id, status, fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(&currentSagaID, &currentStatus, &currentToken)
-	if err == nil && currentSagaID == sagaID && currentToken == fencingToken {
-		_, _ = tx.ExecContext(ctx, "UPDATE receiver_claims SET status = ?, saga_id = '' WHERE receiver_id = ?", string(ClaimStatusUnclaimed), receiverID)
+	if err != nil || ReceiverClaimStatus(currentStatus) != ClaimStatusClaimed || currentSagaID != sagaID || currentToken != fencingToken {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: cannot release claim for receiver '%s' (fencing token mismatch)", ErrFencingTokenMismatch, receiverID)
 	}
 
+	// Release claim while preserving fencing_token counter
+	_, err = tx.ExecContext(ctx, "UPDATE receiver_claims SET status = ?, saga_id = '' WHERE receiver_id = ?", string(ClaimStatusUnclaimed), receiverID)
+	if err != nil {
+		return PreemptionSagaRecord{}, err
+	}
+
+	originalState := saga.State
 	saga.State = toState
 	saga.Version++
 	saga.UpdatedAt = transition.OccurredAt
@@ -538,7 +573,7 @@ func (p *PersistentSagaStore) TransitionAndReleaseClaim(
 	}
 
 	transition.Sequence = uint64(len(saga.History) + 1)
-	transition.From = saga.State
+	transition.From = originalState
 	transition.To = toState
 	if transition.OccurredAt.IsZero() {
 		transition.OccurredAt = saga.UpdatedAt
@@ -581,23 +616,20 @@ func (p *PersistentSagaStore) QuarantineReceiverClaim(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var currentToken uint64
-	err = tx.QueryRowContext(ctx, "SELECT fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(&currentToken)
-	if err == sql.ErrNoRows {
-		currentToken = 1
+	saga, err := p.getSagaTx(ctx, tx, sagaID)
+	if err != nil || saga.ReceiverID != receiverID {
+		return ReceiverClaim{}, fmt.Errorf("%w: saga '%s' mismatch for receiver '%s'", ErrSagaNotFound, sagaID, receiverID)
 	}
 
-	upsertQuery := `
-	INSERT INTO receiver_claims (receiver_id, saga_id, status, lease_until, claimed_at, claim_version, fencing_token)
-	VALUES (?, ?, ?, ?, ?, 1, ?)
-	ON CONFLICT(receiver_id) DO UPDATE SET
-		saga_id = excluded.saga_id,
-		status = excluded.status,
-		claimed_at = excluded.claimed_at,
-		claim_version = claim_version + 1;
-	`
-	_, err = tx.ExecContext(ctx, upsertQuery,
-		receiverID, sagaID, string(ClaimStatusQuarantined), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), currentToken)
+	var currentSagaID, currentStatus string
+	var currentToken uint64
+	err = tx.QueryRowContext(ctx, "SELECT saga_id, status, fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(&currentSagaID, &currentStatus, &currentToken)
+	if err != nil || ReceiverClaimStatus(currentStatus) != ClaimStatusClaimed || currentSagaID != sagaID || currentToken != fencingToken {
+		return ReceiverClaim{}, fmt.Errorf("%w: claim mismatch for receiver '%s'", ErrFencingTokenMismatch, receiverID)
+	}
+
+	updateQuery := "UPDATE receiver_claims SET status = ?, claimed_at = ?, claim_version = claim_version + 1 WHERE receiver_id = ?"
+	_, err = tx.ExecContext(ctx, updateQuery, string(ClaimStatusQuarantined), now.Format(time.RFC3339Nano), receiverID)
 	if err != nil {
 		return ReceiverClaim{}, err
 	}
