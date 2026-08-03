@@ -304,3 +304,28 @@ func TestEngine_RevalidationFailure_AbortsSagaAndReleasesClaim(t *testing.T) {
 	require.NoError(t, claimErr)
 	require.Equal(t, ClaimStatusUnclaimed, updatedClaim.Status)
 }
+
+type spySagaStore struct {
+	SagaStore
+	calls int
+}
+
+func (s *spySagaStore) GetSaga(ctx context.Context, sagaID string) (PreemptionSagaRecord, error) {
+	s.calls++
+	return s.SagaStore.GetSaga(ctx, sagaID)
+}
+
+func (s *spySagaStore) CompareAndSwapState(ctx context.Context, sagaID string, expectedVersion uint64, receiverID string, fencingToken uint64, fromState PreemptionSagaState, toState PreemptionSagaState, transition SagaTransition) (PreemptionSagaRecord, error) {
+	s.calls++
+	return s.SagaStore.CompareAndSwapState(ctx, sagaID, expectedVersion, receiverID, fencingToken, fromState, toState, transition)
+}
+
+func TestEngine_AttemptTeardownTransition_ZeroStoreCallsSpy(t *testing.T) {
+	innerStore := NewMemorySagaStore()
+	spy := &spySagaStore{SagaStore: innerStore}
+	engine := NewPreemptionSagaEngine(spy)
+
+	_, err := engine.AttemptTeardownTransition(context.Background(), "saga-any", "rec-1", 1)
+	require.ErrorIs(t, err, ErrMutationPhaseDisabled)
+	require.Equal(t, 0, spy.calls, "AttemptTeardownTransition MUST NOT execute any store calls in E3.3a")
+}

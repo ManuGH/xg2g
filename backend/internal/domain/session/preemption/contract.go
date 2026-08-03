@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const MaxClaimQuantitySum = 1000000
+
 var (
 	ErrInvalidContract          = errors.New("invalid preemption execution contract")
 	ErrContractExpired          = errors.New("preemption execution contract has expired")
@@ -84,15 +86,11 @@ func ValidateContract(c *PreemptionExecutionContract, now time.Time) error {
 		return fmt.Errorf("%w: zero expected freed resources", ErrInvalidContract)
 	}
 
-	for i, claim := range c.RequestedResources {
-		if err := ValidateResourceClaim(claim); err != nil {
-			return fmt.Errorf("%w: requested claim at index %d invalid: %v", ErrInvalidContract, i, err)
-		}
+	if _, err := formatCanonicalClaimsStrict(c.RequestedResources); err != nil {
+		return fmt.Errorf("%w: requested resources invalid: %v", ErrInvalidContract, err)
 	}
-	for i, claim := range c.ExpectedFreedResources {
-		if err := ValidateResourceClaim(claim); err != nil {
-			return fmt.Errorf("%w: expected freed claim at index %d invalid: %v", ErrInvalidContract, i, err)
-		}
+	if _, err := formatCanonicalClaimsStrict(c.ExpectedFreedResources); err != nil {
+		return fmt.Errorf("%w: expected freed resources invalid: %v", ErrInvalidContract, err)
 	}
 
 	// Verify ExpectedFreedResources actually satisfies RequestedResources!
@@ -143,8 +141,14 @@ func ComputeContractHash(c *PreemptionExecutionContract) (string, error) {
 	sortedTargets := append([]string(nil), c.TargetAllocationIDs...)
 	sort.Strings(sortedTargets)
 
-	canonicalReqClaims := formatCanonicalClaims(c.RequestedResources)
-	canonicalFreedClaims := formatCanonicalClaims(c.ExpectedFreedResources)
+	canonicalReqClaims, err := formatCanonicalClaimsStrict(c.RequestedResources)
+	if err != nil {
+		return "", fmt.Errorf("invalid requested resources in contract hash: %w", err)
+	}
+	canonicalFreedClaims, err := formatCanonicalClaimsStrict(c.ExpectedFreedResources)
+	if err != nil {
+		return "", fmt.Errorf("invalid expected freed resources in contract hash: %w", err)
+	}
 
 	h := sha256.New()
 	_, _ = fmt.Fprintf(h, "contract_id=%s\n", c.ContractID)
@@ -165,11 +169,43 @@ func ComputeContractHash(c *PreemptionExecutionContract) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// formatCanonicalClaims aggregates duplicate claims by (Kind, Resource), checks bounds, sorts canonically, and formats.
 func formatCanonicalClaims(claims []ResourceClaim) string {
-	formatted := make([]string, len(claims))
-	for i, claim := range claims {
-		formatted[i] = fmt.Sprintf("%s:%s:%d", claim.Kind, claim.Resource, claim.Quantity)
+	str, err := formatCanonicalClaimsStrict(claims)
+	if err != nil {
+		return fmt.Sprintf("INVALID_CLAIMS_ERROR:%v", err)
 	}
-	sort.Strings(formatted)
-	return strings.Join(formatted, ",")
+	return str
+}
+
+// formatCanonicalClaimsStrict returns normalized, quantity-aggregated canonical claim string or an error if invalid/overflowing.
+func formatCanonicalClaimsStrict(claims []ResourceClaim) (string, error) {
+	if len(claims) == 0 {
+		return "", nil
+	}
+
+	totals := make(map[string]int)
+	for i, claim := range claims {
+		if err := ValidateResourceClaim(claim); err != nil {
+			return "", fmt.Errorf("claim at index %d invalid: %w", i, err)
+		}
+		key := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
+		current := totals[key]
+		if claim.Quantity > MaxClaimQuantitySum || current > MaxClaimQuantitySum-claim.Quantity {
+			return "", fmt.Errorf("claim quantity overflow for key '%s'", key)
+		}
+		totals[key] = current + claim.Quantity
+	}
+
+	keys := make([]string, 0, len(totals))
+	for k := range totals {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	formatted := make([]string, len(keys))
+	for i, k := range keys {
+		formatted[i] = fmt.Sprintf("%s:%d", k, totals[k])
+	}
+	return strings.Join(formatted, ","), nil
 }
