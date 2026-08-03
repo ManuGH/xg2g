@@ -169,15 +169,6 @@ func ComputeContractHash(c *PreemptionExecutionContract) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// formatCanonicalClaims aggregates duplicate claims by (Kind, Resource), checks bounds, sorts canonically, and formats.
-func formatCanonicalClaims(claims []ResourceClaim) string {
-	str, err := formatCanonicalClaimsStrict(claims)
-	if err != nil {
-		return fmt.Sprintf("INVALID_CLAIMS_ERROR:%v", err)
-	}
-	return str
-}
-
 // formatCanonicalClaimsStrict returns normalized, quantity-aggregated canonical claim string or an error if invalid/overflowing.
 func formatCanonicalClaimsStrict(claims []ResourceClaim) (string, error) {
 	if len(claims) == 0 {
