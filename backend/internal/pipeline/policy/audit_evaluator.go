@@ -152,8 +152,6 @@ func (e *PipelineAuditEvaluator) AuditTunerConflict(
 			e.TechLogger.Error().Err(emitErr).Str("event_id", eventID).Str("request_id", req.RequestID).Msg("failed to emit evaluation audit event")
 			return fmt.Errorf("%w: %v", ErrAuditEmissionFailed, emitErr)
 		}
-	} else {
-		return ErrAuditEmissionFailed
 	}
 
 	return nil
@@ -183,7 +181,6 @@ func (e *PipelineAuditEvaluator) emitFailureEvent(ctx context.Context, event Eva
 			e.TechLogger.Error().Err(err).Str("request_id", event.RequestID).Msg("failed to emit failure audit event")
 			return fmt.Errorf("%w: %v", ErrAuditEmissionFailed, err)
 		}
-		return nil
 	}
-	return ErrAuditEmissionFailed
+	return nil
 }

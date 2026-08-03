@@ -47,7 +47,15 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 	}
 
 	// Verify proof requested resources canonically match request requested resources
-	if formatCanonicalClaims(proof.RequestedResources) != formatCanonicalClaims(req.RequestedResources) {
+	proofCanon, err := formatCanonicalClaimsStrict(proof.RequestedResources)
+	if err != nil {
+		return fmt.Errorf("%w: invalid proof requested resources: %v", ErrInvalidProof, err)
+	}
+	reqCanon, err := formatCanonicalClaimsStrict(req.RequestedResources)
+	if err != nil {
+		return fmt.Errorf("%w: invalid request requested resources: %v", ErrInvalidProof, err)
+	}
+	if proofCanon != reqCanon {
 		return fmt.Errorf("%w: proof requested resources do not match request requested resources", ErrInvalidProof)
 	}
 
@@ -112,7 +120,15 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 			if !exists {
 				return fmt.Errorf("%w: FreedResourcesByTarget missing target '%s'", ErrInvalidProof, mapping.AllocationID)
 			}
-			if formatCanonicalClaims(freedClaims) != formatCanonicalClaims(mapping.FreedResources) {
+			freedCanon, err := formatCanonicalClaimsStrict(freedClaims)
+			if err != nil {
+				return fmt.Errorf("%w: invalid FreedResourcesByTarget for '%s': %v", ErrInvalidProof, mapping.AllocationID, err)
+			}
+			mappingCanon, err := formatCanonicalClaimsStrict(mapping.FreedResources)
+			if err != nil {
+				return fmt.Errorf("%w: invalid mapping freed resources for '%s': %v", ErrInvalidProof, mapping.AllocationID, err)
+			}
+			if freedCanon != mappingCanon {
 				return fmt.Errorf("%w: FreedResourcesByTarget for '%s' contradicts AllocationMappings", ErrInvalidProof, mapping.AllocationID)
 			}
 		}

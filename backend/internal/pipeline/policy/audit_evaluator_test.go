@@ -155,9 +155,9 @@ func TestAuditEvaluator_SnapshotBuildFailure_EmitsFailureEvent(t *testing.T) {
 	}
 }
 
-func TestAuditEvaluator_JoinedErrorsWhenAuditLoggerFails(t *testing.T) {
+func TestAuditEvaluator_SnapshotBuildFailure_JoinedErrorWithFailingLogger(t *testing.T) {
 	ctx := context.Background()
-	failingLogger := &mockAuditLogger{err: errors.New("disk full / logger stream closed")}
+	failingLogger := &mockAuditLogger{err: errors.New("logger stream closed")}
 
 	failingCandProv := &mockCandidateProvider{err: errors.New("hardware provider down")}
 	allocProv := &mockAllocationProvider{obsAt: time.Now()}
@@ -165,10 +165,10 @@ func TestAuditEvaluator_JoinedErrorsWhenAuditLoggerFails(t *testing.T) {
 	engine := domainPolicy.NewPolicyEngine()
 
 	cfg := Config{Mode: PreemptionModeAuditOnly}
-	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: time.Now()}, builder, engine, &mockIDGen{id: "evt-fail-2"}, failingLogger, zerolog.Nop())
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: time.Now()}, builder, engine, &mockIDGen{id: "evt-fail-snap"}, failingLogger, zerolog.Nop())
 
 	req := ConflictAuditRequest{
-		RequestID:    "req-fail-join",
+		RequestID:    "req-fail-snap",
 		Consumer:     domainPolicy.ConsumerLiveTV,
 		ResourceKind: domainPolicy.ResourceTuner,
 		Owner:        "user-1",
@@ -177,9 +177,98 @@ func TestAuditEvaluator_JoinedErrorsWhenAuditLoggerFails(t *testing.T) {
 
 	err := evaluator.AuditTunerConflict(ctx, req)
 	if !errors.Is(err, ErrSnapshotBuildFailed) {
-		t.Fatalf("expected primary error ErrSnapshotBuildFailed in joined error chain, got %v", err)
+		t.Fatalf("expected primary error ErrSnapshotBuildFailed, got %v", err)
 	}
 	if !errors.Is(err, ErrAuditEmissionFailed) {
-		t.Fatalf("expected audit emission error ErrAuditEmissionFailed in joined error chain, got %v", err)
+		t.Fatalf("expected audit emission error ErrAuditEmissionFailed, got %v", err)
+	}
+}
+
+func TestAuditEvaluator_IDGenFailure_JoinedErrorWithFailingLogger(t *testing.T) {
+	ctx := context.Background()
+	failingLogger := &mockAuditLogger{err: errors.New("logger stream closed")}
+
+	cands := []domainPolicy.ResourceCandidate{{Scope: "tuner:0", Compatible: true, Available: true}}
+	candProv := &mockCandidateProvider{cands: cands, obsAt: time.Now()}
+	allocProv := &mockAllocationProvider{allocs: nil, obsAt: time.Now()}
+	builder := NewSnapshotBuilder(candProv, allocProv)
+	engine := domainPolicy.NewPolicyEngine()
+
+	cfg := Config{Mode: PreemptionModeAuditOnly}
+	failingIDGen := &mockIDGen{err: errors.New("ID generator failure")}
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: time.Now()}, builder, engine, failingIDGen, failingLogger, zerolog.Nop())
+
+	req := ConflictAuditRequest{
+		RequestID:    "req-fail-id",
+		Consumer:     domainPolicy.ConsumerLiveTV,
+		ResourceKind: domainPolicy.ResourceTuner,
+		Owner:        "user-1",
+		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
+	}
+
+	err := evaluator.AuditTunerConflict(ctx, req)
+	if !errors.Is(err, ErrInvalidEventID) {
+		t.Fatalf("expected primary error ErrInvalidEventID, got %v", err)
+	}
+	if !errors.Is(err, ErrAuditEmissionFailed) {
+		t.Fatalf("expected audit emission error ErrAuditEmissionFailed, got %v", err)
+	}
+}
+
+func TestAuditEvaluator_PolicyEvaluationFailure_JoinedErrorWithFailingLogger(t *testing.T) {
+	ctx := context.Background()
+	failingLogger := &mockAuditLogger{err: errors.New("logger stream closed")}
+
+	cands := []domainPolicy.ResourceCandidate{{Scope: "tuner:0", Compatible: true, Available: true}}
+	candProv := &mockCandidateProvider{cands: cands, obsAt: time.Now()}
+	allocProv := &mockAllocationProvider{allocs: nil, obsAt: time.Now()}
+	builder := NewSnapshotBuilder(candProv, allocProv)
+
+	cfg := Config{Mode: PreemptionModeAuditOnly}
+	// Nil engine triggers policy evaluation failure
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: time.Now()}, builder, nil, &mockIDGen{id: "evt-fail-engine"}, failingLogger, zerolog.Nop())
+
+	req := ConflictAuditRequest{
+		RequestID:    "req-fail-engine",
+		Consumer:     domainPolicy.ConsumerLiveTV,
+		ResourceKind: domainPolicy.ResourceTuner,
+		Owner:        "user-1",
+		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
+	}
+
+	err := evaluator.AuditTunerConflict(ctx, req)
+	if !errors.Is(err, ErrPolicyEvaluationFailed) {
+		t.Fatalf("expected primary error ErrPolicyEvaluationFailed, got %v", err)
+	}
+	if !errors.Is(err, ErrAuditEmissionFailed) {
+		t.Fatalf("expected audit emission error ErrAuditEmissionFailed, got %v", err)
+	}
+}
+
+func TestAuditEvaluator_NilLogger_DoesNotCauseTechnicalError(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	cands := []domainPolicy.ResourceCandidate{{Scope: "tuner:0", Compatible: true, Available: true}}
+	candProv := &mockCandidateProvider{cands: cands, obsAt: now}
+	allocProv := &mockAllocationProvider{allocs: nil, obsAt: now}
+	builder := NewSnapshotBuilder(candProv, allocProv)
+	engine := domainPolicy.NewPolicyEngine()
+
+	cfg := Config{Mode: PreemptionModeAuditOnly}
+	// nil logger
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: now}, builder, engine, &mockIDGen{id: "evt-nil-logger"}, nil, zerolog.Nop())
+
+	req := ConflictAuditRequest{
+		RequestID:    "req-nil-logger",
+		Consumer:     domainPolicy.ConsumerLiveTV,
+		ResourceKind: domainPolicy.ResourceTuner,
+		Owner:        "user-1",
+		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
+	}
+
+	err := evaluator.AuditTunerConflict(ctx, req)
+	if err != nil {
+		t.Fatalf("nil logger must not turn a successful audit evaluation into an error, got: %v", err)
 	}
 }
