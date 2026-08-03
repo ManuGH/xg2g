@@ -480,3 +480,66 @@ func TestTeardownPreparer_RejectsExpectedFreedMismatch(t *testing.T) {
 	require.Equal(t, DecisionRejected, prepRes.Decision)
 	require.Equal(t, ReasonTeardownTargetStateMutated, prepRes.Reason)
 }
+
+func TestTeardownPreparer_DistinguishesInvalidProofClaimsFromMutatedState(t *testing.T) {
+	eval := NewEvaluator()
+	preparer := NewTeardownPreparer()
+	now := time.Now().UTC()
+
+	req := PreemptionRequest{
+		RequestID:             "req-diag",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-req-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
+		RequestedResources: []ResourceClaim{
+			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
+		},
+	}
+
+	snapshot := ResourceSnapshot{
+		ReceiverID:       "rec-1",
+		SnapshotRevision: "rev-100",
+		ObservedAt:       now,
+		Allocations: []ActiveAllocation{
+			{
+				AllocationID: "alloc-1",
+				Owner:        "client-B",
+				Priority:     PriorityAttributes{BasePriority: 50},
+				Claims:       req.RequestedResources,
+			},
+		},
+	}
+
+	proof := ConflictResolutionProof{
+		ReceiverID:              "rec-1",
+		SnapshotRevision:        "rev-100",
+		HardwareProfileRevision: "hw-rev-1",
+		HardwareProfileStatus:   HardwareProfileValid,
+		EvidenceClassification:  EvidenceDirectObservation,
+		RequestedResources:      req.RequestedResources,
+		AllocationMappings: []AllocationResourceMapping{
+			{AllocationID: "alloc-1", FreedResources: req.RequestedResources},
+		},
+	}
+
+	selRes, err := eval.SelectPlan(req, snapshot, proof, now)
+	require.NoError(t, err)
+
+	// Proof with invalid claims (quantity -1)
+	proofInvalidClaims := proof
+	proofInvalidClaims.AllocationMappings = []AllocationResourceMapping{
+		{
+			AllocationID: "alloc-1",
+			FreedResources: []ResourceClaim{
+				{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: -1},
+			},
+		},
+	}
+
+	prepRes, err := preparer.PrepareTeardown(selRes.Contract, snapshot, proofInvalidClaims, now)
+	require.NoError(t, err)
+	require.Equal(t, DecisionRejected, prepRes.Decision)
+	require.Equal(t, ReasonTeardownInvalidProof, prepRes.Reason)
+}

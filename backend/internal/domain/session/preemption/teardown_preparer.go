@@ -155,8 +155,20 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 
 	// Verify combined freed claims strictly match contract ExpectedFreedResources
 	combinedCanon, err1 := formatCanonicalClaimsStrict(combinedFreedClaims)
+	if err1 != nil {
+		return TeardownPreparationResult{
+			Decision: DecisionRejected,
+			Reason:   ReasonTeardownInvalidProof,
+		}, nil
+	}
 	expectedCanon, err2 := formatCanonicalClaimsStrict(contract.ExpectedFreedResources)
-	if err1 != nil || err2 != nil || combinedCanon != expectedCanon {
+	if err2 != nil {
+		return TeardownPreparationResult{
+			Decision: DecisionRejected,
+			Reason:   ReasonTeardownContractHashInvalid,
+		}, nil
+	}
+	if combinedCanon != expectedCanon {
 		return TeardownPreparationResult{
 			Decision: DecisionRejected,
 			Reason:   ReasonTeardownTargetStateMutated,

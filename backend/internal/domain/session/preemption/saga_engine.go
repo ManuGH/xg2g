@@ -224,8 +224,14 @@ func (e *PreemptionSagaEngine) validateRequesterReservation(res RequesterReserva
 		return fmt.Errorf("reservation expired at %s", res.ExpiresAt.Format(time.RFC3339))
 	}
 	resCanon, err1 := formatCanonicalClaimsStrict(res.ResourceClaims)
+	if err1 != nil {
+		return fmt.Errorf("invalid reservation resource claims: %w", err1)
+	}
 	contractCanon, err2 := formatCanonicalClaimsStrict(contract.RequestedResources)
-	if err1 != nil || err2 != nil || resCanon != contractCanon {
+	if err2 != nil {
+		return fmt.Errorf("invalid contract requested resources: %w", err2)
+	}
+	if resCanon != contractCanon {
 		return fmt.Errorf("reservation resource claims do not match contract requested resources")
 	}
 	return nil
