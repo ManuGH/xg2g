@@ -10,17 +10,20 @@ umask 077
 # Strictly FORBIDDEN from performing zapping, streaming, timer creation,
 # recording start, config mutation, or Enigma2 restarts.
 
-COLLECTOR_VERSION="1.1.0"
+COLLECTOR_VERSION="1.2.0"
 
 # Create secure temporary directory for transient execution artifacts
 TEMP_DIR="$(mktemp -d /tmp/xg2g_collector_XXXXXX)"
 chmod 700 "${TEMP_DIR}"
 
-# Robust Cleanup Trap: Ensures temporary unredacted files & netrc are deleted on ANY exit/signal
+# Robust Signal Traps: Ensures temporary directory is deleted & script exits with appropriate code
 cleanup() {
     rm -rf "${TEMP_DIR}"
 }
-trap cleanup EXIT INT TERM HUP
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
 
 # Mandatory dependency check: jq MUST be present
 if ! command -v jq >/dev/null 2>&1; then
@@ -97,18 +100,45 @@ if [ -n "${CREDENTIALS_FILE}" ]; then
         exit 1
     fi
 
-    # SECURITY CHECK: Reject any attempt to pass curl configuration options (e.g. url=, upload-file=, output=, proxy=)
+    # SECURITY CHECK: Reject dangerous curl options
     if grep -iE '^\s*(url|upload-file|data|request|output|proxy|header|cookie)\s*=' "${CREDENTIALS_FILE}" >/dev/null 2>&1; then
         echo "SECURITY ERROR: Credentials file contains illegal curl configuration options!" >&2
-        echo "Only simple key-value pairs (username=..., password=...) or standard netrc formats are allowed." >&2
         exit 1
     fi
 
-    # Parse key-value (username=... / password=...) or netrc format into protected netrc
-    USER_VAL="$(grep -E '^\s*(username|user|login)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | cut -d'=' -f2- | tr -d '\r" ' || true)"
-    PASS_VAL="$(grep -E '^\s*(password|pass)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | cut -d'=' -f2- | tr -d '\r" ' || true)"
+    HAS_KV=false
+    HAS_NETRC=false
+    if grep -E '^\s*(username|user|login|password|pass)\s*=' "${CREDENTIALS_FILE}" >/dev/null 2>&1; then
+        HAS_KV=true
+    fi
+    if grep -E '^\s*(machine|default|login|password)\b' "${CREDENTIALS_FILE}" | grep -v '=' >/dev/null 2>&1; then
+        HAS_NETRC=true
+    fi
 
-    if [ -n "${USER_VAL}" ] && [ -n "${PASS_VAL}" ]; then
+    # Format Validation: Must be strictly Key-Value OR Netrc, no mixed formats
+    if [ "${HAS_KV}" = "true" ] && [ "${HAS_NETRC}" = "true" ]; then
+        echo "SECURITY ERROR: Mixed credentials format detected! Must be strictly Key-Value OR Netrc format." >&2
+        exit 1
+    fi
+
+    if [ "${HAS_KV}" = "true" ]; then
+        # Check for unknown keys in Key-Value mode
+        NON_EMPTY_LINES="$(grep -v '^\s*$' "${CREDENTIALS_FILE}" | grep -v '^\s*#' || true)"
+        INVALID_LINES="$(echo "${NON_EMPTY_LINES}" | grep -vE '^\s*(username|user|login|password|pass)\s*=' || true)"
+        if [ -n "${INVALID_LINES}" ]; then
+            echo "SECURITY ERROR: Credentials file contains unknown key-value pairs!" >&2
+            exit 1
+        fi
+
+        # Extract EXACT values without removing legitimate internal spaces
+        USER_VAL="$(grep -E '^\s*(username|user|login)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | sed -E 's/^\s*(username|user|login)\s*=\s*//' | sed -E 's/^["'\''](.*)["'\'']$/\1/' || true)"
+        PASS_VAL="$(grep -E '^\s*(password|pass)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | sed -E 's/^\s*(password|pass)\s*=\s*//' | sed -E 's/^["'\''](.*)["'\'']$/\1/' || true)"
+
+        if [ -z "${USER_VAL}" ] || [ -z "${PASS_VAL}" ]; then
+            echo "SECURITY ERROR: Key-Value credentials file must specify both username and password!" >&2
+            exit 1
+        fi
+
         cat << EOF > "${SECURE_NETRC}"
 default
 login ${USER_VAL}
@@ -116,12 +146,17 @@ password ${PASS_VAL}
 EOF
         chmod 600 "${SECURE_NETRC}"
         CURL_AUTH_ARGS=(--netrc-file "${SECURE_NETRC}")
-    elif grep -q "default" "${CREDENTIALS_FILE}" || grep -q "machine" "${CREDENTIALS_FILE}"; then
+    elif [ "${HAS_NETRC}" = "true" ]; then
+        # Netrc mode: verify no equal signs in directives
+        if grep '=' "${CREDENTIALS_FILE}" >/dev/null 2>&1; then
+            echo "SECURITY ERROR: Netrc syntax file cannot contain key-value '=' assignments!" >&2
+            exit 1
+        fi
         cp "${CREDENTIALS_FILE}" "${SECURE_NETRC}"
         chmod 600 "${SECURE_NETRC}"
         CURL_AUTH_ARGS=(--netrc-file "${SECURE_NETRC}")
     else
-        echo "ERROR: Credentials file format invalid. Must contain username=... & password=... or netrc syntax." >&2
+        echo "SECURITY ERROR: Credentials file format unrecognized. Must be Key-Value or Netrc." >&2
         exit 1
     fi
 fi
@@ -143,7 +178,8 @@ redact_content() {
         -e 's|http(s)?://[^:@]+:[^@]+@|http\1://[REDACTED_AUTH]@|g' \
         -e 's/("pin"|"password"|"token"|"auth"|"sessionid"|"pass"): *"[^"]+"/\1: "[REDACTED]"/g' \
         -e 's/((pin|password|token|auth|sessionid|pass)=)[^" \t\r\n&;]+/\1[REDACTED]/g' \
-        -e 's/(\b(token|password|auth|key|secret)\s+)[^ \t\r\n;,"]+/\1[REDACTED]/gi' \
+        -e 's/((token|password|auth|key|secret)[ :=]+)[^ " \t\r\n;,"]+/\1[REDACTED]/g' \
+        -e 's/secret_[a-zA-Z0-9_]+/[REDACTED]/g' \
         -e 's/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/[REDACTED_EMAIL]/g' \
         -e 's/Authorization: [^\r\n]+/Authorization: [REDACTED]/g' \
         -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/[REDACTED_IP]/g'
@@ -182,9 +218,17 @@ probe_http_endpoint() {
     local rel_out_path=""
     local rel_err_path=""
 
-    # Enforce strict bounded HTTP timeouts: connect 5s, max-time 10s
+    # Enforce STRICT BOUNDED HTTP timeouts: connect 5s, max-time 10s
     # Capture exit code, HTTP status, and actual response Content-Type separately
-    curl -sS "${CURL_AUTH_ARGS[@]}" -w "%{http_code}\n%{content_type}" "${full_url}" -o "${raw_out_file}" 2> "${raw_err_file}" > "${raw_meta_file}" || curl_exit=$?
+    curl -sS \
+        "${CURL_AUTH_ARGS[@]}" \
+        --connect-timeout 5 \
+        --max-time 10 \
+        -w "%{http_code}\n%{content_type}" \
+        "${full_url}" \
+        -o "${raw_out_file}" \
+        2>"${raw_err_file}" \
+        >"${raw_meta_file}" || curl_exit=$?
 
     local end_time
     end_time="$(get_timestamp_ms)"
@@ -299,9 +343,15 @@ if [ -n "${SSH_TARGET}" ]; then
             echo "  -> SUCCESS: sys/${probe_id}.txt"
         else
             status="FAILED"
+            # Preserve BOTH redacted stdout and stderr on SSH failure
             {
                 echo "--- SSH PROBE FAILED ---"
+                if [ -f "${raw_out_file}" ] && [ -s "${raw_out_file}" ]; then
+                    echo "--- STDOUT ---"
+                    cat "${raw_out_file}"
+                fi
                 if [ -f "${raw_err_file}" ] && [ -s "${raw_err_file}" ]; then
+                    echo "--- STDERR ---"
                     cat "${raw_err_file}"
                 fi
             } | redact_content > "${err_file}"

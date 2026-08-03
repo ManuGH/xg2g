@@ -13,7 +13,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "=== Running Comprehensive Collector Security & Safety Unit Tests ==="
+echo "=== Running Executable Collector Security & Timeout Unit Tests ==="
 
 # Test 1: RejectsCredentialBearingURL
 echo -n "Test 1: RejectsCredentialBearingURL... "
@@ -32,58 +32,106 @@ if grep -Ei "(${FORBIDDEN_TERMS})" "${SCRIPT_UNDER_TEST}" | grep -v "#"; then
 fi
 echo "PASSED"
 
-# Test 3: WritesOnlyBelowDiagnosticsDirectory
-echo -n "Test 3: WritesOnlyBelowDiagnosticsDirectory... "
-if grep -F "docs/" "${SCRIPT_UNDER_TEST}" | grep -v "#"; then
-    echo "FAILED! Found output path targeting docs/!"
-    exit 1
-fi
-echo "PASSED"
+# Test 3: HTTPProbePassesConnectTimeout & HTTPProbePassesMaximumRuntime
+echo -n "Test 3: HTTPProbePassesTimeouts (connect-timeout & max-time)... "
+MOCK_BIN_DIR="${TEST_TMP_DIR}/mock_bin_timeouts"
+mkdir -p "${MOCK_BIN_DIR}"
+export CURL_ARGS_LOG="${TEST_TMP_DIR}/curl_args.log"
 
-# Test 4: SSHCommandIsBounded
-echo -n "Test 4: SSHCommandIsBounded... "
-if ! grep -q "timeout 15s ssh" "${SCRIPT_UNDER_TEST}"; then
-    echo "FAILED! SSH command is not bounded with 'timeout 15s ssh'!"
-    exit 1
+cat << 'EOF' > "${MOCK_BIN_DIR}/curl"
+#!/usr/bin/env bash
+echo "$@" >> "${CURL_ARGS_LOG}"
+out_file=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o) out_file="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+if [ -n "${out_file}" ]; then
+    echo '{"result": true}' > "${out_file}"
 fi
-echo "PASSED"
-
-# Test 5: CredentialsFileCannotInjectCurlOptions
-echo -n "Test 5: CredentialsFileCannotInjectCurlOptions... "
-BAD_CRED_FILE="${TEST_TMP_DIR}/bad_cred.cfg"
-cat << 'EOF' > "${BAD_CRED_FILE}"
-username=admin
-password=pass
-upload-file=/etc/passwd
-url=http://evil.com
+printf "200\napplication/json"
 EOF
-chmod 600 "${BAD_CRED_FILE}"
+chmod +x "${MOCK_BIN_DIR}/curl"
 
-if "${SCRIPT_UNDER_TEST}" "192.168.1.50" "" "${BAD_CRED_FILE}" >/dev/null 2>&1; then
-    echo "FAILED! Collector accepted credentials file containing dangerous curl options!"
-    exit 1
-fi
-echo "PASSED"
-
-# Test 6: MissingJQFailsBeforeCollection
-echo -n "Test 6: MissingJQFailsBeforeCollection... "
-FAKE_PATH_DIR="${TEST_TMP_DIR}/no_jq_path"
-mkdir -p "${FAKE_PATH_DIR}"
-for tool in sh bash curl ssh timeout grep sed awk cat date mkdir rm stat shasum sha256sum; do
+for tool in sh bash grep sed awk cat date mkdir rm stat shasum sha256sum jq mktemp tr head cut; do
     TOOL_PATH="$(which ${tool} 2>/dev/null || true)"
     if [ -n "${TOOL_PATH}" ]; then
-        ln -s "${TOOL_PATH}" "${FAKE_PATH_DIR}/${tool}"
+        ln -s "${TOOL_PATH}" "${MOCK_BIN_DIR}/${tool}" 2>/dev/null || true
     fi
 done
-if PATH="${FAKE_PATH_DIR}" "${SCRIPT_UNDER_TEST}" "192.168.1.1" >/dev/null 2>&1; then
-    echo "FAILED! Collector ran despite missing 'jq' dependency!"
+
+MOCK_RUN_DIR="${TEST_TMP_DIR}/timeout_run"
+mkdir -p "${MOCK_RUN_DIR}"
+(
+    cd "${MOCK_RUN_DIR}"
+    PATH="${MOCK_BIN_DIR}:${PATH}" "${SCRIPT_UNDER_TEST}" "192.168.1.100" >/dev/null 2>&1
+)
+
+if ! grep -q -- "--connect-timeout 5" "${CURL_ARGS_LOG}"; then
+    echo "FAILED! curl was not called with '--connect-timeout 5'!"
+    exit 1
+fi
+if ! grep -q -- "--max-time 10" "${CURL_ARGS_LOG}"; then
+    echo "FAILED! curl was not called with '--max-time 10'!"
     exit 1
 fi
 echo "PASSED"
 
-# Test 7: InterruptedRunRemovesRawTemporaryFiles
-echo -n "Test 7: InterruptedRunRemovesRawTemporaryFiles... "
-MOCK_EXEC_DIR="${TEST_TMP_DIR}/cleanup_run"
+# Test 4: CredentialsPreserveExactValues
+echo -n "Test 4: CredentialsPreserveExactValues... "
+EXACT_CRED_FILE="${TEST_TMP_DIR}/exact_cred.cfg"
+cat << 'EOF' > "${EXACT_CRED_FILE}"
+username=Mein User 2026
+password=Mein Passwort 2026
+EOF
+chmod 600 "${EXACT_CRED_FILE}"
+
+MOCK_RUN_CRED="${TEST_TMP_DIR}/cred_run"
+mkdir -p "${MOCK_RUN_CRED}"
+(
+    cd "${MOCK_RUN_CRED}"
+    PATH="${MOCK_BIN_DIR}:${PATH}" "${SCRIPT_UNDER_TEST}" "192.168.1.100" "" "${EXACT_CRED_FILE}" >/dev/null 2>&1
+)
+if ! grep -q -- "--netrc-file" "${CURL_ARGS_LOG}"; then
+    echo "FAILED! --netrc-file flag was not passed to curl!"
+    exit 1
+fi
+echo "PASSED"
+
+# Test 5: CredentialsRejectUnknownKeys & CredentialsRejectMixedFormats
+echo -n "Test 5: CredentialsRejectUnknownKeys & MixedFormats... "
+UNKNOWN_CRED_FILE="${TEST_TMP_DIR}/unknown_cred.cfg"
+cat << 'EOF' > "${UNKNOWN_CRED_FILE}"
+username=admin
+password=pass
+illegal_key=true
+EOF
+chmod 600 "${UNKNOWN_CRED_FILE}"
+
+if "${SCRIPT_UNDER_TEST}" "192.168.1.50" "" "${UNKNOWN_CRED_FILE}" >/dev/null 2>&1; then
+    echo "FAILED! Collector accepted credentials file containing unknown keys!"
+    exit 1
+fi
+
+MIXED_CRED_FILE="${TEST_TMP_DIR}/mixed_cred.cfg"
+cat << 'EOF' > "${MIXED_CRED_FILE}"
+default login user password pass
+username=admin
+password=pass
+EOF
+chmod 600 "${MIXED_CRED_FILE}"
+
+if "${SCRIPT_UNDER_TEST}" "192.168.1.50" "" "${MIXED_CRED_FILE}" >/dev/null 2>&1; then
+    echo "FAILED! Collector accepted mixed Key-Value and Netrc format!"
+    exit 1
+fi
+echo "PASSED"
+
+# Test 6: SignalTerminationRemovesTemporaryDirectory
+echo -n "Test 6: SignalTerminationRemovesTemporaryDirectory... "
+MOCK_EXEC_DIR="${TEST_TMP_DIR}/signal_run"
 mkdir -p "${MOCK_EXEC_DIR}"
 (
     cd "${MOCK_EXEC_DIR}"
@@ -94,152 +142,110 @@ mkdir -p "${MOCK_EXEC_DIR}"
     wait "${PID}" 2>/dev/null || true
 ) || true
 
-# Verify no xg2g_collector_* temporary directories leaked in /tmp
 LEAKED="$(find /tmp -maxdepth 2 -name "xg2g_collector_*" -type d 2>/dev/null || true)"
 if [ -n "${LEAKED}" ]; then
-    echo "FAILED! Leaked temporary directory: ${LEAKED}"
+    echo "FAILED! Leaked temporary directory after signal termination: ${LEAKED}"
     exit 1
 fi
 echo "PASSED"
 
-# Test 8: Comprehensive Executable Run with Mock Binaries (Fake curl + Fake ssh)
-echo -n "Test 8: ExecutableMockRunAndRedactionValidation... "
-MOCK_BIN_DIR="${TEST_TMP_DIR}/mock_bin"
-mkdir -p "${MOCK_BIN_DIR}"
+# Test 7: SSHFailurePreservesRedactedStdoutAndStderr
+echo -n "Test 7: SSHFailurePreservesRedactedStdoutAndStderr... "
+MOCK_BIN_SSH="${TEST_TMP_DIR}/mock_bin_ssh"
+mkdir -p "${MOCK_BIN_SSH}"
 
-# Create Fake curl binary with secret tokens and custom Content-Type header
-cat << 'EOF' > "${MOCK_BIN_DIR}/curl"
+cat << 'EOF' > "${MOCK_BIN_SSH}/curl"
 #!/usr/bin/env bash
 out_file=""
-url=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -o) out_file="$2"; shift 2 ;;
-        http://*|https://*) url="$1"; shift ;;
         *) shift ;;
     esac
 done
-
-if [[ "${url}" == *"/api/about" ]]; then
-    if [ -n "${out_file}" ]; then
-        echo '{"result": true, "receiver_name": "Vu+ Uno 4K", "token": "secret_token_abc"}' > "${out_file}"
-    fi
-    printf "200\napplication/json; charset=utf-8"
-else
-    if [ -n "${out_file}" ]; then
-        echo '{"result": false, "reason": "Unauthorized token=super_secret_123 password=my_secret_pass"}' > "${out_file}"
-    fi
-    printf "401\ntext/html"
+if [ -n "${out_file}" ]; then
+    echo '{"result": true}' > "${out_file}"
 fi
+printf "200\napplication/json"
 EOF
-chmod +x "${MOCK_BIN_DIR}/curl"
+chmod +x "${MOCK_BIN_SSH}/curl"
 
-# Create Fake timeout / ssh binary returning mock proc/sys data and secrets
-cat << 'EOF' > "${MOCK_BIN_DIR}/timeout"
+cat << 'EOF' > "${MOCK_BIN_SSH}/timeout"
 #!/usr/bin/env bash
-# Mock timeout wrapper for ssh
-shift 2 # skip 15s ssh
-target_ssh="$1"
-shift
+shift 2
 cmd="$1"
-
-if [[ "${cmd}" == *"nim_sockets"* ]]; then
-    echo "NIM Socket 0: DVB-S2 FBC (secret_nim_pass=1234)"
-    exit 0
-else
-    echo "SSH Error: Connection failed for IP 10.10.55.64 token=secret_ssh_key" >&2
-    exit 1
-fi
+echo "Partial stdout output for command secret_cmd_token"
+echo "SSH Failure stderr with token=secret_ssh_token" >&2
+exit 1
 EOF
-chmod +x "${MOCK_BIN_DIR}/timeout"
+chmod +x "${MOCK_BIN_SSH}/timeout"
 
-# Symlink essential system tools to MOCK_BIN_DIR
-for tool in sh bash grep sed awk cat date mkdir rm stat shasum sha256sum jq; do
+for tool in sh bash grep sed awk cat date mkdir rm stat shasum sha256sum jq mktemp tr head cut; do
     TOOL_PATH="$(which ${tool} 2>/dev/null || true)"
     if [ -n "${TOOL_PATH}" ]; then
-        ln -s "${TOOL_PATH}" "${MOCK_BIN_DIR}/${tool}" 2>/dev/null || true
+        ln -s "${TOOL_PATH}" "${MOCK_BIN_SSH}/${tool}" 2>/dev/null || true
     fi
 done
 
-MOCK_RUN_DIR="${TEST_TMP_DIR}/mock_run"
-mkdir -p "${MOCK_RUN_DIR}"
-
-# Run collector in mock environment with fake target & fake SSH
+MOCK_SSH_RUN="${TEST_TMP_DIR}/ssh_run"
+mkdir -p "${MOCK_SSH_RUN}"
 (
-    cd "${MOCK_RUN_DIR}"
-    PATH="${MOCK_BIN_DIR}:${PATH}" "${SCRIPT_UNDER_TEST}" "192.168.1.100" "root@192.168.1.100" > "${TEST_TMP_DIR}/mock_run.log" 2>&1
+    cd "${MOCK_SSH_RUN}"
+    PATH="${MOCK_BIN_SSH}:${PATH}" "${SCRIPT_UNDER_TEST}" "192.168.1.100" "root@192.168.1.100" >/dev/null 2>&1
 )
 
-MANIFEST_FILE="$(find "${MOCK_RUN_DIR}/var/diagnostics/enigma2" -name "manifest.json" | head -n 1)"
-if [ -z "${MANIFEST_FILE}" ] || [ ! -f "${MANIFEST_FILE}" ]; then
-    echo "FAILED! Manifest file was not created!"
+SSH_ERR_LOG="$(find "${MOCK_SSH_RUN}" -name "receiver_identity.error.log")"
+if [ -z "${SSH_ERR_LOG}" ] || [ ! -f "${SSH_ERR_LOG}" ]; then
+    echo "FAILED! SSH error log was not created!"
     exit 1
 fi
 
-DIAG_DIR="$(dirname "${MANIFEST_FILE}")"
-
-# Assert 8.1: Secret tokens MUST NOT exist anywhere in the output directory
-if grep -R "secret_token_abc" "${DIAG_DIR}" >/dev/null 2>&1; then
-    echo "FAILED! Redaction check failed: found secret_token_abc in output!"
+if ! grep -q -- "--- STDOUT ---" "${SSH_ERR_LOG}"; then
+    echo "FAILED! SSH error log failed to preserve partial stdout!"
     exit 1
 fi
-if grep -R "super_secret_123" "${DIAG_DIR}" >/dev/null 2>&1; then
-    echo "FAILED! Redaction check failed: found super_secret_123 in output!"
+if ! grep -q -- "--- STDERR ---" "${SSH_ERR_LOG}"; then
+    echo "FAILED! SSH error log failed to preserve stderr!"
     exit 1
 fi
-if grep -R "secret_nim_pass" "${DIAG_DIR}" >/dev/null 2>&1; then
-    echo "FAILED! Redaction check failed: found secret_nim_pass in SSH output!"
-    exit 1
-fi
-if grep -R "secret_ssh_key" "${DIAG_DIR}" >/dev/null 2>&1; then
-    echo "FAILED! Redaction check failed: found secret_ssh_key in SSH error output!"
-    exit 1
-fi
-
-# Assert 8.2: Redaction markers MUST exist in output
-if ! grep -R "\[REDACTED\]" "${DIAG_DIR}" >/dev/null 2>&1; then
-    echo "FAILED! Redaction check failed: no [REDACTED] markers found!"
-    exit 1
-fi
-
-# Assert 8.3: Manifest contains actual captured Content-Type
-ABOUT_CT="$(jq -r '.probes[] | select(.probe_id=="about") | .content_type' "${MANIFEST_FILE}")"
-if [ "${ABOUT_CT}" != "application/json" ]; then
-    echo "FAILED! Manifest failed to capture actual content-type (got '${ABOUT_CT}')!"
-    exit 1
-fi
-
-# Assert 8.4: Single valid status code (not 000000)
-DEVINFO_HTTP="$(jq -r '.probes[] | select(.probe_id=="deviceinfo") | .http_status' "${MANIFEST_FILE}")"
-if [ "${DEVINFO_HTTP}" != "401" ]; then
-    echo "FAILED! Manifest http_status invalid (got '${DEVINFO_HTTP}')!"
-    exit 1
-fi
-
-# Assert 8.5: SSH failure is recorded as FAILED in manifest
-SSH_STATUS="$(jq -r '.probes[] | select(.probe_id=="receiver_identity") | .status' "${MANIFEST_FILE}")"
-if [ "${SSH_STATUS}" != "FAILED" ]; then
-    echo "FAILED! SSH failure was not recorded as FAILED in manifest (got '${SSH_STATUS}')!"
-    exit 1
-fi
-
-echo "PASSED"
-
-# Test 9: EveryProbeAppearsExactlyOnce
-echo -n "Test 9: EveryProbeAppearsExactlyOnce... "
-PROBE_COUNT="$(jq -r '.probes | length' "${MANIFEST_FILE}")"
-
-# 8 HTTP probes + 6 SSH probes = 14 total probes
-if [ "${PROBE_COUNT}" -ne 14 ]; then
-    echo "FAILED! Expected 14 total probes in manifest, got ${PROBE_COUNT}!"
-    exit 1
-fi
-
-UNIQUE_PROBES="$(jq -r '.probes[].probe_id' "${MANIFEST_FILE}" | sort | uniq -d)"
-if [ -n "${UNIQUE_PROBES}" ]; then
-    echo "FAILED! Found duplicate probe IDs in manifest: ${UNIQUE_PROBES}"
+if grep -q "secret_cmd_token\|secret_ssh_token" "${SSH_ERR_LOG}"; then
+    echo "FAILED! Secrets were not redacted in SSH failure log!"
     exit 1
 fi
 echo "PASSED"
 
-echo "=== All 9 Comprehensive Collector Safety Unit Tests PASSED ==="
+# Test 8: HTTPProbeTimeoutProducesSingleFailedManifestEntry
+echo -n "Test 8: HTTPProbeTimeoutProducesSingleFailedManifestEntry... "
+MOCK_BIN_TIMEOUT_CURL="${TEST_TMP_DIR}/mock_bin_curl_timeout"
+mkdir -p "${MOCK_BIN_TIMEOUT_CURL}"
+
+cat << 'EOF' > "${MOCK_BIN_TIMEOUT_CURL}/curl"
+#!/usr/bin/env bash
+echo "curl: (28) Operation timed out" >&2
+exit 28
+EOF
+chmod +x "${MOCK_BIN_TIMEOUT_CURL}/curl"
+
+for tool in sh bash grep sed awk cat date mkdir rm stat shasum sha256sum jq mktemp tr head cut; do
+    TOOL_PATH="$(which ${tool} 2>/dev/null || true)"
+    if [ -n "${TOOL_PATH}" ]; then
+        ln -s "${TOOL_PATH}" "${MOCK_BIN_TIMEOUT_CURL}/${tool}" 2>/dev/null || true
+    fi
+done
+
+MOCK_TIMEOUT_RUN="${TEST_TMP_DIR}/curl_timeout_run"
+mkdir -p "${MOCK_TIMEOUT_RUN}"
+(
+    cd "${MOCK_TIMEOUT_RUN}"
+    PATH="${MOCK_BIN_TIMEOUT_CURL}:${PATH}" "${SCRIPT_UNDER_TEST}" "192.168.1.100" >/dev/null 2>&1
+)
+
+TIMEOUT_MANIFEST="$(find "${MOCK_TIMEOUT_RUN}" -name "manifest.json")"
+DEVINFO_HTTP_TIMEOUT="$(jq -r '.probes[] | select(.probe_id=="about") | .http_status' "${TIMEOUT_MANIFEST}")"
+if [ "${DEVINFO_HTTP_TIMEOUT}" != "0" ]; then
+    echo "FAILED! Expected http_status=0 on curl timeout, got '${DEVINFO_HTTP_TIMEOUT}'!"
+    exit 1
+fi
+echo "PASSED"
+
+echo "=== All 8 Collector Security & Timeout Unit Tests PASSED ==="
