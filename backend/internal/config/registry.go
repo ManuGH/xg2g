@@ -52,6 +52,12 @@ const (
 	// DefaultHLSReadySegments is the minimum number of live segments that must
 	// exist before a session is marked READY.
 	DefaultHLSReadySegments = 3
+	// RelayInputRemoveAfter is the announced end-of-life date for the options
+	// that select the relay input port instead of the receiver's own streaming
+	// port. Receivers now serve the same content on the standard port, so the
+	// extra hop is redundant. Options keep working until this date; deployments
+	// that still set them should move to the default input path.
+	RelayInputRemoveAfter = "2026-10-01"
 )
 
 // ConfigEntry defines a single configuration option's metadata.
@@ -70,6 +76,20 @@ type ConfigEntry struct {
 	Min           *float64  // Min numeric value boundary (if applicable)
 	Max           *float64  // Max numeric value boundary (if applicable)
 	Allowed       []string  // Enum of allowed values (if applicable)
+	// RemoveAfter is the announced end-of-life date (YYYY-MM-DD) for a
+	// deprecated option. It is advisory metadata surfaced to operators so an
+	// upgrade can be planned; it never changes runtime behaviour on its own.
+	// Only meaningful together with StatusDeprecated.
+	RemoveAfter string
+}
+
+// EndOfLife reports the announced removal date for a deprecated entry.
+// The boolean is false for entries that are not deprecated or carry no date.
+func (e ConfigEntry) EndOfLife() (string, bool) {
+	if e.Status != StatusDeprecated || e.RemoveAfter == "" {
+		return "", false
+	}
+	return e.RemoveAfter, true
 }
 
 // Registry manages the configuration surface inventory.
@@ -124,9 +144,9 @@ func buildRegistry() (*Registry, error) {
 		{Path: "enigma2.retries", Env: "XG2G_E2_RETRIES", FieldPath: "Enigma2.Retries", Profile: ProfileAdvanced, Status: StatusActive, Default: 2},
 		{Path: "enigma2.backoff", Env: "XG2G_E2_BACKOFF", FieldPath: "Enigma2.Backoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 200 * time.Millisecond},
 		{Path: "enigma2.maxBackoff", Env: "XG2G_E2_MAX_BACKOFF", FieldPath: "Enigma2.MaxBackoff", Profile: ProfileAdvanced, Status: StatusActive, Default: 30 * time.Second},
-		{Path: "enigma2.streamPort", Env: "XG2G_E2_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001},
-		{Path: "enigma2.useWebIFStreams", Env: "XG2G_E2_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: false},
-		{Path: "enigma2.fallbackTo8001", Env: "XG2G_E2_FALLBACK_TO_8001", FieldPath: "Enigma2.FallbackTo8001", Profile: ProfileIntegrator, Status: StatusActive, Default: true},
+		{Path: "enigma2.streamPort", Env: "XG2G_E2_STREAM_PORT", FieldPath: "Enigma2.StreamPort", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: 8001, RemoveAfter: RelayInputRemoveAfter},
+		{Path: "enigma2.useWebIFStreams", Env: "XG2G_E2_USE_WEBIF_STREAMS", FieldPath: "Enigma2.UseWebIFStreams", Profile: ProfileAdvanced, Status: StatusDeprecated, Default: false, RemoveAfter: RelayInputRemoveAfter},
+		{Path: "enigma2.fallbackTo8001", Env: "XG2G_E2_FALLBACK_TO_8001", FieldPath: "Enigma2.FallbackTo8001", Profile: ProfileIntegrator, Status: StatusDeprecated, Default: true, RemoveAfter: RelayInputRemoveAfter},
 		{Path: "enigma2.authMode", Env: "XG2G_E2_AUTH_MODE", FieldPath: "Enigma2.AuthMode", Profile: ProfileAdvanced, Status: StatusActive, Default: "inherit"},
 		{Path: "enigma2.rateLimit", Env: "XG2G_E2_RATE_LIMIT", FieldPath: "Enigma2.RateLimit", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "enigma2.rateBurst", Env: "XG2G_E2_RATE_BURST", FieldPath: "Enigma2.RateBurst", Profile: ProfileAdvanced, Status: StatusActive},
