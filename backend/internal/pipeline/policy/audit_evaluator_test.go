@@ -154,3 +154,32 @@ func TestAuditEvaluator_SnapshotBuildFailure_EmitsFailureEvent(t *testing.T) {
 		t.Errorf("expected ErrorCode POLICY_EVALUATION_FAILED, got %s", failEvt.ErrorCode)
 	}
 }
+
+func TestAuditEvaluator_JoinedErrorsWhenAuditLoggerFails(t *testing.T) {
+	ctx := context.Background()
+	failingLogger := &mockAuditLogger{err: errors.New("disk full / logger stream closed")}
+
+	failingCandProv := &mockCandidateProvider{err: errors.New("hardware provider down")}
+	allocProv := &mockAllocationProvider{obsAt: time.Now()}
+	builder := NewSnapshotBuilder(failingCandProv, allocProv)
+	engine := domainPolicy.NewPolicyEngine()
+
+	cfg := Config{Mode: PreemptionModeAuditOnly}
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: time.Now()}, builder, engine, &mockIDGen{id: "evt-fail-2"}, failingLogger, zerolog.Nop())
+
+	req := ConflictAuditRequest{
+		RequestID:    "req-fail-join",
+		Consumer:     domainPolicy.ConsumerLiveTV,
+		ResourceKind: domainPolicy.ResourceTuner,
+		Owner:        "user-1",
+		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
+	}
+
+	err := evaluator.AuditTunerConflict(ctx, req)
+	if !errors.Is(err, ErrSnapshotBuildFailed) {
+		t.Fatalf("expected primary error ErrSnapshotBuildFailed in joined error chain, got %v", err)
+	}
+	if !errors.Is(err, ErrAuditEmissionFailed) {
+		t.Fatalf("expected audit emission error ErrAuditEmissionFailed in joined error chain, got %v", err)
+	}
+}
