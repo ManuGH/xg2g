@@ -10,10 +10,14 @@ umask 077
 # Strictly FORBIDDEN from performing zapping, streaming, timer creation,
 # recording start, config mutation, or Enigma2 restarts.
 
-COLLECTOR_VERSION="1.2.0"
+COLLECTOR_VERSION="1.3.0"
+
+# Determine script & repository root paths reliably regardless of PWD
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 
 # Create secure temporary directory for transient execution artifacts
-TEMP_DIR="$(mktemp -d /tmp/xg2g_collector_XXXXXX)"
+TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/xg2g_collector_XXXXXX")"
 chmod 700 "${TEMP_DIR}"
 
 # Robust Signal Traps: Ensures temporary directory is deleted & script exits with appropriate code
@@ -50,6 +54,24 @@ if [[ "${RAW_TARGET}" =~ @ ]]; then
     exit 1
 fi
 
+# SECURITY RULE 2: Validate SSH_TARGET to prevent option injection (e.g. -oProxyCommand=...)
+SSH_ENABLED=false
+if [ -n "${SSH_TARGET}" ]; then
+    if [[ "${SSH_TARGET}" =~ ^- ]]; then
+        echo "SECURITY ERROR: SSH target must not start with a dash (-)!" >&2
+        exit 1
+    fi
+    if [[ "${SSH_TARGET}" =~ [[:space:]\'\"\`\$] ]]; then
+        echo "SECURITY ERROR: SSH target contains illegal whitespace or shell control characters!" >&2
+        exit 1
+    fi
+    if ! [[ "${SSH_TARGET}" =~ ^([a-zA-Z0-9._-]+@)?[a-zA-Z0-9._-]+$ ]]; then
+        echo "SECURITY ERROR: Invalid SSH target format! Must match [user@]host." >&2
+        exit 1
+    fi
+    SSH_ENABLED=true
+fi
+
 TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
 
 # Normalize Target URL
@@ -73,19 +95,14 @@ else
     PSEUDONYM_FINGERPRINT="$(printf "%s" "${TARGET_URL}" | sha256sum | awk '{print $1}')"
 fi
 
-SSH_ENABLED=false
-if [ -n "${SSH_TARGET}" ]; then
-    SSH_ENABLED=true
-fi
-
-# Base output directory - ALWAYS in gitignored var/diagnostics/
-BASE_DIR="$(pwd)/var/diagnostics/enigma2/${TIMESTAMP}"
+# Base output directory - ALWAYS inside REPO_ROOT/var/diagnostics/enigma2/
+BASE_DIR="${REPO_ROOT}/var/diagnostics/enigma2/${TIMESTAMP}"
 OPENWEBIF_DIR="${BASE_DIR}/openwebif"
 SYS_DIR="${BASE_DIR}/sys"
 
 mkdir -p "${OPENWEBIF_DIR}" "${SYS_DIR}"
 
-# SECURITY RULE 2: Validate Credentials File & Translate safely to secure netrc
+# SECURITY RULE 3: Validate Credentials File & Translate safely to secure netrc
 CURL_AUTH_ARGS=()
 SECURE_NETRC="${TEMP_DIR}/collector.netrc"
 
@@ -130,12 +147,18 @@ if [ -n "${CREDENTIALS_FILE}" ]; then
             exit 1
         fi
 
-        # Extract EXACT values without removing legitimate internal spaces
+        # Extract values
         USER_VAL="$(grep -E '^\s*(username|user|login)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | sed -E 's/^\s*(username|user|login)\s*=\s*//' | sed -E 's/^["'\''](.*)["'\'']$/\1/' || true)"
         PASS_VAL="$(grep -E '^\s*(password|pass)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | sed -E 's/^\s*(password|pass)\s*=\s*//' | sed -E 's/^["'\''](.*)["'\'']$/\1/' || true)"
 
         if [ -z "${USER_VAL}" ] || [ -z "${PASS_VAL}" ]; then
             echo "SECURITY ERROR: Key-Value credentials file must specify both username and password!" >&2
+            exit 1
+        fi
+
+        # Reject spaces, quotes, newlines, or backslashes in credentials values to prevent netrc corruption
+        if [[ "${USER_VAL}" =~ [[:space:]\'\"\\] ]] || [[ "${PASS_VAL}" =~ [[:space:]\'\"\\] ]]; then
+            echo "SECURITY ERROR: Credential values containing spaces, quotes, or backslashes are forbidden!" >&2
             exit 1
         fi
 
@@ -177,8 +200,8 @@ redact_content() {
     sed -E \
         -e 's|http(s)?://[^:@]+:[^@]+@|http\1://[REDACTED_AUTH]@|g' \
         -e 's/("pin"|"password"|"token"|"auth"|"sessionid"|"pass"): *"[^"]+"/\1: "[REDACTED]"/g' \
-        -e 's/((pin|password|token|auth|sessionid|pass)=)[^" \t\r\n&;]+/\1[REDACTED]/g' \
-        -e 's/((token|password|auth|key|secret)[ :=]+)[^ " \t\r\n;,"]+/\1[REDACTED]/g' \
+        -e 's/(([?&; \t]|^)(pin|password|token|auth|sessionid|pass)=)[^" \t\r\n&;]+/\1[REDACTED]/g' \
+        -e 's/(Bearer )[^\r\n" \t&;]+/\1[REDACTED]/g' \
         -e 's/secret_[a-zA-Z0-9_]+/[REDACTED]/g' \
         -e 's/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/[REDACTED_EMAIL]/g' \
         -e 's/Authorization: [^\r\n]+/Authorization: [REDACTED]/g' \
@@ -229,6 +252,12 @@ probe_http_endpoint() {
         -o "${raw_out_file}" \
         2>"${raw_err_file}" \
         >"${raw_meta_file}" || curl_exit=$?
+
+    # Immediately exit on signal termination (SIGINT=130, SIGTERM=143, SIGHUP=129)
+    if [ ${curl_exit} -eq 130 ] || [ ${curl_exit} -eq 143 ] || [ ${curl_exit} -eq 129 ]; then
+        cleanup
+        exit ${curl_exit}
+    fi
 
     local end_time
     end_time="$(get_timestamp_ms)"
@@ -328,12 +357,13 @@ if [ -n "${SSH_TARGET}" ]; then
         local rel_out_path=""
         local rel_err_path=""
 
-        # Enforce bounded SSH timeout: timeout 15s ssh ...
+        # Enforce bounded SSH timeout & pass -- to prevent option injection: timeout 15s ssh ... -- "${SSH_TARGET}"
         if timeout 15s ssh \
             -o BatchMode=yes \
             -o ConnectTimeout=5 \
             -o ServerAliveInterval=5 \
             -o ServerAliveCountMax=2 \
+            -- \
             "${SSH_TARGET}" "${remote_cmd}" > "${raw_out_file}" 2> "${raw_err_file}"; then
             
             status="SUCCESS"
