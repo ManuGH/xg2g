@@ -181,6 +181,25 @@ func (m *MemoryStore) ReleaseLease(ctx context.Context, key, owner string) error
 	return nil
 }
 
+func (m *MemoryStore) ListLeases(ctx context.Context) ([]Lease, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	res := make([]Lease, 0, len(m.leases))
+	for key, st := range m.leases {
+		if now.After(st.exp) {
+			delete(m.leases, key)
+			continue
+		}
+		res = append(res, &memoryLease{store: m, key: key, owner: st.owner, exp: st.exp})
+	}
+	return res, nil
+}
+
 func (l *memoryLease) Key() string          { return l.key }
 func (l *memoryLease) Owner() string        { return l.owner }
 func (l *memoryLease) ExpiresAt() time.Time { return l.exp }

@@ -560,6 +560,29 @@ func (s *SqliteStore) DeleteAllLeases(ctx context.Context) (int, error) {
 	return int(count), nil
 }
 
+func (s *SqliteStore) ListLeases(ctx context.Context) ([]Lease, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	nowMs := time.Now().UnixMilli()
+	rows, err := s.DB.QueryContext(ctx, "SELECT key, owner, expires_at_ms FROM leases WHERE expires_at_ms > ?", nowMs)
+	if err != nil {
+		return nil, fmt.Errorf("list leases: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var leases []Lease
+	for rows.Next() {
+		var key, owner string
+		var expiresAt int64
+		if err := rows.Scan(&key, &owner, &expiresAt); err != nil {
+			return nil, fmt.Errorf("scan lease: %w", err)
+		}
+		leases = append(leases, &sqliteLease{key: key, owner: owner, expires: time.UnixMilli(expiresAt)})
+	}
+	return leases, rows.Err()
+}
+
 // --- Helpers ---
 
 type sqliteLease struct {

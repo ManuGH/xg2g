@@ -291,6 +291,21 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `rateLimit.global` | - | `100` | Active | Advanced |
 | `rateLimit.whitelist` | `XG2G_RATE_LIMIT_WHITELIST` | - | Active | Advanced |
 
+### receiver_usage
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `receiver_usage.allow_live_with_recording` | - | `false` | Active | Advanced |
+| `receiver_usage.allow_retro_dvr_restricted` | - | `true` | Active | Advanced |
+| `receiver_usage.allow_timeshift` | - | `true` | Active | Advanced |
+| `receiver_usage.channel_change_limiter.duplicate_window` | - | `0s` | Active | Advanced |
+| `receiver_usage.channel_change_limiter.minimum_interval` | - | `0s` | Active | Advanced |
+| `receiver_usage.max_live_sessions` | - | `1` | Active | Advanced |
+| `receiver_usage.max_recording_sessions` | - | `1` | Active | Advanced |
+| `receiver_usage.max_restricted_access_sessions` | - | `1` | Active | Advanced |
+| `receiver_usage.mode` | - | `disabled` | Active | Advanced |
+| `receiver_usage.unknown_access_handling` | - | `count_as_restricted` | Active | Advanced |
+
 ### recording_playback
 
 | Path | Env | Default | Status | Profile |

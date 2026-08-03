@@ -21,7 +21,14 @@ var (
 
 func ReasonErrorClass(reason model.ReasonCode) error {
 	switch reason {
-	case model.RLeaseBusy, model.RLeaseExpired:
+	case model.RLeaseBusy, model.RLeaseExpired,
+		model.RReceiverUsageLiveLimitExceeded,
+		model.RReceiverUsageRecordingLimitExceeded,
+		model.RReceiverUsageRestrictedAccessLimitExceeded,
+		model.RReceiverUsageLiveWithRecordingForbidden,
+		model.RReceiverUsageIntentNotAllowed,
+		model.RReceiverUsageAccessClassificationUnknown,
+		model.RReceiverUsageChannelChangeRateLimited:
 		return ErrAdmissionRejected
 	case model.RNotFound:
 		return ErrSessionNotFound

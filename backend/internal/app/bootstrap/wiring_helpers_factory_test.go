@@ -13,7 +13,7 @@ import (
 )
 
 func TestBuildV3OrchestratorFactory_ConfiguresHeartbeatSource(t *testing.T) {
-	factory := buildV3OrchestratorFactory()
+	factory := buildV3OrchestratorFactory(nil)
 	cfg := config.AppConfig{
 		Engine: config.EngineConfig{
 			IdleTimeout: time.Minute,

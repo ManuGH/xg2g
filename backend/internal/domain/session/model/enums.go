@@ -130,6 +130,14 @@ const (
 	RUpstreamCorrupt         ReasonCode = "R_UPSTREAM_CORRUPT"   // Upstream source is corrupt or missing keyframes
 	RUpstreamScrambled       ReasonCode = "R_UPSTREAM_SCRAMBLED" // Upstream stream is scrambled (encrypted, receiver could not descramble)
 	RInternalInvariantBreach ReasonCode = "R_INTERNAL_INVARIANT_BREACH"
+
+	RReceiverUsageLiveLimitExceeded             ReasonCode = "RECEIVER_USAGE_LIVE_LIMIT_EXCEEDED"
+	RReceiverUsageRecordingLimitExceeded        ReasonCode = "RECEIVER_USAGE_RECORDING_LIMIT_EXCEEDED"
+	RReceiverUsageRestrictedAccessLimitExceeded ReasonCode = "RECEIVER_USAGE_RESTRICTED_ACCESS_LIMIT_EXCEEDED"
+	RReceiverUsageLiveWithRecordingForbidden    ReasonCode = "RECEIVER_USAGE_LIVE_WITH_RECORDING_FORBIDDEN"
+	RReceiverUsageIntentNotAllowed              ReasonCode = "RECEIVER_USAGE_INTENT_NOT_ALLOWED"
+	RReceiverUsageAccessClassificationUnknown   ReasonCode = "RECEIVER_USAGE_ACCESS_CLASSIFICATION_UNKNOWN"
+	RReceiverUsageChannelChangeRateLimited      ReasonCode = "RECEIVER_USAGE_CHANNEL_CHANGE_RATE_LIMITED"
 )
 
 // ReasonDetailCode is a canonical, public-safe detail code.

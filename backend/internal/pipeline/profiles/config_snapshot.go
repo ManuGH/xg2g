@@ -43,7 +43,7 @@ func DefaultConfigSnapshot() ConfigSnapshot {
 		SafariVAAPIMaxRateK:        20000,
 		SafariVAAPIBufSizeK:        40000,
 		SafariCPUPreset:            "veryfast",
-		SafariDirtyAudioBitrateK:   192,
+		SafariDirtyAudioBitrateK:   320,
 		SafariDirtyGPUQP:           20,
 		SafariDirtyGPUMaxRateK:     20000,
 		SafariDirtyGPUBufSizeK:     40000,

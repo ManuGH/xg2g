@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,6 +32,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	pipebus "github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/exec/enigma2"
+	pipelinelease "github.com/ManuGH/xg2g/internal/pipeline/lease"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	pipelinestore "github.com/ManuGH/xg2g/internal/pipeline/store"
@@ -54,6 +57,9 @@ type Container struct {
 	Server        *api.Server
 	Manager       daemon.Manager
 	App           *daemon.App
+
+	IntentStore pipelinelease.IntentStore
+	Deps        daemon.Deps
 
 	snapshot         config.Snapshot
 	piconPool        *jobs.PiconPool
@@ -203,6 +209,55 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	metricsAddr := resolveMetricsAddr(cfg)
 
+	intentStorePath, err := paths.ResolveDataFilePath(cfg.DataDir, "intents.json", true)
+	if err != nil {
+		return nil, fmt.Errorf("resolve intent store path: %w", err)
+	}
+
+	var intentStore pipelinelease.IntentStore
+	var wireSuccess bool
+	defer func() {
+		if !wireSuccess && intentStore != nil {
+			if closer, ok := intentStore.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		}
+	}()
+
+	if cfg.Store.Backend == "memory" {
+		intentStore = pipelinelease.NewInMemoryIntentStore()
+	} else {
+		fileStore, fErr := pipelinelease.NewFileIntentStore(intentStorePath)
+		if fErr != nil {
+			return nil, fmt.Errorf("initialize file intent store: %w", fErr)
+		}
+		intentStore = fileStore
+	}
+
+	sessionStoreController := pipelinelease.NewSessionStoreTunerLeaseController(v3Store)
+	trackedTunerController, err := pipelinelease.NewIntentTrackedTunerLeaseControllerWithConfig(pipelinelease.IntentTrackedControllerConfig{
+		Controller:    sessionStoreController,
+		IntentStore:   intentStore,
+		StartupPolicy: pipelinelease.DefaultStartupPolicy{AllowAuditOnlyOrphans: false},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize tracked tuner lease controller: %w", err)
+	}
+
+	startupReport, err := trackedTunerController.ExecuteStartupReconciliation(ctx, pipelinelease.ReconcilerConfig{
+		IntentStore: intentStore,
+		Backend:     pipelinelease.SessionStoreObservableBackend{SessionStoreTunerLeaseController: sessionStoreController},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("mandatory startup reconciliation failed: %w", err)
+	}
+	logger.Info().
+		Int("confirmed", startupReport.Summary.Confirmed).
+		Int("released", startupReport.Summary.Released).
+		Int("orphaned", startupReport.Summary.Orphaned).
+		Int("missing", startupReport.Summary.Missing).
+		Msg("mandatory startup reconciliation completed successfully")
+
 	deps := daemon.Deps{
 		Logger:                logger,
 		Config:                cfg,
@@ -218,7 +273,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		ScanManager:           v3Scan,
 		ReceiverHealthCheck:   newReceiverHealthCheck(cfg, e2Client),
 		MediaPipeline:         mediaPipeline,
-		V3OrchestratorFactory: buildV3OrchestratorFactory(),
+		V3OrchestratorFactory: buildV3OrchestratorFactory(trackedTunerController),
 	}
 
 	mgr, err := daemon.NewManager(serverCfg, deps)
@@ -232,6 +287,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	app := daemon.NewApp(logger, mgr, cfgHolder, s, false)
 
+	wireSuccess = true
 	return &Container{
 		Config:           cfg,
 		ConfigManager:    configMgr,
@@ -240,10 +296,26 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		Server:           s,
 		Manager:          mgr,
 		App:              app,
+		IntentStore:      intentStore,
+		Deps:             deps,
 		snapshot:         snap,
 		scanManager:      v3Scan,
 		verificationWork: verifyWorker,
 	}, nil
+}
+
+// Close closes any underlying resources in the container (such as IntentStore if it implements io.Closer).
+func (c *Container) Close() error {
+	if c == nil {
+		return nil
+	}
+	var errs []error
+	if closer, ok := c.IntentStore.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close intent store: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // monetizationServices bundles the entitlement, household and receipt services

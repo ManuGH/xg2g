@@ -1,0 +1,36 @@
+{
+  "verification_version": "1.5.0",
+  "verification_type": "COLLECTOR_SECURITY_VERIFICATION",
+  "collector_script": "scripts/collect_receiver_diagnostics.sh",
+  "collector_script_version": "1.5.0",
+  "tested_commit_sha": "1debf251f28b4ee436f2ec52e46cfd0ec8b88d8b",
+  "verification_timestamp_utc": "2026-08-03T09:41:00Z",
+  "cli_interface_contract": {
+    "openwebif_url_required": true,
+    "named_options_enforced": true,
+    "positional_arguments_forbidden": true,
+    "ssh_disabled_by_default": true,
+    "ssh_target_without_enable_ssh_fails": true,
+    "enable_ssh_without_ssh_target_fails": true
+  },
+  "validation_contract": {
+    "early_validation_before_output_creation": "VERIFIED_BY_UNIT_TEST",
+    "embedded_url_credentials_rejected": "VERIFIED_BY_UNIT_TEST",
+    "sensitive_query_parameters_rejected": "VERIFIED_BY_UNIT_TEST",
+    "credentials_strict_key_value_only": "VERIFIED_BY_UNIT_TEST",
+    "credentials_netrc_syntax_rejected": "VERIFIED_BY_UNIT_TEST",
+    "credentials_spaces_and_quotes_rejected": "VERIFIED_BY_UNIT_TEST",
+    "ssh_option_injection_prevented": "VERIFIED_BY_UNIT_TEST",
+    "base_dir_repository_bound": "VERIFIED_BY_UNIT_TEST",
+    "comprehensive_output_redaction": "VERIFIED_BY_UNIT_TEST",
+    "signal_termination_exact_codes": "VERIFIED_BY_UNIT_TEST",
+    "strict_manifest_probe_assertions": "VERIFIED_BY_UNIT_TEST"
+  },
+  "compliance_status": {
+    "read_only_contract": "COMPLIANT",
+    "network_bounding_contract": "COMPLIANT",
+    "ssh_safety_contract": "COMPLIANT",
+    "credential_safety_contract": "COMPLIANT",
+    "hardware_preemption_status": "Die bisher bekannten OpenWebif-Endpunkte liefern Timer-, Aufnahme- und Serviceinformationen, aber es ist noch nicht empirisch belegt, ob sie sämtliche aktiven FBC-Tuner-, Demodulator- und internen Enigma2-Belegungen vollständig und atomar abbilden."
+  }
+}

@@ -965,6 +965,56 @@
       "default": false,
       "type": "boolean"
     },
+    "receiver_usage": {
+      "properties": {
+        "allow_live_with_recording": {
+          "default": false,
+          "type": "boolean"
+        },
+        "allow_retro_dvr_restricted": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allow_timeshift": {
+          "default": true,
+          "type": "boolean"
+        },
+        "channel_change_limiter": {
+          "properties": {
+            "duplicate_window": {
+              "default": "0s",
+              "type": "string"
+            },
+            "minimum_interval": {
+              "default": "0s",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "max_live_sessions": {
+          "default": 1,
+          "type": "integer"
+        },
+        "max_recording_sessions": {
+          "default": 1,
+          "type": "integer"
+        },
+        "max_restricted_access_sessions": {
+          "default": 1,
+          "type": "integer"
+        },
+        "mode": {
+          "default": "disabled",
+          "type": "string"
+        },
+        "unknown_access_handling": {
+          "default": "count_as_restricted",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "recording_playback": {
       "properties": {
         "mappings": {

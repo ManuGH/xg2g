@@ -16,6 +16,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/read"
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	"github.com/ManuGH/xg2g/internal/health"
 	householddomain "github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/log"
@@ -76,6 +77,27 @@ func (s *Server) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
 		Household: &HouseholdStatus{
 			PinConfigured: &householdPinConfigured,
 		},
+	}
+
+	if cfg.ReceiverUsage.Mode != "" {
+		modeStr := string(cfg.ReceiverUsage.Mode)
+		policyMode := ReceiverUsagePolicyConfigMode(modeStr)
+		unknownAccessStr := string(cfg.ReceiverUsage.UnknownAccessHandling)
+		if unknownAccessStr == "" {
+			unknownAccessStr = "count_as_restricted"
+		}
+		unknownAccessHandling := ReceiverUsagePolicyConfigUnknownAccessHandling(unknownAccessStr)
+
+		resp.ReceiverUsagePolicy = &ReceiverUsagePolicyConfig{
+			Mode:                        &policyMode,
+			MaxLiveSessions:             &cfg.ReceiverUsage.MaxLiveSessions,
+			MaxRecordingSessions:        &cfg.ReceiverUsage.MaxRecordingSessions,
+			MaxRestrictedAccessSessions: &cfg.ReceiverUsage.MaxRestrictedAccessSessions,
+			AllowLiveWithRecording:      &cfg.ReceiverUsage.AllowLiveWithRecording,
+			AllowTimeshift:              &cfg.ReceiverUsage.AllowTimeshift,
+			AllowRetroDVRRestricted:     &cfg.ReceiverUsage.AllowRetroDVRRestricted,
+			UnknownAccessHandling:       &unknownAccessHandling,
+		}
 	}
 	if isAdminScope {
 		resp.DataDir = &info.DataDir
@@ -167,6 +189,33 @@ func (s *Server) PutSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 	if req.LogLevel != nil {
 		next.LogLevel = *req.LogLevel
+	}
+
+	if req.ReceiverUsagePolicy != nil {
+		if req.ReceiverUsagePolicy.Mode != nil {
+			next.ReceiverUsage.Mode = receiverusage.ReceiverUsageMode(*req.ReceiverUsagePolicy.Mode)
+		}
+		if req.ReceiverUsagePolicy.MaxLiveSessions != nil {
+			next.ReceiverUsage.MaxLiveSessions = *req.ReceiverUsagePolicy.MaxLiveSessions
+		}
+		if req.ReceiverUsagePolicy.MaxRecordingSessions != nil {
+			next.ReceiverUsage.MaxRecordingSessions = *req.ReceiverUsagePolicy.MaxRecordingSessions
+		}
+		if req.ReceiverUsagePolicy.MaxRestrictedAccessSessions != nil {
+			next.ReceiverUsage.MaxRestrictedAccessSessions = *req.ReceiverUsagePolicy.MaxRestrictedAccessSessions
+		}
+		if req.ReceiverUsagePolicy.AllowLiveWithRecording != nil {
+			next.ReceiverUsage.AllowLiveWithRecording = *req.ReceiverUsagePolicy.AllowLiveWithRecording
+		}
+		if req.ReceiverUsagePolicy.AllowTimeshift != nil {
+			next.ReceiverUsage.AllowTimeshift = *req.ReceiverUsagePolicy.AllowTimeshift
+		}
+		if req.ReceiverUsagePolicy.AllowRetroDVRRestricted != nil {
+			next.ReceiverUsage.AllowRetroDVRRestricted = *req.ReceiverUsagePolicy.AllowRetroDVRRestricted
+		}
+		if req.ReceiverUsagePolicy.UnknownAccessHandling != nil {
+			next.ReceiverUsage.UnknownAccessHandling = receiverusage.UnknownAccessHandling(*req.ReceiverUsagePolicy.UnknownAccessHandling)
+		}
 	}
 
 	if req.Household != nil && req.Household.Pin != nil {

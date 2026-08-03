@@ -146,6 +146,18 @@ rateLimit:
   global: 100
   whitelist: []
 readyStrict: false
+receiver_usage:
+  allow_live_with_recording: false
+  allow_retro_dvr_restricted: true
+  allow_timeshift: true
+  channel_change_limiter:
+    duplicate_window: 0s
+    minimum_interval: 0s
+  max_live_sessions: 1
+  max_recording_sessions: 1
+  max_restricted_access_sessions: 1
+  mode: disabled
+  unknown_access_handling: count_as_restricted
 recording_playback:
   mappings: []
   playback_policy: auto

@@ -49,8 +49,10 @@ type LeaseStore interface {
 	TryAcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error)
 	RenewLease(ctx context.Context, key, owner string, ttl time.Duration) (Lease, bool, error)
 	GetLease(ctx context.Context, key string) (Lease, bool, error)
+	// ReleaseLease idempotently releases the lease key for owner. Returns nil only when the specified lease is no longer active in the authoritative store.
 	ReleaseLease(ctx context.Context, key, owner string) error
 	DeleteAllLeases(ctx context.Context) (int, error)
+	ListLeases(ctx context.Context) ([]Lease, error)
 }
 
 // IntentStore exposes only the state/idempotency/lease operations required by intent admission.
@@ -97,4 +99,5 @@ type StateStore interface {
 	GetLease(ctx context.Context, key string) (Lease, bool, error)
 	ReleaseLease(ctx context.Context, key, owner string) error
 	DeleteAllLeases(ctx context.Context) (int, error)
+	ListLeases(ctx context.Context) ([]Lease, error)
 }

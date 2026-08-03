@@ -158,3 +158,9 @@ func (i *instrumentedStore) DeleteAllLeases(ctx context.Context) (count int, err
 	defer func() { i.observe("delete_all_leases", start, err) }()
 	return i.inner.DeleteAllLeases(ctx)
 }
+
+func (i *instrumentedStore) ListLeases(ctx context.Context) (leases []Lease, err error) {
+	start := time.Now()
+	defer func() { i.observe("list_leases", start, err) }()
+	return i.inner.ListLeases(ctx)
+}

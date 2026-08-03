@@ -1210,6 +1210,8 @@ components:
           description: Log level to set (debug, info, warn, error)
         household:
           $ref: "#/components/schemas/HouseholdConfigUpdate"
+        receiverUsagePolicy:
+          $ref: "#/components/schemas/ReceiverUsagePolicyConfig"
 
     AppConfig:
       type: object
@@ -1240,6 +1242,49 @@ components:
           $ref: "#/components/schemas/HouseholdStatus"
         connectivity:
           $ref: "#/components/schemas/ConnectivityConfig"
+        receiverUsagePolicy:
+          $ref: "#/components/schemas/ReceiverUsagePolicyConfig"
+
+    ReceiverUsagePolicyConfig:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [disabled, audit-only, enforce]
+          example: "disabled"
+          description: "Usage protection enforcement mode: disabled (default), audit-only (log), enforce (strict)."
+        maxLiveSessions:
+          type: integer
+          minimum: 0
+          example: 1
+          description: "Maximum simultaneous live TV streaming sessions."
+        maxRecordingSessions:
+          type: integer
+          minimum: 0
+          example: 1
+          description: "Maximum simultaneous recording sessions."
+        maxRestrictedAccessSessions:
+          type: integer
+          minimum: 0
+          example: 1
+          description: "Maximum simultaneous restricted access slots."
+        allowLiveWithRecording:
+          type: boolean
+          example: false
+          description: "Allow live TV session while a recording is active."
+        allowTimeshift:
+          type: boolean
+          example: true
+          description: "Allow timeshift sessions."
+        allowRetroDVRRestricted:
+          type: boolean
+          example: true
+          description: "Allow retro-DVR for restricted access services when fetched from local buffer."
+        unknownAccessHandling:
+          type: string
+          enum: [count_as_restricted, count_as_none, reject]
+          example: "count_as_restricted"
+          description: "Policy handling for unclassified channel access requirements."
 
     HouseholdConfigUpdate:
       type: object

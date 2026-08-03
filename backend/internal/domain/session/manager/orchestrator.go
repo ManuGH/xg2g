@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -21,6 +22,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/hls/ringbuffer"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/pipeline/lease"
+	pipelinePolicy "github.com/ManuGH/xg2g/internal/pipeline/policy"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 )
@@ -46,6 +49,14 @@ type Orchestrator struct {
 	Platform        ports.Platform         // OS/FS operations
 	HeartbeatSource SegmentHeartbeatSource // PR-P3-2: Pluggable truth source
 	LeaseKeyFunc    func(model.StartSessionEvent) string
+
+	TunerLeaseController lease.TunerLeaseController
+	ConflictAuditor      pipelinePolicy.ConflictAuditor
+
+	ReceiverID           string
+	UsagePolicy          receiverusage.ReceiverUsagePolicy
+	UsageEvaluator       receiverusage.Evaluator
+	RestrictedAccessCtrl *receiverusage.RestrictedAccessController
 
 	PipelineStopTimeout time.Duration
 	OutboundPolicy      platformnet.OutboundPolicy
@@ -230,7 +241,11 @@ func (o *Orchestrator) Run(ctx context.Context) (runErr error) {
 					defer func() { <-o.startSem }()
 					telemetry.GetStartupTracer(evt.SessionID).MarkOnce(telemetry.MilestoneP4, "worker_acquired")
 					if err := o.handleStart(ctx, evt); err != nil {
-						log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start failed")
+						if errors.Is(err, context.Canceled) || strings.Contains(err.Error(), string(model.RClientStop)) {
+							log.L().Info().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start cancelled by client")
+						} else {
+							log.L().Error().Err(err).Str("sid", evt.SessionID).Str("correlation_id", evt.CorrelationID).Msg("session start failed")
+						}
 					}
 				}) {
 					log.L().Warn().Str("sid", evt.SessionID).Msg("session worker registry closing; dropping start")
@@ -522,18 +537,77 @@ func (o *Orchestrator) unregisterActive(id string) {
 	log.L().Info().Str("session_id", id).Msg("session_removed")
 }
 
-func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, ok bool, err error) {
-	for _, s := range slots {
-		k := model.LeaseKeyTunerSlot(s)
-		l, got, e := o.Store.TryAcquireLease(ctx, k, owner, o.LeaseTTL)
-		if e != nil {
-			return 0, nil, false, e
-		}
-		if got {
-			return s, l, true, nil
-		}
+var (
+	ErrNoSlotsConfigured         = errors.New("no tuner slots configured")
+	ErrAuthoritativeLeaseMissing = errors.New("authoritative lease missing after acquire")
+	ErrLeaseReadAfterAcquire     = errors.New("authoritative lease read failed after acquire")
+	ErrCompensationReleaseFailed = errors.New("compensation release failed")
+)
+
+func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, handle *lease.TunerLeaseHandle, err error) {
+	if len(slots) == 0 {
+		return 0, nil, nil, ErrNoSlotsConfigured
 	}
-	return 0, nil, false, nil
+
+	ctrl := o.TunerLeaseController
+	var storeAdapter *lease.SessionStoreTunerLeaseController
+	if ctrl == nil {
+		storeAdapter = lease.NewSessionStoreTunerLeaseController(o.Store)
+		ctrl = storeAdapter
+	}
+
+	var lastConflict error
+	for _, s := range slots {
+		if storeAdapter != nil {
+			h, storeLease, e := storeAdapter.AcquireWithLease(ctx, lease.Owner(owner), s, o.LeaseTTL)
+			if e == nil {
+				return s, storeLease, h, nil
+			}
+			if errors.Is(e, lease.ErrScopeConflict) {
+				lastConflict = e
+				continue
+			}
+			return 0, nil, nil, e
+		}
+
+		h, e := ctrl.Acquire(ctx, lease.Owner(owner), s, o.LeaseTTL)
+		if e == nil {
+			sl, ok, readErr := o.Store.GetLease(ctx, string(h.Scope))
+			if readErr != nil {
+				relErr := ctrl.Release(ctx, h, lease.ReasonReleasedByOwner)
+				readFailure := fmt.Errorf("%w: %w", ErrLeaseReadAfterAcquire, readErr)
+				if relErr != nil {
+					return 0, nil, nil, errors.Join(
+						readFailure,
+						fmt.Errorf("%w: %w", ErrCompensationReleaseFailed, relErr),
+					)
+				}
+				return 0, nil, nil, readFailure
+			}
+			if !ok {
+				relErr := ctrl.Release(ctx, h, lease.ReasonReleasedByOwner)
+				missingErr := ErrAuthoritativeLeaseMissing
+				if relErr != nil {
+					return 0, nil, nil, errors.Join(
+						missingErr,
+						fmt.Errorf("%w: %w", ErrCompensationReleaseFailed, relErr),
+					)
+				}
+				return 0, nil, nil, missingErr
+			}
+			return s, sl, h, nil
+		}
+		if errors.Is(e, lease.ErrScopeConflict) {
+			lastConflict = e
+			continue
+		}
+		return 0, nil, nil, e
+	}
+
+	if lastConflict != nil {
+		return 0, nil, nil, lastConflict
+	}
+	return 0, nil, nil, ErrNoSlotsConfigured
 }
 
 func (o *Orchestrator) recordTransition(ctx context.Context, sessionID string, from, to model.SessionState, reason model.ReasonCode) {

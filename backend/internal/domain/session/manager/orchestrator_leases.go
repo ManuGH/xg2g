@@ -3,15 +3,20 @@ package manager
 import (
 	"context"
 	"errors"
+	"strings"
+	"time"
+
+	domainPolicy "github.com/ManuGH/xg2g/internal/domain/policy"
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
+	pipelineLease "github.com/ManuGH/xg2g/internal/pipeline/lease"
+	pipelinePolicy "github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/rs/zerolog"
-	"strings"
-	"time"
 )
 
 func (o *Orchestrator) acquireLeases(
@@ -22,10 +27,11 @@ func (o *Orchestrator) acquireLeases(
 	logger zerolog.Logger,
 ) (*leaseAcquisition, error) {
 	res := &leaseAcquisition{
-		Slot:         -1,
-		ReleaseDedup: func() {},
-		ReleaseTuner: func() {},
-		HBCancel:     func() {},
+		Slot:                    -1,
+		ReleaseDedup:            func() {},
+		ReleaseTuner:            func() {},
+		ReleaseRestrictedAccess: func() error { return nil },
+		HBCancel:                func() {},
 	}
 
 	if sessionCtx.Mode == model.ModeLive {
@@ -39,9 +45,6 @@ func (o *Orchestrator) acquireLeases(
 		}
 		res.DedupLease = dedupLease
 		res.ReleaseDedup = func() {
-			// Detach from the parent context: a release/cleanup must run even when the
-			// session context is already canceled (e.g. orchestrator shutdown), which
-			// otherwise failed every dedup-lease release. Matches the tuner-lease release.
 			ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			if err := o.Store.ReleaseLease(ctxRel, dedupLease.Key(), dedupLease.Owner()); err != nil {
@@ -53,31 +56,111 @@ func (o *Orchestrator) acquireLeases(
 		}
 	}
 
-	if sessionCtx.Mode == model.ModeLive {
-		slot, tunerLease, ok, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
+	// E2.5c: Receiver Usage Policy Evaluation & Multi-Resource Plan Execution
+	if o.UsageEvaluator != nil {
+		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, true, true, time.Now())
+		activeSessions, _ := o.Store.ListSessions(ctx)
+		snap := BuildSystemSnapshot(o.ReceiverID, activeSessions, nil)
+
+		policy := o.UsagePolicy
+
+		decision, err := o.UsageEvaluator.Evaluate(ctx, policy, req, snap)
 		if err != nil {
 			res.ReleaseDedup()
 			return nil, err
 		}
-		if !ok {
+
+		switch decision.Kind {
+		case receiverusage.DecisionReuseSession:
+			return res, nil
+		case receiverusage.DecisionReject:
 			res.ReleaseDedup()
-			tunerBusyTotal.WithLabelValues().Inc()
-			return nil, newReasonError(model.RLeaseBusy, "no tuner slots available", nil)
+			return nil, newReasonError(decision.Reason, decision.Message, nil)
+		case receiverusage.DecisionAllow:
+			for _, reqItem := range decision.Requirements {
+				if reqItem.Kind == receiverusage.ReqRestrictedAccessSlot {
+					ctrl := o.RestrictedAccessCtrl
+					if ctrl == nil {
+						ctrl = receiverusage.NewRestrictedAccessController(o.Store)
+					}
+					cap := policy.MaxRestrictedAccessSessions
+					if cap <= 0 {
+						cap = 1
+					}
+					h, err := ctrl.Acquire(ctx, o.ReceiverID, leaseOwner, cap, o.LeaseTTL)
+					if err != nil {
+						res.ReleaseDedup()
+						return nil, newReasonError(model.RReceiverUsageRestrictedAccessLimitExceeded, "restricted access slot limit exceeded", err)
+					}
+					res.RestrictedAccessHandle = h
+					res.ReleaseRestrictedAccess = func() error {
+						ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+						defer cancel()
+						if err := ctrl.Release(ctxRel, h); err != nil {
+							logger.Error().Err(err).
+								Str("scope", h.Scope).
+								Str("owner", h.Owner).
+								Msg("failed to release restricted access lease")
+							return err
+						}
+						return nil
+					}
+				}
+			}
+		}
+	}
+
+	if sessionCtx.Mode == model.ModeLive {
+		slot, tunerLease, tunerHandle, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
+		if err != nil {
+			relErr := res.ReleaseRestrictedAccess()
+			res.ReleaseDedup()
+
+			tunerErr := err
+			if relErr != nil {
+				tunerErr = errors.Join(err, relErr)
+			}
+
+			if errors.Is(err, pipelineLease.ErrScopeConflict) {
+				tunerBusyTotal.WithLabelValues().Inc()
+				publicErr := newReasonError(model.RLeaseBusy, "no tuner slots available", tunerErr)
+
+				if o.ConflictAuditor != nil {
+					consumer := domainPolicy.ConsumerLiveTV
+					if sessionCtx.Mode == model.ModeRecording {
+						consumer = domainPolicy.ConsumerScheduledRecording
+					}
+					auditReq := pipelinePolicy.ConflictAuditRequest{
+						RequestID:    event.SessionID,
+						Consumer:     consumer,
+						ResourceKind: domainPolicy.ResourceTuner,
+						Owner:        leaseOwner,
+						ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
+					}
+					if auditErr := o.ConflictAuditor.AuditTunerConflict(ctx, auditReq); auditErr != nil {
+						logger.Error().Err(auditErr).Str("session_id", event.SessionID).Msg("policy audit evaluation failed")
+					}
+				}
+
+				return nil, publicErr
+			}
+			return nil, err
 		}
 		res.Slot = slot
 		res.TunerLease = tunerLease
-		// Authoritative tuner-lease release, bound to the in-memory lease handle (mirrors
-		// ReleaseDedup). Used by finalizeDeferred after terminalization so the slot is freed
-		// regardless of whether ContextData[tuner_slot] (B) was ever persisted — closing the
-		// leak when start fails in the [acquired … B committed) window. Detached context so
-		// it runs even when the session context is already canceled.
+		res.TunerHandle = tunerHandle
 		res.ReleaseTuner = func() {
 			ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			if err := o.Store.ReleaseLease(ctxRel, tunerLease.Key(), tunerLease.Owner()); err != nil {
+			controller := o.TunerLeaseController
+			if controller == nil {
+				controller = pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
+			}
+			if err := controller.Release(ctxRel, res.TunerHandle, pipelineLease.ReasonReleasedByOwner); err != nil {
 				logger.Error().Err(err).
-					Str("lease_key", tunerLease.Key()).
-					Str("owner", tunerLease.Owner()).
+					Str("lease_key", string(res.TunerHandle.Scope)).
+					Str("owner", string(res.TunerHandle.Owner)).
+					Int("slot", res.TunerHandle.Slot).
 					Msg("failed to release tuner lease")
 			}
 		}
@@ -98,21 +181,26 @@ func (o *Orchestrator) acquireLeases(
 				case <-hbCtx.Done():
 					return
 				case <-t.C:
-					_, ok, err := o.Store.RenewLease(hbCtx, res.TunerLease.Key(), res.TunerLease.Owner(), o.LeaseTTL)
+					controller := o.TunerLeaseController
+					if controller == nil {
+						controller = pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
+					}
+					err := controller.Renew(hbCtx, res.TunerHandle, o.LeaseTTL)
 					if err != nil {
+						if errors.Is(err, pipelineLease.ErrLeaseInactive) || errors.Is(err, pipelineLease.ErrNotFound) {
+							logger.Warn().Str("lease", string(res.TunerHandle.Scope)).Str("sid", event.SessionID).Msg("tuner lease lost, aborting")
+							leaseLostTotalLegacy.WithLabelValues().Inc()
+							_, _ = o.Store.UpdateSession(hbCtx, event.SessionID, func(r *model.SessionRecord) error {
+								if !r.State.IsTerminal() {
+									cause := lifecycle.NewReasonError(model.RLeaseExpired, "", nil)
+									_, _ = lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvTerminalize}, cause, false, time.Now())
+								}
+								return nil
+							})
+							hbCancel()
+							return
+						}
 						logger.Warn().Err(err).Msg("heartbeat renewal error")
-					} else if !ok {
-						logger.Warn().Str("lease", res.TunerLease.Key()).Str("sid", event.SessionID).Msg("tuner lease lost, aborting")
-						leaseLostTotalLegacy.WithLabelValues().Inc()
-						_, _ = o.Store.UpdateSession(hbCtx, event.SessionID, func(r *model.SessionRecord) error {
-							if !r.State.IsTerminal() {
-								cause := lifecycle.NewReasonError(model.RLeaseExpired, "", nil)
-								_, _ = lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvTerminalize}, cause, false, time.Now())
-							}
-							return nil
-						})
-						hbCancel()
-						return
 					}
 				}
 			}
@@ -120,10 +208,17 @@ func (o *Orchestrator) acquireLeases(
 		if !started {
 			res.HBCancel()
 			res.ReleaseDedup()
-			if res.Slot >= 0 {
+			if res.TunerHandle != nil {
 				ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 				defer cancel()
-				_ = o.Store.ReleaseLease(ctxRel, res.TunerLease.Key(), res.TunerLease.Owner())
+				controller := pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
+				if err := controller.Release(ctxRel, res.TunerHandle, pipelineLease.ReasonReleasedByOwner); err != nil {
+					logger.Error().Err(err).
+						Str("lease_key", string(res.TunerHandle.Scope)).
+						Str("owner", string(res.TunerHandle.Owner)).
+						Int("slot", res.TunerHandle.Slot).
+						Msg("failed to release tuner lease on worker start failure")
+				}
 			}
 			return nil, newReasonError(model.RCancelled, "orchestrator shutting down", nil)
 		}

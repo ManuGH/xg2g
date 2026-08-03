@@ -5,6 +5,7 @@
 /artifacts/
 /build/
 tmp/
+var/diagnostics/
 logs/
 .runtime-bin/
 !logs/.gitkeep
