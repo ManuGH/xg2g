@@ -225,7 +225,25 @@ func TestEngine_RequesterReservation_StrictValidation(t *testing.T) {
 	}
 	_, err = engine.RevalidateAndTransition(ctx, saga3.SagaID, "rec-1", claim3.FencingToken, selRes3.Contract, prepared3, snapshot, proof, resBadClaims, now)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "resource claims")
+	require.Contains(t, err.Error(), "reservation resource claims do not match")
+
+	// 4. Invalid reservation claims (e.g. quantity -1) -> Explicit typed error
+	saga4, claim4, selRes4, prepared4 := createTestSaga("req-res-4")
+	resInvalidClaims := RequesterReservation{
+		ReservationID:         "res-4",
+		RequestID:             "req-res-4",
+		ReceiverID:            "rec-1",
+		Owner:                 "client-A",
+		ContractID:            selRes4.Contract.ContractID,
+		PreparedTeardownHash:  prepared4.PreparedTeardownHash,
+		RequesterAllocationID: "alloc-req-1",
+		ResourceClaims:        []ResourceClaim{{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: -1}},
+		Revision:              "rev-1",
+		ExpiresAt:             now.Add(30 * time.Second),
+	}
+	_, err = engine.RevalidateAndTransition(ctx, saga4.SagaID, "rec-1", claim4.FencingToken, selRes4.Contract, prepared4, snapshot, proof, resInvalidClaims, now)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid reservation resource claims")
 }
 
 func TestEngine_RevalidationFailure_AbortsSagaAndReleasesClaim(t *testing.T) {
