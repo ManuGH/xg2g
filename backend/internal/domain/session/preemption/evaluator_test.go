@@ -228,6 +228,48 @@ func TestSelectPlan_RejectsUnverifiedEvidence(t *testing.T) {
 	require.Equal(t, ReasonRejectedInvalidProof, res.Reason)
 }
 
+func TestSelectPlan_RejectsInferredEvidenceForExecutablePreemption(t *testing.T) {
+	eval := NewEvaluator()
+	now := time.Now().UTC()
+
+	req := PreemptionRequest{
+		RequestID:         "req-inferred",
+		ReceiverID:        "rec-1",
+		RequesterOwner:    "client-A",
+		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestedResources: []ResourceClaim{
+			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
+		},
+	}
+
+	snapshot := ResourceSnapshot{
+		ReceiverID:       "rec-1",
+		SnapshotRevision: "rev-100",
+		ObservedAt:       now,
+		Allocations: []ActiveAllocation{
+			{AllocationID: "alloc-1", Claims: req.RequestedResources},
+		},
+	}
+
+	// INFERRED evidence classification MUST be rejected for executable preemption contracts
+	proof := ConflictResolutionProof{
+		ReceiverID:              "rec-1",
+		SnapshotRevision:        "rev-100",
+		HardwareProfileRevision: "hw-rev-1",
+		HardwareProfileStatus:   HardwareProfileValid,
+		EvidenceClassification:  EvidenceInferred,
+		RequestedResources:      req.RequestedResources,
+		AllocationMappings: []AllocationResourceMapping{
+			{AllocationID: "alloc-1", FreedResources: req.RequestedResources},
+		},
+	}
+
+	res, err := eval.SelectPlan(req, snapshot, proof, now)
+	require.NoError(t, err)
+	require.Equal(t, DecisionRejected, res.Decision)
+	require.Equal(t, ReasonRejectedInvalidProof, res.Reason)
+}
+
 func TestSelectPlan_RejectsProofMappingForInactiveAllocation(t *testing.T) {
 	eval := NewEvaluator()
 	now := time.Now().UTC()
@@ -359,7 +401,7 @@ func TestSelectPlan_CandidateBoundExceeded(t *testing.T) {
 	res, err := eval.SelectPlan(req, snapshot, proof, now)
 	require.NoError(t, err)
 	require.Equal(t, DecisionRejected, res.Decision)
-	require.Equal(t, ReasonRejectedNoEligibleVictim, res.Reason)
+	require.Equal(t, ReasonRejectedBoundsExceeded, res.Reason)
 }
 
 func TestContractHashChangesWhenAnyRelevantFieldChanges(t *testing.T) {
