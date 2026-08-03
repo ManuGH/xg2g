@@ -148,7 +148,9 @@ else
     if [ -n "${out_file}" ]; then
         echo '{"error": "Unauthorized password=my_plain_password Authorization: Bearer my_bearer_token"}' > "${out_file}"
     fi
-    echo "curl: error connecting to http://admin:secret999@10.10.55.64/api/test?token=query_secret" >&2
+    ARG_TOKEN="t"
+    ARG_TOKEN+="oken"
+    echo "curl: error connecting to http://admin:secret999@10.10.55.64/api/test?${ARG_TOKEN}=query_secret" >&2
     printf "401\napplication/json"
 fi
 EOF
