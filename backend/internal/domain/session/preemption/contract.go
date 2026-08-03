@@ -36,8 +36,39 @@ func ValidateContract(c *PreemptionExecutionContract, now time.Time) error {
 	if strings.TrimSpace(c.RequestID) == "" {
 		return fmt.Errorf("%w: empty request ID", ErrInvalidContract)
 	}
+	if strings.TrimSpace(c.RequesterOwner) == "" {
+		return fmt.Errorf("%w: empty requester owner", ErrInvalidContract)
+	}
+	if strings.TrimSpace(c.SnapshotRevision) == "" {
+		return fmt.Errorf("%w: empty snapshot revision", ErrInvalidContract)
+	}
+	if strings.TrimSpace(c.HardwareProfileRevision) == "" {
+		return fmt.Errorf("%w: empty hardware profile revision", ErrInvalidContract)
+	}
+	if strings.TrimSpace(c.ConflictProofRevision) == "" {
+		return fmt.Errorf("%w: empty conflict proof revision", ErrInvalidContract)
+	}
 	if len(c.TargetAllocationIDs) == 0 {
 		return ErrContractEmptyTargets
+	}
+	if len(c.RequestedResources) == 0 {
+		return fmt.Errorf("%w: zero requested resources", ErrInvalidContract)
+	}
+	if len(c.ExpectedFreedResources) == 0 {
+		return fmt.Errorf("%w: zero expected freed resources", ErrInvalidContract)
+	}
+	for i, claim := range c.RequestedResources {
+		if claim.Quantity <= 0 {
+			return fmt.Errorf("%w: requested claim at index %d has non-positive quantity %d", ErrInvalidContract, i, claim.Quantity)
+		}
+	}
+	for i, claim := range c.ExpectedFreedResources {
+		if claim.Quantity <= 0 {
+			return fmt.Errorf("%w: expected freed claim at index %d has non-positive quantity %d", ErrInvalidContract, i, claim.Quantity)
+		}
+	}
+	if !c.CreatedAt.Before(c.ExpiresAt) {
+		return fmt.Errorf("%w: CreatedAt %s must be before ExpiresAt %s", ErrInvalidContract, c.CreatedAt, c.ExpiresAt)
 	}
 
 	// Check canonical sorting & uniqueness of targets
@@ -79,11 +110,17 @@ func ComputeContractHash(c *PreemptionExecutionContract) (string, error) {
 	sortedTargets := append([]string(nil), c.TargetAllocationIDs...)
 	sort.Strings(sortedTargets)
 
+	canonicalReqClaims := formatCanonicalClaims(c.RequestedResources)
+	canonicalFreedClaims := formatCanonicalClaims(c.ExpectedFreedResources)
+
 	h := sha256.New()
 	_, _ = fmt.Fprintf(h, "contract_id=%s\n", c.ContractID)
 	_, _ = fmt.Fprintf(h, "receiver_id=%s\n", c.ReceiverID)
 	_, _ = fmt.Fprintf(h, "request_id=%s\n", c.RequestID)
+	_, _ = fmt.Fprintf(h, "requester_owner=%s\n", c.RequesterOwner)
 	_, _ = fmt.Fprintf(h, "targets=%s\n", strings.Join(sortedTargets, ","))
+	_, _ = fmt.Fprintf(h, "requested_claims=%s\n", canonicalReqClaims)
+	_, _ = fmt.Fprintf(h, "expected_freed_claims=%s\n", canonicalFreedClaims)
 	_, _ = fmt.Fprintf(h, "snapshot_rev=%s\n", c.SnapshotRevision)
 	_, _ = fmt.Fprintf(h, "hardware_rev=%s\n", c.HardwareProfileRevision)
 	_, _ = fmt.Fprintf(h, "proof_rev=%s\n", c.ConflictProofRevision)
@@ -91,4 +128,13 @@ func ComputeContractHash(c *PreemptionExecutionContract) (string, error) {
 	_, _ = fmt.Fprintf(h, "expires_at=%s\n", c.ExpiresAt.UTC().Format(time.RFC3339Nano))
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func formatCanonicalClaims(claims []ResourceClaim) string {
+	formatted := make([]string, len(claims))
+	for i, claim := range claims {
+		formatted[i] = fmt.Sprintf("%s:%s:%d", claim.Kind, claim.Resource, claim.Quantity)
+	}
+	sort.Strings(formatted)
+	return strings.Join(formatted, ",")
 }

@@ -6,6 +6,7 @@ package preemption
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -38,7 +39,7 @@ func (e *PreemptionSagaEngine) CreateSaga(ctx context.Context, prepared *Prepare
 	sagaID := fmt.Sprintf("saga-%s", prepared.TeardownID)
 	rec := PreemptionSagaRecord{
 		SagaID:               sagaID,
-		ReceiverID:           prepared.TargetAllocationIDs[0], // primary target receiver
+		ReceiverID:           prepared.ReceiverID, // Strictly copy ReceiverID from PreparedTeardown!
 		ContractID:           prepared.ContractID,
 		PreparedTeardownHash: prepared.PreparedTeardownHash,
 		State:                StatePrepared,
@@ -59,11 +60,6 @@ func (e *PreemptionSagaEngine) CreateSaga(ctx context.Context, prepared *Prepare
 		},
 	}
 
-	// Fetch primary receiver ID from contract if available
-	if len(prepared.TargetAllocationIDs) > 0 {
-		rec.ReceiverID = prepared.TargetAllocationIDs[0]
-	}
-
 	return e.store.CreateSaga(ctx, rec)
 }
 
@@ -73,7 +69,7 @@ func (e *PreemptionSagaEngine) ClaimExecution(ctx context.Context, sagaID string
 		now = time.Now().UTC()
 	}
 	if leaseDuration <= 0 {
-		leaseDuration = 30 * time.Second
+		leaseDuration = 15 * time.Second
 	}
 
 	saga, err := e.store.GetSaga(ctx, sagaID)
@@ -81,7 +77,18 @@ func (e *PreemptionSagaEngine) ClaimExecution(ctx context.Context, sagaID string
 		return PreemptionSagaRecord{}, ReceiverClaim{}, err
 	}
 
+	if saga.ReceiverID != receiverID {
+		return PreemptionSagaRecord{}, ReceiverClaim{}, fmt.Errorf("%w: requested receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
+	}
+
 	leaseUntil := now.Add(leaseDuration)
+	if leaseUntil.After(saga.ExpiresAt) {
+		leaseUntil = saga.ExpiresAt
+	}
+	if !leaseUntil.After(now) {
+		return PreemptionSagaRecord{}, ReceiverClaim{}, fmt.Errorf("%w: lease expiry %s must be after now %s", ErrContractExpired, leaseUntil, now)
+	}
+
 	transition := SagaTransition{
 		From:       saga.State,
 		To:         StateExecutionClaimed,
@@ -116,12 +123,16 @@ func (e *PreemptionSagaEngine) RevalidateAndTransition(
 		return PreemptionSagaRecord{}, err
 	}
 
+	if saga.ReceiverID != receiverID {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: requested receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
+	}
+
 	if saga.State != StateExecutionClaimed {
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: saga state %s != expected %s", ErrInvalidStateTransition, saga.State, StateExecutionClaimed)
 	}
 
 	// 1. Validate RequesterReservation binding to Contract & Teardown
-	if err := e.validateRequesterReservation(reservation, contract, prepared, now); err != nil {
+	if resErr := e.validateRequesterReservation(reservation, contract, prepared, now); resErr != nil {
 		// Abort saga to FAILED_BEFORE_MUTATION & release claim
 		trans := SagaTransition{
 			From:       StateExecutionClaimed,
@@ -129,18 +140,24 @@ func (e *PreemptionSagaEngine) RevalidateAndTransition(
 			ReasonCode: SagaReasonRequesterDropped,
 			OccurredAt: now,
 			Actor:      "preemption_engine",
-			Details:    err.Error(),
+			Details:    resErr.Error(),
 		}
-		aborted, _ := e.store.TransitionAndReleaseClaim(ctx, sagaID, saga.Version, receiverID, fencingToken, StateFailedBeforeMutation, trans)
-		return aborted, fmt.Errorf("requester reservation invalid: %w", err)
+		aborted, abortErr := e.store.TransitionAndReleaseClaim(ctx, sagaID, saga.Version, receiverID, fencingToken, StateFailedBeforeMutation, trans)
+		if abortErr != nil {
+			return aborted, errors.Join(resErr, abortErr)
+		}
+		return aborted, fmt.Errorf("requester reservation invalid: %w", resErr)
 	}
 
 	// 2. Re-verify teardown preparation protocol against live snapshot & proof
-	prepRes, err := e.preparer.PrepareTeardown(contract, liveSnapshot, liveProof, now)
-	if err != nil || prepRes.Decision != DecisionApproved {
+	prepRes, prepErr := e.preparer.PrepareTeardown(contract, liveSnapshot, liveProof, now)
+	if prepErr != nil || prepRes.Decision != DecisionApproved {
 		reason := SagaReasonTargetMutated
 		details := "live target state mutated or unverified"
-		if prepRes.Reason == ReasonTeardownContractExpired {
+		var failureErr error = fmt.Errorf("live revalidation failed: %s", prepRes.Reason)
+		if prepErr != nil {
+			failureErr = prepErr
+		} else if prepRes.Reason == ReasonTeardownContractExpired {
 			reason = SagaReasonContractExpired
 			details = "contract expired before execution"
 		}
@@ -152,8 +169,11 @@ func (e *PreemptionSagaEngine) RevalidateAndTransition(
 			Actor:      "preemption_engine",
 			Details:    details,
 		}
-		aborted, _ := e.store.TransitionAndReleaseClaim(ctx, sagaID, saga.Version, receiverID, fencingToken, StateFailedBeforeMutation, trans)
-		return aborted, fmt.Errorf("live revalidation failed: %s", prepRes.Reason)
+		aborted, abortErr := e.store.TransitionAndReleaseClaim(ctx, sagaID, saga.Version, receiverID, fencingToken, StateFailedBeforeMutation, trans)
+		if abortErr != nil {
+			return aborted, errors.Join(failureErr, abortErr)
+		}
+		return aborted, failureErr
 	}
 
 	// 3. Mode check: audit-only mode stops cleanly at TARGET_REVALIDATED
@@ -177,6 +197,10 @@ func (e *PreemptionSagaEngine) AttemptTeardownTransition(ctx context.Context, sa
 		return PreemptionSagaRecord{}, err
 	}
 
+	if saga.ReceiverID != receiverID {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: requested receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
+	}
+
 	trans := SagaTransition{
 		From:       saga.State,
 		To:         StateTeardownRequested,
@@ -185,18 +209,34 @@ func (e *PreemptionSagaEngine) AttemptTeardownTransition(ctx context.Context, sa
 		Actor:      "preemption_engine",
 	}
 
-	// This must fail with ErrMutationPhaseDisabled
-	_, err = e.store.CompareAndSwapState(ctx, sagaID, saga.Version, receiverID, fencingToken, saga.State, StateTeardownRequested, trans)
+	// Attempt store transition to TEARDOWN_REQUESTED (MUST return ErrMutationPhaseDisabled)
+	res, err := e.store.CompareAndSwapState(ctx, sagaID, saga.Version, receiverID, fencingToken, saga.State, StateTeardownRequested, trans)
 	if err != nil {
-		return PreemptionSagaRecord{}, fmt.Errorf("%w: %v", ErrMutationPhaseDisabled, err)
+		// Do not mask underlying store / fencing errors as ErrMutationPhaseDisabled unless it is ErrMutationPhaseDisabled
+		return res, err
 	}
 
-	return PreemptionSagaRecord{}, ErrMutationPhaseDisabled
+	return res, ErrMutationPhaseDisabled
 }
 
 func (e *PreemptionSagaEngine) validateRequesterReservation(res RequesterReservation, contract *PreemptionExecutionContract, prepared *PreparedTeardown, now time.Time) error {
 	if strings.TrimSpace(res.ReservationID) == "" {
 		return fmt.Errorf("empty reservation ID")
+	}
+	if strings.TrimSpace(res.RequestID) == "" || res.RequestID != contract.RequestID {
+		return fmt.Errorf("reservation request ID '%s' != contract request ID '%s'", res.RequestID, contract.RequestID)
+	}
+	if strings.TrimSpace(res.ReceiverID) == "" || res.ReceiverID != contract.ReceiverID {
+		return fmt.Errorf("reservation receiver ID '%s' != contract receiver ID '%s'", res.ReceiverID, contract.ReceiverID)
+	}
+	if strings.TrimSpace(res.Owner) == "" || res.Owner != contract.RequesterOwner {
+		return fmt.Errorf("reservation owner '%s' != contract owner '%s'", res.Owner, contract.RequesterOwner)
+	}
+	if strings.TrimSpace(res.RequesterAllocationID) == "" {
+		return fmt.Errorf("empty requester allocation ID")
+	}
+	if strings.TrimSpace(res.Revision) == "" {
+		return fmt.Errorf("empty reservation revision")
 	}
 	if res.ContractID != contract.ContractID {
 		return fmt.Errorf("reservation contract ID '%s' != contract '%s'", res.ContractID, contract.ContractID)
@@ -207,8 +247,8 @@ func (e *PreemptionSagaEngine) validateRequesterReservation(res RequesterReserva
 	if !now.IsZero() && now.After(res.ExpiresAt) {
 		return fmt.Errorf("reservation expired at %s", res.ExpiresAt.Format(time.RFC3339))
 	}
-	if len(res.ResourceClaims) == 0 {
-		return fmt.Errorf("reservation contains zero resource claims")
+	if formatCanonicalClaims(res.ResourceClaims) != formatCanonicalClaims(contract.RequestedResources) {
+		return fmt.Errorf("reservation resource claims do not match contract requested resources")
 	}
 	return nil
 }

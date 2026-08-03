@@ -28,6 +28,8 @@ const (
 type PreparedTeardown struct {
 	TeardownID              string    `json:"teardownId"`
 	ContractID              string    `json:"contractId"`
+	ReceiverID              string    `json:"receiverId"`
+	RequestID               string    `json:"requestId"`
 	ContractHash            string    `json:"contractHash"`
 	TargetAllocationIDs     []string  `json:"targetAllocationIds"`
 	SnapshotRevision        string    `json:"snapshotRevision"`
