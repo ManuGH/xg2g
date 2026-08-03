@@ -72,7 +72,7 @@ func (e *Evaluator) SelectPlan(req PreemptionRequest, snapshot ResourceSnapshot,
 	if len(eligibleMap) > MaxCandidateAllocations {
 		return SelectionResult{
 			Decision: DecisionRejected,
-			Reason:   ReasonRejectedNoEligibleVictim,
+			Reason:   ReasonRejectedBoundsExceeded,
 		}, nil
 	}
 

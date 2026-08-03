@@ -28,6 +28,7 @@ const (
 	ReasonRejectedRevisionMismatch     PreemptionReasonCode = "PREEMPTION_REJECTED_REVISION_MISMATCH"
 	ReasonRejectedInvalidProof         PreemptionReasonCode = "PREEMPTION_REJECTED_INVALID_PROOF"
 	ReasonRejectedStaleHardware        PreemptionReasonCode = "PREEMPTION_REJECTED_STALE_HARDWARE"
+	ReasonRejectedBoundsExceeded       PreemptionReasonCode = "PREEMPTION_REJECTED_EVALUATION_BOUNDS_EXCEEDED"
 )
 
 const (
