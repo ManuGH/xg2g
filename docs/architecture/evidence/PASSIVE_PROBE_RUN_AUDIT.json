@@ -1,12 +1,12 @@
 {
-  "audit_version": "1.2.0",
+  "audit_version": "1.3.0",
   "audit_type": "PASSIVE_DIAGNOSTIC_PROBE_RUN",
   "target_type": "Vu+ Uno 4K / OpenWebif / Enigma2",
   "collector_script": "scripts/collect_receiver_diagnostics.sh",
-  "collector_script_version": "1.2.0",
-  "tested_commit_sha": "8ed9f1ac520bfd6537af369b764eeff64f9bfdfa",
-  "audit_timestamp_utc": "2026-08-03T08:12:30Z",
-  "audit_run_id": "audit-run-20260803-8ed9f1ac",
+  "collector_script_version": "1.3.0",
+  "tested_commit_sha": "d1165479ae7f139bf83e5a5933d1421f1d199738",
+  "audit_timestamp_utc": "2026-08-03T08:42:25Z",
+  "audit_run_id": "audit-run-20260803-d1165479",
   "http_probe_summary": {
     "total_probes": 8,
     "http_connect_timeout_seconds": 5,
@@ -17,19 +17,17 @@
   },
   "safety_verifications": {
     "embedded_url_credentials_rejected": "VERIFIED_BY_UNIT_TEST",
-    "http_connect_timeout_enforced": "VERIFIED_BY_UNIT_TEST",
-    "http_maximum_runtime_enforced": "VERIFIED_BY_UNIT_TEST",
-    "credentials_exact_values_preserved": "VERIFIED_BY_UNIT_TEST",
-    "credentials_unknown_keys_rejected": "VERIFIED_BY_UNIT_TEST",
-    "credentials_mixed_formats_rejected": "VERIFIED_BY_UNIT_TEST",
-    "signal_termination_removes_temp_dir": "VERIFIED_BY_UNIT_TEST",
-    "ssh_failure_preserves_stdout_and_stderr": "VERIFIED_BY_UNIT_TEST",
-    "output_redaction_verified": "VERIFIED_BY_UNIT_TEST",
-    "manifest_safe_jq_serialization": "VERIFIED_BY_UNIT_TEST"
+    "ssh_target_option_injection_prevented": "VERIFIED_BY_UNIT_TEST",
+    "credentials_spaces_and_quotes_rejected": "VERIFIED_BY_UNIT_TEST",
+    "base_dir_repository_bound": "VERIFIED_BY_UNIT_TEST",
+    "comprehensive_output_redaction": "VERIFIED_BY_UNIT_TEST",
+    "signal_termination_deterministic": "VERIFIED_BY_UNIT_TEST",
+    "strict_manifest_probe_assertions": "VERIFIED_BY_UNIT_TEST"
   },
   "compliance_status": {
     "read_only_contract": "COMPLIANT",
     "network_bounding_contract": "COMPLIANT",
+    "ssh_safety_contract": "COMPLIANT",
     "credential_safety_contract": "COMPLIANT",
     "hardware_preemption_status": "PROPOSED - NOT YET IMPLEMENTED"
   }
