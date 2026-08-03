@@ -16,6 +16,14 @@ const (
 	DecisionRejected Decision = "REJECTED"
 )
 
+// PreemptionMode represents execution mode.
+type PreemptionMode string
+
+const (
+	PreemptionModeAuditOnly PreemptionMode = "AUDIT_ONLY"
+	PreemptionModeEnforce   PreemptionMode = "ENFORCE"
+)
+
 // PreemptionReasonCode represents domain classification of selection outcomes.
 type PreemptionReasonCode string
 

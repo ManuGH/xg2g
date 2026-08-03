@@ -1,0 +1,193 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package preemption
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestEngine_LifecycleAndRevalidation_MemoryAndSQLiteStores(t *testing.T) {
+	stores := map[string]func(t *testing.T) SagaStore{
+		"MemoryStore": func(t *testing.T) SagaStore {
+			return NewMemorySagaStore()
+		},
+		"PersistentSQLiteStore": func(t *testing.T) SagaStore {
+			dir := t.TempDir()
+			store, err := NewPersistentSagaStore(filepath.Join(dir, "engine_test.db"))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = store.Close() })
+			return store
+		},
+	}
+
+	for name, storeFactory := range stores {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store := storeFactory(t)
+			engine := NewPreemptionSagaEngine(store)
+			eval := NewEvaluator()
+			preparer := NewTeardownPreparer()
+			now := time.Now().UTC()
+
+			req := PreemptionRequest{
+				RequestID:         "req-eng-1",
+				ReceiverID:        "rec-1",
+				RequesterOwner:    "client-A",
+				RequesterPriority: PriorityAttributes{BasePriority: 100},
+				RequestedResources: []ResourceClaim{
+					{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
+				},
+			}
+
+			snapshot := ResourceSnapshot{
+				ReceiverID:       "rec-1",
+				SnapshotRevision: "rev-100",
+				ObservedAt:       now,
+				Allocations: []ActiveAllocation{
+					{
+						AllocationID: "alloc-1",
+						Owner:        "client-B",
+						Priority:     PriorityAttributes{BasePriority: 50},
+						Claims:       req.RequestedResources,
+					},
+				},
+			}
+
+			proof := ConflictResolutionProof{
+				ReceiverID:              "rec-1",
+				SnapshotRevision:        "rev-100",
+				HardwareProfileRevision: "hw-rev-1",
+				HardwareProfileStatus:   HardwareProfileValid,
+				EvidenceClassification:  EvidenceDirectObservation,
+				RequestedResources:      req.RequestedResources,
+				AllocationMappings: []AllocationResourceMapping{
+					{AllocationID: "alloc-1", FreedResources: req.RequestedResources},
+				},
+			}
+
+			// E3.1 Select Plan
+			selRes, err := eval.SelectPlan(req, snapshot, proof, now)
+			require.NoError(t, err)
+
+			// E3.2 Prepare Teardown
+			prepRes, err := preparer.PrepareTeardown(selRes.Contract, snapshot, proof, now)
+			require.NoError(t, err)
+			prepared := prepRes.Prepared
+
+			// 1. Create Saga in PREPARED state
+			saga, created, err := engine.CreateSaga(ctx, prepared, PreemptionModeEnforce, now)
+			require.NoError(t, err)
+			require.True(t, created)
+			require.Equal(t, StatePrepared, saga.State)
+
+			// 2. Claim Receiver Execution (PREPARED -> EXECUTION_CLAIMED)
+			claimedSaga, claim, err := engine.ClaimExecution(ctx, saga.SagaID, "rec-1", 15*time.Second, now)
+			require.NoError(t, err)
+			require.Equal(t, StateExecutionClaimed, claimedSaga.State)
+			require.Equal(t, uint64(1), claim.FencingToken)
+
+			// 3. Valid RequesterReservation
+			reservation := RequesterReservation{
+				ReservationID:         "res-1",
+				RequestID:             "req-eng-1",
+				ReceiverID:            "rec-1",
+				Owner:                 "client-A",
+				ContractID:            selRes.Contract.ContractID,
+				PreparedTeardownHash:  prepared.PreparedTeardownHash,
+				RequesterAllocationID: "alloc-req-1",
+				ResourceClaims:        req.RequestedResources,
+				Revision:              "res-rev-1",
+				ExpiresAt:             now.Add(30 * time.Second),
+			}
+
+			// 4. Revalidate and Transition (EXECUTION_CLAIMED -> TARGET_REVALIDATED)
+			revalidatedSaga, err := engine.RevalidateAndTransition(ctx, saga.SagaID, "rec-1", claim.FencingToken, selRes.Contract, prepared, snapshot, proof, reservation, now)
+			require.NoError(t, err)
+			require.Equal(t, StateTargetRevalidated, revalidatedSaga.State)
+
+			// 5. Attempt Teardown Transition MUST be rejected in E3.3a
+			_, err = engine.AttemptTeardownTransition(ctx, saga.SagaID, "rec-1", claim.FencingToken)
+			require.ErrorIs(t, err, ErrMutationPhaseDisabled)
+		})
+	}
+}
+
+func TestEngine_RevalidationFailure_AbortsSagaAndReleasesClaim(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemorySagaStore()
+	engine := NewPreemptionSagaEngine(store)
+	eval := NewEvaluator()
+	preparer := NewTeardownPreparer()
+	now := time.Now().UTC()
+
+	req := PreemptionRequest{
+		RequestID:         "req-abort",
+		ReceiverID:        "rec-1",
+		RequesterOwner:    "client-A",
+		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestedResources: []ResourceClaim{
+			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
+		},
+	}
+
+	snapshot := ResourceSnapshot{
+		ReceiverID:       "rec-1",
+		SnapshotRevision: "rev-100",
+		ObservedAt:       now,
+		Allocations: []ActiveAllocation{
+			{AllocationID: "alloc-1", Claims: req.RequestedResources},
+		},
+	}
+
+	proof := ConflictResolutionProof{
+		ReceiverID:              "rec-1",
+		SnapshotRevision:        "rev-100",
+		HardwareProfileRevision: "hw-rev-1",
+		HardwareProfileStatus:   HardwareProfileValid,
+		EvidenceClassification:  EvidenceDirectObservation,
+		RequestedResources:      req.RequestedResources,
+		AllocationMappings: []AllocationResourceMapping{
+			{AllocationID: "alloc-1", FreedResources: req.RequestedResources},
+		},
+	}
+
+	selRes, _ := eval.SelectPlan(req, snapshot, proof, now)
+	prepRes, _ := preparer.PrepareTeardown(selRes.Contract, snapshot, proof, now)
+	prepared := prepRes.Prepared
+
+	saga, _, _ := engine.CreateSaga(ctx, prepared, PreemptionModeEnforce, now)
+	_, claim, _ := engine.ClaimExecution(ctx, saga.SagaID, "rec-1", 15*time.Second, now)
+
+	// Expired RequesterReservation!
+	expiredReservation := RequesterReservation{
+		ReservationID:        "res-expired",
+		RequestID:            "req-abort",
+		ReceiverID:           "rec-1",
+		Owner:                "client-A",
+		ContractID:           selRes.Contract.ContractID,
+		PreparedTeardownHash: prepared.PreparedTeardownHash,
+		ResourceClaims:       req.RequestedResources,
+		ExpiresAt:            now.Add(-10 * time.Second), // EXPIRED!
+	}
+
+	// Revalidation MUST fail, transition saga to FAILED_BEFORE_MUTATION, and release claim
+	_, err := engine.RevalidateAndTransition(ctx, saga.SagaID, "rec-1", claim.FencingToken, selRes.Contract, prepared, snapshot, proof, expiredReservation, now)
+	require.Error(t, err)
+
+	// Verify saga state is FAILED_BEFORE_MUTATION
+	updatedSaga, getErr := store.GetSaga(ctx, saga.SagaID)
+	require.NoError(t, getErr)
+	require.Equal(t, StateFailedBeforeMutation, updatedSaga.State)
+
+	// Verify claim is released (UNCLAIMED)
+	updatedClaim, claimErr := store.GetReceiverClaim(ctx, "rec-1")
+	require.NoError(t, claimErr)
+	require.Equal(t, ClaimStatusUnclaimed, updatedClaim.Status)
+}
