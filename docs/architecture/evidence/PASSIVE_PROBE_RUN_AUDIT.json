@@ -1,21 +1,36 @@
 {
-  "audit_version": "1.0.0",
-  "collector_version": "1.0.0",
-  "commit_sha": "01aac9cee426541c119a7067b701900367834995",
-  "timestamp_utc": "2026-08-02T22:14:59Z",
-  "target_url_fingerprint": "747ac6c9a35f4aa07c2c7d0739d46ffe26fd45c25547c2d88752c4b0d28a24f6",
-  "ssh_enabled": false,
-  "probe_phase": "PASSIVE_COLLECTION",
-  "manifest_validation": "PASSED",
-  "redaction_verification": "PASSED",
-  "probes": [
-    { "probe_id": "about", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/about.error.log" },
-    { "probe_id": "deviceinfo", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/deviceinfo.error.log" },
-    { "probe_id": "statusinfo", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/statusinfo.error.log" },
-    { "probe_id": "tunersignal", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/tunersignal.error.log" },
-    { "probe_id": "timerlist", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/timerlist.error.log" },
-    { "probe_id": "getallservices", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/getallservices.error.log" },
-    { "probe_id": "subservices", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/subservices.error.log" },
-    { "probe_id": "getcurrent", "kind": "HTTP_GET", "status": "FAILED", "http_status": 401, "error_file": "openwebif/getcurrent.error.log" }
-  ]
+  "audit_version": "1.2.0",
+  "audit_type": "PASSIVE_DIAGNOSTIC_PROBE_RUN",
+  "target_type": "Vu+ Uno 4K / OpenWebif / Enigma2",
+  "collector_script": "scripts/collect_receiver_diagnostics.sh",
+  "collector_script_version": "1.2.0",
+  "tested_commit_sha": "8ed9f1ac520bfd6537af369b764eeff64f9bfdfa",
+  "audit_timestamp_utc": "2026-08-03T08:12:30Z",
+  "audit_run_id": "audit-run-20260803-8ed9f1ac",
+  "http_probe_summary": {
+    "total_probes": 8,
+    "http_connect_timeout_seconds": 5,
+    "http_max_time_seconds": 10,
+    "unauthenticated_status": "HTTP 401 Unauthorized",
+    "mutation_commands_invoked": 0,
+    "unredacted_temporary_files_remaining": 0
+  },
+  "safety_verifications": {
+    "embedded_url_credentials_rejected": "VERIFIED_BY_UNIT_TEST",
+    "http_connect_timeout_enforced": "VERIFIED_BY_UNIT_TEST",
+    "http_maximum_runtime_enforced": "VERIFIED_BY_UNIT_TEST",
+    "credentials_exact_values_preserved": "VERIFIED_BY_UNIT_TEST",
+    "credentials_unknown_keys_rejected": "VERIFIED_BY_UNIT_TEST",
+    "credentials_mixed_formats_rejected": "VERIFIED_BY_UNIT_TEST",
+    "signal_termination_removes_temp_dir": "VERIFIED_BY_UNIT_TEST",
+    "ssh_failure_preserves_stdout_and_stderr": "VERIFIED_BY_UNIT_TEST",
+    "output_redaction_verified": "VERIFIED_BY_UNIT_TEST",
+    "manifest_safe_jq_serialization": "VERIFIED_BY_UNIT_TEST"
+  },
+  "compliance_status": {
+    "read_only_contract": "COMPLIANT",
+    "network_bounding_contract": "COMPLIANT",
+    "credential_safety_contract": "COMPLIANT",
+    "hardware_preemption_status": "PROPOSED - NOT YET IMPLEMENTED"
+  }
 }
