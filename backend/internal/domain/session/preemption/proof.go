@@ -30,8 +30,8 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 	if strings.TrimSpace(proof.HardwareProfileRevision) == "" || proof.HardwareProfileStatus != HardwareProfileValid {
 		return fmt.Errorf("%w: status '%s'", ErrProofStaleHardware, proof.HardwareProfileStatus)
 	}
-	if proof.EvidenceClassification != EvidenceDirectObservation && proof.EvidenceClassification != EvidenceInferred {
-		return fmt.Errorf("%w: unverified evidence classification '%s'", ErrInvalidProof, proof.EvidenceClassification)
+	if proof.EvidenceClassification != EvidenceDirectObservation {
+		return fmt.Errorf("%w: evidence classification '%s' is not direct observation", ErrInvalidProof, proof.EvidenceClassification)
 	}
 	if len(proof.RequestedResources) == 0 {
 		return fmt.Errorf("%w: proof contains zero requested resources", ErrInvalidProof)
