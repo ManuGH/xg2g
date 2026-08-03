@@ -133,7 +133,7 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `enigma2.authMode` | `XG2G_E2_AUTH_MODE` | `inherit` | Active | Advanced |
 | `enigma2.backoff` | `XG2G_E2_BACKOFF` | `200ms` | Active | Advanced |
 | `enigma2.baseUrl` | `XG2G_E2_HOST` | - | Active | Simple |
-| `enigma2.fallbackTo8001` | `XG2G_E2_FALLBACK_TO_8001` | `true` | Active | Integrator |
+| `enigma2.fallbackTo8001` | `XG2G_E2_FALLBACK_TO_8001` | `true` | Deprecated (removal after 2026-10-01) | Integrator |
 | `enigma2.maxBackoff` | `XG2G_E2_MAX_BACKOFF` | `30s` | Active | Advanced |
 | `enigma2.password` | `XG2G_E2_PASS` | - | Active | Simple |
 | `enigma2.preflightTimeout` | `XG2G_E2_PREFLIGHT_TIMEOUT` | `10s` | Active | Advanced |
@@ -142,10 +142,10 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `enigma2.rateLimit` | `XG2G_E2_RATE_LIMIT` | - | Active | Advanced |
 | `enigma2.responseHeaderTimeout` | `XG2G_E2_RESPONSE_HEADER_TIMEOUT` | `10s` | Active | Advanced |
 | `enigma2.retries` | `XG2G_E2_RETRIES` | `2` | Active | Advanced |
-| `enigma2.streamPort` | `XG2G_E2_STREAM_PORT` | `8001` | Deprecated | Advanced |
+| `enigma2.streamPort` | `XG2G_E2_STREAM_PORT` | `8001` | Deprecated (removal after 2026-10-01) | Advanced |
 | `enigma2.timeout` | `XG2G_E2_TIMEOUT` | `10s` | Active | Advanced |
 | `enigma2.tuneTimeout` | `XG2G_E2_TUNE_TIMEOUT` | `10s` | Active | Advanced |
-| `enigma2.useWebIFStreams` | `XG2G_E2_USE_WEBIF_STREAMS` | `false` | Deprecated | Advanced |
+| `enigma2.useWebIFStreams` | `XG2G_E2_USE_WEBIF_STREAMS` | `false` | Deprecated (removal after 2026-10-01) | Advanced |
 | `enigma2.userAgent` | `XG2G_E2_USER_AGENT` | - | Active | Advanced |
 | `enigma2.username` | `XG2G_E2_USER` | - | Active | Simple |
 

@@ -7,6 +7,18 @@
 
 ### Release Notes
 
+- The relay input path is deprecated with an announced end-of-life date of
+  **2026-10-01**. Receivers can serve the same content on their standard
+  streaming port, which makes the extra hop redundant. `enigma2.fallbackTo8001`
+  (`XG2G_E2_FALLBACK_TO_8001`) joins `enigma2.streamPort` and
+  `enigma2.useWebIFStreams` as deprecated, and all three now carry the removal
+  date in the config reference and in upgrade-preflight output. Nothing changes
+  at runtime yet — options keep working until the date. Deployments that set
+  them should move to the default input path. `XG2G_STREAMRELAY_ANALYZE_DURATION`
+  and `XG2G_STREAMRELAY_PROBE_SIZE` are covered by the same date; they are read
+  outside the config registry and are documented as deprecated in code.
+  Registry entries gained a `RemoveAfter` field so future deprecations can
+  announce a date the same way.
 - Low-Latency HLS shipped end-to-end: real LL-HLS packaging with `EXT-X-PART`
   and blocking playlist reload (#629), gated on observed parts so plain
   playlists serve until real parts exist (#638), `temp_file` dropped from the

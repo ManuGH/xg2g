@@ -73,8 +73,12 @@ func buildConfigDoc(entries []config.ConfigEntry) string {
 			if entry.Default != nil {
 				def = fmt.Sprintf("`%s`", formatDefault(entry.Default))
 			}
+			status := string(entry.Status)
+			if date, ok := entry.EndOfLife(); ok {
+				status = fmt.Sprintf("%s (removal after %s)", status, date)
+			}
 			fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n",
-				entry.Path, env, def, entry.Status, entry.Profile)
+				entry.Path, env, def, status, entry.Profile)
 		}
 		b.WriteString("\n")
 	}
