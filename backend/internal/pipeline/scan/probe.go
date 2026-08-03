@@ -396,10 +396,22 @@ func (m *Manager) probeWithFallbacks(ctx context.Context, serviceRef, originalUR
 	if errors.Is(err, context.DeadlineExceeded) {
 		metrics.IncScanProbeTimeout()
 	}
-	log.L().Warn().Err(err).Str("sref", serviceRef).Msg("scan: initial probe failed, attempting port 8001 fallback")
-
+	// Decide the standard-port fallback before announcing it. When the initial
+	// probe URL already targets that port -- the normal case for a receiver that
+	// serves its own streaming port -- the fallback resolves to a URL that was
+	// just attempted, so it is skipped. Logging the attempt unconditionally made
+	// those runs read as if the fallback had carried the probe when it never ran.
 	fallbackURL, buildErr := buildFallbackURL(initialProbeURL, serviceRef)
-	if buildErr == nil && !hasAttemptedProbeURL(attemptedProbeURLs, fallbackURL) {
+	fallbackIsNewTarget := buildErr == nil && !hasAttemptedProbeURL(attemptedProbeURLs, fallbackURL)
+
+	failedAttempt := log.L().Warn().Err(err).Str("sref", serviceRef)
+	if fallbackIsNewTarget {
+		failedAttempt.Msg("scan: initial probe failed, attempting port 8001 fallback")
+	} else {
+		failedAttempt.Msg("scan: initial probe failed; port 8001 already attempted, skipping to original URL fallback")
+	}
+
+	if fallbackIsNewTarget {
 		attemptedProbeURLs[normalizeProbeURL(fallbackURL)] = struct{}{}
 		resFallback, errFallback := m.runProbeAttempt(ctx, fallbackURL, opts, timeout)
 		if errFallback == nil {
