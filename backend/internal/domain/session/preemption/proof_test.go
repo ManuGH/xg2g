@@ -135,10 +135,19 @@ func TestFormatCanonicalClaims_AggregationAndOverflow(t *testing.T) {
 	_, errNeg := formatCanonicalClaimsStrict(negativeClaims)
 	require.Error(t, errNeg)
 
-	// 3. Reject quantity overflow
+	// 3. Reject quantity overflow (single claim)
 	overflowClaims := []ResourceClaim{
 		{Kind: ResourceKindTunerSlot, Resource: "tuner-A", Quantity: MaxClaimQuantitySum + 1},
 	}
 	_, errOverflow := formatCanonicalClaimsStrict(overflowClaims)
 	require.Error(t, errOverflow)
+
+	// 4. Reject sum-based quantity overflow (each claim <= MaxClaimQuantitySum, but sum > MaxClaimQuantitySum)
+	sumOverflowClaims := []ResourceClaim{
+		{Kind: ResourceKindTunerSlot, Resource: "tuner-A", Quantity: 600000},
+		{Kind: ResourceKindTunerSlot, Resource: "tuner-A", Quantity: 500001},
+	}
+	_, errSumOverflow := formatCanonicalClaimsStrict(sumOverflowClaims)
+	require.Error(t, errSumOverflow)
+	require.Contains(t, errSumOverflow.Error(), "overflow")
 }
