@@ -120,9 +120,9 @@ func TestProductionWiring_SingleSourceOfTruth(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Session 1 acquires tuner slot 0 via Orchestrator
-	slot1, l1, handle1, ok1, err := orch.acquireTunerLease(ctx, orch.TunerSlots, "session-1")
-	if err != nil || !ok1 {
-		t.Fatalf("first acquire failed: err=%v, ok=%v", err, ok1)
+	slot1, l1, handle1, err := orch.acquireTunerLease(ctx, orch.TunerSlots, "session-1")
+	if err != nil {
+		t.Fatalf("first acquire failed: err=%v", err)
 	}
 	if slot1 != 0 || handle1 == nil {
 		t.Errorf("expected slot 0 and non-nil handle, got slot=%d, handle=%v", slot1, handle1)
@@ -144,9 +144,9 @@ func TestProductionWiring_SingleSourceOfTruth(t *testing.T) {
 	}
 
 	// 4. Now second session can acquire slot 0 via Orchestrator
-	slot2, _, handle2, ok2, err := orch.acquireTunerLease(ctx, orch.TunerSlots, "session-2")
-	if err != nil || !ok2 {
-		t.Fatalf("acquire after release failed: err=%v, ok=%v", err, ok2)
+	slot2, _, handle2, err := orch.acquireTunerLease(ctx, orch.TunerSlots, "session-2")
+	if err != nil {
+		t.Fatalf("acquire after release failed: err=%v", err)
 	}
 	if slot2 != 0 || handle2 == nil {
 		t.Errorf("expected slot 0 and non-nil handle, got slot=%d, handle=%v", slot2, handle2)

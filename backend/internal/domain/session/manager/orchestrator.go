@@ -50,7 +50,7 @@ type Orchestrator struct {
 	LeaseKeyFunc    func(model.StartSessionEvent) string
 
 	TunerLeaseController lease.TunerLeaseController
-	AuditEvaluator       pipelinePolicy.AuditEvaluator
+	ConflictAuditor      pipelinePolicy.ConflictAuditor
 
 	PipelineStopTimeout time.Duration
 	OutboundPolicy      platformnet.OutboundPolicy
@@ -531,41 +531,77 @@ func (o *Orchestrator) unregisterActive(id string) {
 	log.L().Info().Str("session_id", id).Msg("session_removed")
 }
 
-func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, handle *lease.TunerLeaseHandle, ok bool, err error) {
+var (
+	ErrNoSlotsConfigured         = errors.New("no tuner slots configured")
+	ErrAuthoritativeLeaseMissing = errors.New("authoritative lease missing after acquire")
+	ErrLeaseReadAfterAcquire     = errors.New("authoritative lease read failed after acquire")
+	ErrCompensationReleaseFailed = errors.New("compensation release failed")
+)
+
+func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner string) (slot int, l store.Lease, handle *lease.TunerLeaseHandle, err error) {
+	if len(slots) == 0 {
+		return 0, nil, nil, ErrNoSlotsConfigured
+	}
+
 	ctrl := o.TunerLeaseController
 	var storeAdapter *lease.SessionStoreTunerLeaseController
-	if ctrl != nil {
-		if sa, isSA := ctrl.(*lease.SessionStoreTunerLeaseController); isSA {
-			storeAdapter = sa
-		}
-	} else {
+	if ctrl == nil {
 		storeAdapter = lease.NewSessionStoreTunerLeaseController(o.Store)
 		ctrl = storeAdapter
 	}
 
+	var lastConflict error
 	for _, s := range slots {
 		if storeAdapter != nil {
 			h, storeLease, e := storeAdapter.AcquireWithLease(ctx, lease.Owner(owner), s, o.LeaseTTL)
 			if e == nil {
-				return s, storeLease, h, true, nil
+				return s, storeLease, h, nil
 			}
 			if errors.Is(e, lease.ErrScopeConflict) {
+				lastConflict = e
 				continue
 			}
-			return 0, nil, nil, false, e
+			return 0, nil, nil, e
 		}
 
 		h, e := ctrl.Acquire(ctx, lease.Owner(owner), s, o.LeaseTTL)
 		if e == nil {
-			sl, _, _ := o.Store.GetLease(ctx, string(h.Scope))
-			return s, sl, h, true, nil
+			sl, ok, readErr := o.Store.GetLease(ctx, string(h.Scope))
+			if readErr != nil {
+				relErr := ctrl.Release(ctx, h, lease.ReasonReleasedByOwner)
+				readFailure := fmt.Errorf("%w: %w", ErrLeaseReadAfterAcquire, readErr)
+				if relErr != nil {
+					return 0, nil, nil, errors.Join(
+						readFailure,
+						fmt.Errorf("%w: %w", ErrCompensationReleaseFailed, relErr),
+					)
+				}
+				return 0, nil, nil, readFailure
+			}
+			if !ok {
+				relErr := ctrl.Release(ctx, h, lease.ReasonReleasedByOwner)
+				missingErr := ErrAuthoritativeLeaseMissing
+				if relErr != nil {
+					return 0, nil, nil, errors.Join(
+						missingErr,
+						fmt.Errorf("%w: %w", ErrCompensationReleaseFailed, relErr),
+					)
+				}
+				return 0, nil, nil, missingErr
+			}
+			return s, sl, h, nil
 		}
 		if errors.Is(e, lease.ErrScopeConflict) {
+			lastConflict = e
 			continue
 		}
-		return 0, nil, nil, false, e
+		return 0, nil, nil, e
 	}
-	return 0, nil, nil, false, nil
+
+	if lastConflict != nil {
+		return 0, nil, nil, lastConflict
+	}
+	return 0, nil, nil, ErrNoSlotsConfigured
 }
 
 func (o *Orchestrator) recordTransition(ctx context.Context, sessionID string, from, to model.SessionState, reason model.ReasonCode) {

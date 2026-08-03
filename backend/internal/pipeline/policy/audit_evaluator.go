@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,11 +10,12 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// PipelineAuditEvaluator implements AuditEvaluator.
+// PipelineAuditEvaluator implements ConflictAuditor.
 // It evaluates resource conflicts pure-functionally in audit-only mode, emits structured audit events,
 // and performs STRICTLY ZERO state mutations or side effects.
 type PipelineAuditEvaluator struct {
 	Config          Config
+	Clock           Clock
 	SnapshotBuilder SnapshotBuilder
 	Engine          *domainPolicy.PolicyEngine
 	IDGen           IDGenerator
@@ -24,6 +26,7 @@ type PipelineAuditEvaluator struct {
 // NewAuditEvaluator creates a PipelineAuditEvaluator.
 func NewAuditEvaluator(
 	cfg Config,
+	clock Clock,
 	builder SnapshotBuilder,
 	engine *domainPolicy.PolicyEngine,
 	idGen IDGenerator,
@@ -32,6 +35,7 @@ func NewAuditEvaluator(
 ) *PipelineAuditEvaluator {
 	return &PipelineAuditEvaluator{
 		Config:          cfg,
+		Clock:           clock,
 		SnapshotBuilder: builder,
 		Engine:          engine,
 		IDGen:           idGen,
@@ -40,101 +44,93 @@ func NewAuditEvaluator(
 	}
 }
 
-// EvaluateConflict evaluates a tuner conflict in audit-only mode without mutating state.
+// AuditTunerConflict evaluates a tuner conflict in audit-only mode without mutating state or error objects.
 // In "disabled" mode, it bypasses snapshot reading, policy evaluation, and audit logging completely.
-// On audit pipeline failure (snapshot build, evaluation, or audit emit), it logs technical errors structurally,
-// emits a failure audit event with ReasonCode "POLICY_EVALUATION_FAILED", and returns a typed error.
-// The caller ALWAYS retains its original conflict error unchanged.
-func (e *PipelineAuditEvaluator) EvaluateConflict(
+func (e *PipelineAuditEvaluator) AuditTunerConflict(
 	ctx context.Context,
-	requestID string,
-	req domainPolicy.EvaluationRequest,
-	origErr error,
-) (EvaluationAuditEvent, error) {
+	req ConflictAuditRequest,
+) error {
 	// 1. Mode "disabled" -> Absolute Bypass (Zero overhead, zero reads, zero evaluation)
 	if e.Config.Mode == PreemptionModeDisabled {
-		return EvaluationAuditEvent{}, nil
+		return nil
 	}
 
-	if requestID == "" {
+	if req.RequestID == "" {
 		e.TechLogger.Error().Msg("requestID cannot be empty for policy audit evaluation")
-		return EvaluationAuditEvent{}, ErrMissingRequestID
+		return ErrMissingRequestID
+	}
+
+	if e.Clock == nil {
+		e.TechLogger.Error().Msg("Clock is nil")
+		return errors.New("clock is required")
+	}
+
+	evalTime := e.Clock.Now()
+
+	domainReq := domainPolicy.EvaluationRequest{
+		Consumer:     req.Consumer,
+		ResourceKind: req.ResourceKind,
+		Owner:        req.Owner,
+		TargetScope:  req.TargetScope,
+		ScopeMode:    req.ScopeMode,
+		EvaluatedAt:  evalTime,
 	}
 
 	if e.IDGen == nil {
-		e.TechLogger.Error().Msg("IDGen generator function is nil")
-		return EvaluationAuditEvent{}, ErrInvalidEventID
+		e.TechLogger.Error().Msg("IDGen generator is nil")
+		failEvent := e.makeFailureEvent("", req.RequestID, domainReq, evalTime, "ID_GENERATION", "IDGen generator is nil")
+		e.emitFailureEvent(ctx, failEvent)
+		return ErrInvalidEventID
 	}
 
 	// 2. Generate Event ID
-	eventID, err := e.IDGen()
+	eventID, err := e.IDGen.NewID()
 	if err != nil || eventID == "" {
-		e.TechLogger.Error().Err(err).Str("request_id", requestID).Msg("event ID generator failed or produced empty ID")
-		failEvent := EvaluationAuditEvent{
-			EvaluatedAt:         req.EvaluatedAt,
-			RequestID:           requestID,
-			RequestOwner:        req.Owner,
-			Consumer:            req.Consumer,
-			ResourceKind:        req.ResourceKind,
-			ScopeMode:           req.ScopeMode,
-			TargetScope:         req.TargetScope,
-			Decision:            domainPolicy.DecisionReject,
-			ReasonCode:          domainPolicy.ReasonCode("POLICY_EVALUATION_FAILED"),
-			EnforcementMode:     PreemptionModeAuditOnly,
-			EvaluationSucceeded: false,
-			ErrorMessage:        "event ID generation failed",
-		}
-		if e.Logger != nil {
-			_ = e.Logger.Emit(ctx, failEvent)
-		}
-		return failEvent, ErrInvalidEventID
-	}
-
-	evalTime := req.EvaluatedAt
-	if evalTime.IsZero() {
-		evalTime = time.Now()
-		req.EvaluatedAt = evalTime
+		e.TechLogger.Error().Err(err).Str("request_id", req.RequestID).Msg("event ID generator failed or produced empty ID")
+		failEvent := e.makeFailureEvent("", req.RequestID, domainReq, evalTime, "ID_GENERATION", "event ID generation failed")
+		e.emitFailureEvent(ctx, failEvent)
+		return ErrInvalidEventID
 	}
 
 	// 3. Build Resource Snapshot from Read-Only Providers
 	if e.SnapshotBuilder == nil {
-		e.TechLogger.Error().Str("request_id", requestID).Msg("SnapshotBuilder is nil")
-		failEvent := e.makeFailureEvent(eventID, requestID, req, "SnapshotBuilder is nil")
+		e.TechLogger.Error().Str("request_id", req.RequestID).Msg("SnapshotBuilder is nil")
+		failEvent := e.makeFailureEvent(eventID, req.RequestID, domainReq, evalTime, "SNAPSHOT_BUILD", "SnapshotBuilder is nil")
 		e.emitFailureEvent(ctx, failEvent)
-		return failEvent, ErrSnapshotBuildFailed
+		return ErrSnapshotBuildFailed
 	}
 
-	snap, rev, err := e.SnapshotBuilder.BuildSnapshot(ctx, req)
+	snap, rev, err := e.SnapshotBuilder.BuildSnapshot(ctx, domainReq)
 	if err != nil {
-		e.TechLogger.Error().Err(err).Str("request_id", requestID).Msg("failed to build resource snapshot for audit evaluation")
-		failEvent := e.makeFailureEvent(eventID, requestID, req, fmt.Sprintf("snapshot build failed: %v", err))
+		e.TechLogger.Error().Err(err).Str("request_id", req.RequestID).Msg("failed to build resource snapshot for audit evaluation")
+		failEvent := e.makeFailureEvent(eventID, req.RequestID, domainReq, evalTime, "SNAPSHOT_BUILD", fmt.Sprintf("snapshot build failed: %v", err))
 		e.emitFailureEvent(ctx, failEvent)
-		return failEvent, fmt.Errorf("%w: %v", ErrSnapshotBuildFailed, err)
+		return fmt.Errorf("%w: %v", ErrSnapshotBuildFailed, err)
 	}
 
 	// 4. Policy Engine Functional Evaluation
 	if e.Engine == nil {
-		e.TechLogger.Error().Str("request_id", requestID).Msg("PolicyEngine is nil")
-		failEvent := e.makeFailureEvent(eventID, requestID, req, "PolicyEngine is nil")
+		e.TechLogger.Error().Str("request_id", req.RequestID).Msg("PolicyEngine is nil")
+		failEvent := e.makeFailureEvent(eventID, req.RequestID, domainReq, evalTime, "POLICY_EVALUATION", "PolicyEngine is nil")
 		failEvent.SnapshotRevision = rev
 		e.emitFailureEvent(ctx, failEvent)
-		return failEvent, ErrPolicyEvaluationFailed
+		return ErrPolicyEvaluationFailed
 	}
 
-	res, evalErr := e.Engine.Evaluate(req, snap)
+	res, evalErr := e.Engine.Evaluate(domainReq, snap)
 	if evalErr != nil {
-		e.TechLogger.Error().Err(evalErr).Str("request_id", requestID).Str("snapshot_rev", rev).Msg("policy engine evaluation returned an error")
-		failEvent := e.makeFailureEvent(eventID, requestID, req, fmt.Sprintf("policy engine evaluation failed: %v", evalErr))
+		e.TechLogger.Error().Err(evalErr).Str("request_id", req.RequestID).Str("snapshot_rev", rev).Msg("policy engine evaluation returned an error")
+		failEvent := e.makeFailureEvent(eventID, req.RequestID, domainReq, evalTime, "POLICY_EVALUATION", fmt.Sprintf("policy engine evaluation failed: %v", evalErr))
 		failEvent.SnapshotRevision = rev
 		e.emitFailureEvent(ctx, failEvent)
-		return failEvent, fmt.Errorf("%w: %v", ErrPolicyEvaluationFailed, evalErr)
+		return fmt.Errorf("%w: %v", ErrPolicyEvaluationFailed, evalErr)
 	}
 
 	// 5. Construct Audit Event
 	event := EvaluationAuditEvent{
 		EventID:               eventID,
-		EvaluatedAt:           req.EvaluatedAt,
-		RequestID:             requestID,
+		EvaluatedAt:           evalTime,
+		RequestID:             req.RequestID,
 		RequestOwner:          req.Owner,
 		Consumer:              req.Consumer,
 		ResourceKind:          req.ResourceKind,
@@ -153,28 +149,28 @@ func (e *PipelineAuditEvaluator) EvaluateConflict(
 	// 6. Emit Audit Event
 	if e.Logger != nil {
 		if emitErr := e.Logger.Emit(ctx, event); emitErr != nil {
-			e.TechLogger.Error().Err(emitErr).Str("event_id", eventID).Str("request_id", requestID).Msg("failed to emit evaluation audit event")
-			return event, fmt.Errorf("%w: %v", ErrAuditEmissionFailed, emitErr)
+			e.TechLogger.Error().Err(emitErr).Str("event_id", eventID).Str("request_id", req.RequestID).Msg("failed to emit evaluation audit event")
+			return fmt.Errorf("%w: %v", ErrAuditEmissionFailed, emitErr)
 		}
 	}
 
-	return event, nil
+	return nil
 }
 
-func (e *PipelineAuditEvaluator) makeFailureEvent(eventID, requestID string, req domainPolicy.EvaluationRequest, errMsg string) EvaluationAuditEvent {
+func (e *PipelineAuditEvaluator) makeFailureEvent(eventID, requestID string, req domainPolicy.EvaluationRequest, evalTime time.Time, stage, errMsg string) EvaluationAuditEvent {
 	return EvaluationAuditEvent{
 		EventID:             eventID,
-		EvaluatedAt:         req.EvaluatedAt,
+		EvaluatedAt:         evalTime,
 		RequestID:           requestID,
 		RequestOwner:        req.Owner,
 		Consumer:            req.Consumer,
 		ResourceKind:        req.ResourceKind,
 		ScopeMode:           req.ScopeMode,
 		TargetScope:         req.TargetScope,
-		Decision:            domainPolicy.DecisionReject,
-		ReasonCode:          domainPolicy.ReasonCode("POLICY_EVALUATION_FAILED"),
 		EnforcementMode:     PreemptionModeAuditOnly,
 		EvaluationSucceeded: false,
+		FailureStage:        stage,
+		ErrorCode:           "POLICY_EVALUATION_FAILED",
 		ErrorMessage:        errMsg,
 	}
 }

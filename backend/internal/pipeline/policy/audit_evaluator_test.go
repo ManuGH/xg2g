@@ -23,28 +23,41 @@ func (m *mockAuditLogger) Emit(ctx context.Context, event EvaluationAuditEvent) 
 	return nil
 }
 
+type mockClock struct {
+	fixed time.Time
+}
+
+func (c *mockClock) Now() time.Time {
+	return c.fixed
+}
+
+type mockIDGen struct {
+	id  string
+	err error
+}
+
+func (g *mockIDGen) NewID() (string, error) {
+	return g.id, g.err
+}
+
 func TestAuditEvaluator_DisabledMode_BypassesAll(t *testing.T) {
 	ctx := context.Background()
 	logger := &mockAuditLogger{}
 
 	cfg := Config{Mode: PreemptionModeDisabled}
-	evaluator := NewAuditEvaluator(cfg, nil, nil, nil, logger, zerolog.Nop())
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: time.Now()}, nil, nil, &mockIDGen{}, logger, zerolog.Nop())
 
-	req := domainPolicy.EvaluationRequest{
+	req := ConflictAuditRequest{
+		RequestID:    "req-123",
 		Consumer:     domainPolicy.ConsumerLiveTV,
 		ResourceKind: domainPolicy.ResourceTuner,
 		Owner:        "user-1",
 		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
-		EvaluatedAt:  time.Now(),
 	}
 
-	origErr := errors.New("original conflict")
-	event, err := evaluator.EvaluateConflict(ctx, "req-123", req, origErr)
+	err := evaluator.AuditTunerConflict(ctx, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if event.EventID != "" {
-		t.Errorf("expected empty event in disabled mode, got %+v", event)
 	}
 	if len(logger.events) != 0 {
 		t.Errorf("expected 0 emitted audit events in disabled mode, got %d", len(logger.events))
@@ -64,26 +77,26 @@ func TestAuditEvaluator_AuditOnlyMode_EmitsAuditEvent(t *testing.T) {
 	builder := NewSnapshotBuilder(candProv, allocProv)
 	engine := domainPolicy.NewPolicyEngine()
 
-	idGen := func() (string, error) {
-		return "evt-999", nil
-	}
-
 	cfg := Config{Mode: PreemptionModeAuditOnly}
-	evaluator := NewAuditEvaluator(cfg, builder, engine, idGen, logger, zerolog.Nop())
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: now}, builder, engine, &mockIDGen{id: "evt-999"}, logger, zerolog.Nop())
 
-	req := domainPolicy.EvaluationRequest{
+	req := ConflictAuditRequest{
+		RequestID:    "req-555",
 		Consumer:     domainPolicy.ConsumerLiveTV,
 		ResourceKind: domainPolicy.ResourceTuner,
 		Owner:        "user-1",
 		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
-		EvaluatedAt:  now,
 	}
 
-	origErr := errors.New("original conflict")
-	event, err := evaluator.EvaluateConflict(ctx, "req-555", req, origErr)
+	err := evaluator.AuditTunerConflict(ctx, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
+	if len(logger.events) != 1 {
+		t.Fatalf("expected 1 emitted event, got %d", len(logger.events))
+	}
+	event := logger.events[0]
 
 	if event.EventID != "evt-999" {
 		t.Errorf("expected EventID evt-999, got %s", event.EventID)
@@ -100,38 +113,29 @@ func TestAuditEvaluator_AuditOnlyMode_EmitsAuditEvent(t *testing.T) {
 	if !event.EvaluationSucceeded {
 		t.Error("expected EvaluationSucceeded == true")
 	}
-	if len(logger.events) != 1 {
-		t.Fatalf("expected 1 emitted event, got %d", len(logger.events))
-	}
 }
 
 func TestAuditEvaluator_SnapshotBuildFailure_EmitsFailureEvent(t *testing.T) {
 	ctx := context.Background()
 	logger := &mockAuditLogger{}
 
-	// Failing snapshot builder
 	failingCandProv := &mockCandidateProvider{err: errors.New("hardware provider down")}
 	allocProv := &mockAllocationProvider{obsAt: time.Now()}
 	builder := NewSnapshotBuilder(failingCandProv, allocProv)
 	engine := domainPolicy.NewPolicyEngine()
 
-	idGen := func() (string, error) {
-		return "evt-fail-1", nil
-	}
-
 	cfg := Config{Mode: PreemptionModeAuditOnly}
-	evaluator := NewAuditEvaluator(cfg, builder, engine, idGen, logger, zerolog.Nop())
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: time.Now()}, builder, engine, &mockIDGen{id: "evt-fail-1"}, logger, zerolog.Nop())
 
-	req := domainPolicy.EvaluationRequest{
+	req := ConflictAuditRequest{
+		RequestID:    "req-fail",
 		Consumer:     domainPolicy.ConsumerLiveTV,
 		ResourceKind: domainPolicy.ResourceTuner,
 		Owner:        "user-1",
 		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
-		EvaluatedAt:  time.Now(),
 	}
 
-	origErr := errors.New("original conflict")
-	_, err := evaluator.EvaluateConflict(ctx, "req-fail", req, origErr)
+	err := evaluator.AuditTunerConflict(ctx, req)
 	if !errors.Is(err, ErrSnapshotBuildFailed) {
 		t.Fatalf("expected ErrSnapshotBuildFailed, got %v", err)
 	}
@@ -143,7 +147,10 @@ func TestAuditEvaluator_SnapshotBuildFailure_EmitsFailureEvent(t *testing.T) {
 	if failEvt.EvaluationSucceeded {
 		t.Error("expected EvaluationSucceeded == false")
 	}
-	if failEvt.ReasonCode != domainPolicy.ReasonCode("POLICY_EVALUATION_FAILED") {
-		t.Errorf("expected ReasonCode POLICY_EVALUATION_FAILED, got %s", failEvt.ReasonCode)
+	if failEvt.FailureStage != "SNAPSHOT_BUILD" {
+		t.Errorf("expected FailureStage SNAPSHOT_BUILD, got %s", failEvt.FailureStage)
+	}
+	if failEvt.ErrorCode != "POLICY_EVALUATION_FAILED" {
+		t.Errorf("expected ErrorCode POLICY_EVALUATION_FAILED, got %s", failEvt.ErrorCode)
 	}
 }

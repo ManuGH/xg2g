@@ -45,28 +45,29 @@ func TestAuditEvaluator_SideEffectSpy_StrictZeroMutations(t *testing.T) {
 	engine := domainPolicy.NewPolicyEngine()
 	logger := &mockAuditLogger{}
 
-	idGen := func() (string, error) {
-		return "evt-spy-1", nil
-	}
-
 	cfg := Config{Mode: PreemptionModeAuditOnly}
-	evaluator := NewAuditEvaluator(cfg, builder, engine, idGen, logger, zerolog.Nop())
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: now}, builder, engine, &mockIDGen{id: "evt-spy-1"}, logger, zerolog.Nop())
 
-	req := domainPolicy.EvaluationRequest{
+	req := ConflictAuditRequest{
+		RequestID:    "req-spy-1",
 		Consumer:     domainPolicy.ConsumerScheduledRecording, // Wants to preempt ChannelScan
 		ResourceKind: domainPolicy.ResourceTuner,
 		Owner:        "timer-recording-job",
 		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
-		EvaluatedAt:  now,
 	}
 
 	// Initial Acquire attempt happened exactly 1 time before conflict
 	atomic.StoreInt64(&spy.AcquiresCount, 1)
 
-	event, err := evaluator.EvaluateConflict(ctx, "req-spy-1", req, nil)
+	err := evaluator.AuditTunerConflict(ctx, req)
 	if err != nil {
 		t.Fatalf("unexpected evaluation error: %v", err)
 	}
+
+	if len(logger.events) != 1 {
+		t.Fatalf("expected 1 audit event, got %d", len(logger.events))
+	}
+	event := logger.events[0]
 
 	if event.Decision != domainPolicy.DecisionPreemptionRequired {
 		t.Fatalf("expected DecisionPreemptionRequired, got %s", event.Decision)

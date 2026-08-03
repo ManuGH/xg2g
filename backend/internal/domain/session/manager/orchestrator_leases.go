@@ -12,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/log"
 	pipelineLease "github.com/ManuGH/xg2g/internal/pipeline/lease"
+	pipelinePolicy "github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
 	"github.com/rs/zerolog"
@@ -54,35 +55,33 @@ func (o *Orchestrator) acquireLeases(
 	}
 
 	if sessionCtx.Mode == model.ModeLive {
-		slot, tunerLease, tunerHandle, ok, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
+		slot, tunerLease, tunerHandle, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
 		if err != nil {
 			res.ReleaseDedup()
-			return nil, err
-		}
-		if !ok {
-			res.ReleaseDedup()
-			tunerBusyTotal.WithLabelValues().Inc()
-			origErr := newReasonError(model.RLeaseBusy, "no tuner slots available", nil)
+			if errors.Is(err, pipelineLease.ErrScopeConflict) {
+				tunerBusyTotal.WithLabelValues().Inc()
+				publicErr := newReasonError(model.RLeaseBusy, "no tuner slots available", err)
 
-			if o.AuditEvaluator != nil {
-				consumer := domainPolicy.ConsumerLiveTV
-				if sessionCtx.Mode == model.ModeRecording {
-					consumer = domainPolicy.ConsumerScheduledRecording
+				if o.ConflictAuditor != nil {
+					consumer := domainPolicy.ConsumerLiveTV
+					if sessionCtx.Mode == model.ModeRecording {
+						consumer = domainPolicy.ConsumerScheduledRecording
+					}
+					auditReq := pipelinePolicy.ConflictAuditRequest{
+						RequestID:    event.SessionID,
+						Consumer:     consumer,
+						ResourceKind: domainPolicy.ResourceTuner,
+						Owner:        leaseOwner,
+						ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
+					}
+					if auditErr := o.ConflictAuditor.AuditTunerConflict(ctx, auditReq); auditErr != nil {
+						logger.Error().Err(auditErr).Str("session_id", event.SessionID).Msg("policy audit evaluation failed")
+					}
 				}
-				evalReq := domainPolicy.EvaluationRequest{
-					Consumer:     consumer,
-					ResourceKind: domainPolicy.ResourceTuner,
-					Owner:        leaseOwner,
-					ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
-					EvaluatedAt:  time.Now(),
-				}
-				_, auditErr := o.AuditEvaluator.EvaluateConflict(ctx, event.SessionID, evalReq, origErr)
-				if auditErr != nil {
-					logger.Error().Err(auditErr).Str("session_id", event.SessionID).Msg("policy audit evaluation failed")
-				}
+
+				return nil, publicErr
 			}
-
-			return nil, origErr
+			return nil, err
 		}
 		res.Slot = slot
 		res.TunerLease = tunerLease

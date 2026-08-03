@@ -53,17 +53,34 @@ type AllocationProvider interface {
 	ActiveAllocations(ctx context.Context, kind domainPolicy.ResourceKind) ([]AllocationMetadata, time.Time, error)
 }
 
+// Clock defines a deterministic time provider interface.
+type Clock interface {
+	Now() time.Time
+}
+
+// IDGenerator generates unique string identifiers for audit events.
+type IDGenerator interface {
+	NewID() (string, error)
+}
+
 // AuditLogger emits structured evaluation audit events.
 type AuditLogger interface {
 	Emit(ctx context.Context, event EvaluationAuditEvent) error
 }
 
-// IDGenerator generates unique string identifiers for audit events.
-type IDGenerator func() (string, error)
+// ConflictAuditRequest contains the facts for a conflict evaluation without error pointers.
+type ConflictAuditRequest struct {
+	RequestID    string
+	Consumer     domainPolicy.ConsumerType
+	ResourceKind domainPolicy.ResourceKind
+	Owner        string
+	TargetScope  string
+	ScopeMode    domainPolicy.ScopeSelectionMode
+}
 
-// AuditEvaluator evaluates tuner conflicts and emits structured audit events without mutating state.
-type AuditEvaluator interface {
-	EvaluateConflict(ctx context.Context, requestID string, req domainPolicy.EvaluationRequest, origErr error) (EvaluationAuditEvent, error)
+// ConflictAuditor evaluates tuner conflicts and emits structured audit events without mutating state or receiving business error pointers.
+type ConflictAuditor interface {
+	AuditTunerConflict(ctx context.Context, req ConflictAuditRequest) error
 }
 
 var (

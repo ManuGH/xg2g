@@ -2,7 +2,6 @@ package policy
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -38,30 +37,29 @@ func TestProductionIntegration_TunerConflictTriggersAudit_PreservesErrorIdentity
 	engine := domainPolicy.NewPolicyEngine()
 	auditLogger := &mockAuditLogger{}
 
-	idGen := func() (string, error) {
-		return "evt-prod-123", nil
-	}
-
 	cfg := Config{Mode: PreemptionModeAuditOnly}
-	evaluator := NewAuditEvaluator(cfg, builder, engine, idGen, auditLogger, zerolog.Nop())
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: now}, builder, engine, &mockIDGen{id: "evt-prod-123"}, auditLogger, zerolog.Nop())
 
 	// 3. Execute AuditEvaluator on conflict
-	req := domainPolicy.EvaluationRequest{
+	req := ConflictAuditRequest{
+		RequestID:    "sess-prod-777",
 		Consumer:     domainPolicy.ConsumerScheduledRecording,
 		ResourceKind: domainPolicy.ResourceTuner,
 		Owner:        "new-recording-job",
 		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
-		EvaluatedAt:  now,
 	}
 
-	origConflictErr := errors.New("authoritative lease store conflict: no slots available")
-	event, auditErr := evaluator.EvaluateConflict(ctx, "sess-prod-777", req, origConflictErr)
-
+	auditErr := evaluator.AuditTunerConflict(ctx, req)
 	if auditErr != nil {
 		t.Fatalf("unexpected audit error: %v", auditErr)
 	}
 
 	// 4. Assert Audit Event content
+	if len(auditLogger.events) != 1 {
+		t.Fatalf("expected 1 audit event, got %d", len(auditLogger.events))
+	}
+	event := auditLogger.events[0]
+
 	if event.EventID != "evt-prod-123" {
 		t.Errorf("expected EventID evt-prod-123, got %s", event.EventID)
 	}
@@ -90,25 +88,21 @@ func TestProductionIntegration_DisabledMode_LeavesBehaviorUntouched(t *testing.T
 
 	auditLogger := &mockAuditLogger{}
 	cfg := Config{Mode: PreemptionModeDisabled}
-	evaluator := NewAuditEvaluator(cfg, nil, nil, nil, auditLogger, zerolog.Nop())
+	evaluator := NewAuditEvaluator(cfg, &mockClock{fixed: time.Now()}, nil, nil, &mockIDGen{}, auditLogger, zerolog.Nop())
 
-	req := domainPolicy.EvaluationRequest{
+	req := ConflictAuditRequest{
+		RequestID:    "sess-disabled",
 		Consumer:     domainPolicy.ConsumerLiveTV,
 		ResourceKind: domainPolicy.ResourceTuner,
 		Owner:        "user-2",
 		ScopeMode:    domainPolicy.ScopeSelectionAnyCompatible,
-		EvaluatedAt:  time.Now(),
 	}
 
-	origConflictErr := errors.New("original conflict error")
-	event, err := evaluator.EvaluateConflict(ctx, "sess-disabled", req, origConflictErr)
+	err := evaluator.AuditTunerConflict(ctx, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if event.EventID != "" {
-		t.Errorf("expected empty event in disabled mode, got %+v", event)
-	}
 	if len(auditLogger.events) != 0 {
 		t.Errorf("expected 0 audit events emitted in disabled mode, got %d", len(auditLogger.events))
 	}

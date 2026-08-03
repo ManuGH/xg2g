@@ -16,13 +16,15 @@ type EvaluationAuditEvent struct {
 	ResourceKind          domainPolicy.ResourceKind       `json:"resource_kind"`
 	ScopeMode             domainPolicy.ScopeSelectionMode `json:"scope_mode"`
 	TargetScope           string                          `json:"target_scope"`
-	Decision              domainPolicy.PreemptionDecision `json:"decision"`
-	ReasonCode            domainPolicy.ReasonCode         `json:"reason_code"`
+	Decision              domainPolicy.PreemptionDecision `json:"decision,omitempty"`
+	ReasonCode            domainPolicy.ReasonCode         `json:"reason_code,omitempty"`
 	SelectedScope         string                          `json:"selected_scope,omitempty"`
 	TargetAllocationID    string                          `json:"target_allocation_id,omitempty"`
 	BlockingAllocationIDs []string                        `json:"blocking_allocation_ids,omitempty"`
 	EnforcementMode       PreemptionMode                  `json:"enforcement_mode"`
 	SnapshotRevision      string                          `json:"snapshot_revision"`
 	EvaluationSucceeded   bool                            `json:"evaluation_succeeded"`
+	FailureStage          string                          `json:"failure_stage,omitempty"` // SNAPSHOT_BUILD, POLICY_EVALUATION, ID_GENERATION
+	ErrorCode             string                          `json:"error_code,omitempty"`    // e.g. POLICY_EVALUATION_FAILED
 	ErrorMessage          string                          `json:"error_message,omitempty"` // Strictly diagnostic message
 }
