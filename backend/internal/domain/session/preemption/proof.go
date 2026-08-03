@@ -14,6 +14,7 @@ var (
 	ErrInvalidProof               = errors.New("invalid conflict resolution proof")
 	ErrProofReceiverMismatch      = errors.New("proof receiver ID does not match request")
 	ErrProofRevisionMismatch      = errors.New("proof snapshot revision does not match snapshot")
+	ErrProofStaleHardware         = errors.New("proof hardware profile is stale or unverified")
 	ErrProofUnmappedAllocation    = errors.New("proof target allocation not active in snapshot")
 	ErrProofIncompleteFreedClaims = errors.New("freed resources do not satisfy requested resources")
 )
@@ -25,6 +26,12 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 	}
 	if strings.TrimSpace(proof.SnapshotRevision) == "" || proof.SnapshotRevision != snapshot.SnapshotRevision {
 		return fmt.Errorf("%w: proof revision '%s' != snapshot revision '%s'", ErrProofRevisionMismatch, proof.SnapshotRevision, snapshot.SnapshotRevision)
+	}
+	if strings.TrimSpace(proof.HardwareProfileRevision) == "" || proof.HardwareProfileStatus != HardwareProfileValid {
+		return fmt.Errorf("%w: status '%s'", ErrProofStaleHardware, proof.HardwareProfileStatus)
+	}
+	if proof.EvidenceClassification != EvidenceDirectObservation && proof.EvidenceClassification != EvidenceInferred {
+		return fmt.Errorf("%w: unverified evidence classification '%s'", ErrInvalidProof, proof.EvidenceClassification)
 	}
 	if len(proof.RequestedResources) == 0 {
 		return fmt.Errorf("%w: proof contains zero requested resources", ErrInvalidProof)
@@ -40,8 +47,22 @@ func ValidateConflictProof(req PreemptionRequest, snapshot ResourceSnapshot, pro
 		if strings.TrimSpace(mapping.AllocationID) == "" {
 			return fmt.Errorf("%w: empty allocation ID in proof mapping", ErrInvalidProof)
 		}
-		if _, ok := activeMap[mapping.AllocationID]; !ok {
+		alloc, ok := activeMap[mapping.AllocationID]
+		if !ok {
 			return fmt.Errorf("%w: allocation '%s' in proof is not active in snapshot", ErrProofUnmappedAllocation, mapping.AllocationID)
+		}
+		if len(mapping.FreedResources) == 0 {
+			return fmt.Errorf("%w: mapping for allocation '%s' contains zero freed resources", ErrInvalidProof, mapping.AllocationID)
+		}
+		allocClaimMap := make(map[string]struct{})
+		for _, claim := range alloc.Claims {
+			allocClaimMap[fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)] = struct{}{}
+		}
+		for _, freed := range mapping.FreedResources {
+			key := fmt.Sprintf("%s:%s", freed.Kind, freed.Resource)
+			if _, hasClaim := allocClaimMap[key]; !hasClaim && freed.Kind != ResourceKindPhysicalTuner && freed.Kind != ResourceKindDemux {
+				return fmt.Errorf("%w: freed claim '%s' not owned by target allocation '%s'", ErrInvalidProof, key, mapping.AllocationID)
+			}
 		}
 	}
 
