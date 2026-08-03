@@ -438,11 +438,15 @@ func TestContractHashChangesWhenAnyRelevantFieldChanges(t *testing.T) {
 
 func TestContractRejectsExpiredContract(t *testing.T) {
 	now := time.Now().UTC()
+	reqClaim := []ResourceClaim{{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1}}
 	contract := PreemptionExecutionContract{
 		ContractID:              "c-1",
 		ReceiverID:              "rec-1",
 		RequestID:               "req-1",
+		RequesterOwner:          "owner-1",
 		TargetAllocationIDs:     []string{"alloc-1"},
+		RequestedResources:      reqClaim,
+		ExpectedFreedResources:  reqClaim,
 		SnapshotRevision:        "rev-1",
 		HardwareProfileRevision: "hw-1",
 		ConflictProofRevision:   "rev-1",
@@ -459,13 +463,17 @@ func TestContractRejectsExpiredContract(t *testing.T) {
 
 func TestContractRejectsUnsortedOrDuplicateTargets(t *testing.T) {
 	now := time.Now().UTC()
+	reqClaim := []ResourceClaim{{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1}}
 
 	// Unsorted targets
 	contractUnsorted := PreemptionExecutionContract{
 		ContractID:              "c-1",
 		ReceiverID:              "rec-1",
 		RequestID:               "req-1",
+		RequesterOwner:          "owner-1",
 		TargetAllocationIDs:     []string{"alloc-B", "alloc-A"}, // Unsorted
+		RequestedResources:      reqClaim,
+		ExpectedFreedResources:  reqClaim,
 		SnapshotRevision:        "rev-1",
 		HardwareProfileRevision: "hw-1",
 		ConflictProofRevision:   "rev-1",
@@ -485,7 +493,10 @@ func TestContractRejectsUnsortedOrDuplicateTargets(t *testing.T) {
 		ContractID:              "c-2",
 		ReceiverID:              "rec-1",
 		RequestID:               "req-1",
+		RequesterOwner:          "owner-1",
 		TargetAllocationIDs:     []string{"alloc-A", "alloc-A"}, // Duplicate
+		RequestedResources:      reqClaim,
+		ExpectedFreedResources:  reqClaim,
 		SnapshotRevision:        "rev-1",
 		HardwareProfileRevision: "hw-1",
 		ConflictProofRevision:   "rev-1",

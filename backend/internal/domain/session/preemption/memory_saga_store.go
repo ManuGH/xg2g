@@ -32,7 +32,11 @@ func (m *MemorySagaStore) CreateSaga(ctx context.Context, record PreemptionSagaR
 
 	// Check if saga with same SagaID exists
 	if existing, ok := m.sagas[record.SagaID]; ok {
-		if existing.ContractID == record.ContractID && existing.PreparedTeardownHash == record.PreparedTeardownHash {
+		if existing.ContractID == record.ContractID &&
+			existing.PreparedTeardownHash == record.PreparedTeardownHash &&
+			existing.ReceiverID == record.ReceiverID &&
+			existing.Mode == record.Mode &&
+			existing.ExpiresAt.Equal(record.ExpiresAt) {
 			return existing, false, nil
 		}
 		return PreemptionSagaRecord{}, false, fmt.Errorf("%w: saga '%s' exists with mismatched content", ErrSagaIdentityConflict, record.SagaID)
@@ -80,6 +84,10 @@ func (m *MemorySagaStore) ClaimSagaExecution(
 		return PreemptionSagaRecord{}, ReceiverClaim{}, ErrSagaNotFound
 	}
 
+	if saga.ReceiverID != receiverID {
+		return PreemptionSagaRecord{}, ReceiverClaim{}, fmt.Errorf("%w: receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
+	}
+
 	if saga.Version != expectedVersion {
 		return PreemptionSagaRecord{}, ReceiverClaim{}, fmt.Errorf("%w: saga version %d != expected %d", ErrSagaVersionConflict, saga.Version, expectedVersion)
 	}
@@ -101,7 +109,6 @@ func (m *MemorySagaStore) ClaimSagaExecution(
 		}
 	}
 
-	// Calculate new monotonic fencing token
 	newFencingToken := uint64(1)
 	newClaimVersion := uint64(1)
 	if claimExists {
@@ -119,12 +126,13 @@ func (m *MemorySagaStore) ClaimSagaExecution(
 		FencingToken: newFencingToken,
 	}
 
-	// Update saga record
+	// Update saga record (save original state for history)
+	originalState := saga.State
 	saga.State = StateExecutionClaimed
 	saga.Version++
 	saga.UpdatedAt = now
 	transition.Sequence = uint64(len(saga.History) + 1)
-	transition.From = StatePrepared
+	transition.From = originalState
 	transition.To = StateExecutionClaimed
 	transition.OccurredAt = now
 	saga.History = append(saga.History, transition)
@@ -158,6 +166,10 @@ func (m *MemorySagaStore) CompareAndSwapState(
 		return PreemptionSagaRecord{}, ErrSagaNotFound
 	}
 
+	if saga.ReceiverID != receiverID {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
+	}
+
 	if saga.Version != expectedVersion {
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: saga version %d != expected %d", ErrSagaVersionConflict, saga.Version, expectedVersion)
 	}
@@ -166,12 +178,13 @@ func (m *MemorySagaStore) CompareAndSwapState(
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: current state %s != expected %s", ErrInvalidStateTransition, saga.State, fromState)
 	}
 
-	// Verify receiver claim & fencing token
+	// Verify receiver claim & fencing token strictly
 	claim, claimExists := m.claims[receiverID]
 	if !claimExists || claim.Status != ClaimStatusClaimed || claim.SagaID != sagaID || claim.FencingToken != fencingToken {
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: claim mismatch for receiver '%s' (token %d)", ErrFencingTokenMismatch, receiverID, fencingToken)
 	}
 
+	originalState := saga.State
 	saga.State = toState
 	saga.Version++
 	saga.UpdatedAt = transition.OccurredAt
@@ -179,7 +192,7 @@ func (m *MemorySagaStore) CompareAndSwapState(
 		saga.UpdatedAt = time.Now().UTC()
 	}
 	transition.Sequence = uint64(len(saga.History) + 1)
-	transition.From = fromState
+	transition.From = originalState
 	transition.To = toState
 	if transition.OccurredAt.IsZero() {
 		transition.OccurredAt = saga.UpdatedAt
@@ -236,18 +249,27 @@ func (m *MemorySagaStore) TransitionAndReleaseClaim(
 		return PreemptionSagaRecord{}, ErrSagaNotFound
 	}
 
+	if saga.ReceiverID != receiverID {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: receiver '%s' != saga receiver '%s'", ErrFencingTokenMismatch, receiverID, saga.ReceiverID)
+	}
+
 	if saga.Version != expectedVersion {
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: saga version %d != expected %d", ErrSagaVersionConflict, saga.Version, expectedVersion)
 	}
 
+	// Strictly verify claim ownership, status, and fencing token! If mismatch -> ZERO MUTATIONS!
 	claim, claimExists := m.claims[receiverID]
-	if claimExists && claim.SagaID == sagaID && claim.FencingToken == fencingToken {
-		// Release claim but PRESERVE FencingToken!
-		claim.Status = ClaimStatusUnclaimed
-		claim.SagaID = ""
-		m.claims[receiverID] = claim
+	if !claimExists || claim.Status != ClaimStatusClaimed || claim.SagaID != sagaID || claim.FencingToken != fencingToken {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: cannot release claim for receiver '%s' (fencing token mismatch)", ErrFencingTokenMismatch, receiverID)
 	}
 
+	// Release claim while preserving fencing_token counter
+	claim.Status = ClaimStatusUnclaimed
+	claim.SagaID = ""
+	m.claims[receiverID] = claim
+
+	// Record true original state in transition log
+	originalState := saga.State
 	saga.State = toState
 	saga.Version++
 	saga.UpdatedAt = transition.OccurredAt
@@ -255,7 +277,7 @@ func (m *MemorySagaStore) TransitionAndReleaseClaim(
 		saga.UpdatedAt = time.Now().UTC()
 	}
 	transition.Sequence = uint64(len(saga.History) + 1)
-	transition.From = saga.State
+	transition.From = originalState
 	transition.To = toState
 	if transition.OccurredAt.IsZero() {
 		transition.OccurredAt = saga.UpdatedAt
@@ -277,15 +299,17 @@ func (m *MemorySagaStore) QuarantineReceiverClaim(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	claim, ok := m.claims[receiverID]
-	if !ok {
-		claim = ReceiverClaim{
-			ReceiverID:   receiverID,
-			FencingToken: 1,
-		}
+	saga, ok := m.sagas[sagaID]
+	if !ok || saga.ReceiverID != receiverID {
+		return ReceiverClaim{}, fmt.Errorf("%w: saga '%s' mismatch for receiver '%s'", ErrSagaNotFound, sagaID, receiverID)
 	}
+
+	claim, ok := m.claims[receiverID]
+	if !ok || claim.Status != ClaimStatusClaimed || claim.SagaID != sagaID || claim.FencingToken != fencingToken {
+		return ReceiverClaim{}, fmt.Errorf("%w: claim mismatch for receiver '%s'", ErrFencingTokenMismatch, receiverID)
+	}
+
 	claim.Status = ClaimStatusQuarantined
-	claim.SagaID = sagaID
 	claim.ClaimedAt = now
 	claim.ClaimVersion++
 	m.claims[receiverID] = claim

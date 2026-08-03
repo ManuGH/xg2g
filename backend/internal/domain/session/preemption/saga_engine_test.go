@@ -81,11 +81,12 @@ func TestEngine_LifecycleAndRevalidation_MemoryAndSQLiteStores(t *testing.T) {
 			require.NoError(t, err)
 			prepared := prepRes.Prepared
 
-			// 1. Create Saga in PREPARED state
+			// 1. Create Saga in PREPARED state (ReceiverID MUST be rec-1, NOT alloc-1!)
 			saga, created, err := engine.CreateSaga(ctx, prepared, PreemptionModeEnforce, now)
 			require.NoError(t, err)
 			require.True(t, created)
 			require.Equal(t, StatePrepared, saga.State)
+			require.Equal(t, "rec-1", saga.ReceiverID, "Saga ReceiverID MUST be rec-1")
 
 			// 2. Claim Receiver Execution (PREPARED -> EXECUTION_CLAIMED)
 			claimedSaga, claim, err := engine.ClaimExecution(ctx, saga.SagaID, "rec-1", 15*time.Second, now)
@@ -117,6 +118,110 @@ func TestEngine_LifecycleAndRevalidation_MemoryAndSQLiteStores(t *testing.T) {
 			require.ErrorIs(t, err, ErrMutationPhaseDisabled)
 		})
 	}
+}
+
+func TestEngine_RequesterReservation_StrictValidation(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemorySagaStore()
+	engine := NewPreemptionSagaEngine(store)
+	eval := NewEvaluator()
+	preparer := NewTeardownPreparer()
+	now := time.Now().UTC()
+
+	req := PreemptionRequest{
+		RequestID:         "req-res-test",
+		ReceiverID:        "rec-1",
+		RequesterOwner:    "client-A",
+		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestedResources: []ResourceClaim{
+			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
+		},
+	}
+
+	snapshot := ResourceSnapshot{
+		ReceiverID:       "rec-1",
+		SnapshotRevision: "rev-100",
+		ObservedAt:       now,
+		Allocations: []ActiveAllocation{
+			{AllocationID: "alloc-1", Claims: req.RequestedResources},
+		},
+	}
+
+	proof := ConflictResolutionProof{
+		ReceiverID:              "rec-1",
+		SnapshotRevision:        "rev-100",
+		HardwareProfileRevision: "hw-rev-1",
+		HardwareProfileStatus:   HardwareProfileValid,
+		EvidenceClassification:  EvidenceDirectObservation,
+		RequestedResources:      req.RequestedResources,
+		AllocationMappings: []AllocationResourceMapping{
+			{AllocationID: "alloc-1", FreedResources: req.RequestedResources},
+		},
+	}
+
+	createTestSaga := func(requestID string) (PreemptionSagaRecord, ReceiverClaim, SelectionResult, *PreparedTeardown) {
+		r := req
+		r.RequestID = requestID
+		sRes, _ := eval.SelectPlan(r, snapshot, proof, now)
+		pRes, _ := preparer.PrepareTeardown(sRes.Contract, snapshot, proof, now)
+		s, _, _ := engine.CreateSaga(ctx, pRes.Prepared, PreemptionModeEnforce, now)
+		sClaimed, c, _ := engine.ClaimExecution(ctx, s.SagaID, "rec-1", 15*time.Second, now)
+		return sClaimed, c, sRes, pRes.Prepared
+	}
+
+	// 1. Receiver ID mismatch -> Rejection
+	saga1, claim1, selRes1, prepared1 := createTestSaga("req-res-1")
+	resBadRec := RequesterReservation{
+		ReservationID:         "res-1",
+		RequestID:             "req-res-1",
+		ReceiverID:            "rec-OTHER", // Bad receiver!
+		Owner:                 "client-A",
+		ContractID:            selRes1.Contract.ContractID,
+		PreparedTeardownHash:  prepared1.PreparedTeardownHash,
+		RequesterAllocationID: "alloc-req-1",
+		ResourceClaims:        req.RequestedResources,
+		Revision:              "rev-1",
+		ExpiresAt:             now.Add(30 * time.Second),
+	}
+	_, err := engine.RevalidateAndTransition(ctx, saga1.SagaID, "rec-1", claim1.FencingToken, selRes1.Contract, prepared1, snapshot, proof, resBadRec, now)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "receiver ID")
+
+	// 2. Request ID mismatch -> Rejection
+	saga2, claim2, selRes2, prepared2 := createTestSaga("req-res-2")
+	resBadReq := RequesterReservation{
+		ReservationID:         "res-2",
+		RequestID:             "req-OTHER", // Bad request!
+		ReceiverID:            "rec-1",
+		Owner:                 "client-A",
+		ContractID:            selRes2.Contract.ContractID,
+		PreparedTeardownHash:  prepared2.PreparedTeardownHash,
+		RequesterAllocationID: "alloc-req-1",
+		ResourceClaims:        req.RequestedResources,
+		Revision:              "rev-1",
+		ExpiresAt:             now.Add(30 * time.Second),
+	}
+	_, err = engine.RevalidateAndTransition(ctx, saga2.SagaID, "rec-1", claim2.FencingToken, selRes2.Contract, prepared2, snapshot, proof, resBadReq, now)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "request ID")
+
+	// 3. Claims mismatch -> Rejection
+	saga3, claim3, selRes3, prepared3 := createTestSaga("req-res-3")
+	resBadClaims := RequesterReservation{
+		ReservationID:         "res-3",
+		RequestID:             "req-res-3",
+		ReceiverID:            "rec-1",
+		Owner:                 "client-A",
+		ContractID:            selRes3.Contract.ContractID,
+		PreparedTeardownHash:  prepared3.PreparedTeardownHash,
+		RequesterAllocationID: "alloc-req-1",
+		ResourceClaims:        []ResourceClaim{{Kind: ResourceKindRestrictedAccessSlot, Resource: "slot-999", Quantity: 1}},
+		Revision:              "rev-1",
+		ExpiresAt:             now.Add(30 * time.Second),
+	}
+	_, err = engine.RevalidateAndTransition(ctx, saga3.SagaID, "rec-1", claim3.FencingToken, selRes3.Contract, prepared3, snapshot, proof, resBadClaims, now)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "resource claims")
 }
 
 func TestEngine_RevalidationFailure_AbortsSagaAndReleasesClaim(t *testing.T) {
@@ -167,14 +272,16 @@ func TestEngine_RevalidationFailure_AbortsSagaAndReleasesClaim(t *testing.T) {
 
 	// Expired RequesterReservation!
 	expiredReservation := RequesterReservation{
-		ReservationID:        "res-expired",
-		RequestID:            "req-abort",
-		ReceiverID:           "rec-1",
-		Owner:                "client-A",
-		ContractID:           selRes.Contract.ContractID,
-		PreparedTeardownHash: prepared.PreparedTeardownHash,
-		ResourceClaims:       req.RequestedResources,
-		ExpiresAt:            now.Add(-10 * time.Second), // EXPIRED!
+		ReservationID:         "res-expired",
+		RequestID:             "req-abort",
+		ReceiverID:            "rec-1",
+		Owner:                 "client-A",
+		ContractID:            selRes.Contract.ContractID,
+		PreparedTeardownHash:  prepared.PreparedTeardownHash,
+		RequesterAllocationID: "alloc-req-1",
+		Revision:              "rev-1",
+		ResourceClaims:        req.RequestedResources,
+		ExpiresAt:             now.Add(-10 * time.Second), // EXPIRED!
 	}
 
 	// Revalidation MUST fail, transition saga to FAILED_BEFORE_MUTATION, and release claim

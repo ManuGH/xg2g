@@ -309,6 +309,8 @@ func TestValidatePreparedTeardown_HashSensitivityAndUnsortedTargets(t *testing.T
 	basePrep := PreparedTeardown{
 		TeardownID:              "t-1",
 		ContractID:              "c-1",
+		ReceiverID:              "rec-1",
+		RequestID:               "req-1",
 		ContractHash:            "chash-1",
 		TargetAllocationIDs:     []string{"alloc-1", "alloc-2"},
 		SnapshotRevision:        "rev-1",
