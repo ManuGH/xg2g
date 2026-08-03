@@ -24,7 +24,26 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 		return UsageDecision{}, err
 	}
 
-	// 1. Check for Duplicate Request (Same receiver, service, intent, owner within DuplicateWindow)
+	if policy.Mode == "" || policy.Mode == ReceiverUsageModeDisabled {
+		return UsageDecision{
+			Kind:           DecisionAllow,
+			Classification: req.Access,
+			Message:        "receiver usage policy disabled",
+		}, nil
+	}
+
+	decision := e.evaluateInternal(policy, req, snapshot)
+
+	if policy.Mode == ReceiverUsageModeAuditOnly {
+		decision.Kind = DecisionAllow
+		decision.Requirements = nil
+		decision.Message = "audit-only: " + decision.Message
+	}
+
+	return decision, nil
+}
+
+func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, req UsageRequest, snapshot SystemSnapshot) UsageDecision {
 	for _, sess := range snapshot.ActiveSessions {
 		if sess.ReceiverID == req.ReceiverID &&
 			sess.ServiceReference == req.Source.ServiceReference &&
@@ -35,7 +54,7 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 					Kind:           DecisionReuseSession,
 					ReuseSessionID: sess.SessionID,
 					Classification: req.Access,
-				}, nil
+				}
 			}
 		}
 	}
@@ -57,21 +76,21 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 			return UsageDecision{
 				Kind:           DecisionReject,
 				Reason:         model.RReceiverUsageAccessClassificationUnknown,
-				Message:        "access classification is unknown and policy requires rejection",
+				Message:        "unknown access capacity classification rejected by policy",
 				Classification: req.Access,
-			}, nil
+			}
 		}
 	}
 
-	// 3. Retro-DVR Source Check
+	// 3. Retro-DVR Special Rules
 	if req.Intent == IntentRetroDVR {
 		if req.RetroSource == RetroSourceExistingBuffer {
-			// Existing local buffer consumes 0 new receiver access or tuner slots
+			// Existing local buffer requires 0 new receiver capacity
 			return UsageDecision{
 				Kind:           DecisionAllow,
-				Requirements:   []LeaseRequirement{},
+				Requirements:   nil,
 				Classification: req.Access,
-			}, nil
+			}
 		}
 		if req.RetroSource == RetroSourceReceiverFetch && isRestricted && !policy.AllowRetroDVRRestricted {
 			return UsageDecision{
@@ -79,11 +98,11 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 				Reason:         model.RReceiverUsageIntentNotAllowed,
 				Message:        "retro-dvr with receiver fetch is forbidden for restricted services under current policy",
 				Classification: req.Access,
-			}, nil
+			}
 		}
 	}
 
-	// 4. Count Active Sessions for Target Receiver
+	// 4. Session Count Summaries
 	activeLiveCount := 0
 	activeRecordingCount := 0
 	activeRestrictedCount := 0
@@ -92,10 +111,10 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 		if sess.ReceiverID != req.ReceiverID {
 			continue
 		}
-		if sess.Intent == IntentLive {
+		switch sess.Intent {
+		case IntentLive:
 			activeLiveCount++
-		}
-		if sess.Intent == IntentRecording {
+		case IntentRecording:
 			activeRecordingCount++
 		}
 		if sess.IsRestricted {
@@ -103,7 +122,16 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 		}
 	}
 
-	// 5. Evaluate Concurrency & Limits
+	// 5. Evaluate Limits
+	if req.Intent == IntentLive && activeRecordingCount > 0 && !policy.AllowLiveWithRecording {
+		return UsageDecision{
+			Kind:           DecisionReject,
+			Reason:         model.RReceiverUsageLiveWithRecordingForbidden,
+			Message:        "live TV while recording is not permitted by policy",
+			Classification: req.Access,
+		}
+	}
+
 	if req.Intent == IntentLive {
 		if activeLiveCount >= policy.MaxLiveSessions {
 			return UsageDecision{
@@ -111,15 +139,7 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 				Reason:         model.RReceiverUsageLiveLimitExceeded,
 				Message:        "maximum simultaneous live sessions limit reached",
 				Classification: req.Access,
-			}, nil
-		}
-		if activeRecordingCount > 0 && !policy.AllowLiveWithRecording {
-			return UsageDecision{
-				Kind:           DecisionReject,
-				Reason:         model.RReceiverUsageLiveWithRecordingForbidden,
-				Message:        "live session is forbidden while a recording session is active",
-				Classification: req.Access,
-			}, nil
+			}
 		}
 	}
 
@@ -130,7 +150,7 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 				Reason:         model.RReceiverUsageRecordingLimitExceeded,
 				Message:        "maximum simultaneous recording sessions limit reached",
 				Classification: req.Access,
-			}, nil
+			}
 		}
 	}
 
@@ -141,7 +161,7 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 				Reason:         model.RReceiverUsageRestrictedAccessLimitExceeded,
 				Message:        "maximum simultaneous restricted access sessions limit reached",
 				Classification: req.Access,
-			}, nil
+			}
 		}
 	}
 
@@ -164,5 +184,5 @@ func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUs
 		Kind:           DecisionAllow,
 		Requirements:   reqs,
 		Classification: req.Access,
-	}, nil
+	}
 }

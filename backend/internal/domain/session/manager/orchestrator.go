@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -51,6 +52,11 @@ type Orchestrator struct {
 
 	TunerLeaseController lease.TunerLeaseController
 	ConflictAuditor      pipelinePolicy.ConflictAuditor
+
+	ReceiverID           string
+	UsagePolicy          receiverusage.ReceiverUsagePolicy
+	UsageEvaluator       receiverusage.Evaluator
+	RestrictedAccessCtrl *receiverusage.RestrictedAccessController
 
 	PipelineStopTimeout time.Duration
 	OutboundPolicy      platformnet.OutboundPolicy

@@ -9,6 +9,14 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
+type ReceiverUsageMode string
+
+const (
+	ReceiverUsageModeDisabled  ReceiverUsageMode = "disabled"   // Default: no usage policy enforced
+	ReceiverUsageModeAuditOnly ReceiverUsageMode = "audit-only" // Log & measure decisions without enforcement
+	ReceiverUsageModeEnforce   ReceiverUsageMode = "enforce"    // Enforce admissions & acquire restricted access leases
+)
+
 type AccessCapacityClass string
 
 const (

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	domainPolicy "github.com/ManuGH/xg2g/internal/domain/policy"
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -26,10 +27,11 @@ func (o *Orchestrator) acquireLeases(
 	logger zerolog.Logger,
 ) (*leaseAcquisition, error) {
 	res := &leaseAcquisition{
-		Slot:         -1,
-		ReleaseDedup: func() {},
-		ReleaseTuner: func() {},
-		HBCancel:     func() {},
+		Slot:                    -1,
+		ReleaseDedup:            func() {},
+		ReleaseTuner:            func() {},
+		ReleaseRestrictedAccess: func() error { return nil },
+		HBCancel:                func() {},
 	}
 
 	if sessionCtx.Mode == model.ModeLive {
@@ -54,13 +56,74 @@ func (o *Orchestrator) acquireLeases(
 		}
 	}
 
+	// E2.5c: Receiver Usage Policy Evaluation & Multi-Resource Plan Execution
+	if o.UsageEvaluator != nil {
+		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, true, true, time.Now())
+		activeSessions, _ := o.Store.ListSessions(ctx)
+		snap := BuildSystemSnapshot(o.ReceiverID, activeSessions, nil)
+
+		policy := o.UsagePolicy
+
+		decision, err := o.UsageEvaluator.Evaluate(ctx, policy, req, snap)
+		if err != nil {
+			res.ReleaseDedup()
+			return nil, err
+		}
+
+		switch decision.Kind {
+		case receiverusage.DecisionReuseSession:
+			return res, nil
+		case receiverusage.DecisionReject:
+			res.ReleaseDedup()
+			return nil, newReasonError(decision.Reason, decision.Message, nil)
+		case receiverusage.DecisionAllow:
+			for _, reqItem := range decision.Requirements {
+				if reqItem.Kind == receiverusage.ReqRestrictedAccessSlot {
+					ctrl := o.RestrictedAccessCtrl
+					if ctrl == nil {
+						ctrl = receiverusage.NewRestrictedAccessController(o.Store)
+					}
+					cap := policy.MaxRestrictedAccessSessions
+					if cap <= 0 {
+						cap = 1
+					}
+					h, err := ctrl.Acquire(ctx, o.ReceiverID, leaseOwner, cap, o.LeaseTTL)
+					if err != nil {
+						res.ReleaseDedup()
+						return nil, newReasonError(model.RReceiverUsageRestrictedAccessLimitExceeded, "restricted access slot limit exceeded", err)
+					}
+					res.RestrictedAccessHandle = h
+					res.ReleaseRestrictedAccess = func() error {
+						ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+						defer cancel()
+						if err := ctrl.Release(ctxRel, h); err != nil {
+							logger.Error().Err(err).
+								Str("scope", h.Scope).
+								Str("owner", h.Owner).
+								Msg("failed to release restricted access lease")
+							return err
+						}
+						return nil
+					}
+				}
+			}
+		}
+	}
+
 	if sessionCtx.Mode == model.ModeLive {
 		slot, tunerLease, tunerHandle, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
 		if err != nil {
+			relErr := res.ReleaseRestrictedAccess()
 			res.ReleaseDedup()
+
+			tunerErr := err
+			if relErr != nil {
+				tunerErr = errors.Join(err, relErr)
+			}
+
 			if errors.Is(err, pipelineLease.ErrScopeConflict) {
 				tunerBusyTotal.WithLabelValues().Inc()
-				publicErr := newReasonError(model.RLeaseBusy, "no tuner slots available", err)
+				publicErr := newReasonError(model.RLeaseBusy, "no tuner slots available", tunerErr)
 
 				if o.ConflictAuditor != nil {
 					consumer := domainPolicy.ConsumerLiveTV

@@ -19,6 +19,7 @@ type ChannelChangePolicy struct {
 }
 
 type ReceiverUsagePolicy struct {
+	Mode                        ReceiverUsageMode     `json:"mode" yaml:"mode"`
 	MaxLiveSessions             int                   `json:"max_live_sessions" yaml:"max_live_sessions"`
 	MaxRecordingSessions        int                   `json:"max_recording_sessions" yaml:"max_recording_sessions"`
 	MaxRestrictedAccessSessions int                   `json:"max_restricted_access_sessions" yaml:"max_restricted_access_sessions"`
@@ -31,6 +32,13 @@ type ReceiverUsagePolicy struct {
 
 // Validate checks policy configuration. Zero values (e.g. MaxRecordingSessions = 0) are valid. Negative values or unknown enums are invalid.
 func (p ReceiverUsagePolicy) Validate() error {
+	switch p.Mode {
+	case "", ReceiverUsageModeDisabled, ReceiverUsageModeAuditOnly, ReceiverUsageModeEnforce:
+		// Valid
+	default:
+		return fmt.Errorf("%w: unknown mode %q", ErrInvalidPolicyConfiguration, p.Mode)
+	}
+
 	if p.MaxLiveSessions < 0 {
 		return fmt.Errorf("%w: max_live_sessions cannot be negative (%d)", ErrInvalidPolicyConfiguration, p.MaxLiveSessions)
 	}
@@ -42,7 +50,7 @@ func (p ReceiverUsagePolicy) Validate() error {
 	}
 
 	switch p.UnknownAccessHandling {
-	case UnknownAccessCountAsRestricted, UnknownAccessCountAsNone, UnknownAccessReject:
+	case "", UnknownAccessCountAsRestricted, UnknownAccessCountAsNone, UnknownAccessReject:
 		// Valid
 	default:
 		return fmt.Errorf("%w: unknown unknown_access_handling enum %q", ErrInvalidPolicyConfiguration, p.UnknownAccessHandling)
@@ -58,18 +66,19 @@ func (p ReceiverUsagePolicy) Validate() error {
 	return nil
 }
 
-// ConservativeSingleUsePolicy returns a conservative single-use receiver usage policy.
+// ConservativeSingleUsePolicy returns a strict default policy allowing 1 live TV session and 1 restricted access slot.
 func ConservativeSingleUsePolicy() ReceiverUsagePolicy {
 	return ReceiverUsagePolicy{
+		Mode:                        ReceiverUsageModeEnforce,
 		MaxLiveSessions:             1,
 		MaxRecordingSessions:        1,
 		MaxRestrictedAccessSessions: 1,
 		AllowLiveWithRecording:      false,
-		AllowTimeshift:              false,
-		AllowRetroDVRRestricted:     false,
+		AllowTimeshift:              true,
+		AllowRetroDVRRestricted:     true,
 		UnknownAccessHandling:       UnknownAccessCountAsRestricted,
 		ChannelChangeLimiter: ChannelChangePolicy{
-			MinimumInterval: 10 * time.Second,
+			MinimumInterval: 5 * time.Second,
 			DuplicateWindow: 5 * time.Second,
 		},
 	}

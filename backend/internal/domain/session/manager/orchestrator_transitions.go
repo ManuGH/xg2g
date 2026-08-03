@@ -396,8 +396,13 @@ func (o *Orchestrator) finalizeDeferred(
 	// after the terminalization UpdateSession above committed, so the lease is never freed
 	// while the session is still in an intermediate state — preserving the recovery probe's
 	// invariant (B set ∧ intermediate ⟹ lease held ⟹ session alive).
-	if leases := *leasesPtr; leases != nil && leases.ReleaseTuner != nil {
-		leases.ReleaseTuner()
+	if leases := *leasesPtr; leases != nil {
+		if leases.ReleaseTuner != nil {
+			leases.ReleaseTuner()
+		}
+		if leases.ReleaseRestrictedAccess != nil {
+			_ = leases.ReleaseRestrictedAccess()
+		}
 	}
 
 	// ForceReleaseLeases is retained and ADDITIVE: it releases the dedup/service lease, and

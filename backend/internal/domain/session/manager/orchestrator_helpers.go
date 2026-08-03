@@ -2,12 +2,14 @@ package manager
 
 import (
 	"context"
+	"strings"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/log"
 	pipelineLease "github.com/ManuGH/xg2g/internal/pipeline/lease"
-	"strings"
-	"time"
 )
 
 type sessionContext struct {
@@ -84,17 +86,15 @@ func (o *Orchestrator) buildSessionContext(session *model.SessionRecord, e model
 }
 
 type leaseAcquisition struct {
-	Slot        int
-	TunerLease  store.Lease
-	TunerHandle *pipelineLease.TunerLeaseHandle
-	DedupLease  store.Lease
-	HBCancel    context.CancelFunc
-	HBCtx       context.Context
-	// ReleaseDedup / ReleaseTuner are in-memory release closures bound at acquisition time.
-	// They are the AUTHORITATIVE release path for the session this process started: they do
-	// not depend on the ContextData tuner-slot mirror (B) being persisted, so they cover the
-	// window where start fails after the lease is acquired but before transitionStarting
-	// commits B. Both default to no-ops so an unacquired lease releases cleanly.
-	ReleaseDedup func()
-	ReleaseTuner func()
+	Slot                   int
+	TunerLease             store.Lease
+	TunerHandle            *pipelineLease.TunerLeaseHandle
+	DedupLease             store.Lease
+	RestrictedAccessHandle receiverusage.RestrictedAccessLeaseHandle
+	HBCancel               context.CancelFunc
+	HBCtx                  context.Context
+	// ReleaseDedup / ReleaseTuner / ReleaseRestrictedAccess are in-memory release closures bound at acquisition time.
+	ReleaseDedup            func()
+	ReleaseTuner            func()
+	ReleaseRestrictedAccess func() error
 }
