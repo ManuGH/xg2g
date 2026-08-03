@@ -153,8 +153,8 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 		combinedFreedClaims = append(combinedFreedClaims, freed...)
 	}
 
-	// Verify combined freed claims satisfy contract requested resources
-	if !SatisfiesResources(contract.RequestedResources, combinedFreedClaims) {
+	// Verify combined freed claims strictly match contract ExpectedFreedResources
+	if formatCanonicalClaims(combinedFreedClaims) != formatCanonicalClaims(contract.ExpectedFreedResources) {
 		return TeardownPreparationResult{
 			Decision: DecisionRejected,
 			Reason:   ReasonTeardownTargetStateMutated,

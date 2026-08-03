@@ -62,6 +62,7 @@ const (
 	ResourceKindTunerSlot            ResourceKind = "TUNER_SLOT"
 	ResourceKindDemux                ResourceKind = "DEMUX"
 	ResourceKindPhysicalTuner        ResourceKind = "PHYSICAL_TUNER"
+	ResourceKindStorageIO            ResourceKind = "STORAGE_IO"
 )
 
 // ResourceClaim specifies a single resource requirement.
@@ -91,11 +92,13 @@ type ActiveAllocation struct {
 
 // PreemptionRequest specifies the incoming session preemption request.
 type PreemptionRequest struct {
-	RequestID          string             `json:"requestId"`
-	ReceiverID         string             `json:"receiverId"`
-	RequesterOwner     string             `json:"requesterOwner"`
-	RequesterPriority  PriorityAttributes `json:"requesterPriority"`
-	RequestedResources []ResourceClaim    `json:"requestedResources"`
+	RequestID             string             `json:"requestId"`
+	ReceiverID            string             `json:"receiverId"`
+	RequesterOwner        string             `json:"requesterOwner"`
+	RequesterAllocationID string             `json:"requesterAllocationId"`
+	RequesterRevision     string             `json:"requesterRevision"`
+	RequesterPriority     PriorityAttributes `json:"requesterPriority"`
+	RequestedResources    []ResourceClaim    `json:"requestedResources"`
 }
 
 // ResourceSnapshot represents the immutable state snapshot.
@@ -138,6 +141,8 @@ type PreemptionExecutionContract struct {
 	ReceiverID              string          `json:"receiverId"`
 	RequestID               string          `json:"requestId"`
 	RequesterOwner          string          `json:"requesterOwner"`
+	RequesterAllocationID   string          `json:"requesterAllocationId"`
+	RequesterRevision       string          `json:"requesterRevision"`
 	TargetAllocationIDs     []string        `json:"targetAllocationIds"`
 	RequestedResources      []ResourceClaim `json:"requestedResources"`
 	ExpectedFreedResources  []ResourceClaim `json:"expectedFreedResources"`

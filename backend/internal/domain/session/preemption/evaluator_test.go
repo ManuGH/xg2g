@@ -444,6 +444,8 @@ func TestContractRejectsExpiredContract(t *testing.T) {
 		ReceiverID:              "rec-1",
 		RequestID:               "req-1",
 		RequesterOwner:          "owner-1",
+		RequesterAllocationID:   "alloc-req-1",
+		RequesterRevision:       "rev-req-1",
 		TargetAllocationIDs:     []string{"alloc-1"},
 		RequestedResources:      reqClaim,
 		ExpectedFreedResources:  reqClaim,
@@ -471,6 +473,8 @@ func TestContractRejectsUnsortedOrDuplicateTargets(t *testing.T) {
 		ReceiverID:              "rec-1",
 		RequestID:               "req-1",
 		RequesterOwner:          "owner-1",
+		RequesterAllocationID:   "alloc-req-1",
+		RequesterRevision:       "rev-req-1",
 		TargetAllocationIDs:     []string{"alloc-B", "alloc-A"}, // Unsorted
 		RequestedResources:      reqClaim,
 		ExpectedFreedResources:  reqClaim,
@@ -494,6 +498,8 @@ func TestContractRejectsUnsortedOrDuplicateTargets(t *testing.T) {
 		ReceiverID:              "rec-1",
 		RequestID:               "req-1",
 		RequesterOwner:          "owner-1",
+		RequesterAllocationID:   "alloc-req-1",
+		RequesterRevision:       "rev-req-1",
 		TargetAllocationIDs:     []string{"alloc-A", "alloc-A"}, // Duplicate
 		RequestedResources:      reqClaim,
 		ExpectedFreedResources:  reqClaim,

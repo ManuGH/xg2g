@@ -22,6 +22,26 @@ var (
 	ErrContractDuplicateTargets = errors.New("contract contains duplicate target allocation IDs")
 )
 
+// ValidateResourceClaim verifies structural and semantic validity of a ResourceClaim.
+func ValidateResourceClaim(claim ResourceClaim) error {
+	switch claim.Kind {
+	case ResourceKindRestrictedAccessSlot, ResourceKindTunerSlot, ResourceKindDemux, ResourceKindPhysicalTuner, ResourceKindStorageIO:
+		// Valid kind
+	default:
+		return fmt.Errorf("invalid resource kind '%s'", claim.Kind)
+	}
+
+	if strings.TrimSpace(claim.Resource) == "" {
+		return fmt.Errorf("empty resource identifier")
+	}
+
+	if claim.Quantity <= 0 {
+		return fmt.Errorf("non-positive quantity %d", claim.Quantity)
+	}
+
+	return nil
+}
+
 // ValidateContract verifies structural integrity, target uniqueness, non-expired TTL, and SHA-256 hash match.
 func ValidateContract(c *PreemptionExecutionContract, now time.Time) error {
 	if c == nil {
@@ -38,6 +58,12 @@ func ValidateContract(c *PreemptionExecutionContract, now time.Time) error {
 	}
 	if strings.TrimSpace(c.RequesterOwner) == "" {
 		return fmt.Errorf("%w: empty requester owner", ErrInvalidContract)
+	}
+	if strings.TrimSpace(c.RequesterAllocationID) == "" {
+		return fmt.Errorf("%w: empty requester allocation ID", ErrInvalidContract)
+	}
+	if strings.TrimSpace(c.RequesterRevision) == "" {
+		return fmt.Errorf("%w: empty requester revision", ErrInvalidContract)
 	}
 	if strings.TrimSpace(c.SnapshotRevision) == "" {
 		return fmt.Errorf("%w: empty snapshot revision", ErrInvalidContract)
@@ -57,16 +83,23 @@ func ValidateContract(c *PreemptionExecutionContract, now time.Time) error {
 	if len(c.ExpectedFreedResources) == 0 {
 		return fmt.Errorf("%w: zero expected freed resources", ErrInvalidContract)
 	}
+
 	for i, claim := range c.RequestedResources {
-		if claim.Quantity <= 0 {
-			return fmt.Errorf("%w: requested claim at index %d has non-positive quantity %d", ErrInvalidContract, i, claim.Quantity)
+		if err := ValidateResourceClaim(claim); err != nil {
+			return fmt.Errorf("%w: requested claim at index %d invalid: %v", ErrInvalidContract, i, err)
 		}
 	}
 	for i, claim := range c.ExpectedFreedResources {
-		if claim.Quantity <= 0 {
-			return fmt.Errorf("%w: expected freed claim at index %d has non-positive quantity %d", ErrInvalidContract, i, claim.Quantity)
+		if err := ValidateResourceClaim(claim); err != nil {
+			return fmt.Errorf("%w: expected freed claim at index %d invalid: %v", ErrInvalidContract, i, err)
 		}
 	}
+
+	// Verify ExpectedFreedResources actually satisfies RequestedResources!
+	if !SatisfiesResources(c.RequestedResources, c.ExpectedFreedResources) {
+		return fmt.Errorf("%w: expected freed resources do not satisfy requested resources", ErrInvalidContract)
+	}
+
 	if !c.CreatedAt.Before(c.ExpiresAt) {
 		return fmt.Errorf("%w: CreatedAt %s must be before ExpiresAt %s", ErrInvalidContract, c.CreatedAt, c.ExpiresAt)
 	}
@@ -118,6 +151,8 @@ func ComputeContractHash(c *PreemptionExecutionContract) (string, error) {
 	_, _ = fmt.Fprintf(h, "receiver_id=%s\n", c.ReceiverID)
 	_, _ = fmt.Fprintf(h, "request_id=%s\n", c.RequestID)
 	_, _ = fmt.Fprintf(h, "requester_owner=%s\n", c.RequesterOwner)
+	_, _ = fmt.Fprintf(h, "requester_alloc_id=%s\n", c.RequesterAllocationID)
+	_, _ = fmt.Fprintf(h, "requester_rev=%s\n", c.RequesterRevision)
 	_, _ = fmt.Fprintf(h, "targets=%s\n", strings.Join(sortedTargets, ","))
 	_, _ = fmt.Fprintf(h, "requested_claims=%s\n", canonicalReqClaims)
 	_, _ = fmt.Fprintf(h, "expected_freed_claims=%s\n", canonicalFreedClaims)

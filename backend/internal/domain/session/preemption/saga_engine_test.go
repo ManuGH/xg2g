@@ -37,10 +37,12 @@ func TestEngine_LifecycleAndRevalidation_MemoryAndSQLiteStores(t *testing.T) {
 			now := time.Now().UTC()
 
 			req := PreemptionRequest{
-				RequestID:         "req-eng-1",
-				ReceiverID:        "rec-1",
-				RequesterOwner:    "client-A",
-				RequesterPriority: PriorityAttributes{BasePriority: 100},
+				RequestID:             "req-eng-1",
+				ReceiverID:            "rec-1",
+				RequesterOwner:        "client-A",
+				RequesterAllocationID: "alloc-req-1",
+				RequesterRevision:     "res-rev-1",
+				RequesterPriority:     PriorityAttributes{BasePriority: 100},
 				RequestedResources: []ResourceClaim{
 					{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
 				},
@@ -129,10 +131,12 @@ func TestEngine_RequesterReservation_StrictValidation(t *testing.T) {
 	now := time.Now().UTC()
 
 	req := PreemptionRequest{
-		RequestID:         "req-res-test",
-		ReceiverID:        "rec-1",
-		RequesterOwner:    "client-A",
-		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestID:             "req-res-test",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
 		RequestedResources: []ResourceClaim{
 			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
 		},
@@ -233,10 +237,12 @@ func TestEngine_RevalidationFailure_AbortsSagaAndReleasesClaim(t *testing.T) {
 	now := time.Now().UTC()
 
 	req := PreemptionRequest{
-		RequestID:         "req-abort",
-		ReceiverID:        "rec-1",
-		RequesterOwner:    "client-A",
-		RequesterPriority: PriorityAttributes{BasePriority: 100},
+		RequestID:             "req-abort",
+		ReceiverID:            "rec-1",
+		RequesterOwner:        "client-A",
+		RequesterAllocationID: "alloc-req-1",
+		RequesterRevision:     "rev-1",
+		RequesterPriority:     PriorityAttributes{BasePriority: 100},
 		RequestedResources: []ResourceClaim{
 			{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1},
 		},
