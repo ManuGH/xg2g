@@ -57,8 +57,11 @@ func (t *mockTeardownTransport) TeardownTarget(ctx context.Context, req TargetTe
 	return t.result, nil
 }
 
-func newTestTeardownExecutor(reader ReceiverClaimReader, gateway FencedTeardownGateway) *TeardownExecutor {
-	exec := NewTeardownExecutor(reader, gateway)
+func newTestTeardownExecutor(reader ReceiverClaimReader, authorizer FencedMutationAuthorizer, transport TeardownTransport) *TeardownExecutor {
+	exec, err := NewTeardownExecutor(reader, authorizer, transport)
+	if err != nil {
+		panic(err)
+	}
 	exec.allowMock = true
 	return exec
 }
@@ -117,6 +120,33 @@ func setupTeardownTestContext(t *testing.T) (context.Context, *PreemptionExecuti
 	return context.Background(), contract, snapshot, proof, now
 }
 
+func TestTeardownExecutor_ConstructorRejectsNilDependencies(t *testing.T) {
+	reader := &mockClaimReader{}
+	authorizer := NewStoreFencedMutationAuthorizer(reader)
+	transport := &mockTeardownTransport{}
+
+	// Nil reader
+	_, err := NewTeardownExecutor(nil, authorizer, transport)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ReceiverClaimReader is nil")
+
+	// Nil authorizer
+	_, err = NewTeardownExecutor(reader, nil, transport)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "FencedMutationAuthorizer is nil")
+
+	// Nil transport
+	_, err = NewTeardownExecutor(reader, authorizer, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "TeardownTransport is nil")
+
+	// Valid creation
+	exec, err := NewTeardownExecutor(reader, authorizer, transport)
+	require.NoError(t, err)
+	require.NotNil(t, exec)
+	require.NotNil(t, exec.gateway)
+}
+
 func TestPrepareTeardown_RejectsMissingAllocationRevision(t *testing.T) {
 	_, contract, snapshot, proof, now := setupTeardownTestContext(t)
 	preparer := NewTeardownPreparer()
@@ -136,6 +166,39 @@ func TestPrepareTeardown_RejectsMissingAllocationRevision(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, DecisionRejected, prepRes.Decision)
 	require.Equal(t, ReasonTeardownTargetStateMutated, prepRes.Reason)
+}
+
+func TestPrepareTeardown_RejectsEmptyAllocationIDsAndMissingMappings(t *testing.T) {
+	_, contract, snapshot, proof, now := setupTeardownTestContext(t)
+	preparer := NewTeardownPreparer()
+
+	// 1. Empty allocation ID in snapshot -> Rejection
+	snapEmptyID := snapshot
+	snapEmptyID.Allocations = []ActiveAllocation{
+		{AllocationID: "", Owner: "client-B", Revision: "rev-1", Claims: contract.RequestedResources},
+	}
+	resSnapEmpty, err := preparer.PrepareTeardown(contract, snapEmptyID, proof, now)
+	require.NoError(t, err)
+	require.Equal(t, DecisionRejected, resSnapEmpty.Decision)
+	require.Equal(t, ReasonTeardownTargetStateMutated, resSnapEmpty.Reason)
+
+	// 2. Empty allocation ID in proof mapping -> Rejection
+	proofEmptyID := proof
+	proofEmptyID.AllocationMappings = []AllocationResourceMapping{
+		{AllocationID: "", FreedResources: contract.RequestedResources},
+	}
+	resProofEmpty, err := preparer.PrepareTeardown(contract, snapshot, proofEmptyID, now)
+	require.NoError(t, err)
+	require.Equal(t, DecisionRejected, resProofEmpty.Decision)
+	require.Equal(t, ReasonTeardownInvalidProof, resProofEmpty.Reason)
+
+	// 3. Missing proof mapping for contract target -> Rejection
+	proofMissingMapping := proof
+	proofMissingMapping.AllocationMappings = []AllocationResourceMapping{} // Empty mappings!
+	resMissingMap, err := preparer.PrepareTeardown(contract, snapshot, proofMissingMapping, now)
+	require.NoError(t, err)
+	require.Equal(t, DecisionRejected, resMissingMap.Decision)
+	require.Equal(t, ReasonTeardownTargetStateMutated, resMissingMap.Reason)
 }
 
 func TestPrepareTeardown_RejectsDuplicateSnapshotAllocationsAndProofMappings(t *testing.T) {
@@ -211,10 +274,7 @@ func TestTeardownGateway_TOCTOUFencingRevalidation(t *testing.T) {
 		},
 	}
 
-	gateway, err := NewAuthorizingTeardownGateway(authorizer, transport)
-	require.NoError(t, err)
-
-	executor := newTestTeardownExecutor(syncedReader, gateway)
+	executor := newTestTeardownExecutor(syncedReader, authorizer, transport)
 
 	// Executor pre-check sees initialClaim (Token 10) -> Passes Executor pre-check!
 	// Right before transport start, AuthorizingTeardownGateway calls Authorizer, which reads bumpedClaim (Token 99).
@@ -245,11 +305,9 @@ func TestTeardownGateway_NativeContextCancellation(t *testing.T) {
 	}
 
 	reader := &mockClaimReader{claim: validClaim}
+	authorizer := NewStoreFencedMutationAuthorizer(reader)
 	transport := &mockTeardownTransport{}
-	gateway, err := NewAuthorizingTeardownGateway(NewStoreFencedMutationAuthorizer(reader), transport)
-	require.NoError(t, err)
-
-	executor := newTestTeardownExecutor(reader, gateway)
+	executor := newTestTeardownExecutor(reader, authorizer, transport)
 
 	// Cancel context prior to execution
 	cancelledCtx, cancel := context.WithCancel(ctx)
@@ -275,11 +333,9 @@ func TestTeardownExecutor_ResultMatrixValidation(t *testing.T) {
 	}
 
 	reader := &mockClaimReader{claim: validClaim}
+	authorizer := NewStoreFencedMutationAuthorizer(reader)
 	transport := &mockTeardownTransport{}
-	gateway, err := NewAuthorizingTeardownGateway(NewStoreFencedMutationAuthorizer(reader), transport)
-	require.NoError(t, err)
-
-	executor := newTestTeardownExecutor(reader, gateway)
+	executor := newTestTeardownExecutor(reader, authorizer, transport)
 
 	// 1. TIMEOUT status with non-zero StoppedAt -> Rejection
 	transport.result = TargetTeardownResult{
@@ -339,10 +395,8 @@ func TestTeardownExecutor_ZeroStateMutations(t *testing.T) {
 			Diagnostic:         TeardownDiagnostic{Code: DiagnosticCodeNone, Retryable: false, Transport: TransportKindMock},
 		},
 	}
-	gateway, err := NewAuthorizingTeardownGateway(NewStoreFencedMutationAuthorizer(memoryStore), transport)
-	require.NoError(t, err)
-
-	executor := newTestTeardownExecutor(memoryStore, gateway)
+	authorizer := NewStoreFencedMutationAuthorizer(memoryStore)
+	executor := newTestTeardownExecutor(memoryStore, authorizer, transport)
 
 	// Execute teardown
 	res, err := executor.ExecuteTargetTeardown(ctx, prepRes.Prepared, saga.SagaID, claimedClaim.FencingToken, "alloc-1", now.Add(10*time.Second))
