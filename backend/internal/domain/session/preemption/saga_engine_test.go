@@ -56,6 +56,7 @@ func TestEngine_LifecycleAndRevalidation_MemoryAndSQLiteStores(t *testing.T) {
 					{
 						AllocationID: "alloc-1",
 						Owner:        "client-B",
+						Revision:     "alloc-rev-100",
 						Priority:     PriorityAttributes{BasePriority: 50},
 						Claims:       req.RequestedResources,
 					},
