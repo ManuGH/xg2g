@@ -97,12 +97,53 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 	// 4. Deep all-or-nothing validation of target active allocations in current snapshot
 	activeMap := make(map[string]ActiveAllocation, len(snapshot.Allocations))
 	for _, alloc := range snapshot.Allocations {
+		if strings.TrimSpace(alloc.AllocationID) == "" {
+			return TeardownPreparationResult{
+				Decision: DecisionRejected,
+				Reason:   ReasonTeardownTargetStateMutated,
+			}, nil
+		}
+		if _, duplicate := activeMap[alloc.AllocationID]; duplicate {
+			return TeardownPreparationResult{
+				Decision: DecisionRejected,
+				Reason:   ReasonTeardownTargetStateMutated,
+			}, nil
+		}
 		activeMap[alloc.AllocationID] = alloc
 	}
 
-	freedByAllocation := make(map[string][]ResourceClaim)
+	freedByAllocation := make(map[string][]ResourceClaim, len(proof.AllocationMappings))
 	for _, mapping := range proof.AllocationMappings {
+		if strings.TrimSpace(mapping.AllocationID) == "" {
+			return TeardownPreparationResult{
+				Decision: DecisionRejected,
+				Reason:   ReasonTeardownInvalidProof,
+			}, nil
+		}
+		if _, duplicate := freedByAllocation[mapping.AllocationID]; duplicate {
+			return TeardownPreparationResult{
+				Decision: DecisionRejected,
+				Reason:   ReasonTeardownInvalidProof,
+			}, nil
+		}
 		freedByAllocation[mapping.AllocationID] = mapping.FreedResources
+	}
+
+	seenTargets := make(map[string]struct{}, len(contract.TargetAllocationIDs))
+	for _, targetID := range contract.TargetAllocationIDs {
+		if strings.TrimSpace(targetID) == "" {
+			return TeardownPreparationResult{
+				Decision: DecisionRejected,
+				Reason:   ReasonTeardownContractHashInvalid,
+			}, nil
+		}
+		if _, duplicate := seenTargets[targetID]; duplicate {
+			return TeardownPreparationResult{
+				Decision: DecisionRejected,
+				Reason:   ReasonTeardownContractHashInvalid,
+			}, nil
+		}
+		seenTargets[targetID] = struct{}{}
 	}
 
 	var combinedFreedClaims []ResourceClaim
