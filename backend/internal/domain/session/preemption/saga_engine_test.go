@@ -147,7 +147,7 @@ func TestEngine_RequesterReservation_StrictValidation(t *testing.T) {
 		SnapshotRevision: "rev-100",
 		ObservedAt:       now,
 		Allocations: []ActiveAllocation{
-			{AllocationID: "alloc-1", Claims: req.RequestedResources},
+			{AllocationID: "alloc-1", Owner: "client-B", Revision: "alloc-rev-100", Claims: req.RequestedResources},
 		},
 	}
 
@@ -271,7 +271,7 @@ func TestEngine_RevalidationFailure_AbortsSagaAndReleasesClaim(t *testing.T) {
 		SnapshotRevision: "rev-100",
 		ObservedAt:       now,
 		Allocations: []ActiveAllocation{
-			{AllocationID: "alloc-1", Claims: req.RequestedResources},
+			{AllocationID: "alloc-1", Owner: "client-B", Revision: "alloc-rev-100", Claims: req.RequestedResources},
 		},
 	}
 

@@ -86,6 +86,7 @@ type PriorityAttributes struct {
 type ActiveAllocation struct {
 	AllocationID string             `json:"allocationId"`
 	Owner        string             `json:"owner"`
+	Revision     string             `json:"revision"`
 	Priority     PriorityAttributes `json:"priority"`
 	Claims       []ResourceClaim    `json:"claims"`
 }
