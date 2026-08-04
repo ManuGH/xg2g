@@ -38,16 +38,6 @@ func NewTeardownExecutor(reader ReceiverClaimReader, gateway FencedTeardownGatew
 	}
 }
 
-// NewTeardownExecutorForTesting creates a test-only TeardownExecutor instance with TransportKindMock permitted.
-func NewTeardownExecutorForTesting(reader ReceiverClaimReader, gateway FencedTeardownGateway) *TeardownExecutor {
-	return &TeardownExecutor{
-		claimReader: reader,
-		gateway:     gateway,
-		nowFunc:     func() time.Time { return time.Now().UTC() },
-		allowMock:   true,
-	}
-}
-
 // ExecuteTargetTeardown executes a single target teardown attempt from an authoritative PreparedTeardown dataset.
 func (e *TeardownExecutor) ExecuteTargetTeardown(
 	ctx context.Context,
