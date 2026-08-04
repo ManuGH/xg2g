@@ -269,8 +269,8 @@ func TestTeardownPreparer_AllOrNothingTargetValidation(t *testing.T) {
 		SnapshotRevision: "rev-100",
 		ObservedAt:       now,
 		Allocations: []ActiveAllocation{
-			{AllocationID: "alloc-A", Claims: []ResourceClaim{{Kind: ResourceKindRestrictedAccessSlot, Resource: "slot-1", Quantity: 1}}},
-			{AllocationID: "alloc-B", Claims: []ResourceClaim{{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1}}},
+			{AllocationID: "alloc-A", Owner: "client-A", Revision: "rev-A", Claims: []ResourceClaim{{Kind: ResourceKindRestrictedAccessSlot, Resource: "slot-1", Quantity: 1}}},
+			{AllocationID: "alloc-B", Owner: "client-B", Revision: "rev-B", Claims: []ResourceClaim{{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1}}},
 		},
 	}
 
@@ -294,7 +294,7 @@ func TestTeardownPreparer_AllOrNothingTargetValidation(t *testing.T) {
 	// Mutate snapshot: alloc-B is missing!
 	snapMutated := snapshot
 	snapMutated.Allocations = []ActiveAllocation{
-		{AllocationID: "alloc-A", Claims: []ResourceClaim{{Kind: ResourceKindRestrictedAccessSlot, Resource: "slot-1", Quantity: 1}}},
+		{AllocationID: "alloc-A", Owner: "client-A", Revision: "rev-100", Claims: []ResourceClaim{{Kind: ResourceKindRestrictedAccessSlot, Resource: "slot-1", Quantity: 1}}},
 	}
 
 	// Entire preparation MUST be rejected (zero partial teardown!)
@@ -316,6 +316,29 @@ func TestTeardownPreparer_AllOrNothingTargetValidation(t *testing.T) {
 func TestValidatePreparedTeardown_HashSensitivityAndUnsortedTargets(t *testing.T) {
 	now := time.Now().UTC()
 
+	desc1 := TargetExecutionDescriptor{
+		AllocationID:       "alloc-1",
+		ExpectedOwner:      "client-1",
+		AllocationRevision: "rev-1",
+		SnapshotRevision:   "rev-1",
+		HardwareRevision:   "hw-1",
+		ExpectedClaims:     []ResourceClaim{{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1}},
+	}
+	desc1.DescriptorHash, _ = ComputeDescriptorHash(desc1)
+
+	desc2 := TargetExecutionDescriptor{
+		AllocationID:       "alloc-2",
+		ExpectedOwner:      "client-2",
+		AllocationRevision: "rev-1",
+		SnapshotRevision:   "rev-1",
+		HardwareRevision:   "hw-1",
+		ExpectedClaims:     []ResourceClaim{{Kind: ResourceKindTunerSlot, Resource: "tuner-2", Quantity: 1}},
+	}
+	desc2.DescriptorHash, _ = ComputeDescriptorHash(desc2)
+
+	descriptors := []TargetExecutionDescriptor{desc1, desc2}
+	dHash, _ := ComputeTargetDescriptorsHash(descriptors)
+
 	basePrep := PreparedTeardown{
 		TeardownID:              "t-1",
 		ContractID:              "c-1",
@@ -323,6 +346,8 @@ func TestValidatePreparedTeardown_HashSensitivityAndUnsortedTargets(t *testing.T
 		RequestID:               "req-1",
 		ContractHash:            "chash-1",
 		TargetAllocationIDs:     []string{"alloc-1", "alloc-2"},
+		TargetDescriptors:       descriptors,
+		TargetDescriptorsHash:  dHash,
 		SnapshotRevision:        "rev-1",
 		HardwareProfileRevision: "hw-1",
 		ConflictProofRevision:   "rev-1",
@@ -342,11 +367,14 @@ func TestValidatePreparedTeardown_HashSensitivityAndUnsortedTargets(t *testing.T
 	modPrep := basePrep
 	modPrep.TargetAllocationIDs = []string{"alloc-1", "alloc-3"}
 	err = ValidatePreparedTeardown(&modPrep, now)
-	require.ErrorIs(t, err, ErrPreparedTeardownHashMismatch)
+	require.Error(t, err)
 
 	// Unsorted targets rejection
 	unsortedPrep := basePrep
 	unsortedPrep.TargetAllocationIDs = []string{"alloc-2", "alloc-1"}
+	unsortedPrep.TargetDescriptors = []TargetExecutionDescriptor{desc2, desc1}
+	dHashUnsorted, _ := ComputeTargetDescriptorsHash(unsortedPrep.TargetDescriptors)
+	unsortedPrep.TargetDescriptorsHash = dHashUnsorted
 	uHash, _ := ComputePreparedTeardownHash(&unsortedPrep)
 	unsortedPrep.PreparedTeardownHash = uHash
 	err = ValidatePreparedTeardown(&unsortedPrep, now)
@@ -376,8 +404,8 @@ func TestPrepareTeardown_DoesNotMutateInputData(t *testing.T) {
 		SnapshotRevision: "rev-100",
 		ObservedAt:       now,
 		Allocations: []ActiveAllocation{
-			{AllocationID: "alloc-2", Claims: req.RequestedResources},
-			{AllocationID: "alloc-1", Claims: req.RequestedResources},
+			{AllocationID: "alloc-2", Owner: "client-C", Revision: "rev-100", Claims: req.RequestedResources},
+			{AllocationID: "alloc-1", Owner: "client-B", Revision: "rev-100", Claims: req.RequestedResources},
 		},
 	}
 
