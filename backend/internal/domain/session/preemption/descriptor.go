@@ -59,6 +59,7 @@ func ComputeDescriptorHash(d TargetExecutionDescriptor) (string, error) {
 	_, _ = fmt.Fprintf(h, "alloc_rev=%s\n", d.AllocationRevision)
 	_, _ = fmt.Fprintf(h, "snap_rev=%s\n", d.SnapshotRevision)
 	_, _ = fmt.Fprintf(h, "hw_rev=%s\n", d.HardwareRevision)
+	_, _ = fmt.Fprintf(h, "coverage=%t:%t\n", d.Coverage.HardwareBindingsAuthoritative, d.Coverage.LeaseBindingsAuthoritative)
 	_, _ = fmt.Fprintf(h, "expected_claims=%s\n", canonClaims)
 	_, _ = fmt.Fprintf(h, "expected_hw_claims=%s\n", canonHwClaims)
 	_, _ = fmt.Fprintf(h, "expected_hw_bindings=%s\n", canonHwBindings)
@@ -130,12 +131,12 @@ func formatCanonicalHardwareBindingsStrict(bindings []ExpectedHardwareBinding) (
 		if allocID == "" {
 			return "", fmt.Errorf("empty allocation ID at index %d", i)
 		}
-		if b.Quantity <= 0 {
-			return "", fmt.Errorf("non-positive quantity %d at index %d", b.Quantity, i)
+		if b.Quantity <= 0 || b.Quantity > MaxClaimQuantitySum {
+			return "", fmt.Errorf("invalid quantity %d at index %d", b.Quantity, i)
 		}
 		key := fmt.Sprintf("%s:%s:%s", b.Kind, res, allocID)
-		if qtyMap[key]+b.Quantity < qtyMap[key] {
-			return "", fmt.Errorf("quantity overflow at index %d", i)
+		if qtyMap[key] > MaxClaimQuantitySum-b.Quantity {
+			return "", fmt.Errorf("quantity sum overflow for hardware binding '%s' at index %d", key, i)
 		}
 		qtyMap[key] += b.Quantity
 	}
@@ -174,12 +175,12 @@ func formatCanonicalLeaseBindingsStrict(bindings []ExpectedLeaseBinding) (string
 		if ownerID == "" {
 			return "", fmt.Errorf("empty expected owner ID at index %d", i)
 		}
-		if b.Quantity <= 0 {
-			return "", fmt.Errorf("non-positive quantity %d at index %d", b.Quantity, i)
+		if b.Quantity <= 0 || b.Quantity > MaxClaimQuantitySum {
+			return "", fmt.Errorf("invalid quantity %d at index %d", b.Quantity, i)
 		}
 		key := fmt.Sprintf("%s:%s:%s:%s", b.LeaseKind, res, scopeID, ownerID)
-		if qtyMap[key]+b.Quantity < qtyMap[key] {
-			return "", fmt.Errorf("quantity overflow at index %d", i)
+		if qtyMap[key] > MaxClaimQuantitySum-b.Quantity {
+			return "", fmt.Errorf("quantity sum overflow for lease binding '%s' at index %d", key, i)
 		}
 		qtyMap[key] += b.Quantity
 	}

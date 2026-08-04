@@ -203,23 +203,17 @@ func (p *TeardownPreparer) PrepareTeardown(
 
 		// Build TargetExecutionDescriptor for E3.2 binding
 		var expClaims, expHwClaims []ResourceClaim
-		var expHwBindings []ExpectedHardwareBinding
 
 		for _, c := range alloc.Claims {
 			if c.Kind == ResourceKindPhysicalTuner || c.Kind == ResourceKindDemux {
 				expHwClaims = append(expHwClaims, c)
-				expHwBindings = append(expHwBindings, ExpectedHardwareBinding{
-					Kind:         c.Kind,
-					Resource:     c.Resource,
-					Quantity:     c.Quantity,
-					AllocationID: targetID,
-				})
 			} else {
 				expClaims = append(expClaims, c)
 			}
 		}
 
-		// ExpectedLeaseBindings remains empty []ExpectedLeaseBinding(nil) until an authoritative lease store source is integrated
+		// ExpectedHardwareBindings and ExpectedLeaseBindings MUST remain nil until authoritative hardware/lease binding sources are integrated
+		var expHwBindings []ExpectedHardwareBinding
 		var expLeaseBindings []ExpectedLeaseBinding
 
 		allocRev := strings.TrimSpace(alloc.Revision)
@@ -236,6 +230,7 @@ func (p *TeardownPreparer) PrepareTeardown(
 			AllocationRevision:       allocRev,
 			SnapshotRevision:         snapshot.SnapshotRevision,
 			HardwareRevision:         proof.HardwareProfileRevision,
+			Coverage:                 DescriptorBindingCoverage{HardwareBindingsAuthoritative: false, LeaseBindingsAuthoritative: false},
 			ExpectedClaims:           expClaims,
 			ExpectedHardwareClaims:   expHwClaims,
 			ExpectedHardwareBindings: expHwBindings,

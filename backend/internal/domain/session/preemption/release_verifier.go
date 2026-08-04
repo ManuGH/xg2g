@@ -81,12 +81,12 @@ func ComputeObservationHash(obs ReleaseObservation) (string, error) {
 		if allocID == "" {
 			return "", fmt.Errorf("empty allocation ID at hardware binding index %d", i)
 		}
-		if b.Quantity <= 0 {
-			return "", fmt.Errorf("non-positive quantity %d at hardware binding index %d", b.Quantity, i)
+		if b.Quantity <= 0 || b.Quantity > MaxClaimQuantitySum {
+			return "", fmt.Errorf("invalid quantity %d at hardware binding index %d", b.Quantity, i)
 		}
 		key := fmt.Sprintf("%s:%s:%s", b.Kind, res, allocID)
-		if hwQtyMap[key]+b.Quantity < hwQtyMap[key] {
-			return "", fmt.Errorf("quantity overflow at hardware binding index %d", i)
+		if hwQtyMap[key] > MaxClaimQuantitySum-b.Quantity {
+			return "", fmt.Errorf("quantity sum overflow for hardware binding '%s' at index %d", key, i)
 		}
 		hwQtyMap[key] += b.Quantity
 	}
@@ -117,12 +117,12 @@ func ComputeObservationHash(obs ReleaseObservation) (string, error) {
 		if ownerID == "" {
 			return "", fmt.Errorf("empty owner ID at lease binding index %d", i)
 		}
-		if b.Quantity <= 0 {
-			return "", fmt.Errorf("non-positive quantity %d at lease binding index %d", b.Quantity, i)
+		if b.Quantity <= 0 || b.Quantity > MaxClaimQuantitySum {
+			return "", fmt.Errorf("invalid quantity %d at lease binding index %d", b.Quantity, i)
 		}
 		key := fmt.Sprintf("%s:%s:%s:%s", b.LeaseKind, res, scopeID, ownerID)
-		if leaseQtyMap[key]+b.Quantity < leaseQtyMap[key] {
-			return "", fmt.Errorf("quantity overflow at lease binding index %d", i)
+		if leaseQtyMap[key] > MaxClaimQuantitySum-b.Quantity {
+			return "", fmt.Errorf("quantity sum overflow for lease binding '%s' at index %d", key, i)
 		}
 		leaseQtyMap[key] += b.Quantity
 	}
@@ -276,6 +276,29 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 	descMap := make(map[string]TargetExecutionDescriptor, len(prepared.TargetDescriptors))
 	for _, desc := range prepared.TargetDescriptors {
 		descMap[desc.AllocationID] = desc
+
+		// FAIL-CLOSED: Check if target requires hardware/lease bindings, but binding coverage is not authoritative!
+		hasHwClaim := len(desc.ExpectedHardwareClaims) > 0
+		hasLeaseClaim := false
+		for _, c := range desc.ExpectedClaims {
+			if c.Kind == ResourceKindRestrictedAccessSlot || c.Kind == ResourceKindTunerSlot {
+				hasLeaseClaim = true
+				break
+			}
+		}
+
+		if hasHwClaim && !desc.Coverage.HardwareBindingsAuthoritative {
+			return ReleaseVerificationResult{
+				Decision: ReleaseDecisionRejected,
+				Reason:   ReleaseVerificationReasonEvidenceIncomplete,
+			}, nil
+		}
+		if hasLeaseClaim && !desc.Coverage.LeaseBindingsAuthoritative {
+			return ReleaseVerificationResult{
+				Decision: ReleaseDecisionRejected,
+				Reason:   ReleaseVerificationReasonEvidenceIncomplete,
+			}, nil
+		}
 	}
 
 	evidenceMap := make(map[string]TargetTeardownEvidence, len(teardownEvidence))
@@ -373,9 +396,8 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 		activeAllocMap[alloc.AllocationID] = alloc
 	}
 
-	// Map exact hardware bindings by key "Kind:Resource:AllocationID" -> quantity
 	activeHwQtyMap := make(map[string]int, len(observation.ActiveHardwareBindings))
-	allHwQtyMap := make(map[string]map[string]int) // "Kind:Resource" -> map[AllocationID]quantity
+	allHwQtyMap := make(map[string]map[string]int)
 	for _, b := range observation.ActiveHardwareBindings {
 		key := fmt.Sprintf("%s:%s:%s", b.Kind, b.Resource, b.AllocationID)
 		activeHwQtyMap[key] += b.Quantity
@@ -387,9 +409,8 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 		allHwQtyMap[resKey][b.AllocationID] += b.Quantity
 	}
 
-	// Map exact lease bindings by key "LeaseKind:Resource:ScopeID:OwnerID" -> quantity
 	activeLeaseQtyMap := make(map[string]int, len(observation.ActiveLeaseBindings))
-	allLeaseQtyMap := make(map[string]map[string]int) // "LeaseKind:Resource:ScopeID" -> map[OwnerID]quantity
+	allLeaseQtyMap := make(map[string]map[string]int)
 	for _, b := range observation.ActiveLeaseBindings {
 		key := fmt.Sprintf("%s:%s:%s:%s", b.LeaseKind, b.Resource, b.ScopeID, b.OwnerID)
 		activeLeaseQtyMap[key] += b.Quantity
@@ -404,8 +425,8 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 	targetResults := make([]SingleTargetReleaseResult, 0, len(prepared.TargetDescriptors))
 	allReleased := true
 
-	var releasedClaims []ResourceClaim
-	var freeClaims []ResourceClaim
+	rawReleasedClaims := make(map[string]int)
+	rawFreeClaims := make(map[string]int)
 	reassignedHwMap := make(map[string]ObservedResourceBinding)
 	reassignedLeaseMap := make(map[string]ObservedLeaseBinding)
 
@@ -419,14 +440,12 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 		}
 		var resourceResults []ResourceReleaseResult
 
-		// A. Check if target allocation is still active in snapshot
 		if _, active := activeAllocMap[targetID]; active {
 			targetRes.ReleaseState = TargetStillActive
 			targetRes.Reason = ReleaseReasonTargetStillObserved
 			allReleased = false
 		}
 
-		// B. Check ONLY exact expected hardware bindings (Kind, Resource, AllocationID)
 		for _, ehb := range desc.ExpectedHardwareBindings {
 			key := fmt.Sprintf("%s:%s:%s", ehb.Kind, ehb.Resource, ehb.AllocationID)
 			if remainingQty := activeHwQtyMap[key]; remainingQty > 0 {
@@ -436,7 +455,6 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 			}
 		}
 
-		// C. Check ONLY exact expected lease bindings (LeaseKind, Resource, ScopeID, ExpectedOwnerID)
 		for _, elb := range desc.ExpectedLeaseBindings {
 			key := fmt.Sprintf("%s:%s:%s:%s", elb.LeaseKind, elb.Resource, elb.ScopeID, elb.ExpectedOwnerID)
 			if remainingQty := activeLeaseQtyMap[key]; remainingQty > 0 {
@@ -446,9 +464,7 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 			}
 		}
 
-		// D. Process ExpectedClaims (non-hardware claims like STORAGE_IO, or slot claims without lease bindings)
 		for _, claim := range desc.ExpectedClaims {
-			// Skip if claim is already represented in ExpectedLeaseBindings to avoid double counting!
 			alreadyInLeases := false
 			for _, eb := range desc.ExpectedLeaseBindings {
 				if eb.LeaseKind == claim.Kind && eb.Resource == claim.Resource {
@@ -475,48 +491,45 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 				releasedQty = 0
 			}
 
-			reassignedQty := 0
+			otherObservedQty := 0
 			for otherID, otherAlloc := range activeAllocMap {
 				if otherID != targetID {
 					for _, ac := range otherAlloc.Claims {
 						if ac.Kind == claim.Kind && ac.Resource == claim.Resource {
-							reassignedQty += ac.Quantity
+							otherObservedQty += ac.Quantity
 						}
 					}
 				}
 			}
 
-			freeQty := releasedQty - reassignedQty
-			if freeQty < 0 {
-				freeQty = 0
-			}
-
 			disp := ResourceCurrentlyFree
 			if targetRes.ReleaseState != TargetReleased || remainingTargetQty > 0 {
 				disp = ResourceUnknown
-			} else if reassignedQty > 0 {
-				disp = ResourceReassigned
+			} else if otherObservedQty > 0 {
+				disp = ResourceOtherObserved
 			}
 
 			if releasedQty > 0 {
-				releasedClaims = append(releasedClaims, ResourceClaim{Kind: claim.Kind, Resource: claim.Resource, Quantity: releasedQty})
+				claimKey := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
+				rawReleasedClaims[claimKey] += releasedQty
 			}
-			if disp == ResourceCurrentlyFree && freeQty > 0 {
-				freeClaims = append(freeClaims, ResourceClaim{Kind: claim.Kind, Resource: claim.Resource, Quantity: freeQty})
+			if disp == ResourceCurrentlyFree && releasedQty > 0 {
+				claimKey := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
+				rawFreeClaims[claimKey] += releasedQty
 			}
 
 			resourceResults = append(resourceResults, ResourceReleaseResult{
-				Resource:                claim,
-				ExpectedQuantity:        expectedQty,
-				RemainingTargetQuantity: remainingTargetQty,
-				ReleasedQuantity:        releasedQty,
-				ReassignedQuantity:      reassignedQty,
-				CurrentlyFreeQuantity:   freeQty,
-				Disposition:             disp,
+				Resource:                   claim,
+				ExpectedQuantity:           expectedQty,
+				RemainingTargetQuantity:    remainingTargetQty,
+				ReleasedFromTargetQuantity: releasedQty,
+				OtherObservedQuantity:      otherObservedQty,
+				CurrentlyFreeQuantity:      0, // Not authoritative without capacity source
+				CurrentlyFreeAuthoritative: false,
+				Disposition:                disp,
 			})
 		}
 
-		// E. Process ExpectedHardwareClaims with quantity-based balance
 		for _, hwClaim := range desc.ExpectedHardwareClaims {
 			expectedQty := hwClaim.Quantity
 			key := fmt.Sprintf("%s:%s", hwClaim.Kind, hwClaim.Resource)
@@ -529,11 +542,11 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 				releasedQty = 0
 			}
 
-			reassignedQty := 0
+			otherObservedQty := 0
 			if allocMap, exists := allHwQtyMap[key]; exists {
 				for allocID, qty := range allocMap {
 					if allocID != targetID {
-						reassignedQty += qty
+						otherObservedQty += qty
 						reassignedHwMap[fmt.Sprintf("%s:%s:%s:%d", hwClaim.Kind, hwClaim.Resource, allocID, qty)] = ObservedResourceBinding{
 							Kind:         hwClaim.Kind,
 							Resource:     hwClaim.Resource,
@@ -544,37 +557,34 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 				}
 			}
 
-			freeQty := releasedQty - reassignedQty
-			if freeQty < 0 {
-				freeQty = 0
-			}
-
 			disp := ResourceCurrentlyFree
 			if targetRes.ReleaseState != TargetReleased || remainingTargetQty > 0 {
 				disp = ResourceUnknown
-			} else if reassignedQty > 0 {
-				disp = ResourceReassigned
+			} else if otherObservedQty > 0 {
+				disp = ResourceOtherObserved
 			}
 
 			if releasedQty > 0 {
-				releasedClaims = append(releasedClaims, ResourceClaim{Kind: hwClaim.Kind, Resource: hwClaim.Resource, Quantity: releasedQty})
+				claimKey := fmt.Sprintf("%s:%s", hwClaim.Kind, hwClaim.Resource)
+				rawReleasedClaims[claimKey] += releasedQty
 			}
-			if disp == ResourceCurrentlyFree && freeQty > 0 {
-				freeClaims = append(freeClaims, ResourceClaim{Kind: hwClaim.Kind, Resource: hwClaim.Resource, Quantity: freeQty})
+			if disp == ResourceCurrentlyFree && releasedQty > 0 {
+				claimKey := fmt.Sprintf("%s:%s", hwClaim.Kind, hwClaim.Resource)
+				rawFreeClaims[claimKey] += releasedQty
 			}
 
 			resourceResults = append(resourceResults, ResourceReleaseResult{
-				Resource:                hwClaim,
-				ExpectedQuantity:        expectedQty,
-				RemainingTargetQuantity: remainingTargetQty,
-				ReleasedQuantity:        releasedQty,
-				ReassignedQuantity:      reassignedQty,
-				CurrentlyFreeQuantity:   freeQty,
-				Disposition:             disp,
+				Resource:                   hwClaim,
+				ExpectedQuantity:           expectedQty,
+				RemainingTargetQuantity:    remainingTargetQty,
+				ReleasedFromTargetQuantity: releasedQty,
+				OtherObservedQuantity:      otherObservedQty,
+				CurrentlyFreeQuantity:      0, // Not authoritative without capacity source
+				CurrentlyFreeAuthoritative: false,
+				Disposition:                disp,
 			})
 		}
 
-		// F. Process ExpectedLeaseBindings with quantity-based balance
 		for _, eb := range desc.ExpectedLeaseBindings {
 			expectedQty := eb.Quantity
 			resKey := fmt.Sprintf("%s:%s:%s", eb.LeaseKind, eb.Resource, eb.ScopeID)
@@ -587,11 +597,11 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 				releasedQty = 0
 			}
 
-			reassignedQty := 0
+			otherObservedQty := 0
 			if ownerMap, exists := allLeaseQtyMap[resKey]; exists {
 				for ownerID, qty := range ownerMap {
 					if ownerID != eb.ExpectedOwnerID && ownerID != targetID {
-						reassignedQty += qty
+						otherObservedQty += qty
 						reassignedLeaseMap[fmt.Sprintf("%s:%s:%s:%s:%d", eb.LeaseKind, eb.Resource, eb.ScopeID, ownerID, qty)] = ObservedLeaseBinding{
 							LeaseKind: eb.LeaseKind,
 							Resource:  eb.Resource,
@@ -603,34 +613,32 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 				}
 			}
 
-			freeQty := releasedQty - reassignedQty
-			if freeQty < 0 {
-				freeQty = 0
-			}
-
 			disp := ResourceCurrentlyFree
 			if targetRes.ReleaseState != TargetReleased || remainingTargetQty > 0 {
 				disp = ResourceUnknown
-			} else if reassignedQty > 0 {
-				disp = ResourceReassigned
+			} else if otherObservedQty > 0 {
+				disp = ResourceOtherObserved
 			}
 
 			claim := ResourceClaim{Kind: eb.LeaseKind, Resource: eb.Resource, Quantity: expectedQty}
 			if releasedQty > 0 {
-				releasedClaims = append(releasedClaims, ResourceClaim{Kind: eb.LeaseKind, Resource: eb.Resource, Quantity: releasedQty})
+				claimKey := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
+				rawReleasedClaims[claimKey] += releasedQty
 			}
-			if disp == ResourceCurrentlyFree && freeQty > 0 {
-				freeClaims = append(freeClaims, ResourceClaim{Kind: eb.LeaseKind, Resource: eb.Resource, Quantity: freeQty})
+			if disp == ResourceCurrentlyFree && releasedQty > 0 {
+				claimKey := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
+				rawFreeClaims[claimKey] += releasedQty
 			}
 
 			resourceResults = append(resourceResults, ResourceReleaseResult{
-				Resource:                claim,
-				ExpectedQuantity:        expectedQty,
-				RemainingTargetQuantity: remainingTargetQty,
-				ReleasedQuantity:        releasedQty,
-				ReassignedQuantity:      reassignedQty,
-				CurrentlyFreeQuantity:   freeQty,
-				Disposition:             disp,
+				Resource:                   claim,
+				ExpectedQuantity:           expectedQty,
+				RemainingTargetQuantity:    remainingTargetQty,
+				ReleasedFromTargetQuantity: releasedQty,
+				OtherObservedQuantity:      otherObservedQty,
+				CurrentlyFreeQuantity:      0, // Not authoritative without capacity source
+				CurrentlyFreeAuthoritative: false,
+				Disposition:                disp,
 			})
 		}
 
@@ -645,6 +653,39 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 			TargetResults: targetResults,
 		}, nil
 	}
+
+	// 8. Aggregate output claims, check overflow, and sort deterministically
+	releasedList := make([]ResourceClaim, 0, len(rawReleasedClaims))
+	for k, qty := range rawReleasedClaims {
+		parts := strings.SplitN(k, ":", 2)
+		releasedList = append(releasedList, ResourceClaim{
+			Kind:     ResourceKind(parts[0]),
+			Resource: parts[1],
+			Quantity: qty,
+		})
+	}
+	sort.Slice(releasedList, func(i, j int) bool {
+		if releasedList[i].Kind != releasedList[j].Kind {
+			return releasedList[i].Kind < releasedList[j].Kind
+		}
+		return releasedList[i].Resource < releasedList[j].Resource
+	})
+
+	freeList := make([]ResourceClaim, 0, len(rawFreeClaims))
+	for k, qty := range rawFreeClaims {
+		parts := strings.SplitN(k, ":", 2)
+		freeList = append(freeList, ResourceClaim{
+			Kind:     ResourceKind(parts[0]),
+			Resource: parts[1],
+			Quantity: qty,
+		})
+	}
+	sort.Slice(freeList, func(i, j int) bool {
+		if freeList[i].Kind != freeList[j].Kind {
+			return freeList[i].Kind < freeList[j].Kind
+		}
+		return freeList[i].Resource < freeList[j].Resource
+	})
 
 	reassignedHwList := make([]ObservedResourceBinding, 0, len(reassignedHwMap))
 	for _, b := range reassignedHwMap {
@@ -670,8 +711,8 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 		Decision:                   ReleaseDecisionReleased,
 		Reason:                     ReleaseVerificationReasonNone,
 		TargetResults:              targetResults,
-		ReleasedFromTargetClaims:   releasedClaims,
-		CurrentlyFreeClaims:        freeClaims,
+		ReleasedFromTargetClaims:   releasedList,
+		CurrentlyFreeClaims:        freeList,
 		ReassignedHardwareBindings: reassignedHwList,
 		ReassignedLeaseBindings:    reassignedLeaseList,
 		ObservationRevision:        observation.ObservationRevision,
