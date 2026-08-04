@@ -211,7 +211,7 @@ func transcodeSharpenFilter(amount float64) string {
 	if amount <= 0 {
 		return ""
 	}
-	return fmt.Sprintf("unsharp=5:5:%.2f:5:5:0.0", amount)
+	return fmt.Sprintf("unsharp=3:3:%.2f:3:3:0.0", amount)
 }
 
 // transcodeDenoiseFilter returns an hqdn3d denoise expression for the transcode

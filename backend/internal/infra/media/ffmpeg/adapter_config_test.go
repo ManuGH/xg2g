@@ -141,7 +141,7 @@ func TestAdapterConfigSnapshot_DoesNotReadEnvironmentMidPlanning(t *testing.T) {
 	t.Setenv("XG2G_TRANSCODE_SHARPEN", "2.5")
 	t.Setenv("XG2G_AV1_QVBR_QUALITY", "111")
 
-	if got := transcodeSharpenFilter(snapshot.TranscodeSharpen); got != "unsharp=5:5:0.70:5:5:0.0" {
+	if got := transcodeSharpenFilter(snapshot.TranscodeSharpen); got != "unsharp=3:3:0.70:3:3:0.0" {
 		t.Fatalf("snapshot sharpen filter = %q", got)
 	}
 	if snapshot.AV1QVBRQuality != 77 {
