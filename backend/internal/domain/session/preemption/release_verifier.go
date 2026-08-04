@@ -371,8 +371,9 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 			ReleaseState:       TargetReleased,
 			Reason:             ReleaseReasonNone,
 		}
+		var resourceResults []ResourceReleaseResult
 
-		// A. Check if target allocation is still active
+		// A. Check if target allocation is still active in snapshot
 		if _, active := activeAllocMap[targetID]; active {
 			targetRes.ReleaseState = TargetStillActive
 			targetRes.Reason = ReleaseReasonTargetStillObserved
@@ -386,30 +387,95 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 			allReleased = false
 		}
 
-		// C. Check if target lease bindings still remain
+		// C. Check if target lease bindings still remain (matching targetID, desc.ExpectedOwner, OR eb.ExpectedOwnerID)
 		if leaseBindings, bound := activeLeaseBindingsByOwner[targetID]; bound && len(leaseBindings) > 0 {
 			targetRes.ReleaseState = TargetBindingRemains
 			targetRes.Reason = ReleaseReasonLeaseBinding
 			allReleased = false
 		}
 		if ownerLeases, bound := activeLeaseBindingsByOwner[desc.ExpectedOwner]; bound && len(ownerLeases) > 0 {
-			for _, eb := range desc.ExpectedLeaseBindings {
-				for _, ob := range ownerLeases {
-					if ob.LeaseKind == eb.LeaseKind && ob.Resource == eb.Resource && ob.ScopeID == eb.ScopeID {
-						targetRes.ReleaseState = TargetBindingRemains
-						targetRes.Reason = ReleaseReasonLeaseBinding
-						allReleased = false
-						break
+			targetRes.ReleaseState = TargetBindingRemains
+			targetRes.Reason = ReleaseReasonLeaseBinding
+			allReleased = false
+		}
+		for _, eb := range desc.ExpectedLeaseBindings {
+			if strings.TrimSpace(eb.ExpectedOwnerID) != "" {
+				if ownerLeases, bound := activeLeaseBindingsByOwner[eb.ExpectedOwnerID]; bound && len(ownerLeases) > 0 {
+					for _, ob := range ownerLeases {
+						if ob.LeaseKind == eb.LeaseKind && ob.Resource == eb.Resource && ob.ScopeID == eb.ScopeID {
+							targetRes.ReleaseState = TargetBindingRemains
+							targetRes.Reason = ReleaseReasonLeaseBinding
+							allReleased = false
+							break
+						}
 					}
 				}
 			}
 		}
 
-		// D. Process expected hardware claims & determine disposition
-		var resourceResults []ResourceReleaseResult
+		// D. Process ExpectedClaims (Non-Hardware claims like TUNER_SLOT, RESTRICTED_ACCESS_SLOT, STORAGE_IO)
+		for _, claim := range desc.ExpectedClaims {
+			releasedClaims = append(releasedClaims, claim)
+			key := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
+
+			// Check if claim is still held by target allocation in activeAllocMap
+			if targetAlloc, active := activeAllocMap[targetID]; active {
+				for _, ac := range targetAlloc.Claims {
+					if ac.Kind == claim.Kind && ac.Resource == claim.Resource {
+						targetRes.ReleaseState = TargetStillActive
+						targetRes.Reason = ReleaseReasonTargetStillObserved
+						allReleased = false
+						break
+					}
+				}
+			}
+
+			// Determine disposition cleanly (avoiding contradictory CURRENTLY_FREE if target binding remains!)
+			if targetRes.ReleaseState != TargetReleased {
+				resourceResults = append(resourceResults, ResourceReleaseResult{
+					Resource:    claim,
+					Disposition: ResourceUnknown,
+				})
+			} else {
+				// Check if reassigned to another active allocation
+				reassigned := false
+				for otherID, otherAlloc := range activeAllocMap {
+					if otherID != targetID {
+						for _, ac := range otherAlloc.Claims {
+							if ac.Kind == claim.Kind && ac.Resource == claim.Resource {
+								reassigned = true
+								break
+							}
+						}
+					}
+				}
+				disp := ResourceCurrentlyFree
+				if reassigned {
+					disp = ResourceReassigned
+				} else {
+					freeClaims = append(freeClaims, claim)
+				}
+				resourceResults = append(resourceResults, ResourceReleaseResult{
+					Resource:    claim,
+					Disposition: disp,
+				})
+			}
+			_ = key
+		}
+
+		// E. Process ExpectedHardwareClaims & determine disposition
 		for _, hwClaim := range desc.ExpectedHardwareClaims {
 			releasedClaims = append(releasedClaims, hwClaim)
 			key := fmt.Sprintf("%s:%s", hwClaim.Kind, hwClaim.Resource)
+
+			// If target is NOT released, disposition MUST be ResourceUnknown (not contradictory CURRENTLY_FREE!)
+			if targetRes.ReleaseState != TargetReleased {
+				resourceResults = append(resourceResults, ResourceReleaseResult{
+					Resource:    hwClaim,
+					Disposition: ResourceUnknown,
+				})
+				continue
+			}
 
 			var reassignedBinding *ObservedResourceBinding
 			if bindings, exists := allHwBindingsByResource[key]; exists {
@@ -435,16 +501,25 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 			})
 		}
 
-		// E. Process expected lease claims
+		// F. Process ExpectedLeaseBindings & determine disposition
 		for _, eb := range desc.ExpectedLeaseBindings {
 			claim := ResourceClaim{Kind: eb.LeaseKind, Resource: eb.Resource, Quantity: eb.Quantity}
 			releasedClaims = append(releasedClaims, claim)
 			key := fmt.Sprintf("%s:%s:%s", eb.LeaseKind, eb.Resource, eb.ScopeID)
 
+			// If target is NOT released, disposition MUST be ResourceUnknown
+			if targetRes.ReleaseState != TargetReleased {
+				resourceResults = append(resourceResults, ResourceReleaseResult{
+					Resource:    claim,
+					Disposition: ResourceUnknown,
+				})
+				continue
+			}
+
 			var reassignedLease *ObservedLeaseBinding
 			if bindings, exists := allLeaseBindingsByResource[key]; exists {
 				for _, b := range bindings {
-					if b.OwnerID != targetID && b.OwnerID != desc.ExpectedOwner {
+					if b.OwnerID != targetID && b.OwnerID != desc.ExpectedOwner && (eb.ExpectedOwnerID == "" || b.OwnerID != eb.ExpectedOwnerID) {
 						reassignedLease = &b
 						reassignedLeaseMap[fmt.Sprintf("%s:%s:%s:%s", b.LeaseKind, b.Resource, b.ScopeID, b.OwnerID)] = b
 						break

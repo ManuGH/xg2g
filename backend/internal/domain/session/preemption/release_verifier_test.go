@@ -70,7 +70,6 @@ func setupReleaseTestContext(t *testing.T) (context.Context, *PreparedTeardown, 
 	preparer := NewTeardownPreparer()
 	prepRes, err := preparer.PrepareTeardown(contract, snapshot, proof, now.Add(-5*time.Second))
 	require.NoError(t, err)
-	t.Logf("prepRes.Decision: %s, prepRes.Reason: %s", prepRes.Decision, prepRes.Reason)
 	require.Equal(t, DecisionApproved, prepRes.Decision)
 
 	prepared := prepRes.Prepared
@@ -151,7 +150,6 @@ func TestVerifyRelease_ObservationHashMismatch(t *testing.T) {
 	_, prepared, ev, obs, now := setupReleaseTestContext(t)
 	verifier := NewResourceReleaseVerifier()
 
-	// Tamper hash
 	obs.ObservationHash = "corrupted-hash"
 
 	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
@@ -165,7 +163,6 @@ func TestVerifyRelease_EvidenceHashMismatch(t *testing.T) {
 	_, prepared, ev, obs, now := setupReleaseTestContext(t)
 	verifier := NewResourceReleaseVerifier()
 
-	// Tamper evidence hash
 	ev.EvidenceHash = "corrupted-hash"
 
 	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
@@ -201,7 +198,6 @@ func TestVerifyRelease_TargetStillActive(t *testing.T) {
 	_, prepared, ev, obs, now := setupReleaseTestContext(t)
 	verifier := NewResourceReleaseVerifier()
 
-	// Target alloc-1 is still active!
 	obs.ActiveAllocations = []ActiveAllocation{
 		{AllocationID: "alloc-1", Owner: "client-B", Revision: "alloc-rev-100"},
 	}
@@ -215,6 +211,8 @@ func TestVerifyRelease_TargetStillActive(t *testing.T) {
 	require.Equal(t, ReleaseVerificationReasonTargetsNotReleased, res.Reason)
 	require.Equal(t, TargetStillActive, res.TargetResults[0].ReleaseState)
 	require.Equal(t, ReleaseReasonTargetStillObserved, res.TargetResults[0].Reason)
+	// Assert disposition is ResourceUnknown (NOT contradictory ResourceCurrentlyFree!)
+	require.Equal(t, ResourceUnknown, res.TargetResults[0].Resources[0].Disposition)
 }
 
 func TestVerifyRelease_TargetBindingRemains(t *testing.T) {
@@ -235,13 +233,14 @@ func TestVerifyRelease_TargetBindingRemains(t *testing.T) {
 	require.Equal(t, ReleaseVerificationReasonTargetsNotReleased, res.Reason)
 	require.Equal(t, TargetBindingRemains, res.TargetResults[0].ReleaseState)
 	require.Equal(t, ReleaseReasonHardwareBinding, res.TargetResults[0].Reason)
+	// Assert disposition is ResourceUnknown (NOT contradictory ResourceCurrentlyFree!)
+	require.Equal(t, ResourceUnknown, res.TargetResults[0].Resources[0].Disposition)
 }
 
 func TestVerifyRelease_StaleObservation(t *testing.T) {
 	_, prepared, ev, obs, now := setupReleaseTestContext(t)
 	verifier := NewResourceReleaseVerifier()
 
-	// Observation timestamp is BEFORE teardown acknowledgment!
 	obs.ObservedAt = ev.AcknowledgedAt.Add(-1 * time.Second)
 	obsHash, err := ComputeObservationHash(obs)
 	require.NoError(t, err)
@@ -257,7 +256,6 @@ func TestVerifyRelease_InconsistentRevision(t *testing.T) {
 	_, prepared, ev, obs, now := setupReleaseTestContext(t)
 	verifier := NewResourceReleaseVerifier()
 
-	// HardwareProfileRevision mismatch
 	obs.HardwareProfileRevision = "hw-rev-different"
 	obsHash, err := ComputeObservationHash(obs)
 	require.NoError(t, err)
@@ -273,7 +271,6 @@ func TestVerifyRelease_MultiVictimAllOrNothing(t *testing.T) {
 	now := time.Now().UTC()
 	attemptAt := now.Add(-2 * time.Second)
 	ackAt := now.Add(-1 * time.Second)
-	obsAt := now.Add(-500 * time.Millisecond)
 
 	hwClaim1 := []ResourceClaim{{Kind: ResourceKindPhysicalTuner, Resource: "tuner-1", Quantity: 1}}
 	hwClaim2 := []ResourceClaim{{Kind: ResourceKindPhysicalTuner, Resource: "tuner-2", Quantity: 1}}
@@ -356,7 +353,6 @@ func TestVerifyRelease_MultiVictimAllOrNothing(t *testing.T) {
 	require.NoError(t, err)
 	ev2.EvidenceHash = ev2Hash
 
-	// alloc-1 is gone, but alloc-2 remains active in observation!
 	obs := ReleaseObservation{
 		ReceiverID:               "rec-1",
 		ObservationRevision:      "obs-rev-1",
@@ -389,7 +385,6 @@ func TestVerifyRelease_MultiVictimAllOrNothing(t *testing.T) {
 	require.Len(t, res.TargetResults, 2)
 	require.Equal(t, TargetReleased, res.TargetResults[0].ReleaseState)
 	require.Equal(t, TargetStillActive, res.TargetResults[1].ReleaseState)
-	_ = obsAt
 }
 
 func TestVerifyRelease_ZeroStateMutations(t *testing.T) {
@@ -406,7 +401,6 @@ func TestVerifyRelease_ZeroStateMutations(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ReleaseDecisionReleased, res.Decision)
 
-	// Verify SagaStore state was NOT mutated
 	sagaAfter, getErr := memoryStore.GetSaga(context.Background(), saga.SagaID)
 	require.NoError(t, getErr)
 	require.Equal(t, StatePrepared, sagaAfter.State)

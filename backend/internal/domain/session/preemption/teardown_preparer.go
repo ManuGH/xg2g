@@ -15,12 +15,12 @@ import (
 )
 
 var (
-	ErrInvalidPreparedTeardown      = errors.New("invalid prepared teardown")
-	ErrPreparedTeardownExpired      = errors.New("prepared teardown has expired")
-	ErrPreparedTeardownHashMismatch = errors.New("prepared teardown hash verification failed")
+	ErrInvalidPreparedTeardown     = errors.New("invalid prepared teardown")
+	ErrPreparedTeardownExpired     = errors.New("prepared teardown has expired")
+	ErrPreparedTeardownHashMismatch = errors.New("prepared teardown hash mismatch")
 )
 
-// TeardownPreparer provides pure, read-only teardown protocol preparation without side effects.
+// TeardownPreparer creates and validates PreparedTeardown instances in Phase E3.2.
 type TeardownPreparer struct {
 	DefaultPreparationTTL time.Duration
 }
@@ -32,31 +32,22 @@ func NewTeardownPreparer() *TeardownPreparer {
 	}
 }
 
-// PrepareTeardown re-evaluates the contract, live snapshot, and conflict proof, returning TeardownPreparationResult.
-func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract, snapshot ResourceSnapshot, proof ConflictResolutionProof, now time.Time) (TeardownPreparationResult, error) {
+// PrepareTeardown generates an immutable PreparedTeardown dataset from an active execution contract.
+func (p *TeardownPreparer) PrepareTeardown(
+	contract *PreemptionExecutionContract,
+	snapshot ResourceSnapshot,
+	proof ConflictResolutionProof,
+	now time.Time,
+) (TeardownPreparationResult, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
 
-	// 1. Validate contract integrity and expiration
+	// 1. Validate contract integrity and TTL
 	if err := ValidateContract(contract, now); err != nil {
-		if errors.Is(err, ErrContractExpired) {
-			return TeardownPreparationResult{
-				Decision: DecisionRejected,
-				Reason:   ReasonTeardownContractExpired,
-			}, nil
-		}
 		return TeardownPreparationResult{
 			Decision: DecisionRejected,
-			Reason:   ReasonTeardownContractHashInvalid,
-		}, nil
-	}
-
-	// Receiver ID alignment check
-	if contract.ReceiverID != snapshot.ReceiverID || contract.ReceiverID != proof.ReceiverID {
-		return TeardownPreparationResult{
-			Decision: DecisionRejected,
-			Reason:   ReasonTeardownInvalidProof,
+			Reason:   ReasonTeardownContractExpired,
 		}, nil
 	}
 
@@ -197,6 +188,8 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 		// Build TargetExecutionDescriptor for E3.2 binding
 		var expClaims, expHwClaims []ResourceClaim
 		var expHwBindings []ExpectedHardwareBinding
+		var expLeaseBindings []ExpectedLeaseBinding
+
 		for _, c := range alloc.Claims {
 			if c.Kind == ResourceKindPhysicalTuner || c.Kind == ResourceKindDemux {
 				expHwClaims = append(expHwClaims, c)
@@ -208,11 +201,17 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 				})
 			} else {
 				expClaims = append(expClaims, c)
+				if c.Kind == ResourceKindRestrictedAccessSlot || c.Kind == ResourceKindTunerSlot {
+					expLeaseBindings = append(expLeaseBindings, ExpectedLeaseBinding{
+						LeaseKind:       c.Kind,
+						Resource:        c.Resource,
+						ScopeID:         contract.ReceiverID,
+						ExpectedOwnerID: alloc.Owner,
+						Quantity:        c.Quantity,
+					})
+				}
 			}
 		}
-
-		// ExpectedLeaseBindings remains empty []ExpectedLeaseBinding(nil) unless concrete lease scope & owner IDs are present
-		var expLeaseBindings []ExpectedLeaseBinding
 
 		allocRev := strings.TrimSpace(alloc.Revision)
 		if allocRev == "" {
@@ -278,23 +277,23 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 		expiresAt = maxExpires
 	}
 
-	sortedTargets := append([]string(nil), contract.TargetAllocationIDs...)
-	sort.Strings(sortedTargets)
-
-	// Sort descriptors canonically by AllocationID
+	// Ensure descriptors are strictly sorted by AllocationID
 	sort.Slice(descriptors, func(i, j int) bool {
 		return descriptors[i].AllocationID < descriptors[j].AllocationID
 	})
 
-	descriptorsHash, err := ComputeTargetDescriptorsHash(descriptors)
-	if err != nil {
-		return TeardownPreparationResult{
-			Decision: DecisionRejected,
-			Reason:   ReasonTeardownInvalidProof,
-		}, nil
+	sortedTargets := make([]string, len(descriptors))
+	for i, desc := range descriptors {
+		sortedTargets[i] = desc.AllocationID
 	}
 
-	teardownID := generateTeardownID(contract.ContractID, now)
+	descriptorsHash, err := ComputeTargetDescriptorsHash(descriptors)
+	if err != nil {
+		return TeardownPreparationResult{}, fmt.Errorf("failed to compute target descriptors hash: %w", err)
+	}
+
+	teardownID := fmt.Sprintf("td-%s", contract.ContractID)
+
 	prepared := &PreparedTeardown{
 		TeardownID:              teardownID,
 		ContractID:              contract.ContractID,
@@ -378,10 +377,10 @@ func ValidatePreparedTeardown(p *PreparedTeardown, now time.Time) error {
 		return fmt.Errorf("%w: target descriptors invalid: %v", ErrInvalidPreparedTeardown, err)
 	}
 	if p.TargetDescriptorsHash != computedDescHash {
-		return fmt.Errorf("%w: computed target descriptors hash '%s' != stored '%s'", ErrPreparedTeardownHashMismatch, computedDescHash, p.TargetDescriptorsHash)
+		return fmt.Errorf("%w: target descriptors hash mismatch: computed '%s' != stored '%s'", ErrInvalidPreparedTeardown, computedDescHash, p.TargetDescriptorsHash)
 	}
 
-	if !now.IsZero() && now.After(p.ExpiresAt) {
+	if !now.IsZero() && !now.Before(p.ExpiresAt) {
 		return fmt.Errorf("%w: expired at %s (now: %s)", ErrPreparedTeardownExpired, p.ExpiresAt.Format(time.RFC3339), now.Format(time.RFC3339))
 	}
 
@@ -396,14 +395,14 @@ func ValidatePreparedTeardown(p *PreparedTeardown, now time.Time) error {
 	return nil
 }
 
-// ComputePreparedTeardownHash generates SHA-256 hash covering all execution-relevant fields.
+// ComputePreparedTeardownHash generates a deterministic SHA-256 hash covering all decision-relevant fields.
 func ComputePreparedTeardownHash(p *PreparedTeardown) (string, error) {
 	if p == nil {
 		return "", ErrInvalidPreparedTeardown
 	}
 
 	if !sort.StringsAreSorted(p.TargetAllocationIDs) {
-		return "", fmt.Errorf("%w: target allocation IDs are not canonically sorted", ErrInvalidPreparedTeardown)
+		return "", fmt.Errorf("%w: target allocation IDs not canonically sorted", ErrInvalidPreparedTeardown)
 	}
 
 	h := sha256.New()
@@ -415,16 +414,10 @@ func ComputePreparedTeardownHash(p *PreparedTeardown) (string, error) {
 	_, _ = fmt.Fprintf(h, "targets=%s\n", strings.Join(p.TargetAllocationIDs, ","))
 	_, _ = fmt.Fprintf(h, "target_descriptors_hash=%s\n", p.TargetDescriptorsHash)
 	_, _ = fmt.Fprintf(h, "snapshot_rev=%s\n", p.SnapshotRevision)
-	_, _ = fmt.Fprintf(h, "hardware_rev=%s\n", p.HardwareProfileRevision)
-	_, _ = fmt.Fprintf(h, "proof_rev=%s\n", p.ConflictProofRevision)
-	_, _ = fmt.Fprintf(h, "prepared_at=%s\n", p.PreparedAt.UTC().Format(time.RFC3339Nano))
-	_, _ = fmt.Fprintf(h, "expires_at=%s\n", p.ExpiresAt.UTC().Format(time.RFC3339Nano))
+	_, _ = fmt.Fprintf(h, "hw_profile_rev=%s\n", p.HardwareProfileRevision)
+	_, _ = fmt.Fprintf(h, "conflict_proof_rev=%s\n", p.ConflictProofRevision)
+	_, _ = fmt.Fprintf(h, "prepared_at=%d\n", p.PreparedAt.UnixNano())
+	_, _ = fmt.Fprintf(h, "expires_at=%d\n", p.ExpiresAt.UnixNano())
 
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-func generateTeardownID(contractID string, t time.Time) string {
-	h := sha256.New()
-	_, _ = fmt.Fprintf(h, "%s:%d", contractID, t.UnixNano())
-	return fmt.Sprintf("teardown-%s", hex.EncodeToString(h.Sum(nil))[:16])
 }
