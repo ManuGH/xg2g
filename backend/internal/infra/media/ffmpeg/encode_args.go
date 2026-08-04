@@ -253,7 +253,7 @@ func av1VAAPIGeometryPadFilter() string {
 	//     1082-line frames. Padding to a 16-line height keeps the decoded
 	//     geometry stable for native HLS clients; SAR is adjusted before padding
 	//     so the display aspect ratio is unchanged after 1088p.
-	return "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=lanczos," +
+	return "scale=w=trunc(max(720\\,ih)*dar/2)*2:h=max(720\\,ih):flags=bicubic," +
 		"setsar=sar=sar*ceil(h/16)*16/h:max=1000," +
 		"pad=iw:ceil(ih/16)*16:0:(oh-ih)/2:black"
 }
