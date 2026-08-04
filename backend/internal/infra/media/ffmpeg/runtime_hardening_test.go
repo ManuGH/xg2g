@@ -222,8 +222,8 @@ func TestFinalizePlan_AdaptiveTranscodeQualityPromotesAV1FMP4ToHQ50(t *testing.T
 	assert.Equal(t, ports.RuntimeModeHQ50, finalized.Profile.EffectiveRuntimeMode)
 	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, finalized.Profile.EffectiveModeSource)
 	assert.False(t, finalized.Profile.ForceSafariHQ25)
-	assert.Equal(t, 14000, finalized.Profile.VideoMaxRateK)
-	assert.Equal(t, 28000, finalized.Profile.VideoBufSizeK)
+	assert.Equal(t, 8000, finalized.Profile.VideoMaxRateK)
+	assert.Equal(t, 16000, finalized.Profile.VideoBufSizeK)
 }
 
 func TestFinalizePlan_AdaptiveTranscodeQualityHonorsAV1BudgetEnv(t *testing.T) {

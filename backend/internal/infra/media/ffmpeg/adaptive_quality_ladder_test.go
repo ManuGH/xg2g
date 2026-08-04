@@ -17,15 +17,15 @@ func TestAdaptiveQualityLadder_ScalesWithSourceHeight(t *testing.T) {
 		height   int
 		wantMaxK int
 	}{
-		{"unknown -> prior default (av1)", "av1", 0, 14000},
+		{"unknown -> prior default (av1)", "av1", 0, 8000},
 		{"unknown -> prior default (h264)", "h264", 0, 16000},
-		{"SD 576 av1 is frugal", "av1", 576, 5000},
+		{"SD 576 av1 is frugal", "av1", 576, 2500},
 		{"SD 576 hevc", "hevc", 576, 6000},
 		{"SD 576 h264 highest of the three", "h264", 576, 7000},
-		{"720 av1", "av1", 720, 8000},
-		{"1080 av1 keeps the high ceiling", "av1", 1080, 14000},
+		{"720 av1", "av1", 720, 4500},
+		{"1080 av1 keeps the high ceiling", "av1", 1080, 8000},
 		{"1080 h264", "h264", 1080, 16000},
-		{"UHD av1", "av1", 2160, 22000},
+		{"UHD av1", "av1", 2160, 12000},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -53,7 +53,7 @@ func TestAdaptiveTranscodeQualityBudget_UsesSourceHeight(t *testing.T) {
 		VideoSourceHeight: 576,
 	}, LoadAdapterConfig("", ""))
 	assert.True(t, ok)
-	assert.Equal(t, 5000, budget.maxRateK)
+	assert.Equal(t, 2500, budget.maxRateK)
 
 	// Same codec at 1080 keeps the high ceiling.
 	hd, ok := adaptiveTranscodeQualityBudgetFor(ports.ProfileSpec{
@@ -61,5 +61,5 @@ func TestAdaptiveTranscodeQualityBudget_UsesSourceHeight(t *testing.T) {
 		VideoSourceHeight: 1080,
 	}, LoadAdapterConfig("", ""))
 	assert.True(t, ok)
-	assert.Equal(t, 14000, hd.maxRateK)
+	assert.Equal(t, 8000, hd.maxRateK)
 }

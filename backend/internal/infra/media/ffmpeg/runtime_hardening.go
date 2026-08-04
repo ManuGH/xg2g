@@ -451,15 +451,15 @@ func adaptiveQualityLadder(codec string, sourceHeight int) (maxRateK, bufSizeK i
 	}
 	switch {
 	case sourceHeight <= 0: // unknown -> prior defaults
-		maxRateK = pick(14000, 14000, 16000)
+		maxRateK = pick(8000, 14000, 16000)
 	case sourceHeight <= 576: // SD (e.g. PAL 720x576)
-		maxRateK = pick(5000, 6000, 7000)
+		maxRateK = pick(2500, 6000, 7000)
 	case sourceHeight <= 720:
-		maxRateK = pick(8000, 10000, 12000)
-	case sourceHeight <= 1080: // HD -> unchanged high ceiling
-		maxRateK = pick(14000, 14000, 16000)
+		maxRateK = pick(4500, 10000, 12000)
+	case sourceHeight <= 1080: // HD -> gestochen scharf ceiling
+		maxRateK = pick(8000, 14000, 16000)
 	default: // UHD
-		maxRateK = pick(22000, 24000, 30000)
+		maxRateK = pick(12000, 24000, 30000)
 	}
 	return maxRateK, maxRateK * 2
 }
