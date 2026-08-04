@@ -20,22 +20,30 @@ var (
 	ErrDisallowedTransportInProd = errors.New("TransportKindMock is disallowed outside test environment")
 )
 
-// TeardownExecutor coordinates target teardown requests using read-only claim validation and fenced gateways.
+// TeardownExecutor coordinates target teardown requests using read-only claim validation and mandatory AuthorizingTeardownGateway.
 type TeardownExecutor struct {
 	claimReader ReceiverClaimReader
-	gateway     FencedTeardownGateway
+	gateway     *AuthorizingTeardownGateway
 	nowFunc     func() time.Time
 	allowMock   bool
 }
 
 // NewTeardownExecutor creates a production TeardownExecutor instance.
-func NewTeardownExecutor(reader ReceiverClaimReader, gateway FencedTeardownGateway) *TeardownExecutor {
+// It requires ReceiverClaimReader, FencedMutationAuthorizer, and TeardownTransport, constructing an AuthorizingTeardownGateway internally.
+func NewTeardownExecutor(reader ReceiverClaimReader, authorizer FencedMutationAuthorizer, transport TeardownTransport) (*TeardownExecutor, error) {
+	if reader == nil {
+		return nil, fmt.Errorf("ReceiverClaimReader is nil")
+	}
+	authGateway, err := NewAuthorizingTeardownGateway(authorizer, transport)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AuthorizingTeardownGateway: %w", err)
+	}
 	return &TeardownExecutor{
 		claimReader: reader,
-		gateway:     gateway,
+		gateway:     authGateway,
 		nowFunc:     func() time.Time { return time.Now().UTC() },
 		allowMock:   false,
-	}
+	}, nil
 }
 
 // ExecuteTargetTeardown executes a single target teardown attempt from an authoritative PreparedTeardown dataset.
@@ -125,7 +133,7 @@ func (e *TeardownExecutor) ExecuteTargetTeardown(
 	defer cancel()
 
 	if e.gateway == nil {
-		return TargetTeardownResult{}, fmt.Errorf("FencedTeardownGateway is nil")
+		return TargetTeardownResult{}, fmt.Errorf("AuthorizingTeardownGateway is nil")
 	}
 
 	claimIdent := ReceiverClaimIdentity{
@@ -143,7 +151,7 @@ func (e *TeardownExecutor) ExecuteTargetTeardown(
 		Deadline:             effectiveDeadline,
 	}
 
-	// 6. Synchronous call to FencedTeardownGateway
+	// 6. Synchronous call to mandatory AuthorizingTeardownGateway
 	res, err := e.gateway.TeardownTargetFenced(derivedCtx, claimIdent, req)
 	if err != nil {
 		return TargetTeardownResult{}, err
