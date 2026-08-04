@@ -235,15 +235,16 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	}
 
 	relay := isStreamRelayURL(rawURL)
+	isTunerOrRelay := relay || result.ResolvedPort == 8001 || result.ResolvedPort == 8002 || result.ResolvedPort == 8000
 	timeout := a.PreflightTimeout
 	if timeout <= 0 {
 		timeout = preflightTimeout
 	}
 	scanBytes := preflightScanBytes
-	if relay {
-		// A relay source can show the scrambling bits set briefly at the start of a
-		// fresh stream; read further and allow more time so the trailing window lands
-		// past that initial interval.
+	if isTunerOrRelay {
+		// Tuner (8000/8001/8002) and relay (17999) sources can show scrambling bits set
+		// briefly at the start of a fresh stream before OSCam/demuxer locks CW.
+		// Read further (~752KB) and evaluate on the trailing window.
 		scanBytes = preflightRelayScanBytes
 		if timeout < preflightRelayTimeout {
 			timeout = preflightRelayTimeout
@@ -342,7 +343,7 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	// 48-packet sample still lands inside the lock and a healthy stream
 	// is falsely flagged R_UPSTREAM_SCRAMBLED.
 	minRequiredBytes := preflightMinBytes
-	if relay {
+	if isTunerOrRelay {
 		minRequiredBytes = 188 * 2500 // ~2000 pkt lock + 48 pkt trailing window + margin
 	}
 	if n >= minRequiredBytes && err != nil {
@@ -380,7 +381,7 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 		return result, fmt.Errorf("preflight ts sync missing")
 	}
 
-	if fraction, packets := scrambleFractionForSource(buf[:n], relay); packets >= tsScrambleMinPackets && fraction >= tsScrambleThreshold {
+	if fraction, packets := scrambleFractionForSource(buf[:n], isTunerOrRelay); packets >= tsScrambleMinPackets && fraction >= tsScrambleThreshold {
 		result.Detail = "scrambled"
 		result.Reason = ports.PreflightReasonScrambled
 		a.Logger.Warn().
