@@ -46,7 +46,7 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 	if v := strings.TrimSpace(a.IngestMaxErrorRate); v != "" && !strictIngest {
 		baseInputArgs = append(baseInputArgs, "-max_error_rate", v)
 	}
-	baseInputArgs = append(baseInputArgs, "-ignore_unknown")
+	baseInputArgs = append(baseInputArgs, "-sn", "-dn", "-ignore_unknown")
 	if spec.Source.Type != ports.SourceFile {
 		if liveAnalyze := strings.TrimSpace(a.LiveAnalyzeDuration); liveAnalyze != "" {
 			analyzeDuration = liveAnalyze
