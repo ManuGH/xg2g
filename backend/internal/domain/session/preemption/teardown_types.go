@@ -24,16 +24,35 @@ const (
 	ReasonTeardownInvalidProof                  TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_INVALID_PROOF"
 )
 
+// ExpectedLeaseBinding defines concrete expected lease bindings bound in E3.2.
+type ExpectedLeaseBinding struct {
+	LeaseKind       ResourceKind `json:"leaseKind"`
+	Resource        string       `json:"resource"`
+	ScopeID         string       `json:"scopeId"`
+	ExpectedOwnerID string       `json:"expectedOwnerId"`
+	Quantity        int          `json:"quantity"`
+}
+
+// ExpectedHardwareBinding defines concrete expected hardware bindings bound in E3.2.
+type ExpectedHardwareBinding struct {
+	Kind         ResourceKind `json:"kind"`
+	Resource     string       `json:"resource"`
+	Quantity     int          `json:"quantity"`
+	AllocationID string       `json:"allocationId"`
+}
+
 // TargetExecutionDescriptor specifies immutable expected target attributes bound in E3.2.
 type TargetExecutionDescriptor struct {
-	AllocationID           string          `json:"allocationId"`
-	ExpectedOwner          string          `json:"expectedOwner"`
-	AllocationRevision     string          `json:"allocationRevision"`
-	SnapshotRevision       string          `json:"snapshotRevision"`
-	HardwareRevision       string          `json:"hardwareRevision"`
-	ExpectedClaims         []ResourceClaim `json:"expectedClaims"`
-	ExpectedHardwareClaims []ResourceClaim `json:"expectedHardwareClaims"`
-	DescriptorHash         string          `json:"descriptorHash"`
+	AllocationID             string                    `json:"allocationId"`
+	ExpectedOwner            string                    `json:"expectedOwner"`
+	AllocationRevision       string                    `json:"allocationRevision"`
+	SnapshotRevision         string                    `json:"snapshotRevision"`
+	HardwareRevision         string                    `json:"hardwareRevision"`
+	ExpectedClaims            []ResourceClaim           `json:"expectedClaims"`
+	ExpectedHardwareClaims    []ResourceClaim           `json:"expectedHardwareClaims"`
+	ExpectedHardwareBindings []ExpectedHardwareBinding `json:"expectedHardwareBindings"`
+	ExpectedLeaseBindings    []ExpectedLeaseBinding    `json:"expectedLeaseBindings"`
+	DescriptorHash           string                    `json:"descriptorHash"`
 }
 
 // PreparedTeardown is the immutable read-only protocol dataset verifying teardown readiness before mutation.

@@ -9,17 +9,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
 var (
-	ErrInvalidDescriptor      = errors.New("invalid target execution descriptor")
-	ErrDescriptorHashMismatch = errors.New("target execution descriptor hash mismatch")
-	ErrClaimKindDisallowed    = errors.New("disallowed claim kind in hardware or non-hardware claim list")
-	ErrClaimKindOverlap       = errors.New("claim resource exists in both expected claims and expected hardware claims")
+	ErrInvalidDescriptor = errors.New("invalid target execution descriptor")
 )
 
-// ComputeDescriptorHash computes a deterministic SHA-256 hash for a TargetExecutionDescriptor.
+// ComputeDescriptorHash generates a deterministic SHA-256 hash covering all execution-relevant fields.
 func ComputeDescriptorHash(d TargetExecutionDescriptor) (string, error) {
 	if strings.TrimSpace(d.AllocationID) == "" {
 		return "", fmt.Errorf("%w: empty allocation ID", ErrInvalidDescriptor)
@@ -37,27 +35,6 @@ func ComputeDescriptorHash(d TargetExecutionDescriptor) (string, error) {
 		return "", fmt.Errorf("%w: empty hardware revision", ErrInvalidDescriptor)
 	}
 
-	// Verify ExpectedHardwareClaims contain ONLY physical tuner or demux claims
-	hwClaimKeys := make(map[string]struct{}, len(d.ExpectedHardwareClaims))
-	for i, claim := range d.ExpectedHardwareClaims {
-		if claim.Kind != ResourceKindPhysicalTuner && claim.Kind != ResourceKindDemux {
-			return "", fmt.Errorf("%w: hardware claim at index %d has invalid kind '%s'", ErrClaimKindDisallowed, i, claim.Kind)
-		}
-		key := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
-		hwClaimKeys[key] = struct{}{}
-	}
-
-	// Verify ExpectedClaims contain NO physical tuner or demux claims
-	for i, claim := range d.ExpectedClaims {
-		if claim.Kind == ResourceKindPhysicalTuner || claim.Kind == ResourceKindDemux {
-			return "", fmt.Errorf("%w: expected claim at index %d has hardware kind '%s'", ErrClaimKindDisallowed, i, claim.Kind)
-		}
-		key := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
-		if _, overlap := hwClaimKeys[key]; overlap {
-			return "", fmt.Errorf("%w: claim '%s' present in both expected claims and expected hardware claims", ErrClaimKindOverlap, key)
-		}
-	}
-
 	canonClaims, err := formatCanonicalClaimsStrict(d.ExpectedClaims)
 	if err != nil {
 		return "", fmt.Errorf("%w: invalid expected claims: %v", ErrInvalidDescriptor, err)
@@ -65,6 +42,15 @@ func ComputeDescriptorHash(d TargetExecutionDescriptor) (string, error) {
 	canonHwClaims, err := formatCanonicalClaimsStrict(d.ExpectedHardwareClaims)
 	if err != nil {
 		return "", fmt.Errorf("%w: invalid expected hardware claims: %v", ErrInvalidDescriptor, err)
+	}
+
+	canonHwBindings, err := formatCanonicalHardwareBindingsStrict(d.ExpectedHardwareBindings)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid expected hardware bindings: %v", ErrInvalidDescriptor, err)
+	}
+	canonLeaseBindings, err := formatCanonicalLeaseBindingsStrict(d.ExpectedLeaseBindings)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid expected lease bindings: %v", ErrInvalidDescriptor, err)
 	}
 
 	h := sha256.New()
@@ -75,44 +61,138 @@ func ComputeDescriptorHash(d TargetExecutionDescriptor) (string, error) {
 	_, _ = fmt.Fprintf(h, "hw_rev=%s\n", d.HardwareRevision)
 	_, _ = fmt.Fprintf(h, "expected_claims=%s\n", canonClaims)
 	_, _ = fmt.Fprintf(h, "expected_hw_claims=%s\n", canonHwClaims)
+	_, _ = fmt.Fprintf(h, "expected_hw_bindings=%s\n", canonHwBindings)
+	_, _ = fmt.Fprintf(h, "expected_lease_bindings=%s\n", canonLeaseBindings)
 
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// ValidateDescriptor verifies structural validity and SHA-256 hash match for a TargetExecutionDescriptor.
+// ValidateDescriptor validates the descriptor's fields and hash.
 func ValidateDescriptor(d TargetExecutionDescriptor) error {
 	computed, err := ComputeDescriptorHash(d)
 	if err != nil {
 		return err
 	}
+	if strings.TrimSpace(d.DescriptorHash) == "" {
+		return fmt.Errorf("%w: empty descriptor hash", ErrInvalidDescriptor)
+	}
 	if d.DescriptorHash != computed {
-		return fmt.Errorf("%w: computed '%s' != stored '%s'", ErrDescriptorHashMismatch, computed, d.DescriptorHash)
+		return fmt.Errorf("%w: computed descriptor hash '%s' != stored '%s'", ErrInvalidDescriptor, computed, d.DescriptorHash)
 	}
 	return nil
 }
 
-// ComputeTargetDescriptorsHash generates a deterministic SHA-256 hash over an array of TargetExecutionDescriptors.
-// Descriptors MUST be canonically sorted by AllocationID and each DescriptorHash must be valid.
+// ComputeTargetDescriptorsHash computes a canonical hash across a slice of target descriptors.
 func ComputeTargetDescriptorsHash(descriptors []TargetExecutionDescriptor) (string, error) {
 	if len(descriptors) == 0 {
-		return "", fmt.Errorf("%w: zero target descriptors", ErrInvalidDescriptor)
+		return "", fmt.Errorf("%w: empty descriptors list", ErrInvalidDescriptor)
 	}
 
+	sorted := make([]TargetExecutionDescriptor, len(descriptors))
+	copy(sorted, descriptors)
+
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].AllocationID < sorted[j].AllocationID
+	})
+
 	h := sha256.New()
-	seen := make(map[string]struct{}, len(descriptors))
-	for i, d := range descriptors {
-		if err := ValidateDescriptor(d); err != nil {
-			return "", fmt.Errorf("descriptor at index %d invalid: %w", i, err)
-		}
+	seen := make(map[string]struct{}, len(sorted))
+	for i, d := range sorted {
 		if _, duplicate := seen[d.AllocationID]; duplicate {
-			return "", fmt.Errorf("%w: duplicate allocation ID '%s' in target descriptors", ErrInvalidDescriptor, d.AllocationID)
+			return "", fmt.Errorf("%w: duplicate allocation ID '%s' in descriptors", ErrInvalidDescriptor, d.AllocationID)
 		}
 		seen[d.AllocationID] = struct{}{}
-		if i > 0 && descriptors[i-1].AllocationID > descriptors[i].AllocationID {
-			return "", fmt.Errorf("%w: target descriptors are not canonically sorted by AllocationID at index %d", ErrInvalidDescriptor, i)
+
+		dHash, err := ComputeDescriptorHash(d)
+		if err != nil {
+			return "", fmt.Errorf("%w: descriptor at index %d invalid: %v", ErrInvalidDescriptor, i, err)
 		}
-		_, _ = fmt.Fprintf(h, "desc[%d]=%s:%s\n", i, d.AllocationID, d.DescriptorHash)
+		_, _ = fmt.Fprintf(h, "%d:%s:%s\n", i, d.AllocationID, dHash)
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func formatCanonicalHardwareBindingsStrict(bindings []ExpectedHardwareBinding) (string, error) {
+	if len(bindings) == 0 {
+		return "", nil
+	}
+	qtyMap := make(map[string]int, len(bindings))
+	for i, b := range bindings {
+		if !b.Kind.IsValid() {
+			return "", fmt.Errorf("invalid resource kind '%s' at index %d", b.Kind, i)
+		}
+		res := strings.TrimSpace(b.Resource)
+		if res == "" {
+			return "", fmt.Errorf("empty resource at index %d", i)
+		}
+		allocID := strings.TrimSpace(b.AllocationID)
+		if allocID == "" {
+			return "", fmt.Errorf("empty allocation ID at index %d", i)
+		}
+		if b.Quantity <= 0 {
+			return "", fmt.Errorf("non-positive quantity %d at index %d", b.Quantity, i)
+		}
+		key := fmt.Sprintf("%s:%s:%s", b.Kind, res, allocID)
+		if qtyMap[key]+b.Quantity < qtyMap[key] {
+			return "", fmt.Errorf("quantity overflow at index %d", i)
+		}
+		qtyMap[key] += b.Quantity
+	}
+
+	keys := make([]string, 0, len(qtyMap))
+	for k := range qtyMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	formatted := make([]string, 0, len(keys))
+	for _, k := range keys {
+		formatted = append(formatted, fmt.Sprintf("%s:%d", k, qtyMap[k]))
+	}
+	return strings.Join(formatted, ";"), nil
+}
+
+func formatCanonicalLeaseBindingsStrict(bindings []ExpectedLeaseBinding) (string, error) {
+	if len(bindings) == 0 {
+		return "", nil
+	}
+	qtyMap := make(map[string]int, len(bindings))
+	for i, b := range bindings {
+		if !b.LeaseKind.IsValid() {
+			return "", fmt.Errorf("invalid lease kind '%s' at index %d", b.LeaseKind, i)
+		}
+		res := strings.TrimSpace(b.Resource)
+		if res == "" {
+			return "", fmt.Errorf("empty resource at index %d", i)
+		}
+		scopeID := strings.TrimSpace(b.ScopeID)
+		if scopeID == "" {
+			return "", fmt.Errorf("empty scope ID at index %d", i)
+		}
+		ownerID := strings.TrimSpace(b.ExpectedOwnerID)
+		if ownerID == "" {
+			return "", fmt.Errorf("empty expected owner ID at index %d", i)
+		}
+		if b.Quantity <= 0 {
+			return "", fmt.Errorf("non-positive quantity %d at index %d", b.Quantity, i)
+		}
+		key := fmt.Sprintf("%s:%s:%s:%s", b.LeaseKind, res, scopeID, ownerID)
+		if qtyMap[key]+b.Quantity < qtyMap[key] {
+			return "", fmt.Errorf("quantity overflow at index %d", i)
+		}
+		qtyMap[key] += b.Quantity
+	}
+
+	keys := make([]string, 0, len(qtyMap))
+	for k := range qtyMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	formatted := make([]string, 0, len(keys))
+	for _, k := range keys {
+		formatted = append(formatted, fmt.Sprintf("%s:%d", k, qtyMap[k]))
+	}
+	return strings.Join(formatted, ";"), nil
 }
