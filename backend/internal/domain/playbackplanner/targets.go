@@ -123,7 +123,7 @@ func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 	// 25p. These are ceilings, not targets - the encoder spends what the picture
 	// needs, and applyPolicyModifiers still clamps them on a constrained link.
 	case "av1":
-		return 24000
+		return 12000
 	case "hevc", "h265":
 		return 10000
 	case "h264", "avc", "libx264":
