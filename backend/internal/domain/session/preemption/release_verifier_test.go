@@ -1,0 +1,418 @@
+// Copyright (c) 2025 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package preemption
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+func setupReleaseTestContext(t *testing.T) (context.Context, *PreparedTeardown, TargetTeardownEvidence, ReleaseObservation, time.Time) {
+	now := time.Now().UTC()
+	attemptAt := now.Add(-2 * time.Second)
+	ackAt := now.Add(-1 * time.Second)
+	obsAt := now.Add(-500 * time.Millisecond)
+
+	hwClaim := []ResourceClaim{{Kind: ResourceKindPhysicalTuner, Resource: "tuner-1", Quantity: 1}}
+
+	contract := &PreemptionExecutionContract{
+		ContractID:              "c-1",
+		ReceiverID:              "rec-1",
+		RequestID:               "req-1",
+		RequesterOwner:          "client-A",
+		RequesterAllocationID:   "alloc-req-1",
+		RequesterRevision:       "rev-req-1",
+		TargetAllocationIDs:     []string{"alloc-1"},
+		RequestedResources:      hwClaim,
+		ExpectedFreedResources:  hwClaim,
+		SnapshotRevision:        "rev-100",
+		HardwareProfileRevision: "hw-rev-1",
+		ConflictProofRevision:   "rev-100",
+		CreatedAt:               now.Add(-10 * time.Second),
+		ExpiresAt:               now.Add(30 * time.Second),
+	}
+	cHash, err := ComputeContractHash(contract)
+	require.NoError(t, err)
+	contract.ContractHash = cHash
+
+	snapshot := ResourceSnapshot{
+		ReceiverID:       "rec-1",
+		SnapshotRevision: "rev-100",
+		ObservedAt:       now.Add(-5 * time.Second),
+		Allocations: []ActiveAllocation{
+			{
+				AllocationID: "alloc-1",
+				Owner:        "client-B",
+				Revision:     "alloc-rev-100",
+				Priority:     PriorityAttributes{BasePriority: 50},
+				Claims:       hwClaim,
+			},
+		},
+	}
+
+	proof := ConflictResolutionProof{
+		ReceiverID:              "rec-1",
+		SnapshotRevision:        "rev-100",
+		HardwareProfileRevision: "hw-rev-1",
+		HardwareProfileStatus:   HardwareProfileValid,
+		EvidenceClassification:  EvidenceDirectObservation,
+		RequestedResources:      hwClaim,
+		AllocationMappings: []AllocationResourceMapping{
+			{AllocationID: "alloc-1", FreedResources: hwClaim},
+		},
+	}
+
+	preparer := NewTeardownPreparer()
+	prepRes, err := preparer.PrepareTeardown(contract, snapshot, proof, now.Add(-5*time.Second))
+	require.NoError(t, err)
+	t.Logf("prepRes.Decision: %s, prepRes.Reason: %s", prepRes.Decision, prepRes.Reason)
+	require.Equal(t, DecisionApproved, prepRes.Decision)
+
+	prepared := prepRes.Prepared
+
+	ev := TargetTeardownEvidence{
+		SagaID:               "saga-1",
+		PreparedTeardownHash: prepared.PreparedTeardownHash,
+		TargetAllocationID:   "alloc-1",
+		DescriptorHash:       prepared.TargetDescriptors[0].DescriptorHash,
+		FencingToken:         10,
+		Status:               TeardownStatusStopConfirmed,
+		AttemptedAt:          attemptAt,
+		AcknowledgedAt:       ackAt,
+	}
+	evHash, err := ComputeEvidenceHash(ev)
+	require.NoError(t, err)
+	ev.EvidenceHash = evHash
+
+	obs := ReleaseObservation{
+		ReceiverID:               "rec-1",
+		ObservationRevision:      "obs-rev-1",
+		AllocationSourceRevision: "alloc-src-1",
+		HardwareSourceRevision:   "hw-src-1",
+		LeaseSourceRevision:      "lease-src-1",
+		HardwareProfileRevision:  "hw-rev-1",
+		Evidence:                 EvidenceDirectObservation,
+		Coverage: ObservationCoverage{
+			AllocationsComplete:      true,
+			HardwareBindingsComplete: true,
+			LeaseBindingsComplete:    true,
+		},
+		ObservedAt:             obsAt,
+		ActiveAllocations:      []ActiveAllocation{},      // alloc-1 is GONE!
+		ActiveHardwareBindings: []ObservedResourceBinding{}, // hardware binding is GONE!
+		ActiveLeaseBindings:    []ObservedLeaseBinding{},    // lease binding is GONE!
+	}
+	obsHash, err := ComputeObservationHash(obs)
+	require.NoError(t, err)
+	obs.ObservationHash = obsHash
+
+	return context.Background(), prepared, ev, obs, now
+}
+
+func TestVerifyRelease_EmpiricallyConfirmed(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+	verifier := NewResourceReleaseVerifier()
+
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionReleased, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonNone, res.Reason)
+	require.False(t, res.VerifiedAt.IsZero())
+	require.Len(t, res.TargetResults, 1)
+	require.Equal(t, TargetReleased, res.TargetResults[0].ReleaseState)
+	require.Equal(t, ReleaseReasonNone, res.TargetResults[0].Reason)
+	require.Len(t, res.ReleasedFromTargetClaims, 1)
+	require.Len(t, res.CurrentlyFreeClaims, 1)
+}
+
+func TestVerifyRelease_IncompleteCoverageRejection(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+	verifier := NewResourceReleaseVerifier()
+
+	// Mutate coverage flag -> MUST fail-closed!
+	obs.Coverage.HardwareBindingsComplete = false
+	obsHash, err := ComputeObservationHash(obs)
+	require.NoError(t, err)
+	obs.ObservationHash = obsHash
+
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionRejected, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonEvidenceIncomplete, res.Reason)
+	require.True(t, res.VerifiedAt.IsZero(), "VerifiedAt MUST remain zero on rejected evidence")
+}
+
+func TestVerifyRelease_ObservationHashMismatch(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+	verifier := NewResourceReleaseVerifier()
+
+	// Tamper hash
+	obs.ObservationHash = "corrupted-hash"
+
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionRejected, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonEvidenceMalformed, res.Reason)
+	require.True(t, res.VerifiedAt.IsZero())
+}
+
+func TestVerifyRelease_EvidenceHashMismatch(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+	verifier := NewResourceReleaseVerifier()
+
+	// Tamper evidence hash
+	ev.EvidenceHash = "corrupted-hash"
+
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionRejected, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonEvidenceMalformed, res.Reason)
+	require.True(t, res.VerifiedAt.IsZero())
+}
+
+func TestVerifyRelease_ResourceReassigned(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+	verifier := NewResourceReleaseVerifier()
+
+	// Reassign tuner-1 to alloc-C
+	obs.ActiveHardwareBindings = []ObservedResourceBinding{
+		{Kind: ResourceKindPhysicalTuner, Resource: "tuner-1", Quantity: 1, AllocationID: "alloc-C"},
+	}
+	obsHash, err := ComputeObservationHash(obs)
+	require.NoError(t, err)
+	obs.ObservationHash = obsHash
+
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionReleased, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonNone, res.Reason)
+	require.Len(t, res.TargetResults, 1)
+	require.Equal(t, TargetReleased, res.TargetResults[0].ReleaseState)
+	require.Len(t, res.ReassignedHardwareBindings, 1)
+	require.Equal(t, "alloc-C", res.ReassignedHardwareBindings[0].AllocationID)
+}
+
+func TestVerifyRelease_TargetStillActive(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+	verifier := NewResourceReleaseVerifier()
+
+	// Target alloc-1 is still active!
+	obs.ActiveAllocations = []ActiveAllocation{
+		{AllocationID: "alloc-1", Owner: "client-B", Revision: "alloc-rev-100"},
+	}
+	obsHash, err := ComputeObservationHash(obs)
+	require.NoError(t, err)
+	obs.ObservationHash = obsHash
+
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionRejected, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonTargetsNotReleased, res.Reason)
+	require.Equal(t, TargetStillActive, res.TargetResults[0].ReleaseState)
+	require.Equal(t, ReleaseReasonTargetStillObserved, res.TargetResults[0].Reason)
+}
+
+func TestVerifyRelease_TargetBindingRemains(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+	verifier := NewResourceReleaseVerifier()
+
+	// Target alloc-1 is gone, but hardware binding still points to alloc-1!
+	obs.ActiveHardwareBindings = []ObservedResourceBinding{
+		{Kind: ResourceKindPhysicalTuner, Resource: "tuner-1", Quantity: 1, AllocationID: "alloc-1"},
+	}
+	obsHash, err := ComputeObservationHash(obs)
+	require.NoError(t, err)
+	obs.ObservationHash = obsHash
+
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionRejected, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonTargetsNotReleased, res.Reason)
+	require.Equal(t, TargetBindingRemains, res.TargetResults[0].ReleaseState)
+	require.Equal(t, ReleaseReasonHardwareBinding, res.TargetResults[0].Reason)
+}
+
+func TestVerifyRelease_StaleObservation(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+	verifier := NewResourceReleaseVerifier()
+
+	// Observation timestamp is BEFORE teardown acknowledgment!
+	obs.ObservedAt = ev.AcknowledgedAt.Add(-1 * time.Second)
+	obsHash, err := ComputeObservationHash(obs)
+	require.NoError(t, err)
+	obs.ObservationHash = obsHash
+
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionRejected, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonEvidenceStale, res.Reason)
+}
+
+func TestVerifyRelease_InconsistentRevision(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+	verifier := NewResourceReleaseVerifier()
+
+	// HardwareProfileRevision mismatch
+	obs.HardwareProfileRevision = "hw-rev-different"
+	obsHash, err := ComputeObservationHash(obs)
+	require.NoError(t, err)
+	obs.ObservationHash = obsHash
+
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionRejected, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonRevisionMismatch, res.Reason)
+}
+
+func TestVerifyRelease_MultiVictimAllOrNothing(t *testing.T) {
+	now := time.Now().UTC()
+	attemptAt := now.Add(-2 * time.Second)
+	ackAt := now.Add(-1 * time.Second)
+	obsAt := now.Add(-500 * time.Millisecond)
+
+	hwClaim1 := []ResourceClaim{{Kind: ResourceKindPhysicalTuner, Resource: "tuner-1", Quantity: 1}}
+	hwClaim2 := []ResourceClaim{{Kind: ResourceKindPhysicalTuner, Resource: "tuner-2", Quantity: 1}}
+	bothClaims := append(append([]ResourceClaim{}, hwClaim1...), hwClaim2...)
+
+	contract := &PreemptionExecutionContract{
+		ContractID:              "c-multi",
+		ReceiverID:              "rec-1",
+		RequestID:               "req-1",
+		RequesterOwner:          "client-A",
+		RequesterAllocationID:   "alloc-req-1",
+		RequesterRevision:       "rev-req-1",
+		TargetAllocationIDs:     []string{"alloc-1", "alloc-2"},
+		RequestedResources:      bothClaims,
+		ExpectedFreedResources:  bothClaims,
+		SnapshotRevision:        "rev-100",
+		HardwareProfileRevision: "hw-rev-1",
+		ConflictProofRevision:   "rev-100",
+		CreatedAt:               now.Add(-10 * time.Second),
+		ExpiresAt:               now.Add(30 * time.Second),
+	}
+	cHash, err := ComputeContractHash(contract)
+	require.NoError(t, err)
+	contract.ContractHash = cHash
+
+	snapshot := ResourceSnapshot{
+		ReceiverID:       "rec-1",
+		SnapshotRevision: "rev-100",
+		ObservedAt:       now.Add(-5 * time.Second),
+		Allocations: []ActiveAllocation{
+			{AllocationID: "alloc-1", Owner: "client-B", Revision: "rev-1", Priority: PriorityAttributes{BasePriority: 50}, Claims: hwClaim1},
+			{AllocationID: "alloc-2", Owner: "client-C", Revision: "rev-2", Priority: PriorityAttributes{BasePriority: 40}, Claims: hwClaim2},
+		},
+	}
+
+	proof := ConflictResolutionProof{
+		ReceiverID:              "rec-1",
+		SnapshotRevision:        "rev-100",
+		HardwareProfileRevision: "hw-rev-1",
+		HardwareProfileStatus:   HardwareProfileValid,
+		EvidenceClassification:  EvidenceDirectObservation,
+		RequestedResources:      bothClaims,
+		AllocationMappings: []AllocationResourceMapping{
+			{AllocationID: "alloc-1", FreedResources: hwClaim1},
+			{AllocationID: "alloc-2", FreedResources: hwClaim2},
+		},
+	}
+
+	preparer := NewTeardownPreparer()
+	prepRes, err := preparer.PrepareTeardown(contract, snapshot, proof, now.Add(-5*time.Second))
+	require.NoError(t, err)
+	require.Equal(t, DecisionApproved, prepRes.Decision)
+	prepared := prepRes.Prepared
+
+	ev1 := TargetTeardownEvidence{
+		SagaID:               "saga-1",
+		PreparedTeardownHash: prepared.PreparedTeardownHash,
+		TargetAllocationID:   "alloc-1",
+		DescriptorHash:       prepared.TargetDescriptors[0].DescriptorHash,
+		FencingToken:         10,
+		Status:               TeardownStatusStopConfirmed,
+		AttemptedAt:          attemptAt,
+		AcknowledgedAt:       ackAt,
+	}
+	ev1Hash, err := ComputeEvidenceHash(ev1)
+	require.NoError(t, err)
+	ev1.EvidenceHash = ev1Hash
+
+	ev2 := TargetTeardownEvidence{
+		SagaID:               "saga-1",
+		PreparedTeardownHash: prepared.PreparedTeardownHash,
+		TargetAllocationID:   "alloc-2",
+		DescriptorHash:       prepared.TargetDescriptors[1].DescriptorHash,
+		FencingToken:         10,
+		Status:               TeardownStatusStopConfirmed,
+		AttemptedAt:          attemptAt,
+		AcknowledgedAt:       ackAt,
+	}
+	ev2Hash, err := ComputeEvidenceHash(ev2)
+	require.NoError(t, err)
+	ev2.EvidenceHash = ev2Hash
+
+	// alloc-1 is gone, but alloc-2 remains active in observation!
+	obs := ReleaseObservation{
+		ReceiverID:               "rec-1",
+		ObservationRevision:      "obs-rev-1",
+		AllocationSourceRevision: "alloc-src-1",
+		HardwareSourceRevision:   "hw-src-1",
+		LeaseSourceRevision:      "lease-src-1",
+		HardwareProfileRevision:  "hw-rev-1",
+		Evidence:                 EvidenceDirectObservation,
+		Coverage: ObservationCoverage{
+			AllocationsComplete:      true,
+			HardwareBindingsComplete: true,
+			LeaseBindingsComplete:    true,
+		},
+		ObservedAt: now.Add(-500 * time.Millisecond),
+		ActiveAllocations: []ActiveAllocation{
+			{AllocationID: "alloc-2", Owner: "client-C", Revision: "rev-2"},
+		},
+		ActiveHardwareBindings: []ObservedResourceBinding{},
+		ActiveLeaseBindings:    []ObservedLeaseBinding{},
+	}
+	obsHash, err := ComputeObservationHash(obs)
+	require.NoError(t, err)
+	obs.ObservationHash = obsHash
+
+	verifier := NewResourceReleaseVerifier()
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev1, ev2}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionRejected, res.Decision)
+	require.Equal(t, ReleaseVerificationReasonTargetsNotReleased, res.Reason)
+	require.Len(t, res.TargetResults, 2)
+	require.Equal(t, TargetReleased, res.TargetResults[0].ReleaseState)
+	require.Equal(t, TargetStillActive, res.TargetResults[1].ReleaseState)
+	_ = obsAt
+}
+
+func TestVerifyRelease_ZeroStateMutations(t *testing.T) {
+	_, prepared, ev, obs, now := setupReleaseTestContext(t)
+
+	memoryStore := NewMemorySagaStore()
+	engine := NewPreemptionSagaEngine(memoryStore)
+
+	saga, _, err := engine.CreateSaga(context.Background(), prepared, PreemptionModeEnforce, now)
+	require.NoError(t, err)
+
+	verifier := NewResourceReleaseVerifier()
+	res, err := verifier.VerifyRelease(prepared, []TargetTeardownEvidence{ev}, obs, now)
+	require.NoError(t, err)
+	require.Equal(t, ReleaseDecisionReleased, res.Decision)
+
+	// Verify SagaStore state was NOT mutated
+	sagaAfter, getErr := memoryStore.GetSaga(context.Background(), saga.SagaID)
+	require.NoError(t, getErr)
+	require.Equal(t, StatePrepared, sagaAfter.State)
+	require.Equal(t, saga.Version, sagaAfter.Version)
+
+	claimAfter, claimErr := memoryStore.GetReceiverClaim(context.Background(), "rec-1")
+	require.NoError(t, claimErr)
+	require.Equal(t, ClaimStatusUnclaimed, claimAfter.Status)
+}

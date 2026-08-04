@@ -196,13 +196,23 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 
 		// Build TargetExecutionDescriptor for E3.2 binding
 		var expClaims, expHwClaims []ResourceClaim
+		var expHwBindings []ExpectedHardwareBinding
 		for _, c := range alloc.Claims {
 			if c.Kind == ResourceKindPhysicalTuner || c.Kind == ResourceKindDemux {
 				expHwClaims = append(expHwClaims, c)
+				expHwBindings = append(expHwBindings, ExpectedHardwareBinding{
+					Kind:         c.Kind,
+					Resource:     c.Resource,
+					Quantity:     c.Quantity,
+					AllocationID: targetID,
+				})
 			} else {
 				expClaims = append(expClaims, c)
 			}
 		}
+
+		// ExpectedLeaseBindings remains empty []ExpectedLeaseBinding(nil) unless concrete lease scope & owner IDs are present
+		var expLeaseBindings []ExpectedLeaseBinding
 
 		allocRev := strings.TrimSpace(alloc.Revision)
 		if allocRev == "" {
@@ -213,13 +223,15 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 		}
 
 		desc := TargetExecutionDescriptor{
-			AllocationID:           targetID,
-			ExpectedOwner:          alloc.Owner,
-			AllocationRevision:     allocRev,
-			SnapshotRevision:       snapshot.SnapshotRevision,
-			HardwareRevision:       proof.HardwareProfileRevision,
-			ExpectedClaims:         expClaims,
-			ExpectedHardwareClaims: expHwClaims,
+			AllocationID:             targetID,
+			ExpectedOwner:            alloc.Owner,
+			AllocationRevision:       allocRev,
+			SnapshotRevision:         snapshot.SnapshotRevision,
+			HardwareRevision:         proof.HardwareProfileRevision,
+			ExpectedClaims:           expClaims,
+			ExpectedHardwareClaims:   expHwClaims,
+			ExpectedHardwareBindings: expHwBindings,
+			ExpectedLeaseBindings:    expLeaseBindings,
 		}
 
 		descHash, err := ComputeDescriptorHash(desc)

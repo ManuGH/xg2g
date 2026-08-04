@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -67,6 +68,15 @@ func ComputeDescriptorHash(d TargetExecutionDescriptor) (string, error) {
 		return "", fmt.Errorf("%w: invalid expected hardware claims: %v", ErrInvalidDescriptor, err)
 	}
 
+	canonHwBindings, err := formatCanonicalHardwareBindingsStrict(d.ExpectedHardwareBindings)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid expected hardware bindings: %v", ErrInvalidDescriptor, err)
+	}
+	canonLeaseBindings, err := formatCanonicalLeaseBindingsStrict(d.ExpectedLeaseBindings)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid expected lease bindings: %v", ErrInvalidDescriptor, err)
+	}
+
 	h := sha256.New()
 	_, _ = fmt.Fprintf(h, "allocation_id=%s\n", d.AllocationID)
 	_, _ = fmt.Fprintf(h, "expected_owner=%s\n", d.ExpectedOwner)
@@ -75,8 +85,73 @@ func ComputeDescriptorHash(d TargetExecutionDescriptor) (string, error) {
 	_, _ = fmt.Fprintf(h, "hw_rev=%s\n", d.HardwareRevision)
 	_, _ = fmt.Fprintf(h, "expected_claims=%s\n", canonClaims)
 	_, _ = fmt.Fprintf(h, "expected_hw_claims=%s\n", canonHwClaims)
+	_, _ = fmt.Fprintf(h, "expected_hw_bindings=%s\n", canonHwBindings)
+	_, _ = fmt.Fprintf(h, "expected_lease_bindings=%s\n", canonLeaseBindings)
 
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func formatCanonicalHardwareBindingsStrict(bindings []ExpectedHardwareBinding) (string, error) {
+	if len(bindings) == 0 {
+		return "", nil
+	}
+	formatted := make([]string, 0, len(bindings))
+	seen := make(map[string]struct{}, len(bindings))
+	for i, b := range bindings {
+		if !b.Kind.IsValid() {
+			return "", fmt.Errorf("invalid resource kind '%s' at index %d", b.Kind, i)
+		}
+		if strings.TrimSpace(b.Resource) == "" {
+			return "", fmt.Errorf("empty resource at index %d", i)
+		}
+		if strings.TrimSpace(b.AllocationID) == "" {
+			return "", fmt.Errorf("empty allocation ID at index %d", i)
+		}
+		if b.Quantity <= 0 {
+			return "", fmt.Errorf("non-positive quantity %d at index %d", b.Quantity, i)
+		}
+		item := fmt.Sprintf("%s:%s:%s:%d", b.Kind, strings.TrimSpace(b.Resource), strings.TrimSpace(b.AllocationID), b.Quantity)
+		if _, dup := seen[item]; dup {
+			return "", fmt.Errorf("duplicate hardware binding '%s' at index %d", item, i)
+		}
+		seen[item] = struct{}{}
+		formatted = append(formatted, item)
+	}
+	sort.Strings(formatted)
+	return strings.Join(formatted, ";"), nil
+}
+
+func formatCanonicalLeaseBindingsStrict(bindings []ExpectedLeaseBinding) (string, error) {
+	if len(bindings) == 0 {
+		return "", nil
+	}
+	formatted := make([]string, 0, len(bindings))
+	seen := make(map[string]struct{}, len(bindings))
+	for i, b := range bindings {
+		if !b.LeaseKind.IsValid() {
+			return "", fmt.Errorf("invalid lease kind '%s' at index %d", b.LeaseKind, i)
+		}
+		if strings.TrimSpace(b.Resource) == "" {
+			return "", fmt.Errorf("empty resource at index %d", i)
+		}
+		if strings.TrimSpace(b.ScopeID) == "" {
+			return "", fmt.Errorf("empty scope ID at index %d", i)
+		}
+		if strings.TrimSpace(b.ExpectedOwnerID) == "" {
+			return "", fmt.Errorf("empty expected owner ID at index %d", i)
+		}
+		if b.Quantity <= 0 {
+			return "", fmt.Errorf("non-positive quantity %d at index %d", b.Quantity, i)
+		}
+		item := fmt.Sprintf("%s:%s:%s:%s:%d", b.LeaseKind, strings.TrimSpace(b.Resource), strings.TrimSpace(b.ScopeID), strings.TrimSpace(b.ExpectedOwnerID), b.Quantity)
+		if _, dup := seen[item]; dup {
+			return "", fmt.Errorf("duplicate lease binding '%s' at index %d", item, i)
+		}
+		seen[item] = struct{}{}
+		formatted = append(formatted, item)
+	}
+	sort.Strings(formatted)
+	return strings.Join(formatted, ";"), nil
 }
 
 // ValidateDescriptor verifies structural validity and SHA-256 hash match for a TargetExecutionDescriptor.
@@ -98,20 +173,25 @@ func ComputeTargetDescriptorsHash(descriptors []TargetExecutionDescriptor) (stri
 		return "", fmt.Errorf("%w: zero target descriptors", ErrInvalidDescriptor)
 	}
 
+	seenIDs := make(map[string]struct{}, len(descriptors))
+	var lastID string
+
 	h := sha256.New()
-	seen := make(map[string]struct{}, len(descriptors))
 	for i, d := range descriptors {
 		if err := ValidateDescriptor(d); err != nil {
 			return "", fmt.Errorf("descriptor at index %d invalid: %w", i, err)
 		}
-		if _, duplicate := seen[d.AllocationID]; duplicate {
-			return "", fmt.Errorf("%w: duplicate allocation ID '%s' in target descriptors", ErrInvalidDescriptor, d.AllocationID)
+
+		if i > 0 && d.AllocationID <= lastID {
+			return "", fmt.Errorf("%w: descriptors not strictly sorted by AllocationID (index %d '%s' <= index %d '%s')", ErrInvalidDescriptor, i, d.AllocationID, i-1, lastID)
 		}
-		seen[d.AllocationID] = struct{}{}
-		if i > 0 && descriptors[i-1].AllocationID > descriptors[i].AllocationID {
-			return "", fmt.Errorf("%w: target descriptors are not canonically sorted by AllocationID at index %d", ErrInvalidDescriptor, i)
+		if _, duplicate := seenIDs[d.AllocationID]; duplicate {
+			return "", fmt.Errorf("%w: duplicate allocation ID '%s' in descriptors", ErrInvalidDescriptor, d.AllocationID)
 		}
-		_, _ = fmt.Fprintf(h, "desc[%d]=%s:%s\n", i, d.AllocationID, d.DescriptorHash)
+		seenIDs[d.AllocationID] = struct{}{}
+		lastID = d.AllocationID
+
+		_, _ = fmt.Fprintf(h, "desc[%d]=%s\n", i, d.DescriptorHash)
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
