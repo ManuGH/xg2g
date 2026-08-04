@@ -65,6 +65,15 @@ const (
 	ResourceKindStorageIO            ResourceKind = "STORAGE_IO"
 )
 
+func (k ResourceKind) IsValid() bool {
+	switch k {
+	case ResourceKindRestrictedAccessSlot, ResourceKindTunerSlot, ResourceKindDemux, ResourceKindPhysicalTuner, ResourceKindStorageIO:
+		return true
+	default:
+		return false
+	}
+}
+
 // ResourceClaim specifies a single resource requirement.
 type ResourceClaim struct {
 	Kind     ResourceKind `json:"kind"`
