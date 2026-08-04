@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// TeardownPreparationReasonCode represents domain classification for teardown preparation outcomes.
 type TeardownPreparationReasonCode string
 
 const (
@@ -16,7 +15,7 @@ const (
 	ReasonTeardownContractExpired               TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_CONTRACT_EXPIRED"
 	ReasonTeardownContractHashInvalid           TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_CONTRACT_HASH_INVALID"
 	ReasonTeardownSnapshotRevisionMismatch      TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_SNAPSHOT_REVISION_MISMATCH"
-	ReasonTeardownHardwareRevisionMismatch      TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_HARDWARE_PROFILE_REVISION_MISMATCH"
+	ReasonTeardownHardwareRevisionMismatch      TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_HARDWARE_REVISION_MISMATCH"
 	ReasonTeardownConflictProofRevisionMismatch TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_CONFLICT_PROOF_REVISION_MISMATCH"
 	ReasonTeardownTargetStateMutated            TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_TARGET_STATE_MUTATED"
 	ReasonTeardownTargetProtected               TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_TARGET_PROTECTED"
@@ -24,12 +23,18 @@ const (
 	ReasonTeardownInvalidProof                  TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_INVALID_PROOF"
 )
 
+// DescriptorBindingCoverage specifies whether binding sources were authoritative when creating the descriptor.
+type DescriptorBindingCoverage struct {
+	HardwareBindingsAuthoritative bool `json:"hardwareBindingsAuthoritative"`
+	LeaseBindingsAuthoritative    bool `json:"leaseBindingsAuthoritative"`
+}
+
 // ExpectedLeaseBinding defines concrete expected lease bindings bound in E3.2.
 type ExpectedLeaseBinding struct {
 	LeaseKind       ResourceKind `json:"leaseKind"`
 	Resource        string       `json:"resource"`
 	ScopeID         string       `json:"scopeId"`
-	ExpectedOwnerID string       `json:"expectedOwnerId"`
+	ExpectedOwnerID string       `json:"expectedOwnerID"`
 	Quantity        int          `json:"quantity"`
 }
 
@@ -48,8 +53,9 @@ type TargetExecutionDescriptor struct {
 	AllocationRevision       string                    `json:"allocationRevision"`
 	SnapshotRevision         string                    `json:"snapshotRevision"`
 	HardwareRevision         string                    `json:"hardwareRevision"`
-	ExpectedClaims            []ResourceClaim           `json:"expectedClaims"`
-	ExpectedHardwareClaims    []ResourceClaim           `json:"expectedHardwareClaims"`
+	Coverage                 DescriptorBindingCoverage `json:"coverage"`
+	ExpectedClaims           []ResourceClaim           `json:"expectedClaims"`
+	ExpectedHardwareClaims   []ResourceClaim           `json:"expectedHardwareClaims"`
 	ExpectedHardwareBindings []ExpectedHardwareBinding `json:"expectedHardwareBindings"`
 	ExpectedLeaseBindings    []ExpectedLeaseBinding    `json:"expectedLeaseBindings"`
 	DescriptorHash           string                    `json:"descriptorHash"`
@@ -64,7 +70,7 @@ type PreparedTeardown struct {
 	ContractHash            string                      `json:"contractHash"`
 	TargetAllocationIDs     []string                    `json:"targetAllocationIds"`
 	TargetDescriptors       []TargetExecutionDescriptor `json:"targetDescriptors"`
-	TargetDescriptorsHash  string                      `json:"targetDescriptorsHash"`
+	TargetDescriptorsHash   string                      `json:"targetDescriptorsHash"`
 	SnapshotRevision        string                      `json:"snapshotRevision"`
 	HardwareProfileRevision string                      `json:"hardwareProfileRevision"`
 	ConflictProofRevision   string                      `json:"conflictProofRevision"`
@@ -73,7 +79,7 @@ type PreparedTeardown struct {
 	PreparedTeardownHash    string                      `json:"preparedTeardownHash"`
 }
 
-// TeardownPreparationResult represents the domain outcome of teardown preparation.
+// TeardownPreparationResult represents the immutable output of a TeardownPreparer evaluation.
 type TeardownPreparationResult struct {
 	Decision Decision                      `json:"decision"`
 	Reason   TeardownPreparationReasonCode `json:"reason"`
