@@ -296,8 +296,8 @@ func TestFinalizePlan_AdaptiveTranscodeQualityPromotesHEVCFMP4ToHQ50(t *testing.
 	assert.Equal(t, ports.RuntimeModeHQ50, finalized.Profile.PolicyModeHint)
 	assert.Equal(t, ports.RuntimeModeHQ50, finalized.Profile.EffectiveRuntimeMode)
 	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, finalized.Profile.EffectiveModeSource)
-	assert.Equal(t, 14000, finalized.Profile.VideoMaxRateK)
-	assert.Equal(t, 28000, finalized.Profile.VideoBufSizeK)
+	assert.Equal(t, 10000, finalized.Profile.VideoMaxRateK)
+	assert.Equal(t, 20000, finalized.Profile.VideoBufSizeK)
 }
 
 func TestFinalizePlan_AdaptiveTranscodeQualityPromotesH264ToHQ50(t *testing.T) {
@@ -332,8 +332,8 @@ func TestFinalizePlan_AdaptiveTranscodeQualityPromotesH264ToHQ50(t *testing.T) {
 	assert.Equal(t, ports.RuntimeModeHQ50, finalized.Profile.PolicyModeHint)
 	assert.Equal(t, ports.RuntimeModeHQ50, finalized.Profile.EffectiveRuntimeMode)
 	assert.Equal(t, ports.RuntimeModeSourceRuntimeHardening, finalized.Profile.EffectiveModeSource)
-	assert.Equal(t, 16000, finalized.Profile.VideoMaxRateK)
-	assert.Equal(t, 32000, finalized.Profile.VideoBufSizeK)
+	assert.Equal(t, 12000, finalized.Profile.VideoMaxRateK)
+	assert.Equal(t, 24000, finalized.Profile.VideoBufSizeK)
 }
 
 func TestFinalizePlan_AdaptiveTranscodeQualityRespectsExplicitHQ25Cap(t *testing.T) {

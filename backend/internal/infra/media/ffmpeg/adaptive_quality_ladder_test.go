@@ -18,13 +18,13 @@ func TestAdaptiveQualityLadder_ScalesWithSourceHeight(t *testing.T) {
 		wantMaxK int
 	}{
 		{"unknown -> prior default (av1)", "av1", 0, 8000},
-		{"unknown -> prior default (h264)", "h264", 0, 16000},
+		{"unknown -> prior default (h264)", "h264", 0, 12000},
 		{"SD 576 av1 is frugal", "av1", 576, 2500},
-		{"SD 576 hevc", "hevc", 576, 6000},
-		{"SD 576 h264 highest of the three", "h264", 576, 7000},
+		{"SD 576 hevc", "hevc", 576, 3500},
+		{"SD 576 h264 highest of the three", "h264", 576, 4500},
 		{"720 av1", "av1", 720, 4500},
 		{"1080 av1 keeps the high ceiling", "av1", 1080, 8000},
-		{"1080 h264", "h264", 1080, 16000},
+		{"1080 h264", "h264", 1080, 12000},
 		{"UHD av1", "av1", 2160, 12000},
 	}
 	for _, tc := range cases {
