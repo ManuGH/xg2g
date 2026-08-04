@@ -452,10 +452,10 @@ func adaptiveQualityLadder(codec string, sourceHeight int) (maxRateK, bufSizeK i
 	switch {
 	case sourceHeight <= 0: // unknown -> prior defaults
 		maxRateK = pick(8000, 10000, 12000)
-	case sourceHeight <= 576: // SD (e.g. PAL 720x576)
-		maxRateK = pick(2500, 3500, 4500)
+	case sourceHeight <= 576: // SD (e.g. PAL 720x576) upscaled to 720p HD needs crisp bitrate
+		maxRateK = pick(4500, 6000, 7000)
 	case sourceHeight <= 720:
-		maxRateK = pick(4500, 6000, 8000)
+		maxRateK = pick(6500, 8000, 10000)
 	case sourceHeight <= 1080: // Full HD -> gestochen scharf ceiling
 		maxRateK = pick(8000, 10000, 12000)
 	default: // UHD / 4K
