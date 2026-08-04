@@ -20,7 +20,7 @@ type ResourceDisposition string
 
 const (
 	ResourceCurrentlyFree ResourceDisposition = "CURRENTLY_FREE"
-	ResourceReassigned    ResourceDisposition = "REASSIGNED"
+	ResourceOtherObserved ResourceDisposition = "OTHER_OBSERVED"
 	ResourceUnknown       ResourceDisposition = "UNKNOWN"
 )
 
@@ -105,13 +105,14 @@ type TargetTeardownEvidence struct {
 }
 
 type ResourceReleaseResult struct {
-	Resource                ResourceClaim       `json:"resource"`
-	ExpectedQuantity        int                 `json:"expectedQuantity"`
-	RemainingTargetQuantity int                 `json:"remainingTargetQuantity"`
-	ReleasedQuantity        int                 `json:"releasedQuantity"`
-	ReassignedQuantity      int                 `json:"reassignedQuantity"`
-	CurrentlyFreeQuantity   int                 `json:"currentlyFreeQuantity"`
-	Disposition             ResourceDisposition `json:"disposition"`
+	Resource                   ResourceClaim       `json:"resource"`
+	ExpectedQuantity           int                 `json:"expectedQuantity"`
+	RemainingTargetQuantity    int                 `json:"remainingTargetQuantity"`
+	ReleasedFromTargetQuantity int                 `json:"releasedFromTargetQuantity"`
+	OtherObservedQuantity      int                 `json:"otherObservedQuantity"`
+	CurrentlyFreeQuantity      int                 `json:"currentlyFreeQuantity,omitempty"`
+	CurrentlyFreeAuthoritative bool                `json:"currentlyFreeAuthoritative"`
+	Disposition                ResourceDisposition `json:"disposition"`
 }
 
 type SingleTargetReleaseResult struct {
