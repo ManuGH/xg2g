@@ -54,6 +54,12 @@ func (g *mockFencedGateway) TeardownTargetFenced(ctx context.Context, claimIdent
 	return g.result, nil
 }
 
+func newTestTeardownExecutor(reader ReceiverClaimReader, gateway FencedTeardownGateway) *TeardownExecutor {
+	exec := NewTeardownExecutor(reader, gateway)
+	exec.allowMock = true
+	return exec
+}
+
 func setupTeardownTestContext(t *testing.T) (context.Context, *PreemptionExecutionContract, ResourceSnapshot, ConflictResolutionProof, time.Time) {
 	now := time.Now().UTC()
 	reqClaim := []ResourceClaim{{Kind: ResourceKindTunerSlot, Resource: "tuner-1", Quantity: 1}}
@@ -182,7 +188,7 @@ func TestTeardownGateway_TOCTOUFencingRevalidation(t *testing.T) {
 		},
 	}
 
-	executor := NewTeardownExecutorForTesting(reader, gateway)
+	executor := newTestTeardownExecutor(reader, gateway)
 
 	// 1. Valid execution succeeds
 	res, err := executor.ExecuteTargetTeardown(ctx, prepRes.Prepared, "saga-1", 10, "alloc-1", now.Add(10*time.Second))
@@ -218,7 +224,7 @@ func TestTeardownGateway_NativeContextCancellation(t *testing.T) {
 
 	reader := &mockClaimReader{claim: validClaim}
 	gateway := &mockFencedGateway{authorizer: NewStoreFencedMutationAuthorizer(reader)}
-	executor := NewTeardownExecutorForTesting(reader, gateway)
+	executor := newTestTeardownExecutor(reader, gateway)
 
 	// Cancel context prior to execution
 	cancelledCtx, cancel := context.WithCancel(ctx)
@@ -245,7 +251,7 @@ func TestTeardownExecutor_ResultMatrixValidation(t *testing.T) {
 
 	reader := &mockClaimReader{claim: validClaim}
 	gateway := &mockFencedGateway{authorizer: NewStoreFencedMutationAuthorizer(reader)}
-	executor := NewTeardownExecutorForTesting(reader, gateway)
+	executor := newTestTeardownExecutor(reader, gateway)
 
 	// 1. TIMEOUT status with non-zero StoppedAt -> Rejection
 	gateway.result = TargetTeardownResult{
@@ -307,7 +313,7 @@ func TestTeardownExecutor_ZeroStateMutations(t *testing.T) {
 		},
 	}
 
-	executor := NewTeardownExecutorForTesting(memoryStore, gateway)
+	executor := newTestTeardownExecutor(memoryStore, gateway)
 
 	// Execute teardown
 	res, err := executor.ExecuteTargetTeardown(ctx, prepRes.Prepared, saga.SagaID, claimedClaim.FencingToken, "alloc-1", now.Add(10*time.Second))
