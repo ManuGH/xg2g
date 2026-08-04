@@ -404,12 +404,21 @@ func (p *PersistentSagaStore) CompareAndSwapState(
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: current state %s != expected %s", ErrInvalidStateTransition, saga.State, fromState)
 	}
 
-	// Verify receiver claim & fencing token strictly
-	var currentSagaID, currentStatus string
+	// Verify receiver claim, fencing token, and non-expired lease strictly
+	var currentSagaID, currentStatus, currentLeaseStr string
 	var currentToken uint64
-	err = tx.QueryRowContext(ctx, "SELECT saga_id, status, fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(&currentSagaID, &currentStatus, &currentToken)
+	err = tx.QueryRowContext(ctx, "SELECT saga_id, status, lease_until, fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(&currentSagaID, &currentStatus, &currentLeaseStr, &currentToken)
 	if err != nil || ReceiverClaimStatus(currentStatus) != ClaimStatusClaimed || currentSagaID != sagaID || currentToken != fencingToken {
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: claim mismatch for receiver '%s' (token %d)", ErrFencingTokenMismatch, receiverID, fencingToken)
+	}
+
+	curLease, _ := time.Parse(time.RFC3339Nano, currentLeaseStr)
+	nowCheck := transition.OccurredAt
+	if nowCheck.IsZero() {
+		nowCheck = time.Now().UTC()
+	}
+	if !curLease.IsZero() && !nowCheck.Before(curLease) {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: claim has expired at %s for receiver '%s'", ErrFencingTokenMismatch, curLease.Format(time.RFC3339), receiverID)
 	}
 
 	originalState := saga.State
@@ -544,12 +553,21 @@ func (p *PersistentSagaStore) TransitionAndReleaseClaim(
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: saga version %d != expected %d", ErrSagaVersionConflict, saga.Version, expectedVersion)
 	}
 
-	// Strictly verify claim ownership, status, and fencing token! If mismatch -> ZERO MUTATIONS!
-	var currentSagaID, currentStatus string
+	// Strictly verify claim ownership, status, fencing token, and non-expired lease!
+	var currentSagaID, currentStatus, currentLeaseStr string
 	var currentToken uint64
-	err = tx.QueryRowContext(ctx, "SELECT saga_id, status, fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(&currentSagaID, &currentStatus, &currentToken)
+	err = tx.QueryRowContext(ctx, "SELECT saga_id, status, lease_until, fencing_token FROM receiver_claims WHERE receiver_id = ?", receiverID).Scan(&currentSagaID, &currentStatus, &currentLeaseStr, &currentToken)
 	if err != nil || ReceiverClaimStatus(currentStatus) != ClaimStatusClaimed || currentSagaID != sagaID || currentToken != fencingToken {
 		return PreemptionSagaRecord{}, fmt.Errorf("%w: cannot release claim for receiver '%s' (fencing token mismatch)", ErrFencingTokenMismatch, receiverID)
+	}
+
+	curLease, _ := time.Parse(time.RFC3339Nano, currentLeaseStr)
+	nowCheck := transition.OccurredAt
+	if nowCheck.IsZero() {
+		nowCheck = time.Now().UTC()
+	}
+	if !curLease.IsZero() && !nowCheck.Before(curLease) {
+		return PreemptionSagaRecord{}, fmt.Errorf("%w: cannot release claim for receiver '%s' (claim expired at %s)", ErrFencingTokenMismatch, receiverID, curLease.Format(time.RFC3339))
 	}
 
 	// Release claim while preserving fencing_token counter

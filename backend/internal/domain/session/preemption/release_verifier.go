@@ -50,8 +50,12 @@ func ComputeObservationHash(obs ReleaseObservation) (string, error) {
 		if _, dup := seenAllocIDs[id]; dup {
 			return "", fmt.Errorf("duplicate active allocation ID '%s' at index %d", id, i)
 		}
+		canonClaims, err := formatCanonicalClaimsStrict(alloc.Claims)
+		if err != nil {
+			return "", fmt.Errorf("invalid claims for active allocation '%s': %w", id, err)
+		}
 		seenAllocIDs[id] = struct{}{}
-		canonAllocIDs = append(canonAllocIDs, fmt.Sprintf("%s:%s:%s", id, strings.TrimSpace(alloc.Owner), strings.TrimSpace(alloc.Revision)))
+		canonAllocIDs = append(canonAllocIDs, fmt.Sprintf("%s:%s:%s:%d:%t:%t:%s", id, strings.TrimSpace(alloc.Owner), strings.TrimSpace(alloc.Revision), alloc.Priority.BasePriority, alloc.Priority.Foreground, alloc.Priority.UserProtected, canonClaims))
 	}
 	sort.Strings(canonAllocIDs)
 
@@ -413,8 +417,20 @@ func (v *ResourceReleaseVerifier) VerifyRelease(
 			}
 		}
 
-		// D. Process ExpectedClaims (Non-Hardware claims like TUNER_SLOT, RESTRICTED_ACCESS_SLOT, STORAGE_IO)
+		// D. Process ExpectedClaims (Non-Hardware claims like STORAGE_IO, or slot claims without lease bindings)
 		for _, claim := range desc.ExpectedClaims {
+			// Skip if claim is already represented in ExpectedLeaseBindings to avoid double counting!
+			alreadyInLeases := false
+			for _, eb := range desc.ExpectedLeaseBindings {
+				if eb.LeaseKind == claim.Kind && eb.Resource == claim.Resource {
+					alreadyInLeases = true
+					break
+				}
+			}
+			if alreadyInLeases {
+				continue
+			}
+
 			releasedClaims = append(releasedClaims, claim)
 			key := fmt.Sprintf("%s:%s", claim.Kind, claim.Resource)
 

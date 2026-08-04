@@ -45,13 +45,29 @@ func (p *TeardownPreparer) PrepareTeardown(
 
 	// 1. Validate contract integrity and TTL
 	if err := ValidateContract(contract, now); err != nil {
+		reason := ReasonTeardownContractHashInvalid
+		if errors.Is(err, ErrContractExpired) {
+			reason = ReasonTeardownContractExpired
+		}
 		return TeardownPreparationResult{
 			Decision: DecisionRejected,
-			Reason:   ReasonTeardownContractExpired,
+			Reason:   reason,
 		}, nil
 	}
 
-	// 2. Validate current snapshot & proof revisions against contract
+	// 2. Validate receiver ID and revisions for snapshot & proof against contract
+	if snapshot.ReceiverID != contract.ReceiverID {
+		return TeardownPreparationResult{
+			Decision: DecisionRejected,
+			Reason:   ReasonTeardownSnapshotRevisionMismatch,
+		}, nil
+	}
+	if proof.ReceiverID != contract.ReceiverID {
+		return TeardownPreparationResult{
+			Decision: DecisionRejected,
+			Reason:   ReasonTeardownInvalidProof,
+		}, nil
+	}
 	if contract.SnapshotRevision != snapshot.SnapshotRevision {
 		return TeardownPreparationResult{
 			Decision: DecisionRejected,

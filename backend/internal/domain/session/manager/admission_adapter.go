@@ -74,7 +74,7 @@ func BuildSystemSnapshot(receiverID string, activeSessions []*model.SessionRecor
 
 	// 1. Convert active xg2g sessions
 	for _, sess := range activeSessions {
-		if sess == nil {
+		if sess == nil || sess.State.IsTerminal() {
 			continue
 		}
 		sessRecID := receiverID

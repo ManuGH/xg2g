@@ -190,6 +190,12 @@ func NewAuthorizingTeardownGateway(authorizer FencedMutationAuthorizer, transpor
 // TeardownTargetFenced revalidates fencing token via authorizer immediately prior to calling physical transport.
 func (g *AuthorizingTeardownGateway) TeardownTargetFenced(ctx context.Context, claimIdentity ReceiverClaimIdentity, req TargetTeardownRequest) (TargetTeardownResult, error) {
 	now := g.nowFunc()
+
+	// Verify strict identity match between claimIdentity and req to prevent authorization vs request mismatch!
+	if req.ReceiverID != claimIdentity.ReceiverID || req.SagaID != claimIdentity.SagaID || req.FencingToken != claimIdentity.FencingToken {
+		return TargetTeardownResult{}, fmt.Errorf("%w: request identity (receiver='%s', saga='%s', token=%d) != claim identity (receiver='%s', saga='%s', token=%d)", ErrFencingTokenMismatch, req.ReceiverID, req.SagaID, req.FencingToken, claimIdentity.ReceiverID, claimIdentity.SagaID, claimIdentity.FencingToken)
+	}
+
 	if err := g.authorizer.AuthorizeReceiverMutation(ctx, claimIdentity, now); err != nil {
 		return TargetTeardownResult{}, err
 	}
