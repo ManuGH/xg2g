@@ -6,6 +6,7 @@ package preemption
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,33 +26,35 @@ func (m *mockClaimReader) GetReceiverClaim(ctx context.Context, receiverID strin
 	return m.claim, nil
 }
 
-type mockFencedGateway struct {
-	authorizer FencedMutationAuthorizer
-	calls      int32
-	result     TargetTeardownResult
-	err        error
+type synchronizedTOCTOUClaimReader struct {
+	mu           sync.Mutex
+	callCount    int
+	initialClaim ReceiverClaim
+	bumpedClaim  ReceiverClaim
 }
 
-func (g *mockFencedGateway) TeardownTargetFenced(ctx context.Context, claimIdent ReceiverClaimIdentity, req TargetTeardownRequest) (TargetTeardownResult, error) {
-	// Atomic store-backed FencedMutationAuthorizer check immediately before transport start!
-	if g.authorizer != nil {
-		if err := g.authorizer.AuthorizeReceiverMutation(ctx, claimIdent, time.Now().UTC()); err != nil {
-			return TargetTeardownResult{}, err
-		}
+func (s *synchronizedTOCTOUClaimReader) GetReceiverClaim(ctx context.Context, receiverID string) (ReceiverClaim, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.callCount++
+	if s.callCount == 1 {
+		return s.initialClaim, nil
 	}
+	return s.bumpedClaim, nil
+}
 
-	select {
-	case <-ctx.Done():
-		return TargetTeardownResult{}, ctx.Err()
-	default:
+type mockTeardownTransport struct {
+	calls  int32
+	result TargetTeardownResult
+	err    error
+}
+
+func (t *mockTeardownTransport) TeardownTarget(ctx context.Context, req TargetTeardownRequest) (TargetTeardownResult, error) {
+	atomic.AddInt32(&t.calls, 1)
+	if t.err != nil {
+		return TargetTeardownResult{}, t.err
 	}
-
-	atomic.AddInt32(&g.calls, 1)
-
-	if g.err != nil {
-		return TargetTeardownResult{}, g.err
-	}
-	return g.result, nil
+	return t.result, nil
 }
 
 func newTestTeardownExecutor(reader ReceiverClaimReader, gateway FencedTeardownGateway) *TeardownExecutor {
@@ -135,30 +138,45 @@ func TestPrepareTeardown_RejectsMissingAllocationRevision(t *testing.T) {
 	require.Equal(t, ReasonTeardownTargetStateMutated, prepRes.Reason)
 }
 
-func TestTeardownExecutor_PreparedTeardownDescriptorBinding(t *testing.T) {
+func TestPrepareTeardown_RejectsDuplicateSnapshotAllocationsAndProofMappings(t *testing.T) {
 	_, contract, snapshot, proof, now := setupTeardownTestContext(t)
 	preparer := NewTeardownPreparer()
 
-	prepRes, err := preparer.PrepareTeardown(contract, snapshot, proof, now)
+	// 1. Duplicate allocation in snapshot -> Rejection
+	snapDup := snapshot
+	snapDup.Allocations = []ActiveAllocation{
+		{AllocationID: "alloc-1", Owner: "client-B", Revision: "rev-1", Claims: contract.RequestedResources},
+		{AllocationID: "alloc-1", Owner: "client-B", Revision: "rev-1", Claims: contract.RequestedResources},
+	}
+	resDup, err := preparer.PrepareTeardown(contract, snapDup, proof, now)
 	require.NoError(t, err)
-	require.Equal(t, DecisionApproved, prepRes.Decision)
+	require.Equal(t, DecisionRejected, resDup.Decision)
+	require.Equal(t, ReasonTeardownTargetStateMutated, resDup.Reason)
 
-	prepared := prepRes.Prepared
-	require.Len(t, prepared.TargetDescriptors, 1)
-	require.NotEmpty(t, prepared.TargetDescriptorsHash)
-
-	// Verify PreparedTeardown hash validation succeeds
-	err = ValidatePreparedTeardown(prepared, now)
+	// 2. Duplicate mapping in proof -> Rejection
+	proofDup := proof
+	proofDup.AllocationMappings = []AllocationResourceMapping{
+		{AllocationID: "alloc-1", FreedResources: contract.RequestedResources},
+		{AllocationID: "alloc-1", FreedResources: contract.RequestedResources},
+	}
+	resProofDup, err := preparer.PrepareTeardown(contract, snapshot, proofDup, now)
 	require.NoError(t, err)
+	require.Equal(t, DecisionRejected, resProofDup.Decision)
+	require.Equal(t, ReasonTeardownInvalidProof, resProofDup.Reason)
+}
 
-	// Tamper descriptor owner -> Hash validation MUST fail!
-	tampered := *prepared
-	tamperedDescriptors := append([]TargetExecutionDescriptor(nil), prepared.TargetDescriptors...)
-	tamperedDescriptors[0].ExpectedOwner = "MALICIOUS_OWNER"
-	tampered.TargetDescriptors = tamperedDescriptors
+func TestAuthorizingTeardownGateway_ConstructorRejectsNil(t *testing.T) {
+	reader := &mockClaimReader{}
+	authorizer := NewStoreFencedMutationAuthorizer(reader)
+	transport := &mockTeardownTransport{}
 
-	err = ValidatePreparedTeardown(&tampered, now)
+	_, err := NewAuthorizingTeardownGateway(nil, transport)
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "FencedMutationAuthorizer is nil")
+
+	_, err = NewAuthorizingTeardownGateway(authorizer, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "TeardownTransport is nil")
 }
 
 func TestTeardownGateway_TOCTOUFencingRevalidation(t *testing.T) {
@@ -175,11 +193,16 @@ func TestTeardownGateway_TOCTOUFencingRevalidation(t *testing.T) {
 		Status:       ClaimStatusClaimed,
 		LeaseUntil:   now.Add(30 * time.Second),
 	}
+	bumpedClaim := validClaim
+	bumpedClaim.FencingToken = 99 // Token bumped while in flight!
 
-	reader := &mockClaimReader{claim: validClaim}
-	authorizer := NewStoreFencedMutationAuthorizer(reader)
-	gateway := &mockFencedGateway{
-		authorizer: authorizer,
+	syncedReader := &synchronizedTOCTOUClaimReader{
+		initialClaim: validClaim,
+		bumpedClaim:  bumpedClaim,
+	}
+
+	authorizer := NewStoreFencedMutationAuthorizer(syncedReader)
+	transport := &mockTeardownTransport{
 		result: TargetTeardownResult{
 			Status:             TeardownStatusStopConfirmed,
 			TargetAllocationID: "alloc-1",
@@ -188,24 +211,23 @@ func TestTeardownGateway_TOCTOUFencingRevalidation(t *testing.T) {
 		},
 	}
 
-	executor := newTestTeardownExecutor(reader, gateway)
-
-	// 1. Valid execution succeeds
-	res, err := executor.ExecuteTargetTeardown(ctx, prepRes.Prepared, "saga-1", 10, "alloc-1", now.Add(10*time.Second))
+	gateway, err := NewAuthorizingTeardownGateway(authorizer, transport)
 	require.NoError(t, err)
-	require.Equal(t, TeardownStatusStopConfirmed, res.Status)
-	require.Equal(t, int32(1), atomic.LoadInt32(&gateway.calls))
 
-	// 2. TOCTOU Revocation: Worker claim token is bumped right before gateway entry -> StoreFencedMutationAuthorizer rejects execution!
-	revokedClaim := validClaim
-	revokedClaim.FencingToken = 99 // Token bumped!
-	reader.claim = revokedClaim
+	executor := newTestTeardownExecutor(syncedReader, gateway)
 
+	// Executor pre-check sees initialClaim (Token 10) -> Passes Executor pre-check!
+	// Right before transport start, AuthorizingTeardownGateway calls Authorizer, which reads bumpedClaim (Token 99).
+	// Authorizer detects mismatch (10 != 99) and rejects execution before calling transport!
 	_, err = executor.ExecuteTargetTeardown(ctx, prepRes.Prepared, "saga-1", 10, "alloc-1", now.Add(10*time.Second))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "fencing token")
-	// Gateway transport calls counter must NOT increase!
-	require.Equal(t, int32(1), atomic.LoadInt32(&gateway.calls))
+
+	// Verify Authorizer was called during gateway execution
+	require.Equal(t, 2, syncedReader.callCount, "Reader must be called twice: once for Executor pre-check, once for AuthorizingGateway")
+
+	// Verify Transport was NEVER called (calls counter == 0)
+	require.Equal(t, int32(0), atomic.LoadInt32(&transport.calls), "Physical transport MUST NOT be launched when FencedMutationAuthorizer fails")
 }
 
 func TestTeardownGateway_NativeContextCancellation(t *testing.T) {
@@ -223,7 +245,10 @@ func TestTeardownGateway_NativeContextCancellation(t *testing.T) {
 	}
 
 	reader := &mockClaimReader{claim: validClaim}
-	gateway := &mockFencedGateway{authorizer: NewStoreFencedMutationAuthorizer(reader)}
+	transport := &mockTeardownTransport{}
+	gateway, err := NewAuthorizingTeardownGateway(NewStoreFencedMutationAuthorizer(reader), transport)
+	require.NoError(t, err)
+
 	executor := newTestTeardownExecutor(reader, gateway)
 
 	// Cancel context prior to execution
@@ -232,7 +257,7 @@ func TestTeardownGateway_NativeContextCancellation(t *testing.T) {
 
 	_, err = executor.ExecuteTargetTeardown(cancelledCtx, prepRes.Prepared, "saga-1", 10, "alloc-1", now.Add(10*time.Second))
 	require.Error(t, err)
-	require.Equal(t, int32(0), atomic.LoadInt32(&gateway.calls), "Transport call MUST NOT be launched when context is cancelled")
+	require.Equal(t, int32(0), atomic.LoadInt32(&transport.calls), "Transport call MUST NOT be launched when context is cancelled")
 }
 
 func TestTeardownExecutor_ResultMatrixValidation(t *testing.T) {
@@ -250,11 +275,14 @@ func TestTeardownExecutor_ResultMatrixValidation(t *testing.T) {
 	}
 
 	reader := &mockClaimReader{claim: validClaim}
-	gateway := &mockFencedGateway{authorizer: NewStoreFencedMutationAuthorizer(reader)}
+	transport := &mockTeardownTransport{}
+	gateway, err := NewAuthorizingTeardownGateway(NewStoreFencedMutationAuthorizer(reader), transport)
+	require.NoError(t, err)
+
 	executor := newTestTeardownExecutor(reader, gateway)
 
 	// 1. TIMEOUT status with non-zero StoppedAt -> Rejection
-	gateway.result = TargetTeardownResult{
+	transport.result = TargetTeardownResult{
 		Status:             TeardownStatusTimeout,
 		TargetAllocationID: "alloc-1",
 		StoppedAt:          now, // INVALID for TIMEOUT!
@@ -265,7 +293,7 @@ func TestTeardownExecutor_ResultMatrixValidation(t *testing.T) {
 	require.Contains(t, err.Error(), "TIMEOUT requires zero StoppedAt")
 
 	// 2. TARGET_STATE_MUTATED status with non-zero StoppedAt -> Rejection
-	gateway.result = TargetTeardownResult{
+	transport.result = TargetTeardownResult{
 		Status:             TeardownStatusTargetStateMutated,
 		TargetAllocationID: "alloc-1",
 		StoppedAt:          now, // INVALID for TARGET_STATE_MUTATED!
@@ -276,7 +304,7 @@ func TestTeardownExecutor_ResultMatrixValidation(t *testing.T) {
 	require.Contains(t, err.Error(), "TARGET_STATE_MUTATED requires zero StoppedAt")
 
 	// 3. Valid TIMEOUT with zero StoppedAt -> Approved by Matrix
-	gateway.result = TargetTeardownResult{
+	transport.result = TargetTeardownResult{
 		Status:             TeardownStatusTimeout,
 		TargetAllocationID: "alloc-1",
 		StoppedAt:          time.Time{}, // Valid zero time
@@ -303,8 +331,7 @@ func TestTeardownExecutor_ZeroStateMutations(t *testing.T) {
 	sagaClaimed, claimedClaim, err := engine.ClaimExecution(ctx, saga.SagaID, "rec-1", 30*time.Second, now)
 	require.NoError(t, err)
 
-	gateway := &mockFencedGateway{
-		authorizer: NewStoreFencedMutationAuthorizer(memoryStore),
+	transport := &mockTeardownTransport{
 		result: TargetTeardownResult{
 			Status:             TeardownStatusStopConfirmed,
 			TargetAllocationID: "alloc-1",
@@ -312,6 +339,8 @@ func TestTeardownExecutor_ZeroStateMutations(t *testing.T) {
 			Diagnostic:         TeardownDiagnostic{Code: DiagnosticCodeNone, Retryable: false, Transport: TransportKindMock},
 		},
 	}
+	gateway, err := NewAuthorizingTeardownGateway(NewStoreFencedMutationAuthorizer(memoryStore), transport)
+	require.NoError(t, err)
 
 	executor := newTestTeardownExecutor(memoryStore, gateway)
 

@@ -151,6 +151,11 @@ func (a *StoreFencedMutationAuthorizer) AuthorizeReceiverMutation(ctx context.Co
 	return nil
 }
 
+// TeardownTransport specifies the low-level physical/RPC transport interface without fencing logic.
+type TeardownTransport interface {
+	TeardownTarget(ctx context.Context, req TargetTeardownRequest) (TargetTeardownResult, error)
+}
+
 // FencedTeardownGateway performs atomic fencing token validation immediately before physical transport execution.
 type FencedTeardownGateway interface {
 	TeardownTargetFenced(
@@ -158,4 +163,42 @@ type FencedTeardownGateway interface {
 		claimIdentity ReceiverClaimIdentity,
 		req TargetTeardownRequest,
 	) (TargetTeardownResult, error)
+}
+
+// AuthorizingTeardownGateway is the mandatory wrapper enforcing FencedMutationAuthorizer revalidation before transport invocation.
+type AuthorizingTeardownGateway struct {
+	authorizer FencedMutationAuthorizer
+	transport  TeardownTransport
+	nowFunc    func() time.Time
+}
+
+// NewAuthorizingTeardownGateway creates an AuthorizingTeardownGateway. Both authorizer and transport MUST be non-nil.
+func NewAuthorizingTeardownGateway(authorizer FencedMutationAuthorizer, transport TeardownTransport) (*AuthorizingTeardownGateway, error) {
+	if authorizer == nil {
+		return nil, fmt.Errorf("FencedMutationAuthorizer is nil")
+	}
+	if transport == nil {
+		return nil, fmt.Errorf("TeardownTransport is nil")
+	}
+	return &AuthorizingTeardownGateway{
+		authorizer: authorizer,
+		transport:  transport,
+		nowFunc:    func() time.Time { return time.Now().UTC() },
+	}, nil
+}
+
+// TeardownTargetFenced revalidates fencing token via authorizer immediately prior to calling physical transport.
+func (g *AuthorizingTeardownGateway) TeardownTargetFenced(ctx context.Context, claimIdentity ReceiverClaimIdentity, req TargetTeardownRequest) (TargetTeardownResult, error) {
+	now := g.nowFunc()
+	if err := g.authorizer.AuthorizeReceiverMutation(ctx, claimIdentity, now); err != nil {
+		return TargetTeardownResult{}, err
+	}
+
+	select {
+	case <-ctx.Done():
+		return TargetTeardownResult{}, ctx.Err()
+	default:
+	}
+
+	return g.transport.TeardownTarget(ctx, req)
 }
