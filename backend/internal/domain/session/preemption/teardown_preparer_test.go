@@ -37,6 +37,7 @@ func TestTeardownPreparer_ValidPreparation_ClampsTTLAndHashes(t *testing.T) {
 			{
 				AllocationID: "alloc-1",
 				Owner:        "client-B",
+				Revision:     "alloc-rev-100",
 				Priority:     PriorityAttributes{BasePriority: 50},
 				Claims:       req.RequestedResources,
 			},
@@ -534,6 +535,7 @@ func TestTeardownPreparer_DistinguishesInvalidProofClaimsFromMutatedState(t *tes
 			{
 				AllocationID: "alloc-1",
 				Owner:        "client-B",
+				Revision:     "alloc-rev-100",
 				Priority:     PriorityAttributes{BasePriority: 50},
 				Claims:       req.RequestedResources,
 			},
