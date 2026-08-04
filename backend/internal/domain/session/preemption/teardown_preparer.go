@@ -106,6 +106,7 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 	}
 
 	var combinedFreedClaims []ResourceClaim
+	descriptors := make([]TargetExecutionDescriptor, 0, len(contract.TargetAllocationIDs))
 
 	for _, targetID := range contract.TargetAllocationIDs {
 		alloc, ok := activeMap[targetID]
@@ -151,6 +152,41 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 		}
 
 		combinedFreedClaims = append(combinedFreedClaims, freed...)
+
+		// Build TargetExecutionDescriptor for E3.2 binding
+		var expClaims, expHwClaims []ResourceClaim
+		for _, c := range alloc.Claims {
+			if c.Kind == ResourceKindPhysicalTuner || c.Kind == ResourceKindDemux {
+				expHwClaims = append(expHwClaims, c)
+			} else {
+				expClaims = append(expClaims, c)
+			}
+		}
+
+		allocRev := alloc.Revision
+		if strings.TrimSpace(allocRev) == "" {
+			allocRev = snapshot.SnapshotRevision
+		}
+
+		desc := TargetExecutionDescriptor{
+			AllocationID:           targetID,
+			ExpectedOwner:          alloc.Owner,
+			AllocationRevision:     allocRev,
+			SnapshotRevision:       snapshot.SnapshotRevision,
+			HardwareRevision:       proof.HardwareProfileRevision,
+			ExpectedClaims:         expClaims,
+			ExpectedHardwareClaims: expHwClaims,
+		}
+
+		descHash, err := ComputeDescriptorHash(desc)
+		if err != nil {
+			return TeardownPreparationResult{
+				Decision: DecisionRejected,
+				Reason:   ReasonTeardownInvalidProof,
+			}, nil
+		}
+		desc.DescriptorHash = descHash
+		descriptors = append(descriptors, desc)
 	}
 
 	// Verify combined freed claims strictly match contract ExpectedFreedResources
@@ -189,6 +225,19 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 	sortedTargets := append([]string(nil), contract.TargetAllocationIDs...)
 	sort.Strings(sortedTargets)
 
+	// Sort descriptors canonically by AllocationID
+	sort.Slice(descriptors, func(i, j int) bool {
+		return descriptors[i].AllocationID < descriptors[j].AllocationID
+	})
+
+	descriptorsHash, err := ComputeTargetDescriptorsHash(descriptors)
+	if err != nil {
+		return TeardownPreparationResult{
+			Decision: DecisionRejected,
+			Reason:   ReasonTeardownInvalidProof,
+		}, nil
+	}
+
 	teardownID := generateTeardownID(contract.ContractID, now)
 	prepared := &PreparedTeardown{
 		TeardownID:              teardownID,
@@ -197,6 +246,8 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 		RequestID:               contract.RequestID,
 		ContractHash:            contract.ContractHash,
 		TargetAllocationIDs:     sortedTargets,
+		TargetDescriptors:       descriptors,
+		TargetDescriptorsHash:  descriptorsHash,
 		SnapshotRevision:        snapshot.SnapshotRevision,
 		HardwareProfileRevision: proof.HardwareProfileRevision,
 		ConflictProofRevision:   proof.SnapshotRevision,
@@ -240,11 +291,14 @@ func ValidatePreparedTeardown(p *PreparedTeardown, now time.Time) error {
 	if len(p.TargetAllocationIDs) == 0 {
 		return fmt.Errorf("%w: empty target allocation IDs", ErrInvalidPreparedTeardown)
 	}
+	if len(p.TargetDescriptors) != len(p.TargetAllocationIDs) {
+		return fmt.Errorf("%w: target descriptors length %d != target allocation IDs length %d", ErrInvalidPreparedTeardown, len(p.TargetDescriptors), len(p.TargetAllocationIDs))
+	}
 	if !p.PreparedAt.Before(p.ExpiresAt) {
 		return fmt.Errorf("%w: PreparedAt %s must be before ExpiresAt %s", ErrInvalidPreparedTeardown, p.PreparedAt, p.ExpiresAt)
 	}
 
-	// Check canonical sorting & uniqueness
+	// Check canonical sorting & uniqueness of target allocation IDs and descriptors
 	seen := make(map[string]struct{}, len(p.TargetAllocationIDs))
 	for i, target := range p.TargetAllocationIDs {
 		if strings.TrimSpace(target) == "" {
@@ -257,6 +311,18 @@ func ValidatePreparedTeardown(p *PreparedTeardown, now time.Time) error {
 		if i > 0 && p.TargetAllocationIDs[i-1] > p.TargetAllocationIDs[i] {
 			return fmt.Errorf("%w: target allocation IDs are not canonically sorted", ErrInvalidPreparedTeardown)
 		}
+		if p.TargetDescriptors[i].AllocationID != target {
+			return fmt.Errorf("%w: target descriptor at index %d allocation ID '%s' != target allocation ID '%s'", ErrInvalidPreparedTeardown, i, p.TargetDescriptors[i].AllocationID, target)
+		}
+	}
+
+	// Validate target descriptors hash
+	computedDescHash, err := ComputeTargetDescriptorsHash(p.TargetDescriptors)
+	if err != nil {
+		return fmt.Errorf("%w: target descriptors invalid: %v", ErrInvalidPreparedTeardown, err)
+	}
+	if p.TargetDescriptorsHash != computedDescHash {
+		return fmt.Errorf("%w: computed target descriptors hash '%s' != stored '%s'", ErrPreparedTeardownHashMismatch, computedDescHash, p.TargetDescriptorsHash)
 	}
 
 	if !now.IsZero() && now.After(p.ExpiresAt) {
@@ -290,6 +356,7 @@ func ComputePreparedTeardownHash(p *PreparedTeardown) (string, error) {
 	_, _ = fmt.Fprintf(h, "request_id=%s\n", p.RequestID)
 	_, _ = fmt.Fprintf(h, "contract_hash=%s\n", p.ContractHash)
 	_, _ = fmt.Fprintf(h, "targets=%s\n", strings.Join(sortedTargets, ","))
+	_, _ = fmt.Fprintf(h, "target_descriptors_hash=%s\n", p.TargetDescriptorsHash)
 	_, _ = fmt.Fprintf(h, "snapshot_rev=%s\n", p.SnapshotRevision)
 	_, _ = fmt.Fprintf(h, "hardware_rev=%s\n", p.HardwareProfileRevision)
 	_, _ = fmt.Fprintf(h, "proof_rev=%s\n", p.ConflictProofRevision)

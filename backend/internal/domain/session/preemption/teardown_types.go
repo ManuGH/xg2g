@@ -24,20 +24,34 @@ const (
 	ReasonTeardownInvalidProof                  TeardownPreparationReasonCode = "TEARDOWN_PREPARATION_INVALID_PROOF"
 )
 
+// TargetExecutionDescriptor specifies immutable expected target attributes bound in E3.2.
+type TargetExecutionDescriptor struct {
+	AllocationID           string          `json:"allocationId"`
+	ExpectedOwner          string          `json:"expectedOwner"`
+	AllocationRevision     string          `json:"allocationRevision"`
+	SnapshotRevision       string          `json:"snapshotRevision"`
+	HardwareRevision       string          `json:"hardwareRevision"`
+	ExpectedClaims         []ResourceClaim `json:"expectedClaims"`
+	ExpectedHardwareClaims []ResourceClaim `json:"expectedHardwareClaims"`
+	DescriptorHash         string          `json:"descriptorHash"`
+}
+
 // PreparedTeardown is the immutable read-only protocol dataset verifying teardown readiness before mutation.
 type PreparedTeardown struct {
-	TeardownID              string    `json:"teardownId"`
-	ContractID              string    `json:"contractId"`
-	ReceiverID              string    `json:"receiverId"`
-	RequestID               string    `json:"requestId"`
-	ContractHash            string    `json:"contractHash"`
-	TargetAllocationIDs     []string  `json:"targetAllocationIds"`
-	SnapshotRevision        string    `json:"snapshotRevision"`
-	HardwareProfileRevision string    `json:"hardwareProfileRevision"`
-	ConflictProofRevision   string    `json:"conflictProofRevision"`
-	PreparedAt              time.Time `json:"preparedAt"`
-	ExpiresAt               time.Time `json:"expiresAt"`
-	PreparedTeardownHash    string    `json:"preparedTeardownHash"`
+	TeardownID              string                      `json:"teardownId"`
+	ContractID              string                      `json:"contractId"`
+	ReceiverID              string                      `json:"receiverId"`
+	RequestID               string                      `json:"requestId"`
+	ContractHash            string                      `json:"contractHash"`
+	TargetAllocationIDs     []string                    `json:"targetAllocationIds"`
+	TargetDescriptors       []TargetExecutionDescriptor `json:"targetDescriptors"`
+	TargetDescriptorsHash  string                      `json:"targetDescriptorsHash"`
+	SnapshotRevision        string                      `json:"snapshotRevision"`
+	HardwareProfileRevision string                      `json:"hardwareProfileRevision"`
+	ConflictProofRevision   string                      `json:"conflictProofRevision"`
+	PreparedAt              time.Time                   `json:"preparedAt"`
+	ExpiresAt               time.Time                   `json:"expiresAt"`
+	PreparedTeardownHash    string                      `json:"preparedTeardownHash"`
 }
 
 // TeardownPreparationResult represents the domain outcome of teardown preparation.
