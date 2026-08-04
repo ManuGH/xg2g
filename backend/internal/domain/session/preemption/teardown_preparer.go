@@ -163,9 +163,12 @@ func (p *TeardownPreparer) PrepareTeardown(contract *PreemptionExecutionContract
 			}
 		}
 
-		allocRev := alloc.Revision
-		if strings.TrimSpace(allocRev) == "" {
-			allocRev = snapshot.SnapshotRevision
+		allocRev := strings.TrimSpace(alloc.Revision)
+		if allocRev == "" {
+			return TeardownPreparationResult{
+				Decision: DecisionRejected,
+				Reason:   ReasonTeardownTargetStateMutated,
+			}, nil
 		}
 
 		desc := TargetExecutionDescriptor{
@@ -346,8 +349,9 @@ func ComputePreparedTeardownHash(p *PreparedTeardown) (string, error) {
 		return "", ErrInvalidPreparedTeardown
 	}
 
-	sortedTargets := append([]string(nil), p.TargetAllocationIDs...)
-	sort.Strings(sortedTargets)
+	if !sort.StringsAreSorted(p.TargetAllocationIDs) {
+		return "", fmt.Errorf("%w: target allocation IDs are not canonically sorted", ErrInvalidPreparedTeardown)
+	}
 
 	h := sha256.New()
 	_, _ = fmt.Fprintf(h, "teardown_id=%s\n", p.TeardownID)
@@ -355,7 +359,7 @@ func ComputePreparedTeardownHash(p *PreparedTeardown) (string, error) {
 	_, _ = fmt.Fprintf(h, "receiver_id=%s\n", p.ReceiverID)
 	_, _ = fmt.Fprintf(h, "request_id=%s\n", p.RequestID)
 	_, _ = fmt.Fprintf(h, "contract_hash=%s\n", p.ContractHash)
-	_, _ = fmt.Fprintf(h, "targets=%s\n", strings.Join(sortedTargets, ","))
+	_, _ = fmt.Fprintf(h, "targets=%s\n", strings.Join(p.TargetAllocationIDs, ","))
 	_, _ = fmt.Fprintf(h, "target_descriptors_hash=%s\n", p.TargetDescriptorsHash)
 	_, _ = fmt.Fprintf(h, "snapshot_rev=%s\n", p.SnapshotRevision)
 	_, _ = fmt.Fprintf(h, "hardware_rev=%s\n", p.HardwareProfileRevision)

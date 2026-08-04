@@ -6,6 +6,7 @@ package preemption
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -102,6 +103,52 @@ type ReceiverClaimIdentity struct {
 // ReceiverClaimReader is the minimal read-only interface required by TeardownExecutor.
 type ReceiverClaimReader interface {
 	GetReceiverClaim(ctx context.Context, receiverID string) (ReceiverClaim, error)
+}
+
+// FencedMutationAuthorizer enforces authoritative fencing token revalidation immediately before physical mutation.
+type FencedMutationAuthorizer interface {
+	AuthorizeReceiverMutation(ctx context.Context, identity ReceiverClaimIdentity, now time.Time) error
+}
+
+// StoreFencedMutationAuthorizer implements FencedMutationAuthorizer backed by authoritative Store claim reading.
+type StoreFencedMutationAuthorizer struct {
+	reader ReceiverClaimReader
+}
+
+// NewStoreFencedMutationAuthorizer creates a new StoreFencedMutationAuthorizer.
+func NewStoreFencedMutationAuthorizer(reader ReceiverClaimReader) *StoreFencedMutationAuthorizer {
+	return &StoreFencedMutationAuthorizer{reader: reader}
+}
+
+// AuthorizeReceiverMutation revalidates active claim status, SagaID, FencingToken, quarantine status, and lease expiration.
+func (a *StoreFencedMutationAuthorizer) AuthorizeReceiverMutation(ctx context.Context, identity ReceiverClaimIdentity, now time.Time) error {
+	if a.reader == nil {
+		return fmt.Errorf("ReceiverClaimReader is nil")
+	}
+	claim, err := a.reader.GetReceiverClaim(ctx, identity.ReceiverID)
+	if err != nil {
+		return fmt.Errorf("failed to read receiver claim: %w", err)
+	}
+
+	switch claim.Status {
+	case ClaimStatusQuarantined:
+		return fmt.Errorf("%w: receiver claim is quarantined", ErrFencingTokenMismatch)
+	case ClaimStatusClaimed:
+		// continue validation
+	default:
+		return fmt.Errorf("%w: claim status '%s' != CLAIMED", ErrFencingTokenMismatch, claim.Status)
+	}
+
+	if claim.SagaID != identity.SagaID {
+		return fmt.Errorf("%w: claim saga ID '%s' != expected '%s'", ErrFencingTokenMismatch, claim.SagaID, identity.SagaID)
+	}
+	if claim.FencingToken != identity.FencingToken {
+		return fmt.Errorf("%w: claim fencing token %d != expected %d", ErrFencingTokenMismatch, claim.FencingToken, identity.FencingToken)
+	}
+	if !now.IsZero() && !now.Before(claim.LeaseUntil) {
+		return fmt.Errorf("%w: claim lease expired at %s", ErrReceiverClaimExpired, claim.LeaseUntil.Format(time.RFC3339))
+	}
+	return nil
 }
 
 // FencedTeardownGateway performs atomic fencing token validation immediately before physical transport execution.

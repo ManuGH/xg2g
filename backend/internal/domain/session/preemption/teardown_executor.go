@@ -28,7 +28,7 @@ type TeardownExecutor struct {
 	allowMock   bool
 }
 
-// NewTeardownExecutor creates a new TeardownExecutor instance.
+// NewTeardownExecutor creates a production TeardownExecutor instance.
 func NewTeardownExecutor(reader ReceiverClaimReader, gateway FencedTeardownGateway) *TeardownExecutor {
 	return &TeardownExecutor{
 		claimReader: reader,
@@ -38,9 +38,14 @@ func NewTeardownExecutor(reader ReceiverClaimReader, gateway FencedTeardownGatew
 	}
 }
 
-// SetAllowMockForTesting enables TransportKindMock for unit test execution.
-func (e *TeardownExecutor) SetAllowMockForTesting(allow bool) {
-	e.allowMock = allow
+// NewTeardownExecutorForTesting creates a test-only TeardownExecutor instance with TransportKindMock permitted.
+func NewTeardownExecutorForTesting(reader ReceiverClaimReader, gateway FencedTeardownGateway) *TeardownExecutor {
+	return &TeardownExecutor{
+		claimReader: reader,
+		gateway:     gateway,
+		nowFunc:     func() time.Time { return time.Now().UTC() },
+		allowMock:   true,
+	}
 }
 
 // ExecuteTargetTeardown executes a single target teardown attempt from an authoritative PreparedTeardown dataset.
@@ -91,9 +96,15 @@ func (e *TeardownExecutor) ExecuteTargetTeardown(
 		return TargetTeardownResult{}, fmt.Errorf("failed to read receiver claim: %w", err)
 	}
 
-	if claim.Status != ClaimStatusClaimed {
+	switch claim.Status {
+	case ClaimStatusQuarantined:
+		return TargetTeardownResult{}, fmt.Errorf("%w: receiver claim is quarantined", ErrFencingTokenMismatch)
+	case ClaimStatusClaimed:
+		// continue validation
+	default:
 		return TargetTeardownResult{}, fmt.Errorf("%w: claim status '%s' != CLAIMED", ErrFencingTokenMismatch, claim.Status)
 	}
+
 	if claim.SagaID != sagaID {
 		return TargetTeardownResult{}, fmt.Errorf("%w: claim saga ID '%s' != request saga ID '%s'", ErrFencingTokenMismatch, claim.SagaID, sagaID)
 	}
@@ -102,9 +113,6 @@ func (e *TeardownExecutor) ExecuteTargetTeardown(
 	}
 	if claim.ReceiverID != prepared.ReceiverID {
 		return TargetTeardownResult{}, fmt.Errorf("%w: claim receiver ID '%s' != prepared receiver ID '%s'", ErrFencingTokenMismatch, claim.ReceiverID, prepared.ReceiverID)
-	}
-	if claim.Status == ClaimStatusQuarantined {
-		return TargetTeardownResult{}, fmt.Errorf("%w: receiver claim is quarantined", ErrFencingTokenMismatch)
 	}
 	if !now.Before(claim.LeaseUntil) {
 		return TargetTeardownResult{}, fmt.Errorf("%w: claim expired at %s (now: %s)", ErrReceiverClaimExpired, claim.LeaseUntil.Format(time.RFC3339), now.Format(time.RFC3339))
