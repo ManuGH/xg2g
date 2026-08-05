@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,6 +41,23 @@ type LifecycleObservedResult struct {
 	ProcessIdentities []ffmpeg.TranscodeProcessIdentity `json:"process_identities"`
 }
 
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
 func TestP6_1a_RealFFmpegJobGenerationAcrossManualRestart(t *testing.T) {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -47,7 +65,7 @@ func TestP6_1a_RealFFmpegJobGenerationAcrossManualRestart(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	var logBuf bytes.Buffer
+	var logBuf safeBuffer
 	logger := zerolog.New(&logBuf).With().Timestamp().Logger()
 
 	adapter := ffmpeg.NewLocalAdapter(
