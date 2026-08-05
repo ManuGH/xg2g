@@ -30,5 +30,13 @@ func (a *LocalAdapter) monitorProcess(parentCtx context.Context, handle ports.Ru
 	if usesVAAPI {
 		backend = profiles.GPUBackendVAAPI
 	}
-	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, 0, backend, "", a.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false)
+	pid := 0
+	if cmd != nil && cmd.Process != nil {
+		pid = cmd.Process.Pid
+	}
+	ident, _ := a.getProcessIdentity(handle)
+	if ident.IsZero() {
+		ident = NewProcessIdentity(sessionID, 1, pid, time.Now())
+	}
+	a.monitorProcessWithStartTimeout(parentCtx, handle, cmd, stderr, sessionID, 0, backend, "", a.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false, ident)
 }

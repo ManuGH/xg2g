@@ -450,13 +450,14 @@ func TestMonitorProcess_RuntimePathCorrectnessMarksBrokenAndStopsProcess(t *test
 	}()
 
 	handle := ports.RunHandle("session-path-broken-123")
+	ident1 := adapter.registerProcessIdentity(handle, "session-path-broken", cmd.Process.Pid, time.Now())
 	adapter.mu.Lock()
 	adapter.activeProcs[handle] = cmd
 	adapter.mu.Unlock()
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-broken", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false)
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-broken", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false, ident1)
 		close(done)
 	}()
 
@@ -517,13 +518,14 @@ func TestMonitorProcess_RuntimePathCorrectnessMarksVerified(t *testing.T) {
 	}()
 
 	handle := ports.RunHandle("session-path-verified-123")
+	ident2 := adapter.registerProcessIdentity(handle, "session-path-verified", cmd.Process.Pid, time.Now())
 	adapter.mu.Lock()
 	adapter.activeProcs[handle] = cmd
 	adapter.mu.Unlock()
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-verified", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false)
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-path-verified", 0, profiles.GPUBackendVAAPI, hardware.PathVAAPIEncodeOnlyInterlacedHEVC, adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false, ident2)
 		close(done)
 	}()
 
@@ -666,13 +668,14 @@ func TestMonitorProcess_RecordsNVENCRuntimeFailureForNVENCError(t *testing.T) {
 	require.NoError(t, cmd.Start())
 
 	handle := ports.RunHandle("session-nvenc-runtime-123")
+	ident := adapter.registerProcessIdentity(handle, "session-nvenc-runtime", cmd.Process.Pid, time.Now())
 	adapter.mu.Lock()
 	adapter.activeProcs[handle] = cmd
 	adapter.mu.Unlock()
 
 	done := make(chan struct{})
 	go func() {
-		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-nvenc-runtime", 0, profiles.GPUBackendNVENC, "", adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false)
+		adapter.monitorProcessWithStartTimeout(context.Background(), handle, cmd, stderr, "session-nvenc-runtime", 0, profiles.GPUBackendNVENC, "", adapter.StartTimeout, noopStartupSpan(), time.Now(), nil, false, false, ident)
 		close(done)
 	}()
 
