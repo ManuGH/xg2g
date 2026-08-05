@@ -103,6 +103,9 @@ func TestDualRenditionHLSSpike(t *testing.T) {
 	assert.Contains(t, masterContent, "RESOLUTION=1280x720", "Master playlist must specify 1280x720 for high variant")
 	assert.Contains(t, masterContent, "RESOLUTION=640x360", "Master playlist must specify 640x360 for low variant")
 
+	// Check INDEPENDENT-SEGMENTS tag in Master Playlist
+	require.Contains(t, masterContent, "#EXT-X-INDEPENDENT-SEGMENTS", "master playlist must declare independent segments")
+
 	// Ensure no separate external audio group in master playlist
 	assert.NotContains(t, masterContent, "#EXT-X-MEDIA:TYPE=AUDIO", "Master playlist must not contain external audio group tags")
 
@@ -239,7 +242,7 @@ func TestDualRenditionHLSSpike(t *testing.T) {
 	require.Len(t, variantDurations, 2)
 	highDurs := variantDurations[0]
 	lowDurs := variantDurations[1]
-	assert.Equal(t, len(highDurs), len(lowDurs), "High and low variant playlists must contain equal number of #EXTINF segments")
+	require.Equal(t, len(highDurs), len(lowDurs), "High and low variant playlists must contain equal number of #EXTINF segments")
 
 	for i := 0; i < len(highDurs); i++ {
 		durDiff := math.Abs(highDurs[i] - lowDurs[i])
@@ -255,7 +258,7 @@ func TestDualRenditionHLSSpike(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, highSegs, "variant_high must contain generated .ts segments")
-	assert.Equal(t, len(highSegs), len(lowSegs), "variant_high and variant_low must generate equal segment count (%d vs %d)", len(highSegs), len(lowSegs))
+	require.Equal(t, len(highSegs), len(lowSegs), "variant_high and variant_low must generate equal segment count (%d vs %d)", len(highSegs), len(lowSegs))
 
 	for i := 0; i < len(highSegs); i++ {
 		hPath := highSegs[i]
