@@ -64,4 +64,3 @@ export interface PlayerTelemetryEvent {
 export function emitPlayerTelemetry(payload: PlayerTelemetryEvent): void {
   debugLog('[TELEMETRY]', payload);
 }
-

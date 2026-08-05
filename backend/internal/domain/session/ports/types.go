@@ -77,6 +77,7 @@ type StreamSource struct {
 
 // StreamSpec fully describes a media session request without implementation details.
 type StreamSpec struct {
+	JobID        string // Explicit TranscodeJobID / Intent correlation ID; defaults to SessionID if empty.
 	SessionID    string
 	ClientFamily string
 	Mode         StreamMode
@@ -103,6 +104,13 @@ type StreamSpec struct {
 	// has already given up is unreachable code that costs the session its
 	// diagnosis.
 	ReadyDeadline time.Time
+}
+
+func (s StreamSpec) EffectiveJobID() string {
+	if s.JobID != "" {
+		return s.JobID
+	}
+	return s.SessionID
 }
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).
