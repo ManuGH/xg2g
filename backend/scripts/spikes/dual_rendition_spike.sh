@@ -93,4 +93,6 @@ echo "  Duration:         ${DURATION_SEC}s"
     "$OUT_DIR/variant_%v/index.m3u8" 2> "$LOG_FILE"
 
 echo "==> FFmpeg execution completed successfully."
+echo "==> Performing ffprobe sanity check on generated master playlist..."
+"$FFPROBE_BIN" -v error "$OUT_DIR/index.m3u8"
 echo "==> Output written to: $OUT_DIR"
