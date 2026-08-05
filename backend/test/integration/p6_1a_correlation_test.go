@@ -4,11 +4,13 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,36 +19,36 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type BaselineEvent struct {
-	Event              string `json:"event"`
-	PlaybackInstanceID string `json:"playback_instance_id,omitempty"`
-	IntentID           string `json:"intent_id,omitempty"`
-	SessionID          string `json:"session_id,omitempty"`
-	TranscodeJobID     string `json:"transcode_job_id,omitempty"`
-	ProcessGeneration  uint64 `json:"process_generation,omitempty"`
-	PID                int    `json:"pid,omitempty"`
-	Reason             string `json:"reason,omitempty"`
+type ObservedEvent struct {
+	Event             string `json:"event"`
+	SessionID         string `json:"session_id,omitempty"`
+	TranscodeJobID    string `json:"transcode_job_id,omitempty"`
+	ProcessGeneration uint64 `json:"process_generation,omitempty"`
+	PID               int    `json:"pid,omitempty"`
+	Reason            string `json:"reason,omitempty"`
+	StartupPhase      string `json:"startup_phase,omitempty"`
+	SegmentPath       string `json:"segment_path,omitempty"`
 }
 
-type BaselineResult struct {
+type LifecycleObservedResult struct {
 	Scenario          string                            `json:"scenario"`
 	Timestamps        map[string]int64                  `json:"timestamps"`
-	IDTransitions     []BaselineEvent                   `json:"id_transitions"`
+	ObservedEvents    []ObservedEvent                   `json:"observed_events"`
 	FFmpegStartCount  int                               `json:"ffmpeg_start_count"`
-	StallDurationMS   int64                             `json:"stall_duration_ms"`
 	RecoveryAction    string                            `json:"recovery_action"`
 	FinalOutcome      string                            `json:"final_outcome"`
 	ProcessIdentities []ffmpeg.TranscodeProcessIdentity `json:"process_identities"`
 }
 
-func TestP6_1a_RealFFmpegCorrelationBaseline(t *testing.T) {
+func TestP6_1a_RealFFmpegJobGenerationAcrossManualRestart(t *testing.T) {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		t.Skip("ffmpeg binary not found in PATH, skipping real FFmpeg process execution test")
 	}
 
 	tmpDir := t.TempDir()
-	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	var logBuf bytes.Buffer
+	logger := zerolog.New(&logBuf).With().Timestamp().Logger()
 
 	adapter := ffmpeg.NewLocalAdapter(
 		ffmpegPath,
@@ -69,11 +71,7 @@ func TestP6_1a_RealFFmpegCorrelationBaseline(t *testing.T) {
 	jobID := "job-p61a-baseline-001"
 	sessionID1 := "sess-p61a-001"
 	sessionID2 := "sess-p61a-002"
-	instanceID := "play-inst-001"
-	intentID1 := "intent-p61a-001"
-	intentID2 := "intent-p61a-002"
 
-	// Create a real synthetic input source using ffmpeg testsrc
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -108,16 +106,11 @@ func TestP6_1a_RealFFmpegCorrelationBaseline(t *testing.T) {
 		t.Fatalf("failed to start real FFmpeg process: %v", err)
 	}
 
-	profIdent1, ok1 := adapter.FinalizedProfile(handle1)
-	_ = profIdent1
-	_ = ok1
-
-	// Stop process 1 to simulate stall escalation
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
 	stalled1 := time.Now()
 	_ = adapter.Stop(ctx, handle1)
 
-	// 2. Start real FFmpeg process Generation 2 (same JobID, new SessionID)
+	// 2. Start real FFmpeg process Generation 2 for SAME JobID under new SessionID
 	spec2 := spec1
 	spec2.SessionID = sessionID2
 
@@ -126,55 +119,64 @@ func TestP6_1a_RealFFmpegCorrelationBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start second real FFmpeg process: %v", err)
 	}
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
 	_ = adapter.Stop(ctx, handle2)
 
-	// Build baseline result structure from real execution
-	result := BaselineResult{
-		Scenario: "real_ffmpeg_single_rendition_stall_escalation",
+	// Parse captured zerolog JSON lines to extract REAL observed events
+	lines := strings.Split(logBuf.String(), "\n")
+	var observedEvents []ObservedEvent
+	var processIdentities []ffmpeg.TranscodeProcessIdentity
+	startCount := 0
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var evt ObservedEvent
+		if json.Unmarshal([]byte(line), &evt) == nil && evt.Event != "" {
+			if strings.HasPrefix(evt.Event, "transcoder.") {
+				observedEvents = append(observedEvents, evt)
+				if evt.Event == "transcoder.started" {
+					startCount++
+					processIdentities = append(processIdentities, ffmpeg.NewProcessIdentity(evt.TranscodeJobID, evt.ProcessGeneration, evt.PID, started1))
+				}
+			}
+		}
+	}
+
+	if startCount != 2 {
+		t.Fatalf("expected 2 real transcoder.started events, observed %d", startCount)
+	}
+
+	// Assert generations 1 and 2 were assigned
+	if len(processIdentities) >= 2 {
+		if processIdentities[0].Generation != 1 {
+			t.Errorf("expected first generation 1, got %d", processIdentities[0].Generation)
+		}
+		if processIdentities[1].Generation != 2 {
+			t.Errorf("expected second generation 2, got %d", processIdentities[1].Generation)
+		}
+		if processIdentities[0].JobID != jobID || processIdentities[1].JobID != jobID {
+			t.Errorf("expected JobID %s for both generations", jobID)
+		}
+	}
+
+	// Build baseline result structure from REAL captured observation
+	result := LifecycleObservedResult{
+		Scenario: "real_ffmpeg_single_rendition_manual_restart_observed",
 		Timestamps: map[string]int64{
 			"started":   started1.UnixMilli(),
 			"stalled":   stalled1.UnixMilli(),
 			"recovered": recovered1.UnixMilli(),
 		},
-		IDTransitions: []BaselineEvent{
-			{
-				Event:              "transcoder.started",
-				PlaybackInstanceID: instanceID,
-				IntentID:           intentID1,
-				SessionID:          sessionID1,
-				TranscodeJobID:     jobID,
-				ProcessGeneration:  1,
-			},
-			{
-				Event:              "player.stall_started",
-				PlaybackInstanceID: instanceID,
-				IntentID:           intentID1,
-				SessionID:          sessionID1,
-				Reason:             "buffer_emptied",
-			},
-			{
-				Event:              "player.intent_recreated",
-				PlaybackInstanceID: instanceID,
-				IntentID:           intentID2,
-				Reason:             "recovery_watchdog_recreated_intent",
-			},
-			{
-				Event:              "transcoder.started",
-				PlaybackInstanceID: instanceID,
-				IntentID:           intentID2,
-				SessionID:          sessionID2,
-				TranscodeJobID:     jobID,
-				ProcessGeneration:  2,
-			},
-		},
-		FFmpegStartCount: 2,
-		StallDurationMS:  recovered1.Sub(stalled1).Milliseconds(),
-		RecoveryAction:   "intent_recreation",
-		FinalOutcome:     "restarted_new_process",
+		ObservedEvents:    observedEvents,
+		FFmpegStartCount:  startCount,
+		RecoveryAction:    "manual_test_restart",
+		FinalOutcome:      "second_process_started_by_test",
+		ProcessIdentities: processIdentities,
 	}
 
-	// Portable output path (in t.TempDir() or optional BASELINE_RESULTS_DIR)
 	outputDir := tmpDir
 	if custom := os.Getenv("BASELINE_RESULTS_DIR"); custom != "" {
 		outputDir = custom
@@ -191,5 +193,5 @@ func TestP6_1a_RealFFmpegCorrelationBaseline(t *testing.T) {
 		t.Fatalf("failed to write baseline_results.json: %v", err)
 	}
 
-	t.Logf("portable baseline_results.json written to %s", artifactPath)
+	t.Logf("portable observed baseline_results.json written to %s (startCount=%d)", artifactPath, startCount)
 }
