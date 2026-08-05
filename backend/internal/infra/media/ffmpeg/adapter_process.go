@@ -268,13 +268,14 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 
 	pid := cmd.Process.Pid
 	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, pid))
-	procIdent := a.registerProcessIdentity(handle, spec.SessionID, pid, spawnedAt)
+	jobID := spec.EffectiveJobID()
+	procIdent := a.registerProcessIdentity(handle, jobID, pid, spawnedAt)
 
 	_ = WriteWorkerState(spec.SessionID, spec.Source.ID, spec.Profile.Name, pid)
 	a.Logger.Info().
 		Str("event", "transcoder.started").
 		Str("session_id", spec.SessionID).
-		Str("transcode_job_id", spec.SessionID).
+		Str("transcode_job_id", jobID).
 		Uint64("process_generation", procIdent.Generation).
 		Int("pid", pid).
 		Str("startup_phase", "ffmpeg_started").
@@ -425,10 +426,14 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		}
 		dc := a.GetDiagnosticContext(sessionID)
 		ident, _ := a.getProcessIdentity(handle)
+		jobID := ident.JobID
+		if jobID == "" {
+			jobID = dc.SessionID
+		}
 		a.Logger.Info().
 			Str("event", "transcoder.stopped").
 			Str("session_id", dc.SessionID).
-			Str("transcode_job_id", dc.SessionID).
+			Str("transcode_job_id", jobID).
 			Uint64("process_generation", ident.Generation).
 			Int("pid", ident.PID).
 			Str("generation_id", dc.GenerationID).
@@ -517,15 +522,31 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 					endStartupSpan()
 					wd.ObserveProgress()
 					ident, _ := a.getProcessIdentity(handle)
-					a.Logger.Info().
-						Str("event", "transcoder.ready").
-						Str("session_id", sessionID).
-						Str("transcode_job_id", sessionID).
-						Uint64("process_generation", ident.Generation).
-						Int("pid", ident.PID).
-						Str("startup_phase", "first_segment_write").
-						Str("segment_path", segmentPath).
-						Msg("ffmpeg first segment write observed")
+					jobID := ident.JobID
+					if jobID == "" {
+						jobID = sessionID
+					}
+					if stat, err := os.Stat(segmentPath); err == nil {
+						a.Logger.Info().
+							Str("event", "transcoder.ready").
+							Str("session_id", sessionID).
+							Str("transcode_job_id", jobID).
+							Uint64("process_generation", ident.Generation).
+							Int("pid", ident.PID).
+							Str("startup_phase", "first_segment_write").
+							Str("segment_path", segmentPath).
+							Int64("segment_size_bytes", stat.Size()).
+							Msg("ffmpeg first segment write observed")
+					} else {
+						a.Logger.Info().
+							Str("event", "transcoder.first_segment_open_observed").
+							Str("session_id", sessionID).
+							Str("transcode_job_id", jobID).
+							Uint64("process_generation", ident.Generation).
+							Int("pid", ident.PID).
+							Str("segment_path", segmentPath).
+							Msg("ffmpeg first segment path observed in log")
+					}
 					if pathID != "" && !outputObserverStarted {
 						outputObserverStarted = true
 						go a.detector.observeRuntimePathCorrectness(observerCtx, handle, cmd, sessionID, pathID)
@@ -710,6 +731,7 @@ func (a *LocalAdapter) removeActiveProcessLocked(handle ports.RunHandle, archive
 	delete(a.handleSessions, handle)
 	delete(a.finalizedProfiles, handle)
 	delete(a.executedPlans, handle)
+	delete(a.processIdentities, handle)
 	delete(a.runtimeDiagnostics, handle)
 	if archiveDetail {
 		a.archiveProcessDetailLocked(handle)
