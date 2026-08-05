@@ -93,25 +93,6 @@ echo "  Duration:         ${DURATION_SEC}s"
     "$OUT_DIR/variant_%v/index.m3u8" 2> "$LOG_FILE"
 
 echo "==> FFmpeg execution completed successfully."
-# Ensure #EXT-X-INDEPENDENT-SEGMENTS tag is declared in Master Playlist
-if ! grep -q "#EXT-X-INDEPENDENT-SEGMENTS" "$OUT_DIR/index.m3u8"; then
-    python3 -c "
-with open('$OUT_DIR/index.m3u8', 'r') as f:
-    content = f.read()
-if '#EXT-X-INDEPENDENT-SEGMENTS' not in content:
-    lines = content.splitlines()
-    new_lines = []
-    inserted = False
-    for line in lines:
-        new_lines.append(line)
-        if not inserted and line.startswith('#EXT-X-VERSION'):
-            new_lines.append('#EXT-X-INDEPENDENT-SEGMENTS')
-            inserted = True
-    with open('$OUT_DIR/index.m3u8', 'w') as f:
-        f.write('\n'.join(new_lines) + '\n')
-"
-fi
-
 echo "==> Performing ffprobe sanity check on generated master playlist..."
 "$FFPROBE_BIN" -v error "$OUT_DIR/index.m3u8"
 echo "==> Output written to: $OUT_DIR"
