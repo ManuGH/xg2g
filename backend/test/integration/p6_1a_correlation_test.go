@@ -195,11 +195,11 @@ func TestP6_1a_RealFFmpegJobGenerationAcrossManualRestart(t *testing.T) {
 	if stopCount != 2 {
 		t.Fatalf("expected exactly 2 real transcoder.stopped events, observed %d (logs:\n%s)", stopCount, logBuf.String())
 	}
-	if readyCount < 1 {
-		t.Fatalf("expected at least 1 real transcoder.ready event, observed %d (logs:\n%s)", readyCount, logBuf.String())
+	if readyCount != 2 {
+		t.Fatalf("expected exactly 2 real transcoder.ready events (1 per generation), observed %d (logs:\n%s)", readyCount, logBuf.String())
 	}
 
-	// 4. Strict Identity Assertions
+	// 4. Strict Per-Generation Invariants & Session Correlation Assertions
 	if len(processIdentities) != 2 {
 		t.Fatalf("expected exactly 2 process identities, got %d", len(processIdentities))
 	}
@@ -221,16 +221,77 @@ func TestP6_1a_RealFFmpegJobGenerationAcrossManualRestart(t *testing.T) {
 		t.Fatalf("expected valid non-zero StartedAt timestamps in identities")
 	}
 
-	// 5. Sequence Invariant & No Ready After Stopped Assertion
-	genStopped := make(map[uint64]bool)
-	for _, evt := range observedEvents {
-		if evt.Event == "transcoder.stopped" {
-			genStopped[evt.ProcessGeneration] = true
+	// 5. Per-Generation Event Order & Session Correlation Analysis
+	type genSequence struct {
+		startedIdx int
+		readyIdx   int
+		stoppedIdx int
+		sessionID  string
+		startedEvt ObservedEvent
+		readyEvt   ObservedEvent
+		stoppedEvt ObservedEvent
+	}
+	seqs := map[uint64]*genSequence{
+		1: {startedIdx: -1, readyIdx: -1, stoppedIdx: -1},
+		2: {startedIdx: -1, readyIdx: -1, stoppedIdx: -1},
+	}
+
+	for idx, evt := range observedEvents {
+		if evt.Event == "transcoder.readiness_timeout" {
+			t.Fatalf("observed unexpected transcoder.readiness_timeout for generation %d", evt.ProcessGeneration)
 		}
-		if evt.Event == "transcoder.ready" {
-			if genStopped[evt.ProcessGeneration] {
-				t.Fatalf("invalid event sequence: transcoder.ready logged AFTER transcoder.stopped for generation %d", evt.ProcessGeneration)
+		gen := evt.ProcessGeneration
+		if gen != 1 && gen != 2 {
+			continue
+		}
+		seq := seqs[gen]
+		switch evt.Event {
+		case "transcoder.started":
+			if seq.startedIdx != -1 {
+				t.Fatalf("duplicate transcoder.started observed for generation %d", gen)
 			}
+			seq.startedIdx = idx
+			seq.startedEvt = evt
+			seq.sessionID = evt.SessionID
+		case "transcoder.ready":
+			if seq.readyIdx != -1 {
+				t.Fatalf("duplicate transcoder.ready observed for generation %d", gen)
+			}
+			if seq.stoppedIdx != -1 {
+				t.Fatalf("invalid sequence: transcoder.ready logged AFTER transcoder.stopped for generation %d", gen)
+			}
+			seq.readyIdx = idx
+			seq.readyEvt = evt
+		case "transcoder.stopped":
+			if seq.stoppedIdx != -1 {
+				t.Fatalf("duplicate transcoder.stopped observed for generation %d", gen)
+			}
+			seq.stoppedIdx = idx
+			seq.stoppedEvt = evt
+		}
+	}
+
+	// Verify Gen 1 -> Session 1 and Gen 2 -> Session 2 correlation
+	if seqs[1].sessionID != sessionID1 {
+		t.Fatalf("expected Generation 1 correlated with SessionID %s, got %s", sessionID1, seqs[1].sessionID)
+	}
+	if seqs[2].sessionID != sessionID2 {
+		t.Fatalf("expected Generation 2 correlated with SessionID %s, got %s", sessionID2, seqs[2].sessionID)
+	}
+
+	// Verify exact order: started < ready < stopped for each generation
+	for gen, seq := range seqs {
+		if seq.startedIdx == -1 {
+			t.Fatalf("missing transcoder.started for generation %d", gen)
+		}
+		if seq.readyIdx == -1 {
+			t.Fatalf("missing transcoder.ready for generation %d", gen)
+		}
+		if seq.stoppedIdx == -1 {
+			t.Fatalf("missing transcoder.stopped for generation %d", gen)
+		}
+		if !(seq.startedIdx < seq.readyIdx && seq.readyIdx < seq.stoppedIdx) {
+			t.Fatalf("invalid lifecycle order for generation %d: startedIdx=%d, readyIdx=%d, stoppedIdx=%d", gen, seq.startedIdx, seq.readyIdx, seq.stoppedIdx)
 		}
 	}
 
