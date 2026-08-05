@@ -26,6 +26,7 @@ type ObservedEvent struct {
 	TranscodeJobID    string `json:"transcode_job_id,omitempty"`
 	ProcessGeneration uint64 `json:"process_generation,omitempty"`
 	PID               int    `json:"pid,omitempty"`
+	StartedAtUnixMS   int64  `json:"started_at_unix_ms,omitempty"`
 	Reason            string `json:"reason,omitempty"`
 	StartupPhase      string `json:"startup_phase,omitempty"`
 	SegmentPath       string `json:"segment_path,omitempty"`
@@ -124,7 +125,7 @@ func TestP6_1a_RealFFmpegJobGenerationAcrossManualRestart(t *testing.T) {
 		t.Fatalf("failed to start real FFmpeg process: %v", err)
 	}
 
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(3000 * time.Millisecond)
 	stalled1 := time.Now()
 	_ = adapter.Stop(ctx, handle1)
 
@@ -137,50 +138,111 @@ func TestP6_1a_RealFFmpegJobGenerationAcrossManualRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start second real FFmpeg process: %v", err)
 	}
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(3000 * time.Millisecond)
 	_ = adapter.Stop(ctx, handle2)
 
-	// Parse captured zerolog JSON lines to extract REAL observed events
-	lines := strings.Split(logBuf.String(), "\n")
+	// 3. Deterministic Waiter: Poll log buffer until 2 started and 2 stopped events are captured
 	var observedEvents []ObservedEvent
 	var processIdentities []ffmpeg.TranscodeProcessIdentity
 	startCount := 0
+	stopCount := 0
+	readyCount := 0
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		var evt ObservedEvent
-		if json.Unmarshal([]byte(line), &evt) == nil && evt.Event != "" {
-			if strings.HasPrefix(evt.Event, "transcoder.") {
-				observedEvents = append(observedEvents, evt)
-				if evt.Event == "transcoder.started" {
-					startCount++
-					processIdentities = append(processIdentities, ffmpeg.NewProcessIdentity(evt.TranscodeJobID, evt.ProcessGeneration, evt.PID, started1))
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		observedEvents = nil
+		processIdentities = nil
+		startCount = 0
+		stopCount = 0
+		readyCount = 0
+
+		lines := strings.Split(logBuf.String(), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var evt ObservedEvent
+			if json.Unmarshal([]byte(line), &evt) == nil && evt.Event != "" {
+				if strings.HasPrefix(evt.Event, "transcoder.") {
+					observedEvents = append(observedEvents, evt)
+					switch evt.Event {
+					case "transcoder.started":
+						startCount++
+						stTime := time.UnixMilli(evt.StartedAtUnixMS)
+						if evt.StartedAtUnixMS == 0 {
+							stTime = started1
+						}
+						processIdentities = append(processIdentities, ffmpeg.NewProcessIdentity(evt.TranscodeJobID, evt.ProcessGeneration, evt.PID, stTime))
+					case "transcoder.stopped":
+						stopCount++
+					case "transcoder.ready":
+						readyCount++
+					}
 				}
+			}
+		}
+
+		if startCount >= 2 && stopCount >= 2 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if startCount != 2 {
+		t.Fatalf("expected exactly 2 real transcoder.started events, observed %d (logs:\n%s)", startCount, logBuf.String())
+	}
+	if stopCount != 2 {
+		t.Fatalf("expected exactly 2 real transcoder.stopped events, observed %d (logs:\n%s)", stopCount, logBuf.String())
+	}
+	if readyCount < 1 {
+		t.Fatalf("expected at least 1 real transcoder.ready event, observed %d (logs:\n%s)", readyCount, logBuf.String())
+	}
+
+	// 4. Strict Identity Assertions
+	if len(processIdentities) != 2 {
+		t.Fatalf("expected exactly 2 process identities, got %d", len(processIdentities))
+	}
+	pid1 := processIdentities[0].PID
+	pid2 := processIdentities[1].PID
+	if pid1 <= 0 || pid2 <= 0 {
+		t.Fatalf("expected positive PIDs, got pid1=%d, pid2=%d", pid1, pid2)
+	}
+	if pid1 == pid2 {
+		t.Fatalf("expected distinct PIDs for separate runs, got identical PID %d", pid1)
+	}
+	if processIdentities[0].JobID != jobID || processIdentities[1].JobID != jobID {
+		t.Fatalf("expected JobID %s for both identities, got %s and %s", jobID, processIdentities[0].JobID, processIdentities[1].JobID)
+	}
+	if processIdentities[0].Generation != 1 || processIdentities[1].Generation != 2 {
+		t.Fatalf("expected generations 1 and 2, got %d and %d", processIdentities[0].Generation, processIdentities[1].Generation)
+	}
+	if processIdentities[0].StartedAt.IsZero() || processIdentities[1].StartedAt.IsZero() {
+		t.Fatalf("expected valid non-zero StartedAt timestamps in identities")
+	}
+
+	// 5. Sequence Invariant & No Ready After Stopped Assertion
+	genStopped := make(map[uint64]bool)
+	for _, evt := range observedEvents {
+		if evt.Event == "transcoder.stopped" {
+			genStopped[evt.ProcessGeneration] = true
+		}
+		if evt.Event == "transcoder.ready" {
+			if genStopped[evt.ProcessGeneration] {
+				t.Fatalf("invalid event sequence: transcoder.ready logged AFTER transcoder.stopped for generation %d", evt.ProcessGeneration)
 			}
 		}
 	}
 
-	if startCount != 2 {
-		t.Fatalf("expected 2 real transcoder.started events, observed %d", startCount)
+	// 6. Map Cleanup Assertion
+	if _, ok1 := adapter.GetProcessIdentity(handle1); ok1 {
+		t.Fatalf("expected handle1 to be removed from processIdentities map after stop")
+	}
+	if _, ok2 := adapter.GetProcessIdentity(handle2); ok2 {
+		t.Fatalf("expected handle2 to be removed from processIdentities map after stop")
 	}
 
-	// Assert generations 1 and 2 were assigned
-	if len(processIdentities) >= 2 {
-		if processIdentities[0].Generation != 1 {
-			t.Errorf("expected first generation 1, got %d", processIdentities[0].Generation)
-		}
-		if processIdentities[1].Generation != 2 {
-			t.Errorf("expected second generation 2, got %d", processIdentities[1].Generation)
-		}
-		if processIdentities[0].JobID != jobID || processIdentities[1].JobID != jobID {
-			t.Errorf("expected JobID %s for both generations", jobID)
-		}
-	}
-
-	// Build baseline result structure from REAL captured observation
+	// 7. Write Portable Baseline Result
 	result := LifecycleObservedResult{
 		Scenario: "real_ffmpeg_single_rendition_manual_restart_observed",
 		Timestamps: map[string]int64{
@@ -211,5 +273,5 @@ func TestP6_1a_RealFFmpegJobGenerationAcrossManualRestart(t *testing.T) {
 		t.Fatalf("failed to write baseline_results.json: %v", err)
 	}
 
-	t.Logf("portable observed baseline_results.json written to %s (startCount=%d)", artifactPath, startCount)
+	t.Logf("portable observed baseline_results.json written to %s (starts=%d, stops=%d, ready=%d)\nLOGS:\n%s", artifactPath, startCount, stopCount, readyCount, logBuf.String())
 }

@@ -206,10 +206,7 @@ func extractStartupSegmentPath(line string) (string, bool) {
 	}
 	path := line[start+1 : start+1+endRel]
 	base := filepath.Base(path)
-	if !strings.HasPrefix(base, "seg_") {
-		return "", false
-	}
-	if strings.HasSuffix(base, ".m4s") || strings.HasSuffix(base, ".ts") {
+	if strings.HasSuffix(base, ".m4s") || strings.HasSuffix(base, ".ts") || strings.HasSuffix(base, ".tmp") {
 		return path, true
 	}
 	return "", false
