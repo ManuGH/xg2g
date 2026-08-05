@@ -44,3 +44,24 @@ export function formatError(err: unknown): string {
   }
   return 'unknown error';
 }
+
+export interface PlayerTelemetryEvent {
+  event:
+    | 'player.buffer_low'
+    | 'player.stall_started'
+    | 'player.stall_recovered'
+    | 'player.network_error'
+    | 'player.media_error'
+    | 'player.recovery_attempted'
+    | 'player.intent_recreated';
+  playbackInstanceId: string;
+  intentId?: string;
+  sessionId?: string;
+  reason?: string;
+  details?: Record<string, unknown>;
+}
+
+export function emitPlayerTelemetry(payload: PlayerTelemetryEvent): void {
+  debugLog('[TELEMETRY]', payload);
+}
+
