@@ -4,7 +4,7 @@
 package ffmpeg
 
 import (
-	"os"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -117,18 +117,34 @@ func TestProcessIdentity_ConcurrentRegistration(t *testing.T) {
 
 	var wg sync.WaitGroup
 	const workers = 50
+	gens := make(chan uint64, workers)
 
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			handle := ports.RunHandle(os.Getenv("TMP") + string(rune(idx)))
+			handle := ports.RunHandle(fmt.Sprintf("handle-%d", idx))
 			ident := adapter.registerProcessIdentity(handle, "concurrent-job", idx+1000, time.Now())
-			if ident.Generation == 0 {
-				t.Errorf("got zero generation under concurrency")
+			gens <- ident.Generation
+			if _, ok := adapter.getProcessIdentity(handle); !ok {
+				t.Errorf("expected handle %s to be registered", handle)
 			}
-			adapter.getProcessIdentity(handle)
 		}(i)
 	}
 	wg.Wait()
+	close(gens)
+
+	seen := make(map[uint64]bool)
+	for g := range gens {
+		if g < 1 || g > uint64(workers) {
+			t.Errorf("generation %d out of expected range 1..%d", g, workers)
+		}
+		if seen[g] {
+			t.Errorf("duplicate generation %d detected under concurrency", g)
+		}
+		seen[g] = true
+	}
+	if len(seen) != workers {
+		t.Fatalf("expected %d unique generations, got %d", workers, len(seen))
+	}
 }
