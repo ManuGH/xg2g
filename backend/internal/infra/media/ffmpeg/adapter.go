@@ -301,7 +301,7 @@ func (a *LocalAdapter) GetDiagnosticContext(sessionID string) DiagnosticContext 
 	return dc
 }
 
-func (a *LocalAdapter) registerProcessIdentity(handle ports.RunHandle, sessionID string, pid int, startedAt time.Time) TranscodeProcessIdentity {
+func (a *LocalAdapter) registerProcessIdentity(handle ports.RunHandle, jobID string, pid int, startedAt time.Time) TranscodeProcessIdentity {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.generations == nil {
@@ -310,9 +310,9 @@ func (a *LocalAdapter) registerProcessIdentity(handle ports.RunHandle, sessionID
 	if a.processIdentities == nil {
 		a.processIdentities = make(map[ports.RunHandle]TranscodeProcessIdentity)
 	}
-	a.generations[sessionID]++
-	gen := a.generations[sessionID]
-	ident := NewProcessIdentity(sessionID, gen, pid, startedAt)
+	a.generations[jobID]++
+	gen := a.generations[jobID]
+	ident := NewProcessIdentity(jobID, gen, pid, startedAt)
 	a.processIdentities[handle] = ident
 	return ident
 }
@@ -323,4 +323,3 @@ func (a *LocalAdapter) getProcessIdentity(handle ports.RunHandle) (TranscodeProc
 	ident, ok := a.processIdentities[handle]
 	return ident, ok
 }
-
