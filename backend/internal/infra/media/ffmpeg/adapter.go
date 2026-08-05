@@ -323,3 +323,7 @@ func (a *LocalAdapter) getProcessIdentity(handle ports.RunHandle) (TranscodeProc
 	ident, ok := a.processIdentities[handle]
 	return ident, ok
 }
+
+func (a *LocalAdapter) GetProcessIdentity(handle ports.RunHandle) (TranscodeProcessIdentity, bool) {
+	return a.getProcessIdentity(handle)
+}
