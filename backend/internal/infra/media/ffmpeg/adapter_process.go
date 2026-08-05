@@ -333,8 +333,8 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	ingestHandedOff = true
 	releaseIngest := ingestInput
 	go func() {
-		defer releaseIngest.Release()                                                                                                                                                                                                                                                  // nil-safe; a non-tuner source has none
-		a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForSpec(effectiveSpec), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo, isDirectHTTP) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
+		defer releaseIngest.Release()                                                                                                                                                                                                                                                             // nil-safe; a non-tuner source has none
+		a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForSpec(effectiveSpec), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo, isDirectHTTP, procIdent) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
 	}()
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(ctx, sourceKey, spec.SessionID, spec.Profile.DVRWindowSec)
@@ -450,10 +450,9 @@ func awaitProcessExit(
 	return out
 }
 
-func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time, shadowRuntime *ShadowRuntime, transcodeVideo bool, _ bool) {
+func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time, shadowRuntime *ShadowRuntime, transcodeVideo bool, _ bool, procIdent TranscodeProcessIdentity) {
 	defer func() {
 		a.mu.Lock()
-		ident, _ := a.processIdentities[handle]
 		a.removeActiveProcessLocked(handle, true)
 		a.mu.Unlock()
 		if shadowRuntime != nil {
@@ -464,7 +463,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			hls.EvictRAPCache(ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec))
 		}
 		dc := a.GetDiagnosticContext(sessionID)
-		jobID := ident.JobID
+		jobID := procIdent.JobID
 		if jobID == "" {
 			jobID = dc.SessionID
 		}
@@ -472,8 +471,8 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			Str("event", "transcoder.stopped").
 			Str("session_id", dc.SessionID).
 			Str("transcode_job_id", jobID).
-			Uint64("process_generation", ident.Generation).
-			Int("pid", ident.PID).
+			Uint64("process_generation", procIdent.Generation).
+			Int("pid", procIdent.PID).
 			Str("generation_id", dc.GenerationID).
 			Str("reason", dc.Reason).
 			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
