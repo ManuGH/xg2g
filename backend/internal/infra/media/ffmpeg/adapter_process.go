@@ -305,6 +305,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		Str("transcode_job_id", jobID).
 		Uint64("process_generation", procIdent.Generation).
 		Int("pid", pid).
+		Int64("started_at_unix_ms", procIdent.StartedAt.UnixMilli()).
 		Str("startup_phase", "ffmpeg_started").
 		Msg("ffmpeg process started")
 	a.mu.Lock()
@@ -558,7 +559,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 					startupSpan.SetStatus(codes.Ok, "")
 					endStartupSpan()
 					wd.ObserveProgress()
-					a.checkAndEmitTranscoderReady(handle, sessionID, segmentPath)
+					a.checkAndEmitTranscoderReady(observerCtx, handle, sessionID, dvrWindowSec, segmentPath)
 					if pathID != "" && !outputObserverStarted {
 						outputObserverStarted = true
 						go a.detector.observeRuntimePathCorrectness(observerCtx, handle, cmd, sessionID, pathID)
@@ -941,21 +942,44 @@ func transformArgsForTelemetryPipeMode(args []string) []string {
 	return out
 }
 
-func (a *LocalAdapter) checkAndEmitTranscoderReady(handle ports.RunHandle, sessionID, segmentPath string) {
-	ident, _ := a.getProcessIdentity(handle)
+func (a *LocalAdapter) checkAndEmitTranscoderReady(ctx context.Context, handle ports.RunHandle, sessionID string, dvrWindowSec int, segmentPath string) {
+	ident, ok := a.getProcessIdentity(handle)
+	if !ok {
+		ident = TranscodeProcessIdentity{
+			JobID:      sessionID,
+			Generation: 1,
+			PID:        0,
+			StartedAt:  time.Now(),
+		}
+	}
 	jobID := ident.JobID
 	if jobID == "" {
 		jobID = sessionID
 	}
-	playlistPath := filepath.Join(ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, 0), "index.m3u8")
+	targetSegmentPath := strings.TrimSuffix(segmentPath, ".tmp")
+	targetSegmentBase := filepath.Base(targetSegmentPath)
+	hlsDir := ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec)
+	playlistPath := filepath.Join(hlsDir, "index.m3u8")
 
 	isReady := func() (int64, bool) {
-		stat, err := os.Stat(segmentPath)
+		if curIdent, active := a.getProcessIdentity(handle); active {
+			if curIdent.Generation != ident.Generation || curIdent.PID != ident.PID {
+				return 0, false
+			}
+		}
+		stat, err := os.Stat(targetSegmentPath)
 		if err != nil || stat.Size() <= 0 {
-			return 0, false
+			stat, err = os.Stat(segmentPath)
+			if err != nil || stat.Size() <= 0 {
+				return 0, false
+			}
 		}
 		plStat, err := os.Stat(playlistPath)
 		if err != nil || plStat.Size() <= 0 {
+			return stat.Size(), false
+		}
+		plContent, err := os.ReadFile(playlistPath)
+		if err != nil || !strings.Contains(string(plContent), targetSegmentBase) {
 			return stat.Size(), false
 		}
 		return stat.Size(), true
@@ -991,7 +1015,13 @@ func (a *LocalAdapter) checkAndEmitTranscoderReady(handle ports.RunHandle, sessi
 		timeout := time.After(2 * time.Second)
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-ticker.C:
+				curIdent, active := a.getProcessIdentity(handle)
+				if !active || curIdent.Generation != ident.Generation || curIdent.PID != ident.PID {
+					return
+				}
 				if size, ready := isReady(); ready {
 					a.Logger.Info().
 						Str("event", "transcoder.ready").
@@ -1006,6 +1036,17 @@ func (a *LocalAdapter) checkAndEmitTranscoderReady(handle ports.RunHandle, sessi
 					return
 				}
 			case <-timeout:
+				if curIdent, active := a.getProcessIdentity(handle); active && curIdent.Generation == ident.Generation && curIdent.PID == ident.PID {
+					a.Logger.Warn().
+						Str("event", "transcoder.readiness_timeout").
+						Str("session_id", sessionID).
+						Str("transcode_job_id", jobID).
+						Uint64("process_generation", ident.Generation).
+						Int("pid", ident.PID).
+						Str("segment_path", segmentPath).
+						Str("playlist_path", playlistPath).
+						Msg("ffmpeg transcoder readiness timed out")
+				}
 				return
 			}
 		}
