@@ -267,13 +267,18 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	}
 
 	pid := cmd.Process.Pid
+	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, pid))
+	procIdent := a.registerProcessIdentity(handle, spec.SessionID, pid, spawnedAt)
+
 	_ = WriteWorkerState(spec.SessionID, spec.Source.ID, spec.Profile.Name, pid)
 	a.Logger.Info().
+		Str("event", "transcoder.started").
 		Str("session_id", spec.SessionID).
-		Str("startup_phase", "ffmpeg_started").
+		Str("transcode_job_id", spec.SessionID).
+		Uint64("process_generation", procIdent.Generation).
 		Int("pid", pid).
+		Str("startup_phase", "ffmpeg_started").
 		Msg("ffmpeg process started")
-	handle := ports.RunHandle(fmt.Sprintf("%s-%d", spec.SessionID, pid))
 	a.mu.Lock()
 	a.activeProcs[handle] = cmd
 	a.handleSessions[handle] = spec.SessionID
@@ -419,8 +424,13 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			hls.EvictRAPCache(ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec))
 		}
 		dc := a.GetDiagnosticContext(sessionID)
+		ident, _ := a.getProcessIdentity(handle)
 		a.Logger.Info().
+			Str("event", "transcoder.stopped").
 			Str("session_id", dc.SessionID).
+			Str("transcode_job_id", dc.SessionID).
+			Uint64("process_generation", ident.Generation).
+			Int("pid", ident.PID).
 			Str("generation_id", dc.GenerationID).
 			Str("reason", dc.Reason).
 			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
@@ -506,8 +516,13 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 					startupSpan.SetStatus(codes.Ok, "")
 					endStartupSpan()
 					wd.ObserveProgress()
+					ident, _ := a.getProcessIdentity(handle)
 					a.Logger.Info().
+						Str("event", "transcoder.ready").
 						Str("session_id", sessionID).
+						Str("transcode_job_id", sessionID).
+						Uint64("process_generation", ident.Generation).
+						Int("pid", ident.PID).
 						Str("startup_phase", "first_segment_write").
 						Str("segment_path", segmentPath).
 						Msg("ffmpeg first segment write observed")

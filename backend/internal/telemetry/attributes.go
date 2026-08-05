@@ -20,6 +20,13 @@ const (
 	HTTPURLKey        = "http.url"
 	HTTPUserAgentKey  = "http.user_agent"
 
+	// Correlation attributes (P6.1a)
+	PlaybackInstanceIDKey = "playback_instance_id"
+	IntentIDKey           = "intent_id"
+	SessionIDKey          = "session_id"
+	TranscodeJobIDKey     = "transcode_job_id"
+	ProcessGenerationKey  = "process_generation"
+
 	// Streaming attributes
 	StreamChannelKey   = "stream.channel"
 	StreamServiceIDKey = "stream.service_id"

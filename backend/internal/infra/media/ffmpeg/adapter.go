@@ -137,6 +137,10 @@ type LocalAdapter struct {
 	finalizedProfiles map[ports.RunHandle]ports.ProfileSpec
 	// executedPlans keeps the execution-truth plan parsed from the real argv that launched for a handle.
 	executedPlans map[ports.RunHandle]ports.ExecutedFFmpegPlan
+	// generations tracks process generation counter per session ID for P6.1a correlation
+	generations map[string]uint64
+	// processIdentities keeps operational TranscodeProcessIdentity for active handles
+	processIdentities map[ports.RunHandle]TranscodeProcessIdentity
 	// runtimeDiagnostics keeps the latest FFmpeg progress/source-warning snapshot.
 	runtimeDiagnostics map[ports.RunHandle]ports.RuntimeDiagnostics
 	// processDetails keeps the last meaningful failure summary for a handle.
@@ -246,6 +250,8 @@ func NewLocalAdapterWithConfig(binPath string, ffprobeBin string, hlsRoot string
 		handleSessions:             make(map[ports.RunHandle]string),
 		finalizedProfiles:          make(map[ports.RunHandle]ports.ProfileSpec),
 		executedPlans:              make(map[ports.RunHandle]ports.ExecutedFFmpegPlan),
+		generations:                make(map[string]uint64),
+		processIdentities:          make(map[ports.RunHandle]TranscodeProcessIdentity),
 		runtimeDiagnostics:         make(map[ports.RunHandle]ports.RuntimeDiagnostics),
 		processDetails:             make(map[ports.RunHandle]string),
 		completedProcessDetails:    make(map[ports.RunHandle]string),
@@ -288,3 +294,27 @@ func (a *LocalAdapter) GetDiagnosticContext(sessionID string) DiagnosticContext 
 	}
 	return dc
 }
+
+func (a *LocalAdapter) registerProcessIdentity(handle ports.RunHandle, sessionID string, pid int, startedAt time.Time) TranscodeProcessIdentity {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.generations == nil {
+		a.generations = make(map[string]uint64)
+	}
+	if a.processIdentities == nil {
+		a.processIdentities = make(map[ports.RunHandle]TranscodeProcessIdentity)
+	}
+	a.generations[sessionID]++
+	gen := a.generations[sessionID]
+	ident := NewProcessIdentity(sessionID, gen, pid, startedAt)
+	a.processIdentities[handle] = ident
+	return ident
+}
+
+func (a *LocalAdapter) getProcessIdentity(handle ports.RunHandle) (TranscodeProcessIdentity, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	ident, ok := a.processIdentities[handle]
+	return ident, ok
+}
+
