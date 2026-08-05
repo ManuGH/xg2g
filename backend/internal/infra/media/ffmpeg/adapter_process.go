@@ -992,6 +992,7 @@ func (a *LocalAdapter) checkAndEmitTranscoderReady(handle ports.RunHandle, sessi
 		Str("transcode_job_id", jobID).
 		Uint64("process_generation", ident.Generation).
 		Int("pid", ident.PID).
+		Str("startup_phase", "first_segment_write").
 		Str("segment_path", segmentPath).
 		Msg("ffmpeg first segment path observed in log")
 
