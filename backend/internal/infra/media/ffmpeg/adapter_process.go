@@ -453,6 +453,7 @@ func awaitProcessExit(
 func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context, handle ports.RunHandle, cmd *exec.Cmd, stderr io.ReadCloser, sessionID string, dvrWindowSec int, hwBackend profiles.GPUBackend, pathID string, startTimeout time.Duration, startupSpan trace.Span, spawnedAt time.Time, shadowRuntime *ShadowRuntime, transcodeVideo bool, _ bool) {
 	defer func() {
 		a.mu.Lock()
+		ident, _ := a.processIdentities[handle]
 		a.removeActiveProcessLocked(handle, true)
 		a.mu.Unlock()
 		if shadowRuntime != nil {
@@ -463,7 +464,6 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 			hls.EvictRAPCache(ports.SessionHLSDirForPolicy(a.HLSRoot, sessionID, dvrWindowSec))
 		}
 		dc := a.GetDiagnosticContext(sessionID)
-		ident, _ := a.getProcessIdentity(handle)
 		jobID := ident.JobID
 		if jobID == "" {
 			jobID = dc.SessionID
