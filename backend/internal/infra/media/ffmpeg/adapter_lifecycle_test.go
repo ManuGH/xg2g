@@ -387,6 +387,7 @@ func TestMonitorProcess_LogsStartupMarkersOnce(t *testing.T) {
 	}()
 
 	handle := ports.RunHandle("session-3-789")
+	adapter.registerProcessIdentity(handle, "session-3", cmd.Process.Pid, time.Now())
 	adapter.mu.Lock()
 	adapter.activeProcs[handle] = cmd
 	adapter.mu.Unlock()

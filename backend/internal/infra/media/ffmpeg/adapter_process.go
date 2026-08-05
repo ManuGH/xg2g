@@ -956,12 +956,11 @@ func transformArgsForTelemetryPipeMode(args []string) []string {
 func (a *LocalAdapter) checkAndEmitTranscoderReady(ctx context.Context, handle ports.RunHandle, sessionID string, dvrWindowSec int, segmentPath string) {
 	ident, ok := a.getProcessIdentity(handle)
 	if !ok {
-		ident = TranscodeProcessIdentity{
-			JobID:      sessionID,
-			Generation: 1,
-			PID:        0,
-			StartedAt:  time.Now(),
-		}
+		a.Logger.Warn().
+			Str("event", "transcoder.readiness_identity_missing").
+			Str("session_id", sessionID).
+			Msg("cannot evaluate transcoder readiness without process identity")
+		return
 	}
 	jobID := ident.JobID
 	if jobID == "" {
@@ -973,10 +972,9 @@ func (a *LocalAdapter) checkAndEmitTranscoderReady(ctx context.Context, handle p
 	playlistPath := filepath.Join(hlsDir, "index.m3u8")
 
 	isReady := func() (int64, bool) {
-		if curIdent, active := a.getProcessIdentity(handle); active {
-			if curIdent.Generation != ident.Generation || curIdent.PID != ident.PID {
-				return 0, false
-			}
+		curIdent, active := a.getProcessIdentity(handle)
+		if !active || curIdent.Generation != ident.Generation || curIdent.PID != ident.PID {
+			return 0, false
 		}
 		stat, err := os.Stat(targetSegmentPath)
 		if err != nil || stat.Size() <= 0 {
@@ -990,7 +988,21 @@ func (a *LocalAdapter) checkAndEmitTranscoderReady(ctx context.Context, handle p
 			return stat.Size(), false
 		}
 		plContent, err := os.ReadFile(playlistPath)
-		if err != nil || !strings.Contains(string(plContent), targetSegmentBase) {
+		if err != nil {
+			return stat.Size(), false
+		}
+		found := false
+		for _, line := range strings.Split(string(plContent), "\n") {
+			lineClean := strings.TrimSpace(line)
+			if lineClean == "" || strings.HasPrefix(lineClean, "#") {
+				continue
+			}
+			if filepath.Base(lineClean) == targetSegmentBase {
+				found = true
+				break
+			}
+		}
+		if !found {
 			return stat.Size(), false
 		}
 		return stat.Size(), true
