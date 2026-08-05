@@ -103,41 +103,73 @@ func TestDualRenditionHLSSpike(t *testing.T) {
 	assert.Contains(t, masterContent, "RESOLUTION=1280x720", "Master playlist must specify 1280x720 for high variant")
 	assert.Contains(t, masterContent, "RESOLUTION=640x360", "Master playlist must specify 640x360 for low variant")
 
-	// Check CODECS attribute in Master Playlist
-	assert.Contains(t, masterContent, "CODECS=", "Master playlist must specify CODECS attribute in #EXT-X-STREAM-INF")
-	assert.Contains(t, masterContent, "avc1", "Master playlist CODECS attribute must include H.264 (avc1)")
-	assert.Contains(t, masterContent, "mp4a.40.2", "Master playlist CODECS attribute must include AAC (mp4a.40.2)")
-
-	// Ensure no separate external audio group
+	// Ensure no separate external audio group in master playlist
 	assert.NotContains(t, masterContent, "#EXT-X-MEDIA:TYPE=AUDIO", "Master playlist must not contain external audio group tags")
 
-	// Parse bandwidths and verify distinctness and plausible range bounds
+	// Block-wise Master Playlist Parsing: Map #EXT-X-STREAM-INF attributes directly to following variant URI
+	type variantStreamInf struct {
+		bandwidth  int
+		resolution string
+		codecs     string
+	}
+	variantBlocks := make(map[string]variantStreamInf)
+
 	lines := strings.Split(masterContent, "\n")
-	var bandwidths []int
+	var lastStreamInf string
 	for _, line := range lines {
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#EXT-X-STREAM-INF:") {
-			if idx := strings.Index(line, "BANDWIDTH="); idx >= 0 {
-				rest := line[idx+len("BANDWIDTH="):]
-				endIdx := strings.IndexAny(rest, ", \r\n")
-				if endIdx >= 0 {
+			lastStreamInf = line
+		} else if line != "" && !strings.HasPrefix(line, "#") && lastStreamInf != "" {
+			var info variantStreamInf
+			if idx := strings.Index(lastStreamInf, "BANDWIDTH="); idx >= 0 {
+				rest := lastStreamInf[idx+len("BANDWIDTH="):]
+				if endIdx := strings.IndexAny(rest, ", \r\n"); endIdx >= 0 {
 					rest = rest[:endIdx]
 				}
-				bw, err := strconv.Atoi(rest)
-				if err == nil {
-					bandwidths = append(bandwidths, bw)
-				}
+				info.bandwidth, _ = strconv.Atoi(rest)
 			}
+			if idx := strings.Index(lastStreamInf, "RESOLUTION="); idx >= 0 {
+				rest := lastStreamInf[idx+len("RESOLUTION="):]
+				if endIdx := strings.IndexAny(rest, ", \r\n"); endIdx >= 0 {
+					rest = rest[:endIdx]
+				}
+				info.resolution = rest
+			}
+			if idx := strings.Index(lastStreamInf, "CODECS="); idx >= 0 {
+				rest := lastStreamInf[idx+len("CODECS="):]
+				if strings.HasPrefix(rest, `"`) {
+					rest = rest[1:]
+					if endIdx := strings.Index(rest, `"`); endIdx >= 0 {
+						rest = rest[:endIdx]
+					}
+				} else if endIdx := strings.IndexAny(rest, ", \r\n"); endIdx >= 0 {
+					rest = rest[:endIdx]
+				}
+				info.codecs = rest
+			}
+			variantBlocks[line] = info
+			lastStreamInf = ""
 		}
 	}
-	require.Len(t, bandwidths, 2, "Must extract 2 BANDWIDTH values from master playlist")
-	assert.NotEqual(t, bandwidths[0], bandwidths[1], "High and low variants must have distinct BANDWIDTH values")
-	assert.True(t, bandwidths[0] > bandwidths[1], "High variant bandwidth (%d) should be greater than low variant bandwidth (%d)", bandwidths[0], bandwidths[1])
 
-	// Enforce plausible bandwidth bounds
-	highBw := bandwidths[0]
-	lowBw := bandwidths[1]
-	assert.True(t, highBw >= 600000 && highBw <= 2500000, "High variant bandwidth (%d) out of plausible range [600k, 2.5M]", highBw)
-	assert.True(t, lowBw >= 200000 && lowBw <= 1000000, "Low variant bandwidth (%d) out of plausible range [200k, 1M]", lowBw)
+	require.Contains(t, variantBlocks, "variant_high/index.m3u8", "master playlist must map block to variant_high/index.m3u8")
+	require.Contains(t, variantBlocks, "variant_low/index.m3u8", "master playlist must map block to variant_low/index.m3u8")
+
+	highBlock := variantBlocks["variant_high/index.m3u8"]
+	lowBlock := variantBlocks["variant_low/index.m3u8"]
+
+	assert.Equal(t, "1280x720", highBlock.resolution, "high variant block resolution mismatch")
+	assert.Equal(t, "640x360", lowBlock.resolution, "low variant block resolution mismatch")
+
+	assert.Contains(t, highBlock.codecs, "avc1", "high variant codecs must include avc1")
+	assert.Contains(t, highBlock.codecs, "mp4a.40.2", "high variant codecs must include mp4a.40.2")
+	assert.Contains(t, lowBlock.codecs, "avc1", "low variant codecs must include avc1")
+	assert.Contains(t, lowBlock.codecs, "mp4a.40.2", "low variant codecs must include mp4a.40.2")
+
+	assert.True(t, highBlock.bandwidth >= 600000 && highBlock.bandwidth <= 2500000, "high variant bandwidth out of range: %d", highBlock.bandwidth)
+	assert.True(t, lowBlock.bandwidth >= 200000 && lowBlock.bandwidth <= 1000000, "low variant bandwidth out of range: %d", lowBlock.bandwidth)
+	assert.True(t, highBlock.bandwidth > lowBlock.bandwidth, "high variant bandwidth (%d) must exceed low variant bandwidth (%d)", highBlock.bandwidth, lowBlock.bandwidth)
 
 	// =========================================================================
 	// Level 3 Validation: ffprobe Per-Variant Stream Inspection
@@ -156,7 +188,7 @@ func TestDualRenditionHLSSpike(t *testing.T) {
 
 	var variantDurations [][]float64
 
-	for idx, v := range variants {
+	for _, v := range variants {
 		variantPlPath := filepath.Join(outDir, v.relPath)
 		plBytes, err := os.ReadFile(variantPlPath)
 		require.NoError(t, err, "Variant playlist %s must exist", v.relPath)
@@ -172,7 +204,7 @@ func TestDualRenditionHLSSpike(t *testing.T) {
 		variantDurations = append(variantDurations, durs)
 
 		// Assert bandwidth is within configured variant bounds
-		bw := bandwidths[idx]
+		bw := variantBlocks[v.relPath].bandwidth
 		assert.True(t, bw >= v.minBw && bw <= v.maxBw, "Variant %s bandwidth %d out of bounds [%d, %d]", v.name, bw, v.minBw, v.maxBw)
 
 		// Execute ffprobe on variant playlist
@@ -261,12 +293,13 @@ func TestDualRenditionHLSSpike(t *testing.T) {
 		assert.Contains(t, hFirst.Flags, "K", "high segment %s first video packet must be a Keyframe (flags=%s)", hPath, hFirst.Flags)
 		assert.Contains(t, lFirst.Flags, "K", "low segment %s first video packet must be a Keyframe (flags=%s)", lPath, lFirst.Flags)
 
-		// Assert PTS alignment of first video packet across variants
+		// Assert PTS alignment of first video packet across variants strictly
 		hPts, errH := strconv.ParseFloat(hFirst.PtsTime, 64)
+		require.NoError(t, errH, "high segment %s must expose valid first-video PTS (got %q)", hPath, hFirst.PtsTime)
 		lPts, errL := strconv.ParseFloat(lFirst.PtsTime, 64)
-		if errH == nil && errL == nil {
-			ptsDiff := math.Abs(hPts - lPts)
-			assert.True(t, ptsDiff < 0.05, "Segment %d start PTS drift between high (%f) and low (%f) exceeds 0.05s", i, hPts, lPts)
-		}
+		require.NoError(t, errL, "low segment %s must expose valid first-video PTS (got %q)", lPath, lFirst.PtsTime)
+
+		ptsDiff := math.Abs(hPts - lPts)
+		require.True(t, ptsDiff < 0.05, "Segment %d start PTS drift between high (%f) and low (%f) exceeds 0.05s", i, hPts, lPts)
 	}
 }
