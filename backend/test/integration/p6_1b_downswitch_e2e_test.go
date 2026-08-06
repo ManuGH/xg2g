@@ -68,7 +68,10 @@ func (h *RateLimitingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	http.FileServer(http.Dir(h.targetDir)).ServeHTTP(w, r)
 }
 
-func TestP6_1b_SeamlessPlayerDownswitchE2E(t *testing.T) {
+// TestDualRenditionHTTPProbe_SelectsLowAfterMeasuredHighThroughputDrop is an HTTP probe prototype
+// that demonstrates controlled bandwidth throttling on high variant HTTP requests and explicit selection
+// of low variant segments after a measured throughput drop.
+func TestDualRenditionHTTPProbe_SelectsLowAfterMeasuredHighThroughputDrop(t *testing.T) {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		t.Skip("ffmpeg binary not found in PATH, skipping downswitch E2E test")
@@ -175,8 +178,8 @@ func TestP6_1b_SeamlessPlayerDownswitchE2E(t *testing.T) {
 		require.NotEmpty(t, lowSegBody, "Low segment %s must be non-empty", segIdx)
 	}
 
-	// 7. Verify Telemetry & Lifecycle Invariants
-	t.Log("==> Verifying Downswitch Lifecycle Invariants...")
+	// 7. Verify Probe Invariants
+	t.Log("==> Verifying Probe Invariants...")
 
 	// Verify fetches occurred on both variants
 	assert.True(t, handler.highFetches.Load() > 0, "High variant must have been fetched")
