@@ -164,7 +164,7 @@ func SessionRuntimeProfileForStepWithResolver(current model.ProfileSpec, step ru
 		next.VideoMaxWidth = 1920
 		next.Preset = "slow"
 		if next.AudioBitrateK <= 0 {
-			next.AudioBitrateK = 192
+			next.AudioBitrateK = 320
 		}
 		return next, true
 	case runtimepolicy.PlaybackStepH264720p:

@@ -342,7 +342,7 @@ func readTranscoderRuntime(getenv func(string) string) TranscoderRuntime {
 		H264RepairEnabled: h264Repair,
 		AudioEnabled:      audioEnabled,
 		Codec:             getString(getenv, "XG2G_AUDIO_CODEC", "aac"),
-		Bitrate:           getString(getenv, "XG2G_AUDIO_BITRATE", "192k"),
+		Bitrate:           getString(getenv, "XG2G_AUDIO_BITRATE", "320k"),
 		Channels:          channels,
 		FFmpegPath:        getString(getenv, "XG2G_FFMPEG_BIN", ""),
 		VideoTranscode:    videoTranscode,
