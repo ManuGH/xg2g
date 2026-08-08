@@ -11,7 +11,7 @@ import (
 
 func TestTranscodeSharpenFilter(t *testing.T) {
 	t.Run("default is a clean luma unsharp", func(t *testing.T) {
-		assert.Equal(t, "unsharp=5:5:1.50:5:5:0.0", transcodeSharpenFilter(LoadAdapterConfig("", "").TranscodeSharpen))
+		assert.Equal(t, "unsharp=5:5:2.00:5:5:0.0", transcodeSharpenFilter(LoadAdapterConfig("", "").TranscodeSharpen))
 	})
 
 	t.Run("zero disables sharpening", func(t *testing.T) {
