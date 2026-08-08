@@ -168,35 +168,12 @@ func parseContextSeconds(ctx map[string]string, key string) *float64 {
 	return &value
 }
 
+// mapReasonDetailCode renders a detail code as public text. Both HTTP surfaces delegate
+// to the single table on the model so they cannot drift apart again — the copy
+// serving this endpoint had already lost the scrambled case, returning an empty
+// reason_detail for a failure that carried its text everywhere else.
 func mapReasonDetailCode(code model.ReasonDetailCode) string {
-	switch code {
-	case model.DContextCanceled:
-		return "context canceled"
-	case model.DDeadlineExceeded:
-		return "deadline exceeded"
-	case model.DRecordingComplete:
-		return "recording completed"
-	case model.DSweeperForcedStopStuck:
-		return "sweeper_forced_stop_stuck"
-	case model.DInternalInvariantBreach:
-		return "internal invariant breach"
-	case model.DProcessEndedStartup:
-		return "process ended during startup"
-	case model.DProcessExitedUnexpectedly:
-		return "process exited unexpectedly"
-	case model.DTranscodeStalled:
-		return "transcode stalled - no progress detected"
-	case model.DUpstreamEndedPrematurely:
-		return "upstream stream ended prematurely"
-	case model.DUpstreamInputOpenFailed:
-		return "failed to open upstream input"
-	case model.DInvalidUpstreamInput:
-		return "invalid upstream input data"
-	case model.DCopyOutputMissingCodec:
-		return "copy output missing codec parameters"
-	default:
-		return ""
-	}
+	return code.Text()
 }
 
 func terminalProblemCode(outcome lifecycle.PublicOutcome) string {

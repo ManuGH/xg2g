@@ -20,7 +20,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 COPY backend/scripts/build-ffmpeg.sh .
 ENV TARGET_DIR=/opt/ffmpeg
+# Debug symbols are split out here and kept OUT of the runtime image below.
+ENV DEBUG_DIR=/opt/ffmpeg-debug
 RUN ./build-ffmpeg.sh
+
+# Symbols-only stage. Nothing depends on it, so a normal build never pays for it;
+# export it when a core needs reading, keyed to the same build as the image:
+#
+#   docker build -f infra/docker/Dockerfile.ffmpeg-base --target ffmpeg-debug \
+#     --output type=local,dest=./ffmpeg-debug .
+#
+# Without this, an ffmpeg fault leaves a core nobody can attribute to a function —
+# which is exactly what six cores on the staging box turned out to be.
+FROM scratch AS ffmpeg-debug
+COPY --from=ffmpeg-builder /opt/ffmpeg-debug /
 
 FROM debian:trixie-slim AS ffmpeg-runtime-base
 

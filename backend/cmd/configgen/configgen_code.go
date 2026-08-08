@@ -40,7 +40,7 @@ func getFieldType(fieldPath string) reflect.Type {
 	parts := strings.Split(fieldPath, ".")
 	curr := appConfigType
 	for _, part := range parts {
-		if curr.Kind() == reflect.Ptr {
+		if curr.Kind() == reflect.Pointer {
 			curr = curr.Elem()
 		}
 		if curr.Kind() != reflect.Struct {
@@ -85,18 +85,18 @@ func (l *Loader) mergeEnvConfigGenerated(cfg *AppConfig) {
 
 		// Handle specific custom types
 		if e.Path == "api.allowedOrigins" || e.Path == "api.tokenScopes" || e.Path == "api.playbackDecisionPreviousKeys" || e.Path == "network.outbound.allow.hosts" || e.Path == "network.outbound.allow.cidrs" || e.Path == "network.outbound.allow.schemes" || e.Path == "network.lan.allow.cidrs" || e.Path == "rateLimit.whitelist" || e.Path == "monetization.requiredScopes" {
-			buf.WriteString(fmt.Sprintf("\t%s = parseCommaSeparated(l.envString(%q, \"\"), %s)\n", field, envVar, field))
+			fmt.Fprintf(&buf, "\t%s = parseCommaSeparated(l.envString(%q, \"\"), %s)\n", field, envVar, field)
 			continue
 		}
 		if e.Path == "engine.tunerSlots" {
 			continue // custom ParseTunerSlots in mergeEnvTunerSlots
 		}
 		if e.Path == "network.outbound.allow.ports" {
-			buf.WriteString(fmt.Sprintf("\t%s = parseCommaSeparatedInts(l.envString(%q, \"\"), %s)\n", field, envVar, field))
+			fmt.Fprintf(&buf, "\t%s = parseCommaSeparatedInts(l.envString(%q, \"\"), %s)\n", field, envVar, field)
 			continue
 		}
 		if e.Path == "api.tokens" {
-			buf.WriteString(fmt.Sprintf("\tif tokens, err := parseScopedTokens(l.envString(%q, \"\"), %s); err == nil {\n\t\t%s = tokens\n\t}\n", envVar, field, field))
+			fmt.Fprintf(&buf, "\tif tokens, err := parseScopedTokens(l.envString(%q, \"\"), %s); err == nil {\n\t\t%s = tokens\n\t}\n", envVar, field, field)
 			continue
 		}
 		if e.Path == "connectivity.publishedEndpoints" {
@@ -109,15 +109,15 @@ func (l *Loader) mergeEnvConfigGenerated(cfg *AppConfig) {
 		}
 
 		if fieldType == durationSeq {
-			buf.WriteString(fmt.Sprintf("\t%s = l.envDuration(%q, %s)\n", field, envVar, field))
+			fmt.Fprintf(&buf, "\t%s = l.envDuration(%q, %s)\n", field, envVar, field)
 		} else if fieldType.Kind() == reflect.Bool {
-			buf.WriteString(fmt.Sprintf("\t%s = l.envBool(%q, %s)\n", field, envVar, field))
+			fmt.Fprintf(&buf, "\t%s = l.envBool(%q, %s)\n", field, envVar, field)
 		} else if fieldType.Kind() == reflect.Int || fieldType.Kind() == reflect.Int64 {
-			buf.WriteString(fmt.Sprintf("\t%s = l.envInt(%q, %s)\n", field, envVar, field))
+			fmt.Fprintf(&buf, "\t%s = l.envInt(%q, %s)\n", field, envVar, field)
 		} else if fieldType.Kind() == reflect.Float64 {
-			buf.WriteString(fmt.Sprintf("\t%s = l.envFloat(%q, %s)\n", field, envVar, field))
+			fmt.Fprintf(&buf, "\t%s = l.envFloat(%q, %s)\n", field, envVar, field)
 		} else if fieldType.Kind() == reflect.String {
-			buf.WriteString(fmt.Sprintf("\t%s = l.envString(%q, %s)\n", field, envVar, field))
+			fmt.Fprintf(&buf, "\t%s = l.envString(%q, %s)\n", field, envVar, field)
 		}
 	}
 
@@ -581,9 +581,9 @@ func writeGeneratedValidation(backendRoot string, entries []config.ConfigEntry) 
 		field := "cfg." + e.FieldPath
 		if e.Min != nil && e.Max != nil {
 			if strings.HasPrefix(e.FieldPath, "EPG") || e.FieldPath == "FuzzyMax" {
-				bodyBuf.WriteString(fmt.Sprintf("\tif cfg.EPGEnabled {\n\t\tv.Range(%q, %s, %d, %d)\n\t}\n", e.FieldPath, field, int(*e.Min), int(*e.Max)))
+				fmt.Fprintf(&bodyBuf, "\tif cfg.EPGEnabled {\n\t\tv.Range(%q, %s, %d, %d)\n\t}\n", e.FieldPath, field, int(*e.Min), int(*e.Max))
 			} else {
-				bodyBuf.WriteString(fmt.Sprintf("\tv.Range(%q, %s, %d, %d)\n", e.FieldPath, field, int(*e.Min), int(*e.Max)))
+				fmt.Fprintf(&bodyBuf, "\tv.Range(%q, %s, %d, %d)\n", e.FieldPath, field, int(*e.Min), int(*e.Max))
 			}
 		}
 		if len(e.Allowed) > 0 {
@@ -592,11 +592,11 @@ func writeGeneratedValidation(backendRoot string, entries []config.ConfigEntry) 
 			for i, a := range e.Allowed {
 				allowedStrs[i] = fmt.Sprintf("%q", a)
 			}
-			bodyBuf.WriteString(fmt.Sprintf("\tif %s != \"\" {\n\t\tv.OneOf(%q, strings.ToLower(%s), []string{%s})\n\t}\n", field, e.FieldPath, field, strings.Join(allowedStrs, ", ")))
+			fmt.Fprintf(&bodyBuf, "\tif %s != \"\" {\n\t\tv.OneOf(%q, strings.ToLower(%s), []string{%s})\n\t}\n", field, e.FieldPath, field, strings.Join(allowedStrs, ", "))
 		}
 		if e.Required {
 			hasStrings = true
-			bodyBuf.WriteString(fmt.Sprintf("\tif strings.TrimSpace(%s) == \"\" {\n\t\tv.AddError(%q, \"is required\", \"\")\n\t}\n", field, e.FieldPath))
+			fmt.Fprintf(&bodyBuf, "\tif strings.TrimSpace(%s) == \"\" {\n\t\tv.AddError(%q, \"is required\", \"\")\n\t}\n", field, e.FieldPath)
 		}
 	}
 

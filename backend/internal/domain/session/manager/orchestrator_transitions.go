@@ -180,9 +180,45 @@ func (o *Orchestrator) runExecutionLoop(
 		})
 	}
 
-	for attempt := 0; attempt <= defaultStartupProcessRetryLimit; attempt++ {
+	// One budget for the whole startup, spanning every internal attempt, so the
+	// per-attempt ceilings cannot stack past the point where the player has given
+	// up and started reporting its own generic timeout instead of the real reason.
+	// VOD keeps its own long per-attempt ceiling and stays unbounded here.
+	// startup_budget.go divides it between the phases and attempts below.
+	budget := o.newStartupBudget(startTime, sessionCtx.IsVOD)
+	if budget.bounded() && budget.RetryLimit > 0 && !budget.fitsRetry() {
+		// Not silently degraded: with this segment geometry the budget only ever
+		// holds one attempt, so no retry and no profile hardening can run for any
+		// session on this deployment. That is a configuration fact worth reading
+		// in the logs rather than inferring from fallbacks that never appear.
+		logger.Warn().
+			Str("session_id", e.SessionID).
+			Dur("budget", budget.Total).
+			Dur("ready_floor", budget.ReadyFloor).
+			Dur("attempt_cost", budget.attemptCost()).
+			Int("ready_segments", o.liveReadySegments()).
+			Dur("segment_duration", o.liveSegmentDuration()).
+			Msg("startup budget holds only one attempt; retries and profile hardening are disabled for this session")
+	}
+	recoveryAttempt := false
+
+	for attempt := 0; attempt <= budget.RetryLimit; attempt++ {
+		attemptCtx := budget.attempt(attempt, recoveryAttempt)
+		if remaining, bounded := attemptCtx.remaining(time.Now()); bounded && remaining <= 0 {
+			logger.Warn().
+				Str("session_id", e.SessionID).
+				Int("attempt", attempt).
+				Dur("budget", budget.Total).
+				Msg("startup budget exhausted before attempt could start")
+			if failReason == "" {
+				failReason = model.RDeadlineExceeded
+				failDetail = "startup budget exhausted before the attempt could start"
+			}
+			break
+		}
+
 		var effectiveProfile model.ProfileSpec
-		handle, effectiveProfile, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot)
+		handle, effectiveProfile, err = o.startPipeline(hbCtx, e, sessionCtx, currentProfileSpec, tunerSlot, attemptCtx)
 		if err != nil {
 			return "", model.ProfileSpec{}, err
 		}
@@ -201,7 +237,7 @@ func (o *Orchestrator) runExecutionLoop(
 			playlistReadyResult, waitReason, waitDetail = o.waitForReady(
 				ctx, hbCtx, e, currentProfileSpec, handle,
 				playlistPath, sessionCtx.IsVOD,
-				startTime, logger, &ttfpRecorded,
+				startTime, attemptCtx, logger, &ttfpRecorded,
 			)
 
 			if !playlistReadyResult {
@@ -217,7 +253,14 @@ func (o *Orchestrator) runExecutionLoop(
 		}
 
 		nextProfileSpec, promoteProfile := startupRecoveryProfileWithResolver(currentProfileSpec, failReason, failDetail, o.RecoveryProfileResolver)
-		if attempt < defaultStartupProcessRetryLimit && (shouldRetryStartupWaitFailure(failReason, failDetail, attempt) || promoteProfile) {
+		// A retry is only worth starting if the budget can still hold a viable
+		// attempt; otherwise it would be killed mid-flight and the session would
+		// report the retry's truncated failure instead of the original one. What
+		// counts as viable is the structural cost of reaching ready on this
+		// deployment, not a fixed constant that could sit either side of it.
+		budgetLeft, bounded := attemptCtx.remaining(time.Now())
+		budgetAllowsRetry := !bounded || budgetLeft >= budget.attemptCost()
+		if attempt < budget.RetryLimit && budgetAllowsRetry && (shouldRetryStartupWaitFailure(failReason, failDetail, attempt) || promoteProfile) {
 			if promoteProfile {
 				if err := o.persistStartupRecoveryProfile(ctx, e.SessionID, currentProfileSpec, nextProfileSpec); err != nil {
 					o.stopPipelineHandle(ctx, handle)
@@ -228,7 +271,7 @@ func (o *Orchestrator) runExecutionLoop(
 			logger.Warn().
 				Str("session_id", e.SessionID).
 				Int("attempt", attempt+1).
-				Int("max_retries", defaultStartupProcessRetryLimit).
+				Int("max_retries", budget.RetryLimit).
 				Str("reason", string(failReason)).
 				Str("detail", failDetail).
 				Str("from_profile", currentProfileSpec.Name).
@@ -238,6 +281,7 @@ func (o *Orchestrator) runExecutionLoop(
 					}
 					return currentProfileSpec.Name
 				}()).
+				Dur("budget_left", budgetLeft).
 				Msg("startup failed before ready; retrying once")
 
 			o.stopPipelineHandle(ctx, handle)
@@ -246,15 +290,36 @@ func (o *Orchestrator) runExecutionLoop(
 			}
 			if promoteProfile {
 				currentProfileSpec = nextProfileSpec
+				// The hardened profile keeps its name, so the next attempt is told
+				// it is a recovery explicitly rather than being sniffed from it.
+				recoveryAttempt = true
 			}
 			ttfpRecorded = false
 			continue
+		}
+
+		if bounded && !budgetAllowsRetry && attempt < budget.RetryLimit {
+			logger.Warn().
+				Str("session_id", e.SessionID).
+				Int("attempt", attempt).
+				Dur("budget_left", budgetLeft).
+				Dur("budget_needed", budget.attemptCost()).
+				Str("reason", string(failReason)).
+				Msg("startup budget too short for another attempt; reporting the original failure")
 		}
 
 		o.stopPipelineHandle(ctx, handle)
 		return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
 	}
 
+	// Reached only when the loop broke without ever recording a failure, i.e. the
+	// budget ran out before an attempt could start. A reason is synthesized above
+	// for that path; this guard keeps an empty reason from ever reaching the
+	// lifecycle, where it would terminalize the session with a blank code.
+	if failReason == "" {
+		failReason = model.RDeadlineExceeded
+		failDetail = "startup budget exhausted before the session could start"
+	}
 	return "", model.ProfileSpec{}, newReasonError(failReason, failDetail, nil)
 }
 

@@ -281,7 +281,7 @@ export type SessionResponse = {
     /**
      * Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
      */
-    reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP';
+    reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP' | 'R_UPSTREAM_SCRAMBLED' | 'R_UPSTREAM_CORRUPT' | 'R_DESCRAMBLER_DOWN' | 'R_DEADLINE_EXCEEDED' | 'R_PIPELINE_START_FAILED' | 'R_INTERNAL_INVARIANT_BREACH';
     reasonDetail?: string;
     correlationId?: string;
     updatedAtMs?: number;
@@ -372,7 +372,7 @@ export type SessionRecord = {
     /**
      * Reason code; R_LEASE_BUSY means capacity rejection (no tuner available), not a system fault.
      */
-    reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP';
+    reason?: 'R_NONE' | 'R_UNKNOWN' | 'R_BAD_REQUEST' | 'R_NOT_FOUND' | 'R_LEASE_BUSY' | 'R_TUNE_TIMEOUT' | 'R_LEASE_EXPIRED' | 'R_TUNE_FAILED' | 'R_INVARIANT_VIOLATION' | 'R_FFMPEG_START_FAILED' | 'R_PROCESS_ENDED' | 'R_PACKAGER_FAILED' | 'R_CANCELLED' | 'R_IDLE_TIMEOUT' | 'R_CLIENT_STOP' | 'R_UPSTREAM_SCRAMBLED' | 'R_UPSTREAM_CORRUPT' | 'R_DESCRAMBLER_DOWN' | 'R_DEADLINE_EXCEEDED' | 'R_PIPELINE_START_FAILED' | 'R_INTERNAL_INVARIANT_BREACH';
     reasonDetail?: string;
     createdAtUnix?: number;
     updatedAtUnix?: number;

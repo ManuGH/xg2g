@@ -173,7 +173,7 @@ type LocalObjectReader struct {
 	size int64
 }
 
-func (r *LocalObjectReader) Read(p []byte) (int, error)       { return r.file.Read(p) }
+func (r *LocalObjectReader) Read(p []byte) (int, error)              { return r.file.Read(p) }
 func (r *LocalObjectReader) ReadAt(p []byte, off int64) (int, error) { return r.file.ReadAt(p, off) }
 func (r *LocalObjectReader) Seek(offset int64, whence int) (int64, error) {
 	return r.file.Seek(offset, whence)

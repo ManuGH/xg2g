@@ -79,7 +79,6 @@ echo "Configuring FFmpeg..."
   --enable-demuxer=hls \
   --enable-muxer=hls \
   --enable-muxer=mpegts \
-  --disable-debug \
   --disable-doc \
   --disable-static \
   --enable-shared
@@ -92,6 +91,70 @@ make -j"$(nproc)"
 echo "Installing to ${TARGET_DIR}..."
 mkdir -p "${TARGET_DIR}"
 make install
+
+# --- Split debug info -------------------------------------------------------
+#
+# This build used to pass --disable-debug, which drops -g. The cost of that only
+# becomes visible when something goes wrong: ffmpeg faulted six times on the
+# staging deployment over four months and left 716MB of core files, and not one
+# could be attributed to a function because the binaries carry no symbols. Four
+# of those cores are the same null dereference at the same address — very likely
+# a single fixable bug that has simply never been readable.
+#
+# What ships is deliberately unchanged. The runtime binaries are stripped of
+# DWARF only (--strip-debug), so their dynamic symbol table, size and load
+# behaviour stay exactly as before; the debug info moves to a separate tree that
+# the runtime image never copies. The tree is laid out the way debuggers look
+# symbols up — by build ID — so a core from a given image resolves against the
+# symbols from that same build with no path juggling and no chance of pairing a
+# core with the wrong build.
+#
+# Cost: the compile carries -g, so the builder stage takes longer and needs more
+# scratch space. The base image is built rarely; a crash that cannot be read
+# costs more.
+DEBUG_DIR="${DEBUG_DIR:-/opt/ffmpeg-debug}"
+DEBUG_ROOT="${DEBUG_DIR}/.build-id"
+mkdir -p "${DEBUG_ROOT}"
+
+build_id_of() {
+  readelf -n "$1" 2>/dev/null | sed -n 's/.*Build ID: \([0-9a-f]\{4,\}\).*/\1/p' | head -1
+}
+
+split_debug() {
+  local f="$1" id short rest
+  id="$(build_id_of "$f")"
+  if [ -z "$id" ]; then
+    echo "  warn: no build ID, shipping without separable symbols: $f" >&2
+    return 0
+  fi
+  short="${id:0:2}"
+  rest="${id:2}"
+  mkdir -p "${DEBUG_ROOT}/${short}"
+  objcopy --only-keep-debug "$f" "${DEBUG_ROOT}/${short}/${rest}.debug"
+  # DWARF only: keep .dynsym so the shipped artifact matches the previous build.
+  strip --strip-debug "$f"
+}
+
+echo "Splitting debug symbols by build ID into ${DEBUG_DIR}..."
+for f in "${TARGET_DIR}"/bin/* "${TARGET_DIR}"/lib/*.so.*; do
+  [ -f "$f" ] || continue
+  case "$f" in *.debug) continue ;; esac
+  split_debug "$f"
+done
+echo "Debug symbols: $(find "${DEBUG_ROOT}" -name '*.debug' | wc -l) files, $(du -sh "${DEBUG_DIR}" | cut -f1)"
+cat > "${DEBUG_DIR}/README" <<EOF
+FFmpeg ${FFMPEG_VERSION} debug symbols, keyed by GNU build ID.
+
+These pair with the stripped binaries in ${TARGET_DIR} of the SAME image build.
+To read a core:
+
+  gdb -ex 'set debug-file-directory ${DEBUG_DIR}' \\
+      -ex 'bt full' --batch /opt/ffmpeg/bin/ffmpeg <core-file>
+
+Confirm the pairing first — the build ID in the core's NT_FILE mapping must have
+a matching .build-id/xx/rest.debug entry here. A core from a different image
+build will not resolve, and gdb will say so rather than lie.
+EOF
 
 # Verify
 echo ""

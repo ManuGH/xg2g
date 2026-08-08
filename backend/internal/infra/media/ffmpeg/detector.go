@@ -1072,7 +1072,7 @@ func (d *Detector) observeRuntimePathCorrectness(ctx context.Context, handle por
 				Reason: reason,
 			})
 			if d.recordProcessDetail != nil {
-				d.recordProcessDetail(handle, "runtime path correctness failed - black output detected")
+				d.recordProcessDetail(handle, ports.DetailBlackOutput)
 			}
 			d.Logger.Error().
 				Str("session_id", sessionID).

@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 )
 
@@ -149,26 +151,35 @@ func inferReasonDetailCode(reason model.ReasonCode, detailDebug string) model.Re
 
 	lower := strings.ToLower(detailDebug)
 
-	switch {
-	case strings.Contains(lower, "transcode stalled - no progress detected"):
+	// Classified through the shared taxonomy rather than re-parsed here, so this
+	// mapping cannot drift from the adapter that produced the text.
+	switch ports.ClassifyProcessFailure(lower) {
+	case ports.CauseTranscodeStalled:
 		return model.DTranscodeStalled
-	case strings.Contains(lower, "upstream stream ended prematurely"):
+	case ports.CauseUpstreamEnded:
 		return model.DUpstreamEndedPrematurely
-	case strings.Contains(lower, "failed to open upstream input"),
-		strings.Contains(lower, "upstream input/output error"):
+	case ports.CauseUpstreamOpenFailed, ports.CauseUpstreamIOError:
 		return model.DUpstreamInputOpenFailed
-	case strings.Contains(lower, "invalid upstream input data"):
+	case ports.CauseInvalidUpstreamInput:
 		return model.DInvalidUpstreamInput
-	case strings.Contains(lower, "copy output missing codec parameters"):
+	case ports.CauseCopyOutputMissingCodec:
 		return model.DCopyOutputMissingCodec
+	case ports.CauseUpstreamScrambled:
+		return model.DUpstreamScrambled
+	case ports.CauseEncoderCrashed:
+		return model.DEncoderCrashed
+	case ports.CauseBlackOutput:
+		return model.DBlackOutput
+	case ports.CauseProcessExited:
+		return model.DProcessExitedUnexpectedly
 	}
 
 	if reason == model.RProcessEnded {
 		switch {
 		case strings.Contains(lower, "process died during startup"):
 			return model.DProcessEndedStartup
+		// Non-canonical phrasings only; the canonical text is classified above.
 		case strings.Contains(lower, "process exit code"),
-			strings.Contains(lower, "process exited unexpectedly"),
 			strings.Contains(lower, "process exited"),
 			strings.Contains(lower, "process not running"),
 			strings.Contains(lower, "process not found"):

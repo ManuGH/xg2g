@@ -113,6 +113,14 @@ var (
 		Help: "Total number of ffprobe timeouts during background scan",
 	})
 
+	// FFmpegCrashTotal counts ffmpeg terminations on a fault signal (SIGSEGV,
+	// SIGABRT, ...), as opposed to deliberate ones. These are encoder or driver
+	// defects and were previously indistinguishable from a watchdog kill.
+	FFmpegCrashTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "xg2g_ffmpeg_crash_total",
+		Help: "Total number of ffmpeg processes that terminated on a fault signal",
+	}, []string{"signal", "hw_backend"})
+
 	// ScanInflightProbes tracks active probes during scan.
 	ScanInflightProbes = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "xg2g_scan_inflight_probes",
@@ -169,6 +177,24 @@ func ObservePreflightLatency(port int, duration time.Duration) {
 		portType = "relay"
 	}
 	PreflightLatency.WithLabelValues(portType).Observe(duration.Seconds())
+}
+
+// DescramblerDownTotal counts preflights attributed to the receiver having
+// stopped descrambling entirely, as opposed to one service being unavailable.
+var DescramblerDownTotal = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "xg2g_descrambler_down_total",
+	Help: "Preflight failures attributed to receiver-wide descrambling loss",
+})
+
+// RecordDescramblerDown counts one receiver-wide descrambling failure.
+func RecordDescramblerDown() { DescramblerDownTotal.Inc() }
+
+// RecordFFmpegCrash counts one ffmpeg fault-signal termination.
+func RecordFFmpegCrash(signal, hwBackend string) {
+	if hwBackend == "" {
+		hwBackend = "none"
+	}
+	FFmpegCrashTotal.WithLabelValues(signal, hwBackend).Inc()
 }
 
 // ObserveStreamTuneDuration records the tune duration.

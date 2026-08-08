@@ -7,11 +7,12 @@ import type { TFunction } from 'i18next';
 //
 // Keep this in sync with `backend/internal/domain/session/model/enums.go`
 // ReasonCode constants that can reach a terminal session response.
-const TRANSLATED_REASONS = new Set<string>([
+export const TRANSLATED_REASONS = new Set<string>([
   'R_BAD_REQUEST',
   'R_CANCELLED',
   'R_CLIENT_STOP',
   'R_DEADLINE_EXCEEDED',
+  'R_DESCRAMBLER_DOWN',
   'R_FFMPEG_START_FAILED',
   'R_IDLE_TIMEOUT',
   'R_INTERNAL_INVARIANT_BREACH',

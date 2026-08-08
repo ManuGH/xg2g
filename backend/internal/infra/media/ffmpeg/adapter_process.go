@@ -32,12 +32,28 @@ import (
 
 // Start initiates the media process.
 func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.RunHandle, error) {
+	// Everything up to the spawn runs on prepCtx, which carries the caller's
+	// PrepareDeadline. The process itself is started from ctx further down, so
+	// the preparation bound can never reach the stream it prepared: tuning,
+	// resolution, preflight and the plan probes are bounded, the pipeline is not.
+	//
+	// Without this bound the pre-spawn work sat outside the caller's startup
+	// budget entirely — a slow receiver could consume all of it before ffmpeg
+	// existed, and the session then failed on a packager timeout for a packager
+	// that had never been given a chance to run.
+	prepCtx := ctx
+	if !spec.PrepareDeadline.IsZero() {
+		var cancelPrepare context.CancelFunc
+		prepCtx, cancelPrepare = context.WithDeadline(ctx, spec.PrepareDeadline)
+		defer cancelPrepare()
+	}
+
 	if spec.Source.Type == ports.SourceTuner && a.E2 != nil {
 		if spec.Source.TunerSlot < 0 {
 			return "", fmt.Errorf("invalid tuner slot: %d", spec.Source.TunerSlot)
 		}
 		tuner := enigma2.NewTuner(a.E2, spec.Source.TunerSlot, 10*time.Second)
-		if err := tuner.Tune(ctx, spec.Source.ID); err != nil {
+		if err := tuner.Tune(prepCtx, spec.Source.ID); err != nil {
 			return "", fmt.Errorf("tuning failed: %w", err)
 		}
 		telemetry.GetStartupTracer(spec.SessionID).MarkOnce("E_LOCK", "tuner_locked")
@@ -55,7 +71,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		if a.E2 == nil {
 			return "", fmt.Errorf("tuner source requires enigma2 client")
 		}
-		streamURL, err := a.E2.ResolveStreamURL(ctx, spec.Source.ID)
+		streamURL, err := a.E2.ResolveStreamURL(prepCtx, spec.Source.ID)
 		if err != nil {
 			return "", fmt.Errorf("resolve stream url: %w", err)
 		}
@@ -66,7 +82,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 			Str("resolved_url", sanitizeURLForLog(streamURL)).
 			Msg("stream url resolved")
 
-		chosenURL, err := a.selectStreamURL(ctx, spec.SessionID, spec.Source.ID, streamURL)
+		chosenURL, err := a.selectStreamURL(prepCtx, spec.SessionID, spec.Source.ID, streamURL)
 		if err != nil {
 			return "", err
 		}
@@ -94,7 +110,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	// Span covering the playback decision + ffprobe probes (the untraced gap
 	// between request and spawn). No-op when tracing is off. planCtx lets any
 	// probe spans added later nest under this one.
-	planCtx, planSpan := telemetry.Tracer("xg2g.ffmpeg").Start(ctx, "playback.plan",
+	planCtx, planSpan := telemetry.Tracer("xg2g.ffmpeg").Start(prepCtx, "playback.plan",
 		trace.WithAttributes(
 			attribute.String("xg2g.session_id", spec.SessionID),
 			attribute.String("xg2g.source_type", fmt.Sprintf("%v", spec.Source.Type)),
@@ -118,12 +134,15 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 	// (startup segment with a leading video hole while audio runs on). Any
 	// peek/measure failure falls back to the unchanged direct-URL path.
 	var avsyncStdin io.Reader
-	avsyncSpec := spec
-	avsyncSpec.Profile = plan.effectiveProfile
+	// The spec as it actually runs: the plan may have finalized a different
+	// profile than the one requested, and both the avsync decision and the
+	// startup watchdog have to reason about what runs, not what was asked for.
+	effectiveSpec := spec
+	effectiveSpec.Profile = plan.effectiveProfile
 	var usingPipe bool
-	if a.shouldAvsyncAtrim(avsyncSpec) {
+	if a.shouldAvsyncAtrim(effectiveSpec) {
 		if orphan, stdin, useAtrim := a.prepareAvsyncPipe(ctx, inputURL, spec.SessionID); stdin != nil {
-			args = transformArgsForAvsyncPipeMode(args, orphan, useAtrim && !a.LiveAvsyncPipeNoTrim, avsyncSpec.Profile.TranscodeVideo)
+			args = transformArgsForAvsyncPipeMode(args, orphan, useAtrim && !a.LiveAvsyncPipeNoTrim, effectiveSpec.Profile.TranscodeVideo)
 			avsyncStdin = stdin
 			usingPipe = true
 			if !useAtrim {
@@ -291,7 +310,7 @@ func (a *LocalAdapter) Start(ctx context.Context, spec ports.StreamSpec) (ports.
 		a.Logger.Warn().Err(err).Str("session_id", spec.SessionID).Msg("failed to attach shadow store, proceeding with disk only")
 	}
 
-	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForProfile(spec.Source.Type, plan.effectiveProfile), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo, isDirectHTTP) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
+	go a.monitorProcessWithStartTimeout(ctx, handle, cmd, stderr, spec.SessionID, spec.Profile.DVRWindowSec, argsHardwareBackend(args), plan.pathID, a.startTimeoutForSpec(effectiveSpec), startupSpan, spawnedAt, shadowRuntime, plan.effectiveProfile.TranscodeVideo, isDirectHTTP) // #nosec G118 -- goroutine receives the request-scoped ctx (first arg), not context.Background/TODO
 	if sourceKey != "" {
 		go a.learnFPSFromOutput(ctx, sourceKey, spec.SessionID, spec.Profile.DVRWindowSec)
 	}
@@ -555,7 +574,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 		parentCtx, procErrCh, wdErrCh,
 		func(stallErr error) {
 			metrics.IncLiveFFmpegStall("watchdog_timeout")
-			a.recordProcessDetail(handle, "transcode stalled - no progress detected")
+			a.recordProcessDetail(handle, ports.DetailTranscodeStalled)
 			a.Logger.Error().Err(stallErr).Str("sessionId", sessionID).Msg("watchdog triggered process termination")
 			a.terminateProcessGroup(cmd, sessionID)
 		},
@@ -572,7 +591,7 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 	if !watchdogConsumed {
 		if wdErr := <-wdErrCh; wdErr != nil {
 			metrics.IncLiveFFmpegStall("watchdog_timeout")
-			a.recordProcessDetail(handle, "transcode stalled - no progress detected")
+			a.recordProcessDetail(handle, ports.DetailTranscodeStalled)
 			a.Logger.Error().Err(wdErr).Str("sessionId", sessionID).Msg("watchdog reported failure")
 			if resultErr == nil {
 				resultErr = wdErr
@@ -593,7 +612,20 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 
 	if procErr != nil {
 		a.recordProcessDetail(handle, summarizeProcessExit(procErr))
-		a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
+		if sig, crashed := isProcessCrash(procErr); crashed {
+			// Loud and greppable on purpose: a fault is a defect in the encoder or
+			// the driver, not a stream problem, and it must not be readable as one.
+			a.Logger.Error().
+				Err(procErr).
+				Str("event", "ffmpeg_crashed").
+				Str("sessionId", sessionID).
+				Str("signal", sig.String()).
+				Str("hw_backend", string(hwBackend)).
+				Msg("ffmpeg terminated on a fault signal")
+			metrics.RecordFFmpegCrash(sig.String(), string(hwBackend))
+		} else {
+			a.Logger.Debug().Err(procErr).Str("sessionId", sessionID).Msg("ffmpeg process exited")
+		}
 		return
 	}
 	if resultErr != nil {
@@ -602,6 +634,48 @@ func (a *LocalAdapter) monitorProcessWithStartTimeout(parentCtx context.Context,
 	a.clearProcessDetail(handle)
 }
 
+// startTimeoutForSpec is how long the startup watchdog gives the media process
+// to produce its first progress: the profile's own allowance, clamped so it
+// always lands before the caller stops waiting.
+//
+// The clamp is the whole point. The profile allowance reaches 60s for an HQ50
+// CPU transcode and is capped at 120s, while a live caller stops waiting after
+// its startup budget — 45s by default. Unclamped, the watchdog could only ever
+// fire after the session had already been failed by someone else, which made it
+// unreachable code for exactly the sessions that needed it. What is lost with it
+// is the diagnosis: the watchdog reports DetailTranscodeStalled, which the
+// recovery policy classifies as recoverable by a lighter profile, whereas the
+// caller's own timeout can only report that no playlist appeared.
+func (a *LocalAdapter) startTimeoutForSpec(spec ports.StreamSpec) time.Duration {
+	timeout := a.startTimeoutForProfile(spec.Source.Type, spec.Profile)
+	if timeout <= 0 || spec.ReadyDeadline.IsZero() {
+		return timeout
+	}
+	clamped := time.Until(spec.ReadyDeadline) - watchdogStartLead
+	// Never turn a configured timeout into a non-positive one: zero and below
+	// mean "fire on the first tick" to the watchdog, which is a different
+	// contract than "fire early".
+	if clamped < minWatchdogStartTimeout {
+		clamped = minWatchdogStartTimeout
+	}
+	if clamped < timeout {
+		return clamped
+	}
+	return timeout
+}
+
+const (
+	// watchdogStartLead is how far ahead of the caller's deadline the watchdog is
+	// allowed to fire. It covers terminating the process group plus one of the
+	// caller's ready-poll intervals, so the caller observes an unhealthy process
+	// carrying a real diagnosis instead of hitting its own generic timeout first.
+	watchdogStartLead = 2 * time.Second
+	// minWatchdogStartTimeout keeps a clamped allowance positive.
+	minWatchdogStartTimeout = 1 * time.Second
+)
+
+// startTimeoutForProfile is the profile's own startup allowance, before any
+// caller deadline is taken into account.
 func (a *LocalAdapter) startTimeoutForProfile(sourceType ports.SourceType, profile ports.ProfileSpec) time.Duration {
 	timeout := a.StartTimeout
 	if timeout <= 0 {
@@ -803,25 +877,10 @@ func (a *LocalAdapter) processStatusMessage(handle ports.RunHandle, fallback str
 	return fallback
 }
 
+// processDetailPriority ranks details via the shared taxonomy, so the adapter and
+// the session domain cannot disagree about which failure outranks which.
 func processDetailPriority(detail string) int {
-	switch detail {
-	case "runtime path correctness failed - black output detected":
-		return 55
-	case "transcode stalled - no progress detected":
-		return 50
-	case "copy output missing codec parameters":
-		return 45
-	case "upstream stream ended prematurely":
-		return 40
-	case "failed to open upstream input", "upstream input/output error":
-		return 30
-	case "invalid upstream input data":
-		return 20
-	case "process exited unexpectedly":
-		return 10
-	default:
-		return 0
-	}
+	return ports.ClassifyProcessFailure(detail).Priority()
 }
 
 type telemetryReader struct {

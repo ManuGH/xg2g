@@ -31,6 +31,46 @@ const (
 	PreflightReasonInternal           PreflightReason = "internal"
 )
 
+// ScrambleVerdict is the tri-state outcome of MPEG-TS scramble classification.
+//
+// The third state is the point: a sample that could not be judged (too few
+// aligned packets, alignment lost early) is NOT evidence of a clear stream.
+// Collapsing it into "clear" is what lets an encrypted service pass preflight,
+// so the verdict is carried explicitly instead of being folded into OK.
+type ScrambleVerdict string
+
+const (
+	// ScrambleVerdictUnevaluated means classification never ran (non-TS path, or
+	// the preflight failed before a sample was scanned).
+	ScrambleVerdictUnevaluated ScrambleVerdict = ""
+	// ScrambleVerdictClear means enough packets were classified and the payload
+	// is not encrypted.
+	ScrambleVerdictClear ScrambleVerdict = "clear"
+	// ScrambleVerdictScrambled means enough packets were classified and the
+	// payload carries transport_scrambling_control.
+	ScrambleVerdictScrambled ScrambleVerdict = "scrambled"
+	// ScrambleVerdictInconclusive means the sample was too small to judge. It
+	// never proves a stream clear and never overturns earlier scrambled evidence.
+	ScrambleVerdictInconclusive ScrambleVerdict = "inconclusive"
+)
+
+// ScrambleEvidence is what a single scramble classification actually observed.
+// It travels with the result so callers can weigh samples against each other
+// instead of trusting one boolean.
+type ScrambleEvidence struct {
+	Verdict ScrambleVerdict
+	// Fraction of classified packets carrying transport_scrambling_control.
+	Fraction float64
+	// Classified is the number of packets the verdict is based on.
+	Classified int
+	// Aligned is the number of packets in the sample before window selection.
+	Aligned int
+	// Window names the classification window ("full" or "post_lock").
+	Window string
+	// Scope attributes a scrambled verdict to the service or to the receiver.
+	Scope ScrambleScope
+}
+
 // PreflightResult captures the structured outcome of a media-path preflight.
 type PreflightResult struct {
 	OK           bool
@@ -40,6 +80,8 @@ type PreflightResult struct {
 	Bytes        int
 	LatencyMs    int64
 	ResolvedPort int
+	// Scramble records what the scramble classifier saw for this sample.
+	Scramble ScrambleEvidence
 }
 
 // FailureDetail returns the most specific human-readable failure detail.

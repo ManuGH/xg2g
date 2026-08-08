@@ -144,7 +144,6 @@ docker run --rm <image> sh -c 'echo $XG2G_FFMPEG_BIN'
 --enable-protocol=hls,file,http,tcp
 --enable-demuxer=mpegts,hls
 --enable-muxer=hls,mpegts
---disable-debug
 --disable-doc
 --disable-static
 --enable-shared
@@ -156,8 +155,34 @@ docker run --rm <image> sh -c 'echo $XG2G_FFMPEG_BIN'
 - x264/x265: H.264/H.265 encoding
 - VAAPI: Hardware acceleration (Intel/AMD)
 - HLS protocols: Essential for streaming
-- No debug/doc: Minimal build size
+- No doc: Minimal build size
 - Shared libs: Reusable across processes
+
+### Debug symbols
+
+The build carries `-g` and splits the debug info into `/opt/ffmpeg-debug`,
+keyed by GNU build ID. The runtime image copies only `/opt/ffmpeg`, and its
+binaries are stripped of DWARF alone, so what ships is unchanged — same build
+ID, same dynamic symbol table, same size.
+
+This is not optional polish. The build previously passed `--disable-debug`, and
+six ffmpeg faults on staging over four months left ~716 MB of core files that
+could not be attributed to a single function. Four of them are the same null
+dereference at the same address, i.e. very likely one fixable bug that was never
+readable.
+
+Export the symbols for the build you are debugging, then read the core:
+
+```bash
+docker build -f infra/docker/Dockerfile.ffmpeg-base --target ffmpeg-debug \
+  --output type=local,dest=./ffmpeg-debug .
+
+gdb -ex 'set debug-file-directory ./ffmpeg-debug' -ex 'bt full' --batch \
+  /opt/ffmpeg/bin/ffmpeg <core-file>
+```
+
+The core and the symbols must come from the same image build; the build ID is
+what pairs them, and gdb reports a mismatch rather than resolving wrongly.
 
 ## Local Development
 

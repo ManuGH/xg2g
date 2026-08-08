@@ -25,10 +25,14 @@ func (o *Orchestrator) waitForReady(
 	playlistPath string,
 	vodMode bool,
 	startTime time.Time,
+	attempt startupAttempt,
 	logger zerolog.Logger,
 	ttfpRecorded *bool,
 ) (ready bool, reason model.ReasonCode, detail string) {
-	playlistReadyTimeout := o.playlistReadyTimeout(currentProfileSpec, vodMode)
+	playlistReadyTimeout := o.playlistReadyTimeout(currentProfileSpec, vodMode, attempt)
+	if playlistReadyTimeout <= 0 {
+		return false, model.RPackagerFailed, "startup budget exhausted before playlist wait"
+	}
 	playlistPollInterval := 200 * time.Millisecond
 	playlistDeadline := time.Now().Add(playlistReadyTimeout)
 	ticker := time.NewTicker(playlistPollInterval)
@@ -38,8 +42,10 @@ func (o *Orchestrator) waitForReady(
 		Str("session_id", e.SessionID).
 		Str("service_ref", e.ServiceRef).
 		Str("profile", currentProfileSpec.Name).
-		Bool("recovery_mode", isStartupRecoveryProfile(currentProfileSpec.Name)).
+		Int("attempt", attempt.Index).
+		Bool("recovery_mode", o.isRecoveryAttempt(currentProfileSpec, attempt)).
 		Dur("timeout", playlistReadyTimeout).
+		Dur("profile_timeout", o.profilePlaylistReadyTimeout(currentProfileSpec, vodMode, attempt)).
 		Msg("waiting for playlist to become ready")
 
 	var lastNotReadyReason string
@@ -81,12 +87,37 @@ func (o *Orchestrator) waitForReady(
 	}
 }
 
-func (o *Orchestrator) playlistReadyTimeout(currentProfileSpec model.ProfileSpec, vodMode bool) time.Duration {
+// isRecoveryAttempt reports whether this attempt is a recovery: either the loop
+// restarted it after a profile fallback, or the profile is itself one of the
+// recovery profiles (which a client may also request directly).
+func (o *Orchestrator) isRecoveryAttempt(currentProfileSpec model.ProfileSpec, attempt startupAttempt) bool {
+	return attempt.Recovery || isStartupRecoveryProfile(currentProfileSpec.Name)
+}
+
+// playlistReadyTimeout is the profile's ceiling clamped to what THIS attempt may
+// still spend, so per-attempt ceilings can no longer stack past the point where
+// the player has already given up.
+//
+// The clamp is against the attempt's usable slice, not against the whole
+// remaining budget. Clamping against the budget is what made the first attempt
+// always end exactly at the deadline and left nothing for the retry that the
+// profile-hardening ladder depends on.
+func (o *Orchestrator) playlistReadyTimeout(currentProfileSpec model.ProfileSpec, vodMode bool, attempt startupAttempt) time.Duration {
+	timeout := o.profilePlaylistReadyTimeout(currentProfileSpec, vodMode, attempt)
+	usable, bounded := attempt.usable(time.Now())
+	if bounded && usable < timeout {
+		return usable
+	}
+	return timeout
+}
+
+// profilePlaylistReadyTimeout is the per-attempt ceiling for this profile alone.
+func (o *Orchestrator) profilePlaylistReadyTimeout(currentProfileSpec model.ProfileSpec, vodMode bool, attempt startupAttempt) time.Duration {
 	if vodMode {
 		return defaultVODPlaylistReadyTimeout
 	}
 	normalizedProfile := profiles.NormalizeRequestedProfileID(currentProfileSpec.Name)
-	if isStartupRecoveryProfile(currentProfileSpec.Name) {
+	if o.isRecoveryAttempt(currentProfileSpec, attempt) {
 		return defaultIfZero(o.RecoveryPlaylistReadyTimeout, defaultRecoveryPlaylistReadyTimeout)
 	}
 	if currentProfileSpec.EffectiveRuntimeMode == ports.RuntimeModeHQ50 {

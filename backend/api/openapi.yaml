@@ -589,6 +589,12 @@ components:
             - R_CANCELLED
             - R_IDLE_TIMEOUT
             - R_CLIENT_STOP
+            - R_UPSTREAM_SCRAMBLED
+            - R_UPSTREAM_CORRUPT
+            - R_DESCRAMBLER_DOWN
+            - R_DEADLINE_EXCEEDED
+            - R_PIPELINE_START_FAILED
+            - R_INTERNAL_INVARIANT_BREACH
         reasonDetail:
           type: string
         correlationId:
@@ -722,6 +728,12 @@ components:
             - R_CANCELLED
             - R_IDLE_TIMEOUT
             - R_CLIENT_STOP
+            - R_UPSTREAM_SCRAMBLED
+            - R_UPSTREAM_CORRUPT
+            - R_DESCRAMBLER_DOWN
+            - R_DEADLINE_EXCEEDED
+            - R_PIPELINE_START_FAILED
+            - R_INTERNAL_INVARIANT_BREACH
         reasonDetail:
           type: string
         createdAtUnix:

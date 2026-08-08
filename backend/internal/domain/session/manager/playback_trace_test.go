@@ -109,6 +109,7 @@ func TestStartPipeline_RecordsEffectiveRuntimeModeFromFinalizedProfile(t *testin
 		&sessionContext{Mode: model.ModeLive, ServiceRef: "ref:live"},
 		session.Profile,
 		-1,
+		startupAttempt{},
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, handle)

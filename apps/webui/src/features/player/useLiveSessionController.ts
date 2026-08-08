@@ -26,9 +26,16 @@ import {
 // (namespace: 2xx info codes in usePlaybackEngine; never triggers fallback).
 const PLAYBACK_INFO_CODE_SESSION_TIMELINE = 230;
 
-const SESSION_READY_TIMEOUT_MS = 60_000;
+// How long the player waits for a fresh session to reach READY. This is the
+// safety net for a server that goes silent, so it must stay ABOVE the
+// orchestrator's own startup budget (defaultLiveStartupBudget, 45s) — if it
+// fires first, the user gets this generic timeout instead of the reason the
+// session actually failed with.
+export const SESSION_READY_TIMEOUT_MS = 60_000;
+// Waiting for an already-running session to be READY again after a decode error.
+// Short on purpose: the session exists and should already be serving.
+export const SESSION_DECODE_RECOVERY_READY_TIMEOUT_MS = 20_000;
 const SESSION_READY_POLL_MS = 250;
-const SESSION_READY_MAX_ATTEMPTS = Math.ceil(SESSION_READY_TIMEOUT_MS / SESSION_READY_POLL_MS);
 const HEARTBEAT_RETRY_INTERVAL_MS = 5_000;
 const CONNECTION_LOST_AFTER_FAILURES = 2;
 
@@ -65,7 +72,7 @@ interface LiveSessionController {
   clearSessionLeaseState: () => void;
   sendStopIntent: (sessionId: string | null, force?: boolean) => Promise<void>;
   refreshSessionSnapshot: (sessionId?: string | null) => Promise<V3SessionStatusResponse | null>;
-  waitForSessionReady: (sessionId: string, maxAttempts?: number) => Promise<V3SessionStatusResponse>;
+  waitForSessionReady: (sessionId: string, budgetMs?: number) => Promise<V3SessionStatusResponse>;
 }
 
 const SESSION_TIMELINE_REPORT_TIMEOUT_MS = 500;
@@ -363,10 +370,13 @@ export function useLiveSessionController({
     }
   }, [apiBase, applySessionInfo, authHeaders, fetchWithRecoveredSessionCookie]);
 
+  // budgetMs, not a poll count: callers reason in seconds, and a bare attempt
+  // count hid a 20s wait behind the literal `80` at one of the two call sites.
   const waitForSessionReady = useCallback(async (
     trackedSessionId: string,
-    maxAttempts = SESSION_READY_MAX_ATTEMPTS
+    budgetMs = SESSION_READY_TIMEOUT_MS
   ): Promise<V3SessionStatusResponse> => {
+    const maxAttempts = Math.max(1, Math.ceil(budgetMs / SESSION_READY_POLL_MS));
     let recoveredSessionAuth = false;
 
     // 1. Initial quick check (in case existing session is already READY or fast-started)
@@ -533,15 +543,15 @@ export function useLiveSessionController({
       let isDone = false;
       const abortController = new AbortController();
 
+      // Set while an authoritative session lookup is in flight, so the deadline
+      // cannot report a timeout for a session we are in the middle of confirming.
+      let settling = false;
+      let expired = false;
+
       const timerId = window.setTimeout(() => {
-        if (isDone) return;
-        isDone = true;
-        abortController.abort();
-        reject(createPlayerError(t('player.sessionNotReadyInTime'), {
-          sessionId: trackedSessionId,
-          waitedMs: maxTimeoutMs,
-          pollMs: SESSION_READY_POLL_MS
-        }));
+        expired = true;
+        if (settling) return; // the in-flight lookup settles it, or fails it below
+        failExpired();
       }, maxTimeoutMs);
 
       const cleanup = () => {
@@ -550,6 +560,82 @@ export function useLiveSessionController({
         window.clearTimeout(timerId);
         abortController.abort();
         return true;
+      };
+
+      function failExpired() {
+        if (!cleanup()) return;
+        reject(createPlayerError(t('player.sessionNotReadyInTime'), {
+          sessionId: trackedSessionId,
+          waitedMs: maxTimeoutMs,
+          pollMs: SESSION_READY_POLL_MS
+        }));
+      }
+
+      const rejectTerminal = (state: string, reason: string, reasonDetail?: string) => {
+        if (!cleanup()) return;
+        const detail = reasonDetail ? `: ${reasonDetail}` : '';
+        if (String(reason).includes('LEASE_BUSY') || String(detail).includes('LEASE_BUSY')) {
+          reject(createPlayerError(t('player.leaseBusy')));
+          return;
+        }
+        reject(createPlayerError(`${t('player.sessionFailed')}: ${translatePlaybackReason(reason, reasonDetail, t)}`, {
+          sessionId: trackedSessionId,
+          state
+        }));
+      };
+
+      // Settle the promise from the authoritative session record rather than from
+      // the event that prompted the look. Resolves true once settled, false while
+      // the session is still on its way to READY.
+      const settleFromSessionStatus = async (): Promise<boolean> => {
+        if (isDone || settling) return isDone;
+        settling = true;
+        try {
+          const { response } = await fetchWithRecoveredSessionCookie(
+            'useLiveSessionController.waitForSessionReady.final',
+            // raw-fetch-justified: authoritative live session lookup
+            () => fetch(`${apiBase}/sessions/${trackedSessionId}`, {
+              headers: authHeaders(),
+              signal: timeoutSignal(SESSION_REQUEST_TIMEOUT_MS),
+            })
+          );
+          if (!response.ok) {
+            throw new Error(`Failed to fetch ready session (HTTP ${response.status})`);
+          }
+          const session: V3SessionStatusResponse = await response.json();
+          applySessionInfo(session);
+          const state = session.state;
+
+          if (state === 'FAILED' || state === 'STOPPED' || state === 'CANCELLED' || state === 'STOPPING') {
+            rejectTerminal(state, session.reason || state, session.reasonDetail);
+            return true;
+          }
+          if ((state === 'READY' || state === 'DRAINING') && session.playbackUrl) {
+            if (!hasValidHeartbeatInterval(session.heartbeatIntervalSeconds)) {
+              if (cleanup()) {
+                reject(createPlayerError(t('player.sessionFailed'), {
+                  contractError: true,
+                  requestId: session.requestId,
+                  sessionId: trackedSessionId,
+                  missingField: 'heartbeatIntervalSeconds'
+                }));
+              }
+              return true;
+            }
+            if (!cleanup()) return true;
+            resolve(session);
+            return true;
+          }
+          if (state === 'PRIMING') {
+            setStatus('priming');
+          }
+          return false;
+        } finally {
+          settling = false;
+          // The deadline held off while this lookup was in flight; if it passed
+          // meanwhile and the lookup did not settle the promise, it applies now.
+          if (expired && !isDone) failExpired();
+        }
       };
 
       void getSessionEvents({
@@ -563,39 +649,11 @@ export function useLiveSessionController({
             if (state === 'PRIMING') {
               setStatus('priming');
             } else if (state === 'READY' || state === 'DRAINING') {
-              if (!cleanup()) return;
-              fetchWithRecoveredSessionCookie(
-                'useLiveSessionController.waitForSessionReady.final',
-                // raw-fetch-justified: final ready live session lookup
-                () => fetch(`${apiBase}/sessions/${trackedSessionId}`, {
-                  headers: authHeaders(),
-                  signal: timeoutSignal(SESSION_REQUEST_TIMEOUT_MS),
-                })
-              ).then(async ({ response: finalRes }) => {
-                if (!finalRes.ok) {
-                  throw new Error(`Failed to fetch ready session (HTTP ${finalRes.status})`);
-                }
-                const finalSession: V3SessionStatusResponse = await finalRes.json();
-                applySessionInfo(finalSession);
-                if (!hasValidHeartbeatInterval(finalSession.heartbeatIntervalSeconds)) {
-                  throw createPlayerError(t('player.sessionFailed'), {
-                    contractError: true,
-                    requestId: finalSession.requestId,
-                    sessionId: trackedSessionId,
-                    missingField: 'heartbeatIntervalSeconds'
-                  });
-                }
-                resolve(finalSession);
-              }).catch((err) => reject(err));
+              void settleFromSessionStatus().catch((err) => {
+                if (cleanup()) reject(err);
+              });
             } else if (state === 'FAILED' || state === 'STOPPED' || state === 'CANCELLED' || state === 'STOPPING') {
-              if (!cleanup()) return;
-              const reason = stateData.reason || state;
-              const detail = stateData.reasonDetail ? `: ${stateData.reasonDetail}` : '';
-              if (String(reason).includes('LEASE_BUSY') || String(detail).includes('LEASE_BUSY')) {
-                reject(createPlayerError(t('player.leaseBusy')));
-              } else {
-                reject(createPlayerError(`${t('player.sessionFailed')}: ${translatePlaybackReason(reason, stateData.reasonDetail, t)}`));
-              }
+              rejectTerminal(state, stateData.reason || state, stateData.reasonDetail);
             }
           }
         },
@@ -609,7 +667,25 @@ export function useLiveSessionController({
             if (isDone || abortController.signal.aborted) break;
           }
         } catch {
-          // Stream aborted or errored, ignore
+          // Stream aborted or errored — settled below from the session record.
+        }
+        if (isDone || abortController.signal.aborted) return;
+
+        // The stream can end without ever delivering a terminal state_changed event:
+        // the server closed it, a proxy timed it out, or the session was torn down
+        // before the publish. Waiting for the timer here reports "not ready in time"
+        // and buries the real reason — session 1619cee0 failed R_UPSTREAM_SCRAMBLED
+        // 80ms before the timer fired and the user was told it timed out. Losing the
+        // stream must also not doom a session that is still starting, so fall back to
+        // polling the authoritative record until the same deadline.
+        debugWarn('[V3Player] SSE stream ended without a terminal state; polling session status');
+        while (!isDone && !abortController.signal.aborted) {
+          try {
+            if (await settleFromSessionStatus()) return;
+          } catch (err) {
+            debugWarn('[V3Player] Session status poll failed after SSE stream ended:', err);
+          }
+          await sleep(SESSION_READY_POLL_MS);
         }
       }).catch((err) => {
         if (cleanup()) {

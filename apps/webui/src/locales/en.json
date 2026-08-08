@@ -240,6 +240,7 @@
       "R_UNKNOWN": "Unknown error.",
       "R_UPSTREAM_CORRUPT": "This channel is currently unavailable or has no video.",
       "R_UPSTREAM_SCRAMBLED": "This channel is encrypted and could not be descrambled.",
+      "R_DESCRAMBLER_DOWN": "Your receiver is not descrambling any channel right now. Check the CAM or softcam on the receiver — switching channels will not help.",
       "unknown": "Playback failed."
     },
     "retryAfter": "Try again in ~{{seconds}}s.",

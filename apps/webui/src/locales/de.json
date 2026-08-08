@@ -240,6 +240,7 @@
       "R_UNKNOWN": "Unbekannter Fehler.",
       "R_UPSTREAM_CORRUPT": "Dieser Sender ist derzeit nicht verfügbar oder hat kein Video.",
       "R_UPSTREAM_SCRAMBLED": "Dieser Sender ist verschlüsselt und konnte nicht entschlüsselt werden.",
+      "R_DESCRAMBLER_DOWN": "Dein Receiver entschlüsselt derzeit keinen einzigen Sender. Prüfe das CAM bzw. Softcam am Receiver — ein Senderwechsel hilft nicht.",
       "unknown": "Die Wiedergabe ist fehlgeschlagen."
     },
     "retryAfter": "Bitte in ~{{seconds}}s erneut versuchen.",
