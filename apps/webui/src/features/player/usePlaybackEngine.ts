@@ -9,6 +9,7 @@ import type { PlaybackEngineErrorContext } from '../../client-ts';
 import { debugError, debugLog, debugWarn } from '../../utils/logging';
 import type { PlaybackFailureReportOptions } from './semantics/playbackFailureSemantics';
 import { classifyHlsFatalError, classifyMediaElementError } from './playbackErrorPresentation';
+import { SESSION_DECODE_RECOVERY_READY_TIMEOUT_MS } from './useLiveSessionController';
 import {
   describeHlsRenderProbe,
   isBlackRenderSuspect,
@@ -43,7 +44,7 @@ type ReportErrorFn = (
   context?: PlaybackEngineErrorContext,
 ) => Promise<void>;
 type PreferNativeFn = (videoEl?: VideoElementRef, hlsJsSupported?: boolean) => boolean;
-type WaitForSessionReadyFn = (sessionId: string, maxAttempts?: number) => Promise<V3SessionStatusResponse>;
+type WaitForSessionReadyFn = (sessionId: string, budgetMs?: number) => Promise<V3SessionStatusResponse>;
 type PrimePlaybackAuthFn = (playbackUrl: string, source: string) => Promise<void>;
 
 const NATIVE_STALL_RECOVERY_MS = 2500;
@@ -566,7 +567,7 @@ export function usePlaybackEngine({
           return;
         }
 
-        const session = await waitForSessionReady(trackedSessionId, 80);
+        const session = await waitForSessionReady(trackedSessionId, SESSION_DECODE_RECOVERY_READY_TIMEOUT_MS);
 
         if (sessionIdRef.current !== trackedSessionId) {
           return;

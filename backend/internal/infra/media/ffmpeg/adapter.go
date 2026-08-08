@@ -58,6 +58,11 @@ type pathProbeRequest struct {
 
 // LocalAdapter implements ports.MediaPipeline using local exec.Command.
 type LocalAdapter struct {
+	// scrambleObs remembers per-service descrambling outcomes so a scrambled
+	// upstream can be attributed to the service or to the receiver.
+	scrambleObs          *ports.ScrambleObserver
+	scrambleObserverOnce sync.Once
+
 	Config                     AdapterConfig
 	BinPath                    string
 	FFprobeBin                 string

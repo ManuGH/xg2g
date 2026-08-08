@@ -155,12 +155,12 @@ seg_000002.m4s
 func TestPlaylistReadyTimeout_UsesExtendedTimeoutForRecoveryProfiles(t *testing.T) {
 	orch := &Orchestrator{}
 
-	timeout := orch.playlistReadyTimeout(model.ProfileSpec{Name: profiles.ProfileRepair}, false)
+	timeout := orch.playlistReadyTimeout(model.ProfileSpec{Name: profiles.ProfileRepair}, false, startupAttempt{})
 	if timeout != defaultRecoveryPlaylistReadyTimeout {
 		t.Fatalf("expected repair profile timeout %v, got %v", defaultRecoveryPlaylistReadyTimeout, timeout)
 	}
 
-	timeout = orch.playlistReadyTimeout(model.ProfileSpec{Name: profiles.ProfileSafariDirty}, false)
+	timeout = orch.playlistReadyTimeout(model.ProfileSpec{Name: profiles.ProfileSafariDirty}, false, startupAttempt{})
 	if timeout != defaultRecoveryPlaylistReadyTimeout {
 		t.Fatalf("expected safari_dirty timeout %v, got %v", defaultRecoveryPlaylistReadyTimeout, timeout)
 	}
@@ -172,7 +172,7 @@ func TestPlaylistReadyTimeout_ExtendsSafariCPUTranscodeStartup(t *testing.T) {
 	timeout := orch.playlistReadyTimeout(model.ProfileSpec{
 		Name:           profiles.ProfileSafari,
 		TranscodeVideo: true,
-	}, false)
+	}, false, startupAttempt{})
 	if timeout != defaultSafariCPUPlaylistReadyTimeout {
 		t.Fatalf("expected safari cpu timeout %v, got %v", defaultSafariCPUPlaylistReadyTimeout, timeout)
 	}
@@ -181,7 +181,7 @@ func TestPlaylistReadyTimeout_ExtendsSafariCPUTranscodeStartup(t *testing.T) {
 		Name:           profiles.ProfileSafari,
 		TranscodeVideo: true,
 		HWAccel:        "vaapi",
-	}, false)
+	}, false, startupAttempt{})
 	if timeout != defaultSafariPlaylistReadyTimeout {
 		t.Fatalf("expected safari gpu timeout %v, got %v", defaultSafariPlaylistReadyTimeout, timeout)
 	}
@@ -189,7 +189,7 @@ func TestPlaylistReadyTimeout_ExtendsSafariCPUTranscodeStartup(t *testing.T) {
 	timeout = orch.playlistReadyTimeout(model.ProfileSpec{
 		Name:           profiles.ProfileSafariRuntimeHQ,
 		TranscodeVideo: true,
-	}, false)
+	}, false, startupAttempt{})
 	if timeout != defaultSafariCPUPlaylistReadyTimeout {
 		t.Fatalf("expected safari runtime hq timeout %v, got %v", defaultSafariCPUPlaylistReadyTimeout, timeout)
 	}
@@ -202,7 +202,7 @@ func TestPlaylistReadyTimeout_ExtendsSafariHQ50Startup(t *testing.T) {
 		Name:                 profiles.ProfileSafari,
 		TranscodeVideo:       true,
 		EffectiveRuntimeMode: ports.RuntimeModeHQ50,
-	}, false)
+	}, false, startupAttempt{})
 	if timeout != defaultSafariHQ50PlaylistReadyTimeout {
 		t.Fatalf("expected safari hq50 timeout %v, got %v", defaultSafariHQ50PlaylistReadyTimeout, timeout)
 	}

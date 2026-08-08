@@ -32,17 +32,15 @@ func shouldRetryStartupWaitFailure(reason model.ReasonCode, detail string, attem
 		return false
 	}
 
-	lower := strings.ToLower(strings.TrimSpace(detail))
-	switch {
-	case strings.Contains(lower, "upstream stream ended prematurely"):
-		return true
-	case strings.Contains(lower, "failed to open upstream input"):
-		return true
-	case strings.Contains(lower, "invalid upstream input data"):
-		return true
-	default:
-		return false
-	}
+	return ports.ClassifyProcessFailure(detail).RetriableAsIs()
+}
+
+// isStartupHardeningDetail reports whether a startup failure is one that a
+// lighter runtime profile can plausibly survive. The policy itself lives with the
+// taxonomy (ports.ProcessFailureCause) so the adapter, the lifecycle and this
+// recovery path cannot disagree about what a given failure means.
+func isStartupHardeningDetail(detail string) bool {
+	return ports.ClassifyProcessFailure(detail).RecoverableByProfileChange()
 }
 
 func startupRecoveryProfileWithResolver(current model.ProfileSpec, reason model.ReasonCode, detail string, profileResolver RecoveryProfileResolver) (model.ProfileSpec, bool) {
@@ -62,7 +60,7 @@ func startupRecoveryProfileWithResolver(current model.ProfileSpec, reason model.
 			next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
 			return next, true
 		}
-		if reason == model.RProcessEnded && strings.Contains(lower, "transcode stalled - no progress detected") {
+		if reason == model.RProcessEnded && isStartupHardeningDetail(lower) {
 			next := current
 			next.ForceSafariHQ25 = true
 			next.EffectiveRuntimeMode = ports.RuntimeModeHQ25
@@ -79,7 +77,7 @@ func startupRecoveryProfileWithResolver(current model.ProfileSpec, reason model.
 			next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
 			return next, true
 		}
-		if reason == model.RProcessEnded && strings.Contains(lower, "transcode stalled - no progress detected") {
+		if reason == model.RProcessEnded && isStartupHardeningDetail(lower) {
 			next := resolveProfile(profiles.ProfileRepair, current.DVRWindowSec)
 			if current.DVRWindowSec > 0 {
 				next.DVRWindowSec = current.DVRWindowSec
@@ -93,7 +91,7 @@ func startupRecoveryProfileWithResolver(current model.ProfileSpec, reason model.
 		return model.ProfileSpec{}, false
 	}
 
-	if !strings.Contains(lower, "copy output missing codec parameters") {
+	if ports.ClassifyProcessFailure(lower) != ports.CauseCopyOutputMissingCodec {
 		return model.ProfileSpec{}, false
 	}
 

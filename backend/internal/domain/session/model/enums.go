@@ -121,14 +121,18 @@ const (
 	RInvariantViolation  ReasonCode = "R_INVARIANT_VIOLATION"
 	RPipelineStartFailed ReasonCode = "R_PIPELINE_START_FAILED"
 
-	RProcessEnded            ReasonCode = "R_PROCESS_ENDED"
-	RPackagerFailed          ReasonCode = "R_PACKAGER_FAILED"
-	RCancelled               ReasonCode = "R_CANCELLED"
-	RDeadlineExceeded        ReasonCode = "R_DEADLINE_EXCEEDED"
-	RIdleTimeout             ReasonCode = "R_IDLE_TIMEOUT"
-	RClientStop              ReasonCode = "R_CLIENT_STOP"
-	RUpstreamCorrupt         ReasonCode = "R_UPSTREAM_CORRUPT"   // Upstream source is corrupt or missing keyframes
-	RUpstreamScrambled       ReasonCode = "R_UPSTREAM_SCRAMBLED" // Upstream stream is scrambled (encrypted, receiver could not descramble)
+	RProcessEnded      ReasonCode = "R_PROCESS_ENDED"
+	RPackagerFailed    ReasonCode = "R_PACKAGER_FAILED"
+	RCancelled         ReasonCode = "R_CANCELLED"
+	RDeadlineExceeded  ReasonCode = "R_DEADLINE_EXCEEDED"
+	RIdleTimeout       ReasonCode = "R_IDLE_TIMEOUT"
+	RClientStop        ReasonCode = "R_CLIENT_STOP"
+	RUpstreamCorrupt   ReasonCode = "R_UPSTREAM_CORRUPT"   // Upstream source is corrupt or missing keyframes
+	RUpstreamScrambled ReasonCode = "R_UPSTREAM_SCRAMBLED" // Upstream stream is scrambled (encrypted, receiver could not descramble)
+	// RDescramblerDown separates a receiver that has stopped descrambling
+	// altogether from a single service that is simply not entitled. Same packets
+	// on the wire, opposite actions for whoever has to fix it.
+	RDescramblerDown         ReasonCode = "R_DESCRAMBLER_DOWN"
 	RInternalInvariantBreach ReasonCode = "R_INTERNAL_INVARIANT_BREACH"
 
 	RReceiverUsageLiveLimitExceeded             ReasonCode = "RECEIVER_USAGE_LIVE_LIMIT_EXCEEDED"
@@ -159,6 +163,14 @@ const (
 	DInvalidUpstreamInput      ReasonDetailCode = "D_INVALID_UPSTREAM_INPUT"
 	DUpstreamScrambled         ReasonDetailCode = "D_UPSTREAM_SCRAMBLED"
 	DCopyOutputMissingCodec    ReasonDetailCode = "D_COPY_OUTPUT_MISSING_CODEC"
+	// DEncoderCrashed and DBlackOutput carry failures that previously rendered as
+	// D_NONE, i.e. reached the client with an empty reason_detail. The code itself
+	// is never serialised — only its text — so these are internal additions.
+	DEncoderCrashed ReasonDetailCode = "D_ENCODER_CRASHED"
+	DBlackOutput    ReasonDetailCode = "D_BLACK_OUTPUT"
+	// DDescramblerDown separates a receiver that has stopped descrambling
+	// entirely from a single service that is not entitled.
+	DDescramblerDown ReasonDetailCode = "D_DESCRAMBLER_DOWN"
 )
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).
@@ -214,4 +226,51 @@ type Intent struct {
 	Profile    string            `json:"profile"`
 	Priority   int               `json:"priority"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+// Text renders a detail code as the public, API-visible description.
+//
+// This is the ONE place a detail code becomes prose. It used to be copied into
+// each HTTP surface, and the copies had already drifted: the table serving
+// GET /sessions/{id} was missing DUpstreamScrambled, so that endpoint returned an
+// empty reason_detail for a scrambled upstream while every other surface carried
+// the text. Process-failure wording comes from ports so the adapters that produce
+// those failures and this renderer quote the same string.
+func (c ReasonDetailCode) Text() string {
+	switch c {
+	case DContextCanceled:
+		return "context canceled"
+	case DDeadlineExceeded:
+		return "deadline exceeded"
+	case DRecordingComplete:
+		return "recording completed"
+	case DSweeperForcedStopStuck:
+		return "sweeper_forced_stop_stuck"
+	case DInternalInvariantBreach:
+		return "internal invariant breach"
+	case DProcessEndedStartup:
+		return "process ended during startup"
+	case DProcessExitedUnexpectedly:
+		return ports.DetailProcessExitedUnexpectedly
+	case DTranscodeStalled:
+		return ports.DetailTranscodeStalled
+	case DUpstreamEndedPrematurely:
+		return ports.DetailUpstreamEndedPrematurely
+	case DUpstreamInputOpenFailed:
+		return ports.DetailUpstreamOpenFailed
+	case DInvalidUpstreamInput:
+		return ports.DetailInvalidUpstreamInput
+	case DUpstreamScrambled:
+		return ports.DetailUpstreamScrambled
+	case DCopyOutputMissingCodec:
+		return ports.DetailCopyOutputMissingCodec
+	case DEncoderCrashed:
+		return ports.DetailEncoderCrashed
+	case DBlackOutput:
+		return ports.DetailBlackOutput
+	case DDescramblerDown:
+		return ports.DetailDescramblerDown
+	default:
+		return ""
+	}
 }

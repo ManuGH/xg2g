@@ -48,11 +48,11 @@ func TestPreflightTS_RelayClearLead_FastPath(t *testing.T) {
 	if err != nil || !res.OK {
 		t.Fatalf("clear relay source must preflight OK, got ok=%v err=%v reason=%s", res.OK, err, res.Reason)
 	}
-	if res.Bytes > preflightRelayLeadProbeBytes {
-		t.Fatalf("clear-lead fast path must stop at the lead probe (<=%d), read %d", preflightRelayLeadProbeBytes, res.Bytes)
+	if res.Bytes > preflightLockProneLeadProbeBytes {
+		t.Fatalf("clear-lead fast path must stop at the lead probe (<=%d), read %d", preflightLockProneLeadProbeBytes, res.Bytes)
 	}
-	if res.Bytes >= preflightRelayScanBytes {
-		t.Fatalf("fast path must NOT drain the full window (%d), read %d", preflightRelayScanBytes, res.Bytes)
+	if res.Bytes >= preflightLockProneScanBytes {
+		t.Fatalf("fast path must NOT drain the full window (%d), read %d", preflightLockProneScanBytes, res.Bytes)
 	}
 }
 

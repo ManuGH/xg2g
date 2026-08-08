@@ -39,11 +39,19 @@ type Orchestrator struct {
 	TunerSlots        []int  // Available hardware slots
 	HLSRoot           string // Root directory for HLS segments
 	LiveReadySegments int    // Minimum number of live HLS segments required before READY
+	// LiveSegmentSeconds is the configured HLS segment duration. Together with
+	// LiveReadySegments it gives the startup budget the structural cost of
+	// reaching READY, which is what decides whether a retry can fit at all
+	// (see liveReadyFloor).
+	LiveSegmentSeconds int
 	// Optional startup wait overrides for orchestration tests and targeted recovery tuning.
 	PlaylistReadyTimeout         time.Duration
 	SafariPlaylistReadyTimeout   time.Duration
 	RecoveryPlaylistReadyTimeout time.Duration
-	Sweeper                      SweeperConfig
+	// LiveStartupBudget bounds the whole live startup across all internal
+	// attempts (see defaultLiveStartupBudget).
+	LiveStartupBudget time.Duration
+	Sweeper           SweeperConfig
 
 	Pipeline        ports.MediaPipeline
 	Platform        ports.Platform         // OS/FS operations

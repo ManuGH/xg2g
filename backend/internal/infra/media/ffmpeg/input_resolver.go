@@ -14,38 +14,79 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/rs/zerolog"
 )
 
 const (
 	preflightMinBytes          = 188 * 3  // sync floor: never raised, keeps preflight latency/timeout behaviour unchanged
-	preflightScanBytes         = 188 * 48 // best-effort upper bound scanned for scrambling (9024B); only what the relay delivers for free is used
+	preflightScanBytes         = 188 * 48 // best-effort upper bound scanned for scrambling (9024B) on a source that is not lock-prone
 	preflightTimeout           = 2 * time.Second
 	preflightMaxTries          = 3
 	preflightDirectWarmupTries = 8
 
-	// A stream-relay source (port 17999) can emit MPEG-TS packets with the
-	// transport_scrambling_control bits set for a brief interval at the start of a
-	// freshly-started stream; they clear once the stream stabilizes. Sampling only
-	// the first 48 packets (preflightScanBytes) can land entirely inside that initial
-	// interval and misclassify the whole stream — and each retry opens a fresh
-	// connection that lands in it again. For relay sources we read further and
-	// classify on the trailing window instead (see scrambleFractionForSource).
-	preflightRelayScanBytes = 188 * 4096 // ~752KB: past observed descrambler/ECM-lock (~367KB / ~2000 pkt on a real icam channel) + margin. 188*1024 landed INSIDE the lock -> false R_UPSTREAM_SCRAMBLED while VLC (waits longer) played fine. A genuinely scrambled channel stays scrambled throughout, so the trailing window still flags it.
-	preflightRelayTimeout   = 4 * time.Second
+	// A lock-prone source — the stream relay on 17999 and the receiver's own tuner
+	// ports (see isTunerPort) — emits MPEG-TS packets with the
+	// transport_scrambling_control bits set until the control word locks, and only
+	// clears afterwards. Sampling just the first 48 packets can land entirely
+	// inside that lock-in and misclassify the whole stream, and each retry opens a
+	// fresh connection that lands in it again. These sources are therefore read
+	// far enough that the classified window sits past the lock-in; classifyScramble
+	// picks the window.
+	preflightLockProneScanBytes = 188 * 4096 // ~752KB: past observed descrambler/ECM-lock (~367KB / ~2000 pkt on a real icam channel) + margin. 188*1024 landed INSIDE the lock -> false R_UPSTREAM_SCRAMBLED while VLC (waits longer) played fine. A genuinely scrambled channel stays scrambled throughout, so the classified window still flags it.
+	preflightLockProneTimeout   = 4 * time.Second
 )
 
 // Scramble detection thresholds — deliberately conservative so a clear channel
 // (or a tiny sample) can never be falsely classified as encrypted.
 const (
-	tsScrambleMinPackets  = 24  // require a meaningful sample before classifying
-	tsScrambleThreshold   = 0.5 // majority of aligned packets must carry the scrambling bits
-	tsScrambleTailPackets = 48  // relay streams are classified on this trailing window, past the brief initial interval
+	tsScrambleMinPackets = 24  // below this the sample is inconclusive, never "clear"
+	tsScrambleThreshold  = 0.5 // majority of classified packets must carry the scrambling bits
+	// Leading packets skipped on a lock-prone source before classifying, so the
+	// verdict describes the steady state rather than the control-word lock-in.
+	// Measured lock ~2000 packets (~367KB) on a real icam channel; +500 margin.
+	// Capped at half the sample (see classifyScramble), so on a production-sized
+	// read the cap is what binds and the trailing half is classified.
+	tsScrambleLockPrefixPackets = 2500
+	// Smallest classification window with margin against PSI/EPG bursts, measured
+	// on two 13MB captures of real encrypted services (86.7% and 92.9% scrambled
+	// overall). Minimum scrambled fraction across every window of that size:
+	//
+	//	window    capture A   capture B      windows reading below the threshold
+	//	    48       0.0417      0.0208      1344 / 1087
+	//	   256       0.2148      0.1758      1232 / 1084
+	//	  1024       0.6348      0.4121         0 /  427   <- still flips
+	//	  2048       0.6406      0.6758         0 /    0
+	//
+	// Anything smaller can be flipped by a clear burst; 2048 holds a ~0.14 margin.
+	tsScrambleMinConfidentWindow = 2048
+	// Below this fraction a sample is clear no matter how small the window: a
+	// stream that is not encrypted carries transport_scrambling_control 00 on
+	// every packet, so its fraction is exactly 0. The lowest fraction any window
+	// of an encrypted capture reached was 0.0208 (48 packets) — an order of
+	// magnitude above this — so no burst can reach down here.
+	tsScrambleStrictClearFraction = 0.002
+
+	// Consecutive clear verdicts required to overturn earlier scrambled evidence
+	// within one preflight round (see runPreflightWithRetry).
+	preflightClearCorroborations = 2
+	// Extra reads granted beyond the base try budget to corroborate a contested
+	// clear verdict, so corroboration cannot be starved by the budget.
+	preflightCorroborationTries = 1
 )
 
 var ffmpegURLPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^'"\s]+`)
 var preflightRetryDelay = 750 * time.Millisecond
 
 type preflightFn func(context.Context, string) (ports.PreflightResult, error)
+
+// scrambleObserver returns the adapter's descrambling-outcome memory, built on
+// first use so no constructor signature has to change.
+func (a *LocalAdapter) scrambleObserver() *ports.ScrambleObserver {
+	a.scrambleObserverOnce.Do(func() {
+		a.scrambleObs = ports.NewScrambleObserver(0, 0)
+	})
+	return a.scrambleObs
+}
 
 func (a *LocalAdapter) selectStreamURL(ctx context.Context, sessionID, serviceRef, streamURL string) (string, error) {
 	return a.selectStreamURLWithPreflight(ctx, sessionID, serviceRef, streamURL, a.preflightTS)
@@ -68,8 +109,17 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 		Int("http_status", result.HTTPStatus).
 		Msg("stream input preflight finished")
 	reason := preflightReason(result)
+
+	// Record what descrambling did for this service, so a scrambled upstream can
+	// later be attributed to the service or to the receiver as a whole.
+	scrambled := result.Normalized().Reason == ports.PreflightReasonScrambled
 	if err == nil && result.OK {
+		a.scrambleObserver().Observe(serviceRef, false, time.Now())
 		return streamURL, nil
+	}
+	if scrambled {
+		a.scrambleObserver().Observe(serviceRef, true, time.Now())
+		result.Scramble.Scope = a.scrambleObserver().Scope(time.Now())
 	}
 
 	resolvedLogURL := sanitizeURLForLog(streamURL)
@@ -89,16 +139,27 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Msg("streamrelay preflight failed")
 	}
 
-	if result.Normalized().Reason == ports.PreflightReasonScrambled {
-		a.Logger.Warn().
+	if scrambled {
+		scope := result.Scramble.Scope
+		evt := a.Logger.Warn().
 			Str("event", "preflight_scrambled").
 			Str("sessionId", sessionID).
 			Str("service_ref", serviceRef).
 			Str("resolved_url", resolvedLogURL).
+			Str("scramble_scope", string(scope)).
 			Int("preflight_bytes", result.Bytes).
 			Int64("preflight_latency_ms", result.LatencyMs).
-			Int("resolved_port", result.ResolvedPort).
-			Msg("stream is scrambled (encrypted, control word missing) — receiver could not descramble it; not falling back, the same service stays scrambled on every port")
+			Int("resolved_port", result.ResolvedPort)
+		if scope == ports.ScrambleScopeReceiver {
+			// Several distinct services have failed and none has descrambled: this
+			// is the receiver, not the service, and no retry or profile change
+			// touches it. Said plainly so it is actionable at a glance.
+			evt.Str("event", "descrambler_down").
+				Msg("receiver is not descrambling ANY service — check the CAM or softcam on the receiver; retrying or switching channels will not help")
+			metrics.RecordDescramblerDown()
+		} else {
+			evt.Msg("stream is scrambled (encrypted, control word missing) — receiver could not descramble it; not falling back, the same service stays scrambled on every port")
+		}
 		return "", ports.NewPreflightError(ports.PreflightResult{
 			Reason:       ports.PreflightReasonScrambled,
 			Detail:       "scrambled",
@@ -106,6 +167,7 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 			Bytes:        result.Bytes,
 			LatencyMs:    result.LatencyMs,
 			ResolvedPort: result.ResolvedPort,
+			Scramble:     result.Scramble,
 		})
 	}
 
@@ -199,10 +261,10 @@ func (a *LocalAdapter) selectStreamURLWithPreflight(ctx context.Context, session
 	return "", ports.NewPreflightError(result)
 }
 
-// preflightRelayLeadProbeBytes is the leading sample read for the relay clear-lead
+// preflightLockProneLeadProbeBytes is the leading sample read for the relay clear-lead
 // fast path: enough packets (>> tsScrambleMinPackets) to tell an FTA/clear head from
 // a scrambled one, yet tiny vs the full descrambler-lock scan window.
-const preflightRelayLeadProbeBytes = 188 * 128 // ~24KB / 128 packets
+const preflightLockProneLeadProbeBytes = 188 * 128 // ~24KB / 128 packets
 
 func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result ports.PreflightResult, err error) {
 	start := time.Now()
@@ -235,18 +297,19 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	}
 
 	relay := isStreamRelayURL(rawURL)
+	isTunerOrRelay := relay || isTunerPort(result.ResolvedPort)
 	timeout := a.PreflightTimeout
 	if timeout <= 0 {
 		timeout = preflightTimeout
 	}
 	scanBytes := preflightScanBytes
-	if relay {
-		// A relay source can show the scrambling bits set briefly at the start of a
-		// fresh stream; read further and allow more time so the trailing window lands
-		// past that initial interval.
-		scanBytes = preflightRelayScanBytes
-		if timeout < preflightRelayTimeout {
-			timeout = preflightRelayTimeout
+	if isTunerOrRelay {
+		// Tuner (8000/8001/8002) and relay (17999) sources show the scrambling bits
+		// set at the start of a fresh stream until the control word locks; read far
+		// enough that the classified window lands past that lock-in.
+		scanBytes = preflightLockProneScanBytes
+		if timeout < preflightLockProneTimeout {
+			timeout = preflightLockProneTimeout
 		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -295,8 +358,8 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	// progress or genuinely scrambled) fails this check and falls through to the
 	// unchanged trailing-window classification below.
 	n := 0
-	if relay {
-		lead := preflightRelayLeadProbeBytes
+	if isTunerOrRelay {
+		lead := preflightLockProneLeadProbeBytes
 		if lead > scanBytes {
 			lead = scanBytes
 		}
@@ -310,7 +373,10 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 			return result, leadErr
 		}
 		if nLead >= preflightMinBytes && hasTSSync(buf[:nLead]) {
-			if frac, pkts := tsScrambledFraction(buf[:nLead]); pkts >= tsScrambleMinPackets && frac < tsScrambleThreshold {
+			// Classified on the lead window itself (lockProne=false): the whole
+			// point is to read the head, which on a descrambling source is the
+			// lock-in and therefore not clear.
+			if lead := classifyScramble(buf[:nLead], false); lead.Verdict == ports.ScrambleVerdictClear {
 				latency := time.Since(start)
 				a.Logger.Info().
 					Str("url", sanitizeURLForLog(rawURL)).
@@ -318,8 +384,11 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 					Dur("latency", latency).
 					Int("resolved_port", result.ResolvedPort).
 					Str("preflight_fast_path", "clear_lead").
+					Int("scramble_classified_packets", lead.Classified).
+					Str("scramble_fraction", fmt.Sprintf("%.4f", lead.Fraction)).
 					Msg("preflight clear-lead fast path (FTA/passthrough relay source)")
 				result = ports.NewSuccessfulPreflightResult(nLead, latency.Milliseconds(), result.ResolvedPort)
+				result.Scramble = lead
 				return result, nil
 			}
 		}
@@ -342,8 +411,9 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 	// 48-packet sample still lands inside the lock and a healthy stream
 	// is falsely flagged R_UPSTREAM_SCRAMBLED.
 	minRequiredBytes := preflightMinBytes
-	if relay {
-		minRequiredBytes = 188 * 2500 // ~2000 pkt lock + 48 pkt trailing window + margin
+	if isTunerOrRelay {
+		// Enough packets that the classified window still clears the lock prefix.
+		minRequiredBytes = 188 * (tsScrambleLockPrefixPackets + tsScrambleMinPackets)
 	}
 	if n >= minRequiredBytes && err != nil {
 		err = nil
@@ -380,16 +450,33 @@ func (a *LocalAdapter) preflightTS(ctx context.Context, rawURL string) (result p
 		return result, fmt.Errorf("preflight ts sync missing")
 	}
 
-	if fraction, packets := scrambleFractionForSource(buf[:n], relay); packets >= tsScrambleMinPackets && fraction >= tsScrambleThreshold {
+	scramble := classifyScramble(buf[:n], isTunerOrRelay)
+	result.Scramble = scramble
+	scrambleLog := func(e *zerolog.Event) *zerolog.Event {
+		return e.
+			Str("url", sanitizeURLForLog(rawURL)).
+			Str("scramble_verdict", string(scramble.Verdict)).
+			Str("scramble_window", scramble.Window).
+			Int("scramble_aligned_packets", scramble.Aligned).
+			Int("scramble_classified_packets", scramble.Classified).
+			Str("scramble_fraction", fmt.Sprintf("%.4f", scramble.Fraction)).
+			Int("resolved_port", result.ResolvedPort)
+	}
+
+	switch scramble.Verdict {
+	case ports.ScrambleVerdictScrambled:
 		result.Detail = "scrambled"
 		result.Reason = ports.PreflightReasonScrambled
-		a.Logger.Warn().
-			Str("url", sanitizeURLForLog(rawURL)).
-			Int("scanned_packets", packets).
-			Str("scrambled_fraction", fmt.Sprintf("%.2f", fraction)).
-			Int("resolved_port", result.ResolvedPort).
+		scrambleLog(a.Logger.Warn()).
 			Msg("preflight sample is scrambled (encrypted payload, transport_scrambling_control set)")
 		return result, fmt.Errorf("preflight stream is scrambled (encrypted, not descrambled)")
+	case ports.ScrambleVerdictInconclusive:
+		// Not evidence of a clear stream: too few packets survived window
+		// selection to judge. The sample passes (absence of proof is not proof
+		// of encryption) but carries the verdict, so a later scrambled sample in
+		// the same round is not overturned by it.
+		scrambleLog(a.Logger.Warn()).
+			Msg("preflight scramble classification inconclusive — sample too small to judge, not treated as clear")
 	}
 
 	result = ports.NewSuccessfulPreflightResult(n, latency.Milliseconds(), result.ResolvedPort)
@@ -419,13 +506,73 @@ func preflightReason(result ports.PreflightResult) string {
 	return string(ports.PreflightReasonUnknown)
 }
 
+// runPreflightWithRetry samples the source up to a bounded number of times and
+// decides on the accumulated evidence, not on whichever sample happened to be last.
+//
+// The distinction matters because each sample is a short read of a live stream, so
+// one sample can be unrepresentative in either direction. Two rules follow:
+//
+//   - A scrambled verdict is remembered for the whole round. Once the source has
+//     been observed encrypted, an inconclusive sample cannot wave it through — an
+//     unjudgeable sample is not counter-evidence.
+//   - A clear verdict that contradicts earlier scrambled evidence is accepted only
+//     once a second consecutive clear read confirms it. On a tuner source the later
+//     sample is genuinely the more informative one (the control word has had more
+//     time to lock), so a corroborated clear must still win; a lone one must not.
+//     Corroboration gets its own extra read so the try budget cannot starve it.
+//
+// If the round ends without an accepted clear, the remembered scrambled result is
+// returned, so the caller reports the encryption rather than the last sample's
+// incidental outcome.
 func (a *LocalAdapter) runPreflightWithRetry(ctx context.Context, sessionID, rawURL string, preflight preflightFn) (ports.PreflightResult, error) {
-	result, err := preflight(ctx, rawURL)
-	result = normalizeAdapterPreflightResult(result, err)
+	var (
+		result          ports.PreflightResult
+		err             error
+		scrambledResult ports.PreflightResult
+		scrambledErr    error
+		sawScrambled    bool
+		clearRun        int
+	)
 
-	for attempt := 2; shouldRetryTSPreflight(result); attempt++ {
-		maxTries := maxPreflightTries(result)
-		if attempt > maxTries {
+	for attempt := 1; ; attempt++ {
+		result, err = preflight(ctx, rawURL)
+		result = normalizeAdapterPreflightResult(result, err)
+
+		ok := err == nil && result.OK
+		switch {
+		case ok && !sawScrambled:
+			return result, nil
+		case ok && result.Scramble.Verdict == ports.ScrambleVerdictClear:
+			clearRun++
+			if clearRun >= preflightClearCorroborations {
+				a.Logger.Info().
+					Str("event", "input_preflight_clear_corroborated").
+					Str("sessionId", sessionID).
+					Str("url", sanitizeURLForLog(rawURL)).
+					Int("clear_reads", clearRun).
+					Str("scramble_fraction", fmt.Sprintf("%.4f", result.Scramble.Fraction)).
+					Int("scramble_classified_packets", result.Scramble.Classified).
+					Msg("clear preflight verdict corroborated after an earlier scrambled sample; control word locked")
+				return result, nil
+			}
+		default:
+			clearRun = 0
+			if result.Normalized().Reason == ports.PreflightReasonScrambled {
+				sawScrambled, scrambledResult, scrambledErr = true, result, err
+			}
+		}
+
+		// An OK sample that reached here is contested: it did not satisfy the
+		// accept rules above and is only worth another read for corroboration.
+		corroborating := ok
+		if !corroborating && !shouldRetryTSPreflight(result) {
+			break
+		}
+		budget := maxPreflightTries(result)
+		if corroborating {
+			budget += preflightCorroborationTries
+		}
+		if attempt >= budget {
 			break
 		}
 		if waitErr := sleepWithContext(ctx, preflightRetryDelay); waitErr != nil {
@@ -435,22 +582,27 @@ func (a *LocalAdapter) runPreflightWithRetry(ctx context.Context, sessionID, raw
 			Str("event", "input_preflight_retry").
 			Str("sessionId", sessionID).
 			Str("url", sanitizeURLForLog(rawURL)).
-			Int("attempt", attempt).
-			Int("max_attempts", maxTries).
+			Int("attempt", attempt+1).
+			Int("max_attempts", budget).
+			Bool("corroborating_clear", corroborating).
 			Int("preflight_bytes", result.Bytes).
 			Str("preflight_reason", preflightReason(result)).
 			Str("preflight_detail", result.FailureDetail()).
+			Str("scramble_verdict", string(result.Scramble.Verdict)).
 			Int("http_status", result.HTTPStatus).
 			Int("resolved_port", result.ResolvedPort).
 			Msg("retrying transient stream input preflight")
-
-		result, err = preflight(ctx, rawURL)
-		result = normalizeAdapterPreflightResult(result, err)
-		if err == nil && result.OK {
-			return result, nil
-		}
 	}
 
+	if sawScrambled {
+		a.Logger.Warn().
+			Str("event", "input_preflight_scrambled_stands").
+			Str("sessionId", sessionID).
+			Str("url", sanitizeURLForLog(rawURL)).
+			Str("final_scramble_verdict", string(result.Scramble.Verdict)).
+			Msg("preflight round ends scrambled: no corroborated clear verdict overturned it")
+		return scrambledResult, scrambledErr
+	}
 	return result, err
 }
 
@@ -504,73 +656,107 @@ func hasTSSync(buf []byte) bool {
 	return buf[0] == 0x47 && buf[188] == 0x47 && buf[376] == 0x47
 }
 
-// tsScrambledFraction reports the fraction of 188-byte MPEG-TS packets in buf
-// whose transport_scrambling_control bits (the top two bits of byte 3) are set,
-// i.e. the payload is encrypted and was not descrambled by the receiver. buf
-// must be packet-aligned at offset 0 — callers gate this on hasTSSync. Scanning
-// stops at the first packet that loses 0x47 alignment so a mid-buffer glitch
-// cannot inflate the count. Returns (0, 0) when no aligned packet is found.
-func tsScrambledFraction(buf []byte) (fraction float64, packets int) {
-	const pktLen = 188
-	scrambled, total := 0, 0
-	for off := 0; off+pktLen <= len(buf); off += pktLen {
-		if buf[off] != 0x47 {
-			break // lost packet alignment; only trust the aligned prefix
-		}
-		total++
-		if buf[off+3]&0xC0 != 0 { // transport_scrambling_control != 00
-			scrambled++
-		}
-	}
-	if total == 0 {
-		return 0, 0
-	}
-	return float64(scrambled) / float64(total), total
-}
-
-// scrambleFractionForSource picks the scramble-classification window by source type.
-// A direct source carries clear packets from the first one, so the whole sample is
-// scanned. A stream-relay source can show the transport_scrambling_control bits set
-// for a brief interval at the start of a freshly-started stream that clears once it
-// stabilizes, so it is classified on the TRAILING window — past that initial interval
-// — while a stream that stays flagged throughout (its tail is flagged too) is still
-// classified as scrambled.
-func scrambleFractionForSource(buf []byte, relay bool) (fraction float64, packets int) {
-	if relay {
-		return tsScrambledTailFraction(buf, tsScrambleTailPackets)
-	}
-	return tsScrambledFraction(buf)
-}
-
-// tsScrambledTailFraction reports the scrambled fraction over the last tailPackets
-// aligned 188-byte MPEG-TS packets in buf (or all of them if fewer). Like
-// tsScrambledFraction it scans only the aligned prefix (stops at the first packet
-// that loses 0x47 alignment); buf must be packet-aligned at offset 0 — callers gate
-// on hasTSSync. Returns (0, 0) when no aligned packet is found.
-func tsScrambledTailFraction(buf []byte, tailPackets int) (fraction float64, packets int) {
+// tsScrambleFlags reports, per 188-byte MPEG-TS packet in buf, whether the
+// transport_scrambling_control bits (the top two bits of byte 3) are set, i.e.
+// the payload is encrypted and was not descrambled by the receiver. buf must be
+// packet-aligned at offset 0 — callers gate this on hasTSSync. Scanning stops at
+// the first packet that loses 0x47 alignment so a mid-buffer glitch cannot
+// inflate the count.
+func tsScrambleFlags(buf []byte) []bool {
 	const pktLen = 188
 	flags := make([]bool, 0, len(buf)/pktLen+1)
 	for off := 0; off+pktLen <= len(buf); off += pktLen {
 		if buf[off] != 0x47 {
-			break // lost alignment; only trust the aligned prefix
+			break // lost packet alignment; only trust the aligned prefix
 		}
 		flags = append(flags, buf[off+3]&0xC0 != 0)
 	}
+	return flags
+}
+
+// tsScrambledFraction reports the fraction of aligned packets in buf carrying the
+// scrambling bits. Returns (0, 0) when no aligned packet is found.
+//
+//nolint:unused // test-only helper in package ffmpeg
+func tsScrambledFraction(buf []byte) (fraction float64, packets int) {
+	return scrambledFractionOf(tsScrambleFlags(buf))
+}
+
+func scrambledFractionOf(flags []bool) (fraction float64, packets int) {
 	if len(flags) == 0 {
 		return 0, 0
 	}
-	start := 0
-	if len(flags) > tailPackets {
-		start = len(flags) - tailPackets
-	}
-	tail := flags[start:]
 	scrambled := 0
-	for _, s := range tail {
+	for _, s := range flags {
 		if s {
 			scrambled++
 		}
 	}
-	return float64(scrambled) / float64(len(tail)), len(tail)
+	return float64(scrambled) / float64(len(flags)), len(flags)
+}
+
+// classifyScramble decides whether a TS sample is encrypted, and says so in three
+// states — clear, scrambled, or inconclusive. Inconclusive is a first-class answer:
+// a sample too small to judge is not evidence of a clear stream, and the caller
+// must not treat it as one.
+//
+// Window selection. A lock-prone source (tuner or stream relay) carries the
+// scrambling bits from its first packet until the control word locks, so the
+// leading packets describe the lock-in, not the stream. Those are skipped and the
+// verdict is taken on everything that follows — the steady state.
+//
+// The skipped prefix is capped at half the sample so a short read still gets a
+// verdict from its more recent half, and the remainder must still hold
+// tsScrambleMinPackets or the answer is inconclusive.
+//
+// Why the whole remainder and not a trailing peephole: EPG/PSI packets (EIT on
+// PID 0x12, PAT, PMT) are never scrambled, so on a fully encrypted service they
+// form clear bursts. A short window landing in one reads as clear. Replaying every
+// preflight-sized read of a 13MB capture of a real encrypted service through the
+// old trailing-48 window produced 1110 clear verdicts out of 65053 (1.71%) — with
+// three reads per round that is roughly one round in twenty starting a transcode
+// on an undecodable stream. The same replay through this window: 0 of 65053.
+//
+// A source whose control word locks late (past the midpoint of the sample) reads
+// scrambled here where the old peephole read clear. That is deliberate: the round
+// in runPreflightWithRetry re-reads, and on the second read the receiver is
+// already tuned and descrambling, so two clear reads corroborate and the source is
+// accepted. It costs a working channel a couple of extra reads; the inverse error
+// costs 52 seconds and a wrong failure message.
+func classifyScramble(buf []byte, lockProne bool) ports.ScrambleEvidence {
+	flags := tsScrambleFlags(buf)
+	evidence := ports.ScrambleEvidence{Aligned: len(flags), Window: "full"}
+
+	classified := flags
+	if lockProne && len(flags) > 0 {
+		prefix := min(tsScrambleLockPrefixPackets, len(flags)/2)
+		if prefix > 0 {
+			classified = flags[prefix:]
+			evidence.Window = "post_lock"
+		}
+	}
+
+	fraction, packets := scrambledFractionOf(classified)
+	evidence.Fraction = fraction
+	evidence.Classified = packets
+
+	// The two verdicts do not need the same amount of evidence, because a small
+	// window only lies in one direction. A high fraction is trustworthy at any
+	// size: a clear stream carries no scrambling bits at all, so nothing can push
+	// its fraction up. A low fraction is only trustworthy on a large window, or
+	// when it is low enough that no clear burst could account for it.
+	switch {
+	case packets < tsScrambleMinPackets:
+		evidence.Verdict = ports.ScrambleVerdictInconclusive
+	case fraction >= tsScrambleThreshold:
+		evidence.Verdict = ports.ScrambleVerdictScrambled
+	case packets >= tsScrambleMinConfidentWindow, fraction <= tsScrambleStrictClearFraction:
+		evidence.Verdict = ports.ScrambleVerdictClear
+	default:
+		// Low fraction on a window too small to trust it — the PSI/EPG burst zone.
+		evidence.Verdict = ports.ScrambleVerdictInconclusive
+	}
+	return evidence
 }
 
 func buildFallbackURL(resolvedURL, serviceRef string) (string, error) {
@@ -593,6 +779,18 @@ func buildFallbackURL(resolvedURL, serviceRef string) (string, error) {
 	u.Fragment = ""
 	u.User = nil
 	return u.String(), nil
+}
+
+// isTunerPort reports whether the port streams straight off a receiver tuner.
+// Like the relay these sources descramble in-line, so their first packets can
+// carry the scrambling bits until the control word locks.
+func isTunerPort(port int) bool {
+	switch port {
+	case 8000, 8001, 8002:
+		return true
+	default:
+		return false
+	}
 }
 
 func isStreamRelayURL(rawURL string) bool {

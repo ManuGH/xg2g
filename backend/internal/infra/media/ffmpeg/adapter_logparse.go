@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -223,18 +224,18 @@ func summarizeFFmpegFailureLine(line string) string {
 		strings.Contains(lower, "could not find codec parameters for stream") && strings.Contains(lower, "unspecified size"),
 		strings.Contains(lower, "could not write header (incorrect codec parameters ?)"),
 		strings.Contains(lower, "dimensions not set"):
-		return "copy output missing codec parameters"
+		return ports.DetailCopyOutputMissingCodec
 	case strings.Contains(lower, "stream ends prematurely"):
-		return "upstream stream ended prematurely"
+		return ports.DetailUpstreamEndedPrematurely
 	case strings.Contains(lower, "error opening input files"),
 		strings.Contains(lower, "error opening input file"),
 		strings.Contains(lower, "error opening input:"):
 		if strings.Contains(lower, "input/output error") {
-			return "upstream input/output error"
+			return ports.DetailUpstreamIOError
 		}
-		return "failed to open upstream input"
+		return ports.DetailUpstreamOpenFailed
 	case strings.Contains(lower, "invalid data found when processing input"):
-		return "invalid upstream input data"
+		return ports.DetailInvalidUpstreamInput
 	}
 	return ""
 }
@@ -489,13 +490,62 @@ func looksLikeFFmpegWarning(lower string) bool {
 	return false
 }
 
+// ports.DetailEncoderCrashed prefixes the detail recorded when ffmpeg died on a
+// fault signal rather than exiting. Matchers use it as a prefix; the signal name
+// is appended.
+
+// crashSignals are the signals that mean ffmpeg faulted. Everything else that
+// terminates it (SIGKILL from the stall watchdog, SIGTERM on stop) is a
+// deliberate termination and must stay distinguishable from a crash.
+var crashSignals = map[syscall.Signal]bool{
+	syscall.SIGSEGV: true,
+	syscall.SIGABRT: true,
+	syscall.SIGBUS:  true,
+	syscall.SIGILL:  true,
+	syscall.SIGFPE:  true,
+}
+
+// exitSignal reports the signal ffmpeg died on, if it died on one.
+//
+// exec.ExitError.ExitCode() returns -1 for every signal death, so a segfault, an
+// abort and our own watchdog SIGKILL were previously indistinguishable in both
+// the logs and the session reason — six real ffmpeg faults on this deployment
+// left no trace anywhere except core files nobody reads.
+func exitSignal(procErr error) (syscall.Signal, bool) {
+	var exitErr *exec.ExitError
+	if !errors.As(procErr, &exitErr) {
+		return 0, false
+	}
+	status, ok := exitErr.Sys().(syscall.WaitStatus)
+	if !ok || !status.Signaled() {
+		return 0, false
+	}
+	return status.Signal(), true
+}
+
+// isProcessCrash reports whether ffmpeg faulted, as opposed to exiting or being
+// terminated on purpose.
+func isProcessCrash(procErr error) (syscall.Signal, bool) {
+	sig, signaled := exitSignal(procErr)
+	if !signaled || !crashSignals[sig] {
+		return 0, false
+	}
+	return sig, true
+}
+
 func summarizeProcessExit(procErr error) string {
 	if procErr == nil {
 		return ""
+	}
+	if sig, crashed := isProcessCrash(procErr); crashed {
+		return fmt.Sprintf("%s (%s)", ports.DetailEncoderCrashed, sig)
+	}
+	if sig, signaled := exitSignal(procErr); signaled {
+		return fmt.Sprintf("process terminated by signal (%s)", sig)
 	}
 	var exitErr *exec.ExitError
 	if errors.As(procErr, &exitErr) {
 		return fmt.Sprintf("process exit code %d", exitErr.ExitCode())
 	}
-	return "process exited unexpectedly"
+	return ports.DetailProcessExitedUnexpectedly
 }

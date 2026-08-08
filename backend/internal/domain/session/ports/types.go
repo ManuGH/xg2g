@@ -81,6 +81,25 @@ type StreamSpec struct {
 	Quality   QualityProfile
 	Source    StreamSource
 	Profile   ProfileSpec // Transcoding profile (GPU, codec, quality knobs)
+
+	// PrepareDeadline bounds the work an adapter does BEFORE it spawns the media
+	// process: tuning, URL resolution, preflight, and the plan probes. Zero means
+	// unbounded.
+	//
+	// It never bounds the process itself. The spawned pipeline keeps the caller's
+	// long-lived context, because a deadline that reached the process would kill
+	// the very stream the preparation was for.
+	PrepareDeadline time.Time
+
+	// ReadyDeadline is when the caller stops waiting for this start to produce a
+	// playable stream. Zero means it does not stop.
+	//
+	// Adapters clamp their own startup watchdogs to it so the watchdog — which
+	// knows WHY nothing arrived — fires before the caller's timeout, which only
+	// knows THAT nothing arrived. A watchdog that can only fire after the caller
+	// has already given up is unreachable code that costs the session its
+	// diagnosis.
+	ReadyDeadline time.Time
 }
 
 // ProfileSpec is data-driven and future-proof (VisionOS, embedded clients, etc.).

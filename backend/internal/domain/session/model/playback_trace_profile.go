@@ -192,7 +192,10 @@ func TraceStopClassFromReason(reason ReasonCode) PlaybackStopClass {
 	switch reason {
 	case RClientStop, RCancelled, RIdleTimeout:
 		return PlaybackStopClassOperator
-	case RUpstreamCorrupt, RTuneFailed, RTuneTimeout:
+	// A scrambled upstream and a receiver that stopped descrambling are both
+	// upstream of us; classifying them as server faults made our own traces and
+	// metrics blame xg2g for a receiver problem.
+	case RUpstreamCorrupt, RTuneFailed, RTuneTimeout, RUpstreamScrambled, RDescramblerDown:
 		return PlaybackStopClassInput
 	case RPackagerFailed:
 		return PlaybackStopClassPackager

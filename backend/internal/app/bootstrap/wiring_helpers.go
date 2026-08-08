@@ -133,6 +133,7 @@ func (f v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orche
 		TunerLeaseController: f.tunerController,
 		HLSRoot:              cfg.HLS.Root,
 		LiveReadySegments:    cfg.HLS.ReadySegments,
+		LiveSegmentSeconds:   cfg.HLS.SegmentSeconds,
 		PipelineStopTimeout:  5 * time.Second,
 		StartConcurrency:     10,
 		StopConcurrency:      10,

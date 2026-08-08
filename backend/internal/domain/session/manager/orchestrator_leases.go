@@ -234,6 +234,7 @@ func (o *Orchestrator) startPipeline(
 	sessionCtx *sessionContext,
 	currentProfileSpec model.ProfileSpec,
 	tunerSlot int,
+	attempt startupAttempt,
 ) (ports.RunHandle, model.ProfileSpec, error) {
 	// Build StreamSpec (Domain Object)
 	spec := ports.StreamSpec{
@@ -247,6 +248,17 @@ func (o *Orchestrator) startPipeline(
 			Type:      ports.SourceTuner, // Default assumes Tuner/Ref
 			TunerSlot: tunerSlot,
 		},
+	}
+
+	// Hand the attempt's phase boundaries to the adapter so its preparation and
+	// its startup watchdog are bounded by the same clock this orchestrator gives
+	// up on, instead of by constants that can sit either side of it.
+	now := time.Now()
+	if prepareDeadline, bounded := attempt.prepareDeadline(now); bounded {
+		spec.PrepareDeadline = prepareDeadline
+	}
+	if readyDeadline, bounded := attempt.deadline(); bounded {
+		spec.ReadyDeadline = readyDeadline
 	}
 
 	if sessionCtx.Mode == model.ModeRecording {

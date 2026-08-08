@@ -27,6 +27,12 @@ func preflightStartReasonError(err error) (*ports.PreflightError, bool, error) {
 	case ports.PreflightReasonInvalidTS, ports.PreflightReasonNoVideo, ports.PreflightReasonCorruptInput:
 		return pErr, true, newReasonError(model.RUpstreamCorrupt, detail, err)
 	case ports.PreflightReasonScrambled:
+		// Same reason either way — the upstream IS scrambled — but the detail
+		// separates "this service is not descrambling" from "nothing is", which
+		// are different problems for whoever has to act on it.
+		if result.Scramble.Scope == ports.ScrambleScopeReceiver {
+			return pErr, true, newReasonErrorWithDetail(model.RDescramblerDown, model.DDescramblerDown, ports.DetailDescramblerDown, err)
+		}
 		return pErr, true, newReasonErrorWithDetail(model.RUpstreamScrambled, model.DUpstreamScrambled, detail, err)
 	default:
 		return pErr, true, newReasonError(model.RTuneFailed, detail, err)

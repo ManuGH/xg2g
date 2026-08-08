@@ -208,17 +208,35 @@ type FailingStorageBackend struct {
 	id string
 }
 
-func (f *FailingStorageBackend) ID() string { return f.id }
+func (f *FailingStorageBackend) ID() string                { return f.id }
 func (f *FailingStorageBackend) Type() storage.StorageType { return storage.StorageTypeLocal }
-func (f *FailingStorageBackend) Roles() []storage.StorageRole { return []storage.StorageRole{storage.RoleRecordingTarget} }
-func (f *FailingStorageBackend) Capabilities() storage.StorageCapabilities { return storage.StorageCapabilities{SupportsAtomicReplace: true} }
-func (f *FailingStorageBackend) Health(ctx context.Context) storage.HealthStatus { return storage.HealthStatus{} }
-func (f *FailingStorageBackend) Capacity(ctx context.Context) (storage.CapacityInfo, error) { return storage.CapacityInfo{}, nil }
-func (f *FailingStorageBackend) Open(ctx context.Context, objectKey string) (storage.ObjectReader, error) { return nil, storage.ErrObjectNotFound }
-func (f *FailingStorageBackend) OpenRange(ctx context.Context, objectKey string, offset, length int64) (io.ReadCloser, error) { return nil, storage.ErrObjectNotFound }
-func (f *FailingStorageBackend) CommitFile(ctx context.Context, srcLocalPath string, targetObjectKey string) error { return os.ErrPermission }
-func (f *FailingStorageBackend) Stat(ctx context.Context, objectKey string) (storage.ObjectInfo, error) { return storage.ObjectInfo{}, storage.ErrObjectNotFound }
-func (f *FailingStorageBackend) DeleteFile(ctx context.Context, targetObjectKey string) error { return storage.ErrObjectNotFound }
+func (f *FailingStorageBackend) Roles() []storage.StorageRole {
+	return []storage.StorageRole{storage.RoleRecordingTarget}
+}
+func (f *FailingStorageBackend) Capabilities() storage.StorageCapabilities {
+	return storage.StorageCapabilities{SupportsAtomicReplace: true}
+}
+func (f *FailingStorageBackend) Health(ctx context.Context) storage.HealthStatus {
+	return storage.HealthStatus{}
+}
+func (f *FailingStorageBackend) Capacity(ctx context.Context) (storage.CapacityInfo, error) {
+	return storage.CapacityInfo{}, nil
+}
+func (f *FailingStorageBackend) Open(ctx context.Context, objectKey string) (storage.ObjectReader, error) {
+	return nil, storage.ErrObjectNotFound
+}
+func (f *FailingStorageBackend) OpenRange(ctx context.Context, objectKey string, offset, length int64) (io.ReadCloser, error) {
+	return nil, storage.ErrObjectNotFound
+}
+func (f *FailingStorageBackend) CommitFile(ctx context.Context, srcLocalPath string, targetObjectKey string) error {
+	return os.ErrPermission
+}
+func (f *FailingStorageBackend) Stat(ctx context.Context, objectKey string) (storage.ObjectInfo, error) {
+	return storage.ObjectInfo{}, storage.ErrObjectNotFound
+}
+func (f *FailingStorageBackend) DeleteFile(ctx context.Context, targetObjectKey string) error {
+	return storage.ErrObjectNotFound
+}
 
 func TestRetroDVRHandoverEngine_TargetFailureFallbackAndWorkerRetry(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "retro_failure_test")

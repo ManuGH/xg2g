@@ -192,7 +192,10 @@ verify_governed_paths_exist() {
   done
 
   for prefix in "${GOVERNED_PREFIXES[@]}"; do
-    count="$(git ls-files "${prefix}" | wc -l | tr -d '[:space:]')"
+    # -C: pathspecs are resolved against the CWD, not the repo root, so without
+    # this the check silently found nothing and failed whenever it was invoked
+    # from anywhere but the repo root (e.g. from backend/).
+    count="$(git -C "${REPO_ROOT}" ls-files "${prefix}" | wc -l | tr -d '[:space:]')"
     [[ "${count}" != "0" ]] || fail "governed prefix has no tracked files: ${prefix}"
   done
 }

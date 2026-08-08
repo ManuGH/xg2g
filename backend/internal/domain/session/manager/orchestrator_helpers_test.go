@@ -193,8 +193,8 @@ func TestPlaylistReadyTimeout(t *testing.T) {
 		RecoveryPlaylistReadyTimeout: 20 * time.Second,
 	}
 
-	assert.Equal(t, o.playlistReadyTimeout(model.ProfileSpec{Name: "default"}, true), defaultVODPlaylistReadyTimeout)
-	assert.Equal(t, o.playlistReadyTimeout(model.ProfileSpec{Name: "safari_dirty"}, false), 20*time.Second)
-	assert.Equal(t, o.playlistReadyTimeout(model.ProfileSpec{Name: "safari"}, false), 15*time.Second)
-	assert.Equal(t, o.playlistReadyTimeout(model.ProfileSpec{Name: "default"}, false), 10*time.Second)
+	assert.Equal(t, o.playlistReadyTimeout(model.ProfileSpec{Name: "default"}, true, startupAttempt{}), defaultVODPlaylistReadyTimeout)
+	assert.Equal(t, o.playlistReadyTimeout(model.ProfileSpec{Name: "safari_dirty"}, false, startupAttempt{}), 20*time.Second)
+	assert.Equal(t, o.playlistReadyTimeout(model.ProfileSpec{Name: "safari"}, false, startupAttempt{}), 15*time.Second)
+	assert.Equal(t, o.playlistReadyTimeout(model.ProfileSpec{Name: "default"}, false, startupAttempt{}), 10*time.Second)
 }

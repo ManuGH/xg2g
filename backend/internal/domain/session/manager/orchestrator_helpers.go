@@ -38,6 +38,27 @@ const (
 	defaultRecoveryPlaylistReadyTimeout   = 35 * time.Second
 	defaultVODPlaylistReadyTimeout        = 2 * time.Minute
 	defaultStartupProcessRetryLimit       = 1
+
+	// defaultLiveStartupBudget bounds the WHOLE live startup — every internal
+	// attempt together — rather than each attempt on its own.
+	//
+	// The timeouts above are per-attempt ceilings, and they used to stack: an HQ50
+	// profile could spend 75s on its first try and another 60s after a fallback,
+	// so the orchestrator would still be working 135s in. The player gives up long
+	// before that (SESSION_READY_TIMEOUT_MS, 60s, in useLiveSessionController.ts),
+	// so everything past its deadline was unreachable budget that only decided
+	// which message the user got: the player's generic "not ready in time" instead
+	// of the reason the session actually failed with. Session 1619cee0 lost that
+	// race by 80ms.
+	//
+	// So the budget sits under the player's deadline with margin for the terminal
+	// transition to reach the client. Headroom is ample: over a week of staging
+	// sessions the only startup that reached playlist-ready did so in 17.9s.
+	// Keep this below the player's constant if either side ever moves.
+	//
+	// How the budget is divided between an attempt's phases, and between
+	// attempts, lives in startup_budget.go.
+	defaultLiveStartupBudget = 45 * time.Second
 )
 
 func (o *Orchestrator) resolveSession(ctx context.Context, e model.StartSessionEvent) (string, *model.SessionRecord, context.Context, error) {
