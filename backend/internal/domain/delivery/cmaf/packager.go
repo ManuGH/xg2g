@@ -6,6 +6,7 @@ package cmaf
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
@@ -28,25 +29,26 @@ func (p *Packager) Format() delivery.PackagingFormat {
 
 // PackageInitSegment generates the fMP4/CMAF initialization header.
 func (p *Packager) PackageInitSegment(ctx context.Context, trackID string) (*delivery.SegmentResponse, error) {
-	if strings.TrimSpace(trackID) == "" {
+	trackID = strings.TrimSpace(trackID)
+	if trackID == "" {
 		return nil, fmt.Errorf("trackID cannot be empty")
 	}
 
-	// Minimal valid fMP4 init header box stubs (ftyp + moov)
-	ftypBox := []byte{
-		0x00, 0x00, 0x00, 0x18, // box size: 24
-		'f', 't', 'y', 'p', // box type: ftyp
-		'c', 'm', 'f', 'h', // major brand: cmfh
+	// Basic CMAF ftyp + moov setup for stream header initialization
+	ftyp := []byte{
+		0x00, 0x00, 0x00, 0x18, // size: 24
+		'f', 't', 'y', 'p',
+		'c', 'm', 'f', 'c', // major brand: cmfc
 		0x00, 0x00, 0x00, 0x00, // minor version: 0
-		'c', 'm', 'f', 'h', // compatible brand: cmfh
-		'i', 's', 'o', '8', // compatible brand: iso8
+		'c', 'm', 'f', 'c', // compatible brands
+		'i', 's', 'o', '6',
 	}
 
 	return &delivery.SegmentResponse{
 		Type:        delivery.SegmentTypeInit,
 		Format:      delivery.FormatCMAF,
 		ContentType: "video/mp4",
-		Data:        ftypBox,
+		Data:        ftyp,
 	}, nil
 }
 
@@ -67,13 +69,10 @@ func (p *Packager) PackageMediaFragment(ctx context.Context, req delivery.Segmen
 		data = payload
 	} else {
 		// Box payload into mdat box
-		mdatHeader := []byte{
-			byte((len(payload) + 8) >> 24),
-			byte((len(payload) + 8) >> 16),
-			byte((len(payload) + 8) >> 8),
-			byte(len(payload) + 8),
-			'm', 'd', 'a', 't',
-		}
+		mdatHeader := make([]byte, 8)
+		// #nosec G115 -- segment payload is an in-memory fragment well within uint32 capacity
+		binary.BigEndian.PutUint32(mdatHeader[:4], uint32(len(payload)+8))
+		copy(mdatHeader[4:8], "mdat")
 		data = append(mdatHeader, payload...)
 	}
 

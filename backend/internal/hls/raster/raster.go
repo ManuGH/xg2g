@@ -97,6 +97,7 @@ type Runner interface {
 type ExecRunner struct{}
 
 func (ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	// #nosec G204 -- Runner is an internal helper specifically executing ffprobe
 	cmd := exec.CommandContext(ctx, name, args...)
 	return cmd.Output()
 }
