@@ -877,12 +877,6 @@
   box-shadow: var(--shadow-accent-action);
 }
 
-.deviceVolumeHint {
-  color: var(--text-secondary);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
 .liveButton {
   min-height: 44px;
   display: inline-flex;
@@ -1106,12 +1100,6 @@
   max-width: 120px;
 }
 
-.container.surfaceCompact .deviceVolumeHint {
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* ==========================================================================
    Apple HIG iPhone Mobile Layout Optimization (Portrait & Landscape)
    ========================================================================== */
@@ -1135,6 +1123,14 @@
     min-width: 44px;
     min-height: 44px;
     border-radius: 22px;
+  }
+
+  /* Shape and hit area apply to every control; the muted touch fill must not.
+     It would repaint the primary play button — the one element that is meant
+     to stand out — in the same grey as its neighbours. */
+  .liveButton,
+  .controlsBottomRow :global(button[data-size="sm"]:not([data-variant="primary"])),
+  .controlsBottomRow :global(button[data-size="icon"]:not([data-variant="primary"])) {
     background: var(--player-touch-control-bg);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
@@ -1163,11 +1159,11 @@
 
 /* 2026 Liquid Glass Tactile Buttons (iPhone & iPad Touch Feedback) */
 @media (hover: none) and (pointer: coarse) {
+  /* Press feedback is for every control, including the primary. */
   .playPauseButton,
   .liveButton,
   .controlsBottomRow :global(button[data-size="sm"]),
   .controlsBottomRow :global(button[data-size="icon"]) {
-    border: 1px solid var(--player-touch-control-border);
     box-shadow: var(--shadow-player-touch);
     transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.14s ease, border-color 0.14s ease;
   }
@@ -1177,6 +1173,18 @@
   .controlsBottomRow :global(button[data-size="sm"]):active,
   .controlsBottomRow :global(button[data-size="icon"]):active {
     transform: scale(0.92);
+  }
+
+  /* Colour, however, stays off the primary — it owns its own fill and border. */
+  .liveButton,
+  .controlsBottomRow :global(button[data-size="sm"]:not([data-variant="primary"])),
+  .controlsBottomRow :global(button[data-size="icon"]:not([data-variant="primary"])) {
+    border: 1px solid var(--player-touch-control-border);
+  }
+
+  .liveButton:active,
+  .controlsBottomRow :global(button[data-size="sm"]:not([data-variant="primary"])):active,
+  .controlsBottomRow :global(button[data-size="icon"]:not([data-variant="primary"])):active {
     background: var(--player-touch-control-bg-active);
     border-color: var(--player-touch-control-border-active);
   }
@@ -1190,14 +1198,22 @@
   align-items: center;
   gap: 16px;
   margin-top: 8px;
+  /* Let the two groups stack once they no longer fit side by side. Without
+     this the utility cluster wraps internally, claims the full row width and
+     squeezes .controlsLeft to zero — its transport buttons then paint on top
+     of the utility buttons (measured at 393px: controlsLeft width 0). */
+  flex-wrap: wrap;
 }
 
 .controlsLeft {
   display: flex;
   align-items: center;
   gap: 16px;
-  flex: 1;
-  min-width: 0;
+  /* min-content, not 0: the group may shrink until its buttons touch, never
+     past it. The title inside keeps its own min-width:0 so it ellipsises. */
+  flex: 1 1 auto;
+  min-width: min-content;
+  flex-wrap: wrap;
 }
 
 .inlineTitleGroup {

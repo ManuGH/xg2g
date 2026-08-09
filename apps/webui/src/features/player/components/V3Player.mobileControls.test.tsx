@@ -269,7 +269,10 @@ describe('V3Player Mobile Controls', () => {
       expect(screen.queryByRole('slider')).not.toBeInTheDocument();
     });
     expect(await screen.findByRole('button', { name: /unmute|mute/i })).toBeInTheDocument();
-    expect(screen.getByText(/use device buttons/i)).toBeInTheDocument();
+    // The hardware-volume hint is no longer a text pill in the control row —
+    // it rides on the mute button's accessible name, so it stays announced
+    // without occupying ~270px next to the other controls.
+    expect(await screen.findByRole('button', { name: /use device buttons/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /player\.pipLabel/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
   });
