@@ -168,6 +168,8 @@ export function usePlayerChrome({
   const [liveWindowClockMs, setLiveWindowClockMs] = useState(() => Date.now());
   const [nativeFullscreenPending, setNativeFullscreenPending] = useState(false);
   const lastNonZeroVolumeRef = useRef<number>(1);
+  const userExplicitlyMutedRef = useRef(false);
+  const programmaticVolumeChangeRef = useRef(false);
   const idleTimerRef = useRef<number | null>(null);
   const pendingNativeFullscreenRef = useRef(false);
   const appliedTouchDvrDefaultRef = useRef(false);
@@ -694,15 +696,18 @@ export function usePlayerChrome({
     const video = videoRef.current;
     if (!video) return;
 
+    programmaticVolumeChangeRef.current = true;
     if (!video.muted) {
       if (video.volume > 0) {
         lastNonZeroVolumeRef.current = video.volume;
       }
+      userExplicitlyMutedRef.current = true;
       video.muted = true;
       setIsMuted(true);
       return;
     }
 
+    userExplicitlyMutedRef.current = false;
     const restoreVolume = lastNonZeroVolumeRef.current > 0 ? lastNonZeroVolumeRef.current : video.volume;
     if (restoreVolume > 0 && video.volume !== restoreVolume) {
       video.volume = restoreVolume;
@@ -715,12 +720,14 @@ export function usePlayerChrome({
   const handleVolumeChange = useCallback((newVolume: number) => {
     const video = videoRef.current;
     if (!video) return;
+    programmaticVolumeChangeRef.current = true;
     video.volume = newVolume;
     setVolume(newVolume);
     if (newVolume > 0) {
       lastNonZeroVolumeRef.current = newVolume;
     }
     const shouldMute = newVolume === 0;
+    userExplicitlyMutedRef.current = shouldMute;
     video.muted = shouldMute;
     setIsMuted(shouldMute);
   }, [videoRef]);
@@ -729,6 +736,8 @@ export function usePlayerChrome({
     if (!autoStart) return;
     const video = videoRef.current;
     if (!video) return;
+    programmaticVolumeChangeRef.current = true;
+    userExplicitlyMutedRef.current = false;
     video.muted = true;
     setIsMuted(true);
   }, [autoStart, videoRef]);
@@ -1167,12 +1176,36 @@ export function usePlayerChrome({
     const video = videoRef.current;
     if (!video) return;
 
+    const onVolumeChange = () => {
+      if (programmaticVolumeChangeRef.current) {
+        programmaticVolumeChangeRef.current = false;
+        return;
+      }
+
+      // On mobile WebKit / touch devices, when hardware volume buttons are pressed,
+      // WebKit fires 'volumechange'. If the video was playing muted due to autoplay
+      // policy, automatically un-mute so the user gets audio immediately.
+      if (video.muted && shouldForceNativeMobileHls(video) && !userExplicitlyMutedRef.current) {
+        video.muted = false;
+      }
+      setVolume(video.volume);
+      setIsMuted(video.muted);
+      if (video.volume > 0) {
+        lastNonZeroVolumeRef.current = video.volume;
+      }
+    };
+
     setVolume(video.volume);
     setIsMuted(video.muted);
     if (video.volume > 0) {
       lastNonZeroVolumeRef.current = video.volume;
     }
-  }, [videoRef]);
+
+    video.addEventListener('volumechange', onVolumeChange);
+    return () => {
+      video.removeEventListener('volumechange', onVolumeChange);
+    };
+  }, [shouldForceNativeMobileHls, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;

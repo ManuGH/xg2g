@@ -1009,6 +1009,13 @@
   align-items: stretch;
 }
 
+.container.surfaceCompact.userIdle .controlsHeader,
+.container.surfaceCompact.userIdle .closeButton {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease-out;
+}
+
 /* The default scrim ramps to black only at the very bottom, which works under
    a single row. The compact chrome is two rows tall, so its top row — scrubber
    and transport — sat in the still-transparent part and washed out over bright
