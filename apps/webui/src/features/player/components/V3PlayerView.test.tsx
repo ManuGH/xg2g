@@ -124,6 +124,7 @@ function createViewState(overrides: Partial<V3PlayerViewState> = {}): V3PlayerVi
     audioToggleActive: true,
     canAdjustVolume: false,
     volume: 1,
+    isMuted: false,
     deviceVolumeHint: 'Use device buttons',
     showPipButton: false,
     pipTitle: 'Picture in picture',

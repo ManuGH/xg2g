@@ -143,6 +143,17 @@ export function V3PlayerView({
           </div>
         )}
 
+        {viewState.isMuted && !viewState.showSpinnerCard && (
+          <button
+            type="button"
+            className={styles.unmuteBanner}
+            onClick={() => void actions.toggleMute()}
+            aria-label={viewState.audioToggleLabel}
+          >
+            <span aria-hidden="true">🔊</span> {viewState.audioToggleLabel}
+          </button>
+        )}
+
         <video
           ref={videoRef}
           controls={false}
