@@ -6,7 +6,7 @@ set -euo pipefail
 FFMPEG_VERSION="8.1.2"
 FFMPEG_URL="https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"
 NVCODEC_HEADERS_VERSION="n13.0.19.0"
-NVCODEC_HEADERS_REPO="https://git.videolan.org/git/ffmpeg/nv-codec-headers.git"
+NVCODEC_HEADERS_REPO="https://github.com/FFmpeg/nv-codec-headers.git"
 TARGET_DIR="${TARGET_DIR:-/opt/ffmpeg}"
 BUILD_DIR="${BUILD_DIR:-/tmp/ffmpeg-build}"
 
@@ -55,7 +55,10 @@ tar xf "ffmpeg-${FFMPEG_VERSION}.tar.xz"
 # Install pinned NVENC headers required by FFmpeg's ffnvcodec detection.
 rm -rf nv-codec-headers
 echo "Cloning nv-codec-headers ${NVCODEC_HEADERS_VERSION}..."
-git clone --branch "${NVCODEC_HEADERS_VERSION}" --depth 1 "${NVCODEC_HEADERS_REPO}" nv-codec-headers
+if ! git clone --branch "${NVCODEC_HEADERS_VERSION}" --depth 1 "${NVCODEC_HEADERS_REPO}" nv-codec-headers; then
+    echo "Fallback: cloning nv-codec-headers from videolan mirror..."
+    git clone --branch "${NVCODEC_HEADERS_VERSION}" --depth 1 "https://git.videolan.org/git/ffmpeg/nv-codec-headers.git" nv-codec-headers
+fi
 echo "Installing nv-codec-headers ${NVCODEC_HEADERS_VERSION}..."
 make -C nv-codec-headers PREFIX=/usr/local install
 
