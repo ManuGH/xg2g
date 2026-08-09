@@ -1009,6 +1009,21 @@
   align-items: stretch;
 }
 
+/* The default scrim ramps to black only at the very bottom, which works under
+   a single row. The compact chrome is two rows tall, so its top row — scrubber
+   and transport — sat in the still-transparent part and washed out over bright
+   content (verified against a live picture with a near-white lower third).
+   Pull the ramp up so every row has a backing. */
+.container.surfaceCompact .controlsHeader::before {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.5) 16%,
+    rgba(0, 0, 0, 0.84) 52%,
+    rgba(0, 0, 0, 0.92) 100%
+  );
+}
+
 .container.surfaceCompact .statsOverlay {
   right: 16px;
   top: 88px;
@@ -1078,7 +1093,10 @@
   margin-left: 0;
   justify-content: space-between;
   align-self: stretch;
-  gap: 10px;
+  /* Seven 44px icon buttons need 308px; at 361px of usable width a 10px gap
+     overflows by 19px and drops the last one onto its own line. 6px keeps the
+     utility cluster on a single row down to a 375pt phone. */
+  gap: 6px;
 }
 
 .container.surfaceCompact .volumeControl {
@@ -1252,4 +1270,50 @@
   align-items: center;
   gap: 12px;
   width: 100%;
+}
+
+/* ==========================================================================
+   Portrait: picture at the top, controls directly underneath
+   --------------------------------------------------------------------------
+   A 16:9 picture centred in a portrait viewport leaves two thick black bands
+   and pushes the control bar to the bottom edge, hundreds of pixels away from
+   what it controls (measured 900x1200: picture 876x493, 333px of black above
+   and below, chrome another 254px down at the screen edge). Anchoring the
+   picture to the top and letting the chrome follow it in normal flow is what
+   every native player does in portrait, and it frees the lower half instead
+   of painting it black.
+   Landscape keeps the overlay behaviour: there the picture fills the viewport
+   and floating controls are correct.
+   ========================================================================== */
+/* Phones are excluded on purpose. There the chrome is tall relative to the
+   screen, so the picture already sits just above it (48px apart at 393x852) —
+   anchoring it to the top would only drag the transport row from y=630 up to
+   y=300, out of the one-handed thumb zone. Tablets and narrow desktop windows
+   are the ones with a real gap: 192px on a 834x1194 iPad, 333px at 900x1200. */
+@media (orientation: portrait) {
+  .container.overlay:not(.surfaceCompact) {
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+
+  .container.overlay:not(.surfaceCompact) .videoWrapper {
+    flex: 0 0 auto;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+
+  /* Off the picture, the controls have nothing to obscure — so they stay put
+     instead of fading out with the idle timer, and the scrim that made them
+     readable over video is dead weight. */
+  .container.overlay:not(.surfaceCompact) .controlsHeader,
+  .container.overlay:not(.surfaceCompact).userIdle .controlsHeader {
+    position: static;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .container.overlay:not(.surfaceCompact) .controlsHeader::before {
+    display: none;
+  }
 }
