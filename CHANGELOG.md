@@ -1126,3 +1126,12 @@ v3.9.7 Linux installation and verification behavior:
 
 API, configuration, storage, streaming, and authorization contracts are
 unchanged.
+
+
+### Behavioral Changes (v3.10.0)
+v3.10.0 Mobile WebUI, Transcode Tuning & Startup Orchestration:
+
+- WebUI Player Redesign: Replaced legacy control bar with responsive Apple HIG 7-icon compact chrome for mobile and tablet, with full-screen edge-to-edge rendering, floating iOS unmute badge, and automatic idle fade-out.
+- High-Fidelity Video Tuning: Elevated AV1 maxrate ceiling to 32Mbps (64Mbps burst buffer) and tuned unsharp filter (2.0) with QVBR 70 for reference-grade LAN streaming. Default audio bitrate raised to 320k.
+- Startup & Ringbuffer Engine: Integrated DVR ringbuffer engine, SnapshotReservation API, and budget-aware preflight startup orchestration with deadline clamping.
+- Dead-CSS Governance Gate: Added strict AST-level gate:no-dead-css:player into standard linting.
