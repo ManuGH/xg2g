@@ -542,6 +542,23 @@ export function usePlayerChrome({
       }
     }
 
+    // Intentional Architecture Decision: Touch WebKit Fullscreen Priority (iOS / iPadOS)
+    // On Touch WebKit devices (iPhone and iPadOS), we deliberately route fullscreen
+    // to the native AVPlayer (video.webkitEnterFullscreen()) BEFORE attempting W3C
+    // container.requestFullscreen().
+    //
+    // Rationale:
+    // 1. Rock-solid system integration: Native AVPlayer guarantees smooth PiP transitions,
+    //    hardware media control synchronization, AirPlay 2 routing, and battery-efficient decoding.
+    // 2. Avoid MSE/buffer handoff instability: Touch WebKit native HLS playback maintains continuous
+    //    session state without the risk of buffer stalling during container fullscreen transitions.
+    // 3. Trade-off: On iPadOS, this replaces xg2g's custom HTML overlay chrome with Apple's native
+    //    system playback UI in fullscreen mode. This is an explicit, intentional trade-off in favor
+    //    of playback stability and system feature parity.
+    //
+    // Note: Engine and fullscreen routing throughout the player rely strictly on feature detection
+    // (canPlayType + webkitEnterFullscreen / webkitSupportsPresentationMode + maxTouchPoints),
+    // never on UA sniffing, osName, or surface layout flags.
     if (video && useTouchWebKitFullscreen) {
       pendingNativeFullscreenRef.current = true;
       if (!canEnterTouchNativeFullscreenNow(video)) {
