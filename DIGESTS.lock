@@ -95,6 +95,10 @@
     "v3.9.7": {
       "digest": "pending",
       "published_at": "pending"
+    },
+    "v3.10.0": {
+      "digest": "pending",
+      "published_at": "pending"
     }
   }
 }
