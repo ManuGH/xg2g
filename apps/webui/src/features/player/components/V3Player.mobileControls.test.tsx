@@ -415,4 +415,26 @@ describe('V3Player Mobile Controls', () => {
       expect(queryByRole('button', { name: /pip/i })).not.toBeInTheDocument();
     });
   });
+
+  it('shows PiP button when webkitSupportsPresentationMode is supported and returns true', async () => {
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSetPresentationMode', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
+      configurable: true,
+      value: vi.fn().mockImplementation((mode: string) => mode === 'picture-in-picture'),
+    });
+
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true,
+    } as V3PlayerProps;
+
+    const { getByRole } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(getByRole('button', { name: /pip/i })).toBeInTheDocument();
+    });
+  });
 });
