@@ -34,8 +34,11 @@ export function V3PlayerView({
   // On phone-sized surfaces apply the compact mobile player layout (full-bleed
   // video, repositioned chrome). The styles existed in V3Player.module.css but
   // were never wired up, so the player rendered letterboxed on phones.
-  const { surface } = useUiSurface();
-  const isCompactSurface = surface === 'small';
+  // Phone-width AND phone-height both need the compact chrome. A landscape
+  // iPhone reports surface 'medium' (852pt wide) but only ~393pt tall, where the
+  // roomy desktop chrome eats 79% of the screen — measured 312px of 393px.
+  const { surface, heightClass } = useUiSurface();
+  const isCompactSurface = surface === 'small' || heightClass === 'compact';
   return (
     <div
       ref={containerRef}
@@ -274,7 +277,10 @@ export function V3PlayerView({
               )}
 
               {viewState.showDvrModeButton && (
-                <Button onClick={actions.enterDVRMode} title={viewState.dvrModeLabel}>
+                // Ghost, not the Button default: DVR is a mode switch. Leaving it
+                // primary put a second blue block next to play/pause and split the
+                // one visual anchor the control row has.
+                <Button variant="ghost" size="sm" onClick={actions.enterDVRMode} title={viewState.dvrModeLabel}>
                   <PipGlyph /> DVR
                 </Button>
               )}
@@ -357,22 +363,37 @@ export function V3PlayerView({
                 </Button>
               )}
 
-              {viewState.showVolumeControls && (
-                <div className={styles.volumeControl}>
+              {viewState.showVolumeControls && (() => {
+                const muteButton = (
                   <Button
                     variant="ghost"
                     size="sm"
                     className={[styles.audioToggleButton, viewState.audioToggleActive ? null : styles.audioMuted].filter(Boolean).join(' ')}
                     onClick={actions.toggleMute}
-                    title={viewState.audioToggleLabel}
-                    aria-label={viewState.audioToggleLabel}
+                    title={viewState.canAdjustVolume
+                      ? viewState.audioToggleLabel
+                      : `${viewState.audioToggleLabel} — ${viewState.deviceVolumeHint}`}
+                    aria-label={viewState.canAdjustVolume
+                      ? viewState.audioToggleLabel
+                      : `${viewState.audioToggleLabel} — ${viewState.deviceVolumeHint}`}
                     aria-pressed={viewState.audioToggleActive}
                   >
                     <span className={styles.audioToggleIcon} aria-hidden="true">
                       <VolumeGlyph muted={!viewState.audioToggleActive} />
                     </span>
                   </Button>
-                  {viewState.canAdjustVolume ? (
+                );
+
+                // Without a usable slider (iOS/iPadOS reject programmatic volume)
+                // the framed group would be a pill around a single pill, and the
+                // hardware-volume hint a permanent sentence occupying ~270px of
+                // the control row. Ship the bare toggle and carry the hint in its
+                // accessible name instead.
+                if (!viewState.canAdjustVolume) return muteButton;
+
+                return (
+                  <div className={styles.volumeControl}>
+                    {muteButton}
                     <input
                       type="range"
                       min="0"
@@ -382,11 +403,9 @@ export function V3PlayerView({
                       value={viewState.volume}
                       onChange={(e) => actions.changeVolume(parseFloat(e.target.value))}
                     />
-                  ) : (
-                    <span className={styles.deviceVolumeHint}>{viewState.deviceVolumeHint}</span>
-                  )}
-                </div>
-              )}
+                  </div>
+                );
+              })()}
 
               {viewState.showPipButton && (
                 <Button

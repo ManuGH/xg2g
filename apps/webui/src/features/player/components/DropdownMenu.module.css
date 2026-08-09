@@ -18,6 +18,15 @@
   justify-content: center;
 }
 
+/* 18px glyph + 8px padding leaves a 34px target — below the 44pt Apple asks
+   for, and the only control in the player chrome that fell short. */
+@media (hover: none) and (pointer: coarse) {
+  .trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .trigger:hover {
   background: var(--surface-highlight);
   color: var(--text-primary);
