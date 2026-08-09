@@ -27,7 +27,7 @@ type TunerLeaseController interface {
 	Release(ctx context.Context, handle *TunerLeaseHandle, reason ReasonCode) error
 }
 
-// RenewalScheduler abstracts periodic ticker scheduling for deterministic testing without real time.Sleep.
+// RenewalScheduler abstracts periodic ticker scheduling for deterministic testing without real sleeping.
 type RenewalScheduler interface {
 	C() <-chan time.Time
 	Stop()

@@ -18,7 +18,7 @@ Governed by [ADR-031](../ADR/031-resource-conflict-policy-engine.md) and detaile
 | `POLICY_INVALID_INPUT` | Validation | Evaluation request or snapshot failed structural validation. | `REJECT` |
 
 ### 2. Tuner Lease & Reconciliation Engine (`LEASE_*` & `RECONCILIATION_*`)
-Governed by [ADR-029](../ADR/029-resource-arbitration-composite-lease-model.md) and [ADR-030](../ADR/030-persistent-intent-model-and-tuner-lease-reconciliation.md).
+Governed by [ADR-029](../ADR/029-resource-arbitration-composite-lease-model.md) and [ADR-030](../ADR/030-lease-reconciliation.md).
 
 | Reason Code | Category | Description |
 | :--- | :--- | :--- |

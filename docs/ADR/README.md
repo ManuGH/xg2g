@@ -20,6 +20,7 @@ ADRs are stable reference points for maintainers and operationalize the [Enginee
 | [ADR-027](027-openapi-operation-catalog.md) | OpenAPI Operation Catalog | ✅ ACTIVE |
 | [ADR-028](028-playback-capability-claims.md) | Playback Capability Claims and Verified Truth | ✅ ACTIVE |
 | [ADR-029](029-resource-arbitration-composite-lease-model.md) | Resource Arbitration and Composite Lease Model | ✅ ACTIVE |
+| [ADR-030](030-lease-reconciliation.md) | Lease Reconciliation Engine & Persistent Intent Model | ✅ ACTIVE |
 | [ADR-031](031-resource-conflict-policy-engine.md) | Resource Conflict Policy Engine | ✅ ACTIVE |
 
 ## Decision Rules

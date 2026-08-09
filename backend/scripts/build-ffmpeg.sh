@@ -19,7 +19,7 @@ cd "${BUILD_DIR}"
 # Download FFmpeg source
 if [ ! -f "ffmpeg-${FFMPEG_VERSION}.tar.xz" ]; then
     echo "Downloading FFmpeg ${FFMPEG_VERSION}..."
-    curl -fsSL "${FFMPEG_URL}" -o "ffmpeg-${FFMPEG_VERSION}.tar.xz"
+    curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused --connect-timeout 20 "${FFMPEG_URL}" -o "ffmpeg-${FFMPEG_VERSION}.tar.xz"
 fi
 
 # Verify checksum (sha256)
