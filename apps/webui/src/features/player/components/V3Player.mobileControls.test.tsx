@@ -315,7 +315,7 @@ describe('V3Player Mobile Controls', () => {
     });
 
     const player = container.firstElementChild as HTMLElement;
-    expect(player.className).not.toContain(styles.touchInlineChrome);
+    expect(player.className).not.toContain(styles.surfaceCompact);
   });
 
   it('resumes native inline playback after lock and unlock on touch devices', async () => {
