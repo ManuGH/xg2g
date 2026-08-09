@@ -65,6 +65,9 @@ function HookHarness({
       <button onClick={chrome.applyAutoplayMute} type="button">
         mute
       </button>
+      <button onClick={chrome.toggleMute} type="button">
+        togglemute
+      </button>
       <button onClick={() => void chrome.toggleFullscreen()} type="button">
         fullscreen
       </button>
@@ -356,6 +359,36 @@ describe('usePlayerChrome', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'mute' }));
 
+    expect(video.muted).toBe(true);
+  });
+
+  it('unmutes autoplay on hardware volume change for native mobile HLS', () => {
+    render(<HookHarness shouldForceNativeMobileHls={() => true} />);
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    fireEvent.click(screen.getByRole('button', { name: 'mute' })); // applyAutoplayMute
+    expect(video.muted).toBe(true);
+
+    // Hardware volume key pressed -> WebKit dispatches volumechange
+    fireEvent(video, new Event('volumechange'));
+
+    expect(video.muted).toBe(false);
+  });
+
+  it('keeps video muted on volume change if user explicitly toggled mute', () => {
+    render(<HookHarness shouldForceNativeMobileHls={() => true} />);
+
+    const video = screen.getByTestId('player-video') as HTMLVideoElement;
+    video.muted = false;
+
+    // User explicitly clicked mute button
+    fireEvent.click(screen.getByRole('button', { name: 'togglemute' }));
+    expect(video.muted).toBe(true);
+
+    // Hardware volume change event fires
+    fireEvent(video, new Event('volumechange'));
+
+    // Stays muted because user explicitly requested mute
     expect(video.muted).toBe(true);
   });
 
