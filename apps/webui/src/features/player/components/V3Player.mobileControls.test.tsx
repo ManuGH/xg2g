@@ -64,6 +64,8 @@ describe('V3Player Mobile Controls', () => {
   let requestPictureInPictureDescriptor: PropertyDescriptor | undefined;
   let requestFullscreenDescriptor: PropertyDescriptor | undefined;
   let visibilityStateDescriptor: PropertyDescriptor | undefined;
+  let webkitSupportsPresentationModeDescriptor: PropertyDescriptor | undefined;
+  let webkitSetPresentationModeDescriptor: PropertyDescriptor | undefined;
   const webkitEnterFullscreen = vi.fn();
   const requestFullscreen = vi.fn().mockResolvedValue(undefined);
 
@@ -75,6 +77,8 @@ describe('V3Player Mobile Controls', () => {
     requestPictureInPictureDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'requestPictureInPicture');
     requestFullscreenDescriptor = Object.getOwnPropertyDescriptor(HTMLDivElement.prototype, 'requestFullscreen');
     visibilityStateDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    webkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode');
+    webkitSetPresentationModeDescriptor = Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'webkitSetPresentationMode');
 
     Object.defineProperty(window.navigator, 'maxTouchPoints', {
       configurable: true,
@@ -136,6 +140,18 @@ describe('V3Player Mobile Controls', () => {
 
     if (maxTouchPointsDescriptor) {
       Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
+    }
+
+    if (webkitSupportsPresentationModeDescriptor) {
+      Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', webkitSupportsPresentationModeDescriptor);
+    } else {
+      delete (HTMLVideoElement.prototype as any).webkitSupportsPresentationMode;
+    }
+
+    if (webkitSetPresentationModeDescriptor) {
+      Object.defineProperty(HTMLVideoElement.prototype, 'webkitSetPresentationMode', webkitSetPresentationModeDescriptor);
+    } else {
+      delete (HTMLVideoElement.prototype as any).webkitSetPresentationMode;
     }
 
     vi.restoreAllMocks();
@@ -378,4 +394,25 @@ describe('V3Player Mobile Controls', () => {
     expect(video.hasAttribute('playsinline')).toBe(true);
   });
 
+  it('does not show PiP button when webkitSupportsPresentationMode is unsupported or returns false', async () => {
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSetPresentationMode', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'webkitSupportsPresentationMode', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
+
+    const props = {
+      src: 'http://example.com/playlist.m3u8',
+      autoStart: true,
+    } as V3PlayerProps;
+
+    const { queryByRole } = render(<V3Player {...props} />);
+
+    await waitFor(() => {
+      expect(queryByRole('button', { name: /pip/i })).not.toBeInTheDocument();
+    });
+  });
 });
