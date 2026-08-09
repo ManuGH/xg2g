@@ -487,7 +487,6 @@ describe('V3Player ServiceRef Input', () => {
       return originalCanPlayType.call(this, type);
     });
 
-    window.history.replaceState({}, '', '/?xg2g_ios_native_av1=1');
     resetCachedCodecs();
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/live/stream-info')) {

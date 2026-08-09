@@ -152,12 +152,13 @@ describe('codecDetection', () => {
     expect(preferred).toEqual(['av1', 'hevc', 'h264']);
   });
 
-  it('keeps the ios native av1 query override compatible with supported-or-smooth probes', async () => {
+  it('allows ios native av1 when probe is supported even if smooth is false', async () => {
+    resetCachedCodecs();
     (navigator as any).mediaCapabilities = {
       decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
         const contentType = video?.contentType ?? '';
         if (contentType.includes('av01')) {
-          return { supported: true, smooth: true, powerEfficient: false };
+          return { supported: true, smooth: false, powerEfficient: false };
         }
         if (contentType.includes('hvc1') || contentType.includes('hev1')) {
           return { supported: true, smooth: true, powerEfficient: true };
@@ -184,13 +185,6 @@ describe('codecDetection', () => {
     Object.defineProperty(navigator, 'maxTouchPoints', {
       configurable: true,
       value: 5,
-    });
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: {
-        ...originalLocation,
-        search: '?xg2g_ios_native_av1=1',
-      },
     });
 
     const preferred = await detectPreferredCodecs(video);
@@ -198,12 +192,13 @@ describe('codecDetection', () => {
     expect(preferred).toEqual(['av1', 'hevc', 'h264']);
   });
 
-  it('allows ios native av1 automatically on the staging host aliases', async () => {
+  it('excludes av1 on ios native when av1 probe is unsupported', async () => {
+    resetCachedCodecs();
     (navigator as any).mediaCapabilities = {
       decodingInfo: vi.fn().mockImplementation(async ({ video }: { video?: { contentType?: string } }) => {
         const contentType = video?.contentType ?? '';
         if (contentType.includes('av01')) {
-          return { supported: true, smooth: true, powerEfficient: false };
+          return { supported: false, smooth: false, powerEfficient: false };
         }
         if (contentType.includes('hvc1') || contentType.includes('hev1')) {
           return { supported: true, smooth: true, powerEfficient: true };
@@ -219,7 +214,7 @@ describe('codecDetection', () => {
     video.webkitEnterFullscreen = vi.fn();
     vi.spyOn(video, 'canPlayType').mockImplementation((type: string) => {
       if (type === 'application/vnd.apple.mpegurl') return 'probably';
-      if (type.includes('av01')) return 'probably';
+      if (type.includes('av01')) return '';
       if (type.includes('hvc1') || type.includes('hev1')) return 'probably';
       if (type.includes('avc1')) return 'probably';
       return '';
@@ -231,21 +226,10 @@ describe('codecDetection', () => {
       configurable: true,
       value: 5,
     });
-    for (const hostname of ['tv.example.com', 'tv.example.net']) {
-      resetCachedCodecs();
-      Object.defineProperty(window, 'location', {
-        configurable: true,
-        value: {
-          ...originalLocation,
-          hostname,
-          host: hostname,
-          search: '',
-        },
-      });
 
-      const preferred = await detectPreferredCodecs(video);
-      expect(preferred).toEqual(['av1', 'hevc', 'h264']);
-    }
+    const preferred = await detectPreferredCodecs(video);
+
+    expect(preferred).toEqual(['hevc', 'h264']);
   });
 
   it('recomputes preferred codecs when an ios native probe follows a cached non-native probe', async () => {
