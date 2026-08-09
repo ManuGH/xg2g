@@ -1,4 +1,4 @@
-import { isTruthyOverrideValue } from './iosNativeAv1Experiment';
+import { isTruthyOverrideValue } from './overrideFlags';
 
 // Runtime opt-in for routing HEVC live sources on Safari through NATIVE WebKit
 // HLS (the <video> element loading the m3u8 directly) instead of hls.js/MSE.
