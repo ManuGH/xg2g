@@ -20,7 +20,7 @@
   width: 100vw;
   height: 100vh;
   height: 100dvh;
-  padding: calc(10px + var(--sat)) 12px calc(32px + var(--sab));
+  padding: 0;
   background: var(--bg-video-stage);
   z-index: 9999;
   justify-content: flex-start;
@@ -248,6 +248,32 @@
   color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.unmuteBanner {
+  position: absolute;
+  top: calc(16px + var(--sat, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-action) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-action) 90%, black 10%);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 0.14s ease, opacity 0.2s ease;
+}
+
+.unmuteBanner:active {
+  transform: translateX(-50%) scale(0.96);
 }
 
 .startupRingCore {
@@ -1137,6 +1163,11 @@
     border-radius: 20px;
     overflow: hidden;
     box-shadow: var(--shadow-player-mobile);
+  }
+
+  .container.overlay {
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .controlsHeader {

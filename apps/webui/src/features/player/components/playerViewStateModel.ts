@@ -99,6 +99,7 @@ export interface V3PlayerViewState {
   audioToggleActive: boolean;
   canAdjustVolume: boolean;
   volume: number;
+  isMuted: boolean;
   deviceVolumeHint: string;
   showPipButton: boolean;
   pipTitle: string;
@@ -396,6 +397,7 @@ export function buildPlayerViewState(input: BuildViewStateInput): V3PlayerViewSt
     audioToggleActive: !input.isMuted,
     canAdjustVolume: input.canAdjustVolume,
     volume: input.isMuted ? 0 : input.volume,
+    isMuted: input.isMuted,
     deviceVolumeHint: t('player.deviceVolumeHint', { defaultValue: 'Use device buttons' }),
     showPipButton: input.canTogglePiP,
     pipTitle: t('player.pipTitle'),
