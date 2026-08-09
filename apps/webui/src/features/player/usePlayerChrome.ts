@@ -9,6 +9,19 @@ type PlaybackMode = 'LIVE' | 'VOD' | 'UNKNOWN';
 type ForceNativeFn = (videoEl?: VideoElementRef) => boolean;
 type DesktopFullscreenFn = (videoEl?: VideoElementRef) => boolean;
 
+function canUseWebKitPresentationModePiP(video: unknown): boolean {
+  if (!video || typeof video !== 'object') return false;
+  const webkitVideo = video as {
+    webkitSupportsPresentationMode?: (mode: string) => boolean;
+    webkitSetPresentationMode?: (mode: string) => void;
+  };
+  return (
+    typeof webkitVideo.webkitSupportsPresentationMode === 'function' &&
+    webkitVideo.webkitSupportsPresentationMode('picture-in-picture') === true &&
+    typeof webkitVideo.webkitSetPresentationMode === 'function'
+  );
+}
+
 interface LiveSeekWindowHint {
   start: number;
   end: number;
@@ -649,7 +662,7 @@ export function usePlayerChrome({
     }
 
     // 2. Apple iPadOS / WebKit native presentation mode fallback
-    if (typeof video.webkitSetPresentationMode === 'function') {
+    if (canUseWebKitPresentationModePiP(video)) {
       try {
         const currentMode = video.webkitPresentationMode;
         video.webkitSetPresentationMode(currentMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
@@ -1152,7 +1165,7 @@ export function usePlayerChrome({
       typeof document !== 'undefined' &&
       !!video &&
       ((!!document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function') ||
-        typeof (video as any).webkitSetPresentationMode === 'function');
+        canUseWebKitPresentationModePiP(video));
     const fullscreenAvailable =
       shouldUseTouchWebKitFullscreen(video) ||
       (allowNativeFullscreen && !!video?.webkitEnterFullscreen) ||
