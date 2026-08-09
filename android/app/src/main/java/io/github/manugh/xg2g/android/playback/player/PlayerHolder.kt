@@ -25,7 +25,6 @@ internal class PlayerHolder(
     }
 
     private val renderersFactory = DefaultRenderersFactory(context.applicationContext)
-        .setEnableAudioTrackPlaybackParams(false)
         .setEnableAudioOutputPlaybackParameters(false)
 
     val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext, renderersFactory)

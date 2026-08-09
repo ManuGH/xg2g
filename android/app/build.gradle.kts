@@ -56,12 +56,34 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFileEnv = System.getenv("KEYSTORE_FILE")
+            val storePasswordEnv = System.getenv("KEYSTORE_PASSWORD")
+            val keyAliasEnv = System.getenv("KEY_ALIAS")
+            val keyPasswordEnv = System.getenv("KEY_PASSWORD")
+
+            if (!storeFileEnv.isNullOrEmpty() && file(storeFileEnv).exists()) {
+                storeFile = file(storeFileEnv)
+                storePassword = storePasswordEnv
+                keyAlias = keyAliasEnv
+                keyPassword = keyPasswordEnv
+            } else {
+                storeFile = signingConfigs.getByName("debug").storeFile
+                storePassword = signingConfigs.getByName("debug").storePassword
+                keyAlias = signingConfigs.getByName("debug").keyAlias
+                keyPassword = signingConfigs.getByName("debug").keyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             buildConfigField("boolean", "WEBVIEW_DEBUGGING", "true")
         }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             buildConfigField("boolean", "WEBVIEW_DEBUGGING", "false")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
