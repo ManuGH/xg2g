@@ -23,7 +23,7 @@
     "gate:mode-bridge": "vitest run tests/contracts/v3player.mode-bridge.test.ts",
     "gate:no-dead-css:player": "node scripts/css-dead-inventory.mjs src/features/player/components/V3Player.module.css src",
     "gate:no-dead-css:all": "node scripts/css-dead-inventory.mjs \"src/**/*.module.css\" src",
-    "lint": "eslint . && bash ../../backend/scripts/ci_gate_webui_logging.sh && npm run design:check",
+    "lint": "eslint . && bash ../../backend/scripts/ci_gate_webui_logging.sh && npm run design:check && npm run gate:no-dead-css:player",
     "preview": "vite preview",
     "test": "vitest run",
     "type-check": "tsc --noEmit"
