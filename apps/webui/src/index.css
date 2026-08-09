@@ -611,6 +611,24 @@ a:hover {
   scrollbar-width: none;
 }
 
+/* Visually hidden, still announced. The player markup has been asking for this
+   class since the icon buttons were written — it was never defined, so every
+   `sr-only` span rendered as a visible label and the control row carried
+   "Sender", "Vollbild", "PiP" and "Stats" as text. That is what made it need
+   four wrapped lines on a phone. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Loading Spinner */
 .loading-spinner {
   width: 40px;
