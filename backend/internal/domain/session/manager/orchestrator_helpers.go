@@ -13,9 +13,10 @@ import (
 )
 
 type sessionContext struct {
-	Mode       string
-	ServiceRef string
-	IsVOD      bool
+	Mode         string
+	ServiceRef   string
+	ClientFamily string
+	IsVOD        bool
 }
 
 type terminationCause struct {
@@ -100,9 +101,10 @@ func (o *Orchestrator) buildSessionContext(session *model.SessionRecord, e model
 	}
 
 	return &sessionContext{
-		Mode:       sessionMode,
-		ServiceRef: playbackSource,
-		IsVOD:      session.Profile.VOD || sessionMode == model.ModeRecording,
+		Mode:         sessionMode,
+		ServiceRef:   playbackSource,
+		ClientFamily: strings.TrimSpace(session.ContextData[model.CtxKeyClientFamily]),
+		IsVOD:        session.Profile.VOD || sessionMode == model.ModeRecording,
 	}, nil
 }
 

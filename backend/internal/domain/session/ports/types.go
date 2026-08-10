@@ -75,12 +75,13 @@ type StreamSource struct {
 
 // StreamSpec fully describes a media session request without implementation details.
 type StreamSpec struct {
-	SessionID string
-	Mode      StreamMode
-	Format    StreamFormat
-	Quality   QualityProfile
-	Source    StreamSource
-	Profile   ProfileSpec // Transcoding profile (GPU, codec, quality knobs)
+	SessionID    string
+	ClientFamily string
+	Mode         StreamMode
+	Format       StreamFormat
+	Quality      QualityProfile
+	Source       StreamSource
+	Profile      ProfileSpec // Transcoding profile (GPU, codec, quality knobs)
 
 	// PrepareDeadline bounds the work an adapter does BEFORE it spawns the media
 	// process: tuning, URL resolution, preflight, and the plan probes. Zero means

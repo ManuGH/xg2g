@@ -140,8 +140,8 @@ internal class PlayerHolder(
         .setBufferDurationsMs(
             /* minBufferMs = */ 15_000,
             /* maxBufferMs = */ 30_000,
-            /* bufferForPlaybackMs = */ 2_500,
-            /* bufferForPlaybackAfterRebufferMs = */ 5_000
+            /* bufferForPlaybackMs = */ 750,
+            /* bufferForPlaybackAfterRebufferMs = */ 3_500
         )
         .setTargetBufferBytes(MAX_BUFFER_BYTES)
         .setPrioritizeTimeOverSizeThresholds(false)

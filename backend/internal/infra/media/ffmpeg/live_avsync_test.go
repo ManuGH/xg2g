@@ -164,6 +164,11 @@ func TestShouldAvsyncAtrimOnlyAllowsLiveFMP4(t *testing.T) {
 	if !adapter.shouldAvsyncAtrim(spec) {
 		t.Fatal("expected live fMP4 transcode to enable orphan correction")
 	}
+	spec.ClientFamily = "android_tv_native"
+	if adapter.shouldAvsyncAtrim(spec) {
+		t.Fatal("native Android TV must not use the AVPlayer orphan-correction spool")
+	}
+	spec.ClientFamily = ""
 	spec.Profile.TranscodeVideo = false
 	spec.Profile.Container = "mpegts"
 	if adapter.shouldAvsyncAtrim(spec) {

@@ -61,3 +61,27 @@ func TestPlanInput_RelayTranscodeUsesConfiguredDeepProbe(t *testing.T) {
 		t.Fatalf("analyzeduration = %q, want configured 10000000", got)
 	}
 }
+
+func TestPlanInput_AndroidTVNativeUsesFastProbeWithoutChangingWeb(t *testing.T) {
+	a := &LocalAdapter{StreamRelayAnalyzeDuration: "10000000", StreamRelayProbeSize: "20M"}
+	nativeSpec := relayTranscodeSpec()
+	nativeSpec.ClientFamily = "android_tv_native"
+	nativePlan, err := a.planInput(nativeSpec, relayTestURL)
+	if err != nil {
+		t.Fatalf("planInput native: %v", err)
+	}
+	if got := analyzeDurationArg(t, nativePlan.args); got != "2000000" {
+		t.Fatalf("native analyzeduration = %q, want 2000000", got)
+	}
+	if got, _ := valueAfter(nativePlan.args, "-probesize"); got != "5M" {
+		t.Fatalf("native probesize = %q, want 5M", got)
+	}
+
+	webPlan, err := a.planInput(relayTranscodeSpec(), relayTestURL)
+	if err != nil {
+		t.Fatalf("planInput web: %v", err)
+	}
+	if got := analyzeDurationArg(t, webPlan.args); got != "10000000" {
+		t.Fatalf("web analyzeduration = %q, want unchanged 10000000", got)
+	}
+}

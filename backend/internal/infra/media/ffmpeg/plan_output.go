@@ -103,6 +103,13 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		layout.segmentDurationSec = safariDirtyHLSTimeSec
 		layout.initSegmentDurationSec = min(safariDirtyHLSInitTimeSec, layout.segmentDurationSec)
 	}
+	if isAndroidTVNativeSpec(spec) && spec.Mode == ports.ModeLive && spec.Profile.TranscodeVideo &&
+		strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") && layout.segmentDurationSec > 1 {
+		// A one-second keyframe cadence publishes the first complete native-app
+		// segment sooner. Copy streams retain their source GOP cadence, while web
+		// clients retain their existing segment layout.
+		layout.segmentDurationSec = 1
+	}
 	if layout.segmentDurationSec <= 0 {
 		return liveSegmentLayout{}, fmt.Errorf("invalid hls segment seconds: %d", layout.segmentDurationSec)
 	}
@@ -111,6 +118,10 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 		layout.listSize = max(dvrSize, layout.listSize, minSize)
 	}
 	return layout, nil
+}
+
+func isAndroidTVNativeSpec(spec ports.StreamSpec) bool {
+	return strings.EqualFold(strings.TrimSpace(spec.ClientFamily), "android_tv_native")
 }
 
 func shouldUseShortFMP4StartupSegments(spec ports.StreamSpec) bool {
