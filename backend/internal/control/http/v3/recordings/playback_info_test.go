@@ -2414,7 +2414,7 @@ func TestService_ResolvePlaybackInfo_LiveAndroidTVNativeCopyableTSReturnsFMP4Dir
 	assert.Equal(t, playbackplanner.DecisionAllow, res.PlannerEvaluation.Result.Plan.Decision)
 	assert.Equal(t, "remux", res.PlannerEvaluation.Result.Plan.Mode)
 	assert.Equal(t, "hls", res.PlannerEvaluation.Result.Plan.DeliveryEngine)
-	assert.Equal(t, "mpegts", res.PlannerEvaluation.Result.Plan.Packaging.Container, "copied DVB H.264 uses MPEG-TS to prevent open-GOP fMP4 judder")
+	assert.Equal(t, "fmp4", res.PlannerEvaluation.Result.Plan.Packaging.Container, "native Android TV avoids the MediaTek MPEG-TS parser; copied fMP4 preserves negative CTS offsets")
 	assert.Equal(t, "copy", res.PlannerEvaluation.Result.Plan.Video.Mode)
 	assert.Equal(t, "h264", res.PlannerEvaluation.Result.Plan.Video.Codec)
 	assert.Equal(t, "copy", res.PlannerEvaluation.Result.Plan.Audio.Mode)

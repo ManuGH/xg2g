@@ -625,19 +625,19 @@ func TestPostLivePlaybackInfo_AndroidTVNativeCopyableTSReturnsFMP4HLS(t *testing
 
 	selected, ok := dec["selected"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "ts", selected["container"])
+	assert.Equal(t, "fmp4", selected["container"])
 
 	trace, ok := dec["trace"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "compatible_hls_ts", trace["qualityRung"])
+	assert.Equal(t, "compatible_hls_fmp4", trace["qualityRung"])
 
 	targetProfileRaw, ok := trace["targetProfile"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "ts", targetProfileRaw["container"])
-	assert.Equal(t, "ts", targetProfileRaw["packaging"])
+	assert.Equal(t, "fmp4", targetProfileRaw["container"])
+	assert.Equal(t, "fmp4", targetProfileRaw["packaging"])
 	hls, ok := targetProfileRaw["hls"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "mpegts", hls["segmentContainer"])
+	assert.Equal(t, "fmp4", hls["segmentContainer"])
 }
 
 func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisionUsesAV1FMP4(t *testing.T) {

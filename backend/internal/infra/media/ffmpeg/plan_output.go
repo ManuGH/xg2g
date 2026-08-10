@@ -270,12 +270,22 @@ func (a *LocalAdapter) appendLiveHLSArgs(args []string, spec ports.StreamSpec, l
 			}
 		}
 		args = append(args, "-hls_fmp4_init_filename", initFilename)
+		segmentOptions := make([]string, 0, 2)
+		if !spec.Profile.TranscodeVideo {
+			// Copied DVB H.264 may start an fMP4 fragment with reordered B-frames.
+			// Version-1 CTTS preserves their negative composition offsets instead of
+			// clamping them to a duplicate PTS at every segment boundary.
+			segmentOptions = append(segmentOptions, "movflags=+negative_cts_offsets")
+		}
 		if a.LowLatencyHLS {
 			// Fragment each segment on the part-target grid so the LL-HLS
 			// packager (internal/hls/llhls) can advertise EXT-X-PART byte
 			// ranges. FFmpeg 8.x leaks the first segment into init.mp4 in
 			// this mode; the packager repairs that before serving.
-			args = append(args, "-hls_segment_options", fmt.Sprintf("frag_duration=%d", llhlsPartTargetMs*1000))
+			segmentOptions = append(segmentOptions, fmt.Sprintf("frag_duration=%d", llhlsPartTargetMs*1000))
+		}
+		if len(segmentOptions) > 0 {
+			args = append(args, "-hls_segment_options", strings.Join(segmentOptions, ":"))
 		}
 	}
 	if layout.initSegmentDurationSec > 0 {
