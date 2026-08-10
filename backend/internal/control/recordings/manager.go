@@ -125,7 +125,11 @@ func (pm *probeManager) triggerProbe(key, serviceRef, sourceURL, localPath strin
 		}
 		pm.mu.Unlock()
 
-		ctx, cancel := context.WithTimeout(pm.rootCtx, 3*time.Minute)
+		parentCtx := pm.rootCtx
+		if parentCtx == nil || parentCtx.Err() != nil {
+			parentCtx = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(parentCtx, 3*time.Minute)
 		defer cancel()
 
 		var info *vod.StreamInfo
