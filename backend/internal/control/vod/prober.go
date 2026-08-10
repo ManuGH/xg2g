@@ -112,6 +112,14 @@ func (m *Manager) runProbe(ctx context.Context, req probeRequest) error {
 			input = p
 		}
 	}
+	if input == "" {
+		receiverPath := recordings.ExtractPathFromServiceRef(id)
+		if receiverPath != "" && filepath.IsAbs(receiverPath) {
+			if _, statErr := os.Stat(receiverPath); statErr == nil {
+				input = receiverPath
+			}
+		}
+	}
 
 	if input == "" {
 		m.MarkFailure(id, ArtifactStateFailed, "missing or unresolvable input path", "", nil)
