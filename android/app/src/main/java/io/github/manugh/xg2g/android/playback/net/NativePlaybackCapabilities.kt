@@ -173,6 +173,9 @@ private object NativePlaybackCapabilityProbe {
             .map { it.codec }
             .sorted()
 
+        // Report only codecs backed by a real decoder entry. Advertising MP2 unconditionally
+        // made the planner copy MPEG-1 Layer II audio to Fire OS devices whose MP3 decoder cannot
+        // decode Layer II, producing a deterministic MediaCodecAudioRenderer failure.
         val audioCodecs = audioTargets
             .filter { target -> entries.any { entry -> target.mimeTypes.any { mime -> mime.equals(entry.mimeType, ignoreCase = true) } } }
             .map { it.token }

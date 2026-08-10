@@ -79,6 +79,7 @@ internal object PlaybackJsonCodec {
         .put("playWhenReady", state.playWhenReady)
         .put("isInPip", state.isInPip)
         .put("lastError", state.lastError)
+        .put("playbackWarning", state.playbackWarning)
         .toString()
 
     fun sessionFromJson(json: JSONObject, fallbackSessionId: String? = null): SessionSnapshot {

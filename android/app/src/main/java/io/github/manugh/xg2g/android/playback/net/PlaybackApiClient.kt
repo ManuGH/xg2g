@@ -3,6 +3,7 @@ package io.github.manugh.xg2g.android.playback.net
 import android.content.Context
 import android.util.Log
 import android.util.Base64
+import android.os.Build
 import io.github.manugh.xg2g.android.DeviceAuthRepository
 import io.github.manugh.xg2g.android.ServerSettingsStore
 import io.github.manugh.xg2g.android.playback.model.NativeLiveStartResult
@@ -88,7 +89,9 @@ internal class PlaybackApiClient(
             .build()
 
         executeJson(httpRequest) { response ->
-            PlaybackApiJsonCodec.parseStartLiveIntentResponse(response, decision.diagnostics)
+            val result = PlaybackApiJsonCodec.parseStartLiveIntentResponse(response, decision.diagnostics)
+            val fallbackUrl = response.optString("playbackUrl").takeIf { it.isNotBlank() } ?: decision.streamUrl
+            result.copy(streamUrl = fallbackUrl)
         }
     }
 
@@ -262,7 +265,7 @@ internal class PlaybackApiClient(
     private fun requestLiveDecision(request: NativePlaybackRequest.Live): NativeLiveDecision {
         val httpRequest = Request.Builder()
             .url(apiUrl("live", "stream-info"))
-            .withPlaybackProfile(request.profile)
+            .withPlaybackProfile(request.profile ?: ANDROID_LIVE_PROFILE)
             .post(
                 PlaybackApiJsonCodec.liveDecisionRequestBody(
                     request = request,
@@ -335,9 +338,25 @@ internal class PlaybackApiClient(
 
     private companion object {
         const val TAG = "Xg2gPlaybackApi"
-        val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        const val JSON_MEDIA_TYPE_STR = "application/json; charset=utf-8"
+        val JSON_MEDIA_TYPE = JSON_MEDIA_TYPE_STR.toMediaType()
         const val SESSION_COOKIE_NAME = "xg2g_session"
         const val ANDROID_RECORDING_PROFILE = "android_native"
+
+        private val hasBuggyMediaTekDecoder: Boolean
+            get() = runCatching {
+                android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
+                    .codecInfos
+                    .asSequence()
+                    .filterNot { it.isEncoder }
+                    .any { info ->
+                        val name = info.name.lowercase()
+                        (name.contains("mtk") || name.contains("mediatek")) && (name.contains("avc") || name.contains("h264"))
+                    }
+            }.getOrDefault(false)
+
+        val ANDROID_LIVE_PROFILE: String
+            get() = if (hasBuggyMediaTekDecoder) "android_native" else "direct"
     }
 }
 

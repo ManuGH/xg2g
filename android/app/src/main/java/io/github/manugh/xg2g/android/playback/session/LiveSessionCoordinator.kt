@@ -14,23 +14,32 @@ internal class LiveSessionCoordinator(
     private val onDiagnosticsUpdated: (NativePlaybackDiagnostics) -> Unit,
     private val onError: (Throwable) -> Unit
 ) {
+    private var activeSessionId: String? = null
+
     suspend fun start(request: NativePlaybackRequest.Live): SessionSnapshot {
+        stop(activeSessionId)
         playbackApi.ensureAuthSession(request.authToken)
         val startResult = playbackApi.startLiveIntent(request)
         startResult.diagnostics?.let(onDiagnosticsUpdated)
         val sessionId = startResult.sessionId
+        activeSessionId = sessionId
         return try {
             val snapshot = readinessPoller.awaitReady(sessionId)
-            onSessionUpdated(snapshot)
+            val finalSnapshot = if (snapshot.playbackUrl.isNullOrBlank() && !startResult.streamUrl.isNullOrBlank()) {
+                snapshot.copy(playbackUrl = startResult.streamUrl)
+            } else {
+                snapshot
+            }
+            onSessionUpdated(finalSnapshot)
 
             heartbeatManager.start(
                 sessionId = sessionId,
-                intervalSeconds = snapshot.heartbeatIntervalSec ?: HEARTBEAT_FALLBACK_SECONDS,
+                intervalSeconds = finalSnapshot.heartbeatIntervalSec ?: HEARTBEAT_FALLBACK_SECONDS,
                 onSessionUpdated = onSessionUpdated,
                 onError = onError
             )
 
-            snapshot
+            finalSnapshot
         } catch (error: CancellationException) {
             cleanupStartedSession(sessionId)
             throw error
@@ -40,10 +49,12 @@ internal class LiveSessionCoordinator(
         }
     }
 
-    suspend fun stop(sessionId: String?) {
+    suspend fun stop(sessionId: String? = null) {
+        val targetSessionId = sessionId ?: activeSessionId
+        activeSessionId = null
         heartbeatManager.stop()
-        if (sessionId != null) {
-            runCatching { playbackApi.stopSession(sessionId) }
+        if (targetSessionId != null) {
+            runCatching { playbackApi.stopSession(targetSessionId) }
                 .onFailure(onError)
         }
     }

@@ -29,6 +29,15 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, runtime.player)
             .setCallback(PlaybackMediaSessionCallback())
             .build()
+
+        // Decoder recovery rebuilds the ExoPlayer; keep the session bound to the live instance.
+        serviceScope.launch {
+            runtime.state.collect {
+                if (mediaSession.player !== runtime.player) {
+                    mediaSession.player = runtime.player
+                }
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = mediaSession

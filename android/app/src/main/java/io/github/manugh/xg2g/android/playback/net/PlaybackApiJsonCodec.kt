@@ -69,6 +69,10 @@ internal object PlaybackApiJsonCodec {
         val playbackMode = PlaybackMode.fromWireValue(response.optString("mode"))
             ?: throw IllegalStateException("Missing or unsupported mode in live playback decision")
 
+        val streamUrl = response.optString("url")
+            .takeIf { it.isNotBlank() }
+            ?: response.optJSONObject("decision")?.optString("selectedOutputUrl")?.takeIf { it.isNotBlank() }
+
         return NativeLiveDecision(
             requestId = response.optString("requestId").takeIf { it.isNotBlank() },
             playbackDecisionToken = playbackDecisionToken,
@@ -78,7 +82,8 @@ internal object PlaybackApiJsonCodec {
                 playbackInfo = response,
                 playbackMode = playbackMode,
                 capHash = capHash
-            )
+            ),
+            streamUrl = streamUrl
         )
     }
 
@@ -224,5 +229,6 @@ internal data class NativeLiveDecision(
     val playbackDecisionToken: String,
     val playbackMode: PlaybackMode,
     val capHash: String?,
-    val diagnostics: NativePlaybackDiagnostics?
+    val diagnostics: NativePlaybackDiagnostics?,
+    val streamUrl: String? = null
 )

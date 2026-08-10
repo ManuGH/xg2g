@@ -13,8 +13,8 @@ internal class ReadinessPoller(
 ) {
     suspend fun awaitReady(
         sessionId: String,
-        maxAttempts: Int = 80,
-        pollMs: Long = 500L
+        maxAttempts: Int = 150,
+        pollMs: Long = 100L
     ): SessionSnapshot {
         repeat(maxAttempts) {
             val snapshot = playbackApi.getSessionState(sessionId)

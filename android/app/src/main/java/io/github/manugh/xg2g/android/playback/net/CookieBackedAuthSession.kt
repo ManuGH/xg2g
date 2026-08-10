@@ -34,8 +34,13 @@ internal class CookieBackedAuthSession(
     }
 
     override fun storeCookies(url: HttpUrl, headers: Headers) {
+        val rootUrl = "${url.scheme}://${url.host}/"
         headers.values("Set-Cookie").forEach { value ->
             cookieManager.setCookie(url.toString(), value)
+            if (value.contains("xg2g_session=", ignoreCase = true)) {
+                val rootValue = value.replace(Regex("Path=[^;]+", RegexOption.IGNORE_CASE), "Path=/")
+                cookieManager.setCookie(rootUrl, rootValue)
+            }
         }
         cookieManager.flush()
         if (headers.values("Set-Cookie").isNotEmpty()) {
@@ -46,7 +51,14 @@ internal class CookieBackedAuthSession(
         }
     }
 
-    override fun cookieHeader(url: HttpUrl): String? = cookieManager.getCookie(url.toString())
+    override fun cookieHeader(url: HttpUrl): String? {
+        val exactMatch = cookieManager.getCookie(url.toString())
+        if (!exactMatch.isNullOrBlank()) {
+            return exactMatch
+        }
+        val rootUrl = "${url.scheme}://${url.host}/"
+        return cookieManager.getCookie(rootUrl)
+    }
 
     override fun clearSessionCookie(url: HttpUrl, cookieName: String, cookiePath: String) {
         cookieManager.setCookie(

@@ -41,15 +41,47 @@ internal class PlaybackRuntime(
         onDiagnosticsUpdated = ::updateDiagnostics,
         onError = ::reportError
     )
-    private val playerEventForwarder = PlayerEventForwarder(playerHolder.player, ::onPlayerStateChanged)
+    private var playerEventForwarder = PlayerEventForwarder(playerHolder.player, ::onPlayerStateChanged)
     private var reportedReadySessionId: String? = null
     private var reportedErrorSignature: String? = null
 
-    override val player = playerHolder.player
+    /**
+     * Set when playback has been abandoned for good. Kept separate from the transient error field
+     * because the session heartbeat clears that one on every tick, which would silently wipe the
+     * only thing telling the viewer that the stream is dead.
+     */
+    private var terminalError: String? = null
+
+    override val player: Player
+        get() = playerHolder.player
+
+    init {
+        // The MediaTek decoder on Fire TV can only be recovered by rebuilding the player;
+        // re-wire the event forwarder and tell the UI/session to re-attach.
+        playerHolder.onPlayerReplaced = { replacement ->
+            playerEventForwarder.dispose()
+            playerEventForwarder = PlayerEventForwarder(replacement, ::onPlayerStateChanged)
+            mutateState { current ->
+                current.copy(playerGeneration = current.playerGeneration + 1)
+            }
+        }
+        playerHolder.onUnrecoverable = { reason ->
+            Log.e(TAG, "playback abandoned after repeated decoder failures: $reason")
+            terminalError = reason
+            reportSessionFeedback("error", null, reason)
+            mutateState { current -> current.copy(lastError = reason) }
+        }
+        playerHolder.onDegraded = { warning ->
+            Log.w(TAG, "playback continues in degraded mode: $warning")
+            reportSessionFeedback("warning", null, warning)
+            mutateState { current -> current.copy(playbackWarning = warning) }
+        }
+    }
     override val state: StateFlow<NativePlaybackState> = stateStore.state
 
     override suspend fun start(request: NativePlaybackRequest) {
         stop(force = true)
+        terminalError = null
         setState(NativePlaybackState(activeRequest = request))
 
         when (request) {
@@ -137,7 +169,7 @@ internal class PlaybackRuntime(
             current.copy(
                 session = snapshot,
                 diagnostics = current.diagnostics?.mergeSession(snapshot),
-                lastError = null
+                lastError = terminalError
             )
         }
     }
@@ -146,7 +178,7 @@ internal class PlaybackRuntime(
         mutateState { current ->
             current.copy(
                 diagnostics = diagnostics,
-                lastError = null
+                lastError = terminalError
             )
         }
     }

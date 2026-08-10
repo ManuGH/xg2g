@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -34,11 +35,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -135,7 +138,8 @@ class GuideActivity : AppCompatActivity() {
                 serviceRef = channel.serviceRef,
                 title = channel.displayName,
                 logoUrl = channel.logoUrl,
-                authToken = authToken
+                authToken = authToken,
+                profile = "direct"
             )
         )
     }
@@ -232,72 +236,49 @@ private fun GuideScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(
+                Brush.radialGradient(
                     colors = listOf(
-                        colorFromRes(R.color.ide_background),
                         colorFromRes(R.color.ide_surface_panel),
-                        colorFromRes(R.color.ide_background)
+                        colorFromRes(R.color.ide_background),
+                        Color(0F, 0F, 0F, 1F)
                     )
                 )
             )
-            .padding(horizontal = 20.dp, vertical = 18.dp)
     ) {
         GuideBackdropArt()
-        Column(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            GuideHeader(
-                serverLabel = state.serverLabel,
-                health = when (state) {
-                    is GuideScreenState.Empty -> state.health
-                    is GuideScreenState.Ready -> state.health
-                    else -> null
-                },
-                timelineWindow = when (state) {
-                    is GuideScreenState.Empty -> state.timelineWindow
-                    is GuideScreenState.Ready -> state.timelineWindow
-                    else -> null
-                },
+        when (state) {
+            is GuideScreenState.Loading -> GuideLoading(state.serverLabel)
+            is GuideScreenState.Error -> GuideError(state)
+            is GuideScreenState.Empty -> GuideContentLayout(
+                bouquets = state.bouquets,
+                selectedBouquet = state.selectedBouquet,
+                channels = emptyList(),
+                health = state.health,
+                timelineWindow = state.timelineWindow,
+                selectedChannelRef = null,
+                currentEpochSec = currentEpochSec,
                 displayZoneId = displayZoneId,
-                isRefreshing = state is GuideScreenState.Ready && state.isRefreshing,
-                onRefresh = onRefresh
+                assetBaseUrl = assetBaseUrl,
+                onSelectBouquet = onSelectBouquet,
+                onSelectChannel = onSelectChannel,
+                onPlayChannel = onPlayChannel,
+                onExit = onExit
             )
-            Spacer(modifier = Modifier.height(18.dp))
-
-            when (state) {
-                is GuideScreenState.Loading -> GuideLoading(state.serverLabel)
-                is GuideScreenState.Error -> GuideError(state)
-                is GuideScreenState.Empty -> GuideContentLayout(
-                    bouquets = state.bouquets,
-                    selectedBouquet = state.selectedBouquet,
-                    channels = emptyList(),
-                    health = state.health,
-                    timelineWindow = state.timelineWindow,
-                    selectedChannelRef = null,
-                    currentEpochSec = currentEpochSec,
-                    displayZoneId = displayZoneId,
-                    assetBaseUrl = assetBaseUrl,
-                    onSelectBouquet = onSelectBouquet,
-                    onSelectChannel = onSelectChannel,
-                    onPlayChannel = onPlayChannel,
-                    onExit = onExit
-                )
-                is GuideScreenState.Ready -> GuideContentLayout(
-                    bouquets = state.bouquets,
-                    selectedBouquet = state.selectedBouquet,
-                    channels = state.channels,
-                    health = state.health,
-                    timelineWindow = state.timelineWindow,
-                    selectedChannelRef = state.selectedChannelRef,
-                    currentEpochSec = currentEpochSec,
-                    displayZoneId = displayZoneId,
-                    assetBaseUrl = assetBaseUrl,
-                    onSelectBouquet = onSelectBouquet,
-                    onSelectChannel = onSelectChannel,
-                    onPlayChannel = onPlayChannel,
-                    onExit = onExit
-                )
-            }
+            is GuideScreenState.Ready -> GuideContentLayout(
+                bouquets = state.bouquets,
+                selectedBouquet = state.selectedBouquet,
+                channels = state.channels,
+                health = state.health,
+                timelineWindow = state.timelineWindow,
+                selectedChannelRef = state.selectedChannelRef,
+                currentEpochSec = currentEpochSec,
+                displayZoneId = displayZoneId,
+                assetBaseUrl = assetBaseUrl,
+                onSelectBouquet = onSelectBouquet,
+                onSelectChannel = onSelectChannel,
+                onPlayChannel = onPlayChannel,
+                onExit = onExit
+            )
         }
     }
 }
@@ -326,65 +307,52 @@ private fun GuideHeader(
     onRefresh: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier.weight(1f)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = stringResource(R.string.guide_kicker),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.secondary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = stringResource(R.string.guide_title),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = stringResource(R.string.guide_support),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                GuideServerChip(serverLabel)
-                GuideWindowChip(timelineWindow, displayZoneId)
-                GuideHealthChip(health)
-            }
+            GuideHealthChip(health)
+            GuideWindowChip(timelineWindow, displayZoneId)
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(
-            horizontalAlignment = Alignment.End
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            GuideServerChip(serverLabel)
+            if (isRefreshing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             OutlinedButton(
                 onClick = onRefresh,
                 modifier = Modifier.focusProperties { canFocus = false },
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = colorFromRes(R.color.ide_surface_panel_soft),
                     contentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft))
             ) {
-                Text(stringResource(R.string.guide_refresh))
-            }
-            if (isRefreshing) {
-                Spacer(modifier = Modifier.height(10.dp))
-                LinearProgressIndicator(
-                    modifier = Modifier.width(150.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                Text(
+                    text = stringResource(R.string.guide_refresh),
+                    style = MaterialTheme.typography.labelMedium
                 )
             }
         }
@@ -579,7 +547,9 @@ private fun GuideContentLayout(
         }
     }
 
-    LaunchedEffect(selectedChannelKey, channelKeys, bouquetPickerOpen) {
+    var initialFocusDone by remember(selectedBouquet) { mutableStateOf(false) }
+
+    LaunchedEffect(selectedBouquet, channelKeys, bouquetPickerOpen) {
         if (bouquetPickerOpen) {
             return@LaunchedEffect
         }
@@ -587,11 +557,10 @@ private fun GuideContentLayout(
             focusedPane = GuideFocusedPane.BOUQUETS
             return@LaunchedEffect
         }
-        val index = channelKeys.indexOf(selectedChannelKey)
-        if (index >= 0) {
-            channelListState.scrollToItem(max(0, index - 1))
+        if (!initialFocusDone) {
+            selectedChannelRequester?.requestFocus()
+            initialFocusDone = true
         }
-        selectedChannelRequester?.requestFocus()
         focusedPane = GuideFocusedPane.CHANNELS
     }
 
@@ -781,94 +750,181 @@ private fun ChannelPane(
     onFocusedPane: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val selectedChannel = channels.firstOrNull { it.serviceRef == selectedChannelRef }
-    Surface(
-        modifier = modifier.fillMaxHeight(),
-        shape = RoundedCornerShape(22.dp),
-        color = colorFromRes(R.color.ide_surface_strong),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline)),
-        contentColor = MaterialTheme.colorScheme.onSurface
+    val selectedChannel = channels.firstOrNull { it.serviceRef == selectedChannelRef } ?: channels.firstOrNull()
+    val primaryProgram = selectedChannel?.let { channelPrimaryProgram(it, currentEpochSec) }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
+            // TOP 65%: CINEMATIC HERO STAGE
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 14.dp, end = 14.dp, top = 14.dp),
-                verticalAlignment = Alignment.Bottom
+                    .weight(1f),
+                verticalArrangement = Arrangement.Top
             ) {
-                BouquetSelectorButton(
-                    selectedBouquet = selectedBouquet,
-                    onOpenBouquetPicker = onOpenBouquetPicker,
-                    onFocusedPane = onFocusedPane,
-                    channelFocusRequester = selectedChannelRequester,
-                    modifier = Modifier.focusRequester(bouquetControlRequester)
-                )
-                Spacer(modifier = Modifier.width(14.dp))
-                Column(
-                    modifier = Modifier.weight(1f)
+                // Top Header Controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = stringResource(R.string.guide_channels, channels.size),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    BouquetSelectorButton(
+                        selectedBouquet = selectedBouquet,
+                        onOpenBouquetPicker = onOpenBouquetPicker,
+                        onFocusedPane = onFocusedPane,
+                        channelFocusRequester = selectedChannelRequester,
+                        modifier = Modifier.focusRequester(bouquetControlRequester)
                     )
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0x33FFFFFF),
+                        border = BorderStroke(1.dp, Color(0x22FFFFFF))
+                    ) {
+                        Text(
+                            text = "${channels.size} Sender",
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Big Hero Program Title & Metadata
+                if (selectedChannel != null && primaryProgram != null) {
+                    val isLive = currentEpochSec in primaryProgram.startEpochSec until primaryProgram.endEpochSec
+                    val remainingMinutes = if (isLive) ((primaryProgram.endEpochSec - currentEpochSec) / 60L).coerceAtLeast(1L) else null
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Metadata Badges Row
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0x3300E5FF),
+                                border = BorderStroke(1.dp, Color(0x6600E5FF))
+                            ) {
+                                Text(
+                                    text = selectedChannel.displayName,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF00E5FF)
+                                )
+                            }
+
+                            if (isLive) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0x44FFB300),
+                                    border = BorderStroke(1.dp, Color(0x88FFB300))
+                                ) {
+                                    Text(
+                                        text = "● LIVE NOW",
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFFC107)
+                                    )
+                                }
+                            }
+
+                            if (remainingMinutes != null) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0x33FFFFFF),
+                                    border = BorderStroke(1.dp, Color(0x22FFFFFF))
+                                ) {
+                                    Text(
+                                        text = "Noch ${remainingMinutes} Min",
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0x22FFFFFF)
+                            ) {
+                                Text(
+                                    text = "${primaryProgram.displayStartTime(displayZoneId)} - ${primaryProgram.displayEndTime(displayZoneId)}",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color.White.copy(alpha = 0.75f)
+                                )
+                            }
+                        }
+
+                        // Hero Title
+                        Text(
+                            text = primaryProgram.title,
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        // Description
+                        val description = primaryProgram.description?.let(::normalizeGuideDescription)
+                        if (!description.isNullOrBlank()) {
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = Color.White.copy(alpha = 0.75f),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth(0.85f)
+                            )
+                        }
+                    }
                 }
             }
-            selectedChannel?.let { channel ->
-                GuideSelectionPanel(
-                    channel = channel,
-                    currentEpochSec = currentEpochSec,
-                    displayZoneId = displayZoneId,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 14.dp, end = 14.dp, top = 12.dp)
+
+            // BOTTOM 35%: HORIZONTAL LIVE CHANNEL POSTER CAROUSEL
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "LIVE SENDER",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            if (channels.isEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 22.dp),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.guide_empty_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = stringResource(R.string.guide_empty_detail),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                LazyColumn(
+
+                LazyRow(
                     state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     itemsIndexed(channels, key = { _, channel -> channel.serviceRef }) { _, channel ->
-                        ChannelCard(
+                        GuideChannelPosterCard2026(
                             assetBaseUrl = assetBaseUrl,
                             channel = channel,
-                            health = health,
-                            timelineWindow = timelineWindow,
                             currentEpochSec = currentEpochSec,
-                            displayZoneId = displayZoneId,
                             selected = channel.serviceRef == selectedChannelRef,
                             modifier = Modifier
                                 .focusRequester(requesters.getValue(channel.serviceRef))
                                 .focusProperties {
-                                    left = bouquetControlRequester
+                                    up = bouquetControlRequester
                                 },
                             onFocus = {
                                 onFocusedPane()
@@ -880,6 +936,120 @@ private fun ChannelPane(
                             }
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GuideChannelPosterCard2026(
+    assetBaseUrl: String,
+    channel: GuideChannel,
+    currentEpochSec: Long,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onFocus: () -> Unit,
+    onPlayChannel: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "posterScale")
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            focused -> Color(0xFF00E5FF)
+            selected -> Color(0x6600E5FF)
+            else -> Color(0x22FFFFFF)
+        },
+        label = "posterBorder"
+    )
+
+    val primaryProgram = channelPrimaryProgram(channel, currentEpochSec)
+
+    Surface(
+        modifier = modifier
+            .width(148.dp)
+            .height(145.dp)
+            .scale(scale)
+            .onFocusChanged {
+                if (it.isFocused) {
+                    focused = true
+                    onFocus()
+                } else if (!it.hasFocus) {
+                    focused = false
+                }
+            }
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyUp && event.key.isGuidePlayKey()) {
+                    onPlayChannel()
+                    true
+                } else {
+                    false
+                }
+            }
+            .focusable()
+            .clickable(onClick = onPlayChannel),
+        shape = RoundedCornerShape(16.dp),
+        color = if (focused) Color(0x4400E5FF) else Color(0x22111827),
+        border = BorderStroke(if (focused) 2.dp else 1.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0x33000000)),
+                contentAlignment = Alignment.Center
+            ) {
+                GuideChannelLogo(
+                    assetBaseUrl = assetBaseUrl,
+                    channel = channel
+                )
+            }
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = channel.displayName,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                if (primaryProgram != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = primaryProgram.title,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            if (primaryProgram != null) {
+                val totalSec = (primaryProgram.endEpochSec - primaryProgram.startEpochSec).coerceAtLeast(1L)
+                val elapsedSec = (currentEpochSec - primaryProgram.startEpochSec).coerceIn(0L, totalSec)
+                val progressFraction = elapsedSec.toFloat() / totalSec.toFloat()
+                if (progressFraction > 0f) {
+                    LinearProgressIndicator(
+                        progress = { progressFraction.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = Color(0xFF00E5FF),
+                        trackColor = Color(0x33FFFFFF)
+                    )
                 }
             }
         }
@@ -933,7 +1103,7 @@ private fun BouquetSelectorButton(
 }
 
 @Composable
-private fun ChannelCard(
+private fun ChannelMatrixCard(
     assetBaseUrl: String,
     channel: GuideChannel,
     health: GuideHealthStatus?,
@@ -942,32 +1112,132 @@ private fun ChannelCard(
     displayZoneId: ZoneId,
     selected: Boolean,
     modifier: Modifier = Modifier,
-    onFocus: () -> Unit,
+    onFocusChannel: () -> Unit,
+    onSelectProgram: (GuideProgram) -> Unit,
     onPlayChannel: () -> Unit
 ) {
+    val programs = remember(channel) {
+        channel.schedule.ifEmpty {
+            listOfNotNull(channel.now, channel.next)
+        }
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            modifier = Modifier
+                .width(160.dp)
+                .fillMaxHeight(),
+            shape = RoundedCornerShape(12.dp),
+            color = colorFromRes(R.color.ide_surface_panel),
+            border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                GuideChannelLogo(
+                    assetBaseUrl = assetBaseUrl,
+                    channel = channel
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = channel.displayName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        LazyRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (programs.isEmpty()) {
+                item {
+                    ProgramBlock(
+                        title = stringResource(R.string.guide_no_program),
+                        startTimeStr = "",
+                        endTimeStr = "",
+                        durationMinutes = 60,
+                        isLive = false,
+                        progressFraction = 0f,
+                        onFocus = onFocusChannel,
+                        onPlay = onPlayChannel
+                    )
+                }
+            } else {
+                items(programs, key = { "${it.startEpochSec}_${it.title}" }) { program ->
+                    val durationMin = ((program.endEpochSec - program.startEpochSec) / 60L).coerceIn(15L, 240L)
+                    val isLive = currentEpochSec in program.startEpochSec until program.endEpochSec
+                    val totalSec = (program.endEpochSec - program.startEpochSec).coerceAtLeast(1L)
+                    val elapsedSec = (currentEpochSec - program.startEpochSec).coerceIn(0L, totalSec)
+                    val progressFraction = if (isLive) elapsedSec.toFloat() / totalSec.toFloat() else 0f
+
+                    ProgramBlock(
+                        title = program.title,
+                        startTimeStr = program.displayStartTime(displayZoneId),
+                        endTimeStr = program.displayEndTime(displayZoneId),
+                        durationMinutes = durationMin,
+                        isLive = isLive,
+                        progressFraction = progressFraction,
+                        onFocus = {
+                            onFocusChannel()
+                            onSelectProgram(program)
+                        },
+                        onPlay = onPlayChannel
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProgramBlock(
+    title: String,
+    startTimeStr: String,
+    endTimeStr: String,
+    durationMinutes: Long,
+    isLive: Boolean,
+    progressFraction: Float,
+    onFocus: () -> Unit,
+    onPlay: () -> Unit
+) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.01f else 1f, label = "channelCardScale")
+    val blockWidth = (durationMinutes * 4.5f).dp.coerceIn(130.dp, 360.dp)
+
     val backgroundColor by animateColorAsState(
         targetValue = when {
             focused -> colorFromRes(R.color.ide_surface_panel_soft)
-            selected -> colorFromRes(R.color.ide_surface_strong)
+            isLive -> colorFromRes(R.color.ide_live).copy(alpha = 0.12f)
             else -> colorFromRes(R.color.ide_surface)
         },
-        label = "channelCardBackground"
+        label = "programBlockBg"
     )
     val borderColor by animateColorAsState(
         targetValue = when {
             focused -> colorFromRes(R.color.ide_blue)
-            selected -> colorFromRes(R.color.ide_outline_strong)
+            isLive -> colorFromRes(R.color.ide_live).copy(alpha = 0.4f)
             else -> colorFromRes(R.color.ide_outline_soft)
         },
-        label = "channelCardBorder"
+        label = "programBlockBorder"
     )
 
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .scale(scale)
+        modifier = Modifier
+            .width(blockWidth)
+            .fillMaxHeight()
             .onFocusChanged {
                 if (it.isFocused) {
                     focused = true
@@ -978,78 +1248,58 @@ private fun ChannelCard(
             }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyUp && event.key.isGuidePlayKey()) {
-                    onPlayChannel()
+                    onPlay()
                     true
                 } else {
                     false
                 }
             }
             .focusable()
-            .clickable(onClick = onPlayChannel),
-        shape = RoundedCornerShape(18.dp),
+            .clickable(onClick = onPlay),
+        shape = RoundedCornerShape(12.dp),
         color = backgroundColor,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(
-            width = if (focused) 2.dp else 1.dp,
-            color = borderColor
-        )
+        border = BorderStroke(if (focused) 2.dp else 1.dp, borderColor)
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+                .fillMaxSize()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (focused || isLive) FontWeight.Bold else FontWeight.Medium,
+                color = if (focused) colorFromRes(R.color.ide_text_primary) else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                GuideChannelLogo(
-                    assetBaseUrl = assetBaseUrl,
-                    channel = channel
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
+                if (startTimeStr.isNotEmpty()) {
                     Text(
-                        text = channel.displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = "$startTimeStr - $endTimeStr",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isLive) colorFromRes(R.color.ide_live) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    channelMeta(channel)?.let { meta ->
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = meta,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                PlayBadge()
+
+                if (isLive && progressFraction > 0f) {
+                    LinearProgressIndicator(
+                        progress = { progressFraction.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .width(45.dp)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = colorFromRes(R.color.ide_blue),
+                        trackColor = colorFromRes(R.color.ide_outline_soft)
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(10.dp))
-            GuideProgramSummary(
-                now = channel.now,
-                next = channel.next,
-                currentEpochSec = currentEpochSec,
-                displayZoneId = displayZoneId
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            GuideScheduleTimeline(
-                schedule = channel.schedule,
-                now = channel.now,
-                next = channel.next,
-                health = health,
-                timelineWindow = timelineWindow,
-                currentEpochSec = currentEpochSec,
-                displayZoneId = displayZoneId
-            )
         }
     }
 }
@@ -1057,53 +1307,119 @@ private fun ChannelCard(
 @Composable
 private fun GuideSelectionPanel(
     channel: GuideChannel,
+    program: GuideProgram?,
     currentEpochSec: Long,
     displayZoneId: ZoneId,
     modifier: Modifier = Modifier
 ) {
-    val primaryProgram = channelPrimaryProgram(channel, currentEpochSec) ?: return
-    val description = primaryProgram.description
-        ?.let(::normalizeGuideDescription)
-        ?: return
+    val activeProgram = program ?: channelPrimaryProgram(channel, currentEpochSec) ?: return
+    val description = activeProgram.description?.let(::normalizeGuideDescription)
+    val isLive = currentEpochSec in activeProgram.startEpochSec until activeProgram.endEpochSec
+    val remainingMinutes = if (isLive) {
+        ((activeProgram.endEpochSec - currentEpochSec) / 60L).coerceAtLeast(1L)
+    } else null
 
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         color = colorFromRes(R.color.ide_surface_panel),
         border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft)),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = channel.displayName,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = primaryProgram.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "${primaryProgram.displayStartTime(displayZoneId)}-${primaryProgram.displayEndTime(displayZoneId)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = colorFromRes(R.color.ide_live)
-            )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = channel.displayName,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = colorFromRes(R.color.ide_blue)
+                    )
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = activeProgram.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isLive) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = colorFromRes(R.color.ide_live).copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, colorFromRes(R.color.ide_live).copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = "● LIVE",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = colorFromRes(R.color.ide_live)
+                            )
+                        }
+                    }
+
+                    if (remainingMinutes != null) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = colorFromRes(R.color.ide_blue).copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, colorFromRes(R.color.ide_blue).copy(alpha = 0.3f))
+                        ) {
+                            Text(
+                                text = "Noch ${remainingMinutes}m",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = colorFromRes(R.color.ide_text_primary)
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = colorFromRes(R.color.ide_surface_panel_soft),
+                        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft))
+                    ) {
+                        Text(
+                            text = "${activeProgram.displayStartTime(displayZoneId)} - ${activeProgram.displayEndTime(displayZoneId)}",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (!description.isNullOrBlank()) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

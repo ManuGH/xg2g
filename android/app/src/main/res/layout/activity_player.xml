@@ -10,7 +10,8 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:keepScreenOn="true"
-        app:show_buffering="when_playing"
+        app:resize_mode="fit"
+        app:show_buffering="never"
         app:use_controller="false"
         app:shutter_background_color="#000000"
         app:use_artwork="false" />
