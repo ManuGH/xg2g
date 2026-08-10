@@ -46,6 +46,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -418,15 +423,17 @@ private fun DirectoryCard(
     val isFocused by interactionSource.collectIsFocusedAsState()
 
     Surface(
+        onClick = onClick,
         modifier = Modifier
             .width(190.dp)
             .clip(RoundedCornerShape(12.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .focusable(interactionSource = interactionSource),
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyUp && (event.key == Key.DirectionCenter || event.key == Key.Enter)) {
+                    onClick()
+                    true
+                } else false
+            },
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(12.dp),
         color = colorResource(R.color.color_bg_elevated),
         border = BorderStroke(
@@ -473,27 +480,29 @@ private fun RootChip(
     val isFocused by interactionSource.collectIsFocusedAsState()
 
     Surface(
+        onClick = onClick,
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .focusable(interactionSource = interactionSource),
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyUp && (event.key == Key.DirectionCenter || event.key == Key.Enter)) {
+                    onClick()
+                    true
+                } else false
+            },
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(6.dp),
         color = if (isSelected) colorResource(R.color.color_action) else Color(0xFF1E293B),
         border = BorderStroke(
             width = if (isFocused) 2.dp else 1.dp,
-            color = if (isFocused) Color.White else colorResource(R.color.color_border_subtle)
+            color = if (isFocused) colorResource(R.color.color_action) else colorResource(R.color.color_border_subtle)
         )
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+            color = if (isSelected) Color.White else colorResource(R.color.color_text_secondary),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
         )
     }
 }
@@ -508,14 +517,16 @@ private fun BreadcrumbChip(
     val isFocused by interactionSource.collectIsFocusedAsState()
 
     Surface(
+        onClick = onClick,
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .focusable(interactionSource = interactionSource),
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyUp && (event.key == Key.DirectionCenter || event.key == Key.Enter)) {
+                    onClick()
+                    true
+                } else false
+            },
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(6.dp),
         color = if (isCurrent) Color(0xFF334155) else Color.Transparent,
         border = BorderStroke(
@@ -649,18 +660,20 @@ private fun RecordingCard(
     val progressFraction = remember(item) { getResumeProgressFraction(item) }
 
     Surface(
+        onClick = onClick,
         modifier = Modifier
             .width(width)
             .clip(RoundedCornerShape(12.dp))
             .let { mod ->
                 if (focusRequester != null) mod.focusRequester(focusRequester) else mod
             }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .focusable(interactionSource = interactionSource),
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyUp && (event.key == Key.DirectionCenter || event.key == Key.Enter)) {
+                    onClick()
+                    true
+                } else false
+            },
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(12.dp),
         color = colorResource(R.color.color_bg_elevated),
         border = BorderStroke(

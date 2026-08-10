@@ -50,10 +50,7 @@ internal class ReadinessPoller(
     ): NativeRecordingPlaybackInfo {
         var playbackInfo: NativeRecordingPlaybackInfo? = null
         repeat(maxAttempts) {
-            if (playbackInfo == null) {
-                playbackInfo = playbackApi.getRecordingPlaybackInfo(request)
-            }
-            val readyPlayback = playbackInfo
+            val readyPlayback = playbackInfo ?: playbackApi.getRecordingPlaybackInfo(request)?.also { playbackInfo = it }
             if (readyPlayback != null) {
                 playbackApi.getPlaybackUrlIfReady(readyPlayback.playbackUrl)?.let {
                     return readyPlayback.copy(playbackUrl = it)

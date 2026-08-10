@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">xg2g</string>
+    <string name="app_description">xg2g – High-Performance Live TV, EPG &amp; Streaming Bridge for Enigma2/Vu+ Receiver.</string>
     <string name="server_setup_kicker">TV host setup</string>
     <string name="server_setup_title">Connect to xg2g</string>
     <string name="server_setup_support">Keep this screen pointed at your xg2g bridge. On TV, app links are the fastest way back into the native shell.</string>

@@ -383,7 +383,8 @@ internal fun normalizeRecordingPlaybackUrl(
     if (resolvedUrl?.encodedPath?.endsWith("/stream.mp4") != true) {
         return playbackUrl
     }
-    if (selectedOutputKind == "file" || decisionMode?.trim()?.lowercase() == "direct_play") {
+    val mode = decisionMode?.trim()?.lowercase()
+    if (selectedOutputKind == "file" || mode == "direct_play" || mode == "direct_mp4") {
         return playbackUrl
     }
 
