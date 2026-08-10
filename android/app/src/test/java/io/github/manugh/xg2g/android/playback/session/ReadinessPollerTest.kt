@@ -64,6 +64,29 @@ class ReadinessPollerTest {
     }
 
     @Test
+    fun `awaitReady rejects a terminal snapshot even when it retains a playback url`() = runTest {
+        val playbackApi = FakePlaybackApi(
+            sessionResults = mutableListOf(
+                sessionSnapshot(
+                    state = SessionState.Failed,
+                    playbackUrl = "/api/v3/sessions/sess-live-1/hls/index.m3u8"
+                )
+            ),
+            recordingInfoResults = mutableListOf(),
+            playbackUrlResults = mutableListOf(),
+            recordingPlaylistResults = mutableListOf()
+        )
+        val poller = ReadinessPoller(playbackApi, PlaybackErrorMapper())
+
+        try {
+            poller.awaitReady("sess-live-1", maxAttempts = 1, pollMs = 0L)
+            fail("Expected terminal snapshot to throw")
+        } catch (error: IllegalStateException) {
+            assertTrue(error.message.orEmpty().contains("terminal state FAILED"))
+        }
+    }
+
+    @Test
     fun `awaitRecordingPlayback retries until playback info and playlist become ready`() = runTest {
         val request = NativePlaybackRequest.Recording(recordingId = "rec-monk")
         val playbackApi = FakePlaybackApi(

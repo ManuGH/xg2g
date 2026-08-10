@@ -50,6 +50,7 @@ internal class PlaybackRuntime(
      * because the session heartbeat clears that one on every tick, which would silently wipe the
      * only thing telling the viewer that the stream is dead.
      */
+    @Volatile
     private var terminalError: String? = null
 
     override val player: Player
@@ -74,7 +75,17 @@ internal class PlaybackRuntime(
         playerHolder.onDegraded = { warning ->
             Log.w(TAG, "playback continues in degraded mode: $warning")
             reportSessionFeedback("warning", null, warning)
-            mutateState { current -> current.copy(playbackWarning = warning) }
+            mutateState { current ->
+                current.copy(
+                    lastError = terminalError,
+                    playbackWarning = warning
+                )
+            }
+        }
+        playerHolder.onRecovered = {
+            Log.i(TAG, "decoder recovery confirmed by a newly rendered frame")
+            reportSessionFeedback("info", 200, "decoder_recovered")
+            mutateState { current -> current.copy(lastError = terminalError) }
         }
     }
     override val state: StateFlow<NativePlaybackState> = stateStore.state
@@ -221,8 +232,8 @@ internal class PlaybackRuntime(
         stateStore.set(value)
     }
 
-    private inline fun mutateState(transform: (NativePlaybackState) -> NativePlaybackState) {
-        setState(transform(stateStore.current()))
+    private fun mutateState(transform: (NativePlaybackState) -> NativePlaybackState) {
+        stateStore.update(transform)
     }
 
     private fun reportSessionFeedback(event: String, code: Int?, message: String?) {

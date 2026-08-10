@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.github.manugh.xg2g.android.DeviceAuthRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +14,7 @@ import kotlinx.coroutines.launch
 
 internal class GuideViewModel(
     private val serverLabel: String,
-    private val repository: GuideRepository
+    private val repository: GuideDataSource
 ) : ViewModel() {
     private val _state = MutableStateFlow<GuideScreenState>(GuideScreenState.Loading(serverLabel))
     val state: StateFlow<GuideScreenState> = _state.asStateFlow()
@@ -120,6 +121,8 @@ internal class GuideViewModel(
                         displayZoneOffsetSeconds = content.displayZoneOffsetSeconds
                     )
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Throwable) {
                 _state.value = GuideScreenState.Error(
                     serverLabel = serverLabel,

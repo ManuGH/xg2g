@@ -4,19 +4,28 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.time.Instant
 
+internal interface GuideDataSource {
+    suspend fun loadInitial(): GuideContent
+
+    suspend fun loadBouquet(
+        bouquetName: String,
+        knownBouquets: List<GuideBouquet>? = null
+    ): GuideContent
+}
+
 internal class GuideRepository(
     private val apiClient: GuideApiClient,
     private val authToken: String?
-) {
-    suspend fun loadInitial(): GuideContent {
+) : GuideDataSource {
+    override suspend fun loadInitial(): GuideContent {
         val bouquets = apiClient.fetchBouquets(authToken)
         val selectedBouquet = bouquets.firstOrNull()?.name.orEmpty()
         return loadBouquet(selectedBouquet, bouquets)
     }
 
-    suspend fun loadBouquet(
+    override suspend fun loadBouquet(
         bouquetName: String,
-        knownBouquets: List<GuideBouquet>? = null
+        knownBouquets: List<GuideBouquet>?
     ): GuideContent = coroutineScope {
         val deviceEpochSec = Instant.now().epochSecond
         val bouquetsDeferred = async {

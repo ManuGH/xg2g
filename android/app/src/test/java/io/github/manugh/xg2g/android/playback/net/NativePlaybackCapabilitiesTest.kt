@@ -104,4 +104,31 @@ class NativePlaybackCapabilitiesTest {
         assertEquals(false, capabilities.videoCodecSignals.first { it.codec == "h264" }.powerEfficient)
         assertEquals(false, capabilities.videoCodecSignals.first { it.codec == "av1" }.supported)
     }
+
+    @Test
+    fun `global video limit remains a coherent decoder tuple`() {
+        val capabilities = NativePlaybackCapabilities.fromMimeEntries(
+            isTv = true,
+            entries = listOf(
+                NativeDecoderMimeEntry(
+                    codecName = "decoder-wide",
+                    mimeType = "video/avc",
+                    hardwareAccelerated = true,
+                    maxWidth = 4096,
+                    maxHeight = 1080,
+                    maxFps = 60,
+                ),
+                NativeDecoderMimeEntry(
+                    codecName = "decoder-tall",
+                    mimeType = "video/hevc",
+                    hardwareAccelerated = true,
+                    maxWidth = 1920,
+                    maxHeight = 2160,
+                    maxFps = 120,
+                )
+            )
+        )
+
+        assertEquals(NativePlaybackMaxVideo(4096, 1080, 60), capabilities.maxVideo)
+    }
 }

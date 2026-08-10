@@ -18,11 +18,11 @@ internal class ReadinessPoller(
     ): SessionSnapshot {
         repeat(maxAttempts) {
             val snapshot = playbackApi.getSessionState(sessionId)
-            if (!snapshot.playbackUrl.isNullOrBlank()) {
-                return snapshot
-            }
             if (snapshot.state.isTerminal) {
                 throw errorMapper.toSessionStateException(snapshot)
+            }
+            if (!snapshot.playbackUrl.isNullOrBlank()) {
+                return snapshot
             }
             delay(pollMs)
         }

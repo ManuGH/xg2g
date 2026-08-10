@@ -107,14 +107,13 @@ class GuideActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
         baseUrl = intent.getStringExtra(EXTRA_BASE_URL).orEmpty()
         authToken = intent.getStringExtra(EXTRA_AUTH_TOKEN)?.trim()?.takeIf { it.isNotEmpty() }
         if (baseUrl.isBlank()) {
             finish()
             return
         }
-
-        super.onCreate(savedInstanceState)
 
         setContent {
             val state by viewModel.state.collectAsStateWithLifecycle()
@@ -248,7 +247,7 @@ private fun GuideScreen(
         GuideBackdropArt()
         when (state) {
             is GuideScreenState.Loading -> GuideLoading(state.serverLabel)
-            is GuideScreenState.Error -> GuideError(state)
+            is GuideScreenState.Error -> GuideError(state, onRefresh)
             is GuideScreenState.Empty -> GuideContentLayout(
                 bouquets = state.bouquets,
                 selectedBouquet = state.selectedBouquet,
@@ -471,7 +470,7 @@ private fun GuideLoading(serverLabel: String) {
 }
 
 @Composable
-private fun GuideError(state: GuideScreenState.Error) {
+private fun GuideError(state: GuideScreenState.Error, onRefresh: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -501,6 +500,10 @@ private fun GuideError(state: GuideScreenState.Error) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(onClick = onRefresh) {
+                Text(stringResource(R.string.guide_refresh))
+            }
         }
     }
 }

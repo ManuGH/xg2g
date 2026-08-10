@@ -101,8 +101,12 @@ internal class PlayerHolder(
     /** Invoked when playback can continue with a reduced feature set, currently video-only. */
     var onDegraded: ((String) -> Unit)? = null
 
+    /** Invoked after a rebuilt decoder has rendered a frame successfully. */
+    var onRecovered: (() -> Unit)? = null
+
     private var lastRearmAtMs = 0L
     private var consecutiveFastFailures = 0
+    private var awaitingRecoveryFirstFrame = false
     private val playbackLogger = Xg2gPlaybackLogger()
 
     /**
@@ -175,6 +179,10 @@ internal class PlayerHolder(
 
                     override fun onRenderedFirstFrame() {
                         scheduleHealthyPlaybackReset()
+                        if (awaitingRecoveryFirstFrame) {
+                            awaitingRecoveryFirstFrame = false
+                            onRecovered?.invoke()
+                        }
                     }
                 })
                 setAudioAttributes(
@@ -341,9 +349,15 @@ internal class PlayerHolder(
                 return@post
             }
             val previous = player
+            val recordingResumePositionMs = if (request.isLive) {
+                C.TIME_UNSET
+            } else {
+                previous.currentPosition.takeIf { it >= 0L } ?: request.startPositionMs
+            }
             runCatching { previous.release() }
                 .onFailure { err -> Log.w(TAG, "[DECODER_RECOVERY] releasing old player failed: ${err.message}") }
 
+            awaitingRecoveryFirstFrame = true
             player = createPlayer()
             onPlayerReplaced?.invoke(player)
 
@@ -366,7 +380,7 @@ internal class PlayerHolder(
                     isLive = request.isLive,
                     requestHeaders = request.requestHeaders,
                     mimeType = request.mimeType,
-                    startPositionMs = if (request.isLive) C.TIME_UNSET else request.startPositionMs
+                    startPositionMs = recordingResumePositionMs
                 )
                 isRecovering = false
                 lastRearmAtMs = android.os.SystemClock.elapsedRealtime()
@@ -389,7 +403,9 @@ internal class PlayerHolder(
         }
         current.prepare()
         current.playWhenReady = true
-        onDegraded?.invoke("Audio unavailable: $label")
+        // Post until after every Player.Listener has observed the renderer error. Otherwise the
+        // generic event forwarder writes the same error back after we have marked it non-fatal.
+        handler.post { onDegraded?.invoke("Audio unavailable: $label") }
     }
 
     /**
@@ -399,6 +415,7 @@ internal class PlayerHolder(
      */
     private fun giveUp(reason: String) {
         isRecovering = false
+        awaitingRecoveryFirstFrame = false
         terminalReason = reason
         watchdogEnabled = false
         handler.removeCallbacks(stallWatchdog)
@@ -435,6 +452,7 @@ internal class PlayerHolder(
             recoveryCount = 0
             consecutiveFastFailures = 0
             terminalReason = null
+            awaitingRecoveryFirstFrame = false
             if (audioDisabled) {
                 audioDisabled = false
                 player.enableTrackType(C.TRACK_TYPE_AUDIO)
@@ -499,6 +517,7 @@ internal class PlayerHolder(
         lastRequest = null
         isRecovering = false
         terminalReason = null
+        awaitingRecoveryFirstFrame = false
         recoveryCount = 0
         consecutiveFastFailures = 0
         resetWatchdogSample()
@@ -512,6 +531,7 @@ internal class PlayerHolder(
         onPlayerReplaced = null
         onUnrecoverable = null
         onDegraded = null
+        onRecovered = null
         player.release()
     }
 }

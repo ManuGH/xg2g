@@ -105,6 +105,12 @@ private data class CodecTarget(
     val mimeTypes: List<String>,
 )
 
+private data class ProbedVideoLimit(
+    val width: Int,
+    val height: Int,
+    val fps: Int?,
+)
+
 private object NativePlaybackCapabilityProbe {
     private const val DEVICE_ANDROID = "android"
     private const val DEVICE_ANDROID_TV = "android_tv"
@@ -239,29 +245,32 @@ private object NativePlaybackCapabilityProbe {
     ): NativeDecoderMimeEntry? {
         val capabilities = runCatching { codecInfo.getCapabilitiesForType(mimeType) }.getOrNull() ?: return null
         val videoCapabilities = capabilities.videoCapabilities
-        val maxWidth = videoCapabilities?.supportedWidths?.upper
-        val maxHeight = videoCapabilities?.supportedHeights?.upper
-        val maxFps = videoCapabilities
-            ?.supportedFrameRates
-            ?.upper
-            ?.toString()
-            ?.toDoubleOrNull()
-            ?.let { fps ->
-                if (fps >= 0) {
-                    (fps + 0.5).toInt()
-                } else {
-                    (fps - 0.5).toInt()
-                }
-            }
+        val videoLimit = videoCapabilities?.let(::probeCoherentVideoLimit)
 
         return NativeDecoderMimeEntry(
             codecName = codecInfo.name,
             mimeType = mimeType.lowercase(),
             hardwareAccelerated = isHardwareAccelerated(codecInfo),
-            maxWidth = maxWidth,
-            maxHeight = maxHeight,
-            maxFps = maxFps,
+            maxWidth = videoLimit?.width,
+            maxHeight = videoLimit?.height,
+            maxFps = videoLimit?.fps,
         )
+    }
+
+    private fun probeCoherentVideoLimit(
+        capabilities: MediaCodecInfo.VideoCapabilities
+    ): ProbedVideoLimit? {
+        val size = VIDEO_PROBE_SIZES.firstOrNull { (width, height) ->
+            runCatching { capabilities.isSizeSupported(width, height) }.getOrDefault(false)
+        } ?: return null
+        val fps = runCatching {
+            capabilities.getSupportedFrameRatesFor(size.first, size.second)
+                .upper
+                .coerceAtMost(MAX_REASONABLE_VIDEO_FPS)
+                .toInt()
+                .takeIf { it > 0 }
+        }.getOrNull()
+        return ProbedVideoLimit(width = size.first, height = size.second, fps = fps)
     }
 
     private fun isHardwareAccelerated(codecInfo: MediaCodecInfo): Boolean? {
@@ -279,10 +288,19 @@ private object NativePlaybackCapabilityProbe {
     }
 
     private fun mergeMaxVideo(entries: List<NativeDecoderMimeEntry>): NativePlaybackMaxVideo? {
-        val width = entries.mapNotNull { it.maxWidth }.maxOrNull() ?: return null
-        val height = entries.mapNotNull { it.maxHeight }.maxOrNull() ?: return null
-        val fps = entries.mapNotNull { it.maxFps }.maxOrNull()
-        return NativePlaybackMaxVideo(width = width, height = height, fps = fps)
+        // Width, height and rate must come from the same decoder entry. Taking each maximum
+        // independently produced impossible claims such as 4096x4096@960 on Fire TV.
+        val best = entries
+            .filter { (it.maxWidth ?: 0) > 0 && (it.maxHeight ?: 0) > 0 }
+            .maxWithOrNull(
+                compareBy<NativeDecoderMimeEntry> { (it.maxWidth ?: 0).toLong() * (it.maxHeight ?: 0).toLong() }
+                    .thenBy { it.maxFps ?: 0 }
+            ) ?: return null
+        return NativePlaybackMaxVideo(
+            width = requireNotNull(best.maxWidth),
+            height = requireNotNull(best.maxHeight),
+            fps = best.maxFps,
+        )
     }
 
     private fun resolvePowerEfficient(entries: List<NativeDecoderMimeEntry>): Boolean? {
@@ -357,4 +375,17 @@ private object NativePlaybackCapabilityProbe {
             )
         }.getOrNull()
     }
+
+    private val VIDEO_PROBE_SIZES = listOf(
+        7680 to 4320,
+        4096 to 2160,
+        3840 to 2160,
+        2560 to 1440,
+        1920 to 1080,
+        1280 to 720,
+        720 to 576,
+        640 to 480,
+    )
+
+    private const val MAX_REASONABLE_VIDEO_FPS = 240.0
 }

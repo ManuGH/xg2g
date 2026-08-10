@@ -5,9 +5,12 @@ import okhttp3.Response
 import org.json.JSONObject
 
 internal class PlaybackErrorMapper {
-    fun toHttpException(response: Response, body: String?): IllegalStateException {
+    fun toHttpException(response: Response, body: String?): PlaybackHttpException {
         val detail = extractProblemDetail(body)?.let { " · $it" }.orEmpty()
-        return IllegalStateException("Playback API ${response.code}: ${response.message}$detail")
+        return PlaybackHttpException(
+            statusCode = response.code,
+            message = "Playback API ${response.code}: ${response.message}$detail"
+        )
     }
 
     fun toSessionStateException(snapshot: SessionSnapshot): IllegalStateException {
@@ -23,3 +26,8 @@ internal class PlaybackErrorMapper {
         }.getOrNull() ?: raw
     }
 }
+
+internal class PlaybackHttpException(
+    val statusCode: Int,
+    message: String
+) : IllegalStateException(message)

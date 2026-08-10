@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseStoreFile = System.getenv("KEYSTORE_FILE")
+val releaseStorePassword = System.getenv("KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("KEY_ALIAS")
+val releaseKeyPassword = System.getenv("KEY_PASSWORD")
+val releaseSigningConfigured = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() } && file(requireNotNull(releaseStoreFile)).isFile
+
 android {
     namespace = "io.github.manugh.xg2g.android"
     compileSdk = 36
@@ -52,27 +63,19 @@ android {
             manifestPlaceholders["appLabel"] = "xg2g"
             manifestPlaceholders["usesCleartextTraffic"] = "false"
             manifestPlaceholders["deepLinkScheme"] = "https"
-            manifestPlaceholders["deepLinkHost"] = "xg2g.example.invalid"
+            manifestPlaceholders["deepLinkHost"] = "xg2g.home.matrixcentral.de"
         }
     }
 
     signingConfigs {
         create("release") {
-            val storeFileEnv = System.getenv("KEYSTORE_FILE")
-            val storePasswordEnv = System.getenv("KEYSTORE_PASSWORD")
-            val keyAliasEnv = System.getenv("KEY_ALIAS")
-            val keyPasswordEnv = System.getenv("KEY_PASSWORD")
-
-            if (!storeFileEnv.isNullOrEmpty() && file(storeFileEnv).exists()) {
-                storeFile = file(storeFileEnv)
-                storePassword = storePasswordEnv
-                keyAlias = keyAliasEnv
-                keyPassword = keyPasswordEnv
-            } else {
-                storeFile = signingConfigs.getByName("debug").storeFile
-                storePassword = signingConfigs.getByName("debug").storePassword
-                keyAlias = signingConfigs.getByName("debug").keyAlias
-                keyPassword = signingConfigs.getByName("debug").keyPassword
+            // Never produce a production-looking APK with the debug identity. An unconfigured
+            // release is deliberately unsigned and AGP will fail its package/sign task.
+            if (releaseSigningConfigured) {
+                storeFile = file(requireNotNull(releaseStoreFile))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             }
         }
     }

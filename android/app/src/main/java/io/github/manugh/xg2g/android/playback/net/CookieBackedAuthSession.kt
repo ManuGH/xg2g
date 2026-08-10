@@ -61,15 +61,20 @@ internal class CookieBackedAuthSession(
     }
 
     override fun clearSessionCookie(url: HttpUrl, cookieName: String, cookiePath: String) {
-        cookieManager.setCookie(
-            url.toString(),
-            "$cookieName=; Max-Age=0; Path=$cookiePath; HttpOnly"
-        )
+        sessionCookieDeletionPaths(cookiePath).forEach { path ->
+            cookieManager.setCookie(
+                url.toString(),
+                "$cookieName=; Max-Age=0; Path=$path; HttpOnly"
+            )
+        }
         cookieManager.flush()
-        Log.d(TAG, "clearSessionCookie path=${url.encodedPath} cookieName=$cookieName cookiePath=$cookiePath")
+        Log.d(TAG, "clearSessionCookie path=${url.encodedPath} cookieName=$cookieName cookiePaths=${sessionCookieDeletionPaths(cookiePath)}")
     }
 
     private companion object {
         const val TAG = "Xg2gCookieSession"
     }
 }
+
+internal fun sessionCookieDeletionPaths(cookiePath: String): List<String> =
+    listOf(cookiePath, "/").distinct()

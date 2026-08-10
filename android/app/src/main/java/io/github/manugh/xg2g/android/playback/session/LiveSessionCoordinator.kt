@@ -5,6 +5,8 @@ import io.github.manugh.xg2g.android.playback.model.NativePlaybackDiagnostics
 import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.net.PlaybackApi
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 internal class LiveSessionCoordinator(
     private val playbackApi: PlaybackApi,
@@ -60,9 +62,17 @@ internal class LiveSessionCoordinator(
     }
 
     private suspend fun cleanupStartedSession(sessionId: String) {
+        if (activeSessionId == sessionId) {
+            activeSessionId = null
+        }
         heartbeatManager.stop()
-        runCatching { playbackApi.stopSession(sessionId) }
-            .onFailure(onError)
+        // start() reaches this path from a cancelled command. The real API stop uses
+        // withContext(IO), which will not even enter when it inherits that cancelled Job.
+        // Cleanup owns a backend tuner lease, so it must finish independently.
+        withContext(NonCancellable) {
+            runCatching { playbackApi.stopSession(sessionId) }
+                .onFailure(onError)
+        }
     }
 
     private companion object {
