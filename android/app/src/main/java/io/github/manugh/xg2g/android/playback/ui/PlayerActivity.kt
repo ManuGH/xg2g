@@ -320,6 +320,10 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         isClosingPlayback = true
+        runCatching {
+            session.player.stop()
+            session.player.clearMediaItems()
+        }
         NativePlaybackBridge(this).stop()
         finish()
     }
@@ -327,10 +331,15 @@ class PlayerActivity : AppCompatActivity() {
     override fun onDestroy() {
         if (!isClosingPlayback) {
             isClosingPlayback = true
+            runCatching {
+                session.player.stop()
+                session.player.clearMediaItems()
+            }
             NativePlaybackBridge(this).stop()
         }
         super.onDestroy()
     }
+
 
     private fun isExitKey(event: KeyEvent): Boolean {
         if (event.repeatCount != 0) {

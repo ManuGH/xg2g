@@ -7,6 +7,11 @@ import android.content.pm.ResolveInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import androidx.activity.compose.setContent
+import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.activity.viewModels
+import io.github.manugh.xg2g.android.guide.GuideViewModel
+import io.github.manugh.xg2g.android.dashboard.DashboardViewModel
 import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -39,6 +44,49 @@ class MainActivity : AppCompatActivity() {
     private var sessionAuthToken: String? = null
     private var uiState: MainUiState = MainUiState.Loading()
     private var loadAppUrlJob: Job? = null
+    private val destinationFlow = MutableStateFlow(TvNavigationDestination.Home)
+    private val dashboardViewModel: DashboardViewModel by viewModels {
+        DashboardViewModel.Factory(
+            context = applicationContext,
+            serverLabel = serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "",
+            baseUrl = serverSettingsStore.getServerUrl() ?: "",
+            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
+        )
+    }
+
+    private val guideViewModel: GuideViewModel by viewModels {
+        GuideViewModel.Factory(
+            context = applicationContext,
+            serverLabel = serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "",
+            baseUrl = serverSettingsStore.getServerUrl() ?: "",
+            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
+        )
+    }
+
+    private val recordingsViewModel: io.github.manugh.xg2g.android.recordings.RecordingsViewModel by viewModels {
+        io.github.manugh.xg2g.android.recordings.RecordingsViewModel.Factory(
+            context = applicationContext,
+            serverLabel = serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "",
+            baseUrl = serverSettingsStore.getServerUrl() ?: "",
+            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
+        )
+    }
+
+    private val timersViewModel: io.github.manugh.xg2g.android.timers.TimersViewModel by viewModels {
+        io.github.manugh.xg2g.android.timers.TimersViewModel.Factory(
+            context = applicationContext,
+            serverLabel = serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "",
+            baseUrl = serverSettingsStore.getServerUrl() ?: "",
+            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
+        )
+    }
+
+    private val settingsViewModel: io.github.manugh.xg2g.android.settings.SettingsViewModel by viewModels {
+        io.github.manugh.xg2g.android.settings.SettingsViewModel.Factory(
+            context = applicationContext,
+            serverUrl = serverSettingsStore.getServerUrl() ?: ""
+        )
+    }
 
     private val serverSettingsStore by lazy { ServerSettingsStore(this) }
     private val deviceAuthRepository by lazy(LazyThreadSafetyMode.NONE) {
@@ -57,12 +105,59 @@ class MainActivity : AppCompatActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
 
-        setContentView(R.layout.activity_main)
-
+        val mainView = layoutInflater.inflate(R.layout.activity_main, null, false)
         screenUi = MainScreenUi(
             activity = this,
+            view = mainView,
             isTvDevice = isTvDevice
         )
+        
+        setContent {
+            MainActivityContent(
+                destinationFlow = destinationFlow,
+                onNavigate = { navigateToTvDestination(it) },
+                dashboardViewModel = dashboardViewModel,
+                guideViewModel = guideViewModel,
+                recordingsViewModel = recordingsViewModel,
+                timersViewModel = timersViewModel,
+                settingsViewModel = settingsViewModel,
+                assetBaseUrl = serverSettingsStore.getServerUrl() ?: "",
+                onPlayChannel = { channel -> 
+                    nativePlaybackBridge.start(
+                        NativePlaybackRequest.Live(
+                            serviceRef = channel.serviceRef,
+                            title = channel.displayName,
+                            logoUrl = channel.logoUrl,
+                            authToken = sessionAuthToken,
+                            profile = "direct"
+                        )
+                    )
+                },
+                onPlayRecording = { item ->
+                    val startPosMs = if (item.resume != null && item.resume.finished != true && item.resume.posSeconds > 0) {
+                        item.resume.posSeconds * 1000L
+                    } else 0L
+
+                    val thumbnailUrl = serverSettingsStore.getServerUrl()?.let { base ->
+                        "$base/api/v3/recordings/${item.recordingId}/thumbnail.jpg"
+                    }
+
+                    nativePlaybackBridge.start(
+                        NativePlaybackRequest.Recording(
+                            recordingId = item.recordingId,
+                            startPositionMs = startPosMs,
+                            title = item.title,
+                            logoUrl = thumbnailUrl,
+                            authToken = sessionAuthToken,
+                            profile = "direct"
+                        )
+                    )
+                },
+                onOpenSetup = { showSetupUi() },
+                onExitGuide = { navigateToTvDestination(TvNavigationDestination.Home) }
+            )
+        }
+
 
         configureScreenUi()
         installBackHandler()
@@ -158,6 +253,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        dashboardViewModel.refresh()
+        recordingsViewModel.refresh(isInitial = false)
         webViewController?.onResume()
         applyPlaybackKeepScreenOn(playbackActive)
     }
@@ -266,6 +363,18 @@ class MainActivity : AppCompatActivity() {
                     hideTvQuickActions(restoreFocus = true)
                     return
                 }
+                
+                // 1. Native Compose Screens (Guide, Recordings, Timers, Settings) -> Home Priority
+                if (destinationFlow.value != TvNavigationDestination.Home) {
+                    navigateToTvDestination(TvNavigationDestination.Home)
+                    return
+                }
+
+                // 2. WebUI Internal History Priority
+                if (webViewController?.canGoBack() == true) {
+                    webViewController?.goBack()
+                    return
+                }
 
                 when (uiState) {
                     is MainUiState.TvHome -> {
@@ -298,18 +407,15 @@ class MainActivity : AppCompatActivity() {
 
                     is MainUiState.Loading,
                     MainUiState.Content -> {
-                        if (webViewController?.canGoBack() == true) {
-                            webViewController?.goBack()
+                        // 3. From other Root destination -> Home
+                        if (destinationFlow.value != TvNavigationDestination.Home) {
+                            navigateToTvDestination(TvNavigationDestination.Home)
                             return
                         }
-
+                        
+                        // 4. From Home -> Exit
                         if (shouldReturnToTvHome()) {
                             showTvHomeUi(reason = "back_to_tv_home")
-                            return
-                        }
-
-                        if (canOpenTvQuickActions()) {
-                            showTvQuickActions()
                             return
                         }
                     }
@@ -520,14 +626,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTvQuickActions() {
-        if (!canOpenTvQuickActions()) {
-            return
-        }
-        screenUi.showTvQuickActions(
-            context = describeDestination(currentExternalUrl()),
-            activeDestination = resolveActiveTvDestination(currentExternalUrl())
-        )
-        screenUi.setExternalBrowserActionVisible(canOpenExternalBrowser(currentExternalUrl()))
+        // TvQuickActions are now disabled in favor of the Compose BroadcastRail
+        // If the user presses MENU, we could optionally open the BroadcastRail here,
+        // but it is automatically focusable now.
     }
 
     private fun hideTvQuickActions(restoreFocus: Boolean) {
@@ -562,22 +663,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openTvGuide() {
-        if (!isTvDevice) {
-            navigateToTvDestination(TvNavigationDestination.Guide)
-            return
-        }
-
-        hideTvQuickActions(restoreFocus = false)
-        val baseUrl = serverSettingsStore.getServerUrl()
-        if (baseUrl.isNullOrBlank()) {
-            showSetupUi()
-            return
-        }
-
-        startActivity(GuideActivity.createIntent(this, baseUrl, sessionAuthToken))
+        navigateToTvDestination(TvNavigationDestination.Guide)
     }
 
     private fun navigateToTvDestination(destination: TvNavigationDestination) {
+        destinationFlow.value = destination
         val targetUrl = buildTvDestinationUrl(destination)
         if (targetUrl == null) {
             showSetupUi()
@@ -590,7 +680,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         hideTvQuickActions(restoreFocus = false)
-        loadAppUrl(targetUrl, reason = "tv_destination_${destination.name.lowercase()}")
+        if (destination != TvNavigationDestination.Guide) {
+            loadAppUrl(targetUrl, reason = "tv_destination_${destination.name.lowercase()}")
+        }
     }
 
     private fun currentExternalUrl(): String {
@@ -675,6 +767,7 @@ class MainActivity : AppCompatActivity() {
             deepLinkUrl = intent.dataString
         )
         if (explicitToken != null) {
+            serverSettingsStore.saveAuthToken(explicitToken)
             return explicitToken
         }
         // Normalize before comparing so default-port differences do not falsely
@@ -684,7 +777,7 @@ class MainActivity : AppCompatActivity() {
         if (normalizedConfigured != null && normalizedConfigured != normalizedExisting) {
             return null
         }
-        return sessionAuthToken
+        return sessionAuthToken ?: serverSettingsStore.getAuthToken()
     }
 
     private suspend fun prepareWebUiUrl(url: String): String {
@@ -822,7 +915,10 @@ class MainActivity : AppCompatActivity() {
             configuredBaseUrl = configuredBaseUrl,
             intent = intent
         )
+        dashboardViewModel.refresh()
+        recordingsViewModel.refresh(isInitial = false)
         serverSettingsStore.saveServerUrl(configuredBaseUrl)
+
 
         val startUrl = ServerTargetResolver.resolveStartUrl(
             baseUrl = configuredBaseUrl,

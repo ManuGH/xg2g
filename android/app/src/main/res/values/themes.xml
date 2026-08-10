@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Base application theme (Android Studio / Dracula style) -->
+    <!-- Base application theme (Broadcast Console 2026 style) -->
     <style name="Theme.Xg2g" parent="Theme.Material3.Dark.NoActionBar">
         <!-- Main colors -->
-        <item name="colorPrimary">@color/ide_blue</item>
-        <item name="colorOnPrimary">@color/ide_text_primary</item>
-        <item name="colorPrimaryContainer">@color/ide_blue</item>
-        <item name="colorOnPrimaryContainer">@color/ide_text_primary</item>
-        <item name="colorOutline">@color/ide_outline</item>
+        <item name="colorPrimary">@color/color_action</item>
+        <item name="colorOnPrimary">@color/color_text_primary</item>
+        <item name="colorPrimaryContainer">@color/color_action</item>
+        <item name="colorOnPrimaryContainer">@color/color_text_primary</item>
+        <item name="colorOutline">@color/color_border_base</item>
 
-        <item name="android:windowBackground">@color/ide_background</item>
-        <item name="colorSurface">@color/ide_surface</item>
-        <item name="colorOnSurface">@color/ide_text_primary</item>
-        <item name="colorOnSurfaceVariant">@color/ide_text_secondary</item>
+        <item name="android:windowBackground">@color/color_bg_base</item>
+        <item name="colorSurface">@color/color_bg_elevated</item>
+        <item name="colorOnSurface">@color/color_text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/color_text_secondary</item>
 
-        <item name="colorError">@color/ide_error</item>
+        <item name="colorError">@color/color_status_error</item>
 
         <!-- Components -->
         <item name="editTextStyle">@style/Widget.Xg2g.TextInputEditText</item>
@@ -24,111 +24,123 @@
         <item name="materialCardViewStyle">@style/Widget.Xg2g.CardView</item>
 
         <!-- Navigation & Status Bar -->
-        <item name="android:navigationBarColor">@color/ide_background</item>
-        <item name="android:statusBarColor">@color/ide_background</item>
+        <item name="android:navigationBarColor">@color/color_bg_base</item>
+        <item name="android:statusBarColor">@color/color_bg_base</item>
+        
+        <!-- Typography -->
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <style name="Widget.Xg2g.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
-        <item name="boxBackgroundColor">@color/ide_surface_soft</item>
-        <item name="boxStrokeColor">@color/ide_outline</item>
-        <item name="boxStrokeErrorColor">@color/ide_error</item>
-        <item name="boxCornerRadiusTopStart">16dp</item>
-        <item name="boxCornerRadiusTopEnd">16dp</item>
-        <item name="boxCornerRadiusBottomStart">16dp</item>
-        <item name="boxCornerRadiusBottomEnd">16dp</item>
-        <item name="hintTextColor">@color/ide_text_secondary</item>
+        <item name="boxBackgroundColor">@color/color_bg_base</item>
+        <item name="boxStrokeColor">@color/color_border_base</item>
+        <item name="boxStrokeErrorColor">@color/color_status_error</item>
+        <item name="boxCornerRadiusTopStart">12dp</item>
+        <item name="boxCornerRadiusTopEnd">12dp</item>
+        <item name="boxCornerRadiusBottomStart">12dp</item>
+        <item name="boxCornerRadiusBottomEnd">12dp</item>
+        <item name="hintTextColor">@color/color_text_secondary</item>
     </style>
 
     <style name="Widget.Xg2g.TextInputEditText" parent="Widget.Material3.TextInputEditText.OutlinedBox">
-        <item name="android:textColor">@color/ide_text_primary</item>
-        <item name="android:textColorHint">@color/ide_text_secondary</item>
+        <item name="android:textColor">@color/color_text_primary</item>
+        <item name="android:textColorHint">@color/color_text_secondary</item>
         <item name="android:minHeight">56dp</item>
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <style name="Widget.Xg2g.Button" parent="Widget.Material3.Button">
         <item name="android:minHeight">50dp</item>
         <item name="android:paddingLeft">18dp</item>
         <item name="android:paddingRight">18dp</item>
-        <item name="cornerRadius">16dp</item>
-        <item name="backgroundTint">@color/ide_blue</item>
-        <item name="android:textColor">@color/ide_text_primary</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="backgroundTint">@color/color_action</item>
+        <item name="android:textColor">@color/color_text_primary</item>
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <style name="Widget.Xg2g.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
         <item name="android:minHeight">50dp</item>
         <item name="android:paddingLeft">18dp</item>
         <item name="android:paddingRight">18dp</item>
-        <item name="cornerRadius">16dp</item>
-        <item name="backgroundTint">@color/ide_surface_soft</item>
-        <item name="strokeColor">@color/ide_outline</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="backgroundTint">@android:color/transparent</item>
+        <item name="strokeColor">@color/color_border_base</item>
         <item name="strokeWidth">1dp</item>
-        <item name="android:textColor">@color/ide_text_primary</item>
+        <item name="android:textColor">@color/color_text_primary</item>
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <style name="Widget.Xg2g.Button.TvRail" parent="Widget.Material3.Button.OutlinedButton">
         <item name="android:minHeight">50dp</item>
         <item name="android:paddingLeft">16dp</item>
         <item name="android:paddingRight">16dp</item>
-        <item name="cornerRadius">18dp</item>
-        <item name="backgroundTint">@color/ide_surface_panel_soft</item>
-        <item name="strokeColor">@color/ide_outline_soft</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="backgroundTint">@android:color/transparent</item>
+        <item name="strokeColor">@color/color_border_base</item>
         <item name="strokeWidth">1dp</item>
-        <item name="android:textColor">@color/ide_text_primary</item>
+        <item name="android:textColor">@color/color_text_primary</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:gravity">start|center_vertical</item>
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <style name="Widget.Xg2g.Button.TvPanelPrimary" parent="Widget.Material3.Button">
         <item name="android:minHeight">54dp</item>
         <item name="android:paddingLeft">18dp</item>
         <item name="android:paddingRight">18dp</item>
-        <item name="cornerRadius">18dp</item>
-        <item name="backgroundTint">@color/ide_blue</item>
-        <item name="android:textColor">@color/ide_text_primary</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="backgroundTint">@color/color_action</item>
+        <item name="android:textColor">@color/color_text_primary</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:gravity">start|center_vertical</item>
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <style name="Widget.Xg2g.Button.TvPanelSecondary" parent="Widget.Material3.Button.OutlinedButton">
         <item name="android:minHeight">52dp</item>
         <item name="android:paddingLeft">18dp</item>
         <item name="android:paddingRight">18dp</item>
-        <item name="cornerRadius">18dp</item>
-        <item name="backgroundTint">@color/ide_surface_panel_soft</item>
-        <item name="strokeColor">@color/ide_outline_soft</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="backgroundTint">@color/color_surface_panel_soft</item>
+        <item name="strokeColor">@color/color_border_base</item>
         <item name="strokeWidth">1dp</item>
-        <item name="android:textColor">@color/ide_text_primary</item>
+        <item name="android:textColor">@color/color_text_primary</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:gravity">start|center_vertical</item>
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <style name="Widget.Xg2g.CardView" parent="Widget.Material3.CardView.Elevated">
-        <item name="cardBackgroundColor">@color/ide_surface_strong</item>
-        <item name="strokeColor">@color/ide_outline</item>
+        <item name="cardBackgroundColor">@color/color_surface_shell_strong</item>
+        <item name="strokeColor">@color/color_border_base</item>
         <item name="strokeWidth">1dp</item>
-        <item name="cardCornerRadius">22dp</item>
-        <item name="cardElevation">6dp</item>
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">0dp</item>
     </style>
 
     <style name="TextAppearance.Xg2g.ShellEyebrow" parent="TextAppearance.Material3.LabelMedium">
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.12</item>
-        <item name="android:textColor">@color/ide_live</item>
+        <item name="android:textColor">@color/color_live</item>
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <style name="TextAppearance.Xg2g.ShellSupport" parent="TextAppearance.Material3.BodySmall">
-        <item name="android:textColor">@color/ide_text_secondary</item>
+        <item name="android:textColor">@color/color_text_secondary</item>
         <item name="android:lineSpacingExtra">1dp</item>
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <style name="TextAppearance.Xg2g.ShellLead" parent="TextAppearance.Material3.BodyMedium">
-        <item name="android:textColor">@color/ide_text_secondary</item>
+        <item name="android:textColor">@color/color_text_secondary</item>
         <item name="android:lineSpacingExtra">2dp</item>
+        <item name="fontFamily">@font/ibm_plex_sans</item>
     </style>
 
     <!-- Splash Screen Theme -->
     <style name="Theme.Xg2g.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/ide_background</item>
+        <item name="windowSplashScreenBackground">@color/color_bg_base</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
         <item name="postSplashScreenTheme">@style/Theme.Xg2g</item>
     </style>

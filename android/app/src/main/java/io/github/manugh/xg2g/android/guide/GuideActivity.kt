@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import io.github.manugh.xg2g.android.ui.theme.GuideTheme
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -96,13 +97,13 @@ import kotlin.math.max
 class GuideActivity : AppCompatActivity() {
     private lateinit var baseUrl: String
     private var authToken: String? = null
-    private val playbackBridge by lazy(LazyThreadSafetyMode.NONE) { NativePlaybackBridge(this) }
-    private val viewModel: GuideViewModel by viewModels {
+    internal val playbackBridge by lazy(LazyThreadSafetyMode.NONE) { NativePlaybackBridge(this) }
+    internal val viewModel: GuideViewModel by viewModels {
         GuideViewModel.Factory(
             context = applicationContext,
             serverLabel = describeServer(baseUrl),
             baseUrl = baseUrl,
-            authToken = authToken
+            authTokenProvider = { authToken }
         )
     }
 
@@ -131,7 +132,7 @@ class GuideActivity : AppCompatActivity() {
         }
     }
 
-    private fun playChannel(channel: GuideChannel) {
+    internal fun playChannel(channel: GuideChannel) {
         playbackBridge.start(
             NativePlaybackRequest.Live(
                 serviceRef = channel.serviceRef,
@@ -143,7 +144,7 @@ class GuideActivity : AppCompatActivity() {
         )
     }
 
-    private fun describeServer(url: String): String {
+    internal fun describeServer(url: String): String {
         val uri = runCatching { Uri.parse(url) }.getOrNull()
         val host = uri?.host ?: return url
         val path = uri.path?.trim('/').orEmpty()
@@ -165,33 +166,15 @@ class GuideActivity : AppCompatActivity() {
     }
 }
 
-private enum class GuideFocusedPane {
+internal enum class GuideFocusedPane {
     BOUQUETS,
     CHANNELS
 }
 
-@Composable
-private fun GuideTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = MaterialTheme.colorScheme.copy(
-            primary = colorFromRes(R.color.ide_blue),
-            secondary = colorFromRes(R.color.ide_live),
-            surface = colorFromRes(R.color.ide_surface),
-            surfaceVariant = colorFromRes(R.color.ide_surface_strong),
-            background = colorFromRes(R.color.ide_background),
-            onBackground = colorFromRes(R.color.ide_text_primary),
-            onSurface = colorFromRes(R.color.ide_text_primary),
-            onSurfaceVariant = colorFromRes(R.color.ide_text_secondary),
-            outline = colorFromRes(R.color.ide_outline),
-            outlineVariant = colorFromRes(R.color.ide_outline_soft),
-            error = colorFromRes(R.color.ide_error)
-        ),
-        content = content
-    )
-}
+
 
 @Composable
-private fun GuideScreen(
+internal fun GuideScreen(
     state: GuideScreenState,
     assetBaseUrl: String,
     onSelectBouquet: (String) -> Unit,
@@ -237,8 +220,8 @@ private fun GuideScreen(
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        colorFromRes(R.color.ide_surface_panel),
-                        colorFromRes(R.color.ide_background),
+                        colorFromRes(R.color.color_surface_panel),
+                        colorFromRes(R.color.color_bg_base),
                         Color(0F, 0F, 0F, 1F)
                     )
                 )
@@ -283,7 +266,7 @@ private fun GuideScreen(
 }
 
 @Composable
-private fun BoxScope.GuideBackdropArt() {
+internal fun BoxScope.GuideBackdropArt() {
     Image(
         painter = painterResource(R.drawable.xg2g_logo_mono_dark),
         contentDescription = null,
@@ -297,7 +280,7 @@ private fun BoxScope.GuideBackdropArt() {
 }
 
 @Composable
-private fun GuideHeader(
+internal fun GuideHeader(
     serverLabel: String,
     health: GuideHealthStatus?,
     timelineWindow: GuideTimelineWindow?,
@@ -344,10 +327,10 @@ private fun GuideHeader(
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = colorFromRes(R.color.ide_surface_panel_soft),
+                    containerColor = colorFromRes(R.color.color_surface_panel_soft),
                     contentColor = MaterialTheme.colorScheme.onSurface
                 ),
-                border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft))
+                border = BorderStroke(1.dp, colorFromRes(R.color.color_border_subtle))
             ) {
                 Text(
                     text = stringResource(R.string.guide_refresh),
@@ -359,15 +342,15 @@ private fun GuideHeader(
 }
 
 @Composable
-private fun GuideWindowChip(timelineWindow: GuideTimelineWindow?, displayZoneId: ZoneId) {
+internal fun GuideWindowChip(timelineWindow: GuideTimelineWindow?, displayZoneId: ZoneId) {
     if (timelineWindow == null) {
         return
     }
 
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = colorFromRes(R.color.ide_surface_panel_soft),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft)),
+        color = colorFromRes(R.color.color_surface_panel_soft),
+        border = BorderStroke(1.dp, colorFromRes(R.color.color_border_subtle)),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Text(
@@ -384,15 +367,15 @@ private fun GuideWindowChip(timelineWindow: GuideTimelineWindow?, displayZoneId:
 }
 
 @Composable
-private fun GuideHealthChip(health: GuideHealthStatus?) {
+internal fun GuideHealthChip(health: GuideHealthStatus?) {
     if (health == null) {
         return
     }
 
     val (labelRes, tone) = when {
-        !health.receiverHealthy -> R.string.guide_health_receiver_issue to colorFromRes(R.color.ide_error)
-        health.epgHealthy -> R.string.guide_health_epg_ready to colorFromRes(R.color.ide_live)
-        else -> R.string.guide_health_epg_limited to colorFromRes(R.color.ide_live)
+        !health.receiverHealthy -> R.string.guide_health_receiver_issue to colorFromRes(R.color.color_status_error)
+        health.epgHealthy -> R.string.guide_health_epg_ready to colorFromRes(R.color.color_live)
+        else -> R.string.guide_health_epg_limited to colorFromRes(R.color.color_live)
     }
 
     val text = if (!health.epgHealthy && (health.missingChannels ?: 0) > 0) {
@@ -420,11 +403,11 @@ private fun GuideHealthChip(health: GuideHealthStatus?) {
 }
 
 @Composable
-private fun GuideServerChip(serverLabel: String) {
+internal fun GuideServerChip(serverLabel: String) {
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = colorFromRes(R.color.ide_surface_panel_soft),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft)),
+        color = colorFromRes(R.color.color_surface_panel_soft),
+        border = BorderStroke(1.dp, colorFromRes(R.color.color_border_subtle)),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Text(
@@ -437,12 +420,12 @@ private fun GuideServerChip(serverLabel: String) {
 }
 
 @Composable
-private fun GuideLoading(serverLabel: String) {
+internal fun GuideLoading(serverLabel: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = colorFromRes(R.color.ide_surface_strong),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline)),
+        shape = MaterialTheme.shapes.large,
+        color = colorFromRes(R.color.color_surface_shell_strong),
+        border = BorderStroke(1.dp, colorFromRes(R.color.color_border_base)),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Column(
@@ -470,12 +453,12 @@ private fun GuideLoading(serverLabel: String) {
 }
 
 @Composable
-private fun GuideError(state: GuideScreenState.Error, onRefresh: () -> Unit) {
+internal fun GuideError(state: GuideScreenState.Error, onRefresh: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = colorFromRes(R.color.ide_surface_strong),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline)),
+        shape = MaterialTheme.shapes.large,
+        color = colorFromRes(R.color.color_surface_shell_strong),
+        border = BorderStroke(1.dp, colorFromRes(R.color.color_border_base)),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Column(
@@ -509,7 +492,7 @@ private fun GuideError(state: GuideScreenState.Error, onRefresh: () -> Unit) {
 }
 
 @Composable
-private fun GuideContentLayout(
+internal fun GuideContentLayout(
     bouquets: List<GuideBouquet>,
     selectedBouquet: String,
     channels: List<GuideChannel>,
@@ -634,7 +617,7 @@ private fun GuideContentLayout(
 }
 
 @Composable
-private fun BouquetPickerOverlay(
+internal fun BouquetPickerOverlay(
     bouquets: List<GuideBouquet>,
     selectedBouquet: String,
     listState: androidx.compose.foundation.lazy.LazyListState,
@@ -647,9 +630,9 @@ private fun BouquetPickerOverlay(
 ) {
     Surface(
         modifier = modifier.padding(end = 14.dp),
-        shape = RoundedCornerShape(22.dp),
-        color = colorFromRes(R.color.ide_surface_panel),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline)),
+        shape = MaterialTheme.shapes.large,
+        color = colorFromRes(R.color.color_surface_panel),
+        border = BorderStroke(1.dp, colorFromRes(R.color.color_border_base)),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Column(
@@ -691,18 +674,18 @@ private fun BouquetPickerOverlay(
                                     onFocusedPane()
                                 }
                             },
-                        shape = RoundedCornerShape(18.dp),
+                        shape = MaterialTheme.shapes.large,
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = if (selected) {
-                                colorFromRes(R.color.ide_blue)
+                                colorFromRes(R.color.color_action)
                             } else {
-                                colorFromRes(R.color.ide_surface_panel_soft)
+                                colorFromRes(R.color.color_surface_panel_soft)
                             },
-                            contentColor = colorFromRes(R.color.ide_text_primary)
+                            contentColor = colorFromRes(R.color.color_text_primary)
                         ),
                         border = BorderStroke(
                             1.dp,
-                            if (selected) colorFromRes(R.color.ide_blue) else colorFromRes(R.color.ide_outline_soft)
+                            if (selected) colorFromRes(R.color.color_action) else colorFromRes(R.color.color_border_subtle)
                         )
                     ) {
                         Column(
@@ -719,7 +702,7 @@ private fun BouquetPickerOverlay(
                                     text = stringResource(R.string.guide_channels, bouquet.services),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = if (selected) {
-                                        colorFromRes(R.color.ide_text_primary)
+                                        colorFromRes(R.color.color_text_primary)
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
                                     }
@@ -734,7 +717,7 @@ private fun BouquetPickerOverlay(
 }
 
 @Composable
-private fun ChannelPane(
+internal fun ChannelPane(
     selectedBouquet: String,
     assetBaseUrl: String,
     channels: List<GuideChannel>,
@@ -946,7 +929,7 @@ private fun ChannelPane(
 }
 
 @Composable
-private fun GuideChannelPosterCard2026(
+internal fun GuideChannelPosterCard2026(
     assetBaseUrl: String,
     channel: GuideChannel,
     currentEpochSec: Long,
@@ -1060,7 +1043,7 @@ private fun GuideChannelPosterCard2026(
 }
 
 @Composable
-private fun BouquetSelectorButton(
+internal fun BouquetSelectorButton(
     selectedBouquet: String,
     onOpenBouquetPicker: () -> Unit,
     onFocusedPane: () -> Unit,
@@ -1078,12 +1061,12 @@ private fun BouquetSelectorButton(
                     onFocusedPane()
                 }
             },
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.large,
         colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = colorFromRes(R.color.ide_surface_panel_soft),
-            contentColor = colorFromRes(R.color.ide_text_primary)
+            containerColor = colorFromRes(R.color.color_surface_panel_soft),
+            contentColor = colorFromRes(R.color.color_text_primary)
         ),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft))
+        border = BorderStroke(1.dp, colorFromRes(R.color.color_border_subtle))
     ) {
         Column(
             horizontalAlignment = Alignment.Start
@@ -1106,7 +1089,7 @@ private fun BouquetSelectorButton(
 }
 
 @Composable
-private fun ChannelMatrixCard(
+internal fun ChannelMatrixCard(
     assetBaseUrl: String,
     channel: GuideChannel,
     health: GuideHealthStatus?,
@@ -1136,8 +1119,8 @@ private fun ChannelMatrixCard(
                 .width(160.dp)
                 .fillMaxHeight(),
             shape = RoundedCornerShape(12.dp),
-            color = colorFromRes(R.color.ide_surface_panel),
-            border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft))
+            color = colorFromRes(R.color.color_surface_panel),
+            border = BorderStroke(1.dp, colorFromRes(R.color.color_border_subtle))
         ) {
             Row(
                 modifier = Modifier
@@ -1207,7 +1190,7 @@ private fun ChannelMatrixCard(
 }
 
 @Composable
-private fun ProgramBlock(
+internal fun ProgramBlock(
     title: String,
     startTimeStr: String,
     endTimeStr: String,
@@ -1222,17 +1205,17 @@ private fun ProgramBlock(
 
     val backgroundColor by animateColorAsState(
         targetValue = when {
-            focused -> colorFromRes(R.color.ide_surface_panel_soft)
-            isLive -> colorFromRes(R.color.ide_live).copy(alpha = 0.12f)
-            else -> colorFromRes(R.color.ide_surface)
+            focused -> colorFromRes(R.color.color_surface_panel_soft)
+            isLive -> colorFromRes(R.color.color_live).copy(alpha = 0.12f)
+            else -> colorFromRes(R.color.color_bg_elevated)
         },
         label = "programBlockBg"
     )
     val borderColor by animateColorAsState(
         targetValue = when {
-            focused -> colorFromRes(R.color.ide_blue)
-            isLive -> colorFromRes(R.color.ide_live).copy(alpha = 0.4f)
-            else -> colorFromRes(R.color.ide_outline_soft)
+            focused -> colorFromRes(R.color.color_action)
+            isLive -> colorFromRes(R.color.color_live).copy(alpha = 0.4f)
+            else -> colorFromRes(R.color.color_border_subtle)
         },
         label = "programBlockBorder"
     )
@@ -1273,7 +1256,7 @@ private fun ProgramBlock(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (focused || isLive) FontWeight.Bold else FontWeight.Medium,
-                color = if (focused) colorFromRes(R.color.ide_text_primary) else MaterialTheme.colorScheme.onSurface,
+                color = if (focused) colorFromRes(R.color.color_text_primary) else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1287,7 +1270,7 @@ private fun ProgramBlock(
                     Text(
                         text = "$startTimeStr - $endTimeStr",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (isLive) colorFromRes(R.color.ide_live) else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (isLive) colorFromRes(R.color.color_live) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -1298,8 +1281,8 @@ private fun ProgramBlock(
                             .width(45.dp)
                             .height(3.dp)
                             .clip(RoundedCornerShape(2.dp)),
-                        color = colorFromRes(R.color.ide_blue),
-                        trackColor = colorFromRes(R.color.ide_outline_soft)
+                        color = colorFromRes(R.color.color_action),
+                        trackColor = colorFromRes(R.color.color_border_subtle)
                     )
                 }
             }
@@ -1308,7 +1291,7 @@ private fun ProgramBlock(
 }
 
 @Composable
-private fun GuideSelectionPanel(
+internal fun GuideSelectionPanel(
     channel: GuideChannel,
     program: GuideProgram?,
     currentEpochSec: Long,
@@ -1325,8 +1308,8 @@ private fun GuideSelectionPanel(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        color = colorFromRes(R.color.ide_surface_panel),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft)),
+        color = colorFromRes(R.color.color_surface_panel),
+        border = BorderStroke(1.dp, colorFromRes(R.color.color_border_subtle)),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Column(
@@ -1346,7 +1329,7 @@ private fun GuideSelectionPanel(
                         text = channel.displayName,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = colorFromRes(R.color.ide_blue)
+                        color = colorFromRes(R.color.color_action)
                     )
                     Text(
                         text = "·",
@@ -1370,15 +1353,15 @@ private fun GuideSelectionPanel(
                     if (isLive) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = colorFromRes(R.color.ide_live).copy(alpha = 0.2f),
-                            border = BorderStroke(1.dp, colorFromRes(R.color.ide_live).copy(alpha = 0.5f))
+                            color = colorFromRes(R.color.color_live).copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, colorFromRes(R.color.color_live).copy(alpha = 0.5f))
                         ) {
                             Text(
                                 text = "● LIVE",
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = colorFromRes(R.color.ide_live)
+                                color = colorFromRes(R.color.color_live)
                             )
                         }
                     }
@@ -1386,23 +1369,23 @@ private fun GuideSelectionPanel(
                     if (remainingMinutes != null) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = colorFromRes(R.color.ide_blue).copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, colorFromRes(R.color.ide_blue).copy(alpha = 0.3f))
+                            color = colorFromRes(R.color.color_action).copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, colorFromRes(R.color.color_action).copy(alpha = 0.3f))
                         ) {
                             Text(
                                 text = "Noch ${remainingMinutes}m",
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = colorFromRes(R.color.ide_text_primary)
+                                color = colorFromRes(R.color.color_text_primary)
                             )
                         }
                     }
 
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = colorFromRes(R.color.ide_surface_panel_soft),
-                        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft))
+                        color = colorFromRes(R.color.color_surface_panel_soft),
+                        border = BorderStroke(1.dp, colorFromRes(R.color.color_border_subtle))
                     ) {
                         Text(
                             text = "${activeProgram.displayStartTime(displayZoneId)} - ${activeProgram.displayEndTime(displayZoneId)}",
@@ -1427,27 +1410,27 @@ private fun GuideSelectionPanel(
     }
 }
 
-private fun Key.isGuidePlayKey(): Boolean = this == Key.DirectionCenter || this == Key.Enter || this == Key.NumPadEnter
+internal fun Key.isGuidePlayKey(): Boolean = this == Key.DirectionCenter || this == Key.Enter || this == Key.NumPadEnter
 
 @Composable
-private fun PlayBadge() {
+internal fun PlayBadge() {
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = colorFromRes(R.color.ide_blue),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_blue)),
-        contentColor = colorFromRes(R.color.ide_text_primary)
+        color = colorFromRes(R.color.color_action),
+        border = BorderStroke(1.dp, colorFromRes(R.color.color_action)),
+        contentColor = colorFromRes(R.color.color_text_primary)
     ) {
         Text(
             text = stringResource(R.string.guide_play),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
             style = MaterialTheme.typography.labelMedium,
-            color = colorFromRes(R.color.ide_text_primary)
+            color = colorFromRes(R.color.color_text_primary)
         )
     }
 }
 
 @Composable
-private fun GuideChannelLogo(
+internal fun GuideChannelLogo(
     assetBaseUrl: String,
     channel: GuideChannel
 ) {
@@ -1463,8 +1446,8 @@ private fun GuideChannelLogo(
     Surface(
         modifier = Modifier.size(58.dp),
         shape = RoundedCornerShape(14.dp),
-        color = colorFromRes(R.color.ide_surface_panel),
-        border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft)),
+        color = colorFromRes(R.color.color_surface_panel),
+        border = BorderStroke(1.dp, colorFromRes(R.color.color_border_subtle)),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         if (bitmap != null) {
@@ -1485,7 +1468,7 @@ private fun GuideChannelLogo(
                     text = channelLogoFallback(channel),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = colorFromRes(R.color.ide_live)
+                    color = colorFromRes(R.color.color_live)
                 )
             }
         }
@@ -1493,7 +1476,7 @@ private fun GuideChannelLogo(
 }
 
 @Composable
-private fun GuideProgramSummary(
+internal fun GuideProgramSummary(
     now: GuideProgram?,
     next: GuideProgram?,
     currentEpochSec: Long,
@@ -1516,14 +1499,14 @@ private fun GuideProgramSummary(
             liveProgram?.let { program ->
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = colorFromRes(R.color.ide_live).copy(alpha = 0.14f),
-                    border = BorderStroke(1.dp, colorFromRes(R.color.ide_live).copy(alpha = 0.35f))
+                    color = colorFromRes(R.color.color_live).copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, colorFromRes(R.color.color_live).copy(alpha = 0.35f))
                 ) {
                     Text(
                         text = stringResource(R.string.guide_now),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelMedium,
-                        color = colorFromRes(R.color.ide_live)
+                        color = colorFromRes(R.color.color_live)
                     )
                 }
                 Column(
@@ -1568,7 +1551,7 @@ private fun GuideProgramSummary(
 }
 
 @Composable
-private fun GuideScheduleTimeline(
+internal fun GuideScheduleTimeline(
     schedule: List<GuideProgram>,
     now: GuideProgram?,
     next: GuideProgram?,
@@ -1591,8 +1574,8 @@ private fun GuideScheduleTimeline(
                 .fillMaxWidth()
                 .height(64.dp),
             shape = RoundedCornerShape(16.dp),
-            color = colorFromRes(R.color.ide_surface_panel),
-            border = BorderStroke(1.dp, colorFromRes(R.color.ide_outline_soft)),
+            color = colorFromRes(R.color.color_surface_panel),
+            border = BorderStroke(1.dp, colorFromRes(R.color.color_border_subtle)),
             contentColor = MaterialTheme.colorScheme.onSurface
         ) {
             Box(
@@ -1633,7 +1616,7 @@ private fun GuideScheduleTimeline(
     }
 }
 
-private fun buildGuideTimelinePrograms(
+internal fun buildGuideTimelinePrograms(
     schedule: List<GuideProgram>,
     fallbackPrograms: List<GuideProgram>,
     timelineWindow: GuideTimelineWindow?
@@ -1645,7 +1628,7 @@ private fun buildGuideTimelinePrograms(
         .take(4)
 }
 
-private fun channelPrimaryProgram(
+internal fun channelPrimaryProgram(
     channel: GuideChannel,
     currentEpochSec: Long
 ): GuideProgram? {
@@ -1659,7 +1642,7 @@ private fun channelPrimaryProgram(
     return channel.schedule.firstOrNull { !it.description.isNullOrBlank() } ?: channel.schedule.firstOrNull()
 }
 
-private fun normalizeGuideDescription(raw: String): String? =
+internal fun normalizeGuideDescription(raw: String): String? =
     raw
         .replace("\\n", " ")
         .replace(Regex("\\s+"), " ")
@@ -1667,16 +1650,16 @@ private fun normalizeGuideDescription(raw: String): String? =
         .takeIf { it.isNotEmpty() }
 
 @Composable
-private fun RowScope.GuideScheduleSegment(
+internal fun RowScope.GuideScheduleSegment(
     program: GuideProgram,
     weight: Float,
     active: Boolean,
     displayZoneId: ZoneId
 ) {
     val backgroundColor = if (active) {
-        colorFromRes(R.color.ide_surface_panel)
+        colorFromRes(R.color.color_surface_panel)
     } else {
-        colorFromRes(R.color.ide_surface_panel_soft)
+        colorFromRes(R.color.color_surface_panel_soft)
     }
     Box(
         modifier = Modifier
@@ -1694,8 +1677,8 @@ private fun RowScope.GuideScheduleSegment(
                     .background(
                         Brush.horizontalGradient(
                             colors = listOf(
-                                colorFromRes(R.color.ide_blue).copy(alpha = 0.22f),
-                                colorFromRes(R.color.ide_live).copy(alpha = 0.18f)
+                                colorFromRes(R.color.color_action).copy(alpha = 0.22f),
+                                colorFromRes(R.color.color_live).copy(alpha = 0.18f)
                             )
                         )
                     )
@@ -1711,23 +1694,23 @@ private fun RowScope.GuideScheduleSegment(
                 text = if (active) stringResource(R.string.guide_now) else program.displayStartTime(displayZoneId),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (active) {
-                    colorFromRes(R.color.ide_live)
+                    colorFromRes(R.color.color_live)
                 } else {
-                    colorFromRes(R.color.ide_text_secondary)
+                    colorFromRes(R.color.color_text_secondary)
                 }
             )
             Text(
                 text = program.title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = colorFromRes(R.color.ide_text_primary),
+                color = colorFromRes(R.color.color_text_primary),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "${program.displayStartTime(displayZoneId)}-${program.displayEndTime(displayZoneId)}",
                 style = MaterialTheme.typography.labelSmall,
-                color = colorFromRes(R.color.ide_text_primary),
+                color = colorFromRes(R.color.color_text_primary),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1735,17 +1718,17 @@ private fun RowScope.GuideScheduleSegment(
     }
 }
 
-private fun programWeight(program: GuideProgram): Float {
+internal fun programWeight(program: GuideProgram): Float {
     val durationSec = max(1L, program.endEpochSec - program.startEpochSec)
     return durationSec.toFloat()
 }
 
-private fun channelMeta(channel: GuideChannel): String? = buildList {
+internal fun channelMeta(channel: GuideChannel): String? = buildList {
     channel.resolution?.takeIf { it.isNotBlank() }?.let(::add)
     channel.codec?.takeIf { it.isNotBlank() }?.uppercase()?.let(::add)
 }.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 
-private fun channelLogoFallback(channel: GuideChannel): String {
+internal fun channelLogoFallback(channel: GuideChannel): String {
     channel.number?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { return it.take(3) }
@@ -1759,7 +1742,7 @@ private fun channelLogoFallback(channel: GuideChannel): String {
     return initials.ifBlank { "TV" }
 }
 
-private fun resolveGuideLogoUrl(baseUrl: String, logoUrl: String?): String? {
+internal fun resolveGuideLogoUrl(baseUrl: String, logoUrl: String?): String? {
     val normalized = logoUrl?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
         return normalized
@@ -1768,7 +1751,7 @@ private fun resolveGuideLogoUrl(baseUrl: String, logoUrl: String?): String? {
     return base.resolve(normalized)?.toString()
 }
 
-private suspend fun loadGuideBitmap(url: String): Bitmap? = withContext(Dispatchers.IO) {
+internal suspend fun loadGuideBitmap(url: String): Bitmap? = withContext(Dispatchers.IO) {
     runCatching {
         val connection = URL(url).openConnection() as HttpURLConnection
         val cookies = CookieManager.getInstance().getCookie(url)
@@ -1781,12 +1764,12 @@ private suspend fun loadGuideBitmap(url: String): Bitmap? = withContext(Dispatch
     }.getOrNull()
 }
 
-private fun millisUntilNextProgressTick(): Long {
+internal fun millisUntilNextProgressTick(): Long {
     val now = System.currentTimeMillis()
     val remainder = now % 30_000L
     return if (remainder == 0L) 30_000L else 30_000L - remainder
 }
 
 @Composable
-private fun colorFromRes(resId: Int): Color =
+internal fun colorFromRes(resId: Int): Color =
     Color(ContextCompat.getColor(LocalContext.current, resId))

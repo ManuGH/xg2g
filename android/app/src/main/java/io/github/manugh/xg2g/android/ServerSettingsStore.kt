@@ -22,8 +22,24 @@ internal class ServerSettingsStore(
         prefs.edit { putString(PREF_SERVER_URL, url) }
     }
 
+    fun getAuthToken(): String? {
+        return prefs.getString(PREF_AUTH_TOKEN, null)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    fun saveAuthToken(token: String?) {
+        val cleaned = token?.trim()?.takeIf { it.isNotEmpty() }
+        prefs.edit {
+            if (cleaned != null) {
+                putString(PREF_AUTH_TOKEN, cleaned)
+            } else {
+                remove(PREF_AUTH_TOKEN)
+            }
+        }
+    }
+
     private companion object {
         private const val PREFS_NAME = "app_settings"
         private const val PREF_SERVER_URL = "server_url"
+        private const val PREF_AUTH_TOKEN = "auth_token"
     }
 }

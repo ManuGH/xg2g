@@ -137,7 +137,7 @@ internal class GuideViewModel(
         private val context: Context,
         private val serverLabel: String,
         private val baseUrl: String,
-        private val authToken: String?
+        private val authTokenProvider: () -> String?
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -146,7 +146,7 @@ internal class GuideViewModel(
                     baseUrl = baseUrl,
                     deviceAuthRepository = DeviceAuthRepository(context.applicationContext)
                 ),
-                authToken = authToken
+                authTokenProvider = authTokenProvider
             )
             return GuideViewModel(
                 serverLabel = serverLabel,

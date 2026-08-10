@@ -5,7 +5,7 @@
     android:id="@+id/root_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ide_background"
+    android:background="@color/color_bg_base"
     tools:context=".MainActivity">
 
     <View
@@ -50,7 +50,7 @@
         app:icon="@drawable/ic_tv_menu"
         app:iconGravity="textStart"
         app:iconPadding="0dp"
-        app:iconTint="@color/ide_text_primary" />
+        app:iconTint="@color/color_text_primary" />
 
     <FrameLayout
         android:id="@+id/fullscreen_container"
@@ -118,7 +118,7 @@
             android:layout_width="920dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            app:strokeColor="@color/ide_outline">
+            app:strokeColor="@color/color_border_base">
 
             <FrameLayout
                 android:layout_width="match_parent"
@@ -188,7 +188,7 @@
                             android:paddingHorizontal="16dp"
                             android:paddingVertical="14dp"
                             android:textAppearance="?attr/textAppearanceTitleMedium"
-                            android:textColor="@color/ide_text_primary"
+                            android:textColor="@color/color_text_primary"
                             tools:text="tv.example.com/ui" />
 
                         <TextView
@@ -321,7 +321,7 @@
             android:layout_width="600dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            app:strokeColor="@color/ide_outline">
+            app:strokeColor="@color/color_border_base">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -468,7 +468,7 @@
         android:id="@+id/tv_quick_actions_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#7005090F"
+        android:background="#70070B10"
         android:clickable="true"
         android:descendantFocusability="afterDescendants"
         android:focusable="true"
@@ -514,7 +514,7 @@
                             android:layout_height="wrap_content"
                             android:text="xg2g"
                             android:textAppearance="?attr/textAppearanceTitleLarge"
-                            android:textColor="@color/ide_text_primary"
+                            android:textColor="@color/color_text_primary"
                             android:textStyle="bold" />
 
                         <TextView
@@ -532,7 +532,7 @@
                     android:layout_marginTop="26dp"
                     android:text="@string/tv_quick_actions_title"
                     android:textAppearance="?attr/textAppearanceHeadlineMedium"
-                    android:textColor="@color/ide_text_primary"
+                    android:textColor="@color/color_text_primary"
                     android:textStyle="bold" />
 
                 <TextView
