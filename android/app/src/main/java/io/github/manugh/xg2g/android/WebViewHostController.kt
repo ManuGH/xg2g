@@ -69,12 +69,12 @@ internal class WebViewHostController(
         activeWebView = { webView },
         shouldShowWebView = { callbacks.isWebUiVisible() }
     )
-    private val hostBridge = HostJavascriptBridge(
+    private val hostBridge = HostWebMessageBridge(
         activity = activity,
         serializedHostCapabilities = serializedHostCapabilities,
         serializedPlaybackCapabilities = serializedPlaybackCapabilities,
         activeWebView = { webView },
-        callbacks = object : HostJavascriptBridge.Callbacks {
+        callbacks = object : HostWebMessageBridge.Callbacks {
             override fun onPlaybackActiveChanged(active: Boolean) {
                 callbacks.onPlaybackActiveChanged(active)
             }
@@ -117,7 +117,7 @@ internal class WebViewHostController(
             }
         }
 
-        hostBridge.publishCurrentNativePlaybackState()
+        hostBridge.publishSnapshot()
         hostBridge.requestInputFocus()
     }
 
@@ -165,6 +165,7 @@ internal class WebViewHostController(
     fun loadUrl(url: String) {
         callbacks.onPlaybackActiveChanged(false)
         callbacks.updateLastRequestedUrl(url)
+        hostBridge.bindOrigin(webView, url)
         webView.loadUrl(url)
     }
 
@@ -220,7 +221,7 @@ internal class WebViewHostController(
 
         target.isFocusable = true
         target.isFocusableInTouchMode = true
-        hostBridge.attach(target)
+        hostBridge.bindOrigin(target, callbacks.currentBaseUrl())
         configureRendererProcessClient(target)
 
         target.webChromeClient = object : WebChromeClient() {
@@ -235,6 +236,7 @@ internal class WebViewHostController(
 
         target.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                hostBridge.onPageStarted(view)
                 if (!url.isNullOrBlank() && url != ABOUT_BLANK) {
                     callbacks.updateLastRequestedUrl(url)
                 }
@@ -247,7 +249,7 @@ internal class WebViewHostController(
                 if (!url.isNullOrBlank()) {
                     callbacks.updateLastRequestedUrl(url)
                 }
-                hostBridge.publishEnvironment(view)
+                hostBridge.publishSnapshot()
                 callbacks.onMainFrameVisible()
                 fullscreenController.onPageCommitVisible()
                 hostBridge.requestInputFocus()

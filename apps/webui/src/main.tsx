@@ -19,7 +19,11 @@ import { UiScaleProvider } from './context/UiScaleContext.tsx';
 import { UiSurfaceProvider } from './context/UiSurfaceContext.tsx';
 import { UiOverlayProvider } from './context/UiOverlayContext.tsx';
 import { i18nReady } from './i18n';
-import { applyHostEnvironmentToDocument, resolveHostEnvironment } from './lib/hostBridge';
+import {
+  applyHostEnvironmentToDocument,
+  initializeHostBridge,
+  resolveHostEnvironment,
+} from './lib/hostBridge';
 import { applyUiScaleToDocument, readStoredUiScale } from './lib/uiScale.ts';
 import { applyUiSurfaceToDocument, resolveUiSurface } from './lib/uiSurface.ts';
 import { setClientAuthToken } from './services/clientWrapper';
@@ -49,10 +53,7 @@ const queryClient = new QueryClient({
 // Prime the shared API client before React mounts so the first bootstrap query
 // already carries the persisted token on cold starts.
 setClientAuthToken(getStoredToken());
-const hostEnvironment = resolveHostEnvironment();
-applyHostEnvironmentToDocument(hostEnvironment);
 applyUiScaleToDocument(readStoredUiScale(safeLocalStorage()), document.documentElement);
-applyUiSurfaceToDocument(resolveUiSurface(window, hostEnvironment), document.documentElement);
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -94,9 +95,17 @@ function renderApp() {
 // left i18nReady pending, root.render() uncalled, and #root empty (a black
 // screen). Cap the wait so the app always mounts; untranslated keys fill in
 // when the bundle arrives.
-void Promise.race([
-  i18nReady.catch(() => undefined),
-  new Promise<void>((resolve) => {
-    window.setTimeout(resolve, 1200);
-  }),
-]).then(renderApp);
+void Promise.all([
+  initializeHostBridge(),
+  Promise.race([
+    i18nReady.catch(() => undefined),
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 1200);
+    }),
+  ]),
+]).then(() => {
+  const hostEnvironment = resolveHostEnvironment();
+  applyHostEnvironmentToDocument(hostEnvironment);
+  applyUiSurfaceToDocument(resolveUiSurface(window, hostEnvironment), document.documentElement);
+  renderApp();
+});
