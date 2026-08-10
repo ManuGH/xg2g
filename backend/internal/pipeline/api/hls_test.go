@@ -1016,3 +1016,45 @@ seg_000000.ts
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.Equal(t, "1", w.Header().Get("Retry-After"))
 }
+
+func TestServeHLS_HoldsOnlyNativeCopyPlaylistUntilReady(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "native-copy-headroom"
+	sessionDir := filepath.Join(tmpDir, "sessions", sessionID)
+	require.NoError(t, os.MkdirAll(sessionDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "init.mp4"), []byte("init"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "seg_000000.m4s"), []byte("segment"), 0o600))
+	manifest := `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:1.5,
+seg_000000.m4s
+`
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "index.m3u8"), []byte(manifest), 0o600))
+
+	store := &MockStore{Session: &model.SessionRecord{
+		SessionID: sessionID,
+		State:     model.SessionPriming,
+		ContextData: map[string]string{
+			model.CtxKeyClientFamily: "android_tv_native",
+		},
+		Profile: model.ProfileSpec{Container: "fmp4", DVRWindowSec: 60, TranscodeVideo: false},
+	}}
+	req := httptest.NewRequest(http.MethodGet, "/index.m3u8", nil)
+	w := httptest.NewRecorder()
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "1", w.Header().Get("Retry-After"))
+
+	store.Session.ContextData[model.CtxKeyClientFamily] = "chromium_hlsjs"
+	w = httptest.NewRecorder()
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
+	assert.Equal(t, http.StatusOK, w.Code, "web startup path must remain unchanged")
+
+	store.Session.ContextData[model.CtxKeyClientFamily] = "android_tv_native"
+	store.Session.State = model.SessionReady
+	w = httptest.NewRecorder()
+	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
+	assert.Equal(t, http.StatusOK, w.Code)
+}
