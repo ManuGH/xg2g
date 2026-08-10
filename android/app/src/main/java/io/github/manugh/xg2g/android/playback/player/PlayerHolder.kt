@@ -140,7 +140,10 @@ internal class PlayerHolder(
         .setBufferDurationsMs(
             /* minBufferMs = */ 15_000,
             /* maxBufferMs = */ 30_000,
-            /* bufferForPlaybackMs = */ 750,
+            // Copy streams can begin with a short partial-GOP segment (~640ms).
+            // One second keeps the fast path fast but prevents Media3 from
+            // consuming that fragment before the first full segment is published.
+            /* bufferForPlaybackMs = */ 1_000,
             /* bufferForPlaybackAfterRebufferMs = */ 3_500
         )
         .setTargetBufferBytes(MAX_BUFFER_BYTES)
