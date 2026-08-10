@@ -9,6 +9,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 )
 
 var (
@@ -37,15 +39,15 @@ func ValidateRecordingRef(serviceRef string) error {
 		return ErrInvalidRecordingRef
 	}
 
-	// 1. Structural Enigma2 check (1:0:0:0:0:0:0:0:0:0:PATH)
+	// 1. Structural Enigma2 check (1:0:0:0:0:0:0:0:0:0:PATH or similar with namespace colons)
 	parts := strings.Split(trimmedRef, ":")
 	if len(parts) < 11 {
 		return ErrInvalidRecordingRef
 	}
 
 	// 2. Strict SSRF/Traversal guards on the path component (Gate R5)
-	receiverPath := parts[10]
-	if receiverPath == "" {
+	receiverPath := internalrecordings.ExtractPathFromServiceRef(trimmedRef)
+	if receiverPath == "" || receiverPath == trimmedRef {
 		return ErrInvalidRecordingRef
 	}
 
