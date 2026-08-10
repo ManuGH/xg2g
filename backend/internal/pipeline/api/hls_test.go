@@ -1041,19 +1041,21 @@ seg_000000.m4s
 		},
 		Profile: model.ProfileSpec{Container: "fmp4", DVRWindowSec: 60, TranscodeVideo: false},
 	}}
-	req := httptest.NewRequest(http.MethodGet, "/index.m3u8", nil)
-	w := httptest.NewRecorder()
-	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-	assert.Equal(t, "1", w.Header().Get("Retry-After"))
+	nativeReq := hlsRequest{isPlaylist: true}
+	assert.True(t, shouldHoldAndroidTVNativeCopyPlaylist(nativeReq, store.Session))
+	_, ready := awaitAndroidTVNativeCopyReady(context.Background(), store, store.Session, 0)
+	assert.False(t, ready)
 
+	req := httptest.NewRequest(http.MethodGet, "/index.m3u8", nil)
 	store.Session.ContextData[model.CtxKeyClientFamily] = "chromium_hlsjs"
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 	assert.Equal(t, http.StatusOK, w.Code, "web startup path must remain unchanged")
 
 	store.Session.ContextData[model.CtxKeyClientFamily] = "android_tv_native"
 	store.Session.State = model.SessionReady
+	_, ready = awaitAndroidTVNativeCopyReady(context.Background(), store, store.Session, time.Second)
+	assert.True(t, ready)
 	w = httptest.NewRecorder()
 	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
 	assert.Equal(t, http.StatusOK, w.Code)
