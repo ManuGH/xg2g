@@ -11,9 +11,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
-    <!-- Declare Android TV support -->
+    <!-- Declare Android TV / Fire TV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
     <!-- Android 11+ package visibility: the app resolves a real external browser before
          offering the "open in browser" action. Starting ACTION_VIEW alone is not enough
@@ -33,6 +34,7 @@
 
     <application
         android:allowBackup="false"
+        android:appCategory="video"
         android:icon="@mipmap/ic_launcher"
         android:label="${appLabel}"
         android:description="@string/app_description"
@@ -40,11 +42,16 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Xg2g"
         android:banner="@drawable/tv_banner"
+        android:logo="@drawable/tv_banner"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:label="${appLabel}"
+            android:icon="@mipmap/ic_launcher"
+            android:banner="@drawable/tv_banner"
+            android:logo="@drawable/tv_banner"
             android:launchMode="singleTop"
             android:theme="@style/Theme.Xg2g.Launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode">
