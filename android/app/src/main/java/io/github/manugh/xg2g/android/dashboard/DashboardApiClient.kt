@@ -227,7 +227,9 @@ internal class DashboardApiClient(
     }
 
     private fun apiUrl(vararg segments: String): HttpUrl {
-        val builder = requireBaseUrl().newBuilder()
+        val parsed = baseUrl.toHttpUrlOrNull()
+            ?: throw IllegalArgumentException("Invalid server base URL: $baseUrl")
+        val builder = parsed.newBuilder()
             .encodedPath("/api/v3/")
             .query(null)
             .fragment(null)

@@ -185,22 +185,87 @@ internal fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            TvSettingsButton(
-                                label = if (state.authToken.isNullOrBlank()) "Token eingeben" else "Token bearbeiten",
-                                onClick = {
-                                    tokenEditValue = state.authToken.orEmpty()
-                                    showTokenDialog = true
-                                },
-                                isPrimary = true
-                            )
-
-                            if (!state.authToken.isNullOrBlank()) {
+                        if (state.isPairingActive) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF1E293B),
+                                border = BorderStroke(1.dp, Color(0xFF3B82F6)),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "📱 GERÄT KOPPELN (DEVICE PAIRING)",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF60A5FA)
+                                    )
+                                    Text(
+                                        text = "Gib diesen PIN in der WebUI unter Einstellungen > Android TV ein:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.White
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0xFF0F172A),
+                                        border = BorderStroke(1.dp, Color(0xFF60A5FA))
+                                    ) {
+                                        Text(
+                                            text = state.pairingCode ?: "Generiere PIN...",
+                                            style = MaterialTheme.typography.headlineLarge,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color(0xFF38BDF8),
+                                            letterSpacing = 4.sp,
+                                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = "Warte auf Bestätigung in der WebUI...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colorResource(R.color.color_text_secondary)
+                                    )
+                                    if (state.pairingError != null) {
+                                        Text(
+                                            text = state.pairingError.orEmpty(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color(0xFFEF4444)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    TvSettingsButton(
+                                        label = "Kopplung abbrechen",
+                                        onClick = { viewModel.cancelPairing() },
+                                        isPrimary = false
+                                    )
+                                }
+                            }
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 TvSettingsButton(
-                                    label = "Token löschen",
-                                    onClick = { viewModel.saveToken(null) },
+                                    label = "📱 TV mit WebUI koppeln (PIN / QR)",
+                                    onClick = { viewModel.startPairing() },
+                                    isPrimary = true
+                                )
+
+                                TvSettingsButton(
+                                    label = if (state.authToken.isNullOrBlank()) "Token manuell eingeben" else "Manuell bearbeiten",
+                                    onClick = {
+                                        tokenEditValue = state.authToken.orEmpty()
+                                        showTokenDialog = true
+                                    },
                                     isPrimary = false
                                 )
+
+                                if (!state.authToken.isNullOrBlank()) {
+                                    TvSettingsButton(
+                                        label = "Token löschen",
+                                        onClick = { viewModel.saveToken(null) },
+                                        isPrimary = false
+                                    )
+                                }
                             }
                         }
 

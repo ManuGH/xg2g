@@ -109,8 +109,9 @@ class GuideActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        baseUrl = intent.getStringExtra(EXTRA_BASE_URL).orEmpty()
-        authToken = intent.getStringExtra(EXTRA_AUTH_TOKEN)?.trim()?.takeIf { it.isNotEmpty() }
+        val store = io.github.manugh.xg2g.android.ServerSettingsStore(this)
+        baseUrl = intent.getStringExtra(EXTRA_BASE_URL).orEmpty().ifBlank { store.getServerUrl().orEmpty() }
+        authToken = intent.getStringExtra(EXTRA_AUTH_TOKEN)?.trim()?.takeIf { it.isNotEmpty() } ?: store.getAuthToken()
         if (baseUrl.isBlank()) {
             finish()
             return

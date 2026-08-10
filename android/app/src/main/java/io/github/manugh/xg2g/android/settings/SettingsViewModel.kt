@@ -20,12 +20,18 @@ internal data class SettingsUiState(
     val epgStatus: String = "Lade...",
     val appVersion: String = "2.0.0 (Native Compose TV)",
     val isSaving: Boolean = false,
-    val message: String? = null
+    val message: String? = null,
+    val isPairingActive: Boolean = false,
+    val pairingCode: String? = null,
+    val pairingQrPayload: String? = null,
+    val pairingError: String? = null,
+    val pairingStatus: String = "idle"
 )
 
 internal class SettingsViewModel(
     private val serverSettingsStore: ServerSettingsStore,
-    private val dashboardApiClient: DashboardApiClient
+    private val dashboardApiClient: DashboardApiClient,
+    private val pairingApiClient: io.github.manugh.xg2g.android.pairing.PairingApiClient? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -36,8 +42,87 @@ internal class SettingsViewModel(
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
+    private var activePairingSecret: String? = null
+    private var activePairingId: String? = null
+
     init {
         refreshHealth()
+    }
+
+    fun startPairing() {
+        val client = pairingApiClient ?: io.github.manugh.xg2g.android.pairing.PairingApiClient(serverSettingsStore.getServerUrl().orEmpty())
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isPairingActive = true,
+                pairingStatus = "starting",
+                pairingError = null
+            )
+            try {
+                val startRes = client.startPairing(deviceName = "Android TV Wohnzimmer")
+                activePairingId = startRes.pairingId
+                activePairingSecret = startRes.pairingSecret
+                _uiState.value = _uiState.value.copy(
+                    pairingCode = startRes.userCode,
+                    pairingQrPayload = startRes.qrPayload,
+                    pairingStatus = "pending"
+                )
+
+                // Start polling until approved or cancelled
+                pollPairing(client, startRes.pairingId, startRes.pairingSecret)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    pairingStatus = "error",
+                    pairingError = "Kopplung konnte nicht gestartet werden: ${e.localizedMessage}"
+                )
+            }
+        }
+    }
+
+    private fun pollPairing(
+        client: io.github.manugh.xg2g.android.pairing.PairingApiClient,
+        pairingId: String,
+        pairingSecret: String
+    ) {
+        viewModelScope.launch {
+            while (_uiState.value.isPairingActive && _uiState.value.pairingStatus == "pending") {
+                kotlinx.coroutines.delay(2000)
+                if (!_uiState.value.isPairingActive) break
+
+                try {
+                    val statusRes = client.getPairingStatus(pairingId, pairingSecret)
+                    if (statusRes.status == "approved") {
+                        _uiState.value = _uiState.value.copy(pairingStatus = "exchanging")
+                        val exchangeRes = client.exchangePairing(pairingId, pairingSecret)
+                        saveToken(exchangeRes.accessToken)
+                        _uiState.value = _uiState.value.copy(
+                            isPairingActive = false,
+                            pairingStatus = "success",
+                            message = "Gerät erfolgreich gekoppelt!"
+                        )
+                        break
+                    } else if (statusRes.status == "expired" || statusRes.status == "revoked") {
+                        _uiState.value = _uiState.value.copy(
+                            pairingStatus = "error",
+                            pairingError = "Kopplungs-Anfrage ist abgelaufen oder wurde abgelehnt."
+                        )
+                        break
+                    }
+                } catch (e: Exception) {
+                    // Ignore transient network errors during polling
+                }
+            }
+        }
+    }
+
+    fun cancelPairing() {
+        _uiState.value = _uiState.value.copy(
+            isPairingActive = false,
+            pairingStatus = "idle",
+            pairingCode = null,
+            pairingError = null
+        )
+        activePairingId = null
+        activePairingSecret = null
     }
 
     fun refreshHealth() {
@@ -89,9 +174,11 @@ internal class SettingsViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val store = ServerSettingsStore(context)
             val client = DashboardApiClient(serverUrl)
+            val pairingClient = io.github.manugh.xg2g.android.pairing.PairingApiClient(serverUrl)
             return SettingsViewModel(
                 serverSettingsStore = store,
-                dashboardApiClient = client
+                dashboardApiClient = client,
+                pairingApiClient = pairingClient
             ) as T
         }
     }

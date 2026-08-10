@@ -129,14 +129,12 @@ internal class TimersApiClient(
     }
 
     private fun apiUrl(vararg segments: String): HttpUrl {
-        val base = baseUrl.trimEnd('/')
-        val parsed = base.toHttpUrlOrNull()
+        val parsed = baseUrl.toHttpUrlOrNull()
             ?: throw IllegalArgumentException("Invalid server base URL: $baseUrl")
         val builder = parsed.newBuilder()
-        if (parsed.pathSegments.none { it == "api" }) {
-            builder.addPathSegment("api")
-            builder.addPathSegment("v3")
-        }
+            .encodedPath("/api/v3/")
+            .query(null)
+            .fragment(null)
         for (segment in segments) {
             builder.addPathSegment(segment)
         }

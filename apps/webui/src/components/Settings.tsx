@@ -10,6 +10,7 @@ import Files from './Files';
 import Logs from './Logs';
 import SectionContextBar from './SectionContextBar';
 import {
+  approvePairing,
   putSystemConfig,
   type AppConfig,
   type ConfigUpdate,
@@ -122,6 +123,9 @@ function Settings() {
   const [pinDraft, setPinDraft] = useState<string>('');
   const [pinConfirmDraft, setPinConfirmDraft] = useState<string>('');
   const [pinSaving, setPinSaving] = useState<boolean>(false);
+  const [pairingCodeDraft, setPairingCodeDraft] = useState<string>('');
+  const [pairingSubmitting, setPairingSubmitting] = useState<boolean>(false);
+  const [pairingFeedback, setPairingFeedback] = useState<{ success: boolean; message: string } | null>(null);
   const {
     data: config = null,
     refetch: refetchConfig,
@@ -1117,6 +1121,66 @@ function Settings() {
               <label>{t('settings.androidTv.currentServer')}</label>
               <code className={`${styles.launchValue} tabular`.trim()}>{androidTvBaseUrlDisplay}</code>
               <span className={styles.hint}>{t('settings.androidTv.currentServerHint')}</span>
+            </div>
+
+            <div className={styles.group} style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <label style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>📱 Android TV mit PIN koppeln (Device Pairing)</label>
+              <p className={styles.hint} style={{ marginTop: '0.25rem', marginBottom: '0.75rem' }}>
+                Gib den 6- bis 8-stelligen Code ein, der auf deinem Smart-TV Bildschirm angezeigt wird:
+              </p>
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="z.B. X2VZ-ZRRF"
+                  value={pairingCodeDraft}
+                  onChange={(e) => { setPairingCodeDraft(e.target.value); setPairingFeedback(null); }}
+                  style={{
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    color: '#fff',
+                    fontFamily: 'monospace',
+                    fontSize: '1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px',
+                    width: '180px'
+                  }}
+                />
+                <Button
+                  onClick={async () => {
+                    const code = pairingCodeDraft.trim();
+                    if (!code) return;
+                    setPairingSubmitting(true);
+                    setPairingFeedback(null);
+                    try {
+                      const res = await approvePairing({
+                        path: { pairingId: code },
+                        body: {}
+                      });
+                      if (res.data?.status === 'approved') {
+                        setPairingFeedback({ success: true, message: '✅ Smart-TV erfolgreich autorisiert! Der TV schaltet sich sofort frei.' });
+                        setPairingCodeDraft('');
+                      } else {
+                        setPairingFeedback({ success: false, message: 'Kopplung konnte nicht autorisiert werden.' });
+                      }
+                    } catch (e: any) {
+                      setPairingFeedback({ success: false, message: `Fehler: ${e?.message || 'Ungültiger Code oder abgelaufen'}` });
+                    } finally {
+                      setPairingSubmitting(false);
+                    }
+                  }}
+                  disabled={pairingSubmitting || !pairingCodeDraft.trim()}
+                  className={styles.onboardingButton}
+                >
+                  {pairingSubmitting ? 'Autorisiere…' : 'TV Jetzt Koppeln'}
+                </Button>
+              </div>
+              {pairingFeedback ? (
+                <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: pairingFeedback.success ? '#34d399' : '#f87171' }}>
+                  {pairingFeedback.message}
+                </p>
+              ) : null}
             </div>
 
             <div className={styles.onboardingActions}>

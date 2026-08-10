@@ -128,7 +128,7 @@ class MainActivity : AppCompatActivity() {
                             serviceRef = channel.serviceRef,
                             title = channel.displayName,
                             logoUrl = channel.logoUrl,
-                            authToken = sessionAuthToken,
+                            authToken = sessionAuthToken ?: serverSettingsStore.getAuthToken(),
                             profile = "direct"
                         )
                     )
@@ -148,7 +148,7 @@ class MainActivity : AppCompatActivity() {
                             startPositionMs = startPosMs,
                             title = item.title,
                             logoUrl = thumbnailUrl,
-                            authToken = sessionAuthToken,
+                            authToken = sessionAuthToken ?: serverSettingsStore.getAuthToken(),
                             profile = "direct"
                         )
                     )
