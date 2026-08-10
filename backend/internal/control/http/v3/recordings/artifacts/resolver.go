@@ -429,15 +429,24 @@ func (r *DefaultResolver) resolveSource(serviceRef string) (string, string, stri
 	allowLocal := policy != config.PlaybackPolicyReceiverOnly
 	allowReceiver := policy != config.PlaybackPolicyLocalOnly
 
-	if allowLocal && r.pathMapper != nil {
-		if localPath, ok := r.pathMapper.ResolveLocalUnsafe(receiverPath); ok {
-			// Invariant: Return valid file:// URI structure
-			// User requested: "Baue file-URL über url.URL{Scheme:"file", Path: localPath}.String()"
-			u := url.URL{
-				Scheme: "file",
-				Path:   localPath,
+	if allowLocal {
+		if r.pathMapper != nil {
+			if localPath, ok := r.pathMapper.ResolveLocalUnsafe(receiverPath); ok {
+				u := url.URL{
+					Scheme: "file",
+					Path:   localPath,
+				}
+				return "local", u.String(), "", nil
 			}
-			return "local", u.String(), "", nil
+		}
+		if receiverPath != "" && filepath.IsAbs(receiverPath) {
+			if _, statErr := os.Stat(receiverPath); statErr == nil {
+				u := url.URL{
+					Scheme: "file",
+					Path:   receiverPath,
+				}
+				return "local", u.String(), "", nil
+			}
 		}
 	}
 
