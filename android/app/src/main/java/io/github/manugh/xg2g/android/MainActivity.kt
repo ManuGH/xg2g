@@ -37,7 +37,6 @@ import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     private lateinit var screenUi: MainScreenUi
-    private var webViewController: WebViewHostController? = null
 
     private var lastRequestedUrl: String = ""
     private var playbackActive = false
@@ -161,84 +160,12 @@ class MainActivity : AppCompatActivity() {
 
         configureScreenUi()
         installBackHandler()
-        observeNativePlaybackState()
 
         applyIntentConfiguration(
             intent = intent,
             savedInstanceState = savedInstanceState,
             routeReason = "on_create"
         )
-    }
-
-    private fun getOrCreateWebViewController(): WebViewHostController {
-        webViewController?.let { return it }
-
-        android.webkit.WebView.setWebContentsDebuggingEnabled(BuildConfig.WEBVIEW_DEBUGGING)
-        return WebViewHostController(
-            activity = this,
-            initialWebView = screenUi.getOrCreateWebView(),
-            rootContainer = screenUi.rootContainer,
-            fullscreenContainer = screenUi.fullscreenContainer,
-            isTvDevice = isTvDevice,
-            appVersionName = BuildConfig.VERSION_NAME,
-            serializedHostCapabilities = serializedHostCapabilities,
-            serializedPlaybackCapabilities = serializedPlaybackCapabilities,
-            callbacks = object : WebViewHostController.Callbacks {
-                override fun currentBaseUrl(): String? = serverSettingsStore.getServerUrl()
-
-                override fun lastRequestedUrl(): String = lastRequestedUrl
-
-                override fun updateLastRequestedUrl(url: String) {
-                    lastRequestedUrl = url
-                }
-
-                override fun onMainFrameVisible() {
-                    setUiState(MainUiState.Content)
-                }
-
-                override fun onMainFrameError(title: String, detail: String) {
-                    showErrorUi(title, detail)
-                }
-
-                override fun onPlaybackActiveChanged(active: Boolean) {
-                    setPlaybackActive(active)
-                }
-
-                override fun startNativePlayback(request: NativePlaybackRequest) {
-                    nativePlaybackBridge.start(request)
-                }
-
-                override fun stopNativePlayback() {
-                    nativePlaybackBridge.stop()
-                }
-
-                override fun currentNativePlaybackStateJson(): String {
-                    return PlaybackSessionRegistry.currentStateJson()
-                }
-
-                override fun isWebUiVisible(): Boolean {
-                    return uiState == MainUiState.Content || uiState is MainUiState.Loading
-                }
-
-                override fun isSetupVisible(): Boolean = uiState is MainUiState.Setup
-
-                override fun isErrorVisible(): Boolean = uiState is MainUiState.Error
-
-                override fun openExternal(uri: Uri) {
-                    this@MainActivity.openExternal(uri)
-                }
-            }
-        ).also { webViewController = it }
-    }
-
-    private fun observeNativePlaybackState() {
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                PlaybackSessionRegistry.state.collect { state ->
-                    webViewController?.publishNativePlaybackState(PlaybackJsonCodec.stateToJson(state))
-                }
-            }
-        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -255,36 +182,21 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         dashboardViewModel.refresh()
         recordingsViewModel.refresh(isInitial = false)
-        webViewController?.onResume()
         applyPlaybackKeepScreenOn(playbackActive)
     }
 
     override fun onPause() {
         applyPlaybackKeepScreenOn(false)
-        webViewController?.onPause()
         super.onPause()
-    }
-
-    override fun onTrimMemory(level: Int) {
-        super.onTrimMemory(level)
-        webViewController?.onTrimMemory(level)
-    }
-
-    override fun onLowMemory() {
-        super.onLowMemory()
-        webViewController?.onLowMemory()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(STATE_LAST_REQUESTED_URL, lastRequestedUrl)
-        outState.putBoolean(STATE_WEBVIEW_CREATED, webViewController != null)
-        webViewController?.saveState(outState)
         super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
         loadAppUrlJob?.cancel()
-        webViewController?.release(renderProcessGone = false)
         super.onDestroy()
     }
 
@@ -354,11 +266,6 @@ class MainActivity : AppCompatActivity() {
     private fun installBackHandler() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webViewController?.hasCustomView() == true) {
-                    webViewController?.hideCustomView()
-                    return
-                }
-
                 if (screenUi.isTvQuickActionsVisible()) {
                     hideTvQuickActions(restoreFocus = true)
                     return
@@ -367,12 +274,6 @@ class MainActivity : AppCompatActivity() {
                 // 1. Native Compose Screens (Guide, Recordings, Timers, Settings) -> Home Priority
                 if (destinationFlow.value != TvNavigationDestination.Home) {
                     navigateToTvDestination(TvNavigationDestination.Home)
-                    return
-                }
-
-                // 2. WebUI Internal History Priority
-                if (webViewController?.canGoBack() == true) {
-                    webViewController?.goBack()
                     return
                 }
 
@@ -481,11 +382,11 @@ class MainActivity : AppCompatActivity() {
                 )
                 return@launch
             }
-            Log.i(
-                TAG,
-                "event=prepare_web_ui_complete reason=$reason requestedUrl=$url preparedUrl=$preparedUrl"
-            )
-            getOrCreateWebViewController().loadUrl(preparedUrl)
+            if (isTvDevice) {
+                showTvHomeUi(reason = "prepare_web_ui_complete")
+            } else {
+                showSetupUi()
+            }
         }
     }
 
@@ -519,7 +420,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleAppControlKey(keyCode: Int): Boolean {
-        if (!isTvDevice || webViewController?.hasCustomView() == true) {
+        if (!isTvDevice) {
             return false
         }
 
@@ -541,25 +442,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleMediaKey(keyCode: Int): Boolean {
-        if (uiState is MainUiState.TvHome || uiState is MainUiState.Setup || uiState is MainUiState.Error) {
-            return false
-        }
-
-        val action = when (keyCode) {
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-            KeyEvent.KEYCODE_HEADSETHOOK -> "playPause"
-            KeyEvent.KEYCODE_MEDIA_PLAY -> "play"
-            KeyEvent.KEYCODE_MEDIA_PAUSE -> "pause"
-            KeyEvent.KEYCODE_MEDIA_STOP -> "stop"
-            KeyEvent.KEYCODE_MEDIA_REWIND,
-            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> "seekBack"
-            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
-            KeyEvent.KEYCODE_MEDIA_NEXT -> "seekForward"
-            else -> return false
-        }
-
-        webViewController?.dispatchHostMediaKey(action)
-        return true
+        return false
     }
 
     private fun applyPlaybackKeepScreenOn(active: Boolean) {
@@ -594,21 +477,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun setUiState(newState: MainUiState) {
         uiState = newState
-        val controller = if (newState == MainUiState.Content) {
-            getOrCreateWebViewController()
-        } else {
-            webViewController
-        }
         screenUi.render(
             state = newState,
-            webView = controller?.activeWebView,
-            hasCustomView = controller?.hasCustomView() == true,
             externalBrowserAvailable = canOpenExternalBrowser(currentExternalUrl())
         )
-
-        if (newState == MainUiState.Content && !screenUi.isTvQuickActionsVisible()) {
-            controller?.requestInputFocus()
-        }
     }
 
     private fun canOpenTvQuickActions(): Boolean {
@@ -637,9 +509,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         screenUi.hideTvQuickActions()
-        if (restoreFocus && uiState == MainUiState.Content) {
-            webViewController?.requestInputFocus()
-        }
     }
 
     private fun reloadCurrentPage() {
@@ -937,21 +806,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         lastRequestedUrl = savedInstanceState.getString(STATE_LAST_REQUESTED_URL) ?: startUrl
-        val controller = if (savedInstanceState.getBoolean(STATE_WEBVIEW_CREATED)) {
-            getOrCreateWebViewController()
-        } else {
-            null
-        }
-        val restoredState = controller?.restoreState(savedInstanceState)
-        if (controller == null || restoredState == null || controller.activeWebView.url.isNullOrBlank()) {
-            routeInitialDestination(
-                baseUrl = configuredBaseUrl,
-                startUrl = lastRequestedUrl,
-                reason = "restore_missing_webview_state"
-            )
-        } else if (!controller.hasCustomView()) {
-            setUiState(MainUiState.Content)
-        }
+        routeInitialDestination(
+            baseUrl = configuredBaseUrl,
+            startUrl = lastRequestedUrl,
+            reason = "restore_state"
+        )
     }
 
     private fun promptServerSwitchConfirmation(
@@ -1079,7 +938,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val STATE_LAST_REQUESTED_URL = "state_last_requested_url"
-        private const val STATE_WEBVIEW_CREATED = "state_webview_created"
         private const val TAG = "Xg2gMainLaunch"
     }
 }

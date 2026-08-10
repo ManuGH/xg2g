@@ -42,6 +42,8 @@ func GetHealthInfo(ctx context.Context, src HealthSource) (HealthInfo, error) {
 	// Map Receiver Status
 	if res, ok := respH.Checks["receiver_connection"]; ok {
 		info.ReceiverStatus = string(res.Status)
+	} else if res, ok := respH.Checks["v3_receiver_connection"]; ok {
+		info.ReceiverStatus = string(res.Status)
 	} else {
 		info.ReceiverStatus = string(health.StatusUnhealthy)
 	}

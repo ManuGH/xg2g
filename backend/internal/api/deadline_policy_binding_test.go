@@ -67,6 +67,9 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 		{http.MethodHead, "/ui/*"},
 		{http.MethodGet, "/ui"},
 		{http.MethodGet, "/logos/{filename}"},
+		{http.MethodGet, "/apk"},
+		{http.MethodGet, "/xg2g.apk"},
+		{http.MethodGet, "/download/apk"},
 		{http.MethodHead, "/api/v3/recordings/{recordingId}/stream.mp4"},
 	} {
 		add("outer", route.method, route.path, mediaPolicy)
@@ -322,7 +325,7 @@ func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 		delete(actual, v3Key)
 		actual[RegistrationKey{RouterID: "v3", Method: known.Method, Pattern: known.Pattern}] = outerPolicy
 		actual[RegistrationKey{RouterID: "outer", Method: v3Key.Method, Pattern: v3Key.Pattern}] = v3Policy
-		require.Len(t, actual, 103)
+		require.Len(t, actual, 106)
 		require.Error(t, validatePolicyBindingParity(actual, expected))
 	})
 }

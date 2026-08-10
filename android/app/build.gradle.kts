@@ -82,12 +82,10 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("boolean", "WEBVIEW_DEBUGGING", "true")
         }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")
-            buildConfigField("boolean", "WEBVIEW_DEBUGGING", "false")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -117,7 +115,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("com.google.android.material:material:1.13.0")
-    implementation("androidx.webkit:webkit:1.15.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.media3:media3-exoplayer:1.10.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.0")

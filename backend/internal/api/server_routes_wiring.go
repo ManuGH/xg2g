@@ -32,6 +32,9 @@ var publicUIReservedPrefixes = []string{
 	"/logos",
 	"/ui",
 	"/Items",
+	"/apk",
+	"/download",
+	"/xg2g.apk",
 }
 
 func (s *Server) newRouter() chi.Router {
@@ -221,7 +224,68 @@ func (s *Server) registerPublicRoutesWithPolicies(adapter *policyRegistrarAdapte
 	if err := adapter.Register(http.MethodGet, "/logos/{filename}", http.HandlerFunc(s.servePiconLogo)); err != nil {
 		return err
 	}
+	if err := adapter.Register(http.MethodGet, "/apk", http.HandlerFunc(s.serveAndroidApk)); err != nil {
+		return err
+	}
+	if err := adapter.Register(http.MethodGet, "/xg2g.apk", http.HandlerFunc(s.serveAndroidApk)); err != nil {
+		return err
+	}
+	if err := adapter.Register(http.MethodGet, "/download/apk", http.HandlerFunc(s.serveAndroidApk)); err != nil {
+		return err
+	}
 	return nil
+}
+
+// serveAndroidApk serves the Android APK binary for direct Fire TV / Android TV sideloading.
+func (s *Server) serveAndroidApk(w http.ResponseWriter, r *http.Request) {
+	apkPath := os.Getenv("XG2G_APK_PATH")
+	if apkPath == "" {
+		candidates := []string{
+			filepath.Join(s.cfg.DataDir, "apk", "xg2g.apk"),
+			filepath.Join(s.cfg.DataDir, "xg2g.apk"),
+			filepath.Join(s.cfg.DataDir, "apk", "app-prod-release.apk"),
+			filepath.Join(s.cfg.DataDir, "apk", "app-prod-debug.apk"),
+		}
+		for _, c := range candidates {
+			if info, err := os.Stat(c); err == nil && !info.IsDir() {
+				apkPath = c
+				break
+			}
+		}
+	}
+
+	if apkPath == "" {
+		http.Error(w, "Android APK not available on server", http.StatusNotFound)
+		return
+	}
+
+	absPath, err := filepath.Abs(apkPath)
+	if err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	f, err := os.Open(absPath) // #nosec G304
+	if err != nil {
+		http.Error(w, "Android APK not readable", http.StatusNotFound)
+		return
+	}
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			log.L().Warn().Err(closeErr).Str("path", absPath).Msg("failed to close APK file")
+		}
+	}()
+
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.android.package-archive")
+	w.Header().Set("Content-Disposition", `attachment; filename="xg2g.apk"`)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	http.ServeContent(w, r, "xg2g.apk", info.ModTime(), f)
 }
 
 // servePiconLogo securely serves a picon PNG from the data directory.

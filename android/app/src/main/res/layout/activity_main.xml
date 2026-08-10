@@ -28,14 +28,6 @@
         android:translationX="120dp"
         android:translationY="120dp" />
 
-    <ViewStub
-        android:id="@+id/webview_stub"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:inflatedId="@+id/webview"
-        android:layout="@layout/view_webview"
-        android:visibility="gone" />
-
     <com.google.android.material.button.MaterialButton
         android:id="@+id/tv_menu_button"
         style="?attr/materialButtonOutlinedStyle"

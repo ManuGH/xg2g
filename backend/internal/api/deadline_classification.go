@@ -212,7 +212,7 @@ func ClassifyRoute(routerID string, variant ConfigVariant, method string, patter
 	// 3. Media Bounded routes (GET/HEAD requests for HLS segments, picon images, static UI files, and HEAD stream.mp4 probes)
 	// HEAD /stream.mp4 resolves file readiness, reads os.Stat, and prepares range/content headers without body copy.
 	if (method == http.MethodGet || method == http.MethodHead) &&
-		(strings.HasPrefix(pattern, "/logos/") || strings.Contains(pattern, "/hls") || strings.HasPrefix(pattern, "/ui") || strings.HasSuffix(pattern, "/stream.mp4")) {
+		(strings.HasPrefix(pattern, "/logos/") || strings.HasPrefix(pattern, "/apk") || strings.HasPrefix(pattern, "/download/") || pattern == "/xg2g.apk" || strings.Contains(pattern, "/hls") || strings.HasPrefix(pattern, "/ui") || strings.HasSuffix(pattern, "/stream.mp4")) {
 		return RoutePolicy{
 			Class:                RouteDeadlineMediaBounded,
 			RequiresFlush:        false,
