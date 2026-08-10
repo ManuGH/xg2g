@@ -11,7 +11,6 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.webkit.URLUtil
-import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -33,7 +32,7 @@ import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     private lateinit var screenUi: MainScreenUi
-    private lateinit var webViewController: WebViewHostController
+    private var webViewController: WebViewHostController? = null
 
     private var lastRequestedUrl: String = ""
     private var playbackActive = false
@@ -53,14 +52,10 @@ class MainActivity : AppCompatActivity() {
             NativePlaybackCapabilities.create(applicationContext)
         )
     }
-    private val webView: WebView
-        get() = webViewController.activeWebView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.WEBVIEW_DEBUGGING)
 
         setContentView(R.layout.activity_main)
 
@@ -69,9 +64,24 @@ class MainActivity : AppCompatActivity() {
             isTvDevice = isTvDevice
         )
 
-        webViewController = WebViewHostController(
+        configureScreenUi()
+        installBackHandler()
+        observeNativePlaybackState()
+
+        applyIntentConfiguration(
+            intent = intent,
+            savedInstanceState = savedInstanceState,
+            routeReason = "on_create"
+        )
+    }
+
+    private fun getOrCreateWebViewController(): WebViewHostController {
+        webViewController?.let { return it }
+
+        android.webkit.WebView.setWebContentsDebuggingEnabled(BuildConfig.WEBVIEW_DEBUGGING)
+        return WebViewHostController(
             activity = this,
-            initialWebView = screenUi.initialWebView,
+            initialWebView = screenUi.getOrCreateWebView(),
             rootContainer = screenUi.rootContainer,
             fullscreenContainer = screenUi.fullscreenContainer,
             isTvDevice = isTvDevice,
@@ -123,24 +133,14 @@ class MainActivity : AppCompatActivity() {
                     this@MainActivity.openExternal(uri)
                 }
             }
-        )
-
-        configureScreenUi()
-        installBackHandler()
-        observeNativePlaybackState()
-
-        applyIntentConfiguration(
-            intent = intent,
-            savedInstanceState = savedInstanceState,
-            routeReason = "on_create"
-        )
+        ).also { webViewController = it }
     }
 
     private fun observeNativePlaybackState() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 PlaybackSessionRegistry.state.collect { state ->
-                    webViewController.publishNativePlaybackState(PlaybackJsonCodec.stateToJson(state))
+                    webViewController?.publishNativePlaybackState(PlaybackJsonCodec.stateToJson(state))
                 }
             }
         }
@@ -158,35 +158,36 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        webViewController.onResume()
+        webViewController?.onResume()
         applyPlaybackKeepScreenOn(playbackActive)
     }
 
     override fun onPause() {
         applyPlaybackKeepScreenOn(false)
-        webViewController.onPause()
+        webViewController?.onPause()
         super.onPause()
     }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        webViewController.onTrimMemory(level)
+        webViewController?.onTrimMemory(level)
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        webViewController.onLowMemory()
+        webViewController?.onLowMemory()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(STATE_LAST_REQUESTED_URL, lastRequestedUrl)
-        webViewController.saveState(outState)
+        outState.putBoolean(STATE_WEBVIEW_CREATED, webViewController != null)
+        webViewController?.saveState(outState)
         super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
         loadAppUrlJob?.cancel()
-        webViewController.release(renderProcessGone = false)
+        webViewController?.release(renderProcessGone = false)
         super.onDestroy()
     }
 
@@ -256,8 +257,8 @@ class MainActivity : AppCompatActivity() {
     private fun installBackHandler() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webViewController.hasCustomView()) {
-                    webViewController.hideCustomView()
+                if (webViewController?.hasCustomView() == true) {
+                    webViewController?.hideCustomView()
                     return
                 }
 
@@ -297,8 +298,8 @@ class MainActivity : AppCompatActivity() {
 
                     is MainUiState.Loading,
                     MainUiState.Content -> {
-                        if (webViewController.canGoBack()) {
-                            webViewController.goBack()
+                        if (webViewController?.canGoBack() == true) {
+                            webViewController?.goBack()
                             return
                         }
 
@@ -378,7 +379,7 @@ class MainActivity : AppCompatActivity() {
                 TAG,
                 "event=prepare_web_ui_complete reason=$reason requestedUrl=$url preparedUrl=$preparedUrl"
             )
-            webViewController.loadUrl(preparedUrl)
+            getOrCreateWebViewController().loadUrl(preparedUrl)
         }
     }
 
@@ -412,7 +413,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleAppControlKey(keyCode: Int): Boolean {
-        if (!isTvDevice || webViewController.hasCustomView()) {
+        if (!isTvDevice || webViewController?.hasCustomView() == true) {
             return false
         }
 
@@ -451,7 +452,7 @@ class MainActivity : AppCompatActivity() {
             else -> return false
         }
 
-        webViewController.dispatchHostMediaKey(action)
+        webViewController?.dispatchHostMediaKey(action)
         return true
     }
 
@@ -487,15 +488,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun setUiState(newState: MainUiState) {
         uiState = newState
+        val controller = if (newState == MainUiState.Content) {
+            getOrCreateWebViewController()
+        } else {
+            webViewController
+        }
         screenUi.render(
             state = newState,
-            webView = webView,
-            hasCustomView = webViewController.hasCustomView(),
+            webView = controller?.activeWebView,
+            hasCustomView = controller?.hasCustomView() == true,
             externalBrowserAvailable = canOpenExternalBrowser(currentExternalUrl())
         )
 
         if (newState == MainUiState.Content && !screenUi.isTvQuickActionsVisible()) {
-            webViewController.requestInputFocus()
+            controller?.requestInputFocus()
         }
     }
 
@@ -531,7 +537,7 @@ class MainActivity : AppCompatActivity() {
 
         screenUi.hideTvQuickActions()
         if (restoreFocus && uiState == MainUiState.Content) {
-            webViewController.requestInputFocus()
+            webViewController?.requestInputFocus()
         }
     }
 
@@ -835,14 +841,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         lastRequestedUrl = savedInstanceState.getString(STATE_LAST_REQUESTED_URL) ?: startUrl
-        val restoredState = webViewController.restoreState(savedInstanceState)
-        if (restoredState == null || webView.url.isNullOrBlank()) {
+        val controller = if (savedInstanceState.getBoolean(STATE_WEBVIEW_CREATED)) {
+            getOrCreateWebViewController()
+        } else {
+            null
+        }
+        val restoredState = controller?.restoreState(savedInstanceState)
+        if (controller == null || restoredState == null || controller.activeWebView.url.isNullOrBlank()) {
             routeInitialDestination(
                 baseUrl = configuredBaseUrl,
                 startUrl = lastRequestedUrl,
                 reason = "restore_missing_webview_state"
             )
-        } else if (!webViewController.hasCustomView()) {
+        } else if (!controller.hasCustomView()) {
             setUiState(MainUiState.Content)
         }
     }
@@ -972,6 +983,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val STATE_LAST_REQUESTED_URL = "state_last_requested_url"
+        private const val STATE_WEBVIEW_CREATED = "state_webview_created"
         private const val TAG = "Xg2gMainLaunch"
     }
 }

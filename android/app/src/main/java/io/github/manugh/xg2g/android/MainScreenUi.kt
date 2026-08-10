@@ -2,6 +2,7 @@ package io.github.manugh.xg2g.android
 
 import android.content.res.ColorStateList
 import android.view.View
+import android.view.ViewStub
 import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -18,7 +19,8 @@ internal class MainScreenUi(
 ) {
     val rootContainer: FrameLayout = activity.findViewById(R.id.root_container)
     val fullscreenContainer: FrameLayout = activity.findViewById(R.id.fullscreen_container)
-    val initialWebView: WebView = activity.findViewById(R.id.webview)
+    private val webViewStub: ViewStub = activity.findViewById(R.id.webview_stub)
+    private var inflatedWebView: WebView? = null
 
     private val loadingContainer: View = activity.findViewById(R.id.loading_container)
     private val loadingDetail: TextView = activity.findViewById(R.id.loading_detail)
@@ -69,6 +71,9 @@ internal class MainScreenUi(
     private val actionRailStroke = color(R.color.ide_outline_soft)
     private val actionRailText = color(R.color.ide_text_secondary)
     private var preferredQuickActionsFocusTarget: MaterialButton? = null
+
+    fun getOrCreateWebView(): WebView = inflatedWebView
+        ?: (webViewStub.inflate() as WebView).also { inflatedWebView = it }
 
     fun bindActions(
         onConnect: (String) -> Unit,
@@ -217,7 +222,7 @@ internal class MainScreenUi(
 
     fun render(
         state: MainUiState,
-        webView: WebView,
+        webView: WebView?,
         hasCustomView: Boolean,
         externalBrowserAvailable: Boolean
     ) {
@@ -231,7 +236,7 @@ internal class MainScreenUi(
         }
     }
 
-    private fun renderTvHome(state: MainUiState.TvHome, webView: WebView) {
+    private fun renderTvHome(state: MainUiState.TvHome, webView: WebView?) {
         clearServerUrlError()
         hideTvQuickActions()
         loadingContainer.isVisible = false
@@ -239,12 +244,12 @@ internal class MainScreenUi(
         errorContainer.isVisible = false
         tvMenuButton.isVisible = false
         tvHomeContainer.isVisible = true
-        webView.isVisible = false
+        webView?.isVisible = false
         tvHomeServerValue.text = state.serverLabel
         tvHomeLiveButton.requestFocus()
     }
 
-    private fun renderSetup(state: MainUiState.Setup, webView: WebView) {
+    private fun renderSetup(state: MainUiState.Setup, webView: WebView?) {
         clearServerUrlError()
         hideTvQuickActions()
         loadingContainer.isVisible = false
@@ -253,7 +258,7 @@ internal class MainScreenUi(
         setupContainer.isVisible = true
         cancelSetupButton.isVisible = state.savedUrl != null
         errorContainer.isVisible = false
-        webView.isVisible = false
+        webView?.isVisible = false
         serverUrlEditText.setText(state.savedUrl ?: "")
 
         if (isTvDevice && state.savedUrl != null) {
@@ -267,7 +272,7 @@ internal class MainScreenUi(
         }
     }
 
-    private fun renderError(state: MainUiState.Error, webView: WebView) {
+    private fun renderError(state: MainUiState.Error, webView: WebView?) {
         hideTvQuickActions()
         loadingContainer.isVisible = false
         tvHomeContainer.isVisible = false
@@ -276,30 +281,30 @@ internal class MainScreenUi(
         errorDetail.text = state.detail
         errorContainer.isVisible = true
         setupContainer.isVisible = false
-        webView.isVisible = false
+        webView?.isVisible = false
         retryButton.requestFocus()
     }
 
-    private fun renderLoading(state: MainUiState.Loading, webView: WebView) {
+    private fun renderLoading(state: MainUiState.Loading, webView: WebView?) {
         hideTvQuickActions()
         tvMenuButton.isVisible = false
         tvHomeContainer.isVisible = false
         setupContainer.isVisible = false
         errorContainer.isVisible = false
         loadingContainer.isVisible = true
-        webView.isVisible = false
+        webView?.isVisible = false
         loadingDetail.text = state.destinationLabel?.takeIf { it.isNotBlank() }
             ?.let { activity.getString(R.string.shell_loading_detail_host, it) }
             ?: activity.getString(R.string.shell_loading_detail_generic)
     }
 
-    private fun renderContent(webView: WebView, hasCustomView: Boolean) {
+    private fun renderContent(webView: WebView?, hasCustomView: Boolean) {
         loadingContainer.isVisible = false
         tvHomeContainer.isVisible = false
         setupContainer.isVisible = false
         errorContainer.isVisible = false
         tvMenuButton.isVisible = isTvDevice && !tvQuickActionsContainer.isVisible
-        webView.isVisible = !hasCustomView
+        webView?.isVisible = !hasCustomView
     }
 
     private fun color(resId: Int): Int = ContextCompat.getColor(activity, resId)

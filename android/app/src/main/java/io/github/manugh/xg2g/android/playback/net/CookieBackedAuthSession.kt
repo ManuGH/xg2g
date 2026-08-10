@@ -15,8 +15,14 @@ internal interface AuthCookieSession {
 }
 
 internal class CookieBackedAuthSession(
-    private val cookieManager: CookieManager = CookieManager.getInstance()
+    private val providedCookieManager: CookieManager? = null
 ) : AuthCookieSession {
+    // CookieManager boots the full WebView provider on Fire TV. Delay that several-second cost
+    // until a web or authenticated playback path actually needs browser cookies.
+    private val cookieManager: CookieManager by lazy(LazyThreadSafetyMode.NONE) {
+        providedCookieManager ?: CookieManager.getInstance()
+    }
+
     override fun hasSessionCookie(url: HttpUrl, cookieName: String): Boolean =
         cookieManager.getCookie(url.toString())
             ?.split(';')
