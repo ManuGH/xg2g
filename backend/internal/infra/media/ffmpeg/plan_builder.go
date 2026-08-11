@@ -35,7 +35,7 @@ type outputPlan struct {
 	effectiveProfile ports.ProfileSpec
 
 	// primaryPlaylist specifies the entry manifest ("index.m3u8" or "master.m3u8").
-	primaryPlaylist  string
+	primaryPlaylist string
 
 	// cmafSegment marks the LL-HLS pipe mode: ffmpeg emits one fragmented
 	// MP4 stream on stdout and the in-process cmaf segmenter produces the
@@ -51,7 +51,7 @@ type finalizedPlan struct {
 	pathID           string
 
 	// primaryPlaylist is the entry manifest ("index.m3u8" or "master.m3u8").
-	primaryPlaylist  string
+	primaryPlaylist string
 
 	cmafSegment      bool
 	cmafTargetDurSec int

@@ -138,7 +138,7 @@ type ProfileSpec struct {
 	AudioBitrateK     int    `json:"audioBitrateK,omitempty"`
 	Preset            string `json:"preset,omitempty"`
 	Container         string `json:"container,omitempty"` // "ts" (default) or "fmp4"
-	EnableABR         bool   `json:"enableAbr,omitempty"`  // Opt-in 3-tier/2-tier HLS Adaptive Bitrate transcoding
+	EnableABR         bool   `json:"enableAbr,omitempty"` // Opt-in 3-tier/2-tier HLS Adaptive Bitrate transcoding
 }
 
 func (p ProfileSpec) TranscodesAudio() bool {
