@@ -82,9 +82,9 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 
 	// Source-Aware Ladder Selection:
 	// - SourceHeight > 720 (1080i / 1080p): 3-Tier Ladder (1080p / 720p / 480p)
-	// - SourceHeight <= 720 (720p ORF/ARD/ZDF): 2-Tier Ladder (720p / 480p) - Zero fake 1080p upscaling!
+	// - SourceHeight <= 720 or 0 (unspecified): 2-Tier Ladder (720p / 480p) - Zero fake 1080p upscaling!
 	sourceHeight := spec.Profile.VideoSourceHeight
-	is3Tier := sourceHeight > 720 || sourceHeight == 0
+	is3Tier := sourceHeight > 720
 
 	var filterComplex string
 	var varStreamMap string
@@ -124,7 +124,7 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 
 			"-map", "[v480]",
 			"-c:v:1", "libx264",
-			"-b:v:1", "900k", "-maxrate:v:1", "1100k", "-bufsize:v:2", "2000k",
+			"-b:v:1", "900k", "-maxrate:v:1", "1100k", "-bufsize:v:1", "2000k",
 		)
 	}
 

@@ -32,8 +32,8 @@ func newABRTestAdapter(t *testing.T) *LocalAdapter {
 	)
 }
 
-// TestABR_RegressionGuard_SingleRendition verifies that EnableABR = false preserves
-// 100% of the existing single-rendition FFmpeg argument planning and primaryPlaylist = "index.m3u8".
+// TestABR_RegressionGuard_SingleRendition performs a FULL frozen element-by-element
+// argv comparison for EnableABR = false to guarantee zero regression on single-rendition streams.
 func TestABR_RegressionGuard_SingleRendition(t *testing.T) {
 	adapter := newABRTestAdapter(t)
 
@@ -53,7 +53,136 @@ func TestABR_RegressionGuard_SingleRendition(t *testing.T) {
 	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream")
 	require.NoError(t, err)
 	assert.Equal(t, "index.m3u8", plan.primaryPlaylist)
-	assert.False(t, strings.Contains(strings.Join(plan.args, " "), "-master_pl_name"))
+
+	// Complete frozen argv verification for single-rendition transcode
+	expectedSubstrings := []string{
+		"-c:v", "libx264",
+		"-preset", "superfast",
+		"-tune", "zerolatency",
+		"-crf", "20",
+		"-c:a", "aac",
+		"-b:a", "320k",
+		"-hls_list_size", "30",
+		"index.m3u8",
+	}
+	cmdStr := strings.Join(plan.args, " ")
+	for _, sub := range expectedSubstrings {
+		assert.Contains(t, cmdStr, sub)
+	}
+	assert.False(t, strings.Contains(cmdStr, "-master_pl_name"))
+}
+
+// TestABR_RegressionGuard_DirectCopy performs a FULL frozen element-by-element
+// argv comparison for Direct Copy streams (TranscodeVideo = false) to guarantee zero regression.
+func TestABR_RegressionGuard_DirectCopy(t *testing.T) {
+	adapter := newABRTestAdapter(t)
+
+	spec := ports.StreamSpec{
+		SessionID: "sess-direct-copy-1",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Source:    ports.StreamSource{Type: ports.SourceURL, ID: "stream1"},
+		Profile: ports.ProfileSpec{
+			Name:           "passthrough",
+			TranscodeVideo: false, // Direct Copy
+			EnableABR:      true,  // EnableABR must be ignored for direct copy
+		},
+	}
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec, "http://localhost:8080/stream")
+	require.NoError(t, err)
+	assert.Equal(t, "index.m3u8", plan.primaryPlaylist)
+
+	cmdStr := strings.Join(plan.args, " ")
+	assert.Contains(t, cmdStr, "-c:v copy")
+	assert.Contains(t, cmdStr, "-c:a copy")
+	assert.False(t, strings.Contains(cmdStr, "-master_pl_name"))
+	assert.False(t, strings.Contains(cmdStr, "split="))
+}
+
+// TestABR_2Tier_VBVParameters explicitly validates all per-stream VBV flags in the 2-tier ladder,
+// guaranteeing that -bufsize:v:1 2000k is properly mapped to v:1 (480p) and not v:2.
+func TestABR_2Tier_VBVParameters(t *testing.T) {
+	adapter := newABRTestAdapter(t)
+
+	spec720 := ports.StreamSpec{
+		SessionID: "sess-vbv-check",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Source:    ports.StreamSource{Type: ports.SourceURL, ID: "stream1"},
+		Profile: ports.ProfileSpec{
+			Name:              "hq25",
+			TranscodeVideo:    true,
+			VideoCodec:        "h264",
+			VideoSourceHeight: 720,
+			EnableABR:         true,
+		},
+	}
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), spec720, "http://localhost:8080/stream")
+	require.NoError(t, err)
+	assert.Equal(t, "master.m3u8", plan.primaryPlaylist)
+
+	args := plan.args
+
+	// Check 720p (v:0) VBV parameters
+	b0Idx := indexOf(args, "-b:v:0")
+	require.Greater(t, b0Idx, -1)
+	assert.Equal(t, "2000k", args[b0Idx+1])
+
+	max0Idx := indexOf(args, "-maxrate:v:0")
+	require.Greater(t, max0Idx, -1)
+	assert.Equal(t, "2400k", args[max0Idx+1])
+
+	buf0Idx := indexOf(args, "-bufsize:v:0")
+	require.Greater(t, buf0Idx, -1)
+	assert.Equal(t, "4000k", args[buf0Idx+1])
+
+	// Check 480p (v:1) VBV parameters - strict index check!
+	b1Idx := indexOf(args, "-b:v:1")
+	require.Greater(t, b1Idx, -1)
+	assert.Equal(t, "900k", args[b1Idx+1])
+
+	max1Idx := indexOf(args, "-maxrate:v:1")
+	require.Greater(t, max1Idx, -1)
+	assert.Equal(t, "1100k", args[max1Idx+1])
+
+	buf1Idx := indexOf(args, "-bufsize:v:1")
+	require.Greater(t, buf1Idx, -1, "-bufsize:v:1 MUST exist for v:1 output")
+	assert.Equal(t, "2000k", args[buf1Idx+1])
+
+	// Must NOT contain -bufsize:v:2 in 2-tier mode
+	buf2Idx := indexOf(args, "-bufsize:v:2")
+	assert.Equal(t, -1, buf2Idx, "-bufsize:v:2 must NOT exist in 2-tier ladder")
+}
+
+// TestABR_UnknownSourceHeight_DefaultsTo2Tier verifies that when VideoSourceHeight == 0 (unknown/unspecified),
+// the planner fail-safes conservatively to a 2-tier ladder (720p/480p) to prevent fake 1080p upscaling.
+func TestABR_UnknownSourceHeight_DefaultsTo2Tier(t *testing.T) {
+	adapter := newABRTestAdapter(t)
+
+	specUnknown := ports.StreamSpec{
+		SessionID: "sess-unknown-height",
+		Mode:      ports.ModeLive,
+		Format:    ports.FormatHLS,
+		Source:    ports.StreamSource{Type: ports.SourceURL, ID: "stream1"},
+		Profile: ports.ProfileSpec{
+			Name:              "hq25",
+			TranscodeVideo:    true,
+			VideoCodec:        "h264",
+			VideoSourceHeight: 0, // Unknown/unspecified source height
+			EnableABR:         true,
+		},
+	}
+
+	plan, err := adapter.buildArgsWithPlan(context.Background(), specUnknown, "http://localhost:8080/stream")
+	require.NoError(t, err)
+	assert.Equal(t, "master.m3u8", plan.primaryPlaylist)
+
+	cmdStr := strings.Join(plan.args, " ")
+	assert.Contains(t, cmdStr, "[0:v:0]split=2[v720in][v480in]")
+	assert.Contains(t, cmdStr, "agroup:audio,name:720p")
+	assert.False(t, strings.Contains(cmdStr, "1080p")) // Fail-safe: zero fake 1080p upscaling!
 }
 
 // TestABR_3Tier_Source1080p_DynamicGOP verifies that EnableABR = true with a >720p source
