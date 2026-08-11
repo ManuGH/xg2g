@@ -223,15 +223,15 @@ func (a *LocalAdapter) planLiveVAAPIABROutput(ctx context.Context, spec ports.St
 		out.args = append(out.args,
 			"-map", "[v1080]",
 			"-c:v:0", vaapiEncoder,
-			"-b:v:0", "4500k", "-maxrate:v:0", "5200k",
+			"-b:v:0", "4500k", "-maxrate:v:0", "5200k", "-bufsize:v:0", "9000k",
 
 			"-map", "[v720]",
 			"-c:v:1", vaapiEncoder,
-			"-b:v:1", "2000k", "-maxrate:v:1", "2400k",
+			"-b:v:1", "2000k", "-maxrate:v:1", "2400k", "-bufsize:v:1", "4000k",
 
 			"-map", "[v480]",
 			"-c:v:2", vaapiEncoder,
-			"-b:v:2", "900k", "-maxrate:v:2", "1100k",
+			"-b:v:2", "900k", "-maxrate:v:2", "1100k", "-bufsize:v:2", "2000k",
 
 			"-map", "[a1080]",
 			"-c:a:0", "aac",
@@ -249,11 +249,11 @@ func (a *LocalAdapter) planLiveVAAPIABROutput(ctx context.Context, spec ports.St
 		out.args = append(out.args,
 			"-map", "[v720]",
 			"-c:v:0", vaapiEncoder,
-			"-b:v:0", "2000k", "-maxrate:v:0", "2400k",
+			"-b:v:0", "2000k", "-maxrate:v:0", "2400k", "-bufsize:v:0", "4000k",
 
 			"-map", "[v480]",
 			"-c:v:1", vaapiEncoder,
-			"-b:v:1", "900k", "-maxrate:v:1", "1100k",
+			"-b:v:1", "900k", "-maxrate:v:1", "1100k", "-bufsize:v:1", "2000k",
 
 			"-map", "[a720]",
 			"-c:a:0", "aac",
