@@ -31,7 +31,7 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 	streamPolicy := RoutePolicy{Class: RouteDeadlineStreaming}
 	ssePolicy := RoutePolicy{Class: RouteDeadlineStreaming, RequiresFlush: true}
 
-	baseline := make(map[RegistrationKey]RoutePolicy, 103)
+	baseline := make(map[RegistrationKey]RoutePolicy, 105)
 	add := func(routerID, method, path string, policy RoutePolicy) {
 		key := RegistrationKey{RouterID: routerID, Method: method, Pattern: path}
 		if _, exists := baseline[key]; exists {
@@ -151,6 +151,8 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 		{http.MethodPost, "/series-rules/{id}/run"},
 		{http.MethodGet, "/sessions/{sessionID}/hls/{filename}"},
 		{http.MethodHead, "/sessions/{sessionID}/hls/{filename}"},
+		{http.MethodGet, "/sessions/{sessionID}/hls/{variant}/{filename}"},
+		{http.MethodHead, "/sessions/{sessionID}/hls/{variant}/{filename}"},
 		{http.MethodPost, "/pairing/start"},
 		{http.MethodGet, "/recordings/{recordingId}/stream.mp4"},
 		{http.MethodPost, "/system/scan"},
@@ -170,6 +172,8 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 	setV3Policy(http.MethodGet, "/sessions/{sessionID}/events", ssePolicy)
 	setV3Policy(http.MethodGet, "/sessions/{sessionID}/hls/{filename}", mediaPolicy)
 	setV3Policy(http.MethodHead, "/sessions/{sessionID}/hls/{filename}", mediaPolicy)
+	setV3Policy(http.MethodGet, "/sessions/{sessionID}/hls/{variant}/{filename}", mediaPolicy)
+	setV3Policy(http.MethodHead, "/sessions/{sessionID}/hls/{variant}/{filename}", mediaPolicy)
 	setV3Policy(http.MethodHead, "/recordings/{recordingId}/stream.mp4", mediaPolicy)
 	setV3Policy(http.MethodGet, "/recordings/{recordingId}/stream.mp4", streamPolicy)
 
@@ -214,8 +218,8 @@ func TestPhase1RegistrationIdentityParity(t *testing.T) {
 
 	expected := getPhase1CanonicalBaselineMap()
 	actual := snapshotAsMap(snapshot)
-	require.Len(t, expected, 106)
-	require.Len(t, actual, 106)
+	require.Len(t, expected, 108)
+	require.Len(t, actual, 108)
 	require.NoError(t, validatePolicyBindingParity(actual, expected))
 
 	counts := map[string]int{}
@@ -223,7 +227,7 @@ func TestPhase1RegistrationIdentityParity(t *testing.T) {
 		counts[key.RouterID]++
 	}
 	require.Equal(t, 26, counts["outer"])
-	require.Equal(t, 80, counts["v3"])
+	require.Equal(t, 82, counts["v3"])
 }
 
 func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
@@ -246,7 +250,7 @@ func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, snapshot, err := s.buildRouterWithBindings(test.variant)
 			require.NoError(t, err)
-			require.Equal(t, 106, snapshot.Len())
+			require.Equal(t, 108, snapshot.Len())
 
 			for key, expected := range map[RegistrationKey]RoutePolicy{
 				{RouterID: "outer", Method: http.MethodGet, Pattern: "/ui/*"}:  test.uiGet,
@@ -279,7 +283,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
 	registrations, err := ValidateRouterInventory(s, ConfigVariantDevProxy)
 	require.NoError(t, err)
-	require.Len(t, registrations, 106)
+	require.Len(t, registrations, 108)
 
 	evidence := getDefaultPhase2VerifiedEvidenceRegistry()
 	runtimeReady := 0
@@ -294,7 +298,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 		require.NoError(t, registration.ValidateRuntimeReadiness(), "%s", registration.Key)
 		runtimeReady++
 	}
-	require.Equal(t, 106, runtimeReady)
+	require.Equal(t, 108, runtimeReady)
 }
 
 func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
@@ -325,7 +329,7 @@ func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 		delete(actual, v3Key)
 		actual[RegistrationKey{RouterID: "v3", Method: known.Method, Pattern: known.Pattern}] = outerPolicy
 		actual[RegistrationKey{RouterID: "outer", Method: v3Key.Method, Pattern: v3Key.Pattern}] = v3Policy
-		require.Len(t, actual, 106)
+		require.Len(t, actual, 108)
 		require.Error(t, validatePolicyBindingParity(actual, expected))
 	})
 }

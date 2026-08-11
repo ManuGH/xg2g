@@ -158,6 +158,14 @@ func (m *MockPreparingServer) ProbeRecordingMp4(w http.ResponseWriter, r *http.R
 	m.StreamRecordingDirect(w, r, recordingId)
 }
 
+func (m *MockPreparingServer) ServeHLSVariant(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, variant string, filename string) {
+	m.ServeHLS(w, r, sessionID, filename)
+}
+
+func (m *MockPreparingServer) ServeHLSVariantHead(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, variant string, filename string) {
+	m.ServeHLSHead(w, r, sessionID, filename)
+}
+
 func (m *MockPreparingServer) GetRecordingHLSPlaylist(w http.ResponseWriter, r *http.Request, recordingId string) {
 	w.Header().Set("Retry-After", "5")
 	w.Header().Set("Content-Type", "application/problem+json")

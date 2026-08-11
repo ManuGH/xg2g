@@ -474,7 +474,7 @@ func TestDeadlineClassification_DevProxyReportsPendingHijackVerification(t *test
 
 	regs, err := ValidateRouterInventory(s, ConfigVariantDevProxy)
 	require.NoError(t, err, "DevProxy inventory walk must pass structural and declared compatibility validation")
-	assert.Equal(t, 106, len(regs))
+	assert.Equal(t, 108, len(regs))
 
 	var totalCount, structuralCount, declaredCount int
 	var runtimeReadyBoundedOrStreamingCount, pendingUpgradeCount, runtimeReadyUpgradeCount int
@@ -514,10 +514,10 @@ func TestDeadlineClassification_DevProxyReportsPendingHijackVerification(t *test
 	t.Logf("Pending upgrade routes:                 %d", pendingUpgradeCount)
 	t.Logf("Runtime-ready upgrade routes:           %d", runtimeReadyUpgradeCount)
 
-	assert.Equal(t, 106, totalCount)
-	assert.Equal(t, 106, structuralCount)
-	assert.Equal(t, 106, declaredCount)
-	assert.Equal(t, 104, runtimeReadyBoundedOrStreamingCount, "all 104 bounded and streaming routes must be runtime-ready with verified evidence")
+	assert.Equal(t, 108, totalCount)
+	assert.Equal(t, 108, structuralCount)
+	assert.Equal(t, 108, declaredCount)
+	assert.Equal(t, 106, runtimeReadyBoundedOrStreamingCount, "all 106 bounded and streaming routes must be runtime-ready with verified evidence")
 	assert.Equal(t, 2, pendingUpgradeCount, "exactly 2 DevProxy MayUpgradePerRequest routes must report pending Phase 2 empirical hijack verification")
 	assert.Equal(t, 0, runtimeReadyUpgradeCount, "0 upgrade routes are runtime-ready until Phase 2 empirical hijack probe")
 	assert.Contains(t, declaredUpgradeRoutes, "GET /ui")
@@ -647,7 +647,7 @@ func TestDeadlineClassification_InventoryCountsAndClassificationList(t *testing.
 			regs, err := ValidateRouterInventory(s, variant)
 			require.NoError(t, err)
 
-			assert.Equal(t, 106, len(regs), "total registrable instances must equal 106")
+			assert.Equal(t, 108, len(regs), "total registrable instances must equal 108")
 
 			var streaming, mediaBounded, apiBounded int
 			var mayUpgradeCount int
@@ -669,15 +669,15 @@ func TestDeadlineClassification_InventoryCountsAndClassificationList(t *testing.
 			t.Logf("Variant: %s -> Total: %d [APIBounded: %d, MediaBounded: %d, Streaming: %d, MayUpgradePerRequest: %d]",
 				variant, len(regs), apiBounded, mediaBounded, streaming, mayUpgradeCount)
 
-			assert.Equal(t, 106, apiBounded+mediaBounded+streaming)
+			assert.Equal(t, 108, apiBounded+mediaBounded+streaming)
 			assert.Equal(t, 2, streaming, "RouteDeadlineStreaming must strictly equal 2 GET endpoints")
 
 			if variant == ConfigVariantDevProxy {
-				assert.Equal(t, 10, mediaBounded, "RouteDeadlineMediaBounded count is 10 under DevProxy")
+				assert.Equal(t, 12, mediaBounded, "RouteDeadlineMediaBounded count is 12 under DevProxy")
 				assert.Equal(t, 94, apiBounded, "RouteDeadlineAPIBounded count is 94 under DevProxy")
 				assert.Equal(t, 2, mayUpgradeCount, "DevProxy has 2 MayUpgradePerRequest routes (GET /ui and GET /ui/*)")
 			} else {
-				assert.Equal(t, 11, mediaBounded, "RouteDeadlineMediaBounded count is 11 under ProdStatic/DevDir")
+				assert.Equal(t, 13, mediaBounded, "RouteDeadlineMediaBounded count is 13 under ProdStatic/DevDir")
 				assert.Equal(t, 93, apiBounded, "RouteDeadlineAPIBounded count is 93 under ProdStatic/DevDir")
 				assert.Equal(t, 0, mayUpgradeCount)
 			}
@@ -733,10 +733,10 @@ func TestDeadlineClassification_RawInventoryDiagnostics(t *testing.T) {
 	t.Logf("Combined Classifiable Registrations: %d", (rawOuterCount-filteredDelegateCount)+rawV3Count)
 
 	assert.Equal(t, 35, rawOuterCount, "raw outer walk contains 26 routes + 9 method expansions of /api/v3/* delegate mount")
-	assert.Equal(t, 80, rawV3Count, "raw v3 walk contains 80 routes")
+	assert.Equal(t, 82, rawV3Count, "raw v3 walk contains 82 routes")
 	assert.Equal(t, 9, filteredDelegateCount, "chi expands /api/v3/* wildcard mount to 9 HTTP methods")
 	assert.Equal(t, 26, rawOuterCount-filteredDelegateCount)
-	assert.Equal(t, 106, (rawOuterCount-filteredDelegateCount)+rawV3Count)
+	assert.Equal(t, 108, (rawOuterCount-filteredDelegateCount)+rawV3Count)
 }
 
 func TestDeadlineClassification_MethodSpecificUI(t *testing.T) {
