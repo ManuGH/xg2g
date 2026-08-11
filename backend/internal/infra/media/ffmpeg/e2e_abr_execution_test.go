@@ -105,7 +105,7 @@ func TestE2E_ProductiveBackendABRExecution(t *testing.T) {
 	t.Logf("[E2E TEST] Backend FFmpeg started with PID: %d", pid)
 
 	// 5. Poll for master.m3u8 and variant segments
-	sessionDir := filepath.Join(hlsDir, sessionID)
+	sessionDir := ports.SessionHLSDirForPolicy(hlsDir, sessionID, spec.Profile.DVRWindowSec)
 	masterPath := filepath.Join(sessionDir, "master.m3u8")
 
 	require.Eventually(t, func() bool {
