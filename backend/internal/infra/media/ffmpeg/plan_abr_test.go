@@ -248,7 +248,7 @@ func TestABR_UnknownSourceHeight_DefaultsTo2Tier(t *testing.T) {
 
 	cmdStr := strings.Join(plan.args, " ")
 	assert.Contains(t, cmdStr, "[0:v:0]split=2[v720in][v480in]")
-	assert.Contains(t, cmdStr, "agroup:audio,name:720p")
+	assert.Contains(t, cmdStr, "v:0,a:0,name:720p v:1,a:1,name:480p")
 	assert.False(t, strings.Contains(cmdStr, "1080p")) // Fail-safe: zero fake 1080p upscaling!
 }
 
@@ -282,7 +282,7 @@ func TestABR_3Tier_Source1080p_DynamicGOP(t *testing.T) {
 	cmdStr25 := strings.Join(plan25.args, " ")
 	assert.Contains(t, cmdStr25, "-master_pl_name master.m3u8")
 	assert.Contains(t, cmdStr25, "[0:v:0]split=3[v1080in][v720in][v480in]")
-	assert.Contains(t, cmdStr25, "agroup:audio,name:1080p")
+	assert.Contains(t, cmdStr25, "v:0,a:0,name:1080p v:1,a:1,name:720p v:2,a:2,name:480p")
 	assert.Contains(t, cmdStr25, "-g 50 -keyint_min 50 -force_key_frames expr:gte(t,n_forced*2)")
 
 	// 2. Test 1080p Source @ 50 FPS (gop = 50 * 2 = 100)
@@ -342,6 +342,6 @@ func TestABR_2Tier_Source720p_NoFakeUpscaling(t *testing.T) {
 
 	cmdStr720 := strings.Join(plan720.args, " ")
 	assert.Contains(t, cmdStr720, "-filter_complex [0:v:0]split=2[v720in][v480in]")
-	assert.Contains(t, cmdStr720, "agroup:audio,name:720p")
+	assert.Contains(t, cmdStr720, "v:0,a:0,name:720p v:1,a:1,name:480p")
 	assert.False(t, strings.Contains(cmdStr720, "1080p")) // Zero fake 1080p upscaling!
 }

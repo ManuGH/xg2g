@@ -89,11 +89,11 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 	var filterComplex string
 	var varStreamMap string
 	if is3Tier {
-		filterComplex = "[0:v:0]split=3[v1080in][v720in][v480in]; [v1080in]null[v1080]; [v720in]scale=1280:720[v720]; [v480in]scale=854:480[v480]"
-		varStreamMap = "a:0,agroup:audio v:0,agroup:audio,name:1080p v:1,agroup:audio,name:720p v:2,agroup:audio,name:480p"
+		filterComplex = "[0:v:0]split=3[v1080in][v720in][v480in]; [v1080in]null[v1080]; [v720in]scale=1280:720[v720]; [v480in]scale=854:480[v480]; [0:a:0?]asplit=3[a1080][a720][a480]"
+		varStreamMap = "v:0,a:0,name:1080p v:1,a:1,name:720p v:2,a:2,name:480p"
 	} else {
-		filterComplex = "[0:v:0]split=2[v720in][v480in]; [v720in]null[v720]; [v480in]scale=854:480[v480]"
-		varStreamMap = "a:0,agroup:audio v:0,agroup:audio,name:720p v:1,agroup:audio,name:480p"
+		filterComplex = "[0:v:0]split=2[v720in][v480in]; [v720in]null[v720]; [v480in]scale=854:480[v480]; [0:a:0?]asplit=2[a720][a480]"
+		varStreamMap = "v:0,a:0,name:720p v:1,a:1,name:480p"
 	}
 
 	out.args = append(out.args, "-filter_complex", filterComplex)
@@ -115,6 +115,18 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 			"-map", "[v480]",
 			"-c:v:2", "libx264",
 			"-b:v:2", "900k", "-maxrate:v:2", "1100k", "-bufsize:v:2", "2000k",
+
+			"-map", "[a1080]",
+			"-c:a:0", "aac",
+			"-b:a:0", "128k", "-ac:a:0", "2", "-ar:a:0", "48000",
+
+			"-map", "[a720]",
+			"-c:a:1", "aac",
+			"-b:a:1", "128k", "-ac:a:1", "2", "-ar:a:1", "48000",
+
+			"-map", "[a480]",
+			"-c:a:2", "aac",
+			"-b:a:2", "128k", "-ac:a:2", "2", "-ar:a:2", "48000",
 		)
 	} else {
 		out.args = append(out.args,
@@ -125,6 +137,14 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 			"-map", "[v480]",
 			"-c:v:1", "libx264",
 			"-b:v:1", "900k", "-maxrate:v:1", "1100k", "-bufsize:v:1", "2000k",
+
+			"-map", "[a720]",
+			"-c:a:0", "aac",
+			"-b:a:0", "128k", "-ac:a:0", "2", "-ar:a:0", "48000",
+
+			"-map", "[a480]",
+			"-c:a:1", "aac",
+			"-b:a:1", "128k", "-ac:a:1", "2", "-ar:a:1", "48000",
 		)
 	}
 
@@ -136,15 +156,6 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 		"-force_key_frames", forceKeyExpr,
 		"-preset", "ultrafast",
 		"-sc_threshold", "0",
-	)
-
-	// Stereo AAC Audio
-	out.args = append(out.args,
-		"-map", "0:a:0?",
-		"-c:a", "aac",
-		"-b:a", "128k",
-		"-ac", "2",
-		"-ar", "48000",
 	)
 
 	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec)
