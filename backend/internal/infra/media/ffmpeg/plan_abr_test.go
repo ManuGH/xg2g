@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -32,8 +33,8 @@ func newABRTestAdapter(t *testing.T) *LocalAdapter {
 	)
 }
 
-// TestABR_RegressionGuard_SingleRendition performs a FULL frozen element-by-element
-// argv comparison for EnableABR = false to guarantee zero regression on single-rendition streams.
+// TestABR_RegressionGuard_SingleRendition performs a STRICT full frozen element-by-element
+// []string slice comparison using assert.Equal to guarantee zero regression on single-rendition streams.
 func TestABR_RegressionGuard_SingleRendition(t *testing.T) {
 	adapter := newABRTestAdapter(t)
 
@@ -54,26 +55,60 @@ func TestABR_RegressionGuard_SingleRendition(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "index.m3u8", plan.primaryPlaylist)
 
-	// Complete frozen argv verification for single-rendition transcode
-	expectedSubstrings := []string{
+	// Complete frozen []string slice up to dynamic output paths
+	expectedPrefix := []string{
+		"-fflags", "+genpts+discardcorrupt+flush_packets",
+		"-err_detect", "ignore_err",
+		"-max_error_rate", "1.0",
+		"-ignore_unknown",
+		"-avoid_negative_ts", "make_zero",
+		"-headers", "Icy-MetaData: 1\r\n",
+		"-analyzeduration", "1000000",
+		"-probesize", "1M",
+		"-protocol_whitelist", "crypto,http,https,tcp,tls",
+		"-reconnect", "1",
+		"-reconnect_at_eof", "1",
+		"-reconnect_streamed", "1",
+		"-reconnect_delay_max", "2",
+		"-reconnect_on_network_error", "1",
+		"-reconnect_on_http_error", "4xx,5xx",
+		"-i", "http://localhost:8080/stream",
+		"-progress", "pipe:2",
+		"-map", "0:v:0?",
+		"-map", "0:a:0?",
+		"-r", "25",
 		"-c:v", "libx264",
 		"-preset", "superfast",
 		"-tune", "zerolatency",
 		"-crf", "20",
+		"-x264-params", "keyint=50:min-keyint=50:scenecut=0",
+		"-g", "50",
+		"-sc_threshold", "0",
+		"-force_key_frames", "expr:gte(t,n_forced*2)",
+		"-flags", "+cgop",
+		"-pix_fmt", "yuv420p",
+		"-profile:v", "main",
 		"-c:a", "aac",
 		"-b:a", "320k",
+		"-ac", "2",
+		"-ar", "48000",
+		"-sn",
+		"-f", "hls",
+		"-hls_time", "2",
 		"-hls_list_size", "30",
-		"index.m3u8",
+		"-hls_flags", "delete_segments+append_list+program_date_time+independent_segments+temp_file",
+		"-hls_segment_type", "mpegts",
 	}
-	cmdStr := strings.Join(plan.args, " ")
-	for _, sub := range expectedSubstrings {
-		assert.Contains(t, cmdStr, sub)
-	}
-	assert.False(t, strings.Contains(cmdStr, "-master_pl_name"))
+
+	require.Len(t, plan.args, len(expectedPrefix)+3)
+	assert.Equal(t, expectedPrefix, plan.args[:len(expectedPrefix)])
+	assert.Equal(t, "-hls_segment_filename", plan.args[len(expectedPrefix)])
+	assert.Equal(t, "seg_%06d.ts", filepath.Base(plan.args[len(expectedPrefix)+1]))
+	assert.Equal(t, "index.m3u8", filepath.Base(plan.args[len(expectedPrefix)+2]))
 }
 
-// TestABR_RegressionGuard_DirectCopy performs a FULL frozen element-by-element
-// argv comparison for Direct Copy streams (TranscodeVideo = false) to guarantee zero regression.
+// TestABR_RegressionGuard_DirectCopy performs a STRICT full frozen element-by-element
+// []string slice comparison using assert.Equal for Direct Copy sessions.
 func TestABR_RegressionGuard_DirectCopy(t *testing.T) {
 	adapter := newABRTestAdapter(t)
 
@@ -85,7 +120,7 @@ func TestABR_RegressionGuard_DirectCopy(t *testing.T) {
 		Profile: ports.ProfileSpec{
 			Name:           "passthrough",
 			TranscodeVideo: false, // Direct Copy
-			EnableABR:      true,  // EnableABR must be ignored for direct copy
+			EnableABR:      true,  // Must be ignored for direct copy
 		},
 	}
 
@@ -93,11 +128,43 @@ func TestABR_RegressionGuard_DirectCopy(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "index.m3u8", plan.primaryPlaylist)
 
-	cmdStr := strings.Join(plan.args, " ")
-	assert.Contains(t, cmdStr, "-c:v copy")
-	assert.Contains(t, cmdStr, "-c:a copy")
-	assert.False(t, strings.Contains(cmdStr, "-master_pl_name"))
-	assert.False(t, strings.Contains(cmdStr, "split="))
+	expectedPrefix := []string{
+		"-fflags", "+genpts+discardcorrupt+flush_packets",
+		"-err_detect", "ignore_err",
+		"-max_error_rate", "1.0",
+		"-ignore_unknown",
+		"-avoid_negative_ts", "make_zero",
+		"-headers", "Icy-MetaData: 1\r\n",
+		"-analyzeduration", "1000000",
+		"-probesize", "1M",
+		"-protocol_whitelist", "crypto,http,https,tcp,tls",
+		"-reconnect", "1",
+		"-reconnect_at_eof", "1",
+		"-reconnect_streamed", "1",
+		"-reconnect_delay_max", "2",
+		"-reconnect_on_network_error", "1",
+		"-reconnect_on_http_error", "4xx,5xx",
+		"-i", "http://localhost:8080/stream",
+		"-progress", "pipe:2",
+		"-map", "0:v:0?",
+		"-map", "0:a:0?",
+		"-c:v", "copy",
+		"-enc_time_base:v", "demux",
+		"-bsf:v", "dump_extra=freq=keyframe",
+		"-c:a", "copy",
+		"-sn",
+		"-f", "hls",
+		"-hls_time", "2",
+		"-hls_list_size", "30",
+		"-hls_flags", "delete_segments+append_list+program_date_time+temp_file",
+		"-hls_segment_type", "mpegts",
+	}
+
+	require.Len(t, plan.args, len(expectedPrefix)+3)
+	assert.Equal(t, expectedPrefix, plan.args[:len(expectedPrefix)])
+	assert.Equal(t, "-hls_segment_filename", plan.args[len(expectedPrefix)])
+	assert.Equal(t, "seg_%06d.ts", filepath.Base(plan.args[len(expectedPrefix)+1]))
+	assert.Equal(t, "index.m3u8", filepath.Base(plan.args[len(expectedPrefix)+2]))
 }
 
 // TestABR_2Tier_VBVParameters explicitly validates all per-stream VBV flags in the 2-tier ladder,

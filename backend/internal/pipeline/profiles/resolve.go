@@ -71,6 +71,10 @@ var aliasMap = map[string]string{
 	"direct":            ProfileCopy,
 	"passthrough":       ProfileCopy,
 	"repair":            ProfileRepair,
+	"abr":               "abr",
+	"mobile_abr":        "abr",
+	"3tier":             "abr",
+	"2tier":             "abr",
 }
 
 type HWAccelMode string
@@ -423,6 +427,12 @@ func ResolveWithConfig(requested, userAgent string, dvrWindowSec int, cap *scan.
 
 	// 4. Apply DVR window semantics
 	applyDVROverlay(&spec, canonical, dvrWindowSec)
+
+	if canonical == "abr" {
+		spec.EnableABR = true
+		spec.TranscodeVideo = true
+		spec.VideoCodec = "h264"
+	}
 
 	return spec
 }
