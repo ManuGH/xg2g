@@ -190,7 +190,12 @@ func (a *LocalAdapter) planLiveVAAPIABROutput(ctx context.Context, spec ports.St
 	sourceHeight := spec.Profile.VideoSourceHeight
 	is3Tier := sourceHeight > 720
 
+	out.args = append(out.args, codec.preInputArgs...)
+
 	gpuHead := "[0:v:0]format=nv12,hwupload"
+	if codec.fullVAAPI {
+		gpuHead = "[0:v:0]null"
+	}
 	if spec.Profile.Deinterlace {
 		gpuHead += "," + vaapiDeinterlaceFilter(spec)
 	}
