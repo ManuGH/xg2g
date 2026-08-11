@@ -135,21 +135,35 @@ internal class GuideViewModel(
 
     internal class Factory(
         private val context: Context,
-        private val serverLabel: String,
-        private val baseUrl: String,
+        private val serverLabelProvider: () -> String,
+        private val baseUrlProvider: () -> String,
         private val authTokenProvider: () -> String?
     ) : ViewModelProvider.Factory {
+        constructor(
+            context: Context,
+            serverLabel: String,
+            baseUrl: String,
+            authTokenProvider: () -> String?
+        ) : this(
+            context = context,
+            serverLabelProvider = { serverLabel },
+            baseUrlProvider = { baseUrl },
+            authTokenProvider = authTokenProvider
+        )
+
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            val store = io.github.manugh.xg2g.android.ServerSettingsStore(context.applicationContext)
             val repository = GuideRepository(
                 apiClient = GuideApiClient(
-                    baseUrl = baseUrl,
+                    baseUrlProvider = baseUrlProvider,
+                    profileIdProvider = { store.getSelectedProfileId() },
                     deviceAuthRepository = DeviceAuthRepository(context.applicationContext)
                 ),
                 authTokenProvider = authTokenProvider
             )
             return GuideViewModel(
-                serverLabel = serverLabel,
+                serverLabel = serverLabelProvider(),
                 repository = repository
             ) as T
         }

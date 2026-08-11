@@ -21,7 +21,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 internal class RecordingsApiClient(
-    private val baseUrl: String,
+    private val baseUrlProvider: () -> String,
     private val deviceAuthRepository: DeviceAuthRepository? = null,
     private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -35,6 +35,28 @@ internal class RecordingsApiClient(
         }
         .build()
 ) {
+    constructor(
+        baseUrl: String,
+        deviceAuthRepository: DeviceAuthRepository? = null,
+        cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
+        okHttpClient: OkHttpClient = OkHttpClient.Builder()
+            .addNetworkInterceptor { chain ->
+                val original = chain.request()
+                val builder = original.newBuilder()
+                cookieSession.applyCookies(original.url, builder)
+                val response = chain.proceed(builder.build())
+                cookieSession.storeCookies(original.url, response.headers)
+                response
+            }
+            .build()
+    ) : this(
+        baseUrlProvider = { baseUrl },
+        deviceAuthRepository = deviceAuthRepository,
+        cookieSession = cookieSession,
+        okHttpClient = okHttpClient
+    )
+
+    private val baseUrl: String get() = baseUrlProvider()
     suspend fun fetchRecordings(
         authToken: String?,
         root: String? = null,
@@ -190,11 +212,15 @@ internal class RecordingsApiClient(
 
     private suspend fun ensureAuthSession(authToken: String?) {
         withContext(Dispatchers.IO) {
+            val currentBaseUrl = baseUrl
+            if (currentBaseUrl.isBlank()) {
+                return@withContext
+            }
             val sessionUrl = apiUrl("auth", "session")
             val repository = deviceAuthRepository
             if (repository != null) {
                 try {
-                    repository.ensureAuthSession(baseUrl, authToken)
+                    repository.ensureAuthSession(currentBaseUrl, authToken)
                     if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
                         return@withContext
                     }

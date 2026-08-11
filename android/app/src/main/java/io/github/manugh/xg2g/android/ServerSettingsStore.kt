@@ -37,9 +37,43 @@ internal class ServerSettingsStore(
         }
     }
 
+    fun getAudioMode(): String {
+        return prefs.getString(PREF_AUDIO_MODE, "stereo") ?: "stereo"
+    }
+
+    fun saveAudioMode(mode: String) {
+        prefs.edit { putString(PREF_AUDIO_MODE, mode) }
+    }
+
+    fun getDvrMode(): String {
+        return prefs.getString(PREF_DVR_MODE, "2h") ?: "2h"
+    }
+
+    fun saveDvrMode(mode: String) {
+        prefs.edit { putString(PREF_DVR_MODE, mode) }
+    }
+
+    fun getSelectedProfileId(): String? {
+        return prefs.getString(PREF_SELECTED_PROFILE_ID, null)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    fun saveSelectedProfileId(profileId: String?) {
+        val cleaned = profileId?.trim()?.takeIf { it.isNotEmpty() }
+        prefs.edit {
+            if (cleaned != null) {
+                putString(PREF_SELECTED_PROFILE_ID, cleaned)
+            } else {
+                remove(PREF_SELECTED_PROFILE_ID)
+            }
+        }
+    }
+
     private companion object {
         private const val PREFS_NAME = "app_settings"
         private const val PREF_SERVER_URL = "server_url"
         private const val PREF_AUTH_TOKEN = "auth_token"
+        private const val PREF_AUDIO_MODE = "audio_mode"
+        private const val PREF_DVR_MODE = "dvr_mode"
+        private const val PREF_SELECTED_PROFILE_ID = "selected_profile_id"
     }
 }

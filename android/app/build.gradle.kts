@@ -44,6 +44,7 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
+            versionCode = 2
             manifestPlaceholders["appLabel"] = "xg2g Dev"
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             manifestPlaceholders["deepLinkScheme"] = "https"

@@ -19,13 +19,7 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		return outputPlan{}, err
 	}
 	spec.Profile.VideoCodec = codec.resolvedCodec
-	// 50p (HQ50) promotion is decided in FinalizePlan's adaptive_transcode_quality
-	// evaluator (host-benchmark gated: weak hosts stay 25p); by the time we plan
-	// the output the Profile already carries the final EffectiveRuntimeMode.
-	// Use the pre-sanitisation URL so ffprobe/warmup probes can authenticate
-	// against protected sources.  adjustLiveFPSForRuntimeServiceOverride only
-	// extracts the service ref from the URL structure and works correctly with
-	// either version.
+
 	probeURL := input.authURL
 	if probeURL == "" {
 		probeURL = input.inputURL
@@ -36,12 +30,22 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	gopFPS := fps
 	if targetOutputFPS > 0 {
 		gopFPS = targetOutputFPS
+	} else if effectiveLiveRuntimeMode(spec.Profile) == ports.RuntimeModeHQ50 {
+		gopFPS = 50
 	}
 	gop := gopFPS * layout.segmentDurationSec
 
+	// Route to CPU/libx264 Source-Aware ABR Output Planner when EnableABR is active
+	if spec.Profile.EnableABR && spec.Profile.TranscodeVideo && !codec.useHW && codec.hwBackend == "" {
+		return a.planLiveABROutput(ctx, spec, input, codec, layout, gop, targetOutputFPS)
+	}
+
 	audioSelection := a.planLiveAudioSelection(ctx, spec, probeURL)
 
-	out := outputPlan{effectiveProfile: spec.Profile}
+	out := outputPlan{
+		effectiveProfile: spec.Profile,
+		primaryPlaylist:  "index.m3u8",
+	}
 	out.args = append(out.args, "-map", "0:v:0?")
 	for _, m := range audioSelection.Maps {
 		out.args = append(out.args, "-map", m)
@@ -54,10 +58,6 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	out.args = appendLiveVideoContainerTags(out.args, spec, codec.resolvedCodec)
 	out.args = append(out.args, audioSelection.AudioArgs...)
 	if a.useCMAFSegmenter(spec) {
-		// LL-HLS pipe mode: one fragmented MP4 stream on stdout; the cmaf
-		// segmenter writes init/segments/playlist so the open segment grows
-		// on disk fragment by fragment (the hls muxer buffers fMP4 segments
-		// in memory and would only publish them completed).
 		out.args = appendLiveCMAFStreamArgs(out.args)
 		out.cmafSegment = true
 		out.cmafTargetDurSec = layout.segmentDurationSec
@@ -68,13 +68,98 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 		out.args = append(out.args, a.prepareLiveOutputPath(spec.SessionID, spec.Profile.DVRWindowSec, audioSelection.IsMultiAudio))
 	}
 
-	// One source of truth: record the hwAccel the emitted argv actually reflects,
-	// so the profile-derived predicted FFmpeg plan matches execution. The planner
-	// can downgrade full VAAPI -> encode-only (unverified interlaced HEVC/AV1,
-	// forced AV1) or fall back off the GPU; without this writeback the prediction
-	// (profile.HWAccel) would diverge from the real argv, causing a spurious
-	// plan_mismatch warning. VideoCodec is already synced to codec.resolvedCodec.
 	out.effectiveProfile.HWAccel = resolvedExecutedHWAccel(codec)
+
+	return out, nil
+}
+
+// planLiveABROutput constructs a 3-tier or 2-tier Source-Aware CPU/libx264 ABR pipeline.
+func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamSpec, input inputPlan, codec codecPlan, layout liveSegmentLayout, gop int, targetOutputFPS int) (outputPlan, error) {
+	out := outputPlan{
+		effectiveProfile: spec.Profile,
+		primaryPlaylist:  "master.m3u8",
+	}
+
+	// Source-Aware Ladder Selection:
+	// - SourceHeight > 720 (1080i / 1080p): 3-Tier Ladder (1080p / 720p / 480p)
+	// - SourceHeight <= 720 (720p ORF/ARD/ZDF): 2-Tier Ladder (720p / 480p) - Zero fake 1080p upscaling!
+	sourceHeight := spec.Profile.VideoSourceHeight
+	is3Tier := sourceHeight > 720 || sourceHeight == 0
+
+	var filterComplex string
+	var varStreamMap string
+	if is3Tier {
+		filterComplex = "[0:v:0]split=3[v1080in][v720in][v480in]; [v1080in]null[v1080]; [v720in]scale=1280:720[v720]; [v480in]scale=854:480[v480]"
+		varStreamMap = "a:0,agroup:audio v:0,agroup:audio,name:1080p v:1,agroup:audio,name:720p v:2,agroup:audio,name:480p"
+	} else {
+		filterComplex = "[0:v:0]split=2[v720in][v480in]; [v720in]null[v720]; [v480in]scale=854:480[v480]"
+		varStreamMap = "a:0,agroup:audio v:0,agroup:audio,name:720p v:1,agroup:audio,name:480p"
+	}
+
+	out.args = append(out.args, "-filter_complex", filterComplex)
+
+	if targetOutputFPS > 0 {
+		out.args = append(out.args, "-r", strconv.Itoa(targetOutputFPS))
+	}
+
+	if is3Tier {
+		out.args = append(out.args,
+			"-map", "[v1080]",
+			"-c:v:0", "libx264",
+			"-b:v:0", "4500k", "-maxrate:v:0", "5200k", "-bufsize:v:0", "9000k",
+
+			"-map", "[v720]",
+			"-c:v:1", "libx264",
+			"-b:v:1", "2000k", "-maxrate:v:1", "2400k", "-bufsize:v:1", "4000k",
+
+			"-map", "[v480]",
+			"-c:v:2", "libx264",
+			"-b:v:2", "900k", "-maxrate:v:2", "1100k", "-bufsize:v:2", "2000k",
+		)
+	} else {
+		out.args = append(out.args,
+			"-map", "[v720]",
+			"-c:v:0", "libx264",
+			"-b:v:0", "2000k", "-maxrate:v:0", "2400k", "-bufsize:v:0", "4000k",
+
+			"-map", "[v480]",
+			"-c:v:1", "libx264",
+			"-b:v:1", "900k", "-maxrate:v:1", "1100k", "-bufsize:v:2", "2000k",
+		)
+	}
+
+	// Dynamic GOP and synchronized Keyframe interval calculation
+	forceKeyExpr := fmt.Sprintf("expr:gte(t,n_forced*%d)", layout.segmentDurationSec)
+	out.args = append(out.args,
+		"-g", strconv.Itoa(gop),
+		"-keyint_min", strconv.Itoa(gop),
+		"-force_key_frames", forceKeyExpr,
+		"-preset", "ultrafast",
+		"-sc_threshold", "0",
+	)
+
+	// Stereo AAC Audio
+	out.args = append(out.args,
+		"-map", "0:a:0?",
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-ac", "2",
+		"-ar", "48000",
+	)
+
+	sessionDir := filepath.Join(a.HLSRoot, spec.SessionID)
+	os.MkdirAll(sessionDir, 0755)
+	varPath := filepath.Join(sessionDir, "%v", "index.m3u8")
+
+	out.args = append(out.args,
+		"-f", "hls",
+		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
+		"-hls_list_size", strconv.Itoa(layout.listSize),
+		"-hls_flags", "delete_segments+independent_segments",
+		"-master_pl_name", "master.m3u8",
+		"-var_stream_map", varStreamMap,
+		varPath,
+	)
 
 	return out, nil
 }

@@ -24,7 +24,7 @@ import (
 )
 
 var safeHLSSessionIDRouteRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-var safeHLSFilenameRouteRe = regexp.MustCompile(`^(?:index\.m3u8|stream(?:_[A-Za-z0-9_-]+)?\.m3u8|init(?:_[A-Za-z0-9_-]+)?\.mp4|seg_[A-Za-z0-9_-]+\.(?:ts|m4s)|stream[A-Za-z0-9_-]*\.ts)$`)
+var safeHLSFilenameRouteRe = regexp.MustCompile(`^(?:master\.m3u8|index\.m3u8|stream(?:_[A-Za-z0-9_-]+)?\.m3u8|init(?:_[A-Za-z0-9_-]+)?\.mp4|seg_[A-Za-z0-9_-]+\.(?:ts|m4s)|stream[A-Za-z0-9_-]*\.ts)$`)
 
 const livePreviewFilename = "preview.jpg"
 

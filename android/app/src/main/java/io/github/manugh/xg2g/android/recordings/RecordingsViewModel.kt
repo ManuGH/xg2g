@@ -141,19 +141,19 @@ internal class RecordingsViewModel(
 
     class Factory(
         private val context: Context,
-        private val baseUrl: String,
-        private val serverLabel: String,
+        private val serverLabelProvider: () -> String,
+        private val baseUrlProvider: () -> String,
         private val authTokenProvider: () -> String?
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val client = RecordingsApiClient(
-                baseUrl = baseUrl,
+                baseUrlProvider = baseUrlProvider,
                 deviceAuthRepository = DeviceAuthRepository(context.applicationContext)
             )
             return RecordingsViewModel(
-                baseUrl = baseUrl,
-                serverLabel = serverLabel,
+                baseUrl = baseUrlProvider(),
+                serverLabel = serverLabelProvider(),
                 apiClient = client,
                 authTokenProvider = authTokenProvider
             ) as T

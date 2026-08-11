@@ -47,7 +47,7 @@ var pdtRe = regexp.MustCompile(`^#EXT-X-PROGRAM-DATE-TIME:(\d{4}-\d{2}-\d{2}T\d{
 var safeHLSSessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var safeHLSSegmentRe = regexp.MustCompile(`^seg_[A-Za-z0-9_-]+\.(?:ts|m4s)$`)
 var safeHLSLegacySegmentRe = regexp.MustCompile(`^stream[A-Za-z0-9_-]*\.ts$`)
-var safeHLSPlaylistRe = regexp.MustCompile(`^(?:index|(?:stream|audio)[A-Za-z0-9_-]*)\.m3u8$`)
+var safeHLSPlaylistRe = regexp.MustCompile(`^(?:master|index|(?:stream|audio)[A-Za-z0-9_-]*)\.m3u8$`)
 var safeHLSInitRe = regexp.MustCompile(`^init[A-Za-z0-9_-]*\.mp4$`)
 
 const (

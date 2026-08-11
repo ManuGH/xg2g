@@ -18,7 +18,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 internal class TimersApiClient(
-    private val baseUrl: String,
+    private val baseUrlProvider: () -> String,
     private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor { chain ->
@@ -31,6 +31,26 @@ internal class TimersApiClient(
         }
         .build()
 ) {
+    constructor(
+        baseUrl: String,
+        cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
+        okHttpClient: OkHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val original = chain.request()
+                val builder = original.newBuilder()
+                cookieSession.applyCookies(original.url, builder)
+                val response = chain.proceed(builder.build())
+                cookieSession.storeCookies(original.url, response.headers)
+                response
+            }
+            .build()
+    ) : this(
+        baseUrlProvider = { baseUrl },
+        cookieSession = cookieSession,
+        okHttpClient = okHttpClient
+    )
+
+    private val baseUrl: String get() = baseUrlProvider()
     suspend fun fetchTimers(authToken: String?): List<TimerItem> = withContext(Dispatchers.IO) {
         ensureAuthSession(authToken)
         val url = apiUrl("timers")
@@ -101,6 +121,10 @@ internal class TimersApiClient(
     }
 
     private suspend fun ensureAuthSession(authToken: String?) = withContext(Dispatchers.IO) {
+        val currentBaseUrl = baseUrl
+        if (currentBaseUrl.isBlank()) {
+            return@withContext
+        }
         val sessionUrl = apiUrl("auth", "session")
         if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
             return@withContext

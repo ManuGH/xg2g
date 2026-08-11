@@ -52,6 +52,7 @@ internal class DashboardViewModel(
                 val health = client.fetchHealth(currentToken)
                 _state.value = _state.value.copy(healthState = ModuleState.Success(health))
             } catch (e: Exception) {
+                android.util.Log.e("DashboardViewModel", "fetchHealth failed: ${e.message}", e)
                 _state.value = _state.value.copy(healthState = ModuleState.Error(e.message))
             }
         }
@@ -90,18 +91,30 @@ internal class DashboardViewModel(
 
     class Factory(
         private val context: Context,
-        private val serverLabel: String,
-        private val baseUrl: String,
+        private val serverLabelProvider: () -> String,
+        private val baseUrlProvider: () -> String,
         private val authTokenProvider: () -> String?
     ) : ViewModelProvider.Factory {
+        constructor(
+            context: Context,
+            serverLabel: String,
+            baseUrl: String,
+            authTokenProvider: () -> String?
+        ) : this(
+            context = context,
+            serverLabelProvider = { serverLabel },
+            baseUrlProvider = { baseUrl },
+            authTokenProvider = authTokenProvider
+        )
+
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val deviceAuthRepository = DeviceAuthRepository(context)
             val client = DashboardApiClient(
-                baseUrl = baseUrl,
+                baseUrlProvider = baseUrlProvider,
                 deviceAuthRepository = deviceAuthRepository
             )
-            return DashboardViewModel(client, serverLabel, authTokenProvider) as T
+            return DashboardViewModel(client, serverLabelProvider(), authTokenProvider) as T
         }
     }
 }

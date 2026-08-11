@@ -39,6 +39,10 @@ internal class PlaybackApiClient(
             val original = chain.request()
             val builder = original.newBuilder()
             cookieSession.applyCookies(original.url, builder)
+            val profileId = serverSettingsStore.getSelectedProfileId()?.trim()?.takeIf { it.isNotEmpty() }
+            if (profileId != null) {
+                builder.header("X-Household-Profile", profileId)
+            }
             val response = chain.proceed(builder.build())
             cookieSession.storeCookies(original.url, response.headers)
             response

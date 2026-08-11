@@ -1,5 +1,6 @@
 package io.github.manugh.xg2g.android.guide
 
+import androidx.compose.ui.input.key.Key
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -17,6 +18,14 @@ internal fun formatGuideEpochTime(epochSec: Long, displayZoneId: ZoneId): String
 
 internal fun guideDisplayZoneId(offsetSeconds: Int?): ZoneId =
     offsetSeconds?.let(ZoneOffset::ofTotalSeconds) ?: ZoneId.systemDefault()
+
+internal fun millisUntilNextProgressTick(): Long {
+    val now = System.currentTimeMillis()
+    val remainder = now % 30_000L
+    return if (remainder == 0L) 30_000L else 30_000L - remainder
+}
+
+internal fun Key.isGuidePlayKey(): Boolean = this == Key.DirectionCenter || this == Key.Enter || this == Key.NumPadEnter
 
 private fun formatGuideProgramTime(
     rawXmltvTime: String?,

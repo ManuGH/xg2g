@@ -21,7 +21,8 @@ import org.json.JSONTokener
 import java.time.OffsetDateTime
 
 internal class GuideApiClient(
-    private val baseUrl: String,
+    private val baseUrlProvider: () -> String,
+    private val profileIdProvider: () -> String? = { null },
     private val deviceAuthRepository: DeviceAuthRepository? = null,
     private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -29,19 +30,55 @@ internal class GuideApiClient(
             val original = chain.request()
             val builder = original.newBuilder()
             cookieSession.applyCookies(original.url, builder)
+            val profileId = profileIdProvider()?.trim()?.takeIf { it.isNotEmpty() }
+            if (profileId != null) {
+                builder.header("X-Household-Profile", profileId)
+            }
             val response = chain.proceed(builder.build())
             cookieSession.storeCookies(original.url, response.headers)
             response
         }
         .build()
 ) {
+    constructor(
+        baseUrl: String,
+        profileIdProvider: () -> String? = { null },
+        deviceAuthRepository: DeviceAuthRepository? = null,
+        cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
+        okHttpClient: OkHttpClient = OkHttpClient.Builder()
+            .addNetworkInterceptor { chain ->
+                val original = chain.request()
+                val builder = original.newBuilder()
+                cookieSession.applyCookies(original.url, builder)
+                val profileId = profileIdProvider()?.trim()?.takeIf { it.isNotEmpty() }
+                if (profileId != null) {
+                    builder.header("X-Household-Profile", profileId)
+                }
+                val response = chain.proceed(builder.build())
+                cookieSession.storeCookies(original.url, response.headers)
+                response
+            }
+            .build()
+    ) : this(
+        baseUrlProvider = { baseUrl },
+        profileIdProvider = profileIdProvider,
+        deviceAuthRepository = deviceAuthRepository,
+        cookieSession = cookieSession,
+        okHttpClient = okHttpClient
+    )
+
+    private val baseUrl: String get() = baseUrlProvider()
     suspend fun ensureAuthSession(authToken: String?) {
         withContext(Dispatchers.IO) {
+            val currentBaseUrl = baseUrl
+            if (currentBaseUrl.isBlank()) {
+                return@withContext
+            }
             val sessionUrl = apiUrl("auth", "session")
             val repository = deviceAuthRepository
             if (repository != null) {
                 try {
-                    repository.ensureAuthSession(baseUrl, authToken)
+                    repository.ensureAuthSession(currentBaseUrl, authToken)
                     return@withContext
                 } catch (error: DeviceAuthReenrollRequiredException) {
                     throw GuideAuthRequiredException(410, error.message)

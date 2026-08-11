@@ -14,11 +14,37 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
+
+internal data class HouseholdUnlockStatus(
+    val pinConfigured: Boolean,
+    val unlocked: Boolean
+)
+
+internal data class SystemScanStatus(
+    val state: String = "idle",
+    val startedAt: Long? = null,
+    val finishedAt: Long? = null,
+    val totalChannels: Int = 0,
+    val scannedChannels: Int = 0,
+    val updatedCount: Int = 0,
+    val lastError: String? = null
+)
+
+internal data class NativeHouseholdProfile(
+    val id: String,
+    val name: String,
+    val kind: String,
+    val maxFsk: Int? = null,
+    val allowedBouquets: List<String> = emptyList(),
+    val allowedServiceRefs: List<String> = emptyList(),
+    val favoriteServiceRefs: List<String> = emptyList()
+)
 
 internal data class DashboardRecordingItem(
     val id: String,
@@ -44,7 +70,8 @@ internal data class DashboardDvrStatus(
 )
 
 internal class DashboardApiClient(
-    private val baseUrl: String,
+    private val baseUrlProvider: () -> String,
+    private val profileIdProvider: () -> String? = { null },
     private val deviceAuthRepository: DeviceAuthRepository? = null,
     private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -52,19 +79,55 @@ internal class DashboardApiClient(
             val original = chain.request()
             val builder = original.newBuilder()
             cookieSession.applyCookies(original.url, builder)
+            val profileId = profileIdProvider()?.trim()?.takeIf { it.isNotEmpty() }
+            if (profileId != null) {
+                builder.header("X-Household-Profile", profileId)
+            }
             val response = chain.proceed(builder.build())
             cookieSession.storeCookies(original.url, response.headers)
             response
         }
         .build()
 ) {
+    constructor(
+        baseUrl: String,
+        profileIdProvider: () -> String? = { null },
+        deviceAuthRepository: DeviceAuthRepository? = null,
+        cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
+        okHttpClient: OkHttpClient = OkHttpClient.Builder()
+            .addNetworkInterceptor { chain ->
+                val original = chain.request()
+                val builder = original.newBuilder()
+                cookieSession.applyCookies(original.url, builder)
+                val profileId = profileIdProvider()?.trim()?.takeIf { it.isNotEmpty() }
+                if (profileId != null) {
+                    builder.header("X-Household-Profile", profileId)
+                }
+                val response = chain.proceed(builder.build())
+                cookieSession.storeCookies(original.url, response.headers)
+                response
+            }
+            .build()
+    ) : this(
+        baseUrlProvider = { baseUrl },
+        profileIdProvider = profileIdProvider,
+        deviceAuthRepository = deviceAuthRepository,
+        cookieSession = cookieSession,
+        okHttpClient = okHttpClient
+    )
+
+    private val baseUrl: String get() = baseUrlProvider()
     private suspend fun ensureAuthSession(authToken: String?) {
         withContext(Dispatchers.IO) {
+            val currentBaseUrl = baseUrl
+            if (currentBaseUrl.isBlank()) {
+                return@withContext
+            }
             val sessionUrl = apiUrl("auth", "session")
             val repository = deviceAuthRepository
             if (repository != null) {
                 try {
-                    repository.ensureAuthSession(baseUrl, authToken)
+                    repository.ensureAuthSession(currentBaseUrl, authToken)
                     if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
                         return@withContext
                     }
@@ -91,6 +154,9 @@ internal class DashboardApiClient(
     }
 
     suspend fun fetchHealth(authToken: String?): GuideHealthStatus = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext GuideHealthStatus(receiverHealthy = false, epgHealthy = false, missingChannels = 0)
+        }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("system", "health")).get()
         authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -116,6 +182,9 @@ internal class DashboardApiClient(
 
 
     suspend fun fetchRecordings(authToken: String?): List<DashboardRecordingItem> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyList()
+        }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("recordings")).get()
         authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -148,6 +217,9 @@ internal class DashboardApiClient(
     }
 
     suspend fun fetchTimers(authToken: String?): List<DashboardTimerItem> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyList()
+        }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("timers")).get()
         authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -181,6 +253,9 @@ internal class DashboardApiClient(
     }
 
     suspend fun fetchDvrStatus(authToken: String?): DashboardDvrStatus = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext DashboardDvrStatus(diskFreeBytes = null, diskTotalBytes = null, recordingCount = 0, activeTimerCount = 0)
+        }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("dvr", "status")).get()
         authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -193,6 +268,126 @@ internal class DashboardApiClient(
             recordingCount = root.optInt("recordingCount", 0),
             activeTimerCount = root.optInt("activeTimerCount", 0)
         )
+    }
+
+    suspend fun fetchHouseholdUnlockStatus(authToken: String?): HouseholdUnlockStatus = withContext(Dispatchers.IO) {
+        ensureAuthSession(authToken)
+        val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).get()
+        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            requestBuilder.header("Authorization", "Bearer $it")
+        }
+        val root = executeJsonObject(requestBuilder.build())
+        HouseholdUnlockStatus(
+            pinConfigured = root.optBoolean("pinConfigured", false),
+            unlocked = root.optBoolean("unlocked", false)
+        )
+    }
+
+    suspend fun fetchHouseholdProfiles(authToken: String?): List<NativeHouseholdProfile> = withContext(Dispatchers.IO) {
+        ensureAuthSession(authToken)
+        val requestBuilder = Request.Builder().url(apiUrl("household", "profiles")).get()
+        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            requestBuilder.header("Authorization", "Bearer $it")
+        }
+        val root = execute(requestBuilder.build())
+        val array = when (root) {
+            is JSONArray -> root
+            is JSONObject -> root.optJSONArray("profiles") ?: JSONArray()
+            else -> JSONArray()
+        }
+        val items = mutableListOf<NativeHouseholdProfile>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val id = obj.optString("id")
+            val name = obj.optString("name")
+            if (id.isNotBlank() && name.isNotBlank()) {
+                val kind = obj.optString("kind", "adult")
+                val maxFsk = if (obj.has("maxFsk") && !obj.isNull("maxFsk")) obj.optInt("maxFsk") else null
+
+                val bouquets = mutableListOf<String>()
+                obj.optJSONArray("allowedBouquets")?.let { bArr ->
+                    for (b in 0 until bArr.length()) { bArr.optString(b).takeIf { it.isNotBlank() }?.let { bouquets.add(it) } }
+                }
+
+                val services = mutableListOf<String>()
+                obj.optJSONArray("allowedServiceRefs")?.let { sArr ->
+                    for (s in 0 until sArr.length()) { sArr.optString(s).takeIf { it.isNotBlank() }?.let { services.add(it) } }
+                }
+
+                val favorites = mutableListOf<String>()
+                obj.optJSONArray("favoriteServiceRefs")?.let { fArr ->
+                    for (f in 0 until fArr.length()) { fArr.optString(f).takeIf { it.isNotBlank() }?.let { favorites.add(it) } }
+                }
+
+                items.add(
+                    NativeHouseholdProfile(
+                        id = id,
+                        name = name,
+                        kind = kind,
+                        maxFsk = maxFsk,
+                        allowedBouquets = bouquets,
+                        allowedServiceRefs = services,
+                        favoriteServiceRefs = favorites
+                    )
+                )
+            }
+        }
+        items
+    }
+
+    suspend fun unlockHousehold(authToken: String?, pin: String): HouseholdUnlockStatus = withContext(Dispatchers.IO) {
+        ensureAuthSession(authToken)
+        val json = JSONObject().put("pin", pin)
+        val requestBuilder = Request.Builder()
+            .url(apiUrl("household", "unlock"))
+            .post(json.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            requestBuilder.header("Authorization", "Bearer $it")
+        }
+        val root = executeJsonObject(requestBuilder.build())
+        HouseholdUnlockStatus(
+            pinConfigured = root.optBoolean("pinConfigured", false),
+            unlocked = root.optBoolean("unlocked", false)
+        )
+    }
+
+    suspend fun lockHousehold(authToken: String?): Unit = withContext(Dispatchers.IO) {
+        ensureAuthSession(authToken)
+        val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).delete()
+        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            requestBuilder.header("Authorization", "Bearer $it")
+        }
+        execute(requestBuilder.build())
+    }
+
+    suspend fun fetchScanStatus(authToken: String?): SystemScanStatus = withContext(Dispatchers.IO) {
+        ensureAuthSession(authToken)
+        val requestBuilder = Request.Builder().url(apiUrl("system", "scan")).get()
+        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            requestBuilder.header("Authorization", "Bearer $it")
+        }
+        val root = executeJsonObject(requestBuilder.build())
+        SystemScanStatus(
+            state = root.optString("state", "idle"),
+            startedAt = root.optLong("startedAt").takeIf { it > 0 },
+            finishedAt = root.optLong("finishedAt").takeIf { it > 0 },
+            totalChannels = root.optInt("totalChannels", 0),
+            scannedChannels = root.optInt("scannedChannels", 0),
+            updatedCount = root.optInt("updatedCount", 0),
+            lastError = root.optString("lastError").takeIf { it.isNotBlank() }
+        )
+    }
+
+    suspend fun triggerSystemScan(authToken: String?): Boolean = withContext(Dispatchers.IO) {
+        ensureAuthSession(authToken)
+        val requestBuilder = Request.Builder()
+            .url(apiUrl("system", "scan"))
+            .post(ByteArray(0).toRequestBody(null))
+        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            requestBuilder.header("Authorization", "Bearer $it")
+        }
+        execute(requestBuilder.build())
+        true
     }
 
 

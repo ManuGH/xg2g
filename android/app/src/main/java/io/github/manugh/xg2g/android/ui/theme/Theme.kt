@@ -26,3 +26,7 @@ fun GuideTheme(content: @Composable () -> Unit) {
         content = content
     )
 }
+
+@Composable
+internal fun colorFromRes(id: Int) = colorResource(id)
+

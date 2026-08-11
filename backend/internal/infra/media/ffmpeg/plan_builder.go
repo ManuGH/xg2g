@@ -34,6 +34,9 @@ type outputPlan struct {
 	args             []string
 	effectiveProfile ports.ProfileSpec
 
+	// primaryPlaylist specifies the entry manifest ("index.m3u8" or "master.m3u8").
+	primaryPlaylist  string
+
 	// cmafSegment marks the LL-HLS pipe mode: ffmpeg emits one fragmented
 	// MP4 stream on stdout and the in-process cmaf segmenter produces the
 	// session artifacts instead of the hls muxer.
@@ -46,6 +49,9 @@ type finalizedPlan struct {
 	args             []string
 	effectiveProfile ports.ProfileSpec
 	pathID           string
+
+	// primaryPlaylist is the entry manifest ("index.m3u8" or "master.m3u8").
+	primaryPlaylist  string
 
 	cmafSegment      bool
 	cmafTargetDurSec int
@@ -93,6 +99,7 @@ func (a *LocalAdapter) buildArgsWithPlan(ctx context.Context, spec ports.StreamS
 		}
 		result.args = append(result.args, liveOutput.args...)
 		result.effectiveProfile = liveOutput.effectiveProfile
+		result.primaryPlaylist = liveOutput.primaryPlaylist
 		result.cmafSegment = liveOutput.cmafSegment
 		result.cmafTargetDurSec = liveOutput.cmafTargetDurSec
 		result.listSize = liveOutput.listSize

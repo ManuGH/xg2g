@@ -47,8 +47,8 @@ class MainActivity : AppCompatActivity() {
     private val dashboardViewModel: DashboardViewModel by viewModels {
         DashboardViewModel.Factory(
             context = applicationContext,
-            serverLabel = serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "",
-            baseUrl = serverSettingsStore.getServerUrl() ?: "",
+            serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
+            baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
             authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
         )
     }
@@ -56,8 +56,8 @@ class MainActivity : AppCompatActivity() {
     private val guideViewModel: GuideViewModel by viewModels {
         GuideViewModel.Factory(
             context = applicationContext,
-            serverLabel = serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "",
-            baseUrl = serverSettingsStore.getServerUrl() ?: "",
+            serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
+            baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
             authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
         )
     }
@@ -65,8 +65,8 @@ class MainActivity : AppCompatActivity() {
     private val recordingsViewModel: io.github.manugh.xg2g.android.recordings.RecordingsViewModel by viewModels {
         io.github.manugh.xg2g.android.recordings.RecordingsViewModel.Factory(
             context = applicationContext,
-            serverLabel = serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "",
-            baseUrl = serverSettingsStore.getServerUrl() ?: "",
+            serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
+            baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
             authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
         )
     }
@@ -74,8 +74,8 @@ class MainActivity : AppCompatActivity() {
     private val timersViewModel: io.github.manugh.xg2g.android.timers.TimersViewModel by viewModels {
         io.github.manugh.xg2g.android.timers.TimersViewModel.Factory(
             context = applicationContext,
-            serverLabel = serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "",
-            baseUrl = serverSettingsStore.getServerUrl() ?: "",
+            serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
+            baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
             authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
         )
     }
@@ -103,14 +103,14 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-
+        
         val mainView = layoutInflater.inflate(R.layout.activity_main, null, false)
         screenUi = MainScreenUi(
             activity = this,
             view = mainView,
             isTvDevice = isTvDevice
         )
-        
+
         setContent {
             MainActivityContent(
                 destinationFlow = destinationFlow,
@@ -784,9 +784,9 @@ class MainActivity : AppCompatActivity() {
             configuredBaseUrl = configuredBaseUrl,
             intent = intent
         )
+        serverSettingsStore.saveServerUrl(configuredBaseUrl)
         dashboardViewModel.refresh()
         recordingsViewModel.refresh(isInitial = false)
-        serverSettingsStore.saveServerUrl(configuredBaseUrl)
 
 
         val startUrl = ServerTargetResolver.resolveStartUrl(
