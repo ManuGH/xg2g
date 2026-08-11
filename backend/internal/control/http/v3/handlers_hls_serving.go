@@ -13,3 +13,7 @@ import (
 func (s *Server) handleV3HLS(w http.ResponseWriter, r *http.Request) {
 	s.hlsProcessor().HandleV3HLS(w, r)
 }
+
+func (s *Server) HandleV3HLS(w http.ResponseWriter, r *http.Request) {
+	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(s.handleV3HLS)).ServeHTTP(w, r)
+}

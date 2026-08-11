@@ -24,7 +24,7 @@ import (
 )
 
 var safeHLSSessionIDRouteRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-var safeHLSFilenameRouteRe = regexp.MustCompile(`^(?:master\.m3u8|index\.m3u8|stream(?:_[A-Za-z0-9_-]+)?\.m3u8|init(?:_[A-Za-z0-9_-]+)?\.mp4|seg_[A-Za-z0-9_-]+\.(?:ts|m4s)|stream[A-Za-z0-9_-]*\.ts)$`)
+var safeHLSFilenameRouteRe = regexp.MustCompile(`^(?:(?:[A-Za-z0-9_-]+)/)?(?:master\.m3u8|index\.m3u8|stream(?:_[A-Za-z0-9_-]+)?\.m3u8|init(?:_[A-Za-z0-9_-]+)?\.mp4|seg_[A-Za-z0-9_-]+\.(?:ts|m4s)|stream[A-Za-z0-9_-]*\.ts|index\d*\.ts)$`)
 
 const livePreviewFilename = "preview.jpg"
 
@@ -92,6 +92,12 @@ func (s *Service) HandleV3HLS(w http.ResponseWriter, r *http.Request) {
 
 	sessionID := chi.URLParam(r, "sessionID")
 	filename := chi.URLParam(r, "filename")
+	if idx := strings.Index(r.URL.Path, "/hls/"); idx != -1 && sessionID != "" {
+		sub := r.URL.Path[idx+len("/hls/"):]
+		if sub != "" {
+			filename = sub
+		}
+	}
 	if !safeHLSSessionIDRouteRe.MatchString(sessionID) {
 		s.writeProblem(w, r, http.StatusBadRequest, "sessions/invalid_id", "Invalid Session ID", problemcode.CodeInvalidSessionID, "The provided session ID contains unsafe characters", nil)
 		return
