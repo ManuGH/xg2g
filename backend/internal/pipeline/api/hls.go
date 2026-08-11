@@ -45,10 +45,10 @@ const (
 
 var pdtRe = regexp.MustCompile(`^#EXT-X-PROGRAM-DATE-TIME:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)(Z|[+-]\d{4})\s*$`)
 var safeHLSSessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-var safeHLSSegmentRe = regexp.MustCompile(`^seg_[A-Za-z0-9_-]+\.(?:ts|m4s)$`)
-var safeHLSLegacySegmentRe = regexp.MustCompile(`^stream[A-Za-z0-9_-]*\.ts$`)
-var safeHLSPlaylistRe = regexp.MustCompile(`^(?:master|index|(?:stream|audio)[A-Za-z0-9_-]*)\.m3u8$`)
-var safeHLSInitRe = regexp.MustCompile(`^init[A-Za-z0-9_-]*\.mp4$`)
+var safeHLSSegmentRe = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)?(?:seg_[A-Za-z0-9_-]+\.(?:ts|m4s)|index\d*\.ts)$`)
+var safeHLSLegacySegmentRe = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)?stream[A-Za-z0-9_-]*\.ts$`)
+var safeHLSPlaylistRe = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)?(?:master|index|(?:stream|audio)[A-Za-z0-9_-]*)\.m3u8$`)
+var safeHLSInitRe = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)?init[A-Za-z0-9_-]*\.mp4$`)
 
 const (
 	minPlaylistAccessUpdateInterval = time.Second
@@ -107,7 +107,8 @@ func validateRequest(w http.ResponseWriter, sessionID, filename string) (hlsRequ
 	}
 
 	cleanName := filepath.Base(filename)
-	if cleanName != filename || filename == "." || filename == ".." || strings.Contains(filename, "\\") {
+	relPath := filepath.Clean(filename)
+	if filepath.IsAbs(filename) || strings.HasPrefix(relPath, "..") || filename == "." || filename == ".." || strings.Contains(filename, "\\") {
 		http.Error(w, "invalid filename path", http.StatusBadRequest)
 		return hlsRequest{}, false
 	}
