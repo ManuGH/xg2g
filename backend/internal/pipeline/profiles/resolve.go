@@ -432,6 +432,9 @@ func ResolveWithConfig(requested, userAgent string, dvrWindowSec int, cap *scan.
 		spec.EnableABR = true
 		spec.TranscodeVideo = true
 		spec.VideoCodec = "h264"
+		if hwaccel := requestedHWAccelProfile(gpuBackend, hwaccelMode); hwaccel != "" {
+			spec.HWAccel = hwaccel
+		}
 	}
 
 	return spec
