@@ -35,9 +35,14 @@ func (a *LocalAdapter) planLiveOutput(ctx context.Context, spec ports.StreamSpec
 	}
 	gop := gopFPS * layout.segmentDurationSec
 
-	// Route to CPU/libx264 Source-Aware ABR Output Planner when EnableABR is active
-	if spec.Profile.EnableABR && spec.Profile.TranscodeVideo && !codec.useHW && codec.hwBackend == "" {
-		return a.planLiveABROutput(ctx, spec, input, codec, layout, gop, targetOutputFPS)
+	// Route to Source-Aware ABR Output Planners when EnableABR is active
+	if spec.Profile.EnableABR && spec.Profile.TranscodeVideo {
+		if codec.useHW && codec.hwBackend == profiles.GPUBackendVAAPI {
+			return a.planLiveVAAPIABROutput(ctx, spec, input, codec, layout, gop, targetOutputFPS)
+		}
+		if !codec.useHW || codec.hwBackend == "" || codec.hwBackend == profiles.GPUBackendNone {
+			return a.planLiveABROutput(ctx, spec, input, codec, layout, gop, targetOutputFPS)
+		}
 	}
 
 	audioSelection := a.planLiveAudioSelection(ctx, spec, probeURL)
@@ -172,6 +177,111 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 		varPath,
 	)
 
+	return out, nil
+}
+
+// planLiveVAAPIABROutput constructs a 3-tier or 2-tier Source-Aware Intel VAAPI Hardware ABR pipeline.
+func (a *LocalAdapter) planLiveVAAPIABROutput(ctx context.Context, spec ports.StreamSpec, input inputPlan, codec codecPlan, layout liveSegmentLayout, gop int, targetOutputFPS int) (outputPlan, error) {
+	out := outputPlan{
+		effectiveProfile: spec.Profile,
+		primaryPlaylist:  "master.m3u8",
+	}
+
+	sourceHeight := spec.Profile.VideoSourceHeight
+	is3Tier := sourceHeight > 720
+
+	gpuHead := "[0:v:0]format=nv12,hwupload"
+	if spec.Profile.Deinterlace {
+		gpuHead += "," + vaapiDeinterlaceFilter(spec)
+	}
+	gpuHead += "[v_gpu]"
+
+	var filterComplex string
+	var varStreamMap string
+	if is3Tier {
+		filterComplex = gpuHead + "; [v_gpu]split=3[v1080][v720in][v480in]; [v720in]scale_vaapi=w=1280:h=720[v720]; [v480in]scale_vaapi=w=854:h=480[v480]; [0:a:0?]asplit=3[a1080][a720][a480]"
+		varStreamMap = "v:0,a:0,name:1080p v:1,a:1,name:720p v:2,a:2,name:480p"
+	} else {
+		filterComplex = gpuHead + "; [v_gpu]split=2[v720in][v480in]; [v720in]scale_vaapi=w=1280:h=720[v720]; [v480in]scale_vaapi=w=854:h=480[v480]; [0:a:0?]asplit=2[a720][a480]"
+		varStreamMap = "v:0,a:0,name:720p v:1,a:1,name:480p"
+	}
+
+	out.args = append(out.args, "-filter_complex", filterComplex)
+
+	if targetOutputFPS > 0 {
+		out.args = append(out.args, "-r", strconv.Itoa(targetOutputFPS))
+	}
+
+	vaapiEncoder := vaapiEncoderForCodec(codec.resolvedCodec)
+
+	if is3Tier {
+		out.args = append(out.args,
+			"-map", "[v1080]",
+			"-c:v:0", vaapiEncoder,
+			"-b:v:0", "4500k", "-maxrate:v:0", "5200k",
+
+			"-map", "[v720]",
+			"-c:v:1", vaapiEncoder,
+			"-b:v:1", "2000k", "-maxrate:v:1", "2400k",
+
+			"-map", "[v480]",
+			"-c:v:2", vaapiEncoder,
+			"-b:v:2", "900k", "-maxrate:v:2", "1100k",
+
+			"-map", "[a1080]",
+			"-c:a:0", "aac",
+			"-b:a:0", "128k", "-ac:a:0", "2", "-ar:a:0", "48000",
+
+			"-map", "[a720]",
+			"-c:a:1", "aac",
+			"-b:a:1", "128k", "-ac:a:1", "2", "-ar:a:1", "48000",
+
+			"-map", "[a480]",
+			"-c:a:2", "aac",
+			"-b:a:2", "128k", "-ac:a:2", "2", "-ar:a:2", "48000",
+		)
+	} else {
+		out.args = append(out.args,
+			"-map", "[v720]",
+			"-c:v:0", vaapiEncoder,
+			"-b:v:0", "2000k", "-maxrate:v:0", "2400k",
+
+			"-map", "[v480]",
+			"-c:v:1", vaapiEncoder,
+			"-b:v:1", "900k", "-maxrate:v:1", "1100k",
+
+			"-map", "[a720]",
+			"-c:a:0", "aac",
+			"-b:a:0", "128k", "-ac:a:0", "2", "-ar:a:0", "48000",
+
+			"-map", "[a480]",
+			"-c:a:1", "aac",
+			"-b:a:1", "128k", "-ac:a:1", "2", "-ar:a:1", "48000",
+		)
+	}
+
+	forceKeyExpr := fmt.Sprintf("expr:gte(t,n_forced*%d)", layout.segmentDurationSec)
+	out.args = append(out.args,
+		"-g", strconv.Itoa(gop),
+		"-keyint_min", strconv.Itoa(gop),
+		"-force_key_frames", forceKeyExpr,
+	)
+
+	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec)
+	_ = os.MkdirAll(sessionDir, 0755)
+	varPath := filepath.Join(sessionDir, "%v", "index.m3u8")
+
+	out.args = append(out.args,
+		"-f", "hls",
+		"-hls_time", strconv.Itoa(layout.segmentDurationSec),
+		"-hls_list_size", strconv.Itoa(layout.listSize),
+		"-hls_flags", "delete_segments+independent_segments",
+		"-master_pl_name", "master.m3u8",
+		"-var_stream_map", varStreamMap,
+		varPath,
+	)
+
+	out.effectiveProfile.HWAccel = resolvedExecutedHWAccel(codec)
 	return out, nil
 }
 

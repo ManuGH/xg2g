@@ -55,6 +55,7 @@ func startupRecoveryProfileWithResolver(current model.ProfileSpec, reason model.
 	if current.EffectiveRuntimeMode == ports.RuntimeModeHQ50 {
 		if reason == model.RPackagerFailed && strings.Contains(lower, "playlist not ready timeout") {
 			next := current
+			next.HWAccel = ""
 			next.ForceSafariHQ25 = true
 			next.EffectiveRuntimeMode = ports.RuntimeModeHQ25
 			next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
@@ -62,15 +63,20 @@ func startupRecoveryProfileWithResolver(current model.ProfileSpec, reason model.
 		}
 		if reason == model.RProcessEnded && isStartupHardeningDetail(lower) {
 			next := current
+			next.HWAccel = ""
 			next.ForceSafariHQ25 = true
 			next.EffectiveRuntimeMode = ports.RuntimeModeHQ25
 			next.EffectiveModeSource = ports.RuntimeModeSourceRuntimeHardening
 			return next, true
 		}
 	}
-	if current.EffectiveRuntimeMode == ports.RuntimeModeHQ25 {
+	if current.EffectiveRuntimeMode == ports.RuntimeModeHQ25 || current.HWAccel != "" {
 		if reason == model.RPackagerFailed && strings.Contains(lower, "playlist not ready timeout") {
 			next := resolveProfile(profiles.ProfileRepair, current.DVRWindowSec)
+			if current.HWAccel != "" && current.EffectiveRuntimeMode != ports.RuntimeModeHQ25 {
+				next = current
+				next.HWAccel = ""
+			}
 			if current.DVRWindowSec > 0 {
 				next.DVRWindowSec = current.DVRWindowSec
 			}
@@ -79,6 +85,10 @@ func startupRecoveryProfileWithResolver(current model.ProfileSpec, reason model.
 		}
 		if reason == model.RProcessEnded && isStartupHardeningDetail(lower) {
 			next := resolveProfile(profiles.ProfileRepair, current.DVRWindowSec)
+			if current.HWAccel != "" && current.EffectiveRuntimeMode != ports.RuntimeModeHQ25 {
+				next = current
+				next.HWAccel = ""
+			}
 			if current.DVRWindowSec > 0 {
 				next.DVRWindowSec = current.DVRWindowSec
 			}
