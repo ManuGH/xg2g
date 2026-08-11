@@ -60,6 +60,22 @@ func (s *Server) ServeHLSHead(w http.ResponseWriter, r *http.Request, sessionID 
 	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(s.handleV3HLS)).ServeHTTP(w, r)
 }
 
+// ServeHLSVariant implements GET /sessions/{sessionID}/hls/{variant}/{filename}.
+func (s *Server) ServeHLSVariant(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, variant string, filename string) {
+	_ = sessionID
+	_ = variant
+	_ = filename
+	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(s.handleV3HLS)).ServeHTTP(w, r)
+}
+
+// ServeHLSVariantHead implements HEAD /sessions/{sessionID}/hls/{variant}/{filename}.
+func (s *Server) ServeHLSVariantHead(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, variant string, filename string) {
+	_ = sessionID
+	_ = variant
+	_ = filename
+	s.ScopeMiddleware(ScopeV3Read)(http.HandlerFunc(s.handleV3HLS)).ServeHTTP(w, r)
+}
+
 // TriggerSystemScan implements POST /api/v3/system/scan
 func (s *Server) TriggerSystemScan(w http.ResponseWriter, r *http.Request) {
 	s.ScopeMiddleware(ScopeV3Admin)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
