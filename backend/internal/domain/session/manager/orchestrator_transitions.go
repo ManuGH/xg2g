@@ -226,7 +226,11 @@ func (o *Orchestrator) runExecutionLoop(
 
 		playlistPath := ""
 		if sessionDir := ports.SessionHLSDirForPolicy(o.HLSRoot, e.SessionID, currentProfileSpec.DVRWindowSec); sessionDir != "" {
-			playlistPath = filepath.Join(sessionDir, "index.m3u8")
+			if currentProfileSpec.EnableABR {
+				playlistPath = filepath.Join(sessionDir, "master.m3u8")
+			} else {
+				playlistPath = filepath.Join(sessionDir, "index.m3u8")
+			}
 		}
 
 		playlistReadyResult := false
