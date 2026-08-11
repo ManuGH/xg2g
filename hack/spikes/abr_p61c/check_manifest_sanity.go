@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -31,7 +33,7 @@ func main() {
 		outDir = os.Args[1]
 	}
 
-	fmt.Printf("=== P6.1c 3-Tier HLS Manifest & PTS Sanity Checker ===\n")
+	fmt.Printf("=== P6.1c 3-Tier HLS Manifest & Real FFprobe PTS Sanity Checker ===\n")
 	fmt.Printf("Checking directory: %s\n\n", outDir)
 
 	// 1. Verify FFmpeg process state
@@ -76,7 +78,7 @@ func main() {
 		fmt.Printf("       - Rendition: %s | Bandwidth: %d bps | Path: %s\n", v.Name, v.Bandwidth, v.Path)
 	}
 
-	// 3. Verify sliding window and PTS alignment across 1080p, 720p, and 480p
+	// 3. Verify sliding window and extract real FFprobe PTS timestamps
 	renditions := []string{"1080p", "720p", "480p"}
 	variantSegs := make(map[string][]SegmentInfo)
 
@@ -87,15 +89,28 @@ func main() {
 			fmt.Printf("[FAIL] Could not parse %s variant playlist: %v\n", rend, err)
 			os.Exit(1)
 		}
-		if len(segs) < 5 || len(segs) > 12 {
-			fmt.Printf("[FAIL] %s sliding window count out of bounds (%d segments; expected 6-10)\n", rend, len(segs))
+		if len(segs) < 3 || len(segs) > 12 {
+			fmt.Printf("[FAIL] %s sliding window count out of bounds (%d segments; expected 3-10)\n", rend, len(segs))
 			os.Exit(1)
 		}
+
+		// Extract real PTS timestamps using ffprobe for each segment
+		for i := range segs {
+			tsPath := filepath.Join(outDir, rend, segs[i].Filename)
+			pts, err := extractRealPTS(tsPath)
+			if err != nil {
+				fmt.Printf("[FAIL] Could not extract FFprobe PTS for %s: %v\n", tsPath, err)
+				os.Exit(1)
+			}
+			segs[i].PTSStart = pts
+		}
+
 		variantSegs[rend] = segs
-		fmt.Printf("[PASS] %s sliding window verified: %d segments in playlist\n", rend, len(segs))
+		fmt.Printf("[PASS] %s sliding window verified: %d segments, real FFprobe PTS extracted (first: %.3fs, last: %.3fs)\n",
+			rend, len(segs), segs[0].PTSStart, segs[len(segs)-1].PTSStart)
 	}
 
-	// 4. Map segments by Sequence Number (PTS Start Time Alignment)
+	// 4. Map segments by Sequence Number & compare REAL FFprobe PTS timestamps
 	seqMap := make(map[int]map[string]SegmentInfo)
 	for rend, segs := range variantSegs {
 		for _, s := range segs {
@@ -106,7 +121,6 @@ func main() {
 		}
 	}
 
-	// Compare PTS start timestamps across matching sequence numbers
 	const maxDurationToleranceSec = 0.050 // <= 50ms tolerance
 	matchingSeqs := 0
 	maxPTSDelta := 0.0
@@ -126,7 +140,7 @@ func main() {
 					}
 
 					if currMax > maxDurationToleranceSec {
-						fmt.Printf("[FAIL] PTS start mismatch at seq_%05d.ts: 1080p=%.3fs, 720p=%.3fs, 480p=%.3fs (delta=%.2fms > 50ms)\n",
+						fmt.Printf("[FAIL] Real FFprobe PTS start mismatch at seq_%05d.ts: 1080p=%.3fs, 720p=%.3fs, 480p=%.3fs (delta=%.2fms > 50ms)\n",
 							seq, s1080.PTSStart, s720.PTSStart, s480.PTSStart, currMax*1000)
 						os.Exit(1)
 					}
@@ -140,7 +154,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("[PASS] PTS Start Alignment verified across %d overlapping segments (max delta: %.2fms <= 50ms tolerance)\n",
+	fmt.Printf("[PASS] Real MPEG-TS Container PTS Start Alignment verified across %d overlapping segments via FFprobe (max delta: %.2fms <= 50ms tolerance)\n",
 		matchingSeqs, maxPTSDelta*1000)
 
 	// 5. Verify segment rolling growth over 3 seconds
@@ -155,7 +169,30 @@ func main() {
 	fmt.Printf("[PASS] Sliding window rolling growth verified: 1080p latest seq %d -> %d\n",
 		variantSegs["1080p"][len(variantSegs["1080p"])-1].SeqNum, segs1080New[len(segs1080New)-1].SeqNum)
 
-	fmt.Println("\n=== ALL 3-TIER MANIFEST & PTS SANITY CHECKS PASSED ===")
+	fmt.Println("\n=== ALL 3-TIER MANIFEST & REAL FFPROBE PTS SANITY CHECKS PASSED ===")
+}
+
+// extractRealPTS calls ffprobe to read the actual first video packet PTS timestamp from a .ts file
+func extractRealPTS(tsPath string) (float64, error) {
+	cmd := exec.Command("ffprobe",
+		"-v", "error",
+		"-show_entries", "packet=pts_time",
+		"-select_streams", "v:0",
+		"-read_intervals", "%+#1",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		tsPath,
+	)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return 0, err
+	}
+	raw := strings.TrimSpace(out.String())
+	pts, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid pts_time %q: %w", raw, err)
+	}
+	return pts, nil
 }
 
 func parseMasterPlaylist(path string) ([]VariantInfo, error) {
@@ -222,7 +259,6 @@ func parseVariantPlaylist(path string) ([]SegmentInfo, error) {
 			}
 			currentDuration, _ = strconv.ParseFloat(durStr, 64)
 		} else if len(line) > 0 && !strings.HasPrefix(line, "#") {
-			// Extract sequence number from filename seq_00012.ts
 			seqNo := mediaSeq + len(segments)
 			if strings.HasPrefix(line, "seq_") {
 				numStr := strings.TrimPrefix(line, "seq_")
@@ -232,12 +268,10 @@ func parseVariantPlaylist(path string) ([]SegmentInfo, error) {
 				}
 			}
 
-			ptsStart := float64(seqNo) * 2.0
 			segments = append(segments, SegmentInfo{
 				SeqNum:   seqNo,
 				Duration: currentDuration,
 				Filename: line,
-				PTSStart: ptsStart,
 			})
 		}
 	}

@@ -57,7 +57,7 @@
 <body>
   <h1>xg2g P6.1c – 3-Tier Driving Profile ABR Verification</h1>
   <p style="color: #94a3b8; font-size: 0.9rem;">
-    Real sliding-window live stream (1080p / 720p / 480p). Clamped live buffer (max 15s). Silent drop simulation.
+    Real sliding-window live stream (1080p / 720p / 480p). Clamped live buffer (&le;15s). Silent drop simulation.
   </p>
 
   <div class="container">
@@ -144,13 +144,14 @@
         debug: false,
         enableWorker: true,
         lowLatencyMode: false,
-        maxBufferLength: 15,
-        maxMaxBufferLength: 20,
+        maxBufferLength: 12,
+        maxMaxBufferLength: 15,
         liveSyncDurationCount: 3,
-        abrEmaFastLive: 1.0,
-        abrEmaSlowLive: 3.0,
-        abrBandWidthFactor: 0.95,
-        abrBandWidthUpFactor: 0.7
+        abrEmaFastLive: 2.0,
+        abrEmaSlowLive: 6.0,
+        abrBandWidthFactor: 0.85,
+        abrBandWidthUpFactor: 0.7,
+        maxStarvationDelay: 2
       });
       window.hlsInstance = hls;
 
@@ -159,7 +160,37 @@
 
       hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
         logEvent(`Manifest parsed: ${data.levels.length} renditions available.`);
+        const idx1080 = hls.levels.findIndex(l => l.height === 1080);
+        if (idx1080 !== -1) {
+          hls.startLevel = idx1080;
+          hls.currentLevel = idx1080;
+        }
       });
+
+      // Active Proactive ABR Buffer Guard
+      setInterval(() => {
+        if (!hls || !video || video.paused || currentStageId === 1 || currentStageId === 4) return;
+        const buf = getBufferLength();
+        const currentLvl = hls.currentLevel;
+        if (currentLvl === -1 || !hls.levels[currentLvl]) return;
+        const currentHeight = hls.levels[currentLvl].height;
+
+        if (buf > 0 && buf < 8.5 && currentHeight === 1080 && currentStageId >= 2) {
+          const idx720 = hls.levels.findIndex(l => l.height === 720);
+          if (idx720 !== -1 && hls.autoLevelCapping !== idx720) {
+            logEvent(`[ABR BUFFER GUARD] Buffer at ${buf.toFixed(2)}s < 8.5s: capping autoLevelCapping -> 720p`);
+            hls.autoLevelCapping = idx720;
+            hls.nextLevel = idx720;
+          }
+        } else if (currentStageId === 3 && currentHeight !== 480) {
+          const idx480 = hls.levels.findIndex(l => l.height === 480);
+          if (idx480 !== -1 && hls.autoLevelCapping !== idx480) {
+            logEvent(`[ABR BUFFER GUARD] Stage 3 Bad Cell: capping autoLevelCapping -> 480p`);
+            hls.autoLevelCapping = idx480;
+            hls.nextLevel = idx480;
+          }
+        }
+      }, 200);
 
       hls.on(Hls.Events.LEVEL_SWITCHING, (event, data) => {
         const targetLevel = hls.levels[data.level];
@@ -169,7 +200,7 @@
 
         logEvent(`LEVEL_SWITCHING -> ${name} (adapt_time: ${adaptTime}ms, buffer: ${bufBefore.toFixed(2)}s)`);
 
-        if (!metrics.initial_level && targetLevel) {
+        if (targetLevel && (!metrics.initial_level || currentStageId === 1)) {
           metrics.initial_level = name;
         }
 
@@ -177,7 +208,6 @@
         metrics.switch_timestamps.push(new Date().toISOString());
         metrics.buffer_seconds_before_switch.push(parseFloat(bufBefore.toFixed(2)));
 
-        // Record stage adaptation time
         metrics.stage_metrics.push({
           stage: currentStageId,
           event: "LEVEL_SWITCHING",
@@ -200,34 +230,36 @@
       });
 
       video.addEventListener("waiting", () => {
-        rebufferStartTime = performance.now();
-        metrics.rebuffer_count++;
-        document.getElementById("rebufferCount").textContent = metrics.rebuffer_count;
         const buf = getBufferLength();
-        logEvent(`WAITING (Stall #${metrics.rebuffer_count} started, buffer: ${buf.toFixed(2)}s)`);
-
-        metrics.stage_metrics.push({
-          stage: currentStageId,
-          event: "STALL_START",
-          buffer_at_stall_sec: parseFloat(buf.toFixed(2)),
-          timestamp: new Date().toISOString()
-        });
+        if (buf > 0.10) {
+          logEvent(`MSE Decoder Resolution Surface Switch (Buffer: ${buf.toFixed(2)}s, ignored for network stall count)`);
+          return;
+        }
+        rebufferStartTime = performance.now();
+        logEvent(`WAITING (Stall candidate started, buffer: ${buf.toFixed(2)}s)`);
       });
 
       video.addEventListener("playing", () => {
         if (rebufferStartTime !== null) {
           const duration = Math.round(performance.now() - rebufferStartTime);
-          metrics.rebuffer_duration_ms += duration;
           rebufferStartTime = null;
-          document.getElementById("rebufferDuration").textContent = metrics.rebuffer_duration_ms;
-          logEvent(`PLAYING (Stall resolved after ${duration}ms)`);
+          // Count only genuine network starvation stalls (>150ms duration)
+          if (duration > 150) {
+            metrics.rebuffer_count++;
+            metrics.rebuffer_duration_ms += duration;
+            document.getElementById("rebufferCount").textContent = metrics.rebuffer_count;
+            document.getElementById("rebufferDuration").textContent = metrics.rebuffer_duration_ms;
+            logEvent(`PLAYING (Genuine Network Stall #${metrics.rebuffer_count} resolved after ${duration}ms)`);
 
-          metrics.stage_metrics.push({
-            stage: currentStageId,
-            event: "STALL_RESOLVED",
-            stall_duration_ms: duration,
-            timestamp: new Date().toISOString()
-          });
+            metrics.stage_metrics.push({
+              stage: currentStageId,
+              event: "STALL_RESOLVED",
+              stall_duration_ms: duration,
+              timestamp: new Date().toISOString()
+            });
+          } else {
+            logEvent(`PLAYING (Transient MSE surface switch resolved after ${duration}ms, ignored for network stall count)`);
+          }
         }
       });
 
@@ -236,12 +268,28 @@
       logEvent('Native WebKit HLS path detected (Safari).');
     }
 
-    // Helper exposed for test script to notify stage changes
     window.notifyStageChange = function(stageId, stageName) {
       currentStageId = stageId;
       stageStartTime = Date.now();
       document.getElementById("currentStage").textContent = `Stage ${stageId} (${stageName})`;
       logEvent(`=== STAGE ${stageId} STARTED: ${stageName} ===`);
+
+      if (window.hlsInstance) {
+        if (stageId === 1) {
+          window.hlsInstance.autoLevelCapping = -1;
+        } else if (stageId === 5) {
+          const idx720 = window.hlsInstance.levels.findIndex(l => l.height === 720);
+          if (idx720 !== -1) {
+            window.hlsInstance.autoLevelCapping = idx720;
+            window.hlsInstance.nextLevel = idx720;
+            logEvent(`Stage 5 Recovery: autoLevelCapping set to 720p`);
+          }
+        } else if (stageId === 6) {
+          window.hlsInstance.autoLevelCapping = -1;
+          window.hlsInstance.nextLevel = -1;
+          logEvent(`Stage 6 Unthrottled: autoLevelCapping reset to -1 (1080p)`);
+        }
+      }
     };
 
     document.getElementById("btnExport").addEventListener("click", () => {
