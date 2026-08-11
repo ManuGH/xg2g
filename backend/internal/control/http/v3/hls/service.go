@@ -135,7 +135,7 @@ func (s *Service) HandleV3HLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if filename == "index.m3u8" || filename == "stream.m3u8" || (strings.HasPrefix(filename, "stream_") && strings.HasSuffix(filename, ".m3u8")) {
+	if strings.HasSuffix(filename, ".m3u8") {
 		if s.renewLease != nil {
 			s.renewLease(r.Context(), sessionID)
 		}
