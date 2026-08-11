@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>xg2g P6.1b Native Safari / WebKit ABR Smoke Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { font-size: 1.5rem; color: #38bdf8; }
+    video { width: 100%; max-width: 800px; border-radius: 8px; background: #000; }
+    .note { background: #1e293b; padding: 12px; border-radius: 6px; border-left: 4px solid #38bdf8; max-width: 800px; }
+  </style>
+</head>
+<body>
+  <h1>xg2g P6.1b – Native WebKit / Safari ABR Smoke Test</h1>
+  <div class="note">
+    <p><strong>Note for Safari / iOS WebKit:</strong> Native WebKit handles HLS ABR internally within AVPlayer/ManagedMediaSource.</p>
+    <p>Use Network Link Conditioner or Network Throttling to test 720p &rarr; 480p adaptation without stream drops.</p>
+  </div>
+  <br>
+  <video src="/hls/master.m3u8" controls autoplay muted playsinline></video>
+</body>
+</html>
