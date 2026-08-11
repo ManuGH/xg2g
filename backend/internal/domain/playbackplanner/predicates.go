@@ -124,7 +124,7 @@ func requiresPlannedTranscode(ev PlaybackEvidence) bool {
 		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
 	}
 	switch requested {
-	case "transcode", "repair":
+	case "transcode", "repair", "abr", "mobile_abr", "3tier", "2tier":
 		return true
 	default:
 		return false

@@ -29,7 +29,10 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			plan.Packaging.Container = "fmp4"
 		}
 
-		if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" {
+		isABRIntent := isABRRequested(ev)
+		if isABRIntent {
+			plan.Video = TrackPlan{Mode: "transcode", Codec: "h264", EnableABR: true}
+		} else if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" {
 			plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		} else {
 			if requiresInterlaceRepair(ev) {
@@ -188,5 +191,18 @@ func applyPolicyModifiers(plan *PlaybackPlan, ev PlaybackEvidence) {
 				plan.RateControl.TargetVideoBitrateKbps = ev.OperatorPolicy.MaxGlobalBitrate
 			}
 		}
+	}
+}
+
+func isABRRequested(ev PlaybackEvidence) bool {
+	requested := strings.ToLower(strings.TrimSpace(ev.OperatorPolicy.ForceIntent))
+	if requested == "" {
+		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
+	}
+	switch requested {
+	case "abr", "mobile_abr", "3tier", "2tier":
+		return true
+	default:
+		return false
 	}
 }
