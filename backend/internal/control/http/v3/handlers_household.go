@@ -366,15 +366,20 @@ func (s *Server) GetAccessPolicy(w http.ResponseWriter, r *http.Request) {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
 		return
 	}
-	user := s.getUserFromContext(r.Context())
-	if user == nil {
+	p := s.resolveRequestPrincipal(r)
+	if p == nil || p.User == "" {
 		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
 		return
+	}
+	user, _ := svc.Store().GetUserByUsername(r.Context(), p.User)
+	userID := p.User
+	if user != nil {
+		userID = user.ID
 	}
 
 	targetUserID := r.URL.Query().Get("userId")
 	if targetUserID == "" {
-		targetUserID = user.ID
+		targetUserID = userID
 	}
 
 	pol, err := svc.GetAccessPolicy(r.Context(), targetUserID)
@@ -415,9 +420,14 @@ func (s *Server) CreateAccessPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if pol.AccountID == "" {
-		user := s.getUserFromContext(r.Context())
-		if user != nil {
-			pol.AccountID = user.ID
+		p := s.resolveRequestPrincipal(r)
+		if p != nil && p.User != "" {
+			user, _ := svc.Store().GetUserByUsername(r.Context(), p.User)
+			if user != nil {
+				pol.AccountID = user.ID
+			} else {
+				pol.AccountID = p.User
+			}
 		}
 	}
 
@@ -507,10 +517,10 @@ func (s *Server) ApproveApprovalRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	id := chi.URLParam(r, "id")
-	user := s.getUserFromContext(r.Context())
+	p := s.resolveRequestPrincipal(r)
 	adminID := "admin"
-	if user != nil {
-		adminID = user.ID
+	if p != nil && p.User != "" {
+		adminID = p.User
 	}
 	if err := svc.ApproveRequest(r.Context(), id, adminID); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Approval Error", problemcode.CodeInvalidInput, err.Error(), nil)
@@ -526,10 +536,10 @@ func (s *Server) DenyApprovalRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	user := s.getUserFromContext(r.Context())
+	p := s.resolveRequestPrincipal(r)
 	adminID := "admin"
-	if user != nil {
-		adminID = user.ID
+	if p != nil && p.User != "" {
+		adminID = p.User
 	}
 	if err := svc.DenyRequest(r.Context(), id, adminID); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Approval Error", problemcode.CodeInvalidInput, err.Error(), nil)

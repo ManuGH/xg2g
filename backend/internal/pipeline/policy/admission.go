@@ -175,13 +175,17 @@ func (a *HouseholdResourceAdmission) ReleaseSession(sessionID string) {
 func (a *HouseholdResourceAdmission) findPreemptionCandidateLocked(requesterRole identity.Role) string {
 	// Preemption hierarchy: Guest (1) < Member (2) < Admin (3)
 	requesterRank := roleRank(requesterRole)
+	lowestRank := requesterRank
+	candidateID := ""
 
 	for id, s := range a.sessions {
-		if roleRank(s.Role) < requesterRank {
-			return id
+		rank := roleRank(s.Role)
+		if rank < lowestRank {
+			lowestRank = rank
+			candidateID = id
 		}
 	}
-	return ""
+	return candidateID
 }
 
 func roleRank(r identity.Role) int {
