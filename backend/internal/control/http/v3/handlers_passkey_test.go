@@ -71,8 +71,18 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	server, handler, idSvc := setupTestV3ServerWithIdentity(t, dbPath)
 	defer idSvc.Store().Close()
 
-	// ---------------- 1. Passkey Registration Start (Bootstrap) ----------------
+	// ---------------- 1. Passkey Registration Start (Bootstrap with Operator Token) ----------------
+	// 1a. Unauthenticated attempt without operator token when master token configured should fail with 401
+	reqUnauth := httptest.NewRequest(http.MethodPost, "/api/v3/auth/passkey/register/start", nil)
+	reqUnauth.Header.Set("X-Forwarded-Proto", "https")
+	reqUnauth.RemoteAddr = "127.0.0.1:12345"
+	wUnauth := httptest.NewRecorder()
+	handler.ServeHTTP(wUnauth, reqUnauth)
+	require.Equal(t, http.StatusUnauthorized, wUnauth.Code, "Unauthenticated bootstrap without operator token must be rejected")
+
+	// 1b. Operator-authorized bootstrap succeeds
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/auth/passkey/register/start", nil)
+	req.Header.Set("Authorization", "Bearer test-admin-token-12345")
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
@@ -82,6 +92,7 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	var createOpts webauthn.CreationOptions
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &createOpts))
 	assert.NotEmpty(t, createOpts.Challenge)
+	assert.Equal(t, "required", createOpts.AuthenticatorSelection.UserVerification)
 
 	// Simulate Client Authenticator P-256 Key generation
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -101,7 +112,7 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	rpIDHash := sha256.Sum256([]byte("localhost"))
 	authDataReg := make([]byte, 37)
 	copy(authDataReg[:32], rpIDHash[:])
-	authDataReg[32] = 0x01 | 0x40 | 0x08 | 0x10 // UP | AT | BE | BS
+	authDataReg[32] = 0x01 | 0x04 | 0x40 | 0x08 | 0x10 // UP | UV | AT | BE | BS
 	binary.BigEndian.PutUint32(authDataReg[33:37], 0)
 
 	authDataReg = append(authDataReg, aaguid...)
@@ -150,6 +161,14 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	assert.True(t, regFinishResp["backupEligible"].(bool))
 	assert.True(t, regFinishResp["backupState"].(bool))
 
+	// 2b. Now that a user exists, an unauthenticated register/start MUST fail with 401
+	reqUnauth2 := httptest.NewRequest(http.MethodPost, "/api/v3/auth/passkey/register/start", nil)
+	reqUnauth2.Header.Set("X-Forwarded-Proto", "https")
+	reqUnauth2.RemoteAddr = "127.0.0.1:12345"
+	wUnauth2 := httptest.NewRecorder()
+	handler.ServeHTTP(wUnauth2, reqUnauth2)
+	require.Equal(t, http.StatusUnauthorized, wUnauth2.Code, "Unauthenticated register/start must be rejected once users exist")
+
 	// ---------------- 3. Passkey Login Start ----------------
 	loginStartPayload, _ := json.Marshal(map[string]string{"username": "admin"})
 	reqLoginStart := httptest.NewRequest(http.MethodPost, "/api/v3/auth/passkey/login/start", bytes.NewReader(loginStartPayload))
@@ -163,8 +182,9 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	var reqOpts webauthn.RequestOptions
 	require.NoError(t, json.Unmarshal(wLoginStart.Body.Bytes(), &reqOpts))
 	assert.NotEmpty(t, reqOpts.Challenge)
+	assert.Equal(t, "required", reqOpts.UserVerification)
 
-	// ---------------- 4. Passkey Login Finish ----------------
+	// ---------------- 4. Passkey Login Finish (Zero JS Session Token Exposure) ----------------
 	clientDataLogin := webauthn.ClientDataJSON{
 		Type:      "webauthn.get",
 		Challenge: reqOpts.Challenge,
@@ -175,7 +195,7 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 
 	authDataLogin := make([]byte, 37)
 	copy(authDataLogin[:32], rpIDHash[:])
-	authDataLogin[32] = 0x01 | 0x08 | 0x10 // UP | BE | BS
+	authDataLogin[32] = 0x01 | 0x04 | 0x08 | 0x10 // UP | UV | BE | BS
 	binary.BigEndian.PutUint32(authDataLogin[33:37], 1)
 
 	signedMessage := append(authDataLogin, clientDataHash[:]...)
@@ -219,6 +239,13 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	assert.True(t, sessionCookie.Secure)
 	assert.Equal(t, http.SameSiteLaxMode, sessionCookie.SameSite)
 
+	// Zero JavaScript Exposure Invariant: response body must NOT contain session ID / token!
+	var authSessResp v3.AuthSessionResponse
+	require.NoError(t, json.Unmarshal(wLoginFinish.Body.Bytes(), &authSessResp))
+	assert.Equal(t, "admin", authSessResp.User.Username)
+	assert.NotContains(t, wLoginFinish.Body.String(), sessionCookie.Value, "Raw response JSON body must NEVER leak the session cookie token")
+	assert.NotContains(t, wLoginFinish.Body.String(), "sessionId", "Response JSON body must not have sessionId field")
+
 	// ---------------- 5. Access Protected Endpoint with xg2g_session Cookie ----------------
 	reqPasskeys := httptest.NewRequest(http.MethodGet, "/api/v3/auth/passkeys", nil)
 	reqPasskeys.AddCookie(sessionCookie)
@@ -243,19 +270,43 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, wRoaming.Code, "Session must remain active across roaming IP changes")
 
-	// ---------------- 7. Recovery Code Login ----------------
-	// Retrieve the admin user's recovery codes from DB
+	// ---------------- 7. Recovery Code Login & Cross-User Protection ----------------
 	adminUser, err := idSvc.Store().GetUserByUsername(context.Background(), "admin")
 	require.NoError(t, err)
-	recCodes, err := idSvc.Store().ListRecoveryCodesByUser(context.Background(), adminUser.ID)
-	require.NoError(t, err)
-	assert.NotEmpty(t, recCodes)
 
-	// Generate a known recovery code to test login
+	// Create a second user (e.g. member) with their own recovery codes
+	memberUser := &identity.User{
+		ID:          "usr_member_test",
+		Username:    "member1",
+		DisplayName: "Member One",
+		Role:        identity.RoleMember,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	require.NoError(t, idSvc.Store().PutUser(context.Background(), memberUser))
+	memberRawCodes, memberRecords, err := identity.GenerateRecoveryCodes(memberUser.ID, 1, time.Now().UTC())
+	require.NoError(t, err)
+	require.NoError(t, idSvc.Store().PutRecoveryCodes(context.Background(), memberRecords))
+
+	// Generate known recovery code for admin
 	knownRawCodes, knownRecords, err := identity.GenerateRecoveryCodes(adminUser.ID, 1, time.Now().UTC())
 	require.NoError(t, err)
 	require.NoError(t, idSvc.Store().PutRecoveryCodes(context.Background(), knownRecords))
 
+	// Cross-User Attack Test: Attacker tries to use member's recovery code against admin account -> MUST FAIL 401
+	crossUserPayload, _ := json.Marshal(map[string]string{
+		"username": "admin",
+		"code":     memberRawCodes[0],
+	})
+	reqCrossUser := httptest.NewRequest(http.MethodPost, "/api/v3/auth/recovery", bytes.NewReader(crossUserPayload))
+	reqCrossUser.Header.Set("Content-Type", "application/json")
+	reqCrossUser.Header.Set("X-Forwarded-Proto", "https")
+	reqCrossUser.RemoteAddr = "127.0.0.1:12345"
+	wCrossUser := httptest.NewRecorder()
+	handler.ServeHTTP(wCrossUser, reqCrossUser)
+	require.Equal(t, http.StatusUnauthorized, wCrossUser.Code, "Cross-user recovery code usage must be strictly rejected")
+
+	// Valid Admin Recovery Login
 	recLoginPayload, _ := json.Marshal(map[string]string{
 		"username": "admin",
 		"code":     knownRawCodes[0],
@@ -268,9 +319,7 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	handler.ServeHTTP(wRecLogin, reqRecLogin)
 
 	require.Equal(t, http.StatusOK, wRecLogin.Code)
-	var recSessionResp v3.AuthSessionResponse
-	require.NoError(t, json.Unmarshal(wRecLogin.Body.Bytes(), &recSessionResp))
-	assert.NotEmpty(t, recSessionResp.SessionID)
+	assert.NotContains(t, wRecLogin.Body.String(), "sessionId", "Recovery response body must not leak sessionId")
 
 	// Re-using the same recovery code must fail with 401
 	wRecLogin2 := httptest.NewRecorder()

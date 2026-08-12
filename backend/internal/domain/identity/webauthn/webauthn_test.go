@@ -102,7 +102,7 @@ func TestWebAuthn_FullRegistrationAndLoginFlow(t *testing.T) {
 	rpIDHash := sha256.Sum256([]byte(rpID))
 	authDataReg := make([]byte, 37)
 	copy(authDataReg[:32], rpIDHash[:])
-	authDataReg[32] = flagUserPresent | flagAttestedCredential | flagBackupEligible | flagBackupState
+	authDataReg[32] = flagUserPresent | flagUserVerified | flagAttestedCredential | flagBackupEligible | flagBackupState
 	binary.BigEndian.PutUint32(authDataReg[33:37], 0)
 
 	authDataReg = append(authDataReg, aaguid...)
@@ -138,6 +138,19 @@ func TestWebAuthn_FullRegistrationAndLoginFlow(t *testing.T) {
 	assert.True(t, cred.BackupEligible)
 	assert.True(t, cred.BackupState)
 
+	// Test UV Missing in Registration Rejection
+	authDataRegNoUV := make([]byte, len(authDataReg))
+	copy(authDataRegNoUV, authDataReg)
+	authDataRegNoUV[32] = flagUserPresent | flagAttestedCredential // UV missing!
+	attObjMapNoUV := map[any]any{"fmt": "none", "authData": authDataRegNoUV, "attStmt": map[any]any{}}
+	regRespNoUV := AttestationResponse{
+		ClientDataJSON:    base64.RawURLEncoding.EncodeToString(clientDataRegJSON),
+		AttestationObject: base64.RawURLEncoding.EncodeToString(encodeSimpleCBORMap(attObjMapNoUV)),
+		Transports:        []string{"internal"},
+	}
+	_, err = FinishRegistration(regRespNoUV, *regSession, rpID, origin, now)
+	require.ErrorIs(t, err, ErrUserVerifiedRequired, "Registration without UV must be rejected")
+
 	// ---------------- 2. Login (Assertion) ----------------
 	credDesc := CredentialDescriptor{
 		Type: "public-key",
@@ -146,6 +159,7 @@ func TestWebAuthn_FullRegistrationAndLoginFlow(t *testing.T) {
 	loginOpts, loginSession, err := BeginLogin([]CredentialDescriptor{credDesc}, rpID, 5*time.Minute, now)
 	require.NoError(t, err)
 	assert.NotEmpty(t, loginOpts.Challenge)
+	assert.Equal(t, "required", loginOpts.UserVerification)
 
 	clientDataLogin := ClientDataJSON{
 		Type:      "webauthn.get",
@@ -155,10 +169,10 @@ func TestWebAuthn_FullRegistrationAndLoginFlow(t *testing.T) {
 	clientDataLoginJSON, _ := json.Marshal(clientDataLogin)
 	clientDataHash := sha256.Sum256(clientDataLoginJSON)
 
-	// Build AuthData for Login (Synced Passkey with count=5)
+	// Build AuthData for Login (Synced Passkey with count=5, UV=1)
 	authDataLogin := make([]byte, 37)
 	copy(authDataLogin[:32], rpIDHash[:])
-	authDataLogin[32] = flagUserPresent | flagBackupEligible | flagBackupState
+	authDataLogin[32] = flagUserPresent | flagUserVerified | flagBackupEligible | flagBackupState
 	binary.BigEndian.PutUint32(authDataLogin[33:37], 5)
 
 	signedMessage := append(authDataLogin, clientDataHash[:]...)
@@ -191,11 +205,29 @@ func TestWebAuthn_FullRegistrationAndLoginFlow(t *testing.T) {
 	assert.Equal(t, uint32(5), newCount)
 	assert.True(t, isBackup)
 
+	// Test UV Missing in Login Rejection
+	authDataLoginNoUV := make([]byte, 37)
+	copy(authDataLoginNoUV[:32], rpIDHash[:])
+	authDataLoginNoUV[32] = flagUserPresent | flagBackupEligible | flagBackupState // UV=0!
+	binary.BigEndian.PutUint32(authDataLoginNoUV[33:37], 6)
+	signedNoUV := append(authDataLoginNoUV, clientDataHash[:]...)
+	digestNoUV := sha256.Sum256(signedNoUV)
+	rNoUV, sNoUV, _ := ecdsa.Sign(rand.Reader, privKey, digestNoUV[:])
+	sigDERNoUV, _ := asn1.Marshal(struct{ R, S *big.Int }{rNoUV, sNoUV})
+	loginRespNoUV := AssertionResponse{
+		CredentialID:      cred.CredentialID,
+		ClientDataJSON:    base64.RawURLEncoding.EncodeToString(clientDataLoginJSON),
+		AuthenticatorData: base64.RawURLEncoding.EncodeToString(authDataLoginNoUV),
+		Signature:         base64.RawURLEncoding.EncodeToString(sigDERNoUV),
+	}
+	_, _, err = FinishLogin(loginRespNoUV, credState, *loginSession, rpID, origin, now)
+	require.ErrorIs(t, err, ErrUserVerifiedRequired, "Login without UV must be rejected")
+
 	// ---------------- 3. Synced Passkey Non-Monotone Counter Tolerance ----------------
 	// Next login from another synced device with counter=2 should NOT be rejected!
 	authDataLogin2 := make([]byte, 37)
 	copy(authDataLogin2[:32], rpIDHash[:])
-	authDataLogin2[32] = flagUserPresent | flagBackupEligible | flagBackupState
+	authDataLogin2[32] = flagUserPresent | flagUserVerified | flagBackupEligible | flagBackupState
 	binary.BigEndian.PutUint32(authDataLogin2[33:37], 2)
 
 	signedMessage2 := append(authDataLogin2, clientDataHash[:]...)
@@ -226,8 +258,8 @@ func TestWebAuthn_FullRegistrationAndLoginFlow(t *testing.T) {
 
 	authDataSingleDevDecreased := make([]byte, 37)
 	copy(authDataSingleDevDecreased[:32], rpIDHash[:])
-	authDataSingleDevDecreased[32] = flagUserPresent                  // BE=0, BS=0
-	binary.BigEndian.PutUint32(authDataSingleDevDecreased[33:37], 50) // Decreased counter!
+	authDataSingleDevDecreased[32] = flagUserPresent | flagUserVerified // BE=0, BS=0, UV=1
+	binary.BigEndian.PutUint32(authDataSingleDevDecreased[33:37], 50)   // Decreased counter!
 
 	signedMessage3 := append(authDataSingleDevDecreased, clientDataHash[:]...)
 	digest3 := sha256.Sum256(signedMessage3)

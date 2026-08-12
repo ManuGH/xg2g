@@ -383,13 +383,13 @@ func (s *SQLiteStore) ListRecoveryCodesByUser(ctx context.Context, userID string
 	return out, rows.Err()
 }
 
-func (s *SQLiteStore) ConsumeRecoveryCode(ctx context.Context, codeHash string, now time.Time) error {
+func (s *SQLiteStore) ConsumeRecoveryCode(ctx context.Context, userID, codeHash string, now time.Time) error {
 	query := `
 	UPDATE recovery_codes
 	SET consumed_at = ?
-	WHERE code_hash = ? AND consumed_at IS NULL
+	WHERE user_id = ? AND code_hash = ? AND consumed_at IS NULL
 	`
-	res, err := s.db.ExecContext(ctx, query, now.UTC(), codeHash)
+	res, err := s.db.ExecContext(ctx, query, now.UTC(), userID, codeHash)
 	if err != nil {
 		return err
 	}

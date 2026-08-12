@@ -86,19 +86,40 @@ func (s *Server) PasskeyRegisterStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Resolve current authenticated user or bootstrap admin
-	userID := ""
-	if p := s.resolveRequestPrincipal(r); p != nil && p.User != "" {
-		if u, err := svc.Store().GetUserByUsername(r.Context(), p.User); err == nil && u != nil {
-			userID = u.ID
-		}
+	hasUsers, err := svc.HasUsers(r.Context())
+	if err != nil {
+		log.FromContext(r.Context()).Error().Err(err).Msg("failed to check existing users")
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal_error", "Internal Error", problemcode.CodeInternalServerError, "Failed to check existing users", nil)
+		return
 	}
 
-	if userID == "" {
-		// Bootstrap check: if database has 0 users, allow bootstrap registration
-		admin, _, err := svc.EnsureDefaultAdminUser(r.Context(), "admin", "Administrator")
+	var userID string
+	p := s.resolveRequestPrincipal(r)
+
+	if hasUsers {
+		// When users exist, registration MUST be authenticated!
+		if p == nil || p.User == "" {
+			writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/authentication_required", "Authentication Required", problemcode.CodeUnauthorized, "You must be authenticated to register a passkey", nil)
+			return
+		}
+		u, err := svc.Store().GetUserByUsername(r.Context(), p.User)
+		if err != nil || u == nil {
+			writeRegisteredProblem(w, r, http.StatusNotFound, "auth/user_not_found", "User Not Found", problemcode.CodeNotFound, "User not found", nil)
+			return
+		}
+		userID = u.ID
+	} else {
+		// Bootstrap mode (0 users exist): require operator authorization if master token configured
+		cfg := s.GetConfig()
+		if cfg.APIToken != "" {
+			if !principalHasScope(p, "*") {
+				writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/bootstrap_unauthorized", "Bootstrap Unauthorized", problemcode.CodeUnauthorized, "Operator authorization required for initial admin bootstrap", nil)
+				return
+			}
+		}
+		admin, _, err := svc.CreateInitialAdminUser(r.Context(), "admin", "Administrator")
 		if err != nil {
-			log.FromContext(r.Context()).Error().Err(err).Msg("failed to ensure default admin user")
+			log.FromContext(r.Context()).Error().Err(err).Msg("failed to create initial admin user")
 			writeRegisteredProblem(w, r, http.StatusInternalServerError, "auth/bootstrap_failed", "Bootstrap Failed", problemcode.CodeInternalServerError, "Failed to initialize default user", nil)
 			return
 		}
@@ -192,7 +213,6 @@ type LoginFinishRequest struct {
 }
 
 type AuthSessionResponse struct {
-	SessionID string        `json:"sessionId"`
 	User      identity.User `json:"user"`
 	ExpiresAt time.Time     `json:"expiresAt"`
 }
@@ -235,7 +255,6 @@ func (s *Server) PasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(AuthSessionResponse{
-		SessionID: webSess.SessionID,
 		User:      *user,
 		ExpiresAt: webSess.ExpiresAt,
 	})
@@ -289,7 +308,6 @@ func (s *Server) RecoveryLogin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(AuthSessionResponse{
-		SessionID: webSess.SessionID,
 		User:      *user,
 		ExpiresAt: webSess.ExpiresAt,
 	})

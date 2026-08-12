@@ -45,18 +45,16 @@ func TestIdentityService_FullIntegration(t *testing.T) {
 	svc := identity.NewService(cfg, s)
 	svc.SetNowFunc(func() time.Time { return now })
 
-	// 1. Ensure Default Admin User
-	admin, recCodes, err := svc.EnsureDefaultAdminUser(ctx, "manuel", "Manuel")
+	// 1. Create Initial Admin User
+	admin, recCodes, err := svc.CreateInitialAdminUser(ctx, "manuel", "Manuel")
 	require.NoError(t, err)
 	assert.Equal(t, "manuel", admin.Username)
 	assert.Equal(t, identity.RoleAdmin, admin.Role)
 	assert.Len(t, recCodes, 10)
 
-	// Second call should return existing admin without error
-	admin2, recCodes2, err := svc.EnsureDefaultAdminUser(ctx, "manuel", "Manuel")
-	require.NoError(t, err)
-	assert.Equal(t, admin.ID, admin2.ID)
-	assert.Nil(t, recCodes2)
+	// Second call should return ErrAdminAlreadyExists
+	_, _, err = svc.CreateInitialAdminUser(ctx, "manuel", "Manuel")
+	require.ErrorIs(t, err, identity.ErrAdminAlreadyExists)
 
 	// 2. Register Passkey
 	regOpts, err := svc.BeginPasskeyRegistration(ctx, admin.ID)
@@ -81,7 +79,7 @@ func TestIdentityService_FullIntegration(t *testing.T) {
 	rpIDHash := sha256.Sum256([]byte(cfg.RPID))
 	authDataReg := make([]byte, 37)
 	copy(authDataReg[:32], rpIDHash[:])
-	authDataReg[32] = 0x01 | 0x40 | 0x08 | 0x10 // UP | AT | BE | BS
+	authDataReg[32] = 0x01 | 0x04 | 0x40 | 0x08 | 0x10 // UP | UV | AT | BE | BS
 	binary.BigEndian.PutUint32(authDataReg[33:37], 0)
 
 	authDataReg = append(authDataReg, aaguid...)
@@ -131,7 +129,7 @@ func TestIdentityService_FullIntegration(t *testing.T) {
 
 	authDataLogin := make([]byte, 37)
 	copy(authDataLogin[:32], rpIDHash[:])
-	authDataLogin[32] = 0x01 | 0x08 | 0x10 // UP | BE | BS
+	authDataLogin[32] = 0x01 | 0x04 | 0x08 | 0x10 // UP | UV | BE | BS
 	binary.BigEndian.PutUint32(authDataLogin[33:37], 1)
 
 	signedMessage := append(authDataLogin, clientDataHash[:]...)

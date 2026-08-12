@@ -24,6 +24,10 @@ var (
 	ErrInvalidSessionToken    = errors.New("invalid session token")
 )
 
+const (
+	maxConcurrentChallenges = 1000
+)
+
 type Config struct {
 	RPID                string
 	RPName              string
@@ -37,9 +41,9 @@ type Service struct {
 	store Store
 	now   func() time.Time
 
-	mu             sync.RWMutex
-	challenges     map[string]webauthn.SessionData
-	cleanupStarted bool
+	mu          sync.RWMutex
+	challenges  map[string]webauthn.SessionData
+	stopCleanup chan struct{}
 }
 
 func NewService(cfg Config, s Store) *Service {
@@ -60,12 +64,80 @@ func NewService(cfg Config, s Store) *Service {
 	}
 
 	svc := &Service{
-		cfg:        cfg,
-		store:      s,
-		now:        func() time.Time { return time.Now().UTC() },
-		challenges: make(map[string]webauthn.SessionData),
+		cfg:         cfg,
+		store:       s,
+		now:         func() time.Time { return time.Now().UTC() },
+		challenges:  make(map[string]webauthn.SessionData),
+		stopCleanup: make(chan struct{}),
 	}
+	svc.startCleanupLoop()
 	return svc
+}
+
+func (s *Service) Close() error {
+	select {
+	case <-s.stopCleanup:
+		// already closed
+	default:
+		close(s.stopCleanup)
+	}
+	return nil
+}
+
+func (s *Service) startCleanupLoop() {
+	ticker := time.NewTicker(1 * time.Minute)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				s.mu.Lock()
+				s.purgeExpiredChallengesLocked()
+				s.mu.Unlock()
+			case <-s.stopCleanup:
+				ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+func (s *Service) purgeExpiredChallengesLocked() {
+	now := s.now()
+	for k, v := range s.challenges {
+		if now.After(v.ExpiresAt) {
+			delete(s.challenges, k)
+		}
+	}
+}
+
+func (s *Service) saveChallenge(challenge string, session webauthn.SessionData) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.purgeExpiredChallengesLocked()
+
+	// If at max capacity, evict an entry to maintain bounds
+	if len(s.challenges) >= maxConcurrentChallenges {
+		for k := range s.challenges {
+			delete(s.challenges, k)
+			if len(s.challenges) < maxConcurrentChallenges {
+				break
+			}
+		}
+	}
+
+	s.challenges[challenge] = session
+}
+
+func (s *Service) popChallenge(challenge string) (webauthn.SessionData, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	session, ok := s.challenges[challenge]
+	if ok {
+		delete(s.challenges, challenge)
+	}
+	return session, ok
 }
 
 func (s *Service) SetNowFunc(fn func() time.Time) {
@@ -76,8 +148,17 @@ func (s *Service) Store() Store {
 	return s.store
 }
 
-// EnsureDefaultAdminUser creates an initial admin user if the database has no users.
-func (s *Service) EnsureDefaultAdminUser(ctx context.Context, username, displayName string) (*User, []string, error) {
+// HasUsers returns true if at least one user exists in the identity store.
+func (s *Service) HasUsers(ctx context.Context) (bool, error) {
+	users, err := s.store.ListUsers(ctx)
+	if err != nil {
+		return false, err
+	}
+	return len(users) > 0, nil
+}
+
+// CreateInitialAdminUser creates an initial admin user only if 0 users exist.
+func (s *Service) CreateInitialAdminUser(ctx context.Context, username, displayName string) (*User, []string, error) {
 	if username == "" {
 		username = "admin"
 	}
@@ -90,7 +171,7 @@ func (s *Service) EnsureDefaultAdminUser(ctx context.Context, username, displayN
 		return nil, nil, err
 	}
 	if len(users) > 0 {
-		return &users[0], nil, nil
+		return nil, nil, ErrAdminAlreadyExists
 	}
 
 	now := s.now()
@@ -135,10 +216,7 @@ func (s *Service) BeginPasskeyRegistration(ctx context.Context, userID string) (
 		return nil, err
 	}
 
-	s.mu.Lock()
-	s.challenges[opts.Challenge] = *session
-	s.mu.Unlock()
-
+	s.saveChallenge(opts.Challenge, *session)
 	return opts, nil
 }
 
@@ -154,13 +232,7 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, resp webauthn.A
 		return nil, err
 	}
 
-	s.mu.Lock()
-	session, ok := s.challenges[clientData.Challenge]
-	if ok {
-		delete(s.challenges, clientData.Challenge)
-	}
-	s.mu.Unlock()
-
+	session, ok := s.popChallenge(clientData.Challenge)
 	if !ok {
 		return nil, ErrChallengeExpired
 	}
@@ -226,10 +298,7 @@ func (s *Service) BeginPasskeyLogin(ctx context.Context, username string) (*weba
 		return nil, err
 	}
 
-	s.mu.Lock()
-	s.challenges[opts.Challenge] = *session
-	s.mu.Unlock()
-
+	s.saveChallenge(opts.Challenge, *session)
 	return opts, nil
 }
 
@@ -245,25 +314,19 @@ func (s *Service) FinishPasskeyLogin(ctx context.Context, resp webauthn.Assertio
 		return nil, nil, err
 	}
 
-	s.mu.Lock()
-	session, ok := s.challenges[clientData.Challenge]
-	if ok {
-		delete(s.challenges, clientData.Challenge)
-	}
-	s.mu.Unlock()
-
+	session, ok := s.popChallenge(clientData.Challenge)
 	if !ok {
 		return nil, nil, ErrChallengeExpired
 	}
 
 	cred, err := s.store.GetPasskey(ctx, resp.CredentialID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", ErrCredentialNotFound, err)
+		return nil, nil, ErrCredentialNotFound
 	}
 
 	user, err := s.store.GetUser(ctx, cred.UserID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", ErrUserNotFound, err)
+		return nil, nil, ErrUserNotFound
 	}
 
 	now := s.now()
@@ -302,7 +365,7 @@ func (s *Service) LoginWithRecoveryCode(ctx context.Context, username, code, use
 	now := s.now()
 	codeHash := HashRecoveryCode(code)
 
-	if err := s.store.ConsumeRecoveryCode(ctx, codeHash, now); err != nil {
+	if err := s.store.ConsumeRecoveryCode(ctx, user.ID, codeHash, now); err != nil {
 		return nil, nil, err
 	}
 

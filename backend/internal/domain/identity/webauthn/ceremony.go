@@ -27,6 +27,7 @@ var (
 	ErrOriginMismatch        = errors.New("webauthn origin mismatch")
 	ErrRPIDMismatch          = errors.New("webauthn rp id mismatch")
 	ErrUserPresentRequired   = errors.New("user presence flag (UP) is required")
+	ErrUserVerifiedRequired  = errors.New("user verification flag (UV) is required")
 	ErrInvalidSignature      = errors.New("invalid webauthn signature")
 	ErrSignCountDecreased    = errors.New("authenticator signature counter decreased on single-device security key")
 	ErrSessionExpired        = errors.New("webauthn session has expired")
@@ -166,7 +167,7 @@ func BeginRegistration(user UserDescriptor, rpID, rpName string, ttl time.Durati
 		{Type: "public-key", Alg: coseAlgRS256},
 	}
 	opts.AuthenticatorSelection.ResidentKey = "preferred"
-	opts.AuthenticatorSelection.UserVerification = "preferred"
+	opts.AuthenticatorSelection.UserVerification = "required"
 
 	session := &SessionData{
 		Challenge: challenge,
@@ -233,6 +234,9 @@ func FinishRegistration(resp AttestationResponse, session SessionData, rpID, exp
 	if !authData.UserPresent {
 		return nil, ErrUserPresentRequired
 	}
+	if !authData.UserVerified {
+		return nil, ErrUserVerifiedRequired
+	}
 
 	attFormat, _ := attMap["fmt"].(string)
 	if attFormat == "" {
@@ -272,7 +276,7 @@ func BeginLogin(credentials []CredentialDescriptor, rpID string, ttl time.Durati
 		Challenge:        challenge,
 		Timeout:          60000,
 		RPID:             rpID,
-		UserVerification: "preferred",
+		UserVerification: "required",
 		AllowCredentials: credentials,
 	}
 
@@ -325,6 +329,9 @@ func FinishLogin(resp AssertionResponse, cred CredentialState, session SessionDa
 	}
 	if !authData.UserPresent {
 		return 0, false, ErrUserPresentRequired
+	}
+	if !authData.UserVerified {
+		return 0, false, ErrUserVerifiedRequired
 	}
 
 	// Sign count & Backup State handling:

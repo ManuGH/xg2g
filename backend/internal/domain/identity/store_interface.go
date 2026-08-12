@@ -38,7 +38,7 @@ type PasskeyStore interface {
 type RecoveryStore interface {
 	PutRecoveryCodes(ctx context.Context, codes []RecoveryCode) error
 	ListRecoveryCodesByUser(ctx context.Context, userID string) ([]RecoveryCode, error)
-	ConsumeRecoveryCode(ctx context.Context, codeHash string, now time.Time) error
+	ConsumeRecoveryCode(ctx context.Context, userID, codeHash string, now time.Time) error
 }
 
 // WebSessionStore owns persistent web browser sessions.

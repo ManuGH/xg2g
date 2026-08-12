@@ -85,11 +85,14 @@ func TestSQLiteIdentityStore_LifecycleAndPersistence(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, storedRecCodes, 3)
 
-	// Consume one code
-	err = s.ConsumeRecoveryCode(ctx, storedRecCodes[0].CodeHash, now.Add(2*time.Minute))
+	// Consume one code with correct user
+	err = s.ConsumeRecoveryCode(ctx, user.ID, storedRecCodes[0].CodeHash, now.Add(2*time.Minute))
 	require.NoError(t, err)
 	// Consuming second time should fail
-	err = s.ConsumeRecoveryCode(ctx, storedRecCodes[0].CodeHash, now.Add(3*time.Minute))
+	err = s.ConsumeRecoveryCode(ctx, user.ID, storedRecCodes[0].CodeHash, now.Add(3*time.Minute))
+	require.ErrorIs(t, err, identity.ErrRecoveryCodeNotFound)
+	// Cross-user consumption attempt must fail
+	err = s.ConsumeRecoveryCode(ctx, "other_user_id", storedRecCodes[1].CodeHash, now.Add(4*time.Minute))
 	require.ErrorIs(t, err, identity.ErrRecoveryCodeNotFound)
 
 	// 5. Create Web Sessions
