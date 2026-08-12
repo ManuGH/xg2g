@@ -925,3 +925,239 @@ func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
+
+// ----------------- Household v1 Methods -----------------
+
+func (s *Service) resolveUser(ctx context.Context, userIDOrUsername string) (*User, error) {
+	u, err := s.store.GetUser(ctx, userIDOrUsername)
+	if err == nil && u != nil {
+		return u, nil
+	}
+	uByUsername, errUsername := s.store.GetUserByUsername(ctx, userIDOrUsername)
+	if errUsername == nil && uByUsername != nil {
+		return uByUsername, nil
+	}
+	return nil, err
+}
+
+// CreateInvitation generates a 1-time setup invitation code for a new member or guest.
+func (s *Service) CreateInvitation(ctx context.Context, createdByUserID string, role Role, displayName string) (string, *AccountInvitation, error) {
+	adminUser, err := s.resolveUser(ctx, createdByUserID)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to fetch admin user: %w", err)
+	}
+
+	mem, err := s.store.GetHouseholdMembership(ctx, "default_household", adminUser.ID)
+	isAdmin := (err == nil && mem != nil && mem.Role == RoleAdmin) || adminUser.Role == RoleAdmin
+	if !isAdmin {
+		return "", nil, errors.New("only household admins can create invitations")
+	}
+
+	if role != RoleMember && role != RoleGuest {
+		return "", nil, errors.New("invitation role must be member or guest")
+	}
+
+	codeBytes := make([]byte, 20)
+	if _, err := rand.Read(codeBytes); err != nil {
+		return "", nil, err
+	}
+	rawCode := "xg2g_inv_" + strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(codeBytes))
+	codeHash := hashToken(rawCode)
+
+	invID := "inv_" + generateRandomHex(12)
+	now := s.now()
+	inv := &AccountInvitation{
+		ID:              invID,
+		HouseholdID:     "default_household",
+		CodeHash:        codeHash,
+		Role:            role,
+		DisplayName:     displayName,
+		CreatedByUserID: adminUser.ID,
+		ExpiresAt:       now.Add(7 * 24 * time.Hour),
+	}
+
+	if err := s.store.CreateInvitation(ctx, inv); err != nil {
+		return "", nil, err
+	}
+
+	return rawCode, inv, nil
+}
+
+// RedeemInvitationWithPassword redeems a 1-time invitation using a username and Argon2id password.
+func (s *Service) RedeemInvitationWithPassword(ctx context.Context, inviteCode, username, displayName, password string) (*AuthSessionResponse, error) {
+	inviteCode = strings.TrimSpace(inviteCode)
+	username = strings.ToLower(strings.TrimSpace(username))
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		displayName = username
+	}
+
+	if len(password) < 8 {
+		return nil, ErrPasswordTooShort
+	}
+
+	codeHash := hashToken(inviteCode)
+	inv, err := s.store.GetInvitationByCodeHash(ctx, codeHash)
+	if err != nil {
+		return nil, ErrInvitationNotFound
+	}
+	if inv.UsedAt != nil {
+		return nil, ErrInvitationAlreadyUsed
+	}
+
+	passHash, err := HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+
+	now := s.now()
+	newUser := &User{
+		ID:          "usr_" + generateRandomHex(12),
+		Username:    username,
+		DisplayName: displayName,
+		Role:        inv.Role,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	mem, err := s.store.RedeemInvitationAtomic(ctx, inv.ID, codeHash, newUser, passHash, nil, now)
+	if err != nil {
+		return nil, err
+	}
+	_ = mem
+
+	sessID, err := generateSessionToken()
+	if err != nil {
+		return nil, err
+	}
+	sess := &WebSession{
+		SessionID:    sessID,
+		UserID:       newUser.ID,
+		CreatedAt:    now,
+		ExpiresAt:    now.Add(s.cfg.SessionTTL),
+		LastActiveAt: now,
+	}
+	if err := s.store.PutSession(ctx, sess); err != nil {
+		return nil, err
+	}
+
+	return &AuthSessionResponse{
+		User:      *newUser,
+		SessionID: sessID,
+		ExpiresAt: sess.ExpiresAt,
+	}, nil
+}
+
+// AuthenticateWithPassword authenticates a user via Argon2id password hash.
+func (s *Service) AuthenticateWithPassword(ctx context.Context, username, password string) (*AuthSessionResponse, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
+	user, err := s.store.GetUserByUsername(ctx, username)
+	if err != nil {
+		return nil, ErrInvalidPassword
+	}
+
+	hash, err := s.store.GetAccountPasswordHash(ctx, user.ID)
+	if err != nil || hash == "" {
+		return nil, ErrInvalidPassword
+	}
+
+	if !VerifyPassword(password, hash) {
+		return nil, ErrInvalidPassword
+	}
+
+	now := s.now()
+	sessID, err := generateSessionToken()
+	if err != nil {
+		return nil, err
+	}
+	sess := &WebSession{
+		SessionID:    sessID,
+		UserID:       user.ID,
+		CreatedAt:    now,
+		ExpiresAt:    now.Add(s.cfg.SessionTTL),
+		LastActiveAt: now,
+	}
+	if err := s.store.PutSession(ctx, sess); err != nil {
+		return nil, err
+	}
+
+	return &AuthSessionResponse{
+		User:      *user,
+		SessionID: sessID,
+		ExpiresAt: sess.ExpiresAt,
+	}, nil
+}
+
+// CreateProfile creates a screen-level viewing profile & policy.
+func (s *Service) CreateProfile(ctx context.Context, createdByUserID, name, avatarURL string, isChild bool, allowedBouquets, blockedChannels []string, maturityLevel int, exitPIN string) (*Profile, *ProfilePolicy, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, nil, errors.New("profile name must not be empty")
+	}
+
+	creator, err := s.resolveUser(ctx, createdByUserID)
+	creatorID := createdByUserID
+	if err == nil && creator != nil {
+		creatorID = creator.ID
+	}
+
+	now := s.now()
+	profID := "prof_" + generateRandomHex(12)
+	prof := &Profile{
+		ID:              profID,
+		HouseholdID:     "default_household",
+		Name:            name,
+		AvatarURL:       avatarURL,
+		IsChild:         isChild,
+		CreatedByUserID: creatorID,
+		CreatedAt:       now,
+	}
+
+	var pinHash string
+	if exitPIN != "" {
+		h, err := HashProfilePIN(exitPIN)
+		if err != nil {
+			return nil, nil, err
+		}
+		pinHash = h
+	}
+
+	pol := &ProfilePolicy{
+		ProfileID:       profID,
+		AllowedBouquets: allowedBouquets,
+		BlockedChannels: blockedChannels,
+		MaturityLevel:   maturityLevel,
+		ExitPINHash:     pinHash,
+		DVRAllowed:      !isChild,
+	}
+
+	if err := s.store.PutProfile(ctx, prof, pol); err != nil {
+		return nil, nil, err
+	}
+
+	return prof, pol, nil
+}
+
+// GetEffectivePermissions computes EffectivePermissions = AccountPermissions ∩ ProfilePolicy.
+func (s *Service) GetEffectivePermissions(ctx context.Context, userID, profileID string) (EffectivePermissions, error) {
+	user, err := s.resolveUser(ctx, userID)
+	if err != nil {
+		return EffectivePermissions{}, err
+	}
+
+	mem, err := s.store.GetHouseholdMembership(ctx, "default_household", user.ID)
+	role := user.Role
+	if err == nil && mem != nil {
+		role = mem.Role
+	}
+
+	var pol *ProfilePolicy
+	if profileID != "" {
+		_, p, err := s.store.GetProfile(ctx, profileID)
+		if err == nil {
+			pol = p
+		}
+	}
+
+	return CalculateEffectivePermissions(user.ID, role, pol), nil
+}

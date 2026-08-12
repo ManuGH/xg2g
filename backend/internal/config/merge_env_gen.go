@@ -7,6 +7,8 @@ package config
 // mergeEnvConfigGenerated applies registry-defined environment variables to AppConfig.
 func (l *Loader) mergeEnvConfigGenerated(cfg *AppConfig) {
 	cfg.AllowedOrigins = parseCommaSeparated(l.envString("XG2G_ALLOWED_ORIGINS", ""), cfg.AllowedOrigins)
+	cfg.AndroidPackageName = l.envString("XG2G_ANDROID_PACKAGE_NAME", cfg.AndroidPackageName)
+	cfg.AndroidSHA256Fingerprints = parseCommaSeparated(l.envString("XG2G_ANDROID_SHA256_FINGERPRINTS", ""), cfg.AndroidSHA256Fingerprints)
 	cfg.APIDisableLegacyTokenSources = l.envBool("XG2G_API_DISABLE_LEGACY_TOKEN_SOURCES", cfg.APIDisableLegacyTokenSources)
 	cfg.APILegacyEnabled = l.envBool("XG2G_API_LEGACY_ENABLED", cfg.APILegacyEnabled)
 	cfg.APIToken = l.envString("XG2G_API_TOKEN", cfg.APIToken)

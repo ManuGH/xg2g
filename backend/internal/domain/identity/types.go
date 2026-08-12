@@ -69,17 +69,25 @@ type BootstrapResult struct {
 	ExpiresAt     time.Time         `json:"expiresAt"`
 }
 
+// AuthSessionResponse contains user metadata and active session expiry.
+type AuthSessionResponse struct {
+	User      User      `json:"user"`
+	SessionID string    `json:"sessionId,omitempty"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
 type Role string
 
 const (
 	RoleAdmin  Role = "admin"
 	RoleMember Role = "member"
+	RoleGuest  Role = "guest"
 	RoleViewer Role = "viewer"
 )
 
 func (r Role) Valid() bool {
 	switch r {
-	case RoleAdmin, RoleMember, RoleViewer:
+	case RoleAdmin, RoleMember, RoleGuest, RoleViewer:
 		return true
 	default:
 		return false

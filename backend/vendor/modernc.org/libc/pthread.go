@@ -395,10 +395,6 @@ func Xpthread_cond_timedwait(t *TLS, pCond, pMutex, pAbsTime uintptr) int32 {
 			defer cond.Unlock()
 
 			delete(cond.waiters, t)
-			select {
-			case <-t.wait:
-			default:
-			}
 			return errno.ETIMEDOUT
 		}
 	}
@@ -655,12 +651,7 @@ func Xpthread_detach(t *TLS, thread pthread.Pthread_t) int32 {
 		trc("t=%v thread=%v, (%v:)", t, thread, origin(2))
 	}
 	threadsMu.Lock()
-	tls := threads[int32(thread)]
-	if tls == nil {
-		threadsMu.Unlock()
-		return errno.ESRCH
-	}
-	tls.detached = true
+	threads[int32(thread)].detached = true
 	threadsMu.Unlock()
 	return 0
 }
@@ -719,10 +710,6 @@ func Xpthread_join(t *TLS, thread pthread.Pthread_t, pValue uintptr) int32 {
 	}
 	threadsMu.Lock()
 	tls := threads[int32(thread)]
-	if tls == nil {
-		threadsMu.Unlock()
-		return errno.ESRCH
-	}
 	delete(threads, int32(thread))
 	threadsMu.Unlock()
 	<-tls.done

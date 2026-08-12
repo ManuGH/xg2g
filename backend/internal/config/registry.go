@@ -151,6 +151,8 @@ func buildRegistry() (*Registry, error) {
 		{Path: "api.playbackDecisionPreviousKeys", Env: "XG2G_PLAYBACK_DECISION_PREVIOUS_KEYS", FieldPath: "PlaybackDecisionPreviousKeys", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "api.playbackDecisionRotationWindow", Env: "XG2G_PLAYBACK_DECISION_ROTATION_WINDOW", FieldPath: "PlaybackDecisionRotationWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 10 * time.Minute},
 		{Path: "api.allowedOrigins", Env: "XG2G_ALLOWED_ORIGINS", FieldPath: "AllowedOrigins", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "android.packageName", Env: "XG2G_ANDROID_PACKAGE_NAME", FieldPath: "AndroidPackageName", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "android.sha256Fingerprints", Env: "XG2G_ANDROID_SHA256_FINGERPRINTS", FieldPath: "AndroidSHA256Fingerprints", Profile: ProfileAdvanced, Status: StatusActive},
 
 		// --- CONNECTIVITY ---
 		{Path: "connectivity.profile", Env: "XG2G_CONNECTIVITY_PROFILE", FieldPath: "Connectivity.Profile", Profile: ProfileAdvanced, Status: StatusActive, Default: "lan"},

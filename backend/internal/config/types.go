@@ -19,6 +19,11 @@ const (
 	PlaybackPolicyReceiverOnly = "receiver_only"
 )
 
+type FileAndroidConfig struct {
+	PackageName        string   `yaml:"packageName,omitempty"`
+	SHA256Fingerprints []string `yaml:"sha256Fingerprints,omitempty"`
+}
+
 // FileConfig represents the YAML configuration structure
 type FileConfig struct {
 	Version       string `yaml:"version,omitempty"`
@@ -54,6 +59,7 @@ type FileConfig struct {
 	Engine                EngineFileConfig                  `yaml:"engine,omitempty"`
 	TLS                   TLSConfig                         `yaml:"tls,omitempty"`
 	Library               LibraryFileConfig                 `yaml:"library,omitempty"`
+	Android               FileAndroidConfig                 `yaml:"android,omitempty"`
 	RecordingPathMappings []RecordingPathMapping            `yaml:"recordingPathMappings,omitempty"`
 
 	// Advanced/internal configuration (Registry-exposed)

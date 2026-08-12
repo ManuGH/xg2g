@@ -28,7 +28,6 @@ import (
 	"net/http"
 	"reflect"
 	"runtime"
-	"runtime/pprof"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,7 +42,6 @@ import (
 	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/internal/binarylog"
 	"google.golang.org/grpc/internal/channelz"
-	"google.golang.org/grpc/internal/envconfig"
 	"google.golang.org/grpc/internal/grpcsync"
 	"google.golang.org/grpc/internal/grpcutil"
 	istats "google.golang.org/grpc/internal/stats"
@@ -126,8 +124,7 @@ type serviceInfo struct {
 
 // Server is a gRPC server to serve RPC requests.
 type Server struct {
-	opts         serverOptions
-	statsHandler stats.Handler
+	opts serverOptions
 
 	mu  sync.Mutex // guards following
 	lis map[net.Listener]bool
@@ -191,7 +188,6 @@ var defaultServerOptions = serverOptions{
 	maxSendMessageSize:    defaultServerMaxSendMessageSize,
 	connectionTimeout:     120 * time.Second,
 	writeBufferSize:       defaultWriteBufSize,
-	sharedWriteBuffer:     true,
 	readBufferSize:        defaultReadBufSize,
 	bufferPool:            mem.DefaultBufferPool(),
 }
@@ -249,8 +245,10 @@ func newJoinServerOption(opts ...ServerOption) ServerOption {
 // If this option is set to true every connection will release the buffer after
 // flushing the data on the wire.
 //
-// Deprecated: shared write buffer is enabled by default. SharedWriteBuffer
-// will be removed in a future release.
+// # Experimental
+//
+// Notice: This API is EXPERIMENTAL and may be changed or removed in a
+// later release.
 func SharedWriteBuffer(val bool) ServerOption {
 	return newFuncServerOption(func(o *serverOptions) {
 		o.sharedWriteBuffer = val
@@ -299,14 +297,6 @@ func InitialConnWindowSize(s int32) ServerOption {
 // window size to the value provided and disables dynamic flow control.
 // The lower bound for window size is 64K and any value smaller than that
 // will be ignored.
-//
-// Note that this also disables dynamic flow control for the connection,
-// falling back to a default static connection-level window of 64KB. To
-// use a larger connection-level window, you must also use the
-// [StaticConnWindowSize] ServerOption.
-//
-// Most users should not configure static flow control windows unless
-// operating in a memory-constrained environment.
 func StaticStreamWindowSize(s int32) ServerOption {
 	return newFuncServerOption(func(o *serverOptions) {
 		o.initialWindowSize = s
@@ -318,14 +308,6 @@ func StaticStreamWindowSize(s int32) ServerOption {
 // window size to the value provided and disables dynamic flow control.
 // The lower bound for window size is 64K and any value smaller than that
 // will be ignored.
-//
-// Note that this also disables dynamic flow control for individual streams,
-// falling back to a default static connection-level window of 64KB. To
-// explicitly configure the stream-level window size, you must also use the
-// [StaticStreamWindowSize] ServerOption.
-//
-// Most users should not configure static flow control windows unless
-// operating in a memory-constrained environment.
 func StaticConnWindowSize(s int32) ServerOption {
 	return newFuncServerOption(func(o *serverOptions) {
 		o.initialConnWindowSize = s
@@ -710,14 +692,13 @@ func NewServer(opt ...ServerOption) *Server {
 		o.apply(&opts)
 	}
 	s := &Server{
-		lis:          make(map[net.Listener]bool),
-		opts:         opts,
-		statsHandler: istats.NewCombinedHandler(opts.statsHandlers...),
-		conns:        make(map[string]map[transport.ServerTransport]bool),
-		services:     make(map[string]*serviceInfo),
-		quit:         grpcsync.NewEvent(),
-		done:         grpcsync.NewEvent(),
-		channelz:     channelz.RegisterServer(""),
+		lis:      make(map[net.Listener]bool),
+		opts:     opts,
+		conns:    make(map[string]map[transport.ServerTransport]bool),
+		services: make(map[string]*serviceInfo),
+		quit:     grpcsync.NewEvent(),
+		done:     grpcsync.NewEvent(),
+		channelz: channelz.RegisterServer(""),
 	}
 	chainUnaryServerInterceptors(s)
 	chainStreamServerInterceptors(s)
@@ -940,7 +921,9 @@ func (s *Server) Serve(lis net.Listener) error {
 					tempDelay = 5 * time.Millisecond
 				} else {
 					tempDelay *= 2
-					tempDelay = min(tempDelay, 1*time.Second)
+				}
+				if max := 1 * time.Second; tempDelay > max {
+					tempDelay = max
 				}
 				s.mu.Lock()
 				s.printf("Accept error: %v; retrying in %v", err, tempDelay)
@@ -1016,7 +999,7 @@ func (s *Server) newHTTP2Transport(c net.Conn) transport.ServerTransport {
 		ConnectionTimeout:     s.opts.connectionTimeout,
 		Credentials:           s.opts.creds,
 		InTapHandle:           s.opts.inTapHandle,
-		StatsHandler:          s.statsHandler,
+		StatsHandlers:         s.opts.statsHandlers,
 		KeepaliveParams:       s.opts.keepaliveParams,
 		KeepalivePolicy:       s.opts.keepalivePolicy,
 		InitialWindowSize:     s.opts.initialWindowSize,
@@ -1053,18 +1036,18 @@ func (s *Server) newHTTP2Transport(c net.Conn) transport.ServerTransport {
 func (s *Server) serveStreams(ctx context.Context, st transport.ServerTransport, rawConn net.Conn) {
 	ctx = transport.SetConnection(ctx, rawConn)
 	ctx = peer.NewContext(ctx, st.Peer())
-	if s.statsHandler != nil {
-		ctx = s.statsHandler.TagConn(ctx, &stats.ConnTagInfo{
+	for _, sh := range s.opts.statsHandlers {
+		ctx = sh.TagConn(ctx, &stats.ConnTagInfo{
 			RemoteAddr: st.Peer().Addr,
 			LocalAddr:  st.Peer().LocalAddr,
 		})
-		s.statsHandler.HandleConn(ctx, &stats.ConnBegin{})
+		sh.HandleConn(ctx, &stats.ConnBegin{})
 	}
 
 	defer func() {
 		st.Close(errors.New("finished serving streams for the server transport"))
-		if s.statsHandler != nil {
-			s.statsHandler.HandleConn(ctx, &stats.ConnEnd{})
+		for _, sh := range s.opts.statsHandlers {
+			sh.HandleConn(ctx, &stats.ConnEnd{})
 		}
 	}()
 
@@ -1121,7 +1104,7 @@ var _ http.Handler = (*Server)(nil)
 // Notice: This API is EXPERIMENTAL and may be changed or removed in a
 // later release.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	st, err := transport.NewServerHandlerTransport(w, r, s.statsHandler, s.opts.bufferPool)
+	st, err := transport.NewServerHandlerTransport(w, r, s.opts.statsHandlers, s.opts.bufferPool)
 	if err != nil {
 		// Errors returned from transport.NewServerHandlerTransport have
 		// already been written to w.
@@ -1215,8 +1198,12 @@ func (s *Server) sendResponse(ctx context.Context, stream *transport.ServerStrea
 		return status.Errorf(codes.ResourceExhausted, "grpc: trying to send message larger than max (%d vs. %d)", payloadLen, s.opts.maxSendMessageSize)
 	}
 	err = stream.Write(hdr, payload, opts)
-	if err == nil && s.statsHandler != nil {
-		s.statsHandler.HandleRPC(ctx, outPayload(false, msg, dataLen, payloadLen, time.Now()))
+	if err == nil {
+		if len(s.opts.statsHandlers) != 0 {
+			for _, sh := range s.opts.statsHandlers {
+				sh.HandleRPC(ctx, outPayload(false, msg, dataLen, payloadLen, time.Now()))
+			}
+		}
 	}
 	return err
 }
@@ -1258,15 +1245,16 @@ func getChainUnaryHandler(interceptors []UnaryServerInterceptor, curr int, info 
 }
 
 func (s *Server) processUnaryRPC(ctx context.Context, stream *transport.ServerStream, info *serviceInfo, md *MethodDesc, trInfo *traceInfo) (err error) {
-	sh := s.statsHandler
-	if sh != nil || trInfo != nil || channelz.IsOn() {
+	shs := s.opts.statsHandlers
+	if len(shs) != 0 || trInfo != nil || channelz.IsOn() {
 		if channelz.IsOn() {
 			s.incrCallsStarted()
 		}
 		var statsBegin *stats.Begin
-		if sh != nil {
+		for _, sh := range shs {
+			beginTime := time.Now()
 			statsBegin = &stats.Begin{
-				BeginTime:      time.Now(),
+				BeginTime:      beginTime,
 				IsClientStream: false,
 				IsServerStream: false,
 			}
@@ -1294,7 +1282,7 @@ func (s *Server) processUnaryRPC(ctx context.Context, stream *transport.ServerSt
 				trInfo.tr.Finish()
 			}
 
-			if sh != nil {
+			for _, sh := range shs {
 				end := &stats.End{
 					BeginTime: statsBegin.BeginTime,
 					EndTime:   time.Now(),
@@ -1391,7 +1379,7 @@ func (s *Server) processUnaryRPC(ctx context.Context, stream *transport.ServerSt
 	}
 
 	var payInfo *payloadInfo
-	if sh != nil || len(binlogs) != 0 {
+	if len(shs) != 0 || len(binlogs) != 0 {
 		payInfo = &payloadInfo{}
 		defer payInfo.free()
 	}
@@ -1417,7 +1405,7 @@ func (s *Server) processUnaryRPC(ctx context.Context, stream *transport.ServerSt
 			return status.Errorf(codes.Internal, "grpc: error unmarshalling request: %v", err)
 		}
 
-		if sh != nil {
+		for _, sh := range shs {
 			sh.HandleRPC(ctx, &stats.InPayload{
 				RecvTime:         time.Now(),
 				Payload:          v,
@@ -1591,30 +1579,33 @@ func (s *Server) processStreamingRPC(ctx context.Context, stream *transport.Serv
 	if channelz.IsOn() {
 		s.incrCallsStarted()
 	}
-	sh := s.statsHandler
+	shs := s.opts.statsHandlers
 	var statsBegin *stats.Begin
-	if sh != nil {
+	if len(shs) != 0 {
+		beginTime := time.Now()
 		statsBegin = &stats.Begin{
-			BeginTime:      time.Now(),
+			BeginTime:      beginTime,
 			IsClientStream: sd.ClientStreams,
 			IsServerStream: sd.ServerStreams,
 		}
-		sh.HandleRPC(ctx, statsBegin)
+		for _, sh := range shs {
+			sh.HandleRPC(ctx, statsBegin)
+		}
 	}
 	ctx = NewContextWithServerTransportStream(ctx, stream)
 	ss := &serverStream{
 		ctx:                   ctx,
 		s:                     stream,
-		p:                     parser{r: stream, bufferPool: s.opts.bufferPool},
+		p:                     &parser{r: stream, bufferPool: s.opts.bufferPool},
 		codec:                 s.getCodec(stream.ContentSubtype()),
 		desc:                  sd,
 		maxReceiveMessageSize: s.opts.maxReceiveMessageSize,
 		maxSendMessageSize:    s.opts.maxSendMessageSize,
 		trInfo:                trInfo,
-		statsHandler:          sh,
+		statsHandler:          shs,
 	}
 
-	if sh != nil || trInfo != nil || channelz.IsOn() {
+	if len(shs) != 0 || trInfo != nil || channelz.IsOn() {
 		// See comment in processUnaryRPC on defers.
 		defer func() {
 			if trInfo != nil {
@@ -1628,7 +1619,7 @@ func (s *Server) processStreamingRPC(ctx context.Context, stream *transport.Serv
 				ss.mu.Unlock()
 			}
 
-			if sh != nil {
+			if len(shs) != 0 {
 				end := &stats.End{
 					BeginTime: statsBegin.BeginTime,
 					EndTime:   time.Now(),
@@ -1636,7 +1627,9 @@ func (s *Server) processStreamingRPC(ctx context.Context, stream *transport.Serv
 				if err != nil && err != io.EOF {
 					end.Error = toRPCErr(err)
 				}
-				sh.HandleRPC(ctx, end)
+				for _, sh := range shs {
+					sh.HandleRPC(ctx, end)
+				}
 			}
 
 			if channelz.IsOn() {
@@ -1779,33 +1772,9 @@ func (s *Server) processStreamingRPC(ctx context.Context, stream *transport.Serv
 	return ss.s.WriteStatus(statusOK)
 }
 
-func (s *Server) handleMalformedMethodName(stream *transport.ServerStream, ti *traceInfo) {
-	if ti != nil {
-		ti.tr.LazyLog(&fmtStringer{"Malformed method name %q", []any{stream.Method()}}, true)
-		ti.tr.SetError()
-	}
-	errDesc := fmt.Sprintf("malformed method name: %q", stream.Method())
-	if err := stream.WriteStatus(status.New(codes.Unimplemented, errDesc)); err != nil {
-		if ti != nil {
-			ti.tr.LazyLog(&fmtStringer{"%v", []any{err}}, true)
-			ti.tr.SetError()
-		}
-		channelz.Warningf(logger, s.channelz, "grpc: Server.handleStream failed to write status: %v", err)
-	}
-	if ti != nil {
-		ti.tr.Finish()
-	}
-}
-
 func (s *Server) handleStream(t transport.ServerTransport, stream *transport.ServerStream) {
 	ctx := stream.Context()
 	ctx = contextWithServer(ctx, s)
-	if envconfig.LabelServerGoroutines&envconfig.GoroutineLabelServerMethod != 0 {
-		// This method always runs in its own goroutine, so we can set a
-		// goroutine label without needing to restore a previous context.
-		ctx = pprof.WithLabels(ctx, pprof.Labels("grpc.method", stream.Method()))
-		pprof.SetGoroutineLabels(ctx)
-	}
 	var ti *traceInfo
 	if EnableTracing {
 		tr := newTrace("grpc.Recv."+methodFamily(stream.Method()), stream.Method())
@@ -1822,31 +1791,46 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Ser
 		}
 	}
 
-	sm, found := strings.CutPrefix(stream.Method(), "/")
-	if !found {
-		s.handleMalformedMethodName(stream, ti)
-		return
+	sm := stream.Method()
+	if sm != "" && sm[0] == '/' {
+		sm = sm[1:]
 	}
 	pos := strings.LastIndex(sm, "/")
 	if pos == -1 {
-		s.handleMalformedMethodName(stream, ti)
+		if ti != nil {
+			ti.tr.LazyLog(&fmtStringer{"Malformed method name %q", []any{sm}}, true)
+			ti.tr.SetError()
+		}
+		errDesc := fmt.Sprintf("malformed method name: %q", stream.Method())
+		if err := stream.WriteStatus(status.New(codes.Unimplemented, errDesc)); err != nil {
+			if ti != nil {
+				ti.tr.LazyLog(&fmtStringer{"%v", []any{err}}, true)
+				ti.tr.SetError()
+			}
+			channelz.Warningf(logger, s.channelz, "grpc: Server.handleStream failed to write status: %v", err)
+		}
+		if ti != nil {
+			ti.tr.Finish()
+		}
 		return
 	}
 	service := sm[:pos]
 	method := sm[pos+1:]
 
 	// FromIncomingContext is expensive: skip if there are no statsHandlers
-	if s.statsHandler != nil {
+	if len(s.opts.statsHandlers) > 0 {
 		md, _ := metadata.FromIncomingContext(ctx)
-		ctx = s.statsHandler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: stream.Method()})
-		s.statsHandler.HandleRPC(ctx, &stats.InHeader{
-			FullMethod:  stream.Method(),
-			RemoteAddr:  t.Peer().Addr,
-			LocalAddr:   t.Peer().LocalAddr,
-			Compression: stream.RecvCompress(),
-			WireLength:  stream.HeaderWireLength(),
-			Header:      md,
-		})
+		for _, sh := range s.opts.statsHandlers {
+			ctx = sh.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: stream.Method()})
+			sh.HandleRPC(ctx, &stats.InHeader{
+				FullMethod:  stream.Method(),
+				RemoteAddr:  t.Peer().Addr,
+				LocalAddr:   t.Peer().LocalAddr,
+				Compression: stream.RecvCompress(),
+				WireLength:  stream.HeaderWireLength(),
+				Header:      md,
+			})
+		}
 	}
 	// To have calls in stream callouts work. Will delete once all stats handler
 	// calls come from the gRPC layer.

@@ -158,6 +158,58 @@ func (s *SQLiteStore) initSchema(ctx context.Context) error {
 		revoked_at TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS households (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS household_memberships (
+		household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		role TEXT NOT NULL CHECK (role IN ('admin', 'member', 'guest', 'viewer')),
+		created_at TIMESTAMP NOT NULL,
+		PRIMARY KEY (household_id, user_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS account_passwords (
+		user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		password_hash TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL,
+		updated_at TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS account_invitations (
+		id TEXT PRIMARY KEY,
+		household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+		code_hash TEXT NOT NULL UNIQUE,
+		role TEXT NOT NULL CHECK (role IN ('member', 'guest')),
+		display_name TEXT,
+		created_by_user_id TEXT NOT NULL REFERENCES users(id),
+		expires_at TIMESTAMP NOT NULL,
+		used_at TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS profiles (
+		id TEXT PRIMARY KEY,
+		household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		avatar_url TEXT,
+		is_child BOOLEAN NOT NULL DEFAULT 0,
+		created_by_user_id TEXT NOT NULL REFERENCES users(id),
+		created_at TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS profile_policies (
+		profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+		allowed_bouquets TEXT,
+		blocked_channels TEXT,
+		maturity_level INTEGER DEFAULT 0,
+		exit_pin_hash TEXT,
+		dvr_allowed BOOLEAN NOT NULL DEFAULT 1,
+		viewing_time_window TEXT
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_passkey_user_id ON passkey_credentials(user_id);
 	CREATE INDEX IF NOT EXISTS idx_recovery_user_id ON recovery_codes(user_id);
 	CREATE INDEX IF NOT EXISTS idx_web_sessions_user_id ON web_sessions(user_id);
@@ -168,9 +220,56 @@ func (s *SQLiteStore) initSchema(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_device_grants_family_id ON device_grants(family_id);
 	CREATE INDEX IF NOT EXISTS idx_refresh_family_id ON refresh_token_families(family_id);
 	CREATE INDEX IF NOT EXISTS idx_access_tokens_bound_jkt ON access_tokens(bound_jkt);
+	CREATE INDEX IF NOT EXISTS idx_invitations_code_hash ON account_invitations(code_hash);
+	CREATE INDEX IF NOT EXISTS idx_profiles_household_id ON profiles(household_id);
 	`
-	_, err := s.db.ExecContext(ctx, schema)
-	return err
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
+		return err
+	}
+
+	return s.migrateHouseholdV1(ctx)
+}
+
+func (s *SQLiteStore) migrateHouseholdV1(ctx context.Context) error {
+	const defaultHouseholdID = "default_household"
+	const defaultHouseholdName = "Haupt-Haushalt"
+
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO households (id, name, created_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(id) DO NOTHING;
+	`, defaultHouseholdID, defaultHouseholdName, now)
+	if err != nil {
+		return fmt.Errorf("failed to create default household: %w", err)
+	}
+
+	var initialAdminID string
+	_ = s.db.QueryRowContext(ctx, `SELECT initial_admin_id FROM bootstrap_meta WHERE id = 1 AND initial_admin_id IS NOT NULL`).Scan(&initialAdminID)
+
+	rows, err := s.db.QueryContext(ctx, `SELECT id, role FROM users`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var uid, urole string
+			if err := rows.Scan(&uid, &urole); err == nil {
+				targetRole := urole
+				if uid == initialAdminID || urole == "admin" {
+					targetRole = "admin"
+				} else if targetRole != "guest" {
+					targetRole = "member"
+				}
+
+				_, _ = s.db.ExecContext(ctx, `
+					INSERT INTO household_memberships (household_id, user_id, role, created_at)
+					VALUES (?, ?, ?, ?)
+					ON CONFLICT(household_id, user_id) DO NOTHING;
+				`, defaultHouseholdID, uid, targetRole, now)
+			}
+		}
+	}
+
+	return nil
 }
 
 // ----------------- UserStore -----------------
@@ -737,6 +836,16 @@ func (s *SQLiteStore) CommitInitialAdminBootstrap(ctx context.Context, user *ide
 		return fmt.Errorf("failed to insert bootstrap metadata: %w", err)
 	}
 
+	// 7. Insert Default Household Membership for Initial Admin
+	insertMemQuery := `
+	INSERT INTO household_memberships (household_id, user_id, role, created_at)
+	VALUES ('default_household', ?, 'admin', ?)
+	ON CONFLICT(household_id, user_id) DO NOTHING
+	`
+	if _, err := tx.ExecContext(ctx, insertMemQuery, normUser.ID, now); err != nil {
+		return fmt.Errorf("failed to insert initial admin household membership: %w", err)
+	}
+
 	return tx.Commit()
 }
 
@@ -1064,4 +1173,306 @@ func (s *SQLiteStore) RevokeDPoPAccessToken(ctx context.Context, tokenHash strin
 		return identity.ErrStoreNotFound
 	}
 	return nil
+}
+
+// ----------------- HouseholdStore -----------------
+
+func (s *SQLiteStore) GetHousehold(ctx context.Context, id string) (*identity.Household, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, name, created_at FROM households WHERE id = ?`, id)
+	var h identity.Household
+	if err := row.Scan(&h.ID, &h.Name, &h.CreatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrHouseholdNotFound
+		}
+		return nil, err
+	}
+	return &h, nil
+}
+
+func (s *SQLiteStore) GetHouseholdMembership(ctx context.Context, householdID, userID string) (*identity.HouseholdMembership, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT household_id, user_id, role, created_at FROM household_memberships WHERE household_id = ? AND user_id = ?`, householdID, userID)
+	var m identity.HouseholdMembership
+	var rStr string
+	if err := row.Scan(&m.HouseholdID, &m.UserID, &rStr, &m.CreatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrStoreNotFound
+		}
+		return nil, err
+	}
+	m.Role = identity.Role(rStr)
+	return &m, nil
+}
+
+func (s *SQLiteStore) PutHouseholdMembership(ctx context.Context, membership *identity.HouseholdMembership) error {
+	query := `
+	INSERT INTO household_memberships (household_id, user_id, role, created_at)
+	VALUES (?, ?, ?, ?)
+	ON CONFLICT(household_id, user_id) DO UPDATE SET
+		role = excluded.role;
+	`
+	_, err := s.db.ExecContext(ctx, query, membership.HouseholdID, membership.UserID, string(membership.Role), membership.CreatedAt.UTC())
+	return err
+}
+
+func (s *SQLiteStore) PutAccountPassword(ctx context.Context, userID, passwordHash string, now time.Time) error {
+	query := `
+	INSERT INTO account_passwords (user_id, password_hash, created_at, updated_at)
+	VALUES (?, ?, ?, ?)
+	ON CONFLICT(user_id) DO UPDATE SET
+		password_hash = excluded.password_hash,
+		updated_at = excluded.updated_at;
+	`
+	_, err := s.db.ExecContext(ctx, query, userID, passwordHash, now.UTC(), now.UTC())
+	return err
+}
+
+func (s *SQLiteStore) GetAccountPasswordHash(ctx context.Context, userID string) (string, error) {
+	var hash string
+	err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM account_passwords WHERE user_id = ?`, userID).Scan(&hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", identity.ErrStoreNotFound
+		}
+		return "", err
+	}
+	return hash, nil
+}
+
+func (s *SQLiteStore) CreateInvitation(ctx context.Context, invite *identity.AccountInvitation) error {
+	query := `
+	INSERT INTO account_invitations (id, household_id, code_hash, role, display_name, created_by_user_id, expires_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?)
+	`
+	_, err := s.db.ExecContext(ctx, query, invite.ID, invite.HouseholdID, invite.CodeHash, string(invite.Role), invite.DisplayName, invite.CreatedByUserID, invite.ExpiresAt.UTC())
+	return err
+}
+
+func (s *SQLiteStore) GetInvitationByCodeHash(ctx context.Context, codeHash string) (*identity.AccountInvitation, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, household_id, code_hash, role, display_name, created_by_user_id, expires_at, used_at FROM account_invitations WHERE code_hash = ?`, codeHash)
+	var inv identity.AccountInvitation
+	var rStr string
+	var uAt sql.NullTime
+	if err := row.Scan(&inv.ID, &inv.HouseholdID, &inv.CodeHash, &rStr, &inv.DisplayName, &inv.CreatedByUserID, &inv.ExpiresAt, &uAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrInvitationNotFound
+		}
+		return nil, err
+	}
+	inv.Role = identity.Role(rStr)
+	if uAt.Valid {
+		t := uAt.Time
+		inv.UsedAt = &t
+	}
+	return &inv, nil
+}
+
+func (s *SQLiteStore) RedeemInvitationAtomic(ctx context.Context, inviteID, codeHash string, user *identity.User, passwordHash string, passkey *identity.PasskeyCredential, now time.Time) (*identity.HouseholdMembership, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var hID, roleStr string
+	var expAt time.Time
+	var usedAt sql.NullTime
+	err = tx.QueryRowContext(ctx, `
+		SELECT household_id, role, expires_at, used_at
+		FROM account_invitations
+		WHERE id = ? AND code_hash = ?
+	`, inviteID, codeHash).Scan(&hID, &roleStr, &expAt, &usedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrInvitationNotFound
+		}
+		return nil, err
+	}
+
+	if usedAt.Valid {
+		return nil, identity.ErrInvitationAlreadyUsed
+	}
+	if now.After(expAt) {
+		return nil, identity.ErrInvitationNotFound
+	}
+
+	normUser, err := user.Normalize()
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO users (id, username, display_name, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, normUser.ID, normUser.Username, normUser.DisplayName, string(normUser.Role), normUser.CreatedAt.UTC(), normUser.UpdatedAt.UTC())
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert user during invite redeem: %w", err)
+	}
+
+	role := identity.Role(roleStr)
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO household_memberships (household_id, user_id, role, created_at)
+		VALUES (?, ?, ?, ?)
+	`, hID, normUser.ID, string(role), now.UTC())
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert household membership: %w", err)
+	}
+
+	if passwordHash != "" {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO account_passwords (user_id, password_hash, created_at, updated_at)
+			VALUES (?, ?, ?, ?)
+		`, normUser.ID, passwordHash, now.UTC(), now.UTC())
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert account password: %w", err)
+		}
+	} else if passkey != nil {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO passkey_credentials (id, user_id, public_key, attestation_type, aaguid, sign_count, backup_eligible, backup_state, transports, nickname, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, passkey.ID, normUser.ID, passkey.PublicKey, passkey.AttestationType, passkey.AAGUID, passkey.SignCount, passkey.BackupEligible, passkey.BackupState, strings.Join(passkey.Transports, ","), passkey.Nickname, now.UTC())
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert passkey credential: %w", err)
+		}
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE account_invitations
+		SET used_at = ?
+		WHERE id = ? AND used_at IS NULL
+	`, now.UTC(), inviteID)
+	if err != nil {
+		return nil, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil, identity.ErrInvitationAlreadyUsed
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return &identity.HouseholdMembership{
+		HouseholdID: hID,
+		UserID:      normUser.ID,
+		Role:        role,
+		CreatedAt:   now,
+	}, nil
+}
+
+func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile, policy *identity.ProfilePolicy) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO profiles (id, household_id, name, avatar_url, is_child, created_by_user_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			avatar_url = excluded.avatar_url,
+			is_child = excluded.is_child;
+	`, profile.ID, profile.HouseholdID, profile.Name, profile.AvatarURL, profile.IsChild, profile.CreatedByUserID, profile.CreatedAt.UTC())
+	if err != nil {
+		return err
+	}
+
+	if policy != nil {
+		var abJSON, bcJSON, twJSON sql.NullString
+		if len(policy.AllowedBouquets) > 0 {
+			b, _ := json.Marshal(policy.AllowedBouquets)
+			abJSON = sql.NullString{String: string(b), Valid: true}
+		}
+		if len(policy.BlockedChannels) > 0 {
+			b, _ := json.Marshal(policy.BlockedChannels)
+			bcJSON = sql.NullString{String: string(b), Valid: true}
+		}
+		if policy.ViewingTimeWindow != nil {
+			b, _ := json.Marshal(policy.ViewingTimeWindow)
+			twJSON = sql.NullString{String: string(b), Valid: true}
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO profile_policies (profile_id, allowed_bouquets, blocked_channels, maturity_level, exit_pin_hash, dvr_allowed, viewing_time_window)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(profile_id) DO UPDATE SET
+				allowed_bouquets = excluded.allowed_bouquets,
+				blocked_channels = excluded.blocked_channels,
+				maturity_level = excluded.maturity_level,
+				exit_pin_hash = excluded.exit_pin_hash,
+				dvr_allowed = excluded.dvr_allowed,
+				viewing_time_window = excluded.viewing_time_window;
+		`, policy.ProfileID, abJSON, bcJSON, policy.MaturityLevel, policy.ExitPINHash, policy.DVRAllowed, twJSON)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) GetProfile(ctx context.Context, profileID string) (*identity.Profile, *identity.ProfilePolicy, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, household_id, name, avatar_url, is_child, created_by_user_id, created_at FROM profiles WHERE id = ?`, profileID)
+	var p identity.Profile
+	var av sql.NullString
+	if err := row.Scan(&p.ID, &p.HouseholdID, &p.Name, &av, &p.IsChild, &p.CreatedByUserID, &p.CreatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, identity.ErrProfileNotFound
+		}
+		return nil, nil, err
+	}
+	if av.Valid {
+		p.AvatarURL = av.String
+	}
+
+	pRow := s.db.QueryRowContext(ctx, `SELECT profile_id, allowed_bouquets, blocked_channels, maturity_level, exit_pin_hash, dvr_allowed, viewing_time_window FROM profile_policies WHERE profile_id = ?`, profileID)
+	var pol identity.ProfilePolicy
+	var abStr, bcStr, exitPin, twStr sql.NullString
+	if err := pRow.Scan(&pol.ProfileID, &abStr, &bcStr, &pol.MaturityLevel, &exitPin, &pol.DVRAllowed, &twStr); err == nil {
+		if abStr.Valid && abStr.String != "" {
+			_ = json.Unmarshal([]byte(abStr.String), &pol.AllowedBouquets)
+		}
+		if bcStr.Valid && bcStr.String != "" {
+			_ = json.Unmarshal([]byte(bcStr.String), &pol.BlockedChannels)
+		}
+		if exitPin.Valid {
+			pol.ExitPINHash = exitPin.String
+		}
+		if twStr.Valid && twStr.String != "" {
+			var tw identity.ViewingTimeWindow
+			if err := json.Unmarshal([]byte(twStr.String), &tw); err == nil {
+				pol.ViewingTimeWindow = &tw
+			}
+		}
+		return &p, &pol, nil
+	}
+
+	return &p, nil, nil
+}
+
+func (s *SQLiteStore) ListProfilesByHousehold(ctx context.Context, householdID string) ([]identity.Profile, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, household_id, name, avatar_url, is_child, created_by_user_id, created_at FROM profiles WHERE household_id = ? ORDER BY created_at ASC`, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var profiles []identity.Profile
+	for rows.Next() {
+		var p identity.Profile
+		var av sql.NullString
+		if err := rows.Scan(&p.ID, &p.HouseholdID, &p.Name, &av, &p.IsChild, &p.CreatedByUserID, &p.CreatedAt); err == nil {
+			if av.Valid {
+				p.AvatarURL = av.String
+			}
+			profiles = append(profiles, p)
+		}
+	}
+	return profiles, nil
+}
+
+func (s *SQLiteStore) DeleteProfile(ctx context.Context, profileID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM profiles WHERE id = ?`, profileID)
+	return err
 }

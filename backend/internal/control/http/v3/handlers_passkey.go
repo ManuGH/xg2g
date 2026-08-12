@@ -51,6 +51,30 @@ func RegisterPasskeyRoutesWithRegistrar(registrar RouteRegistrar, svc *Server) e
 	if err := registrar.Register(http.MethodPost, "/auth/sessions/revoke-others", svc.authMiddleware(http.HandlerFunc(svc.RevokeOtherSessions))); err != nil {
 		return err
 	}
+	if err := registrar.Register(http.MethodPost, "/auth/login/password", http.HandlerFunc(svc.PasswordLogin)); err != nil {
+		return err
+	}
+	if err := registrar.Register(http.MethodPost, "/auth/invitations/redeem", http.HandlerFunc(svc.RedeemInvitation)); err != nil {
+		return err
+	}
+	if err := registrar.Register(http.MethodPost, "/auth/invitations", svc.authMiddleware(http.HandlerFunc(svc.CreateInvitation))); err != nil {
+		return err
+	}
+	if err := registrar.Register(http.MethodGet, "/auth/effective-permissions", svc.authMiddleware(http.HandlerFunc(svc.GetEffectivePermissions))); err != nil {
+		return err
+	}
+	if err := registrar.Register(http.MethodGet, "/profiles", svc.authMiddleware(http.HandlerFunc(svc.ListProfiles))); err != nil {
+		return err
+	}
+	if err := registrar.Register(http.MethodPost, "/profiles", svc.authMiddleware(http.HandlerFunc(svc.CreateProfile))); err != nil {
+		return err
+	}
+	if err := registrar.Register(http.MethodGet, "/profiles/{id}", svc.authMiddleware(http.HandlerFunc(svc.GetProfile))); err != nil {
+		return err
+	}
+	if err := registrar.Register(http.MethodDelete, "/profiles/{id}", svc.authMiddleware(http.HandlerFunc(svc.DeleteProfile))); err != nil {
+		return err
+	}
 	return registrar.Register(http.MethodPost, "/auth/bootstrap/acknowledge-recovery", svc.authMiddleware(http.HandlerFunc(svc.AcknowledgeRecovery)))
 }
 
@@ -68,6 +92,8 @@ func (s *Server) mountPasskeyRoutes(r chi.Router) {
 		dr.Post("/refresh", s.DeviceRefresh)
 	})
 	r.Post("/auth/recovery", s.RecoveryLogin)
+
+	s.mountHouseholdRoutes(r)
 
 	// Protected management endpoints
 	r.Group(func(pr chi.Router) {

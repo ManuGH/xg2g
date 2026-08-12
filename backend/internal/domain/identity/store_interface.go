@@ -77,6 +77,25 @@ type DeviceStore interface {
 	RevokeDPoPAccessToken(ctx context.Context, tokenHash string, now time.Time) error
 }
 
+// HouseholdStore owns household membership, password auth, invitation, and profile persistence.
+type HouseholdStore interface {
+	GetHousehold(ctx context.Context, id string) (*Household, error)
+	GetHouseholdMembership(ctx context.Context, householdID, userID string) (*HouseholdMembership, error)
+	PutHouseholdMembership(ctx context.Context, membership *HouseholdMembership) error
+
+	PutAccountPassword(ctx context.Context, userID, passwordHash string, now time.Time) error
+	GetAccountPasswordHash(ctx context.Context, userID string) (string, error)
+
+	CreateInvitation(ctx context.Context, invite *AccountInvitation) error
+	GetInvitationByCodeHash(ctx context.Context, codeHash string) (*AccountInvitation, error)
+	RedeemInvitationAtomic(ctx context.Context, inviteID, codeHash string, user *User, passwordHash string, passkey *PasskeyCredential, now time.Time) (*HouseholdMembership, error)
+
+	PutProfile(ctx context.Context, profile *Profile, policy *ProfilePolicy) error
+	GetProfile(ctx context.Context, profileID string) (*Profile, *ProfilePolicy, error)
+	ListProfilesByHousehold(ctx context.Context, householdID string) ([]Profile, error)
+	DeleteProfile(ctx context.Context, profileID string) error
+}
+
 // Store is the combined identity persistence interface.
 type Store interface {
 	UserStore
@@ -85,5 +104,6 @@ type Store interface {
 	WebSessionStore
 	BootstrapStore
 	DeviceStore
+	HouseholdStore
 	Close() error
 }

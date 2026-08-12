@@ -84,7 +84,7 @@ func (l *Loader) mergeEnvConfigGenerated(cfg *AppConfig) {
 		envVar := e.Env
 
 		// Handle specific custom types
-		if e.Path == "api.allowedOrigins" || e.Path == "api.tokenScopes" || e.Path == "api.playbackDecisionPreviousKeys" || e.Path == "network.outbound.allow.hosts" || e.Path == "network.outbound.allow.cidrs" || e.Path == "network.outbound.allow.schemes" || e.Path == "network.lan.allow.cidrs" || e.Path == "rateLimit.whitelist" || e.Path == "monetization.requiredScopes" {
+		if e.Path == "api.allowedOrigins" || e.Path == "api.tokenScopes" || e.Path == "api.playbackDecisionPreviousKeys" || e.Path == "network.outbound.allow.hosts" || e.Path == "network.outbound.allow.cidrs" || e.Path == "network.outbound.allow.schemes" || e.Path == "network.lan.allow.cidrs" || e.Path == "rateLimit.whitelist" || e.Path == "monetization.requiredScopes" || e.Path == "android.sha256Fingerprints" {
 			fmt.Fprintf(&buf, "\t%s = parseCommaSeparated(l.envString(%q, \"\"), %s)\n", field, envVar, field)
 			continue
 		}
