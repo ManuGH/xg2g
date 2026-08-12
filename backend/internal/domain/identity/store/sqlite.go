@@ -210,6 +210,56 @@ func (s *SQLiteStore) initSchema(ctx context.Context) error {
 		viewing_time_window TEXT
 	);
 
+	CREATE TABLE IF NOT EXISTS access_policies (
+		id TEXT PRIMARY KEY,
+		account_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		valid_from TIMESTAMP,
+		valid_until TIMESTAMP,
+		daily_start TEXT,
+		daily_end TEXT,
+		timezone TEXT NOT NULL DEFAULT 'Europe/Vienna',
+		allowed_days_mask INTEGER NOT NULL DEFAULT 127,
+		live_tv_allowed BOOLEAN NOT NULL DEFAULT 1,
+		epg_allowed BOOLEAN NOT NULL DEFAULT 1,
+		dvr_allowed BOOLEAN NOT NULL DEFAULT 1,
+		recordings_allowed BOOLEAN NOT NULL DEFAULT 1,
+		max_devices INTEGER NOT NULL DEFAULT 3,
+		revoked_at TIMESTAMP,
+		created_at TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS approval_requests (
+		id TEXT PRIMARY KEY,
+		household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+		profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+		request_type TEXT NOT NULL,
+		resource_id TEXT NOT NULL,
+		resource_name TEXT NOT NULL,
+		parental_rating INTEGER NOT NULL DEFAULT 0,
+		scope TEXT NOT NULL DEFAULT 'single',
+		status TEXT NOT NULL DEFAULT 'pending',
+		created_at TIMESTAMP NOT NULL,
+		expires_at TIMESTAMP NOT NULL,
+		approved_by_user_id TEXT REFERENCES users(id),
+		approved_at TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS household_resource_policies (
+		household_id TEXT PRIMARY KEY REFERENCES households(id) ON DELETE CASCADE,
+		max_concurrent_live_services INTEGER NOT NULL DEFAULT 3,
+		max_concurrent_viewers INTEGER NOT NULL DEFAULT 5,
+		max_parallel_recordings INTEGER NOT NULL DEFAULT 4,
+		max_parallel_transcodes INTEGER NOT NULL DEFAULT 3,
+		preemption_enabled BOOLEAN NOT NULL DEFAULT 0,
+		updated_at TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS recording_profile_access (
+		recording_id TEXT NOT NULL,
+		profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+		PRIMARY KEY (recording_id, profile_id)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_passkey_user_id ON passkey_credentials(user_id);
 	CREATE INDEX IF NOT EXISTS idx_recovery_user_id ON recovery_codes(user_id);
 	CREATE INDEX IF NOT EXISTS idx_web_sessions_user_id ON web_sessions(user_id);
@@ -222,12 +272,23 @@ func (s *SQLiteStore) initSchema(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_access_tokens_bound_jkt ON access_tokens(bound_jkt);
 	CREATE INDEX IF NOT EXISTS idx_invitations_code_hash ON account_invitations(code_hash);
 	CREATE INDEX IF NOT EXISTS idx_profiles_household_id ON profiles(household_id);
+	CREATE INDEX IF NOT EXISTS idx_access_policies_account_id ON access_policies(account_id);
+	CREATE INDEX IF NOT EXISTS idx_approval_requests_household_status ON approval_requests(household_id, status);
 	`
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return err
 	}
 
+	s.addProfileColumns(ctx)
+
 	return s.migrateHouseholdV1(ctx)
+}
+
+func (s *SQLiteStore) addProfileColumns(ctx context.Context) {
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE profiles ADD COLUMN date_of_birth TIMESTAMP;`)
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE profiles ADD COLUMN max_parental_rating INTEGER DEFAULT 18;`)
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE profiles ADD COLUMN unknown_rating_policy TEXT DEFAULT 'request_approval';`)
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE profiles ADD COLUMN storage_quota_bytes INTEGER DEFAULT 0;`)
 }
 
 func (s *SQLiteStore) migrateHouseholdV1(ctx context.Context) error {
@@ -1366,14 +1427,31 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	dobVal := sql.NullTime{}
+	if profile.DateOfBirth != nil {
+		dobVal = sql.NullTime{Time: profile.DateOfBirth.UTC(), Valid: true}
+	}
+	maxRating := profile.MaxParentalRating
+	if maxRating == 0 {
+		maxRating = 18
+	}
+	unknownPol := profile.UnknownRatingPolicy
+	if unknownPol == "" {
+		unknownPol = "request_approval"
+	}
+
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO profiles (id, household_id, name, avatar_url, is_child, created_by_user_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO profiles (id, household_id, name, avatar_url, is_child, date_of_birth, max_parental_rating, unknown_rating_policy, storage_quota_bytes, created_by_user_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			avatar_url = excluded.avatar_url,
-			is_child = excluded.is_child;
-	`, profile.ID, profile.HouseholdID, profile.Name, profile.AvatarURL, profile.IsChild, profile.CreatedByUserID, profile.CreatedAt.UTC())
+			is_child = excluded.is_child,
+			date_of_birth = excluded.date_of_birth,
+			max_parental_rating = excluded.max_parental_rating,
+			unknown_rating_policy = excluded.unknown_rating_policy,
+			storage_quota_bytes = excluded.storage_quota_bytes;
+	`, profile.ID, profile.HouseholdID, profile.Name, profile.AvatarURL, profile.IsChild, dobVal, maxRating, unknownPol, profile.StorageQuotaBytes, profile.CreatedByUserID, profile.CreatedAt.UTC())
 	if err != nil {
 		return err
 	}
@@ -1413,10 +1491,11 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 }
 
 func (s *SQLiteStore) GetProfile(ctx context.Context, profileID string) (*identity.Profile, *identity.ProfilePolicy, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, household_id, name, avatar_url, is_child, created_by_user_id, created_at FROM profiles WHERE id = ?`, profileID)
+	row := s.db.QueryRowContext(ctx, `SELECT id, household_id, name, avatar_url, is_child, date_of_birth, max_parental_rating, unknown_rating_policy, storage_quota_bytes, created_by_user_id, created_at FROM profiles WHERE id = ?`, profileID)
 	var p identity.Profile
 	var av sql.NullString
-	if err := row.Scan(&p.ID, &p.HouseholdID, &p.Name, &av, &p.IsChild, &p.CreatedByUserID, &p.CreatedAt); err != nil {
+	var dob sql.NullTime
+	if err := row.Scan(&p.ID, &p.HouseholdID, &p.Name, &av, &p.IsChild, &dob, &p.MaxParentalRating, &p.UnknownRatingPolicy, &p.StorageQuotaBytes, &p.CreatedByUserID, &p.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil, identity.ErrProfileNotFound
 		}
@@ -1424,6 +1503,10 @@ func (s *SQLiteStore) GetProfile(ctx context.Context, profileID string) (*identi
 	}
 	if av.Valid {
 		p.AvatarURL = av.String
+	}
+	if dob.Valid {
+		t := dob.Time.UTC()
+		p.DateOfBirth = &t
 	}
 
 	pRow := s.db.QueryRowContext(ctx, `SELECT profile_id, allowed_bouquets, blocked_channels, maturity_level, exit_pin_hash, dvr_allowed, viewing_time_window FROM profile_policies WHERE profile_id = ?`, profileID)
@@ -1452,7 +1535,7 @@ func (s *SQLiteStore) GetProfile(ctx context.Context, profileID string) (*identi
 }
 
 func (s *SQLiteStore) ListProfilesByHousehold(ctx context.Context, householdID string) ([]identity.Profile, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, household_id, name, avatar_url, is_child, created_by_user_id, created_at FROM profiles WHERE household_id = ? ORDER BY created_at ASC`, householdID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, household_id, name, avatar_url, is_child, date_of_birth, max_parental_rating, unknown_rating_policy, storage_quota_bytes, created_by_user_id, created_at FROM profiles WHERE household_id = ? ORDER BY created_at ASC`, householdID)
 	if err != nil {
 		return nil, err
 	}
@@ -1462,9 +1545,14 @@ func (s *SQLiteStore) ListProfilesByHousehold(ctx context.Context, householdID s
 	for rows.Next() {
 		var p identity.Profile
 		var av sql.NullString
-		if err := rows.Scan(&p.ID, &p.HouseholdID, &p.Name, &av, &p.IsChild, &p.CreatedByUserID, &p.CreatedAt); err == nil {
+		var dob sql.NullTime
+		if err := rows.Scan(&p.ID, &p.HouseholdID, &p.Name, &av, &p.IsChild, &dob, &p.MaxParentalRating, &p.UnknownRatingPolicy, &p.StorageQuotaBytes, &p.CreatedByUserID, &p.CreatedAt); err == nil {
 			if av.Valid {
 				p.AvatarURL = av.String
+			}
+			if dob.Valid {
+				t := dob.Time.UTC()
+				p.DateOfBirth = &t
 			}
 			profiles = append(profiles, p)
 		}
@@ -1474,5 +1562,270 @@ func (s *SQLiteStore) ListProfilesByHousehold(ctx context.Context, householdID s
 
 func (s *SQLiteStore) DeleteProfile(ctx context.Context, profileID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM profiles WHERE id = ?`, profileID)
+	return err
+}
+
+// ----------------- Access Policies -----------------
+
+func (s *SQLiteStore) PutAccessPolicy(ctx context.Context, policy *identity.AccessPolicy) error {
+	var vfVal, vuVal, revVal sql.NullTime
+	if policy.ValidFrom != nil {
+		vfVal = sql.NullTime{Time: policy.ValidFrom.UTC(), Valid: true}
+	}
+	if policy.ValidUntil != nil {
+		vuVal = sql.NullTime{Time: policy.ValidUntil.UTC(), Valid: true}
+	}
+	if policy.RevokedAt != nil {
+		revVal = sql.NullTime{Time: policy.RevokedAt.UTC(), Valid: true}
+	}
+	tz := policy.Timezone
+	if tz == "" {
+		tz = "Europe/Vienna"
+	}
+	days := policy.AllowedDaysMask
+	if days <= 0 {
+		days = 127
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO access_policies (id, account_id, valid_from, valid_until, daily_start, daily_end, timezone, allowed_days_mask, live_tv_allowed, epg_allowed, dvr_allowed, recordings_allowed, max_devices, revoked_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			valid_from = excluded.valid_from,
+			valid_until = excluded.valid_until,
+			daily_start = excluded.daily_start,
+			daily_end = excluded.daily_end,
+			timezone = excluded.timezone,
+			allowed_days_mask = excluded.allowed_days_mask,
+			live_tv_allowed = excluded.live_tv_allowed,
+			epg_allowed = excluded.epg_allowed,
+			dvr_allowed = excluded.dvr_allowed,
+			recordings_allowed = excluded.recordings_allowed,
+			max_devices = excluded.max_devices,
+			revoked_at = excluded.revoked_at;
+	`, policy.ID, policy.AccountID, vfVal, vuVal, policy.DailyStart, policy.DailyEnd, tz, days, policy.LiveTVAllowed, policy.EPGAllowed, policy.DVRAllowed, policy.RecordingsAllowed, policy.MaxDevices, revVal, policy.CreatedAt.UTC())
+	return err
+}
+
+func (s *SQLiteStore) GetAccessPolicy(ctx context.Context, accountID string) (*identity.AccessPolicy, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, account_id, valid_from, valid_until, daily_start, daily_end, timezone, allowed_days_mask, live_tv_allowed, epg_allowed, dvr_allowed, recordings_allowed, max_devices, revoked_at, created_at
+		FROM access_policies WHERE account_id = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1
+	`, accountID)
+	var pol identity.AccessPolicy
+	var vf, vu, rev sql.NullTime
+	var ds, de sql.NullString
+	if err := row.Scan(&pol.ID, &pol.AccountID, &vf, &vu, &ds, &de, &pol.Timezone, &pol.AllowedDaysMask, &pol.LiveTVAllowed, &pol.EPGAllowed, &pol.DVRAllowed, &pol.RecordingsAllowed, &pol.MaxDevices, &rev, &pol.CreatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if vf.Valid {
+		t := vf.Time.UTC()
+		pol.ValidFrom = &t
+	}
+	if vu.Valid {
+		t := vu.Time.UTC()
+		pol.ValidUntil = &t
+	}
+	if rev.Valid {
+		t := rev.Time.UTC()
+		pol.RevokedAt = &t
+	}
+	if ds.Valid {
+		pol.DailyStart = ds.String
+	}
+	if de.Valid {
+		pol.DailyEnd = de.String
+	}
+	return &pol, nil
+}
+
+func (s *SQLiteStore) RevokeAccessPolicy(ctx context.Context, id string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE access_policies SET revoked_at = ? WHERE id = ?`, now.UTC(), id)
+	return err
+}
+
+// ----------------- Approval Requests -----------------
+
+func (s *SQLiteStore) CreateApprovalRequest(ctx context.Context, req *identity.ApprovalRequest) error {
+	var appUser sql.NullString
+	var appAt sql.NullTime
+	if req.ApprovedByUserID != "" {
+		appUser = sql.NullString{String: req.ApprovedByUserID, Valid: true}
+	}
+	if req.ApprovedAt != nil {
+		appAt = sql.NullTime{Time: req.ApprovedAt.UTC(), Valid: true}
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO approval_requests (id, household_id, profile_id, request_type, resource_id, resource_name, parental_rating, scope, status, created_at, expires_at, approved_by_user_id, approved_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`, req.ID, req.HouseholdID, req.ProfileID, req.RequestType, req.ResourceID, req.ResourceName, req.ParentalRating, req.Scope, req.Status, req.CreatedAt.UTC(), req.ExpiresAt.UTC(), appUser, appAt)
+	return err
+}
+
+func (s *SQLiteStore) GetApprovalRequest(ctx context.Context, id string) (*identity.ApprovalRequest, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, household_id, profile_id, request_type, resource_id, resource_name, parental_rating, scope, status, created_at, expires_at, approved_by_user_id, approved_at
+		FROM approval_requests WHERE id = ?
+	`, id)
+	var req identity.ApprovalRequest
+	var appUser sql.NullString
+	var appAt sql.NullTime
+	if err := row.Scan(&req.ID, &req.HouseholdID, &req.ProfileID, &req.RequestType, &req.ResourceID, &req.ResourceName, &req.ParentalRating, &req.Scope, &req.Status, &req.CreatedAt, &req.ExpiresAt, &appUser, &appAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrApprovalNotFound
+		}
+		return nil, err
+	}
+	if appUser.Valid {
+		req.ApprovedByUserID = appUser.String
+	}
+	if appAt.Valid {
+		t := appAt.Time.UTC()
+		req.ApprovedAt = &t
+	}
+	return &req, nil
+}
+
+func (s *SQLiteStore) ListApprovalRequests(ctx context.Context, householdID, status string) ([]identity.ApprovalRequest, error) {
+	query := `SELECT id, household_id, profile_id, request_type, resource_id, resource_name, parental_rating, scope, status, created_at, expires_at, approved_by_user_id, approved_at FROM approval_requests WHERE household_id = ?`
+	args := []any{householdID}
+	if status != "" {
+		query += ` AND status = ?`
+		args = append(args, status)
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reqs []identity.ApprovalRequest
+	for rows.Next() {
+		var req identity.ApprovalRequest
+		var appUser sql.NullString
+		var appAt sql.NullTime
+		if err := rows.Scan(&req.ID, &req.HouseholdID, &req.ProfileID, &req.RequestType, &req.ResourceID, &req.ResourceName, &req.ParentalRating, &req.Scope, &req.Status, &req.CreatedAt, &req.ExpiresAt, &appUser, &appAt); err == nil {
+			if appUser.Valid {
+				req.ApprovedByUserID = appUser.String
+			}
+			if appAt.Valid {
+				t := appAt.Time.UTC()
+				req.ApprovedAt = &t
+			}
+			reqs = append(reqs, req)
+		}
+	}
+	return reqs, nil
+}
+
+func (s *SQLiteStore) SettleApprovalRequest(ctx context.Context, id, status, approvedByUserID string, approvedAt time.Time) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE approval_requests
+		SET status = ?, approved_by_user_id = ?, approved_at = ?
+		WHERE id = ? AND status = 'pending';
+	`, status, approvedByUserID, approvedAt.UTC(), id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return identity.ErrApprovalAlreadySettled
+	}
+	return nil
+}
+
+// ----------------- Household Resource Policy -----------------
+
+func (s *SQLiteStore) PutHouseholdResourcePolicy(ctx context.Context, policy *identity.HouseholdResourcePolicy) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO household_resource_policies (household_id, max_concurrent_live_services, max_concurrent_viewers, max_parallel_recordings, max_parallel_transcodes, preemption_enabled, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(household_id) DO UPDATE SET
+			max_concurrent_live_services = excluded.max_concurrent_live_services,
+			max_concurrent_viewers = excluded.max_concurrent_viewers,
+			max_parallel_recordings = excluded.max_parallel_recordings,
+			max_parallel_transcodes = excluded.max_parallel_transcodes,
+			preemption_enabled = excluded.preemption_enabled,
+			updated_at = excluded.updated_at;
+	`, policy.HouseholdID, policy.MaxConcurrentLiveServices, policy.MaxConcurrentViewers, policy.MaxParallelRecordings, policy.MaxParallelTranscodes, policy.PreemptionEnabled, policy.UpdatedAt.UTC())
+	return err
+}
+
+func (s *SQLiteStore) GetHouseholdResourcePolicy(ctx context.Context, householdID string) (*identity.HouseholdResourcePolicy, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT household_id, max_concurrent_live_services, max_concurrent_viewers, max_parallel_recordings, max_parallel_transcodes, preemption_enabled, updated_at
+		FROM household_resource_policies WHERE household_id = ?
+	`, householdID)
+	var pol identity.HouseholdResourcePolicy
+	if err := row.Scan(&pol.HouseholdID, &pol.MaxConcurrentLiveServices, &pol.MaxConcurrentViewers, &pol.MaxParallelRecordings, &pol.MaxParallelTranscodes, &pol.PreemptionEnabled, &pol.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return &identity.HouseholdResourcePolicy{
+				HouseholdID:               householdID,
+				MaxConcurrentLiveServices: 3,
+				MaxConcurrentViewers:      5,
+				MaxParallelRecordings:     4,
+				MaxParallelTranscodes:     3,
+				PreemptionEnabled:         false,
+				UpdatedAt:                 time.Now().UTC(),
+			}, nil
+		}
+		return nil, err
+	}
+	return &pol, nil
+}
+
+// ----------------- Recording Profile Access -----------------
+
+func (s *SQLiteStore) PutRecordingProfileAccess(ctx context.Context, recordingID string, profileIDs []string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx, `DELETE FROM recording_profile_access WHERE recording_id = ?`, recordingID)
+	if err != nil {
+		return err
+	}
+
+	for _, pid := range profileIDs {
+		if pid == "" {
+			continue
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO recording_profile_access (recording_id, profile_id) VALUES (?, ?)`, recordingID, pid)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) GetRecordingProfileAccess(ctx context.Context, recordingID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT profile_id FROM recording_profile_access WHERE recording_id = ?`, recordingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pids []string
+	for rows.Next() {
+		var pid string
+		if err := rows.Scan(&pid); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
+// ----------------- Session Revocation -----------------
+
+func (s *SQLiteStore) RevokeAllUserSessions(ctx context.Context, userID string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE web_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`, now.UTC(), userID)
 	return err
 }

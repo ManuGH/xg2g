@@ -1138,7 +1138,7 @@ func (s *Service) CreateProfile(ctx context.Context, createdByUserID, name, avat
 	return prof, pol, nil
 }
 
-// GetEffectivePermissions computes EffectivePermissions = AccountPermissions ∩ ProfilePolicy.
+// GetEffectivePermissions computes EffectivePermissions = AccountRole ∩ ProfilePolicy ∩ AccessPolicy ∩ DeviceState.
 func (s *Service) GetEffectivePermissions(ctx context.Context, userID, profileID string) (EffectivePermissions, error) {
 	user, err := s.resolveUser(ctx, userID)
 	if err != nil {
@@ -1159,5 +1159,107 @@ func (s *Service) GetEffectivePermissions(ctx context.Context, userID, profileID
 		}
 	}
 
-	return CalculateEffectivePermissions(user.ID, role, pol), nil
+	access, _ := s.store.GetAccessPolicy(ctx, user.ID)
+
+	return CalculateEffectivePermissions(user.ID, role, pol, access), nil
+}
+
+// CreateAccessPolicy sets or updates an access policy for an account.
+func (s *Service) CreateAccessPolicy(ctx context.Context, policy *AccessPolicy) error {
+	if policy.ID == "" {
+		policy.ID = "acc_pol_" + generateRandomHex(12)
+	}
+	policy.CreatedAt = s.now()
+	return s.store.PutAccessPolicy(ctx, policy)
+}
+
+// GetAccessPolicy fetches the active access policy for an account.
+func (s *Service) GetAccessPolicy(ctx context.Context, accountID string) (*AccessPolicy, error) {
+	return s.store.GetAccessPolicy(ctx, accountID)
+}
+
+// RevokeAccessPolicy revokes an access policy immediately.
+func (s *Service) RevokeAccessPolicy(ctx context.Context, policyID string) error {
+	return s.store.RevokeAccessPolicy(ctx, policyID, s.now())
+}
+
+// CreateApprovalRequest creates a pending child content or recording request.
+func (s *Service) CreateApprovalRequest(ctx context.Context, profileID, requestType, resourceID, resourceName string, parentalRating int, scope string, expiresAt time.Time) (*ApprovalRequest, error) {
+	prof, _, err := s.store.GetProfile(ctx, profileID)
+	if err != nil {
+		return nil, err
+	}
+
+	if expiresAt.IsZero() {
+		expiresAt = s.now().Add(24 * time.Hour)
+	}
+
+	req := &ApprovalRequest{
+		ID:             "appr_" + generateRandomHex(12),
+		HouseholdID:    prof.HouseholdID,
+		ProfileID:      profileID,
+		RequestType:    requestType,
+		ResourceID:     resourceID,
+		ResourceName:   resourceName,
+		ParentalRating: parentalRating,
+		Scope:          scope,
+		Status:         "pending",
+		CreatedAt:      s.now(),
+		ExpiresAt:      expiresAt,
+	}
+
+	if err := s.store.CreateApprovalRequest(ctx, req); err != nil {
+		return nil, err
+	}
+	return req, nil
+}
+
+// ListApprovalRequests lists approval requests by status (e.g. "pending").
+func (s *Service) ListApprovalRequests(ctx context.Context, householdID, status string) ([]ApprovalRequest, error) {
+	if householdID == "" {
+		householdID = "default_household"
+	}
+	return s.store.ListApprovalRequests(ctx, householdID, status)
+}
+
+// ApproveRequest approves a pending approval request.
+func (s *Service) ApproveRequest(ctx context.Context, requestID, adminUserID string) error {
+	return s.store.SettleApprovalRequest(ctx, requestID, "approved", adminUserID, s.now())
+}
+
+// DenyRequest denies a pending approval request.
+func (s *Service) DenyRequest(ctx context.Context, requestID, adminUserID string) error {
+	return s.store.SettleApprovalRequest(ctx, requestID, "denied", adminUserID, s.now())
+}
+
+// PutHouseholdResourcePolicy updates concurrency limits for a household.
+func (s *Service) PutHouseholdResourcePolicy(ctx context.Context, policy *HouseholdResourcePolicy) error {
+	if policy.HouseholdID == "" {
+		policy.HouseholdID = "default_household"
+	}
+	policy.UpdatedAt = s.now()
+	return s.store.PutHouseholdResourcePolicy(ctx, policy)
+}
+
+// GetHouseholdResourcePolicy retrieves current concurrency limits for a household.
+func (s *Service) GetHouseholdResourcePolicy(ctx context.Context, householdID string) (*HouseholdResourcePolicy, error) {
+	if householdID == "" {
+		householdID = "default_household"
+	}
+	return s.store.GetHouseholdResourcePolicy(ctx, householdID)
+}
+
+// PutRecordingProfileAccess sets profile access visibility for virtual recording library items.
+func (s *Service) PutRecordingProfileAccess(ctx context.Context, recordingID string, profileIDs []string) error {
+	return s.store.PutRecordingProfileAccess(ctx, recordingID, profileIDs)
+}
+
+// GetRecordingProfileAccess retrieves profile access list for a recording.
+func (s *Service) GetRecordingProfileAccess(ctx context.Context, recordingID string) ([]string, error) {
+	return s.store.GetRecordingProfileAccess(ctx, recordingID)
+}
+
+// RevokeAllUserSessions revokes all active web sessions for a target user.
+func (s *Service) RevokeAllUserSessions(ctx context.Context, userID string) error {
+	return s.store.RevokeAllUserSessions(ctx, userID, s.now())
 }

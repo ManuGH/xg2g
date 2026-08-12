@@ -64,6 +64,17 @@ func (s *Server) mountHouseholdRoutes(r chi.Router) {
 		pr.Post("/profiles", s.CreateProfile)
 		pr.Get("/profiles/{id}", s.GetProfile)
 		pr.Delete("/profiles/{id}", s.DeleteProfile)
+
+		pr.Get("/household/policies/access", s.GetAccessPolicy)
+		pr.Post("/household/policies/access", s.CreateAccessPolicy)
+		pr.Post("/household/policies/access/revoke", s.RevokeAccessPolicy)
+		pr.Get("/household/approvals", s.ListApprovalRequests)
+		pr.Post("/household/approvals", s.CreateApprovalRequest)
+		pr.Post("/household/approvals/{id}/approve", s.ApproveApprovalRequest)
+		pr.Post("/household/approvals/{id}/deny", s.DenyApprovalRequest)
+		pr.Get("/household/resource-policy", s.GetHouseholdResourcePolicy)
+		pr.Put("/household/resource-policy", s.PutHouseholdResourcePolicy)
+		pr.Post("/sessions/revoke-user-sessions", s.RevokeUserSessions)
 	})
 }
 
@@ -347,4 +358,237 @@ func (s *Server) PutHouseholdProfile(w http.ResponseWriter, r *http.Request, pro
 		return
 	}
 	s.CreateProfile(w, r)
+}
+
+func (s *Server) GetAccessPolicy(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+	user := s.getUserFromContext(r.Context())
+	if user == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	targetUserID := r.URL.Query().Get("userId")
+	if targetUserID == "" {
+		targetUserID = user.ID
+	}
+
+	pol, err := svc.GetAccessPolicy(r.Context(), targetUserID)
+	if err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to get access policy", nil)
+		return
+	}
+	if pol == nil {
+		pol = &identity.AccessPolicy{
+			AccountID:         targetUserID,
+			DailyStart:        "07:00",
+			DailyEnd:          "19:00",
+			Timezone:          "Europe/Vienna",
+			AllowedDaysMask:   127,
+			LiveTVAllowed:     true,
+			EPGAllowed:        true,
+			DVRAllowed:        true,
+			RecordingsAllowed: true,
+			MaxDevices:        3,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(pol)
+}
+
+func (s *Server) CreateAccessPolicy(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+
+	var pol identity.AccessPolicy
+	if err := json.NewDecoder(r.Body).Decode(&pol); err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Invalid Request", problemcode.CodeInvalidInput, "Invalid access policy JSON", nil)
+		return
+	}
+
+	if pol.AccountID == "" {
+		user := s.getUserFromContext(r.Context())
+		if user != nil {
+			pol.AccountID = user.ID
+		}
+	}
+
+	if err := svc.CreateAccessPolicy(r.Context(), &pol); err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to create access policy", nil)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(pol)
+}
+
+func (s *Server) RevokeAccessPolicy(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+	policyID := r.URL.Query().Get("id")
+	if policyID == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Invalid Request", problemcode.CodeInvalidInput, "Missing id parameter", nil)
+		return
+	}
+
+	if err := svc.RevokeAccessPolicy(r.Context(), policyID); err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to revoke access policy", nil)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) ListApprovalRequests(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+	status := r.URL.Query().Get("status")
+	reqs, err := svc.ListApprovalRequests(r.Context(), "default_household", status)
+	if err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to list approval requests", nil)
+		return
+	}
+	if reqs == nil {
+		reqs = []identity.ApprovalRequest{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(reqs)
+}
+
+type CreateApprovalPayload struct {
+	ProfileID      string `json:"profileId"`
+	RequestType    string `json:"requestType"`
+	ResourceID     string `json:"resourceId"`
+	ResourceName   string `json:"resourceName"`
+	ParentalRating int    `json:"parentalRating"`
+	Scope          string `json:"scope"`
+}
+
+func (s *Server) CreateApprovalRequest(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+	var p CreateApprovalPayload
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Invalid Request", problemcode.CodeInvalidInput, "Invalid approval payload", nil)
+		return
+	}
+
+	appr, err := svc.CreateApprovalRequest(r.Context(), p.ProfileID, p.RequestType, p.ResourceID, p.ResourceName, p.ParentalRating, p.Scope, time.Time{})
+	if err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to create approval request", nil)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(appr)
+}
+
+func (s *Server) ApproveApprovalRequest(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	user := s.getUserFromContext(r.Context())
+	adminID := "admin"
+	if user != nil {
+		adminID = user.ID
+	}
+	if err := svc.ApproveRequest(r.Context(), id, adminID); err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Approval Error", problemcode.CodeInvalidInput, err.Error(), nil)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) DenyApprovalRequest(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	user := s.getUserFromContext(r.Context())
+	adminID := "admin"
+	if user != nil {
+		adminID = user.ID
+	}
+	if err := svc.DenyRequest(r.Context(), id, adminID); err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Approval Error", problemcode.CodeInvalidInput, err.Error(), nil)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) GetHouseholdResourcePolicy(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+	pol, err := svc.GetHouseholdResourcePolicy(r.Context(), "default_household")
+	if err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to get resource policy", nil)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(pol)
+}
+
+func (s *Server) PutHouseholdResourcePolicy(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+	var pol identity.HouseholdResourcePolicy
+	if err := json.NewDecoder(r.Body).Decode(&pol); err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Invalid Request", problemcode.CodeInvalidInput, "Invalid resource policy payload", nil)
+		return
+	}
+	if err := svc.PutHouseholdResourcePolicy(r.Context(), &pol); err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to update resource policy", nil)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(pol)
+}
+
+func (s *Server) RevokeUserSessions(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+	type RevokeReq struct {
+		UserID string `json:"userId"`
+	}
+	var req RevokeReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UserID == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Invalid Request", problemcode.CodeInvalidInput, "Invalid userId", nil)
+		return
+	}
+	if err := svc.RevokeAllUserSessions(r.Context(), req.UserID); err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to revoke user sessions", nil)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -94,6 +94,23 @@ type HouseholdStore interface {
 	GetProfile(ctx context.Context, profileID string) (*Profile, *ProfilePolicy, error)
 	ListProfilesByHousehold(ctx context.Context, householdID string) ([]Profile, error)
 	DeleteProfile(ctx context.Context, profileID string) error
+
+	PutAccessPolicy(ctx context.Context, policy *AccessPolicy) error
+	GetAccessPolicy(ctx context.Context, accountID string) (*AccessPolicy, error)
+	RevokeAccessPolicy(ctx context.Context, id string, now time.Time) error
+
+	CreateApprovalRequest(ctx context.Context, req *ApprovalRequest) error
+	GetApprovalRequest(ctx context.Context, id string) (*ApprovalRequest, error)
+	ListApprovalRequests(ctx context.Context, householdID, status string) ([]ApprovalRequest, error)
+	SettleApprovalRequest(ctx context.Context, id, status, approvedByUserID string, approvedAt time.Time) error
+
+	PutHouseholdResourcePolicy(ctx context.Context, policy *HouseholdResourcePolicy) error
+	GetHouseholdResourcePolicy(ctx context.Context, householdID string) (*HouseholdResourcePolicy, error)
+
+	PutRecordingProfileAccess(ctx context.Context, recordingID string, profileIDs []string) error
+	GetRecordingProfileAccess(ctx context.Context, recordingID string) ([]string, error)
+
+	RevokeAllUserSessions(ctx context.Context, userID string, now time.Time) error
 }
 
 // Store is the combined identity persistence interface.
