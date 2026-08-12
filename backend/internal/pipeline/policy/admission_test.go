@@ -4,6 +4,7 @@
 package policy_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/domain/identity"
@@ -92,7 +93,7 @@ func TestIssueAdmissionTicket_AndPreemptionTieBreaker(t *testing.T) {
 	assert.True(t, dec1.Allowed)
 	assert.NotNil(t, tkt1)
 	assert.Equal(t, policy.TicketStatusIssued, tkt1.Status)
-	assert.Equal(t, "tkt_sess_g1", tkt1.TicketID)
+	assert.True(t, strings.HasPrefix(tkt1.TicketID, "tkt_"))
 
 	reqGuest2 := policy.AdmissionRequest{
 		SessionID:   "sess_g2",

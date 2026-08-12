@@ -16,8 +16,14 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/recordings/model"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 )
+
+// ValidateDVRRecordingTicket validates that a bound AdmissionTicket in consumed status permits DVR recording worker execution.
+func ValidateDVRRecordingTicket(ticket *policy.AdmissionTicket, sessionID, userID, profileID string) error {
+	return policy.ValidateBoundTicket(ticket, sessionID, userID, profileID, "dvr")
+}
 
 // PlaybackResolution represents the truthful resolution of how to play a recording.
 type PlaybackResolution struct {

@@ -40,6 +40,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/store"
@@ -69,62 +70,64 @@ type Server struct {
 	JWTSecret []byte // HMAC-SHA256 key for playbackDecisionToken (SSOT)
 
 	// Core Components
-	v3Bus                  bus.Bus
-	v3Store                SessionStateStore
-	storeRegistry          store.StoreRegistry
-	resumeStore            resume.Store
-	v3Scan                 ChannelScanner
-	decisionAudit          decisionaudit.EventSink
-	capabilityRegistry     capreg.Store
-	entitlementService     *entitlements.Service
-	householdService       *household.Service
-	receiptService         *receipts.Service
-	owiFactory             receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
-	recordingPathMapper    *recinfra.PathMapper
-	channelManager         *channels.Manager
-	seriesManager          *dvr.Manager
-	seriesEngine           *dvr.SeriesEngine
-	vodManager             *vod.Manager
-	resolver               recservice.Resolver // Strict V4 Resolver (Domain)
-	artifacts              artifacts.Resolver
-	epgCache               *epg.TV // EPG Cache reference
-	owiClient              *openwebif.Client
-	owiEpoch               uint64
-	receiverAbout          *openwebif.AboutInfo
-	receiverAboutAt        time.Time
-	receiverAboutEpoch     uint64
-	receiverLocations      []openwebif.MovieLocation
-	receiverLocationsAt    time.Time
-	receiverLocationsEpoch uint64
-	configManager          *config.Manager
-	configMu               sync.Mutex // Serializes configuration updates
-	epgCacheTime           time.Time
-	epgCacheMTime          time.Time
-	epgSfg                 singleflight.Group
-	receiverSfg            singleflight.Group
-	libraryService         *library.Service // Media library per ADR-ENG-002
-	admission              *admission.Controller
-	admissionState         AdmissionState
-	hostPressureMonitor    *admissionmonitor.ResourceMonitor
-	hostPressureTracker    *hardware.PressureTracker
-	tokensService          *v3tokens.Service
-	playbackSLO            *playbackSessionTracker
-	exposureLimiter        *exposureRateLimiter
-	intentService          *v3intents.Service
-	pairingV3Service       *v3pairing.Service
-	deviceAuthV3Service    *v3deviceauth.Service
-	recordingsV3Service    *v3recordings.Service
-	sessionsV3Service      *v3sessions.Service
-	playbackInfoV3Service  *v3playbackinfo.Service
-	deviceAuthStateStore   deviceauthstore.StateStore
-	plannerShadowWorker    *playbackshadow.Worker
-	plannerShadowObserver  playbackshadow.PlannerShadowObserver
-	plannerReceiptStore    *v3intents.PlanningHandoffStore
-	plannerReceiptEnabled  bool
-	plannerReceiptRequired bool
-	profileResolver        profiles.Resolver
-	clientAV1Disabled      bool
-	iosNativeHEVCHWMode    string
+	v3Bus                   bus.Bus
+	v3Store                 SessionStateStore
+	storeRegistry           store.StoreRegistry
+	resumeStore             resume.Store
+	v3Scan                  ChannelScanner
+	decisionAudit           decisionaudit.EventSink
+	capabilityRegistry      capreg.Store
+	entitlementService      *entitlements.Service
+	householdService        *household.Service
+	receiptService          *receipts.Service
+	owiFactory              receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
+	recordingPathMapper     *recinfra.PathMapper
+	channelManager          *channels.Manager
+	seriesManager           *dvr.Manager
+	seriesEngine            *dvr.SeriesEngine
+	vodManager              *vod.Manager
+	resolver                recservice.Resolver // Strict V4 Resolver (Domain)
+	artifacts               artifacts.Resolver
+	epgCache                *epg.TV // EPG Cache reference
+	owiClient               *openwebif.Client
+	owiEpoch                uint64
+	receiverAbout           *openwebif.AboutInfo
+	receiverAboutAt         time.Time
+	receiverAboutEpoch      uint64
+	receiverLocations       []openwebif.MovieLocation
+	receiverLocationsAt     time.Time
+	receiverLocationsEpoch  uint64
+	configManager           *config.Manager
+	configMu                sync.Mutex // Serializes configuration updates
+	epgCacheTime            time.Time
+	epgCacheMTime           time.Time
+	epgSfg                  singleflight.Group
+	receiverSfg             singleflight.Group
+	libraryService          *library.Service // Media library per ADR-ENG-002
+	admission               *admission.Controller
+	admissionState          AdmissionState
+	householdAdmission      *policy.HouseholdResourceAdmission
+	householdResourcePolicy *identity.HouseholdResourcePolicy
+	hostPressureMonitor     *admissionmonitor.ResourceMonitor
+	hostPressureTracker     *hardware.PressureTracker
+	tokensService           *v3tokens.Service
+	playbackSLO             *playbackSessionTracker
+	exposureLimiter         *exposureRateLimiter
+	intentService           *v3intents.Service
+	pairingV3Service        *v3pairing.Service
+	deviceAuthV3Service     *v3deviceauth.Service
+	recordingsV3Service     *v3recordings.Service
+	sessionsV3Service       *v3sessions.Service
+	playbackInfoV3Service   *v3playbackinfo.Service
+	deviceAuthStateStore    deviceauthstore.StateStore
+	plannerShadowWorker     *playbackshadow.Worker
+	plannerShadowObserver   playbackshadow.PlannerShadowObserver
+	plannerReceiptStore     *v3intents.PlanningHandoffStore
+	plannerReceiptEnabled   bool
+	plannerReceiptRequired  bool
+	profileResolver         profiles.Resolver
+	clientAV1Disabled       bool
+	iosNativeHEVCHWMode     string
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error

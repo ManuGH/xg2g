@@ -8,14 +8,45 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 )
 
 func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profileSpec model.ProfileSpec) *Error {
+	if hAdm := s.deps.HouseholdAdmission(); hAdm != nil {
+		role := identity.Role(intent.Params["role"])
+		if role == "" {
+			role = identity.RoleMember
+		}
+		profileID := intent.Params["profileId"]
+
+		req := policy.AdmissionRequest{
+			SessionID:    intent.SessionID,
+			UserID:       intent.PrincipalID,
+			Role:         role,
+			ProfileID:    profileID,
+			ServiceRef:   intent.ServiceRef,
+			RequestType:  policy.AdmissionRequestLiveTV,
+			IsTranscoded: profileSpec.TranscodeVideo || profileSpec.TranscodesAudio(),
+		}
+		ticket, hDec := hAdm.IssueAdmissionTicket(req, s.deps.HouseholdResourcePolicy())
+		if !hDec.Allowed {
+			s.deps.RecordReject("household_admission_rejected")
+			return &Error{Kind: ErrorAdmissionRejected, Message: hDec.Reason}
+		}
+		consumedTkt, err := hAdm.ConsumeTicketOnce(ticket.TicketID)
+		if err != nil {
+			s.deps.RecordReject("household_ticket_consume_failed")
+			return &Error{Kind: ErrorAdmissionRejected, Message: err.Error()}
+		}
+		_ = consumedTkt
+	}
+
 	controller := s.deps.AdmissionController()
 	if controller == nil {
 		return &Error{Kind: ErrorAdmissionUnavailable}

@@ -4,6 +4,10 @@
 package policy
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,7 +19,20 @@ type AdmissionRequestType string
 const (
 	AdmissionRequestLiveTV          AdmissionRequestType = "live_tv"
 	AdmissionRequestRecord          AdmissionRequestType = "record"
+	AdmissionRequestManualRecord    AdmissionRequestType = "manual_record"
 	AdmissionRequestWatchRecordings AdmissionRequestType = "watch_recordings"
+)
+
+var (
+	ErrNilTicket             = errors.New("admission ticket is nil")
+	ErrTicketNotConsumed     = errors.New("admission ticket is not consumed")
+	ErrTicketReleased        = errors.New("admission ticket is released")
+	ErrSessionMismatch       = errors.New("admission ticket session ID mismatch")
+	ErrUserMismatch          = errors.New("admission ticket user ID mismatch")
+	ErrProfileMismatch       = errors.New("admission ticket profile ID mismatch")
+	ErrResourceClassMismatch = errors.New("admission ticket resource class not permitted for operation")
+	ErrInvalidTicket         = errors.New("admission ticket invalid or not found")
+	ErrTicketAlreadyConsumed = errors.New("admission ticket already consumed")
 )
 
 type AdmissionRequest struct {
@@ -72,12 +89,22 @@ type SessionRegistration struct {
 type HouseholdResourceAdmission struct {
 	mu       sync.Mutex
 	sessions map[string]SessionRegistration
+	tickets  map[string]*AdmissionTicket
 }
 
 func NewHouseholdResourceAdmission() *HouseholdResourceAdmission {
 	return &HouseholdResourceAdmission{
 		sessions: make(map[string]SessionRegistration),
+		tickets:  make(map[string]*AdmissionTicket),
 	}
+}
+
+func generateTicketID() string {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("tkt_%d", time.Now().UnixNano())
+	}
+	return "tkt_" + hex.EncodeToString(b)
 }
 
 // IssueAdmissionTicket performs pre-allocation resource admission and issues a mandatory AdmissionTicket.
@@ -87,8 +114,9 @@ func (a *HouseholdResourceAdmission) IssueAdmissionTicket(req AdmissionRequest, 
 		return nil, decision
 	}
 
+	tktID := generateTicketID()
 	ticket := &AdmissionTicket{
-		TicketID:           "tkt_" + req.SessionID,
+		TicketID:           tktID,
 		HouseholdID:        "default_household",
 		UserID:             req.UserID,
 		ProfileID:          req.ProfileID,
@@ -100,7 +128,87 @@ func (a *HouseholdResourceAdmission) IssueAdmissionTicket(req AdmissionRequest, 
 		DisplacedSessionID: decision.DisplacedSessionID,
 	}
 
+	a.mu.Lock()
+	if a.tickets == nil {
+		a.tickets = make(map[string]*AdmissionTicket)
+	}
+	a.tickets[tktID] = ticket
+	a.mu.Unlock()
+
 	return ticket, decision
+}
+
+// ConsumeTicketOnce transitions a ticket from TicketStatusIssued to TicketStatusConsumed at session start.
+func (a *HouseholdResourceAdmission) ConsumeTicketOnce(ticketID string) (*AdmissionTicket, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	tkt, ok := a.tickets[ticketID]
+	if !ok || tkt == nil {
+		return nil, ErrInvalidTicket
+	}
+
+	if tkt.Status == TicketStatusConsumed {
+		return nil, ErrTicketAlreadyConsumed
+	}
+	if tkt.Status == TicketStatusReleased {
+		return nil, ErrTicketReleased
+	}
+
+	tkt.Status = TicketStatusConsumed
+	return tkt, nil
+}
+
+// ValidateBoundTicket checks that a ticket is in TicketStatusConsumed state and strictly matches the target operation's context.
+func ValidateBoundTicket(ticket *AdmissionTicket, opSessionID, opUserID, opProfileID, requiredClass string) error {
+	if ticket == nil {
+		return ErrNilTicket
+	}
+	if ticket.Status == TicketStatusReleased {
+		return ErrTicketReleased
+	}
+	if ticket.Status != TicketStatusConsumed {
+		return ErrTicketNotConsumed
+	}
+	if opSessionID != "" && ticket.SessionID != opSessionID {
+		return ErrSessionMismatch
+	}
+	if opUserID != "" && ticket.UserID != opUserID {
+		return ErrUserMismatch
+	}
+	if opProfileID != "" && ticket.ProfileID != opProfileID {
+		return ErrProfileMismatch
+	}
+	if requiredClass != "" {
+		ticketClass := getResourceClass(AdmissionRequest{
+			SessionID:   ticket.SessionID,
+			UserID:      ticket.UserID,
+			ProfileID:   ticket.ProfileID,
+			RequestType: ticket.RequestType,
+		})
+		if !isResourceClassPermitted(ticketClass, requiredClass) {
+			return ErrResourceClassMismatch
+		}
+	}
+	return nil
+}
+
+// ReleaseAdmissionTicket idempotently frees a ticket and its associated resource session slot.
+func (a *HouseholdResourceAdmission) ReleaseAdmissionTicket(ticketID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	tkt, ok := a.tickets[ticketID]
+	if !ok || tkt == nil {
+		return
+	}
+
+	if tkt.Status == TicketStatusReleased {
+		return // Idempotent multi-caller safety
+	}
+
+	tkt.Status = TicketStatusReleased
+	delete(a.sessions, tkt.SessionID)
 }
 
 // EvaluateAndReserve performs pre-allocation resource admission.
@@ -125,7 +233,7 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 	activeLiveServices := make(map[string]bool)
 
 	for _, s := range a.sessions {
-		if s.RequestType == AdmissionRequestRecord {
+		if s.RequestType == AdmissionRequestRecord || s.RequestType == AdmissionRequestManualRecord {
 			activeRecordings++
 		} else {
 			activeViewers++
@@ -139,7 +247,7 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 	}
 
 	// 1. Check viewer limit
-	if req.RequestType != AdmissionRequestRecord && activeViewers >= policy.MaxConcurrentViewers {
+	if req.RequestType != AdmissionRequestRecord && req.RequestType != AdmissionRequestManualRecord && activeViewers >= policy.MaxConcurrentViewers {
 		if policy.PreemptionEnabled {
 			displacedID := a.findPreemptionCandidateLocked(req, policy)
 			if displacedID != "" {
@@ -169,7 +277,7 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 	}
 
 	// 2. Check recording limit
-	if req.RequestType == AdmissionRequestRecord && activeRecordings >= policy.MaxParallelRecordings {
+	if (req.RequestType == AdmissionRequestRecord || req.RequestType == AdmissionRequestManualRecord) && activeRecordings >= policy.MaxParallelRecordings {
 		return AdmissionDecision{
 			Allowed:    false,
 			Reason:     "Maximum parallel recording slots reached",
@@ -240,7 +348,14 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 func (a *HouseholdResourceAdmission) ReleaseSession(sessionID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
 	delete(a.sessions, sessionID)
+	for tktID, tkt := range a.tickets {
+		if tkt.SessionID == sessionID {
+			tkt.Status = TicketStatusReleased
+			delete(a.tickets, tktID)
+		}
+	}
 }
 
 func (a *HouseholdResourceAdmission) findPreemptionCandidateLocked(req AdmissionRequest, policy *identity.HouseholdResourcePolicy) string {
@@ -258,7 +373,8 @@ func (a *HouseholdResourceAdmission) findPreemptionCandidateLocked(req Admission
 
 	for id, s := range a.sessions {
 		// Rule 5: Recording Protection -> Scheduled recordings never preempt another recording unless policy permits
-		if s.RequestType == AdmissionRequestRecord && req.RequestType == AdmissionRequestRecord {
+		if (s.RequestType == AdmissionRequestRecord || s.RequestType == AdmissionRequestManualRecord) &&
+			(req.RequestType == AdmissionRequestRecord || req.RequestType == AdmissionRequestManualRecord) {
 			continue
 		}
 
@@ -287,6 +403,9 @@ func (a *HouseholdResourceAdmission) findPreemptionCandidateLocked(req Admission
 }
 
 func getResourceClass(req AdmissionRequest) string {
+	if req.RequestType == AdmissionRequestManualRecord {
+		return "manual_recording"
+	}
 	if req.RequestType == AdmissionRequestRecord {
 		return "scheduled_recording"
 	}
@@ -298,6 +417,16 @@ func getResourceClass(req AdmissionRequest) string {
 	default:
 		return "guest_live"
 	}
+}
+
+func isResourceClassPermitted(ticketClass, requiredClass string) bool {
+	if requiredClass == "dvr" || requiredClass == "recording" {
+		return ticketClass == "scheduled_recording" || ticketClass == "manual_recording"
+	}
+	if requiredClass == "live" || requiredClass == "tuner" {
+		return ticketClass == "admin_live" || ticketClass == "member_live" || ticketClass == "guest_live"
+	}
+	return ticketClass == requiredClass
 }
 
 func getPriorityRank(class string, ranks []string) int {

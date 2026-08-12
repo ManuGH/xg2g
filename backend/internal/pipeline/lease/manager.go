@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 )
 
 var (
@@ -93,6 +95,14 @@ func (m *Manager) resolveStateLocked(l *Lease, now time.Time) {
 			delete(m.scopes, l.Scope)
 		}
 	}
+}
+
+// AcquireWithBoundTicket enforces that a valid, bound AdmissionTicket in TicketStatusConsumed state is provided prior to acquiring a tuner lease.
+func (m *Manager) AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
+	if err := policy.ValidateBoundTicket(ticket, "", "", "", "tuner"); err != nil {
+		return nil, fmt.Errorf("tuner lease ticket validation failed: %w", err)
+	}
+	return m.Acquire(ctx, owner, scope, ttl)
 }
 
 // Acquire creates a new lease for the specified scope if no active lease conflicts.

@@ -10,9 +10,11 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/rs/zerolog"
 )
@@ -213,6 +215,10 @@ func (m *mockDeps) IncLivePlaybackKey(keyLabel, resultLabel string) {
 	_ = resultLabel
 	m.playbackKeyCalls++
 }
+
+func (m *mockDeps) HouseholdAdmission() *policy.HouseholdResourceAdmission { return nil }
+
+func (m *mockDeps) HouseholdResourcePolicy() *identity.HouseholdResourcePolicy { return nil }
 
 func (m *mockDeps) RecordReject(code string) {
 	m.rejectCodes = append(m.rejectCodes, code)

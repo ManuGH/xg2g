@@ -8,8 +8,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 )
 
 type serverIntentDeps struct {
@@ -79,6 +81,14 @@ func (d *serverIntentDeps) VerifyLivePlaybackDecision(token, principalID, servic
 
 func (d *serverIntentDeps) IncLivePlaybackKey(keyLabel, resultLabel string) {
 	metrics.IncLiveIntentsPlaybackKey(keyLabel, resultLabel)
+}
+
+func (d *serverIntentDeps) HouseholdAdmission() *policy.HouseholdResourceAdmission {
+	return d.s.householdAdmission
+}
+
+func (d *serverIntentDeps) HouseholdResourcePolicy() *identity.HouseholdResourcePolicy {
+	return d.s.householdResourcePolicy
 }
 
 func (d *serverIntentDeps) RecordReject(code string) {

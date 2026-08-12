@@ -7,8 +7,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 )
 
@@ -51,6 +53,8 @@ type Deps interface {
 	HostRuntime(ctx context.Context) playbackprofile.HostRuntimeSnapshot
 	VerifyLivePlaybackDecision(token, principalID, serviceRef, playbackMode string) bool
 	IncLivePlaybackKey(keyLabel, resultLabel string)
+	HouseholdAdmission() *policy.HouseholdResourceAdmission
+	HouseholdResourcePolicy() *identity.HouseholdResourcePolicy
 	RecordReject(code string)
 	RecordAdmit()
 	RecordIntent(intentType, mode, outcome string)
