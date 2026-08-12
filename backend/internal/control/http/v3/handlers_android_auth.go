@@ -70,7 +70,7 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validator := dpop.NewValidator(0)
+	validator := s.getDPoPValidator()
 	now := time.Now().UTC()
 	proofClaims, err := validator.ValidateProof(r, dpopProof, "", now)
 	if err != nil {
@@ -135,7 +135,7 @@ func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validator := dpop.NewValidator(0)
+	validator := s.getDPoPValidator()
 	now := time.Now().UTC()
 	proofClaims, err := validator.ValidateProof(r, dpopProof, "", now)
 	if err != nil {

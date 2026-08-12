@@ -832,22 +832,35 @@ func (s *Service) RotateDeviceRefreshToken(ctx context.Context, rawRefreshToken,
 	now := s.now()
 	oldHash := hashToken(rawRefreshToken)
 
+	// 1. Pre-fetch refresh token family record to identify device BEFORE modifying DB state
+	family, err := s.store.GetRefreshTokenFamily(ctx, oldHash)
+	if err != nil {
+		if errors.Is(err, ErrStoreNotFound) {
+			return nil, ErrInvalidSessionToken
+		}
+		return nil, err
+	}
+
+	// 2. Fetch associated device
+	dev, err := s.store.GetDevice(ctx, family.DeviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. SECURITY FIX (DoS Prevention): Verify DPoP Key Binding BEFORE rotating token!
+	// If an attacker presents a stolen refresh token with an unauthorized DPoP key,
+	// REJECT IMMEDIATELY with ErrDPoPBindingMismatch WITHOUT altering SQLite state!
+	if dev.JWKThumbprint != proofJWKThumbprint {
+		return nil, ErrDPoPBindingMismatch
+	}
+
 	newRawRefreshToken := "rt_" + generateRandomHex(32)
 	newRefreshHash := hashToken(newRawRefreshToken)
 
-	newGen, err := s.store.RotateRefreshToken(ctx, oldHash, newRefreshHash, now.Add(30*24*time.Hour), now)
+	// 4. Perform atomic rotation only after DPoP binding has been confirmed
+	_, err = s.store.RotateRefreshToken(ctx, oldHash, newRefreshHash, now.Add(30*24*time.Hour), now)
 	if err != nil {
 		return nil, err
-	}
-
-	dev, err := s.store.GetDevice(ctx, newGen.DeviceID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Bind check: Proof JWK thumbprint must match registered device thumbprint
-	if dev.JWKThumbprint != proofJWKThumbprint {
-		return nil, ErrDPoPBindingMismatch
 	}
 
 	rawAccessToken := "at_dpop_" + generateRandomHex(32)

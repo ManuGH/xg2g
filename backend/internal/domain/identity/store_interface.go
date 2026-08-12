@@ -69,6 +69,7 @@ type DeviceStore interface {
 	ListDevicesByUser(ctx context.Context, userID string) ([]Device, error)
 	PutDeviceGrant(ctx context.Context, grant *DeviceGrant, initialToken *RefreshTokenFamily) error
 	GetDeviceGrant(ctx context.Context, grantID string) (*DeviceGrant, error)
+	GetRefreshTokenFamily(ctx context.Context, tokenHash string) (*RefreshTokenFamily, error)
 	RotateRefreshToken(ctx context.Context, oldTokenHash, newTokenHash string, newExpiresAt, now time.Time) (*RefreshTokenFamily, error)
 	RevokeDeviceGrantFamily(ctx context.Context, familyID string, now time.Time) error
 	PutDPoPAccessToken(ctx context.Context, token *DPoPAccessToken) error

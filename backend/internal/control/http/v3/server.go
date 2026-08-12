@@ -13,6 +13,7 @@ import (
 	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	v3deviceauth "github.com/ManuGH/xg2g/internal/control/http/v3/deviceauth"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/dpop"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
 	v3playbackinfo "github.com/ManuGH/xg2g/internal/control/http/v3/playbackinfo"
@@ -142,8 +143,27 @@ type Server struct {
 	runtimeCtx        context.Context
 	runtimeCancel     context.CancelFunc
 
+	// DPoP Proof Validator (shared across requests with long-lived JTI replay cache)
+	dpopValidator   *dpop.Validator
+	dpopValidatorMu sync.RWMutex
+
 	// Middlewares (injectable for tests)
 	AuthMiddlewareOverride func(http.Handler) http.Handler
+}
+
+func (s *Server) getDPoPValidator() *dpop.Validator {
+	s.dpopValidatorMu.RLock()
+	v := s.dpopValidator
+	s.dpopValidatorMu.RUnlock()
+	if v != nil {
+		return v
+	}
+	s.dpopValidatorMu.Lock()
+	defer s.dpopValidatorMu.Unlock()
+	if s.dpopValidator == nil {
+		s.dpopValidator = dpop.NewValidator(10 * time.Minute)
+	}
+	return s.dpopValidator
 }
 
 // NewServer creates a new implemented v3 server.

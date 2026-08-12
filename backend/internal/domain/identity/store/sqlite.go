@@ -906,6 +906,31 @@ func (s *SQLiteStore) GetDeviceGrant(ctx context.Context, grantID string) (*iden
 	return &g, nil
 }
 
+func (s *SQLiteStore) GetRefreshTokenFamily(ctx context.Context, tokenHash string) (*identity.RefreshTokenFamily, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT token_hash, family_id, device_id, generation, created_at, expires_at, rotated_at, revoked_at, replay_detected_at FROM refresh_token_families WHERE token_hash = ?`, tokenHash)
+	var f identity.RefreshTokenFamily
+	var rotatedAt, revokedAt, replayDetectedAt sql.NullTime
+	if err := row.Scan(&f.TokenHash, &f.FamilyID, &f.DeviceID, &f.Generation, &f.CreatedAt, &f.ExpiresAt, &rotatedAt, &revokedAt, &replayDetectedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrStoreNotFound
+		}
+		return nil, err
+	}
+	if rotatedAt.Valid {
+		t := rotatedAt.Time
+		f.RotatedAt = &t
+	}
+	if revokedAt.Valid {
+		t := revokedAt.Time
+		f.RevokedAt = &t
+	}
+	if replayDetectedAt.Valid {
+		t := replayDetectedAt.Time
+		f.ReplayDetectedAt = &t
+	}
+	return &f, nil
+}
+
 func (s *SQLiteStore) RotateRefreshToken(ctx context.Context, oldTokenHash, newTokenHash string, newExpiresAt, now time.Time) (*identity.RefreshTokenFamily, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

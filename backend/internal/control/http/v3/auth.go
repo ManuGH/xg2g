@@ -31,6 +31,7 @@ const (
 //
 //nolint:unused // Legacy types - kept for future use
 type ctxPrincipalKey struct{}
+type dpopRequestContextKey struct{}
 
 // Note: securityHeaders is defined in middleware.go
 
@@ -90,8 +91,8 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 			return
 		}
 
-		// Use constant-time comparison to prevent timing attacks
-		principal, ok := s.TokenPrincipal(r.Context(), reqToken)
+		reqCtx := context.WithValue(r.Context(), dpopRequestContextKey{}, r)
+		principal, ok := s.TokenPrincipal(reqCtx, reqToken)
 		if !ok {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)

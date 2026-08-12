@@ -22,6 +22,7 @@ const (
 	// the legacy LegacyCookieSource ("X-API-Token cookie") also contains the
 	// word "cookie" and would otherwise satisfy the check.
 	BearerSource        = "Authorization header (Bearer)"
+	DPoPSource          = "Authorization header (DPoP)"
 	SessionCookieSource = "xg2g_session cookie"
 	LegacyHeaderSource  = "X-API-Token header"
 	LegacyCookieSource  = "X-API-Token cookie"
@@ -59,9 +60,14 @@ func ExtractTokenDetailedWithOptions(r *http.Request, opts TokenExtractOptions) 
 		return "", ""
 	}
 
-	// 1. Authorization Header
-	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimSpace(auth[7:]), BearerSource
+	// 1. Authorization Header (Bearer or DPoP)
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		if strings.HasPrefix(authHeader, "DPoP ") {
+			return strings.TrimSpace(authHeader[5:]), DPoPSource
+		}
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			return strings.TrimSpace(authHeader[7:]), BearerSource
+		}
 	}
 
 	// 2. Cookie

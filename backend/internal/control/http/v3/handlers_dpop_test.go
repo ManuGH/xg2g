@@ -100,6 +100,7 @@ func TestAndroidDualKey_DPoPAndDeviceGrantE2E(t *testing.T) {
 
 	jktExpected, err := dpop.ComputeJWKThumbprint(deviceJWK)
 	require.NoError(t, err)
+	_ = jktExpected
 
 	grantURL := "https://localhost/api/v3/auth/device/grant/finish"
 	dpopProof1 := createTestDPoPProof(devicePrivKey, deviceJWK, "POST", grantURL, now.Unix(), "")
@@ -141,36 +142,75 @@ func TestAndroidDualKey_DPoPAndDeviceGrantE2E(t *testing.T) {
 	assert.NotEmpty(t, grantRes.RefreshToken)
 	assert.Equal(t, 900, grantRes.ExpiresIn)
 
-	// 4. Validate Access Token with DPoP Key Binding
-	// Case A: Matching DPoP Device Key -> Valid
-	tokenVal, valUser, err := identitySvc.ValidateDPoPAccessToken(ctx, grantRes.AccessToken, jktExpected)
+	// 4. Validate Access Token with DPoP Key Binding & API Middleware Integration
+	// Case A: Protected API request with valid DPoP Access Token & DPoP Proof -> 200 OK
+	apiURL := "https://localhost/api/v3/auth/passkeys"
+	apiProof1 := createTestDPoPProof(devicePrivKey, deviceJWK, "GET", apiURL, now.Unix()+1, dpop.ComputeAccessTokenHash(grantRes.AccessToken))
+
+	reqAPI := httptest.NewRequest(http.MethodGet, "/api/v3/auth/passkeys", nil)
+	reqAPI.Header.Set("Authorization", "DPoP "+grantRes.AccessToken)
+	reqAPI.Header.Set("DPoP", apiProof1)
+	reqAPI.Header.Set("X-Forwarded-Proto", "https")
+	reqAPI.Host = "localhost"
+
+	wAPI := httptest.NewRecorder()
+	handler.ServeHTTP(wAPI, reqAPI)
+	assert.Equal(t, http.StatusOK, wAPI.Code, "DPoP Access Token MUST be accepted by API auth middleware")
+
+	// Case B: Global JTI Replay Prevention -> Reusing apiProof1 MUST fail with 401 Unauthorized
+	reqAPIReplay := httptest.NewRequest(http.MethodGet, "/api/v3/auth/passkeys", nil)
+	reqAPIReplay.Header.Set("Authorization", "DPoP "+grantRes.AccessToken)
+	reqAPIReplay.Header.Set("DPoP", apiProof1)
+	reqAPIReplay.Header.Set("X-Forwarded-Proto", "https")
+	reqAPIReplay.Host = "localhost"
+
+	wAPIReplay := httptest.NewRecorder()
+	handler.ServeHTTP(wAPIReplay, reqAPIReplay)
+	assert.Equal(t, http.StatusUnauthorized, wAPIReplay.Code, "Global JTI Replay must be rejected across requests")
+
+	// 5. SECURITY FIX TEST (DoS Prevention): Attacker with stolen Refresh Token & wrong DPoP Key
+	attackerPrivKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
-	assert.Equal(t, bootstrapRes.User.ID, valUser.ID)
-	assert.Equal(t, jktExpected, tokenVal.BoundJKT)
+	attackerPub := &attackerPrivKey.PublicKey
+	attackerJWK := dpop.JWKECPublicKey{
+		Kty: "EC",
+		Crv: "P-256",
+		X:   base64.RawURLEncoding.EncodeToString(attackerPub.X.Bytes()),
+		Y:   base64.RawURLEncoding.EncodeToString(attackerPub.Y.Bytes()),
+	}
 
-	// Case B: Attacker DPoP Device Key -> 401 Mismatch
-	_, _, errMismatch := identitySvc.ValidateDPoPAccessToken(ctx, grantRes.AccessToken, "attacker_jkt_999")
-	assert.ErrorIs(t, errMismatch, identity.ErrDPoPBindingMismatch)
-
-	// 5. Rotate Refresh Token
 	refreshURL := "https://localhost/api/v3/auth/device/refresh"
-	dpopProof2 := createTestDPoPProof(devicePrivKey, deviceJWK, "POST", refreshURL, now.Unix(), "")
+	attackerDPoPProof := createTestDPoPProof(attackerPrivKey, attackerJWK, "POST", refreshURL, now.Unix()+50, "")
 
 	refreshPayload := v3.DeviceRefreshRequest{RefreshToken: grantRes.RefreshToken}
 	refreshJSON, _ := json.Marshal(refreshPayload)
 
-	reqRefresh := httptest.NewRequest(http.MethodPost, "/api/v3/auth/device/refresh", bytes.NewReader(refreshJSON))
-	reqRefresh.Header.Set("Content-Type", "application/json")
-	reqRefresh.Header.Set("DPoP", dpopProof2)
-	reqRefresh.Header.Set("X-Forwarded-Proto", "https")
-	reqRefresh.Host = "localhost"
+	reqAttackerRefresh := httptest.NewRequest(http.MethodPost, "/api/v3/auth/device/refresh", bytes.NewReader(refreshJSON))
+	reqAttackerRefresh.Header.Set("Content-Type", "application/json")
+	reqAttackerRefresh.Header.Set("DPoP", attackerDPoPProof)
+	reqAttackerRefresh.Header.Set("X-Forwarded-Proto", "https")
+	reqAttackerRefresh.Host = "localhost"
 
-	wRefresh := httptest.NewRecorder()
-	handler.ServeHTTP(wRefresh, reqRefresh)
+	wAttackerRefresh := httptest.NewRecorder()
+	handler.ServeHTTP(wAttackerRefresh, reqAttackerRefresh)
 
-	require.Equal(t, http.StatusOK, wRefresh.Code)
+	assert.Equal(t, http.StatusUnauthorized, wAttackerRefresh.Code, "Attacker refresh request with mismatched key MUST be rejected with 401")
+
+	// INVARIANT CHECK: Legitimate device's refresh token WAS NOT ROTATED or REVOKED by the attacker's failed attempt!
+	legitDPoPProof := createTestDPoPProof(devicePrivKey, deviceJWK, "POST", refreshURL, now.Unix()+60, "")
+
+	reqLegitRefresh := httptest.NewRequest(http.MethodPost, "/api/v3/auth/device/refresh", bytes.NewReader(refreshJSON))
+	reqLegitRefresh.Header.Set("Content-Type", "application/json")
+	reqLegitRefresh.Header.Set("DPoP", legitDPoPProof)
+	reqLegitRefresh.Header.Set("X-Forwarded-Proto", "https")
+	reqLegitRefresh.Host = "localhost"
+
+	wLegitRefresh := httptest.NewRecorder()
+	handler.ServeHTTP(wLegitRefresh, reqLegitRefresh)
+
+	require.Equal(t, http.StatusOK, wLegitRefresh.Code, "Legitimate device MUST still be able to refresh after attacker failed attempt")
 	var rotRes identity.DeviceGrantResult
-	require.NoError(t, json.Unmarshal(wRefresh.Body.Bytes(), &rotRes))
+	require.NoError(t, json.Unmarshal(wLegitRefresh.Body.Bytes(), &rotRes))
 	assert.Equal(t, "DPoP", rotRes.TokenType)
 	assert.NotEqual(t, grantRes.RefreshToken, rotRes.RefreshToken, "Refresh token must be rotated")
 
