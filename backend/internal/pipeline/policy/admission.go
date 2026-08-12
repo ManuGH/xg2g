@@ -5,6 +5,7 @@ package policy
 
 import (
 	"sync"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 )
@@ -34,6 +35,27 @@ type AdmissionDecision struct {
 	StatusCode         int    `json:"statusCode"`
 }
 
+type TicketStatus string
+
+const (
+	TicketStatusIssued   TicketStatus = "issued"
+	TicketStatusConsumed TicketStatus = "consumed"
+	TicketStatusReleased TicketStatus = "released"
+)
+
+type AdmissionTicket struct {
+	TicketID           string               `json:"ticketId"`
+	HouseholdID        string               `json:"householdId"`
+	UserID             string               `json:"userId"`
+	ProfileID          string               `json:"profileId"`
+	SessionID          string               `json:"sessionId"`
+	ServiceRef         string               `json:"serviceRef"`
+	RequestType        AdmissionRequestType `json:"requestType"`
+	IssuedAt           time.Time            `json:"issuedAt"`
+	Status             TicketStatus         `json:"status"`
+	DisplacedSessionID string               `json:"displacedSessionId,omitempty"`
+}
+
 // SessionRegistration holds transient state of active viewer/recording streams.
 type SessionRegistration struct {
 	SessionID    string
@@ -43,6 +65,7 @@ type SessionRegistration struct {
 	ServiceRef   string
 	RequestType  AdmissionRequestType
 	IsTranscoded bool
+	CreatedAt    time.Time
 }
 
 // HouseholdResourceAdmission manages real-time resource limits and arbitration.
@@ -55,6 +78,29 @@ func NewHouseholdResourceAdmission() *HouseholdResourceAdmission {
 	return &HouseholdResourceAdmission{
 		sessions: make(map[string]SessionRegistration),
 	}
+}
+
+// IssueAdmissionTicket performs pre-allocation resource admission and issues a mandatory AdmissionTicket.
+func (a *HouseholdResourceAdmission) IssueAdmissionTicket(req AdmissionRequest, policy *identity.HouseholdResourcePolicy) (*AdmissionTicket, AdmissionDecision) {
+	decision := a.EvaluateAndReserve(req, policy)
+	if !decision.Allowed {
+		return nil, decision
+	}
+
+	ticket := &AdmissionTicket{
+		TicketID:           "tkt_" + req.SessionID,
+		HouseholdID:        "default_household",
+		UserID:             req.UserID,
+		ProfileID:          req.ProfileID,
+		SessionID:          req.SessionID,
+		ServiceRef:         req.ServiceRef,
+		RequestType:        req.RequestType,
+		IssuedAt:           time.Now().UTC(),
+		Status:             TicketStatusIssued,
+		DisplacedSessionID: decision.DisplacedSessionID,
+	}
+
+	return ticket, decision
 }
 
 // EvaluateAndReserve performs pre-allocation resource admission.
@@ -98,7 +144,16 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 			displacedID := a.findPreemptionCandidateLocked(req, policy)
 			if displacedID != "" {
 				delete(a.sessions, displacedID)
-				a.sessions[req.SessionID] = SessionRegistration(req)
+				a.sessions[req.SessionID] = SessionRegistration{
+					SessionID:    req.SessionID,
+					UserID:       req.UserID,
+					Role:         req.Role,
+					ProfileID:    req.ProfileID,
+					ServiceRef:   req.ServiceRef,
+					RequestType:  req.RequestType,
+					IsTranscoded: req.IsTranscoded,
+					CreatedAt:    time.Now().UTC(),
+				}
 				return AdmissionDecision{
 					Allowed:            true,
 					DisplacedSessionID: displacedID,
@@ -108,7 +163,7 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 		}
 		return AdmissionDecision{
 			Allowed:    false,
-			Reason:     "Maximum concurrent viewers limit reached",
+			Reason:     "Maximum concurrent household viewers limit reached",
 			StatusCode: 429,
 		}
 	}
@@ -117,31 +172,38 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 	if req.RequestType == AdmissionRequestRecord && activeRecordings >= policy.MaxParallelRecordings {
 		return AdmissionDecision{
 			Allowed:    false,
-			Reason:     "Maximum parallel recordings limit reached",
+			Reason:     "Maximum parallel recording slots reached",
 			StatusCode: 429,
 		}
 	}
 
-	// 3. Check live service tuner limit (shared tuner exception: tuning existing active service is free)
-	if req.ServiceRef != "" && !activeLiveServices[req.ServiceRef] {
-		if len(activeLiveServices) >= policy.MaxConcurrentLiveServices {
-			if policy.PreemptionEnabled {
-				displacedID := a.findPreemptionCandidateLocked(req, policy)
-				if displacedID != "" {
-					delete(a.sessions, displacedID)
-					a.sessions[req.SessionID] = SessionRegistration(req)
-					return AdmissionDecision{
-						Allowed:            true,
-						DisplacedSessionID: displacedID,
-						StatusCode:         200,
-					}
+	// 3. Check live services limit
+	if req.ServiceRef != "" && !activeLiveServices[req.ServiceRef] && len(activeLiveServices) >= policy.MaxConcurrentLiveServices {
+		if policy.PreemptionEnabled {
+			displacedID := a.findPreemptionCandidateLocked(req, policy)
+			if displacedID != "" {
+				delete(a.sessions, displacedID)
+				a.sessions[req.SessionID] = SessionRegistration{
+					SessionID:    req.SessionID,
+					UserID:       req.UserID,
+					Role:         req.Role,
+					ProfileID:    req.ProfileID,
+					ServiceRef:   req.ServiceRef,
+					RequestType:  req.RequestType,
+					IsTranscoded: req.IsTranscoded,
+					CreatedAt:    time.Now().UTC(),
+				}
+				return AdmissionDecision{
+					Allowed:            true,
+					DisplacedSessionID: displacedID,
+					StatusCode:         200,
 				}
 			}
-			return AdmissionDecision{
-				Allowed:    false,
-				Reason:     "Maximum concurrent live tuner services limit reached",
-				StatusCode: 503,
-			}
+		}
+		return AdmissionDecision{
+			Allowed:    false,
+			Reason:     "Maximum concurrent live tuner services limit reached",
+			StatusCode: 503,
 		}
 	}
 
@@ -156,7 +218,16 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 
 	// Reserve session
 	if req.SessionID != "" {
-		a.sessions[req.SessionID] = SessionRegistration(req)
+		a.sessions[req.SessionID] = SessionRegistration{
+			SessionID:    req.SessionID,
+			UserID:       req.UserID,
+			Role:         req.Role,
+			ProfileID:    req.ProfileID,
+			ServiceRef:   req.ServiceRef,
+			RequestType:  req.RequestType,
+			IsTranscoded: req.IsTranscoded,
+			CreatedAt:    time.Now().UTC(),
+		}
 	}
 
 	return AdmissionDecision{
@@ -180,17 +251,36 @@ func (a *HouseholdResourceAdmission) findPreemptionCandidateLocked(req Admission
 
 	requesterClass := getResourceClass(req)
 	requesterPriority := getPriorityRank(requesterClass, ranks)
-	lowestPriority := requesterPriority
-	candidateID := ""
+
+	var lowestPriority int = requesterPriority
+	var candidateID string
+	var candidateCreatedAt time.Time
 
 	for id, s := range a.sessions {
-		sClass := getResourceClass(AdmissionRequest(s))
+		// Rule 5: Recording Protection -> Scheduled recordings never preempt another recording unless policy permits
+		if s.RequestType == AdmissionRequestRecord && req.RequestType == AdmissionRequestRecord {
+			continue
+		}
+
+		sClass := getResourceClass(AdmissionRequest{
+			SessionID:    s.SessionID,
+			UserID:       s.UserID,
+			Role:         s.Role,
+			ProfileID:    s.ProfileID,
+			ServiceRef:   s.ServiceRef,
+			RequestType:  s.RequestType,
+			IsTranscoded: s.IsTranscoded,
+		})
 		pRank := getPriorityRank(sClass, ranks)
-		// Lower priority index = higher rank (scheduled_recording=0 is highest, guest_live=4 is lowest).
-		// Preempt candidate if candidate's index > requester's index.
-		if pRank > lowestPriority {
-			lowestPriority = pRank
-			candidateID = id
+
+		// Candidate must have lower priority (higher rank index)
+		if pRank > requesterPriority {
+			// Deterministic Tie-Breaker Rule: Select lowest priority rank first; if tied, select youngest session (CreatedAt is newer).
+			if pRank > lowestPriority || (pRank == lowestPriority && (candidateID == "" || s.CreatedAt.After(candidateCreatedAt))) {
+				lowestPriority = pRank
+				candidateID = id
+				candidateCreatedAt = s.CreatedAt
+			}
 		}
 	}
 	return candidateID

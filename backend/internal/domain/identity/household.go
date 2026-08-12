@@ -342,3 +342,114 @@ type AuditLogEntry struct {
 	Hash           string    `json:"hash"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
+
+const (
+	ReasonCodeAllowed           = "allowed"
+	ReasonCodeOutsideTimeWindow = "outside_time_window"
+	ReasonCodeRatingBlocked     = "rating_blocked"
+	ReasonCodeApprovalRequired  = "approval_required"
+	ReasonCodeDeviceRevoked     = "device_revoked"
+	ReasonCodeResourceLimit     = "resource_limit"
+	ReasonCodeInternalError     = "internal_error"
+)
+
+type PolicyDecision struct {
+	Allowed           bool                 `json:"allowed"`
+	Capabilities      EffectivePermissions `json:"capabilities"`
+	ReasonCode        string               `json:"reasonCode"`
+	RequiresApproval  bool                 `json:"requiresApproval"`
+	ApprovalRequestID string               `json:"approvalRequestId,omitempty"`
+	EffectiveUntil    *time.Time           `json:"effectiveUntil,omitempty"`
+	NextRecheckAt     *time.Time           `json:"nextRecheckAt,omitempty"`
+	PolicyVersion     int                  `json:"policyVersion"`
+}
+
+// EvaluatePolicyDecision performs a centralized, fail-closed policy evaluation.
+func EvaluatePolicyDecision(userID string, role Role, policy *ProfilePolicy, access *AccessPolicy, resourcePol *HouseholdResourcePolicy, now time.Time) PolicyDecision {
+	if userID == "" {
+		return PolicyDecision{
+			Allowed:       false,
+			ReasonCode:    ReasonCodeInternalError,
+			PolicyVersion: 1,
+		}
+	}
+
+	// 1. Evaluate Effective Capabilities
+	caps := CalculateEffectivePermissionsAt(userID, role, policy, access, now)
+
+	// Fail-closed check: If all product capabilities are false due to access restrictions
+	if !caps.LiveTV && !caps.Record && !caps.WatchRecordings && !caps.EPG {
+		var nextRecheck *time.Time
+		if access != nil && access.DailyEnd != "" {
+			loc := time.UTC
+			if access.Timezone != "" {
+				if l, err := time.LoadLocation(access.Timezone); err == nil {
+					loc = l
+				}
+			}
+			nowInTZ := now.In(loc)
+			if access.DailyStart != "" {
+				if nextStart, err := time.ParseInLocation("15:04", access.DailyStart, loc); err == nil {
+					t := time.Date(nowInTZ.Year(), nowInTZ.Month(), nowInTZ.Day(), nextStart.Hour(), nextStart.Minute(), 0, 0, loc)
+					if t.Before(nowInTZ) {
+						t = t.Add(24 * time.Hour)
+					}
+					utcT := t.UTC()
+					nextRecheck = &utcT
+				}
+			}
+		}
+
+		return PolicyDecision{
+			Allowed:       false,
+			Capabilities:  caps,
+			ReasonCode:    ReasonCodeOutsideTimeWindow,
+			NextRecheckAt: nextRecheck,
+			PolicyVersion: 1,
+		}
+	}
+
+	// 2. Compute Effective Until boundary
+	var effUntil *time.Time
+	if access != nil {
+		if access.ValidUntil != nil {
+			t := access.ValidUntil.UTC()
+			effUntil = &t
+		}
+		if access.DailyEnd != "" {
+			loc := time.UTC
+			if access.Timezone != "" {
+				if l, err := time.LoadLocation(access.Timezone); err == nil {
+					loc = l
+				}
+			}
+			nowInTZ := now.In(loc)
+			if endToday, err := time.ParseInLocation("15:04", access.DailyEnd, loc); err == nil {
+				t := time.Date(nowInTZ.Year(), nowInTZ.Month(), nowInTZ.Day(), endToday.Hour(), endToday.Minute(), 0, 0, loc)
+				if t.Before(nowInTZ) {
+					t = t.Add(24 * time.Hour)
+				}
+				utcT := t.UTC()
+				if effUntil == nil || utcT.Before(*effUntil) {
+					effUntil = &utcT
+				}
+			}
+		}
+	}
+
+	// Set NextRecheckAt 30 seconds before EffectiveUntil
+	var nextRecheck *time.Time
+	if effUntil != nil {
+		t := effUntil.Add(-30 * time.Second)
+		nextRecheck = &t
+	}
+
+	return PolicyDecision{
+		Allowed:        true,
+		Capabilities:   caps,
+		ReasonCode:     ReasonCodeAllowed,
+		EffectiveUntil: effUntil,
+		NextRecheckAt:  nextRecheck,
+		PolicyVersion:  1,
+	}
+}

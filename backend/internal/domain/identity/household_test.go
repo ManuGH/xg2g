@@ -109,3 +109,38 @@ func TestCalculateEffectivePermissions_TimeWindowAndWeekdayMask(t *testing.T) {
 	assert.False(t, effSatNoon.LiveTV, "Access blocked on Saturday (mask restricted to Mon-Fri)")
 	assert.False(t, effSatNoon.EPG)
 }
+
+func TestEvaluatePolicyDecision_FailClosedAndNextRecheck(t *testing.T) {
+	loc, _ := time.LoadLocation("Europe/Vienna")
+	now := time.Date(2026, 8, 12, 14, 0, 0, 0, loc) // Wednesday 14:00
+
+	access := &identity.AccessPolicy{
+		AccountID:     "usr_cousine",
+		LiveTVAllowed: true,
+		EPGAllowed:    true,
+		DailyStart:    "07:00",
+		DailyEnd:      "19:00",
+		Timezone:      "Europe/Vienna",
+	}
+
+	// 1. Valid session within window
+	dec1 := identity.EvaluatePolicyDecision("usr_cousine", identity.RoleGuest, nil, access, nil, now)
+	assert.True(t, dec1.Allowed)
+	assert.Equal(t, identity.ReasonCodeAllowed, dec1.ReasonCode)
+	assert.NotNil(t, dec1.EffectiveUntil)
+	assert.NotNil(t, dec1.NextRecheckAt)
+	// NextRecheckAt should be 18:59:30 (30s before 19:00 cutoff)
+	expectedRecheck := time.Date(2026, 8, 12, 18, 59, 30, 0, loc).UTC()
+	assert.Equal(t, expectedRecheck, *dec1.NextRecheckAt)
+
+	// 2. Session outside window (20:00) -> Fail Closed
+	eveningNow := time.Date(2026, 8, 12, 20, 0, 0, 0, loc)
+	dec2 := identity.EvaluatePolicyDecision("usr_cousine", identity.RoleGuest, nil, access, nil, eveningNow)
+	assert.False(t, dec2.Allowed)
+	assert.Equal(t, identity.ReasonCodeOutsideTimeWindow, dec2.ReasonCode)
+
+	// 3. Missing UserID -> Fail Closed with internal_error
+	dec3 := identity.EvaluatePolicyDecision("", identity.RoleGuest, nil, access, nil, now)
+	assert.False(t, dec3.Allowed)
+	assert.Equal(t, identity.ReasonCodeInternalError, dec3.ReasonCode)
+}

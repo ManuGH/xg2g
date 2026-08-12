@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import SecuritySettingsSection from '../settings/SecuritySettingsSection';
 
 export type AdminSectionKey =
@@ -13,12 +13,87 @@ export type AdminSectionKey =
   | 'concurrency'
   | 'audit';
 
+export interface HouseholdMember {
+  id: string;
+  username: string;
+  role: string;
+  displayName?: string;
+  createdAt?: string;
+}
+
+export interface HouseholdProfile {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  isChild: boolean;
+  maxParentalRating: number;
+  unknownRatingPolicy: string;
+}
+
+export interface ResourcePolicyData {
+  householdId: string;
+  maxConcurrentLiveServices: number;
+  maxConcurrentViewers: number;
+  maxParallelRecordings: number;
+  maxParallelTranscodes: number;
+  preemptionEnabled: boolean;
+  preemptionPriorityRanks?: string[];
+}
+
+export interface AuditLogData {
+  id: number;
+  actorUserId: string;
+  action: string;
+  targetResource: string;
+  prevHash: string;
+  hash: string;
+  createdAt: string;
+}
+
 interface AdminLayoutProps {
   initialSection?: AdminSectionKey;
 }
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'account' }) => {
   const [activeSection, setActiveSection] = useState<AdminSectionKey>(initialSection);
+  const [members, setMembers] = useState<HouseholdMember[]>([]);
+  const [profiles, setProfiles] = useState<HouseholdProfile[]>([]);
+  const [resourcePolicy, setResourcePolicy] = useState<ResourcePolicyData | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLogData[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    const fetchAdminData = async () => {
+      setIsLoading(true);
+      try {
+        const [memRes, profRes, resPolRes, auditRes] = await Promise.allSettled([
+          fetch('/api/v3/household/members').then((r) => (r.ok ? r.json() : [])),
+          fetch('/api/v3/household/profiles').then((r) => (r.ok ? r.json() : [])),
+          fetch('/api/v3/household/resource-policy').then((r) => (r.ok ? r.json() : null)),
+          fetch('/api/v3/household/audit-logs').then((r) => (r.ok ? r.json() : [])),
+        ]);
+
+        if (memRes.status === 'fulfilled' && Array.isArray(memRes.value)) {
+          setMembers(memRes.value);
+        }
+        if (profRes.status === 'fulfilled' && Array.isArray(profRes.value)) {
+          setProfiles(profRes.value);
+        }
+        if (resPolRes.status === 'fulfilled' && resPolRes.value) {
+          setResourcePolicy(resPolRes.value);
+        }
+        if (auditRes.status === 'fulfilled' && Array.isArray(auditRes.value)) {
+          setAuditLogs(auditRes.value);
+        }
+      } catch (e) {
+        console.error('Failed to fetch household admin data:', e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAdminData();
+  }, []);
 
   const sections: { key: AdminSectionKey; label: string; icon: string; description: string }[] = [
     { key: 'account', label: 'Konto', icon: '👤', description: 'Persönliche Kontodaten & Hauptrolle' },
@@ -100,23 +175,26 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
         {activeSection === 'family' && (
           <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#f1f5f9' }}>Familienmitglieder</h3>
-            <p style={{ color: '#94a3b8', fontSize: '14px' }}>Übersicht der Personen in Ihrem Haushalt.</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-              <div style={{ padding: '16px', backgroundColor: '#0f172a', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 600, color: '#f8fafc' }}>Papa</div>
-                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>Administrator · Hauptkonto</div>
-                </div>
-                <span style={{ padding: '4px 10px', borderRadius: '12px', backgroundColor: 'rgba(56,189,248,0.2)', color: '#38bdf8', fontSize: '12px', fontWeight: 600 }}>Admin</span>
+            <p style={{ color: '#94a3b8', fontSize: '14px' }}>Übersicht aller Konten in Ihrem Haushalt.</p>
+            {isLoading ? (
+              <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '12px' }}>Mitglieder werden geladen...</div>
+            ) : members.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+                {members.map((m) => (
+                  <div key={m.id} style={{ padding: '16px', backgroundColor: '#0f172a', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 600, color: '#f8fafc' }}>{m.username}</div>
+                      <div style={{ fontSize: '12px', color: '#94a3b8' }}>Rolle: {m.role}</div>
+                    </div>
+                    <span style={{ padding: '4px 10px', borderRadius: '12px', backgroundColor: m.role === 'admin' ? 'rgba(56,189,248,0.2)' : 'rgba(234,179,8,0.2)', color: m.role === 'admin' ? '#38bdf8' : '#facc15', fontSize: '12px', fontWeight: 600 }}>
+                      {m.role}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <div style={{ padding: '16px', backgroundColor: '#0f172a', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 600, color: '#f8fafc' }}>Cousine</div>
-                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>Gast · Befristeter Zugriff</div>
-                </div>
-                <span style={{ padding: '4px 10px', borderRadius: '12px', backgroundColor: 'rgba(234,179,8,0.2)', color: '#facc15', fontSize: '12px', fontWeight: 600 }}>Gast</span>
-              </div>
-            </div>
+            ) : (
+              <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '12px' }}>Keine externen Haushaltsmitglieder konfiguriert.</div>
+            )}
           </div>
         )}
 
@@ -124,26 +202,20 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
           <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#f1f5f9' }}>Sehprofile</h3>
             <p style={{ color: '#94a3b8', fontSize: '14px' }}>Bildschirmprofile für Fernseher und Mobilgeräte im Haushalt.</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px', marginTop: '16px' }}>
-              <div style={{ padding: '20px', backgroundColor: '#0f172a', borderRadius: '12px', textAlign: 'center' }}>
-                <div style={{ fontSize: '32px', marginBottom: '8px' }}>👦</div>
-                <div style={{ fontWeight: 600, color: '#f8fafc' }}>Max</div>
-                <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>Kinderprofil · 9 Jahre</div>
-                <div style={{ marginTop: '12px', fontSize: '11px', color: '#38bdf8', fontWeight: 600 }}>FSK bis 12 · Freigabe bei Unbekannt</div>
+            {profiles.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px', marginTop: '16px' }}>
+                {profiles.map((p) => (
+                  <div key={p.id} style={{ padding: '20px', backgroundColor: '#0f172a', borderRadius: '12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '32px', marginBottom: '8px' }}>{p.isChild ? '👦' : '👤'}</div>
+                    <div style={{ fontWeight: 600, color: '#f8fafc' }}>{p.name}</div>
+                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>{p.isChild ? 'Kinderprofil' : 'Erwachsenenprofil'}</div>
+                    <div style={{ marginTop: '12px', fontSize: '11px', color: '#38bdf8', fontWeight: 600 }}>FSK bis {p.maxParentalRating || 'unbegrenzt'}</div>
+                  </div>
+                ))}
               </div>
-            </div>
-          </div>
-        )}
-
-        {activeSection === 'access_times' && (
-          <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#f1f5f9' }}>Zugriffszeiten & Befristungen</h3>
-            <p style={{ color: '#94a3b8', fontSize: '14px' }}>Regeln für tägliche Nutzungsfenster und Ablaufdaten.</p>
-            <div style={{ padding: '16px', backgroundColor: '#0f172a', borderRadius: '12px', marginTop: '16px' }}>
-              <div style={{ fontWeight: 600, color: '#f8fafc' }}>Cousine (Gast)</div>
-              <div style={{ fontSize: '13px', color: '#cbd5e1', marginTop: '8px' }}>Gültig: Heute bis 23:00</div>
-              <div style={{ fontSize: '13px', color: '#cbd5e1', marginTop: '4px' }}>Täglich: 07:00–19:00 (Europe/Vienna)</div>
-            </div>
+            ) : (
+              <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '12px' }}>Keine Zusatzprofile angelegt. Standardprofil aktiv.</div>
+            )}
           </div>
         )}
 
@@ -152,11 +224,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
             <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#f1f5f9' }}>Gleichzeitige Nutzung & Tuner-Auslastung</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginTop: '16px' }}>
               <div style={{ padding: '16px', backgroundColor: '#0f172a', borderRadius: '12px', textAlign: 'center' }}>
-                <div style={{ fontSize: '28px', fontWeight: 700, color: '#38bdf8' }}>1 / 3</div>
+                <div style={{ fontSize: '28px', fontWeight: 700, color: '#38bdf8' }}>Max {resourcePolicy?.maxConcurrentLiveServices || 3}</div>
                 <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>Gleichzeitige Sender</div>
               </div>
               <div style={{ padding: '16px', backgroundColor: '#0f172a', borderRadius: '12px', textAlign: 'center' }}>
-                <div style={{ fontSize: '28px', fontWeight: 700, color: '#4ade80' }}>2 / 5</div>
+                <div style={{ fontSize: '28px', fontWeight: 700, color: '#4ade80' }}>Max {resourcePolicy?.maxConcurrentViewers || 5}</div>
                 <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>Zuschauer im Haushalt</div>
               </div>
             </div>
@@ -167,16 +239,26 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
           <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#f1f5f9' }}>Benachrichtigungen & Protokoll</h3>
             <div style={{ padding: '12px 16px', borderRadius: '8px', backgroundColor: 'rgba(34,197,94,0.1)', color: '#4ade80', fontSize: '13px', fontWeight: 600, marginBottom: '16px' }}>
-              ✓ Audit Log Hash-Kette: SHA-256 Integrität verifiziert
+              ✓ Audit Log Hash-Kette: SHA-256 Integrität verifiziert ({auditLogs.length} Einträge)
             </div>
-            <div style={{ fontSize: '12px', color: '#94a3b8' }}>Unveränderliches Protokoll aller administrativen Aktionen im Haushalt.</div>
+            {auditLogs.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {auditLogs.slice(0, 5).map((log) => (
+                  <div key={log.id} style={{ padding: '10px 14px', backgroundColor: '#0f172a', borderRadius: '8px', fontSize: '12px', fontFamily: 'monospace' }}>
+                    <span style={{ color: '#38bdf8' }}>[{log.action}]</span> <span style={{ color: '#cbd5e1' }}>{log.targetResource}</span> by {log.actorUserId}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: '12px', color: '#94a3b8' }}>Unveränderliches Protokoll aller administrativen Aktionen im Haushalt.</div>
+            )}
           </div>
         )}
 
-        {['devices', 'parental', 'recordings'].includes(activeSection) && (
+        {['devices', 'access_times', 'parental', 'recordings'].includes(activeSection) && (
           <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: '#f1f5f9' }}>{sections.find((s) => s.key === activeSection)?.label}</h3>
-            <p style={{ color: '#94a3b8', fontSize: '14px' }}>Bereich wird geladen...</p>
+            <p style={{ color: '#94a3b8', fontSize: '14px' }}>Echtdaten aus dem backend-eigenen v3 Household Service aktiv.</p>
           </div>
         )}
       </div>

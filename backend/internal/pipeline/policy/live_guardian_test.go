@@ -64,3 +64,25 @@ func TestLiveGuardian_PreViolationWarningAndImmediateBlock(t *testing.T) {
 	dec4 := policy.EvaluateStreamStatus(watchNoCutoff, eventStart, impendingEvent, nil)
 	assert.Equal(t, policy.GuardianStatusBlock, dec4.State)
 }
+
+func TestLiveGuardian_ReconcileStream(t *testing.T) {
+	eventStart := time.Date(2026, 8, 12, 19, 57, 0, 0, time.UTC) // FSK 18 broadcast shifted early from 20:00 to 19:57
+	shiftedEvent := &openwebif.EPGEvent{
+		ID:          9002,
+		Title:       "Live Horror Event (FSK 18)",
+		Description: "Ab 18 Jahren freigegeben",
+		Begin:       eventStart.Unix(),
+		Duration:    7200,
+	}
+
+	watch := &policy.ActiveStreamWatch{
+		SessionID:         "sess_child_reconcile",
+		MaxParentalRating: 12,
+		UnknownPolicy:     epg.UnknownPolicyRequestApproval,
+	}
+
+	// Dynamic EPG shift reconciliation triggers immediate block at 19:57
+	recDec := policy.ReconcileStream(watch, shiftedEvent, eventStart)
+	assert.Equal(t, policy.GuardianStatusBlock, recDec.State)
+	assert.Equal(t, "9002", watch.CurrentEventID)
+}

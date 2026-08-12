@@ -117,3 +117,19 @@ func EvaluateStreamStatus(watch *ActiveStreamWatch, now time.Time, currentEvent 
 		State: GuardianStatusOK,
 	}
 }
+
+// ReconcileStream recalibrates stream boundary timers against updated EPG event schedules.
+func ReconcileStream(watch *ActiveStreamWatch, updatedEPG *openwebif.EPGEvent, now time.Time) GuardianDecision {
+	if watch == nil {
+		return GuardianDecision{State: GuardianStatusOK}
+	}
+
+	if updatedEPG != nil {
+		watch.CurrentEventID = fmt.Sprintf("%d", updatedEPG.ID)
+		if updatedEPG.Begin > 0 && updatedEPG.Duration > 0 {
+			watch.CurrentEventEnd = time.Unix(updatedEPG.Begin+updatedEPG.Duration, 0).UTC()
+		}
+	}
+
+	return EvaluateStreamStatus(watch, now, updatedEPG, nil)
+}
