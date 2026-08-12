@@ -131,6 +131,9 @@ type ReplayCache struct {
 }
 
 func NewReplayCache(maxSize int) *ReplayCache {
+	if maxSize <= 0 {
+		maxSize = 10000
+	}
 	return &ReplayCache{
 		cache:   make(map[string]time.Time),
 		maxSize: maxSize,
@@ -141,12 +144,29 @@ func (c *ReplayCache) AddIfNew(jti string, expiresAt time.Time, now time.Time) b
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Clean expired entries if cache is growing large
+	// 1. Clean expired entries if capacity threshold reached
 	if len(c.cache) >= c.maxSize {
 		for k, exp := range c.cache {
 			if now.After(exp) {
 				delete(c.cache, k)
 			}
+		}
+	}
+
+	// 2. HARD CAPACITY CAP ENFORCEMENT: Evict entry with oldest expiry if still at capacity
+	if len(c.cache) >= c.maxSize {
+		var oldestKey string
+		var oldestExp time.Time
+		first := true
+		for k, exp := range c.cache {
+			if first || exp.Before(oldestExp) {
+				oldestKey = k
+				oldestExp = exp
+				first = false
+			}
+		}
+		if oldestKey != "" {
+			delete(c.cache, oldestKey)
 		}
 	}
 
@@ -158,20 +178,45 @@ func (c *ReplayCache) AddIfNew(jti string, expiresAt time.Time, now time.Time) b
 	return true
 }
 
+func (c *ReplayCache) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.cache)
+}
+
+// ValidatorConfig configures DPoP proof validation rules and replay cache parameters.
+type ValidatorConfig struct {
+	MaxClockSkew time.Duration // Max clock skew for iat validation (default: 5 min)
+	ReplayTTL    time.Duration // Replay cache retention duration (default: 10 min)
+	MaxCacheSize int           // Maximum LRU entries in replay cache (default: 10,000)
+}
+
 // Validator encapsulates DPoP proof validation.
 type Validator struct {
 	maxClockSkew time.Duration
+	replayTTL    time.Duration
 	replayCache  *ReplayCache
 }
 
-func NewValidator(maxClockSkew time.Duration) *Validator {
-	if maxClockSkew <= 0 {
-		maxClockSkew = 5 * time.Minute
+func NewValidator(cfg ValidatorConfig) *Validator {
+	if cfg.MaxClockSkew <= 0 {
+		cfg.MaxClockSkew = 5 * time.Minute
+	}
+	if cfg.ReplayTTL <= 0 {
+		cfg.ReplayTTL = 10 * time.Minute
+	}
+	if cfg.MaxCacheSize <= 0 {
+		cfg.MaxCacheSize = 10000
 	}
 	return &Validator{
-		maxClockSkew: maxClockSkew,
-		replayCache:  NewReplayCache(10000),
+		maxClockSkew: cfg.MaxClockSkew,
+		replayTTL:    cfg.ReplayTTL,
+		replayCache:  NewReplayCache(cfg.MaxCacheSize),
 	}
+}
+
+func NewDefaultValidator() *Validator {
+	return NewValidator(ValidatorConfig{})
 }
 
 // ValidateProof verifies a DPoP proof JWT according to RFC 9449.
@@ -248,17 +293,17 @@ func (v *Validator) ValidateProof(r *http.Request, proofJWT string, accessToken 
 		return nil, fmt.Errorf("%w: expected %s, got %s", ErrHTTPURIMismatch, NormalizeHTU(reqURI), NormalizeHTU(payload.HTU))
 	}
 
-	// 5. Validate Clock Skew (iat)
+	// 5. Validate Clock Skew (iat) against MaxClockSkew (default: 5 min)
 	proofTime := time.Unix(payload.IAT, 0)
 	if now.Sub(proofTime) > v.maxClockSkew || proofTime.Sub(now) > v.maxClockSkew {
 		return nil, ErrProofExpired
 	}
 
-	// 6. Replay Check (jti)
+	// 6. Replay Check (jti) against ReplayTTL (default: 10 min)
 	if strings.TrimSpace(payload.JTI) == "" {
 		return nil, fmt.Errorf("%w: jti claim is empty", ErrInvalidProofFormat)
 	}
-	if !v.replayCache.AddIfNew(payload.JTI, now.Add(v.maxClockSkew), now) {
+	if !v.replayCache.AddIfNew(payload.JTI, now.Add(v.replayTTL), now) {
 		return nil, ErrReplayedJTI
 	}
 
@@ -295,6 +340,11 @@ func parseECP256JWK(jwk JWKECPublicKey) (*ecdsa.PublicKey, error) {
 
 	x := new(big.Int).SetBytes(xBytes)
 	y := new(big.Int).SetBytes(yBytes)
+
+	// SECURITY GUARD: Verify point (x,y) lies on the P-256 curve
+	if !elliptic.P256().IsOnCurve(x, y) {
+		return nil, fmt.Errorf("%w: public key point (x,y) does not lie on P-256 curve", ErrInvalidJWKCurve)
+	}
 
 	return &ecdsa.PublicKey{
 		Curve: elliptic.P256(),

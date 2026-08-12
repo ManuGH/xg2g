@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -128,7 +129,7 @@ func TestDPoPValidator_ValidProof(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, targetURL, nil)
 	req.Header.Set("X-Forwarded-Proto", "https")
 
-	validator := dpop.NewValidator(5 * time.Minute)
+	validator := dpop.NewDefaultValidator()
 	claims, err := validator.ValidateProof(req, proofJWT, accessToken, now)
 	require.NoError(t, err)
 	assert.Equal(t, jktExpected, claims.JWKThumbprint)
@@ -140,9 +141,6 @@ func TestDPoPValidator_ValidProof(t *testing.T) {
 }
 
 func TestDPoPValidator_RejectsSymmetricAlgorithms(t *testing.T) {
-	jwk := dpop.JWKECPublicKey{Kty: "EC", Crv: "P-256", X: "f83O...", Y: "x_m_..."}
-	_ = jwk
-
 	hB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"typ":"dpop+jwt","alg":"HS256","jwk":{"kty":"EC","crv":"P-256","x":"a","y":"b"}}`))
 	pB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"jti":"jti_002","htm":"GET","htu":"https://example.com/api","iat":12345}`))
 	sigB64 := base64.RawURLEncoding.EncodeToString(make([]byte, 64))
@@ -150,7 +148,45 @@ func TestDPoPValidator_RejectsSymmetricAlgorithms(t *testing.T) {
 	proof := hB64 + "." + pB64 + "." + sigB64
 	req := httptest.NewRequest(http.MethodGet, "https://example.com/api", nil)
 
-	validator := dpop.NewValidator(5 * time.Minute)
+	validator := dpop.NewDefaultValidator()
 	_, err := validator.ValidateProof(req, proof, "", time.Now())
 	assert.ErrorIs(t, err, dpop.ErrUnsupportedAlgorithm, "HS256 symmetric algorithm must be rejected")
+}
+
+func TestReplayCache_HardCapacityEviction(t *testing.T) {
+	cache := dpop.NewReplayCache(100)
+	now := time.Now().UTC()
+
+	// Push 250 unique JTIs into a 100-entry capacity cache
+	for i := 0; i < 250; i++ {
+		jti := fmt.Sprintf("jti_stress_%d", i)
+		exp := now.Add(time.Duration(i+1) * time.Minute)
+		cache.AddIfNew(jti, exp, now)
+	}
+
+	assert.LessOrEqual(t, cache.Len(), 100, "ReplayCache size MUST be hard bounded at maxSize")
+}
+
+func TestDPoP_RejectsPointsNotOnP256Curve(t *testing.T) {
+	// (x=1, y=1) does NOT lie on the P-256 curve y^2 = x^3 - 3x + b (mod p)
+	invalidJWK := dpop.JWKECPublicKey{
+		Kty: "EC",
+		Crv: "P-256",
+		X:   base64.RawURLEncoding.EncodeToString([]byte{1}),
+		Y:   base64.RawURLEncoding.EncodeToString([]byte{1}),
+	}
+
+	_, err := dpop.ComputeJWKThumbprint(invalidJWK)
+	require.NoError(t, err)
+
+	hB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"typ":"dpop+jwt","alg":"ES256","jwk":{"kty":"EC","crv":"P-256","x":"AQ","y":"AQ"}}`))
+	pB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"jti":"jti_invalid_curve","htm":"GET","htu":"https://example.com/api","iat":12345}`))
+	sigB64 := base64.RawURLEncoding.EncodeToString(make([]byte, 64))
+
+	proof := hB64 + "." + pB64 + "." + sigB64
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/api", nil)
+
+	validator := dpop.NewDefaultValidator()
+	_, err = validator.ValidateProof(req, proof, "", time.Now())
+	assert.ErrorIs(t, err, dpop.ErrInvalidJWKCurve, "Points not on P-256 curve must be rejected with ErrInvalidJWKCurve")
 }

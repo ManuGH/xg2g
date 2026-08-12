@@ -161,7 +161,7 @@ func (s *Server) getDPoPValidator() *dpop.Validator {
 	s.dpopValidatorMu.Lock()
 	defer s.dpopValidatorMu.Unlock()
 	if s.dpopValidator == nil {
-		s.dpopValidator = dpop.NewValidator(10 * time.Minute)
+		s.dpopValidator = dpop.NewDefaultValidator()
 	}
 	return s.dpopValidator
 }
