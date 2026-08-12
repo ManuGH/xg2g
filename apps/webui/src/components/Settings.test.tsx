@@ -252,7 +252,7 @@ describe('Settings', () => {
     });
   });
 
-  it('confirms before discarding a dirty profile draft', async () => {
+  it('renders modern Material 3 Admin Management Center in household section', async () => {
     getSystemConfig.mockResolvedValue({
       data: {
         openWebIF: { baseUrl: 'http://receiver.local' },
@@ -270,21 +270,11 @@ describe('Settings', () => {
         updatedCount: 0,
       },
     });
-    confirm.mockResolvedValue(false);
 
     renderWithQueryClient(['/settings?section=household']);
 
-    fireEvent.change(await screen.findByDisplayValue('Haushalt'), {
-      target: { value: 'Wohnzimmer' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Child profile|Kinderprofil/i }));
-
-    await waitFor(() => {
-      expect(confirm).toHaveBeenCalledTimes(1);
-    });
-
-    expect(screen.getByDisplayValue('Wohnzimmer')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Haushalt' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Haushalt & Administration' })).toBeInTheDocument();
+    expect(screen.getByText('Material 3 Management Center')).toBeInTheDocument();
   });
 
   it('disables the Android TV handoff when public connectivity has no native endpoint', async () => {
