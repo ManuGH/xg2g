@@ -147,7 +147,7 @@ export default function SecuritySettingsSection() {
                 key={key.id}
                 style={{
                   display: 'flex',
-                  justify: 'space-between',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
                   padding: '0.75rem 1rem',
                   backgroundColor: 'rgba(0, 0, 0, 0.25)',

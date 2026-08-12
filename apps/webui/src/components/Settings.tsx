@@ -238,6 +238,7 @@ function Settings() {
     'android-tv': getSettingsSectionLabel('android-tv', t),
     scan: getSettingsSectionLabel('scan', t),
     streaming: getSettingsSectionLabel('streaming', t),
+    security: getSettingsSectionLabel('security', t),
     advanced: getSettingsSectionLabel('advanced', t),
   };
   const toolLabelMap: Record<SettingsTool, string> = {

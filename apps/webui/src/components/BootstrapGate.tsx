@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ClientRequestError } from '../services/clientWrapper';
@@ -6,7 +6,6 @@ import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import { useAppContext } from '../context/AppContext';
 import { useBootstrapConfig } from '../hooks/useServerQueries';
 import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
-import { resolveHostEnvironment } from '../lib/hostBridge';
 import { normalizePathname, ROUTE_MAP, UNLOCK_ROUTE } from '../routes';
 import { isConfigured } from './Config';
 import AuthSurface from './AuthSurface';
@@ -51,17 +50,15 @@ function isBypassRoute(pathname: string): boolean {
 
 export default function BootstrapGate() {
   const { t } = useTranslation();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const pathname = location.pathname;
   const navigate = useNavigate();
   const { auth, setToken, setPlayingChannel, setServerSessionAuthenticated } = useAppContext();
-  const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
-  const isTvHost = hostEnvironment.isTv;
   const authReady = auth.isReady ?? true;
   const hasToken = Boolean(auth.token?.trim());
   const [tokenValue, setTokenValue] = useState('');
   const [forcedAuthPrompt, setForcedAuthPrompt] = useState<AuthPromptReason | null>(null);
   const [authRetry, setAuthRetry] = useState<AuthRetryState | null>(null);
-  const [isTokenVisible, setIsTokenVisible] = useState<boolean>(() => isTvHost);
   const inputRef = useRef<HTMLInputElement>(null);
   const authRetryInFlightRef = useRef(false);
   const {
@@ -164,11 +161,6 @@ export default function BootstrapGate() {
     });
   }, [auth.token, authReady, authRetry, refetch]);
 
-  useEffect(() => {
-    if (authReason !== null) {
-      setIsTokenVisible(isTvHost);
-    }
-  }, [authReason, isTvHost]);
   useTvInitialFocus({
     enabled: authReason !== null,
     targetRef: inputRef,
@@ -178,25 +170,10 @@ export default function BootstrapGate() {
     return <LoadingSkeleton variant="gate" label={t('app.initializing', { defaultValue: 'Initializing...' })} />;
   }
 
-  const handleAuthSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const token = tokenValue.trim();
-    if (!token) {
-      setTokenValue('');
-      inputRef.current?.focus();
-      return;
-    }
-
-    setForcedAuthPrompt(null);
-    setTokenValue(token);
-    setAuthRetry({ token, phase: 'pending' });
-    setToken(token);
-  };
-
   const searchParams = new URLSearchParams(location.search);
   const setupTokenFromUrl = searchParams.get('setup_token') || searchParams.get('token') || '';
 
-  if (config && (config.setupRequired || config.identityReady === false)) {
+  if (setupTokenFromUrl || (config as any)?.setupRequired || (config as any)?.identityReady === false) {
     return (
       <PasskeyAuthFlow
         mode="bootstrap"
@@ -216,7 +193,7 @@ export default function BootstrapGate() {
     return (
       <PasskeyAuthFlow
         mode={authReason === 'expired' ? 'expired' : 'login'}
-        initialToken={tokenValue || auth.token}
+        initialToken={tokenValue || auth.token || undefined}
         onSuccess={() => {
           setForcedAuthPrompt(null);
           setServerSessionAuthenticated(true);

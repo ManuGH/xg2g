@@ -6,7 +6,10 @@ export function bufferToBase64URL(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i] & 0xff);
+    const val = bytes[i];
+    if (val !== undefined) {
+      binary += String.fromCharCode(val & 0xff);
+    }
   }
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -68,6 +71,10 @@ export async function createPasskeyCredential(options: PasskeyRegisterOptions): 
       ...options.publicKey.user,
       id: base64URLToBuffer(options.publicKey.user.id),
     },
+    pubKeyCredParams: options.publicKey.pubKeyCredParams.map((p) => ({
+      type: 'public-key' as PublicKeyCredentialType,
+      alg: p.alg,
+    })),
     excludeCredentials: options.publicKey.excludeCredentials?.map((cred) => ({
       ...cred,
       id: base64URLToBuffer(cred.id),
