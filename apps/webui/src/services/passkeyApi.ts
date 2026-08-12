@@ -88,10 +88,18 @@ export async function startPasskeyLogin(): Promise<{ options: any }> {
  * Backend returns AuthSessionResponse { user, expiresAt } and sets xg2g_session cookie.
  */
 export async function finishPasskeyLogin(assertion: any): Promise<AuthSessionResponse> {
+  const responsePayload = {
+    id: assertion.id || assertion.response?.id,
+    clientDataJSON: assertion.response?.clientDataJSON,
+    authenticatorData: assertion.response?.authenticatorData,
+    signature: assertion.response?.signature,
+    userHandle: assertion.response?.userHandle,
+  };
+
   const data = await request<AuthSessionResponse>('/api/v3/auth/passkey/login/finish', {
     method: 'POST',
     body: {
-      response: assertion.response,
+      response: responsePayload,
     },
   });
 

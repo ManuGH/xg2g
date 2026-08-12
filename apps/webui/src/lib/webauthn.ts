@@ -134,6 +134,7 @@ export async function getPasskeyAssertion(options: PasskeyLoginOptions, conditio
     rawId: bufferToBase64URL(credential.rawId),
     type: credential.type,
     response: {
+      id: credential.id,
       clientDataJSON: bufferToBase64URL(response.clientDataJSON),
       authenticatorData: bufferToBase64URL(response.authenticatorData),
       signature: bufferToBase64URL(response.signature),

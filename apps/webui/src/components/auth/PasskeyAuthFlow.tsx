@@ -30,7 +30,7 @@ interface PasskeyAuthFlowProps {
 export default function PasskeyAuthFlow({
   mode,
   initialToken = '',
-  setupToken,
+  setupToken = '',
   defaultUsername = 'admin',
   onSuccess,
   onSetToken,
@@ -46,7 +46,8 @@ export default function PasskeyAuthFlow({
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [codesConfirmed, setCodesConfirmed] = useState(false);
 
-  // Input states for fallbacks
+  // Input states for fallbacks and bootstrap
+  const [setupTokenInput, setSetupTokenInput] = useState(setupToken);
   const [recoveryCodeInput, setRecoveryCodeInput] = useState('');
   const [recoveryUsernameInput, setRecoveryUsernameInput] = useState(defaultUsername);
   const [apiTokenInput, setApiTokenInput] = useState(initialToken);
@@ -57,6 +58,12 @@ export default function PasskeyAuthFlow({
   useEffect(() => {
     setApiTokenInput(initialToken);
   }, [initialToken]);
+
+  useEffect(() => {
+    if (setupToken) {
+      setSetupTokenInput(setupToken);
+    }
+  }, [setupToken]);
 
   useEffect(() => {
     window.requestAnimationFrame(() => {
@@ -95,11 +102,12 @@ export default function PasskeyAuthFlow({
   }, [mode, step, isTvHost, onSuccess]);
 
   // Handler for First-Admin Passkey Creation
-  const handleCreatePasskey = async () => {
+  const handleCreatePasskey = async (tokenToUse?: string) => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const startRes = await startPasskeyRegistration('admin', setupToken);
+      const activeToken = (tokenToUse !== undefined ? tokenToUse : setupTokenInput).trim() || setupToken;
+      const startRes = await startPasskeyRegistration('admin', activeToken);
       const attestation = await createPasskeyCredential(startRes.options);
       const finishRes = await finishPasskeyRegistration(attestation, 'Admin Passkey');
 
@@ -227,7 +235,7 @@ export default function PasskeyAuthFlow({
 
   const titles = getSurfaceTitles();
 
-  // RENDER STEP 1: BOOTSTRAP PASSKEY CREATION
+  // RENDER STEP 1: BOOTSTRAP PASSKEY CREATION WITH SETUP-TOKEN SUPPORT
   if (mode === 'bootstrap' && step === 'passkey') {
     return (
       <AuthSurface
@@ -237,6 +245,24 @@ export default function PasskeyAuthFlow({
         testId="bootstrap-passkey-surface"
         actions={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Setup-Token (falls erforderlich)</label>
+              <input
+                type="text"
+                value={setupTokenInput}
+                onChange={(e) => setSetupTokenInput(e.target.value)}
+                placeholder="z.B. xg2g_setup_..."
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '6px',
+                  padding: '0.5rem',
+                  color: '#fff',
+                  fontSize: '0.9rem',
+                }}
+                data-testid="bootstrap-setup-token-input"
+              />
+            </div>
             {errorMsg ? <div style={{ color: '#ef4444', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
             <Button
               onClick={() => { void handleCreatePasskey(); }}

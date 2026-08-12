@@ -193,10 +193,14 @@ export default function BootstrapGate() {
     setToken(token);
   };
 
+  const searchParams = new URLSearchParams(location.search);
+  const setupTokenFromUrl = searchParams.get('setup_token') || searchParams.get('token') || '';
+
   if (config && (config.setupRequired || config.identityReady === false)) {
     return (
       <PasskeyAuthFlow
         mode="bootstrap"
+        setupToken={setupTokenFromUrl}
         onSuccess={() => {
           void refetch();
         }}
