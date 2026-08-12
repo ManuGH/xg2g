@@ -42,8 +42,11 @@ import { getSettingsSectionLabel, getSettingsToolLabel } from '../lib/routeConte
 import { Button } from './ui';
 import styles from './Settings.module.css';
 
+import SecuritySettingsSection from './settings/SecuritySettingsSection';
+
 const SETTINGS_SECTIONS: SettingsSection[] = [
   'setup',
+  'security',
   'household',
   'android-tv',
   'scan',
@@ -632,6 +635,16 @@ function Settings() {
               <Button
                 variant="secondary"
                 size="sm"
+                active={activeSection === 'security'}
+                onClick={() => { void handleOpenSettingsSection('security'); }}
+                role="tab"
+                aria-selected={activeSection === 'security'}
+              >
+                Sicherheit & Passkeys
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
                 active={activeSection === 'household'}
                 onClick={() => { void handleOpenSettingsSection('household'); }}
                 role="tab"
@@ -710,6 +723,12 @@ function Settings() {
             )}
           </div>
         )}
+        </div>
+      ) : null}
+
+      {showSection('security') ? (
+        <div className={styles.section}>
+          <SecuritySettingsSection />
         </div>
       ) : null}
 

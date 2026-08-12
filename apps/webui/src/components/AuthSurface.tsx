@@ -59,6 +59,7 @@ export default function AuthSurface({
                 <input
                   id={inputId}
                   ref={form.inputRef}
+                  autoFocus
                   type={form.inputType ?? 'password'}
                   name={form.name}
                   value={form.value}

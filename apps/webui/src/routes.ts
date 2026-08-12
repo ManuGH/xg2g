@@ -27,6 +27,7 @@ export type EpgSection = 'guide' | 'timers';
 export type RecordingsSection = 'library' | 'series';
 export type SettingsSection =
   | 'setup'
+  | 'security'
   | 'household'
   | 'android-tv'
   | 'scan'

@@ -10,6 +10,7 @@ import { resolveHostEnvironment } from '../lib/hostBridge';
 import { normalizePathname, ROUTE_MAP, UNLOCK_ROUTE } from '../routes';
 import { isConfigured } from './Config';
 import AuthSurface from './AuthSurface';
+import PasskeyAuthFlow from './auth/PasskeyAuthFlow';
 import LoadingSkeleton from './LoadingSkeleton';
 import { Button } from './ui';
 
@@ -192,85 +193,39 @@ export default function BootstrapGate() {
     setToken(token);
   };
 
-  if (authReason) {
-    const authTitle =
-      authReason === 'expired'
-        ? t('auth.expiredTitle', { defaultValue: 'Session Expired' })
-        : t('auth.requiredTitle', { defaultValue: 'Authentication Required' });
-    const authCopy =
-      authReason === 'expired'
-        ? t('auth.expiredCopy', {
-          defaultValue: 'Your saved API token was rejected. Enter a valid token to continue.',
-        })
-        : t('auth.requiredCopy', {
-          defaultValue: 'Enter your API token to open the xg2g control surface.',
-        });
-    const authEyebrow =
-      authReason === 'expired'
-        ? t('auth.expiredEyebrow', { defaultValue: 'Re-authenticate' })
-        : t('auth.requiredEyebrow', { defaultValue: 'Sign in' });
-    const authBaseHint = authReason === 'expired'
-      ? t('auth.expiredHint', {
-        defaultValue: 'Submitting a new token will retry startup automatically.',
-      })
-      : t('auth.requiredHint', {
-        defaultValue: 'The token is stored locally in this browser after successful sign-in.',
-      });
-    const authHint = isTvHost
-      ? `${authBaseHint} ${t('auth.tvHint', {
-        defaultValue: 'On TV the token can stay visible while typing so you can spot mistakes immediately.',
-      })}`
-      : authBaseHint;
-
+  if (config && (config.setupRequired || config.identityReady === false)) {
     return (
-      <AuthSurface
-        testId="auth-surface"
-        eyebrow={authEyebrow}
-        title={authTitle}
-        copy={authCopy}
-        form={{
-          label: t('auth.tokenLabel', { defaultValue: 'API Token' }),
-          name: 'token',
-          value: tokenValue,
-          onValueChange: setTokenValue,
-          onSubmit: handleAuthSubmit,
-          submitLabel: t('auth.authenticate', { defaultValue: 'Authenticate' }),
-          submitDisabled: tokenValue.trim().length === 0,
-          placeholder: t('auth.tokenPlaceholder', { defaultValue: 'Enter API Token' }),
-          inputRef,
-          hint: authHint,
-          inputType: isTokenVisible ? 'text' : 'password',
-          inputTestId: 'auth-token-input',
-          submitTestId: 'auth-submit',
-          inputActions: (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-pressed={isTokenVisible}
-                onClick={() => {
-                  setIsTokenVisible((current) => !current);
-                  window.requestAnimationFrame(() => inputRef.current?.focus());
-                }}
-              >
-                {isTokenVisible
-                  ? t('auth.hideToken', { defaultValue: 'Hide token' })
-                  : t('auth.showToken', { defaultValue: 'Show token' })}
-              </Button>
-              {tokenValue ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setTokenValue('');
-                    inputRef.current?.focus();
-                  }}
-                >
-                  {t('auth.clearToken', { defaultValue: 'Clear' })}
-                </Button>
-              ) : null}
-            </>
-          ),
+      <PasskeyAuthFlow
+        mode="bootstrap"
+        onSuccess={() => {
+          void refetch();
+        }}
+        onSetToken={(t) => {
+          setToken(t);
+        }}
+      />
+    );
+  }
+
+  if (authReason) {
+    const fromPath = (location.state as { from?: string })?.from || new URLSearchParams(location.search).get('redirect') || '/';
+    return (
+      <PasskeyAuthFlow
+        mode={authReason === 'expired' ? 'expired' : 'login'}
+        initialToken={tokenValue || auth.token}
+        onSuccess={() => {
+          setForcedAuthPrompt(null);
+          setServerSessionAuthenticated(true);
+          void refetch();
+          if (fromPath && fromPath !== pathname) {
+            navigate(fromPath, { replace: true });
+          }
+        }}
+        onSetToken={(t) => {
+          setForcedAuthPrompt(null);
+          setTokenValue(t);
+          setAuthRetry({ token: t, phase: 'pending' });
+          setToken(t);
         }}
       />
     );
