@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -26,7 +27,7 @@ var (
 	ErrUnsupportedAlgorithm    = errors.New("dpop: unsupported algorithm; only ES256 (P-256) is permitted")
 	ErrInvalidTypeHeader       = errors.New("dpop: typ header parameter must be 'dpop+jwt'")
 	ErrMissingJWK              = errors.New("dpop: jwk header parameter missing or invalid")
-	ErrInvalidJWKCurve         = errors.New("dpop: jwk must be EC curve P-256")
+	ErrInvalidJWKCurve         = identity.ErrInvalidJWKCurve
 	ErrProofExpired            = errors.New("dpop: proof iat is outside allowed clock skew window")
 	ErrHTTPMethodMismatch      = errors.New("dpop: htm claim does not match HTTP request method")
 	ErrHTTPURIMismatch         = errors.New("dpop: htu claim does not match target HTTP URI")
@@ -43,12 +44,7 @@ type ProofHeader struct {
 }
 
 // JWKECPublicKey represents an EC P-256 public key in JWK format.
-type JWKECPublicKey struct {
-	Kty string `json:"kty"`
-	Crv string `json:"crv"`
-	X   string `json:"x"`
-	Y   string `json:"y"`
-}
+type JWKECPublicKey = identity.JWKECPublicKey
 
 // ProofPayload contains standard RFC 9449 DPoP claims.
 type ProofPayload struct {
@@ -68,26 +64,8 @@ type ProofClaims struct {
 }
 
 // ComputeJWKThumbprint computes the canonical RFC 7638 SHA-256 Base64URL thumbprint (jkt) for EC P-256.
-// Invariant: Member keys must be ordered lexicographically: "crv", "kty", "x", "y".
 func ComputeJWKThumbprint(jwk JWKECPublicKey) (string, error) {
-	if jwk.Kty != "EC" || jwk.Crv != "P-256" || jwk.X == "" || jwk.Y == "" {
-		return "", ErrInvalidJWKCurve
-	}
-
-	// Canonical JSON string with lexicographical key order (crv, kty, x, y)
-	canonicalMap := map[string]string{
-		"crv": jwk.Crv,
-		"kty": jwk.Kty,
-		"x":   jwk.X,
-		"y":   jwk.Y,
-	}
-
-	// Build raw JSON explicitly preserving exact RFC 7638 key ordering
-	rawJSON := fmt.Sprintf(`{"crv":%q,"kty":%q,"x":%q,"y":%q}`,
-		canonicalMap["crv"], canonicalMap["kty"], canonicalMap["x"], canonicalMap["y"])
-
-	hash := sha256.Sum256([]byte(rawJSON))
-	return base64.RawURLEncoding.EncodeToString(hash[:]), nil
+	return identity.ComputeJWKThumbprint(jwk)
 }
 
 // NormalizeHTU performs RFC 9449 §4.3 syntax and scheme-based normalization on an HTTP target URI.

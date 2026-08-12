@@ -1,123 +1,166 @@
 // Copyright (c) 2025-2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
-import { getStoredToken } from '../utils/tokenStorage';
+import { request } from '../lib/api';
 
-async function fetchJSON<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const token = getStoredToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
-  };
-
-  if (token && !headers['Authorization']) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(url, {
-    ...options,
-    headers,
-    credentials: 'include', // Includes xg2g_session cookie
-  });
-
-  if (!res.ok) {
-    let errorMessage = `HTTP ${res.status}`;
-    try {
-      const errBody = await res.json();
-      errorMessage = errBody.detail || errBody.title || errBody.message || errorMessage;
-    } catch {
-      // Ignore JSON parse error
-    }
-    throw new Error(errorMessage);
-  }
-
-  return res.json() as Promise<T>;
-}
-
-export interface PasskeyItem {
+export interface PasskeyCredentialSummary {
   id: string;
-  name: string;
+  nickname: string;
   createdAt: string;
-  lastUsedAt?: string;
+  backupEligible?: boolean;
+  backupState?: boolean;
 }
 
-export interface PasskeyRegisterStartResult {
-  options: any;
-}
-
-export interface PasskeyRegisterFinishResult {
-  success: boolean;
+export interface FinishRegistrationResponse {
+  status: 'bootstrap_completed' | 'registered';
+  user?: {
+    id: string;
+    username: string;
+    role: string;
+  };
+  credential?: PasskeyCredentialSummary;
+  id?: string;
+  nickname?: string;
   recoveryCodes?: string[];
-  credentialId?: string;
+  expiresAt?: string;
 }
 
-export interface PasskeyLoginStartResult {
-  options: any;
+export interface AuthSessionResponse {
+  user: {
+    id: string;
+    username: string;
+    role: string;
+  };
+  expiresAt: string;
 }
 
-export interface PasskeyLoginFinishResult {
-  success: boolean;
-  sessionId?: string;
-}
+/**
+ * Start Passkey registration ceremony.
+ * For bootstrap mode (0 users), setupToken can be passed in X-Setup-Token header.
+ */
+export async function startPasskeyRegistration(username?: string, setupToken?: string): Promise<{ options: any }> {
+  const headers: Record<string, string> = {};
+  if (setupToken) {
+    headers['X-Setup-Token'] = setupToken;
+  }
 
-export interface BootstrapCommitResult {
-  success: boolean;
-}
-
-export async function startPasskeyRegistration(username = 'admin'): Promise<PasskeyRegisterStartResult> {
-  return fetchJSON('/api/v3/auth/passkey/register/start', {
+  const data = await request<any>('/api/v3/auth/passkey/register/start', {
     method: 'POST',
-    body: JSON.stringify({ username }),
+    headers,
+    body: username ? { username } : {},
+  });
+
+  return { options: data };
+}
+
+/**
+ * Finish Passkey registration ceremony.
+ */
+export async function finishPasskeyRegistration(
+  attestation: any,
+  nickname = 'Passkey'
+): Promise<FinishRegistrationResponse> {
+  const data = await request<FinishRegistrationResponse>('/api/v3/auth/passkey/register/finish', {
+    method: 'POST',
+    body: {
+      response: attestation.response,
+      nickname,
+    },
+  });
+
+  return data;
+}
+
+/**
+ * Start Passkey login ceremony.
+ */
+export async function startPasskeyLogin(): Promise<{ options: any }> {
+  const data = await request<any>('/api/v3/auth/passkey/login/start', {
+    method: 'POST',
+    body: {},
+  });
+
+  return { options: data };
+}
+
+/**
+ * Finish Passkey login ceremony.
+ * Backend returns AuthSessionResponse { user, expiresAt } and sets xg2g_session cookie.
+ */
+export async function finishPasskeyLogin(assertion: any): Promise<AuthSessionResponse> {
+  const data = await request<AuthSessionResponse>('/api/v3/auth/passkey/login/finish', {
+    method: 'POST',
+    body: {
+      response: assertion.response,
+    },
+  });
+
+  return data;
+}
+
+/**
+ * Acknowledge recovery codes after bootstrap passkey setup.
+ * Backend route: POST /api/v3/auth/bootstrap/acknowledge-recovery
+ */
+export async function acknowledgeRecovery(): Promise<void> {
+  await request<void>('/api/v3/auth/bootstrap/acknowledge-recovery', {
+    method: 'POST',
+    body: {},
   });
 }
 
-export async function finishPasskeyRegistration(attestationResponse: any): Promise<PasskeyRegisterFinishResult> {
-  return fetchJSON('/api/v3/auth/passkey/register/finish', {
+/**
+ * Login using a 10-character recovery code.
+ * Backend route: POST /api/v3/auth/recovery (requires username and code)
+ */
+export async function loginWithRecoveryCode(username: string, code: string): Promise<AuthSessionResponse> {
+  const data = await request<AuthSessionResponse>('/api/v3/auth/recovery', {
     method: 'POST',
-    body: JSON.stringify({ attestation: attestationResponse }),
+    body: {
+      username,
+      code,
+    },
   });
+
+  return data;
 }
 
-export async function startPasskeyLogin(): Promise<PasskeyLoginStartResult> {
-  return fetchJSON('/api/v3/auth/passkey/login/start', {
-    method: 'POST',
-    body: JSON.stringify({}),
+/**
+ * List registered passkeys for the current user.
+ * Backend route: GET /api/v3/auth/passkeys
+ * Returns PasskeyCredentialSummary[] directly as a JSON array.
+ */
+export async function listPasskeys(): Promise<PasskeyCredentialSummary[]> {
+  const data = await request<PasskeyCredentialSummary[] | { passkeys: PasskeyCredentialSummary[] }>('/api/v3/auth/passkeys', {
+    method: 'GET',
   });
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+  if (data && Array.isArray((data as any).passkeys)) {
+    return (data as any).passkeys;
+  }
+  return [];
 }
 
-export async function finishPasskeyLogin(assertionResponse: any): Promise<PasskeyLoginFinishResult> {
-  return fetchJSON('/api/v3/auth/passkey/login/finish', {
-    method: 'POST',
-    body: JSON.stringify({ assertion: assertionResponse }),
-  });
-}
-
-export async function commitBootstrap(): Promise<BootstrapCommitResult> {
-  return fetchJSON('/api/v3/auth/bootstrap/commit', {
-    method: 'POST',
-  });
-}
-
-export async function loginWithRecoveryCode(code: string): Promise<PasskeyLoginFinishResult> {
-  return fetchJSON('/api/v3/auth/recovery/login', {
-    method: 'POST',
-    body: JSON.stringify({ code }),
-  });
-}
-
-export async function listPasskeys(): Promise<PasskeyItem[]> {
-  const data = await fetchJSON<{ passkeys: PasskeyItem[] }>('/api/v3/auth/passkeys');
-  return data.passkeys || [];
-}
-
-export async function deletePasskey(id: string): Promise<{ success: boolean }> {
-  return fetchJSON(`/api/v3/auth/passkeys/${encodeURIComponent(id)}`, {
+/**
+ * Delete a passkey credential by ID.
+ * Backend route: DELETE /api/v3/auth/passkeys/{id}
+ */
+export async function deletePasskey(id: string): Promise<void> {
+  await request<void>(`/api/v3/auth/passkeys/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
 }
 
-export async function revokeOtherSessions(): Promise<{ success: boolean }> {
-  return fetchJSON('/api/v3/auth/sessions/revoke-others', {
-    method: 'DELETE',
+/**
+ * Revoke all other active web sessions.
+ * Backend route: POST /api/v3/auth/sessions/revoke-others
+ */
+export async function revokeOtherSessions(): Promise<void> {
+  await request<void>('/api/v3/auth/sessions/revoke-others', {
+    method: 'POST',
+    body: {},
   });
 }

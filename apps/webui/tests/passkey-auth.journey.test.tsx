@@ -68,7 +68,7 @@ describe('Passkey Public Auth Journey', () => {
       pinConfigured: false,
     });
 
-    // Mock WebAuthn APIs
+    // Mock WebAuthn Browser APIs
     (global as any).navigator.credentials = {
       create: vi.fn().mockResolvedValue({
         id: 'test_cred_id_123',
@@ -121,11 +121,11 @@ describe('Passkey Public Auth Journey', () => {
     });
 
     vi.spyOn(passkeyApi, 'finishPasskeyRegistration').mockResolvedValue({
-      success: true,
+      status: 'bootstrap_completed',
       recoveryCodes: ['CODE-0001', 'CODE-0002', 'CODE-0003'],
     });
 
-    vi.spyOn(passkeyApi, 'commitBootstrap').mockResolvedValue({ success: true });
+    vi.spyOn(passkeyApi, 'acknowledgeRecovery').mockResolvedValue(undefined);
 
     render(
       <QueryClientProvider client={queryClient}>
@@ -165,11 +165,11 @@ describe('Passkey Public Auth Journey', () => {
     });
     expect(finishBtn).not.toBeDisabled();
 
-    // 5. Complete Bootstrap
+    // 5. Complete Bootstrap (calls acknowledgeRecovery)
     await act(async () => {
       fireEvent.click(finishBtn);
     });
-    expect(passkeyApi.commitBootstrap).toHaveBeenCalledTimes(1);
+    expect(passkeyApi.acknowledgeRecovery).toHaveBeenCalledTimes(1);
   });
 
   it('renders Passkey Login View and handles usernameless sign-in', async () => {
@@ -184,8 +184,8 @@ describe('Passkey Public Auth Journey', () => {
     });
 
     vi.spyOn(passkeyApi, 'finishPasskeyLogin').mockResolvedValue({
-      success: true,
-      sessionId: 'sess_123',
+      user: { id: 'admin_id', username: 'admin', role: 'admin' },
+      expiresAt: '2026-08-13T00:00:00Z',
     });
 
     render(
@@ -216,10 +216,9 @@ describe('Passkey Public Auth Journey', () => {
 
   it('renders SecuritySettingsSection and handles listing and deleting passkeys', async () => {
     vi.spyOn(passkeyApi, 'listPasskeys').mockResolvedValue([
-      { id: 'pk_1', name: 'MacBook Touch ID', createdAt: '2026-08-12T20:00:00Z' },
+      { id: 'pk_1', nickname: 'MacBook Touch ID', createdAt: '2026-08-12T20:00:00Z' },
     ]);
-    vi.spyOn(passkeyApi, 'deletePasskey').mockResolvedValue({ success: true });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.spyOn(passkeyApi, 'deletePasskey').mockResolvedValue(undefined);
 
     render(
       <QueryClientProvider client={queryClient}>
@@ -233,9 +232,14 @@ describe('Passkey Public Auth Journey', () => {
       expect(screen.getByText('MacBook Touch ID')).toBeInTheDocument();
     });
 
-    const deleteBtn = screen.getByText('Löschen');
+    const deleteBtn = screen.getByTestId('delete-passkey-pk_1');
     await act(async () => {
       fireEvent.click(deleteBtn);
+    });
+
+    const confirmBtn = screen.getByRole('button', { name: 'Ja' });
+    await act(async () => {
+      fireEvent.click(confirmBtn);
     });
 
     expect(passkeyApi.deletePasskey).toHaveBeenCalledWith('pk_1');

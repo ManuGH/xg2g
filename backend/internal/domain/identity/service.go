@@ -18,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/control/http/v3/dpop"
 	"github.com/ManuGH/xg2g/internal/domain/identity/webauthn"
 )
 
@@ -736,8 +735,8 @@ type DeviceGrantResult struct {
 }
 
 // IssueDeviceGrant registers/updates the Android device and issues a DPoP-bound Grant & Access Token.
-func (s *Service) IssueDeviceGrant(ctx context.Context, userID, deviceName, platform string, jwk dpop.JWKECPublicKey, scopes string) (*DeviceGrantResult, error) {
-	jkt, err := dpop.ComputeJWKThumbprint(jwk)
+func (s *Service) IssueDeviceGrant(ctx context.Context, userID, deviceName, platform string, jwk JWKECPublicKey, scopes string) (*DeviceGrantResult, error) {
+	jkt, err := ComputeJWKThumbprint(jwk)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute RFC 7638 JWK thumbprint: %w", err)
 	}

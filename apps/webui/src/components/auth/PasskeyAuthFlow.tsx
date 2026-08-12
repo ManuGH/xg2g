@@ -14,18 +14,27 @@ import {
   finishPasskeyRegistration,
   startPasskeyLogin,
   finishPasskeyLogin,
-  commitBootstrap,
+  acknowledgeRecovery,
   loginWithRecoveryCode,
 } from '../../services/passkeyApi';
 
 interface PasskeyAuthFlowProps {
   mode: 'bootstrap' | 'login' | 'expired';
   initialToken?: string;
+  setupToken?: string;
+  defaultUsername?: string;
   onSuccess: () => void;
   onSetToken: (token: string) => void;
 }
 
-export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, onSetToken }: PasskeyAuthFlowProps) {
+export default function PasskeyAuthFlow({
+  mode,
+  initialToken = '',
+  setupToken,
+  defaultUsername = 'admin',
+  onSuccess,
+  onSetToken,
+}: PasskeyAuthFlowProps) {
   const hostEnv = resolveHostEnvironment();
   const isTvHost = hostEnv.isTv;
 
@@ -39,6 +48,7 @@ export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, on
 
   // Input states for fallbacks
   const [recoveryCodeInput, setRecoveryCodeInput] = useState('');
+  const [recoveryUsernameInput, setRecoveryUsernameInput] = useState(defaultUsername);
   const [apiTokenInput, setApiTokenInput] = useState(initialToken);
   const [isTokenVisible, setIsTokenVisible] = useState<boolean>(() => isTvHost);
 
@@ -67,7 +77,7 @@ export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, on
               const assertion = await getPasskeyAssertion(startRes.options, true);
               if (active && assertion) {
                 const finishRes = await finishPasskeyLogin(assertion);
-                if (finishRes.success) {
+                if (finishRes && finishRes.user) {
                   onSuccess();
                 }
               }
@@ -89,13 +99,15 @@ export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, on
     setLoading(true);
     setErrorMsg(null);
     try {
-      const startRes = await startPasskeyRegistration('admin');
+      const startRes = await startPasskeyRegistration('admin', setupToken);
       const attestation = await createPasskeyCredential(startRes.options);
-      const finishRes = await finishPasskeyRegistration(attestation);
+      const finishRes = await finishPasskeyRegistration(attestation, 'Admin Passkey');
 
-      if (finishRes.success && finishRes.recoveryCodes) {
+      if (finishRes.status === 'bootstrap_completed' && finishRes.recoveryCodes) {
         setRecoveryCodes(finishRes.recoveryCodes);
         setStep('recovery-backup');
+      } else if (finishRes.status === 'registered' || finishRes.credential || finishRes.id) {
+        onSuccess();
       } else {
         throw new Error('Passkey-Erstellung fehlgeschlagen.');
       }
@@ -106,13 +118,13 @@ export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, on
     }
   };
 
-  // Handler for Bootstrap Final Commit
+  // Handler for Acknowledging Recovery Codes (Final Bootstrap Commit)
   const handleCommitBootstrap = async () => {
     if (!codesConfirmed) return;
     setLoading(true);
     setErrorMsg(null);
     try {
-      await commitBootstrap();
+      await acknowledgeRecovery();
       onSuccess();
     } catch (err: any) {
       setErrorMsg(err.message || 'Einrichtung konnte nicht abgeschlossen werden.');
@@ -130,7 +142,7 @@ export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, on
       const assertion = await getPasskeyAssertion(startRes.options, false);
       const finishRes = await finishPasskeyLogin(assertion);
 
-      if (finishRes.success) {
+      if (finishRes && finishRes.user) {
         onSuccess();
       } else {
         throw new Error('Anmeldung fehlgeschlagen.');
@@ -142,17 +154,18 @@ export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, on
     }
   };
 
-  // Handler for Recovery Code Fallback Login
+  // Handler for Recovery Code Fallback Login (POST /api/v3/auth/recovery with username + code)
   const handleRecoveryLogin = async (e: FormEvent) => {
     e.preventDefault();
     const code = recoveryCodeInput.trim();
+    const username = recoveryUsernameInput.trim() || 'admin';
     if (!code) return;
 
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await loginWithRecoveryCode(code);
-      if (res.success) {
+      const res = await loginWithRecoveryCode(username, code);
+      if (res && res.user) {
         onSuccess();
       } else {
         throw new Error('Ungültiger Wiederherstellungscode.');
@@ -309,7 +322,7 @@ export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, on
       <AuthSurface
         eyebrow="Wiederherstellung"
         title="Mit Wiederherstellungscode anmelden"
-        copy="Gib einen deiner 10-zeichen Einmal-Codes ein."
+        copy="Gib deinen Benutzernamen und einen deiner 10-Zeichen Einmal-Codes ein."
         testId="recovery-login-surface"
         form={{
           label: 'Wiederherstellungscode',
@@ -327,6 +340,23 @@ export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, on
         }}
         actions={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.5rem' }}>
+              <label style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Benutzername</label>
+              <input
+                type="text"
+                value={recoveryUsernameInput}
+                onChange={(e) => setRecoveryUsernameInput(e.target.value)}
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '6px',
+                  padding: '0.5rem',
+                  color: '#fff',
+                  fontSize: '0.9rem',
+                }}
+                data-testid="recovery-username-input"
+              />
+            </div>
             {errorMsg ? <div style={{ color: '#ef4444', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
             <Button variant="ghost" onClick={() => setStep('passkey')} style={{ fontSize: '0.85rem' }}>
               Zurück zur Passkey-Anmeldung
@@ -337,7 +367,7 @@ export default function PasskeyAuthFlow({ mode, initialToken = '', onSuccess, on
     );
   }
 
-  // DEFAULT RENDER: PASSKEY LOGIN + API TOKEN FORM (UNIFIED SURFACES)
+  // DEFAULT RENDER: PASSKEY LOGIN SURFACE WITH SIDE-BY-SIDE API TOKEN FORM
   return (
     <AuthSurface
       testId="auth-surface"

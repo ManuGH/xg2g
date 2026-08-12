@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/identity/webauthn"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 type DeviceGrantStartRequest struct {
@@ -36,7 +37,7 @@ type DeviceRefreshRequest struct {
 func (s *Server) DeviceGrantStart(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()
 	if svc == nil {
-		http.Error(w, `{"error":"identity_service_unavailable"}`, http.StatusServiceUnavailable)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
 		return
 	}
 
@@ -48,7 +49,7 @@ func (s *Server) DeviceGrantStart(w http.ResponseWriter, r *http.Request) {
 	opts, err := svc.BeginPasskeyLogin(r.Context(), req.Username)
 	if err != nil {
 		log.FromContext(r.Context()).Error().Err(err).Msg("failed to begin device passkey assertion")
-		http.Error(w, `{"error":"failed_to_begin_assertion"}`, http.StatusBadRequest)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/login_failed", "Assertion Failed", problemcode.CodeInvalidInput, "Failed to begin passkey assertion", nil)
 		return
 	}
 
@@ -60,13 +61,13 @@ func (s *Server) DeviceGrantStart(w http.ResponseWriter, r *http.Request) {
 func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()
 	if svc == nil {
-		http.Error(w, `{"error":"identity_service_unavailable"}`, http.StatusServiceUnavailable)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
 		return
 	}
 
 	dpopProof := r.Header.Get("DPoP")
 	if dpopProof == "" {
-		http.Error(w, `{"error":"dpop_header_required"}`, http.StatusBadRequest)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/dpop_required", "DPoP Header Required", problemcode.CodeInvalidInput, "DPoP proof header is required", nil)
 		return
 	}
 
@@ -75,13 +76,13 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 	proofClaims, err := validator.ValidateProof(r, dpopProof, "", now)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("invalid DPoP proof during device grant finish")
-		http.Error(w, `{"error":"invalid_dpop_proof","detail":"`+err.Error()+`"}`, http.StatusBadRequest)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/invalid_dpop", "Invalid DPoP Proof", problemcode.CodeInvalidInput, err.Error(), nil)
 		return
 	}
 
 	var req DeviceGrantFinishRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid_json_body"}`, http.StatusBadRequest)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid JSON Body", problemcode.CodeInvalidInput, "Invalid JSON request body", nil)
 		return
 	}
 
@@ -89,7 +90,7 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 	user, _, err := svc.VerifyPasskeyAssertion(r.Context(), req.Assertion)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("passkey assertion failed during android device grant")
-		http.Error(w, `{"error":"invalid_passkey_assertion"}`, http.StatusUnauthorized)
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/login_failed", "Authentication Failed", problemcode.CodeUnauthorized, "Invalid passkey assertion", nil)
 		return
 	}
 
@@ -104,7 +105,7 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 	grantRes, err := svc.IssueDeviceGrant(r.Context(), user.ID, req.DeviceName, req.Platform, proofClaims.Header.JWK, req.Scopes)
 	if err != nil {
 		log.FromContext(r.Context()).Error().Err(err).Msg("failed to issue device grant")
-		http.Error(w, `{"error":"failed_to_issue_grant"}`, http.StatusInternalServerError)
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "auth/grant_failed", "Grant Failed", problemcode.CodeInternalServerError, "Failed to issue device grant", nil)
 		return
 	}
 
@@ -125,13 +126,13 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()
 	if svc == nil {
-		http.Error(w, `{"error":"identity_service_unavailable"}`, http.StatusServiceUnavailable)
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
 		return
 	}
 
 	dpopProof := r.Header.Get("DPoP")
 	if dpopProof == "" {
-		http.Error(w, `{"error":"dpop_header_required"}`, http.StatusBadRequest)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/dpop_required", "DPoP Header Required", problemcode.CodeInvalidInput, "DPoP proof header is required", nil)
 		return
 	}
 
@@ -140,13 +141,13 @@ func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
 	proofClaims, err := validator.ValidateProof(r, dpopProof, "", now)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("invalid DPoP proof during device refresh")
-		http.Error(w, `{"error":"invalid_dpop_proof","detail":"`+err.Error()+`"}`, http.StatusBadRequest)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/invalid_dpop", "Invalid DPoP Proof", problemcode.CodeInvalidInput, err.Error(), nil)
 		return
 	}
 
 	var req DeviceRefreshRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
-		http.Error(w, `{"error":"invalid_refresh_token_payload"}`, http.StatusBadRequest)
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Refresh Token", problemcode.CodeInvalidInput, "Missing or invalid refresh_token payload", nil)
 		return
 	}
 
@@ -156,10 +157,10 @@ func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
 			log.FromContext(r.Context()).Error().
 				Str("jkt", proofClaims.JWKThumbprint).
 				Msg("refresh token replay detected! device grant family revoked")
-			http.Error(w, `{"error":"invalid_grant","detail":"refresh token replay detected; device grant family revoked"}`, http.StatusUnauthorized)
+			writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/invalid_grant", "Invalid Grant", problemcode.CodeUnauthorized, "Refresh token replay detected; device grant family revoked", nil)
 			return
 		}
-		http.Error(w, `{"error":"invalid_grant"}`, http.StatusUnauthorized)
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/invalid_grant", "Invalid Grant", problemcode.CodeUnauthorized, "Device refresh token invalid or revoked", nil)
 		return
 	}
 
