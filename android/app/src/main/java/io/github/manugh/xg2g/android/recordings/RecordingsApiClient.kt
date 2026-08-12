@@ -62,6 +62,9 @@ internal class RecordingsApiClient(
         root: String? = null,
         path: String? = null
     ): RecordingsResponse = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext RecordingsResponse()
+        }
         ensureAuthSession(authToken)
         val urlBuilder = apiUrl("recordings").newBuilder()
         if (!root.isNullOrBlank()) {
@@ -144,6 +147,9 @@ internal class RecordingsApiClient(
     }
 
     suspend fun fetchContinueWatching(authToken: String?, limit: Int = 12): List<RecordingItem> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyList()
+        }
         ensureAuthSession(authToken)
         val url = apiUrl("recordings", "continue").newBuilder()
             .addQueryParameter("limit", limit.toString())

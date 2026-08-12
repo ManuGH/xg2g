@@ -107,6 +107,9 @@ internal class GuideApiClient(
     }
 
     suspend fun fetchBouquets(authToken: String?): List<GuideBouquet> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyList()
+        }
         ensureAuthSession(authToken)
         val request = Request.Builder()
             .url(apiUrl("services", "bouquets"))
@@ -130,6 +133,9 @@ internal class GuideApiClient(
         authToken: String?,
         bouquetName: String?
     ): List<GuideChannel> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyList()
+        }
         ensureAuthSession(authToken)
         val urlBuilder = apiUrlBuilder("services")
         bouquetName?.trim()
@@ -165,6 +171,9 @@ internal class GuideApiClient(
         bouquetName: String?,
         timelineWindow: GuideTimelineWindow
     ): Map<String, List<GuideProgram>> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyMap()
+        }
         ensureAuthSession(authToken)
         val urlBuilder = apiUrlBuilder("epg")
             .addQueryParameter("from", timelineWindow.startEpochSec.toString())
@@ -205,6 +214,9 @@ internal class GuideApiClient(
     }
 
     suspend fun fetchHealthStatus(authToken: String?): GuideHealthStatus = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext GuideHealthStatus(receiverHealthy = false, epgHealthy = false)
+        }
         ensureAuthSession(authToken)
         val request = Request.Builder()
             .url(apiUrl("system", "health"))

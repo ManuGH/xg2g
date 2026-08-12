@@ -204,6 +204,11 @@ class MainActivity : AppCompatActivity() {
         screenUi.bindActions(
             onConnect = { input ->
                 if (validateAndSaveUrl(input)) {
+                    dashboardViewModel.refresh()
+                    guideViewModel.refresh()
+                    recordingsViewModel.refresh(isInitial = false)
+                    timersViewModel.refresh(isInitial = false)
+                    settingsViewModel.refreshHealth()
                     if (isTvDevice) {
                         showTvHomeUi(reason = "connect_server")
                     } else {

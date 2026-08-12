@@ -27,6 +27,7 @@ import (
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/entitlements"
 	"github.com/ManuGH/xg2g/internal/epg"
@@ -61,6 +62,7 @@ type Server struct {
 	// Opaque household unlock store for xg2g_household_unlock cookies.
 	householdUnlockStore household.UnlockStore
 	householdUnlockTTL   time.Duration
+	identityService      *identity.Service
 
 	// Security
 	JWTSecret []byte // HMAC-SHA256 key for playbackDecisionToken (SSOT)

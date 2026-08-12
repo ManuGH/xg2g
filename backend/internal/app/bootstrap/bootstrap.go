@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +24,8 @@ import (
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/daemon"
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
+	identitystore "github.com/ManuGH/xg2g/internal/domain/identity/store"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/entitlements"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -129,6 +132,33 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	if err != nil {
 		return nil, fmt.Errorf("initialize device auth store: %w", err)
 	}
+
+	identityStorePath := filepath.Join(cfg.Store.Path, "identity.sqlite")
+	if cfg.Store.Backend == "memory" {
+		identityStorePath = ":memory:"
+	}
+	identityStore, err := identitystore.OpenStateStore(cfg.Store.Backend, identityStorePath)
+	if err != nil {
+		return nil, fmt.Errorf("initialize identity store: %w", err)
+	}
+
+	rpID := "localhost"
+	origin := "http://localhost:8088"
+	if cfg.APIListenAddr != "" {
+		host, _, err := net.SplitHostPort(cfg.APIListenAddr)
+		if err == nil && host != "" && host != "0.0.0.0" && host != "::" {
+			rpID = host
+		}
+	}
+	if cfg.TLSEnabled || cfg.ForceHTTPS {
+		origin = "https://" + rpID
+	}
+	identitySvc := identity.NewService(identity.Config{
+		RPID:           rpID,
+		RPName:         "xg2g",
+		ExpectedOrigin: origin,
+	}, identityStore)
+	s.SetIdentityService(identitySvc)
 
 	resumeStore, err := resume.NewStore(cfg.Store.Backend, cfg.Store.Path)
 	if err != nil {

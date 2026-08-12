@@ -271,6 +271,9 @@ internal class DashboardApiClient(
     }
 
     suspend fun fetchHouseholdUnlockStatus(authToken: String?): HouseholdUnlockStatus = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext HouseholdUnlockStatus(pinConfigured = false, unlocked = false)
+        }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).get()
         authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -284,6 +287,9 @@ internal class DashboardApiClient(
     }
 
     suspend fun fetchHouseholdProfiles(authToken: String?): List<NativeHouseholdProfile> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyList()
+        }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("household", "profiles")).get()
         authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -336,6 +342,9 @@ internal class DashboardApiClient(
     }
 
     suspend fun unlockHousehold(authToken: String?, pin: String): HouseholdUnlockStatus = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext HouseholdUnlockStatus(pinConfigured = false, unlocked = false)
+        }
         ensureAuthSession(authToken)
         val json = JSONObject().put("pin", pin)
         val requestBuilder = Request.Builder()
@@ -352,6 +361,9 @@ internal class DashboardApiClient(
     }
 
     suspend fun lockHousehold(authToken: String?): Unit = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext
+        }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).delete()
         authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -361,6 +373,17 @@ internal class DashboardApiClient(
     }
 
     suspend fun fetchScanStatus(authToken: String?): SystemScanStatus = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext SystemScanStatus(
+                state = "idle",
+                startedAt = null,
+                finishedAt = null,
+                totalChannels = 0,
+                scannedChannels = 0,
+                updatedCount = 0,
+                lastError = null
+            )
+        }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("system", "scan")).get()
         authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -379,6 +402,9 @@ internal class DashboardApiClient(
     }
 
     suspend fun triggerSystemScan(authToken: String?): Boolean = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext false
+        }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder()
             .url(apiUrl("system", "scan"))

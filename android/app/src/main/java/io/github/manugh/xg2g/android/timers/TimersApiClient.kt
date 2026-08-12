@@ -52,6 +52,9 @@ internal class TimersApiClient(
 
     private val baseUrl: String get() = baseUrlProvider()
     suspend fun fetchTimers(authToken: String?): List<TimerItem> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyList()
+        }
         ensureAuthSession(authToken)
         val url = apiUrl("timers")
         val requestBuilder = Request.Builder().url(url).get()

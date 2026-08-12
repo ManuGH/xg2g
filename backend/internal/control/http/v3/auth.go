@@ -7,6 +7,7 @@
 package v3
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -179,11 +180,22 @@ func (s *Server) authSessionTTLOrDefault() time.Duration {
 }
 
 func (s *Server) resolveSessionToken(sessionID string) (string, bool) {
-	return s.authSessionStoreOrDefault().ResolveSessionToken(sessionID)
+	if token, ok := s.authSessionStoreOrDefault().ResolveSessionToken(sessionID); ok && token != "" {
+		return token, true
+	}
+	if idSvc := s.getIdentityService(); idSvc != nil {
+		if sess, _, err := idSvc.ValidateWebSession(context.Background(), sessionID, "", ""); err == nil && sess != nil {
+			return sessionID, true
+		}
+	}
+	return "", false
 }
 
 func (s *Server) deleteAuthSession(sessionID string) {
 	s.authSessionStoreOrDefault().InvalidateSession(sessionID)
+	if idSvc := s.getIdentityService(); idSvc != nil {
+		_ = idSvc.RevokeWebSession(context.Background(), sessionID)
+	}
 }
 
 func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) (string, error) {

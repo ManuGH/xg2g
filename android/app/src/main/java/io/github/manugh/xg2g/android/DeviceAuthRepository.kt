@@ -83,10 +83,11 @@ internal class DeviceAuthRepository(
     }
 
     suspend fun ensureAuthSession(baseUrl: String, legacyAuthToken: String?) {
-        val normalizedBaseUrl = normalizedBaseUrl(baseUrl)
-            ?: throw IllegalStateException("Invalid xg2g server URL: $baseUrl")
-        val uiBaseUrl = normalizedBaseUrl.toHttpUrlOrNull()
-            ?: throw IllegalStateException("Invalid xg2g server URL: $normalizedBaseUrl")
+        if (baseUrl.isBlank()) {
+            return
+        }
+        val normalizedBaseUrl = normalizedBaseUrl(baseUrl) ?: return
+        val uiBaseUrl = normalizedBaseUrl.toHttpUrlOrNull() ?: return
         val sessionUrl = apiUrl(uiBaseUrl, "auth", "session")
         val deviceState = currentState(normalizedBaseUrl)
         val hasSessionCookie = cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)
@@ -165,10 +166,11 @@ internal class DeviceAuthRepository(
     }
 
     suspend fun prepareWebSession(baseUrl: String, targetUrl: String, legacyAuthToken: String?): String {
-        val normalizedBaseUrl = normalizedBaseUrl(baseUrl)
-            ?: throw IllegalStateException("Invalid xg2g server URL: $baseUrl")
-        val uiBaseUrl = normalizedBaseUrl.toHttpUrlOrNull()
-            ?: throw IllegalStateException("Invalid xg2g server URL: $normalizedBaseUrl")
+        if (baseUrl.isBlank()) {
+            return targetUrl
+        }
+        val normalizedBaseUrl = normalizedBaseUrl(baseUrl) ?: return targetUrl
+        val uiBaseUrl = normalizedBaseUrl.toHttpUrlOrNull() ?: return targetUrl
         val targetPath = resolveTargetPath(uiBaseUrl, targetUrl)
         val sessionUrl = apiUrl(uiBaseUrl, "auth", "session")
         val deviceState = currentState(normalizedBaseUrl)

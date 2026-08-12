@@ -42,6 +42,9 @@ internal class PairingApiClient(
         deviceName: String = "Android TV",
         deviceType: String = "tv"
     ): StartPairingResult = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            throw IllegalStateException("Server-URL ist nicht konfiguriert.")
+        }
         val url = apiUrl("pairing", "start")
         val json = JSONObject().apply {
             put("deviceName", deviceName)

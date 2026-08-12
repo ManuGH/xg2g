@@ -95,6 +95,9 @@ func newHandlerWithMiddlewares(svc *Server, _ config.AppConfig, extra []Middlewa
 
 	// 2. Create Router with RFC 7807 compliant 404/405 handlers
 	r := NewRouteRouter()
+	r.Route(V3BaseURL, func(sub chi.Router) {
+		svc.mountPasskeyRoutes(sub)
+	})
 
 	// 3. Create Handler
 	// Use handwritten router to inject scope policy and keep generated code transport-only.

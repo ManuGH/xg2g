@@ -139,6 +139,9 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	if err := v3.RegisterRoutes(v3Adapter, s.v3Handler); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register v3 routes: %w", err)
 	}
+	if err := v3.RegisterPasskeyRoutesWithRegistrar(v3Adapter, s.v3Handler); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register passkey routes: %w", err)
+	}
 	// v3Sub contains full /api/v3 patterns. A wildcard delegate preserves the
 	// Phase 1 outer inventory's nine technical method entries.
 	r.Handle(v3.V3BaseURL+"/*", v3Sub)
