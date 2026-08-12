@@ -10,17 +10,17 @@ import (
 )
 
 var (
-	ErrHouseholdNotFound     = errors.New("household not found")
-	ErrInvitationNotFound    = errors.New("invitation not found or expired")
-	ErrInvitationAlreadyUsed = errors.New("invitation already used")
-	ErrProfileNotFound       = errors.New("profile not found")
-	ErrInvalidPassword       = errors.New("invalid password")
-	ErrPasswordTooShort      = errors.New("password must be at least 8 characters long")
-	ErrProfilePINMismatch    = errors.New("invalid profile exit pin")
-	ErrAccessPolicyRevoked   = errors.New("access policy has been revoked")
-	ErrAccessPolicyExpired   = errors.New("access policy has expired")
-	ErrOutsideTimeWindow     = errors.New("access is restricted outside allowed time window")
-	ErrApprovalNotFound      = errors.New("approval request not found")
+	ErrHouseholdNotFound      = errors.New("household not found")
+	ErrInvitationNotFound     = errors.New("invitation not found or expired")
+	ErrInvitationAlreadyUsed  = errors.New("invitation already used")
+	ErrProfileNotFound        = errors.New("profile not found")
+	ErrInvalidPassword        = errors.New("invalid password")
+	ErrPasswordTooShort       = errors.New("password must be at least 8 characters long")
+	ErrProfilePINMismatch     = errors.New("invalid profile exit pin")
+	ErrAccessPolicyRevoked    = errors.New("access policy has been revoked")
+	ErrAccessPolicyExpired    = errors.New("access policy has expired")
+	ErrOutsideTimeWindow      = errors.New("access is restricted outside allowed time window")
+	ErrApprovalNotFound       = errors.New("approval request not found")
 	ErrApprovalAlreadySettled = errors.New("approval request is already approved or denied")
 )
 
@@ -84,38 +84,38 @@ func (p Profile) Age() int {
 
 // AccessPolicy defines account-level time window, expiration, and capability restrictions.
 type AccessPolicy struct {
-	ID                  string     `json:"id"`
-	AccountID           string     `json:"accountId"`
-	ValidFrom           *time.Time `json:"validFrom,omitempty"`
-	ValidUntil          *time.Time `json:"validUntil,omitempty"`
-	DailyStart          string     `json:"dailyStart,omitempty"` // e.g. "07:00"
-	DailyEnd            string     `json:"dailyEnd,omitempty"`   // e.g. "19:00"
-	Timezone            string     `json:"timezone"`             // e.g. "Europe/Vienna"
-	AllowedDaysMask     int        `json:"allowedDaysMask"`      // Bitmask for Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64 (127 = all days)
-	LiveTVAllowed       bool       `json:"liveTvAllowed"`
-	EPGAllowed          bool       `json:"epgAllowed"`
-	DVRAllowed          bool       `json:"dvrAllowed"`
-	RecordingsAllowed   bool       `json:"recordingsAllowed"`
-	MaxDevices          int        `json:"maxDevices"`
-	RevokedAt           *time.Time `json:"revokedAt,omitempty"`
-	CreatedAt           time.Time  `json:"createdAt"`
+	ID                string     `json:"id"`
+	AccountID         string     `json:"accountId"`
+	ValidFrom         *time.Time `json:"validFrom,omitempty"`
+	ValidUntil        *time.Time `json:"validUntil,omitempty"`
+	DailyStart        string     `json:"dailyStart,omitempty"` // e.g. "07:00"
+	DailyEnd          string     `json:"dailyEnd,omitempty"`   // e.g. "19:00"
+	Timezone          string     `json:"timezone"`             // e.g. "Europe/Vienna"
+	AllowedDaysMask   int        `json:"allowedDaysMask"`      // Bitmask for Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64 (127 = all days)
+	LiveTVAllowed     bool       `json:"liveTvAllowed"`
+	EPGAllowed        bool       `json:"epgAllowed"`
+	DVRAllowed        bool       `json:"dvrAllowed"`
+	RecordingsAllowed bool       `json:"recordingsAllowed"`
+	MaxDevices        int        `json:"maxDevices"`
+	RevokedAt         *time.Time `json:"revokedAt,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
 }
 
 // ApprovalRequest represents a child request for locked content or recordings awaiting admin approval.
 type ApprovalRequest struct {
-	ID              string     `json:"id"`
-	HouseholdID     string     `json:"householdId"`
-	ProfileID       string     `json:"profileId"`
-	RequestType     string     `json:"requestType"` // "view_content", "record_content", "time_extension"
-	ResourceID      string     `json:"resourceId"`
-	ResourceName    string     `json:"resourceName"`
-	ParentalRating  int        `json:"parentalRating"`
-	Scope           string     `json:"scope"` // "single", "today", "series", "permanent"
-	Status          string     `json:"status"` // "pending", "approved", "denied", "expired"
-	CreatedAt       time.Time  `json:"createdAt"`
-	ExpiresAt       time.Time  `json:"expiresAt"`
-	ApprovedByUserID string    `json:"approvedByUserId,omitempty"`
-	ApprovedAt      *time.Time `json:"approvedAt,omitempty"`
+	ID               string     `json:"id"`
+	HouseholdID      string     `json:"householdId"`
+	ProfileID        string     `json:"profileId"`
+	RequestType      string     `json:"requestType"` // "view_content", "record_content", "time_extension"
+	ResourceID       string     `json:"resourceId"`
+	ResourceName     string     `json:"resourceName"`
+	ParentalRating   int        `json:"parentalRating"`
+	Scope            string     `json:"scope"`  // "single", "today", "series", "permanent"
+	Status           string     `json:"status"` // "pending", "approved", "denied", "expired"
+	CreatedAt        time.Time  `json:"createdAt"`
+	ExpiresAt        time.Time  `json:"expiresAt"`
+	ApprovedByUserID string     `json:"approvedByUserId,omitempty"`
+	ApprovedAt       *time.Time `json:"approvedAt,omitempty"`
 }
 
 // HouseholdResourcePolicy defines system-wide concurrency limits and arbitration thresholds.
@@ -155,20 +155,20 @@ type ProfilePolicy struct {
 // EffectivePermissions is the evaluated intersection:
 // AccountRole(admin/member/guest) ∩ ProfilePolicy ∩ AccessPolicy ∩ DeviceState
 type EffectivePermissions struct {
-	UserID          string   `json:"userId"`
-	Role            Role     `json:"role"`
-	IsAdmin         bool     `json:"isAdmin"`
-	IsMember        bool     `json:"isMember"`
-	IsGuest         bool     `json:"isGuest"`
-	CanManageUser   bool     `json:"canManageUser"`
-	CanConfig       bool     `json:"canConfig"`
+	UserID        string `json:"userId"`
+	Role          Role   `json:"role"`
+	IsAdmin       bool   `json:"isAdmin"`
+	IsMember      bool   `json:"isMember"`
+	IsGuest       bool   `json:"isGuest"`
+	CanManageUser bool   `json:"canManageUser"`
+	CanConfig     bool   `json:"canConfig"`
 
 	// Four First-Class Product Capabilities
-	LiveTV          bool     `json:"liveTv"`
-	Record          bool     `json:"record"`
-	WatchRecordings bool     `json:"watchRecordings"`
-	EPG             bool     `json:"epg"`
-	CanDVR          bool     `json:"canDvr"` // Legacy alias for Record
+	LiveTV          bool `json:"liveTv"`
+	Record          bool `json:"record"`
+	WatchRecordings bool `json:"watchRecordings"`
+	EPG             bool `json:"epg"`
+	CanDVR          bool `json:"canDvr"` // Legacy alias for Record
 
 	AllowedBouquets []string `json:"allowedBouquets,omitempty"`
 	BlockedChannels []string `json:"blockedChannels,omitempty"`

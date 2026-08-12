@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/identity/store"
+	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

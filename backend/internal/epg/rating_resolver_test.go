@@ -22,12 +22,12 @@ func TestResolveEPGRating(t *testing.T) {
 		wantSource        string
 	}{
 		{
-			name:       "Override match",
-			overrides:  map[string]int{"event-101": 16},
-			itemID:     "event-101",
-			wantRating: 16,
+			name:        "Override match",
+			overrides:   map[string]int{"event-101": 16},
+			itemID:      "event-101",
+			wantRating:  16,
 			wantUnknown: false,
-			wantSource: "override",
+			wantSource:  "override",
 		},
 		{
 			name:              "Broadcaster rating numeric string",
