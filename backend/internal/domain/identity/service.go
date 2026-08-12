@@ -397,8 +397,13 @@ func (s *Service) GetBootstrapStatus(ctx context.Context) (BootstrapState, error
 // 2. Initial admin has at least 1 passkey registered
 // 3. Recovery codes exist
 // 4. Recovery codes have been acknowledged by the admin
+// IsIdentityReady checks if the core identity invariants are satisfied:
+// 1. At least 1 admin user exists
+// 2. Admin has registered passkey
+// 3. Recovery codes exist
+// 4. Recovery codes acknowledged
 // 5. Bootstrap is closed
-func (s *Service) IsPublicReady(ctx context.Context) (bool, error) {
+func (s *Service) IsIdentityReady(ctx context.Context) (bool, error) {
 	users, err := s.store.ListUsers(ctx)
 	if err != nil {
 		return false, err
@@ -441,7 +446,28 @@ func (s *Service) IsPublicReady(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// GenerateEmergencyRecoveryCodes generates fresh recovery codes from local CLI.
+// IsPublicReady checks if Identity is Ready AND public HTTPS/Origin configuration is valid.
+func (s *Service) IsPublicReady(ctx context.Context) (bool, error) {
+	identityReady, err := s.IsIdentityReady(ctx)
+	if err != nil || !identityReady {
+		return false, err
+	}
+
+	// Validate Public HTTPS & Origin Contract:
+	rpID := strings.TrimSpace(s.cfg.RPID)
+	if rpID == "" || rpID == "localhost" || rpID == "127.0.0.1" || rpID == "0.0.0.0" || rpID == "::" {
+		return false, nil
+	}
+
+	expectedOrigin := strings.TrimSpace(s.cfg.ExpectedOrigin)
+	if !strings.HasPrefix(expectedOrigin, "https://") {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// GenerateEmergencyRecoveryCodes generates fresh recovery codes from local CLI, atomically replacing old codes.
 func (s *Service) GenerateEmergencyRecoveryCodes(ctx context.Context, username string) ([]string, error) {
 	user, err := s.store.GetUserByUsername(ctx, username)
 	if err != nil {
@@ -452,7 +478,7 @@ func (s *Service) GenerateEmergencyRecoveryCodes(ctx context.Context, username s
 	if err != nil {
 		return nil, err
 	}
-	if err := s.store.PutRecoveryCodes(ctx, records); err != nil {
+	if err := s.store.ReplaceRecoveryCodesForUser(ctx, user.ID, records); err != nil {
 		return nil, err
 	}
 	return rawCodes, nil

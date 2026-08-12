@@ -542,12 +542,14 @@ func (s *Server) AuthStatus(w http.ResponseWriter, r *http.Request) {
 	if svc == nil {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"configured":  false,
-			"publicReady": false,
+			"configured":    false,
+			"identityReady": false,
+			"publicReady":   false,
 		})
 		return
 	}
 
+	identityReady, _ := svc.IsIdentityReady(r.Context())
 	publicReady, _ := svc.IsPublicReady(r.Context())
 	state, _ := svc.GetBootstrapStatus(r.Context())
 	meta, _ := svc.Store().GetBootstrapMeta(r.Context())
@@ -555,6 +557,7 @@ func (s *Server) AuthStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"configured":           true,
+		"identityReady":        identityReady,
 		"publicReady":          publicReady,
 		"bootstrapState":       string(state),
 		"setupRequired":        state == identity.BootstrapStateSetupRequired,

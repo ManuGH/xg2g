@@ -37,6 +37,7 @@ type PasskeyStore interface {
 // RecoveryStore owns single-use recovery code hashes.
 type RecoveryStore interface {
 	PutRecoveryCodes(ctx context.Context, codes []RecoveryCode) error
+	ReplaceRecoveryCodesForUser(ctx context.Context, userID string, codes []RecoveryCode) error
 	ListRecoveryCodesByUser(ctx context.Context, userID string) ([]RecoveryCode, error)
 	ConsumeRecoveryCode(ctx context.Context, userID, codeHash string, now time.Time) error
 }

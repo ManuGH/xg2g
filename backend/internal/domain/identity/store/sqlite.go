@@ -382,6 +382,31 @@ func (s *SQLiteStore) PutRecoveryCodes(ctx context.Context, codes []identity.Rec
 	return tx.Commit()
 }
 
+func (s *SQLiteStore) ReplaceRecoveryCodesForUser(ctx context.Context, userID string, codes []identity.RecoveryCode) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = ?`, userID); err != nil {
+		return fmt.Errorf("failed to delete old recovery codes: %w", err)
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO recovery_codes (code_hash, user_id, created_at, consumed_at) VALUES (?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, c := range codes {
+		if _, err := stmt.ExecContext(ctx, c.CodeHash, c.UserID, c.CreatedAt.UTC(), c.ConsumedAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *SQLiteStore) ListRecoveryCodesByUser(ctx context.Context, userID string) ([]identity.RecoveryCode, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT code_hash, user_id, created_at, consumed_at FROM recovery_codes WHERE user_id = ?`, userID)
 	if err != nil {

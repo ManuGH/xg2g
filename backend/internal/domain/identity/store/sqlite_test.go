@@ -249,3 +249,107 @@ func TestSQLiteIdentityStore_BootstrapTokensAndAtomicCommit(t *testing.T) {
 	assert.True(t, metaAck.BootstrapClosed)
 	assert.NotNil(t, metaAck.RecoveryCodesAcknowledgedAt)
 }
+
+func TestSQLiteIdentityStore_ConcurrentBootstrapLocking(t *testing.T) {
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "identity.sqlite")
+	s, err := OpenSQLite(dbPath, sqlite.DefaultConfig())
+	require.NoError(t, err)
+	defer s.Close()
+
+	now := time.Now().UTC()
+	concurrentCount := 10
+	errChan := make(chan error, concurrentCount)
+
+	for i := 0; i < concurrentCount; i++ {
+		go func(idx int) {
+			adminUser := &identity.User{
+				ID:          "usr_admin_conc",
+				Username:    "admin",
+				DisplayName: "Administrator",
+				Role:        identity.RoleAdmin,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			}
+			passkey := &identity.PasskeyCredential{
+				ID:              "cred_conc",
+				UserID:          adminUser.ID,
+				PublicKey:       []byte("dummy_key_spki"),
+				AttestationType: "none",
+				AAGUID:          "00000000000000000000000000000000",
+				SignCount:       0,
+				BackupEligible:  true,
+				BackupState:     true,
+				Transports:      []string{"internal"},
+				Nickname:        "TouchID",
+				CreatedAt:       now,
+			}
+			_, recRecords, _ := identity.GenerateRecoveryCodes(adminUser.ID, 10, now)
+
+			errCommit := s.CommitInitialAdminBootstrap(context.Background(), adminUser, passkey, recRecords, nil)
+			errChan <- errCommit
+		}(i)
+	}
+
+	var successCount, conflictCount int
+	for i := 0; i < concurrentCount; i++ {
+		errRes := <-errChan
+		if errRes == nil {
+			successCount++
+		} else if assert.ErrorIs(t, errRes, identity.ErrAdminAlreadyExists) {
+			conflictCount++
+		}
+	}
+
+	assert.Equal(t, 1, successCount, "Exactly ONE concurrent bootstrap request must succeed")
+	assert.Equal(t, 9, conflictCount, "All other concurrent bootstrap requests must fail with ErrAdminAlreadyExists")
+}
+
+func TestSQLiteIdentityStore_ReplaceRecoveryCodes(t *testing.T) {
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "identity.sqlite")
+	s, err := OpenSQLite(dbPath, sqlite.DefaultConfig())
+	require.NoError(t, err)
+	defer s.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	user := &identity.User{
+		ID:          "usr_rec_test",
+		Username:    "testuser",
+		DisplayName: "Test",
+		Role:        identity.RoleMember,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	require.NoError(t, s.PutUser(ctx, user))
+
+	// Initial 10 recovery codes
+	raw1, recs1, err := identity.GenerateRecoveryCodes(user.ID, 10, now)
+	require.NoError(t, err)
+	require.NoError(t, s.PutRecoveryCodes(ctx, recs1))
+
+	codesInit, err := s.ListRecoveryCodesByUser(ctx, user.ID)
+	require.NoError(t, err)
+	assert.Len(t, codesInit, 10)
+
+	// Replace with fresh 10 recovery codes
+	raw2, recs2, err := identity.GenerateRecoveryCodes(user.ID, 10, now.Add(time.Minute))
+	require.NoError(t, err)
+	require.NoError(t, s.ReplaceRecoveryCodesForUser(ctx, user.ID, recs2))
+
+	codesReplaced, err := s.ListRecoveryCodesByUser(ctx, user.ID)
+	require.NoError(t, err)
+	assert.Len(t, codesReplaced, 10, "Should have exactly 10 active codes after replacement")
+
+	// Attempting to consume old raw code #1 must fail
+	oldCodeHash := identity.HashRecoveryCode(raw1[0])
+	err = s.ConsumeRecoveryCode(ctx, user.ID, oldCodeHash, now.Add(2*time.Minute))
+	assert.ErrorIs(t, err, identity.ErrRecoveryCodeNotFound, "Old recovery code must be invalidated and unconsumable")
+
+	// Attempting to consume new raw code #1 must succeed
+	newCodeHash := identity.HashRecoveryCode(raw2[0])
+	err = s.ConsumeRecoveryCode(ctx, user.ID, newCodeHash, now.Add(2*time.Minute))
+	assert.NoError(t, err, "New recovery code must consume successfully")
+}

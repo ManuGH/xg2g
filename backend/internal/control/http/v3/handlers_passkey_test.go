@@ -214,14 +214,14 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	handler.ServeHTTP(wAck, reqAck)
 	require.Equal(t, http.StatusOK, wAck.Code)
 
-	// Check Auth Status after Ack: publicReady must NOW be TRUE
+	// Check Auth Status after Ack: identityReady must NOW be TRUE
 	reqStatusAfterAck := httptest.NewRequest(http.MethodGet, "/api/v3/auth/status", nil)
 	reqStatusAfterAck.Header.Set("X-Forwarded-Proto", "https")
 	wStatusAfterAck := httptest.NewRecorder()
 	handler.ServeHTTP(wStatusAfterAck, reqStatusAfterAck)
 	var statusAfterAck map[string]any
 	require.NoError(t, json.Unmarshal(wStatusAfterAck.Body.Bytes(), &statusAfterAck))
-	assert.True(t, statusAfterAck["publicReady"].(bool), "publicReady must be true after recovery codes acknowledged")
+	assert.True(t, statusAfterAck["identityReady"].(bool), "identityReady must be true after recovery codes acknowledged")
 	assert.True(t, statusAfterAck["recoveryAcknowledged"].(bool))
 
 	// ---------------- 2d. Re-attempt unauthenticated register/start -> MUST FAIL 401 ----------------

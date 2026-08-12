@@ -165,6 +165,11 @@ func runAdminStatus(args []string) int {
 		_, _ = fmt.Fprintf(os.Stderr, "❌ Failed to read bootstrap state: %v\n", err)
 		return 1
 	}
+	identityReady, err := svc.IsIdentityReady(ctx)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "❌ Failed to evaluate identity readiness: %v\n", err)
+		return 1
+	}
 	publicReady, err := svc.IsPublicReady(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "❌ Failed to evaluate public readiness: %v\n", err)
@@ -176,6 +181,7 @@ func runAdminStatus(args []string) int {
 
 	fmt.Printf("📊 xg2g Identity & Public Readiness Status (%s):\n", dbPath)
 	fmt.Printf("   Bootstrap State:       %s\n", state)
+	fmt.Printf("   Identity Ready:        %v\n", identityReady)
 	fmt.Printf("   Public Ready:          %v\n", publicReady)
 	fmt.Printf("   User Accounts:         %d\n", len(users))
 	if meta != nil && meta.RecoveryCodesAcknowledgedAt != nil {

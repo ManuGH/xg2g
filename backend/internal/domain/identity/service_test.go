@@ -128,19 +128,42 @@ func TestIdentityService_FullIntegration(t *testing.T) {
 	assert.Len(t, recCodes, 10)
 	assert.NotEmpty(t, bootstrapRes.SessionID)
 
-	// Invariant Check: PublicReady MUST BE FALSE because recovery codes not yet acknowledged
-	readyBeforeAck, err := svc.IsPublicReady(ctx)
+	// Invariant Check: IdentityReady and PublicReady MUST BE FALSE before recovery codes acknowledged
+	idReadyBeforeAck, err := svc.IsIdentityReady(ctx)
 	require.NoError(t, err)
-	assert.False(t, readyBeforeAck, "PublicReady must be false before recovery codes acknowledgment")
+	assert.False(t, idReadyBeforeAck, "IdentityReady must be false before recovery codes acknowledgment")
+
+	pubReadyBeforeAck, err := svc.IsPublicReady(ctx)
+	require.NoError(t, err)
+	assert.False(t, pubReadyBeforeAck, "PublicReady must be false before recovery codes acknowledgment")
 
 	// Acknowledge Recovery Codes
 	err = svc.AcknowledgeRecoveryCodes(ctx, admin.ID)
 	require.NoError(t, err)
 
-	// Invariant Check: PublicReady MUST NOW BE TRUE
-	readyAfterAck, err := svc.IsPublicReady(ctx)
+	// Invariant Check: IdentityReady and PublicReady MUST NOW BE TRUE for valid HTTPS config
+	idReadyAfterAck, err := svc.IsIdentityReady(ctx)
 	require.NoError(t, err)
-	assert.True(t, readyAfterAck, "PublicReady must be true after recovery codes acknowledgment")
+	assert.True(t, idReadyAfterAck, "IdentityReady must be true after recovery codes acknowledgment")
+
+	pubReadyAfterAck, err := svc.IsPublicReady(ctx)
+	require.NoError(t, err)
+	assert.True(t, pubReadyAfterAck, "PublicReady must be true when identity is ready and public HTTPS is configured")
+
+	// Invariant Check: Localhost or Non-HTTPS Config makes IdentityReady TRUE, but PublicReady FALSE
+	localSvc := identity.NewService(identity.Config{
+		RPID:           "localhost",
+		ExpectedOrigin: "http://localhost:8088",
+	}, s)
+	localSvc.SetNowFunc(func() time.Time { return now })
+
+	localIdReady, err := localSvc.IsIdentityReady(ctx)
+	require.NoError(t, err)
+	assert.True(t, localIdReady, "IdentityReady is true because admin, passkey, and acknowledged recovery codes exist")
+
+	localPubReady, err := localSvc.IsPublicReady(ctx)
+	require.NoError(t, err)
+	assert.False(t, localPubReady, "PublicReady MUST be false when RPID is localhost or ExpectedOrigin is http")
 
 	// 4. Login with Passkey
 	loginOpts, err := svc.BeginPasskeyLogin(ctx, "manuel")
