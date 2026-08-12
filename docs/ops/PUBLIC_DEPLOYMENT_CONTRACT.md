@@ -69,7 +69,9 @@ The response is the operator truth for:
 
 ```caddyfile
 tv.example.net {
-  encode zstd gzip
+  # Note: xg2g already handles selective text/manifest compression internally
+  # and deliberately excludes media segments and Range requests; do not add
+  # proxy-level encode directives here.
   reverse_proxy 127.0.0.1:8088 {
     header_up X-Forwarded-Proto https
     header_up X-Forwarded-Host {host}
