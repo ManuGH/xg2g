@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/http/v3/dpop"
 	"github.com/ManuGH/xg2g/internal/domain/identity/webauthn"
 )
 
@@ -675,4 +676,240 @@ func generateRandomHex(byteCount int) string {
 
 func parseJSON(data []byte, out any) error {
 	return json.Unmarshal(data, out)
+}
+
+// VerifyPasskeyAssertion validates a WebAuthn assertion signature WITHOUT issuing an xg2g_session browser cookie.
+// Used for Android native app & Android TV device enrollment.
+func (s *Service) VerifyPasskeyAssertion(ctx context.Context, resp webauthn.AssertionResponse) (*User, *PasskeyCredential, error) {
+	clientDataBytes, err := base64.RawURLEncoding.DecodeString(resp.ClientDataJSON)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode clientDataJSON: %w", err)
+	}
+
+	var clientData webauthn.ClientDataJSON
+	if err := parseJSON(clientDataBytes, &clientData); err != nil {
+		return nil, nil, err
+	}
+
+	session, ok := s.popChallenge(clientData.Challenge)
+	if !ok {
+		return nil, nil, ErrChallengeExpired
+	}
+
+	cred, err := s.store.GetPasskey(ctx, resp.CredentialID)
+	if err != nil {
+		return nil, nil, ErrCredentialNotFound
+	}
+
+	user, err := s.store.GetUser(ctx, cred.UserID)
+	if err != nil {
+		return nil, nil, ErrUserNotFound
+	}
+
+	now := s.now()
+	credState := webauthn.CredentialState{
+		ID:             cred.ID,
+		PublicKeyDER:   cred.PublicKey,
+		SignCount:      cred.SignCount,
+		BackupEligible: cred.BackupEligible,
+		BackupState:    cred.BackupState,
+	}
+
+	newSignCount, isBackup, err := webauthn.FinishLogin(resp, credState, session, s.cfg.RPID, s.cfg.ExpectedOrigin, now)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	_ = s.store.UpdatePasskey(ctx, cred.ID, newSignCount, isBackup, now)
+
+	// INVARIANT: Return user & credential without issuing any browser session cookie
+	return user, cred, nil
+}
+
+type DeviceGrantResult struct {
+	TokenType    string `json:"token_type"`    // Always "DPoP"
+	AccessToken  string `json:"access_token"`  // Opaque 32-byte token
+	RefreshToken string `json:"refresh_token"` // Opaque 32-byte refresh token
+	ExpiresIn    int    `json:"expires_in"`    // Seconds (e.g. 900 for 15 min)
+	DeviceID     string `json:"device_id"`
+	Scope        string `json:"scope"`
+}
+
+// IssueDeviceGrant registers/updates the Android device and issues a DPoP-bound Grant & Access Token.
+func (s *Service) IssueDeviceGrant(ctx context.Context, userID, deviceName, platform string, jwk dpop.JWKECPublicKey, scopes string) (*DeviceGrantResult, error) {
+	jkt, err := dpop.ComputeJWKThumbprint(jwk)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute RFC 7638 JWK thumbprint: %w", err)
+	}
+
+	jwkBytes, _ := json.Marshal(jwk)
+	now := s.now()
+
+	deviceID := "dev_" + generateRandomHex(12)
+	dev := &Device{
+		ID:            deviceID,
+		UserID:        userID,
+		DeviceName:    deviceName,
+		Platform:      platform,
+		PublicKeyJWK:  string(jwkBytes),
+		JWKThumbprint: jkt,
+		CreatedAt:     now,
+		LastSeenAt:    now,
+	}
+
+	// Check if device with this thumbprint already exists for user
+	existingDev, err := s.store.GetDeviceByThumbprint(ctx, jkt)
+	if err == nil && existingDev != nil {
+		dev.ID = existingDev.ID
+		dev.CreatedAt = existingDev.CreatedAt
+	}
+
+	if err := s.store.PutDevice(ctx, dev); err != nil {
+		return nil, fmt.Errorf("failed to register device: %w", err)
+	}
+
+	familyID := "fam_" + generateRandomHex(16)
+	grantID := "grant_" + generateRandomHex(16)
+	grant := &DeviceGrant{
+		ID:        grantID,
+		DeviceID:  dev.ID,
+		UserID:    userID,
+		FamilyID:  familyID,
+		GrantType: "passkey_device_grant",
+		CreatedAt: now,
+	}
+
+	rawRefreshToken := "rt_" + generateRandomHex(32)
+	refreshHash := hashToken(rawRefreshToken)
+
+	initialToken := &RefreshTokenFamily{
+		TokenHash:  refreshHash,
+		FamilyID:   familyID,
+		DeviceID:   dev.ID,
+		Generation: 0,
+		CreatedAt:  now,
+		ExpiresAt:  now.Add(30 * 24 * time.Hour),
+	}
+
+	if err := s.store.PutDeviceGrant(ctx, grant, initialToken); err != nil {
+		return nil, fmt.Errorf("failed to commit device grant: %w", err)
+	}
+
+	// Issue DPoP-bound Access Token (15 Min TTL)
+	rawAccessToken := "at_dpop_" + generateRandomHex(32)
+	accessHash := hashToken(rawAccessToken)
+
+	if scopes == "" {
+		scopes = "api playback"
+	}
+
+	accessTokenObj := &DPoPAccessToken{
+		TokenHash: accessHash,
+		DeviceID:  dev.ID,
+		UserID:    userID,
+		BoundJKT:  jkt,
+		Scopes:    scopes,
+		CreatedAt: now,
+		ExpiresAt: now.Add(15 * time.Minute),
+	}
+
+	if err := s.store.PutDPoPAccessToken(ctx, accessTokenObj); err != nil {
+		return nil, fmt.Errorf("failed to persist DPoP access token: %w", err)
+	}
+
+	return &DeviceGrantResult{
+		TokenType:    "DPoP",
+		AccessToken:  rawAccessToken,
+		RefreshToken: rawRefreshToken,
+		ExpiresIn:    900,
+		DeviceID:     dev.ID,
+		Scope:        scopes,
+	}, nil
+}
+
+// RotateDeviceRefreshToken rotates the refresh token generation and issues a fresh DPoP Access Token.
+func (s *Service) RotateDeviceRefreshToken(ctx context.Context, rawRefreshToken, proofJWKThumbprint string) (*DeviceGrantResult, error) {
+	now := s.now()
+	oldHash := hashToken(rawRefreshToken)
+
+	newRawRefreshToken := "rt_" + generateRandomHex(32)
+	newRefreshHash := hashToken(newRawRefreshToken)
+
+	newGen, err := s.store.RotateRefreshToken(ctx, oldHash, newRefreshHash, now.Add(30*24*time.Hour), now)
+	if err != nil {
+		return nil, err
+	}
+
+	dev, err := s.store.GetDevice(ctx, newGen.DeviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Bind check: Proof JWK thumbprint must match registered device thumbprint
+	if dev.JWKThumbprint != proofJWKThumbprint {
+		return nil, ErrDPoPBindingMismatch
+	}
+
+	rawAccessToken := "at_dpop_" + generateRandomHex(32)
+	accessHash := hashToken(rawAccessToken)
+
+	accessTokenObj := &DPoPAccessToken{
+		TokenHash: accessHash,
+		DeviceID:  dev.ID,
+		UserID:    dev.UserID,
+		BoundJKT:  dev.JWKThumbprint,
+		Scopes:    "api playback",
+		CreatedAt: now,
+		ExpiresAt: now.Add(15 * time.Minute),
+	}
+
+	if err := s.store.PutDPoPAccessToken(ctx, accessTokenObj); err != nil {
+		return nil, err
+	}
+
+	return &DeviceGrantResult{
+		TokenType:    "DPoP",
+		AccessToken:  rawAccessToken,
+		RefreshToken: newRawRefreshToken,
+		ExpiresIn:    900,
+		DeviceID:     dev.ID,
+		Scope:        "api playback",
+	}, nil
+}
+
+// ValidateDPoPAccessToken retrieves and checks a DPoP access token, verifying its cryptographic jkt binding.
+func (s *Service) ValidateDPoPAccessToken(ctx context.Context, rawAccessToken, proofJWKThumbprint string) (*DPoPAccessToken, *User, error) {
+	accessHash := hashToken(rawAccessToken)
+	token, err := s.store.GetDPoPAccessToken(ctx, accessHash)
+	if err != nil {
+		if errors.Is(err, ErrStoreNotFound) {
+			return nil, nil, ErrInvalidSessionToken
+		}
+		return nil, nil, err
+	}
+
+	now := s.now()
+	if token.RevokedAt != nil && !token.RevokedAt.IsZero() {
+		return nil, nil, ErrSessionRevoked
+	}
+	if now.After(token.ExpiresAt) {
+		return nil, nil, ErrSessionExpired
+	}
+
+	// CRITICAL INVARIANT: Verify DPoP Access Token jkt binding
+	if token.BoundJKT != proofJWKThumbprint {
+		return nil, nil, ErrDPoPBindingMismatch
+	}
+
+	user, err := s.store.GetUser(ctx, token.UserID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return token, user, nil
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }

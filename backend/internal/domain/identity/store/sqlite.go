@@ -114,11 +114,60 @@ func (s *SQLiteStore) initSchema(ctx context.Context) error {
 		updated_at TIMESTAMP NOT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS devices (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		device_name TEXT NOT NULL,
+		platform TEXT NOT NULL,
+		public_key_jwk TEXT NOT NULL,
+		jwk_thumbprint TEXT NOT NULL UNIQUE,
+		created_at TIMESTAMP NOT NULL,
+		last_seen_at TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS device_grants (
+		id TEXT PRIMARY KEY,
+		device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		family_id TEXT NOT NULL,
+		grant_type TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL,
+		revoked_at TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS refresh_token_families (
+		token_hash TEXT PRIMARY KEY,
+		family_id TEXT NOT NULL,
+		device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+		generation INTEGER NOT NULL,
+		created_at TIMESTAMP NOT NULL,
+		expires_at TIMESTAMP NOT NULL,
+		rotated_at TIMESTAMP,
+		revoked_at TIMESTAMP,
+		replay_detected_at TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS access_tokens (
+		token_hash TEXT PRIMARY KEY,
+		device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		bound_jkt TEXT NOT NULL,
+		scopes TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL,
+		expires_at TIMESTAMP NOT NULL,
+		revoked_at TIMESTAMP
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_passkey_user_id ON passkey_credentials(user_id);
 	CREATE INDEX IF NOT EXISTS idx_recovery_user_id ON recovery_codes(user_id);
 	CREATE INDEX IF NOT EXISTS idx_web_sessions_user_id ON web_sessions(user_id);
 	CREATE INDEX IF NOT EXISTS idx_web_sessions_expires_at ON web_sessions(expires_at);
 	CREATE INDEX IF NOT EXISTS idx_bootstrap_tokens_expires_at ON bootstrap_tokens(expires_at);
+	CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
+	CREATE INDEX IF NOT EXISTS idx_devices_jwk_thumbprint ON devices(jwk_thumbprint);
+	CREATE INDEX IF NOT EXISTS idx_device_grants_family_id ON device_grants(family_id);
+	CREATE INDEX IF NOT EXISTS idx_refresh_family_id ON refresh_token_families(family_id);
+	CREATE INDEX IF NOT EXISTS idx_access_tokens_bound_jkt ON access_tokens(bound_jkt);
 	`
 	_, err := s.db.ExecContext(ctx, schema)
 	return err
@@ -741,4 +790,253 @@ func (s *SQLiteStore) GetBootstrapMeta(ctx context.Context) (*identity.Bootstrap
 		meta.RecoveryCodesAcknowledgedAt = &t
 	}
 	return meta, nil
+}
+
+// ----------------- DeviceStore -----------------
+
+func (s *SQLiteStore) PutDevice(ctx context.Context, dev *identity.Device) error {
+	if strings.TrimSpace(dev.ID) == "" {
+		return identity.ErrInvalidUserID
+	}
+	query := `
+	INSERT INTO devices (id, user_id, device_name, platform, public_key_jwk, jwk_thumbprint, created_at, last_seen_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(id) DO UPDATE SET
+		device_name = excluded.device_name,
+		platform = excluded.platform,
+		public_key_jwk = excluded.public_key_jwk,
+		jwk_thumbprint = excluded.jwk_thumbprint,
+		last_seen_at = excluded.last_seen_at
+	`
+	_, err := s.db.ExecContext(ctx, query,
+		dev.ID, dev.UserID, dev.DeviceName, dev.Platform,
+		dev.PublicKeyJWK, dev.JWKThumbprint,
+		dev.CreatedAt.UTC(), dev.LastSeenAt.UTC(),
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetDevice(ctx context.Context, id string) (*identity.Device, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, user_id, device_name, platform, public_key_jwk, jwk_thumbprint, created_at, last_seen_at FROM devices WHERE id = ?`, id)
+	var d identity.Device
+	if err := row.Scan(&d.ID, &d.UserID, &d.DeviceName, &d.Platform, &d.PublicKeyJWK, &d.JWKThumbprint, &d.CreatedAt, &d.LastSeenAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrStoreNotFound
+		}
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (s *SQLiteStore) GetDeviceByThumbprint(ctx context.Context, thumbprint string) (*identity.Device, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, user_id, device_name, platform, public_key_jwk, jwk_thumbprint, created_at, last_seen_at FROM devices WHERE jwk_thumbprint = ?`, thumbprint)
+	var d identity.Device
+	if err := row.Scan(&d.ID, &d.UserID, &d.DeviceName, &d.Platform, &d.PublicKeyJWK, &d.JWKThumbprint, &d.CreatedAt, &d.LastSeenAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrStoreNotFound
+		}
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (s *SQLiteStore) ListDevicesByUser(ctx context.Context, userID string) ([]identity.Device, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, user_id, device_name, platform, public_key_jwk, jwk_thumbprint, created_at, last_seen_at FROM devices WHERE user_id = ? ORDER BY created_at ASC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []identity.Device
+	for rows.Next() {
+		var d identity.Device
+		if err := rows.Scan(&d.ID, &d.UserID, &d.DeviceName, &d.Platform, &d.PublicKeyJWK, &d.JWKThumbprint, &d.CreatedAt, &d.LastSeenAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) PutDeviceGrant(ctx context.Context, grant *identity.DeviceGrant, initialToken *identity.RefreshTokenFamily) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	grantQuery := `
+	INSERT INTO device_grants (id, device_id, user_id, family_id, grant_type, created_at, revoked_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?)
+	`
+	var revokedAt *time.Time
+	if grant.RevokedAt != nil {
+		t := grant.RevokedAt.UTC()
+		revokedAt = &t
+	}
+	if _, err := tx.ExecContext(ctx, grantQuery, grant.ID, grant.DeviceID, grant.UserID, grant.FamilyID, grant.GrantType, grant.CreatedAt.UTC(), revokedAt); err != nil {
+		return fmt.Errorf("failed to insert device grant: %w", err)
+	}
+
+	tokenQuery := `
+	INSERT INTO refresh_token_families (token_hash, family_id, device_id, generation, created_at, expires_at, rotated_at, revoked_at, replay_detected_at)
+	VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+	`
+	if _, err := tx.ExecContext(ctx, tokenQuery, initialToken.TokenHash, initialToken.FamilyID, initialToken.DeviceID, initialToken.Generation, initialToken.CreatedAt.UTC(), initialToken.ExpiresAt.UTC()); err != nil {
+		return fmt.Errorf("failed to insert initial refresh token family: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) GetDeviceGrant(ctx context.Context, grantID string) (*identity.DeviceGrant, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, device_id, user_id, family_id, grant_type, created_at, revoked_at FROM device_grants WHERE id = ?`, grantID)
+	var g identity.DeviceGrant
+	var revokedAt sql.NullTime
+	if err := row.Scan(&g.ID, &g.DeviceID, &g.UserID, &g.FamilyID, &g.GrantType, &g.CreatedAt, &revokedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrStoreNotFound
+		}
+		return nil, err
+	}
+	if revokedAt.Valid {
+		t := revokedAt.Time
+		g.RevokedAt = &t
+	}
+	return &g, nil
+}
+
+func (s *SQLiteStore) RotateRefreshToken(ctx context.Context, oldTokenHash, newTokenHash string, newExpiresAt, now time.Time) (*identity.RefreshTokenFamily, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var (
+		familyID         string
+		deviceID         string
+		generation       int
+		expiresAt        time.Time
+		rotatedAt        sql.NullTime
+		revokedAt        sql.NullTime
+		replayDetectedAt sql.NullTime
+	)
+
+	row := tx.QueryRowContext(ctx, `SELECT family_id, device_id, generation, expires_at, rotated_at, revoked_at, replay_detected_at FROM refresh_token_families WHERE token_hash = ?`, oldTokenHash)
+	if err := row.Scan(&familyID, &deviceID, &generation, &expiresAt, &rotatedAt, &revokedAt, &replayDetectedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrStoreNotFound
+		}
+		return nil, err
+	}
+
+	nowUTC := now.UTC()
+
+	// REPLAY DETECTED or EXPIRED/REVOKED TOKEN USED!
+	if rotatedAt.Valid || revokedAt.Valid || replayDetectedAt.Valid {
+		// Mark replay detected and revoke entire family for this DEVICE ONLY
+		_, _ = tx.ExecContext(ctx, `UPDATE refresh_token_families SET replay_detected_at = ?, revoked_at = ? WHERE family_id = ?`, nowUTC, nowUTC, familyID)
+		_, _ = tx.ExecContext(ctx, `UPDATE device_grants SET revoked_at = ? WHERE family_id = ?`, nowUTC, familyID)
+		_ = tx.Commit()
+		return nil, identity.ErrRefreshTokenReplay
+	}
+
+	if nowUTC.After(expiresAt) {
+		return nil, identity.ErrSessionExpired
+	}
+
+	// 1. Mark old token rotated
+	if _, err := tx.ExecContext(ctx, `UPDATE refresh_token_families SET rotated_at = ? WHERE token_hash = ?`, nowUTC, oldTokenHash); err != nil {
+		return nil, fmt.Errorf("failed to mark refresh token rotated: %w", err)
+	}
+
+	// 2. Insert new token generation
+	newToken := &identity.RefreshTokenFamily{
+		TokenHash:  newTokenHash,
+		FamilyID:   familyID,
+		DeviceID:   deviceID,
+		Generation: generation + 1,
+		CreatedAt:  nowUTC,
+		ExpiresAt:  newExpiresAt.UTC(),
+	}
+
+	insertQuery := `
+	INSERT INTO refresh_token_families (token_hash, family_id, device_id, generation, created_at, expires_at, rotated_at, revoked_at, replay_detected_at)
+	VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+	`
+	if _, err := tx.ExecContext(ctx, insertQuery, newToken.TokenHash, newToken.FamilyID, newToken.DeviceID, newToken.Generation, newToken.CreatedAt, newToken.ExpiresAt); err != nil {
+		return nil, fmt.Errorf("failed to insert new refresh token generation: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return newToken, nil
+}
+
+func (s *SQLiteStore) RevokeDeviceGrantFamily(ctx context.Context, familyID string, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	nowUTC := now.UTC()
+	if _, err := tx.ExecContext(ctx, `UPDATE refresh_token_families SET revoked_at = ? WHERE family_id = ?`, nowUTC, familyID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE device_grants SET revoked_at = ? WHERE family_id = ?`, nowUTC, familyID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) PutDPoPAccessToken(ctx context.Context, token *identity.DPoPAccessToken) error {
+	query := `
+	INSERT INTO access_tokens (token_hash, device_id, user_id, bound_jkt, scopes, created_at, expires_at, revoked_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	var revokedAt *time.Time
+	if token.RevokedAt != nil {
+		t := token.RevokedAt.UTC()
+		revokedAt = &t
+	}
+	_, err := s.db.ExecContext(ctx, query,
+		token.TokenHash, token.DeviceID, token.UserID,
+		token.BoundJKT, token.Scopes,
+		token.CreatedAt.UTC(), token.ExpiresAt.UTC(), revokedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetDPoPAccessToken(ctx context.Context, tokenHash string) (*identity.DPoPAccessToken, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT token_hash, device_id, user_id, bound_jkt, scopes, created_at, expires_at, revoked_at FROM access_tokens WHERE token_hash = ?`, tokenHash)
+	var t identity.DPoPAccessToken
+	var revokedAt sql.NullTime
+	if err := row.Scan(&t.TokenHash, &t.DeviceID, &t.UserID, &t.BoundJKT, &t.Scopes, &t.CreatedAt, &t.ExpiresAt, &revokedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrStoreNotFound
+		}
+		return nil, err
+	}
+	if revokedAt.Valid {
+		r := revokedAt.Time
+		t.RevokedAt = &r
+	}
+	return &t, nil
+}
+
+func (s *SQLiteStore) RevokeDPoPAccessToken(ctx context.Context, tokenHash string, now time.Time) error {
+	query := `UPDATE access_tokens SET revoked_at = ? WHERE token_hash = ?`
+	res, err := s.db.ExecContext(ctx, query, now.UTC(), tokenHash)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return identity.ErrStoreNotFound
+	}
+	return nil
 }

@@ -31,6 +31,8 @@ var (
 	ErrBootstrapTokenExpired            = errors.New("bootstrap token is expired or invalid")
 	ErrBootstrapTokenInvalid            = errors.New("invalid bootstrap token")
 	ErrRecoveryCodesAlreadyAcknowledged = errors.New("recovery codes have already been acknowledged")
+	ErrRefreshTokenReplay               = errors.New("refresh token replay detected: entire device grant family revoked")
+	ErrDPoPBindingMismatch              = errors.New("dpop key binding mismatch: access token bound_jkt does not match proof jwk thumbprint")
 )
 
 type BootstrapState string
@@ -180,4 +182,52 @@ func (s WebSession) IsActive(now time.Time) bool {
 		return false
 	}
 	return true
+}
+
+// Device represents a registered native app/device (Android App, Android TV).
+type Device struct {
+	ID            string    `json:"id"`            // Device ID (e.g. dev_xxxx)
+	UserID        string    `json:"userId"`        // Owner user ID
+	DeviceName    string    `json:"deviceName"`    // e.g. "Pixel 8 Pro", "NVIDIA Shield"
+	Platform      string    `json:"platform"`      // "android", "android_tv"
+	PublicKeyJWK  string    `json:"publicKeyJwk"`  // Full P-256 public key in JWK format
+	JWKThumbprint string    `json:"jwkThumbprint"` // RFC 7638 SHA-256 JWK thumbprint (jkt)
+	CreatedAt     time.Time `json:"createdAt"`
+	LastSeenAt    time.Time `json:"lastSeenAt"`
+}
+
+// DeviceGrant represents a persistent grant session issued to a specific device.
+type DeviceGrant struct {
+	ID        string     `json:"id"`
+	DeviceID  string     `json:"deviceId"`
+	UserID    string     `json:"userId"`
+	FamilyID  string     `json:"familyId"`
+	GrantType string     `json:"grantType"` // "passkey_device_grant"
+	CreatedAt time.Time  `json:"createdAt"`
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`
+}
+
+// RefreshTokenFamily tracks rotating refresh tokens for a specific device.
+type RefreshTokenFamily struct {
+	TokenHash        string     `json:"tokenHash"`
+	FamilyID         string     `json:"familyId"`
+	DeviceID         string     `json:"deviceId"`
+	Generation       int        `json:"generation"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	ExpiresAt        time.Time  `json:"expiresAt"`
+	RotatedAt        *time.Time `json:"rotatedAt,omitempty"`
+	RevokedAt        *time.Time `json:"revokedAt,omitempty"`
+	ReplayDetectedAt *time.Time `json:"replayDetectedAt,omitempty"`
+}
+
+// DPoPAccessToken represents an opaque access token bound to a specific RFC 7638 JWK thumbprint (jkt).
+type DPoPAccessToken struct {
+	TokenHash string     `json:"tokenHash"`
+	DeviceID  string     `json:"deviceId"`
+	UserID    string     `json:"userId"`
+	BoundJKT  string     `json:"boundJkt"` // RFC 7638 JWK Thumbprint
+	Scopes    string     `json:"scopes"`   // e.g. "api playback"
+	CreatedAt time.Time  `json:"createdAt"`
+	ExpiresAt time.Time  `json:"expiresAt"`
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`
 }

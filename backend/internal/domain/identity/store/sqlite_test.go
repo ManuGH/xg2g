@@ -353,3 +353,105 @@ func TestSQLiteIdentityStore_ReplaceRecoveryCodes(t *testing.T) {
 	err = s.ConsumeRecoveryCode(ctx, user.ID, newCodeHash, now.Add(2*time.Minute))
 	assert.NoError(t, err, "New recovery code must consume successfully")
 }
+
+func TestSQLiteIdentityStore_DeviceStoreAndTokenRotation(t *testing.T) {
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "identity.sqlite")
+	s, err := OpenSQLite(dbPath, sqlite.DefaultConfig())
+	require.NoError(t, err)
+	defer s.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// 1. Create User
+	user := &identity.User{
+		ID:          "usr_android_owner",
+		Username:    "androidowner",
+		DisplayName: "Android Owner",
+		Role:        identity.RoleMember,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	require.NoError(t, s.PutUser(ctx, user))
+
+	// 2. Register Device
+	dev := &identity.Device{
+		ID:            "dev_pixel_8",
+		UserID:        user.ID,
+		DeviceName:    "Pixel 8 Pro",
+		Platform:      "android",
+		PublicKeyJWK:  `{"crv":"P-256","kty":"EC","x":"abc","y":"def"}`,
+		JWKThumbprint: "jkt_pixel_8_thumbprint_123",
+		CreatedAt:     now,
+		LastSeenAt:    now,
+	}
+	require.NoError(t, s.PutDevice(ctx, dev))
+
+	gotDev, err := s.GetDevice(ctx, dev.ID)
+	require.NoError(t, err)
+	assert.Equal(t, dev.DeviceName, gotDev.DeviceName)
+
+	gotDevByJkt, err := s.GetDeviceByThumbprint(ctx, dev.JWKThumbprint)
+	require.NoError(t, err)
+	assert.Equal(t, dev.ID, gotDevByJkt.ID)
+
+	// 3. Issue Device Grant & Refresh Token Family
+	grant := &identity.DeviceGrant{
+		ID:        "grant_pixel_8",
+		DeviceID:  dev.ID,
+		UserID:    user.ID,
+		FamilyID:  "fam_pixel_8",
+		GrantType: "passkey_device_grant",
+		CreatedAt: now,
+	}
+	initialToken := &identity.RefreshTokenFamily{
+		TokenHash:  "hash_token_gen_0",
+		FamilyID:   grant.FamilyID,
+		DeviceID:   dev.ID,
+		Generation: 0,
+		CreatedAt:  now,
+		ExpiresAt:  now.Add(30 * 24 * time.Hour),
+	}
+	require.NoError(t, s.PutDeviceGrant(ctx, grant, initialToken))
+
+	gotGrant, err := s.GetDeviceGrant(ctx, grant.ID)
+	require.NoError(t, err)
+	assert.Equal(t, grant.FamilyID, gotGrant.FamilyID)
+
+	// 4. Normal Token Rotation: Gen 0 -> Gen 1
+	rot1, err := s.RotateRefreshToken(ctx, initialToken.TokenHash, "hash_token_gen_1", now.Add(30*24*time.Hour), now.Add(time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, 1, rot1.Generation)
+
+	// 5. REPLAY ATTACK TEST: Attempting to use old Gen 0 token again MUST trigger ErrRefreshTokenReplay and revoke family for THIS device
+	_, errReplay := s.RotateRefreshToken(ctx, initialToken.TokenHash, "hash_token_gen_attacker", now.Add(30*24*time.Hour), now.Add(2*time.Hour))
+	assert.ErrorIs(t, errReplay, identity.ErrRefreshTokenReplay, "Replay of old token generation must trigger ErrRefreshTokenReplay")
+
+	// Verify device grant is now revoked
+	revokedGrant, err := s.GetDeviceGrant(ctx, grant.ID)
+	require.NoError(t, err)
+	assert.NotNil(t, revokedGrant.RevokedAt, "Device grant must be marked revoked upon token replay detection")
+
+	// 6. DPoP Access Token Persistence & jkt Binding
+	accessToken := &identity.DPoPAccessToken{
+		TokenHash: "hash_access_token_dpop_1",
+		DeviceID:  dev.ID,
+		UserID:    user.ID,
+		BoundJKT:  dev.JWKThumbprint,
+		Scopes:    "api playback",
+		CreatedAt: now,
+		ExpiresAt: now.Add(15 * time.Minute),
+	}
+	require.NoError(t, s.PutDPoPAccessToken(ctx, accessToken))
+
+	gotAccess, err := s.GetDPoPAccessToken(ctx, accessToken.TokenHash)
+	require.NoError(t, err)
+	assert.Equal(t, dev.JWKThumbprint, gotAccess.BoundJKT)
+	assert.Equal(t, "api playback", gotAccess.Scopes)
+
+	require.NoError(t, s.RevokeDPoPAccessToken(ctx, accessToken.TokenHash, now.Add(time.Minute)))
+	revokedAccess, err := s.GetDPoPAccessToken(ctx, accessToken.TokenHash)
+	require.NoError(t, err)
+	assert.NotNil(t, revokedAccess.RevokedAt)
+}

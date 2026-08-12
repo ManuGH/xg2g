@@ -548,6 +548,10 @@ type AppConfig struct {
 	MetricsEnabled                 bool   // Optional: enable Prometheus metrics server
 	MetricsAddr                    string // Optional: metrics listen address (if enabled)
 
+	// Android Digital Asset Links Configuration
+	AndroidPackageName        string   `yaml:"android_package_name"`
+	AndroidSHA256Fingerprints []string `yaml:"android_sha256_fingerprints"`
+
 	// EPG Configuration
 	EPGEnabled         bool
 	EPGDays            int           // Number of days to fetch EPG data (1-14)

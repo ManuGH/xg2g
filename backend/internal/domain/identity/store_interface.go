@@ -61,6 +61,21 @@ type BootstrapStore interface {
 	GetBootstrapMeta(ctx context.Context) (*BootstrapMeta, error)
 }
 
+// DeviceStore owns native Android device registrations, DPoP grants, and token family rotation.
+type DeviceStore interface {
+	PutDevice(ctx context.Context, dev *Device) error
+	GetDevice(ctx context.Context, id string) (*Device, error)
+	GetDeviceByThumbprint(ctx context.Context, thumbprint string) (*Device, error)
+	ListDevicesByUser(ctx context.Context, userID string) ([]Device, error)
+	PutDeviceGrant(ctx context.Context, grant *DeviceGrant, initialToken *RefreshTokenFamily) error
+	GetDeviceGrant(ctx context.Context, grantID string) (*DeviceGrant, error)
+	RotateRefreshToken(ctx context.Context, oldTokenHash, newTokenHash string, newExpiresAt, now time.Time) (*RefreshTokenFamily, error)
+	RevokeDeviceGrantFamily(ctx context.Context, familyID string, now time.Time) error
+	PutDPoPAccessToken(ctx context.Context, token *DPoPAccessToken) error
+	GetDPoPAccessToken(ctx context.Context, tokenHash string) (*DPoPAccessToken, error)
+	RevokeDPoPAccessToken(ctx context.Context, tokenHash string, now time.Time) error
+}
+
 // Store is the combined identity persistence interface.
 type Store interface {
 	UserStore
@@ -68,5 +83,6 @@ type Store interface {
 	RecoveryStore
 	WebSessionStore
 	BootstrapStore
+	DeviceStore
 	Close() error
 }

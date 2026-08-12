@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/control/http/v3/dpop"
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/identity/store"
 	"github.com/ManuGH/xg2g/internal/domain/identity/webauthn"
@@ -278,4 +279,56 @@ func encodeTestCBORItem(item any) []byte {
 	default:
 		return nil
 	}
+}
+
+func TestIdentityService_AndroidDeviceGrantAndDPoPBinding(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "identity.sqlite")
+
+	s, err := store.OpenSQLite(dbPath, sqlite.DefaultConfig())
+	require.NoError(t, err)
+	defer s.Close()
+
+	now := time.Now().UTC()
+	svc := identity.NewService(identity.Config{}, s)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	// Create User
+	user := &identity.User{
+		ID:          "usr_android_test",
+		Username:    "androiduser",
+		DisplayName: "Android Test User",
+		Role:        identity.RoleMember,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	require.NoError(t, s.PutUser(ctx, user))
+
+	deviceJWK := dpop.JWKECPublicKey{
+		Kty: "EC",
+		Crv: "P-256",
+		X:   "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+		Y:   "x_m_VK2KjBq2B2x1X2K3L4M5N6O7P8Q9R0S1T2U3V4W",
+	}
+	expectedJKT, err := dpop.ComputeJWKThumbprint(deviceJWK)
+	require.NoError(t, err)
+
+	// Issue Device Grant
+	grantRes, err := svc.IssueDeviceGrant(ctx, user.ID, "Pixel 8", "android", deviceJWK, "api playback")
+	require.NoError(t, err)
+	assert.Equal(t, "DPoP", grantRes.TokenType)
+	assert.NotEmpty(t, grantRes.AccessToken)
+	assert.NotEmpty(t, grantRes.RefreshToken)
+	assert.Equal(t, 900, grantRes.ExpiresIn)
+
+	// Validate Access Token with MATCHING proof JWK thumbprint -> SUCCEEDS
+	token, valUser, err := svc.ValidateDPoPAccessToken(ctx, grantRes.AccessToken, expectedJKT)
+	require.NoError(t, err)
+	assert.Equal(t, user.ID, valUser.ID)
+	assert.Equal(t, expectedJKT, token.BoundJKT)
+
+	// Validate Access Token with MISMATCHED proof JWK thumbprint -> FAILS with ErrDPoPBindingMismatch
+	_, _, errMismatch := svc.ValidateDPoPAccessToken(ctx, grantRes.AccessToken, "mismatched_jkt_attacker")
+	assert.ErrorIs(t, errMismatch, identity.ErrDPoPBindingMismatch, "DPoP binding check must enforce jkt match")
 }

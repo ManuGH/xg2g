@@ -62,6 +62,11 @@ func (s *Server) mountPasskeyRoutes(r chi.Router) {
 		pr.Post("/register/start", s.PasskeyRegisterStart)
 		pr.Post("/register/finish", s.PasskeyRegisterFinish)
 	})
+	r.Route("/auth/device", func(dr chi.Router) {
+		dr.Post("/grant/start", s.DeviceGrantStart)
+		dr.Post("/grant/finish", s.DeviceGrantFinish)
+		dr.Post("/refresh", s.DeviceRefresh)
+	})
 	r.Post("/auth/recovery", s.RecoveryLogin)
 
 	// Protected management endpoints
