@@ -167,6 +167,31 @@ func TestReplayCache_HardCapacityEviction(t *testing.T) {
 	assert.LessOrEqual(t, cache.Len(), 100, "ReplayCache size MUST be hard bounded at maxSize")
 }
 
+func TestReplayCache_ReplayCannotBypassAtCapacity(t *testing.T) {
+	cache := dpop.NewReplayCache(100)
+	now := time.Now().UTC()
+
+	// 1. Fill cache completely with 100 active entries
+	for i := 0; i < 100; i++ {
+		jti := fmt.Sprintf("jti_entry_%d", i)
+		exp := now.Add(time.Duration(i+1) * time.Minute)
+		ok := cache.AddIfNew(jti, exp, now)
+		require.True(t, ok, "initial insert must succeed")
+	}
+	assert.Equal(t, 100, cache.Len())
+
+	// 2. Re-present the oldest entry ("jti_entry_0") while cache is at capacity
+	replayed := cache.AddIfNew("jti_entry_0", now.Add(15*time.Minute), now)
+	assert.False(t, replayed, "Replaying existing JTI at full cache capacity MUST be detected and rejected")
+
+	// 3. Re-present another entry ("jti_entry_50")
+	replayed50 := cache.AddIfNew("jti_entry_50", now.Add(15*time.Minute), now)
+	assert.False(t, replayed50, "Replaying intermediate JTI at full cache capacity MUST be detected and rejected")
+
+	// 4. Ensure cache remains bounded
+	assert.LessOrEqual(t, cache.Len(), 100)
+}
+
 func TestDPoP_RejectsPointsNotOnP256Curve(t *testing.T) {
 	// (x=1, y=1) does NOT lie on the P-256 curve y^2 = x^3 - 3x + b (mod p)
 	invalidJWK := dpop.JWKECPublicKey{

@@ -144,7 +144,12 @@ func (c *ReplayCache) AddIfNew(jti string, expiresAt time.Time, now time.Time) b
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// 1. Clean expired entries if capacity threshold reached
+	// 1. REPLAY CHECK FIRST: Replay detection MUST occur before any eviction!
+	if exp, exists := c.cache[jti]; exists && now.Before(exp) {
+		return false // Replay detected!
+	}
+
+	// 2. Clean expired entries if capacity threshold reached
 	if len(c.cache) >= c.maxSize {
 		for k, exp := range c.cache {
 			if now.After(exp) {
@@ -153,7 +158,7 @@ func (c *ReplayCache) AddIfNew(jti string, expiresAt time.Time, now time.Time) b
 		}
 	}
 
-	// 2. HARD CAPACITY CAP ENFORCEMENT: Evict entry with oldest expiry if still at capacity
+	// 3. HARD CAPACITY CAP ENFORCEMENT: Evict entry with oldest expiry if still at capacity
 	if len(c.cache) >= c.maxSize {
 		var oldestKey string
 		var oldestExp time.Time
@@ -168,10 +173,6 @@ func (c *ReplayCache) AddIfNew(jti string, expiresAt time.Time, now time.Time) b
 		if oldestKey != "" {
 			delete(c.cache, oldestKey)
 		}
-	}
-
-	if exp, exists := c.cache[jti]; exists && now.Before(exp) {
-		return false // Replay detected!
 	}
 
 	c.cache[jti] = expiresAt
