@@ -6,7 +6,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -258,6 +260,32 @@ func (s *SQLiteStore) initSchema(ctx context.Context) error {
 		recording_id TEXT NOT NULL,
 		profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
 		PRIMARY KEY (recording_id, profile_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS audit_logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		actor_user_id TEXT NOT NULL,
+		action TEXT NOT NULL,
+		target_resource TEXT NOT NULL,
+		details_json TEXT,
+		prev_hash TEXT NOT NULL,
+		hash TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS notification_endpoints (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		platform TEXT NOT NULL,
+		endpoint_token TEXT NOT NULL UNIQUE,
+		created_at TIMESTAMP NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS notification_preferences (
+		user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		notify_approvals BOOLEAN NOT NULL DEFAULT 1,
+		notify_security BOOLEAN NOT NULL DEFAULT 1,
+		updated_at TIMESTAMP NOT NULL
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_passkey_user_id ON passkey_credentials(user_id);
@@ -1828,4 +1856,114 @@ func (s *SQLiteStore) GetRecordingProfileAccess(ctx context.Context, recordingID
 func (s *SQLiteStore) RevokeAllUserSessions(ctx context.Context, userID string, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE web_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`, now.UTC(), userID)
 	return err
+}
+
+// ----------------- Audit Logs -----------------
+
+func (s *SQLiteStore) AppendAuditEntry(ctx context.Context, actorUserID, action, targetResource, detailsJSON string) (*identity.AuditLogEntry, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var prevHash string
+	_ = tx.QueryRowContext(ctx, `SELECT hash FROM audit_logs ORDER BY id DESC LIMIT 1`).Scan(&prevHash)
+	if prevHash == "" {
+		prevHash = "GENESIS_HASH_00000000000000000000000000000000000000000000000000000000"
+	}
+
+	now := time.Now().UTC()
+	rawPayload := fmt.Sprintf("%s|%s|%s|%s|%s|%s", prevHash, actorUserID, action, targetResource, detailsJSON, now.Format(time.RFC3339))
+	hashBytes := sha256.Sum256([]byte(rawPayload))
+	hashStr := hex.EncodeToString(hashBytes[:])
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO audit_logs (actor_user_id, action, target_resource, details_json, prev_hash, hash, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?);
+	`, actorUserID, action, targetResource, detailsJSON, prevHash, hashStr, now)
+	if err != nil {
+		return nil, err
+	}
+
+	id, _ := res.LastInsertId()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return &identity.AuditLogEntry{
+		ID:             id,
+		ActorUserID:    actorUserID,
+		Action:         action,
+		TargetResource: targetResource,
+		DetailsJSON:    detailsJSON,
+		PrevHash:       prevHash,
+		Hash:           hashStr,
+		CreatedAt:      now,
+	}, nil
+}
+
+func (s *SQLiteStore) ListAuditLogs(ctx context.Context, limit int) ([]identity.AuditLogEntry, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, actor_user_id, action, target_resource, details_json, prev_hash, hash, created_at
+		FROM audit_logs ORDER BY id DESC LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []identity.AuditLogEntry
+	for rows.Next() {
+		var e identity.AuditLogEntry
+		var dj sql.NullString
+		if err := rows.Scan(&e.ID, &e.ActorUserID, &e.Action, &e.TargetResource, &dj, &e.PrevHash, &e.Hash, &e.CreatedAt); err == nil {
+			if dj.Valid {
+				e.DetailsJSON = dj.String
+			}
+			logs = append(logs, e)
+		}
+	}
+	return logs, nil
+}
+
+func (s *SQLiteStore) VerifyAuditChain(ctx context.Context) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, actor_user_id, action, target_resource, details_json, prev_hash, hash, created_at
+		FROM audit_logs ORDER BY id ASC
+	`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	expectedPrev := "GENESIS_HASH_00000000000000000000000000000000000000000000000000000000"
+	for rows.Next() {
+		var e identity.AuditLogEntry
+		var dj sql.NullString
+		if err := rows.Scan(&e.ID, &e.ActorUserID, &e.Action, &e.TargetResource, &dj, &e.PrevHash, &e.Hash, &e.CreatedAt); err != nil {
+			return false, err
+		}
+		if dj.Valid {
+			e.DetailsJSON = dj.String
+		}
+
+		if e.PrevHash != expectedPrev {
+			return false, fmt.Errorf("audit chain broken at id %d: expected prev %s, got %s", e.ID, expectedPrev, e.PrevHash)
+		}
+
+		rawPayload := fmt.Sprintf("%s|%s|%s|%s|%s|%s", e.PrevHash, e.ActorUserID, e.Action, e.TargetResource, e.DetailsJSON, e.CreatedAt.Format(time.RFC3339))
+		hashBytes := sha256.Sum256([]byte(rawPayload))
+		computedHash := hex.EncodeToString(hashBytes[:])
+
+		if computedHash != e.Hash {
+			return false, fmt.Errorf("audit entry %d tampered: expected hash %s, computed %s", e.ID, e.Hash, computedHash)
+		}
+
+		expectedPrev = e.Hash
+	}
+	return true, nil
 }

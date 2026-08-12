@@ -95,7 +95,7 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 	// 1. Check viewer limit
 	if req.RequestType != AdmissionRequestRecord && activeViewers >= policy.MaxConcurrentViewers {
 		if policy.PreemptionEnabled {
-			displacedID := a.findPreemptionCandidateLocked(req.Role)
+			displacedID := a.findPreemptionCandidateLocked(req, policy)
 			if displacedID != "" {
 				delete(a.sessions, displacedID)
 				a.sessions[req.SessionID] = SessionRegistration(req)
@@ -126,7 +126,7 @@ func (a *HouseholdResourceAdmission) EvaluateAndReserve(req AdmissionRequest, po
 	if req.ServiceRef != "" && !activeLiveServices[req.ServiceRef] {
 		if len(activeLiveServices) >= policy.MaxConcurrentLiveServices {
 			if policy.PreemptionEnabled {
-				displacedID := a.findPreemptionCandidateLocked(req.Role)
+				displacedID := a.findPreemptionCandidateLocked(req, policy)
 				if displacedID != "" {
 					delete(a.sessions, displacedID)
 					a.sessions[req.SessionID] = SessionRegistration(req)
@@ -172,31 +172,49 @@ func (a *HouseholdResourceAdmission) ReleaseSession(sessionID string) {
 	delete(a.sessions, sessionID)
 }
 
-func (a *HouseholdResourceAdmission) findPreemptionCandidateLocked(requesterRole identity.Role) string {
-	// Preemption hierarchy: Guest (1) < Member (2) < Admin (3)
-	requesterRank := roleRank(requesterRole)
-	lowestRank := requesterRank
+func (a *HouseholdResourceAdmission) findPreemptionCandidateLocked(req AdmissionRequest, policy *identity.HouseholdResourcePolicy) string {
+	ranks := policy.PreemptionPriorityRanks
+	if len(ranks) == 0 {
+		ranks = []string{"scheduled_recording", "manual_recording", "admin_live", "member_live", "guest_live"}
+	}
+
+	requesterClass := getResourceClass(req)
+	requesterPriority := getPriorityRank(requesterClass, ranks)
+	lowestPriority := requesterPriority
 	candidateID := ""
 
 	for id, s := range a.sessions {
-		rank := roleRank(s.Role)
-		if rank < lowestRank {
-			lowestRank = rank
+		sClass := getResourceClass(AdmissionRequest(s))
+		pRank := getPriorityRank(sClass, ranks)
+		// Lower priority index = higher rank (scheduled_recording=0 is highest, guest_live=4 is lowest).
+		// Preempt candidate if candidate's index > requester's index.
+		if pRank > lowestPriority {
+			lowestPriority = pRank
 			candidateID = id
 		}
 	}
 	return candidateID
 }
 
-func roleRank(r identity.Role) int {
-	switch r {
-	case identity.RoleAdmin:
-		return 3
-	case identity.RoleMember:
-		return 2
-	case identity.RoleGuest, identity.RoleViewer:
-		return 1
-	default:
-		return 0
+func getResourceClass(req AdmissionRequest) string {
+	if req.RequestType == AdmissionRequestRecord {
+		return "scheduled_recording"
 	}
+	switch req.Role {
+	case identity.RoleAdmin:
+		return "admin_live"
+	case identity.RoleMember:
+		return "member_live"
+	default:
+		return "guest_live"
+	}
+}
+
+func getPriorityRank(class string, ranks []string) int {
+	for idx, r := range ranks {
+		if r == class {
+			return idx
+		}
+	}
+	return len(ranks)
 }

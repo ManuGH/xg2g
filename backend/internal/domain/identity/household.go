@@ -126,6 +126,7 @@ type HouseholdResourcePolicy struct {
 	MaxParallelRecordings     int       `json:"maxParallelRecordings"`
 	MaxParallelTranscodes     int       `json:"maxParallelTranscodes"`
 	PreemptionEnabled         bool      `json:"preemptionEnabled"`
+	PreemptionPriorityRanks   []string  `json:"preemptionPriorityRanks,omitempty"`
 	UpdatedAt                 time.Time `json:"updatedAt"`
 }
 
@@ -177,9 +178,14 @@ type EffectivePermissions struct {
 	IsChildProfile  bool     `json:"isChildProfile"`
 }
 
-// CalculateEffectivePermissions computes EffectivePermissions.
-// ProfilePolicy and AccessPolicy can ONLY restrict capabilities, NEVER expand account role rights!
+// CalculateEffectivePermissions computes EffectivePermissions for current time.
 func CalculateEffectivePermissions(userID string, role Role, policy *ProfilePolicy, access *AccessPolicy) EffectivePermissions {
+	return CalculateEffectivePermissionsAt(userID, role, policy, access, time.Now().UTC())
+}
+
+// CalculateEffectivePermissionsAt computes EffectivePermissions at a given timestamp.
+// ProfilePolicy and AccessPolicy can ONLY restrict capabilities, NEVER expand account role rights!
+func CalculateEffectivePermissionsAt(userID string, role Role, policy *ProfilePolicy, access *AccessPolicy, now time.Time) EffectivePermissions {
 	perms := EffectivePermissions{
 		UserID: userID,
 		Role:   role,
@@ -211,7 +217,7 @@ func CalculateEffectivePermissions(userID string, role Role, policy *ProfilePoli
 
 	// Apply AccessPolicy restrictions if present
 	if access != nil {
-		if access.RevokedAt != nil {
+		if access.RevokedAt != nil || isAccessPolicyTimeRestricted(access, now) {
 			perms.LiveTV = false
 			perms.Record = false
 			perms.WatchRecordings = false
@@ -240,6 +246,13 @@ func CalculateEffectivePermissions(userID string, role Role, policy *ProfilePoli
 		if !policy.DVRAllowed {
 			perms.Record = false
 		}
+		if policy.ViewingTimeWindow != nil && isProfileTimeRestricted(policy.ViewingTimeWindow, now) {
+			perms.LiveTV = false
+			perms.Record = false
+			perms.WatchRecordings = false
+			perms.EPG = false
+		}
+
 		perms.AllowedBouquets = policy.AllowedBouquets
 		perms.BlockedChannels = policy.BlockedChannels
 	}
@@ -248,4 +261,84 @@ func CalculateEffectivePermissions(userID string, role Role, policy *ProfilePoli
 	perms.CanDVR = perms.Record
 
 	return perms
+}
+
+func isAccessPolicyTimeRestricted(access *AccessPolicy, now time.Time) bool {
+	if access.ValidFrom != nil && now.Before(access.ValidFrom.UTC()) {
+		return true
+	}
+	if access.ValidUntil != nil && now.After(access.ValidUntil.UTC()) {
+		return true
+	}
+
+	loc := time.UTC
+	if access.Timezone != "" {
+		if l, err := time.LoadLocation(access.Timezone); err == nil {
+			loc = l
+		}
+	}
+	nowInTZ := now.In(loc)
+
+	// Check Weekday Mask if configured
+	if access.AllowedDaysMask > 0 {
+		var dayBit int
+		switch nowInTZ.Weekday() {
+		case time.Monday:
+			dayBit = 1
+		case time.Tuesday:
+			dayBit = 2
+		case time.Wednesday:
+			dayBit = 4
+		case time.Thursday:
+			dayBit = 8
+		case time.Friday:
+			dayBit = 16
+		case time.Saturday:
+			dayBit = 32
+		case time.Sunday:
+			dayBit = 64
+		}
+		if (access.AllowedDaysMask & dayBit) == 0 {
+			return true
+		}
+	}
+
+	// Check Daily Window if configured
+	if access.DailyStart != "" && access.DailyEnd != "" {
+		currentHM := nowInTZ.Format("15:04")
+		if access.DailyStart <= access.DailyEnd {
+			if currentHM < access.DailyStart || currentHM >= access.DailyEnd {
+				return true
+			}
+		} else { // Overnight window (e.g. 22:00 to 06:00)
+			if currentHM < access.DailyStart && currentHM >= access.DailyEnd {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func isProfileTimeRestricted(tw *ViewingTimeWindow, now time.Time) bool {
+	if tw == nil || tw.Start == "" || tw.End == "" {
+		return false
+	}
+	currentHM := now.UTC().Format("15:04")
+	if tw.Start <= tw.End {
+		return currentHM < tw.Start || currentHM >= tw.End
+	}
+	return currentHM < tw.Start && currentHM >= tw.End
+}
+
+// AuditLogEntry is an append-only tamper-evident audit record.
+type AuditLogEntry struct {
+	ID             int64     `json:"id"`
+	ActorUserID    string    `json:"actorUserId"`
+	Action         string    `json:"action"`
+	TargetResource string    `json:"targetResource"`
+	DetailsJSON    string    `json:"detailsJson,omitempty"`
+	PrevHash       string    `json:"prevHash"`
+	Hash           string    `json:"hash"`
+	CreatedAt      time.Time `json:"createdAt"`
 }

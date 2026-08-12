@@ -76,3 +76,36 @@ func TestCalculateEffectivePermissions_IntersectionRule(t *testing.T) {
 	assert.False(t, effRestricted.WatchRecordings)
 	assert.False(t, effRestricted.EPG)
 }
+
+func TestCalculateEffectivePermissions_TimeWindowAndWeekdayMask(t *testing.T) {
+	// Scenario: Cousine allowed daily 07:00-19:00 Mon-Fri (allowedDaysMask = Mon(1)|Tue(2)|Wed(4)|Thu(8)|Fri(16) = 31)
+	accessTimeBound := &identity.AccessPolicy{
+		AccountID:         "usr_cousine",
+		DailyStart:        "07:00",
+		DailyEnd:          "19:00",
+		Timezone:          "Europe/Vienna",
+		AllowedDaysMask:   31, // Mon-Fri
+		LiveTVAllowed:     true,
+		EPGAllowed:        true,
+		DVRAllowed:        false,
+		RecordingsAllowed: false,
+	}
+
+	// 1. Wednesday 14:00 (Allowed day & hour)
+	wednesdayNoon := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC) // 2026-08-12 is Wednesday (14:00 Europe/Vienna)
+	effWedNoon := identity.CalculateEffectivePermissionsAt("usr_cousine", identity.RoleGuest, nil, accessTimeBound, wednesdayNoon)
+	assert.True(t, effWedNoon.LiveTV, "Access allowed at 14:00 on Wednesday")
+	assert.True(t, effWedNoon.EPG)
+
+	// 2. Wednesday 20:30 (After 19:00 cutoff)
+	wednesdayNight := time.Date(2026, 8, 12, 18, 30, 0, 0, time.UTC) // 20:30 Europe/Vienna
+	effWedNight := identity.CalculateEffectivePermissionsAt("usr_cousine", identity.RoleGuest, nil, accessTimeBound, wednesdayNight)
+	assert.False(t, effWedNight.LiveTV, "Access blocked after 19:00 cutoff")
+	assert.False(t, effWedNight.EPG)
+
+	// 3. Saturday 12:00 (Weekend day, mask only allows Mon-Fri)
+	saturdayNoon := time.Date(2026, 8, 15, 10, 0, 0, 0, time.UTC) // 2026-08-15 is Saturday
+	effSatNoon := identity.CalculateEffectivePermissionsAt("usr_cousine", identity.RoleGuest, nil, accessTimeBound, saturdayNoon)
+	assert.False(t, effSatNoon.LiveTV, "Access blocked on Saturday (mask restricted to Mon-Fri)")
+	assert.False(t, effSatNoon.EPG)
+}

@@ -156,4 +156,17 @@ func TestPhase2Store_AccessPoliciesAndApprovals(t *testing.T) {
 	accessProfiles, err := st.GetRecordingProfileAccess(ctx, "rec_999")
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"prof_max"}, accessProfiles)
+
+	// 6. Test Tamper-Evident Audit Log SHA-256 Chain
+	e1, err := st.AppendAuditEntry(ctx, "usr_admin", "device_blocked", "dev_iphone17", `{"reason":"stolen"}`)
+	require.NoError(t, err)
+	require.NotEmpty(t, e1.Hash)
+
+	e2, err := st.AppendAuditEntry(ctx, "usr_admin", "approval_granted", "appr_1001", `{"scope":"permanent"}`)
+	require.NoError(t, err)
+	assert.Equal(t, e1.Hash, e2.PrevHash, "Chain prev_hash must equal previous entry hash")
+
+	validChain, err := st.VerifyAuditChain(ctx)
+	require.NoError(t, err)
+	assert.True(t, validChain, "Audit chain must verify clean SHA-256 integrity")
 }
