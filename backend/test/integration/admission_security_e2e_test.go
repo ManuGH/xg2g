@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/identity"
+	"github.com/ManuGH/xg2g/internal/pipeline/lease"
 	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -91,4 +92,32 @@ func TestAdmissionSecurity_E2E(t *testing.T) {
 
 	errForged := policy.ValidateBoundTicket(nil, "sess_test", "usr_test", "", "live_tv")
 	assert.ErrorIs(t, errForged, policy.ErrNilTicket, "Nil ticket MUST be rejected by allocators")
+
+	// 4. Tuner Lease Ticket Gating Test:
+	leaseMgr := lease.NewManager(lease.ManagerConfig{})
+	defer leaseMgr.Close()
+	tunerBinding := lease.NewTunerBinding(leaseMgr)
+
+	_, errLeaseNil := tunerBinding.AcquireTunerSlotWithTicket(nil, nil, "owner1", 0, 5*time.Second)
+	assert.Error(t, errLeaseNil, "Tuner lease MUST fail when ticket is nil")
+
+	unconsumedTicket := &policy.AdmissionTicket{
+		TicketID:  "tkt_unconsumed_2",
+		SessionID: "sess_test_2",
+		UserID:    "usr_test_2",
+		Status:    policy.TicketStatusIssued,
+	}
+	_, errLeaseUnconsumed := tunerBinding.AcquireTunerSlotWithTicket(nil, unconsumedTicket, "owner1", 0, 5*time.Second)
+	assert.Error(t, errLeaseUnconsumed, "Tuner lease MUST fail when ticket is unconsumed")
+
+	consumedTicket := &policy.AdmissionTicket{
+		TicketID:    "tkt_consumed_2",
+		SessionID:   "sess_test_2",
+		UserID:      "usr_test_2",
+		RequestType: policy.AdmissionRequestLiveTV,
+		Status:      policy.TicketStatusConsumed,
+	}
+	l, errLeaseOk := tunerBinding.AcquireTunerSlotWithTicket(nil, consumedTicket, "owner1", 0, 5*time.Second)
+	require.NoError(t, errLeaseOk, "Tuner lease MUST succeed when valid consumed ticket is provided")
+	require.NotNil(t, l)
 }

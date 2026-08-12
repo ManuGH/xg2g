@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 )
 
 // TunerBinding provides a typed adapter for managing hardware tuner slot leases.
@@ -23,6 +25,15 @@ func NewTunerBinding(mgr *Manager) *TunerBinding {
 // Format: "tuner:<slot>"
 func ScopeForTunerSlot(slot int) Scope {
 	return Scope(LeaseKeyTunerSlot(slot))
+}
+
+// AcquireTunerSlotWithTicket attempts to acquire an exclusive lease for the given tuner slot,
+// structurally requiring a valid bound AdmissionTicket in TicketStatusConsumed state.
+func (tb *TunerBinding) AcquireTunerSlotWithTicket(ctx context.Context, ticket *policy.AdmissionTicket, owner Owner, slot int, ttl time.Duration) (*Lease, error) {
+	if err := policy.ValidateBoundTicket(ticket, "", "", "", "tuner"); err != nil {
+		return nil, fmt.Errorf("tuner slot ticket validation failed: %w", err)
+	}
+	return tb.AcquireTunerSlot(ctx, owner, slot, ttl)
 }
 
 // AcquireTunerSlot attempts to acquire an exclusive lease for the given tuner slot.

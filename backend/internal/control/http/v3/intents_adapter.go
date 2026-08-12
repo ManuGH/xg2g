@@ -2,6 +2,7 @@ package v3
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -94,8 +95,10 @@ func (d *serverIntentDeps) HouseholdResourcePolicy() *identity.HouseholdResource
 func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, profileID string) (identity.Role, *identity.ProfilePolicy, *identity.AccessPolicy, identity.PolicyDecision, error) {
 	idSvc := d.s.getIdentityService()
 	if idSvc == nil {
-		dec := identity.EvaluatePolicyDecision(userID, identity.RoleAdmin, nil, nil, d.s.householdResourcePolicy, time.Now())
-		return identity.RoleAdmin, nil, nil, dec, nil
+		return identity.RoleGuest, nil, nil, identity.PolicyDecision{
+			Allowed:    false,
+			ReasonCode: identity.ReasonCodeInternalError,
+		}, errors.New("identity_service_unavailable")
 	}
 
 	role := identity.RoleMember
@@ -110,9 +113,12 @@ func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, pr
 
 	var pol *identity.ProfilePolicy
 	if profileID != "" {
-		_, p, pErr := idSvc.Store().GetProfile(ctx, profileID)
-		if pErr != nil {
-			return role, nil, nil, identity.PolicyDecision{Allowed: false, ReasonCode: "profile_access_denied"}, nil
+		prof, p, pErr := idSvc.Store().GetProfile(ctx, profileID)
+		if pErr != nil || prof == nil || prof.HouseholdID != "default_household" {
+			return role, nil, nil, identity.PolicyDecision{
+				Allowed:    false,
+				ReasonCode: "profile_access_denied",
+			}, errors.New("profile_access_denied")
 		}
 		pol = p
 	}
