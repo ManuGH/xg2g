@@ -91,6 +91,42 @@ func (d *serverIntentDeps) HouseholdResourcePolicy() *identity.HouseholdResource
 	return d.s.householdResourcePolicy
 }
 
+func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, profileID string) (identity.Role, *identity.ProfilePolicy, *identity.AccessPolicy, identity.PolicyDecision, error) {
+	idSvc := d.s.getIdentityService()
+	if idSvc == nil {
+		dec := identity.EvaluatePolicyDecision(userID, identity.RoleAdmin, nil, nil, d.s.householdResourcePolicy, time.Now())
+		return identity.RoleAdmin, nil, nil, dec, nil
+	}
+
+	role := identity.RoleMember
+	if userID != "" {
+		if u, err := idSvc.Store().GetUser(ctx, userID); err == nil && u != nil {
+			role = u.Role
+			if mem, mErr := idSvc.Store().GetHouseholdMembership(ctx, "default_household", u.ID); mErr == nil && mem != nil {
+				role = mem.Role
+			}
+		}
+	}
+
+	var pol *identity.ProfilePolicy
+	if profileID != "" {
+		_, p, pErr := idSvc.Store().GetProfile(ctx, profileID)
+		if pErr != nil {
+			return role, nil, nil, identity.PolicyDecision{Allowed: false, ReasonCode: "profile_access_denied"}, nil
+		}
+		pol = p
+	}
+
+	access, _ := idSvc.Store().GetAccessPolicy(ctx, userID)
+	resPolicy := d.s.householdResourcePolicy
+	if resPolicy == nil {
+		resPolicy, _ = idSvc.GetHouseholdResourcePolicy(ctx, "default_household")
+	}
+
+	dec := identity.EvaluatePolicyDecision(userID, role, pol, access, resPolicy, time.Now())
+	return role, pol, access, dec, nil
+}
+
 func (d *serverIntentDeps) RecordReject(code string) {
 	metrics.RecordReject(code, "live")
 }

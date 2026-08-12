@@ -220,6 +220,10 @@ func (m *mockDeps) HouseholdAdmission() *policy.HouseholdResourceAdmission { ret
 
 func (m *mockDeps) HouseholdResourcePolicy() *identity.HouseholdResourcePolicy { return nil }
 
+func (m *mockDeps) ResolveServerIdentity(ctx context.Context, userID, profileID string) (identity.Role, *identity.ProfilePolicy, *identity.AccessPolicy, identity.PolicyDecision, error) {
+	return identity.RoleMember, nil, nil, identity.PolicyDecision{Allowed: true}, nil
+}
+
 func (m *mockDeps) RecordReject(code string) {
 	m.rejectCodes = append(m.rejectCodes, code)
 }

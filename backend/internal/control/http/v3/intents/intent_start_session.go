@@ -8,7 +8,6 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/recordings/runtimepolicy"
-	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -19,11 +18,16 @@ import (
 
 func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profileSpec model.ProfileSpec) *Error {
 	if hAdm := s.deps.HouseholdAdmission(); hAdm != nil {
-		role := identity.Role(intent.Params["role"])
-		if role == "" {
-			role = identity.RoleMember
-		}
 		profileID := intent.Params["profileId"]
+		role, _, _, pDec, err := s.deps.ResolveServerIdentity(ctx, intent.PrincipalID, profileID)
+		if err != nil || !pDec.Allowed {
+			s.deps.RecordReject("policy_decision_denied")
+			reason := "policy_decision_denied"
+			if pDec.ReasonCode != "" {
+				reason = pDec.ReasonCode
+			}
+			return &Error{Kind: ErrorAdmissionRejected, Message: reason}
+		}
 
 		req := policy.AdmissionRequest{
 			SessionID:    intent.SessionID,
@@ -44,7 +48,11 @@ func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profil
 			s.deps.RecordReject("household_ticket_consume_failed")
 			return &Error{Kind: ErrorAdmissionRejected, Message: err.Error()}
 		}
-		_ = consumedTkt
+
+		if intent.Params != nil {
+			intent.Params["admissionTicketId"] = consumedTkt.TicketID
+			intent.Params["admissionTicketResourceClass"] = string(consumedTkt.RequestType)
+		}
 	}
 
 	controller := s.deps.AdmissionController()
