@@ -166,6 +166,8 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 		{http.MethodGet, "/auth/passkeys"},
 		{http.MethodDelete, "/auth/passkeys/{id}"},
 		{http.MethodPost, "/auth/sessions/revoke-others"},
+		{http.MethodGet, "/auth/status"},
+		{http.MethodPost, "/auth/bootstrap/acknowledge-recovery"},
 	}
 	for _, route := range v3Routes {
 		add("v3", route.method, "/api/v3"+route.path, apiPolicy)
@@ -184,7 +186,6 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 	setV3Policy(http.MethodHead, "/sessions/{sessionID}/hls/{variant}/{filename}", mediaPolicy)
 	setV3Policy(http.MethodHead, "/recordings/{recordingId}/stream.mp4", mediaPolicy)
 	setV3Policy(http.MethodGet, "/recordings/{recordingId}/stream.mp4", streamPolicy)
-
 	return baseline
 }
 
@@ -226,8 +227,8 @@ func TestCanonicalBaselineParity(t *testing.T) {
 
 	expected := getPhase1CanonicalBaselineMap()
 	actual := snapshotAsMap(snapshot)
-	require.Len(t, expected, 116)
-	require.Len(t, actual, 116)
+	require.Len(t, expected, 118)
+	require.Len(t, actual, 118)
 	require.NoError(t, validatePolicyBindingParity(actual, expected))
 
 	counts := map[string]int{}
@@ -235,7 +236,7 @@ func TestCanonicalBaselineParity(t *testing.T) {
 		counts[key.RouterID]++
 	}
 	require.Equal(t, 26, counts["outer"])
-	require.Equal(t, 90, counts["v3"])
+	require.Equal(t, 92, counts["v3"])
 }
 
 func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
@@ -258,7 +259,7 @@ func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, snapshot, err := s.buildRouterWithBindings(test.variant)
 			require.NoError(t, err)
-			require.Equal(t, 116, snapshot.Len())
+			require.Equal(t, 118, snapshot.Len())
 
 			for key, expected := range map[RegistrationKey]RoutePolicy{
 				{RouterID: "outer", Method: http.MethodGet, Pattern: "/ui/*"}:  test.uiGet,
@@ -291,7 +292,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
 	registrations, err := ValidateRouterInventory(s, ConfigVariantDevProxy)
 	require.NoError(t, err)
-	require.Len(t, registrations, 116)
+	require.Len(t, registrations, 118)
 
 	evidence := getDefaultPhase2VerifiedEvidenceRegistry()
 	runtimeReady := 0
@@ -306,7 +307,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 		require.NoError(t, registration.ValidateRuntimeReadiness(), "%s", registration.Key)
 		runtimeReady++
 	}
-	require.Equal(t, 116, runtimeReady)
+	require.Equal(t, 118, runtimeReady)
 }
 
 func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
@@ -337,7 +338,7 @@ func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 		delete(actual, v3Key)
 		actual[RegistrationKey{RouterID: "v3", Method: known.Method, Pattern: known.Pattern}] = outerPolicy
 		actual[RegistrationKey{RouterID: "outer", Method: v3Key.Method, Pattern: v3Key.Pattern}] = v3Policy
-		require.Len(t, actual, 116)
+		require.Len(t, actual, 118)
 		require.Error(t, validatePolicyBindingParity(actual, expected))
 	})
 }

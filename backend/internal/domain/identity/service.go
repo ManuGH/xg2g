@@ -7,7 +7,10 @@ package identity
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base32"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -148,6 +151,10 @@ func (s *Service) Store() Store {
 	return s.store
 }
 
+func (s *Service) Config() Config {
+	return s.cfg
+}
+
 // HasUsers returns true if at least one user exists in the identity store.
 func (s *Service) HasUsers(ctx context.Context) (bool, error) {
 	users, err := s.store.ListUsers(ctx)
@@ -157,8 +164,55 @@ func (s *Service) HasUsers(ctx context.Context) (bool, error) {
 	return len(users) > 0, nil
 }
 
-// CreateInitialAdminUser creates an initial admin user only if 0 users exist.
-func (s *Service) CreateInitialAdminUser(ctx context.Context, username, displayName string) (*User, []string, error) {
+// GenerateBootstrapToken generates a persistent, single-use 15-minute setup token in SQLite.
+func (s *Service) GenerateBootstrapToken(ctx context.Context) (string, error) {
+	hasUsers, err := s.HasUsers(ctx)
+	if err != nil {
+		return "", err
+	}
+	if hasUsers {
+		return "", ErrAdminAlreadyExists
+	}
+
+	tokenBytes := make([]byte, 20)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", fmt.Errorf("failed to generate random token bytes: %w", err)
+	}
+	rawToken := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(tokenBytes)
+
+	hash := sha256.Sum256([]byte(rawToken))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	now := s.now()
+	expiresAt := now.Add(15 * time.Minute)
+	if err := s.store.PutBootstrapToken(ctx, tokenHash, now, expiresAt); err != nil {
+		return "", fmt.Errorf("failed to persist bootstrap token: %w", err)
+	}
+	return rawToken, nil
+}
+
+// ValidateAndConsumeBootstrapToken verifies and consumes a single-use bootstrap token from SQLite.
+func (s *Service) ValidateAndConsumeBootstrapToken(ctx context.Context, rawToken string) (bool, error) {
+	rawToken = strings.TrimSpace(rawToken)
+	if rawToken == "" {
+		return false, nil
+	}
+	hash := sha256.Sum256([]byte(rawToken))
+	tokenHash := hex.EncodeToString(hash[:])
+	return s.store.ConsumeBootstrapToken(ctx, tokenHash, s.now())
+}
+
+// BeginBootstrapRegistration initiates the initial admin WebAuthn registration ceremony.
+// NOTE: It does NOT write any user or recovery codes to SQLite yet. State is kept transient.
+func (s *Service) BeginBootstrapRegistration(ctx context.Context, username, displayName string) (*webauthn.CreationOptions, error) {
+	hasUsers, err := s.HasUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if hasUsers {
+		return nil, ErrAdminAlreadyExists
+	}
+
 	if username == "" {
 		username = "admin"
 	}
@@ -166,39 +220,28 @@ func (s *Service) CreateInitialAdminUser(ctx context.Context, username, displayN
 		displayName = "Administrator"
 	}
 
-	users, err := s.store.ListUsers(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(users) > 0 {
-		return nil, nil, ErrAdminAlreadyExists
-	}
-
 	now := s.now()
-	adminUser := &User{
-		ID:          "usr_" + generateRandomHex(8),
-		Username:    username,
+	tempUserID := "usr_" + generateRandomHex(8)
+	userDesc := webauthn.UserDescriptor{
+		ID:          tempUserID,
+		Name:        username,
 		DisplayName: displayName,
-		Role:        RoleAdmin,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-	if err := s.store.PutUser(ctx, adminUser); err != nil {
-		return nil, nil, fmt.Errorf("failed to create default admin user: %w", err)
 	}
 
-	rawCodes, records, err := GenerateRecoveryCodes(adminUser.ID, 10, now)
+	opts, session, err := webauthn.BeginRegistration(userDesc, s.cfg.RPID, s.cfg.RPName, s.cfg.PasskeyChallengeTTL, now)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate recovery codes: %w", err)
-	}
-	if err := s.store.PutRecoveryCodes(ctx, records); err != nil {
-		return nil, nil, fmt.Errorf("failed to store recovery codes: %w", err)
+		return nil, err
 	}
 
-	return adminUser, rawCodes, nil
+	session.Username = username
+	session.DisplayName = displayName
+	session.IsBootstrap = true
+
+	s.saveChallenge(opts.Challenge, *session)
+	return opts, nil
 }
 
-// BeginPasskeyRegistration initiates WebAuthn credential registration.
+// BeginPasskeyRegistration initiates WebAuthn credential registration for an existing authenticated user.
 func (s *Service) BeginPasskeyRegistration(ctx context.Context, userID string) (*webauthn.CreationOptions, error) {
 	user, err := s.store.GetUser(ctx, userID)
 	if err != nil {
@@ -221,26 +264,27 @@ func (s *Service) BeginPasskeyRegistration(ctx context.Context, userID string) (
 }
 
 // FinishPasskeyRegistration validates attestation and stores the new Passkey.
-func (s *Service) FinishPasskeyRegistration(ctx context.Context, resp webauthn.AttestationResponse, nickname string) (*PasskeyCredential, error) {
+// If this was a bootstrap registration, it atomically creates the Admin user, Passkey, Recovery Codes, and initial Session.
+func (s *Service) FinishPasskeyRegistration(ctx context.Context, resp webauthn.AttestationResponse, nickname, userAgent, ip string) (*PasskeyCredential, *BootstrapResult, error) {
 	clientDataBytes, err := base64.RawURLEncoding.DecodeString(resp.ClientDataJSON)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode clientDataJSON: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode clientDataJSON: %w", err)
 	}
 
 	var clientData webauthn.ClientDataJSON
 	if err := parseJSON(clientDataBytes, &clientData); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	session, ok := s.popChallenge(clientData.Challenge)
 	if !ok {
-		return nil, ErrChallengeExpired
+		return nil, nil, ErrChallengeExpired
 	}
 
 	now := s.now()
 	attRes, err := webauthn.FinishRegistration(resp, session, s.cfg.RPID, s.cfg.ExpectedOrigin, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if strings.TrimSpace(nickname) == "" {
@@ -261,11 +305,157 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, resp webauthn.A
 		CreatedAt:       now,
 	}
 
-	if err := s.store.PutPasskey(ctx, cred); err != nil {
-		return nil, fmt.Errorf("failed to store passkey credential: %w", err)
+	if session.IsBootstrap {
+		// Atomic First-Admin Commit:
+		// 1. Create Admin User
+		adminUser := &User{
+			ID:          session.UserID,
+			Username:    session.Username,
+			DisplayName: session.DisplayName,
+			Role:        RoleAdmin,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+
+		// 2. Generate 10 Recovery Codes
+		rawCodes, recRecords, err := GenerateRecoveryCodes(adminUser.ID, 10, now)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to generate recovery codes: %w", err)
+		}
+
+		// 3. Create initial WebSession
+		sessionID, err := generateSessionToken()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to generate initial session id: %w", err)
+		}
+		webSess := &WebSession{
+			SessionID:    sessionID,
+			UserID:       adminUser.ID,
+			UserAgent:    userAgent,
+			LastIP:       ip,
+			CreatedAt:    now,
+			ExpiresAt:    now.Add(s.cfg.SessionTTL),
+			LastActiveAt: now,
+		}
+
+		// 4. Atomic SQLite Commit
+		if err := s.store.CommitInitialAdminBootstrap(ctx, adminUser, cred, recRecords, webSess); err != nil {
+			return nil, nil, fmt.Errorf("atomic admin bootstrap commit failed: %w", err)
+		}
+
+		res := &BootstrapResult{
+			User:          *adminUser,
+			Credential:    *cred,
+			RecoveryCodes: rawCodes,
+			SessionID:     webSess.SessionID,
+			ExpiresAt:     webSess.ExpiresAt,
+		}
+		return cred, res, nil
 	}
 
-	return cred, nil
+	if err := s.store.PutPasskey(ctx, cred); err != nil {
+		return nil, nil, fmt.Errorf("failed to store passkey credential: %w", err)
+	}
+
+	return cred, nil, nil
+}
+
+// AcknowledgeRecoveryCodes marks recovery codes as acknowledged and closes the bootstrap state.
+func (s *Service) AcknowledgeRecoveryCodes(ctx context.Context, userID string) error {
+	user, err := s.store.GetUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user.Role != RoleAdmin {
+		return ErrBootstrapUnauthorized
+	}
+	return s.store.AcknowledgeRecoveryCodes(ctx, userID, s.now())
+}
+
+// GetBootstrapStatus returns the current state of system initialization.
+func (s *Service) GetBootstrapStatus(ctx context.Context) (BootstrapState, error) {
+	hasUsers, err := s.HasUsers(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !hasUsers {
+		return BootstrapStateSetupRequired, nil
+	}
+
+	meta, err := s.store.GetBootstrapMeta(ctx)
+	if err != nil {
+		return "", err
+	}
+	if meta != nil && meta.BootstrapClosed && meta.RecoveryCodesAcknowledgedAt != nil {
+		return BootstrapStateReady, nil
+	}
+	return BootstrapStateSetupInProgress, nil
+}
+
+// IsPublicReady checks all invariants required before xg2g can accept public traffic:
+// 1. At least 1 admin user exists
+// 2. Initial admin has at least 1 passkey registered
+// 3. Recovery codes exist
+// 4. Recovery codes have been acknowledged by the admin
+// 5. Bootstrap is closed
+func (s *Service) IsPublicReady(ctx context.Context) (bool, error) {
+	users, err := s.store.ListUsers(ctx)
+	if err != nil {
+		return false, err
+	}
+	var adminUser *User
+	for _, u := range users {
+		if u.Role == RoleAdmin {
+			adminUser = &u
+			break
+		}
+	}
+	if adminUser == nil {
+		return false, nil
+	}
+
+	passkeys, err := s.store.ListPasskeysByUser(ctx, adminUser.ID)
+	if err != nil {
+		return false, err
+	}
+	if len(passkeys) == 0 {
+		return false, nil
+	}
+
+	recCodes, err := s.store.ListRecoveryCodesByUser(ctx, adminUser.ID)
+	if err != nil {
+		return false, err
+	}
+	if len(recCodes) == 0 {
+		return false, nil
+	}
+
+	meta, err := s.store.GetBootstrapMeta(ctx)
+	if err != nil {
+		return false, err
+	}
+	if meta == nil || !meta.BootstrapClosed || meta.RecoveryCodesAcknowledgedAt == nil {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// GenerateEmergencyRecoveryCodes generates fresh recovery codes from local CLI.
+func (s *Service) GenerateEmergencyRecoveryCodes(ctx context.Context, username string) ([]string, error) {
+	user, err := s.store.GetUserByUsername(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	rawCodes, records, err := GenerateRecoveryCodes(user.ID, 10, now)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.store.PutRecoveryCodes(ctx, records); err != nil {
+		return nil, err
+	}
+	return rawCodes, nil
 }
 
 // BeginPasskeyLogin initiates WebAuthn login assertion.

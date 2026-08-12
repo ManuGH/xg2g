@@ -51,11 +51,21 @@ type WebSessionStore interface {
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 }
 
+// BootstrapStore owns setup tokens and initial admin bootstrap state.
+type BootstrapStore interface {
+	PutBootstrapToken(ctx context.Context, tokenHash string, createdAt, expiresAt time.Time) error
+	ConsumeBootstrapToken(ctx context.Context, tokenHash string, now time.Time) (bool, error)
+	CommitInitialAdminBootstrap(ctx context.Context, user *User, cred *PasskeyCredential, recoveryCodes []RecoveryCode, session *WebSession) error
+	AcknowledgeRecoveryCodes(ctx context.Context, userID string, now time.Time) error
+	GetBootstrapMeta(ctx context.Context) (*BootstrapMeta, error)
+}
+
 // Store is the combined identity persistence interface.
 type Store interface {
 	UserStore
 	PasskeyStore
 	RecoveryStore
 	WebSessionStore
+	BootstrapStore
 	Close() error
 }

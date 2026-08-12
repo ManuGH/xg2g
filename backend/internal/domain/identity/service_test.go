@@ -45,21 +45,28 @@ func TestIdentityService_FullIntegration(t *testing.T) {
 	svc := identity.NewService(cfg, s)
 	svc.SetNowFunc(func() time.Time { return now })
 
-	// 1. Create Initial Admin User
-	admin, recCodes, err := svc.CreateInitialAdminUser(ctx, "manuel", "Manuel")
+	// 1. Generate & Consume Bootstrap Token
+	setupToken, err := svc.GenerateBootstrapToken(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, "manuel", admin.Username)
-	assert.Equal(t, identity.RoleAdmin, admin.Role)
-	assert.Len(t, recCodes, 10)
+	assert.NotEmpty(t, setupToken)
 
-	// Second call should return ErrAdminAlreadyExists
-	_, _, err = svc.CreateInitialAdminUser(ctx, "manuel", "Manuel")
-	require.ErrorIs(t, err, identity.ErrAdminAlreadyExists)
+	tokenValid, err := svc.ValidateAndConsumeBootstrapToken(ctx, setupToken)
+	require.NoError(t, err)
+	assert.True(t, tokenValid)
 
-	// 2. Register Passkey
-	regOpts, err := svc.BeginPasskeyRegistration(ctx, admin.ID)
+	// Re-using the token fails
+	tokenValid2, err := svc.ValidateAndConsumeBootstrapToken(ctx, setupToken)
+	require.NoError(t, err)
+	assert.False(t, tokenValid2)
+
+	// 2. Begin Bootstrap Registration (Transient, DB must remain empty!)
+	regOpts, err := svc.BeginBootstrapRegistration(ctx, "manuel", "Manuel")
 	require.NoError(t, err)
 	assert.NotEmpty(t, regOpts.Challenge)
+
+	hasUsersBeforeFinish, err := svc.HasUsers(ctx)
+	require.NoError(t, err)
+	assert.False(t, hasUsersBeforeFinish, "DB must remain empty until Passkey is successfully finished")
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -109,12 +116,33 @@ func TestIdentityService_FullIntegration(t *testing.T) {
 		Transports:        []string{"internal"},
 	}
 
-	passkey, err := svc.FinishPasskeyRegistration(ctx, regResp, "Safari TouchID")
+	// 3. Finish Passkey Registration -> Atomically creates Admin, Passkey, Recovery Codes, Session
+	passkey, bootstrapRes, err := svc.FinishPasskeyRegistration(ctx, regResp, "Safari TouchID", "Safari macOS", "192.168.1.50")
 	require.NoError(t, err)
+	require.NotNil(t, bootstrapRes)
 	assert.Equal(t, "Safari TouchID", passkey.Nickname)
-	assert.Equal(t, admin.ID, passkey.UserID)
+	admin := bootstrapRes.User
+	assert.Equal(t, "manuel", admin.Username)
+	assert.Equal(t, identity.RoleAdmin, admin.Role)
+	recCodes := bootstrapRes.RecoveryCodes
+	assert.Len(t, recCodes, 10)
+	assert.NotEmpty(t, bootstrapRes.SessionID)
 
-	// 3. Login with Passkey
+	// Invariant Check: PublicReady MUST BE FALSE because recovery codes not yet acknowledged
+	readyBeforeAck, err := svc.IsPublicReady(ctx)
+	require.NoError(t, err)
+	assert.False(t, readyBeforeAck, "PublicReady must be false before recovery codes acknowledgment")
+
+	// Acknowledge Recovery Codes
+	err = svc.AcknowledgeRecoveryCodes(ctx, admin.ID)
+	require.NoError(t, err)
+
+	// Invariant Check: PublicReady MUST NOW BE TRUE
+	readyAfterAck, err := svc.IsPublicReady(ctx)
+	require.NoError(t, err)
+	assert.True(t, readyAfterAck, "PublicReady must be true after recovery codes acknowledgment")
+
+	// 4. Login with Passkey
 	loginOpts, err := svc.BeginPasskeyLogin(ctx, "manuel")
 	require.NoError(t, err)
 	assert.NotEmpty(t, loginOpts.Challenge)

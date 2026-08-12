@@ -42,6 +42,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  xg2g [--config path] [--version]")
 	_, _ = fmt.Fprintln(w, "  xg2g daemon run [--config path]")
 	_, _ = fmt.Fprintln(w, "  xg2g version")
+	_, _ = fmt.Fprintln(w, "  xg2g admin <command> [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g config <command> [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g entitlements <command> [flags]")
 	_, _ = fmt.Fprintln(w, "  xg2g storage verify [flags]")
@@ -54,6 +55,7 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Commands:")
 	_, _ = fmt.Fprintln(w, "  daemon       Run the long-lived xg2g service")
+	_, _ = fmt.Fprintln(w, "  admin        Inspect identity and manage bootstrap / recovery access")
 	_, _ = fmt.Fprintln(w, "  version      Print version and build metadata")
 	_, _ = fmt.Fprintln(w, "  config       Validate, dump, and migrate config files")
 	_, _ = fmt.Fprintln(w, "  entitlements Inspect and manage commercial unlock overrides")
@@ -75,6 +77,9 @@ func printMainUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "Examples:")
 	_, _ = fmt.Fprintln(w, "  xg2g --config /etc/xg2g/config.yaml")
 	_, _ = fmt.Fprintln(w, "  xg2g daemon run --config /etc/xg2g/config.yaml")
+	_, _ = fmt.Fprintln(w, "  xg2g admin bootstrap-token")
+	_, _ = fmt.Fprintln(w, "  xg2g admin generate-recovery-codes --user admin")
+	_, _ = fmt.Fprintln(w, "  xg2g admin status")
 	_, _ = fmt.Fprintln(w, "  xg2g version")
 	_, _ = fmt.Fprintln(w, "  xg2g config validate -f /etc/xg2g/config.yaml")
 	_, _ = fmt.Fprintln(w, "  xg2g entitlements list --token $XG2G_API_TOKEN --principal-id viewer")
@@ -108,7 +113,7 @@ func handleImmediateMainCommand(stdout, stderr io.Writer, args []string) (bool, 
 		}
 		printVersion(stdout)
 		return true, 0
-	case "daemon", "help", "config", "entitlements", "storage", "preflight",
+	case "daemon", "help", "admin", "config", "entitlements", "storage", "preflight",
 		"healthcheck", "diagnostic", "status", "report":
 		return false, 0
 	default:
@@ -150,6 +155,9 @@ func runHelpTo(stdout, stderr io.Writer, args []string) int {
 	}
 
 	switch args[0] {
+	case "admin":
+		printAdminUsage(stdout)
+		return 0
 	case "config":
 		printConfigUsage(stdout)
 		return 0
@@ -224,6 +232,8 @@ func main() {
 		switch os.Args[1] {
 		case "help":
 			os.Exit(runHelp(os.Args[2:]))
+		case "admin":
+			os.Exit(runAdminCLI(os.Args[2:]))
 		case "config":
 			os.Exit(runConfigCLI(os.Args[2:]))
 		case "entitlements":

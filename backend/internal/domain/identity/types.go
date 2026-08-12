@@ -11,23 +11,61 @@ import (
 )
 
 var (
-	ErrInvalidUserID         = errors.New("user id must not be empty")
-	ErrInvalidUsername       = errors.New("username must not be empty")
-	ErrInvalidDisplayName    = errors.New("display name must not be empty")
-	ErrInvalidRole           = errors.New("invalid user role")
-	ErrInvalidCredentialID   = errors.New("credential id must not be empty")
-	ErrInvalidPublicKey      = errors.New("public key must not be empty")
-	ErrInvalidBackupState    = errors.New("invalid backup state: backup state cannot be true when backup eligible is false")
-	ErrInvalidRecoveryCode   = errors.New("recovery code must not be empty")
-	ErrInvalidSessionID      = errors.New("session id must not be empty")
-	ErrSessionExpired        = errors.New("session is expired")
-	ErrSessionRevoked        = errors.New("session is revoked")
-	ErrUserNotFound          = errors.New("user not found")
-	ErrCredentialNotFound    = errors.New("passkey credential not found")
-	ErrRecoveryCodeNotFound  = errors.New("recovery code not found or already consumed")
-	ErrAdminAlreadyExists    = errors.New("admin user already initialized; unauthenticated bootstrap is forbidden")
-	ErrBootstrapUnauthorized = errors.New("operator authorization required for initial admin bootstrap")
+	ErrInvalidUserID                    = errors.New("user id must not be empty")
+	ErrInvalidUsername                  = errors.New("username must not be empty")
+	ErrInvalidDisplayName               = errors.New("display name must not be empty")
+	ErrInvalidRole                      = errors.New("invalid user role")
+	ErrInvalidCredentialID              = errors.New("credential id must not be empty")
+	ErrInvalidPublicKey                 = errors.New("public key must not be empty")
+	ErrInvalidBackupState               = errors.New("invalid backup state: backup state cannot be true when backup eligible is false")
+	ErrInvalidRecoveryCode              = errors.New("recovery code must not be empty")
+	ErrInvalidSessionID                 = errors.New("session id must not be empty")
+	ErrSessionExpired                   = errors.New("session is expired")
+	ErrSessionRevoked                   = errors.New("session is revoked")
+	ErrUserNotFound                     = errors.New("user not found")
+	ErrCredentialNotFound               = errors.New("passkey credential not found")
+	ErrRecoveryCodeNotFound             = errors.New("recovery code not found or already consumed")
+	ErrAdminAlreadyExists               = errors.New("admin user already initialized; unauthenticated bootstrap is forbidden")
+	ErrBootstrapUnauthorized            = errors.New("operator authorization required for initial admin bootstrap")
+	ErrSetupNotAuthorized               = errors.New("setup not authorized: valid setup token or operator authorization required")
+	ErrBootstrapTokenExpired            = errors.New("bootstrap token is expired or invalid")
+	ErrBootstrapTokenInvalid            = errors.New("invalid bootstrap token")
+	ErrRecoveryCodesAlreadyAcknowledged = errors.New("recovery codes have already been acknowledged")
 )
+
+type BootstrapState string
+
+const (
+	BootstrapStateSetupRequired   BootstrapState = "setup_required"
+	BootstrapStateSetupInProgress BootstrapState = "setup_in_progress"
+	BootstrapStateReady           BootstrapState = "ready"
+)
+
+// BootstrapMeta tracks the system-wide bootstrap and recovery acknowledgment state.
+type BootstrapMeta struct {
+	InitialAdminID              string     `json:"initialAdminId,omitempty"`
+	RecoveryCodesAcknowledgedAt *time.Time `json:"recoveryCodesAcknowledgedAt,omitempty"`
+	BootstrapClosed             bool       `json:"bootstrapClosed"`
+	CreatedAt                   time.Time  `json:"createdAt"`
+	UpdatedAt                   time.Time  `json:"updatedAt"`
+}
+
+// BootstrapToken represents a persistent, one-time setup token created via CLI.
+type BootstrapToken struct {
+	TokenHash  string     `json:"tokenHash"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	ExpiresAt  time.Time  `json:"expiresAt"`
+	ConsumedAt *time.Time `json:"consumedAt,omitempty"`
+}
+
+// BootstrapResult contains the result of the initial passkey registration ceremony.
+type BootstrapResult struct {
+	User          User              `json:"user"`
+	Credential    PasskeyCredential `json:"credential"`
+	RecoveryCodes []string          `json:"recoveryCodes"`
+	SessionID     string            `json:"-"`
+	ExpiresAt     time.Time         `json:"expiresAt"`
+}
 
 type Role string
 

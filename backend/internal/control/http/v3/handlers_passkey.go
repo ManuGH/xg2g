@@ -24,6 +24,9 @@ func RegisterPasskeyRoutesWithRegistrar(registrar RouteRegistrar, svc *Server) e
 	if registrar == nil || svc == nil {
 		return fmt.Errorf("nil registrar or server")
 	}
+	if err := registrar.Register(http.MethodGet, "/auth/status", http.HandlerFunc(svc.AuthStatus)); err != nil {
+		return err
+	}
 	if err := registrar.Register(http.MethodPost, "/auth/passkey/login/start", http.HandlerFunc(svc.PasskeyLoginStart)); err != nil {
 		return err
 	}
@@ -45,10 +48,14 @@ func RegisterPasskeyRoutesWithRegistrar(registrar RouteRegistrar, svc *Server) e
 	if err := registrar.Register(http.MethodDelete, "/auth/passkeys/{id}", svc.authMiddleware(http.HandlerFunc(svc.DeletePasskey))); err != nil {
 		return err
 	}
-	return registrar.Register(http.MethodPost, "/auth/sessions/revoke-others", svc.authMiddleware(http.HandlerFunc(svc.RevokeOtherSessions)))
+	if err := registrar.Register(http.MethodPost, "/auth/sessions/revoke-others", svc.authMiddleware(http.HandlerFunc(svc.RevokeOtherSessions))); err != nil {
+		return err
+	}
+	return registrar.Register(http.MethodPost, "/auth/bootstrap/acknowledge-recovery", svc.authMiddleware(http.HandlerFunc(svc.AcknowledgeRecovery)))
 }
 
 func (s *Server) mountPasskeyRoutes(r chi.Router) {
+	r.Get("/auth/status", s.AuthStatus)
 	r.Route("/auth/passkey", func(pr chi.Router) {
 		pr.Post("/login/start", s.PasskeyLoginStart)
 		pr.Post("/login/finish", s.PasskeyLoginFinish)
@@ -63,6 +70,7 @@ func (s *Server) mountPasskeyRoutes(r chi.Router) {
 		pr.Get("/auth/passkeys", s.ListPasskeys)
 		pr.Delete("/auth/passkeys/{id}", s.DeletePasskey)
 		pr.Post("/auth/sessions/revoke-others", s.RevokeOtherSessions)
+		pr.Post("/auth/bootstrap/acknowledge-recovery", s.AcknowledgeRecovery)
 	})
 }
 
@@ -93,7 +101,7 @@ func (s *Server) PasskeyRegisterStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userID string
+	var opts *webauthn.CreationOptions
 	p := s.resolveRequestPrincipal(r)
 
 	if hasUsers {
@@ -107,30 +115,36 @@ func (s *Server) PasskeyRegisterStart(w http.ResponseWriter, r *http.Request) {
 			writeRegisteredProblem(w, r, http.StatusNotFound, "auth/user_not_found", "User Not Found", problemcode.CodeNotFound, "User not found", nil)
 			return
 		}
-		userID = u.ID
+		opts, err = svc.BeginPasskeyRegistration(r.Context(), u.ID)
+		if err != nil {
+			log.FromContext(r.Context()).Error().Err(err).Msg("failed to begin passkey registration")
+			writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/registration_failed", "Registration Failed", problemcode.CodeInvalidInput, err.Error(), nil)
+			return
+		}
 	} else {
-		// Bootstrap mode (0 users exist): require operator authorization if master token configured
-		cfg := s.GetConfig()
-		if cfg.APIToken != "" {
-			if !principalHasScope(p, "*") {
-				writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/bootstrap_unauthorized", "Bootstrap Unauthorized", problemcode.CodeUnauthorized, "Operator authorization required for initial admin bootstrap", nil)
+		// Bootstrap mode (0 users exist): require valid setup token or operator authorization
+		setupToken := r.Header.Get("X-Setup-Token")
+		isOperator := principalHasScope(p, "*")
+
+		if !isOperator && setupToken == "" {
+			writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/setup_unauthorized", "Setup Not Authorized", problemcode.CodeUnauthorized, "Valid setup token (X-Setup-Token) or operator authorization required to initialize the server", nil)
+			return
+		}
+
+		if setupToken != "" {
+			valid, err := svc.ValidateAndConsumeBootstrapToken(r.Context(), setupToken)
+			if err != nil || !valid {
+				writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/setup_token_invalid", "Invalid Setup Token", problemcode.CodeUnauthorized, "The provided setup token is expired or invalid", nil)
 				return
 			}
 		}
-		admin, _, err := svc.CreateInitialAdminUser(r.Context(), "admin", "Administrator")
+
+		opts, err = svc.BeginBootstrapRegistration(r.Context(), "admin", "Administrator")
 		if err != nil {
-			log.FromContext(r.Context()).Error().Err(err).Msg("failed to create initial admin user")
-			writeRegisteredProblem(w, r, http.StatusInternalServerError, "auth/bootstrap_failed", "Bootstrap Failed", problemcode.CodeInternalServerError, "Failed to initialize default user", nil)
+			log.FromContext(r.Context()).Error().Err(err).Msg("failed to begin bootstrap registration")
+			writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/bootstrap_failed", "Bootstrap Failed", problemcode.CodeInvalidInput, err.Error(), nil)
 			return
 		}
-		userID = admin.ID
-	}
-
-	opts, err := svc.BeginPasskeyRegistration(r.Context(), userID)
-	if err != nil {
-		log.FromContext(r.Context()).Error().Err(err).Msg("failed to begin passkey registration")
-		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/registration_failed", "Registration Failed", problemcode.CodeInvalidInput, err.Error(), nil)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -156,7 +170,14 @@ func (s *Server) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cred, err := svc.FinishPasskeyRegistration(r.Context(), req.Response, req.Nickname)
+	userAgent := r.UserAgent()
+	remoteIP := requestRemoteIP(r)
+	ipStr := ""
+	if remoteIP != nil {
+		ipStr = remoteIP.String()
+	}
+
+	cred, bootstrapRes, err := svc.FinishPasskeyRegistration(r.Context(), req.Response, req.Nickname, userAgent, ipStr)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("passkey registration verification failed")
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/registration_failed", "Registration Verification Failed", problemcode.CodeInvalidInput, err.Error(), nil)
@@ -170,8 +191,30 @@ func (s *Server) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		Bool("backup_state", cred.BackupState).
 		Msg("passkey credential registered successfully")
 
+	if bootstrapRes != nil {
+		// Set session cookie for the new admin
+		s.setSessionCookieDirect(w, r, bootstrapRes.SessionID, bootstrapRes.ExpiresAt)
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "bootstrap_completed",
+			"user":   bootstrapRes.User,
+			"credential": map[string]any{
+				"id":             cred.ID,
+				"nickname":       cred.Nickname,
+				"backupEligible": cred.BackupEligible,
+				"backupState":    cred.BackupState,
+				"createdAt":      cred.CreatedAt,
+			},
+			"recoveryCodes": bootstrapRes.RecoveryCodes,
+			"expiresAt":     bootstrapRes.ExpiresAt,
+		})
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":         "registered",
 		"id":             cred.ID,
 		"nickname":       cred.Nickname,
 		"backupEligible": cred.BackupEligible,
@@ -451,5 +494,71 @@ func (s *Server) setSessionCookieDirect(w http.ResponseWriter, r *http.Request, 
 		Secure:   effectiveHTTPS,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
+	})
+}
+
+// AcknowledgeRecovery handles POST /api/v3/auth/bootstrap/acknowledge-recovery
+func (s *Server) AcknowledgeRecovery(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
+		return
+	}
+
+	p := s.resolveRequestPrincipal(r)
+	if p == nil || p.User == "" {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	user, err := svc.Store().GetUserByUsername(r.Context(), p.User)
+	if err != nil || user == nil {
+		writeRegisteredProblem(w, r, http.StatusNotFound, "auth/user_not_found", "User Not Found", problemcode.CodeNotFound, "User not found", nil)
+		return
+	}
+
+	if err := svc.AcknowledgeRecoveryCodes(r.Context(), user.ID); err != nil {
+		log.FromContext(r.Context()).Error().Err(err).Msg("failed to acknowledge recovery codes")
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/acknowledgment_failed", "Acknowledgment Failed", problemcode.CodeInvalidInput, err.Error(), nil)
+		return
+	}
+
+	log.FromContext(r.Context()).Info().
+		Str("user_id", user.ID).
+		Str("username", user.Username).
+		Msg("recovery codes acknowledged and bootstrap closed")
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":          "ready",
+		"publicReady":     true,
+		"bootstrapClosed": true,
+	})
+}
+
+// AuthStatus handles GET /api/v3/auth/status
+func (s *Server) AuthStatus(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"configured":  false,
+			"publicReady": false,
+		})
+		return
+	}
+
+	publicReady, _ := svc.IsPublicReady(r.Context())
+	state, _ := svc.GetBootstrapStatus(r.Context())
+	meta, _ := svc.Store().GetBootstrapMeta(r.Context())
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"configured":           true,
+		"publicReady":          publicReady,
+		"bootstrapState":       string(state),
+		"setupRequired":        state == identity.BootstrapStateSetupRequired,
+		"recoveryAcknowledged": meta != nil && meta.RecoveryCodesAcknowledgedAt != nil,
+		"rpId":                 svc.Config().RPID,
 	})
 }

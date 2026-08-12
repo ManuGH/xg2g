@@ -64,9 +64,12 @@ type AttestationResult struct {
 
 // SessionData holds the in-flight challenge state between ceremony start and finish.
 type SessionData struct {
-	Challenge string    `json:"challenge"`
-	UserID    string    `json:"userId,omitempty"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	Challenge   string    `json:"challenge"`
+	UserID      string    `json:"userId,omitempty"`
+	Username    string    `json:"username,omitempty"`
+	DisplayName string    `json:"displayName,omitempty"`
+	IsBootstrap bool      `json:"isBootstrap,omitempty"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 func (s SessionData) Valid(now time.Time) bool {

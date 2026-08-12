@@ -144,15 +144,26 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	rpID := "localhost"
 	origin := "http://localhost:8088"
-	if cfg.APIListenAddr != "" {
+
+	for _, ep := range cfg.Connectivity.PublishedEndpoints {
+		if strings.TrimSpace(ep.Kind) == "public_https" && strings.TrimSpace(ep.URL) != "" {
+			if u, err := url.Parse(strings.TrimSpace(ep.URL)); err == nil && u.Host != "" {
+				rpID = u.Hostname()
+				origin = u.Scheme + "://" + u.Host
+				break
+			}
+		}
+	}
+	if rpID == "localhost" && cfg.APIListenAddr != "" {
 		host, _, err := net.SplitHostPort(cfg.APIListenAddr)
 		if err == nil && host != "" && host != "0.0.0.0" && host != "::" {
 			rpID = host
 		}
 	}
-	if cfg.TLSEnabled || cfg.ForceHTTPS {
+	if (cfg.TLSEnabled || cfg.ForceHTTPS) && !strings.HasPrefix(origin, "https://") {
 		origin = "https://" + rpID
 	}
+
 	identitySvc := identity.NewService(identity.Config{
 		RPID:           rpID,
 		RPName:         "xg2g",

@@ -71,18 +71,34 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	server, handler, idSvc := setupTestV3ServerWithIdentity(t, dbPath)
 	defer idSvc.Store().Close()
 
-	// ---------------- 1. Passkey Registration Start (Bootstrap with Operator Token) ----------------
-	// 1a. Unauthenticated attempt without operator token when master token configured should fail with 401
+	// ---------------- 0. Initial Auth Status Check ----------------
+	reqStatusInit := httptest.NewRequest(http.MethodGet, "/api/v3/auth/status", nil)
+	reqStatusInit.Header.Set("X-Forwarded-Proto", "https")
+	wStatusInit := httptest.NewRecorder()
+	handler.ServeHTTP(wStatusInit, reqStatusInit)
+	require.Equal(t, http.StatusOK, wStatusInit.Code)
+	var statusInit map[string]any
+	require.NoError(t, json.Unmarshal(wStatusInit.Body.Bytes(), &statusInit))
+	assert.True(t, statusInit["setupRequired"].(bool))
+	assert.False(t, statusInit["publicReady"].(bool))
+
+	// ---------------- 1. Passkey Registration Start (Bootstrap with Setup Token) ----------------
+	// 1a. Unauthenticated attempt without setup token or operator token MUST FAIL with 401
 	reqUnauth := httptest.NewRequest(http.MethodPost, "/api/v3/auth/passkey/register/start", nil)
 	reqUnauth.Header.Set("X-Forwarded-Proto", "https")
 	reqUnauth.RemoteAddr = "127.0.0.1:12345"
 	wUnauth := httptest.NewRecorder()
 	handler.ServeHTTP(wUnauth, reqUnauth)
-	require.Equal(t, http.StatusUnauthorized, wUnauth.Code, "Unauthenticated bootstrap without operator token must be rejected")
+	require.Equal(t, http.StatusUnauthorized, wUnauth.Code, "Unauthenticated bootstrap without setup token must be rejected")
 
-	// 1b. Operator-authorized bootstrap succeeds
+	// 1b. Generate persistent 15-minute setup token via SQLite
+	setupToken, err := idSvc.GenerateBootstrapToken(context.Background())
+	require.NoError(t, err)
+	assert.NotEmpty(t, setupToken)
+
+	// 1c. Authorized bootstrap using X-Setup-Token
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/auth/passkey/register/start", nil)
-	req.Header.Set("Authorization", "Bearer test-admin-token-12345")
+	req.Header.Set("X-Setup-Token", setupToken)
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
@@ -93,6 +109,11 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &createOpts))
 	assert.NotEmpty(t, createOpts.Challenge)
 	assert.Equal(t, "required", createOpts.AuthenticatorSelection.UserVerification)
+
+	// Invariant: DB must still have 0 users before passkey finish!
+	hasUsersBeforeFinish, err := idSvc.HasUsers(context.Background())
+	require.NoError(t, err)
+	assert.False(t, hasUsersBeforeFinish, "Database must not have any users created before passkey ceremony finishes")
 
 	// Simulate Client Authenticator P-256 Key generation
 	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -146,7 +167,7 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	}
 	regPayloadBytes, _ := json.Marshal(regPayload)
 
-	// ---------------- 2. Passkey Registration Finish ----------------
+	// ---------------- 2. Passkey Registration Finish (Atomic Commit) ----------------
 	reqRegFinish := httptest.NewRequest(http.MethodPost, "/api/v3/auth/passkey/register/finish", bytes.NewReader(regPayloadBytes))
 	reqRegFinish.Header.Set("Content-Type", "application/json")
 	reqRegFinish.Header.Set("X-Forwarded-Proto", "https")
@@ -155,13 +176,55 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	handler.ServeHTTP(wRegFinish, reqRegFinish)
 
 	require.Equal(t, http.StatusOK, wRegFinish.Code)
+	assert.Equal(t, "no-store", wRegFinish.Header().Get("Cache-Control"), "Recovery codes must be served with no-store")
+
 	var regFinishResp map[string]any
 	require.NoError(t, json.Unmarshal(wRegFinish.Body.Bytes(), &regFinishResp))
-	assert.Equal(t, "Safari TouchID", regFinishResp["nickname"])
-	assert.True(t, regFinishResp["backupEligible"].(bool))
-	assert.True(t, regFinishResp["backupState"].(bool))
+	assert.Equal(t, "bootstrap_completed", regFinishResp["status"])
+	rawRecCodes := regFinishResp["recoveryCodes"].([]any)
+	assert.Len(t, rawRecCodes, 10, "Response must include 10 recovery codes for one-time display")
 
-	// 2b. Now that a user exists, an unauthenticated register/start MUST fail with 401
+	// Verify Set-Cookie header
+	cookiesInit := wRegFinish.Result().Cookies()
+	var adminSessionCookie *http.Cookie
+	for _, c := range cookiesInit {
+		if c.Name == "xg2g_session" {
+			adminSessionCookie = c
+			break
+		}
+	}
+	require.NotNil(t, adminSessionCookie, "Bootstrap finish must set xg2g_session cookie")
+
+	// ---------------- 2b. Public Ready Invariant Check (Must be False before Ack) ----------------
+	reqStatusBeforeAck := httptest.NewRequest(http.MethodGet, "/api/v3/auth/status", nil)
+	reqStatusBeforeAck.Header.Set("X-Forwarded-Proto", "https")
+	wStatusBeforeAck := httptest.NewRecorder()
+	handler.ServeHTTP(wStatusBeforeAck, reqStatusBeforeAck)
+	var statusBeforeAck map[string]any
+	require.NoError(t, json.Unmarshal(wStatusBeforeAck.Body.Bytes(), &statusBeforeAck))
+	assert.False(t, statusBeforeAck["publicReady"].(bool), "publicReady must be false before recovery codes are acknowledged")
+	assert.False(t, statusBeforeAck["recoveryAcknowledged"].(bool))
+
+	// ---------------- 2c. Acknowledge Recovery Codes ----------------
+	reqAck := httptest.NewRequest(http.MethodPost, "/api/v3/auth/bootstrap/acknowledge-recovery", nil)
+	reqAck.AddCookie(adminSessionCookie)
+	reqAck.Header.Set("X-Forwarded-Proto", "https")
+	reqAck.RemoteAddr = "127.0.0.1:12345"
+	wAck := httptest.NewRecorder()
+	handler.ServeHTTP(wAck, reqAck)
+	require.Equal(t, http.StatusOK, wAck.Code)
+
+	// Check Auth Status after Ack: publicReady must NOW be TRUE
+	reqStatusAfterAck := httptest.NewRequest(http.MethodGet, "/api/v3/auth/status", nil)
+	reqStatusAfterAck.Header.Set("X-Forwarded-Proto", "https")
+	wStatusAfterAck := httptest.NewRecorder()
+	handler.ServeHTTP(wStatusAfterAck, reqStatusAfterAck)
+	var statusAfterAck map[string]any
+	require.NoError(t, json.Unmarshal(wStatusAfterAck.Body.Bytes(), &statusAfterAck))
+	assert.True(t, statusAfterAck["publicReady"].(bool), "publicReady must be true after recovery codes acknowledged")
+	assert.True(t, statusAfterAck["recoveryAcknowledged"].(bool))
+
+	// ---------------- 2d. Re-attempt unauthenticated register/start -> MUST FAIL 401 ----------------
 	reqUnauth2 := httptest.NewRequest(http.MethodPost, "/api/v3/auth/passkey/register/start", nil)
 	reqUnauth2.Header.Set("X-Forwarded-Proto", "https")
 	reqUnauth2.RemoteAddr = "127.0.0.1:12345"

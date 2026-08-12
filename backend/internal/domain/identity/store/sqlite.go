@@ -98,10 +98,27 @@ func (s *SQLiteStore) initSchema(ctx context.Context) error {
 		revoked_at TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS bootstrap_tokens (
+		token_hash TEXT PRIMARY KEY,
+		created_at TIMESTAMP NOT NULL,
+		expires_at TIMESTAMP NOT NULL,
+		consumed_at TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS bootstrap_meta (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		initial_admin_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+		recovery_codes_acknowledged_at TIMESTAMP,
+		bootstrap_closed BOOLEAN NOT NULL DEFAULT 0,
+		created_at TIMESTAMP NOT NULL,
+		updated_at TIMESTAMP NOT NULL
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_passkey_user_id ON passkey_credentials(user_id);
 	CREATE INDEX IF NOT EXISTS idx_recovery_user_id ON recovery_codes(user_id);
 	CREATE INDEX IF NOT EXISTS idx_web_sessions_user_id ON web_sessions(user_id);
 	CREATE INDEX IF NOT EXISTS idx_web_sessions_expires_at ON web_sessions(expires_at);
+	CREATE INDEX IF NOT EXISTS idx_bootstrap_tokens_expires_at ON bootstrap_tokens(expires_at);
 	`
 	_, err := s.db.ExecContext(ctx, schema)
 	return err
@@ -507,4 +524,196 @@ func (s *SQLiteStore) DeleteExpiredSessions(ctx context.Context, now time.Time) 
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// ----------------- BootstrapStore -----------------
+
+func (s *SQLiteStore) PutBootstrapToken(ctx context.Context, tokenHash string, createdAt, expiresAt time.Time) error {
+	if tokenHash == "" {
+		return identity.ErrBootstrapTokenInvalid
+	}
+	query := `
+	INSERT INTO bootstrap_tokens (token_hash, created_at, expires_at)
+	VALUES (?, ?, ?)
+	`
+	_, err := s.db.ExecContext(ctx, query, tokenHash, createdAt.UTC(), expiresAt.UTC())
+	return err
+}
+
+func (s *SQLiteStore) ConsumeBootstrapToken(ctx context.Context, tokenHash string, now time.Time) (bool, error) {
+	if tokenHash == "" {
+		return false, identity.ErrBootstrapTokenInvalid
+	}
+	query := `
+	UPDATE bootstrap_tokens
+	SET consumed_at = ?
+	WHERE token_hash = ? AND expires_at > ? AND consumed_at IS NULL
+	`
+	res, err := s.db.ExecContext(ctx, query, now.UTC(), tokenHash, now.UTC())
+	if err != nil {
+		return false, err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
+func (s *SQLiteStore) CommitInitialAdminBootstrap(ctx context.Context, user *identity.User, cred *identity.PasskeyCredential, recoveryCodes []identity.RecoveryCode, session *identity.WebSession) error {
+	if user == nil {
+		return identity.ErrUserNotFound
+	}
+	normUser, err := user.Normalize()
+	if err != nil {
+		return err
+	}
+	if cred == nil {
+		return identity.ErrCredentialNotFound
+	}
+	if err := cred.Validate(); err != nil {
+		return err
+	}
+	if len(recoveryCodes) == 0 {
+		return identity.ErrRecoveryCodeNotFound
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin bootstrap tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	// 1. Atomic Check: Verify exactly 0 users exist
+	var userCount int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&userCount); err != nil {
+		return fmt.Errorf("failed to check existing user count: %w", err)
+	}
+	if userCount > 0 {
+		return identity.ErrAdminAlreadyExists
+	}
+
+	// 2. Insert Initial Admin User
+	insertUserQuery := `
+	INSERT INTO users (id, username, display_name, role, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?)
+	`
+	if _, err := tx.ExecContext(ctx, insertUserQuery, normUser.ID, normUser.Username, normUser.DisplayName, string(normUser.Role), normUser.CreatedAt.UTC(), normUser.UpdatedAt.UTC()); err != nil {
+		return fmt.Errorf("failed to insert initial admin user: %w", err)
+	}
+
+	// 3. Insert Passkey Credential
+	transportsJSON, _ := json.Marshal(cred.Transports)
+	insertCredQuery := `
+	INSERT INTO passkey_credentials (
+		id, user_id, public_key, attestation_type, aaguid,
+		sign_count, backup_eligible, backup_state, transports,
+		nickname, created_at, last_used_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	var lastUsed *time.Time
+	if cred.LastUsedAt != nil {
+		t := cred.LastUsedAt.UTC()
+		lastUsed = &t
+	}
+	if _, err := tx.ExecContext(ctx, insertCredQuery,
+		cred.ID, normUser.ID, cred.PublicKey, cred.AttestationType, cred.AAGUID,
+		cred.SignCount, cred.BackupEligible, cred.BackupState, string(transportsJSON),
+		cred.Nickname, cred.CreatedAt.UTC(), lastUsed,
+	); err != nil {
+		return fmt.Errorf("failed to insert initial admin passkey: %w", err)
+	}
+
+	// 4. Insert Recovery Codes
+	insertCodeQuery := `
+	INSERT INTO recovery_codes (code_hash, user_id, created_at, consumed_at)
+	VALUES (?, ?, ?, NULL)
+	`
+	for _, code := range recoveryCodes {
+		if _, err := tx.ExecContext(ctx, insertCodeQuery, code.CodeHash, normUser.ID, code.CreatedAt.UTC()); err != nil {
+			return fmt.Errorf("failed to insert recovery code: %w", err)
+		}
+	}
+
+	// 5. Insert Active Web Session if provided
+	if session != nil && session.SessionID != "" {
+		insertSessQuery := `
+		INSERT INTO web_sessions (session_id, user_id, user_agent, last_ip, created_at, expires_at, last_active_at, revoked_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+		`
+		if _, err := tx.ExecContext(ctx, insertSessQuery, session.SessionID, normUser.ID, session.UserAgent, session.LastIP, session.CreatedAt.UTC(), session.ExpiresAt.UTC(), session.LastActiveAt.UTC()); err != nil {
+			return fmt.Errorf("failed to insert initial web session: %w", err)
+		}
+	}
+
+	// 6. Record Bootstrap Meta (bootstrap_closed=0 until recovery codes acknowledged)
+	metaQuery := `
+	INSERT INTO bootstrap_meta (id, initial_admin_id, recovery_codes_acknowledged_at, bootstrap_closed, created_at, updated_at)
+	VALUES (1, ?, NULL, 0, ?, ?)
+	ON CONFLICT(id) DO UPDATE SET
+		initial_admin_id = excluded.initial_admin_id,
+		recovery_codes_acknowledged_at = NULL,
+		bootstrap_closed = 0,
+		updated_at = excluded.updated_at
+	`
+	now := normUser.CreatedAt.UTC()
+	if _, err := tx.ExecContext(ctx, metaQuery, normUser.ID, now, now); err != nil {
+		return fmt.Errorf("failed to insert bootstrap metadata: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) AcknowledgeRecoveryCodes(ctx context.Context, userID string, now time.Time) error {
+	query := `
+	INSERT INTO bootstrap_meta (id, initial_admin_id, recovery_codes_acknowledged_at, bootstrap_closed, created_at, updated_at)
+	VALUES (1, ?, ?, 1, ?, ?)
+	ON CONFLICT(id) DO UPDATE SET
+		recovery_codes_acknowledged_at = excluded.recovery_codes_acknowledged_at,
+		bootstrap_closed = 1,
+		updated_at = excluded.updated_at
+	`
+	t := now.UTC()
+	_, err := s.db.ExecContext(ctx, query, userID, t, t, t)
+	return err
+}
+
+func (s *SQLiteStore) GetBootstrapMeta(ctx context.Context) (*identity.BootstrapMeta, error) {
+	query := `
+	SELECT initial_admin_id, recovery_codes_acknowledged_at, bootstrap_closed, created_at, updated_at
+	FROM bootstrap_meta
+	WHERE id = 1
+	`
+	var (
+		initialAdminID sql.NullString
+		ackAt          sql.NullTime
+		closed         bool
+		createdAt      time.Time
+		updatedAt      time.Time
+	)
+	err := s.db.QueryRowContext(ctx, query).Scan(&initialAdminID, &ackAt, &closed, &createdAt, &updatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return &identity.BootstrapMeta{
+				BootstrapClosed: false,
+			}, nil
+		}
+		return nil, err
+	}
+
+	meta := &identity.BootstrapMeta{
+		BootstrapClosed: closed,
+		CreatedAt:       createdAt,
+		UpdatedAt:       updatedAt,
+	}
+	if initialAdminID.Valid {
+		meta.InitialAdminID = initialAdminID.String
+	}
+	if ackAt.Valid {
+		t := ackAt.Time
+		meta.RecoveryCodesAcknowledgedAt = &t
+	}
+	return meta, nil
 }

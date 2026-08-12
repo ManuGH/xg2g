@@ -156,3 +156,96 @@ func TestSQLiteIdentityStore_LifecycleAndPersistence(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, persistedSess.IsActive(now.Add(3*time.Hour)))
 }
+
+func TestSQLiteIdentityStore_BootstrapTokensAndAtomicCommit(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "identity_bootstrap.sqlite")
+
+	now := time.Date(2026, 8, 12, 22, 0, 0, 0, time.UTC)
+	cfg := sqlite.DefaultConfig()
+
+	s, err := OpenSQLite(dbPath, cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// 1. Bootstrap Tokens
+	tokenHash := "hash_test_1234567890abcdef"
+	err = s.PutBootstrapToken(ctx, tokenHash, now, now.Add(15*time.Minute))
+	require.NoError(t, err)
+
+	// Consume token successfully
+	consumed, err := s.ConsumeBootstrapToken(ctx, tokenHash, now.Add(2*time.Minute))
+	require.NoError(t, err)
+	assert.True(t, consumed)
+
+	// Consuming second time fails
+	consumed2, err := s.ConsumeBootstrapToken(ctx, tokenHash, now.Add(3*time.Minute))
+	require.NoError(t, err)
+	assert.False(t, consumed2)
+
+	// Expired token fails
+	expiredHash := "hash_expired_test"
+	require.NoError(t, s.PutBootstrapToken(ctx, expiredHash, now, now.Add(5*time.Minute)))
+	consumedExpired, err := s.ConsumeBootstrapToken(ctx, expiredHash, now.Add(10*time.Minute))
+	require.NoError(t, err)
+	assert.False(t, consumedExpired)
+
+	// 2. Atomic Initial Admin Bootstrap Commit
+	adminUser := &identity.User{
+		ID:          "usr_admin_init",
+		Username:    "admin",
+		DisplayName: "Administrator",
+		Role:        identity.RoleAdmin,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	passkey := &identity.PasskeyCredential{
+		ID:              "cred_admin_init",
+		UserID:          adminUser.ID,
+		PublicKey:       []byte("dummy_key_spki"),
+		AttestationType: "none",
+		AAGUID:          "00000000000000000000000000000000",
+		SignCount:       0,
+		BackupEligible:  true,
+		BackupState:     true,
+		Transports:      []string{"internal"},
+		Nickname:        "TouchID",
+		CreatedAt:       now,
+	}
+	_, recRecords, err := identity.GenerateRecoveryCodes(adminUser.ID, 10, now)
+	require.NoError(t, err)
+
+	webSess := &identity.WebSession{
+		SessionID:    "sess_init_admin",
+		UserID:       adminUser.ID,
+		UserAgent:    "Safari Mac",
+		LastIP:       "127.0.0.1",
+		CreatedAt:    now,
+		ExpiresAt:    now.Add(24 * time.Hour),
+		LastActiveAt: now,
+	}
+
+	err = s.CommitInitialAdminBootstrap(ctx, adminUser, passkey, recRecords, webSess)
+	require.NoError(t, err)
+
+	// Meta check: recovery codes not yet acknowledged
+	meta, err := s.GetBootstrapMeta(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, adminUser.ID, meta.InitialAdminID)
+	assert.False(t, meta.BootstrapClosed)
+	assert.Nil(t, meta.RecoveryCodesAcknowledgedAt)
+
+	// Second attempt at initial bootstrap must fail atomically with ErrAdminAlreadyExists
+	err = s.CommitInitialAdminBootstrap(ctx, adminUser, passkey, recRecords, webSess)
+	require.ErrorIs(t, err, identity.ErrAdminAlreadyExists)
+
+	// 3. Acknowledge Recovery Codes
+	err = s.AcknowledgeRecoveryCodes(ctx, adminUser.ID, now.Add(time.Minute))
+	require.NoError(t, err)
+
+	metaAck, err := s.GetBootstrapMeta(ctx)
+	require.NoError(t, err)
+	assert.True(t, metaAck.BootstrapClosed)
+	assert.NotNil(t, metaAck.RecoveryCodesAcknowledgedAt)
+}
