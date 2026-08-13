@@ -4,11 +4,13 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 
+import io.github.manugh.xg2g.android.profile.ProfileSelectionStore
+
 internal class ServerSettingsStore(
     context: Context,
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-) {
+) : ProfileSelectionStore {
     fun getServerUrl(): String? {
         val rawUrl = prefs.getString(PREF_SERVER_URL, null) ?: return null
         val normalizedUrl = ServerTargetResolver.normalizeServerUrl(rawUrl) ?: return null
@@ -53,11 +55,11 @@ internal class ServerSettingsStore(
         prefs.edit { putString(PREF_DVR_MODE, mode) }
     }
 
-    fun getSelectedProfileId(): String? {
+    override fun getSelectedProfileId(): String? {
         return prefs.getString(PREF_SELECTED_PROFILE_ID, null)?.trim()?.takeIf { it.isNotEmpty() }
     }
 
-    fun saveSelectedProfileId(profileId: String?) {
+    override fun saveSelectedProfileId(profileId: String?) {
         val cleaned = profileId?.trim()?.takeIf { it.isNotEmpty() }
         prefs.edit {
             if (cleaned != null) {
