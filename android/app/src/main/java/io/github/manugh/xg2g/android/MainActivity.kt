@@ -311,6 +311,9 @@ class MainActivity : AppCompatActivity() {
                         return
                     }
 
+                    is MainUiState.Revoked,
+                    is MainUiState.ReauthRequired,
+                    is MainUiState.RefreshingBanner,
                     is MainUiState.Loading,
                     MainUiState.Content -> {
                         // 3. From other Root destination -> Home
