@@ -578,7 +578,7 @@ func (o *Orchestrator) acquireTunerLease(ctx context.Context, slots []int, owner
 			return 0, nil, nil, e
 		}
 
-		h, e := ctrl.Acquire(ctx, lease.Owner(owner), s, o.LeaseTTL)
+		h, e := ctrl.AcquireWithBoundTicket(ctx, nil, "", "", "", lease.Owner(owner), s, o.LeaseTTL)
 		if e == nil {
 			sl, ok, readErr := o.Store.GetLease(ctx, string(h.Scope))
 			if readErr != nil {

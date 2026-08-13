@@ -29,8 +29,8 @@ func ScopeForTunerSlot(slot int) Scope {
 
 // AcquireTunerSlotWithTicket attempts to acquire an exclusive lease for the given tuner slot,
 // structurally requiring a valid bound AdmissionTicket in TicketStatusConsumed state.
-func (tb *TunerBinding) AcquireTunerSlotWithTicket(ctx context.Context, ticket *policy.AdmissionTicket, owner Owner, slot int, ttl time.Duration) (*Lease, error) {
-	if err := policy.ValidateBoundTicket(ticket, "", "", "", "tuner"); err != nil {
+func (tb *TunerBinding) AcquireTunerSlotWithTicket(ctx context.Context, ticket *policy.AdmissionTicket, sessionID, userID, profileID string, owner Owner, slot int, ttl time.Duration) (*Lease, error) {
+	if err := policy.ValidateBoundTicket(ticket, sessionID, userID, profileID, "tuner"); err != nil {
 		return nil, fmt.Errorf("tuner slot ticket validation failed: %w", err)
 	}
 	return tb.AcquireTunerSlot(ctx, owner, slot, ttl)

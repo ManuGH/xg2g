@@ -1,5 +1,6 @@
 package io.github.manugh.xg2g.android.playback
 
+import io.github.manugh.xg2g.android.auth.SoftwareDPoPProvider
 import io.github.manugh.xg2g.android.playback.player.AudioOutputMode
 import io.github.manugh.xg2g.android.playback.player.AudioPassthroughConfig
 import io.github.manugh.xg2g.android.playback.player.Media3SessionBinder
@@ -14,24 +15,25 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativePlaybackPipelineTest {
 
     @Test
-    fun `Media3SessionBinder injects session binding headers into OkHttpClient`() {
+    fun `Media3SessionBinder injects dynamic DPoP proof and Authorization DPoP header`() {
         var recordedAuth: String? = null
         var recordedDpop: String? = null
         var recordedProfile: String? = null
         var recordedDecisionToken: String? = null
 
-        val binder = Media3SessionBinder()
+        val dpopProvider = SoftwareDPoPProvider()
+        val binder = Media3SessionBinder(dpopProvider)
         val binding = PlaybackSessionBinding(
             sessionId = "sess_100",
             playbackDecisionToken = "token_decision_abc",
             accessToken = "at_dpop_xyz",
-            dpopProof = "eyJhbGciOiJFUzI1NiJ9.proof",
             profileId = "prof_child"
         )
         val boundClientWithoutMock = binder.createBoundOkHttpClient(OkHttpClient(), binding)
@@ -57,8 +59,9 @@ class NativePlaybackPipelineTest {
         val request = Request.Builder().url("https://xg2g.local/api/v3/sessions/sess_100/hls/index.m3u8").build()
         testClient.newCall(request).execute()
 
-        assertEquals("Bearer at_dpop_xyz", recordedAuth)
-        assertEquals("eyJhbGciOiJFUzI1NiJ9.proof", recordedDpop)
+        assertEquals("DPoP at_dpop_xyz", recordedAuth)
+        assertNotNull(recordedDpop)
+        assertTrue(recordedDpop!!.startsWith("eyJ"))
         assertEquals("prof_child", recordedProfile)
         assertEquals("token_decision_abc", recordedDecisionToken)
     }

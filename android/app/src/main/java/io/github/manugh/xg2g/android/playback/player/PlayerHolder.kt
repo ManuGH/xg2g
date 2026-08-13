@@ -85,6 +85,8 @@ internal class PlayerHolder(
     private var requestGeneration = 0L
     private var audioDisabled = false
     private var watchdogEnabled = false
+    var sessionBinder: Media3SessionBinder? = null
+    var sessionBinding: PlaybackSessionBinding? = null
 
     /**
      * Invoked on the main thread after the ExoPlayer instance has been replaced. Everything
@@ -491,7 +493,14 @@ internal class PlayerHolder(
         }
 
         val mediaItem = mediaItemBuilder.build()
-        val dataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
+        val currentBinder = sessionBinder
+        val currentBinding = sessionBinding
+        val boundOkHttpClient = if (currentBinder != null && currentBinding != null) {
+            currentBinder.createBoundOkHttpClient(okHttpClient, currentBinding)
+        } else {
+            okHttpClient
+        }
+        val dataSourceFactory = OkHttpDataSource.Factory(boundOkHttpClient)
         if (requestHeaders.isNotEmpty()) {
             dataSourceFactory.setDefaultRequestProperties(requestHeaders)
         }

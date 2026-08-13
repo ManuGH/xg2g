@@ -4,6 +4,7 @@
 package test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -98,7 +99,8 @@ func TestAdmissionSecurity_E2E(t *testing.T) {
 	defer leaseMgr.Close()
 	tunerBinding := lease.NewTunerBinding(leaseMgr)
 
-	_, errLeaseNil := tunerBinding.AcquireTunerSlotWithTicket(nil, nil, "owner1", 0, 5*time.Second)
+	ctx := context.Background()
+	_, errLeaseNil := tunerBinding.AcquireTunerSlotWithTicket(ctx, nil, "sess_test_2", "usr_test_2", "prof_test_2", "owner1", 0, 5*time.Second)
 	assert.Error(t, errLeaseNil, "Tuner lease MUST fail when ticket is nil")
 
 	unconsumedTicket := &policy.AdmissionTicket{
@@ -107,17 +109,18 @@ func TestAdmissionSecurity_E2E(t *testing.T) {
 		UserID:    "usr_test_2",
 		Status:    policy.TicketStatusIssued,
 	}
-	_, errLeaseUnconsumed := tunerBinding.AcquireTunerSlotWithTicket(nil, unconsumedTicket, "owner1", 0, 5*time.Second)
+	_, errLeaseUnconsumed := tunerBinding.AcquireTunerSlotWithTicket(ctx, unconsumedTicket, "sess_test_2", "usr_test_2", "prof_test_2", "owner1", 0, 5*time.Second)
 	assert.Error(t, errLeaseUnconsumed, "Tuner lease MUST fail when ticket is unconsumed")
 
 	consumedTicket := &policy.AdmissionTicket{
 		TicketID:    "tkt_consumed_2",
 		SessionID:   "sess_test_2",
 		UserID:      "usr_test_2",
+		ProfileID:   "prof_test_2",
 		RequestType: policy.AdmissionRequestLiveTV,
 		Status:      policy.TicketStatusConsumed,
 	}
-	l, errLeaseOk := tunerBinding.AcquireTunerSlotWithTicket(nil, consumedTicket, "owner1", 0, 5*time.Second)
+	l, errLeaseOk := tunerBinding.AcquireTunerSlotWithTicket(ctx, consumedTicket, "sess_test_2", "usr_test_2", "prof_test_2", "owner1", 0, 5*time.Second)
 	require.NoError(t, errLeaseOk, "Tuner lease MUST succeed when valid consumed ticket is provided")
 	require.NotNil(t, l)
 }

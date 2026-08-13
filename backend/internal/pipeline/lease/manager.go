@@ -98,8 +98,8 @@ func (m *Manager) resolveStateLocked(l *Lease, now time.Time) {
 }
 
 // AcquireWithBoundTicket enforces that a valid, bound AdmissionTicket in TicketStatusConsumed state is provided prior to acquiring a tuner lease.
-func (m *Manager) AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
-	if err := policy.ValidateBoundTicket(ticket, "", "", "", "tuner"); err != nil {
+func (m *Manager) AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, sessionID, userID, profileID string, owner Owner, scope Scope, ttl time.Duration) (*Lease, error) {
+	if err := policy.ValidateBoundTicket(ticket, sessionID, userID, profileID, "tuner"); err != nil {
 		return nil, fmt.Errorf("tuner lease ticket validation failed: %w", err)
 	}
 	return m.Acquire(ctx, owner, scope, ttl)

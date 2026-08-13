@@ -2096,6 +2096,37 @@ func (s *SQLiteStore) ListNotifications(ctx context.Context, householdID, userID
 	return list, nil
 }
 
+func (s *SQLiteStore) GetNotification(ctx context.Context, id string) (*identity.Notification, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, household_id, user_id, type, title, body, resource_id, action_required, created_at, read_at, expires_at
+		FROM notifications WHERE id = ?;
+	`, id)
+	var n identity.Notification
+	var resID, actReq sql.NullString
+	var readAt, expAt sql.NullTime
+	if err := row.Scan(&n.ID, &n.HouseholdID, &n.UserID, &n.Type, &n.Title, &n.Body, &resID, &actReq, &n.CreatedAt, &readAt, &expAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, identity.ErrNotificationNotFound
+		}
+		return nil, err
+	}
+	if resID.Valid {
+		n.ResourceID = resID.String
+	}
+	if actReq.Valid {
+		n.ActionRequired = actReq.String
+	}
+	if readAt.Valid {
+		t := readAt.Time.UTC()
+		n.ReadAt = &t
+	}
+	if expAt.Valid {
+		t := expAt.Time.UTC()
+		n.ExpiresAt = &t
+	}
+	return &n, nil
+}
+
 func (s *SQLiteStore) MarkNotificationRead(ctx context.Context, id, userID string, readAt time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ?;

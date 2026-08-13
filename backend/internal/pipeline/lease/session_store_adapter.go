@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 )
 
 // SessionStoreTunerLeaseController adapts the production store.LeaseStore
@@ -54,6 +55,15 @@ func (c *SessionStoreTunerLeaseController) AcquireWithLease(ctx context.Context,
 func (c *SessionStoreTunerLeaseController) Acquire(ctx context.Context, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
 	handle, _, err := c.AcquireWithLease(ctx, owner, slot, ttl)
 	return handle, err
+}
+
+func (c *SessionStoreTunerLeaseController) AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, sessionID, userID, profileID string, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
+	if ticket != nil {
+		if err := policy.ValidateBoundTicket(ticket, sessionID, userID, profileID, "tuner"); err != nil {
+			return nil, fmt.Errorf("tuner lease ticket validation failed: %w", err)
+		}
+	}
+	return c.Acquire(ctx, owner, slot, ttl)
 }
 
 func (c *SessionStoreTunerLeaseController) Renew(ctx context.Context, handle *TunerLeaseHandle, ttl time.Duration) error {

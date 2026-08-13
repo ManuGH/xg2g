@@ -1235,10 +1235,14 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, profileID, requestT
 				// Queue WebPush deliveries for active subscriptions of this Admin
 				if subs, sErr := s.store.ListPushSubscriptions(ctx, prof.HouseholdID, m.UserID); sErr == nil {
 					for _, sub := range subs {
+						channel := sub.Channel
+						if channel == "" {
+							channel = "webpush"
+						}
 						deliv := &NotificationDelivery{
 							ID:             "deliv_" + generateRandomHex(12),
 							NotificationID: notif.ID,
-							Channel:        "webpush",
+							Channel:        channel,
 							EndpointID:     sub.Endpoint,
 							Status:         "queued",
 							AttemptCount:   0,

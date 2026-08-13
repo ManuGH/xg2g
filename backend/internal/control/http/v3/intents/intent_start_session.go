@@ -92,6 +92,13 @@ func buildStartRequestParams(intent Intent, resolution startProfileResolution) m
 		"profile": resolution.effectiveProfileID,
 		"bucket":  resolution.bucket,
 	}
+	if intent.PrincipalID != "" {
+		requestParams["principal_id"] = intent.PrincipalID
+	}
+	if ticketID := intent.Params["ticket_id"]; ticketID != "" {
+		requestParams["ticket_id"] = ticketID
+		requestParams["admission_ticket_id"] = ticketID
+	}
 	if resolution.requestedPlaybackMode != "" {
 		requestParams[model.CtxKeyClientPath] = resolution.requestedPlaybackMode
 	}

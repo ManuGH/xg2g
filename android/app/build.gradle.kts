@@ -126,6 +126,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
     implementation("androidx.credentials:credentials:1.5.0-rc01")
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0-rc01")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("com.google.firebase:firebase-messaging:24.1.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

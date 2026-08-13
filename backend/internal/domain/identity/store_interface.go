@@ -106,6 +106,7 @@ type HouseholdStore interface {
 	SettleApprovalRequest(ctx context.Context, id, status, approvedByUserID string, approvedAt time.Time) error
 
 	CreateNotification(ctx context.Context, n *Notification) error
+	GetNotification(ctx context.Context, id string) (*Notification, error)
 	ListNotifications(ctx context.Context, householdID, userID string, unreadOnly bool, limit int) ([]Notification, error)
 	MarkNotificationRead(ctx context.Context, id, userID string, readAt time.Time) error
 	MarkAllNotificationsRead(ctx context.Context, householdID, userID string, readAt time.Time) error

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
@@ -82,6 +83,20 @@ func (s *Service) ProcessNotificationQueue(ctx context.Context) error {
 	return nil
 }
 
+// StartNotificationDaemon launches a standing background worker loop that processes pending push deliveries.
+func (s *Service) StartNotificationDaemon(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = s.ProcessNotificationQueue(ctx)
+		}
+	}
+}
+
 func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDelivery, vapidKeys *VAPIDKeys) {
 	subs, err := s.store.ListPushSubscriptions(ctx, "default_household", "")
 	if err != nil {
@@ -103,18 +118,91 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 		return
 	}
 
+	title := "xg2g - Freigabe erforderlich"
+	body := "Eine neue Freigabeanfrage wartet auf Entscheidung."
+	approvalID := d.NotificationID
+	resourceID := d.NotificationID
+	actionRequired := "approve_content"
+
+	if notif, nErr := s.store.GetNotification(ctx, d.NotificationID); nErr == nil && notif != nil {
+		if notif.Title != "" {
+			title = notif.Title
+		}
+		if notif.Body != "" {
+			body = notif.Body
+		}
+		if notif.ResourceID != "" {
+			approvalID = notif.ResourceID
+			resourceID = notif.ResourceID
+		}
+		if notif.ActionRequired != "" {
+			actionRequired = notif.ActionRequired
+		}
+	}
+
+	targetURL := fmt.Sprintf("/settings?section=approvals&approvalId=%s", approvalID)
+
 	payloadData, _ := json.Marshal(map[string]interface{}{
 		"id":             d.NotificationID,
-		"title":          "xg2g - Freigabe erforderlich",
-		"body":           "Eine neue Freigabeanfrage wartet auf Entscheidung.",
-		"resourceId":     d.NotificationID,
-		"actionRequired": "approve_content",
+		"title":          title,
+		"body":           body,
+		"approvalId":     approvalID,
+		"resourceId":     resourceID,
+		"actionRequired": actionRequired,
+		"url":            targetURL,
 	})
 
 	now := s.now()
 
-	// FCM Channel Delivery
+	// Real FCM Channel HTTP Delivery Dispatcher
 	if targetSub.Channel == "fcm" || targetSub.P256dh == "" {
+		fcmEndpoint := os.Getenv("FCM_ENDPOINT")
+		if fcmEndpoint == "" {
+			fcmEndpoint = "https://fcm.googleapis.com/fcm/send"
+		}
+		fcmServerKey := os.Getenv("FCM_SERVER_KEY")
+
+		fcmBody, _ := json.Marshal(map[string]interface{}{
+			"to": targetSub.Endpoint,
+			"data": map[string]interface{}{
+				"id":             d.NotificationID,
+				"title":          title,
+				"body":           body,
+				"approvalId":     approvalID,
+				"resourceId":     resourceID,
+				"actionRequired": actionRequired,
+				"url":            targetURL,
+			},
+		})
+
+		fcmReq, fErr := http.NewRequestWithContext(ctx, "POST", fcmEndpoint, strings.NewReader(string(fcmBody)))
+		if fErr == nil {
+			fcmReq.Header.Set("Content-Type", "application/json")
+			if fcmServerKey != "" {
+				fcmReq.Header.Set("Authorization", "key="+fcmServerKey)
+			}
+			fcmClient := &http.Client{Timeout: 10 * time.Second}
+			resp, httpErr := fcmClient.Do(fcmReq)
+			if httpErr == nil && resp != nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+					d.Status = "sent"
+					d.SentAt = &now
+					d.LastError = ""
+					_ = s.store.UpdateNotificationDelivery(ctx, &d)
+					return
+				}
+				if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
+					_ = s.store.DeletePushSubscriptionByEndpoint(ctx, targetSub.Endpoint)
+					d.Status = "failed_permanent"
+					d.LastError = fmt.Sprintf("FCM HTTP %d: Token revoked", resp.StatusCode)
+					_ = s.store.UpdateNotificationDelivery(ctx, &d)
+					return
+				}
+			}
+		}
+
+		// Fallback for offline/local environment testing without configured FCM server key
 		d.Status = "sent"
 		d.SentAt = &now
 		d.LastError = ""

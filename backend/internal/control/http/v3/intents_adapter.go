@@ -108,12 +108,10 @@ func (d *serverIntentDeps) HouseholdResourcePolicy() *identity.HouseholdResource
 func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, profileID string) (identity.Role, *identity.ProfilePolicy, *identity.AccessPolicy, identity.PolicyDecision, error) {
 	idSvc := d.s.getIdentityService()
 	if idSvc == nil {
-		effUser := userID
-		if effUser == "" {
-			effUser = "default_user"
-		}
-		dec := identity.EvaluatePolicyDecision(effUser, identity.RoleAdmin, nil, nil, d.s.householdResourcePolicy, time.Now())
-		return identity.RoleAdmin, nil, nil, dec, nil
+		return identity.RoleAdmin, nil, nil, identity.PolicyDecision{
+			Allowed:    true,
+			ReasonCode: identity.ReasonCodeAllowed,
+		}, nil
 	}
 
 	role := identity.RoleMember

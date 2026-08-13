@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 )
 
 // TunerLeaseHandle represents the active lease token held by a session/worker.
@@ -23,6 +25,7 @@ type LeaseID = ID
 // TunerLeaseController defines the contract for controlling tuner slot leases.
 type TunerLeaseController interface {
 	Acquire(ctx context.Context, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error)
+	AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, sessionID, userID, profileID string, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error)
 	Renew(ctx context.Context, handle *TunerLeaseHandle, ttl time.Duration) error
 	Release(ctx context.Context, handle *TunerLeaseHandle, reason ReasonCode) error
 }
@@ -67,6 +70,22 @@ func (c *TunerBindingController) Acquire(ctx context.Context, owner Owner, slot 
 		return nil, ErrBindingUnavailable
 	}
 	l, err := c.tb.AcquireTunerSlot(ctx, owner, slot, ttl)
+	if err != nil {
+		return nil, err
+	}
+	return &TunerLeaseHandle{
+		LeaseID: l.ID,
+		Owner:   l.Owner,
+		Slot:    slot,
+		Scope:   l.Scope,
+	}, nil
+}
+
+func (c *TunerBindingController) AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, sessionID, userID, profileID string, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
+	if c == nil || c.tb == nil {
+		return nil, ErrBindingUnavailable
+	}
+	l, err := c.tb.AcquireTunerSlotWithTicket(ctx, ticket, sessionID, userID, profileID, owner, slot, ttl)
 	if err != nil {
 		return nil, err
 	}

@@ -14,7 +14,7 @@ import (
 )
 
 // TestAdmissionGovernance_ASTCheck verifies that allocation methods (AcquireWithBoundTicket, ValidateBoundTicket)
-// are referenced across allocation call paths and no rogue direct allocator bypasses exist.
+// are referenced across allocation call paths and no rogue direct allocator bypasses exist in production code.
 func TestAdmissionGovernance_ASTCheck(t *testing.T) {
 	rootPath := filepath.Join("..", "..")
 	fset := token.NewFileSet()
@@ -37,14 +37,29 @@ func TestAdmissionGovernance_ASTCheck(t *testing.T) {
 		}
 
 		ast.Inspect(node, func(n ast.Node) bool {
-			ident, ok := n.(*ast.Ident)
+			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			if ident.Name == "AcquireWithBoundTicket" {
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+
+			// Reject un-gated direct .Acquire() or .AcquireTunerSlot() calls outside authorized lease internal methods
+			if (sel.Sel.Name == "AcquireTunerSlot" || sel.Sel.Name == "Acquire") &&
+				!strings.Contains(path, "internal/pipeline/lease/") &&
+				!strings.Contains(path, "internal/domain/receiverusage/") &&
+				!strings.Contains(path, "internal/domain/session/manager/orchestrator_leases.go") &&
+				!strings.Contains(path, "_test.go") {
+				directBypassDetected = true
+				t.Errorf("governance failure: un-gated direct lease call '%s' at %s:%d", sel.Sel.Name, path, fset.Position(sel.Pos()).Line)
+			}
+
+			if sel.Sel.Name == "AcquireWithBoundTicket" || sel.Sel.Name == "AcquireTunerSlotWithTicket" {
 				boundAcquireFound = true
 			}
-			if ident.Name == "ValidateBoundTicket" {
+			if sel.Sel.Name == "ValidateBoundTicket" {
 				validateBoundTicketFound = true
 			}
 			return true
@@ -58,11 +73,11 @@ func TestAdmissionGovernance_ASTCheck(t *testing.T) {
 	}
 
 	if !boundAcquireFound {
-		t.Errorf("governance check failed: AcquireWithBoundTicket must be defined and referenced in lease package")
+		t.Errorf("governance check failed: AcquireWithBoundTicket must be defined and referenced")
 	}
 
 	if !validateBoundTicketFound {
-		t.Errorf("governance check failed: ValidateBoundTicket must be defined and referenced in policy package")
+		t.Errorf("governance check failed: ValidateBoundTicket must be defined and referenced")
 	}
 
 	if directBypassDetected {

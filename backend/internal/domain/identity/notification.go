@@ -5,8 +5,11 @@
 package identity
 
 import (
+	"errors"
 	"time"
 )
+
+var ErrNotificationNotFound = errors.New("notification not found")
 
 // Notification represents a per-user persistent in-app or push alert.
 type Notification struct {
