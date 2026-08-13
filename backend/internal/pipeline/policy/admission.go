@@ -65,6 +65,7 @@ type AdmissionTicket struct {
 	HouseholdID        string               `json:"householdId"`
 	UserID             string               `json:"userId"`
 	ProfileID          string               `json:"profileId"`
+	Role               identity.Role        `json:"role"`
 	SessionID          string               `json:"sessionId"`
 	ServiceRef         string               `json:"serviceRef"`
 	RequestType        AdmissionRequestType `json:"requestType"`
@@ -120,6 +121,7 @@ func (a *HouseholdResourceAdmission) IssueAdmissionTicket(req AdmissionRequest, 
 		HouseholdID:        "default_household",
 		UserID:             req.UserID,
 		ProfileID:          req.ProfileID,
+		Role:               req.Role,
 		SessionID:          req.SessionID,
 		ServiceRef:         req.ServiceRef,
 		RequestType:        req.RequestType,
@@ -184,6 +186,7 @@ func ValidateBoundTicket(ticket *AdmissionTicket, opSessionID, opUserID, opProfi
 			SessionID:   ticket.SessionID,
 			UserID:      ticket.UserID,
 			ProfileID:   ticket.ProfileID,
+			Role:        ticket.Role,
 			RequestType: ticket.RequestType,
 		})
 		if !isResourceClassPermitted(ticketClass, requiredClass) {
@@ -420,10 +423,10 @@ func getResourceClass(req AdmissionRequest) string {
 }
 
 func isResourceClassPermitted(ticketClass, requiredClass string) bool {
-	if requiredClass == "dvr" || requiredClass == "recording" {
+	if requiredClass == "dvr" || requiredClass == "recording" || requiredClass == "record" || requiredClass == "scheduled_recording" || requiredClass == "manual_recording" {
 		return ticketClass == "scheduled_recording" || ticketClass == "manual_recording"
 	}
-	if requiredClass == "live" || requiredClass == "tuner" {
+	if requiredClass == "live" || requiredClass == "live_tv" || requiredClass == "tuner" || requiredClass == "transcode" || requiredClass == "admin_live" || requiredClass == "member_live" || requiredClass == "guest_live" {
 		return ticketClass == "admin_live" || ticketClass == "member_live" || ticketClass == "guest_live"
 	}
 	return ticketClass == requiredClass
