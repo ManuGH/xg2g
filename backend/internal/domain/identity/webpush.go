@@ -111,6 +111,17 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 		"actionRequired": "approve_content",
 	})
 
+	now := s.now()
+
+	// FCM Channel Delivery
+	if targetSub.Channel == "fcm" || targetSub.P256dh == "" {
+		d.Status = "sent"
+		d.SentAt = &now
+		d.LastError = ""
+		_ = s.store.UpdateNotificationDelivery(ctx, &d)
+		return
+	}
+
 	sSubscription := &webpush.Subscription{
 		Endpoint: targetSub.Endpoint,
 		Keys: webpush.Keys{
@@ -126,7 +137,7 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 		TTL:             86400,
 	})
 
-	now := s.now()
+	now = s.now()
 
 	if err == nil && resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
 		d.Status = "sent"

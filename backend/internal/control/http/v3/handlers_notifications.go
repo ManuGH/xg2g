@@ -188,6 +188,7 @@ func (s *Server) SavePushSubscription(w http.ResponseWriter, r *http.Request) {
 
 	var payload struct {
 		Endpoint string `json:"endpoint"`
+		Channel  string `json:"channel"`
 		Keys     struct {
 			P256dh string `json:"p256dh"`
 			Auth   string `json:"auth"`
@@ -199,6 +200,11 @@ func (s *Server) SavePushSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	channel := payload.Channel
+	if channel == "" {
+		channel = "webpush"
+	}
+
 	sub := &identity.PushSubscription{
 		HouseholdID: "default_household",
 		UserID:      principalID,
@@ -206,6 +212,7 @@ func (s *Server) SavePushSubscription(w http.ResponseWriter, r *http.Request) {
 		P256dh:      payload.Keys.P256dh,
 		Auth:        payload.Keys.Auth,
 		UserAgent:   r.UserAgent(),
+		Channel:     channel,
 		CreatedAt:   time.Now(),
 	}
 

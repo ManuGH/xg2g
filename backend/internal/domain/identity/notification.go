@@ -45,5 +45,6 @@ type PushSubscription struct {
 	P256dh      string    `json:"p256dh,omitempty"`
 	Auth        string    `json:"auth,omitempty"`
 	UserAgent   string    `json:"userAgent,omitempty"`
+	Channel     string    `json:"channel,omitempty"` // "webpush" | "fcm"
 	CreatedAt   time.Time `json:"createdAt"`
 }
