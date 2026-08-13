@@ -165,7 +165,7 @@ internal class DeviceAuthStore(
         const val PREF_PUBLISHED_ENDPOINTS = "published_endpoints"
 
         fun createEncryptedSharedPreferences(context: Context): SharedPreferences {
-            return try {
+            val encryptedPrefs = try {
                 val masterKey = MasterKey.Builder(context)
                     .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                     .build()
@@ -179,6 +179,37 @@ internal class DeviceAuthStore(
             } catch (e: Exception) {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             }
+
+            try {
+                val legacyPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                if (legacyPrefs !== encryptedPrefs && legacyPrefs.contains(PREF_DEVICE_GRANT_ID)) {
+                    val legacyServerUrl = legacyPrefs.getString(PREF_SERVER_URL, null)
+                    val legacyGrantId = legacyPrefs.getString(PREF_DEVICE_GRANT_ID, null)
+                    val legacyGrant = legacyPrefs.getString(PREF_DEVICE_GRANT, null)
+                    val legacyAccessSession = legacyPrefs.getString(PREF_ACCESS_SESSION_ID, null)
+                    val legacyAccessToken = legacyPrefs.getString(PREF_ACCESS_TOKEN, null)
+                    val legacyExpiresAt = legacyPrefs.getLong(PREF_ACCESS_TOKEN_EXPIRES_AT_MS, 0L)
+                    val legacyPolicyVersion = legacyPrefs.getString(PREF_POLICY_VERSION, null)
+                    val legacyEndpoints = legacyPrefs.getString(PREF_PUBLISHED_ENDPOINTS, null)
+
+                    if (!legacyGrantId.isNullOrBlank() && !legacyGrant.isNullOrBlank()) {
+                        val editor = encryptedPrefs.edit()
+                            .putString(PREF_SERVER_URL, legacyServerUrl)
+                            .putString(PREF_DEVICE_GRANT_ID, legacyGrantId)
+                            .putString(PREF_DEVICE_GRANT, legacyGrant)
+                        if (!legacyAccessSession.isNullOrBlank()) editor.putString(PREF_ACCESS_SESSION_ID, legacyAccessSession)
+                        if (!legacyAccessToken.isNullOrBlank()) editor.putString(PREF_ACCESS_TOKEN, legacyAccessToken)
+                        if (legacyExpiresAt > 0L) editor.putLong(PREF_ACCESS_TOKEN_EXPIRES_AT_MS, legacyExpiresAt)
+                        if (!legacyPolicyVersion.isNullOrBlank()) editor.putString(PREF_POLICY_VERSION, legacyPolicyVersion)
+                        if (!legacyEndpoints.isNullOrBlank()) editor.putString(PREF_PUBLISHED_ENDPOINTS, legacyEndpoints)
+                        editor.apply()
+                    }
+                    legacyPrefs.edit().clear().apply()
+                }
+            } catch (_: Exception) {
+            }
+
+            return encryptedPrefs
         }
 
         fun encodePublishedEndpoints(values: List<PublishedEndpoint>): String {
