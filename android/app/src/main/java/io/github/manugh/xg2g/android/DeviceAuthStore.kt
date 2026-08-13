@@ -2,6 +2,7 @@ package io.github.manugh.xg2g.android
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import org.json.JSONArray
@@ -155,6 +156,10 @@ internal class DeviceAuthStore(
 
     companion object {
         const val PREFS_NAME = "device_auth_store"
+        const val LEGACY_PREFS_NAME = "device_auth_store"
+        const val ENCRYPTED_PREFS_NAME = "xg2g_device_auth_encrypted"
+        private const val TAG = "DeviceAuthStoreMigration"
+
         const val PREF_SERVER_URL = "server_url"
         const val PREF_DEVICE_GRANT_ID = "device_grant_id"
         const val PREF_DEVICE_GRANT = "device_grant"
@@ -164,6 +169,82 @@ internal class DeviceAuthStore(
         const val PREF_POLICY_VERSION = "policy_version"
         const val PREF_PUBLISHED_ENDPOINTS = "published_endpoints"
 
+        fun migrateLegacyStoreIfNeeded(
+            encryptedPrefs: SharedPreferences,
+            legacyPrefs: SharedPreferences
+        ): Boolean {
+            if (encryptedPrefs === legacyPrefs) {
+                return false
+            }
+
+            if (!legacyPrefs.contains(PREF_DEVICE_GRANT_ID)) {
+                return false
+            }
+
+            val legacyGrantId = legacyPrefs.getString(PREF_DEVICE_GRANT_ID, null)?.trim()
+            val legacyGrant = legacyPrefs.getString(PREF_DEVICE_GRANT, null)?.trim()
+            val legacyServerUrl = legacyPrefs.getString(PREF_SERVER_URL, null)?.trim()
+
+            if (legacyGrantId.isNullOrEmpty() || legacyGrant.isNullOrEmpty()) {
+                legacyPrefs.edit().clear().commit()
+                return false
+            }
+
+            val legacyAccessSession = legacyPrefs.getString(PREF_ACCESS_SESSION_ID, null)?.trim()
+            val legacyAccessToken = legacyPrefs.getString(PREF_ACCESS_TOKEN, null)?.trim()
+            val legacyExpiresAt = legacyPrefs.getLong(PREF_ACCESS_TOKEN_EXPIRES_AT_MS, 0L)
+            val legacyPolicyVersion = legacyPrefs.getString(PREF_POLICY_VERSION, null)?.trim()
+            val legacyEndpoints = legacyPrefs.getString(PREF_PUBLISHED_ENDPOINTS, null)
+
+            return try {
+                val editor = encryptedPrefs.edit()
+                    .putString(PREF_SERVER_URL, legacyServerUrl)
+                    .putString(PREF_DEVICE_GRANT_ID, legacyGrantId)
+                    .putString(PREF_DEVICE_GRANT, legacyGrant)
+
+                if (!legacyAccessSession.isNullOrEmpty()) editor.putString(PREF_ACCESS_SESSION_ID, legacyAccessSession)
+                if (!legacyAccessToken.isNullOrEmpty()) editor.putString(PREF_ACCESS_TOKEN, legacyAccessToken)
+                if (legacyExpiresAt > 0L) editor.putLong(PREF_ACCESS_TOKEN_EXPIRES_AT_MS, legacyExpiresAt)
+                if (!legacyPolicyVersion.isNullOrEmpty()) editor.putString(PREF_POLICY_VERSION, legacyPolicyVersion)
+                if (!legacyEndpoints.isNullOrEmpty()) editor.putString(PREF_PUBLISHED_ENDPOINTS, legacyEndpoints)
+
+                val writeSuccess = editor.commit()
+                if (!writeSuccess) {
+                    logWarn(TAG, "EncryptedSharedPreferences commit failed during migration. Retaining legacy store.")
+                    return false
+                }
+
+                val verifiedGrantId = encryptedPrefs.getString(PREF_DEVICE_GRANT_ID, null)?.trim()
+                val verifiedGrant = encryptedPrefs.getString(PREF_DEVICE_GRANT, null)?.trim()
+                if (verifiedGrantId != legacyGrantId || verifiedGrant != legacyGrant) {
+                    logError(TAG, "EncryptedSharedPreferences verification failed after write. Retaining legacy store.")
+                    return false
+                }
+
+                val clearSuccess = legacyPrefs.edit().clear().commit()
+                if (!clearSuccess) {
+                    logWarn(TAG, "Failed to clear legacy SharedPreferences after successful encrypted migration.")
+                }
+                logInfo(TAG, "Successfully migrated legacy plain-text device credentials to EncryptedSharedPreferences.")
+                true
+            } catch (e: Exception) {
+                logError(TAG, "Exception during secret store migration: ${e.localizedMessage}. Retaining legacy store.", e)
+                false
+            }
+        }
+
+        private fun logInfo(tag: String, msg: String) {
+            runCatching { Log.i(tag, msg) }
+        }
+
+        private fun logWarn(tag: String, msg: String) {
+            runCatching { Log.w(tag, msg) }
+        }
+
+        private fun logError(tag: String, msg: String, t: Throwable? = null) {
+            runCatching { Log.e(tag, msg, t) }
+        }
+
         fun createEncryptedSharedPreferences(context: Context): SharedPreferences {
             val encryptedPrefs = try {
                 val masterKey = MasterKey.Builder(context)
@@ -171,42 +252,21 @@ internal class DeviceAuthStore(
                     .build()
                 EncryptedSharedPreferences.create(
                     context,
-                    "xg2g_device_auth_encrypted",
+                    ENCRYPTED_PREFS_NAME,
                     masterKey,
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 )
             } catch (e: Exception) {
-                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                logWarn(TAG, "EncryptedSharedPreferences creation failed (${e.localizedMessage}). Falling back to standard SharedPreferences.")
+                context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
             }
 
             try {
-                val legacyPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                if (legacyPrefs !== encryptedPrefs && legacyPrefs.contains(PREF_DEVICE_GRANT_ID)) {
-                    val legacyServerUrl = legacyPrefs.getString(PREF_SERVER_URL, null)
-                    val legacyGrantId = legacyPrefs.getString(PREF_DEVICE_GRANT_ID, null)
-                    val legacyGrant = legacyPrefs.getString(PREF_DEVICE_GRANT, null)
-                    val legacyAccessSession = legacyPrefs.getString(PREF_ACCESS_SESSION_ID, null)
-                    val legacyAccessToken = legacyPrefs.getString(PREF_ACCESS_TOKEN, null)
-                    val legacyExpiresAt = legacyPrefs.getLong(PREF_ACCESS_TOKEN_EXPIRES_AT_MS, 0L)
-                    val legacyPolicyVersion = legacyPrefs.getString(PREF_POLICY_VERSION, null)
-                    val legacyEndpoints = legacyPrefs.getString(PREF_PUBLISHED_ENDPOINTS, null)
-
-                    if (!legacyGrantId.isNullOrBlank() && !legacyGrant.isNullOrBlank()) {
-                        val editor = encryptedPrefs.edit()
-                            .putString(PREF_SERVER_URL, legacyServerUrl)
-                            .putString(PREF_DEVICE_GRANT_ID, legacyGrantId)
-                            .putString(PREF_DEVICE_GRANT, legacyGrant)
-                        if (!legacyAccessSession.isNullOrBlank()) editor.putString(PREF_ACCESS_SESSION_ID, legacyAccessSession)
-                        if (!legacyAccessToken.isNullOrBlank()) editor.putString(PREF_ACCESS_TOKEN, legacyAccessToken)
-                        if (legacyExpiresAt > 0L) editor.putLong(PREF_ACCESS_TOKEN_EXPIRES_AT_MS, legacyExpiresAt)
-                        if (!legacyPolicyVersion.isNullOrBlank()) editor.putString(PREF_POLICY_VERSION, legacyPolicyVersion)
-                        if (!legacyEndpoints.isNullOrBlank()) editor.putString(PREF_PUBLISHED_ENDPOINTS, legacyEndpoints)
-                        editor.apply()
-                    }
-                    legacyPrefs.edit().clear().apply()
-                }
-            } catch (_: Exception) {
+                val legacyPrefs = context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+                migrateLegacyStoreIfNeeded(encryptedPrefs, legacyPrefs)
+            } catch (e: Exception) {
+                logError(TAG, "Failed to execute legacy SharedPreferences migration check: ${e.localizedMessage}", e)
             }
 
             return encryptedPrefs
