@@ -216,14 +216,8 @@ func (r *TunerLifecycleRunner) RunSessionWithTicket(
 		return ErrBindingUnavailable
 	}
 
-	// 1. Acquire Tuner Lease BEFORE any hardware operation
-	var handle *TunerLeaseHandle
-	var err error
-	if ticket != nil {
-		handle, err = r.controller.AcquireWithBoundTicket(parentCtx, ticket, sessionID, userID, profileID, owner, slot, r.TTL)
-	} else {
-		handle, err = r.controller.Acquire(parentCtx, owner, slot, r.TTL)
-	}
+	// 1. Acquire Tuner Lease BEFORE any hardware operation using bound ticket
+	handle, err := r.controller.AcquireWithBoundTicket(parentCtx, ticket, sessionID, userID, profileID, owner, slot, r.TTL)
 	if err != nil {
 		// ErrScopeConflict or other acquire errors: ZERO hardware operations occur
 		return err
