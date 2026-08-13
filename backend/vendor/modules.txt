@@ -1,3 +1,6 @@
+# github.com/SherClockHolmes/webpush-go v1.4.0
+## explicit; go 1.13
+github.com/SherClockHolmes/webpush-go
 # github.com/apapsch/go-jsonmerge/v2 v2.0.0
 ## explicit; go 1.12
 github.com/apapsch/go-jsonmerge/v2
@@ -53,6 +56,9 @@ github.com/go-openapi/jsonpointer
 # github.com/go-openapi/swag/jsonname v0.26.0
 ## explicit; go 1.25.0
 github.com/go-openapi/swag/jsonname
+# github.com/golang-jwt/jwt/v5 v5.2.1
+## explicit; go 1.18
+github.com/golang-jwt/jwt/v5
 # github.com/google/go-cmp v0.7.0
 ## explicit; go 1.21
 github.com/google/go-cmp/cmp
@@ -274,6 +280,7 @@ go.yaml.in/yaml/v3
 ## explicit; go 1.25.0
 golang.org/x/crypto/argon2
 golang.org/x/crypto/blake2b
+golang.org/x/crypto/hkdf
 # golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
 ## explicit; go 1.23.0
 golang.org/x/exp/constraints
