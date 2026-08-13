@@ -41,17 +41,23 @@ export default function SecuritySettingsSection() {
     void fetchPasskeys();
   }, []);
 
-  const handleAddPasskey = async () => {
+  const [passkeyNickname, setPasskeyNickname] = useState('');
+  const [showNicknameModal, setShowNicknameModal] = useState(false);
+
+  const handleAddPasskeyWithNickname = async (nicknameToUse: string) => {
     setActionLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
     try {
-      const startRes = await startPasskeyRegistration();
+      const startRes = await startPasskeyRegistration('admin', '');
       const attestation = await createPasskeyCredential(startRes.options);
-      const finishRes = await finishPasskeyRegistration(attestation, 'Neuer Passkey');
+      const nickname = nicknameToUse.trim() || 'Admin Passkey';
+      const finishRes = await finishPasskeyRegistration(attestation, nickname);
 
       if (finishRes.status === 'registered' || finishRes.id || finishRes.credential) {
-        setSuccessMsg('Passkey wurde erfolgreich hinzugefügt.');
+        setSuccessMsg(`Passkey "${nickname}" wurde erfolgreich hinzugefügt.`);
+        setShowNicknameModal(false);
+        setPasskeyNickname('');
         void fetchPasskeys();
       } else {
         throw new Error('Passkey konnte nicht gespeichert werden.');
@@ -126,13 +132,35 @@ export default function SecuritySettingsSection() {
           </div>
           <Button
             size="sm"
-            onClick={() => { void handleAddPasskey(); }}
+            onClick={() => setShowNicknameModal(true)}
             disabled={actionLoading}
             data-testid="add-passkey-button"
           >
             {actionLoading ? 'Registriere...' : 'Passkey hinzufügen'}
           </Button>
         </div>
+
+        {/* Modal for Custom Passkey Nickname */}
+        {showNicknameModal && (
+          <div style={{ padding: '1rem', backgroundColor: 'rgba(56, 189, 248, 0.1)', borderRadius: '8px', marginBottom: '1rem', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+            <h5 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#38bdf8' }}>Passkey-Bezeichnung angeben</h5>
+            <input
+              type="text"
+              value={passkeyNickname}
+              onChange={(e) => setPasskeyNickname(e.target.value)}
+              placeholder="z.B. Manuels MacBook Air (Touch ID)"
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(0,0,0,0.3)', color: '#fff', fontSize: '0.875rem', marginBottom: '0.75rem' }}
+            />
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <Button size="sm" onClick={() => { void handleAddPasskeyWithNickname(passkeyNickname); }} disabled={actionLoading}>
+                Jetzt registrieren
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowNicknameModal(false)}>
+                Abbrechen
+              </Button>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div style={{ padding: '1rem', color: '#9ca3af', fontSize: '0.875rem' }}>Lade Passkeys...</div>
