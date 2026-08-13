@@ -1894,6 +1894,62 @@ func (s *SQLiteStore) PutRecordingProfileAccess(ctx context.Context, recordingID
 	return tx.Commit()
 }
 
+// ----------------- Atomic Approval & Notification Creation -----------------
+
+func (s *SQLiteStore) CreateApprovalRequestWithNotifications(ctx context.Context, req *identity.ApprovalRequest, notifs []*identity.Notification, deliveries []*identity.NotificationDelivery) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var appUser sql.NullString
+	var appAt sql.NullTime
+	if req.ApprovedByUserID != "" {
+		appUser = sql.NullString{String: req.ApprovedByUserID, Valid: true}
+	}
+	if req.ApprovedAt != nil {
+		appAt = sql.NullTime{Time: req.ApprovedAt.UTC(), Valid: true}
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO approval_requests (id, household_id, profile_id, request_type, resource_id, resource_name, parental_rating, scope, status, created_at, expires_at, approved_by_user_id, approved_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`, req.ID, req.HouseholdID, req.ProfileID, req.RequestType, req.ResourceID, req.ResourceName, req.ParentalRating, req.Scope, req.Status, req.CreatedAt.UTC(), req.ExpiresAt.UTC(), appUser, appAt)
+	if err != nil {
+		return fmt.Errorf("insert approval_request: %w", err)
+	}
+
+	for _, n := range notifs {
+		var nExp sql.NullTime
+		if n.ExpiresAt != nil {
+			nExp = sql.NullTime{Time: n.ExpiresAt.UTC(), Valid: true}
+		}
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO notifications (id, household_id, user_id, type, title, body, resource_id, action_required, created_at, expires_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, n.ID, n.HouseholdID, n.UserID, n.Type, n.Title, n.Body, n.ResourceID, n.ActionRequired, n.CreatedAt.UTC(), nExp)
+		if err != nil {
+			return fmt.Errorf("insert notification: %w", err)
+		}
+	}
+
+	for _, d := range deliveries {
+		var sAt sql.NullTime
+		if d.SentAt != nil {
+			sAt = sql.NullTime{Time: d.SentAt.UTC(), Valid: true}
+		}
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO notification_deliveries (id, notification_id, channel, endpoint_id, status, attempt_count, last_error, sent_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, d.ID, d.NotificationID, d.Channel, d.EndpointID, d.Status, d.AttemptCount, d.LastError, sAt)
+		if err != nil {
+			return fmt.Errorf("insert delivery: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (s *SQLiteStore) GetRecordingProfileAccess(ctx context.Context, recordingID string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT profile_id FROM recording_profile_access WHERE recording_id = ?`, recordingID)
 	if err != nil {

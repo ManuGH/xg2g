@@ -101,6 +101,7 @@ type HouseholdStore interface {
 	RevokeAccessPolicy(ctx context.Context, id string, now time.Time) error
 
 	CreateApprovalRequest(ctx context.Context, req *ApprovalRequest) error
+	CreateApprovalRequestWithNotifications(ctx context.Context, req *ApprovalRequest, notifs []*Notification, deliveries []*NotificationDelivery) error
 	GetApprovalRequest(ctx context.Context, id string) (*ApprovalRequest, error)
 	ListApprovalRequests(ctx context.Context, householdID, status string) ([]ApprovalRequest, error)
 	SettleApprovalRequest(ctx context.Context, id, status, approvedByUserID string, approvedAt time.Time) error

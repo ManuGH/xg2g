@@ -2,6 +2,8 @@ package io.github.manugh.xg2g.android
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -66,9 +68,10 @@ internal interface PersistedDeviceAuthStateStore {
 
 internal class DeviceAuthStore(
     context: Context,
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = createEncryptedSharedPreferences(context)
 ) : PersistedDeviceAuthStateStore {
+
+
 
     override fun load(): PersistedDeviceAuthState? {
         val serverUrl = prefs.getString(PREF_SERVER_URL, null)?.trim()?.takeIf { it.isNotEmpty() }
@@ -150,7 +153,7 @@ internal class DeviceAuthStore(
         }
     }
 
-    private companion object {
+    companion object {
         const val PREFS_NAME = "device_auth_store"
         const val PREF_SERVER_URL = "server_url"
         const val PREF_DEVICE_GRANT_ID = "device_grant_id"
@@ -160,6 +163,23 @@ internal class DeviceAuthStore(
         const val PREF_ACCESS_TOKEN_EXPIRES_AT_MS = "access_token_expires_at_ms"
         const val PREF_POLICY_VERSION = "policy_version"
         const val PREF_PUBLISHED_ENDPOINTS = "published_endpoints"
+
+        fun createEncryptedSharedPreferences(context: Context): SharedPreferences {
+            return try {
+                val masterKey = MasterKey.Builder(context)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    context,
+                    "xg2g_device_auth_encrypted",
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            } catch (e: Exception) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            }
+        }
 
         fun encodePublishedEndpoints(values: List<PublishedEndpoint>): String {
             val normalized = normalizePublishedEndpoints(values)

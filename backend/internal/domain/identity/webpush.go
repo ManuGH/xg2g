@@ -161,6 +161,12 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 			fcmEndpoint = "https://fcm.googleapis.com/fcm/send"
 		}
 		fcmServerKey := os.Getenv("FCM_SERVER_KEY")
+		if fcmServerKey == "" {
+			d.Status = "failed_permanent"
+			d.LastError = "FCM_SERVER_KEY environment variable not configured"
+			_ = s.store.UpdateNotificationDelivery(ctx, &d)
+			return
+		}
 
 		fcmBody, _ := json.Marshal(map[string]interface{}{
 			"to": targetSub.Endpoint,
@@ -176,36 +182,43 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 		})
 
 		fcmReq, fErr := http.NewRequestWithContext(ctx, "POST", fcmEndpoint, strings.NewReader(string(fcmBody)))
-		if fErr == nil {
-			fcmReq.Header.Set("Content-Type", "application/json")
-			if fcmServerKey != "" {
-				fcmReq.Header.Set("Authorization", "key="+fcmServerKey)
-			}
-			fcmClient := &http.Client{Timeout: 10 * time.Second}
-			resp, httpErr := fcmClient.Do(fcmReq)
-			if httpErr == nil && resp != nil {
-				defer resp.Body.Close()
-				if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-					d.Status = "sent"
-					d.SentAt = &now
-					d.LastError = ""
-					_ = s.store.UpdateNotificationDelivery(ctx, &d)
-					return
-				}
-				if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
-					_ = s.store.DeletePushSubscriptionByEndpoint(ctx, targetSub.Endpoint)
-					d.Status = "failed_permanent"
-					d.LastError = fmt.Sprintf("FCM HTTP %d: Token revoked", resp.StatusCode)
-					_ = s.store.UpdateNotificationDelivery(ctx, &d)
-					return
-				}
-			}
+		if fErr != nil {
+			d.Status = "failed_temporary"
+			d.LastError = fmt.Sprintf("failed to create FCM HTTP request: %v", fErr)
+			_ = s.store.UpdateNotificationDelivery(ctx, &d)
+			return
 		}
 
-		// Fallback for offline/local environment testing without configured FCM server key
-		d.Status = "sent"
-		d.SentAt = &now
-		d.LastError = ""
+		fcmReq.Header.Set("Content-Type", "application/json")
+		fcmReq.Header.Set("Authorization", "key="+fcmServerKey)
+		fcmClient := &http.Client{Timeout: 10 * time.Second}
+		resp, httpErr := fcmClient.Do(fcmReq)
+		if httpErr != nil {
+			d.Status = "failed_temporary"
+			d.LastError = fmt.Sprintf("FCM HTTP request failed: %v", httpErr)
+			_ = s.store.UpdateNotificationDelivery(ctx, &d)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+			d.Status = "sent"
+			d.SentAt = &now
+			d.LastError = ""
+			_ = s.store.UpdateNotificationDelivery(ctx, &d)
+			return
+		}
+
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
+			_ = s.store.DeletePushSubscriptionByEndpoint(ctx, targetSub.Endpoint)
+			d.Status = "failed_permanent"
+			d.LastError = fmt.Sprintf("FCM HTTP %d: Token revoked", resp.StatusCode)
+			_ = s.store.UpdateNotificationDelivery(ctx, &d)
+			return
+		}
+
+		d.Status = "failed_temporary"
+		d.LastError = fmt.Sprintf("FCM HTTP %d dispatch failure", resp.StatusCode)
 		_ = s.store.UpdateNotificationDelivery(ctx, &d)
 		return
 	}

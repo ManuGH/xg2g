@@ -187,6 +187,19 @@ func (r *TunerLifecycleRunner) RunSession(
 	tuneFn func(ctx context.Context) error,
 	runFn func(ctx context.Context) error,
 ) error {
+	return r.RunSessionWithTicket(parentCtx, nil, "", "", "", owner, slot, requiresTuner, tuneFn, runFn)
+}
+
+func (r *TunerLifecycleRunner) RunSessionWithTicket(
+	parentCtx context.Context,
+	ticket *policy.AdmissionTicket,
+	sessionID, userID, profileID string,
+	owner Owner,
+	slot int,
+	requiresTuner bool,
+	tuneFn func(ctx context.Context) error,
+	runFn func(ctx context.Context) error,
+) error {
 	if parentCtx == nil {
 		parentCtx = context.Background()
 	}
@@ -204,7 +217,13 @@ func (r *TunerLifecycleRunner) RunSession(
 	}
 
 	// 1. Acquire Tuner Lease BEFORE any hardware operation
-	handle, err := r.controller.Acquire(parentCtx, owner, slot, r.TTL)
+	var handle *TunerLeaseHandle
+	var err error
+	if ticket != nil {
+		handle, err = r.controller.AcquireWithBoundTicket(parentCtx, ticket, sessionID, userID, profileID, owner, slot, r.TTL)
+	} else {
+		handle, err = r.controller.Acquire(parentCtx, owner, slot, r.TTL)
+	}
 	if err != nil {
 		// ErrScopeConflict or other acquire errors: ZERO hardware operations occur
 		return err

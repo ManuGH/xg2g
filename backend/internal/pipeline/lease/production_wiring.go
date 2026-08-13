@@ -359,10 +359,11 @@ func (c *IntentTrackedTunerLeaseController) Acquire(ctx context.Context, owner O
 }
 
 func (c *IntentTrackedTunerLeaseController) AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, sessionID, userID, profileID string, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
-	if ticket != nil {
-		if err := policy.ValidateBoundTicket(ticket, sessionID, userID, profileID, "tuner"); err != nil {
-			return nil, fmt.Errorf("tuner lease ticket validation failed: %w", err)
-		}
+	if ticket == nil {
+		return nil, fmt.Errorf("tuner lease acquisition requires a valid bound admission ticket")
+	}
+	if err := policy.ValidateBoundTicket(ticket, sessionID, userID, profileID, "tuner"); err != nil {
+		return nil, fmt.Errorf("tuner lease ticket validation failed: %w", err)
 	}
 	return c.Acquire(ctx, owner, slot, ttl)
 }

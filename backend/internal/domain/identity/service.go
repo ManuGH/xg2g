@@ -1208,9 +1208,8 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, profileID, requestT
 		ExpiresAt:      expiresAt,
 	}
 
-	if err := s.store.CreateApprovalRequest(ctx, req); err != nil {
-		return nil, err
-	}
+	var notifs []*Notification
+	var deliveries []*NotificationDelivery
 
 	// Generate per-Admin Notification rows
 	if members, mErr := s.store.ListHouseholdMemberships(ctx, prof.HouseholdID); mErr == nil {
@@ -1230,7 +1229,7 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, profileID, requestT
 					CreatedAt:      s.now(),
 					ExpiresAt:      &expiresAt,
 				}
-				_ = s.store.CreateNotification(ctx, notif)
+				notifs = append(notifs, notif)
 
 				// Queue WebPush deliveries for active subscriptions of this Admin
 				if subs, sErr := s.store.ListPushSubscriptions(ctx, prof.HouseholdID, m.UserID); sErr == nil {
@@ -1247,11 +1246,15 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, profileID, requestT
 							Status:         "queued",
 							AttemptCount:   0,
 						}
-						_ = s.store.RecordNotificationDelivery(ctx, deliv)
+						deliveries = append(deliveries, deliv)
 					}
 				}
 			}
 		}
+	}
+
+	if err := s.store.CreateApprovalRequestWithNotifications(ctx, req, notifs, deliveries); err != nil {
+		return nil, fmt.Errorf("atomic approval creation failed: %w", err)
 	}
 
 	// Trigger async background push worker (decoupled from HTTP request context)
