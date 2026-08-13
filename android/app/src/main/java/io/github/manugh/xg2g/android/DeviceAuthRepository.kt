@@ -649,7 +649,7 @@ private class LogcatDeviceAuthTelemetry : DeviceAuthTelemetry {
     }
 }
 
-private class OkHttpDeviceAuthTransport(
+internal class OkHttpDeviceAuthTransport(
     private val cookieSession: AuthCookieSession,
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .followRedirects(false)

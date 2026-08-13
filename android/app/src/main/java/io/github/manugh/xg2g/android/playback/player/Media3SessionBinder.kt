@@ -12,7 +12,7 @@ internal data class PlaybackSessionBinding(
 )
 
 internal class Media3SessionBinder(
-    private val dpopProvider: DPoPProvider? = null
+    private val dpopProvider: DPoPProvider
 ) {
     fun createBoundOkHttpClient(
         baseClient: OkHttpClient,
@@ -27,13 +27,9 @@ internal class Media3SessionBinder(
                 val method = original.method
 
                 if (!binding.accessToken.isNullOrBlank()) {
-                    if (dpopProvider != null) {
-                        builder.header("Authorization", "DPoP ${binding.accessToken}")
-                        val dynamicProof = dpopProvider.createProof(method, urlStr, binding.accessToken)
-                        builder.header("DPoP", dynamicProof)
-                    } else {
-                        builder.header("Authorization", "Bearer ${binding.accessToken}")
-                    }
+                    builder.header("Authorization", "DPoP ${binding.accessToken}")
+                    val dynamicProof = dpopProvider.createProof(method, urlStr, binding.accessToken)
+                    builder.header("DPoP", dynamicProof)
                 }
                 if (!binding.profileId.isNullOrBlank()) {
                     builder.header("X-Household-Profile", binding.profileId)

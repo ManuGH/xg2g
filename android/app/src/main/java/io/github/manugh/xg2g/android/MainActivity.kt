@@ -23,7 +23,10 @@ import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.AuthStateMachine
+import io.github.manugh.xg2g.android.auth.NativeDeviceAuthRepository
+import io.github.manugh.xg2g.android.playback.net.CookieBackedAuthSession
 import io.github.manugh.xg2g.android.guide.GuideActivity
 import io.github.manugh.xg2g.android.playback.PlaybackSessionRegistry
 import io.github.manugh.xg2g.android.playback.bridge.NativePlaybackBridge
@@ -88,6 +91,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val serverSettingsStore by lazy { ServerSettingsStore(this) }
+    private val nativeDeviceAuthRepository by lazy(LazyThreadSafetyMode.NONE) {
+        val store = DeviceAuthStore(applicationContext)
+        val dpopProvider = AndroidKeystoreDPoPProvider()
+        val stateMachine = AuthStateMachine(isTvDevice = isTvDevice)
+        val cookieSession = CookieBackedAuthSession()
+        val transport = OkHttpDeviceAuthTransport(cookieSession)
+        NativeDeviceAuthRepository(
+            stateStore = store,
+            dpopProvider = dpopProvider,
+            stateMachine = stateMachine,
+            transport = transport
+        )
+    }
     private val deviceAuthRepository by lazy(LazyThreadSafetyMode.NONE) {
         DeviceAuthRepository(applicationContext)
     }
@@ -706,6 +722,13 @@ class MainActivity : AppCompatActivity() {
             )
         }
         deviceAuthRepository.applyLaunchCredentials(configuredBaseUrl, launchCredentials)
+        lifecycleScope.launch {
+            try {
+                nativeDeviceAuthRepository.hydratePersistedStateOnLaunch(configuredBaseUrl)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to hydrate native device auth state on launch", e)
+            }
+        }
     }
 
     private fun applyIntentConfiguration(
