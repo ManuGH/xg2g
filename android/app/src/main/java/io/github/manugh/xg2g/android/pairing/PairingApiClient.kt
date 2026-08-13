@@ -1,5 +1,6 @@
 package io.github.manugh.xg2g.android.pairing
 
+import io.github.manugh.xg2g.android.PublishedEndpoint
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -9,7 +10,10 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 
 internal data class StartPairingResult(
     val pairingId: String,
@@ -30,8 +34,13 @@ internal data class PairingStatusResult(
 internal data class ExchangePairingResult(
     val pairingId: String,
     val deviceId: String,
+    val deviceGrantId: String,
+    val deviceGrant: String,
+    val accessSessionId: String?,
     val accessToken: String,
-    val accessTokenExpiresAt: String
+    val accessTokenExpiresAtEpochMs: Long,
+    val policyVersion: String?,
+    val endpoints: List<PublishedEndpoint>
 )
 
 internal class PairingApiClient(
@@ -124,12 +133,54 @@ internal class PairingApiClient(
         }
 
         val obj = JSONObject(bodyStr)
+        val expiresAtStr = obj.optString("accessTokenExpiresAt")
+        val expiresAtEpochMs = parseHttpInstant(expiresAtStr) ?: (System.currentTimeMillis() + 900_000L)
+
         ExchangePairingResult(
             pairingId = obj.getString("pairingId"),
             deviceId = obj.optString("deviceId"),
+            deviceGrantId = obj.getString("deviceGrantId"),
+            deviceGrant = obj.getString("deviceGrant"),
+            accessSessionId = obj.optString("accessSessionId").takeIf { it.isNotBlank() },
             accessToken = obj.getString("accessToken"),
-            accessTokenExpiresAt = obj.optString("accessTokenExpiresAt")
+            accessTokenExpiresAtEpochMs = expiresAtEpochMs,
+            policyVersion = obj.optString("policyVersion").takeIf { it.isNotBlank() },
+            endpoints = parseEndpoints(obj.optJSONArray("endpoints"))
         )
+    }
+
+    private fun parseEndpoints(array: JSONArray?): List<PublishedEndpoint> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                add(
+                    PublishedEndpoint(
+                        url = item.optString("url"),
+                        kind = item.optString("kind"),
+                        priority = item.optInt("priority"),
+                        tlsMode = item.optString("tlsMode"),
+                        allowPairing = item.optBoolean("allowPairing"),
+                        allowStreaming = item.optBoolean("allowStreaming"),
+                        allowWeb = item.optBoolean("allowWeb"),
+                        allowNative = item.optBoolean("allowNative"),
+                        advertiseReason = item.optString("advertiseReason"),
+                        source = item.optString("source", "config")
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseHttpInstant(value: String?): Long? {
+        val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return trimmed.toLongOrNull()?.takeIf { it > 0L }
+            ?: runCatching {
+                Instant.from(DateTimeFormatter.RFC_1123_DATE_TIME.parse(trimmed)).toEpochMilli()
+            }.getOrNull()
+            ?: runCatching {
+                Instant.parse(trimmed).toEpochMilli()
+            }.getOrNull()
     }
 
     private fun apiUrl(vararg segments: String): HttpUrl {
