@@ -184,4 +184,31 @@ class DeviceAuthStoreTest {
 
         assertFalse("Migration should return false when encryptedPrefs === legacyPrefs", result)
     }
+
+    @Test
+    fun `migration fails and retains legacy store if post-write full field verification fails`() {
+        val legacyStorage = mutableMapOf<String, Any?>(
+            DeviceAuthStore.PREF_SERVER_URL to "https://xg2g.home.matrixcentral.de",
+            DeviceAuthStore.PREF_DEVICE_GRANT_ID to "dgr_123456",
+            DeviceAuthStore.PREF_DEVICE_GRANT to "grant_secret_abc",
+            DeviceAuthStore.PREF_ACCESS_TOKEN to "tok_original"
+        )
+        val legacyPrefs = FakeSharedPreferences(legacyStorage)
+        val encryptedStorage = mutableMapOf<String, Any?>()
+
+        val corruptingEncryptedPrefs = object : SharedPreferences by FakeSharedPreferences(encryptedStorage) {
+            override fun getString(key: String, defValue: String?): String? {
+                if (key == DeviceAuthStore.PREF_ACCESS_TOKEN) {
+                    return "tok_mismatched"
+                }
+                return encryptedStorage[key] as? String ?: defValue
+            }
+        }
+
+        val result = DeviceAuthStore.migrateLegacyStoreIfNeeded(corruptingEncryptedPrefs, legacyPrefs)
+
+        assertFalse("Migration must fail when full field verification fails", result)
+        assertTrue("Legacy store must remain intact when verification fails", legacyPrefs.contains(DeviceAuthStore.PREF_DEVICE_GRANT_ID))
+        assertEquals("dgr_123456", legacyPrefs.getString(DeviceAuthStore.PREF_DEVICE_GRANT_ID, null))
+    }
 }

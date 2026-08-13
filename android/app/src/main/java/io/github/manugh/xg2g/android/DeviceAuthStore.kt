@@ -216,8 +216,23 @@ internal class DeviceAuthStore(
 
                 val verifiedGrantId = encryptedPrefs.getString(PREF_DEVICE_GRANT_ID, null)?.trim()
                 val verifiedGrant = encryptedPrefs.getString(PREF_DEVICE_GRANT, null)?.trim()
-                if (verifiedGrantId != legacyGrantId || verifiedGrant != legacyGrant) {
-                    logError(TAG, "EncryptedSharedPreferences verification failed after write. Retaining legacy store.")
+                val verifiedServerUrl = encryptedPrefs.getString(PREF_SERVER_URL, null)?.trim()
+                val verifiedAccessSession = encryptedPrefs.getString(PREF_ACCESS_SESSION_ID, null)?.trim()
+                val verifiedAccessToken = encryptedPrefs.getString(PREF_ACCESS_TOKEN, null)?.trim()
+                val verifiedExpiresAt = encryptedPrefs.getLong(PREF_ACCESS_TOKEN_EXPIRES_AT_MS, 0L)
+                val verifiedPolicyVersion = encryptedPrefs.getString(PREF_POLICY_VERSION, null)?.trim()
+                val verifiedEndpoints = encryptedPrefs.getString(PREF_PUBLISHED_ENDPOINTS, null)
+
+                if (verifiedGrantId != legacyGrantId ||
+                    verifiedGrant != legacyGrant ||
+                    verifiedServerUrl != legacyServerUrl ||
+                    (!legacyAccessSession.isNullOrEmpty() && verifiedAccessSession != legacyAccessSession) ||
+                    (!legacyAccessToken.isNullOrEmpty() && verifiedAccessToken != legacyAccessToken) ||
+                    (legacyExpiresAt > 0L && verifiedExpiresAt != legacyExpiresAt) ||
+                    (!legacyPolicyVersion.isNullOrEmpty() && verifiedPolicyVersion != legacyPolicyVersion) ||
+                    (!legacyEndpoints.isNullOrEmpty() && verifiedEndpoints != legacyEndpoints)
+                ) {
+                    logError(TAG, "EncryptedSharedPreferences verification failed for copied secret fields. Retaining legacy store.")
                     return false
                 }
 
@@ -258,8 +273,8 @@ internal class DeviceAuthStore(
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 )
             } catch (e: Exception) {
-                logWarn(TAG, "EncryptedSharedPreferences creation failed (${e.localizedMessage}). Falling back to standard SharedPreferences.")
-                context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+                logError(TAG, "EncryptedSharedPreferences creation failed due to Keystore/Crypto error. Failing closed without plaintext fallback.", e)
+                throw IllegalStateException("EncryptedSharedPreferences security initialization failed", e)
             }
 
             try {
