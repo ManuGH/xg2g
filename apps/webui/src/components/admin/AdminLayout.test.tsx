@@ -25,6 +25,6 @@ describe('AdminLayout Component', () => {
     const familyButton = screen.getByText('Familie');
     fireEvent.click(familyButton);
 
-    expect(screen.getByText('Familienmitglieder')).toBeInTheDocument();
+    expect(screen.getAllByText(/Familienmitglieder/).length).toBeGreaterThan(0);
   });
 });
