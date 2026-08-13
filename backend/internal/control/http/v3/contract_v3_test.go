@@ -30,6 +30,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
+	idstore "github.com/ManuGH/xg2g/internal/domain/identity/store"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -221,12 +223,16 @@ func newV3TestServerWithAdmission(t *testing.T, hlsRoot string, mode admissionHa
 	vm, err := vod.NewManager(&successRunner{fsRoot: hlsRoot}, &noopProber{}, pm)
 	require.NoError(t, err)
 
+	idStore, _ := idstore.NewSQLiteStore(":memory:")
+	idSvc := identity.NewService(identity.Config{}, idStore)
+
 	s.SetDependencies(Dependencies{
-		Bus:         b,
-		Store:       st,
-		ResumeStore: rs,
-		PathMapper:  pm,
-		VODManager:  vm,
+		Bus:             b,
+		Store:           st,
+		ResumeStore:     rs,
+		PathMapper:      pm,
+		VODManager:      vm,
+		IdentityService: idSvc,
 	})
 	// Admission (Slice 2)
 	admCtrl := admission.NewController(cfg)

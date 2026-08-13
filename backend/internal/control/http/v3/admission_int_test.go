@@ -9,6 +9,8 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/admission"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
+	idstore "github.com/ManuGH/xg2g/internal/domain/identity/store"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,11 +54,17 @@ func TestAdmissionIntegration(t *testing.T) {
 	memBus := bus.NewMemoryBus()
 	store := &MockStoreForStreams{} // Use existing mock from streams_test
 
+	idStore, _ := idstore.NewSQLiteStore(":memory:")
+	idSvc := identity.NewService(identity.Config{}, idStore)
+
 	setupServer := func(state *MockAdmissionState) *Server {
 		s := NewServer(cfg, nil, func() {})
 		s.SetJWTSecret(jwtTestSecret)
-		s.v3Bus = memBus
-		s.v3Store = store
+		s.SetDependencies(Dependencies{
+			Bus:             memBus,
+			Store:           store,
+			IdentityService: idSvc,
+		})
 		s.admissionState = state
 		return s
 	}

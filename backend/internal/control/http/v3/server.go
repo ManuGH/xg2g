@@ -389,6 +389,7 @@ type Dependencies struct {
 	RecordingsService  recservice.Service
 	RequestShutdown    func(context.Context) error
 	PreflightProvider  PreflightProvider
+	IdentityService    *identity.Service
 }
 
 // SetDependencies injects shared services into the handler.
@@ -474,6 +475,12 @@ func (s *Server) applyServiceDependencies(deps Dependencies) {
 		s.receiptService = deps.Receipts
 	} else {
 		s.receiptService = nil
+	}
+
+	if !isNil(deps.IdentityService) {
+		s.identityService = deps.IdentityService
+	} else {
+		s.identityService = nil
 	}
 
 	if !isNil(deps.ScanSource) {

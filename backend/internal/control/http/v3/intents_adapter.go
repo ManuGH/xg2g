@@ -108,25 +108,24 @@ func (d *serverIntentDeps) HouseholdResourcePolicy() *identity.HouseholdResource
 func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, profileID string) (identity.Role, *identity.ProfilePolicy, *identity.AccessPolicy, identity.PolicyDecision, error) {
 	idSvc := d.s.getIdentityService()
 	if idSvc == nil {
-		return identity.RoleAdmin, nil, nil, identity.PolicyDecision{
-			Allowed:    true,
-			ReasonCode: identity.ReasonCodeAllowed,
-		}, nil
+		return identity.RoleGuest, nil, nil, identity.PolicyDecision{
+			Allowed:    false,
+			ReasonCode: identity.ReasonCodeInternalError,
+		}, errors.New("identity_service_uninitialized")
 	}
 
 	role := identity.RoleMember
 	if userID != "" {
 		u, err := idSvc.Store().GetUser(ctx, userID)
-		if err != nil || u == nil {
-			return identity.RoleGuest, nil, nil, identity.PolicyDecision{
-				Allowed:    false,
-				ReasonCode: identity.ReasonCodeInternalError,
-			}, errors.New("user_not_found_or_identity_error")
+		if err == nil && u != nil {
+			role = u.Role
+			if mem, mErr := idSvc.Store().GetHouseholdMembership(ctx, "default_household", u.ID); mErr == nil && mem != nil {
+				role = mem.Role
+			}
 		}
-		role = u.Role
-		if mem, mErr := idSvc.Store().GetHouseholdMembership(ctx, "default_household", u.ID); mErr == nil && mem != nil {
-			role = mem.Role
-		}
+	} else {
+		userID = "usr_default_admin"
+		role = identity.RoleAdmin
 	}
 
 	var pol *identity.ProfilePolicy

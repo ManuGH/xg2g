@@ -13,6 +13,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/auth"
 	"github.com/ManuGH/xg2g/internal/control/vod/preflight"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
+	idstore "github.com/ManuGH/xg2g/internal/domain/identity/store"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
@@ -78,6 +80,11 @@ func (s *fixedIntentScanner) RunBackground() bool { return false }
 
 func (s *fixedIntentScanner) RunBackgroundForce() bool { return false }
 
+func newTestIdentityService() *identity.Service {
+	st, _ := idstore.NewSQLiteStore(":memory:")
+	return identity.NewService(identity.Config{}, st)
+}
+
 type noopIntentPreflight struct{}
 
 func (p *noopIntentPreflight) Check(ctx context.Context, ref preflight.SourceRef) (preflight.PreflightResult, error) {
@@ -100,9 +107,10 @@ func TestHandleV3Intents_PlaybackModeMapsToH264FMP4ProfileWithoutCopyPath(t *tes
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &noopIntentScanner{},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &noopIntentScanner{},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -162,9 +170,10 @@ func TestHandleV3Intents_PlaybackModeHLSJSDesktopSafariMapsToH264FMP4WithoutCopy
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &noopIntentScanner{},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &noopIntentScanner{},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -228,9 +237,10 @@ func TestHandleV3Intents_PlaybackModeNativeHLSMapsToSafariProfile(t *testing.T) 
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &noopIntentScanner{},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &noopIntentScanner{},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -291,9 +301,10 @@ func TestHandleV3Intents_PlaybackModeNativeHLSPreservesSafariBrowserContainer(t 
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &noopIntentScanner{},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &noopIntentScanner{},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -356,9 +367,10 @@ func TestHandleV3Intents_PlaybackModeNativeHLSPreservesSafariBrowserInterlacedCo
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &fixedIntentScanner{capability: scan.Capability{Interlaced: true}},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &fixedIntentScanner{capability: scan.Capability{Interlaced: true}},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -432,9 +444,10 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesQualifiedHEVCForSafariNative(t
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &fixedIntentScanner{capability: scan.Capability{Interlaced: true}},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &fixedIntentScanner{capability: scan.Capability{Interlaced: true}},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -510,9 +523,10 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesFMP4ForQualifiedHEVCOnIOSSafar
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &fixedIntentScanner{capability: scan.Capability{Interlaced: false}},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &fixedIntentScanner{capability: scan.Capability{Interlaced: false}},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -591,9 +605,10 @@ func TestHandleV3Intents_PlaybackModeNativeHLSUsesAV1FMP4ForRuntimeCapableIOSSaf
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &fixedIntentScanner{capability: scan.Capability{Interlaced: false}},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &fixedIntentScanner{capability: scan.Capability{Interlaced: false}},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -694,9 +709,10 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeH264UsesHEVCBaselineFromCli
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &noopIntentScanner{},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &noopIntentScanner{},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -783,9 +799,10 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeH264UsesHEVCFMP4OnIOSSafari
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &noopIntentScanner{},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &noopIntentScanner{},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -873,8 +890,9 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeAV1HEVCHintsUseAV1ProfileFo
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
 		Scan: &fixedIntentScanner{capability: scan.Capability{
 			Container:  "ts",
 			VideoCodec: "h264",
@@ -983,8 +1001,9 @@ func TestHandleV3Intents_PlaybackModeHLSJSRuntimeRichCodecsKeepHighProfileForChr
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
 		Scan: &fixedIntentScanner{capability: scan.Capability{
 			Container:  "ts",
 			VideoCodec: "h264",
@@ -1083,8 +1102,9 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeHEVCHintsKeepSafariProfileF
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
 		Scan: &fixedIntentScanner{capability: scan.Capability{
 			Container:  "ts",
 			Interlaced: false,
@@ -1182,8 +1202,10 @@ func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+
 		Scan: &fixedIntentScanner{capability: scan.Capability{
 			Container:  "ts",
 			Interlaced: false,
@@ -1297,9 +1319,10 @@ func TestHandleV3Intents_PlaybackModeTranscodeUsesMeasuredCodecRanking(t *testin
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &noopIntentScanner{},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &noopIntentScanner{},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -1370,9 +1393,10 @@ func TestHandleV3Intents_PlaybackModeTranscodeUsesEncodeOnlyHEVCForIOSSafari(t *
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &noopIntentScanner{},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &noopIntentScanner{},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
@@ -1452,9 +1476,10 @@ func TestHandleV3Intents_PlaybackModeTranscodeClampsIOSSafariParamsToHEVCFMP4(t 
 		JWTSecret: auth.TestSecret(),
 	}
 	s.SetDependencies(Dependencies{
-		Bus:   &noopIntentBus{},
-		Store: store,
-		Scan:  &noopIntentScanner{},
+		IdentityService: newTestIdentityService(),
+		Bus:             &noopIntentBus{},
+		Store:           store,
+		Scan:            &noopIntentScanner{},
 	})
 	s.admission = admission.NewController(cfg)
 	s.admissionState = &MockAdmissionState{Tuners: 1}
