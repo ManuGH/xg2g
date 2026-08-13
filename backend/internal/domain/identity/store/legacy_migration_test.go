@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/identity"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 func TestLegacySQLiteDatabaseAutoMigration(t *testing.T) {
@@ -20,7 +20,7 @@ func TestLegacySQLiteDatabaseAutoMigration(t *testing.T) {
 	dbPath := filepath.Join(tempDir, "legacy_v30.db")
 
 	// 1. Create a raw legacy v3.0 database (without household tables)
-	rawDB, err := sql.Open("sqlite3", dbPath)
+	rawDB, err := sql.Open("sqlite", dbPath)
 	require.NoError(t, err)
 
 	legacyDDL := `
@@ -42,7 +42,7 @@ func TestLegacySQLiteDatabaseAutoMigration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	sqliteStore, err := NewSQLiteStore(ctx, dbPath)
+	sqliteStore, err := NewSQLiteStore(dbPath)
 	require.NoError(t, err)
 	defer sqliteStore.Close()
 
@@ -52,8 +52,20 @@ func TestLegacySQLiteDatabaseAutoMigration(t *testing.T) {
 	require.NotNil(t, mem)
 	require.Equal(t, identity.RoleAdmin, mem.Role)
 
-	// 4. Verify default household profiles exist
-	profiles, err := sqliteStore.ListProfiles(ctx, "default_household")
+	// 4. Verify profile creation under auto-migrated household
+	prof := &identity.Profile{
+		ID:              "prof_admin_1",
+		HouseholdID:     "default_household",
+		Name:            "Hauptnutzer",
+		IsChild:         false,
+		CreatedByUserID: "user_legacy_admin",
+		CreatedAt:       time.Now().UTC(),
+	}
+	err = sqliteStore.PutProfile(ctx, prof, &identity.ProfilePolicy{ProfileID: prof.ID, MaturityLevel: 18, DVRAllowed: true})
 	require.NoError(t, err)
-	require.NotEmpty(t, profiles)
+
+	profiles, err := sqliteStore.ListProfilesByHousehold(ctx, "default_household")
+	require.NoError(t, err)
+	require.Len(t, profiles, 1)
+	require.Equal(t, "prof_admin_1", profiles[0].ID)
 }
