@@ -1211,6 +1211,30 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, profileID, requestT
 	if err := s.store.CreateApprovalRequest(ctx, req); err != nil {
 		return nil, err
 	}
+
+	// Generate per-Admin Notification rows
+	if members, mErr := s.store.ListHouseholdMemberships(ctx, prof.HouseholdID); mErr == nil {
+		title := "Freigabe erforderlich"
+		body := fmt.Sprintf("%s möchte '%s' (FSK %d) ansehen", prof.Name, resourceName, parentalRating)
+		for _, m := range members {
+			if m.Role == RoleAdmin {
+				notif := &Notification{
+					ID:             "notif_" + generateRandomHex(12),
+					HouseholdID:    prof.HouseholdID,
+					UserID:         m.UserID,
+					Type:           "approval_request",
+					Title:          title,
+					Body:           body,
+					ResourceID:     req.ID,
+					ActionRequired: "approve_content",
+					CreatedAt:      s.now(),
+					ExpiresAt:      &expiresAt,
+				}
+				_ = s.store.CreateNotification(ctx, notif)
+			}
+		}
+	}
+
 	return req, nil
 }
 
@@ -1230,6 +1254,34 @@ func (s *Service) ApproveRequest(ctx context.Context, requestID, adminUserID str
 // DenyRequest denies a pending approval request.
 func (s *Service) DenyRequest(ctx context.Context, requestID, adminUserID string) error {
 	return s.store.SettleApprovalRequest(ctx, requestID, "denied", adminUserID, s.now())
+}
+
+// ----------------- Notification Service Methods -----------------
+
+func (s *Service) ListNotifications(ctx context.Context, householdID, userID string, unreadOnly bool) ([]Notification, error) {
+	return s.store.ListNotifications(ctx, householdID, userID, unreadOnly, 50)
+}
+
+func (s *Service) MarkNotificationRead(ctx context.Context, id, userID string) error {
+	return s.store.MarkNotificationRead(ctx, id, userID, s.now())
+}
+
+func (s *Service) MarkAllNotificationsRead(ctx context.Context, householdID, userID string) error {
+	return s.store.MarkAllNotificationsRead(ctx, householdID, userID, s.now())
+}
+
+func (s *Service) DeleteNotification(ctx context.Context, id, userID string) error {
+	return s.store.DeleteNotification(ctx, id, userID)
+}
+
+func (s *Service) SavePushSubscription(ctx context.Context, sub *PushSubscription) error {
+	if sub.ID == "" {
+		sub.ID = "sub_" + generateRandomHex(12)
+	}
+	if sub.CreatedAt.IsZero() {
+		sub.CreatedAt = s.now()
+	}
+	return s.store.SavePushSubscription(ctx, sub)
 }
 
 // PutHouseholdResourcePolicy updates concurrency limits for a household.

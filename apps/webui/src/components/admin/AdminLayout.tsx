@@ -7,6 +7,7 @@ import AccessTimesSection from './AccessTimesSection';
 import ParentalControlSection from './ParentalControlSection';
 import AuditNotificationsSection from './AuditNotificationsSection';
 import DevicesManagementSection from './DevicesManagementSection';
+import { NotificationCenter } from '../notifications/NotificationCenter';
 
 export type AdminSectionKey =
   | 'account'
@@ -119,13 +120,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
 
       {/* Main Content Area */}
       <div style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
-        <div style={{ marginBottom: '24px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0 }}>
-            {sections.find((s) => s.key === activeSection)?.label}
-          </h1>
-          <p style={{ fontSize: '14px', color: '#94a3b8', margin: '4px 0 0 0' }}>
-            {sections.find((s) => s.key === activeSection)?.description}
-          </p>
+        <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0 }}>
+              {sections.find((s) => s.key === activeSection)?.label}
+            </h1>
+            <p style={{ fontSize: '14px', color: '#94a3b8', margin: '4px 0 0 0' }}>
+              {sections.find((s) => s.key === activeSection)?.description}
+            </p>
+          </div>
+          <NotificationCenter />
         </div>
 
         {/* Section Router */}

@@ -81,6 +81,7 @@ type DeviceStore interface {
 type HouseholdStore interface {
 	GetHousehold(ctx context.Context, id string) (*Household, error)
 	GetHouseholdMembership(ctx context.Context, householdID, userID string) (*HouseholdMembership, error)
+	ListHouseholdMemberships(ctx context.Context, householdID string) ([]HouseholdMembership, error)
 	PutHouseholdMembership(ctx context.Context, membership *HouseholdMembership) error
 
 	PutAccountPassword(ctx context.Context, userID, passwordHash string, now time.Time) error
@@ -103,6 +104,17 @@ type HouseholdStore interface {
 	GetApprovalRequest(ctx context.Context, id string) (*ApprovalRequest, error)
 	ListApprovalRequests(ctx context.Context, householdID, status string) ([]ApprovalRequest, error)
 	SettleApprovalRequest(ctx context.Context, id, status, approvedByUserID string, approvedAt time.Time) error
+
+	CreateNotification(ctx context.Context, n *Notification) error
+	ListNotifications(ctx context.Context, householdID, userID string, unreadOnly bool, limit int) ([]Notification, error)
+	MarkNotificationRead(ctx context.Context, id, userID string, readAt time.Time) error
+	MarkAllNotificationsRead(ctx context.Context, householdID, userID string, readAt time.Time) error
+	DeleteNotification(ctx context.Context, id, userID string) error
+
+	SavePushSubscription(ctx context.Context, sub *PushSubscription) error
+	ListPushSubscriptions(ctx context.Context, householdID, userID string) ([]PushSubscription, error)
+	DeletePushSubscription(ctx context.Context, id, userID string) error
+	RecordNotificationDelivery(ctx context.Context, delivery *NotificationDelivery) error
 
 	PutHouseholdResourcePolicy(ctx context.Context, policy *HouseholdResourcePolicy) error
 	GetHouseholdResourcePolicy(ctx context.Context, householdID string) (*HouseholdResourcePolicy, error)

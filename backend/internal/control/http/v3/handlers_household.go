@@ -75,6 +75,14 @@ func (s *Server) mountHouseholdRoutes(r chi.Router) {
 		pr.Get("/household/resource-policy", s.GetHouseholdResourcePolicy)
 		pr.Put("/household/resource-policy", s.PutHouseholdResourcePolicy)
 		pr.Post("/sessions/revoke-user-sessions", s.RevokeUserSessions)
+
+		pr.Get("/notifications", s.ListNotifications)
+		pr.Get("/notifications/stream", s.StreamNotifications)
+		pr.Post("/notifications/mark-read", s.MarkNotificationRead)
+		pr.Post("/notifications/mark-all-read", s.MarkAllNotificationsRead)
+		pr.Delete("/notifications/{id}", s.DeleteNotification)
+		pr.Get("/notifications/vapid-key", s.GetVAPIDPublicKey)
+		pr.Post("/notifications/push-subscriptions", s.SavePushSubscription)
 	})
 }
 

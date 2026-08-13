@@ -262,6 +262,43 @@ func (s *SQLiteStore) initSchema(ctx context.Context) error {
 		PRIMARY KEY (recording_id, profile_id)
 	);
 
+	CREATE TABLE IF NOT EXISTS notifications (
+		id TEXT PRIMARY KEY,
+		household_id TEXT NOT NULL DEFAULT 'default_household',
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		type TEXT NOT NULL,
+		title TEXT NOT NULL,
+		body TEXT NOT NULL,
+		resource_id TEXT,
+		action_required TEXT,
+		created_at TIMESTAMP NOT NULL,
+		read_at TIMESTAMP,
+		expires_at TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read_at, created_at DESC);
+
+	CREATE TABLE IF NOT EXISTS notification_deliveries (
+		id TEXT PRIMARY KEY,
+		notification_id TEXT NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+		channel TEXT NOT NULL,
+		endpoint_id TEXT NOT NULL,
+		status TEXT NOT NULL,
+		attempt_count INTEGER NOT NULL DEFAULT 0,
+		last_error TEXT,
+		sent_at TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS push_subscriptions (
+		id TEXT PRIMARY KEY,
+		household_id TEXT NOT NULL DEFAULT 'default_household',
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		endpoint TEXT NOT NULL UNIQUE,
+		p256dh TEXT NOT NULL,
+		auth TEXT NOT NULL,
+		user_agent TEXT,
+		created_at TIMESTAMP NOT NULL
+	);
+
 	CREATE TABLE IF NOT EXISTS audit_logs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		actor_user_id TEXT NOT NULL,
@@ -1292,6 +1329,28 @@ func (s *SQLiteStore) GetHouseholdMembership(ctx context.Context, householdID, u
 	return &m, nil
 }
 
+func (s *SQLiteStore) ListHouseholdMemberships(ctx context.Context, householdID string) ([]identity.HouseholdMembership, error) {
+	if householdID == "" {
+		householdID = "default_household"
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT household_id, user_id, role, created_at FROM household_memberships WHERE household_id = ?`, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []identity.HouseholdMembership
+	for rows.Next() {
+		var m identity.HouseholdMembership
+		var rStr string
+		if err := rows.Scan(&m.HouseholdID, &m.UserID, &rStr, &m.CreatedAt); err == nil {
+			m.Role = identity.Role(rStr)
+			list = append(list, m)
+		}
+	}
+	return list, nil
+}
+
 func (s *SQLiteStore) PutHouseholdMembership(ctx context.Context, membership *identity.HouseholdMembership) error {
 	query := `
 	INSERT INTO household_memberships (household_id, user_id, role, created_at)
@@ -1966,4 +2025,159 @@ func (s *SQLiteStore) VerifyAuditChain(ctx context.Context) (bool, error) {
 		expectedPrev = e.Hash
 	}
 	return true, nil
+}
+
+// ----------------- Notifications & Push Subscriptions -----------------
+
+func (s *SQLiteStore) CreateNotification(ctx context.Context, n *identity.Notification) error {
+	var readAt, expAt sql.NullTime
+	if n.ReadAt != nil {
+		readAt = sql.NullTime{Time: n.ReadAt.UTC(), Valid: true}
+	}
+	if n.ExpiresAt != nil {
+		expAt = sql.NullTime{Time: n.ExpiresAt.UTC(), Valid: true}
+	}
+	hID := n.HouseholdID
+	if hID == "" {
+		hID = "default_household"
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO notifications (id, household_id, user_id, type, title, body, resource_id, action_required, created_at, read_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`, n.ID, hID, n.UserID, n.Type, n.Title, n.Body, n.ResourceID, n.ActionRequired, n.CreatedAt.UTC(), readAt, expAt)
+	return err
+}
+
+func (s *SQLiteStore) ListNotifications(ctx context.Context, householdID, userID string, unreadOnly bool, limit int) ([]identity.Notification, error) {
+	if householdID == "" {
+		householdID = "default_household"
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `SELECT id, household_id, user_id, type, title, body, resource_id, action_required, created_at, read_at, expires_at FROM notifications WHERE household_id = ? AND user_id = ?`
+	args := []any{householdID, userID}
+	if unreadOnly {
+		query += ` AND read_at IS NULL`
+	}
+	query += ` ORDER BY created_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []identity.Notification
+	for rows.Next() {
+		var n identity.Notification
+		var readAt, expAt sql.NullTime
+		var resID, actReq sql.NullString
+		if err := rows.Scan(&n.ID, &n.HouseholdID, &n.UserID, &n.Type, &n.Title, &n.Body, &resID, &actReq, &n.CreatedAt, &readAt, &expAt); err == nil {
+			if resID.Valid {
+				n.ResourceID = resID.String
+			}
+			if actReq.Valid {
+				n.ActionRequired = actReq.String
+			}
+			if readAt.Valid {
+				t := readAt.Time.UTC()
+				n.ReadAt = &t
+			}
+			if expAt.Valid {
+				t := expAt.Time.UTC()
+				n.ExpiresAt = &t
+			}
+			list = append(list, n)
+		}
+	}
+	return list, nil
+}
+
+func (s *SQLiteStore) MarkNotificationRead(ctx context.Context, id, userID string, readAt time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ?;
+	`, readAt.UTC(), id, userID)
+	return err
+}
+
+func (s *SQLiteStore) MarkAllNotificationsRead(ctx context.Context, householdID, userID string, readAt time.Time) error {
+	if householdID == "" {
+		householdID = "default_household"
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE notifications SET read_at = ? WHERE household_id = ? AND user_id = ? AND read_at IS NULL;
+	`, readAt.UTC(), householdID, userID)
+	return err
+}
+
+func (s *SQLiteStore) DeleteNotification(ctx context.Context, id, userID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM notifications WHERE id = ? AND user_id = ?;`, id, userID)
+	return err
+}
+
+func (s *SQLiteStore) SavePushSubscription(ctx context.Context, sub *identity.PushSubscription) error {
+	hID := sub.HouseholdID
+	if hID == "" {
+		hID = "default_household"
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO push_subscriptions (id, household_id, user_id, endpoint, p256dh, auth, user_agent, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(endpoint) DO UPDATE SET
+			user_id = excluded.user_id,
+			p256dh = excluded.p256dh,
+			auth = excluded.auth,
+			user_agent = excluded.user_agent;
+	`, sub.ID, hID, sub.UserID, sub.Endpoint, sub.P256dh, sub.Auth, sub.UserAgent, sub.CreatedAt.UTC())
+	return err
+}
+
+func (s *SQLiteStore) ListPushSubscriptions(ctx context.Context, householdID, userID string) ([]identity.PushSubscription, error) {
+	if householdID == "" {
+		householdID = "default_household"
+	}
+	query := `SELECT id, household_id, user_id, endpoint, p256dh, auth, user_agent, created_at FROM push_subscriptions WHERE household_id = ?`
+	args := []any{householdID}
+	if userID != "" {
+		query += ` AND user_id = ?`
+		args = append(args, userID)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []identity.PushSubscription
+	for rows.Next() {
+		var sub identity.PushSubscription
+		var ua sql.NullString
+		if err := rows.Scan(&sub.ID, &sub.HouseholdID, &sub.UserID, &sub.Endpoint, &sub.P256dh, &sub.Auth, &ua, &sub.CreatedAt); err == nil {
+			if ua.Valid {
+				sub.UserAgent = ua.String
+			}
+			list = append(list, sub)
+		}
+	}
+	return list, nil
+}
+
+func (s *SQLiteStore) DeletePushSubscription(ctx context.Context, id, userID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE id = ? AND user_id = ?;`, id, userID)
+	return err
+}
+
+func (s *SQLiteStore) RecordNotificationDelivery(ctx context.Context, delivery *identity.NotificationDelivery) error {
+	var sentAt sql.NullTime
+	if delivery.SentAt != nil {
+		sentAt = sql.NullTime{Time: delivery.SentAt.UTC(), Valid: true}
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO notification_deliveries (id, notification_id, channel, endpoint_id, status, attempt_count, last_error, sent_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+	`, delivery.ID, delivery.NotificationID, delivery.Channel, delivery.EndpointID, delivery.Status, delivery.AttemptCount, delivery.LastError, sentAt)
+	return err
 }
