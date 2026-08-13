@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import io.github.manugh.xg2g.android.DeviceAuthRepository
+
 import io.github.manugh.xg2g.android.guide.GuideHealthStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -109,10 +109,8 @@ internal class DashboardViewModel(
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            val deviceAuthRepository = DeviceAuthRepository(context)
             val client = DashboardApiClient(
-                baseUrlProvider = baseUrlProvider,
-                deviceAuthRepository = deviceAuthRepository
+                baseUrlProvider = baseUrlProvider
             )
             return DashboardViewModel(client, serverLabelProvider(), authTokenProvider) as T
         }

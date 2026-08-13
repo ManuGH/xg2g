@@ -2,7 +2,7 @@ package io.github.manugh.xg2g.android.dashboard
 
 import android.webkit.CookieManager
 import io.github.manugh.xg2g.android.DeviceAuthReenrollRequiredException
-import io.github.manugh.xg2g.android.DeviceAuthRepository
+
 import io.github.manugh.xg2g.android.DeviceAuthSignInRequiredException
 import io.github.manugh.xg2g.android.guide.GuideAuthRequiredException
 import io.github.manugh.xg2g.android.guide.GuideHealthStatus
@@ -72,7 +72,6 @@ internal data class DashboardDvrStatus(
 internal class DashboardApiClient(
     private val baseUrlProvider: () -> String,
     private val profileIdProvider: () -> String? = { null },
-    private val deviceAuthRepository: DeviceAuthRepository? = null,
     private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addNetworkInterceptor { chain ->
@@ -92,7 +91,6 @@ internal class DashboardApiClient(
     constructor(
         baseUrl: String,
         profileIdProvider: () -> String? = { null },
-        deviceAuthRepository: DeviceAuthRepository? = null,
         cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
         okHttpClient: OkHttpClient = OkHttpClient.Builder()
             .addNetworkInterceptor { chain ->
@@ -111,46 +109,13 @@ internal class DashboardApiClient(
     ) : this(
         baseUrlProvider = { baseUrl },
         profileIdProvider = profileIdProvider,
-        deviceAuthRepository = deviceAuthRepository,
         cookieSession = cookieSession,
         okHttpClient = okHttpClient
     )
 
     private val baseUrl: String get() = baseUrlProvider()
     private suspend fun ensureAuthSession(authToken: String?) {
-        withContext(Dispatchers.IO) {
-            val currentBaseUrl = baseUrl
-            if (currentBaseUrl.isBlank()) {
-                return@withContext
-            }
-            val sessionUrl = apiUrl("auth", "session")
-            val repository = deviceAuthRepository
-            if (repository != null) {
-                try {
-                    repository.ensureAuthSession(currentBaseUrl, authToken)
-                    if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
-                        return@withContext
-                    }
-                } catch (error: DeviceAuthReenrollRequiredException) {
-                    throw GuideAuthRequiredException(410, error.message)
-                } catch (error: DeviceAuthSignInRequiredException) {
-                    throw GuideAuthRequiredException(401, error.message)
-                }
-            }
-
-            if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
-                return@withContext
-            }
-
-            val bearerToken = authToken?.trim().takeIf { !it.isNullOrEmpty() } ?: return@withContext
-            val request = Request.Builder()
-                .url(sessionUrl)
-                .header("Authorization", "Bearer $bearerToken")
-                .post(ByteArray(0).toRequestBody(null))
-                .build()
-
-            execute(request)
-        }
+        // Native REST API requests manage authentication per request
     }
 
     suspend fun fetchHealth(authToken: String?): GuideHealthStatus = withContext(Dispatchers.IO) {

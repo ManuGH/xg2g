@@ -26,7 +26,7 @@ import androidx.lifecycle.lifecycleScope
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.NativeDeviceAuthRepository
-import io.github.manugh.xg2g.android.playback.net.CookieBackedAuthSession
+import io.github.manugh.xg2g.android.auth.NativeDeviceAuthTransport
 import io.github.manugh.xg2g.android.guide.GuideActivity
 import io.github.manugh.xg2g.android.playback.PlaybackSessionRegistry
 import io.github.manugh.xg2g.android.playback.bridge.NativePlaybackBridge
@@ -95,17 +95,13 @@ class MainActivity : AppCompatActivity() {
         val store = DeviceAuthStore(applicationContext)
         val dpopProvider = AndroidKeystoreDPoPProvider()
         val stateMachine = AuthStateMachine(isTvDevice = isTvDevice)
-        val cookieSession = CookieBackedAuthSession()
-        val transport = OkHttpDeviceAuthTransport(cookieSession)
+        val transport = NativeDeviceAuthTransport(dpopProvider)
         NativeDeviceAuthRepository(
             stateStore = store,
             dpopProvider = dpopProvider,
             stateMachine = stateMachine,
             transport = transport
         )
-    }
-    private val deviceAuthRepository by lazy(LazyThreadSafetyMode.NONE) {
-        DeviceAuthRepository(applicationContext)
     }
     private val nativePlaybackBridge by lazy(LazyThreadSafetyMode.NONE) { NativePlaybackBridge(this) }
     private val isTvDevice by lazy(LazyThreadSafetyMode.NONE) { detectTvDevice() }
@@ -279,7 +275,7 @@ class MainActivity : AppCompatActivity() {
         }
         screenUi.clearServerUrlError()
         serverSettingsStore.saveServerUrl(normalizedUrl)
-        deviceAuthRepository.clearPersistedState()
+        nativeDeviceAuthRepository.clearPersistedState()
         sessionAuthToken = null
         return true
     }
@@ -678,7 +674,7 @@ class MainActivity : AppCompatActivity() {
         if (!ServerTargetResolver.isSameOrigin(url, baseUrl)) {
             return url
         }
-        return deviceAuthRepository.prepareWebSession(
+        return nativeDeviceAuthRepository.prepareWebSession(
             baseUrl = baseUrl,
             targetUrl = url,
             legacyAuthToken = sessionAuthToken
@@ -702,7 +698,7 @@ class MainActivity : AppCompatActivity() {
                 TAG,
                 "event=device_auth_state_cleared reason=base_url_changed previousBaseUrl=$existingBaseUrl newBaseUrl=$configuredBaseUrl"
             )
-            deviceAuthRepository.clearPersistedState()
+            nativeDeviceAuthRepository.clearPersistedState()
         }
         if (configuredBaseUrl == null) {
             return
@@ -721,7 +717,7 @@ class MainActivity : AppCompatActivity() {
                 "event=device_auth_launch_credentials_resolved hasGrant=${launchCredentials.hasPersistableGrant()} hasAccessToken=${!launchCredentials.accessToken.isNullOrBlank()} baseUrl=$configuredBaseUrl"
             )
         }
-        deviceAuthRepository.applyLaunchCredentials(configuredBaseUrl, launchCredentials)
+        nativeDeviceAuthRepository.applyLaunchCredentials(configuredBaseUrl, launchCredentials)
         lifecycleScope.launch {
             try {
                 nativeDeviceAuthRepository.hydratePersistedStateOnLaunch(configuredBaseUrl)

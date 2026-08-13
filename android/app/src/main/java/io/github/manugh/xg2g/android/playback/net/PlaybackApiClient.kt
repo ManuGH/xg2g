@@ -4,7 +4,7 @@ import android.content.Context
 import android.util.Log
 import android.util.Base64
 import android.os.Build
-import io.github.manugh.xg2g.android.DeviceAuthRepository
+
 import io.github.manugh.xg2g.android.ServerSettingsStore
 import io.github.manugh.xg2g.android.playback.model.NativeLiveStartResult
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
@@ -29,10 +29,6 @@ internal class PlaybackApiClient(
     private val serverSettingsStore: ServerSettingsStore = ServerSettingsStore(context.applicationContext),
     private val errorMapper: PlaybackErrorMapper = PlaybackErrorMapper(),
     private val cookieSession: CookieBackedAuthSession = CookieBackedAuthSession(),
-    private val deviceAuthRepository: DeviceAuthRepository = DeviceAuthRepository(
-        context = context.applicationContext,
-        cookieSession = cookieSession
-    ),
     private val nativeCapabilities: NativePlaybackCapabilities = NativePlaybackCapabilities.create(context.applicationContext),
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addNetworkInterceptor { chain ->
@@ -51,18 +47,7 @@ internal class PlaybackApiClient(
 ) : PlaybackApi {
 
     override suspend fun ensureAuthSession(authToken: String?) {
-        withContext(Dispatchers.IO) {
-            val sessionUrl = apiUrl("auth", "session")
-            Log.d(
-                TAG,
-                "ensureAuthSession path=${sessionUrl.encodedPath} hasBearer=${!authToken.isNullOrBlank()} hasSessionCookieBefore=${cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)}"
-            )
-            deviceAuthRepository.ensureAuthSession(requireUiBaseUrl().toString(), authToken)
-            Log.d(
-                TAG,
-                "ensureAuthSession completed hasSessionCookieAfter=${cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)}"
-            )
-        }
+        // Native API requests manage authentication directly via DPoP header per request
     }
 
     override suspend fun startLiveIntent(request: NativePlaybackRequest.Live): NativeLiveStartResult = withContext(Dispatchers.IO) {

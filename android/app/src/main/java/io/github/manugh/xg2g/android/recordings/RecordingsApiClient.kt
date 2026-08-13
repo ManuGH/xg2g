@@ -2,7 +2,7 @@ package io.github.manugh.xg2g.android.recordings
 
 import android.webkit.CookieManager
 import io.github.manugh.xg2g.android.DeviceAuthReenrollRequiredException
-import io.github.manugh.xg2g.android.DeviceAuthRepository
+
 import io.github.manugh.xg2g.android.DeviceAuthSignInRequiredException
 import io.github.manugh.xg2g.android.guide.GuideAuthRequiredException
 import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
@@ -22,7 +22,6 @@ import org.json.JSONTokener
 
 internal class RecordingsApiClient(
     private val baseUrlProvider: () -> String,
-    private val deviceAuthRepository: DeviceAuthRepository? = null,
     private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addNetworkInterceptor { chain ->
@@ -37,7 +36,6 @@ internal class RecordingsApiClient(
 ) {
     constructor(
         baseUrl: String,
-        deviceAuthRepository: DeviceAuthRepository? = null,
         cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
         okHttpClient: OkHttpClient = OkHttpClient.Builder()
             .addNetworkInterceptor { chain ->
@@ -51,7 +49,6 @@ internal class RecordingsApiClient(
             .build()
     ) : this(
         baseUrlProvider = { baseUrl },
-        deviceAuthRepository = deviceAuthRepository,
         cookieSession = cookieSession,
         okHttpClient = okHttpClient
     )
@@ -217,49 +214,7 @@ internal class RecordingsApiClient(
     }
 
     private suspend fun ensureAuthSession(authToken: String?) {
-        withContext(Dispatchers.IO) {
-            val currentBaseUrl = baseUrl
-            if (currentBaseUrl.isBlank()) {
-                return@withContext
-            }
-            val sessionUrl = apiUrl("auth", "session")
-            val repository = deviceAuthRepository
-            if (repository != null) {
-                try {
-                    repository.ensureAuthSession(currentBaseUrl, authToken)
-                    if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
-                        return@withContext
-                    }
-                } catch (_: DeviceAuthSignInRequiredException) {
-                } catch (_: DeviceAuthReenrollRequiredException) {
-                }
-            }
-
-            if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
-                return@withContext
-            }
-
-            val token = authToken?.trim()
-            if (token.isNullOrEmpty()) {
-                return@withContext
-            }
-
-            val request = Request.Builder()
-                .url(sessionUrl)
-                .post("{}".toRequestBody(JSON_MEDIA_TYPE))
-                .header("Authorization", "Bearer $token")
-                .build()
-                .withSameOriginHeaders(sessionUrl)
-
-            try {
-                okHttpClient.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        cookieSession.storeCookies(sessionUrl, response.headers)
-                    }
-                }
-            } catch (_: Exception) {
-            }
-        }
+        // Native REST API requests manage authentication per request
     }
 
     private fun apiUrl(vararg segments: String): HttpUrl {

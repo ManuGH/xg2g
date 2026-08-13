@@ -5,7 +5,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import io.github.manugh.xg2g.android.DeviceAuthRepository
+
 import io.github.manugh.xg2g.android.ServerSettingsStore
 import io.github.manugh.xg2g.android.dashboard.DashboardApiClient
 import io.github.manugh.xg2g.android.dashboard.NativeHouseholdProfile
@@ -343,8 +343,7 @@ internal class SettingsViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val store = ServerSettingsStore(context)
             val client = DashboardApiClient(
-                baseUrlProvider = { store.getServerUrl().orEmpty().ifBlank { serverUrl } },
-                deviceAuthRepository = DeviceAuthRepository(context)
+                baseUrlProvider = { store.getServerUrl().orEmpty().ifBlank { serverUrl } }
             )
             val pairingClient = io.github.manugh.xg2g.android.pairing.PairingApiClient(serverUrl)
             return SettingsViewModel(

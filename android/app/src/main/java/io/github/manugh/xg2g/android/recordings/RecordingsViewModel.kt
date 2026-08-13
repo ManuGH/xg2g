@@ -5,7 +5,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import io.github.manugh.xg2g.android.DeviceAuthRepository
+
 import io.github.manugh.xg2g.android.dashboard.ModuleState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -148,8 +148,7 @@ internal class RecordingsViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val client = RecordingsApiClient(
-                baseUrlProvider = baseUrlProvider,
-                deviceAuthRepository = DeviceAuthRepository(context.applicationContext)
+                baseUrlProvider = baseUrlProvider
             )
             return RecordingsViewModel(
                 baseUrl = baseUrlProvider(),

@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import io.github.manugh.xg2g.android.DeviceAuthRepository
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -157,8 +157,7 @@ internal class GuideViewModel(
             val repository = GuideRepository(
                 apiClient = GuideApiClient(
                     baseUrlProvider = baseUrlProvider,
-                    profileIdProvider = { store.getSelectedProfileId() },
-                    deviceAuthRepository = DeviceAuthRepository(context.applicationContext)
+                    profileIdProvider = { store.getSelectedProfileId() }
                 ),
                 authTokenProvider = authTokenProvider
             )

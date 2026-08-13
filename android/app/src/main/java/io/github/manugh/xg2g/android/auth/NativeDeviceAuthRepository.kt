@@ -1,5 +1,6 @@
 package io.github.manugh.xg2g.android.auth
 
+import io.github.manugh.xg2g.android.DeviceAuthLaunchCredentials
 import io.github.manugh.xg2g.android.DeviceAuthTransport
 import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
@@ -100,5 +101,57 @@ internal class NativeDeviceAuthRepository(
                 stateMachine.handleRefreshError(msg, isNetworkError = true, isRevoked = false)
             }
         }
+    }
+
+    fun applyLaunchCredentials(baseUrl: String, credentials: DeviceAuthLaunchCredentials?) {
+        val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
+        if (credentials == null || normalizedBaseUrl.isBlank()) return
+
+        val currentStore = stateStore.load()
+        val jkt = dpopProvider.getJWKThumbprint()
+
+        when {
+            credentials.hasPersistableGrant() -> {
+                val grantId = credentials.deviceGrantId!!.trim()
+                val grant = credentials.deviceGrant!!.trim()
+                val token = credentials.accessToken?.trim()?.takeIf { it.isNotEmpty() }
+                val expiresAt = credentials.accessTokenExpiresAtEpochMs ?: 0L
+
+                val updatedState = PersistedDeviceAuthState(
+                    serverUrl = normalizedBaseUrl,
+                    deviceGrantId = grantId,
+                    deviceGrant = grant,
+                    accessSessionId = currentStore?.accessSessionId,
+                    accessToken = token,
+                    accessTokenExpiresAtEpochMs = expiresAt,
+                    policyVersion = currentStore?.policyVersion,
+                    publishedEndpoints = currentStore?.publishedEndpoints.orEmpty()
+                )
+                stateStore.save(updatedState)
+                if (token != null) {
+                    stateMachine.activateDeviceGrant(grantId, token, jkt, expiresAt)
+                }
+            }
+
+            currentStore != null && !credentials.accessToken.isNullOrBlank() -> {
+                val token = credentials.accessToken.trim()
+                val expiresAt = credentials.accessTokenExpiresAtEpochMs ?: 0L
+                val updatedState = currentStore.copy(
+                    accessToken = token,
+                    accessTokenExpiresAtEpochMs = expiresAt
+                )
+                stateStore.save(updatedState)
+                stateMachine.activateDeviceGrant(currentStore.deviceGrantId, token, jkt, expiresAt)
+            }
+        }
+    }
+
+    fun clearPersistedState() {
+        stateStore.clear()
+        stateMachine.handleRefreshError("Cleared state", isNetworkError = false, isRevoked = true)
+    }
+
+    fun prepareWebSession(baseUrl: String, targetUrl: String, legacyAuthToken: String?): String {
+        return targetUrl
     }
 }
