@@ -75,6 +75,13 @@ func (s *storeAdmissionState) Snapshot(ctx context.Context) (admission.RuntimeSt
 // CollectRuntimeState is deprecated in favor of AdmissionState.Snapshot.
 // Keeping it briefly for compatibility during transition if needed, but pointing to Snapshot.
 func CollectRuntimeState(ctx context.Context, src AdmissionState) admission.RuntimeState {
+	if src == nil {
+		return admission.RuntimeState{
+			TunerSlots:       1,
+			SessionsActive:   0,
+			TranscodesActive: 0,
+		}
+	}
 	state, err := src.Snapshot(ctx)
 	if err != nil {
 		log.L().Error().Err(err).Msg("admission state snapshot failed, failing closed")

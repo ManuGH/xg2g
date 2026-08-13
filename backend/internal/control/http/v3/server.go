@@ -215,6 +215,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		authSessionTTL:       defaultAuthSessionTTL,
 		householdUnlockStore: household.NewInMemoryUnlockStore(),
 		householdUnlockTTL:   cfg.Household.UnlockTTL,
+		householdAdmission:   policy.NewHouseholdResourceAdmission(),
 		profileResolver:      profileResolver,
 		clientAV1Disabled:    clientAV1Disabled,
 		iosNativeHEVCHWMode:  iosNativeHEVCHWMode,

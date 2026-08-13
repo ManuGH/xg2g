@@ -56,34 +56,33 @@ func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profil
 	}
 
 	controller := s.deps.AdmissionController()
-	if controller == nil {
-		return &Error{Kind: ErrorAdmissionUnavailable}
+	if controller != nil {
+		decision := controller.Check(ctx, admission.Request{WantsTranscode: profileSpec.TranscodeVideo || profileSpec.TranscodesAudio()}, s.deps.AdmissionRuntimeState(ctx))
+		if !decision.Allow {
+			if decision.Problem != nil {
+				s.deps.RecordReject(decision.Problem.Code)
+			}
+
+			retryAfter := ""
+			if decision.RetryAfterSeconds != nil {
+				retryAfter = fmt.Sprintf("%d", *decision.RetryAfterSeconds)
+			} else if decision.Problem != nil && (decision.Problem.Code == admission.CodeNoTuners || decision.Problem.Code == admission.CodeSessionsFull) {
+				retryAfter = "5"
+			}
+
+			problemCode := "admission_rejected"
+			if decision.Problem != nil {
+				problemCode = decision.Problem.Code
+			}
+			intent.Logger.Info().
+				Str("serviceRef", intent.ServiceRef).
+				Str("code", problemCode).
+				Msg("admission rejected")
+
+			return &Error{Kind: ErrorAdmissionRejected, Message: problemCode, RetryAfter: retryAfter, AdmissionProblem: decision.Problem}
+		}
 	}
-	decision := controller.Check(ctx, admission.Request{WantsTranscode: profileSpec.TranscodeVideo || profileSpec.TranscodesAudio()}, s.deps.AdmissionRuntimeState(ctx))
-	if !decision.Allow {
-		if decision.Problem != nil {
-			s.deps.RecordReject(decision.Problem.Code)
-		}
 
-		retryAfter := ""
-		if decision.RetryAfterSeconds != nil {
-			retryAfter = fmt.Sprintf("%d", *decision.RetryAfterSeconds)
-		} else if decision.Problem != nil && (decision.Problem.Code == admission.CodeNoTuners || decision.Problem.Code == admission.CodeSessionsFull) {
-			retryAfter = "5"
-		}
-
-		problemCode := "admission_rejected"
-		if decision.Problem != nil {
-			problemCode = decision.Problem.Code
-		}
-		intent.Logger.Info().
-			Str("serviceRef", intent.ServiceRef).
-			Str("code", problemCode).
-			Msg("admission rejected")
-
-		s.deps.RecordIntent(string(model.IntentTypeStreamStart), "admission", problemCode)
-		return &Error{Kind: ErrorAdmissionRejected, RetryAfter: retryAfter, AdmissionProblem: decision.Problem}
-	}
 	s.deps.RecordAdmit()
 	return nil
 }

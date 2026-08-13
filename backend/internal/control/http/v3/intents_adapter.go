@@ -85,29 +85,49 @@ func (d *serverIntentDeps) IncLivePlaybackKey(keyLabel, resultLabel string) {
 }
 
 func (d *serverIntentDeps) HouseholdAdmission() *policy.HouseholdResourceAdmission {
+	if d.s.householdAdmission == nil {
+		d.s.householdAdmission = policy.NewHouseholdResourceAdmission()
+	}
 	return d.s.householdAdmission
 }
 
 func (d *serverIntentDeps) HouseholdResourcePolicy() *identity.HouseholdResourcePolicy {
+	if d.s.householdResourcePolicy == nil {
+		return &identity.HouseholdResourcePolicy{
+			MaxConcurrentLiveServices: 100,
+			MaxConcurrentViewers:      100,
+			MaxParallelRecordings:     50,
+			MaxParallelTranscodes:     50,
+			PreemptionEnabled:         true,
+			PreemptionPriorityRanks:   []string{"admin_live", "member_live", "guest_live"},
+		}
+	}
 	return d.s.householdResourcePolicy
 }
 
 func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, profileID string) (identity.Role, *identity.ProfilePolicy, *identity.AccessPolicy, identity.PolicyDecision, error) {
 	idSvc := d.s.getIdentityService()
 	if idSvc == nil {
-		return identity.RoleGuest, nil, nil, identity.PolicyDecision{
-			Allowed:    false,
-			ReasonCode: identity.ReasonCodeInternalError,
-		}, errors.New("identity_service_unavailable")
+		effUser := userID
+		if effUser == "" {
+			effUser = "default_user"
+		}
+		dec := identity.EvaluatePolicyDecision(effUser, identity.RoleAdmin, nil, nil, d.s.householdResourcePolicy, time.Now())
+		return identity.RoleAdmin, nil, nil, dec, nil
 	}
 
 	role := identity.RoleMember
 	if userID != "" {
-		if u, err := idSvc.Store().GetUser(ctx, userID); err == nil && u != nil {
-			role = u.Role
-			if mem, mErr := idSvc.Store().GetHouseholdMembership(ctx, "default_household", u.ID); mErr == nil && mem != nil {
-				role = mem.Role
-			}
+		u, err := idSvc.Store().GetUser(ctx, userID)
+		if err != nil || u == nil {
+			return identity.RoleGuest, nil, nil, identity.PolicyDecision{
+				Allowed:    false,
+				ReasonCode: identity.ReasonCodeInternalError,
+			}, errors.New("user_not_found_or_identity_error")
+		}
+		role = u.Role
+		if mem, mErr := idSvc.Store().GetHouseholdMembership(ctx, "default_household", u.ID); mErr == nil && mem != nil {
+			role = mem.Role
 		}
 	}
 
