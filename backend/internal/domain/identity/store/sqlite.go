@@ -285,6 +285,7 @@ func (s *SQLiteStore) initSchema(ctx context.Context) error {
 		status TEXT NOT NULL,
 		attempt_count INTEGER NOT NULL DEFAULT 0,
 		last_error TEXT,
+		next_attempt_at TIMESTAMP,
 		sent_at TIMESTAMP
 	);
 
@@ -2170,14 +2171,76 @@ func (s *SQLiteStore) DeletePushSubscription(ctx context.Context, id, userID str
 	return err
 }
 
+func (s *SQLiteStore) DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE endpoint = ?;`, endpoint)
+	return err
+}
+
 func (s *SQLiteStore) RecordNotificationDelivery(ctx context.Context, delivery *identity.NotificationDelivery) error {
-	var sentAt sql.NullTime
+	var sentAt, nextAt sql.NullTime
 	if delivery.SentAt != nil {
 		sentAt = sql.NullTime{Time: delivery.SentAt.UTC(), Valid: true}
 	}
+	if delivery.NextAttemptAt != nil {
+		nextAt = sql.NullTime{Time: delivery.NextAttemptAt.UTC(), Valid: true}
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO notification_deliveries (id, notification_id, channel, endpoint_id, status, attempt_count, last_error, sent_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-	`, delivery.ID, delivery.NotificationID, delivery.Channel, delivery.EndpointID, delivery.Status, delivery.AttemptCount, delivery.LastError, sentAt)
+		INSERT INTO notification_deliveries (id, notification_id, channel, endpoint_id, status, attempt_count, last_error, next_attempt_at, sent_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+	`, delivery.ID, delivery.NotificationID, delivery.Channel, delivery.EndpointID, delivery.Status, delivery.AttemptCount, delivery.LastError, nextAt, sentAt)
+	return err
+}
+
+func (s *SQLiteStore) GetPendingNotificationDeliveries(ctx context.Context, limit int) ([]identity.NotificationDelivery, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, notification_id, channel, endpoint_id, status, attempt_count, last_error, next_attempt_at, sent_at
+		FROM notification_deliveries
+		WHERE status = 'queued' OR (status = 'failed' AND attempt_count < 5 AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
+		LIMIT ?;
+	`, time.Now().UTC(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []identity.NotificationDelivery
+	for rows.Next() {
+		var d identity.NotificationDelivery
+		var le sql.NullString
+		var nextAt, sentAt sql.NullTime
+		if err := rows.Scan(&d.ID, &d.NotificationID, &d.Channel, &d.EndpointID, &d.Status, &d.AttemptCount, &le, &nextAt, &sentAt); err == nil {
+			if le.Valid {
+				d.LastError = le.String
+			}
+			if nextAt.Valid {
+				t := nextAt.Time.UTC()
+				d.NextAttemptAt = &t
+			}
+			if sentAt.Valid {
+				t := sentAt.Time.UTC()
+				d.SentAt = &t
+			}
+			list = append(list, d)
+		}
+	}
+	return list, nil
+}
+
+func (s *SQLiteStore) UpdateNotificationDelivery(ctx context.Context, delivery *identity.NotificationDelivery) error {
+	var sentAt, nextAt sql.NullTime
+	if delivery.SentAt != nil {
+		sentAt = sql.NullTime{Time: delivery.SentAt.UTC(), Valid: true}
+	}
+	if delivery.NextAttemptAt != nil {
+		nextAt = sql.NullTime{Time: delivery.NextAttemptAt.UTC(), Valid: true}
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE notification_deliveries
+		SET status = ?, attempt_count = ?, last_error = ?, next_attempt_at = ?, sent_at = ?
+		WHERE id = ?;
+	`, delivery.Status, delivery.AttemptCount, delivery.LastError, nextAt, sentAt, delivery.ID)
 	return err
 }

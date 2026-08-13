@@ -114,7 +114,10 @@ type HouseholdStore interface {
 	SavePushSubscription(ctx context.Context, sub *PushSubscription) error
 	ListPushSubscriptions(ctx context.Context, householdID, userID string) ([]PushSubscription, error)
 	DeletePushSubscription(ctx context.Context, id, userID string) error
+	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error
 	RecordNotificationDelivery(ctx context.Context, delivery *NotificationDelivery) error
+	GetPendingNotificationDeliveries(ctx context.Context, limit int) ([]NotificationDelivery, error)
+	UpdateNotificationDelivery(ctx context.Context, delivery *NotificationDelivery) error
 
 	PutHouseholdResourcePolicy(ctx context.Context, policy *HouseholdResourcePolicy) error
 	GetHouseholdResourcePolicy(ctx context.Context, householdID string) (*HouseholdResourcePolicy, error)

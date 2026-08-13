@@ -164,11 +164,15 @@ func (s *Server) DeleteNotification(w http.ResponseWriter, r *http.Request) {
 
 // GetVAPIDPublicKey handles GET /api/v3/notifications/vapid-key
 func (s *Server) GetVAPIDPublicKey(w http.ResponseWriter, r *http.Request) {
-	publicVAPIDKey := "BEl62iUYgUivxIbcLqWVmNs0FGH5k2v8JpX9qLmZ5uN6kW9yX_2v8JpX9qLmZ5uN6kW9yX"
+	keys, err := identity.GetOrGenerateVAPIDKeys(".")
+	pubKey := "BEl62iUYgUivxIbcLqWVmNs0FGH5k2v8JpX9qLmZ5uN6kW9yX_2v8JpX9qLmZ5uN6kW9yX"
+	if err == nil && keys != nil && keys.PublicKey != "" {
+		pubKey = keys.PublicKey
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"publicKey": publicVAPIDKey,
+		"publicKey": pubKey,
 	})
 }
 

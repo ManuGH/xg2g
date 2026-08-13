@@ -1231,9 +1231,29 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, profileID, requestT
 					ExpiresAt:      &expiresAt,
 				}
 				_ = s.store.CreateNotification(ctx, notif)
+
+				// Queue WebPush deliveries for active subscriptions of this Admin
+				if subs, sErr := s.store.ListPushSubscriptions(ctx, prof.HouseholdID, m.UserID); sErr == nil {
+					for _, sub := range subs {
+						deliv := &NotificationDelivery{
+							ID:             "deliv_" + generateRandomHex(12),
+							NotificationID: notif.ID,
+							Channel:        "webpush",
+							EndpointID:     sub.Endpoint,
+							Status:         "queued",
+							AttemptCount:   0,
+						}
+						_ = s.store.RecordNotificationDelivery(ctx, deliv)
+					}
+				}
 			}
 		}
 	}
+
+	// Trigger async background push worker (decoupled from HTTP request context)
+	go func() {
+		_ = s.ProcessNotificationQueue(context.Background())
+	}()
 
 	return req, nil
 }

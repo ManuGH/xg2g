@@ -139,7 +139,7 @@ export const NotificationCenter: React.FC = () => {
   };
 
   const handleToggleWebPush = async () => {
-    if (!('Notification' in window)) {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       alert('Ihr Browser unterstützt keine WebPush-Benachrichtigungen.');
       return;
     }
@@ -148,24 +148,33 @@ export const NotificationCenter: React.FC = () => {
       const perm = await Notification.requestPermission();
       if (perm === 'granted') {
         setWebPushEnabled(true);
+        const reg = await navigator.serviceWorker.register('/sw.js');
         const vapidRes = await fetch('/api/v3/notifications/vapid-key');
         if (vapidRes.ok) {
           const { publicKey } = await vapidRes.json();
+          let sub = await reg.pushManager.getSubscription();
+          if (!sub) {
+            sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: publicKey,
+            });
+          }
+          const subJson = sub.toJSON();
           await fetch('/api/v3/notifications/push-subscriptions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              endpoint: `https://webpush.browser.net/sub/${Math.random().toString(36).substring(7)}`,
+              endpoint: sub.endpoint,
               keys: {
-                p256dh: publicKey,
-                auth: 'auth_token_sample',
+                p256dh: subJson.keys?.p256dh || '',
+                auth: subJson.keys?.auth || '',
               },
             }),
           });
         }
       }
-    } catch {
-      // Ignore error
+    } catch (e) {
+      console.error('[NotificationCenter] Push activation error:', e);
     }
   };
 

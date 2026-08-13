@@ -32,6 +32,7 @@ type NotificationDelivery struct {
 	Status         string     `json:"status"` // "queued" | "sent" | "failed"
 	AttemptCount   int        `json:"attemptCount"`
 	LastError      string     `json:"lastError,omitempty"`
+	NextAttemptAt  *time.Time `json:"nextAttemptAt,omitempty"`
 	SentAt         *time.Time `json:"sentAt,omitempty"`
 }
 
