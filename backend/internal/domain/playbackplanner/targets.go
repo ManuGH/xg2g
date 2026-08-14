@@ -127,20 +127,20 @@ func explicitlyRequestsHEVCProfile(requestedIntent string) bool {
 }
 
 const (
-	// AV1 Compatible (Default / Efficient tier)
+	// AV1 Compatible (Default / Mobile & Bandwidth-efficient tier)
 	AV1Compatible1080pKbps = 5090
 	AV1Compatible720pKbps  = 2340
 	AV1Compatible480pKbps  = 1130
 
-	// AV1 Quality (High Quality / Broad visual transparency tier)
+	// AV1 Quality (High-Quality Home tier)
 	AV1Quality1080pKbps = 12000
 	AV1Quality720pKbps  = 5500
 	AV1Quality480pKbps  = 2500
 
-	// AV1 Repair / Cinema (Maximum / Full source fidelity preservation tier)
-	AV1Cinema1080pKbps = 18000
-	AV1Cinema720pKbps  = 8000
-	AV1Cinema480pKbps  = 4000
+	// AV1 Repair (Stream Recovery Transcode tier)
+	AV1Repair1080pKbps = 8000
+	AV1Repair720pKbps  = 4500
+	AV1Repair480pKbps  = 2000
 
 	// Deprecated legacy aliases
 	AV1MaxBitrate1080pKbps = AV1Compatible1080pKbps
@@ -167,17 +167,6 @@ func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 		}
 		switch intent {
 		case playbackprofile.IntentQuality:
-			if ev.SourceTruth.BitrateKbps > 0 {
-				// Source-aware AV1 Quality Control: AV1 achieves visual transparency at ~70% of source H.264/MPEG-2 bitrate
-				sourceBudget := int(float64(ev.SourceTruth.BitrateKbps) * 0.70)
-				if height > 0 && height <= 480 {
-					return clampInt(sourceBudget, 1500, 3500)
-				}
-				if height > 0 && height <= 720 {
-					return clampInt(sourceBudget, 3000, 7000)
-				}
-				return clampInt(sourceBudget, 6000, 14000)
-			}
 			if height > 0 && height <= 480 {
 				return AV1Quality480pKbps
 			}
@@ -187,23 +176,13 @@ func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 			return AV1Quality1080pKbps
 
 		case playbackprofile.IntentRepair:
-			if ev.SourceTruth.BitrateKbps > 0 {
-				// Cinema / Maximum Fidelity Preservation: match source bitrate to preserve full DVB fidelity
-				if height > 0 && height <= 480 {
-					return clampInt(ev.SourceTruth.BitrateKbps, 2000, 5000)
-				}
-				if height > 0 && height <= 720 {
-					return clampInt(ev.SourceTruth.BitrateKbps, 5000, 10000)
-				}
-				return clampInt(ev.SourceTruth.BitrateKbps, 10000, 20000)
-			}
 			if height > 0 && height <= 480 {
-				return AV1Cinema480pKbps
+				return AV1Repair480pKbps
 			}
 			if height > 0 && height <= 720 {
-				return AV1Cinema720pKbps
+				return AV1Repair720pKbps
 			}
-			return AV1Cinema1080pKbps
+			return AV1Repair1080pKbps
 
 		default: // IntentCompatible or unspecified (Mobile / Bandwidth-efficient)
 			if height > 0 && height <= 480 {

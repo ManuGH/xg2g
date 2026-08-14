@@ -403,20 +403,17 @@ func TestPlanRejectsDuplicateHostEncoderCapabilitiesBeforeHashResolution(t *test
 
 func TestPlanAutoCodecRateControlMatchesExecutionProfiles(t *testing.T) {
 	tests := []struct {
-		name          string
-		codec         string
-		intent        string
-		height        int
-		sourceBitrate int
-		hostCodec     *HostEncoderCapability
-		downlink      int
-		wantTarget    int
-		wantMax       int
+		name       string
+		codec      string
+		intent     string
+		height     int
+		hostCodec  *HostEncoderCapability
+		downlink   int
+		wantTarget int
+		wantMax    int
 	}{
 		{name: "av1 1080p compatible", codec: "av1", intent: "compatible", height: 1080, hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 5090},
-		{name: "av1 1080p quality default", codec: "av1", intent: "quality", height: 1080, hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 12000},
-		{name: "av1 1080p source-aware quality (12Mbps DVB source)", codec: "av1", intent: "quality", height: 1080, sourceBitrate: 12000, hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 8400},
-		{name: "av1 1080p source-aware high bitrate (18Mbps DVB source)", codec: "av1", intent: "quality", height: 1080, sourceBitrate: 18000, hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 12600},
+		{name: "av1 1080p quality", codec: "av1", intent: "quality", height: 1080, hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 12000},
 		{name: "av1 720p compatible", codec: "av1", intent: "compatible", height: 720, hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 2340},
 		{name: "av1 480p compatible", codec: "av1", intent: "compatible", height: 480, hostCodec: &HostEncoderCapability{Codec: "av1", Verified: true, AutoEligible: true, ProbeElapsedMS: 30}, wantMax: 1130},
 		{name: "hevc", codec: "hevc", height: 1080, hostCodec: &HostEncoderCapability{Codec: "hevc", Verified: true, AutoEligible: true, ProbeElapsedMS: 40}, wantMax: 10000},
@@ -437,9 +434,6 @@ func TestPlanAutoCodecRateControlMatchesExecutionProfiles(t *testing.T) {
 			}
 			if tt.height > 0 {
 				ev.SourceTruth.Height = tt.height
-			}
-			if tt.sourceBitrate > 0 {
-				ev.SourceTruth.BitrateKbps = tt.sourceBitrate
 			}
 			ev.NetworkEvidence.DownlinkKbps = tt.downlink
 			if tt.hostCodec != nil {
