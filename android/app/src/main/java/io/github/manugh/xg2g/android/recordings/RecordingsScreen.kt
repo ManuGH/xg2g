@@ -788,12 +788,12 @@ private fun RecordingThumbnailImage(
                 val store = io.github.manugh.xg2g.android.DeviceAuthStore(appContext)
                 val dpopProvider = io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
                 val client = io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient(store, dpopProvider)
-                val urlStr = "$baseUrl/api/v3/recordings/${recordingId}/thumbnail.jpg"
-                val httpUrl = urlStr.toHttpUrlOrNull()
-                if (httpUrl == null) {
+                val parsedBaseUrl = baseUrl.toHttpUrlOrNull()
+                if (parsedBaseUrl == null) {
                     hasError = true
                     return@withContext
                 }
+                val httpUrl = recordingThumbnailUrl(parsedBaseUrl, recordingId)
 
                 val request = Request.Builder()
                     .url(httpUrl)

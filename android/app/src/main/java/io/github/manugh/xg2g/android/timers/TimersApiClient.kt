@@ -2,6 +2,7 @@ package io.github.manugh.xg2g.android.timers
 
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.apiV3Url
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
@@ -122,14 +123,7 @@ internal class TimersApiClient(
     private fun apiUrl(vararg segments: String): HttpUrl {
         val parsed = baseUrl.toHttpUrlOrNull()
             ?: throw IllegalArgumentException("Invalid server base URL: $baseUrl")
-        val builder = parsed.newBuilder()
-            .encodedPath("/api/v3/")
-            .query(null)
-            .fragment(null)
-        for (segment in segments) {
-            builder.addPathSegment(segment)
-        }
-        return builder.build()
+        return apiV3Url(parsed, *segments)
     }
 
     companion object {
