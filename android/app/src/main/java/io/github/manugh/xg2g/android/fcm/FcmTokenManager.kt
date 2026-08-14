@@ -1,6 +1,7 @@
 package io.github.manugh.xg2g.android.fcm
 
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.apiV3Url
 import io.github.manugh.xg2g.android.auth.DPoPProvider
 import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
@@ -29,9 +30,7 @@ internal class FcmTokenManager(
         bearerToken: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
         val parsed = baseUrl.toHttpUrlOrNull() ?: return@withContext false
-        val url = parsed.newBuilder()
-            .encodedPath("/api/v3/notifications/push-subscriptions")
-            .build()
+        val url = apiV3Url(parsed, "notifications", "push-subscriptions")
 
         val json = JSONObject().apply {
             put("endpoint", fcmToken)

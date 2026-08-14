@@ -2,6 +2,7 @@ package io.github.manugh.xg2g.android.guide
 
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.apiV3UrlBuilder
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
@@ -277,13 +278,7 @@ internal class GuideApiClient(
     private fun apiUrl(vararg segments: String): HttpUrl = apiUrlBuilder(*segments).build()
 
     private fun apiUrlBuilder(vararg segments: String): HttpUrl.Builder =
-        requireBaseUrl().newBuilder()
-            .encodedPath("/api/v3/")
-            .query(null)
-            .fragment(null)
-            .apply {
-                segments.forEach(::addPathSegment)
-            }
+        apiV3UrlBuilder(requireBaseUrl(), *segments)
 
     private fun requireBaseUrl(): HttpUrl =
         baseUrl.toHttpUrlOrNull()
