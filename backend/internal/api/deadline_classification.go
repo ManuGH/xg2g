@@ -177,7 +177,9 @@ func ClassifyRoute(routerID string, variant ConfigVariant, method string, patter
 	// 1. Unbounded Streaming routes (ONLY GET requests for SSE sessions/events and stream.mp4)
 	// NOTE: SSE sessions/events route requires explicit Flush capability (RequiresFlush = true).
 	if method == http.MethodGet {
-		if strings.HasSuffix(pattern, "/events") {
+		// Both are Server-Sent Event endpoints: they hold the connection open and flush
+		// incrementally, so an API-bounded write deadline would cut the stream.
+		if strings.HasSuffix(pattern, "/events") || strings.HasSuffix(pattern, "/notifications/stream") {
 			return RoutePolicy{
 				Class:                RouteDeadlineStreaming,
 				RequiresFlush:        true,

@@ -52,40 +52,6 @@ type CreateProfileRequest struct {
 	ExitPIN         string   `json:"exitPin,omitempty"`
 }
 
-func (s *Server) mountHouseholdRoutes(r chi.Router) {
-	r.Post("/auth/login/password", s.PasswordLogin)
-	r.Post("/auth/invitations/redeem", s.RedeemInvitation)
-
-	r.Group(func(pr chi.Router) {
-		pr.Use(s.authMiddleware)
-		pr.Post("/auth/invitations", s.CreateInvitation)
-		pr.Get("/auth/effective-permissions", s.GetEffectivePermissions)
-		pr.Get("/profiles", s.ListProfiles)
-		pr.Post("/profiles", s.CreateProfile)
-		pr.Get("/profiles/{id}", s.GetProfile)
-		pr.Delete("/profiles/{id}", s.DeleteProfile)
-
-		pr.Get("/household/policies/access", s.GetAccessPolicy)
-		pr.Post("/household/policies/access", s.CreateAccessPolicy)
-		pr.Post("/household/policies/access/revoke", s.RevokeAccessPolicy)
-		pr.Get("/household/approvals", s.ListApprovalRequests)
-		pr.Post("/household/approvals", s.CreateApprovalRequest)
-		pr.Post("/household/approvals/{id}/approve", s.ApproveApprovalRequest)
-		pr.Post("/household/approvals/{id}/deny", s.DenyApprovalRequest)
-		pr.Get("/household/resource-policy", s.GetHouseholdResourcePolicy)
-		pr.Put("/household/resource-policy", s.PutHouseholdResourcePolicy)
-		pr.Post("/sessions/revoke-user-sessions", s.RevokeUserSessions)
-
-		pr.Get("/notifications", s.ListNotifications)
-		pr.Get("/notifications/stream", s.StreamNotifications)
-		pr.Post("/notifications/mark-read", s.MarkNotificationRead)
-		pr.Post("/notifications/mark-all-read", s.MarkAllNotificationsRead)
-		pr.Delete("/notifications/{id}", s.DeleteNotification)
-		pr.Get("/notifications/vapid-key", s.GetVAPIDPublicKey)
-		pr.Post("/notifications/push-subscriptions", s.SavePushSubscription)
-	})
-}
-
 // PasswordLogin handles POST /api/v3/auth/login/password
 func (s *Server) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()

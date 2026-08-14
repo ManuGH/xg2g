@@ -176,6 +176,26 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 		{http.MethodPost, "/profiles"},
 		{http.MethodGet, "/profiles/{id}"},
 		{http.MethodDelete, "/profiles/{id}"},
+		{http.MethodPost, "/auth/device/grant/start"},
+		{http.MethodPost, "/auth/device/grant/finish"},
+		{http.MethodPost, "/auth/device/refresh"},
+		{http.MethodPost, "/sessions/revoke-user-sessions"},
+		{http.MethodGet, "/household/policies/access"},
+		{http.MethodPost, "/household/policies/access"},
+		{http.MethodPost, "/household/policies/access/revoke"},
+		{http.MethodGet, "/household/approvals"},
+		{http.MethodPost, "/household/approvals"},
+		{http.MethodPost, "/household/approvals/{id}/approve"},
+		{http.MethodPost, "/household/approvals/{id}/deny"},
+		{http.MethodGet, "/household/resource-policy"},
+		{http.MethodPut, "/household/resource-policy"},
+		{http.MethodGet, "/notifications"},
+		{http.MethodGet, "/notifications/stream"},
+		{http.MethodPost, "/notifications/mark-read"},
+		{http.MethodPost, "/notifications/mark-all-read"},
+		{http.MethodDelete, "/notifications/{id}"},
+		{http.MethodGet, "/notifications/vapid-key"},
+		{http.MethodPost, "/notifications/push-subscriptions"},
 	}
 	for _, route := range v3Routes {
 		add("v3", route.method, "/api/v3"+route.path, apiPolicy)
@@ -188,6 +208,7 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 		baseline[key] = policy
 	}
 	setV3Policy(http.MethodGet, "/sessions/{sessionID}/events", ssePolicy)
+	setV3Policy(http.MethodGet, "/notifications/stream", ssePolicy)
 	setV3Policy(http.MethodGet, "/sessions/{sessionID}/hls/{filename}", mediaPolicy)
 	setV3Policy(http.MethodHead, "/sessions/{sessionID}/hls/{filename}", mediaPolicy)
 	setV3Policy(http.MethodGet, "/sessions/{sessionID}/hls/{variant}/{filename}", mediaPolicy)
@@ -235,8 +256,8 @@ func TestCanonicalBaselineParity(t *testing.T) {
 
 	expected := getPhase1CanonicalBaselineMap()
 	actual := snapshotAsMap(snapshot)
-	require.Len(t, expected, 126)
-	require.Len(t, actual, 126)
+	require.Len(t, expected, 146)
+	require.Len(t, actual, 146)
 	require.NoError(t, validatePolicyBindingParity(actual, expected))
 
 	counts := map[string]int{}
@@ -244,7 +265,7 @@ func TestCanonicalBaselineParity(t *testing.T) {
 		counts[key.RouterID]++
 	}
 	require.Equal(t, 26, counts["outer"])
-	require.Equal(t, 100, counts["v3"])
+	require.Equal(t, 120, counts["v3"])
 }
 
 func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
@@ -267,7 +288,7 @@ func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, snapshot, err := s.buildRouterWithBindings(test.variant)
 			require.NoError(t, err)
-			require.Equal(t, 126, snapshot.Len())
+			require.Equal(t, 146, snapshot.Len())
 
 			for key, expected := range map[RegistrationKey]RoutePolicy{
 				{RouterID: "outer", Method: http.MethodGet, Pattern: "/ui/*"}:  test.uiGet,
@@ -348,7 +369,7 @@ func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 		delete(actual, v3Key)
 		actual[RegistrationKey{RouterID: "v3", Method: known.Method, Pattern: known.Pattern}] = outerPolicy
 		actual[RegistrationKey{RouterID: "outer", Method: v3Key.Method, Pattern: v3Key.Pattern}] = v3Policy
-		require.Len(t, actual, 126)
+		require.Len(t, actual, 146)
 		require.Error(t, validatePolicyBindingParity(actual, expected))
 	})
 }
