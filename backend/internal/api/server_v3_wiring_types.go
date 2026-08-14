@@ -10,6 +10,7 @@ import (
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/health"
@@ -27,6 +28,7 @@ type v3DependencySnapshot struct {
 	vodManager          *vod.Manager
 	epgCache            *epg.TV
 	healthManager       *health.Manager
+	identityService     *identity.Service
 	recordingsService   recservice.Service
 	requestShutdown     func(context.Context) error
 	preflightProvider   v3.PreflightProvider
