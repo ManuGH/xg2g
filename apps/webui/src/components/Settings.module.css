@@ -202,6 +202,62 @@
   min-width: 220px;
 }
 
+.pairingGroup {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--surface-stage);
+  border: 1px solid var(--border-base);
+  border-radius: 8px;
+}
+
+.pairingLabel {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.pairingHint {
+  margin-top: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.pairingControls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.pairingInput {
+  width: 180px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-elevated);
+  border-radius: 6px;
+  background: var(--surface-shell-strong);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.pairingInput:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
+}
+
+.pairingFeedback {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.pairingFeedbackSuccess {
+  color: var(--status-success);
+}
+
+.pairingFeedbackError {
+  color: var(--status-error);
+}
+
 .group label {
   display: block;
   margin-bottom: 8px;
@@ -664,6 +720,10 @@
   }
 
   .onboardingButton {
+    width: 100%;
+  }
+
+  .pairingInput {
     width: 100%;
   }
 
