@@ -2,9 +2,9 @@ package v3
 
 import (
 	"context"
-
-	"fmt"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
@@ -26,6 +26,9 @@ type admissionSessionStore interface {
 type storeAdmissionState struct {
 	store      admissionSessionStore
 	tunerCount atomic.Int64
+	mu         sync.RWMutex
+	lastState  admission.RuntimeState
+	lastUpdate time.Time
 }
 
 func newStoreAdmissionState(store admissionSessionStore, tunerCount int) *storeAdmissionState {
@@ -42,13 +45,42 @@ func (s *storeAdmissionState) SetTunerCount(tunerCount int) {
 }
 
 func (s *storeAdmissionState) Snapshot(ctx context.Context) (admission.RuntimeState, error) {
-	if s.store == nil {
-		return admission.RuntimeState{}, fmt.Errorf("admission state store is nil")
+	tuners := int(s.tunerCount.Load())
+	if tuners <= 0 {
+		tuners = 1
 	}
 
-	sessions, err := s.store.ListSessions(ctx)
+	if s.store == nil {
+		return admission.RuntimeState{
+			TunerSlots:       tuners,
+			SessionsActive:   0,
+			TranscodesActive: 0,
+		}, nil
+	}
+
+	// Use an isolated 2-second timeout context so aggressive caller context cancellation doesn't abort DB queries
+	queryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	sessions, err := s.store.ListSessions(queryCtx)
 	if err != nil {
-		return admission.RuntimeState{}, fmt.Errorf("failed to list sessions: %w", err)
+		s.mu.RLock()
+		cached := s.lastState
+		cachedTime := s.lastUpdate
+		s.mu.RUnlock()
+
+		// Fallback to last known good snapshot if recent (< 15 seconds) to handle transient DB locks gracefully
+		if !cachedTime.IsZero() && time.Since(cachedTime) < 15*time.Second {
+			log.L().Warn().Err(err).Time("last_update", cachedTime).Msg("admission state DB read failed, falling back to cached snapshot")
+			return cached, nil
+		}
+
+		log.L().Warn().Err(err).Msg("admission state DB read failed without fresh cache, using baseline admission state")
+		return admission.RuntimeState{
+			TunerSlots:       tuners,
+			SessionsActive:   0,
+			TranscodesActive: 0,
+		}, nil
 	}
 
 	activeCount := 0
@@ -63,17 +95,22 @@ func (s *storeAdmissionState) Snapshot(ctx context.Context) (admission.RuntimeSt
 		}
 	}
 
-	availTuners := max(int(s.tunerCount.Load())-activeCount, 0)
-
-	return admission.RuntimeState{
+	availTuners := max(tuners-activeCount, 0)
+	state := admission.RuntimeState{
 		TunerSlots:       availTuners,
 		SessionsActive:   activeCount,
 		TranscodesActive: transcodeCount,
-	}, nil
+	}
+
+	s.mu.Lock()
+	s.lastState = state
+	s.lastUpdate = time.Now()
+	s.mu.Unlock()
+
+	return state, nil
 }
 
 // CollectRuntimeState is deprecated in favor of AdmissionState.Snapshot.
-// Keeping it briefly for compatibility during transition if needed, but pointing to Snapshot.
 func CollectRuntimeState(ctx context.Context, src AdmissionState) admission.RuntimeState {
 	if src == nil {
 		return admission.RuntimeState{
