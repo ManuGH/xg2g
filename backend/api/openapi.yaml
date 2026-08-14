@@ -6429,7 +6429,6 @@ paths:
           description: File not found
         "503":
           description: V3 control plane unavailable
-
   /sessions/{sessionID}/hls/{variant}/{filename}:
     parameters:
       - name: sessionID
@@ -6506,4 +6505,3 @@ paths:
           description: File not found
         "503":
           description: V3 control plane unavailable
-
