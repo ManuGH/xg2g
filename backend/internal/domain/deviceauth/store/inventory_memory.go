@@ -13,14 +13,14 @@ import (
 
 // CountUnboundDeviceAuth mirrors the SQLite census so tests and the memory
 // backend answer identically. See ADR-032 Phase 0.
-func (m *MemoryStateStore) CountUnboundDeviceAuth(_ context.Context, now time.Time) (model.UnboundInventory, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+func (s *MemoryStateStore) CountUnboundDeviceAuth(_ context.Context, now time.Time) (model.UnboundInventory, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	inventory := model.UnboundInventory{}
 	owners := make(map[string]struct{})
 
-	for _, device := range m.devices {
+	for _, device := range s.devices {
 		if device.RevokedAt != nil {
 			continue
 		}
@@ -29,7 +29,7 @@ func (m *MemoryStateStore) CountUnboundDeviceAuth(_ context.Context, now time.Ti
 	}
 	inventory.Owners = len(owners)
 
-	for _, grant := range m.grants {
+	for _, grant := range s.grants {
 		if grant.RevokedAt != nil || !grant.ExpiresAt.After(now) {
 			continue
 		}
@@ -47,7 +47,7 @@ func (m *MemoryStateStore) CountUnboundDeviceAuth(_ context.Context, now time.Ti
 		}
 	}
 
-	for _, session := range m.sessions {
+	for _, session := range s.sessions {
 		if session.RevokedAt != nil || !session.ExpiresAt.After(now) {
 			continue
 		}
