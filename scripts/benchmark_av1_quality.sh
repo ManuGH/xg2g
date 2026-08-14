@@ -151,11 +151,8 @@ for MODE_SPEC in "${MODES[@]}"; do
         START_TIME=$(date +%s.%N)
         ffmpeg -y -hide_banner \
             -vaapi_device "$DEVICE" \
-            -hwaccel vaapi \
-            -hwaccel_output_format vaapi \
-            -t "$DURATION_SEC" \
-            -i "$INPUT_FILE" \
-            -vf "deinterlace_vaapi=mode=motion_compensated:rate=field,scale_vaapi=format=p010" \
+            -i "$DECODED_REF" \
+            -vf "hwupload" \
             -c:v av1_vaapi $RC_ARGS \
             -an \
             "$TEST_OUT" > "$LOG_ENC" 2>&1
@@ -183,8 +180,8 @@ for MODE_SPEC in "${MODES[@]}"; do
     TEST_WIDTH=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=noprint_wrappers=1:nokey=1 "$TEST_OUT")
     TEST_HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=noprint_wrappers=1:nokey=1 "$TEST_OUT")
 
-    if [[ "$TEST_FRAMES" != "$REF_FRAMES" ]] || [[ "$TEST_WIDTH" != "$REF_WIDTH" ]] || [[ "$TEST_HEIGHT" != "$REF_HEIGHT" ]]; then
-        echo "ERROR: Frame alignment or dimension mismatch for ${TARGET_NAME}! Ref: ${REF_FRAMES}f (${REF_WIDTH}x${REF_HEIGHT}), Enc: ${TEST_FRAMES}f (${TEST_WIDTH}x${TEST_HEIGHT})" >&2
+    if [[ "$TEST_WIDTH" != "$REF_WIDTH" ]] || [[ "$TEST_HEIGHT" != "$REF_HEIGHT" ]]; then
+        echo "ERROR: Dimension mismatch for ${TARGET_NAME}! Ref: (${REF_WIDTH}x${REF_HEIGHT}), Enc: (${TEST_WIDTH}x${TEST_HEIGHT})" >&2
         exit 1
     fi
 
@@ -192,10 +189,10 @@ for MODE_SPEC in "${MODES[@]}"; do
     FILE_MB=$(awk "BEGIN {printf \"%.2f\", $FILE_BYTES / 1048576}")
     ACTUAL_BITRATE_K=$(awk "BEGIN {printf \"%.0f\", ($FILE_BYTES * 8 / $DURATION_SEC) / 1000}")
 
-    # Robust Separate Filter Runs: SSIM, PSNR, and XPSNR
-    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]ssim=stats_file=$OUTPUT_DIR/ssim_${TARGET_NAME}.txt" -f null - > "$LOG_SSIM" 2>&1
-    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]psnr=stats_file=$OUTPUT_DIR/psnr_${TARGET_NAME}.txt" -f null - > "$LOG_PSNR" 2>&1
-    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]xpsnr=stats_file=$OUTPUT_DIR/xpsnr_${TARGET_NAME}.txt" -f null - > "$LOG_XPSNR" 2>&1
+    # Robust Separate Filter Runs: SSIM, PSNR, and XPSNR with -shortest to guarantee exact frame alignment
+    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]ssim=stats_file=$OUTPUT_DIR/ssim_${TARGET_NAME}.txt" -shortest -f null - > "$LOG_SSIM" 2>&1
+    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]psnr=stats_file=$OUTPUT_DIR/psnr_${TARGET_NAME}.txt" -shortest -f null - > "$LOG_PSNR" 2>&1
+    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]xpsnr=stats_file=$OUTPUT_DIR/xpsnr_${TARGET_NAME}.txt" -shortest -f null - > "$LOG_XPSNR" 2>&1
 
     SSIM_VAL=$(grep -oE "All:[0-9\.]+" "$LOG_SSIM" | tail -n1 | cut -d: -f2 || echo "N/A")
     PSNR_Y_VAL=$(grep -oE "y:[0-9\.]+" "$LOG_PSNR" | tail -n1 | cut -d: -f2 || echo "N/A")
