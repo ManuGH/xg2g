@@ -7,7 +7,7 @@ set -euo pipefail
 
 SHOW_HELP=false
 INPUT_FILE=""
-DURATION_SEC=15
+DURATION_SEC=30
 OUTPUT_DIR="./benchmark_results"
 DEVICE="/dev/dri/renderD128"
 
