@@ -429,4 +429,106 @@ describe('Settings', () => {
     expect(screen.queryByRole('link', { name: 'Open in xg2g App' })).not.toBeInTheDocument();
     expect(screen.getByText('Native clients cannot be handed an externally valid origin because no public_https endpoint allows native access.')).toBeInTheDocument();
   });
+
+  // Published endpoints are origin-only today (the backend rejects any endpoint
+  // URL with a path), so a sub-path endpoint cannot currently reach the WebUI.
+  // These tests pin the derivation model regardless: `/ui/` is a sibling of
+  // `/api/v3` below the deployment root, so it must be derived downward from the
+  // endpoint instead of overwriting its path.
+  it('keeps the deployment sub-path of the contract native endpoint in base_url', async () => {
+    getSystemConfig.mockResolvedValue({
+      data: {
+        openWebIF: { baseUrl: 'http://receiver.local' },
+        streaming: { deliveryPolicy: 'universal' },
+      },
+    });
+    getSystemConnectivity.mockResolvedValue({
+      data: createConnectivityContract({
+        selections: {
+          web: {},
+          webPublic: {},
+          native: {
+            endpoint: {
+              url: 'https://tv.example.net/xg2g',
+              kind: 'local_https',
+              priority: 10,
+              tlsMode: 'required',
+              allowPairing: true,
+              allowStreaming: true,
+              allowWeb: true,
+              allowNative: true,
+              advertiseReason: 'sub-path deployment',
+              source: 'config',
+            },
+            reason: 'highest-priority endpoint with allow_native=true',
+          },
+          nativePublic: {},
+          pairing: {},
+          pairingPublic: {},
+          streaming: {},
+        },
+      }),
+    });
+    getSystemScanStatus.mockResolvedValue({
+      data: {
+        state: 'idle',
+        scannedChannels: 0,
+        totalChannels: 20,
+        updatedCount: 0,
+      },
+    });
+
+    renderWithQueryClient(['/settings?section=android-tv']);
+
+    const link = await screen.findByRole('link', { name: 'Open in xg2g App' });
+    const href = link.getAttribute('href') ?? '';
+    expect(href.startsWith('xg2g://connect?')).toBe(true);
+    const params = new URLSearchParams(href.slice('xg2g://connect?'.length));
+    expect(params.get('base_url')).toBe('https://tv.example.net/xg2g/ui/');
+    expect(screen.getByText('https://tv.example.net/xg2g/ui/')).toBeInTheDocument();
+  });
+
+  it('keeps the deployment sub-path of the configured native endpoint in base_url', async () => {
+    getSystemConfig.mockResolvedValue({
+      data: {
+        openWebIF: { baseUrl: 'http://receiver.local' },
+        connectivity: {
+          profile: 'lan',
+          allowLocalHTTP: false,
+          publishedEndpoints: [
+            {
+              url: 'https://tv.example.net/xg2g/',
+              kind: 'local_https',
+              priority: 10,
+              tlsMode: 'required',
+              allowPairing: true,
+              allowStreaming: true,
+              allowWeb: true,
+              allowNative: true,
+              advertiseReason: 'sub-path deployment',
+              source: 'config',
+            },
+          ],
+        },
+        streaming: { deliveryPolicy: 'universal' },
+      },
+    });
+    getSystemConnectivity.mockResolvedValue({
+      data: createConnectivityContract(),
+    });
+    getSystemScanStatus.mockResolvedValue({
+      data: {
+        state: 'idle',
+        scannedChannels: 0,
+        totalChannels: 20,
+        updatedCount: 0,
+      },
+    });
+
+    renderWithQueryClient(['/settings?section=android-tv']);
+
+    const link = await screen.findByRole('link', { name: 'Open in xg2g App' });
+    const params = new URLSearchParams((link.getAttribute('href') ?? '').slice('xg2g://connect?'.length));
+    expect(params.get('base_url')).toBe('https://tv.example.net/xg2g/ui/');
+  });
 });

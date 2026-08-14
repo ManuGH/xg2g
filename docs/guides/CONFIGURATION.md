@@ -443,6 +443,12 @@ connectivity:
       advertiseReason: "split-dns lan tls"
 ```
 
+Each `url` must be a bare origin (`scheme://host[:port]`, optionally with a
+trailing `/`). Paths, queries, and fragments are rejected at startup, so xg2g
+cannot be published under a deployment sub-path such as
+`https://tv.example.net/xg2g/` — proxy the site root instead. See
+[Public Deployment Contract](../ops/PUBLIC_DEPLOYMENT_CONTRACT.md#published-endpoint-urls-are-origin-only).
+
 Clients receive this ordered list from the backend during pairing/device session
 flows and the WebUI can reuse it for Android launch setup.
 

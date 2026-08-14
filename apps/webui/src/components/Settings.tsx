@@ -55,7 +55,33 @@ function isSettingsTool(value: string | null): value is SettingsTool {
   return value !== null && SETTINGS_TOOLS.includes(value as SettingsTool);
 }
 
-function resolveAndroidTvBaseUrl(
+// Deployment assumption: published endpoints are ORIGIN-ONLY, so xg2g is not
+// supported under a deployment sub-path today. The backend rejects any endpoint
+// URL carrying a path ("only origin URLs are allowed", see
+// backend/internal/domain/connectivity/published_endpoints.go `parseEndpointURL`)
+// and strips the path again during canonicalization, and every reference
+// topology in docs/ops/PUBLIC_DEPLOYMENT_CONTRACT.md proxies the site root.
+//
+// `ui/` is nevertheless derived *relative* to the endpoint rather than by
+// resolving the absolute path `/ui/`, so that assumption stays non-load-bearing:
+// an absolute path silently replaces the deployment root (`https://host/xg2g/`
+// would become `https://host/ui/`), which would hand the native client a URL
+// that does not exist. `/ui` and `/api/v3` are siblings below the same root
+// (backend/internal/api/server_routes_wiring.go, `V3BaseURL`), so both must be
+// derived downward from it — never by overwriting one another's path.
+function deriveUiUrl(endpointUrl: string): string {
+  try {
+    const root = new URL(endpointUrl);
+    if (!root.pathname.endsWith('/')) {
+      root.pathname = `${root.pathname}/`;
+    }
+    return new URL('ui/', root).toString();
+  } catch {
+    return '';
+  }
+}
+
+export function resolveAndroidTvBaseUrl(
   config: AppConfig | null,
   contract: ConnectivityContract | null,
 ): string {
@@ -63,11 +89,7 @@ function resolveAndroidTvBaseUrl(
     ? contract.selections.nativePublic.endpoint?.url
     : contract?.selections.native.endpoint?.url;
   if (contractNativeUrl) {
-    try {
-      return new URL('/ui/', contractNativeUrl).toString();
-    } catch {
-      return '';
-    }
+    return deriveUiUrl(contractNativeUrl);
   }
 
   const profile = config?.connectivity?.profile ?? 'lan';
@@ -75,11 +97,7 @@ function resolveAndroidTvBaseUrl(
     ?.find((endpoint) => endpoint.allowNative && (profile === 'lan' || endpoint.kind === 'public_https'))
     ?.url;
   if (configuredNativeUrl) {
-    try {
-      return new URL('/ui/', configuredNativeUrl).toString();
-    } catch {
-      return '';
-    }
+    return deriveUiUrl(configuredNativeUrl);
   }
 
   if (profile !== 'lan' || contract?.public) {
@@ -89,7 +107,7 @@ function resolveAndroidTvBaseUrl(
   if (typeof window === 'undefined') {
     return '';
   }
-  return new URL('/ui/', window.location.origin).toString();
+  return deriveUiUrl(window.location.origin);
 }
 
 function Settings() {
