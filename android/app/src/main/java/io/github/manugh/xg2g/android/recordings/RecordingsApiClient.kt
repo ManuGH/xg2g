@@ -2,6 +2,7 @@ package io.github.manugh.xg2g.android.recordings
 
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.apiV3Url
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
@@ -155,9 +156,8 @@ internal class RecordingsApiClient(
         parseRecordingItems(itemsArr)
     }
 
-    fun buildThumbnailUrl(recordingId: String): String {
-        return apiUrl("recordings", recordingId, "thumbnail.jpg").toString()
-    }
+    fun buildThumbnailUrl(recordingId: String): String =
+        recordingThumbnailUrl(requireBaseUrl(), recordingId).toString()
 
     private fun parseRecordingItems(arr: JSONArray): List<RecordingItem> {
         val list = mutableListOf<RecordingItem>()
@@ -199,18 +199,12 @@ internal class RecordingsApiClient(
         // Native REST API requests manage authentication per request
     }
 
-    private fun apiUrl(vararg segments: String): HttpUrl {
-        val parsed = baseUrl.toHttpUrlOrNull()
+    private fun apiUrl(vararg segments: String): HttpUrl =
+        apiV3Url(requireBaseUrl(), *segments)
+
+    private fun requireBaseUrl(): HttpUrl =
+        baseUrl.toHttpUrlOrNull()
             ?: throw IllegalArgumentException("Invalid server base URL: $baseUrl")
-        val builder = parsed.newBuilder()
-            .encodedPath("/api/v3/")
-            .query(null)
-            .fragment(null)
-        for (segment in segments) {
-            builder.addPathSegment(segment)
-        }
-        return builder.build()
-    }
 
     companion object {
         private const val SESSION_COOKIE_NAME = "xg2g_session"

@@ -88,7 +88,7 @@ internal class DeviceAuthRepository(
         }
         val normalizedBaseUrl = normalizedBaseUrl(baseUrl) ?: return
         val uiBaseUrl = normalizedBaseUrl.toHttpUrlOrNull() ?: return
-        val sessionUrl = apiUrl(uiBaseUrl, "auth", "session")
+        val sessionUrl = apiV3Url(uiBaseUrl, "auth", "session")
         val deviceState = currentState(normalizedBaseUrl)
         val hasSessionCookie = cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)
         if (deviceState == null && hasSessionCookie) {
@@ -172,7 +172,7 @@ internal class DeviceAuthRepository(
         val normalizedBaseUrl = normalizedBaseUrl(baseUrl) ?: return targetUrl
         val uiBaseUrl = normalizedBaseUrl.toHttpUrlOrNull() ?: return targetUrl
         val targetPath = resolveTargetPath(uiBaseUrl, targetUrl)
-        val sessionUrl = apiUrl(uiBaseUrl, "auth", "session")
+        val sessionUrl = apiV3Url(uiBaseUrl, "auth", "session")
         val deviceState = currentState(normalizedBaseUrl)
 
         if (deviceState != null) {
@@ -437,7 +437,7 @@ internal class DeviceAuthRepository(
             preparedSessionCookieBaseUrl = null
         }
         cookieSession.clearSessionCookie(
-            url = apiUrl(uiBaseUrl, "auth", "session"),
+            url = apiV3Url(uiBaseUrl, "auth", "session"),
             cookieName = SESSION_COOKIE_NAME,
             cookiePath = SESSION_COOKIE_PATH
         )
@@ -524,16 +524,6 @@ internal class DeviceAuthRepository(
         }
         return uiBaseUrl.resolveAgainst(locationPath)
     }
-
-    private fun apiUrl(baseUrl: HttpUrl, vararg segments: String): HttpUrl =
-        baseUrl.newBuilder()
-            .encodedPath("/api/v3/")
-            .query(null)
-            .fragment(null)
-            .apply {
-                segments.forEach(::addPathSegment)
-            }
-            .build()
 
     private fun isSameOrigin(candidate: HttpUrl, baseUrl: HttpUrl): Boolean {
         return candidate.scheme == baseUrl.scheme &&
@@ -664,7 +654,7 @@ internal class OkHttpDeviceAuthTransport(
     ): RefreshedDeviceSession = withContext(Dispatchers.IO) {
         Log.i(TAG, "action=refresh_session path=/api/v3/auth/device/session")
         val request = Request.Builder()
-            .url(apiUrl(uiBaseUrl, "auth", "device", "session"))
+            .url(apiV3Url(uiBaseUrl, "auth", "device", "session"))
             .post(
                 JSONObject()
                     .put("deviceGrantId", deviceGrantId)
@@ -697,7 +687,7 @@ internal class OkHttpDeviceAuthTransport(
         withContext(Dispatchers.IO) {
             Log.i(TAG, "action=create_cookie_session path=/api/v3/auth/session")
             val request = Request.Builder()
-                .url(apiUrl(uiBaseUrl, "auth", "session"))
+                .url(apiV3Url(uiBaseUrl, "auth", "session"))
                 .header("Authorization", "Bearer $bearerToken")
                 .post(ByteArray(0).toRequestBody(null))
                 .build()
@@ -719,7 +709,7 @@ internal class OkHttpDeviceAuthTransport(
     ): StartedWebBootstrap = withContext(Dispatchers.IO) {
         Log.i(TAG, "action=start_web_bootstrap path=/api/v3/auth/web-bootstrap targetPath=$targetPath")
         val request = Request.Builder()
-            .url(apiUrl(uiBaseUrl, "auth", "web-bootstrap"))
+            .url(apiV3Url(uiBaseUrl, "auth", "web-bootstrap"))
             .header("Authorization", "Bearer $accessToken")
             .post(
                 JSONObject()
@@ -777,16 +767,6 @@ internal class OkHttpDeviceAuthTransport(
             cookieSession.storeCookies(request.url, response.headers)
         }
     }
-
-    private fun apiUrl(baseUrl: HttpUrl, vararg segments: String): HttpUrl =
-        baseUrl.newBuilder()
-            .encodedPath("/api/v3/")
-            .query(null)
-            .fragment(null)
-            .apply {
-                segments.forEach(::addPathSegment)
-            }
-            .build()
 
     private fun parseHttpInstant(value: String): Long =
         ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)
