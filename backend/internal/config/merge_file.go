@@ -29,6 +29,9 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 	}
 
 	l.mergeFileConfigGenerated(dst, src)
+	if src.Android.APKPath != "" {
+		dst.AndroidAPKPath = expandEnv(src.Android.APKPath)
+	}
 
 	if err := l.mergeFileEnigma2Aliases(dst, src); err != nil {
 		return err

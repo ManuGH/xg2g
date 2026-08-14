@@ -31,7 +31,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const hlsStartupArtifactWaitTimeout = 5 * time.Second
+const (
+	hlsStartupArtifactWaitTimeout  = 5 * time.Second
+	nativeCopyPlaylistReadyTimeout = 20 * time.Second
+)
 
 const (
 	hlsReasonHeader           = "X-XG2G-Reason"
@@ -42,10 +45,10 @@ const (
 
 var pdtRe = regexp.MustCompile(`^#EXT-X-PROGRAM-DATE-TIME:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)(Z|[+-]\d{4})\s*$`)
 var safeHLSSessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-var safeHLSSegmentRe = regexp.MustCompile(`^seg_[A-Za-z0-9_-]+\.(?:ts|m4s)$`)
-var safeHLSLegacySegmentRe = regexp.MustCompile(`^stream[A-Za-z0-9_-]*\.ts$`)
-var safeHLSPlaylistRe = regexp.MustCompile(`^(?:index|(?:stream|audio)[A-Za-z0-9_-]*)\.m3u8$`)
-var safeHLSInitRe = regexp.MustCompile(`^init[A-Za-z0-9_-]*\.mp4$`)
+var safeHLSSegmentRe = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)?(?:seg_[A-Za-z0-9_-]+\.(?:ts|m4s)|index\d*\.ts)$`)
+var safeHLSLegacySegmentRe = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)?stream[A-Za-z0-9_-]*\.ts$`)
+var safeHLSPlaylistRe = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)?(?:master|index|(?:stream|audio)[A-Za-z0-9_-]*)\.m3u8$`)
+var safeHLSInitRe = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)?init[A-Za-z0-9_-]*\.mp4$`)
 
 const (
 	minPlaylistAccessUpdateInterval = time.Second
@@ -104,7 +107,8 @@ func validateRequest(w http.ResponseWriter, sessionID, filename string) (hlsRequ
 	}
 
 	cleanName := filepath.Base(filename)
-	if cleanName != filename || filename == "." || filename == ".." || strings.Contains(filename, "\\") {
+	relPath := filepath.Clean(filename)
+	if filepath.IsAbs(filename) || strings.HasPrefix(relPath, "..") || filename == "." || filename == ".." || strings.Contains(filename, "\\") {
 		http.Error(w, "invalid filename path", http.StatusBadRequest)
 		return hlsRequest{}, false
 	}
@@ -337,6 +341,48 @@ func resolveArtifact(hlsRoot string, req hlsRequest) (filePath, legacyFilePath s
 
 func isStartupHLSState(state model.SessionState) bool {
 	return state == model.SessionNew || state == model.SessionStarting || state == model.SessionPriming
+}
+
+func shouldHoldAndroidTVNativeCopyPlaylist(req hlsRequest, rec *model.SessionRecord) bool {
+	return req.isPlaylist && rec != nil && isStartupHLSState(rec.State) &&
+		!rec.Profile.TranscodeVideo &&
+		strings.EqualFold(sessionPlaybackClientFamily(rec), "android_tv_native")
+}
+
+func awaitAndroidTVNativeCopyReady(ctx context.Context, store HLSStore, rec *model.SessionRecord, timeout time.Duration) (*model.SessionRecord, bool) {
+	if rec == nil || !isStartupHLSState(rec.State) {
+		return rec, rec != nil && rec.State == model.SessionReady
+	}
+	if timeout <= 0 {
+		return rec, false
+	}
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	latest := rec
+	for {
+		select {
+		case <-ctx.Done():
+			return latest, false
+		case <-timer.C:
+			return latest, false
+		case <-ticker.C:
+			updated, err := store.GetSession(ctx, rec.SessionID)
+			if err != nil || updated == nil {
+				continue
+			}
+			latest = updated
+			if updated.State == model.SessionReady || updated.State == model.SessionDraining {
+				return updated, true
+			}
+			if updated.State.IsTerminal() {
+				return updated, false
+			}
+		}
+	}
 }
 
 func shouldPollMissingArtifact(req hlsRequest, rec *model.SessionRecord) bool {
@@ -649,6 +695,28 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 		}
 		http.Error(w, message, statusCode)
 		return
+	}
+
+	// Native copy streams inherit the broadcaster's GOP cadence. Their first
+	// playlist can therefore contain only a short tune-in fragment followed by
+	// multi-second keyframe gaps. Media3 would consume that fragment immediately
+	// and repeatedly hit the live edge. Hold only this native-copy playlist until
+	// the normal READY gate has verified three complete segments. Transcodes have
+	// a fixed one-second cadence and keep their fast first-playlist path; browser
+	// clients retain their existing startup behavior.
+	if shouldHoldAndroidTVNativeCopyPlaylist(req, rec) {
+		var ready bool
+		rec, ready = awaitAndroidTVNativeCopyReady(r.Context(), store, rec, nativeCopyPlaylistReadyTimeout)
+		if !ready {
+			w.Header().Set("Cache-Control", "no-store")
+			if rec != nil && rec.State.IsTerminal() {
+				http.Error(w, "stream ended", http.StatusGone)
+				return
+			}
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "stream starting: building native copy headroom", http.StatusServiceUnavailable)
+			return
+		}
 	}
 
 	touchPlaylistAccessTime(r.Context(), store, req, rec)

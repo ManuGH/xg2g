@@ -84,3 +84,24 @@ func TestIsStartupHardeningDetail(t *testing.T) {
 		}
 	}
 }
+
+func TestStartupRecovery_HardwareABRFailoverToCPU(t *testing.T) {
+	vaapiABR := model.ProfileSpec{
+		Name:           "hq25",
+		TranscodeVideo: true,
+		EnableABR:      true,
+		HWAccel:        "vaapi",
+	}
+
+	next, promote := startupRecoveryProfileWithResolver(
+		vaapiABR, model.RPackagerFailed, "playlist not ready timeout (last reason: playlist file missing or empty)", nil)
+	if !promote {
+		t.Fatal("a VAAPI ABR startup failure must trigger a recovery attempt")
+	}
+	if next.HWAccel != "" {
+		t.Fatalf("expected HWAccel to be cleared on recovery, got %q", next.HWAccel)
+	}
+	if !next.EnableABR || !next.TranscodeVideo {
+		t.Fatalf("expected ABR transcode to remain active, got EnableABR=%v TranscodeVideo=%v", next.EnableABR, next.TranscodeVideo)
+	}
+}

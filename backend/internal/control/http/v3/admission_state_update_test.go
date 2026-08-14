@@ -2,6 +2,7 @@ package v3
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -52,5 +53,57 @@ func TestUpdateConfigRefreshesAdmissionTunerCountWithActiveSessions(t *testing.T
 	state := CollectRuntimeState(context.Background(), srv.admissionState)
 	if state.TunerSlots != 2 {
 		t.Fatalf("expected active sessions to reduce refreshed tuner slots to 2, got %d", state.TunerSlots)
+	}
+}
+
+type failingAdmissionSessionStore struct {
+	fail     bool
+	sessions []*model.SessionRecord
+}
+
+func (s *failingAdmissionSessionStore) ListSessions(context.Context) ([]*model.SessionRecord, error) {
+	if s.fail {
+		return nil, fmt.Errorf("simulated sqlite read error")
+	}
+	return s.sessions, nil
+}
+
+func TestAdmissionStateResilience_CachedFallbackAndBaseline(t *testing.T) {
+	store := &failingAdmissionSessionStore{
+		fail: false,
+		sessions: []*model.SessionRecord{
+			{State: model.SessionReady},
+		},
+	}
+	adm := newStoreAdmissionState(store, 4)
+
+	// First read succeeds and populates cache
+	state1, err := adm.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("first snapshot failed: %v", err)
+	}
+	if state1.TunerSlots != 3 || state1.SessionsActive != 1 {
+		t.Fatalf("expected 3 available tuners and 1 active session, got tuners=%d active=%d", state1.TunerSlots, state1.SessionsActive)
+	}
+
+	// Now simulate DB failure -> should return cached state seamlessly
+	store.fail = true
+	state2, err := adm.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("snapshot during transient error failed: %v", err)
+	}
+	if state2.TunerSlots != 3 || state2.SessionsActive != 1 {
+		t.Fatalf("expected cached state tuners=3 active=1 during DB error, got tuners=%d active=%d", state2.TunerSlots, state2.SessionsActive)
+	}
+
+	// Un-cached store failure -> should return baseline state (TunerSlots=4) instead of failing closed (-1)
+	freshStore := &failingAdmissionSessionStore{fail: true}
+	freshAdm := newStoreAdmissionState(freshStore, 4)
+	state3, err := freshAdm.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("snapshot on un-cached failing store failed: %v", err)
+	}
+	if state3.TunerSlots != 4 || state3.SessionsActive != 0 {
+		t.Fatalf("expected baseline tuners=4 active=0 on fresh failing store, got tuners=%d active=%d", state3.TunerSlots, state3.SessionsActive)
 	}
 }

@@ -12,8 +12,6 @@
 package libc // import "modernc.org/libc"
 
 import (
-	"math"
-	"math/bits"
 	"unsafe"
 
 	"modernc.org/libc/errno"
@@ -63,12 +61,7 @@ func Xcalloc(t *TLS, n, size types.Size_t) uintptr {
 	if __ccgo_strace {
 		trc("t=%v n=%v size=%v, (%v:)", t, n, size, origin(2))
 	}
-	hi, rq := bits.Mul(uint(n), uint(size))
-	if hi != 0 || rq > math.MaxInt {
-		t.setErrno(errno.ENOMEM)
-		return 0
-	}
-	return Xmalloc(t, types.Size_t(rq))
+	return Xmalloc(t, n*size)
 }
 
 // void *realloc(void *ptr, size_t size);
@@ -99,9 +92,6 @@ func Xfree(t *TLS, p uintptr) {
 }
 
 func UsableSize(p uintptr) types.Size_t {
-	if p == 0 {
-		return 0
-	}
 	return types.Size_t(*(*uintptr)(unsafe.Pointer(p - uintptrSize)))
 }
 

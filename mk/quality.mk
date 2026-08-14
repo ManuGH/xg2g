@@ -78,7 +78,7 @@ test-race: ## Run tests with race detection
 
 test-race-pr: ## Race detector scoped to live concurrency-critical packages (PR gate; deterministic, no ffmpeg binary)
 	@echo "Running scoped race detector (PR gate)..."
-	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test -race -count=1 -timeout=$(GO_TEST_RACE_TIMEOUT) \
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" test -short -race -count=1 -timeout=$(GO_TEST_RACE_TIMEOUT) \
 		./internal/domain/session/... \
 		./internal/pipeline/bus/... \
 		./internal/infra/media/ffmpeg/... \

@@ -6,6 +6,7 @@ import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 internal object PlaybackSessionRegistry {
     private val stateStore = PlaybackStateStore()
@@ -44,5 +45,9 @@ internal class PlaybackStateStore(
 
     fun set(value: NativePlaybackState) {
         _state.value = value
+    }
+
+    fun update(transform: (NativePlaybackState) -> NativePlaybackState) {
+        _state.update(transform)
     }
 }

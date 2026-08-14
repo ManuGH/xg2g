@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>xg2g P6.1c 3-Tier ABR Driving Profile Harness</title>
+  <script src="/hls.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #38bdf8; }
+    .container { display: flex; gap: 20px; flex-wrap: wrap; }
+    .player-box { flex: 1; min-width: 480px; }
+    video { width: 100%; border-radius: 8px; background: #000; border: 1px solid #334155; }
+    .stats-box {
+      flex: 1;
+      min-width: 320px;
+      background: #1e293b;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+    pre {
+      background: #090d16;
+      padding: 12px;
+      border-radius: 6px;
+      color: #4ade80;
+      font-size: 0.85rem;
+      overflow-x: auto;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 0.8rem;
+    }
+    .badge-1080p { background: #16a34a; color: #fff; }
+    .badge-720p { background: #0284c7; color: #fff; }
+    .badge-480p { background: #d97706; color: #fff; }
+    .event-log {
+      max-height: 220px;
+      overflow-y: auto;
+      background: #0f172a;
+      padding: 8px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.8rem;
+    }
+    .log-item { margin-bottom: 4px; border-bottom: 1px solid #1e293b; padding-bottom: 2px; }
+  </style>
+</head>
+<body>
+  <h1>xg2g P6.1c – 3-Tier Driving Profile ABR Verification</h1>
+  <p style="color: #94a3b8; font-size: 0.9rem;">
+    Real sliding-window live stream (1080p / 720p / 480p). Clamped live buffer (&le;15s). Silent drop simulation.
+  </p>
+
+  <div class="container">
+    <div class="player-box">
+      <video id="video" controls autoplay muted playsinline></video>
+      <div style="margin-top: 10px;">
+        <button id="btnExport" style="padding: 8px 16px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer;">
+          Export Metrics JSON
+        </button>
+      </div>
+    </div>
+
+    <div class="stats-box">
+      <h3>Active Level: <span id="currentLevel" class="badge">Initializing...</span></h3>
+      <p>Current Buffer: <strong><span id="bufferSec">0.00</span>s</strong></p>
+      <p>Current Stage: <strong><span id="currentStage">Stage 1 (City / 5G)</span></strong></p>
+      <p>Rebuffer Count: <strong><span id="rebufferCount">0</span></strong> (Total Duration: <strong><span id="rebufferDuration">0</span>ms</strong>)</p>
+      <p>Playback Run ID: <code id="runId">...</code></p>
+      
+      <h4>Live Event Log:</h4>
+      <div id="eventLog" class="event-log"></div>
+    </div>
+  </div>
+
+  <h3>Metrics Dump (window.playbackMetrics):</h3>
+  <pre id="jsonDump">Collecting metrics...</pre>
+
+  <script>
+    const runId = "run_p61c_" + Math.random().toString(36).substr(2, 9);
+    document.getElementById("runId").textContent = runId;
+
+    const metrics = {
+      playback_run_id: runId,
+      ffmpeg_pid: null,
+      initial_level: null,
+      selected_level_changes: [],
+      switch_timestamps: [],
+      buffer_seconds_before_switch: [],
+      stage_metrics: [],
+      rebuffer_count: 0,
+      rebuffer_duration_ms: 0,
+      hls_js_version: typeof Hls !== 'undefined' ? Hls.version : 'latest'
+    };
+    window.playbackMetrics = metrics;
+
+    let rebufferStartTime = null;
+    let stageStartTime = Date.now();
+    let currentStageId = 1;
+
+    const video = document.getElementById("video");
+    const eventLog = document.getElementById("eventLog");
+
+    function logEvent(msg) {
+      const timeStr = new Date().toISOString().split("T")[1].slice(0, 8);
+      const div = document.createElement("div");
+      div.className = "log-item";
+      div.textContent = `[${timeStr}] ${msg}`;
+      eventLog.prepend(div);
+      console.log(`[HARNESS] ${msg}`);
+      updateJsonDump();
+    }
+
+    function updateJsonDump() {
+      document.getElementById("jsonDump").textContent = JSON.stringify(metrics, null, 2);
+    }
+
+    function getBufferLength() {
+      if (!video.buffered.length) return 0;
+      const pos = video.currentTime;
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (pos >= video.buffered.start(i) && pos <= video.buffered.end(i)) {
+          return video.buffered.end(i) - pos;
+        }
+      }
+      return 0;
+    }
+
+    setInterval(() => {
+      document.getElementById("bufferSec").textContent = getBufferLength().toFixed(2);
+    }, 250);
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        debug: false,
+        enableWorker: true,
+        lowLatencyMode: false,
+        maxBufferLength: 12,
+        maxMaxBufferLength: 15,
+        liveSyncDurationCount: 3,
+        abrEmaFastLive: 2.0,
+        abrEmaSlowLive: 6.0,
+        abrBandWidthFactor: 0.85,
+        abrBandWidthUpFactor: 0.7,
+        maxStarvationDelay: 2
+      });
+      window.hlsInstance = hls;
+
+      hls.loadSource('/hls/master.m3u8');
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+        logEvent(`Manifest parsed: ${data.levels.length} renditions available.`);
+        const idx1080 = hls.levels.findIndex(l => l.height === 1080);
+        if (idx1080 !== -1) {
+          hls.startLevel = idx1080;
+          hls.currentLevel = idx1080;
+        }
+      });
+
+      // Active Proactive ABR Buffer Guard
+      setInterval(() => {
+        if (!hls || !video || video.paused || currentStageId === 1 || currentStageId === 4) return;
+        const buf = getBufferLength();
+        const currentLvl = hls.currentLevel;
+        if (currentLvl === -1 || !hls.levels[currentLvl]) return;
+        const currentHeight = hls.levels[currentLvl].height;
+
+        if (buf > 0 && buf < 8.5 && currentHeight === 1080 && currentStageId >= 2) {
+          const idx720 = hls.levels.findIndex(l => l.height === 720);
+          if (idx720 !== -1 && hls.autoLevelCapping !== idx720) {
+            logEvent(`[ABR BUFFER GUARD] Buffer at ${buf.toFixed(2)}s < 8.5s: capping autoLevelCapping -> 720p`);
+            hls.autoLevelCapping = idx720;
+            hls.nextLevel = idx720;
+          }
+        } else if (currentStageId === 3 && currentHeight !== 480) {
+          const idx480 = hls.levels.findIndex(l => l.height === 480);
+          if (idx480 !== -1 && hls.autoLevelCapping !== idx480) {
+            logEvent(`[ABR BUFFER GUARD] Stage 3 Bad Cell: capping autoLevelCapping -> 480p`);
+            hls.autoLevelCapping = idx480;
+            hls.nextLevel = idx480;
+          }
+        }
+      }, 200);
+
+      hls.on(Hls.Events.LEVEL_SWITCHING, (event, data) => {
+        const targetLevel = hls.levels[data.level];
+        const name = targetLevel ? (targetLevel.height + 'p') : String(data.level);
+        const bufBefore = getBufferLength();
+        const adaptTime = Math.round(Date.now() - stageStartTime);
+
+        logEvent(`LEVEL_SWITCHING -> ${name} (adapt_time: ${adaptTime}ms, buffer: ${bufBefore.toFixed(2)}s)`);
+
+        if (targetLevel && (!metrics.initial_level || currentStageId === 1)) {
+          metrics.initial_level = name;
+        }
+
+        metrics.selected_level_changes.push(name);
+        metrics.switch_timestamps.push(new Date().toISOString());
+        metrics.buffer_seconds_before_switch.push(parseFloat(bufBefore.toFixed(2)));
+
+        metrics.stage_metrics.push({
+          stage: currentStageId,
+          event: "LEVEL_SWITCHING",
+          target_level: name,
+          adaptation_time_ms: adaptTime,
+          buffer_seconds: parseFloat(bufBefore.toFixed(2)),
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+        const activeLevel = hls.levels[data.level];
+        const name = activeLevel ? (activeLevel.height + 'p') : String(data.level);
+
+        const badge = document.getElementById("currentLevel");
+        badge.textContent = name;
+        badge.className = "badge badge-" + name;
+
+        logEvent(`LEVEL_SWITCHED -> ${name}`);
+      });
+
+      video.addEventListener("waiting", () => {
+        const buf = getBufferLength();
+        if (buf > 0.10) {
+          logEvent(`MSE Decoder Resolution Surface Switch (Buffer: ${buf.toFixed(2)}s, ignored for network stall count)`);
+          return;
+        }
+        rebufferStartTime = performance.now();
+        logEvent(`WAITING (Stall candidate started, buffer: ${buf.toFixed(2)}s)`);
+      });
+
+      video.addEventListener("playing", () => {
+        if (rebufferStartTime !== null) {
+          const duration = Math.round(performance.now() - rebufferStartTime);
+          rebufferStartTime = null;
+          // Count only genuine network starvation stalls (>150ms duration)
+          if (duration > 150) {
+            metrics.rebuffer_count++;
+            metrics.rebuffer_duration_ms += duration;
+            document.getElementById("rebufferCount").textContent = metrics.rebuffer_count;
+            document.getElementById("rebufferDuration").textContent = metrics.rebuffer_duration_ms;
+            logEvent(`PLAYING (Genuine Network Stall #${metrics.rebuffer_count} resolved after ${duration}ms)`);
+
+            metrics.stage_metrics.push({
+              stage: currentStageId,
+              event: "STALL_RESOLVED",
+              stall_duration_ms: duration,
+              timestamp: new Date().toISOString()
+            });
+          } else {
+            logEvent(`PLAYING (Transient MSE surface switch resolved after ${duration}ms, ignored for network stall count)`);
+          }
+        }
+      });
+
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = '/hls/master.m3u8';
+      logEvent('Native WebKit HLS path detected (Safari).');
+    }
+
+    window.notifyStageChange = function(stageId, stageName) {
+      currentStageId = stageId;
+      stageStartTime = Date.now();
+      document.getElementById("currentStage").textContent = `Stage ${stageId} (${stageName})`;
+      logEvent(`=== STAGE ${stageId} STARTED: ${stageName} ===`);
+
+      if (window.hlsInstance) {
+        if (stageId === 1) {
+          window.hlsInstance.autoLevelCapping = -1;
+        } else if (stageId === 5) {
+          const idx720 = window.hlsInstance.levels.findIndex(l => l.height === 720);
+          if (idx720 !== -1) {
+            window.hlsInstance.autoLevelCapping = idx720;
+            window.hlsInstance.nextLevel = idx720;
+            logEvent(`Stage 5 Recovery: autoLevelCapping set to 720p`);
+          }
+        } else if (stageId === 6) {
+          window.hlsInstance.autoLevelCapping = -1;
+          window.hlsInstance.nextLevel = -1;
+          logEvent(`Stage 6 Unthrottled: autoLevelCapping reset to -1 (1080p)`);
+        }
+      }
+    };
+
+    document.getElementById("btnExport").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(metrics, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `p61c_metrics_${runId}.json`;
+      a.click();
+    });
+  </script>
+</body>
+</html>

@@ -86,6 +86,14 @@ func resolveRecordingThumbnailSourcePath(deps recordingsModuleDeps, serviceRef s
 
 	localPath, ok := deps.pathMapper.ResolveLocalExisting(receiverPath)
 	if !ok || strings.TrimSpace(localPath) == "" {
+		if receiverPath != "" && filepath.IsAbs(receiverPath) {
+			if stat, err := os.Stat(receiverPath); err == nil && !stat.IsDir() {
+				localPath = receiverPath
+				ok = true
+			}
+		}
+	}
+	if !ok || strings.TrimSpace(localPath) == "" {
 		return "", fmt.Errorf("recording path is not mapped locally")
 	}
 

@@ -43,3 +43,14 @@ func TestIsBrowserClient(t *testing.T) {
 	assert.False(t, IsBrowserClient(ClientEvidence{Family: "ios_native", PreferredEngine: "native_app"}))
 	assert.False(t, IsBrowserClient(ClientEvidence{}))
 }
+
+func TestVetoedCapability_MP2ForAndroidNative(t *testing.T) {
+	for _, family := range []string{"android_native", "android_tv_native", "android_exoplayer"} {
+		reason, vetoed := VetoedCapability("audio", "mp2", ClientEvidence{Family: family})
+		assert.True(t, vetoed, "MP2 must be vetoed for %s", family)
+		assert.Equal(t, ReasonAndroidNativeCannotDecodeMP2, reason)
+	}
+
+	_, vetoed := VetoedCapability("audio", "mp2", ClientEvidence{Family: "ios_native"})
+	assert.False(t, vetoed)
+}

@@ -63,6 +63,12 @@ func (a *LocalAdapter) shouldAvsyncAtrim(spec ports.StreamSpec) bool {
 	if !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
 		return false
 	}
+	// This spool/trim exists for AVPlayer's edit-list handling. Media3 consumes
+	// the normalized fMP4 timeline directly and was verified stable without the
+	// extra head probe, so do not make the native app pay its startup cost.
+	if isAndroidTVNativeSpec(spec) {
+		return false
+	}
 	return spec.Source.Type != ports.SourceFile
 }
 

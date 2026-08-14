@@ -13,6 +13,7 @@ import (
 	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
 	v3deviceauth "github.com/ManuGH/xg2g/internal/control/http/v3/deviceauth"
+	"github.com/ManuGH/xg2g/internal/control/http/v3/dpop"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
 	v3playbackinfo "github.com/ManuGH/xg2g/internal/control/http/v3/playbackinfo"
@@ -27,6 +28,7 @@ import (
 	decisionaudit "github.com/ManuGH/xg2g/internal/control/recordings/decision"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/entitlements"
 	"github.com/ManuGH/xg2g/internal/epg"
@@ -38,6 +40,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/bus"
 	"github.com/ManuGH/xg2g/internal/pipeline/hardware"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	"github.com/ManuGH/xg2g/internal/pipeline/resume"
 	"github.com/ManuGH/xg2g/internal/pipeline/store"
@@ -61,67 +64,70 @@ type Server struct {
 	// Opaque household unlock store for xg2g_household_unlock cookies.
 	householdUnlockStore household.UnlockStore
 	householdUnlockTTL   time.Duration
+	identityService      *identity.Service
 
 	// Security
 	JWTSecret []byte // HMAC-SHA256 key for playbackDecisionToken (SSOT)
 
 	// Core Components
-	v3Bus                  bus.Bus
-	v3Store                SessionStateStore
-	storeRegistry          store.StoreRegistry
-	resumeStore            resume.Store
-	v3Scan                 ChannelScanner
-	decisionAudit          decisionaudit.EventSink
-	capabilityRegistry     capreg.Store
-	entitlementService     *entitlements.Service
-	householdService       *household.Service
-	receiptService         *receipts.Service
-	owiFactory             receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
-	recordingPathMapper    *recinfra.PathMapper
-	channelManager         *channels.Manager
-	seriesManager          *dvr.Manager
-	seriesEngine           *dvr.SeriesEngine
-	vodManager             *vod.Manager
-	resolver               recservice.Resolver // Strict V4 Resolver (Domain)
-	artifacts              artifacts.Resolver
-	epgCache               *epg.TV // EPG Cache reference
-	owiClient              *openwebif.Client
-	owiEpoch               uint64
-	receiverAbout          *openwebif.AboutInfo
-	receiverAboutAt        time.Time
-	receiverAboutEpoch     uint64
-	receiverLocations      []openwebif.MovieLocation
-	receiverLocationsAt    time.Time
-	receiverLocationsEpoch uint64
-	configManager          *config.Manager
-	configMu               sync.Mutex // Serializes configuration updates
-	epgCacheTime           time.Time
-	epgCacheMTime          time.Time
-	epgSfg                 singleflight.Group
-	receiverSfg            singleflight.Group
-	libraryService         *library.Service // Media library per ADR-ENG-002
-	admission              *admission.Controller
-	admissionState         AdmissionState
-	hostPressureMonitor    *admissionmonitor.ResourceMonitor
-	hostPressureTracker    *hardware.PressureTracker
-	tokensService          *v3tokens.Service
-	playbackSLO            *playbackSessionTracker
-	exposureLimiter        *exposureRateLimiter
-	intentService          *v3intents.Service
-	pairingV3Service       *v3pairing.Service
-	deviceAuthV3Service    *v3deviceauth.Service
-	recordingsV3Service    *v3recordings.Service
-	sessionsV3Service      *v3sessions.Service
-	playbackInfoV3Service  *v3playbackinfo.Service
-	deviceAuthStateStore   deviceauthstore.StateStore
-	plannerShadowWorker    *playbackshadow.Worker
-	plannerShadowObserver  playbackshadow.PlannerShadowObserver
-	plannerReceiptStore    *v3intents.PlanningHandoffStore
-	plannerReceiptEnabled  bool
-	plannerReceiptRequired bool
-	profileResolver        profiles.Resolver
-	clientAV1Disabled      bool
-	iosNativeHEVCHWMode    string
+	v3Bus                   bus.Bus
+	v3Store                 SessionStateStore
+	storeRegistry           store.StoreRegistry
+	resumeStore             resume.Store
+	v3Scan                  ChannelScanner
+	decisionAudit           decisionaudit.EventSink
+	capabilityRegistry      capreg.Store
+	entitlementService      *entitlements.Service
+	householdService        *household.Service
+	receiptService          *receipts.Service
+	owiFactory              receiverControlFactory // Factory for creating OpenWebIF clients (injectable for tests)
+	recordingPathMapper     *recinfra.PathMapper
+	channelManager          *channels.Manager
+	seriesManager           *dvr.Manager
+	seriesEngine            *dvr.SeriesEngine
+	vodManager              *vod.Manager
+	resolver                recservice.Resolver // Strict V4 Resolver (Domain)
+	artifacts               artifacts.Resolver
+	epgCache                *epg.TV // EPG Cache reference
+	owiClient               *openwebif.Client
+	owiEpoch                uint64
+	receiverAbout           *openwebif.AboutInfo
+	receiverAboutAt         time.Time
+	receiverAboutEpoch      uint64
+	receiverLocations       []openwebif.MovieLocation
+	receiverLocationsAt     time.Time
+	receiverLocationsEpoch  uint64
+	configManager           *config.Manager
+	configMu                sync.Mutex // Serializes configuration updates
+	epgCacheTime            time.Time
+	epgCacheMTime           time.Time
+	epgSfg                  singleflight.Group
+	receiverSfg             singleflight.Group
+	libraryService          *library.Service // Media library per ADR-ENG-002
+	admission               *admission.Controller
+	admissionState          AdmissionState
+	householdAdmission      *policy.HouseholdResourceAdmission
+	householdResourcePolicy *identity.HouseholdResourcePolicy
+	hostPressureMonitor     *admissionmonitor.ResourceMonitor
+	hostPressureTracker     *hardware.PressureTracker
+	tokensService           *v3tokens.Service
+	playbackSLO             *playbackSessionTracker
+	exposureLimiter         *exposureRateLimiter
+	intentService           *v3intents.Service
+	pairingV3Service        *v3pairing.Service
+	deviceAuthV3Service     *v3deviceauth.Service
+	recordingsV3Service     *v3recordings.Service
+	sessionsV3Service       *v3sessions.Service
+	playbackInfoV3Service   *v3playbackinfo.Service
+	deviceAuthStateStore    deviceauthstore.StateStore
+	plannerShadowWorker     *playbackshadow.Worker
+	plannerShadowObserver   playbackshadow.PlannerShadowObserver
+	plannerReceiptStore     *v3intents.PlanningHandoffStore
+	plannerReceiptEnabled   bool
+	plannerReceiptRequired  bool
+	profileResolver         profiles.Resolver
+	clientAV1Disabled       bool
+	iosNativeHEVCHWMode     string
 
 	// Lifecycle
 	requestShutdown   func(context.Context) error
@@ -140,8 +146,27 @@ type Server struct {
 	runtimeCtx        context.Context
 	runtimeCancel     context.CancelFunc
 
+	// DPoP Proof Validator (shared across requests with long-lived JTI replay cache)
+	dpopValidator   *dpop.Validator
+	dpopValidatorMu sync.RWMutex
+
 	// Middlewares (injectable for tests)
 	AuthMiddlewareOverride func(http.Handler) http.Handler
+}
+
+func (s *Server) getDPoPValidator() *dpop.Validator {
+	s.dpopValidatorMu.RLock()
+	v := s.dpopValidator
+	s.dpopValidatorMu.RUnlock()
+	if v != nil {
+		return v
+	}
+	s.dpopValidatorMu.Lock()
+	defer s.dpopValidatorMu.Unlock()
+	if s.dpopValidator == nil {
+		s.dpopValidator = dpop.NewDefaultValidator()
+	}
+	return s.dpopValidator
 }
 
 // NewServer creates a new implemented v3 server.
@@ -190,6 +215,7 @@ func NewServer(cfg config.AppConfig, cfgMgr *config.Manager, rootCancel context.
 		authSessionTTL:       defaultAuthSessionTTL,
 		householdUnlockStore: household.NewInMemoryUnlockStore(),
 		householdUnlockTTL:   cfg.Household.UnlockTTL,
+		householdAdmission:   policy.NewHouseholdResourceAdmission(),
 		profileResolver:      profileResolver,
 		clientAV1Disabled:    clientAV1Disabled,
 		iosNativeHEVCHWMode:  iosNativeHEVCHWMode,
@@ -363,6 +389,7 @@ type Dependencies struct {
 	RecordingsService  recservice.Service
 	RequestShutdown    func(context.Context) error
 	PreflightProvider  PreflightProvider
+	IdentityService    *identity.Service
 }
 
 // SetDependencies injects shared services into the handler.
@@ -448,6 +475,12 @@ func (s *Server) applyServiceDependencies(deps Dependencies) {
 		s.receiptService = deps.Receipts
 	} else {
 		s.receiptService = nil
+	}
+
+	if !isNil(deps.IdentityService) {
+		s.identityService = deps.IdentityService
+	} else {
+		s.identityService = nil
 	}
 
 	if !isNil(deps.ScanSource) {

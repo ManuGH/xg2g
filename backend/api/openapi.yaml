@@ -3771,6 +3771,20 @@ x-xg2g-operation-policies:
     rateLimit: global
     audit: false
     redactErrors: false
+  ServeHLSVariant:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
+  ServeHLSVariantHead:
+    class: session
+    auth: bearer_scope
+    browserTrust: not_browser
+    rateLimit: global
+    audit: false
+    redactErrors: false
   StartPairing:
     class: pairing
     auth: none
@@ -6394,6 +6408,82 @@ paths:
     head:
       summary: Get HLS content metadata (Safari compatibility)
       operationId: serveHLSHead
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: HLS content metadata (headers only)
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+            Cache-Control:
+              schema:
+                type: string
+        "404":
+          description: File not found
+        "503":
+          description: V3 control plane unavailable
+  /sessions/{sessionID}/hls/{variant}/{filename}:
+    parameters:
+      - name: sessionID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: variant
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[a-zA-Z0-9_.-]+$'
+      - name: filename
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[a-zA-Z0-9_.-]+\.(m3u8|ts|m4s|mp4)$'
+    get:
+      summary: Serve HLS variant playlist or segment
+      operationId: serveHLSVariant
+      tags:
+        - v3
+      security:
+        - BearerAuth: [v3:read]
+      responses:
+        "200":
+          description: HLS content
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+            video/MP2T:
+              schema:
+                type: string
+                format: binary
+            video/iso.segment:
+              schema:
+                type: string
+                format: binary
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid request
+        "404":
+          description: File not found
+        "503":
+          description: V3 control plane unavailable
+    head:
+      summary: Get HLS variant content metadata (Safari compatibility)
+      operationId: serveHLSVariantHead
       tags:
         - v3
       security:

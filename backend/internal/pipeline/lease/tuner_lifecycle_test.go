@@ -11,7 +11,31 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/identity"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 )
+
+func testConsumedTicket(owner Owner) *policy.AdmissionTicket {
+	adm := policy.NewHouseholdResourceAdmission()
+	req := policy.AdmissionRequest{
+		SessionID:   string(owner),
+		UserID:      "usr_test",
+		ProfileID:   "prof_test",
+		Role:        identity.RoleAdmin,
+		RequestType: policy.AdmissionRequestLiveTV,
+	}
+	resPol := &identity.HouseholdResourcePolicy{
+		HouseholdID:               "default_household",
+		MaxConcurrentLiveServices: 10,
+		MaxConcurrentViewers:      10,
+		MaxParallelRecordings:     10,
+		MaxParallelTranscodes:     10,
+	}
+	tkt, _ := adm.IssueAdmissionTicket(req, resPol)
+	consumed, _ := adm.ConsumeTicketOnce(tkt.TicketID)
+	return consumed
+}
 
 // MockRenewalScheduler allows manual deterministic ticking without time.Sleep.
 type MockRenewalScheduler struct {
@@ -111,8 +135,12 @@ func TestLifecycleExclusiveStart(t *testing.T) {
 
 	// Session A
 	go func() {
-		_ = runner.RunSession(
+		_ = runner.RunSessionWithTicket(
 			context.Background(),
+			testConsumedTicket("session-A"),
+			"session-A",
+			"usr_test",
+			"prof_test",
 			"session-A",
 			slot,
 			true, // requiresTuner = true
@@ -128,8 +156,12 @@ func TestLifecycleExclusiveStart(t *testing.T) {
 	<-sessionStarted
 
 	// Session B attempts to acquire same slot
-	runErr := runner.RunSession(
+	runErr := runner.RunSessionWithTicket(
 		context.Background(),
+		testConsumedTicket("session-B"),
+		"session-B",
+		"usr_test",
+		"prof_test",
 		"session-B",
 		slot,
 		true,
@@ -165,8 +197,12 @@ func TestLifecycleTuneFailureCompensation(t *testing.T) {
 	slot := 0
 	tuneErr := errors.New("zap failed")
 
-	runErr := runner.RunSession(
+	runErr := runner.RunSessionWithTicket(
 		context.Background(),
+		testConsumedTicket("session-A"),
+		"session-A",
+		"usr_test",
+		"prof_test",
 		"session-A",
 		slot,
 		true,
@@ -204,8 +240,12 @@ func TestLifecycleReadinessFailureCompensation(t *testing.T) {
 	slot := 0
 	readinessErr := errors.New("tuner lock readiness timeout")
 
-	runErr := runner.RunSession(
+	runErr := runner.RunSessionWithTicket(
 		context.Background(),
+		testConsumedTicket("session-A"),
+		"session-A",
+		"usr_test",
+		"prof_test",
 		"session-A",
 		slot,
 		true,
@@ -241,8 +281,12 @@ func TestLifecycleContextCancellation(t *testing.T) {
 	sessionStarted := make(chan struct{})
 
 	go func() {
-		_ = runner.RunSession(
+		_ = runner.RunSessionWithTicket(
 			ctx,
+			testConsumedTicket("session-canceled"),
+			"session-canceled",
+			"usr_test",
+			"prof_test",
 			"session-canceled",
 			slot,
 			true,
@@ -282,8 +326,12 @@ func TestLifecyclePipelineStartFailure(t *testing.T) {
 	slot := 0
 	pipelineErr := errors.New("ffmpeg spawn failed")
 
-	runErr := runner.RunSession(
+	runErr := runner.RunSessionWithTicket(
 		context.Background(),
+		testConsumedTicket("session-pipeline-fail"),
+		"session-pipeline-fail",
+		"usr_test",
+		"prof_test",
 		"session-pipeline-fail",
 		slot,
 		true,
@@ -315,8 +363,12 @@ func TestLifecycleNormalCompletion(t *testing.T) {
 	}
 
 	slot := 0
-	runErr := runner.RunSession(
+	runErr := runner.RunSessionWithTicket(
 		context.Background(),
+		testConsumedTicket("session-normal"),
+		"session-normal",
+		"usr_test",
+		"prof_test",
 		"session-normal",
 		slot,
 		true,
@@ -355,8 +407,12 @@ func TestLifecycleRenewSuccess(t *testing.T) {
 	sessionDone := make(chan struct{})
 
 	go func() {
-		_ = runner.RunSession(
+		_ = runner.RunSessionWithTicket(
 			context.Background(),
+			testConsumedTicket("session-renew"),
+			"session-renew",
+			"usr_test",
+			"prof_test",
 			"session-renew",
 			slot,
 			true,
@@ -409,8 +465,12 @@ func TestLifecycleRealProcessTeardownOnRevoke(t *testing.T) {
 
 	go func() {
 		defer close(sessionEnded)
-		_ = runner.RunSession(
+		_ = runner.RunSessionWithTicket(
 			context.Background(),
+			testConsumedTicket("session-revoke"),
+			"session-revoke",
+			"usr_test",
+			"prof_test",
 			"session-revoke",
 			slot,
 			true,
@@ -518,8 +578,12 @@ func TestLifecycleRaceConditions(t *testing.T) {
 		workerID := Owner(fmt.Sprintf("race-worker-%d", i))
 		go func(wOwner Owner) {
 			defer wg.Done()
-			_ = runner.RunSession(
+			_ = runner.RunSessionWithTicket(
 				ctx,
+				testConsumedTicket(wOwner),
+				string(wOwner),
+				"usr_test",
+				"prof_test",
 				wOwner,
 				slot,
 				true,
@@ -550,5 +614,44 @@ func TestLifecycleRaceConditions(t *testing.T) {
 	active := mgr.ActiveLeases(ScopeForTunerSlot(slot))
 	if len(active) > 0 {
 		t.Errorf("expected 0 active leases remaining after race test, got %d", len(active))
+	}
+}
+
+// 12. Fail-Closed Invariant Test: Tuner-bound session without valid admission ticket MUST fail closed
+func TestLifecycle_RequiresTicketFailClosed(t *testing.T) {
+	mgr := NewManager(ManagerConfig{SweepInterval: 100 * time.Millisecond})
+	defer mgr.Close()
+	tb := NewTunerBinding(mgr)
+
+	runner, err := NewTunerLifecycleRunner(defaultTestRunnerConfig(tb))
+	if err != nil {
+		t.Fatalf("failed to create runner: %v", err)
+	}
+
+	slot := 0
+	tuneCalled := false
+
+	// Calling RunSession (which provides nil ticket) for a tuner-bound workload MUST fail closed!
+	runErr := runner.RunSession(
+		context.Background(),
+		"session-ticketless",
+		slot,
+		true, // requiresTuner = true
+		func(ctx context.Context) error {
+			tuneCalled = true
+			return nil
+		},
+		func(ctx context.Context) error { return nil },
+	)
+
+	if runErr == nil {
+		t.Fatalf("expected error when acquiring tuner lease without admission ticket, got nil")
+	}
+	if tuneCalled {
+		t.Errorf("hardware tune function MUST NOT be called when admission ticket is missing")
+	}
+	_, found := tb.GetTunerLease(slot)
+	if found {
+		t.Errorf("no tuner lease should be acquired when admission ticket is missing")
 	}
 }

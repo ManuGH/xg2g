@@ -131,6 +131,9 @@ func plannerStartError(message string) *Error {
 }
 
 func plannerExecutionProfileID(plan playbackplanner.PlaybackPlan) (string, error) {
+	if plan.Video.EnableABR {
+		return "abr", nil
+	}
 	switch plan.Video.Mode {
 	case "copy":
 		return profiles.ProfileCopy, nil
@@ -152,6 +155,10 @@ func plannerExecutionProfileID(plan playbackplanner.PlaybackPlan) (string, error
 
 func applyPlannerPlanToProfile(spec model.ProfileSpec, plan playbackplanner.PlaybackPlan) model.ProfileSpec {
 	spec.PlannerBound = true
+	if plan.Video.EnableABR {
+		spec.EnableABR = true
+		spec.TranscodeVideo = true
+	}
 	if plan.Startup.DVRWindowSeconds > 0 {
 		spec.DVRWindowSec = plan.Startup.DVRWindowSeconds
 	}

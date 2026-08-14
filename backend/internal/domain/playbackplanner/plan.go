@@ -37,6 +37,7 @@ type PlaybackPlan struct {
 type TrackPlan struct {
 	Mode        string // "copy", "transcode", "disabled"
 	Codec       string // e.g. "h264", "aac"
+	EnableABR   bool
 	BitrateKbps int
 	Channels    int
 	SampleRate  int

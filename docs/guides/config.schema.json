@@ -42,6 +42,23 @@
     }
   ],
   "properties": {
+    "android": {
+      "properties": {
+        "apkPath": {
+          "type": "string"
+        },
+        "packageName": {
+          "type": "string"
+        },
+        "sha256Fingerprints": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "api": {
       "description": "HTTP API server configuration for runtime control",
       "properties": {

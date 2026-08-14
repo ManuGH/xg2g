@@ -878,6 +878,10 @@ func (m *mockFailingTunerController) Acquire(ctx context.Context, owner pipeline
 	return nil, m.ErrToReturn
 }
 
+func (m *mockFailingTunerController) AcquireWithBoundTicket(ctx context.Context, ticket *pipelinePolicy.AdmissionTicket, sessionID, userID, profileID string, owner pipelineLease.Owner, slot int, ttl time.Duration) (*pipelineLease.TunerLeaseHandle, error) {
+	return nil, m.ErrToReturn
+}
+
 func (m *mockFailingTunerController) Renew(ctx context.Context, handle *pipelineLease.TunerLeaseHandle, ttl time.Duration) error {
 	return nil
 }
@@ -898,6 +902,10 @@ func (m *mockMixedSlotController) Acquire(ctx context.Context, owner pipelineLea
 	return nil, err
 }
 
+func (m *mockMixedSlotController) AcquireWithBoundTicket(ctx context.Context, ticket *pipelinePolicy.AdmissionTicket, sessionID, userID, profileID string, owner pipelineLease.Owner, slot int, ttl time.Duration) (*pipelineLease.TunerLeaseHandle, error) {
+	return m.Acquire(ctx, owner, slot, ttl)
+}
+
 func (m *mockMixedSlotController) Renew(ctx context.Context, handle *pipelineLease.TunerLeaseHandle, ttl time.Duration) error {
 	return nil
 }
@@ -916,6 +924,10 @@ func (m *mockCustomController) Acquire(ctx context.Context, owner pipelineLease.
 		return m.AcquireFunc(ctx, owner, slot, ttl)
 	}
 	return nil, nil
+}
+
+func (m *mockCustomController) AcquireWithBoundTicket(ctx context.Context, ticket *pipelinePolicy.AdmissionTicket, sessionID, userID, profileID string, owner pipelineLease.Owner, slot int, ttl time.Duration) (*pipelineLease.TunerLeaseHandle, error) {
+	return m.Acquire(ctx, owner, slot, ttl)
 }
 
 func (m *mockCustomController) Renew(ctx context.Context, handle *pipelineLease.TunerLeaseHandle, ttl time.Duration) error {

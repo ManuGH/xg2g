@@ -269,6 +269,80 @@ func TestPlanCarriesImmutableDVRStartupPolicy(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidEvidence)
 }
 
+func TestPlan_AndroidTVNativeKeepsCopiedH264InFMP4(t *testing.T) {
+	ev := PlaybackEvidence{
+		EvaluatedAt:    time.Now().UnixMilli(),
+		Scope:          "live",
+		SourceIdentity: "service:android-tv-h264",
+		SourceTruth: SourceTruth{
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "ac3",
+			Width:      1280,
+			Height:     720,
+			FPS:        50,
+		},
+		ClientEvidence: ClientEvidence{
+			Family:               "android_tv_native",
+			AllowTranscode:       true,
+			SupportedContainers:  []string{"mpegts", "fmp4"},
+			SupportedVideoCodecs: []string{"h264"},
+			SupportedAudioCodecs: []string{"ac3"},
+			PrefersFMP4:          true,
+			SupportsHls:          true,
+		},
+		HostSnapshot: HostSnapshot{AvailableEngines: []string{"hls"}},
+	}
+
+	result, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "remux", result.Plan.Mode)
+	require.Equal(t, TrackPlan{Mode: "copy", Codec: "h264"}, result.Plan.Video)
+	require.Equal(t, TrackPlan{Mode: "copy", Codec: "ac3"}, result.Plan.Audio)
+	require.Equal(t, "fmp4", result.Plan.Packaging.Container)
+
+	// The exception is intentionally restricted to the native Android TV family.
+	ev.ClientEvidence.Family = "safari_native"
+	otherClient, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "mpegts", otherClient.Plan.Packaging.Container)
+}
+
+func TestPlan_AndroidTVNativeMP2TranscodesOnlyAudio(t *testing.T) {
+	ev := PlaybackEvidence{
+		EvaluatedAt:    time.Now().UnixMilli(),
+		Scope:          "live",
+		SourceIdentity: "service:android-tv-mp2",
+		SourceTruth: SourceTruth{
+			Container:  "mpegts",
+			VideoCodec: "h264",
+			AudioCodec: "mp2",
+			Width:      1280,
+			Height:     720,
+			FPS:        50,
+		},
+		ClientEvidence: ClientEvidence{
+			Family:               "android_tv_native",
+			AllowTranscode:       true,
+			SupportedContainers:  []string{"mpegts", "fmp4"},
+			SupportedVideoCodecs: []string{"h264"},
+			// Old clients advertised MP2; server policy must still veto it.
+			SupportedAudioCodecs: []string{"aac", "mp2"},
+			PrefersFMP4:          true,
+			SupportsHls:          true,
+		},
+		HostSnapshot: HostSnapshot{AvailableEngines: []string{"hls"}},
+	}
+
+	result, err := Plan(ev)
+	require.NoError(t, err)
+	require.Equal(t, "transcode", result.Plan.Mode)
+	require.Equal(t, TrackPlan{Mode: "copy", Codec: "h264"}, result.Plan.Video)
+	require.Equal(t, "transcode", result.Plan.Audio.Mode)
+	require.Equal(t, "aac", result.Plan.Audio.Codec)
+	require.Equal(t, "fmp4", result.Plan.Packaging.Container)
+}
+
 func TestPlanTranscodesVideoWhenClientDimensionsAreExceeded(t *testing.T) {
 	ev := PlaybackEvidence{
 		EvaluatedAt:    time.Now().UnixMilli(),

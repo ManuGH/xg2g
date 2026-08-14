@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	deviceauthmodel "github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/log"
 )
 
@@ -113,6 +114,54 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) (*auth.Princi
 	cfgToken := cfg.APIToken
 	cfgTokenScopes := cfg.APITokenScopes
 	cfgTokens := cfg.APITokens
+
+	// 0. Check persistent Identity Web Sessions (WebAuthn / Passkeys / Recovery)
+	if idSvc := s.getIdentityService(); idSvc != nil {
+		if sess, user, err := idSvc.ValidateWebSession(ctx, token, "", ""); err == nil && sess != nil && user != nil {
+			var scopes []string
+			switch user.Role {
+			case identity.RoleAdmin:
+				scopes = []string{string(ScopeAll)}
+			case identity.RoleMember:
+				scopes = []string{string(ScopeV3Read), string(ScopeV3Write)}
+			case identity.RoleViewer:
+				scopes = []string{string(ScopeV3Read)}
+			default:
+				scopes = []string{string(ScopeV3Read)}
+			}
+			principal := auth.NewPrincipal(sess.SessionID, user.Username, scopes)
+			principal = s.projectTokenPrincipal(ctx, principal, cfg)
+			if principal != nil {
+				return principal, true
+			}
+		}
+
+		// 0b. Check DPoP Access Tokens (Android / Sender-Constrained API Clients)
+		if req, ok := ctx.Value(dpopRequestContextKey{}).(*http.Request); ok && req != nil {
+			dpopProof := req.Header.Get("DPoP")
+			if dpopProof != "" {
+				validator := s.getDPoPValidator()
+				if validator != nil {
+					proofClaims, err := validator.ValidateProof(req, dpopProof, token, time.Now().UTC())
+					if err == nil && proofClaims != nil {
+						if dpopToken, user, err := idSvc.ValidateDPoPAccessToken(ctx, token, proofClaims.JWKThumbprint); err == nil && dpopToken != nil && user != nil {
+							var scopes []string
+							if dpopToken.Scopes != "" {
+								scopes = strings.Split(dpopToken.Scopes, " ")
+							} else {
+								scopes = []string{string(ScopeV3Read), string(ScopeV3Write)}
+							}
+							principal := auth.NewPrincipal(dpopToken.TokenHash, user.Username, scopes)
+							principal = s.projectTokenPrincipal(ctx, principal, cfg)
+							if principal != nil {
+								return principal, true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 
 	// 1. Check legacy single token
 	if cfgToken != "" && auth.AuthorizeToken(token, cfgToken) {

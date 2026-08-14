@@ -1,11 +1,11 @@
 package io.github.manugh.xg2g.android.guide
 
-import android.webkit.CookieManager
-import io.github.manugh.xg2g.android.DeviceAuthReenrollRequiredException
-import io.github.manugh.xg2g.android.DeviceAuthRepository
-import io.github.manugh.xg2g.android.DeviceAuthSignInRequiredException
-import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
-import io.github.manugh.xg2g.android.playback.net.CookieBackedAuthSession
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.AuthStateMachine
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,56 +20,46 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.time.OffsetDateTime
 
+
+
 internal class GuideApiClient(
-    private val baseUrl: String,
-    private val deviceAuthRepository: DeviceAuthRepository? = null,
-    private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor { chain ->
-            val original = chain.request()
-            val builder = original.newBuilder()
-            cookieSession.applyCookies(original.url, builder)
-            val response = chain.proceed(builder.build())
-            cookieSession.storeCookies(original.url, response.headers)
-            response
-        }
-        .build()
+    private val baseUrlProvider: () -> String,
+    stateStore: PersistedDeviceAuthStateStore,
+    dpopProvider: DPoPProvider,
+    stateMachine: AuthStateMachine? = null,
+    private val profileIdProvider: () -> String? = { null },
+    private val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
+        stateStore = stateStore,
+        dpopProvider = dpopProvider,
+        stateMachine = stateMachine,
+        profileIdProvider = profileIdProvider
+    )
 ) {
+    constructor(
+        baseUrl: String,
+        stateStore: PersistedDeviceAuthStateStore,
+        dpopProvider: DPoPProvider,
+        stateMachine: AuthStateMachine? = null,
+        profileIdProvider: () -> String? = { null },
+        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine, profileIdProvider)
+    ) : this(
+        baseUrlProvider = { baseUrl },
+        stateStore = stateStore,
+        dpopProvider = dpopProvider,
+        stateMachine = stateMachine,
+        profileIdProvider = profileIdProvider,
+        okHttpClient = okHttpClient
+    )
+
+    private val baseUrl: String get() = baseUrlProvider()
     suspend fun ensureAuthSession(authToken: String?) {
-        withContext(Dispatchers.IO) {
-            val sessionUrl = apiUrl("auth", "session")
-            val repository = deviceAuthRepository
-            if (repository != null) {
-                try {
-                    repository.ensureAuthSession(baseUrl, authToken)
-                    return@withContext
-                } catch (error: DeviceAuthReenrollRequiredException) {
-                    throw GuideAuthRequiredException(410, error.message)
-                } catch (error: DeviceAuthSignInRequiredException) {
-                    throw GuideAuthRequiredException(401, error.message)
-                }
-            }
-
-            if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
-                return@withContext
-            }
-
-            val bearerToken = authToken?.trim().takeIf { !it.isNullOrEmpty() } ?: return@withContext
-            val request = Request.Builder()
-                .url(sessionUrl)
-                .header("Authorization", "Bearer $bearerToken")
-                .post(ByteArray(0).toRequestBody(null))
-                .build()
-
-            execute(request).use { response ->
-                if (!response.isSuccessful) {
-                    throw mapHttpException(response.code, response.message, response.body.string())
-                }
-            }
-        }
+        // Native REST API requests manage authentication per request
     }
 
     suspend fun fetchBouquets(authToken: String?): List<GuideBouquet> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyList()
+        }
         ensureAuthSession(authToken)
         val request = Request.Builder()
             .url(apiUrl("services", "bouquets"))
@@ -93,6 +83,9 @@ internal class GuideApiClient(
         authToken: String?,
         bouquetName: String?
     ): List<GuideChannel> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyList()
+        }
         ensureAuthSession(authToken)
         val urlBuilder = apiUrlBuilder("services")
         bouquetName?.trim()
@@ -128,6 +121,9 @@ internal class GuideApiClient(
         bouquetName: String?,
         timelineWindow: GuideTimelineWindow
     ): Map<String, List<GuideProgram>> = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext emptyMap()
+        }
         ensureAuthSession(authToken)
         val urlBuilder = apiUrlBuilder("epg")
             .addQueryParameter("from", timelineWindow.startEpochSec.toString())
@@ -168,6 +164,9 @@ internal class GuideApiClient(
     }
 
     suspend fun fetchHealthStatus(authToken: String?): GuideHealthStatus = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) {
+            return@withContext GuideHealthStatus(receiverHealthy = false, epgHealthy = false)
+        }
         ensureAuthSession(authToken)
         val request = Request.Builder()
             .url(apiUrl("system", "health"))
@@ -205,11 +204,7 @@ internal class GuideApiClient(
     }
 
     private fun execute(request: Request) =
-        okHttpClient.newCall(request.withSameOriginHeaders(requireBaseUrl())).execute().also { response ->
-            if (response.code == 401 || response.code == 403) {
-                clearSessionCookie()
-            }
-        }
+        okHttpClient.newCall(request.withSameOriginHeaders(requireBaseUrl())).execute()
 
     private fun executeJsonArray(request: Request): List<JSONObject> {
         execute(request).use { response ->
@@ -303,12 +298,7 @@ internal class GuideApiClient(
         return IllegalStateException("Guide API $code: $message$detail")
     }
 
-    private fun clearSessionCookie() {
-        cookieSession.clearSessionCookie(
-            url = apiUrl("auth", "session"),
-            cookieName = SESSION_COOKIE_NAME
-        )
-    }
+
 
     private fun extractProblemDetail(body: String?): String? {
         val raw = body?.trim()?.takeIf { it.isNotEmpty() } ?: return null

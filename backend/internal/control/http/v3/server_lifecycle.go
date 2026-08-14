@@ -153,6 +153,12 @@ func (s *Server) SetRuntimeContext(ctx context.Context) error {
 		}
 	}
 	admissionmonitor.StartCPUSampler(runtimeCtx, hostPressureMonitor, 0, nil)
+	s.mu.Lock()
+	vodMgr := s.vodManager
+	s.mu.Unlock()
+	if vodMgr != nil {
+		vodMgr.StartProberPool(runtimeCtx)
+	}
 	return nil
 }
 

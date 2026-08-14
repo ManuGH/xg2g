@@ -238,11 +238,12 @@ func (o *Orchestrator) startPipeline(
 ) (ports.RunHandle, model.ProfileSpec, error) {
 	// Build StreamSpec (Domain Object)
 	spec := ports.StreamSpec{
-		SessionID: e.SessionID,
-		Mode:      ports.ModeLive, // Default
-		Format:    ports.FormatHLS,
-		Quality:   streamQualityForProfileSpec(currentProfileSpec),
-		Profile:   currentProfileSpec, // Pass through resolved profile (GPU, codec, quality)
+		SessionID:    e.SessionID,
+		ClientFamily: sessionCtx.ClientFamily,
+		Mode:         ports.ModeLive, // Default
+		Format:       ports.FormatHLS,
+		Quality:      streamQualityForProfileSpec(currentProfileSpec),
+		Profile:      currentProfileSpec, // Pass through resolved profile (GPU, codec, quality)
 		Source: ports.StreamSource{
 			ID:        sessionCtx.ServiceRef,
 			Type:      ports.SourceTuner, // Default assumes Tuner/Ref

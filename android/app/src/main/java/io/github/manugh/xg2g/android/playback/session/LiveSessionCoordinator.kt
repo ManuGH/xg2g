@@ -5,6 +5,8 @@ import io.github.manugh.xg2g.android.playback.model.NativePlaybackDiagnostics
 import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.net.PlaybackApi
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 internal class LiveSessionCoordinator(
     private val playbackApi: PlaybackApi,
@@ -14,23 +16,32 @@ internal class LiveSessionCoordinator(
     private val onDiagnosticsUpdated: (NativePlaybackDiagnostics) -> Unit,
     private val onError: (Throwable) -> Unit
 ) {
+    private var activeSessionId: String? = null
+
     suspend fun start(request: NativePlaybackRequest.Live): SessionSnapshot {
+        stop(activeSessionId)
         playbackApi.ensureAuthSession(request.authToken)
         val startResult = playbackApi.startLiveIntent(request)
         startResult.diagnostics?.let(onDiagnosticsUpdated)
         val sessionId = startResult.sessionId
+        activeSessionId = sessionId
         return try {
             val snapshot = readinessPoller.awaitReady(sessionId)
-            onSessionUpdated(snapshot)
+            val finalSnapshot = if (snapshot.playbackUrl.isNullOrBlank() && !startResult.streamUrl.isNullOrBlank()) {
+                snapshot.copy(playbackUrl = startResult.streamUrl)
+            } else {
+                snapshot
+            }
+            onSessionUpdated(finalSnapshot)
 
             heartbeatManager.start(
                 sessionId = sessionId,
-                intervalSeconds = snapshot.heartbeatIntervalSec ?: HEARTBEAT_FALLBACK_SECONDS,
+                intervalSeconds = finalSnapshot.heartbeatIntervalSec ?: HEARTBEAT_FALLBACK_SECONDS,
                 onSessionUpdated = onSessionUpdated,
                 onError = onError
             )
 
-            snapshot
+            finalSnapshot
         } catch (error: CancellationException) {
             cleanupStartedSession(sessionId)
             throw error
@@ -40,18 +51,28 @@ internal class LiveSessionCoordinator(
         }
     }
 
-    suspend fun stop(sessionId: String?) {
+    suspend fun stop(sessionId: String? = null) {
+        val targetSessionId = sessionId ?: activeSessionId
+        activeSessionId = null
         heartbeatManager.stop()
-        if (sessionId != null) {
-            runCatching { playbackApi.stopSession(sessionId) }
+        if (targetSessionId != null) {
+            runCatching { playbackApi.stopSession(targetSessionId) }
                 .onFailure(onError)
         }
     }
 
     private suspend fun cleanupStartedSession(sessionId: String) {
+        if (activeSessionId == sessionId) {
+            activeSessionId = null
+        }
         heartbeatManager.stop()
-        runCatching { playbackApi.stopSession(sessionId) }
-            .onFailure(onError)
+        // start() reaches this path from a cancelled command. The real API stop uses
+        // withContext(IO), which will not even enter when it inherits that cancelled Job.
+        // Cleanup owns a backend tuner lease, so it must finish independently.
+        withContext(NonCancellable) {
+            runCatching { playbackApi.stopSession(sessionId) }
+                .onFailure(onError)
+        }
     }
 
     private companion object {

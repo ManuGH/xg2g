@@ -3,13 +3,17 @@ package io.github.manugh.xg2g.android.playback
 import android.content.Context
 import android.util.Log
 import androidx.media3.common.Player
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.playback.model.NativePlaybackDiagnostics
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackState
-import io.github.manugh.xg2g.android.playback.model.NativePlaybackDiagnostics
-import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.model.SessionMode
+import io.github.manugh.xg2g.android.playback.model.SessionSnapshot
 import io.github.manugh.xg2g.android.playback.model.SessionState
 import io.github.manugh.xg2g.android.playback.net.PlaybackApiClient
+import io.github.manugh.xg2g.android.playback.player.Media3SessionBinder
+import io.github.manugh.xg2g.android.playback.player.PlaybackSessionBinding
 import io.github.manugh.xg2g.android.playback.player.PlayerEventForwarder
 import io.github.manugh.xg2g.android.playback.player.PlayerHolder
 import io.github.manugh.xg2g.android.playback.session.HeartbeatManager
@@ -29,8 +33,11 @@ internal class PlaybackRuntime(
     private val stateStore: PlaybackStateStore
 ) : PlaybackSession {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val dpopProvider = AndroidKeystoreDPoPProvider()
     private val playbackApi = PlaybackApiClient(context.applicationContext)
-    private val playerHolder = PlayerHolder(context.applicationContext, playbackApi.okHttpClient)
+    private val playerHolder = PlayerHolder(context.applicationContext, playbackApi.okHttpClient).apply {
+        sessionBinder = Media3SessionBinder(dpopProvider)
+    }
     private val heartbeatManager = HeartbeatManager(playbackApi, scope)
     private val readinessPoller = ReadinessPoller(playbackApi, PlaybackErrorMapper())
     private val liveSessionCoordinator = LiveSessionCoordinator(
@@ -41,15 +48,58 @@ internal class PlaybackRuntime(
         onDiagnosticsUpdated = ::updateDiagnostics,
         onError = ::reportError
     )
-    private val playerEventForwarder = PlayerEventForwarder(playerHolder.player, ::onPlayerStateChanged)
+    private var playerEventForwarder = PlayerEventForwarder(playerHolder.player, ::onPlayerStateChanged)
     private var reportedReadySessionId: String? = null
     private var reportedErrorSignature: String? = null
 
-    override val player = playerHolder.player
+    /**
+     * Set when playback has been abandoned for good. Kept separate from the transient error field
+     * because the session heartbeat clears that one on every tick, which would silently wipe the
+     * only thing telling the viewer that the stream is dead.
+     */
+    @Volatile
+    private var terminalError: String? = null
+
+    override val player: Player
+        get() = playerHolder.player
+
+    init {
+        // The MediaTek decoder on Fire TV can only be recovered by rebuilding the player;
+        // re-wire the event forwarder and tell the UI/session to re-attach.
+        playerHolder.onPlayerReplaced = { replacement ->
+            playerEventForwarder.dispose()
+            playerEventForwarder = PlayerEventForwarder(replacement, ::onPlayerStateChanged)
+            mutateState { current ->
+                current.copy(playerGeneration = current.playerGeneration + 1)
+            }
+        }
+        playerHolder.onUnrecoverable = { reason ->
+            Log.e(TAG, "playback abandoned after repeated decoder failures: $reason")
+            terminalError = reason
+            reportSessionFeedback("error", null, reason)
+            mutateState { current -> current.copy(lastError = reason) }
+        }
+        playerHolder.onDegraded = { warning ->
+            Log.w(TAG, "playback continues in degraded mode: $warning")
+            reportSessionFeedback("warning", null, warning)
+            mutateState { current ->
+                current.copy(
+                    lastError = terminalError,
+                    playbackWarning = warning
+                )
+            }
+        }
+        playerHolder.onRecovered = {
+            Log.i(TAG, "decoder recovery confirmed by a newly rendered frame")
+            reportSessionFeedback("info", 200, "decoder_recovered")
+            mutateState { current -> current.copy(lastError = terminalError) }
+        }
+    }
     override val state: StateFlow<NativePlaybackState> = stateStore.state
 
     override suspend fun start(request: NativePlaybackRequest) {
         stop(force = true)
+        terminalError = null
         setState(NativePlaybackState(activeRequest = request))
 
         when (request) {
@@ -137,7 +187,7 @@ internal class PlaybackRuntime(
             current.copy(
                 session = snapshot,
                 diagnostics = current.diagnostics?.mergeSession(snapshot),
-                lastError = null
+                lastError = terminalError
             )
         }
     }
@@ -146,7 +196,7 @@ internal class PlaybackRuntime(
         mutateState { current ->
             current.copy(
                 diagnostics = diagnostics,
-                lastError = null
+                lastError = terminalError
             )
         }
     }
@@ -189,8 +239,8 @@ internal class PlaybackRuntime(
         stateStore.set(value)
     }
 
-    private inline fun mutateState(transform: (NativePlaybackState) -> NativePlaybackState) {
-        setState(transform(stateStore.current()))
+    private fun mutateState(transform: (NativePlaybackState) -> NativePlaybackState) {
+        stateStore.update(transform)
     }
 
     private fun reportSessionFeedback(event: String, code: Int?, message: String?) {

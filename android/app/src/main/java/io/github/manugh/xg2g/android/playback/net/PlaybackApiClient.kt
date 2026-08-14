@@ -3,8 +3,14 @@ package io.github.manugh.xg2g.android.playback.net
 import android.content.Context
 import android.util.Log
 import android.util.Base64
-import io.github.manugh.xg2g.android.DeviceAuthRepository
+import android.os.Build
+
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.ServerSettingsStore
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.playback.model.NativeLiveStartResult
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.PlaybackMode
@@ -27,37 +33,20 @@ internal class PlaybackApiClient(
     context: Context,
     private val serverSettingsStore: ServerSettingsStore = ServerSettingsStore(context.applicationContext),
     private val errorMapper: PlaybackErrorMapper = PlaybackErrorMapper(),
-    private val cookieSession: CookieBackedAuthSession = CookieBackedAuthSession(),
-    private val deviceAuthRepository: DeviceAuthRepository = DeviceAuthRepository(
-        context = context.applicationContext,
-        cookieSession = cookieSession
-    ),
     private val nativeCapabilities: NativePlaybackCapabilities = NativePlaybackCapabilities.create(context.applicationContext),
-    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor { chain ->
-            val original = chain.request()
-            val builder = original.newBuilder()
-            cookieSession.applyCookies(original.url, builder)
-            val response = chain.proceed(builder.build())
-            cookieSession.storeCookies(original.url, response.headers)
-            response
-        }
-        .build()
+    stateStore: PersistedDeviceAuthStateStore = DeviceAuthStore(context.applicationContext),
+    dpopProvider: DPoPProvider = AndroidKeystoreDPoPProvider(),
+    stateMachine: io.github.manugh.xg2g.android.auth.AuthStateMachine? = null,
+    val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
+        stateStore = stateStore,
+        dpopProvider = dpopProvider,
+        stateMachine = stateMachine,
+        profileIdProvider = { serverSettingsStore.getSelectedProfileId() }
+    )
 ) : PlaybackApi {
 
     override suspend fun ensureAuthSession(authToken: String?) {
-        withContext(Dispatchers.IO) {
-            val sessionUrl = apiUrl("auth", "session")
-            Log.d(
-                TAG,
-                "ensureAuthSession path=${sessionUrl.encodedPath} hasBearer=${!authToken.isNullOrBlank()} hasSessionCookieBefore=${cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)}"
-            )
-            deviceAuthRepository.ensureAuthSession(requireUiBaseUrl().toString(), authToken)
-            Log.d(
-                TAG,
-                "ensureAuthSession completed hasSessionCookieAfter=${cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)}"
-            )
-        }
+        // Native API requests manage authentication directly via DPoP header per request
     }
 
     override suspend fun startLiveIntent(request: NativePlaybackRequest.Live): NativeLiveStartResult = withContext(Dispatchers.IO) {
@@ -88,7 +77,9 @@ internal class PlaybackApiClient(
             .build()
 
         executeJson(httpRequest) { response ->
-            PlaybackApiJsonCodec.parseStartLiveIntentResponse(response, decision.diagnostics)
+            val result = PlaybackApiJsonCodec.parseStartLiveIntentResponse(response, decision.diagnostics)
+            val fallbackUrl = response.optString("playbackUrl").takeIf { it.isNotBlank() } ?: decision.streamUrl
+            result.copy(streamUrl = fallbackUrl)
         }
     }
 
@@ -223,10 +214,9 @@ internal class PlaybackApiClient(
         recordingPlaylistHttpUrl(recordingId).toString()
 
     fun playbackRequestHeaders(playbackUrl: String): Map<String, String> {
-        val resolvedUrl = resolvePlaybackUrl(playbackUrl).toHttpUrlOrNull() ?: requireUiBaseUrl()
         return playbackRequestHeaders(
             uiBaseUrl = requireUiBaseUrl(),
-            cookieHeader = cookieSession.cookieHeader(resolvedUrl)
+            cookieHeader = null
         )
     }
 
@@ -243,15 +233,9 @@ internal class PlaybackApiClient(
         val contextualRequest = request.withSameOriginHeaders(requireUiBaseUrl())
         Log.d(
             TAG,
-            "execute request method=${contextualRequest.method} path=${contextualRequest.url.encodedPath} hasCookie=${contextualRequest.header("Cookie") != null} hasAuthorization=${contextualRequest.header("Authorization") != null} hasOrigin=${contextualRequest.header("Origin") != null} hasReferer=${contextualRequest.header("Referer") != null}"
+            "execute request method=${contextualRequest.method} path=${contextualRequest.url.encodedPath} hasAuthorization=${contextualRequest.header("Authorization") != null} hasOrigin=${contextualRequest.header("Origin") != null} hasReferer=${contextualRequest.header("Referer") != null}"
         )
         return okHttpClient.newCall(contextualRequest).execute().also { response ->
-            if (response.code == 401 || response.code == 403) {
-                cookieSession.clearSessionCookie(
-                    url = apiUrl("auth", "session"),
-                    cookieName = SESSION_COOKIE_NAME
-                )
-            }
             Log.d(
                 TAG,
                 "execute response method=${contextualRequest.method} path=${contextualRequest.url.encodedPath} code=${response.code}"
@@ -262,7 +246,7 @@ internal class PlaybackApiClient(
     private fun requestLiveDecision(request: NativePlaybackRequest.Live): NativeLiveDecision {
         val httpRequest = Request.Builder()
             .url(apiUrl("live", "stream-info"))
-            .withPlaybackProfile(request.profile)
+            .withPlaybackProfile(request.profile ?: ANDROID_LIVE_PROFILE)
             .post(
                 PlaybackApiJsonCodec.liveDecisionRequestBody(
                     request = request,
@@ -335,9 +319,25 @@ internal class PlaybackApiClient(
 
     private companion object {
         const val TAG = "Xg2gPlaybackApi"
-        val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        const val JSON_MEDIA_TYPE_STR = "application/json; charset=utf-8"
+        val JSON_MEDIA_TYPE = JSON_MEDIA_TYPE_STR.toMediaType()
         const val SESSION_COOKIE_NAME = "xg2g_session"
         const val ANDROID_RECORDING_PROFILE = "android_native"
+
+        private val hasBuggyMediaTekDecoder: Boolean
+            get() = runCatching {
+                android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
+                    .codecInfos
+                    .asSequence()
+                    .filterNot { it.isEncoder }
+                    .any { info ->
+                        val name = info.name.lowercase()
+                        (name.contains("mtk") || name.contains("mediatek")) && (name.contains("avc") || name.contains("h264"))
+                    }
+            }.getOrDefault(false)
+
+        val ANDROID_LIVE_PROFILE: String
+            get() = if (hasBuggyMediaTekDecoder) "android_native" else "direct"
     }
 }
 
@@ -364,7 +364,8 @@ internal fun normalizeRecordingPlaybackUrl(
     if (resolvedUrl?.encodedPath?.endsWith("/stream.mp4") != true) {
         return playbackUrl
     }
-    if (selectedOutputKind == "file" || decisionMode?.trim()?.lowercase() == "direct_play") {
+    val mode = decisionMode?.trim()?.lowercase()
+    if (selectedOutputKind == "file" || mode == "direct_play" || mode == "direct_mp4") {
         return playbackUrl
     }
 

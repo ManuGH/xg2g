@@ -11,10 +11,12 @@ import android.webkit.CookieManager
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
+import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import io.github.manugh.xg2g.android.R
 import io.github.manugh.xg2g.android.ServerSettingsStore
@@ -30,13 +32,14 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
+@OptIn(markerClass = [UnstableApi::class])
 class PlayerActivity : AppCompatActivity() {
     private val session: PlaybackSession by lazy(LazyThreadSafetyMode.NONE) {
         PlaybackSessionRegistry.getOrCreate(this)
     }
 
     private companion object {
-        const val STABLE_PLAYBACK_DELAY_MS = 1500L
+        const val STABLE_PLAYBACK_DELAY_MS = 150L
     }
 
     private lateinit var playerView: PlayerView
@@ -49,6 +52,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var loadingSubtitle: TextView
     private var stateJob: Job? = null
     private var logoJob: Job? = null
+    private var attachedPlayer: Player? = null
     private var isClosingPlayback = false
     private var loadingDismissed = false
     private var logoLoaded = false
@@ -103,6 +107,11 @@ class PlayerActivity : AppCompatActivity() {
         loadingSubtitle = findViewById(R.id.player_loading_subtitle)
 
         playerView.useController = false
+        // Decoder recovery swaps the player roughly every half minute. Without this the view
+        // drops to its black shutter each time; keeping the last frame makes the ~1s gap read
+        // as a brief freeze instead of a blackout. media3's own buffering spinner is disabled
+        // in the layout for the same reason — the app shows its own overlay on first start.
+        playerView.setKeepContentOnPlayerReset(true)
         playerView.player = session.player
 
         showLoadingOverlay(session.state.value)
@@ -119,8 +128,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        playerView.player = session.player
-        session.player.addListener(playerListener)
+        attachPlayer()
         stateJob = lifecycleScope.launch {
             session.state.collect(::render)
         }
@@ -132,9 +140,29 @@ class PlayerActivity : AppCompatActivity() {
         logoJob?.cancel()
         logoJob = null
         handler.removeCallbacks(stableDismissRunnable)
-        session.player.removeListener(playerListener)
-        playerView.player = null
+        detachPlayer()
         super.onStop()
+    }
+
+    /**
+     * Decoder recovery replaces the whole ExoPlayer instance, so the view must bind to the
+     * current one rather than to whatever it captured at onStart.
+     */
+    private fun attachPlayer() {
+        val current = session.player
+        if (attachedPlayer === current) {
+            return
+        }
+        attachedPlayer?.removeListener(playerListener)
+        attachedPlayer = current
+        playerView.player = current
+        current.addListener(playerListener)
+    }
+
+    private fun detachPlayer() {
+        attachedPlayer?.removeListener(playerListener)
+        attachedPlayer = null
+        playerView.player = null
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -223,6 +251,16 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun render(state: NativePlaybackState) {
+        attachPlayer()
+        if (
+            firstFrameRendered &&
+            loadingDismissed &&
+            state.lastError.isNullOrBlank() &&
+            state.playbackWarning.isNullOrBlank()
+        ) {
+            overlayView.isVisible = false
+            return
+        }
         titleView.text = when (val request = state.activeRequest) {
             null -> getString(R.string.native_playback_title)
             is NativePlaybackRequest.Live -> request.title ?: request.serviceRef
@@ -232,6 +270,8 @@ class PlayerActivity : AppCompatActivity() {
         statusView.text = when {
             !state.lastError.isNullOrBlank() ->
                 getString(R.string.native_playback_status_error, state.lastError)
+
+            !state.playbackWarning.isNullOrBlank() -> state.playbackWarning
 
             state.session != null ->
                 getString(
@@ -258,8 +298,16 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun shouldShowOverlay(state: NativePlaybackState): Boolean {
+        // An error outranks everything: playback that dies after the first frame used to leave the
+        // last decoded picture frozen on screen with nothing telling the viewer it had stopped.
         if (!state.lastError.isNullOrBlank()) {
             return true
+        }
+        if (!state.playbackWarning.isNullOrBlank()) {
+            return true
+        }
+        if (firstFrameRendered || session.player.isPlaying) {
+            return false
         }
         if (state.session != null) {
             return false
@@ -272,9 +320,26 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         isClosingPlayback = true
+        runCatching {
+            session.player.stop()
+            session.player.clearMediaItems()
+        }
         NativePlaybackBridge(this).stop()
         finish()
     }
+
+    override fun onDestroy() {
+        if (!isClosingPlayback) {
+            isClosingPlayback = true
+            runCatching {
+                session.player.stop()
+                session.player.clearMediaItems()
+            }
+            NativePlaybackBridge(this).stop()
+        }
+        super.onDestroy()
+    }
+
 
     private fun isExitKey(event: KeyEvent): Boolean {
         if (event.repeatCount != 0) {

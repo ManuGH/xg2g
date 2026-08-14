@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>xg2g P6.1b ABR Spike Telemetry Test</title>
+  <script src="/hls.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #38bdf8; }
+    .container { display: flex; gap: 20px; flex-wrap: wrap; }
+    .player-box { flex: 1; min-width: 480px; }
+    video { width: 100%; border-radius: 8px; background: #000; border: 1px solid #334155; }
+    .stats-box {
+      flex: 1;
+      min-width: 320px;
+      background: #1e293b;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+    pre {
+      background: #090d16;
+      padding: 12px;
+      border-radius: 6px;
+      color: #4ade80;
+      font-size: 0.85rem;
+      overflow-x: auto;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 0.8rem;
+    }
+    .badge-720p { background: #0284c7; color: #fff; }
+    .badge-480p { background: #d97706; color: #fff; }
+    .event-log {
+      max-height: 200px;
+      overflow-y: auto;
+      background: #0f172a;
+      padding: 8px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.8rem;
+    }
+    .log-item { margin-bottom: 4px; border-bottom: 1px solid #1e293b; padding-bottom: 2px; }
+  </style>
+</head>
+<body>
+  <h1>xg2g P6.1b – Real Browser ABR Down/Upswitch Verification</h1>
+  <p style="color: #94a3b8; font-size: 0.9rem;">
+    Continuous FFmpeg dual-rendition stream. Throttle network in Chrome DevTools to trigger 720p &rarr; 480p downswitch.
+  </p>
+
+  <div class="container">
+    <div class="player-box">
+      <video id="video" controls autoplay muted></video>
+      <div style="margin-top: 10px;">
+        <button id="btnExport" style="padding: 8px 16px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer;">
+          Export Metrics JSON
+        </button>
+      </div>
+    </div>
+
+    <div class="stats-box">
+      <h3>Active Level: <span id="currentLevel" class="badge">Initializing...</span></h3>
+      <p>Current Buffer: <strong><span id="bufferSec">0.00</span>s</strong></p>
+      <p>Rebuffer Count: <strong><span id="rebufferCount">0</span></strong> (Total Duration: <strong><span id="rebufferDuration">0</span>ms</strong>)</p>
+      <p>Playback Run ID: <code id="runId">...</code></p>
+      
+      <h4>Level Switch Events:</h4>
+      <div id="eventLog" class="event-log"></div>
+    </div>
+  </div>
+
+  <h3>Metrics Dump (window.playbackMetrics):</h3>
+  <pre id="jsonDump">Collecting metrics...</pre>
+
+  <script>
+    const runId = "run_" + Math.random().toString(36).substr(2, 9);
+    document.getElementById("runId").textContent = runId;
+
+    const metrics = {
+      playback_run_id: runId,
+      ffmpeg_pid: null,
+      initial_level: null,
+      selected_level_changes: [],
+      switch_timestamps: [],
+      buffer_seconds_before_switch: [],
+      buffer_seconds_after_switch: [],
+      rebuffer_count: 0,
+      rebuffer_duration_ms: 0,
+      hls_js_version: typeof Hls !== 'undefined' ? Hls.version : 'latest'
+    };
+    window.playbackMetrics = metrics;
+
+    let rebufferStartTime = null;
+    const video = document.getElementById("video");
+    const eventLog = document.getElementById("eventLog");
+
+    function logEvent(msg) {
+      const timeStr = new Date().toISOString().split("T")[1].slice(0, 8);
+      const div = document.createElement("div");
+      div.className = "log-item";
+      div.textContent = `[${timeStr}] ${msg}`;
+      eventLog.prepend(div);
+      updateJsonDump();
+    }
+
+    function updateJsonDump() {
+      document.getElementById("jsonDump").textContent = JSON.stringify(metrics, null, 2);
+    }
+
+    // Measure buffer length
+    function getBufferLength() {
+      if (!video.buffered.length) return 0;
+      const pos = video.currentTime;
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (pos >= video.buffered.start(i) && pos <= video.buffered.end(i)) {
+          return video.buffered.end(i) - pos;
+        }
+      }
+      return 0;
+    }
+
+    setInterval(() => {
+      document.getElementById("bufferSec").textContent = getBufferLength().toFixed(2);
+    }, 250);
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        debug: false,
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 30,
+        abrEmaFastLive: 1.0,
+        abrEmaSlowLive: 3.0,
+        abrBandWidthFactor: 0.95,
+        abrBandWidthUpFactor: 0.7
+      });
+
+      hls.loadSource('/hls/master.m3u8');
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+        logEvent(`Manifest parsed with ${data.levels.length} renditions.`);
+      });
+
+      hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+        const stats = data.frag.stats;
+        const bwKbps = Math.round((stats.loaded * 8) / (stats.loading.end - stats.loading.start));
+        const estKbps = Math.round(hls.bandwidthEstimate / 1000);
+        logEvent(`FRAG_LOADED #${data.frag.sn} (level=${data.frag.level}): seg_bw=${bwKbps}kbps, hls_est=${estKbps}kbps`);
+      });
+
+      hls.on(Hls.Events.LEVEL_SWITCHING, (event, data) => {
+        const targetLevel = hls.levels[data.level];
+        const name = targetLevel ? (targetLevel.height + 'p') : String(data.level);
+        const bufBefore = getBufferLength();
+
+        logEvent(`LEVEL_SWITCHING -> ${name} (Buffer before: ${bufBefore.toFixed(2)}s)`);
+
+        if (!metrics.initial_level && targetLevel) {
+          metrics.initial_level = name;
+        }
+
+        metrics.selected_level_changes.push(name);
+        metrics.switch_timestamps.push(new Date().toISOString());
+        metrics.buffer_seconds_before_switch.push(parseFloat(bufBefore.toFixed(2)));
+      });
+
+      hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+        const activeLevel = hls.levels[data.level];
+        const name = activeLevel ? (activeLevel.height + 'p') : data.level;
+        const bufAfter = getBufferLength();
+
+        metrics.buffer_seconds_after_switch.push(parseFloat(bufAfter.toFixed(2)));
+
+        const badge = document.getElementById("currentLevel");
+        badge.textContent = name;
+        badge.className = "badge " + (name === '720p' ? 'badge-720p' : 'badge-480p');
+
+        logEvent(`LEVEL_SWITCHED -> ${name} (Buffer after: ${bufAfter.toFixed(2)}s)`);
+      });
+
+      video.addEventListener("waiting", () => {
+        rebufferStartTime = performance.now();
+        metrics.rebuffer_count++;
+        document.getElementById("rebufferCount").textContent = metrics.rebuffer_count;
+        logEvent(`WAITING (Rebuffer #${metrics.rebuffer_count} started)`);
+      });
+
+      video.addEventListener("playing", () => {
+        if (rebufferStartTime !== null) {
+          const duration = Math.round(performance.now() - rebufferStartTime);
+          metrics.rebuffer_duration_ms += duration;
+          rebufferStartTime = null;
+          document.getElementById("rebufferDuration").textContent = metrics.rebuffer_duration_ms;
+          logEvent(`PLAYING (Rebuffer resolved after ${duration}ms)`);
+        }
+      });
+
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native Safari path
+      video.src = '/hls/master.m3u8';
+      logEvent('Native WebKit HLS path detected (Safari).');
+    }
+
+    document.getElementById("btnExport").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(metrics, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `p61b_metrics_${runId}.json`;
+      a.click();
+    });
+  </script>
+</body>
+</html>

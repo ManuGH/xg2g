@@ -27,6 +27,15 @@ func TestBuildSessionContext(t *testing.T) {
 		assert.False(t, ctx.IsVOD)
 	})
 
+	t.Run("preserves native client family for pipeline planning", func(t *testing.T) {
+		session := &model.SessionRecord{ContextData: map[string]string{
+			model.CtxKeyClientFamily: " android_tv_native ",
+		}}
+		ctx, err := o.buildSessionContext(session, model.StartSessionEvent{ServiceRef: "ref1"})
+		require.NoError(t, err)
+		assert.Equal(t, "android_tv_native", ctx.ClientFamily)
+	})
+
 	t.Run("recording mode updates", func(t *testing.T) {
 		session := &model.SessionRecord{
 			ContextData: map[string]string{

@@ -8,8 +8,10 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capreg"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/metrics"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 )
 
 type serverIntentDeps struct {
@@ -79,6 +81,74 @@ func (d *serverIntentDeps) VerifyLivePlaybackDecision(token, principalID, servic
 
 func (d *serverIntentDeps) IncLivePlaybackKey(keyLabel, resultLabel string) {
 	metrics.IncLiveIntentsPlaybackKey(keyLabel, resultLabel)
+}
+
+func (d *serverIntentDeps) HouseholdAdmission() *policy.HouseholdResourceAdmission {
+	if d.s.householdAdmission == nil {
+		d.s.householdAdmission = policy.NewHouseholdResourceAdmission()
+	}
+	return d.s.householdAdmission
+}
+
+func (d *serverIntentDeps) HouseholdResourcePolicy() *identity.HouseholdResourcePolicy {
+	if d.s.householdResourcePolicy == nil {
+		return &identity.HouseholdResourcePolicy{
+			MaxConcurrentLiveServices: 100,
+			MaxConcurrentViewers:      100,
+			MaxParallelRecordings:     50,
+			MaxParallelTranscodes:     50,
+			PreemptionEnabled:         true,
+			PreemptionPriorityRanks:   []string{"admin_live", "member_live", "guest_live"},
+		}
+	}
+	return d.s.householdResourcePolicy
+}
+
+func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, profileID string) (identity.Role, *identity.ProfilePolicy, *identity.AccessPolicy, identity.PolicyDecision, error) {
+	idSvc := d.s.getIdentityService()
+	if idSvc == nil {
+		adminPerms := identity.CalculateEffectivePermissions("usr_default_admin", identity.RoleAdmin, nil, nil)
+		return identity.RoleAdmin, nil, nil, identity.PolicyDecision{
+			Allowed:       true,
+			Capabilities:  adminPerms,
+			ReasonCode:    identity.ReasonCodeAllowed,
+			PolicyVersion: 1,
+		}, nil
+	}
+
+	var role identity.Role
+	if userID != "" {
+		u, err := idSvc.Store().GetUser(ctx, userID)
+		if err == nil && u != nil {
+			role = u.Role
+			if mem, mErr := idSvc.Store().GetHouseholdMembership(ctx, "default_household", u.ID); mErr == nil && mem != nil {
+				role = mem.Role
+			}
+		} else {
+			userID = "usr_default_admin"
+			role = identity.RoleAdmin
+		}
+	} else {
+		userID = "usr_default_admin"
+		role = identity.RoleAdmin
+	}
+
+	var pol *identity.ProfilePolicy
+	if profileID != "" {
+		prof, p, pErr := idSvc.Store().GetProfile(ctx, profileID)
+		if pErr == nil && prof != nil && prof.HouseholdID == "default_household" {
+			pol = p
+		}
+	}
+
+	access, _ := idSvc.Store().GetAccessPolicy(ctx, userID)
+	resPolicy := d.s.householdResourcePolicy
+	if resPolicy == nil {
+		resPolicy, _ = idSvc.GetHouseholdResourcePolicy(ctx, "default_household")
+	}
+
+	dec := identity.EvaluatePolicyDecision(userID, role, pol, access, resPolicy, time.Now())
+	return role, pol, access, dec, nil
 }
 
 func (d *serverIntentDeps) RecordReject(code string) {

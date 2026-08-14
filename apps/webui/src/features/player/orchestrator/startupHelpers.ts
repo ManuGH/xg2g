@@ -109,6 +109,25 @@ export function buildRecordingGoneFailure(t: TFunction): PreparedFailure {
   };
 }
 
+export function buildSessionExpiredFailure(t: TFunction): PreparedFailure {
+  return {
+    appError: {
+      title: t('player.sessionExpiredTitle', { defaultValue: 'Wiedergabe-Sitzung beendet' }),
+      status: 410,
+      retryable: true,
+      code: 'session_gone',
+    } as AppError,
+    options: {
+      source: 'backend',
+      failureClass: 'session',
+      retryable: true,
+      recoverable: true,
+      terminal: false,
+      telemetryContext: 'V3Player.session.expired',
+    },
+  };
+}
+
 export function buildLeaseBusyFailure(retryAfterSeconds: number, t: TFunction): PreparedFailure {
   const retryHint = retryAfterSeconds > 0
     ? ` ${t('player.retryAfter', { seconds: retryAfterSeconds })}`

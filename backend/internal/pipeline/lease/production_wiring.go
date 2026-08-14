@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 )
 
 // StartupGateState represents the mandatory gate status for lease acquisitions.
@@ -354,6 +356,15 @@ func (c *IntentTrackedTunerLeaseController) Acquire(ctx context.Context, owner O
 	}
 
 	return handle, nil
+}
+
+func (c *IntentTrackedTunerLeaseController) AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, sessionID, userID, profileID string, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
+	if ticket != nil {
+		if err := policy.ValidateBoundTicket(ticket, sessionID, userID, profileID, "tuner"); err != nil {
+			return nil, fmt.Errorf("tuner lease ticket validation failed: %w", err)
+		}
+	}
+	return c.Acquire(ctx, owner, slot, ttl)
 }
 
 // Renew delegates to the underlying controller and marks RECOVERY_REQUIRED if renew fails.

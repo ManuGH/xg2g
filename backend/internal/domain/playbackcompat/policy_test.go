@@ -60,6 +60,30 @@ func TestResolve_NativeAppDolbyClaimRemainsEffective(t *testing.T) {
 	}
 }
 
+func TestResolve_AndroidNativeMP2ClaimIsNotEffective(t *testing.T) {
+	for _, family := range []string{"android_native", "android_tv_native", "android_exoplayer"} {
+		t.Run(family, func(t *testing.T) {
+			resolved := Resolve(Claims{
+				Scope:           "live",
+				Family:          family,
+				PreferredEngine: "native",
+				AudioCodecs:     []string{"aac", "mp2", "ac3"},
+			})
+			if !slices.Equal(resolved.Effective.AudioCodecs, []string{"aac", "ac3"}) {
+				t.Fatalf("unexpected effective audio codecs: %#v", resolved.Effective.AudioCodecs)
+			}
+			if len(resolved.Adjustments) != 1 || resolved.Adjustments[0].Reason != ReasonAndroidNativeCannotDecodeMP2 {
+				t.Fatalf("unexpected policy adjustments: %#v", resolved.Adjustments)
+			}
+		})
+	}
+
+	ios := Resolve(Claims{Family: "ios_native", AudioCodecs: []string{"mp2"}})
+	if !slices.Equal(ios.Effective.AudioCodecs, []string{"mp2"}) {
+		t.Fatalf("non-Android native claim was narrowed: %#v", ios.Effective.AudioCodecs)
+	}
+}
+
 func TestResolve_NeverWidensClaimSets(t *testing.T) {
 	raw := Claims{
 		Family:          "safari_native",

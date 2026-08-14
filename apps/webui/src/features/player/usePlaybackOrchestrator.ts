@@ -119,6 +119,7 @@ import {
   buildMissingDecisionTokenFailure,
   buildMissingOutputUrlFailure,
   buildRecordingGoneFailure,
+  buildSessionExpiredFailure,
   buildServiceRefRequiredFailure,
   buildUnsupportedLiveModeFailure,
   prepareForPlaybackAttempt,
@@ -1449,6 +1450,12 @@ export function usePlaybackOrchestrator(
               recoverable: false,
               terminal: true,
             });
+            return;
+          }
+          if (liveResponse.status === 410) {
+            setStatus('error');
+            const failure = buildSessionExpiredFailure(t);
+            reportPlaybackFailure(failure.appError, failure.options);
             return;
           }
           throw normalizePlayerError(liveError ?? {

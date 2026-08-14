@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 )
 
 // TunerLeaseHandle represents the active lease token held by a session/worker.
@@ -23,6 +25,7 @@ type LeaseID = ID
 // TunerLeaseController defines the contract for controlling tuner slot leases.
 type TunerLeaseController interface {
 	Acquire(ctx context.Context, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error)
+	AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, sessionID, userID, profileID string, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error)
 	Renew(ctx context.Context, handle *TunerLeaseHandle, ttl time.Duration) error
 	Release(ctx context.Context, handle *TunerLeaseHandle, reason ReasonCode) error
 }
@@ -67,6 +70,22 @@ func (c *TunerBindingController) Acquire(ctx context.Context, owner Owner, slot 
 		return nil, ErrBindingUnavailable
 	}
 	l, err := c.tb.AcquireTunerSlot(ctx, owner, slot, ttl)
+	if err != nil {
+		return nil, err
+	}
+	return &TunerLeaseHandle{
+		LeaseID: l.ID,
+		Owner:   l.Owner,
+		Slot:    slot,
+		Scope:   l.Scope,
+	}, nil
+}
+
+func (c *TunerBindingController) AcquireWithBoundTicket(ctx context.Context, ticket *policy.AdmissionTicket, sessionID, userID, profileID string, owner Owner, slot int, ttl time.Duration) (*TunerLeaseHandle, error) {
+	if c == nil || c.tb == nil {
+		return nil, ErrBindingUnavailable
+	}
+	l, err := c.tb.AcquireTunerSlotWithTicket(ctx, ticket, sessionID, userID, profileID, owner, slot, ttl)
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +187,19 @@ func (r *TunerLifecycleRunner) RunSession(
 	tuneFn func(ctx context.Context) error,
 	runFn func(ctx context.Context) error,
 ) error {
+	return r.RunSessionWithTicket(parentCtx, nil, "", "", "", owner, slot, requiresTuner, tuneFn, runFn)
+}
+
+func (r *TunerLifecycleRunner) RunSessionWithTicket(
+	parentCtx context.Context,
+	ticket *policy.AdmissionTicket,
+	sessionID, userID, profileID string,
+	owner Owner,
+	slot int,
+	requiresTuner bool,
+	tuneFn func(ctx context.Context) error,
+	runFn func(ctx context.Context) error,
+) error {
 	if parentCtx == nil {
 		parentCtx = context.Background()
 	}
@@ -184,8 +216,8 @@ func (r *TunerLifecycleRunner) RunSession(
 		return ErrBindingUnavailable
 	}
 
-	// 1. Acquire Tuner Lease BEFORE any hardware operation
-	handle, err := r.controller.Acquire(parentCtx, owner, slot, r.TTL)
+	// 1. Acquire Tuner Lease BEFORE any hardware operation using bound ticket
+	handle, err := r.controller.AcquireWithBoundTicket(parentCtx, ticket, sessionID, userID, profileID, owner, slot, r.TTL)
 	if err != nil {
 		// ErrScopeConflict or other acquire errors: ZERO hardware operations occur
 		return err

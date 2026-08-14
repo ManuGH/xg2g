@@ -25,6 +25,14 @@ if [[ -z "${FFMPEG_VERSION}" ]]; then
 fi
 echo "🛠️  FFmpeg pinned version: ${FFMPEG_VERSION}"
 
+# Go version SSoT comes from backend/go.mod
+GO_VERSION="$(sed -nE 's/^go[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+)/\1/p' "${BACKEND_ROOT}/go.mod" | head -n1 | tr -d '[:space:]')"
+if [[ -z "${GO_VERSION}" ]]; then
+    echo "❌ Could not resolve GO_VERSION from backend/go.mod" >&2
+    exit 1
+fi
+echo "🛠️  Go version SSoT: ${GO_VERSION}"
+
 # Extract Digest from DIGESTS.lock if present
 # This is a basic parser for Step 1; Step 2 will rely on more robust validation.
 DIGEST_VAL=""
@@ -54,6 +62,7 @@ render() {
     sed -e "s/{{VERSION}}/${VERSION}/g" \
         -e "s/{{DIGEST}}/${DIGEST_VAL}/g" \
         -e "s/{{FFMPEG_VERSION}}/${FFMPEG_VERSION}/g" \
+        -e "s/{{GO_VERSION}}/${GO_VERSION}/g" \
         "$src" >> "$dst"
 
     echo "✅ Rendered: ${dst}"
@@ -66,6 +75,7 @@ render_body() {
     sed -e "s/{{VERSION}}/${VERSION}/g" \
         -e "s/{{DIGEST}}/${DIGEST_VAL}/g" \
         -e "s/{{FFMPEG_VERSION}}/${FFMPEG_VERSION}/g" \
+        -e "s/{{GO_VERSION}}/${GO_VERSION}/g" \
         "$src" > "$dst"
 }
 

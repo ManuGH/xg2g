@@ -5,9 +5,11 @@ import {
   HOST_NATIVE_PLAYBACK_STATE_EVENT,
   getNativePlaybackCapabilities,
   getNativePlaybackState,
+  initializeHostBridge,
   onHostMediaKey,
   onNativePlaybackState,
   requestHostInputFocus,
+  resetHostBridgeForTests,
   resolveHostEnvironment,
   setHostPlaybackActive,
   startNativePlayback,
@@ -16,12 +18,83 @@ import {
 
 describe('hostBridge', () => {
   afterEach(() => {
-    delete window.__XG2G_HOST__;
+    resetHostBridgeForTests();
     delete window.Xg2gHost;
+    delete window.Xg2gHostBridge;
     delete document.documentElement.dataset.xg2gHostPlatform;
     delete document.documentElement.dataset.xg2gHostTv;
     delete document.documentElement.dataset.xg2gHostMediaKeys;
     vi.restoreAllMocks();
+  });
+
+  it('handshakes over the origin-bound message bridge and caches its snapshot', async () => {
+    const postMessage = vi.fn();
+    window.Xg2gHostBridge = { postMessage, onmessage: null };
+
+    const initialized = initializeHostBridge();
+    expect(JSON.parse(postMessage.mock.calls[0][0])).toEqual({
+      protocolVersion: 1,
+      type: 'hello',
+    });
+
+    window.Xg2gHostBridge.onmessage?.({
+      data: JSON.stringify({
+        protocolVersion: 1,
+        type: 'snapshot',
+        host: {
+          platform: 'android-tv',
+          isTv: true,
+          supportsKeepScreenAwake: true,
+          supportsHostMediaKeys: true,
+          supportsInputFocus: true,
+          supportsNativePlayback: true,
+        },
+        playbackCapabilities: {
+          capabilitiesVersion: 3,
+          deviceType: 'android_tv',
+          videoCodecs: ['h264'],
+        },
+        nativePlaybackState: {
+          playerState: 3,
+          playWhenReady: true,
+          isInPip: false,
+        },
+      }),
+    });
+    await initialized;
+
+    expect(resolveHostEnvironment().platform).toBe('android-tv');
+    expect(getNativePlaybackCapabilities()).toEqual(expect.objectContaining({
+      deviceType: 'android_tv',
+      videoCodecs: ['h264'],
+    }));
+    expect(getNativePlaybackState()?.playerState).toBe(3);
+  });
+
+  it('sends structured commands through the message bridge', () => {
+    const postMessage = vi.fn();
+    window.Xg2gHostBridge = { postMessage, onmessage: null };
+
+    setHostPlaybackActive(true);
+    requestHostInputFocus();
+    startNativePlayback({ kind: 'live', serviceRef: '1:0:1:AA' });
+    stopNativePlayback();
+
+    const messages = postMessage.mock.calls.map(([raw]) => JSON.parse(raw));
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'hello' }),
+      expect.objectContaining({
+        type: 'command',
+        command: 'setPlaybackActive',
+        payload: { active: true },
+      }),
+      expect.objectContaining({
+        type: 'command',
+        command: 'startNativePlayback',
+        payload: { request: { kind: 'live', serviceRef: '1:0:1:AA' } },
+      }),
+      expect.objectContaining({ type: 'command', command: 'stopNativePlayback' }),
+    ]));
   });
 
   it('resolves the injected Android host capabilities and applies them to the document', () => {

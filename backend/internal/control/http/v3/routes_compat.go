@@ -19,6 +19,7 @@ type CompatibilityHandler interface {
 	HandleRecordingResume(http.ResponseWriter, *http.Request)
 	HandleRecordingsContinue(http.ResponseWriter, *http.Request)
 	PostItemsPlaybackInfo(http.ResponseWriter, *http.Request, string)
+	HandleV3HLS(http.ResponseWriter, *http.Request)
 }
 
 // RegisterCompatibilityRoutes mounts compatibility routes that still exist
@@ -27,6 +28,9 @@ func RegisterCompatibilityRoutes(rRead, rWrite chi.Router, handler Compatibility
 	if handler == nil {
 		return
 	}
+
+	rRead.Get(V3BaseURL+"/sessions/{sessionID}/hls/*", handler.HandleV3HLS)
+	rRead.Head(V3BaseURL+"/sessions/{sessionID}/hls/*", handler.HandleV3HLS)
 
 	rRead.Get(V3BaseURL+"/vod/{recordingId}", func(w http.ResponseWriter, r *http.Request) {
 		recordingID := chi.URLParam(r, "recordingId")

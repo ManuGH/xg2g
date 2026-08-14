@@ -9,6 +9,7 @@ import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.RefreshedDeviceSession
 import io.github.manugh.xg2g.android.StartedWebBootstrap
+import io.github.manugh.xg2g.android.auth.DPoPProvider
 import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
 import kotlinx.coroutines.runBlocking
 import okhttp3.Headers
@@ -126,33 +127,10 @@ class GuideApiClientTest {
     }
 
     @Test
-    fun `fetchBouquets delegates cookie reuse decisions to device auth repository`() {
+    fun `fetchBouquets succeeds with direct native REST API request`() {
         val cookieSession = MutableCookieSession(hasCookie = true)
-        val stateStore = TestStateStore(
-            PersistedDeviceAuthState(
-                serverUrl = "http://127.0.0.1:8080/ui/",
-                deviceGrantId = "dgr-1",
-                deviceGrant = "grant-secret"
-            )
-        )
-        val transport = RecordingDeviceAuthTransport().apply {
-            refreshResponse = RefreshedDeviceSession(
-                accessSessionId = "dss-1",
-                accessToken = "fresh-token",
-                accessTokenExpiresAtEpochMs = 120_000L,
-                policyVersion = "device-auth-v1"
-            )
-        }
-        val repository = DeviceAuthRepository(
-            stateStore = stateStore,
-            cookieSession = cookieSession,
-            transport = transport,
-            telemetry = NoopTelemetry(),
-            nowEpochMs = { 60_000L }
-        )
         val client = guideApiClient(
-            cookieSession = cookieSession,
-            deviceAuthRepository = repository
+            cookieSession = cookieSession
         ) { path ->
             when (path) {
                 "/api/v3/services/bouquets" -> "[]"
@@ -165,14 +143,10 @@ class GuideApiClientTest {
         }
 
         assertTrue(bouquets.isEmpty())
-        assertEquals(1, transport.refreshCalls)
-        assertEquals(1, transport.createCookieSessionCalls)
-        assertEquals("fresh-token", stateStore.current?.accessToken)
     }
 
     private fun guideApiClient(
         cookieSession: AuthCookieSession = AlwaysAuthenticatedCookieSession(),
-        deviceAuthRepository: DeviceAuthRepository? = null,
         responder: (String) -> String
     ): GuideApiClient {
         val okHttpClient = OkHttpClient.Builder()
@@ -189,10 +163,21 @@ class GuideApiClientTest {
             }
             .build()
 
+        val mockStore = object : io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore {
+            override fun load() = null
+            override fun save(state: io.github.manugh.xg2g.android.PersistedDeviceAuthState) {}
+            override fun clear() {}
+        }
+        val mockDPoP = object : DPoPProvider {
+            override fun createProof(htm: String, htu: String, ath: String?) = "proof"
+            override fun getOrGenerateKeyPair(): java.security.KeyPair = java.security.KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
+            override fun getJWKThumbprint() = "jkt"
+        }
+
         return GuideApiClient(
             baseUrl = "http://127.0.0.1:8080/ui/",
-            deviceAuthRepository = deviceAuthRepository,
-            cookieSession = cookieSession,
+            stateStore = mockStore,
+            dpopProvider = mockDPoP,
             okHttpClient = okHttpClient
         )
     }

@@ -71,6 +71,14 @@ func (a *LocalAdapter) planInput(spec ports.StreamSpec, inputURL string) (inputP
 			} else {
 				probeSize = "20M"
 			}
+			// Media3 on the native TV app does not need the deep Safari/HLS.js
+			// discovery window. The tuner preflight has already established a
+			// healthy clear MPEG-TS input, so keep the execution probe bounded and
+			// leave every browser client on the conservative path above.
+			if isAndroidTVNativeSpec(spec) {
+				analyzeDuration = "2000000"
+				probeSize = "5M"
+			}
 		}
 		// igndts discards healthy container DTS and forces a PTS-based
 		// reconstruction that breaks on B-pyramid GOPs (non-monotonic DTS,
@@ -190,6 +198,20 @@ func (a *LocalAdapter) resolveLiveFPS(ctx context.Context, spec ports.StreamSpec
 }
 
 func (a *LocalAdapter) resolveSkippedLiveFPS(ctx context.Context, spec ports.StreamSpec, inputURL, sourceKey string, fallback int) (int, bool) {
+	if isAndroidTVNativeSpec(spec) && spec.Source.Type == ports.SourceTuner {
+		logEvt := a.Logger.Info().
+			Str("session_id", spec.SessionID).
+			Str("startup_phase", "fps_probe_skipped_android_tv_native").
+			Str("source_key", sourceKey)
+		if cachedFPS, ok := a.cachedFPS(sourceKey); ok {
+			logEvt.Int("cached_fps", cachedFPS).
+				Msg("skipping fps probe for native Android TV; using cached fps")
+			return cachedFPS, true
+		}
+		logEvt.Int("fallback_fps", fallback).
+			Msg("skipping fps probe for native Android TV; using profile fallback fps")
+		return fallback, true
+	}
 	if isStreamRelayURL(inputURL) {
 		logEvt := a.Logger.Info().
 			Str("session_id", spec.SessionID).

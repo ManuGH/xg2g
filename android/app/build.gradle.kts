@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseStoreFile = System.getenv("KEYSTORE_FILE")
+val releaseStorePassword = System.getenv("KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("KEY_ALIAS")
+val releaseKeyPassword = System.getenv("KEY_PASSWORD")
+val releaseSigningConfigured = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() } && file(requireNotNull(releaseStoreFile)).isFile
+
 android {
     namespace = "io.github.manugh.xg2g.android"
     compileSdk = 36
@@ -33,6 +44,7 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
+            versionCode = 2
             manifestPlaceholders["appLabel"] = "xg2g Dev"
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             manifestPlaceholders["deepLinkScheme"] = "https"
@@ -52,17 +64,29 @@ android {
             manifestPlaceholders["appLabel"] = "xg2g"
             manifestPlaceholders["usesCleartextTraffic"] = "false"
             manifestPlaceholders["deepLinkScheme"] = "https"
-            manifestPlaceholders["deepLinkHost"] = "xg2g.example.invalid"
+            manifestPlaceholders["deepLinkHost"] = "xg2g.home.matrixcentral.de"
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            // Never produce a production-looking APK with the debug identity. An unconfigured
+            // release is deliberately unsigned and AGP will fail its package/sign task.
+            if (releaseSigningConfigured) {
+                storeFile = file(requireNotNull(releaseStoreFile))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
     }
 
     buildTypes {
         debug {
-            buildConfigField("boolean", "WEBVIEW_DEBUGGING", "true")
         }
         release {
             isMinifyEnabled = false
-            buildConfigField("boolean", "WEBVIEW_DEBUGGING", "false")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -85,12 +109,13 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.03.01"))
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-core")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("com.google.android.material:material:1.13.0")
-    implementation("androidx.webkit:webkit:1.15.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.media3:media3-exoplayer:1.10.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.0")
@@ -99,10 +124,15 @@ dependencies {
     implementation("androidx.media3:media3-datasource-okhttp:1.10.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
+    implementation("androidx.credentials:credentials:1.5.0-rc01")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0-rc01")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("com.google.firebase:firebase-messaging:24.1.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("org.json:json:20250517")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 
     androidTestImplementation("androidx.test:core-ktx:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")

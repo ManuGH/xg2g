@@ -29,7 +29,10 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			plan.Packaging.Container = "fmp4"
 		}
 
-		if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" {
+		isABRIntent := isABRRequested(ev)
+		if isABRIntent {
+			plan.Video = TrackPlan{Mode: "transcode", Codec: "h264", EnableABR: true}
+		} else if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" {
 			plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		} else {
 			if requiresInterlaceRepair(ev) {
@@ -89,12 +92,18 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 	// at every segment boundary — producing a duplicate PTS plus a 40ms hole
 	// per segment, which players render as a periodic visible judder (verified
 	// against a raw capture: source PTS were perfect, segments were not).
-	// MPEG-TS segments carry the source timestamps faithfully, and every HLS
-	// client that copies H.264 also plays TS. HEVC/AV1 keep fMP4: they require
-	// it (hvc1/av01 sample entries) and their pipelines always transcode.
-	if plan.Video.Mode == "copy" && plan.Packaging.Container == "fmp4" && !copyCodecRequiresFMP4(plan.Video.Codec) {
+	// MPEG-TS segments carry the source timestamps faithfully for most clients.
+	// Android TV native is the narrow exception: the MediaTek TS parser on Fire
+	// TV corrupts NAL alignment at segment boundaries, while the same decoder is
+	// stable through ExoPlayer's FragmentedMp4Extractor. Keep the client's fMP4
+	// preference for that family only; video still remains bit-for-bit copy.
+	if plan.Video.Mode == "copy" && plan.Packaging.Container == "fmp4" && !copyCodecRequiresFMP4(plan.Video.Codec) && !allowsCopiedH264FMP4(ev.ClientEvidence) {
 		plan.Packaging.Container = "mpegts"
 	}
+}
+
+func allowsCopiedH264FMP4(client ClientEvidence) bool {
+	return strings.EqualFold(strings.TrimSpace(client.Family), "android_tv_native") && client.PrefersFMP4
 }
 
 func copyCodecRequiresFMP4(codec string) bool {
@@ -182,5 +191,18 @@ func applyPolicyModifiers(plan *PlaybackPlan, ev PlaybackEvidence) {
 				plan.RateControl.TargetVideoBitrateKbps = ev.OperatorPolicy.MaxGlobalBitrate
 			}
 		}
+	}
+}
+
+func isABRRequested(ev PlaybackEvidence) bool {
+	requested := strings.ToLower(strings.TrimSpace(ev.OperatorPolicy.ForceIntent))
+	if requested == "" {
+		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
+	}
+	switch requested {
+	case "abr", "mobile_abr", "3tier", "2tier":
+		return true
+	default:
+		return false
 	}
 }

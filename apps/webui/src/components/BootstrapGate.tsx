@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ClientRequestError } from '../services/clientWrapper';
@@ -6,10 +6,10 @@ import { subscribeAuthRequired } from '../features/player/sessionEvents';
 import { useAppContext } from '../context/AppContext';
 import { useBootstrapConfig } from '../hooks/useServerQueries';
 import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
-import { resolveHostEnvironment } from '../lib/hostBridge';
 import { normalizePathname, ROUTE_MAP, UNLOCK_ROUTE } from '../routes';
 import { isConfigured } from './Config';
 import AuthSurface from './AuthSurface';
+import PasskeyAuthFlow from './auth/PasskeyAuthFlow';
 import LoadingSkeleton from './LoadingSkeleton';
 import { Button } from './ui';
 
@@ -50,17 +50,15 @@ function isBypassRoute(pathname: string): boolean {
 
 export default function BootstrapGate() {
   const { t } = useTranslation();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const pathname = location.pathname;
   const navigate = useNavigate();
   const { auth, setToken, setPlayingChannel, setServerSessionAuthenticated } = useAppContext();
-  const hostEnvironment = useMemo(() => resolveHostEnvironment(), []);
-  const isTvHost = hostEnvironment.isTv;
   const authReady = auth.isReady ?? true;
   const hasToken = Boolean(auth.token?.trim());
   const [tokenValue, setTokenValue] = useState('');
   const [forcedAuthPrompt, setForcedAuthPrompt] = useState<AuthPromptReason | null>(null);
   const [authRetry, setAuthRetry] = useState<AuthRetryState | null>(null);
-  const [isTokenVisible, setIsTokenVisible] = useState<boolean>(() => isTvHost);
   const inputRef = useRef<HTMLInputElement>(null);
   const authRetryInFlightRef = useRef(false);
   const {
@@ -163,11 +161,6 @@ export default function BootstrapGate() {
     });
   }, [auth.token, authReady, authRetry, refetch]);
 
-  useEffect(() => {
-    if (authReason !== null) {
-      setIsTokenVisible(isTvHost);
-    }
-  }, [authReason, isTvHost]);
   useTvInitialFocus({
     enabled: authReason !== null,
     targetRef: inputRef,
@@ -177,100 +170,43 @@ export default function BootstrapGate() {
     return <LoadingSkeleton variant="gate" label={t('app.initializing', { defaultValue: 'Initializing...' })} />;
   }
 
-  const handleAuthSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const token = tokenValue.trim();
-    if (!token) {
-      setTokenValue('');
-      inputRef.current?.focus();
-      return;
-    }
+  const searchParams = new URLSearchParams(location.search);
+  const setupTokenFromUrl = searchParams.get('setup_token') || searchParams.get('token') || '';
 
-    setForcedAuthPrompt(null);
-    setTokenValue(token);
-    setAuthRetry({ token, phase: 'pending' });
-    setToken(token);
-  };
+  if (setupTokenFromUrl || (config as any)?.setupRequired || (config as any)?.identityReady === false) {
+    return (
+      <PasskeyAuthFlow
+        mode="bootstrap"
+        setupToken={setupTokenFromUrl}
+        onSuccess={() => {
+          void refetch();
+        }}
+        onSetToken={(t) => {
+          setToken(t);
+        }}
+      />
+    );
+  }
 
   if (authReason) {
-    const authTitle =
-      authReason === 'expired'
-        ? t('auth.expiredTitle', { defaultValue: 'Session Expired' })
-        : t('auth.requiredTitle', { defaultValue: 'Authentication Required' });
-    const authCopy =
-      authReason === 'expired'
-        ? t('auth.expiredCopy', {
-          defaultValue: 'Your saved API token was rejected. Enter a valid token to continue.',
-        })
-        : t('auth.requiredCopy', {
-          defaultValue: 'Enter your API token to open the xg2g control surface.',
-        });
-    const authEyebrow =
-      authReason === 'expired'
-        ? t('auth.expiredEyebrow', { defaultValue: 'Re-authenticate' })
-        : t('auth.requiredEyebrow', { defaultValue: 'Sign in' });
-    const authBaseHint = authReason === 'expired'
-      ? t('auth.expiredHint', {
-        defaultValue: 'Submitting a new token will retry startup automatically.',
-      })
-      : t('auth.requiredHint', {
-        defaultValue: 'The token is stored locally in this browser after successful sign-in.',
-      });
-    const authHint = isTvHost
-      ? `${authBaseHint} ${t('auth.tvHint', {
-        defaultValue: 'On TV the token can stay visible while typing so you can spot mistakes immediately.',
-      })}`
-      : authBaseHint;
-
+    const fromPath = (location.state as { from?: string })?.from || new URLSearchParams(location.search).get('redirect') || '/';
     return (
-      <AuthSurface
-        testId="auth-surface"
-        eyebrow={authEyebrow}
-        title={authTitle}
-        copy={authCopy}
-        form={{
-          label: t('auth.tokenLabel', { defaultValue: 'API Token' }),
-          name: 'token',
-          value: tokenValue,
-          onValueChange: setTokenValue,
-          onSubmit: handleAuthSubmit,
-          submitLabel: t('auth.authenticate', { defaultValue: 'Authenticate' }),
-          submitDisabled: tokenValue.trim().length === 0,
-          placeholder: t('auth.tokenPlaceholder', { defaultValue: 'Enter API Token' }),
-          inputRef,
-          hint: authHint,
-          inputType: isTokenVisible ? 'text' : 'password',
-          inputTestId: 'auth-token-input',
-          submitTestId: 'auth-submit',
-          inputActions: (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-pressed={isTokenVisible}
-                onClick={() => {
-                  setIsTokenVisible((current) => !current);
-                  window.requestAnimationFrame(() => inputRef.current?.focus());
-                }}
-              >
-                {isTokenVisible
-                  ? t('auth.hideToken', { defaultValue: 'Hide token' })
-                  : t('auth.showToken', { defaultValue: 'Show token' })}
-              </Button>
-              {tokenValue ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setTokenValue('');
-                    inputRef.current?.focus();
-                  }}
-                >
-                  {t('auth.clearToken', { defaultValue: 'Clear' })}
-                </Button>
-              ) : null}
-            </>
-          ),
+      <PasskeyAuthFlow
+        mode={authReason === 'expired' ? 'expired' : 'login'}
+        initialToken={tokenValue || auth.token || undefined}
+        onSuccess={() => {
+          setForcedAuthPrompt(null);
+          setServerSessionAuthenticated(true);
+          void refetch();
+          if (fromPath && fromPath !== pathname) {
+            navigate(fromPath, { replace: true });
+          }
+        }}
+        onSetToken={(t) => {
+          setForcedAuthPrompt(null);
+          setTokenValue(t);
+          setAuthRetry({ token: t, phase: 'pending' });
+          setToken(t);
         }}
       />
     );

@@ -10,7 +10,8 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:keepScreenOn="true"
-        app:show_buffering="when_playing"
+        app:resize_mode="fit"
+        app:show_buffering="never"
         app:use_controller="false"
         app:shutter_background_color="#000000"
         app:use_artwork="false" />
@@ -43,8 +44,9 @@
                 android:id="@+id/player_loading_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:fontFamily="@font/space_grotesk"
                 android:textAppearance="?attr/textAppearanceTitleMedium"
-                android:textColor="@color/ide_text_primary"
+                android:textColor="@color/color_text_primary"
                 android:textStyle="bold" />
 
             <TextView
@@ -52,8 +54,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
+                android:fontFamily="@font/ibm_plex_sans"
                 android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="@color/ide_text_secondary" />
+                android:textColor="@color/color_text_secondary" />
         </LinearLayout>
     </FrameLayout>
 
@@ -63,7 +66,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
-        android:background="#8C070A11"
+        android:background="#8C070B10"
         android:orientation="vertical"
         android:paddingHorizontal="20dp"
         android:paddingVertical="16dp"
@@ -73,9 +76,10 @@
             android:id="@+id/player_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:fontFamily="@font/space_grotesk"
             android:text="@string/native_playback_title"
-            android:textAppearance="?attr/textAppearanceTitleLarge"
-            android:textColor="@color/ide_text_primary"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="@color/color_text_primary"
             android:textStyle="bold" />
 
         <TextView
@@ -83,8 +87,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
+            android:fontFamily="@font/ibm_plex_sans"
             android:text="@string/native_playback_status_loading"
             android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="@color/ide_text_secondary" />
+            android:textColor="@color/color_text_secondary" />
     </LinearLayout>
 </FrameLayout>

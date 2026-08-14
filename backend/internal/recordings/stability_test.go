@@ -34,24 +34,48 @@ func TestIsStable_WritingFile(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	// Start a goroutine that writes to the file
-	done := make(chan bool)
+	// Keep writing throughout the observation window. A single delayed write
+	// makes this test depend on the Go scheduler and can be starved when the
+	// package suite is running CPU-heavy FFmpeg tests in parallel.
+	ready := make(chan error, 1)
+	stop := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		time.Sleep(50 * time.Millisecond)
 		// #nosec G304
 		f, err := os.OpenFile(filepath.Clean(filePath), os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
-			t.Logf("failed to open file for writing: %v", err)
+			ready <- err
+			done <- err
 			return
 		}
 		defer func() { _ = f.Close() }()
-		_, _ = f.WriteString(" more data")
-		done <- true
+
+		ready <- nil
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if _, err := f.WriteString(" more data"); err != nil {
+					done <- err
+					return
+				}
+			case <-stop:
+				done <- nil
+				return
+			}
+		}
 	}()
+	if err := <-ready; err != nil {
+		t.Fatalf("failed to open file for writing: %v", err)
+	}
 
 	// File should NOT be stable (size changing)
-	stable, err := IsStableCtx(context.Background(), filePath, 100*time.Millisecond)
-	<-done
+	stable, err := IsStableCtx(context.Background(), filePath, time.Second)
+	close(stop)
+	if writeErr := <-done; writeErr != nil {
+		t.Fatalf("failed to append test data: %v", writeErr)
+	}
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

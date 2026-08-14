@@ -71,8 +71,12 @@ export function getSettingsSectionLabel(section: SettingsSection, t: TranslateFn
       return t('settings.streaming.scan.title', { defaultValue: 'Media Truth Scan' });
     case 'streaming':
       return t('settings.streaming.title', { defaultValue: 'Streaming' });
+    case 'security':
+      return t('settings.security.title', { defaultValue: 'Security & Access' });
     case 'advanced':
       return t('settings.advanced.title', { defaultValue: 'Advanced tools' });
+    default:
+      return String(section);
   }
 }
 

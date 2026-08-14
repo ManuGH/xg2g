@@ -4,7 +4,14 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import io.github.manugh.xg2g.android.DeviceAuthRepository
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.ServerSettingsStore
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.AuthStateMachine
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +20,7 @@ import kotlinx.coroutines.launch
 
 internal class GuideViewModel(
     private val serverLabel: String,
-    private val repository: GuideRepository
+    private val repository: GuideDataSource
 ) : ViewModel() {
     private val _state = MutableStateFlow<GuideScreenState>(GuideScreenState.Loading(serverLabel))
     val state: StateFlow<GuideScreenState> = _state.asStateFlow()
@@ -120,6 +127,8 @@ internal class GuideViewModel(
                         displayZoneOffsetSeconds = content.displayZoneOffsetSeconds
                     )
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Throwable) {
                 _state.value = GuideScreenState.Error(
                     serverLabel = serverLabel,
@@ -132,21 +141,28 @@ internal class GuideViewModel(
 
     internal class Factory(
         private val context: Context,
-        private val serverLabel: String,
-        private val baseUrl: String,
-        private val authToken: String?
+        private val serverLabelProvider: () -> String,
+        private val baseUrlProvider: () -> String,
+        private val authTokenProvider: () -> String?,
+        private val stateStore: PersistedDeviceAuthStateStore,
+        private val dpopProvider: DPoPProvider,
+        private val stateMachine: AuthStateMachine
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            val store = ServerSettingsStore(context.applicationContext)
             val repository = GuideRepository(
                 apiClient = GuideApiClient(
-                    baseUrl = baseUrl,
-                    deviceAuthRepository = DeviceAuthRepository(context.applicationContext)
+                    baseUrlProvider = baseUrlProvider,
+                    profileIdProvider = { store.getSelectedProfileId() },
+                    stateStore = stateStore,
+                    dpopProvider = dpopProvider,
+                    stateMachine = stateMachine
                 ),
-                authToken = authToken
+                authTokenProvider = authTokenProvider
             )
             return GuideViewModel(
-                serverLabel = serverLabel,
+                serverLabel = serverLabelProvider(),
                 repository = repository
             ) as T
         }

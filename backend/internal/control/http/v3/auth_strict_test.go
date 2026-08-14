@@ -17,6 +17,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/middleware"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
+	idstore "github.com/ManuGH/xg2g/internal/domain/identity/store"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	xlog "github.com/ManuGH/xg2g/internal/log"
@@ -376,10 +378,14 @@ func newTestServerConfig(t *testing.T, spy *SpyStore, spyBus *SpyBus, fn func(*c
 	} else {
 		b = bus.NewMemoryBus()
 	}
+	idStore, _ := idstore.NewSQLiteStore(":memory:")
+	idSvc := identity.NewService(identity.Config{}, idStore)
+
 	srv.SetDependencies(Dependencies{
-		Bus:         b,
-		Store:       spy,
-		ResumeStore: resume.NewMemoryStore(),
+		Bus:             b,
+		Store:           spy,
+		ResumeStore:     resume.NewMemoryStore(),
+		IdentityService: idSvc,
 	})
 	srv.SetPreflightCheck(nil)
 

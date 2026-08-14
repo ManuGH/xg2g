@@ -44,15 +44,9 @@ func _a_ctz_64(tls *TLS, x uint64) int32 {
 }
 
 func AtomicAddFloat32(addr *float32, delta float32) (new float32) {
-	for {
-		oldBits := atomic.LoadUint32((*uint32)(unsafe.Pointer(addr)))
-		oldVal := math.Float32frombits(oldBits)
-		newVal := oldVal + delta
-		newBits := math.Float32bits(newVal)
-		if atomic.CompareAndSwapUint32((*uint32)(unsafe.Pointer(addr)), oldBits, newBits) {
-			return newVal
-		}
-	}
+	v := AtomicLoadFloat32(addr) + delta
+	AtomicStoreFloat32(addr, v)
+	return v
 }
 
 func AtomicLoadFloat32(addr *float32) (val float32) {
@@ -64,15 +58,9 @@ func AtomicStoreFloat32(addr *float32, val float32) {
 }
 
 func AtomicAddFloat64(addr *float64, delta float64) (new float64) {
-	for {
-		oldBits := atomic.LoadUint64((*uint64)(unsafe.Pointer(addr)))
-		oldVal := math.Float64frombits(oldBits)
-		newVal := oldVal + delta
-		newBits := math.Float64bits(newVal)
-		if atomic.CompareAndSwapUint64((*uint64)(unsafe.Pointer(addr)), oldBits, newBits) {
-			return newVal
-		}
-	}
+	v := AtomicLoadFloat64(addr) + delta
+	AtomicStoreFloat64(addr, v)
+	return v
 }
 
 func AtomicLoadFloat64(addr *float64) (val float64) {

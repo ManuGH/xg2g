@@ -13,16 +13,16 @@ internal class ReadinessPoller(
 ) {
     suspend fun awaitReady(
         sessionId: String,
-        maxAttempts: Int = 80,
-        pollMs: Long = 500L
+        maxAttempts: Int = 150,
+        pollMs: Long = 100L
     ): SessionSnapshot {
         repeat(maxAttempts) {
             val snapshot = playbackApi.getSessionState(sessionId)
-            if (!snapshot.playbackUrl.isNullOrBlank()) {
-                return snapshot
-            }
             if (snapshot.state.isTerminal) {
                 throw errorMapper.toSessionStateException(snapshot)
+            }
+            if (!snapshot.playbackUrl.isNullOrBlank()) {
+                return snapshot
             }
             delay(pollMs)
         }
@@ -50,10 +50,7 @@ internal class ReadinessPoller(
     ): NativeRecordingPlaybackInfo {
         var playbackInfo: NativeRecordingPlaybackInfo? = null
         repeat(maxAttempts) {
-            if (playbackInfo == null) {
-                playbackInfo = playbackApi.getRecordingPlaybackInfo(request)
-            }
-            val readyPlayback = playbackInfo
+            val readyPlayback = playbackInfo ?: playbackApi.getRecordingPlaybackInfo(request)?.also { playbackInfo = it }
             if (readyPlayback != null) {
                 playbackApi.getPlaybackUrlIfReady(readyPlayback.playbackUrl)?.let {
                     return readyPlayback.copy(playbackUrl = it)

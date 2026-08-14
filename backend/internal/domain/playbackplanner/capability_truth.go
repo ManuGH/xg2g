@@ -10,6 +10,10 @@ import "github.com/ManuGH/xg2g/internal/domain/playbackcompat"
 // browser clients (they claim AC-3 support they do not have).
 const ReasonBrowserCannotDecodeDolby = playbackcompat.ReasonBrowserCannotDecodeDolby
 
+// ReasonAndroidNativeCannotDecodeMP2 explains why Android native clients get
+// AAC audio even when an older app build claimed MP2 support.
+const ReasonAndroidNativeCannotDecodeMP2 = playbackcompat.ReasonAndroidNativeCannotDecodeMP2
+
 // VetoedCapability reports whether the server-side capability truth table
 // overrides a client-claimed codec, and if so with which reason.
 func VetoedCapability(kind, codec string, ce ClientEvidence) (string, bool) {

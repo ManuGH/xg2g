@@ -3,6 +3,7 @@ package intents
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -12,39 +13,112 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/normalize"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
 func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profileSpec model.ProfileSpec) *Error {
+	if hAdm := s.deps.HouseholdAdmission(); hAdm != nil {
+		profileID := intent.Params["profileId"]
+		role, _, _, pDec, err := s.deps.ResolveServerIdentity(ctx, intent.PrincipalID, profileID)
+		if err != nil || !pDec.Allowed {
+			s.deps.RecordReject("policy_decision_denied")
+			reason := "policy_decision_denied"
+			if pDec.ReasonCode != "" {
+				reason = pDec.ReasonCode
+			}
+			return &Error{
+				Kind:    ErrorAdmissionRejected,
+				Message: reason,
+				AdmissionProblem: &admission.Problem{
+					Status: http.StatusForbidden,
+					Type:   "policy/decision-denied",
+					Title:  "Access Denied by Policy",
+					Code:   problemcode.CodeForbidden,
+					Detail: fmt.Sprintf("Access denied by parental/household policy: %s", reason),
+				},
+			}
+		}
+
+		req := policy.AdmissionRequest{
+			SessionID:    intent.SessionID,
+			UserID:       intent.PrincipalID,
+			Role:         role,
+			ProfileID:    profileID,
+			ServiceRef:   intent.ServiceRef,
+			RequestType:  policy.AdmissionRequestLiveTV,
+			IsTranscoded: profileSpec.TranscodeVideo || profileSpec.TranscodesAudio(),
+		}
+		ticket, hDec := hAdm.IssueAdmissionTicket(req, s.deps.HouseholdResourcePolicy())
+		if !hDec.Allowed {
+			s.deps.RecordReject("household_admission_rejected")
+			probCode := admission.CodeSessionsFull
+			if hDec.Reason == "no_tuners" {
+				probCode = admission.CodeNoTuners
+			}
+			return &Error{
+				Kind:    ErrorAdmissionRejected,
+				Message: hDec.Reason,
+				AdmissionProblem: &admission.Problem{
+					Status: http.StatusServiceUnavailable,
+					Type:   "household/admission-rejected",
+					Title:  "Household Admission Capacity Exceeded",
+					Code:   probCode,
+					Detail: hDec.Reason,
+				},
+			}
+		}
+		consumedTkt, err := hAdm.ConsumeTicketOnce(ticket.TicketID)
+		if err != nil {
+			s.deps.RecordReject("household_ticket_consume_failed")
+			return &Error{
+				Kind:    ErrorAdmissionRejected,
+				Message: err.Error(),
+				AdmissionProblem: &admission.Problem{
+					Status: http.StatusServiceUnavailable,
+					Type:   "household/ticket-consume-failed",
+					Title:  "Admission Ticket Processing Error",
+					Code:   problemcode.CodeInternalServerError,
+					Detail: err.Error(),
+				},
+			}
+		}
+
+		if intent.Params != nil {
+			intent.Params["admissionTicketId"] = consumedTkt.TicketID
+			intent.Params["admissionTicketResourceClass"] = string(consumedTkt.RequestType)
+		}
+	}
+
 	controller := s.deps.AdmissionController()
-	if controller == nil {
-		return &Error{Kind: ErrorAdmissionUnavailable}
+	if controller != nil {
+		decision := controller.Check(ctx, admission.Request{WantsTranscode: profileSpec.TranscodeVideo || profileSpec.TranscodesAudio()}, s.deps.AdmissionRuntimeState(ctx))
+		if !decision.Allow {
+			if decision.Problem != nil {
+				s.deps.RecordReject(decision.Problem.Code)
+			}
+
+			retryAfter := ""
+			if decision.RetryAfterSeconds != nil {
+				retryAfter = fmt.Sprintf("%d", *decision.RetryAfterSeconds)
+			} else if decision.Problem != nil && (decision.Problem.Code == admission.CodeNoTuners || decision.Problem.Code == admission.CodeSessionsFull) {
+				retryAfter = "5"
+			}
+
+			problemCode := "admission_rejected"
+			if decision.Problem != nil {
+				problemCode = decision.Problem.Code
+			}
+			intent.Logger.Info().
+				Str("serviceRef", intent.ServiceRef).
+				Str("code", problemCode).
+				Msg("admission rejected")
+
+			return &Error{Kind: ErrorAdmissionRejected, Message: problemCode, RetryAfter: retryAfter, AdmissionProblem: decision.Problem}
+		}
 	}
-	decision := controller.Check(ctx, admission.Request{WantsTranscode: profileSpec.TranscodeVideo || profileSpec.TranscodesAudio()}, s.deps.AdmissionRuntimeState(ctx))
-	if !decision.Allow {
-		if decision.Problem != nil {
-			s.deps.RecordReject(decision.Problem.Code)
-		}
 
-		retryAfter := ""
-		if decision.RetryAfterSeconds != nil {
-			retryAfter = fmt.Sprintf("%d", *decision.RetryAfterSeconds)
-		} else if decision.Problem != nil && (decision.Problem.Code == admission.CodeNoTuners || decision.Problem.Code == admission.CodeSessionsFull) {
-			retryAfter = "5"
-		}
-
-		problemCode := "admission_rejected"
-		if decision.Problem != nil {
-			problemCode = decision.Problem.Code
-		}
-		intent.Logger.Info().
-			Str("serviceRef", intent.ServiceRef).
-			Str("code", problemCode).
-			Msg("admission rejected")
-
-		s.deps.RecordIntent(string(model.IntentTypeStreamStart), "admission", problemCode)
-		return &Error{Kind: ErrorAdmissionRejected, RetryAfter: retryAfter, AdmissionProblem: decision.Problem}
-	}
 	s.deps.RecordAdmit()
 	return nil
 }
@@ -53,6 +127,13 @@ func buildStartRequestParams(intent Intent, resolution startProfileResolution) m
 	requestParams := map[string]string{
 		"profile": resolution.effectiveProfileID,
 		"bucket":  resolution.bucket,
+	}
+	if intent.PrincipalID != "" {
+		requestParams["principal_id"] = intent.PrincipalID
+	}
+	if ticketID := intent.Params["ticket_id"]; ticketID != "" {
+		requestParams["ticket_id"] = ticketID
+		requestParams["admission_ticket_id"] = ticketID
 	}
 	if resolution.requestedPlaybackMode != "" {
 		requestParams[model.CtxKeyClientPath] = resolution.requestedPlaybackMode

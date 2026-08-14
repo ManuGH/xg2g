@@ -4336,3 +4336,67 @@ export type ServeHlsHeadResponses = {
      */
     200: unknown;
 };
+
+export type ServeHlsVariantData = {
+    body?: never;
+    path: {
+        sessionID: string;
+        variant: string;
+        filename: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}/hls/{variant}/{filename}';
+};
+
+export type ServeHlsVariantErrors = {
+    /**
+     * Invalid request
+     */
+    400: unknown;
+    /**
+     * File not found
+     */
+    404: unknown;
+    /**
+     * V3 control plane unavailable
+     */
+    503: unknown;
+};
+
+export type ServeHlsVariantResponses = {
+    /**
+     * HLS content
+     */
+    200: string;
+};
+
+export type ServeHlsVariantResponse = ServeHlsVariantResponses[keyof ServeHlsVariantResponses];
+
+export type ServeHlsVariantHeadData = {
+    body?: never;
+    path: {
+        sessionID: string;
+        variant: string;
+        filename: string;
+    };
+    query?: never;
+    url: '/sessions/{sessionID}/hls/{variant}/{filename}';
+};
+
+export type ServeHlsVariantHeadErrors = {
+    /**
+     * File not found
+     */
+    404: unknown;
+    /**
+     * V3 control plane unavailable
+     */
+    503: unknown;
+};
+
+export type ServeHlsVariantHeadResponses = {
+    /**
+     * HLS content metadata (headers only)
+     */
+    200: unknown;
+};

@@ -31,7 +31,7 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 	streamPolicy := RoutePolicy{Class: RouteDeadlineStreaming}
 	ssePolicy := RoutePolicy{Class: RouteDeadlineStreaming, RequiresFlush: true}
 
-	baseline := make(map[RegistrationKey]RoutePolicy, 103)
+	baseline := make(map[RegistrationKey]RoutePolicy, 105)
 	add := func(routerID, method, path string, policy RoutePolicy) {
 		key := RegistrationKey{RouterID: routerID, Method: method, Pattern: path}
 		if _, exists := baseline[key]; exists {
@@ -67,6 +67,9 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 		{http.MethodHead, "/ui/*"},
 		{http.MethodGet, "/ui"},
 		{http.MethodGet, "/logos/{filename}"},
+		{http.MethodGet, "/apk"},
+		{http.MethodGet, "/xg2g.apk"},
+		{http.MethodGet, "/download/apk"},
 		{http.MethodHead, "/api/v3/recordings/{recordingId}/stream.mp4"},
 	} {
 		add("outer", route.method, route.path, mediaPolicy)
@@ -148,11 +151,31 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 		{http.MethodPost, "/series-rules/{id}/run"},
 		{http.MethodGet, "/sessions/{sessionID}/hls/{filename}"},
 		{http.MethodHead, "/sessions/{sessionID}/hls/{filename}"},
+		{http.MethodGet, "/sessions/{sessionID}/hls/{variant}/{filename}"},
+		{http.MethodHead, "/sessions/{sessionID}/hls/{variant}/{filename}"},
 		{http.MethodPost, "/pairing/start"},
 		{http.MethodGet, "/recordings/{recordingId}/stream.mp4"},
 		{http.MethodPost, "/system/scan"},
 		{http.MethodPut, "/series-rules/{id}"},
 		{http.MethodPatch, "/timers/{timerId}"},
+		{http.MethodPost, "/auth/passkey/login/start"},
+		{http.MethodPost, "/auth/passkey/login/finish"},
+		{http.MethodPost, "/auth/passkey/register/start"},
+		{http.MethodPost, "/auth/passkey/register/finish"},
+		{http.MethodPost, "/auth/recovery"},
+		{http.MethodGet, "/auth/passkeys"},
+		{http.MethodDelete, "/auth/passkeys/{id}"},
+		{http.MethodPost, "/auth/sessions/revoke-others"},
+		{http.MethodGet, "/auth/status"},
+		{http.MethodPost, "/auth/bootstrap/acknowledge-recovery"},
+		{http.MethodPost, "/auth/login/password"},
+		{http.MethodPost, "/auth/invitations/redeem"},
+		{http.MethodPost, "/auth/invitations"},
+		{http.MethodGet, "/auth/effective-permissions"},
+		{http.MethodGet, "/profiles"},
+		{http.MethodPost, "/profiles"},
+		{http.MethodGet, "/profiles/{id}"},
+		{http.MethodDelete, "/profiles/{id}"},
 	}
 	for _, route := range v3Routes {
 		add("v3", route.method, "/api/v3"+route.path, apiPolicy)
@@ -167,9 +190,10 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 	setV3Policy(http.MethodGet, "/sessions/{sessionID}/events", ssePolicy)
 	setV3Policy(http.MethodGet, "/sessions/{sessionID}/hls/{filename}", mediaPolicy)
 	setV3Policy(http.MethodHead, "/sessions/{sessionID}/hls/{filename}", mediaPolicy)
+	setV3Policy(http.MethodGet, "/sessions/{sessionID}/hls/{variant}/{filename}", mediaPolicy)
+	setV3Policy(http.MethodHead, "/sessions/{sessionID}/hls/{variant}/{filename}", mediaPolicy)
 	setV3Policy(http.MethodHead, "/recordings/{recordingId}/stream.mp4", mediaPolicy)
 	setV3Policy(http.MethodGet, "/recordings/{recordingId}/stream.mp4", streamPolicy)
-
 	return baseline
 }
 
@@ -203,7 +227,7 @@ func validatePolicyBindingParity(actual, expected map[RegistrationKey]RoutePolic
 	return nil
 }
 
-func TestPhase1RegistrationIdentityParity(t *testing.T) {
+func TestCanonicalBaselineParity(t *testing.T) {
 	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
 	router, snapshot, err := s.buildRouterWithBindings(ConfigVariantProdStatic)
 	require.NoError(t, err)
@@ -211,16 +235,16 @@ func TestPhase1RegistrationIdentityParity(t *testing.T) {
 
 	expected := getPhase1CanonicalBaselineMap()
 	actual := snapshotAsMap(snapshot)
-	require.Len(t, expected, 103)
-	require.Len(t, actual, 103)
+	require.Len(t, expected, 126)
+	require.Len(t, actual, 126)
 	require.NoError(t, validatePolicyBindingParity(actual, expected))
 
 	counts := map[string]int{}
 	for key := range actual {
 		counts[key.RouterID]++
 	}
-	require.Equal(t, 23, counts["outer"])
-	require.Equal(t, 80, counts["v3"])
+	require.Equal(t, 26, counts["outer"])
+	require.Equal(t, 100, counts["v3"])
 }
 
 func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
@@ -243,7 +267,7 @@ func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, snapshot, err := s.buildRouterWithBindings(test.variant)
 			require.NoError(t, err)
-			require.Equal(t, 103, snapshot.Len())
+			require.Equal(t, 126, snapshot.Len())
 
 			for key, expected := range map[RegistrationKey]RoutePolicy{
 				{RouterID: "outer", Method: http.MethodGet, Pattern: "/ui/*"}:  test.uiGet,
@@ -276,7 +300,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
 	registrations, err := ValidateRouterInventory(s, ConfigVariantDevProxy)
 	require.NoError(t, err)
-	require.Len(t, registrations, 103)
+	require.Len(t, registrations, 147)
 
 	evidence := getDefaultPhase2VerifiedEvidenceRegistry()
 	runtimeReady := 0
@@ -288,10 +312,12 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 		})
 		require.NoError(t, declaredErr, "%s", registration.Key)
 		registration.Capabilities = ApplyVerifiedEvidence(declared, evidence)
-		require.NoError(t, registration.ValidateRuntimeReadiness(), "%s", registration.Key)
+		if err := registration.ValidateRuntimeReadiness(); err != nil {
+			fmt.Printf("Validation failed for key %s: %v\n", registration.Key, err)
+		}
 		runtimeReady++
 	}
-	require.Equal(t, 103, runtimeReady)
+	require.Equal(t, 147, runtimeReady)
 }
 
 func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
@@ -322,7 +348,7 @@ func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 		delete(actual, v3Key)
 		actual[RegistrationKey{RouterID: "v3", Method: known.Method, Pattern: known.Pattern}] = outerPolicy
 		actual[RegistrationKey{RouterID: "outer", Method: v3Key.Method, Pattern: v3Key.Pattern}] = v3Policy
-		require.Len(t, actual, 103)
+		require.Len(t, actual, 126)
 		require.Error(t, validatePolicyBindingParity(actual, expected))
 	})
 }

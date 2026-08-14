@@ -67,12 +67,14 @@ Located in [apps/webui/](apps/webui/).
 make dev-ui
 ```
 
-## Quality Assurance
+## Quality Assurance & Verification
 
 Before submitting a Pull Request, please ensure:
-- All tests pass: `make test`
-- Linting is clean: `make lint`
-- Quality gates pass: `make quality-gates`
+- Primary PR gate bundle passes: `make ci-pr`
+- Unit tests pass: `make test`
+- All quality gates pass: `make quality-gates`
+- Pre-push guard passes: `make pre-push`
+- Document rendering is up to date (no drift): `make verify-docs-compiled`
 
 ## Creating a New Release
 

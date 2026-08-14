@@ -60,7 +60,8 @@ class PlaybackJsonCodecTest {
                 playerState = Player.STATE_READY,
                 playWhenReady = true,
                 isInPip = false,
-                lastError = null
+                lastError = null,
+                playbackWarning = "Audio unavailable"
             )
         )
 
@@ -74,5 +75,6 @@ class PlaybackJsonCodecTest {
             root.getJSONObject("diagnostics").getString("playbackMode")
         )
         assertTrue(root.getJSONObject("diagnostics").has("playbackInfo"))
+        assertEquals("Audio unavailable", root.getString("playbackWarning"))
     }
 }

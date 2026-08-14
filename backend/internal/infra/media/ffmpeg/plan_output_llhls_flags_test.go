@@ -126,6 +126,39 @@ func TestAppendLiveHLSArgs_TempFileFlag(t *testing.T) {
 			if hasFrag := strings.Contains(argStr, "frag_duration"); hasFrag != wantFrag {
 				t.Errorf("frag_duration present = %v, want %v (args: %s)", hasFrag, wantFrag, argStr)
 			}
+			wantNegativeCTS := tc.container == "fmp4"
+			if hasNegativeCTS := strings.Contains(argStr, "movflags=+negative_cts_offsets"); hasNegativeCTS != wantNegativeCTS {
+				t.Errorf("negative_cts_offsets present = %v, want %v (args: %s)", hasNegativeCTS, wantNegativeCTS, argStr)
+			}
+		})
+	}
+}
+
+func TestAppendLiveHLSArgs_NegativeCTSOffsetsOnlyForCopiedFMP4(t *testing.T) {
+	adapter := &LocalAdapter{HLSRoot: t.TempDir(), Logger: zerolog.Nop()}
+	for _, tc := range []struct {
+		name           string
+		container      string
+		transcodeVideo bool
+		wantOption     bool
+	}{
+		{name: "copied fmp4", container: "fmp4", wantOption: true},
+		{name: "transcoded fmp4", container: "fmp4", transcodeVideo: true, wantOption: false},
+		{name: "copied mpegts", container: "mpegts", wantOption: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := ports.StreamSpec{
+				SessionID: "negative-cts",
+				Profile: ports.ProfileSpec{
+					Container:      tc.container,
+					TranscodeVideo: tc.transcodeVideo,
+				},
+			}
+			args := adapter.appendLiveHLSArgs(nil, spec, liveSegmentLayout{segmentDurationSec: 6, listSize: 30})
+			hasOption := strings.Contains(strings.Join(args, " "), "movflags=+negative_cts_offsets")
+			if hasOption != tc.wantOption {
+				t.Fatalf("negative_cts_offsets present = %v, want %v (args: %v)", hasOption, tc.wantOption, args)
+			}
 		})
 	}
 }

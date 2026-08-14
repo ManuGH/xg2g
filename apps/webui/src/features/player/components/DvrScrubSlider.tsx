@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import styles from './V3Player.module.css';
 import {
+  clampFraction,
   previewOffsetForFraction,
   dvrPreviewImageUrl,
   previewHoverLabel,
@@ -46,6 +47,22 @@ export function DvrScrubSlider({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [hover, setHover] = useState<HoverState>(HIDDEN);
 
+  const updateHoverForFraction = useCallback(
+    (fraction: number, targetWidth: number) => {
+      if (!previewBaseUrl) return;
+      const effectiveWidth = targetWidth > 0 ? targetWidth : 100;
+      const offset = previewOffsetForFraction(fraction, max, segmentSeconds);
+      const leftPx = Math.max(0, Math.min(effectiveWidth, effectiveWidth * clampFraction(fraction)));
+      setHover({
+        visible: true,
+        leftPx,
+        url: dvrPreviewImageUrl(previewBaseUrl, offset),
+        label: previewHoverLabel(offset, windowStartUnix),
+      });
+    },
+    [previewBaseUrl, max, segmentSeconds, windowStartUnix],
+  );
+
   const handleMove = useCallback(
     (e: React.MouseEvent<HTMLInputElement>) => {
       if (!previewBaseUrl) return;
@@ -54,8 +71,8 @@ export function DvrScrubSlider({
       const rect = e.currentTarget.getBoundingClientRect();
       if (rect.width <= 0) return;
       const fraction = (e.clientX - rect.left) / rect.width;
-      const offset = previewOffsetForFraction(fraction, max, segmentSeconds);
       const leftPx = e.clientX - wrap.getBoundingClientRect().left;
+      const offset = previewOffsetForFraction(fraction, max, segmentSeconds);
       setHover({
         visible: true,
         leftPx,
@@ -67,6 +84,30 @@ export function DvrScrubSlider({
   );
 
   const handleLeave = useCallback(() => setHover(HIDDEN), []);
+
+  const handleFocus = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (!wrap || max <= 0) return;
+    const fraction = value / max;
+    const width = wrap.getBoundingClientRect().width;
+    updateHoverForFraction(fraction, width);
+  }, [max, value, updateHoverForFraction]);
+
+  const handleBlur = useCallback(() => setHover(HIDDEN), []);
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newValue = parseFloat(e.target.value);
+      onSeek(newValue);
+      const wrap = wrapRef.current;
+      if (wrap && max > 0 && hover.visible) {
+        const fraction = newValue / max;
+        const width = wrap.getBoundingClientRect().width;
+        updateHoverForFraction(fraction, width);
+      }
+    },
+    [max, onSeek, hover.visible, updateHoverForFraction],
+  );
 
   // Filled-progress portion of the track (YouTube-style), driven purely by a CSS
   // custom property so the native <input type=range> keeps owning all seek
@@ -92,7 +133,9 @@ export function DvrScrubSlider({
         className={sliderClassName}
         style={{ '--xg2g-dvr-fill': `${fillPct}%` } as CSSProperties}
         value={value}
-        onChange={(e) => onSeek(parseFloat(e.target.value))}
+        onChange={handleChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
         onMouseMove={handleMove}
         onMouseLeave={handleLeave}
       />

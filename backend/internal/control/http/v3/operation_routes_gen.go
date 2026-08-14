@@ -78,6 +78,8 @@ var operationRoutes = map[string]operationRoute{
 	"RunSeriesRule":                    {Method: "POST", Path: "/series-rules/{id}/run"},
 	"ServeHLS":                         {Method: "GET", Path: "/sessions/{sessionID}/hls/{filename}"},
 	"ServeHLSHead":                     {Method: "HEAD", Path: "/sessions/{sessionID}/hls/{filename}"},
+	"ServeHLSVariant":                  {Method: "GET", Path: "/sessions/{sessionID}/hls/{variant}/{filename}"},
+	"ServeHLSVariantHead":              {Method: "HEAD", Path: "/sessions/{sessionID}/hls/{variant}/{filename}"},
 	"StartPairing":                     {Method: "POST", Path: "/pairing/start"},
 	"StreamRecordingDirect":            {Method: "GET", Path: "/recordings/{recordingId}/stream.mp4"},
 	"TriggerSystemScan":                {Method: "POST", Path: "/system/scan"},
@@ -161,6 +163,8 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("RunSeriesRule", handler.RunSeriesRule)
 	register.add("ServeHLS", handler.ServeHLS)
 	register.add("ServeHLSHead", handler.ServeHLSHead)
+	register.add("ServeHLSVariant", handler.ServeHLSVariant)
+	register.add("ServeHLSVariantHead", handler.ServeHLSVariantHead)
 	register.add("StartPairing", handler.StartPairing)
 	register.add("StreamRecordingDirect", handler.StreamRecordingDirect)
 	register.add("TriggerSystemScan", handler.TriggerSystemScan)

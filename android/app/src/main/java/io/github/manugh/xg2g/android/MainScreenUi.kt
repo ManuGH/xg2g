@@ -2,7 +2,6 @@ package io.github.manugh.xg2g.android
 
 import android.content.res.ColorStateList
 import android.view.View
-import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -14,60 +13,60 @@ import com.google.android.material.textfield.TextInputLayout
 
 internal class MainScreenUi(
     private val activity: AppCompatActivity,
+    private val view: View,
     private val isTvDevice: Boolean
 ) {
-    val rootContainer: FrameLayout = activity.findViewById(R.id.root_container)
-    val fullscreenContainer: FrameLayout = activity.findViewById(R.id.fullscreen_container)
-    val initialWebView: WebView = activity.findViewById(R.id.webview)
+    val rootContainer: FrameLayout = view.findViewById(R.id.root_container)
+    val fullscreenContainer: FrameLayout = view.findViewById(R.id.fullscreen_container)
 
-    private val loadingContainer: View = activity.findViewById(R.id.loading_container)
-    private val loadingDetail: TextView = activity.findViewById(R.id.loading_detail)
+    private val loadingContainer: View = view.findViewById(R.id.loading_container)
+    private val loadingDetail: TextView = view.findViewById(R.id.loading_detail)
 
-    private val tvHomeContainer: View = activity.findViewById(R.id.tv_home_container)
-    private val tvHomeServerValue: TextView = activity.findViewById(R.id.tv_home_server_value)
-    private val tvHomeLiveButton: MaterialButton = activity.findViewById(R.id.tv_home_live_button)
-    private val tvHomeDashboardButton: MaterialButton = activity.findViewById(R.id.tv_home_dashboard_button)
-    private val tvHomeRecordingsButton: MaterialButton = activity.findViewById(R.id.tv_home_recordings_button)
-    private val tvHomeTimersButton: MaterialButton = activity.findViewById(R.id.tv_home_timers_button)
-    private val tvHomeSettingsButton: MaterialButton = activity.findViewById(R.id.tv_home_settings_button)
-    private val tvHomeChangeServerButton: MaterialButton = activity.findViewById(R.id.tv_home_change_server_button)
-    private val tvHomeBrowserButton: MaterialButton = activity.findViewById(R.id.tv_home_browser_button)
+    private val tvHomeContainer: View = view.findViewById(R.id.tv_home_container)
+    private val tvHomeServerValue: TextView = view.findViewById(R.id.tv_home_server_value)
+    private val tvHomeLiveButton: MaterialButton = view.findViewById(R.id.tv_home_live_button)
+    private val tvHomeDashboardButton: MaterialButton = view.findViewById(R.id.tv_home_dashboard_button)
+    private val tvHomeRecordingsButton: MaterialButton = view.findViewById(R.id.tv_home_recordings_button)
+    private val tvHomeTimersButton: MaterialButton = view.findViewById(R.id.tv_home_timers_button)
+    private val tvHomeSettingsButton: MaterialButton = view.findViewById(R.id.tv_home_settings_button)
+    private val tvHomeChangeServerButton: MaterialButton = view.findViewById(R.id.tv_home_change_server_button)
+    private val tvHomeBrowserButton: MaterialButton = view.findViewById(R.id.tv_home_browser_button)
 
-    private val setupContainer: View = activity.findViewById(R.id.setup_container)
-    private val serverUrlLayout: TextInputLayout = activity.findViewById(R.id.server_url_layout)
-    private val serverUrlEditText: TextInputEditText = activity.findViewById(R.id.server_url_edit_text)
-    private val connectButton: MaterialButton = activity.findViewById(R.id.connect_button)
-    private val cancelSetupButton: MaterialButton = activity.findViewById(R.id.cancel_setup_button)
+    private val setupContainer: View = view.findViewById(R.id.setup_container)
+    private val serverUrlLayout: TextInputLayout = view.findViewById(R.id.server_url_layout)
+    private val serverUrlEditText: TextInputEditText = view.findViewById(R.id.server_url_edit_text)
+    private val connectButton: MaterialButton = view.findViewById(R.id.connect_button)
+    private val cancelSetupButton: MaterialButton = view.findViewById(R.id.cancel_setup_button)
 
-    private val errorContainer: View = activity.findViewById(R.id.error_container)
-    private val errorTitle: TextView = activity.findViewById(R.id.error_title)
-    private val errorDetail: TextView = activity.findViewById(R.id.error_detail)
-    private val retryButton: MaterialButton = activity.findViewById(R.id.retry_button)
-    private val changeServerButton: MaterialButton = activity.findViewById(R.id.change_server_button)
-    private val openInBrowserButton: MaterialButton = activity.findViewById(R.id.open_in_browser_button)
+    private val errorContainer: View = view.findViewById(R.id.error_container)
+    private val errorTitle: TextView = view.findViewById(R.id.error_title)
+    private val errorDetail: TextView = view.findViewById(R.id.error_detail)
+    private val retryButton: MaterialButton = view.findViewById(R.id.retry_button)
+    private val changeServerButton: MaterialButton = view.findViewById(R.id.change_server_button)
+    private val openInBrowserButton: MaterialButton = view.findViewById(R.id.open_in_browser_button)
 
-    private val tvQuickActionsContainer: View = activity.findViewById(R.id.tv_quick_actions_container)
-    private val tvMenuButton: MaterialButton = activity.findViewById(R.id.tv_menu_button)
-    private val tvQuickActionsContext: TextView = activity.findViewById(R.id.tv_quick_actions_context)
-    private val tvHomeDestinationButton: MaterialButton = activity.findViewById(R.id.tv_home_destination_button)
-    private val tvGuideDestinationButton: MaterialButton = activity.findViewById(R.id.tv_guide_destination_button)
-    private val tvRecordingsDestinationButton: MaterialButton = activity.findViewById(R.id.tv_recordings_destination_button)
-    private val tvTimersDestinationButton: MaterialButton = activity.findViewById(R.id.tv_timers_destination_button)
-    private val tvSettingsDestinationButton: MaterialButton = activity.findViewById(R.id.tv_settings_destination_button)
-    private val tvReloadButton: MaterialButton = activity.findViewById(R.id.tv_reload_button)
-    private val tvChangeServerButton: MaterialButton = activity.findViewById(R.id.tv_change_server_button)
-    private val tvOpenInBrowserButton: MaterialButton = activity.findViewById(R.id.tv_open_in_browser_button)
-    private val tvExitButton: MaterialButton = activity.findViewById(R.id.tv_exit_button)
+    private val tvQuickActionsContainer: View = view.findViewById(R.id.tv_quick_actions_container)
+    private val tvMenuButton: MaterialButton = view.findViewById(R.id.tv_menu_button)
+    private val tvQuickActionsContext: TextView = view.findViewById(R.id.tv_quick_actions_context)
+    private val tvHomeDestinationButton: MaterialButton = view.findViewById(R.id.tv_home_destination_button)
+    private val tvGuideDestinationButton: MaterialButton = view.findViewById(R.id.tv_guide_destination_button)
+    private val tvRecordingsDestinationButton: MaterialButton = view.findViewById(R.id.tv_recordings_destination_button)
+    private val tvTimersDestinationButton: MaterialButton = view.findViewById(R.id.tv_timers_destination_button)
+    private val tvSettingsDestinationButton: MaterialButton = view.findViewById(R.id.tv_settings_destination_button)
+    private val tvReloadButton: MaterialButton = view.findViewById(R.id.tv_reload_button)
+    private val tvChangeServerButton: MaterialButton = view.findViewById(R.id.tv_change_server_button)
+    private val tvOpenInBrowserButton: MaterialButton = view.findViewById(R.id.tv_open_in_browser_button)
+    private val tvExitButton: MaterialButton = view.findViewById(R.id.tv_exit_button)
 
-    private val activeRailBackground = color(R.color.ide_blue)
-    private val activeRailStroke = color(R.color.ide_blue)
-    private val activeRailText = color(R.color.ide_text_primary)
-    private val idleRailBackground = color(R.color.ide_surface_panel_soft)
-    private val idleRailStroke = color(R.color.ide_outline_soft)
-    private val idleRailText = color(R.color.ide_text_primary)
-    private val actionRailBackground = color(R.color.ide_surface_panel)
-    private val actionRailStroke = color(R.color.ide_outline_soft)
-    private val actionRailText = color(R.color.ide_text_secondary)
+    private val activeRailBackground = color(R.color.color_action)
+    private val activeRailStroke = color(R.color.color_action)
+    private val activeRailText = color(R.color.color_text_primary)
+    private val idleRailBackground = color(R.color.color_surface_panel_soft)
+    private val idleRailStroke = color(R.color.color_border_subtle)
+    private val idleRailText = color(R.color.color_text_primary)
+    private val actionRailBackground = color(R.color.color_surface_panel)
+    private val actionRailStroke = color(R.color.color_border_subtle)
+    private val actionRailText = color(R.color.color_text_secondary)
     private var preferredQuickActionsFocusTarget: MaterialButton? = null
 
     fun bindActions(
@@ -217,21 +216,22 @@ internal class MainScreenUi(
 
     fun render(
         state: MainUiState,
-        webView: WebView,
-        hasCustomView: Boolean,
         externalBrowserAvailable: Boolean
     ) {
         setExternalBrowserActionVisible(externalBrowserAvailable)
         when (state) {
-            is MainUiState.TvHome -> renderTvHome(state, webView)
-            is MainUiState.Setup -> renderSetup(state, webView)
-            is MainUiState.Error -> renderError(state, webView)
-            is MainUiState.Loading -> renderLoading(state, webView)
-            MainUiState.Content -> renderContent(webView, hasCustomView)
+            is MainUiState.TvHome -> renderTvHome(state)
+            is MainUiState.Setup -> renderSetup(state)
+            is MainUiState.Error -> renderError(state)
+            is MainUiState.Loading -> renderLoading(state)
+            is MainUiState.Revoked -> renderError(MainUiState.Error("Zugriff beendet", state.reason))
+            is MainUiState.ReauthRequired -> renderError(MainUiState.Error("Sitzung abgelaufen", state.reason))
+            is MainUiState.RefreshingBanner -> renderContent()
+            MainUiState.Content -> renderContent()
         }
     }
 
-    private fun renderTvHome(state: MainUiState.TvHome, webView: WebView) {
+    private fun renderTvHome(state: MainUiState.TvHome) {
         clearServerUrlError()
         hideTvQuickActions()
         loadingContainer.isVisible = false
@@ -239,12 +239,11 @@ internal class MainScreenUi(
         errorContainer.isVisible = false
         tvMenuButton.isVisible = false
         tvHomeContainer.isVisible = true
-        webView.isVisible = false
         tvHomeServerValue.text = state.serverLabel
         tvHomeLiveButton.requestFocus()
     }
 
-    private fun renderSetup(state: MainUiState.Setup, webView: WebView) {
+    private fun renderSetup(state: MainUiState.Setup) {
         clearServerUrlError()
         hideTvQuickActions()
         loadingContainer.isVisible = false
@@ -253,7 +252,6 @@ internal class MainScreenUi(
         setupContainer.isVisible = true
         cancelSetupButton.isVisible = state.savedUrl != null
         errorContainer.isVisible = false
-        webView.isVisible = false
         serverUrlEditText.setText(state.savedUrl ?: "")
 
         if (isTvDevice && state.savedUrl != null) {
@@ -267,7 +265,7 @@ internal class MainScreenUi(
         }
     }
 
-    private fun renderError(state: MainUiState.Error, webView: WebView) {
+    private fun renderError(state: MainUiState.Error) {
         hideTvQuickActions()
         loadingContainer.isVisible = false
         tvHomeContainer.isVisible = false
@@ -276,30 +274,27 @@ internal class MainScreenUi(
         errorDetail.text = state.detail
         errorContainer.isVisible = true
         setupContainer.isVisible = false
-        webView.isVisible = false
         retryButton.requestFocus()
     }
 
-    private fun renderLoading(state: MainUiState.Loading, webView: WebView) {
+    private fun renderLoading(state: MainUiState.Loading) {
         hideTvQuickActions()
         tvMenuButton.isVisible = false
         tvHomeContainer.isVisible = false
         setupContainer.isVisible = false
         errorContainer.isVisible = false
         loadingContainer.isVisible = true
-        webView.isVisible = false
         loadingDetail.text = state.destinationLabel?.takeIf { it.isNotBlank() }
             ?.let { activity.getString(R.string.shell_loading_detail_host, it) }
             ?: activity.getString(R.string.shell_loading_detail_generic)
     }
 
-    private fun renderContent(webView: WebView, hasCustomView: Boolean) {
+    private fun renderContent() {
         loadingContainer.isVisible = false
         tvHomeContainer.isVisible = false
         setupContainer.isVisible = false
         errorContainer.isVisible = false
         tvMenuButton.isVisible = isTvDevice && !tvQuickActionsContainer.isVisible
-        webView.isVisible = !hasCustomView
     }
 
     private fun color(resId: Int): Int = ContextCompat.getColor(activity, resId)

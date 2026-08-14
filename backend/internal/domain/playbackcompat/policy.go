@@ -11,11 +11,15 @@ import "strings"
 
 const (
 	// PolicyVersion changes whenever a compatibility rule changes semantics.
-	PolicyVersion = "2026-07-19.1"
+	PolicyVersion = "2026-08-10.1"
 
 	// ReasonBrowserCannotDecodeDolby is kept stable because it is emitted in
 	// planner/shadow diagnostics and may be consumed by operational tooling.
 	ReasonBrowserCannotDecodeDolby = "browser_cannot_decode_copied_dolby_audio"
+
+	// ReasonAndroidNativeCannotDecodeMP2 prevents old Android app versions from
+	// turning a false runtime capability claim into a deterministic decoder loop.
+	ReasonAndroidNativeCannotDecodeMP2 = "android_native_cannot_decode_copied_mp2_audio"
 )
 
 // Claims are the canonical capability statements received from a client (or
@@ -57,6 +61,12 @@ var rules = []rule{
 		Codecs:  stringSet("ac3", "ac-3", "eac3", "ec-3"),
 		Applies: IsBrowserClient,
 		Reason:  ReasonBrowserCannotDecodeDolby,
+	},
+	{
+		Kind:    "audio",
+		Codecs:  stringSet("mp2"),
+		Applies: IsAndroidNativeClient,
+		Reason:  ReasonAndroidNativeCannotDecodeMP2,
 	},
 }
 
@@ -122,6 +132,18 @@ func IsBrowserClient(claims Claims) bool {
 	}
 	_, browser := browserFamilies[token(claims.Family)]
 	return browser
+}
+
+// IsAndroidNativeClient identifies native Android/Android TV playback. These
+// clients use MediaCodec directly; Fire OS exposes an MP3 decoder but no MPEG-1
+// Layer II decoder, despite older xg2g app versions advertising MP2 support.
+func IsAndroidNativeClient(claims Claims) bool {
+	switch token(claims.Family) {
+	case "android_native", "android_tv_native", "android_exoplayer":
+		return true
+	default:
+		return false
+	}
 }
 
 func filter(kind string, values []string, claims Claims, adjustments []Adjustment) ([]string, []Adjustment) {

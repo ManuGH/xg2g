@@ -7,6 +7,7 @@
 package v3
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -30,6 +31,7 @@ const (
 //
 //nolint:unused // Legacy types - kept for future use
 type ctxPrincipalKey struct{}
+type dpopRequestContextKey struct{}
 
 // Note: securityHeaders is defined in middleware.go
 
@@ -89,8 +91,8 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 			return
 		}
 
-		// Use constant-time comparison to prevent timing attacks
-		principal, ok := s.TokenPrincipal(r.Context(), reqToken)
+		reqCtx := context.WithValue(r.Context(), dpopRequestContextKey{}, r)
+		principal, ok := s.TokenPrincipal(reqCtx, reqToken)
 		if !ok {
 			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
@@ -179,11 +181,22 @@ func (s *Server) authSessionTTLOrDefault() time.Duration {
 }
 
 func (s *Server) resolveSessionToken(sessionID string) (string, bool) {
-	return s.authSessionStoreOrDefault().ResolveSessionToken(sessionID)
+	if token, ok := s.authSessionStoreOrDefault().ResolveSessionToken(sessionID); ok && token != "" {
+		return token, true
+	}
+	if idSvc := s.getIdentityService(); idSvc != nil {
+		if sess, _, err := idSvc.ValidateWebSession(context.Background(), sessionID, "", ""); err == nil && sess != nil {
+			return sessionID, true
+		}
+	}
+	return "", false
 }
 
 func (s *Server) deleteAuthSession(sessionID string) {
 	s.authSessionStoreOrDefault().InvalidateSession(sessionID)
+	if idSvc := s.getIdentityService(); idSvc != nil {
+		_ = idSvc.RevokeWebSession(context.Background(), sessionID)
+	}
 }
 
 func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) (string, error) {

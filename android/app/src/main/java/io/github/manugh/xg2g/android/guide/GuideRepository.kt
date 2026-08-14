@@ -4,25 +4,38 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.time.Instant
 
-internal class GuideRepository(
-    private val apiClient: GuideApiClient,
-    private val authToken: String?
-) {
-    suspend fun loadInitial(): GuideContent {
-        val bouquets = apiClient.fetchBouquets(authToken)
-        val selectedBouquet = bouquets.firstOrNull()?.name.orEmpty()
-        return loadBouquet(selectedBouquet, bouquets)
-    }
+internal interface GuideDataSource {
+    suspend fun loadInitial(): GuideContent
 
     suspend fun loadBouquet(
         bouquetName: String,
         knownBouquets: List<GuideBouquet>? = null
+    ): GuideContent
+}
+
+internal class GuideRepository(
+    private val apiClient: GuideApiClient,
+    private val authTokenProvider: () -> String?
+) : GuideDataSource {
+    private val currentToken: String? get() = authTokenProvider()
+
+    override suspend fun loadInitial(): GuideContent {
+        val token = currentToken
+        val bouquets = apiClient.fetchBouquets(token)
+        val selectedBouquet = bouquets.firstOrNull()?.name.orEmpty()
+        return loadBouquet(selectedBouquet, bouquets)
+    }
+
+    override suspend fun loadBouquet(
+        bouquetName: String,
+        knownBouquets: List<GuideBouquet>?
     ): GuideContent = coroutineScope {
+        val token = currentToken
         val deviceEpochSec = Instant.now().epochSecond
         val bouquetsDeferred = async {
-            knownBouquets ?: apiClient.fetchBouquets(authToken)
+            knownBouquets ?: apiClient.fetchBouquets(token)
         }
-        val health = runCatching { apiClient.fetchHealthStatus(authToken) }.getOrNull()
+        val health = runCatching { apiClient.fetchHealthStatus(token) }.getOrNull()
         val referenceEpochSec = health?.serverTimeEpochSec ?: deviceEpochSec
         val timelineWindow = buildGuideTimelineWindow(referenceEpochSec)
         val bouquets = bouquetsDeferred.await()
@@ -33,13 +46,13 @@ internal class GuideRepository(
         }
         val channelsDeferred = async {
             apiClient.fetchChannels(
-                authToken = authToken,
+                authToken = token,
                 bouquetName = selectedBouquet.ifBlank { null }
             )
         }
         val scheduleDeferred = async {
             apiClient.fetchEpgWindow(
-                authToken = authToken,
+                authToken = token,
                 bouquetName = selectedBouquet.ifBlank { null },
                 timelineWindow = timelineWindow
             )

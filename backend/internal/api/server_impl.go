@@ -10,6 +10,7 @@ import (
 	"context" // This import is necessary for context.Context
 
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 )
 
 // StartRecordingCacheEvicter delegates to the v3 handler.
@@ -20,4 +21,13 @@ func (s *Server) StartRecordingCacheEvicter(ctx context.Context) {
 
 func (s *Server) scopeMiddleware(required ...v3.Scope) func(http.Handler) http.Handler {
 	return s.v3Handler.ScopeMiddleware(required...)
+}
+
+// SetIdentityService injects the domain identity service into the v3 server.
+func (s *Server) SetIdentityService(svc *identity.Service) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.v3Handler != nil {
+		s.v3Handler.SetIdentityService(svc)
+	}
 }

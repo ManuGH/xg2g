@@ -482,12 +482,11 @@ func (tls *TLS) Longjmp(jb uintptr, val int32) {
 func Xexit(tls *TLS, code int32) {
 	//TODO atexit finalizers
 	X__stdio_exit(tls)
-	for i := len(atExit) - 1; i >= 0; i-- {
-		atExit[i]()
+	for _, v := range atExit {
+		v()
 	}
 	atExitHandlersMu.Lock()
-	for i := len(atExitHandlers) - 1; i >= 0; i-- {
-		v := atExitHandlers[i]
+	for _, v := range atExitHandlers {
 		(*(*func(*TLS))(unsafe.Pointer(&struct{ uintptr }{v})))(tls)
 	}
 	os.Exit(int(code))
@@ -1070,6 +1069,7 @@ func Xsysctlbyname(t *TLS, name, oldp, oldlenp, newp uintptr, newlen Tsize_t) in
 		*(*int32)(unsafe.Pointer(oldp)) = int32(runtime.GOMAXPROCS(-1))
 		return 0
 	default:
+		panic(todo(""))
 		t.setErrno(ENOENT)
 		return -1
 	}

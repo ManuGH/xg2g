@@ -5,7 +5,7 @@
     android:id="@+id/root_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ide_background"
+    android:background="@color/color_bg_base"
     tools:context=".MainActivity">
 
     <View
@@ -28,12 +28,6 @@
         android:translationX="120dp"
         android:translationY="120dp" />
 
-    <WebView
-        android:id="@+id/webview"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone" />
-
     <com.google.android.material.button.MaterialButton
         android:id="@+id/tv_menu_button"
         style="?attr/materialButtonOutlinedStyle"
@@ -48,7 +42,7 @@
         app:icon="@drawable/ic_tv_menu"
         app:iconGravity="textStart"
         app:iconPadding="0dp"
-        app:iconTint="@color/ide_text_primary" />
+        app:iconTint="@color/color_text_primary" />
 
     <!-- Fullscreen container for video -->
     <FrameLayout
@@ -89,6 +83,7 @@
                     android:layout_marginTop="16dp"
                     android:gravity="center"
                     android:text="@string/shell_loading_title"
+                    android:fontFamily="@font/space_grotesk"
                     android:textAppearance="?attr/textAppearanceHeadlineSmall"
                     android:textStyle="bold" />
 
@@ -108,15 +103,15 @@
         android:id="@+id/tv_home_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="16dp"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="24dp"
         android:visibility="gone">
 
         <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
+            android:layout_width="640dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            app:strokeColor="@color/ide_outline">
+            app:strokeColor="@color/color_border_base">
 
             <FrameLayout
                 android:layout_width="match_parent"
@@ -151,6 +146,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
                         android:text="@string/tv_home_title"
+                        android:fontFamily="@font/space_grotesk"
                         android:textAppearance="?attr/textAppearanceHeadlineMedium"
                         android:textStyle="bold" />
 
@@ -190,7 +186,7 @@
                                 android:paddingHorizontal="12dp"
                                 android:paddingVertical="10dp"
                                 android:textAppearance="?attr/textAppearanceTitleMedium"
-                                android:textColor="@color/ide_text_primary"
+                                android:textColor="@color/color_text_primary"
                                 tools:text="tv.example.com/ui" />
                         </LinearLayout>
 
@@ -211,6 +207,9 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/tv_home_change_server_button"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:ellipsize="end"
                                 style="@style/Widget.Xg2g.Button.TvPanelSecondary"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
@@ -219,6 +218,9 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/tv_home_browser_button"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:ellipsize="end"
                                 style="@style/Widget.Xg2g.Button.TvPanelSecondary"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
@@ -229,6 +231,9 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/tv_home_live_button"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:ellipsize="end"
                         style="@style/Widget.Xg2g.Button.TvPanelPrimary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -250,6 +255,9 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/tv_home_dashboard_button"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:ellipsize="end"
                             style="@style/Widget.Xg2g.Button.TvPanelSecondary"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
@@ -262,6 +270,9 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/tv_home_recordings_button"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:ellipsize="end"
                             style="@style/Widget.Xg2g.Button.TvPanelSecondary"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
@@ -277,6 +288,9 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/tv_home_timers_button"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:ellipsize="end"
                             style="@style/Widget.Xg2g.Button.TvPanelSecondary"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
@@ -289,6 +303,9 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/tv_home_settings_button"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:ellipsize="end"
                             style="@style/Widget.Xg2g.Button.TvPanelSecondary"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
@@ -306,16 +323,16 @@
         android:id="@+id/setup_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:paddingHorizontal="20dp"
+        android:paddingHorizontal="24dp"
         android:paddingVertical="24dp"
         android:visibility="gone"
         tools:visibility="visible">
 
         <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
+            android:layout_width="600dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            app:strokeColor="@color/ide_outline">
+            app:strokeColor="@color/color_border_base">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -334,6 +351,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
                     android:text="@string/server_setup_title"
+                    android:fontFamily="@font/space_grotesk"
                     android:textAppearance="?attr/textAppearanceHeadlineMedium"
                     android:textStyle="bold" />
 
@@ -394,13 +412,14 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:paddingHorizontal="24dp"
-        android:paddingVertical="32dp"
+        android:paddingVertical="24dp"
         android:visibility="gone">
 
         <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
+            android:layout_width="600dp"
             android:layout_height="wrap_content"
-            android:layout_gravity="center">
+            android:layout_gravity="center"
+            app:strokeColor="@color/color_border_base">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -419,6 +438,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
+                    android:fontFamily="@font/space_grotesk"
                     android:textAppearance="?attr/textAppearanceHeadlineSmall"
                     android:textStyle="bold"
                     tools:text="Connection problem" />
@@ -461,7 +481,7 @@
         android:id="@+id/tv_quick_actions_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#7A05090F"
+        android:background="#7A070B10"
         android:clickable="true"
         android:descendantFocusability="afterDescendants"
         android:focusable="true"
@@ -505,8 +525,9 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="xg2g"
+                            android:fontFamily="@font/space_grotesk"
                             android:textAppearance="?attr/textAppearanceTitleMedium"
-                            android:textColor="@color/ide_text_primary"
+                            android:textColor="@color/color_text_primary"
                             android:textStyle="bold" />
 
                         <TextView
@@ -523,8 +544,9 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="24dp"
                     android:text="@string/tv_quick_actions_title"
+                    android:fontFamily="@font/space_grotesk"
                     android:textAppearance="?attr/textAppearanceHeadlineSmall"
-                    android:textColor="@color/ide_text_primary"
+                    android:textColor="@color/color_text_primary"
                     android:textStyle="bold" />
 
                 <TextView

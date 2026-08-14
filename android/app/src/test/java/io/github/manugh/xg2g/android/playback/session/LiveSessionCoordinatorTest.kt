@@ -12,6 +12,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -123,7 +124,11 @@ class LiveSessionCoordinatorTest {
         override suspend fun reportPlaybackFeedback(sessionId: String, event: String, code: Int?, message: String?) = Unit
 
         override suspend fun stopSession(sessionId: String) {
-            stoppedSessions += sessionId
+            // Mirrors the real PlaybackApiClient, whose stop enters an IO context. Without
+            // NonCancellable cleanup this block is skipped when start() was cancelled.
+            withContext(Dispatchers.IO) {
+                stoppedSessions += sessionId
+            }
         }
 
         override fun sessionPlaylistUrl(sessionId: String): String = "http://example.invalid/$sessionId.m3u8"

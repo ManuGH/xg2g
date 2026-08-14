@@ -3,6 +3,7 @@ package recordings
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"mime"
 	"os"
 	"path"
@@ -16,8 +17,14 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/playback"
 	"github.com/ManuGH/xg2g/internal/control/vod"
 	"github.com/ManuGH/xg2g/internal/domain/recordings/model"
+	"github.com/ManuGH/xg2g/internal/pipeline/policy"
 	internalrecordings "github.com/ManuGH/xg2g/internal/recordings"
 )
+
+// ValidateDVRRecordingTicket validates that a bound AdmissionTicket in consumed status permits DVR recording worker execution.
+func ValidateDVRRecordingTicket(ticket *policy.AdmissionTicket, sessionID, userID, profileID string) error {
+	return policy.ValidateBoundTicket(ticket, sessionID, userID, profileID, "dvr")
+}
 
 // PlaybackResolution represents the truthful resolution of how to play a recording.
 type PlaybackResolution struct {
@@ -128,6 +135,12 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 		}
 	}
 
+	// Auto-discover local well-known recording mounts if present in filesystem
+	if _, err := os.Stat("/media/nfs-recordings"); err == nil {
+		s.addRootWithCollision(roots, "nfs", "/media/nfs-recordings")
+		hasDiscoveredRoots = true
+	}
+
 	// Only synthesize the legacy default root when neither config nor the receiver
 	// exposed any usable recording location. Otherwise we risk preferring an empty
 	// phantom HDD root over the real receiver/NAS root (for example nfs-recordings).
@@ -143,7 +156,9 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 
 	qRootID := in.RootID
 	if qRootID == "" {
-		if _, ok := roots["hdd"]; ok {
+		if _, ok := roots["nfs"]; ok {
+			qRootID = "nfs"
+		} else if _, ok := roots["hdd"]; ok {
 			qRootID = "hdd"
 		} else if len(rootList) > 0 {
 			qRootID = rootList[0].ID
@@ -166,15 +181,9 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 	}
 
 	cleanTarget := path.Join(rootAbs, cleanRel)
-	list, err := s.owiClient.GetRecordings(ctx, cleanTarget)
-	if err != nil {
-		return ListResult{}, ErrUpstream{Op: "GetRecordings", Cause: err}
-	}
+	list, _ := s.owiClient.GetRecordings(ctx, cleanTarget)
 
 	// P3-3: Fetch Timers for Truth Derivation
-	// We ignore errors to allow partial availability (fail open for creating scheduled items? No, list is driven by files).
-	// If GetTimers fails, we just don't match any active timers (so no RECORDING status if derived solely from timer).
-	// But ClassifyFilePresence handles file truth.
 	timers, _ := s.owiClient.GetTimers(ctx)
 
 	if !list.Result && len(list.Movies) == 0 {
@@ -256,6 +265,83 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 			continue
 		}
 		directoriesList = append(directoriesList, DirectoryItem{Name: b.Name, Path: rel})
+	}
+
+	// Fallback to local filesystem scanning when upstream returned 0 recordings and target exists locally
+	if len(recordingsList) == 0 {
+		if stat, err := os.Stat(cleanTarget); err == nil && stat.IsDir() {
+			if scanRoot, err := os.OpenRoot(cleanTarget); err == nil {
+				defer func() { _ = scanRoot.Close() }()
+				if entries, err := fs.ReadDir(scanRoot.FS(), "."); err == nil {
+					for _, entry := range entries {
+						if strings.HasPrefix(entry.Name(), ".") {
+							continue
+						}
+						fullPath := filepath.Join(cleanTarget, entry.Name())
+						if entry.IsDir() {
+							rel := entry.Name()
+							if qPath != "" {
+								rel = path.Join(qPath, entry.Name())
+							}
+							directoriesList = append(directoriesList, DirectoryItem{
+								Name: entry.Name(),
+								Path: rel,
+							})
+							continue
+						}
+						if strings.HasSuffix(strings.ToLower(entry.Name()), ".ts") {
+							serviceRef := "1:0:0:0:0:0:0:0:0:0:" + fullPath
+							title := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+							description := ""
+							var beginUnix int64
+							if fi, err := entry.Info(); err == nil {
+								beginUnix = fi.ModTime().Unix()
+							}
+							if metaBytes, err := scanRoot.ReadFile(entry.Name() + ".meta"); err == nil {
+								lines := strings.Split(string(metaBytes), "\n")
+								if len(lines) > 0 && strings.TrimSpace(lines[0]) != "" {
+									refPart := strings.TrimSpace(lines[0])
+									if strings.Contains(refPart, ":") {
+										serviceRef = refPart + ":" + fullPath
+									}
+								}
+								if len(lines) > 1 && strings.TrimSpace(lines[1]) != "" {
+									title = strings.TrimSpace(lines[1])
+								}
+								if len(lines) > 2 && strings.TrimSpace(lines[2]) != "" {
+									description = strings.TrimSpace(lines[2])
+								}
+								if len(lines) > 3 && strings.TrimSpace(lines[3]) != "" {
+									if ts, err := strconv.ParseInt(strings.TrimSpace(lines[3]), 10, 64); err == nil && ts > 0 {
+										beginUnix = ts
+									}
+								}
+							}
+							recItem := RecordingItem{
+								ServiceRef:       serviceRef,
+								RecordingID:      EncodeRecordingID(serviceRef),
+								Title:            title,
+								Description:      description,
+								BeginUnixSeconds: beginUnix,
+								Filename:         entry.Name(),
+								Status:           "completed",
+							}
+							if in.PrincipalID != "" && s.resumeStore != nil {
+								if res, ok, _ := s.resumeStore.GetResume(ctx, in.PrincipalID, serviceRef); ok {
+									recItem.Resume = &ResumeSummary{
+										PosSeconds:      res.PosSeconds,
+										DurationSeconds: res.DurationSeconds,
+										Finished:        res.Finished,
+										UpdatedAt:       &res.UpdatedAt,
+									}
+								}
+							}
+							recordingsList = append(recordingsList, recItem)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	breadcrumbsList := make([]Breadcrumb, 0)

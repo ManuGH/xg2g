@@ -169,6 +169,7 @@ func (s *Service) Status(ctx context.Context, input StatusInput) (*StatusResult,
 }
 
 func (s *Service) Approve(ctx context.Context, input ApproveInput) (*ApproveResult, error) {
+	targetPairingID := strings.TrimSpace(input.PairingID)
 	if strings.TrimSpace(input.PairingID) == "" {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "pairing id is required"}
 	}
@@ -179,9 +180,17 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*ApproveResu
 		return nil, &Error{Kind: ErrorStore, Message: "pairing state store is not configured"}
 	}
 
+	// Support approving directly by user_code (e.g. X2VZ-ZRRF or X2VZZRRF)
+	normalizedCode := strings.ToUpper(strings.ReplaceAll(targetPairingID, "-", ""))
+	if !strings.HasPrefix(targetPairingID, "pair_") {
+		if rec, err := s.deps.StateStore.GetPairingByUserCode(ctx, normalizedCode); err == nil && rec != nil {
+			targetPairingID = rec.PairingID
+		}
+	}
+
 	now := s.now()
 	var outcomeErr error
-	record, err := s.deps.StateStore.UpdatePairing(ctx, strings.TrimSpace(input.PairingID), func(current *deviceauthmodel.PairingRecord) error {
+	record, err := s.deps.StateStore.UpdatePairing(ctx, targetPairingID, func(current *deviceauthmodel.PairingRecord) error {
 		expired, changed, err := lifecycle.ExpireIfElapsed(*current, now)
 		if err != nil {
 			return err

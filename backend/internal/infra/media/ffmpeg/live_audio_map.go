@@ -45,6 +45,17 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 	if !spec.Profile.TranscodeVideo || !strings.EqualFold(strings.TrimSpace(spec.Profile.Container), "fmp4") {
 		return defaultSel
 	}
+	if isAndroidTVNativeSpec(spec) {
+		// The native TV client requests the broadcaster's primary audio track and
+		// always receives AAC. It therefore does not need the Safari/HLS.js
+		// language/rendition compatibility probe that delays pipeline startup.
+		a.Logger.Info().
+			Str("session_id", spec.SessionID).
+			Str("startup_phase", "live_audio_probe_skipped_android_tv_native").
+			Str("audio_map", defaultLiveAudioMap).
+			Msg("using primary live audio stream for native Android TV")
+		return defaultSel
+	}
 
 	streams, err := a.probeLiveAudioStreams(ctx, spec, inputURL)
 	if err != nil {

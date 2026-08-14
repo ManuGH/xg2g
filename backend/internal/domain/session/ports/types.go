@@ -75,12 +75,13 @@ type StreamSource struct {
 
 // StreamSpec fully describes a media session request without implementation details.
 type StreamSpec struct {
-	SessionID string
-	Mode      StreamMode
-	Format    StreamFormat
-	Quality   QualityProfile
-	Source    StreamSource
-	Profile   ProfileSpec // Transcoding profile (GPU, codec, quality knobs)
+	SessionID    string
+	ClientFamily string
+	Mode         StreamMode
+	Format       StreamFormat
+	Quality      QualityProfile
+	Source       StreamSource
+	Profile      ProfileSpec // Transcoding profile (GPU, codec, quality knobs)
 
 	// PrepareDeadline bounds the work an adapter does BEFORE it spawns the media
 	// process: tuning, URL resolution, preflight, and the plan probes. Zero means
@@ -137,6 +138,7 @@ type ProfileSpec struct {
 	AudioBitrateK     int    `json:"audioBitrateK,omitempty"`
 	Preset            string `json:"preset,omitempty"`
 	Container         string `json:"container,omitempty"` // "ts" (default) or "fmp4"
+	EnableABR         bool   `json:"enableAbr,omitempty"` // Opt-in 3-tier/2-tier HLS Adaptive Bitrate transcoding
 }
 
 func (p ProfileSpec) TranscodesAudio() bool {
