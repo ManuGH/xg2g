@@ -26,6 +26,29 @@ branches or client-side heuristics.
   - xg2g terminates public TLS directly
   - `tls.enabled` is required
 
+## Published Endpoint URLs Are Origin-Only
+
+Every entry in `connectivity.publishedEndpoints` must be a bare origin:
+`scheme://host[:port]`, optionally with a trailing `/`. A URL carrying a path,
+query, fragment, or userinfo is rejected at startup
+(`published endpoint url is invalid: only origin URLs are allowed`), and the
+path is stripped again during canonicalization.
+
+**xg2g therefore does not support being mounted under a deployment sub-path.**
+Proxy the site root (`https://tv.example.net/`), not `https://tv.example.net/xg2g/`.
+All reference topologies below do exactly that.
+
+The reason is that xg2g's routes are siblings below one deployment root — `/api/v3`,
+`/ui`, `/stream`, `/logos`, `/healthz` — and clients derive each of them downward
+from the single published origin. A sub-path root would have to be carried through
+every client's URL derivation; today it is not, so it is rejected at the source
+rather than silently dropped later.
+
+Terminating the proxy at a sub-path *and* stripping the prefix before forwarding
+is likewise unsupported: the browser would then be at `https://host/xg2g/ui/`
+while the published endpoint (and every URL derived from it) claims
+`https://host/ui/`.
+
 ## Failure Model
 
 - `fatal`
@@ -199,6 +222,8 @@ These are contract violations:
 - local endpoints marked as web-capable in a public profile
 - wildcard `allowedOrigins` in a public profile
 - public web endpoint not present in `allowedOrigins`
+- a published endpoint URL with a path, query, fragment, or userinfo
+  (see "Published Endpoint URLs Are Origin-Only")
 
 ## Verification Path
 
