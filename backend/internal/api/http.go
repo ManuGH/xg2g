@@ -15,6 +15,7 @@ import (
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	recservice "github.com/ManuGH/xg2g/internal/control/recordings"
 	"github.com/ManuGH/xg2g/internal/control/vod"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/dvr"
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/ManuGH/xg2g/internal/hdhr"
@@ -61,6 +62,7 @@ type Server struct {
 	// v3 Integration
 	v3Handler         *v3.Server
 	v3RuntimeDeps     v3.Dependencies
+	identityService   *identity.Service
 	verificationStore verification.Store // P8.3: Verification Store
 	recordingsService recservice.Service
 
