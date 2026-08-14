@@ -115,6 +115,17 @@ jobs:
         env:
           GOTOOLCHAIN: auto
 
+      - name: Install ffmpeg for full verification suite
+        run: |
+          set -euo pipefail
+          if command -v ffmpeg >/dev/null 2>&1; then
+            echo "ffmpeg already installed"
+          else
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+
       - name: Run scoped race detector
         # Packages where the live transcode/session concurrency lives. These
         # are exactly the packages a fix to the session/ffmpeg/bus hot path
