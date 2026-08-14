@@ -338,7 +338,11 @@ func writeIntentProcessingError(w http.ResponseWriter, r *http.Request, err *v3i
 			admission.WriteProblem(w, r, err.AdmissionProblem)
 			return
 		}
-		respondIntentFailure(w, r, IntentErrAdmissionUnknown, err.Error())
+		detail := err.Message
+		if detail == "" {
+			detail = "admission rejected by policy decision"
+		}
+		writeRegisteredProblem(w, r, http.StatusForbidden, "admission/rejected", "Admission Rejected", problemcode.CodeForbidden, detail, nil)
 	case v3intents.ErrorNoTunerSlots:
 		if err.RetryAfter != "" {
 			w.Header().Set("Retry-After", err.RetryAfter)
