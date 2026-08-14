@@ -6,6 +6,7 @@ import io.github.manugh.xg2g.android.DeviceAuthTransport
 import io.github.manugh.xg2g.android.PublishedEndpoint
 import io.github.manugh.xg2g.android.RefreshedDeviceSession
 import io.github.manugh.xg2g.android.StartedWebBootstrap
+import io.github.manugh.xg2g.android.apiV3Url
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -30,28 +31,7 @@ internal class NativeDeviceAuthTransport(
         deviceGrant: String
     ): RefreshedDeviceSession = withContext(Dispatchers.IO) {
         Log.i(TAG, "action=refresh_session path=/api/v3/auth/device/session")
-        val refreshUrl = uiBaseUrl.newBuilder()
-            .addPathSegment("api")
-            .addPathSegment("v3")
-            .addPathSegment("auth")
-            .addPathSegment("device")
-            .addPathSegment("session")
-            .build()
-
-        val jsonBody = JSONObject()
-            .put("deviceGrantId", deviceGrantId)
-            .put("deviceGrant", deviceGrant)
-            .toString()
-            .toRequestBody("application/json; charset=utf-8".toMediaType())
-
-        val reqBuilder = Request.Builder()
-            .url(refreshUrl)
-            .post(jsonBody)
-
-        val proof = dpopProvider.createProof("POST", refreshUrl.toString())
-        reqBuilder.header("DPoP", proof)
-
-        val request = reqBuilder.build()
+        val request = buildNativeDeviceSessionRequest(uiBaseUrl, deviceGrantId, deviceGrant, dpopProvider)
         okHttpClient.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: ""
             if (!response.isSuccessful) {
@@ -110,4 +90,24 @@ internal class NativeDeviceAuthTransport(
     private companion object {
         const val TAG = "NativeDeviceAuthTransport"
     }
+}
+
+internal fun buildNativeDeviceSessionRequest(
+    uiBaseUrl: HttpUrl,
+    deviceGrantId: String,
+    deviceGrant: String,
+    dpopProvider: DPoPProvider
+): Request {
+    val refreshUrl = apiV3Url(uiBaseUrl, "auth", "device", "session")
+    val jsonBody = JSONObject()
+        .put("deviceGrantId", deviceGrantId)
+        .put("deviceGrant", deviceGrant)
+        .toString()
+        .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+    return Request.Builder()
+        .url(refreshUrl)
+        .post(jsonBody)
+        .header("DPoP", dpopProvider.createProof("POST", refreshUrl.toString()))
+        .build()
 }
