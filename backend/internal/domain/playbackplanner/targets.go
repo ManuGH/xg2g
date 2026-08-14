@@ -124,6 +124,12 @@ func explicitlyRequestsHEVCProfile(requestedIntent string) bool {
 	}
 }
 
+const (
+	AV1MaxBitrate1080pKbps = 5090
+	AV1MaxBitrate720pKbps  = 2340
+	AV1MaxBitrate480pKbps  = 1130
+)
+
 func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 	height := ev.SourceTruth.Height
 	if height <= 0 && ev.SourceTruth.Width > 0 {
@@ -138,37 +144,19 @@ func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 	// needs, and applyPolicyModifiers still clamps them on a constrained link.
 	case "av1":
 		if height > 0 && height <= 480 {
-			return 1130
+			return AV1MaxBitrate480pKbps
 		}
 		if height > 0 && height <= 720 {
-			return 2340
+			return AV1MaxBitrate720pKbps
 		}
-		return 5090
+		return AV1MaxBitrate1080pKbps
 	case "hevc", "h265":
-		if height > 0 && height <= 480 {
-			return 2500
-		}
-		if height > 0 && height <= 720 {
-			return 5000
-		}
 		return 10000
 	case "h264", "avc", "libx264":
 		for _, encoder := range ev.HostSnapshot.EncoderCapabilities {
 			if strings.EqualFold(strings.TrimSpace(encoder.Codec), "h264") && encoder.Verified && encoder.AutoEligible {
-				if height > 0 && height <= 480 {
-					return 3000
-				}
-				if height > 0 && height <= 720 {
-					return 8000
-				}
 				return 20000
 			}
-		}
-		if height > 0 && height <= 480 {
-			return 2000
-		}
-		if height > 0 && height <= 720 {
-			return 4500
 		}
 		return 8000
 	default:
