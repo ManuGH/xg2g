@@ -8,6 +8,7 @@ import android.os.Build
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.ServerSettingsStore
+import io.github.manugh.xg2g.android.apiV3Url
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
 import io.github.manugh.xg2g.android.auth.DPoPProvider
 import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
@@ -284,15 +285,7 @@ internal class PlaybackApiClient(
     }
 
     private fun apiUrl(vararg segments: String): HttpUrl {
-        val uiBase = requireUiBaseUrl()
-        return uiBase.newBuilder()
-            .encodedPath("/api/v3/")
-            .query(null)
-            .fragment(null)
-            .apply {
-                segments.forEach(::addPathSegment)
-            }
-            .build()
+        return apiV3Url(requireUiBaseUrl(), *segments)
     }
 
     private fun extractCapHashFromDecisionToken(token: String?): String? {
@@ -369,14 +362,7 @@ internal fun normalizeRecordingPlaybackUrl(
         return playbackUrl
     }
 
-    val playlistApiUrl = uiBaseUrl.newBuilder()
-        .encodedPath("/api/v3/")
-        .query(null)
-        .fragment(null)
-        .addPathSegment("recordings")
-        .addPathSegment(recordingId)
-        .addPathSegment("playlist.m3u8")
-        .build()
+    val playlistApiUrl = apiV3Url(uiBaseUrl, "recordings", recordingId, "playlist.m3u8")
 
     return recordingPlaylistHttpUrl(
         apiUrl = playlistApiUrl,

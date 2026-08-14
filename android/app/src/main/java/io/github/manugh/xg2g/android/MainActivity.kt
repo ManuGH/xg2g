@@ -34,8 +34,10 @@ import io.github.manugh.xg2g.android.playback.model.PlaybackJsonCodec
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.net.NativePlaybackCapabilities
 import io.github.manugh.xg2g.android.playback.net.PlaybackApiJsonCodec
+import io.github.manugh.xg2g.android.recordings.recordingThumbnailUrl
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
@@ -154,9 +156,9 @@ class MainActivity : AppCompatActivity() {
                         item.resume.posSeconds * 1000L
                     } else 0L
 
-                    val thumbnailUrl = serverSettingsStore.getServerUrl()?.let { base ->
-                        "$base/api/v3/recordings/${item.recordingId}/thumbnail.jpg"
-                    }
+                    val thumbnailUrl = serverSettingsStore.getServerUrl()
+                        ?.toHttpUrlOrNull()
+                        ?.let { base -> recordingThumbnailUrl(base, item.recordingId).toString() }
 
                     nativePlaybackBridge.start(
                         NativePlaybackRequest.Recording(
