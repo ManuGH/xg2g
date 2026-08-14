@@ -22,6 +22,7 @@ const (
 type FileAndroidConfig struct {
 	PackageName        string   `yaml:"packageName,omitempty"`
 	SHA256Fingerprints []string `yaml:"sha256Fingerprints,omitempty"`
+	APKPath            string   `yaml:"apkPath,omitempty"`
 }
 
 // FileConfig represents the YAML configuration structure
@@ -557,6 +558,7 @@ type AppConfig struct {
 	// Android Digital Asset Links Configuration
 	AndroidPackageName        string   `yaml:"android_package_name"`
 	AndroidSHA256Fingerprints []string `yaml:"android_sha256_fingerprints"`
+	AndroidAPKPath            string
 
 	// EPG Configuration
 	EPGEnabled         bool

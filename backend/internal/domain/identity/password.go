@@ -69,13 +69,14 @@ func VerifyPassword(password, encodedHash string) bool {
 	}
 
 	expectedHash, err := base64.RawStdEncoding.DecodeString(parts[5])
-	if err != nil || len(expectedHash) == 0 {
+	if err != nil || len(expectedHash) == 0 || len(expectedHash) > 1024 {
 		return false
 	}
 
 	_ = version // Unused
 
-	computedHash := argon2.IDKey([]byte(password), salt, time, memory, byte(threads), uint32(len(expectedHash)))
+	hashLength := uint32(len(expectedHash)) // #nosec G115 -- expectedHash is bounded to 1024 bytes above.
+	computedHash := argon2.IDKey([]byte(password), salt, time, memory, byte(threads), hashLength)
 
 	return subtle.ConstantTimeCompare(computedHash, expectedHash) == 1
 }

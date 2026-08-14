@@ -37,6 +37,8 @@ type Config struct {
 	ExpectedOrigin      string
 	SessionTTL          time.Duration
 	PasskeyChallengeTTL time.Duration
+	FCMEndpoint         string
+	FCMServerKey        string
 }
 
 type Service struct {

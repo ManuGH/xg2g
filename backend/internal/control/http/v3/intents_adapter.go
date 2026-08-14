@@ -116,7 +116,7 @@ func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, pr
 		}, nil
 	}
 
-	role := identity.RoleMember
+	var role identity.Role
 	if userID != "" {
 		u, err := idSvc.Store().GetUser(ctx, userID)
 		if err == nil && u != nil {

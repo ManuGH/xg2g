@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=./docs/guides/config.schema.json
 # Generated from internal/config/registry.go. Do not edit by hand.
 android:
+  apkPath: ""
   packageName: ""
   sha256Fingerprints: []
 api:

@@ -263,7 +263,7 @@ func (v *Validator) ValidateProof(r *http.Request, proofJWT string, accessToken 
 	}
 
 	// 4. Validate Claims
-	if strings.ToUpper(payload.HTM) != strings.ToUpper(r.Method) {
+	if !strings.EqualFold(payload.HTM, r.Method) {
 		return nil, ErrHTTPMethodMismatch
 	}
 

@@ -83,7 +83,7 @@ func (s *Server) StreamNotifications(w http.ResponseWriter, r *http.Request) {
 				currentUnread := len(currentNotifs)
 				if currentUnread != lastUnread {
 					lastUnread = currentUnread
-					payload, _ := json.Marshal(map[string]interface{}{
+					payload, _ := json.Marshal(map[string]any{
 						"unreadCount":   currentUnread,
 						"notifications": currentNotifs,
 					})

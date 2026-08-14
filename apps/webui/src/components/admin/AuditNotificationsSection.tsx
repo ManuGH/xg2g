@@ -2,6 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import React, { useState, useEffect } from 'react';
+import { debugError } from '../../utils/logging';
 
 export interface AuditLogItem {
   id: number;
@@ -32,7 +33,7 @@ export const AuditNotificationsSection: React.FC = () => {
         const data = await res.json();
         setLogs(Array.isArray(data) ? data : []);
       }
-    } catch (e: any) {
+    } catch {
       setError('Audit-Protokoll konnte nicht geladen werden.');
     } finally {
       setLoading(false);
@@ -61,9 +62,9 @@ export const AuditNotificationsSection: React.FC = () => {
           icon: '/favicon.ico',
         });
       }
-    } catch (e) {
-      console.error('WebPush subscription error:', e);
-    } finally {
+	} catch (e) {
+		debugError('WebPush subscription error:', e);
+	} finally {
       setSubscribing(false);
     }
   };
@@ -92,25 +93,25 @@ export const AuditNotificationsSection: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#f8fafc' }}>Benachrichtigungen & Unveränderliches Audit-Protokoll</h3>
-        <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Benachrichtigungen & Unveränderliches Audit-Protokoll</h3>
+        <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
           SHA-256 fälschungssicheres Protokoll aller administrativen Änderungen und WebPush-Benachrichtigungseinstellungen.
         </p>
       </div>
 
       {error && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
           ⚠️ {error}
         </div>
       )}
 
       {/* WebPush Settings Banner */}
-      <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h4 style={{ margin: 0, fontSize: '16px', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h4 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>📲</span> Browser-WebPush & Push-Benachrichtigungen
           </h4>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
             Erhalten Sie Sofortbenachrichtigungen bei Kinder-Freigabeanfragen oder unbefugten Login-Versuchen.
           </p>
         </div>
@@ -123,7 +124,7 @@ export const AuditNotificationsSection: React.FC = () => {
               fontSize: '12px',
               fontWeight: 600,
               backgroundColor: pushStatus === 'granted' ? 'rgba(34,197,94,0.2)' : pushStatus === 'denied' ? 'rgba(239,68,68,0.2)' : 'rgba(234,179,8,0.2)',
-              color: pushStatus === 'granted' ? '#4ade80' : pushStatus === 'denied' ? '#ef4444' : '#facc15',
+              color: pushStatus === 'granted' ? 'var(--status-success)' : pushStatus === 'denied' ? 'var(--status-error)' : 'var(--status-warning)',
             }}
           >
             {pushStatus === 'granted' ? 'Aktiviert' : pushStatus === 'denied' ? 'Blockiert' : 'Nicht eingerichtet'}
@@ -137,8 +138,8 @@ export const AuditNotificationsSection: React.FC = () => {
                 padding: '10px 18px',
                 borderRadius: '10px',
                 border: 'none',
-                backgroundColor: '#38bdf8',
-                color: '#0f172a',
+                backgroundColor: 'var(--accent-action)',
+                color: 'var(--bg-base)',
                 fontSize: '13px',
                 fontWeight: 700,
                 cursor: 'pointer',
@@ -151,9 +152,9 @@ export const AuditNotificationsSection: React.FC = () => {
       </div>
 
       {/* Audit Log Table & Search */}
-      <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ padding: '6px 12px', borderRadius: '8px', backgroundColor: 'rgba(34,197,94,0.1)', color: '#4ade80', fontSize: '12px', fontWeight: 600 }}>
+          <div style={{ padding: '6px 12px', borderRadius: '8px', backgroundColor: 'rgba(34,197,94,0.1)', color: 'var(--status-success)', fontSize: '12px', fontWeight: 600 }}>
             ✓ SHA-256 Integritätskette intakt ({logs.length} Einträge)
           </div>
 
@@ -163,12 +164,12 @@ export const AuditNotificationsSection: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="🔍 Nach Aktion oder Akteur filtern..."
-              style={{ padding: '8px 14px', borderRadius: '8px', backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', color: '#f8fafc', fontSize: '13px', outline: 'none', width: '220px' }}
+              style={{ padding: '8px 14px', borderRadius: '8px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none', width: '220px' }}
             />
             <button
               onClick={exportAuditLogsCSV}
               disabled={logs.length === 0}
-              style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', backgroundColor: '#334155', color: '#cbd5e1', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+              style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
             >
               📥 CSV Export
             </button>
@@ -176,12 +177,12 @@ export const AuditNotificationsSection: React.FC = () => {
         </div>
 
         {loading ? (
-          <div style={{ color: '#94a3b8', fontSize: '13px' }}>Protokoll wird geladen...</div>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>Protokoll wird geladen...</div>
         ) : filteredLogs.length > 0 ? (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-tertiary)' }}>
                   <th style={{ padding: '10px' }}>Zeitstempel</th>
                   <th style={{ padding: '10px' }}>Akteur</th>
                   <th style={{ padding: '10px' }}>Aktion</th>
@@ -191,18 +192,18 @@ export const AuditNotificationsSection: React.FC = () => {
               </thead>
               <tbody>
                 {filteredLogs.map((log) => (
-                  <tr key={log.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#cbd5e1' }}>
-                    <td style={{ padding: '10px', fontSize: '12px', color: '#64748b' }}>
+                  <tr key={log.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}>
+                    <td style={{ padding: '10px', fontSize: '12px', color: 'var(--text-disabled)' }}>
                       {new Date(log.createdAt).toLocaleString()}
                     </td>
-                    <td style={{ padding: '10px', fontWeight: 600, color: '#f8fafc' }}>{log.actorUserId}</td>
+                    <td style={{ padding: '10px', fontWeight: 600, color: 'var(--text-primary)' }}>{log.actorUserId}</td>
                     <td style={{ padding: '10px' }}>
-                      <span style={{ padding: '2px 8px', borderRadius: '6px', backgroundColor: 'rgba(56,189,248,0.15)', color: '#38bdf8', fontSize: '11px', fontFamily: 'monospace' }}>
+                      <span style={{ padding: '2px 8px', borderRadius: '6px', backgroundColor: 'rgba(56,189,248,0.15)', color: 'var(--accent-action)', fontSize: '11px', fontFamily: 'monospace' }}>
                         {log.action}
                       </span>
                     </td>
                     <td style={{ padding: '10px' }}>{log.targetResource}</td>
-                    <td style={{ padding: '10px', fontSize: '11px', fontFamily: 'monospace', color: '#64748b' }}>
+                    <td style={{ padding: '10px', fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-disabled)' }}>
                       {log.hash ? `${log.hash.substring(0, 12)}...` : 'N/A'}
                     </td>
                   </tr>
@@ -211,7 +212,7 @@ export const AuditNotificationsSection: React.FC = () => {
             </table>
           </div>
         ) : (
-          <div style={{ color: '#94a3b8', fontSize: '13px', padding: '16px', textAlign: 'center' }}>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', padding: '16px', textAlign: 'center' }}>
             Keine Protokolleinträge gefunden.
           </div>
         )}

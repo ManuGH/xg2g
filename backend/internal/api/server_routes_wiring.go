@@ -241,7 +241,7 @@ func (s *Server) registerPublicRoutesWithPolicies(adapter *policyRegistrarAdapte
 
 // serveAndroidApk serves the Android APK binary for direct Fire TV / Android TV sideloading.
 func (s *Server) serveAndroidApk(w http.ResponseWriter, r *http.Request) {
-	apkPath := os.Getenv("XG2G_APK_PATH")
+	apkPath := s.cfg.AndroidAPKPath
 	if apkPath == "" {
 		candidates := []string{
 			filepath.Join(s.cfg.DataDir, "apk", "xg2g.apk"),

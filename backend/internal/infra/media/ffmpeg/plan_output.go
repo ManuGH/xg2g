@@ -164,7 +164,7 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 	)
 
 	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec)
-	_ = os.MkdirAll(sessionDir, 0755)
+	_ = os.MkdirAll(sessionDir, 0750)
 	varPath := filepath.Join(sessionDir, "%v", "index.m3u8")
 
 	out.args = append(out.args,
@@ -273,7 +273,7 @@ func (a *LocalAdapter) planLiveVAAPIABROutput(ctx context.Context, spec ports.St
 	)
 
 	sessionDir := ports.SessionHLSDirForPolicy(a.HLSRoot, spec.SessionID, spec.Profile.DVRWindowSec)
-	_ = os.MkdirAll(sessionDir, 0755)
+	_ = os.MkdirAll(sessionDir, 0750)
 	varPath := filepath.Join(sessionDir, "%v", "index.m3u8")
 
 	out.args = append(out.args,

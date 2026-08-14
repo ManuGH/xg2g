@@ -246,7 +246,7 @@ export default function PasskeyAuthFlow({
         actions={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <label style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Setup-Token (falls erforderlich)</label>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Setup-Token (falls erforderlich)</label>
               <input
                 type="text"
                 value={setupTokenInput}
@@ -257,13 +257,13 @@ export default function PasskeyAuthFlow({
                   border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: '6px',
                   padding: '0.5rem',
-                  color: '#fff',
+                  color: 'var(--text-primary)',
                   fontSize: '0.9rem',
                 }}
                 data-testid="bootstrap-setup-token-input"
               />
             </div>
-            {errorMsg ? <div style={{ color: '#ef4444', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
+            {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
             <Button
               onClick={() => { void handleCreatePasskey(); }}
               disabled={loading}
@@ -327,7 +327,7 @@ export default function PasskeyAuthFlow({
             <span>Ich habe meine Wiederherstellungscodes sicher gespeichert</span>
           </label>
 
-          {errorMsg ? <div style={{ color: '#ef4444', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
+          {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
 
           <Button
             onClick={() => { void handleCommitBootstrap(); }}
@@ -367,7 +367,7 @@ export default function PasskeyAuthFlow({
         actions={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', marginTop: '0.5rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.5rem' }}>
-              <label style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Benutzername</label>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>Benutzername</label>
               <input
                 type="text"
                 value={recoveryUsernameInput}
@@ -377,13 +377,13 @@ export default function PasskeyAuthFlow({
                   border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: '6px',
                   padding: '0.5rem',
-                  color: '#fff',
+                  color: 'var(--text-primary)',
                   fontSize: '0.9rem',
                 }}
                 data-testid="recovery-username-input"
               />
             </div>
-            {errorMsg ? <div style={{ color: '#ef4444', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
+            {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
             <Button variant="ghost" onClick={() => setStep('passkey')} style={{ fontSize: '0.85rem' }}>
               Zurück zur Passkey-Anmeldung
             </Button>
@@ -433,7 +433,7 @@ export default function PasskeyAuthFlow({
       }}
       actions={
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', marginTop: '1rem' }}>
-          {errorMsg ? <div style={{ color: '#ef4444', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
+          {errorMsg ? <div style={{ color: 'var(--status-error)', fontSize: '0.875rem' }}>{errorMsg}</div> : null}
 
           <Button
             onClick={() => { void handlePasskeyLogin(); }}
@@ -448,7 +448,7 @@ export default function PasskeyAuthFlow({
             <Button
               variant="ghost"
               onClick={() => setStep('recovery-login')}
-              style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', color: '#9ca3af' }}
+              style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', color: 'var(--text-tertiary)' }}
               data-testid="recovery-login-link"
             >
               Wiederherstellungscode nutzen

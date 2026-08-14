@@ -44,6 +44,9 @@
   "properties": {
     "android": {
       "properties": {
+        "apkPath": {
+          "type": "string"
+        },
         "packageName": {
           "type": "string"
         },

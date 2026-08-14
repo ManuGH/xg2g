@@ -168,6 +168,8 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		RPID:           rpID,
 		RPName:         "xg2g",
 		ExpectedOrigin: origin,
+		FCMEndpoint:    config.ParseString("FCM_ENDPOINT", "https://fcm.googleapis.com/fcm/send"),
+		FCMServerKey:   config.ParseString("FCM_SERVER_KEY", ""),
 	}, identityStore)
 	s.SetIdentityService(identitySvc)
 
