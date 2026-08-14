@@ -455,29 +455,19 @@ function Settings() {
               <span className={styles.hint}>{t('settings.androidTv.currentServerHint')}</span>
             </div>
 
-            <div className={styles.group} style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-              <label style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>📱 Android TV mit PIN koppeln (Device Pairing)</label>
-              <p className={styles.hint} style={{ marginTop: '0.25rem', marginBottom: '0.75rem' }}>
+            <div className={`${styles.group} ${styles.pairingGroup}`}>
+              <label className={styles.pairingLabel} htmlFor="android-tv-pairing-code">📱 Android TV mit PIN koppeln (Device Pairing)</label>
+              <p className={`${styles.hint} ${styles.pairingHint}`}>
                 Gib den 6- bis 8-stelligen Code ein, der auf deinem Smart-TV Bildschirm angezeigt wird:
               </p>
-              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <div className={styles.pairingControls}>
                 <input
+                  id="android-tv-pairing-code"
+                  className={styles.pairingInput}
                   type="text"
                   placeholder="z.B. X2VZ-ZRRF"
                   value={pairingCodeDraft}
                   onChange={(e) => { setPairingCodeDraft(e.target.value); setPairingFeedback(null); }}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    background: 'rgba(0, 0, 0, 0.4)',
-                    color: 'var(--text-primary)',
-                    fontFamily: 'monospace',
-                    fontSize: '1rem',
-                    textTransform: 'uppercase',
-                    letterSpacing: '2px',
-                    width: '180px'
-                  }}
                 />
                 <Button
                   onClick={async () => {
@@ -509,7 +499,7 @@ function Settings() {
                 </Button>
               </div>
               {pairingFeedback ? (
-                <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: pairingFeedback.success ? 'var(--status-success)' : 'var(--status-error)' }}>
+                <p className={`${styles.pairingFeedback} ${pairingFeedback.success ? styles.pairingFeedbackSuccess : styles.pairingFeedbackError}`}>
                   {pairingFeedback.message}
                 </p>
               ) : null}
