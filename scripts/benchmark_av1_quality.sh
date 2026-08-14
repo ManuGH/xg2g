@@ -149,14 +149,12 @@ for TARGET_K in "${BITRATES_K[@]}"; do
     FORMATTED_FPS=$(awk "BEGIN {printf \"%.1f\", $ENC_FPS}")
 
     # Production Headroom Assessment
-    HEADROOM_STATUS="❌ FAIL"
-    if (( $(echo "$ENC_FPS >= 60.0" | bc -l) )); then
-        HEADROOM_STATUS="🚀 OPTIMAL"
-    elif (( $(echo "$ENC_FPS >= 55.0" | bc -l) )); then
-        HEADROOM_STATUS="✅ GOOD"
-    elif (( $(echo "$ENC_FPS >= 50.0" | bc -l) )); then
-        HEADROOM_STATUS="⚠️ MARGINAL"
-    fi
+    HEADROOM_STATUS=$(awk "BEGIN {
+        if ($ENC_FPS >= 60.0) print \"🚀 OPTIMAL\"
+        else if ($ENC_FPS >= 55.0) print \"✅ GOOD\"
+        else if ($ENC_FPS >= 50.0) print \"⚠️ MARGINAL\"
+        else print \"❌ FAIL\"
+    }")
 
     # Pre-Validation: Verify exact frame count and resolution match before computing metrics
     TEST_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1:nokey=1 "$TEST_OUT")
