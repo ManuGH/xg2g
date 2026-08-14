@@ -144,18 +144,16 @@ internal class RecordingsViewModel(
         private val serverLabelProvider: () -> String,
         private val baseUrlProvider: () -> String,
         private val authTokenProvider: () -> String?,
-        private val stateStore: io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore? = null,
-        private val dpopProvider: io.github.manugh.xg2g.android.auth.DPoPProvider? = null,
-        private val stateMachine: io.github.manugh.xg2g.android.auth.AuthStateMachine? = null
+        private val stateStore: io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore,
+        private val dpopProvider: io.github.manugh.xg2g.android.auth.DPoPProvider,
+        private val stateMachine: io.github.manugh.xg2g.android.auth.AuthStateMachine
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            val deviceAuthStore = stateStore ?: io.github.manugh.xg2g.android.DeviceAuthStore(context.applicationContext)
-            val dpop = dpopProvider ?: io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
             val client = RecordingsApiClient(
                 baseUrlProvider = baseUrlProvider,
-                stateStore = deviceAuthStore,
-                dpopProvider = dpop,
+                stateStore = stateStore,
+                dpopProvider = dpopProvider,
                 stateMachine = stateMachine
             )
             return RecordingsViewModel(

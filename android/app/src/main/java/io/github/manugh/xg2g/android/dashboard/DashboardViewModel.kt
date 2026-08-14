@@ -99,18 +99,18 @@ internal class DashboardViewModel(
         private val serverLabelProvider: () -> String,
         private val baseUrlProvider: () -> String,
         private val authTokenProvider: () -> String?,
-        private val stateStore: PersistedDeviceAuthStateStore? = null,
-        private val dpopProvider: DPoPProvider? = null,
-        private val stateMachine: AuthStateMachine? = null
+        private val stateStore: PersistedDeviceAuthStateStore,
+        private val dpopProvider: DPoPProvider,
+        private val stateMachine: AuthStateMachine
     ) : ViewModelProvider.Factory {
         constructor(
             context: Context,
             serverLabel: String,
             baseUrl: String,
             authTokenProvider: () -> String?,
-            stateStore: PersistedDeviceAuthStateStore? = null,
-            dpopProvider: DPoPProvider? = null,
-            stateMachine: AuthStateMachine? = null
+            stateStore: PersistedDeviceAuthStateStore,
+            dpopProvider: DPoPProvider,
+            stateMachine: AuthStateMachine
         ) : this(
             context = context,
             serverLabelProvider = { serverLabel },
@@ -123,12 +123,10 @@ internal class DashboardViewModel(
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            val store = stateStore ?: DeviceAuthStore(context.applicationContext)
-            val dpop = dpopProvider ?: AndroidKeystoreDPoPProvider()
             val client = DashboardApiClient(
                 baseUrlProvider = baseUrlProvider,
-                stateStore = store,
-                dpopProvider = dpop,
+                stateStore = stateStore,
+                dpopProvider = dpopProvider,
                 stateMachine = stateMachine
             )
             return DashboardViewModel(client, serverLabelProvider(), authTokenProvider) as T

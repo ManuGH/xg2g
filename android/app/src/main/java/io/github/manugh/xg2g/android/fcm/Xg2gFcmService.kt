@@ -17,9 +17,12 @@ class Xg2gFcmService : FirebaseMessagingService() {
         val settingsStore = ServerSettingsStore(applicationContext)
         val serverUrl = settingsStore.getServerUrl() ?: return
         val authToken = settingsStore.getAuthToken()
-        val store = io.github.manugh.xg2g.android.DeviceAuthStore(applicationContext)
-        val dpop = io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
-        val manager = FcmTokenManager(stateStore = store, dpopProvider = dpop)
+        val authContainer = io.github.manugh.xg2g.android.auth.NativeAuthContainer.getInstance(applicationContext)
+        val manager = FcmTokenManager(
+            stateStore = authContainer.stateStore,
+            dpopProvider = authContainer.dpopProvider,
+            stateMachine = authContainer.stateMachine
+        )
 
         CoroutineScope(Dispatchers.IO).launch {
             try {

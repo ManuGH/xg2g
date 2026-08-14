@@ -33,6 +33,7 @@
     </queries>
 
     <application
+        android:name=".Xg2gApplication"
         android:allowBackup="false"
         android:appCategory="video"
         android:icon="@mipmap/ic_launcher"

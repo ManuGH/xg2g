@@ -18,15 +18,15 @@ class GuideActivity : AppCompatActivity() {
     private var authToken: String? = null
     internal val playbackBridge by lazy(LazyThreadSafetyMode.NONE) { NativePlaybackBridge(this) }
     internal val viewModel: GuideViewModel by viewModels {
-        val store = io.github.manugh.xg2g.android.DeviceAuthStore(applicationContext)
-        val dpop = io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
+        val authContainer = io.github.manugh.xg2g.android.auth.NativeAuthContainer.getInstance(applicationContext)
         GuideViewModel.Factory(
             context = applicationContext,
             serverLabelProvider = { describeServer(baseUrl) },
             baseUrlProvider = { baseUrl },
             authTokenProvider = { authToken },
-            stateStore = store,
-            dpopProvider = dpop
+            stateStore = authContainer.stateStore,
+            dpopProvider = authContainer.dpopProvider,
+            stateMachine = authContainer.stateMachine
         )
     }
 

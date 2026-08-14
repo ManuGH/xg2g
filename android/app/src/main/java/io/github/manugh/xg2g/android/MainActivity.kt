@@ -47,15 +47,20 @@ class MainActivity : AppCompatActivity() {
     private var uiState: MainUiState = MainUiState.Loading()
     private var loadAppUrlJob: Job? = null
     private val destinationFlow = MutableStateFlow(TvNavigationDestination.Home)
+    private val authContainer by lazy(LazyThreadSafetyMode.NONE) {
+        io.github.manugh.xg2g.android.auth.NativeAuthContainer.getInstance(applicationContext)
+    }
+    private val nativeDeviceAuthRepository get() = authContainer.repository
+
     private val dashboardViewModel: DashboardViewModel by viewModels {
         DashboardViewModel.Factory(
             context = applicationContext,
             serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
             baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
             authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() },
-            stateStore = nativeDeviceAuthRepository.stateStore,
-            dpopProvider = nativeDeviceAuthRepository.dpopProvider,
-            stateMachine = nativeDeviceAuthRepository.stateMachine
+            stateStore = authContainer.stateStore,
+            dpopProvider = authContainer.dpopProvider,
+            stateMachine = authContainer.stateMachine
         )
     }
 
@@ -65,9 +70,9 @@ class MainActivity : AppCompatActivity() {
             serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
             baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
             authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() },
-            stateStore = nativeDeviceAuthRepository.stateStore,
-            dpopProvider = nativeDeviceAuthRepository.dpopProvider,
-            stateMachine = nativeDeviceAuthRepository.stateMachine
+            stateStore = authContainer.stateStore,
+            dpopProvider = authContainer.dpopProvider,
+            stateMachine = authContainer.stateMachine
         )
     }
 
@@ -77,9 +82,9 @@ class MainActivity : AppCompatActivity() {
             serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
             baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
             authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() },
-            stateStore = nativeDeviceAuthRepository.stateStore,
-            dpopProvider = nativeDeviceAuthRepository.dpopProvider,
-            stateMachine = nativeDeviceAuthRepository.stateMachine
+            stateStore = authContainer.stateStore,
+            dpopProvider = authContainer.dpopProvider,
+            stateMachine = authContainer.stateMachine
         )
     }
 
@@ -89,9 +94,9 @@ class MainActivity : AppCompatActivity() {
             serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
             baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
             authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() },
-            stateStore = nativeDeviceAuthRepository.stateStore,
-            dpopProvider = nativeDeviceAuthRepository.dpopProvider,
-            stateMachine = nativeDeviceAuthRepository.stateMachine
+            stateStore = authContainer.stateStore,
+            dpopProvider = authContainer.dpopProvider,
+            stateMachine = authContainer.stateMachine
         )
     }
 
@@ -103,18 +108,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val serverSettingsStore by lazy { ServerSettingsStore(this) }
-    private val nativeDeviceAuthRepository by lazy(LazyThreadSafetyMode.NONE) {
-        val store = DeviceAuthStore(applicationContext)
-        val dpopProvider = AndroidKeystoreDPoPProvider()
-        val stateMachine = AuthStateMachine(isTvDevice = isTvDevice)
-        val transport = NativeDeviceAuthTransport(dpopProvider)
-        NativeDeviceAuthRepository(
-            stateStore = store,
-            dpopProvider = dpopProvider,
-            stateMachine = stateMachine,
-            transport = transport
-        )
-    }
     private val nativePlaybackBridge by lazy(LazyThreadSafetyMode.NONE) { NativePlaybackBridge(this) }
     private val isTvDevice by lazy(LazyThreadSafetyMode.NONE) { detectTvDevice() }
     private val serializedHostCapabilities by lazy(LazyThreadSafetyMode.NONE) { buildHostCapabilitiesJson() }

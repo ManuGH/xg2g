@@ -144,21 +144,19 @@ internal class GuideViewModel(
         private val serverLabelProvider: () -> String,
         private val baseUrlProvider: () -> String,
         private val authTokenProvider: () -> String?,
-        private val stateStore: PersistedDeviceAuthStateStore? = null,
-        private val dpopProvider: DPoPProvider? = null,
-        private val stateMachine: AuthStateMachine? = null
+        private val stateStore: PersistedDeviceAuthStateStore,
+        private val dpopProvider: DPoPProvider,
+        private val stateMachine: AuthStateMachine
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val store = ServerSettingsStore(context.applicationContext)
-            val deviceAuthStore = stateStore ?: DeviceAuthStore(context.applicationContext)
-            val dpop = dpopProvider ?: AndroidKeystoreDPoPProvider()
             val repository = GuideRepository(
                 apiClient = GuideApiClient(
                     baseUrlProvider = baseUrlProvider,
                     profileIdProvider = { store.getSelectedProfileId() },
-                    stateStore = deviceAuthStore,
-                    dpopProvider = dpop,
+                    stateStore = stateStore,
+                    dpopProvider = dpopProvider,
                     stateMachine = stateMachine
                 ),
                 authTokenProvider = authTokenProvider
