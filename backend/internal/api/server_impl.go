@@ -27,6 +27,7 @@ func (s *Server) scopeMiddleware(required ...v3.Scope) func(http.Handler) http.H
 func (s *Server) SetIdentityService(svc *identity.Service) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.identityService = svc
 	if s.v3Handler != nil {
 		s.v3Handler.SetIdentityService(svc)
 	}
