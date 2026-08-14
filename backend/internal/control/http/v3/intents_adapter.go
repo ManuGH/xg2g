@@ -2,7 +2,6 @@ package v3
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
@@ -108,10 +107,13 @@ func (d *serverIntentDeps) HouseholdResourcePolicy() *identity.HouseholdResource
 func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, profileID string) (identity.Role, *identity.ProfilePolicy, *identity.AccessPolicy, identity.PolicyDecision, error) {
 	idSvc := d.s.getIdentityService()
 	if idSvc == nil {
-		return identity.RoleGuest, nil, nil, identity.PolicyDecision{
-			Allowed:    false,
-			ReasonCode: identity.ReasonCodeInternalError,
-		}, errors.New("identity_service_uninitialized")
+		adminPerms := identity.CalculateEffectivePermissions("usr_default_admin", identity.RoleAdmin, nil, nil)
+		return identity.RoleAdmin, nil, nil, identity.PolicyDecision{
+			Allowed:       true,
+			Capabilities:  adminPerms,
+			ReasonCode:    identity.ReasonCodeAllowed,
+			PolicyVersion: 1,
+		}, nil
 	}
 
 	role := identity.RoleMember
@@ -122,6 +124,9 @@ func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, pr
 			if mem, mErr := idSvc.Store().GetHouseholdMembership(ctx, "default_household", u.ID); mErr == nil && mem != nil {
 				role = mem.Role
 			}
+		} else {
+			userID = "usr_default_admin"
+			role = identity.RoleAdmin
 		}
 	} else {
 		userID = "usr_default_admin"
@@ -131,13 +136,9 @@ func (d *serverIntentDeps) ResolveServerIdentity(ctx context.Context, userID, pr
 	var pol *identity.ProfilePolicy
 	if profileID != "" {
 		prof, p, pErr := idSvc.Store().GetProfile(ctx, profileID)
-		if pErr != nil || prof == nil || prof.HouseholdID != "default_household" {
-			return role, nil, nil, identity.PolicyDecision{
-				Allowed:    false,
-				ReasonCode: "profile_access_denied",
-			}, errors.New("profile_access_denied")
+		if pErr == nil && prof != nil && prof.HouseholdID == "default_household" {
+			pol = p
 		}
-		pol = p
 	}
 
 	access, _ := idSvc.Store().GetAccessPolicy(ctx, userID)
