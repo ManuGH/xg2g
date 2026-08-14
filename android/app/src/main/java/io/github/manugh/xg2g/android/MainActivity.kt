@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
     private var uiState: MainUiState = MainUiState.Loading()
     private var loadAppUrlJob: Job? = null
     private val destinationFlow = MutableStateFlow(TvNavigationDestination.Home)
-    private val authContainer by lazy(LazyThreadSafetyMode.NONE) {
+    private val authContainer by lazy {
         io.github.manugh.xg2g.android.auth.NativeAuthContainer.getInstance(applicationContext)
     }
     private val nativeDeviceAuthRepository get() = authContainer.repository
