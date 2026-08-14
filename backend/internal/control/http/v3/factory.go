@@ -96,9 +96,13 @@ func newHandlerWithMiddlewares(svc *Server, _ config.AppConfig, extra []Middlewa
 	// 2. Create Router with RFC 7807 compliant 404/405 handlers
 	r := NewRouteRouter()
 	r.Get("/.well-known/assetlinks.json", svc.AssetLinks)
+	var mountErr error
 	r.Route(V3BaseURL, func(sub chi.Router) {
-		svc.mountPasskeyRoutes(sub)
+		mountErr = svc.mountPasskeyRoutes(sub)
 	})
+	if mountErr != nil {
+		return nil, fmt.Errorf("register handwritten v3 routes: %w", mountErr)
+	}
 
 	// 3. Create Handler
 	// Use handwritten router to inject scope policy and keep generated code transport-only.

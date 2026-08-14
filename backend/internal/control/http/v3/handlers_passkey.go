@@ -6,7 +6,6 @@ package v3
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -19,90 +18,17 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// RegisterPasskeyRoutesWithRegistrar registers passkey identity routes with policy governance.
+// RegisterPasskeyRoutesWithRegistrar registers the handwritten v3 routes with policy governance.
+// It is the daemon's entry point; the route list itself lives in routes_handwritten.go so that
+// this path and the chi path in NewHandler cannot diverge.
 func RegisterPasskeyRoutesWithRegistrar(registrar RouteRegistrar, svc *Server) error {
-	if registrar == nil || svc == nil {
-		return fmt.Errorf("nil registrar or server")
-	}
-	if err := registrar.Register(http.MethodGet, "/auth/status", http.HandlerFunc(svc.AuthStatus)); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/auth/passkey/login/start", http.HandlerFunc(svc.PasskeyLoginStart)); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/auth/passkey/login/finish", http.HandlerFunc(svc.PasskeyLoginFinish)); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/auth/passkey/register/start", http.HandlerFunc(svc.PasskeyRegisterStart)); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/auth/passkey/register/finish", http.HandlerFunc(svc.PasskeyRegisterFinish)); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/auth/recovery", http.HandlerFunc(svc.RecoveryLogin)); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodGet, "/auth/passkeys", svc.authMiddleware(http.HandlerFunc(svc.ListPasskeys))); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodDelete, "/auth/passkeys/{id}", svc.authMiddleware(http.HandlerFunc(svc.DeletePasskey))); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/auth/sessions/revoke-others", svc.authMiddleware(http.HandlerFunc(svc.RevokeOtherSessions))); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/auth/login/password", http.HandlerFunc(svc.PasswordLogin)); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/auth/invitations/redeem", http.HandlerFunc(svc.RedeemInvitation)); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/auth/invitations", svc.authMiddleware(http.HandlerFunc(svc.CreateInvitation))); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodGet, "/auth/effective-permissions", svc.authMiddleware(http.HandlerFunc(svc.GetEffectivePermissions))); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodGet, "/profiles", svc.authMiddleware(http.HandlerFunc(svc.ListProfiles))); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodPost, "/profiles", svc.authMiddleware(http.HandlerFunc(svc.CreateProfile))); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodGet, "/profiles/{id}", svc.authMiddleware(http.HandlerFunc(svc.GetProfile))); err != nil {
-		return err
-	}
-	if err := registrar.Register(http.MethodDelete, "/profiles/{id}", svc.authMiddleware(http.HandlerFunc(svc.DeleteProfile))); err != nil {
-		return err
-	}
-	return registrar.Register(http.MethodPost, "/auth/bootstrap/acknowledge-recovery", svc.authMiddleware(http.HandlerFunc(svc.AcknowledgeRecovery)))
+	return registerHandwrittenRoutes(registrar, svc)
 }
 
-func (s *Server) mountPasskeyRoutes(r chi.Router) {
-	r.Get("/auth/status", s.AuthStatus)
-	r.Route("/auth/passkey", func(pr chi.Router) {
-		pr.Post("/login/start", s.PasskeyLoginStart)
-		pr.Post("/login/finish", s.PasskeyLoginFinish)
-		pr.Post("/register/start", s.PasskeyRegisterStart)
-		pr.Post("/register/finish", s.PasskeyRegisterFinish)
-	})
-	r.Route("/auth/device", func(dr chi.Router) {
-		dr.Post("/grant/start", s.DeviceGrantStart)
-		dr.Post("/grant/finish", s.DeviceGrantFinish)
-		dr.Post("/refresh", s.DeviceRefresh)
-	})
-	r.Post("/auth/recovery", s.RecoveryLogin)
-
-	s.mountHouseholdRoutes(r)
-
-	// Protected management endpoints
-	r.Group(func(pr chi.Router) {
-		pr.Use(s.authMiddleware)
-		pr.Get("/auth/passkeys", s.ListPasskeys)
-		pr.Delete("/auth/passkeys/{id}", s.DeletePasskey)
-		pr.Post("/auth/sessions/revoke-others", s.RevokeOtherSessions)
-		pr.Post("/auth/bootstrap/acknowledge-recovery", s.AcknowledgeRecovery)
-	})
+// mountPasskeyRoutes registers the handwritten v3 routes onto a chi router. It is the
+// NewHandler entry point and shares its route list with RegisterPasskeyRoutesWithRegistrar.
+func (s *Server) mountPasskeyRoutes(r chi.Router) error {
+	return registerHandwrittenRoutes(chiRouteRegistrar{router: r}, s)
 }
 
 func (s *Server) getIdentityService() *identity.Service {
