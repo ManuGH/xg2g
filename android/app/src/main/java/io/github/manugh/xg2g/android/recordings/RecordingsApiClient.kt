@@ -3,6 +3,7 @@ package io.github.manugh.xg2g.android.recordings
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
 import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.guide.GuideAuthRequiredException
@@ -19,29 +20,30 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
+
+
 internal class RecordingsApiClient(
     private val baseUrlProvider: () -> String,
-    stateStore: PersistedDeviceAuthStateStore? = null,
-    dpopProvider: DPoPProvider? = null,
-    private val okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
-        createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider)
-    } else {
-        OkHttpClient()
-    }
+    stateStore: PersistedDeviceAuthStateStore,
+    dpopProvider: DPoPProvider,
+    stateMachine: AuthStateMachine? = null,
+    private val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
+        stateStore = stateStore,
+        dpopProvider = dpopProvider,
+        stateMachine = stateMachine
+    )
 ) {
     constructor(
         baseUrl: String,
-        stateStore: PersistedDeviceAuthStateStore? = null,
-        dpopProvider: DPoPProvider? = null,
-        okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
-            createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider)
-        } else {
-            OkHttpClient()
-        }
+        stateStore: PersistedDeviceAuthStateStore,
+        dpopProvider: DPoPProvider,
+        stateMachine: AuthStateMachine? = null,
+        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine)
     ) : this(
         baseUrlProvider = { baseUrl },
         stateStore = stateStore,
         dpopProvider = dpopProvider,
+        stateMachine = stateMachine,
         okHttpClient = okHttpClient
     )
 

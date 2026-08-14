@@ -4,6 +4,12 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.ServerSettingsStore
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.AuthStateMachine
+import io.github.manugh.xg2g.android.auth.DPoPProvider
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -137,31 +143,23 @@ internal class GuideViewModel(
         private val context: Context,
         private val serverLabelProvider: () -> String,
         private val baseUrlProvider: () -> String,
-        private val authTokenProvider: () -> String?
+        private val authTokenProvider: () -> String?,
+        private val stateStore: PersistedDeviceAuthStateStore? = null,
+        private val dpopProvider: DPoPProvider? = null,
+        private val stateMachine: AuthStateMachine? = null
     ) : ViewModelProvider.Factory {
-        constructor(
-            context: Context,
-            serverLabel: String,
-            baseUrl: String,
-            authTokenProvider: () -> String?
-        ) : this(
-            context = context,
-            serverLabelProvider = { serverLabel },
-            baseUrlProvider = { baseUrl },
-            authTokenProvider = authTokenProvider
-        )
-
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            val store = io.github.manugh.xg2g.android.ServerSettingsStore(context.applicationContext)
-            val deviceAuthStore = io.github.manugh.xg2g.android.DeviceAuthStore(context.applicationContext)
-            val dpopProvider = io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
+            val store = ServerSettingsStore(context.applicationContext)
+            val deviceAuthStore = stateStore ?: DeviceAuthStore(context.applicationContext)
+            val dpop = dpopProvider ?: AndroidKeystoreDPoPProvider()
             val repository = GuideRepository(
                 apiClient = GuideApiClient(
                     baseUrlProvider = baseUrlProvider,
                     profileIdProvider = { store.getSelectedProfileId() },
                     stateStore = deviceAuthStore,
-                    dpopProvider = dpopProvider
+                    dpopProvider = dpop,
+                    stateMachine = stateMachine
                 ),
                 authTokenProvider = authTokenProvider
             )

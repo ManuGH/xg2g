@@ -3,6 +3,7 @@ package io.github.manugh.xg2g.android.guide
 import io.github.manugh.xg2g.android.DeviceAuthStore
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.AuthStateMachine
 import io.github.manugh.xg2g.android.auth.DPoPProvider
 import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
@@ -19,32 +20,34 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.time.OffsetDateTime
 
+
+
 internal class GuideApiClient(
     private val baseUrlProvider: () -> String,
+    stateStore: PersistedDeviceAuthStateStore,
+    dpopProvider: DPoPProvider,
+    stateMachine: AuthStateMachine? = null,
     private val profileIdProvider: () -> String? = { null },
-    stateStore: PersistedDeviceAuthStateStore? = null,
-    dpopProvider: DPoPProvider? = null,
-    private val okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
-        createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, profileIdProvider = profileIdProvider)
-    } else {
-        OkHttpClient()
-    }
+    private val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
+        stateStore = stateStore,
+        dpopProvider = dpopProvider,
+        stateMachine = stateMachine,
+        profileIdProvider = profileIdProvider
+    )
 ) {
     constructor(
         baseUrl: String,
+        stateStore: PersistedDeviceAuthStateStore,
+        dpopProvider: DPoPProvider,
+        stateMachine: AuthStateMachine? = null,
         profileIdProvider: () -> String? = { null },
-        stateStore: PersistedDeviceAuthStateStore? = null,
-        dpopProvider: DPoPProvider? = null,
-        okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
-            createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, profileIdProvider = profileIdProvider)
-        } else {
-            OkHttpClient()
-        }
+        okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, stateMachine, profileIdProvider)
     ) : this(
         baseUrlProvider = { baseUrl },
-        profileIdProvider = profileIdProvider,
         stateStore = stateStore,
         dpopProvider = dpopProvider,
+        stateMachine = stateMachine,
+        profileIdProvider = profileIdProvider,
         okHttpClient = okHttpClient
     )
 

@@ -37,8 +37,18 @@ class FcmPushTest {
                 .build()
         }
 
+        val mockStore = object : io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore {
+            override fun load() = null
+            override fun save(state: io.github.manugh.xg2g.android.PersistedDeviceAuthState) {}
+            override fun clear() {}
+        }
+        val mockDPoP = object : io.github.manugh.xg2g.android.auth.DPoPProvider {
+            override fun createProof(htm: String, htu: String, ath: String?) = "proof"
+            override fun getOrGenerateKeyPair(): java.security.KeyPair = java.security.KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
+            override fun getJWKThumbprint() = "jkt"
+        }
         val client = OkHttpClient.Builder().addInterceptor(interceptor).build()
-        val manager = FcmTokenManager(okHttpClient = client)
+        val manager = FcmTokenManager(stateStore = mockStore, dpopProvider = mockDPoP, okHttpClient = client)
 
         val success = manager.registerFcmToken(
             baseUrl = "https://xg2g.local",

@@ -8,8 +8,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.IOException
 
 internal class NativeDeviceAuthRepository(
-    private val stateStore: PersistedDeviceAuthStateStore,
-    private val dpopProvider: DPoPProvider,
+    val stateStore: PersistedDeviceAuthStateStore,
+    val dpopProvider: DPoPProvider,
     val stateMachine: AuthStateMachine,
     private val transport: DeviceAuthTransport,
     private val nowEpochMs: () -> Long = { System.currentTimeMillis() }

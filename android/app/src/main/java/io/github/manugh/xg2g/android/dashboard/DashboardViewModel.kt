@@ -5,7 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.AuthStateMachine
+import io.github.manugh.xg2g.android.auth.DPoPProvider
 
 import io.github.manugh.xg2g.android.guide.GuideHealthStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -95,28 +98,38 @@ internal class DashboardViewModel(
         private val context: Context,
         private val serverLabelProvider: () -> String,
         private val baseUrlProvider: () -> String,
-        private val authTokenProvider: () -> String?
+        private val authTokenProvider: () -> String?,
+        private val stateStore: PersistedDeviceAuthStateStore? = null,
+        private val dpopProvider: DPoPProvider? = null,
+        private val stateMachine: AuthStateMachine? = null
     ) : ViewModelProvider.Factory {
         constructor(
             context: Context,
             serverLabel: String,
             baseUrl: String,
-            authTokenProvider: () -> String?
+            authTokenProvider: () -> String?,
+            stateStore: PersistedDeviceAuthStateStore? = null,
+            dpopProvider: DPoPProvider? = null,
+            stateMachine: AuthStateMachine? = null
         ) : this(
             context = context,
             serverLabelProvider = { serverLabel },
             baseUrlProvider = { baseUrl },
-            authTokenProvider = authTokenProvider
+            authTokenProvider = authTokenProvider,
+            stateStore = stateStore,
+            dpopProvider = dpopProvider,
+            stateMachine = stateMachine
         )
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            val store = DeviceAuthStore(context.applicationContext)
-            val dpopProvider = AndroidKeystoreDPoPProvider()
+            val store = stateStore ?: DeviceAuthStore(context.applicationContext)
+            val dpop = dpopProvider ?: AndroidKeystoreDPoPProvider()
             val client = DashboardApiClient(
                 baseUrlProvider = baseUrlProvider,
                 stateStore = store,
-                dpopProvider = dpopProvider
+                dpopProvider = dpop,
+                stateMachine = stateMachine
             )
             return DashboardViewModel(client, serverLabelProvider(), authTokenProvider) as T
         }

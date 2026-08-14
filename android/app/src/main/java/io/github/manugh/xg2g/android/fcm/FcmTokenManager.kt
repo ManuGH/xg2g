@@ -14,13 +14,14 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 internal class FcmTokenManager(
-    stateStore: PersistedDeviceAuthStateStore? = null,
-    dpopProvider: DPoPProvider? = null,
-    private val okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
-        createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider)
-    } else {
-        OkHttpClient()
-    }
+    stateStore: PersistedDeviceAuthStateStore,
+    dpopProvider: DPoPProvider,
+    stateMachine: io.github.manugh.xg2g.android.auth.AuthStateMachine? = null,
+    private val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
+        stateStore = stateStore,
+        dpopProvider = dpopProvider,
+        stateMachine = stateMachine
+    )
 ) {
     suspend fun registerFcmToken(
         baseUrl: String,

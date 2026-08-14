@@ -52,7 +52,10 @@ class MainActivity : AppCompatActivity() {
             context = applicationContext,
             serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
             baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
-            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
+            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() },
+            stateStore = nativeDeviceAuthRepository.stateStore,
+            dpopProvider = nativeDeviceAuthRepository.dpopProvider,
+            stateMachine = nativeDeviceAuthRepository.stateMachine
         )
     }
 
@@ -61,7 +64,10 @@ class MainActivity : AppCompatActivity() {
             context = applicationContext,
             serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
             baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
-            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
+            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() },
+            stateStore = nativeDeviceAuthRepository.stateStore,
+            dpopProvider = nativeDeviceAuthRepository.dpopProvider,
+            stateMachine = nativeDeviceAuthRepository.stateMachine
         )
     }
 
@@ -70,7 +76,10 @@ class MainActivity : AppCompatActivity() {
             context = applicationContext,
             serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
             baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
-            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
+            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() },
+            stateStore = nativeDeviceAuthRepository.stateStore,
+            dpopProvider = nativeDeviceAuthRepository.dpopProvider,
+            stateMachine = nativeDeviceAuthRepository.stateMachine
         )
     }
 
@@ -79,7 +88,10 @@ class MainActivity : AppCompatActivity() {
             context = applicationContext,
             serverLabelProvider = { serverSettingsStore.getServerUrl()?.let { describeServer(it) } ?: "" },
             baseUrlProvider = { serverSettingsStore.getServerUrl() ?: "" },
-            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() }
+            authTokenProvider = { sessionAuthToken ?: serverSettingsStore.getAuthToken() },
+            stateStore = nativeDeviceAuthRepository.stateStore,
+            dpopProvider = nativeDeviceAuthRepository.dpopProvider,
+            stateMachine = nativeDeviceAuthRepository.stateMachine
         )
     }
 

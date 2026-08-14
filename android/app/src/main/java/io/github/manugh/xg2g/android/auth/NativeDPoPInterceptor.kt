@@ -33,12 +33,23 @@ internal class NativeDPoPInterceptor(
             builder.header("X-Household-Profile", profileId)
         }
 
-        val response = chain.proceed(builder.build())
+        val response = try {
+            chain.proceed(builder.build())
+        } catch (error: Exception) {
+            // Network / I/O errors NEVER trigger Revoked or ReauthRequired.
+            throw error
+        }
 
         if (response.code == 401 && stateMachine != null) {
-            val bodyStr = runCatching { response.peekBody(1024).string() }.getOrDefault("")
-            if (bodyStr.contains("invalid_grant", ignoreCase = true) || bodyStr.contains("revoked", ignoreCase = true)) {
-                stateMachine.handleRefreshError("401 Unauthorized / Token Revoked", isNetworkError = false, isRevoked = true)
+            val bodyStr = runCatching { response.peekBody(2048).string() }.getOrDefault("").lowercase()
+            val isExplicitRevocation = bodyStr.contains("device_revoked") ||
+                    bodyStr.contains("grant_revoked") ||
+                    bodyStr.contains("revoked")
+
+            if (isExplicitRevocation) {
+                stateMachine.handleRefreshError("Device grant revoked by server", isNetworkError = false, isRevoked = true)
+            } else {
+                stateMachine.handleRefreshError("401 Unauthorized / Invalid Grant", isNetworkError = false, isRevoked = false)
             }
         }
 

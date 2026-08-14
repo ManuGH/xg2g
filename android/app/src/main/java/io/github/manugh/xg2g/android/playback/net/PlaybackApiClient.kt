@@ -36,9 +36,11 @@ internal class PlaybackApiClient(
     private val nativeCapabilities: NativePlaybackCapabilities = NativePlaybackCapabilities.create(context.applicationContext),
     stateStore: PersistedDeviceAuthStateStore = DeviceAuthStore(context.applicationContext),
     dpopProvider: DPoPProvider = AndroidKeystoreDPoPProvider(),
+    stateMachine: io.github.manugh.xg2g.android.auth.AuthStateMachine? = null,
     val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
         stateStore = stateStore,
         dpopProvider = dpopProvider,
+        stateMachine = stateMachine,
         profileIdProvider = { serverSettingsStore.getSelectedProfileId() }
     )
 ) : PlaybackApi {

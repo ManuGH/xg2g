@@ -9,6 +9,7 @@ import io.github.manugh.xg2g.android.PersistedDeviceAuthState
 import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.RefreshedDeviceSession
 import io.github.manugh.xg2g.android.StartedWebBootstrap
+import io.github.manugh.xg2g.android.auth.DPoPProvider
 import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
 import kotlinx.coroutines.runBlocking
 import okhttp3.Headers
@@ -162,8 +163,21 @@ class GuideApiClientTest {
             }
             .build()
 
+        val mockStore = object : io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore {
+            override fun load() = null
+            override fun save(state: io.github.manugh.xg2g.android.PersistedDeviceAuthState) {}
+            override fun clear() {}
+        }
+        val mockDPoP = object : DPoPProvider {
+            override fun createProof(htm: String, htu: String, ath: String?) = "proof"
+            override fun getOrGenerateKeyPair(): java.security.KeyPair = java.security.KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
+            override fun getJWKThumbprint() = "jkt"
+        }
+
         return GuideApiClient(
             baseUrl = "http://127.0.0.1:8080/ui/",
+            stateStore = mockStore,
+            dpopProvider = mockDPoP,
             okHttpClient = okHttpClient
         )
     }

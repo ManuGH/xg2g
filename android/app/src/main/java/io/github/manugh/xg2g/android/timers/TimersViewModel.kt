@@ -62,11 +62,21 @@ internal class TimersViewModel(
         private val context: Context,
         private val serverLabelProvider: () -> String,
         private val baseUrlProvider: () -> String,
-        private val authTokenProvider: () -> String?
+        private val authTokenProvider: () -> String?,
+        private val stateStore: io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore? = null,
+        private val dpopProvider: io.github.manugh.xg2g.android.auth.DPoPProvider? = null,
+        private val stateMachine: io.github.manugh.xg2g.android.auth.AuthStateMachine? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            val client = TimersApiClient(baseUrlProvider = baseUrlProvider)
+            val deviceAuthStore = stateStore ?: io.github.manugh.xg2g.android.DeviceAuthStore(context.applicationContext)
+            val dpop = dpopProvider ?: io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
+            val client = TimersApiClient(
+                baseUrlProvider = baseUrlProvider,
+                stateStore = deviceAuthStore,
+                dpopProvider = dpop,
+                stateMachine = stateMachine
+            )
             return TimersViewModel(
                 baseUrl = baseUrlProvider(),
                 serverLabel = serverLabelProvider(),
