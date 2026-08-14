@@ -3,11 +3,8 @@ package vod
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 
 	"github.com/ManuGH/xg2g/internal/domain/vod/fsm"
-	"github.com/ManuGH/xg2g/internal/recordings"
 )
 
 // Probe delegates to the infra prober
@@ -52,15 +49,6 @@ func (m *Manager) TriggerProbe(id string, input string) {
 
 	if input != "" {
 		meta.ResolvedPath = input
-	}
-	if input == "" && meta.ResolvedPath == "" {
-		receiverPath := recordings.ExtractPathFromServiceRef(id)
-		if receiverPath != "" && filepath.IsAbs(receiverPath) {
-			if _, statErr := os.Stat(receiverPath); statErr == nil {
-				meta.ResolvedPath = receiverPath
-				input = receiverPath
-			}
-		}
 	}
 	if input == "" && meta.ResolvedPath == "" && m.pathMapper == nil {
 		meta.State = ArtifactStateFailed

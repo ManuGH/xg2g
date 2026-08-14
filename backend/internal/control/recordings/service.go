@@ -3,6 +3,7 @@ package recordings
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"mime"
 	"os"
 	"path"
@@ -269,72 +270,74 @@ func (s *service) List(ctx context.Context, in ListInput) (ListResult, error) {
 	// Fallback to local filesystem scanning when upstream returned 0 recordings and target exists locally
 	if len(recordingsList) == 0 {
 		if stat, err := os.Stat(cleanTarget); err == nil && stat.IsDir() {
-			if entries, err := os.ReadDir(cleanTarget); err == nil {
-				for _, entry := range entries {
-					if strings.HasPrefix(entry.Name(), ".") {
-						continue
-					}
-					fullPath := filepath.Join(cleanTarget, entry.Name())
-					if entry.IsDir() {
-						rel := entry.Name()
-						if qPath != "" {
-							rel = path.Join(qPath, entry.Name())
+			if scanRoot, err := os.OpenRoot(cleanTarget); err == nil {
+				defer func() { _ = scanRoot.Close() }()
+				if entries, err := fs.ReadDir(scanRoot.FS(), "."); err == nil {
+					for _, entry := range entries {
+						if strings.HasPrefix(entry.Name(), ".") {
+							continue
 						}
-						directoriesList = append(directoriesList, DirectoryItem{
-							Name: entry.Name(),
-							Path: rel,
-						})
-						continue
-					}
-					if strings.HasSuffix(strings.ToLower(entry.Name()), ".ts") {
-						metaPath := fullPath + ".meta"
-						serviceRef := "1:0:0:0:0:0:0:0:0:0:" + fullPath
-						title := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-						description := ""
-						var beginUnix int64
-						if fi, err := entry.Info(); err == nil {
-							beginUnix = fi.ModTime().Unix()
+						fullPath := filepath.Join(cleanTarget, entry.Name())
+						if entry.IsDir() {
+							rel := entry.Name()
+							if qPath != "" {
+								rel = path.Join(qPath, entry.Name())
+							}
+							directoriesList = append(directoriesList, DirectoryItem{
+								Name: entry.Name(),
+								Path: rel,
+							})
+							continue
 						}
-						if metaBytes, err := os.ReadFile(metaPath); err == nil {
-							lines := strings.Split(string(metaBytes), "\n")
-							if len(lines) > 0 && strings.TrimSpace(lines[0]) != "" {
-								refPart := strings.TrimSpace(lines[0])
-								if strings.Contains(refPart, ":") {
-									serviceRef = refPart + ":" + fullPath
+						if strings.HasSuffix(strings.ToLower(entry.Name()), ".ts") {
+							serviceRef := "1:0:0:0:0:0:0:0:0:0:" + fullPath
+							title := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+							description := ""
+							var beginUnix int64
+							if fi, err := entry.Info(); err == nil {
+								beginUnix = fi.ModTime().Unix()
+							}
+							if metaBytes, err := scanRoot.ReadFile(entry.Name() + ".meta"); err == nil {
+								lines := strings.Split(string(metaBytes), "\n")
+								if len(lines) > 0 && strings.TrimSpace(lines[0]) != "" {
+									refPart := strings.TrimSpace(lines[0])
+									if strings.Contains(refPart, ":") {
+										serviceRef = refPart + ":" + fullPath
+									}
+								}
+								if len(lines) > 1 && strings.TrimSpace(lines[1]) != "" {
+									title = strings.TrimSpace(lines[1])
+								}
+								if len(lines) > 2 && strings.TrimSpace(lines[2]) != "" {
+									description = strings.TrimSpace(lines[2])
+								}
+								if len(lines) > 3 && strings.TrimSpace(lines[3]) != "" {
+									if ts, err := strconv.ParseInt(strings.TrimSpace(lines[3]), 10, 64); err == nil && ts > 0 {
+										beginUnix = ts
+									}
 								}
 							}
-							if len(lines) > 1 && strings.TrimSpace(lines[1]) != "" {
-								title = strings.TrimSpace(lines[1])
+							recItem := RecordingItem{
+								ServiceRef:       serviceRef,
+								RecordingID:      EncodeRecordingID(serviceRef),
+								Title:            title,
+								Description:      description,
+								BeginUnixSeconds: beginUnix,
+								Filename:         entry.Name(),
+								Status:           "completed",
 							}
-							if len(lines) > 2 && strings.TrimSpace(lines[2]) != "" {
-								description = strings.TrimSpace(lines[2])
-							}
-							if len(lines) > 3 && strings.TrimSpace(lines[3]) != "" {
-								if ts, err := strconv.ParseInt(strings.TrimSpace(lines[3]), 10, 64); err == nil && ts > 0 {
-									beginUnix = ts
+							if in.PrincipalID != "" && s.resumeStore != nil {
+								if res, ok, _ := s.resumeStore.GetResume(ctx, in.PrincipalID, serviceRef); ok {
+									recItem.Resume = &ResumeSummary{
+										PosSeconds:      res.PosSeconds,
+										DurationSeconds: res.DurationSeconds,
+										Finished:        res.Finished,
+										UpdatedAt:       &res.UpdatedAt,
+									}
 								}
 							}
+							recordingsList = append(recordingsList, recItem)
 						}
-						recItem := RecordingItem{
-							ServiceRef:       serviceRef,
-							RecordingID:      EncodeRecordingID(serviceRef),
-							Title:            title,
-							Description:      description,
-							BeginUnixSeconds: beginUnix,
-							Filename:         entry.Name(),
-							Status:           "completed",
-						}
-						if in.PrincipalID != "" && s.resumeStore != nil {
-							if res, ok, _ := s.resumeStore.GetResume(ctx, in.PrincipalID, serviceRef); ok {
-								recItem.Resume = &ResumeSummary{
-									PosSeconds:      res.PosSeconds,
-									DurationSeconds: res.DurationSeconds,
-									Finished:        res.Finished,
-									UpdatedAt:       &res.UpdatedAt,
-								}
-							}
-						}
-						recordingsList = append(recordingsList, recItem)
 					}
 				}
 			}
@@ -554,15 +557,6 @@ func (s *service) rehydrateDirectSourceFromLocalPath(serviceRef string) (vod.Met
 
 	mapper := internalrecordings.NewPathMapper(s.cfg.RecordingPathMappings)
 	localPath, ok := mapper.ResolveLocalExisting(internalrecordings.ExtractPathFromServiceRef(serviceRef))
-	if !ok || localPath == "" {
-		extracted := internalrecordings.ExtractPathFromServiceRef(serviceRef)
-		if extracted != "" && filepath.IsAbs(extracted) {
-			if stat, err := os.Stat(extracted); err == nil && !stat.IsDir() {
-				localPath = extracted
-				ok = true
-			}
-		}
-	}
 	if !ok || localPath == "" {
 		return vod.Metadata{}, false
 	}

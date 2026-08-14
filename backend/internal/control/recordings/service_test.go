@@ -387,6 +387,22 @@ func TestService_Stream_RehydratesLocalSourceWithoutMetadata(t *testing.T) {
 	assert.Equal(t, resolvedPath, meta.ResolvedPath)
 }
 
+func TestService_RehydrateRejectsUnmappedAbsoluteReceiverPath(t *testing.T) {
+	localPath := filepath.Join(t.TempDir(), "unmapped.ts")
+	assert.NoError(t, os.WriteFile(localPath, []byte("ts-data"), 0600))
+
+	cfg := &config.AppConfig{HLS: config.HLSConfig{Root: t.TempDir()}}
+	vm, err := vod.NewManager(new(MockRunnerForService), new(MockProber), nil)
+	assert.NoError(t, err)
+
+	svc, err := NewService(cfg, vm, new(MockResolverForService), new(MockOWIClient), new(MockResumeStore))
+	assert.NoError(t, err)
+
+	serviceRef := "1:0:1:0:0:0:0:0:0:0:" + localPath
+	_, ok := svc.(*service).rehydrateDirectSourceFromLocalPath(serviceRef)
+	assert.False(t, ok, "an existing absolute path must not become trusted without a configured recording mapping")
+}
+
 func TestService_Stream_DoesNotTreatHLSPlaylistAsDirectStreamTruth(t *testing.T) {
 	cfg := &config.AppConfig{
 		HLS: config.HLSConfig{
