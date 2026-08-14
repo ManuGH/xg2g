@@ -41,6 +41,13 @@ var (
 	initialized bool
 )
 
+func init() {
+	// Zerolog reads this package global without synchronization while emitting
+	// timestamps. Set our format once, before application goroutines exist;
+	// mutating it from Configure races with active log writers.
+	zerolog.TimeFieldFormat = time.RFC3339
+}
+
 // Configure initialises the global zerolog logger with the provided configuration.
 func Configure(cfg Config) {
 	mu.Lock()
@@ -53,7 +60,6 @@ func Configure(cfg Config) {
 		}
 	}
 	zerolog.SetGlobalLevel(level)
-	zerolog.TimeFieldFormat = time.RFC3339
 
 	writer := cfg.Output
 	if writer == nil {
