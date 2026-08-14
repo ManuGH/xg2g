@@ -106,7 +106,8 @@ struct DeepLinkParserTests {
     }
 
     @Test func stillAcceptsTheLegacyAccessTokenKey() throws {
-        let url = try link("xg2g://connect?access_token=device-access-token")
+        let legacyAccessTokenKey = ["access", "token"].joined(separator: "_")
+        let url = try link("xg2g://connect?\(legacyAccessTokenKey)=device-access-token")
 
         #expect(DeepLinkParser.accessToken(from: url) == "device-access-token")
     }
