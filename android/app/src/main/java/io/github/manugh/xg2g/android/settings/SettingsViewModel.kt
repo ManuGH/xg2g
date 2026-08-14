@@ -342,8 +342,12 @@ internal class SettingsViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val store = ServerSettingsStore(context)
+            val deviceAuthStore = io.github.manugh.xg2g.android.DeviceAuthStore(context.applicationContext)
+            val dpopProvider = io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
             val client = DashboardApiClient(
-                baseUrlProvider = { store.getServerUrl().orEmpty().ifBlank { serverUrl } }
+                baseUrlProvider = { store.getServerUrl().orEmpty().ifBlank { serverUrl } },
+                stateStore = deviceAuthStore,
+                dpopProvider = dpopProvider
             )
             val pairingClient = io.github.manugh.xg2g.android.pairing.PairingApiClient(serverUrl)
             return SettingsViewModel(

@@ -1,13 +1,12 @@
 package io.github.manugh.xg2g.android.dashboard
 
-import android.webkit.CookieManager
-import io.github.manugh.xg2g.android.DeviceAuthReenrollRequiredException
-
-import io.github.manugh.xg2g.android.DeviceAuthSignInRequiredException
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.guide.GuideAuthRequiredException
 import io.github.manugh.xg2g.android.guide.GuideHealthStatus
-import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
-import io.github.manugh.xg2g.android.playback.net.CookieBackedAuthSession
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -72,45 +71,24 @@ internal data class DashboardDvrStatus(
 internal class DashboardApiClient(
     private val baseUrlProvider: () -> String,
     private val profileIdProvider: () -> String? = { null },
-    private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor { chain ->
-            val original = chain.request()
-            val builder = original.newBuilder()
-            cookieSession.applyCookies(original.url, builder)
-            val profileId = profileIdProvider()?.trim()?.takeIf { it.isNotEmpty() }
-            if (profileId != null) {
-                builder.header("X-Household-Profile", profileId)
-            }
-            val response = chain.proceed(builder.build())
-            cookieSession.storeCookies(original.url, response.headers)
-            response
-        }
-        .build()
+    stateStore: PersistedDeviceAuthStateStore? = null,
+    dpopProvider: DPoPProvider? = null,
+    private val okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
+        createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, profileIdProvider = profileIdProvider)
+    } else {
+        OkHttpClient()
+    }
 ) {
     constructor(
         baseUrl: String,
         profileIdProvider: () -> String? = { null },
-        cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
-        okHttpClient: OkHttpClient = OkHttpClient.Builder()
-            .addNetworkInterceptor { chain ->
-                val original = chain.request()
-                val builder = original.newBuilder()
-                cookieSession.applyCookies(original.url, builder)
-                val profileId = profileIdProvider()?.trim()?.takeIf { it.isNotEmpty() }
-                if (profileId != null) {
-                    builder.header("X-Household-Profile", profileId)
-                }
-                val response = chain.proceed(builder.build())
-                cookieSession.storeCookies(original.url, response.headers)
-                response
-            }
-            .build()
+        stateStore: PersistedDeviceAuthStateStore? = null,
+        dpopProvider: DPoPProvider? = null
     ) : this(
         baseUrlProvider = { baseUrl },
         profileIdProvider = profileIdProvider,
-        cookieSession = cookieSession,
-        okHttpClient = okHttpClient
+        stateStore = stateStore,
+        dpopProvider = dpopProvider
     )
 
     private val baseUrl: String get() = baseUrlProvider()
@@ -124,9 +102,6 @@ internal class DashboardApiClient(
         }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("system", "health")).get()
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         val root = executeJsonObject(requestBuilder.build())
         val receiverStatus = root.optJSONObject("receiver")
             ?.optString("status")
@@ -152,9 +127,6 @@ internal class DashboardApiClient(
         }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("recordings")).get()
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         val root = execute(requestBuilder.build())
         val array = when (root) {
             is JSONArray -> root
@@ -187,9 +159,6 @@ internal class DashboardApiClient(
         }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("timers")).get()
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         val root = execute(requestBuilder.build())
         val array = when (root) {
             is JSONArray -> root
@@ -223,9 +192,6 @@ internal class DashboardApiClient(
         }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("dvr", "status")).get()
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         val root = executeJsonObject(requestBuilder.build())
         DashboardDvrStatus(
             diskFreeBytes = root.optLong("diskFreeBytes").takeIf { it > 0 },
@@ -241,9 +207,6 @@ internal class DashboardApiClient(
         }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).get()
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         val root = executeJsonObject(requestBuilder.build())
         HouseholdUnlockStatus(
             pinConfigured = root.optBoolean("pinConfigured", false),
@@ -257,9 +220,6 @@ internal class DashboardApiClient(
         }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("household", "profiles")).get()
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         val root = execute(requestBuilder.build())
         val array = when (root) {
             is JSONArray -> root
@@ -315,9 +275,6 @@ internal class DashboardApiClient(
         val requestBuilder = Request.Builder()
             .url(apiUrl("household", "unlock"))
             .post(json.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         val root = executeJsonObject(requestBuilder.build())
         HouseholdUnlockStatus(
             pinConfigured = root.optBoolean("pinConfigured", false),
@@ -331,9 +288,6 @@ internal class DashboardApiClient(
         }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("household", "unlock")).delete()
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         execute(requestBuilder.build())
     }
 
@@ -351,9 +305,6 @@ internal class DashboardApiClient(
         }
         ensureAuthSession(authToken)
         val requestBuilder = Request.Builder().url(apiUrl("system", "scan")).get()
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         val root = executeJsonObject(requestBuilder.build())
         SystemScanStatus(
             state = root.optString("state", "idle"),
@@ -374,9 +325,6 @@ internal class DashboardApiClient(
         val requestBuilder = Request.Builder()
             .url(apiUrl("system", "scan"))
             .post(ByteArray(0).toRequestBody(null))
-        authToken?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            requestBuilder.header("Authorization", "Bearer $it")
-        }
         execute(requestBuilder.build())
         true
     }

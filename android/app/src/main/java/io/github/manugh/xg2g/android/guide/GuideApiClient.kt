@@ -1,11 +1,10 @@
 package io.github.manugh.xg2g.android.guide
 
-import android.webkit.CookieManager
-import io.github.manugh.xg2g.android.DeviceAuthReenrollRequiredException
-
-import io.github.manugh.xg2g.android.DeviceAuthSignInRequiredException
-import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
-import io.github.manugh.xg2g.android.playback.net.CookieBackedAuthSession
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,44 +22,29 @@ import java.time.OffsetDateTime
 internal class GuideApiClient(
     private val baseUrlProvider: () -> String,
     private val profileIdProvider: () -> String? = { null },
-    private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor { chain ->
-            val original = chain.request()
-            val builder = original.newBuilder()
-            cookieSession.applyCookies(original.url, builder)
-            val profileId = profileIdProvider()?.trim()?.takeIf { it.isNotEmpty() }
-            if (profileId != null) {
-                builder.header("X-Household-Profile", profileId)
-            }
-            val response = chain.proceed(builder.build())
-            cookieSession.storeCookies(original.url, response.headers)
-            response
-        }
-        .build()
+    stateStore: PersistedDeviceAuthStateStore? = null,
+    dpopProvider: DPoPProvider? = null,
+    private val okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
+        createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, profileIdProvider = profileIdProvider)
+    } else {
+        OkHttpClient()
+    }
 ) {
     constructor(
         baseUrl: String,
         profileIdProvider: () -> String? = { null },
-        cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
-        okHttpClient: OkHttpClient = OkHttpClient.Builder()
-            .addNetworkInterceptor { chain ->
-                val original = chain.request()
-                val builder = original.newBuilder()
-                cookieSession.applyCookies(original.url, builder)
-                val profileId = profileIdProvider()?.trim()?.takeIf { it.isNotEmpty() }
-                if (profileId != null) {
-                    builder.header("X-Household-Profile", profileId)
-                }
-                val response = chain.proceed(builder.build())
-                cookieSession.storeCookies(original.url, response.headers)
-                response
-            }
-            .build()
+        stateStore: PersistedDeviceAuthStateStore? = null,
+        dpopProvider: DPoPProvider? = null,
+        okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
+            createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider, profileIdProvider = profileIdProvider)
+        } else {
+            OkHttpClient()
+        }
     ) : this(
         baseUrlProvider = { baseUrl },
         profileIdProvider = profileIdProvider,
-        cookieSession = cookieSession,
+        stateStore = stateStore,
+        dpopProvider = dpopProvider,
         okHttpClient = okHttpClient
     )
 
@@ -217,11 +201,7 @@ internal class GuideApiClient(
     }
 
     private fun execute(request: Request) =
-        okHttpClient.newCall(request.withSameOriginHeaders(requireBaseUrl())).execute().also { response ->
-            if (response.code == 401 || response.code == 403) {
-                clearSessionCookie()
-            }
-        }
+        okHttpClient.newCall(request.withSameOriginHeaders(requireBaseUrl())).execute()
 
     private fun executeJsonArray(request: Request): List<JSONObject> {
         execute(request).use { response ->
@@ -315,12 +295,7 @@ internal class GuideApiClient(
         return IllegalStateException("Guide API $code: $message$detail")
     }
 
-    private fun clearSessionCookie() {
-        cookieSession.clearSessionCookie(
-            url = apiUrl("auth", "session"),
-            cookieName = SESSION_COOKIE_NAME
-        )
-    }
+
 
     private fun extractProblemDetail(body: String?): String? {
         val raw = body?.trim()?.takeIf { it.isNotEmpty() } ?: return null

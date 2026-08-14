@@ -1,5 +1,8 @@
 package io.github.manugh.xg2g.android.fcm
 
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,7 +14,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 internal class FcmTokenManager(
-    private val okHttpClient: OkHttpClient = OkHttpClient()
+    stateStore: PersistedDeviceAuthStateStore? = null,
+    dpopProvider: DPoPProvider? = null,
+    private val okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
+        createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider)
+    } else {
+        OkHttpClient()
+    }
 ) {
     suspend fun registerFcmToken(
         baseUrl: String,
@@ -32,15 +41,11 @@ internal class FcmTokenManager(
             })
         }
 
-        val requestBuilder = Request.Builder()
+        val request = Request.Builder()
             .url(url)
             .post(json.toString().toRequestBody(JSON_MEDIA_TYPE))
-
-        if (!bearerToken.isNullOrBlank()) {
-            requestBuilder.header("Authorization", "Bearer $bearerToken")
-        }
-
-        val request = requestBuilder.build().withSameOriginHeaders(url)
+            .build()
+            .withSameOriginHeaders(url)
 
         val response = okHttpClient.newCall(request).execute()
         response.isSuccessful

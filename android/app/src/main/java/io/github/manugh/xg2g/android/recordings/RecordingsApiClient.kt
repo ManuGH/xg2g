@@ -1,12 +1,11 @@
 package io.github.manugh.xg2g.android.recordings
 
-import android.webkit.CookieManager
-import io.github.manugh.xg2g.android.DeviceAuthReenrollRequiredException
-
-import io.github.manugh.xg2g.android.DeviceAuthSignInRequiredException
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.guide.GuideAuthRequiredException
-import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
-import io.github.manugh.xg2g.android.playback.net.CookieBackedAuthSession
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,34 +21,27 @@ import org.json.JSONTokener
 
 internal class RecordingsApiClient(
     private val baseUrlProvider: () -> String,
-    private val cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor { chain ->
-            val original = chain.request()
-            val builder = original.newBuilder()
-            cookieSession.applyCookies(original.url, builder)
-            val response = chain.proceed(builder.build())
-            cookieSession.storeCookies(original.url, response.headers)
-            response
-        }
-        .build()
+    stateStore: PersistedDeviceAuthStateStore? = null,
+    dpopProvider: DPoPProvider? = null,
+    private val okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
+        createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider)
+    } else {
+        OkHttpClient()
+    }
 ) {
     constructor(
         baseUrl: String,
-        cookieSession: AuthCookieSession = CookieBackedAuthSession(CookieManager.getInstance()),
-        okHttpClient: OkHttpClient = OkHttpClient.Builder()
-            .addNetworkInterceptor { chain ->
-                val original = chain.request()
-                val builder = original.newBuilder()
-                cookieSession.applyCookies(original.url, builder)
-                val response = chain.proceed(builder.build())
-                cookieSession.storeCookies(original.url, response.headers)
-                response
-            }
-            .build()
+        stateStore: PersistedDeviceAuthStateStore? = null,
+        dpopProvider: DPoPProvider? = null,
+        okHttpClient: OkHttpClient = if (stateStore != null && dpopProvider != null) {
+            createNativeAuthenticatedOkHttpClient(stateStore, dpopProvider)
+        } else {
+            OkHttpClient()
+        }
     ) : this(
         baseUrlProvider = { baseUrl },
-        cookieSession = cookieSession,
+        stateStore = stateStore,
+        dpopProvider = dpopProvider,
         okHttpClient = okHttpClient
     )
 
@@ -71,13 +63,7 @@ internal class RecordingsApiClient(
             urlBuilder.addQueryParameter("path", path.trim())
         }
         val url = urlBuilder.build()
-        val requestBuilder = Request.Builder().url(url).get()
-        val token = authToken?.trim()
-        if (!token.isNullOrEmpty()) {
-            requestBuilder.header("Authorization", "Bearer $token")
-        }
-
-        val request = requestBuilder.build().withSameOriginHeaders(url)
+        val request = Request.Builder().url(url).get().build().withSameOriginHeaders(url)
         val response = okHttpClient.newCall(request).execute()
 
         val responseBody = response.body?.string().orEmpty()
@@ -152,13 +138,7 @@ internal class RecordingsApiClient(
             .addQueryParameter("limit", limit.toString())
             .build()
 
-        val requestBuilder = Request.Builder().url(url).get()
-        val token = authToken?.trim()
-        if (!token.isNullOrEmpty()) {
-            requestBuilder.header("Authorization", "Bearer $token")
-        }
-
-        val request = requestBuilder.build().withSameOriginHeaders(url)
+        val request = Request.Builder().url(url).get().build().withSameOriginHeaders(url)
         val response = okHttpClient.newCall(request).execute()
 
         val responseBody = response.body?.string().orEmpty()

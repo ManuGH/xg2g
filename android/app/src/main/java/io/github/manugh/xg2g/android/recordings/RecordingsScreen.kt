@@ -64,7 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.manugh.xg2g.android.R
 import io.github.manugh.xg2g.android.dashboard.ModuleState
-import io.github.manugh.xg2g.android.playback.net.CookieBackedAuthSession
+
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -696,9 +696,9 @@ private fun RecordingCard(
                         )
                     )
             ) {
-                AuthenticatedThumbnailImage(
-                    baseUrl = baseUrl,
+                RecordingThumbnailImage(
                     recordingId = item.recordingId,
+                    baseUrl = baseUrl,
                     title = item.title ?: "Aufnahme"
                 )
 
@@ -771,35 +771,29 @@ private fun RecordingCard(
 }
 
 @Composable
-private fun AuthenticatedThumbnailImage(
-    baseUrl: String,
+private fun RecordingThumbnailImage(
     recordingId: String,
-    title: String
+    baseUrl: String,
+    title: String,
+    modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var bitmap by remember(recordingId) { mutableStateOf<Bitmap?>(null) }
     var hasError by remember(recordingId) { mutableStateOf(false) }
 
     LaunchedEffect(recordingId, baseUrl) {
+        val appContext = context.applicationContext
         withContext(Dispatchers.IO) {
             try {
-                val cookieSession = CookieBackedAuthSession(CookieManager.getInstance())
+                val store = io.github.manugh.xg2g.android.DeviceAuthStore(appContext)
+                val dpopProvider = io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
+                val client = io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient(store, dpopProvider)
                 val urlStr = "$baseUrl/api/v3/recordings/${recordingId}/thumbnail.jpg"
                 val httpUrl = urlStr.toHttpUrlOrNull()
                 if (httpUrl == null) {
                     hasError = true
                     return@withContext
                 }
-
-                val client = OkHttpClient.Builder()
-                    .addNetworkInterceptor { chain ->
-                        val original = chain.request()
-                        val builder = original.newBuilder()
-                        cookieSession.applyCookies(original.url, builder)
-                        val response = chain.proceed(builder.build())
-                        cookieSession.storeCookies(original.url, response.headers)
-                        response
-                    }
-                    .build()
 
                 val request = Request.Builder()
                     .url(httpUrl)

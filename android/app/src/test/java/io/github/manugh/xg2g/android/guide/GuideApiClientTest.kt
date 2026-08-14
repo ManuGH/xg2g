@@ -164,7 +164,6 @@ class GuideApiClientTest {
 
         return GuideApiClient(
             baseUrl = "http://127.0.0.1:8080/ui/",
-            cookieSession = cookieSession,
             okHttpClient = okHttpClient
         )
     }

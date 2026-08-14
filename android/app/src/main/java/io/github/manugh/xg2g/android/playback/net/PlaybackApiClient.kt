@@ -5,7 +5,12 @@ import android.util.Log
 import android.util.Base64
 import android.os.Build
 
+import io.github.manugh.xg2g.android.DeviceAuthStore
+import io.github.manugh.xg2g.android.PersistedDeviceAuthStateStore
 import io.github.manugh.xg2g.android.ServerSettingsStore
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.auth.createNativeAuthenticatedOkHttpClient
 import io.github.manugh.xg2g.android.playback.model.NativeLiveStartResult
 import io.github.manugh.xg2g.android.playback.model.NativePlaybackRequest
 import io.github.manugh.xg2g.android.playback.model.PlaybackMode
@@ -28,22 +33,14 @@ internal class PlaybackApiClient(
     context: Context,
     private val serverSettingsStore: ServerSettingsStore = ServerSettingsStore(context.applicationContext),
     private val errorMapper: PlaybackErrorMapper = PlaybackErrorMapper(),
-    private val cookieSession: CookieBackedAuthSession = CookieBackedAuthSession(),
     private val nativeCapabilities: NativePlaybackCapabilities = NativePlaybackCapabilities.create(context.applicationContext),
-    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor { chain ->
-            val original = chain.request()
-            val builder = original.newBuilder()
-            cookieSession.applyCookies(original.url, builder)
-            val profileId = serverSettingsStore.getSelectedProfileId()?.trim()?.takeIf { it.isNotEmpty() }
-            if (profileId != null) {
-                builder.header("X-Household-Profile", profileId)
-            }
-            val response = chain.proceed(builder.build())
-            cookieSession.storeCookies(original.url, response.headers)
-            response
-        }
-        .build()
+    stateStore: PersistedDeviceAuthStateStore = DeviceAuthStore(context.applicationContext),
+    dpopProvider: DPoPProvider = AndroidKeystoreDPoPProvider(),
+    val okHttpClient: OkHttpClient = createNativeAuthenticatedOkHttpClient(
+        stateStore = stateStore,
+        dpopProvider = dpopProvider,
+        profileIdProvider = { serverSettingsStore.getSelectedProfileId() }
+    )
 ) : PlaybackApi {
 
     override suspend fun ensureAuthSession(authToken: String?) {
@@ -215,10 +212,9 @@ internal class PlaybackApiClient(
         recordingPlaylistHttpUrl(recordingId).toString()
 
     fun playbackRequestHeaders(playbackUrl: String): Map<String, String> {
-        val resolvedUrl = resolvePlaybackUrl(playbackUrl).toHttpUrlOrNull() ?: requireUiBaseUrl()
         return playbackRequestHeaders(
             uiBaseUrl = requireUiBaseUrl(),
-            cookieHeader = cookieSession.cookieHeader(resolvedUrl)
+            cookieHeader = null
         )
     }
 
@@ -235,15 +231,9 @@ internal class PlaybackApiClient(
         val contextualRequest = request.withSameOriginHeaders(requireUiBaseUrl())
         Log.d(
             TAG,
-            "execute request method=${contextualRequest.method} path=${contextualRequest.url.encodedPath} hasCookie=${contextualRequest.header("Cookie") != null} hasAuthorization=${contextualRequest.header("Authorization") != null} hasOrigin=${contextualRequest.header("Origin") != null} hasReferer=${contextualRequest.header("Referer") != null}"
+            "execute request method=${contextualRequest.method} path=${contextualRequest.url.encodedPath} hasAuthorization=${contextualRequest.header("Authorization") != null} hasOrigin=${contextualRequest.header("Origin") != null} hasReferer=${contextualRequest.header("Referer") != null}"
         )
         return okHttpClient.newCall(contextualRequest).execute().also { response ->
-            if (response.code == 401 || response.code == 403) {
-                cookieSession.clearSessionCookie(
-                    url = apiUrl("auth", "session"),
-                    cookieName = SESSION_COOKIE_NAME
-                )
-            }
             Log.d(
                 TAG,
                 "execute response method=${contextualRequest.method} path=${contextualRequest.url.encodedPath} code=${response.code}"

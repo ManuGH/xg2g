@@ -38,7 +38,7 @@ class FcmPushTest {
         }
 
         val client = OkHttpClient.Builder().addInterceptor(interceptor).build()
-        val manager = FcmTokenManager(client)
+        val manager = FcmTokenManager(okHttpClient = client)
 
         val success = manager.registerFcmToken(
             baseUrl = "https://xg2g.local",

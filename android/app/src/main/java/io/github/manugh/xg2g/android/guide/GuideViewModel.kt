@@ -154,10 +154,14 @@ internal class GuideViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val store = io.github.manugh.xg2g.android.ServerSettingsStore(context.applicationContext)
+            val deviceAuthStore = io.github.manugh.xg2g.android.DeviceAuthStore(context.applicationContext)
+            val dpopProvider = io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
             val repository = GuideRepository(
                 apiClient = GuideApiClient(
                     baseUrlProvider = baseUrlProvider,
-                    profileIdProvider = { store.getSelectedProfileId() }
+                    profileIdProvider = { store.getSelectedProfileId() },
+                    stateStore = deviceAuthStore,
+                    dpopProvider = dpopProvider
                 ),
                 authTokenProvider = authTokenProvider
             )

@@ -147,8 +147,12 @@ internal class RecordingsViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            val deviceAuthStore = io.github.manugh.xg2g.android.DeviceAuthStore(context.applicationContext)
+            val dpopProvider = io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider()
             val client = RecordingsApiClient(
-                baseUrlProvider = baseUrlProvider
+                baseUrlProvider = baseUrlProvider,
+                stateStore = deviceAuthStore,
+                dpopProvider = dpopProvider
             )
             return RecordingsViewModel(
                 baseUrl = baseUrlProvider(),
