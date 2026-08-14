@@ -16,6 +16,7 @@ func (l *Loader) mergeEnvConfigGenerated(cfg *AppConfig) {
 		cfg.APITokens = tokens
 	}
 	cfg.APITokenScopes = parseCommaSeparated(l.envString("XG2G_API_TOKEN_SCOPES", ""), cfg.APITokenScopes)
+	cfg.AndroidAPKPath = l.envString("XG2G_APK_PATH", cfg.AndroidAPKPath)
 	cfg.Bouquet = l.envString("XG2G_BOUQUET", cfg.Bouquet)
 	cfg.ConfigStrict = l.envBool("XG2G_CONFIG_STRICT", cfg.ConfigStrict)
 	cfg.Connectivity.AllowLocalHTTP = l.envBool("XG2G_CONNECTIVITY_ALLOW_LOCAL_HTTP", cfg.Connectivity.AllowLocalHTTP)

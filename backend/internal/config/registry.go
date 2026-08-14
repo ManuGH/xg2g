@@ -153,6 +153,7 @@ func buildRegistry() (*Registry, error) {
 		{Path: "api.allowedOrigins", Env: "XG2G_ALLOWED_ORIGINS", FieldPath: "AllowedOrigins", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "android.packageName", Env: "XG2G_ANDROID_PACKAGE_NAME", FieldPath: "AndroidPackageName", Profile: ProfileAdvanced, Status: StatusActive},
 		{Path: "android.sha256Fingerprints", Env: "XG2G_ANDROID_SHA256_FINGERPRINTS", FieldPath: "AndroidSHA256Fingerprints", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "android.apkPath", Env: "XG2G_APK_PATH", FieldPath: "AndroidAPKPath", Profile: ProfileAdvanced, Status: StatusActive},
 
 		// --- CONNECTIVITY ---
 		{Path: "connectivity.profile", Env: "XG2G_CONNECTIVITY_PROFILE", FieldPath: "Connectivity.Profile", Profile: ProfileAdvanced, Status: StatusActive, Default: "lan"},

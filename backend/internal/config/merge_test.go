@@ -115,6 +115,18 @@ func TestInvalidTunerSlotsEnvPreservesConfig(t *testing.T) {
 	}
 }
 
+func TestAndroidAPKPathEnvMerge(t *testing.T) {
+	loader := NewLoader("", "test")
+	cfg := AppConfig{}
+	t.Setenv("XG2G_APK_PATH", "/srv/xg2g/app-release.apk")
+
+	loader.mergeEnvConfig(&cfg)
+
+	if cfg.AndroidAPKPath != "/srv/xg2g/app-release.apk" {
+		t.Fatalf("expected AndroidAPKPath to come from XG2G_APK_PATH, got %q", cfg.AndroidAPKPath)
+	}
+}
+
 func TestEmptyTunerSlotsEnvPreservesConfig(t *testing.T) {
 	SetRequiredTestSecrets(t)
 	loader := NewLoader("", "test")

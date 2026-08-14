@@ -38,7 +38,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
         const data = await res.json();
         if (data) setPolicy((prev) => ({ ...prev, ...data }));
       }
-    } catch (e: any) {
+    } catch {
       setError('Ressourcen-Limits konnten nicht geladen werden.');
     } finally {
       setLoading(false);
@@ -88,96 +88,96 @@ export const ConcurrencySettingsSection: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#f8fafc' }}>Gleichzeitige Nutzung & Tuner-Arbitrierung</h3>
-        <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Gleichzeitige Nutzung & Tuner-Arbitrierung</h3>
+        <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
           Konfigurieren Sie kapazitive Hardware-Grenzen für Tuner, Transcoder und deterministische Preemption-Prioritäten.
         </p>
       </div>
 
       {error && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
           ⚠️ {error}
         </div>
       )}
       {success && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: 'var(--status-success)', fontSize: '13px' }}>
           ✓ {success}
         </div>
       )}
 
       {loading ? (
-        <div style={{ color: '#94a3b8', fontSize: '14px', padding: '24px', textAlign: 'center' }}>Ressourcen-Regeln werden geladen...</div>
+        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>Ressourcen-Regeln werden geladen...</div>
       ) : (
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Capacity Limits Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
             {/* Live TV Services */}
-            <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8' }}>📡 Max Live TV Sender</div>
-              <div style={{ fontSize: '32px', fontWeight: 800, color: '#f8fafc', margin: '8px 0' }}>{policy.maxConcurrentLiveServices}</div>
+            <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-action)' }}>📡 Max Live TV Sender</div>
+              <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', margin: '8px 0' }}>{policy.maxConcurrentLiveServices}</div>
               <input
                 type="range"
                 min="1"
                 max="10"
                 value={policy.maxConcurrentLiveServices}
                 onChange={(e) => setPolicy({ ...policy, maxConcurrentLiveServices: Number(e.target.value) })}
-                style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
+                style={{ width: '100%', accentColor: 'var(--accent-action)', cursor: 'pointer' }}
               />
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>Hardware-Tuner Limit</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>Hardware-Tuner Limit</div>
             </div>
 
             {/* Household Viewers */}
-            <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#4ade80' }}>👨‍👩‍👧‍👦 Max Zuschauer</div>
-              <div style={{ fontSize: '32px', fontWeight: 800, color: '#f8fafc', margin: '8px 0' }}>{policy.maxConcurrentViewers}</div>
+            <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--status-success)' }}>👨‍👩‍👧‍👦 Max Zuschauer</div>
+              <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', margin: '8px 0' }}>{policy.maxConcurrentViewers}</div>
               <input
                 type="range"
                 min="1"
                 max="20"
                 value={policy.maxConcurrentViewers}
                 onChange={(e) => setPolicy({ ...policy, maxConcurrentViewers: Number(e.target.value) })}
-                style={{ width: '100%', accentColor: '#4ade80', cursor: 'pointer' }}
+                style={{ width: '100%', accentColor: 'var(--status-success)', cursor: 'pointer' }}
               />
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>Aktive Client-Streams</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>Aktive Client-Streams</div>
             </div>
 
             {/* DVR Recordings */}
-            <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#facc15' }}>📼 Max Parallele Aufnahmen</div>
-              <div style={{ fontSize: '32px', fontWeight: 800, color: '#f8fafc', margin: '8px 0' }}>{policy.maxParallelRecordings}</div>
+            <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--status-warning)' }}>📼 Max Parallele Aufnahmen</div>
+              <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', margin: '8px 0' }}>{policy.maxParallelRecordings}</div>
               <input
                 type="range"
                 min="1"
                 max="5"
                 value={policy.maxParallelRecordings}
                 onChange={(e) => setPolicy({ ...policy, maxParallelRecordings: Number(e.target.value) })}
-                style={{ width: '100%', accentColor: '#facc15', cursor: 'pointer' }}
+                style={{ width: '100%', accentColor: 'var(--status-warning)', cursor: 'pointer' }}
               />
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>Geschützte DVR Worker</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>Geschützte DVR Worker</div>
             </div>
 
             {/* Transcodes */}
-            <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#c084fc' }}>⚙️ Max Transcodes</div>
-              <div style={{ fontSize: '32px', fontWeight: 800, color: '#f8fafc', margin: '8px 0' }}>{policy.maxParallelTranscodes}</div>
+            <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--status-info)' }}>⚙️ Max Transcodes</div>
+              <div style={{ fontSize: '32px', fontWeight: 800, color: 'var(--text-primary)', margin: '8px 0' }}>{policy.maxParallelTranscodes}</div>
               <input
                 type="range"
                 min="0"
                 max="5"
                 value={policy.maxParallelTranscodes}
                 onChange={(e) => setPolicy({ ...policy, maxParallelTranscodes: Number(e.target.value) })}
-                style={{ width: '100%', accentColor: '#c084fc', cursor: 'pointer' }}
+                style={{ width: '100%', accentColor: 'var(--status-info)', cursor: 'pointer' }}
               />
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>FFmpeg Transcoder-Slots</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' }}>FFmpeg Transcoder-Slots</div>
             </div>
           </div>
 
           {/* Preemption Arbitration Section */}
-          <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h4 style={{ margin: 0, fontSize: '16px', color: '#f8fafc' }}>Verdrängung & Preemption (Deterministisch)</h4>
-                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                <h4 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)' }}>Verdrängung & Preemption (Deterministisch)</h4>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
                   Bei Tuner-Engpässen werden Sessions nach festen Prioritätsstufen verdrängt. Identische Ränge verdrängen die jüngste Session (Tie-Breaker).
                 </p>
               </div>
@@ -185,19 +185,19 @@ export const ConcurrencySettingsSection: React.FC = () => {
                 type="checkbox"
                 checked={policy.preemptionEnabled}
                 onChange={(e) => setPolicy({ ...policy, preemptionEnabled: e.target.checked })}
-                style={{ width: '20px', height: '20px', accentColor: '#38bdf8', cursor: 'pointer' }}
+                style={{ width: '20px', height: '20px', accentColor: 'var(--accent-action)', cursor: 'pointer' }}
               />
             </div>
 
             {policy.preemptionEnabled && (
               <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Prioritätsreihenfolge (Höchste zuerst)</div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-disabled)', textTransform: 'uppercase' }}>Prioritätsreihenfolge (Höchste zuerst)</div>
                 {(policy.preemptionPriorityRanks || ['admin_live', 'member_live', 'guest_live']).map((rank, idx) => (
                   <div
                     key={rank}
                     style={{
                       padding: '12px 16px',
-                      backgroundColor: '#0f172a',
+                      backgroundColor: 'var(--bg-base)',
                       borderRadius: '10px',
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -206,8 +206,8 @@ export const ConcurrencySettingsSection: React.FC = () => {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#38bdf8', width: '20px' }}>#{idx + 1}</span>
-                      <span style={{ fontSize: '14px', color: '#f8fafc', fontWeight: 600 }}>
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--accent-action)', width: '20px' }}>#{idx + 1}</span>
+                      <span style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 600 }}>
                         {rank === 'admin_live' ? '👑 Admin Live-TV' : rank === 'member_live' ? '👤 Mitglied Live-TV' : '🎟️ Gast Live-TV'}
                       </span>
                     </div>
@@ -217,7 +217,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
                         type="button"
                         onClick={() => moveRank(idx, 'up')}
                         disabled={idx === 0}
-                        style={{ padding: '4px 10px', borderRadius: '6px', border: 'none', backgroundColor: '#334155', color: '#cbd5e1', cursor: idx === 0 ? 'not-allowed' : 'pointer' }}
+                        style={{ padding: '4px 10px', borderRadius: '6px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', cursor: idx === 0 ? 'not-allowed' : 'pointer' }}
                       >
                         ▲
                       </button>
@@ -225,7 +225,7 @@ export const ConcurrencySettingsSection: React.FC = () => {
                         type="button"
                         onClick={() => moveRank(idx, 'down')}
                         disabled={idx === (policy.preemptionPriorityRanks?.length || 3) - 1}
-                        style={{ padding: '4px 10px', borderRadius: '6px', border: 'none', backgroundColor: '#334155', color: '#cbd5e1', cursor: idx === (policy.preemptionPriorityRanks?.length || 3) - 1 ? 'not-allowed' : 'pointer' }}
+                        style={{ padding: '4px 10px', borderRadius: '6px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', cursor: idx === (policy.preemptionPriorityRanks?.length || 3) - 1 ? 'not-allowed' : 'pointer' }}
                       >
                         ▼
                       </button>
@@ -244,8 +244,8 @@ export const ConcurrencySettingsSection: React.FC = () => {
                 padding: '12px 24px',
                 borderRadius: '12px',
                 border: 'none',
-                backgroundColor: '#38bdf8',
-                color: '#0f172a',
+                backgroundColor: 'var(--accent-action)',
+                color: 'var(--bg-base)',
                 fontSize: '14px',
                 fontWeight: 700,
                 cursor: 'pointer',

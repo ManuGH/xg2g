@@ -87,7 +87,7 @@ func runAdminBootstrapToken(args []string) int {
 		_, _ = fmt.Fprintf(os.Stderr, "❌ Failed to open identity database at %s: %v\n", dbPath, err)
 		return 1
 	}
-	defer s.Close()
+	defer reportAdminCloseError(s)
 
 	svc := identity.NewService(identity.Config{}, s)
 	token, err := svc.GenerateBootstrapToken(context.Background())
@@ -124,7 +124,7 @@ func runAdminGenerateRecoveryCodes(args []string) int {
 		_, _ = fmt.Fprintf(os.Stderr, "❌ Failed to open identity database at %s: %v\n", dbPath, err)
 		return 1
 	}
-	defer s.Close()
+	defer reportAdminCloseError(s)
 
 	svc := identity.NewService(identity.Config{}, s)
 	codes, err := svc.GenerateEmergencyRecoveryCodes(context.Background(), *userFlag)
@@ -155,7 +155,7 @@ func runAdminStatus(args []string) int {
 		_, _ = fmt.Fprintf(os.Stderr, "❌ Failed to open identity database at %s: %v\n", dbPath, err)
 		return 1
 	}
-	defer s.Close()
+	defer reportAdminCloseError(s)
 
 	svc := identity.NewService(identity.Config{}, s)
 	ctx := context.Background()
@@ -190,4 +190,10 @@ func runAdminStatus(args []string) int {
 		fmt.Println("   Recovery Acknowledged: NO")
 	}
 	return 0
+}
+
+func reportAdminCloseError(closer interface{ Close() error }) {
+	if err := closer.Close(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: failed to close identity database: %v\n", err)
+	}
 }

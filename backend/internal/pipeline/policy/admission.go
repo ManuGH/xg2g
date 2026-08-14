@@ -370,7 +370,7 @@ func (a *HouseholdResourceAdmission) findPreemptionCandidateLocked(req Admission
 	requesterClass := getResourceClass(req)
 	requesterPriority := getPriorityRank(requesterClass, ranks)
 
-	var lowestPriority int = requesterPriority
+	lowestPriority := requesterPriority
 	var candidateID string
 	var candidateCreatedAt time.Time
 

@@ -376,7 +376,7 @@ func (s *SQLiteStore) migrateHouseholdV1(ctx context.Context) error {
 
 	rows, err := s.db.QueryContext(ctx, `SELECT id, role FROM users`)
 	if err == nil {
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var uid, urole string
 			if err := rows.Scan(&uid, &urole); err == nil {
@@ -453,7 +453,7 @@ func (s *SQLiteStore) ListUsers(ctx context.Context) ([]identity.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []identity.User
 	for rows.Next() {
@@ -575,7 +575,7 @@ func (s *SQLiteStore) ListPasskeysByUser(ctx context.Context, userID string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []identity.PasskeyCredential
 	for rows.Next() {
@@ -647,7 +647,7 @@ func (s *SQLiteStore) PutRecoveryCodes(ctx context.Context, codes []identity.Rec
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, c := range codes {
 		if _, err := stmt.ExecContext(ctx, c.CodeHash, c.UserID, c.CreatedAt.UTC(), c.ConsumedAt); err != nil {
@@ -672,7 +672,7 @@ func (s *SQLiteStore) ReplaceRecoveryCodesForUser(ctx context.Context, userID st
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, c := range codes {
 		if _, err := stmt.ExecContext(ctx, c.CodeHash, c.UserID, c.CreatedAt.UTC(), c.ConsumedAt); err != nil {
@@ -687,7 +687,7 @@ func (s *SQLiteStore) ListRecoveryCodesByUser(ctx context.Context, userID string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []identity.RecoveryCode
 	for rows.Next() {
@@ -906,6 +906,7 @@ func (s *SQLiteStore) CommitInitialAdminBootstrap(ctx context.Context, user *ide
 
 	// 3. Insert Passkey Credential
 	transportsJSON, _ := json.Marshal(cred.Transports)
+	// #nosec G101 -- SQL identifier describes credentials; it contains no credential value.
 	insertCredQuery := `
 	INSERT INTO passkey_credentials (
 		id, user_id, public_key, attestation_type, aaguid,
@@ -1081,7 +1082,7 @@ func (s *SQLiteStore) ListDevicesByUser(ctx context.Context, userID string) ([]i
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []identity.Device
 	for rows.Next() {
@@ -1114,6 +1115,7 @@ func (s *SQLiteStore) PutDeviceGrant(ctx context.Context, grant *identity.Device
 		return fmt.Errorf("failed to insert device grant: %w", err)
 	}
 
+	// #nosec G101 -- SQL identifier describes token storage; it contains no token value.
 	tokenQuery := `
 	INSERT INTO refresh_token_families (token_hash, family_id, device_id, generation, created_at, expires_at, rotated_at, revoked_at, replay_detected_at)
 	VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
@@ -1338,7 +1340,7 @@ func (s *SQLiteStore) ListHouseholdMemberships(ctx context.Context, householdID 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var list []identity.HouseholdMembership
 	for rows.Next() {
@@ -1627,7 +1629,7 @@ func (s *SQLiteStore) ListProfilesByHousehold(ctx context.Context, householdID s
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var profiles []identity.Profile
 	for rows.Next() {
@@ -1790,7 +1792,7 @@ func (s *SQLiteStore) ListApprovalRequests(ctx context.Context, householdID, sta
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var reqs []identity.ApprovalRequest
 	for rows.Next() {
@@ -1955,7 +1957,7 @@ func (s *SQLiteStore) GetRecordingProfileAccess(ctx context.Context, recordingID
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var pids []string
 	for rows.Next() {
@@ -2030,7 +2032,7 @@ func (s *SQLiteStore) ListAuditLogs(ctx context.Context, limit int) ([]identity.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []identity.AuditLogEntry
 	for rows.Next() {
@@ -2054,7 +2056,7 @@ func (s *SQLiteStore) VerifyAuditChain(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	expectedPrev := "GENESIS_HASH_00000000000000000000000000000000000000000000000000000000"
 	for rows.Next() {
@@ -2124,7 +2126,7 @@ func (s *SQLiteStore) ListNotifications(ctx context.Context, householdID, userID
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var list []identity.Notification
 	for rows.Next() {
@@ -2237,7 +2239,7 @@ func (s *SQLiteStore) ListPushSubscriptions(ctx context.Context, householdID, us
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var list []identity.PushSubscription
 	for rows.Next() {
@@ -2291,7 +2293,7 @@ func (s *SQLiteStore) GetPendingNotificationDeliveries(ctx context.Context, limi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var list []identity.NotificationDelivery
 	for rows.Next() {

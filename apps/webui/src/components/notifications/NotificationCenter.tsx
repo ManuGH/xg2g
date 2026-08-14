@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { debugError } from '../../utils/logging';
 
 export interface NotificationItem {
   id: string;
@@ -173,9 +174,9 @@ export const NotificationCenter: React.FC = () => {
           });
         }
       }
-    } catch (e) {
-      console.error('[NotificationCenter] Push activation error:', e);
-    }
+	} catch (e) {
+		debugError('[NotificationCenter] Push activation error:', e);
+	}
   };
 
   const filteredNotifs = filter === 'unread' ? notifications.filter((n) => !n.readAt) : notifications;
@@ -204,7 +205,7 @@ export const NotificationCenter: React.FC = () => {
           borderRadius: '12px',
           backgroundColor: isOpen ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
           border: '1px solid rgba(255, 255, 255, 0.1)',
-          color: '#f8fafc',
+          color: 'var(--text-primary)',
           cursor: 'pointer',
           transition: 'all 0.15s ease-in-out',
         }}
@@ -216,8 +217,8 @@ export const NotificationCenter: React.FC = () => {
               position: 'absolute',
               top: '-4px',
               right: '-4px',
-              backgroundColor: '#ef4444',
-              color: '#ffffff',
+              backgroundColor: 'var(--status-error)',
+              color: 'var(--text-primary)',
               fontSize: '11px',
               fontWeight: 700,
               borderRadius: '10px',
@@ -239,7 +240,7 @@ export const NotificationCenter: React.FC = () => {
             top: '52px',
             right: 0,
             width: '380px',
-            backgroundColor: '#1e293b',
+            backgroundColor: 'var(--surface-panel-strong)',
             borderRadius: '16px',
             border: '1px solid rgba(255, 255, 255, 0.12)',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
@@ -251,7 +252,7 @@ export const NotificationCenter: React.FC = () => {
           <div
             style={{
               padding: '16px 20px',
-              backgroundColor: '#0f172a',
+              backgroundColor: 'var(--bg-base)',
               borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
               display: 'flex',
               alignItems: 'center',
@@ -259,10 +260,10 @@ export const NotificationCenter: React.FC = () => {
             }}
           >
             <div>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f8fafc' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Benachrichtigungen
               </h3>
-              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>
                 Facebook-style Notification Center
               </p>
             </div>
@@ -272,7 +273,7 @@ export const NotificationCenter: React.FC = () => {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#38bdf8',
+                  color: 'var(--accent-action)',
                   fontSize: '12px',
                   cursor: 'pointer',
                   fontWeight: 500,
@@ -295,7 +296,7 @@ export const NotificationCenter: React.FC = () => {
               fontSize: '12px',
             }}
           >
-            <span style={{ color: webPushEnabled ? '#4ade80' : '#fde047' }}>
+            <span style={{ color: webPushEnabled ? 'var(--status-success)' : 'var(--status-warning)' }}>
               {webPushEnabled ? '✓ WebPush im Browser aktiv' : 'WebPush inaktiv'}
             </span>
             {!webPushEnabled && (
@@ -305,8 +306,8 @@ export const NotificationCenter: React.FC = () => {
                   padding: '2px 8px',
                   borderRadius: '6px',
                   border: 'none',
-                  backgroundColor: '#eab308',
-                  color: '#0f172a',
+                  backgroundColor: 'var(--status-warning)',
+                  color: 'var(--bg-base)',
                   fontWeight: 600,
                   fontSize: '11px',
                   cursor: 'pointer',
@@ -332,8 +333,8 @@ export const NotificationCenter: React.FC = () => {
                 padding: '4px 12px',
                 borderRadius: '8px',
                 border: 'none',
-                backgroundColor: filter === 'unread' ? '#38bdf8' : 'transparent',
-                color: filter === 'unread' ? '#0f172a' : '#94a3b8',
+                backgroundColor: filter === 'unread' ? 'var(--accent-action)' : 'transparent',
+                color: filter === 'unread' ? 'var(--bg-base)' : 'var(--text-tertiary)',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -347,8 +348,8 @@ export const NotificationCenter: React.FC = () => {
                 padding: '4px 12px',
                 borderRadius: '8px',
                 border: 'none',
-                backgroundColor: filter === 'all' ? '#38bdf8' : 'transparent',
-                color: filter === 'all' ? '#0f172a' : '#94a3b8',
+                backgroundColor: filter === 'all' ? 'var(--accent-action)' : 'transparent',
+                color: filter === 'all' ? 'var(--bg-base)' : 'var(--text-tertiary)',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -364,7 +365,7 @@ export const NotificationCenter: React.FC = () => {
               style={{
                 padding: '8px 16px',
                 backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                color: '#38bdf8',
+                color: 'var(--accent-action)',
                 fontSize: '12px',
                 borderBottom: '1px solid rgba(56, 189, 248, 0.3)',
               }}
@@ -376,7 +377,7 @@ export const NotificationCenter: React.FC = () => {
           {/* Notification Items List */}
           <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
             {filteredNotifs.length === 0 ? (
-              <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>
+              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-disabled)' }}>
                 <span style={{ fontSize: '24px' }}>✨</span>
                 <p style={{ margin: '8px 0 0 0', fontSize: '13px' }}>Keine Benachrichtigungen</p>
               </div>
@@ -394,15 +395,15 @@ export const NotificationCenter: React.FC = () => {
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                       {item.title}
                     </span>
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-disabled)' }}>
                       {formatRelativeTime(item.createdAt)}
                     </span>
                   </div>
 
-                  <p style={{ margin: 0, fontSize: '13px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
                     {item.body}
                   </p>
 
@@ -415,8 +416,8 @@ export const NotificationCenter: React.FC = () => {
                           padding: '6px 12px',
                           borderRadius: '8px',
                           border: 'none',
-                          backgroundColor: '#22c55e',
-                          color: '#ffffff',
+                          backgroundColor: 'var(--status-success)',
+                          color: 'var(--text-primary)',
                           fontSize: '12px',
                           fontWeight: 600,
                           cursor: 'pointer',
@@ -431,7 +432,7 @@ export const NotificationCenter: React.FC = () => {
                           borderRadius: '8px',
                           border: 'none',
                           backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                          color: '#f87171',
+                          color: 'var(--status-error)',
                           fontSize: '12px',
                           fontWeight: 600,
                           cursor: 'pointer',

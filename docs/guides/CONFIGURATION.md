@@ -82,6 +82,7 @@ The core knobs for a typical deployment. Everything in the per-area sections bel
 
 | Path | Env | Default | Status | Profile |
 | --- | --- | --- | --- | --- |
+| `android.apkPath` | `XG2G_APK_PATH` | - | Active | Advanced |
 | `android.packageName` | `XG2G_ANDROID_PACKAGE_NAME` | - | Active | Advanced |
 | `android.sha256Fingerprints` | `XG2G_ANDROID_SHA256_FINGERPRINTS` | - | Active | Advanced |
 

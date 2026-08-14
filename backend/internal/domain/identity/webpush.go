@@ -29,6 +29,7 @@ func GetOrGenerateVAPIDKeys(storageDir string) (*VAPIDKeys, error) {
 	}
 	keyPath := filepath.Join(storageDir, "vapid_keys.json")
 
+	// #nosec G304 -- storageDir is operator-controlled and the filename is fixed.
 	if data, err := os.ReadFile(keyPath); err == nil {
 		var keys VAPIDKeys
 		if err := json.Unmarshal(data, &keys); err == nil && keys.PrivateKey != "" && keys.PublicKey != "" {
@@ -142,7 +143,7 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 
 	targetURL := fmt.Sprintf("/settings?section=approvals&approvalId=%s", approvalID)
 
-	payloadData, _ := json.Marshal(map[string]interface{}{
+	payloadData, _ := json.Marshal(map[string]any{
 		"id":             d.NotificationID,
 		"title":          title,
 		"body":           body,
@@ -156,11 +157,11 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 
 	// Real FCM Channel HTTP Delivery Dispatcher
 	if targetSub.Channel == "fcm" || targetSub.P256dh == "" {
-		fcmEndpoint := os.Getenv("FCM_ENDPOINT")
+		fcmEndpoint := s.cfg.FCMEndpoint
 		if fcmEndpoint == "" {
 			fcmEndpoint = "https://fcm.googleapis.com/fcm/send"
 		}
-		fcmServerKey := os.Getenv("FCM_SERVER_KEY")
+		fcmServerKey := s.cfg.FCMServerKey
 		if fcmServerKey == "" {
 			d.Status = "failed_permanent"
 			d.LastError = "FCM_SERVER_KEY environment variable not configured"
@@ -168,9 +169,9 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 			return
 		}
 
-		fcmBody, _ := json.Marshal(map[string]interface{}{
+		fcmBody, _ := json.Marshal(map[string]any{
 			"to": targetSub.Endpoint,
-			"data": map[string]interface{}{
+			"data": map[string]any{
 				"id":             d.NotificationID,
 				"title":          title,
 				"body":           body,
@@ -199,7 +200,7 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 			_ = s.store.UpdateNotificationDelivery(ctx, &d)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
 			d.Status = "sent"
@@ -237,6 +238,9 @@ func (s *Service) dispatchSingleDelivery(ctx context.Context, d NotificationDeli
 		VAPIDPrivateKey: vapidKeys.PrivateKey,
 		TTL:             86400,
 	})
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 
 	now = s.now()
 

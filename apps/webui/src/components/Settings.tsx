@@ -453,7 +453,7 @@ function Settings() {
                     borderRadius: '6px',
                     border: '1px solid rgba(255, 255, 255, 0.2)',
                     background: 'rgba(0, 0, 0, 0.4)',
-                    color: '#fff',
+                    color: 'var(--text-primary)',
                     fontFamily: 'monospace',
                     fontSize: '1rem',
                     textTransform: 'uppercase',
@@ -491,7 +491,7 @@ function Settings() {
                 </Button>
               </div>
               {pairingFeedback ? (
-                <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: pairingFeedback.success ? '#34d399' : '#f87171' }}>
+                <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: pairingFeedback.success ? 'var(--status-success)' : 'var(--status-error)' }}>
                   {pairingFeedback.message}
                 </p>
               ) : null}
