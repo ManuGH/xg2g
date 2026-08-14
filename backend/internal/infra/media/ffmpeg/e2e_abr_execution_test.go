@@ -28,12 +28,14 @@ func TestE2E_ProductiveBackendABRExecution(t *testing.T) {
 
 	tempDir := t.TempDir()
 
-	// 1. Generate a real 20-second 1080p25 MPEG-TS input file
+	// 1. Generate a real 8-second 1080p25 MPEG-TS input file. Eight seconds
+	// still covers multiple 2-second segment boundaries while keeping this
+	// CPU-only three-rendition encode practical on shared CI runners.
 	inputFile := filepath.Join(tempDir, "input.ts")
 	genCmd := exec.Command("ffmpeg",
 		"-hide_banner", "-loglevel", "error",
-		"-f", "lavfi", "-i", "testsrc=size=1920x1080:rate=25:duration=20",
-		"-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000:duration=20",
+		"-f", "lavfi", "-i", "testsrc=size=1920x1080:rate=25:duration=8",
+		"-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000:duration=8",
 		"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-b:a", "128k",
 		"-f", "mpegts", "-y", inputFile,
@@ -71,7 +73,10 @@ func TestE2E_ProductiveBackendABRExecution(t *testing.T) {
 		"",
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	// GitHub's two-core runners can encode this real 1080p/720p/480p ladder
+	// considerably slower than real time. The deadline must cover two complete
+	// segment boundaries on every rendition, not assume workstation throughput.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	sessionID := "sess-e2e-backend-abr"
@@ -129,7 +134,7 @@ func TestE2E_ProductiveBackendABRExecution(t *testing.T) {
 		matches720, _ := filepath.Glob(filepath.Join(sessionDir, "720p", "*.ts"))
 		matches480, _ := filepath.Glob(filepath.Join(sessionDir, "480p", "*.ts"))
 		return len(matches1080) >= 2 && len(matches720) >= 2 && len(matches480) >= 2
-	}, 15*time.Second, 500*time.Millisecond, "All 3 variants (1080p, 720p, 480p) must publish TS segments")
+	}, 105*time.Second, 500*time.Millisecond, "All 3 variants (1080p, 720p, 480p) must publish TS segments")
 
 	// 6. Verify PID remains 100% constant
 	adapter.mu.Lock()
