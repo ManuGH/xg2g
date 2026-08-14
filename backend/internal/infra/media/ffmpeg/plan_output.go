@@ -94,10 +94,10 @@ func (a *LocalAdapter) planLiveABROutput(ctx context.Context, spec ports.StreamS
 	var filterComplex string
 	var varStreamMap string
 	if is3Tier {
-		filterComplex = "[0:v:0]split=3[v1080in][v720in][v480in]; [v1080in]null[v1080]; [v720in]scale=1280:720[v720]; [v480in]scale=854:480[v480]; [0:a:0?]asplit=3[a1080][a720][a480]"
+		filterComplex = "[0:v:0]split=3[v1080in][v720in][v480in]; [v1080in]null[v1080]; [v720in]scale=1280:720[v720]; [v480in]scale=854:480[v480]; [0:a:0]asplit=3[a1080][a720][a480]"
 		varStreamMap = "v:0,a:0,name:1080p v:1,a:1,name:720p v:2,a:2,name:480p"
 	} else {
-		filterComplex = "[0:v:0]split=2[v720in][v480in]; [v720in]null[v720]; [v480in]scale=854:480[v480]; [0:a:0?]asplit=2[a720][a480]"
+		filterComplex = "[0:v:0]split=2[v720in][v480in]; [v720in]null[v720]; [v480in]scale=854:480[v480]; [0:a:0]asplit=2[a720][a480]"
 		varStreamMap = "v:0,a:0,name:720p v:1,a:1,name:480p"
 	}
 
@@ -204,10 +204,10 @@ func (a *LocalAdapter) planLiveVAAPIABROutput(ctx context.Context, spec ports.St
 	var filterComplex string
 	var varStreamMap string
 	if is3Tier {
-		filterComplex = gpuHead + "; [v_gpu]split=3[v1080][v720in][v480in]; [v720in]scale_vaapi=w=1280:h=720[v720]; [v480in]scale_vaapi=w=854:h=480[v480]; [0:a:0?]asplit=3[a1080][a720][a480]"
+		filterComplex = gpuHead + "; [v_gpu]split=3[v1080][v720in][v480in]; [v720in]scale_vaapi=w=1280:h=720[v720]; [v480in]scale_vaapi=w=854:h=480[v480]; [0:a:0]asplit=3[a1080][a720][a480]"
 		varStreamMap = "v:0,a:0,name:1080p v:1,a:1,name:720p v:2,a:2,name:480p"
 	} else {
-		filterComplex = gpuHead + "; [v_gpu]split=2[v720in][v480in]; [v720in]scale_vaapi=w=1280:h=720[v720]; [v480in]scale_vaapi=w=854:h=480[v480]; [0:a:0?]asplit=2[a720][a480]"
+		filterComplex = gpuHead + "; [v_gpu]split=2[v720in][v480in]; [v720in]scale_vaapi=w=1280:h=720[v720]; [v480in]scale_vaapi=w=854:h=480[v480]; [0:a:0]asplit=2[a720][a480]"
 		varStreamMap = "v:0,a:0,name:720p v:1,a:1,name:480p"
 	}
 

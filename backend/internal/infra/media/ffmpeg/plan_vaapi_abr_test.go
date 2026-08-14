@@ -36,7 +36,7 @@ func TestABR_VAAPI_3Tier_Plan(t *testing.T) {
 
 	cmdStr := strings.Join(plan.args, " ")
 	assert.Contains(t, cmdStr, "-vaapi_device /dev/dri/renderD128")
-	assert.Contains(t, cmdStr, "-filter_complex [0:v:0]format=nv12,hwupload[v_gpu]; [v_gpu]split=3[v1080][v720in][v480in]; [v720in]scale_vaapi=w=1280:h=720[v720]; [v480in]scale_vaapi=w=854:h=480[v480]; [0:a:0?]asplit=3[a1080][a720][a480]")
+	assert.Contains(t, cmdStr, "-filter_complex [0:v:0]format=nv12,hwupload[v_gpu]; [v_gpu]split=3[v1080][v720in][v480in]; [v720in]scale_vaapi=w=1280:h=720[v720]; [v480in]scale_vaapi=w=854:h=480[v480]; [0:a:0]asplit=3[a1080][a720][a480]")
 	assert.Contains(t, cmdStr, "-c:v:0 h264_vaapi -b:v:0 4500k -maxrate:v:0 5200k -bufsize:v:0 9000k")
 	assert.Contains(t, cmdStr, "-c:v:1 h264_vaapi -b:v:1 2000k -maxrate:v:1 2400k -bufsize:v:1 4000k")
 	assert.Contains(t, cmdStr, "-c:v:2 h264_vaapi -b:v:2 900k -maxrate:v:2 1100k -bufsize:v:2 2000k")
