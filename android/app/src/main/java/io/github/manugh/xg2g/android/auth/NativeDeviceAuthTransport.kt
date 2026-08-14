@@ -7,6 +7,7 @@ import io.github.manugh.xg2g.android.PublishedEndpoint
 import io.github.manugh.xg2g.android.RefreshedDeviceSession
 import io.github.manugh.xg2g.android.StartedWebBootstrap
 import io.github.manugh.xg2g.android.apiV3Url
+import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -110,4 +111,5 @@ internal fun buildNativeDeviceSessionRequest(
         .post(jsonBody)
         .header("DPoP", dpopProvider.createProof("POST", refreshUrl.toString()))
         .build()
+        .withSameOriginHeaders(uiBaseUrl)
 }
