@@ -130,21 +130,28 @@ for TARGET_K in "${BITRATES_K[@]}"; do
     LOG_PSNR="$OUTPUT_DIR/psnr_${TARGET_K}k.log"
     LOG_XPSNR="$OUTPUT_DIR/xpsnr_${TARGET_K}k.log"
 
-    START_TIME=$(date +%s.%N)
-    ffmpeg -y -hide_banner \
-        -vaapi_device "$DEVICE" \
-        -hwaccel vaapi \
-        -hwaccel_output_format vaapi \
-        -t "$DURATION_SEC" \
-        -i "$INPUT_FILE" \
-        -vf "deinterlace_vaapi=mode=motion_compensated:rate=field,scale_vaapi=format=p010" \
-        -c:v av1_vaapi -b:v "${TARGET_K}k" -maxrate "${TARGET_K}k" -bufsize "${BUF_K}k" \
-        -an \
-        "$TEST_OUT" > "$LOG_ENC" 2>&1
-    END_TIME=$(date +%s.%N)
+    # Multi-Run Warmup & 3-Pass Median Performance Sampling
+    RUN_TIMES=()
+    for RUN_IDX in 1 2 3; do
+        START_TIME=$(date +%s.%N)
+        ffmpeg -y -hide_banner \
+            -vaapi_device "$DEVICE" \
+            -hwaccel vaapi \
+            -hwaccel_output_format vaapi \
+            -t "$DURATION_SEC" \
+            -i "$INPUT_FILE" \
+            -vf "deinterlace_vaapi=mode=motion_compensated:rate=field,scale_vaapi=format=p010" \
+            -c:v av1_vaapi -b:v "${TARGET_K}k" -maxrate "${TARGET_K}k" -bufsize "${BUF_K}k" \
+            -an \
+            "$TEST_OUT" > "$LOG_ENC" 2>&1
+        END_TIME=$(date +%s.%N)
+        RUN_ELAPSED=$(awk "BEGIN {print $END_TIME - $START_TIME}")
+        RUN_TIMES+=("$RUN_ELAPSED")
+    done
 
-    ELAPSED=$(awk "BEGIN {print $END_TIME - $START_TIME}")
-    ENC_FPS=$(awk "BEGIN {print $REF_FRAMES / $ELAPSED}")
+    # Sort run times to pick median (index 1 of 3)
+    MEDIAN_ELAPSED=$(printf '%s\n' "${RUN_TIMES[@]}" | sort -n | sed -n '2p')
+    ENC_FPS=$(awk "BEGIN {print $REF_FRAMES / $MEDIAN_ELAPSED}")
     ENC_SPEED=$(awk "BEGIN {printf \"%.2f\", $ENC_FPS / 50.0}")
     FORMATTED_FPS=$(awk "BEGIN {printf \"%.1f\", $ENC_FPS}")
 
