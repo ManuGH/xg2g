@@ -71,8 +71,8 @@ func TestE2E_ProductiveBackendABRExecution(t *testing.T) {
 		false,
 		2*time.Second,
 		2,
-		0,
-		0,
+		30*time.Second, // startup watchdog
+		30*time.Second, // stall watchdog
 		"",
 	)
 
