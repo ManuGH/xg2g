@@ -671,13 +671,13 @@ func TestDeadlineClassification_InventoryCountsAndClassificationList(t *testing.
 				assert.Equal(t, 147, len(regs), "total registrable instances must equal 147 under DevProxy")
 				assert.Equal(t, 147, apiBounded+mediaBounded+streaming)
 				assert.Equal(t, 12, mediaBounded, "RouteDeadlineMediaBounded count is 12 under DevProxy")
-				assert.Equal(t, 133, apiBounded, "RouteDeadlineAPIBounded count is 133 under DevProxy")
+				assert.Equal(t, 132, apiBounded, "RouteDeadlineAPIBounded count is 132 under DevProxy")
 				assert.Equal(t, 2, mayUpgradeCount, "DevProxy has 2 MayUpgradePerRequest routes (GET /ui and GET /ui/*)")
 			} else {
 				assert.Equal(t, 147, len(regs), "total registrable instances must equal 147 under ProdStatic/DevDir")
 				assert.Equal(t, 147, apiBounded+mediaBounded+streaming)
 				assert.Equal(t, 13, mediaBounded, "RouteDeadlineMediaBounded count is 13 under ProdStatic/DevDir")
-				assert.Equal(t, 132, apiBounded, "RouteDeadlineAPIBounded count is 132 under ProdStatic/DevDir")
+				assert.Equal(t, 131, apiBounded, "RouteDeadlineAPIBounded count is 131 under ProdStatic/DevDir")
 				assert.Equal(t, 0, mayUpgradeCount)
 			}
 		})
