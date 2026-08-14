@@ -119,6 +119,26 @@ func TestPR42_SourceResolutionAndKeyHygiene(t *testing.T) {
 	})
 }
 
+func TestTruthProvider_LocalOnlyRejectsUnmappedAbsoluteReceiverPath(t *testing.T) {
+	localPath := filepath.Join(t.TempDir(), "unmapped.ts")
+	require.NoError(t, os.WriteFile(localPath, []byte("data"), 0600))
+
+	cfg := &config.AppConfig{
+		RecordingPlaybackPolicy: config.PlaybackPolicyLocalOnly,
+	}
+	mgr, err := vod.NewManager(&dummyRunner{}, &MockProber{}, nil)
+	require.NoError(t, err)
+	tp, err := newTruthProvider(cfg, mgr, ResolverOptions{})
+	require.NoError(t, err)
+
+	serviceRef := "1:0:1:0:0:0:0:0:0:0:" + localPath
+	kind, source, resolvedPath, err := tp.ResolveSource(context.Background(), serviceRef)
+	require.Error(t, err)
+	assert.Empty(t, kind)
+	assert.Empty(t, source)
+	assert.Empty(t, resolvedPath)
+}
+
 func TestTruthProvider_ImpossibleProbe_BlockedPreparing(t *testing.T) {
 	// Option A Semantics: Impossible probes (no local path + no probe configured)
 	// should remain in PREPARING (Blocked) state, not terminal errors.

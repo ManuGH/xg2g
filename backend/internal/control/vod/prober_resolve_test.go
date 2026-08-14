@@ -102,3 +102,31 @@ func TestRunProbe_EmptyInputFailsWithoutResolver(t *testing.T) {
 		t.Fatal("expected error on failed probe")
 	}
 }
+
+func TestRunProbe_DoesNotTrustExistingAbsolutePathWithoutResolver(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "probe-unmapped-*.ts")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	mgr, err := NewManager(&mockRunner{}, &successProber{}, nil)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	id := "1:0:0:0:0:0:0:0:0:0:" + tmpFile.Name()
+
+	err = mgr.runProbe(context.Background(), probeRequest{ServiceRef: id})
+	if err == nil {
+		t.Fatal("expected unmapped absolute recording path to be rejected")
+	}
+
+	meta, ok := mgr.GetMetadata(id)
+	if !ok {
+		t.Fatal("metadata not found after rejected probe")
+	}
+	if meta.State != ArtifactStateFailed {
+		t.Fatalf("expected FAILED, got %s", meta.State)
+	}
+}

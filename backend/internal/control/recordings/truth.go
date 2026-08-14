@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -315,11 +314,6 @@ func (t *truthProvider) ResolveSource(ctx context.Context, serviceRef string) (k
 			if localPath, ok := mapper.ResolveLocalExisting(receiverPath); ok {
 				cleanPath := filepath.Clean(localPath)
 				return "local", (&url.URL{Scheme: "file", Path: cleanPath}).String(), cleanPath, nil
-			} else if receiverPath != "" && filepath.IsAbs(receiverPath) {
-				if _, statErr := os.Stat(receiverPath); statErr == nil {
-					cleanPath := filepath.Clean(receiverPath)
-					return "local", (&url.URL{Scheme: "file", Path: cleanPath}).String(), cleanPath, nil
-				}
 			}
 		}
 	}
