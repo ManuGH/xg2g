@@ -88,9 +88,9 @@ ffmpeg -y -hide_banner -loglevel error \
     -strict -1 \
     "$DECODED_REF"
 
-REF_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=nokey=1 "$DECODED_REF")
-REF_WIDTH=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=nokey=1 "$DECODED_REF")
-REF_HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=nokey=1 "$DECODED_REF")
+REF_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1:nokey=1 "$DECODED_REF")
+REF_WIDTH=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=noprint_wrappers=1:nokey=1 "$DECODED_REF")
+REF_HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=noprint_wrappers=1:nokey=1 "$DECODED_REF")
 
 echo "✅ Reference generated: $REF_FRAMES frames ($REF_WIDTH x $REF_HEIGHT @ 50fps) in $DECODED_REF"
 echo ""
@@ -159,9 +159,9 @@ for TARGET_K in "${BITRATES_K[@]}"; do
     fi
 
     # Pre-Validation: Verify exact frame count and resolution match before computing metrics
-    TEST_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=nokey=1 "$TEST_OUT")
-    TEST_WIDTH=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=nokey=1 "$TEST_OUT")
-    TEST_HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=nokey=1 "$TEST_OUT")
+    TEST_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=noprint_wrappers=1:nokey=1 "$TEST_OUT")
+    TEST_WIDTH=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=noprint_wrappers=1:nokey=1 "$TEST_OUT")
+    TEST_HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=noprint_wrappers=1:nokey=1 "$TEST_OUT")
 
     if [[ "$TEST_FRAMES" != "$REF_FRAMES" ]] || [[ "$TEST_WIDTH" != "$REF_WIDTH" ]] || [[ "$TEST_HEIGHT" != "$REF_HEIGHT" ]]; then
         echo "ERROR: Frame alignment or dimension mismatch for ${TARGET_K}k! Ref: ${REF_FRAMES}f (${REF_WIDTH}x${REF_HEIGHT}), Enc: ${TEST_FRAMES}f (${TEST_WIDTH}x${TEST_HEIGHT})" >&2
