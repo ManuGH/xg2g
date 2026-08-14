@@ -28,14 +28,17 @@ func TestE2E_ProductiveBackendABRExecution(t *testing.T) {
 
 	tempDir := t.TempDir()
 
-	// 1. Generate a real 8-second 1080p25 MPEG-TS input file. Eight seconds
-	// still covers multiple 2-second segment boundaries while keeping this
-	// CPU-only three-rendition encode practical on shared CI runners.
+	// 1. Generate a real 60-second 1080p25 MPEG-TS input file. The extra source
+	// duration keeps FFmpeg alive for the PID assertion even on fast machines;
+	// the test still stops it as soon as two segments exist. A solid-color source
+	// keeps the CPU-only three-rendition encode practical under full coverage
+	// instrumentation while still exercising scaling, audio, HLS segmentation,
+	// PID stability, and cross-rendition PTS alignment.
 	inputFile := filepath.Join(tempDir, "input.ts")
 	genCmd := exec.Command("ffmpeg",
 		"-hide_banner", "-loglevel", "error",
-		"-f", "lavfi", "-i", "testsrc=size=1920x1080:rate=25:duration=8",
-		"-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000:duration=8",
+		"-f", "lavfi", "-i", "color=c=0x335577:size=1920x1080:rate=25:duration=60",
+		"-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000:duration=60",
 		"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-b:a", "128k",
 		"-f", "mpegts", "-y", inputFile,
