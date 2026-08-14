@@ -425,23 +425,8 @@ function Settings() {
           <div className={styles.onboardingHero}>
             <div className={styles.onboardingIntro}>
               <p className={styles.onboardingEyebrow}>{t('settings.androidTv.eyebrow')}</p>
-              <h3 className={styles.onboardingTitle}>{t('settings.androidTv.headline')}</h3>
-              <p className={styles.onboardingCopy}>{t('settings.androidTv.subtitle')}</p>
-            </div>
-
-            <div className={styles.onboardingSteps} aria-label={t('settings.androidTv.eyebrow')}>
-              <div className={styles.stepCard}>
-                <span className={`${styles.stepNumber} tabular`.trim()}>1</span>
-                <p className={styles.stepLabel}>{t('settings.androidTv.steps.browser')}</p>
-              </div>
-              <div className={styles.stepCard}>
-                <span className={`${styles.stepNumber} tabular`.trim()}>2</span>
-                <p className={styles.stepLabel}>{t('settings.androidTv.steps.launch')}</p>
-              </div>
-              <div className={styles.stepCard}>
-                <span className={`${styles.stepNumber} tabular`.trim()}>3</span>
-                <p className={styles.stepLabel}>{t('settings.androidTv.steps.confirm')}</p>
-              </div>
+              <h3 className={styles.onboardingTitle}>📱 Smart-TV mit PIN-Code koppeln</h3>
+              <p className={styles.onboardingCopy}>Starte die xg2g-App auf deinem TV-Gerät und gib den angezeigten Code hier ein.</p>
             </div>
           </div>
 
