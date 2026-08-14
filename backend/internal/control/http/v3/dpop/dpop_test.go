@@ -215,3 +215,57 @@ func TestDPoP_RejectsPointsNotOnP256Curve(t *testing.T) {
 	_, err = validator.ValidateProof(req, proof, "", time.Now())
 	assert.ErrorIs(t, err, dpop.ErrInvalidJWKCurve, "Points not on P-256 curve must be rejected with ErrInvalidJWKCurve")
 }
+
+// TestDPoPValidator_RejectsDEREncodedSignature pins the wire contract that native clients must
+// meet. JCA (Android) and SecKeyCreateSignature (Apple) both emit ASN.1 DER by default; JWS
+// ES256 (RFC 7518 §3.4) requires the raw 64-byte R||S concatenation. A client shipping DER
+// authenticates against nothing, so the two encodings must be verifiably distinguishable here.
+func TestDPoPValidator_RejectsDEREncodedSignature(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	jwk := dpop.JWKECPublicKey{
+		Kty: "EC",
+		Crv: "P-256",
+		X:   base64.RawURLEncoding.EncodeToString(privKey.PublicKey.X.Bytes()),
+		Y:   base64.RawURLEncoding.EncodeToString(privKey.PublicKey.Y.Bytes()),
+	}
+
+	now := time.Now().UTC()
+	targetURL := "https://xg2g.home.matrixcentral.de/api/v3/services"
+
+	headerJSON, _ := json.Marshal(dpop.ProofHeader{Typ: "dpop+jwt", Alg: "ES256", JWK: jwk})
+	payloadJSON, _ := json.Marshal(dpop.ProofPayload{
+		JTI: "jti_der_encoding_001",
+		HTM: "GET",
+		HTU: targetURL,
+		IAT: now.Unix(),
+	})
+	signedData := base64.RawURLEncoding.EncodeToString(headerJSON) + "." + base64.RawURLEncoding.EncodeToString(payloadJSON)
+	hash := sha256.Sum256([]byte(signedData))
+
+	// DER (what an unconverted JCA / SecKey client sends) must be rejected.
+	derSig, err := ecdsa.SignASN1(rand.Reader, privKey, hash[:])
+	require.NoError(t, err)
+	require.NotEqual(t, 64, len(derSig), "DER signature is never exactly 64 bytes for P-256")
+	require.Equal(t, byte(0x30), derSig[0], "DER signature starts with a SEQUENCE tag")
+
+	derProof := signedData + "." + base64.RawURLEncoding.EncodeToString(derSig)
+	req := httptest.NewRequest(http.MethodGet, targetURL, nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	_, err = dpop.NewDefaultValidator().ValidateProof(req, derProof, "", now)
+	assert.ErrorIs(t, err, dpop.ErrInvalidSignature, "DER-encoded ES256 signatures must be rejected")
+
+	// The same signature converted to raw R||S must be accepted.
+	rBig, sBig, err := ecdsa.Sign(rand.Reader, privKey, hash[:])
+	require.NoError(t, err)
+	rawSig := make([]byte, 64)
+	rBig.FillBytes(rawSig[:32])
+	sBig.FillBytes(rawSig[32:])
+
+	rawProof := signedData + "." + base64.RawURLEncoding.EncodeToString(rawSig)
+	claims, err := dpop.NewDefaultValidator().ValidateProof(req, rawProof, "", now)
+	require.NoError(t, err, "raw R||S signatures must be accepted")
+	assert.Equal(t, "jti_der_encoding_001", claims.Payload.JTI)
+}
