@@ -2,6 +2,8 @@ package playbackplanner
 
 import (
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 )
 
 // resolveMediaTargets populates Video, Audio, Packaging, Filters, and RateControl based on the selected Mode.
@@ -125,9 +127,25 @@ func explicitlyRequestsHEVCProfile(requestedIntent string) bool {
 }
 
 const (
-	AV1MaxBitrate1080pKbps = 5090
-	AV1MaxBitrate720pKbps  = 2340
-	AV1MaxBitrate480pKbps  = 1130
+	// AV1 Compatible (Default / Efficient tier)
+	AV1Compatible1080pKbps = 5090
+	AV1Compatible720pKbps  = 2340
+	AV1Compatible480pKbps  = 1130
+
+	// AV1 Quality (High Quality / Broad visual transparency tier)
+	AV1Quality1080pKbps = 12000
+	AV1Quality720pKbps  = 5500
+	AV1Quality480pKbps  = 2500
+
+	// AV1 Repair / Cinema (Maximum / Full source fidelity preservation tier)
+	AV1Cinema1080pKbps = 18000
+	AV1Cinema720pKbps  = 8000
+	AV1Cinema480pKbps  = 4000
+
+	// Deprecated legacy aliases
+	AV1MaxBitrate1080pKbps = AV1Compatible1080pKbps
+	AV1MaxBitrate720pKbps  = AV1Compatible720pKbps
+	AV1MaxBitrate480pKbps  = AV1Compatible480pKbps
 )
 
 func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
@@ -143,13 +161,59 @@ func transcodeMaxVideoBitrateKbps(codec string, ev PlaybackEvidence) int {
 	// 25p. These are ceilings, not targets - the encoder spends what the picture
 	// needs, and applyPolicyModifiers still clamps them on a constrained link.
 	case "av1":
-		if height > 0 && height <= 480 {
-			return AV1MaxBitrate480pKbps
+		intent := playbackprofile.NormalizeRequestedIntent(ev.RequestedIntent)
+		if ev.OperatorPolicy.ForceIntent != "" {
+			intent = playbackprofile.NormalizeRequestedIntent(ev.OperatorPolicy.ForceIntent)
 		}
-		if height > 0 && height <= 720 {
-			return AV1MaxBitrate720pKbps
+		switch intent {
+		case playbackprofile.IntentQuality:
+			if ev.SourceTruth.BitrateKbps > 0 {
+				// Source-aware AV1 Quality Control: AV1 achieves visual transparency at ~70% of source H.264/MPEG-2 bitrate
+				sourceBudget := int(float64(ev.SourceTruth.BitrateKbps) * 0.70)
+				if height > 0 && height <= 480 {
+					return clampInt(sourceBudget, 1500, 3500)
+				}
+				if height > 0 && height <= 720 {
+					return clampInt(sourceBudget, 3000, 7000)
+				}
+				return clampInt(sourceBudget, 6000, 14000)
+			}
+			if height > 0 && height <= 480 {
+				return AV1Quality480pKbps
+			}
+			if height > 0 && height <= 720 {
+				return AV1Quality720pKbps
+			}
+			return AV1Quality1080pKbps
+
+		case playbackprofile.IntentRepair:
+			if ev.SourceTruth.BitrateKbps > 0 {
+				// Cinema / Maximum Fidelity Preservation: match source bitrate to preserve full DVB fidelity
+				if height > 0 && height <= 480 {
+					return clampInt(ev.SourceTruth.BitrateKbps, 2000, 5000)
+				}
+				if height > 0 && height <= 720 {
+					return clampInt(ev.SourceTruth.BitrateKbps, 5000, 10000)
+				}
+				return clampInt(ev.SourceTruth.BitrateKbps, 10000, 20000)
+			}
+			if height > 0 && height <= 480 {
+				return AV1Cinema480pKbps
+			}
+			if height > 0 && height <= 720 {
+				return AV1Cinema720pKbps
+			}
+			return AV1Cinema1080pKbps
+
+		default: // IntentCompatible or unspecified (Mobile / Bandwidth-efficient)
+			if height > 0 && height <= 480 {
+				return AV1Compatible480pKbps
+			}
+			if height > 0 && height <= 720 {
+				return AV1Compatible720pKbps
+			}
+			return AV1Compatible1080pKbps
 		}
-		return AV1MaxBitrate1080pKbps
 	case "hevc", "h265":
 		return 10000
 	case "h264", "avc", "libx264":
@@ -214,7 +278,7 @@ func applyPolicyModifiers(plan *PlaybackPlan, ev PlaybackEvidence) {
 func isABRRequested(ev PlaybackEvidence) bool {
 	requested := strings.ToLower(strings.TrimSpace(ev.OperatorPolicy.ForceIntent))
 	if requested == "" {
-		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
+		requested = strings.TrimSpace(ev.RequestedIntent)
 	}
 	switch requested {
 	case "abr", "mobile_abr", "3tier", "2tier":
@@ -222,4 +286,14 @@ func isABRRequested(ev PlaybackEvidence) bool {
 	default:
 		return false
 	}
+}
+
+func clampInt(val, min, max int) int {
+	if val < min {
+		return min
+	}
+	if val > max {
+		return max
+	}
+	return val
 }
