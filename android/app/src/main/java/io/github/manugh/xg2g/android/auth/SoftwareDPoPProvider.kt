@@ -71,7 +71,8 @@ class SoftwareDPoPProvider : DPoPProvider {
         val signature = Signature.getInstance("SHA256withECDSA")
         signature.initSign(keyPair.private)
         signature.update(signingInput.toByteArray(Charsets.UTF_8))
-        val sigBytes = signature.sign()
+        // JCA returns ASN.1 DER; JWS ES256 requires raw R || S (RFC 7518 §3.4).
+        val sigBytes = ES256Signature.derToRaw(signature.sign())
         val sigB64 = base64UrlEncode(sigBytes)
 
         return "$signingInput.$sigB64"
