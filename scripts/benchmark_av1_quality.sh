@@ -85,6 +85,7 @@ ffmpeg -y -hide_banner -loglevel error \
     -i "$INPUT_FILE" \
     -vf "deinterlace_vaapi=mode=motion_compensated:rate=field,scale_vaapi=format=p010,hwdownload,format=p010le" \
     -pix_fmt yuv420p10le \
+    -strict -1 \
     "$DECODED_REF"
 
 REF_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=nokey=1:raw_value=1 "$DECODED_REF")
