@@ -122,13 +122,28 @@ EOF
 echo "| Target | Actual Bitrate | Enc Speed | Enc FPS | Production Realtime? | SSIM (All) | PSNR (Y-dB) | XPSNR (Y-dB) | Size (MB) |"
 echo "|:-------|:---------------|:----------|:--------|:---------------------|:-----------|:------------|:-------------|:----------|"
 
-for TARGET_K in "${BITRATES_K[@]}"; do
-    BUF_K=$((TARGET_K * 2))
-    TEST_OUT="$OUTPUT_DIR/av1_${TARGET_K}k.mp4"
-    LOG_ENC="$OUTPUT_DIR/enc_${TARGET_K}k.log"
-    LOG_SSIM="$OUTPUT_DIR/ssim_${TARGET_K}k.log"
-    LOG_PSNR="$OUTPUT_DIR/psnr_${TARGET_K}k.log"
-    LOG_XPSNR="$OUTPUT_DIR/xpsnr_${TARGET_K}k.log"
+# Rate Control Test Modes: VBR and Intel ICQ (Intelligent Constant Quality)
+MODES=(
+    "VBR:5090k:-rc_mode 3 -b:v 5090k -maxrate 5090k -bufsize 10180k"
+    "VBR:8000k:-rc_mode 3 -b:v 8000k -maxrate 8000k -bufsize 16000k"
+    "VBR:12000k:-rc_mode 3 -b:v 12000k -maxrate 12000k -bufsize 24000k"
+    "VBR:15000k:-rc_mode 3 -b:v 15000k -maxrate 15000k -bufsize 30000k"
+    "VBR:18000k:-rc_mode 3 -b:v 18000k -maxrate 18000k -bufsize 36000k"
+    "ICQ:Q=20:-rc_mode 4 -global_quality 20 -maxrate 20000k"
+    "ICQ:Q=22:-rc_mode 4 -global_quality 22 -maxrate 20000k"
+    "ICQ:Q=24:-rc_mode 4 -global_quality 24 -maxrate 20000k"
+    "ICQ:Q=26:-rc_mode 4 -global_quality 26 -maxrate 20000k"
+    "ICQ:Q=28:-rc_mode 4 -global_quality 28 -maxrate 20000k"
+)
+
+for MODE_SPEC in "${MODES[@]}"; do
+    IFS=":" read -r RC_KIND LABEL RC_ARGS <<< "$MODE_SPEC"
+    TARGET_NAME="${RC_KIND}_${LABEL}"
+    TEST_OUT="$OUTPUT_DIR/av1_${TARGET_NAME}.mp4"
+    LOG_ENC="$OUTPUT_DIR/enc_${TARGET_NAME}.log"
+    LOG_SSIM="$OUTPUT_DIR/ssim_${TARGET_NAME}.log"
+    LOG_PSNR="$OUTPUT_DIR/psnr_${TARGET_NAME}.log"
+    LOG_XPSNR="$OUTPUT_DIR/xpsnr_${TARGET_NAME}.log"
 
     # Multi-Run Warmup & 3-Pass Median Performance Sampling
     RUN_TIMES=()
@@ -141,7 +156,7 @@ for TARGET_K in "${BITRATES_K[@]}"; do
             -t "$DURATION_SEC" \
             -i "$INPUT_FILE" \
             -vf "deinterlace_vaapi=mode=motion_compensated:rate=field,scale_vaapi=format=p010" \
-            -c:v av1_vaapi -b:v "${TARGET_K}k" -maxrate "${TARGET_K}k" -bufsize "${BUF_K}k" \
+            -c:v av1_vaapi $RC_ARGS \
             -an \
             "$TEST_OUT" > "$LOG_ENC" 2>&1
         END_TIME=$(date +%s.%N)
@@ -169,7 +184,7 @@ for TARGET_K in "${BITRATES_K[@]}"; do
     TEST_HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=noprint_wrappers=1:nokey=1 "$TEST_OUT")
 
     if [[ "$TEST_FRAMES" != "$REF_FRAMES" ]] || [[ "$TEST_WIDTH" != "$REF_WIDTH" ]] || [[ "$TEST_HEIGHT" != "$REF_HEIGHT" ]]; then
-        echo "ERROR: Frame alignment or dimension mismatch for ${TARGET_K}k! Ref: ${REF_FRAMES}f (${REF_WIDTH}x${REF_HEIGHT}), Enc: ${TEST_FRAMES}f (${TEST_WIDTH}x${TEST_HEIGHT})" >&2
+        echo "ERROR: Frame alignment or dimension mismatch for ${TARGET_NAME}! Ref: ${REF_FRAMES}f (${REF_WIDTH}x${REF_HEIGHT}), Enc: ${TEST_FRAMES}f (${TEST_WIDTH}x${TEST_HEIGHT})" >&2
         exit 1
     fi
 
@@ -178,22 +193,22 @@ for TARGET_K in "${BITRATES_K[@]}"; do
     ACTUAL_BITRATE_K=$(awk "BEGIN {printf \"%.0f\", ($FILE_BYTES * 8 / $DURATION_SEC) / 1000}")
 
     # Robust Separate Filter Runs: SSIM, PSNR, and XPSNR
-    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]ssim=stats_file=$OUTPUT_DIR/ssim_${TARGET_K}k.txt" -f null - > "$LOG_SSIM" 2>&1
-    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]psnr=stats_file=$OUTPUT_DIR/psnr_${TARGET_K}k.txt" -f null - > "$LOG_PSNR" 2>&1
-    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]xpsnr=stats_file=$OUTPUT_DIR/xpsnr_${TARGET_K}k.txt" -f null - > "$LOG_XPSNR" 2>&1
+    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]ssim=stats_file=$OUTPUT_DIR/ssim_${TARGET_NAME}.txt" -f null - > "$LOG_SSIM" 2>&1
+    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]psnr=stats_file=$OUTPUT_DIR/psnr_${TARGET_NAME}.txt" -f null - > "$LOG_PSNR" 2>&1
+    ffmpeg -y -hide_banner -i "$TEST_OUT" -i "$DECODED_REF" -lavfi "[0:v][1:v]xpsnr=stats_file=$OUTPUT_DIR/xpsnr_${TARGET_NAME}.txt" -f null - > "$LOG_XPSNR" 2>&1
 
     SSIM_VAL=$(grep -oE "All:[0-9\.]+" "$LOG_SSIM" | tail -n1 | cut -d: -f2 || echo "N/A")
     PSNR_Y_VAL=$(grep -oE "y:[0-9\.]+" "$LOG_PSNR" | tail -n1 | cut -d: -f2 || echo "N/A")
     XPSNR_Y_VAL=$(grep -oE "y:[0-9\.]+" "$LOG_XPSNR" | tail -n1 | cut -d: -f2 || echo "N/A")
 
-    FORMATTED_LINE="| ${TARGET_K} Kbps | ${ACTUAL_BITRATE_K} Kbps | ${ENC_SPEED}x | ${FORMATTED_FPS} fps | $HEADROOM_STATUS | $SSIM_VAL | $PSNR_Y_VAL dB | $XPSNR_Y_VAL dB | ${FILE_MB} MB |"
+    FORMATTED_LINE="| ${TARGET_NAME} | ${ACTUAL_BITRATE_K} Kbps | ${ENC_SPEED}x | ${FORMATTED_FPS} fps | $HEADROOM_STATUS | $SSIM_VAL | $PSNR_Y_VAL dB | $XPSNR_Y_VAL dB | ${FILE_MB} MB |"
     echo "$FORMATTED_LINE"
     echo "$FORMATTED_LINE" >> "$SUMMARY_FILE"
 
     # Multi-Frame Full Frame Extractions at 2s, 5s, 10s, 15s, 20s, 25s for visual inspection
     for TIMESTAMP_SEC in 2 5 10 15 20 25; do
         if (( TIMESTAMP_SEC < DURATION_SEC )); then
-            ffmpeg -y -hide_banner -ss "$TIMESTAMP_SEC" -i "$TEST_OUT" -vframes 1 "$OUTPUT_DIR/frame_${TIMESTAMP_SEC}s_${TARGET_K}k.png" >/dev/null 2>&1 || true
+            ffmpeg -y -hide_banner -ss "$TIMESTAMP_SEC" -i "$TEST_OUT" -vframes 1 "$OUTPUT_DIR/frame_${TIMESTAMP_SEC}s_${TARGET_NAME}.png" >/dev/null 2>&1 || true
         fi
     done
 done
