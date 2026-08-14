@@ -89,6 +89,17 @@ export function classifyHlsFatalError(
     };
   }
 
+  if (status === 410) {
+    return {
+      title: t('player.sessionExpiredTitle', { defaultValue: 'Wiedergabe-Sitzung beendet' }),
+      details: buildHttpDetails(
+        t('player.sessionExpiredDetail', { defaultValue: 'Die Streaming-Sitzung wurde beendet. Bitte starte den Stream neu.' }),
+        status,
+        detail
+      ),
+    };
+  }
+
   if (status === 404 && isRecordingPlayback(playbackUrl)) {
     return {
       title: t('player.recordingNotFound', { defaultValue: 'Recording was not found.' }),
