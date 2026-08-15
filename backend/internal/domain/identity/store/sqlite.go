@@ -484,7 +484,21 @@ func (s *SQLiteStore) UpdateUser(ctx context.Context, id string, fn func(*identi
 }
 
 func (s *SQLiteStore) DeleteUser(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, _ = tx.ExecContext(ctx, `DELETE FROM household_memberships WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM passkeys WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM web_sessions WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM notifications WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM device_grants WHERE user_id = ?`, id)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM devices WHERE user_id = ?`, id)
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
@@ -492,7 +506,7 @@ func (s *SQLiteStore) DeleteUser(ctx context.Context, id string) error {
 	if n == 0 {
 		return identity.ErrStoreNotFound
 	}
-	return nil
+	return tx.Commit()
 }
 
 // ----------------- PasskeyStore -----------------
