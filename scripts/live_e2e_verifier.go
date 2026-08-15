@@ -316,7 +316,7 @@ func main() {
 	var selectedChannel ServiceItem
 	if *targetChannelFlag != "" {
 		for _, s := range services {
-			if strings.EqualFold(s.Name, *targetChannelFlag) || strings.EqualFold(s.ServiceRef, *targetChannelFlag) {
+			if strings.Contains(strings.ToLower(s.Name), strings.ToLower(*targetChannelFlag)) || strings.EqualFold(s.ServiceRef, *targetChannelFlag) {
 				selectedChannel = s
 				break
 			}
@@ -501,9 +501,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Download first available segment and inspect with ffprobe
+	// Check for EXT-X-MAP init segment
+	initURI := ""
+	for _, line := range strings.Split(mediaPlaylistContent, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#EXT-X-MAP:URI=\"") {
+			initURI = strings.TrimPrefix(line, "#EXT-X-MAP:URI=\"")
+			initURI = strings.TrimSuffix(initURI, "\"")
+			break
+		}
+	}
+
 	tempDir, _ := os.MkdirTemp("", "xg2g-live-verify-*")
 	defer os.RemoveAll(tempDir)
+
+	var initBytes []byte
+	if initURI != "" {
+		initURL := initURI
+		if !strings.HasPrefix(initURL, "http") {
+			initURL = fmt.Sprintf("%s/api/v3/sessions/%s/hls/%s", baseURL, sessionID, initURI)
+		}
+		initReq, _ := http.NewRequest("GET", initURL, nil)
+		if initResp, err := mediaClient.Do(initReq); err == nil && initResp.StatusCode == http.StatusOK {
+			initBytes, _ = io.ReadAll(initResp.Body)
+			initResp.Body.Close()
+		}
+	}
 
 	firstSegURI := segmentURIs[0]
 	segURL := firstSegURI
@@ -526,9 +549,12 @@ func main() {
 		fmt.Printf("FAILED to create file: %v\n", err)
 		os.Exit(1)
 	}
+	if len(initBytes) > 0 {
+		outFile.Write(initBytes)
+	}
 	written, _ := io.Copy(outFile, segResp.Body)
 	outFile.Close()
-	fmt.Printf("OK (%d bytes downloaded)\n", written)
+	fmt.Printf("OK (%d bytes downloaded)\n", written+int64(len(initBytes)))
 
 	// Run ffprobe analysis
 	fmt.Print("      Analyzing Bitstream with ffprobe... ")
