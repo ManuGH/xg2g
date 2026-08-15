@@ -20,7 +20,6 @@ const (
 	defaultDeviceGrantTTL         = 30 * 24 * time.Hour
 	defaultDeviceGrantRotateAfter = 7 * 24 * time.Hour
 	defaultAccessSessionTTL       = 15 * time.Minute
-	defaultWebBootstrapTTL        = 90 * time.Second
 	defaultPolicyVersion          = "device-auth-v1"
 	defaultAuthStrength           = "paired_device"
 )
@@ -44,9 +43,6 @@ func NewService(deps Deps) *Service {
 	}
 	if deps.AccessSessionTTL <= 0 {
 		deps.AccessSessionTTL = defaultAccessSessionTTL
-	}
-	if deps.WebBootstrapTTL <= 0 {
-		deps.WebBootstrapTTL = defaultWebBootstrapTTL
 	}
 	if len(deps.DefaultScopes) == 0 {
 		deps.DefaultScopes = []string{"v3:read", "v3:write"}
@@ -196,180 +192,6 @@ func (s *Service) RefreshSession(ctx context.Context, input RefreshSessionInput)
 	return result, nil
 }
 
-func (s *Service) StartWebBootstrap(ctx context.Context, input StartWebBootstrapInput) (*StartWebBootstrapResult, error) {
-	if strings.TrimSpace(input.SourceAccessToken) == "" {
-		return nil, &Error{Kind: ErrorUnauthorized, Message: "device access bearer token is required"}
-	}
-	if s.deps.StateStore == nil {
-		return nil, &Error{Kind: ErrorStore, Message: "device auth state store is not configured"}
-	}
-
-	now := s.now()
-	sourceSession, err := s.deps.StateStore.GetAccessSessionByTokenHash(ctx, hashOpaqueSecret(input.SourceAccessToken))
-	if err != nil {
-		if errors.Is(err, deviceauthstore.ErrNotFound) {
-			return nil, &Error{Kind: ErrorUnauthorized, Message: "device access session not found"}
-		}
-		return nil, classifyStoreError("failed to resolve source access session", err)
-	}
-	if sourceSession == nil {
-		return nil, &Error{Kind: ErrorUnauthorized, Message: "device access session not found"}
-	}
-	if sourceSession.IsRevoked() {
-		return nil, &Error{Kind: ErrorRevoked, Message: "source access session has been revoked"}
-	}
-	if !sourceSession.IsActive(now) {
-		return nil, &Error{Kind: ErrorExpired, Message: "source access session has expired"}
-	}
-
-	device, err := s.deps.StateStore.GetDevice(ctx, sourceSession.DeviceID)
-	if err != nil {
-		return nil, classifyStoreError("failed to load source device", err)
-	}
-	if device == nil {
-		return nil, &Error{Kind: ErrorNotFound, Message: "source device not found"}
-	}
-	if !device.CanIssueSessions(now) {
-		return nil, &Error{Kind: ErrorRevoked, Message: "source device has been revoked"}
-	}
-
-	bootstrapID, err := newOpaqueID("wbs", 12)
-	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to generate web bootstrap id", Cause: err}
-	}
-	bootstrapToken, err := newOpaqueSecret(24)
-	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to generate web bootstrap token", Cause: err}
-	}
-	record, err := lifecycle.StartWebBootstrap(lifecycle.StartWebBootstrapInput{
-		BootstrapID:           bootstrapID,
-		BootstrapSecretHash:   hashOpaqueSecret(bootstrapToken),
-		SourceAccessSessionID: sourceSession.SessionID,
-		TargetPath:            input.TargetPath,
-		Now:                   now,
-		ExpiresAt:             now.Add(s.deps.WebBootstrapTTL),
-	})
-	if err != nil {
-		return nil, &Error{Kind: ErrorInvalidInput, Message: "web bootstrap request is invalid", Cause: err}
-	}
-	if err := s.deps.StateStore.PutWebBootstrap(ctx, &record); err != nil {
-		return nil, classifyStoreError("failed to persist web bootstrap", err)
-	}
-
-	s.recordAudit(ctx, AuditEvent{
-		Action:      "web.bootstrap.start",
-		BootstrapID: record.BootstrapID,
-		DeviceID:    sourceSession.DeviceID,
-		SessionID:   sourceSession.SessionID,
-		OwnerID:     sourceSession.SubjectID,
-		Outcome:     "ok",
-		Reason:      "issued",
-		At:          now,
-	})
-
-	return &StartWebBootstrapResult{
-		BootstrapID:    record.BootstrapID,
-		BootstrapToken: bootstrapToken,
-		CompletePath:   fmt.Sprintf("/api/v3/auth/web-bootstrap/%s", record.BootstrapID),
-		TargetPath:     record.TargetPath,
-		ExpiresAt:      record.ExpiresAt,
-	}, nil
-}
-
-func (s *Service) CompleteWebBootstrap(ctx context.Context, input CompleteWebBootstrapInput) (*CompleteWebBootstrapResult, error) {
-	if strings.TrimSpace(input.BootstrapID) == "" {
-		return nil, &Error{Kind: ErrorInvalidInput, Message: "web bootstrap id is required"}
-	}
-	if strings.TrimSpace(input.BootstrapToken) == "" {
-		return nil, &Error{Kind: ErrorInvalidInput, Message: "web bootstrap token is required"}
-	}
-	if s.deps.StateStore == nil {
-		return nil, &Error{Kind: ErrorStore, Message: "device auth state store is not configured"}
-	}
-
-	now := s.now()
-	var lifecycleErr error
-	record, err := s.deps.StateStore.UpdateWebBootstrap(ctx, strings.TrimSpace(input.BootstrapID), func(current *deviceauthmodel.WebBootstrapRecord) error {
-		next, err := lifecycle.ConsumeWebBootstrap(*current, lifecycle.ConsumeWebBootstrapInput{
-			BootstrapSecretHash: hashOpaqueSecret(input.BootstrapToken),
-			ConsumedAt:          now,
-		}, now)
-		if err != nil {
-			lifecycleErr = err
-			return nil
-		}
-		*current = next
-		return nil
-	})
-	if err != nil {
-		return nil, classifyStoreError("failed to consume web bootstrap", err)
-	}
-	if lifecycleErr != nil {
-		return nil, classifyWebBootstrapError(lifecycleErr)
-	}
-
-	sourceSession, err := s.deps.StateStore.GetAccessSession(ctx, record.SourceAccessSessionID)
-	if err != nil {
-		if errors.Is(err, deviceauthstore.ErrNotFound) {
-			return nil, &Error{Kind: ErrorRevoked, Message: "source access session is no longer available"}
-		}
-		return nil, classifyStoreError("failed to load source access session", err)
-	}
-	if sourceSession == nil {
-		return nil, &Error{Kind: ErrorRevoked, Message: "source access session is no longer available"}
-	}
-	if sourceSession.IsRevoked() {
-		return nil, &Error{Kind: ErrorRevoked, Message: "source access session has been revoked"}
-	}
-	if !sourceSession.IsActive(now) {
-		return nil, &Error{Kind: ErrorExpired, Message: "source access session has expired"}
-	}
-
-	device, err := s.deps.StateStore.GetDevice(ctx, sourceSession.DeviceID)
-	if err != nil {
-		return nil, classifyStoreError("failed to load source device", err)
-	}
-	if device == nil {
-		return nil, &Error{Kind: ErrorRevoked, Message: "source device is no longer available"}
-	}
-	if !device.CanIssueSessions(now) {
-		return nil, &Error{Kind: ErrorRevoked, Message: "source device has been revoked"}
-	}
-
-	sessionRecord, accessToken, err := s.issueAccessSession(ctx, issueAccessSessionInput{
-		SubjectID:     sourceSession.SubjectID,
-		DeviceID:      sourceSession.DeviceID,
-		Scopes:        append([]string(nil), sourceSession.Scopes...),
-		PolicyVersion: sourceSession.PolicyVersion,
-		AuthStrength:  sourceSession.AuthStrength,
-		IssuedAt:      now,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if _, err := s.touchDevice(ctx, sourceSession.DeviceID, now); err != nil {
-		return nil, err
-	}
-
-	s.recordAudit(ctx, AuditEvent{
-		Action:      "web.bootstrap.complete",
-		BootstrapID: record.BootstrapID,
-		DeviceID:    sourceSession.DeviceID,
-		SessionID:   sessionRecord.SessionID,
-		OwnerID:     sourceSession.SubjectID,
-		Outcome:     "ok",
-		Reason:      "consumed",
-		At:          now,
-	})
-
-	return &CompleteWebBootstrapResult{
-		TargetPath:           record.TargetPath,
-		AccessSessionID:      sessionRecord.SessionID,
-		AccessToken:          accessToken,
-		AccessTokenExpiresAt: sessionRecord.ExpiresAt,
-	}, nil
-}
-
 type issueAccessSessionInput struct {
 	SubjectID     string
 	DeviceID      string
@@ -451,21 +273,6 @@ func classifyStoreError(message string, err error) error {
 		return &Error{Kind: ErrorConflict, Message: "device auth state conflict", Cause: err}
 	default:
 		return &Error{Kind: ErrorStore, Message: message, Cause: err}
-	}
-}
-
-func classifyWebBootstrapError(err error) error {
-	switch {
-	case errors.Is(err, lifecycle.ErrWebBootstrapSecretMismatch):
-		return &Error{Kind: ErrorForbidden, Message: "web bootstrap token mismatch", Cause: err}
-	case errors.Is(err, lifecycle.ErrWebBootstrapAlreadyExpired):
-		return &Error{Kind: ErrorExpired, Message: "web bootstrap has expired", Cause: err}
-	case errors.Is(err, lifecycle.ErrWebBootstrapAlreadyConsumed):
-		return &Error{Kind: ErrorConsumed, Message: "web bootstrap has already been used", Cause: err}
-	case errors.Is(err, lifecycle.ErrWebBootstrapAlreadyRevoked):
-		return &Error{Kind: ErrorRevoked, Message: "web bootstrap has been revoked", Cause: err}
-	default:
-		return &Error{Kind: ErrorInternal, Message: "web bootstrap failed", Cause: err}
 	}
 }
 

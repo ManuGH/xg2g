@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/deviceauth/lifecycle"
 	deviceauthmodel "github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 )
 
 const (
@@ -257,6 +258,42 @@ func (s *Service) Exchange(ctx context.Context, input ExchangeInput) (*ExchangeR
 	if s.deps.StateStore == nil {
 		return nil, &Error{Kind: ErrorStore, Message: "pairing state store is not configured"}
 	}
+	if s.deps.DeviceEnroller == nil {
+		return nil, &Error{Kind: ErrorStore, Message: "device enroller is not configured"}
+	}
+
+	// Everything that can fail without side effects happens before the pairing
+	// is consumed. Consumption is single-use, so a malformed key or an
+	// unresolvable owner must not burn the user's pairing: they would have to
+	// start over for a mistake that changed nothing on the server.
+	if err := identity.ValidateEnrollmentJWK(input.DeviceJWK); err != nil {
+		return nil, &Error{
+			Kind:    ErrorInvalidInput,
+			Message: "device key is not a valid P-256 JWK",
+			Cause:   err,
+		}
+	}
+
+	pending, err := s.deps.StateStore.GetPairing(ctx, strings.TrimSpace(input.PairingID))
+	if err != nil {
+		return nil, classifyStoreError("failed to read pairing", err)
+	}
+	if pending == nil {
+		return nil, &Error{Kind: ErrorNotFound, Message: "pairing not found"}
+	}
+
+	// Resolved against the canonical identity user list. No auto-creation, no
+	// username-as-user-id, no silent fallback — an owner that does not resolve
+	// is a configuration fault, and it fails here rather than producing an
+	// orphaned device.
+	userID, err := s.deps.DeviceEnroller.ResolveOwner(ctx, pending.OwnerID)
+	if err != nil {
+		return nil, &Error{
+			Kind:    ErrorInvalidInput,
+			Message: "pairing owner does not resolve to exactly one identity user",
+			Cause:   err,
+		}
+	}
 
 	now := s.now()
 	pairingSecretHash := hashOpaqueSecret(input.PairingSecret)
@@ -297,81 +334,27 @@ func (s *Service) Exchange(ctx context.Context, input ExchangeInput) (*ExchangeR
 		return nil, classifyLifecycleError("pairing exchange rejected", outcomeErr)
 	}
 
-	deviceID, err := s.deps.Generator.NewDeviceID(ctx)
-	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to generate device id", Cause: err}
-	}
-	deviceGrantID, err := s.deps.Generator.NewDeviceGrantID(ctx)
-	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to generate device grant id", Cause: err}
-	}
-	deviceGrant, err := s.deps.Generator.NewDeviceGrantSecret(ctx)
-	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to generate device grant", Cause: err}
-	}
-	accessSessionID, err := s.deps.Generator.NewAccessSessionID(ctx)
-	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to generate access session id", Cause: err}
-	}
-	accessToken, err := s.deps.Generator.NewAccessToken(ctx)
-	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to generate access token", Cause: err}
-	}
-
-	deviceRecord, err := deviceauthmodel.PrepareDeviceRecord(deviceauthmodel.DeviceRecord{
-		DeviceID:      deviceID,
-		OwnerID:       record.OwnerID,
-		DeviceName:    record.DeviceName,
-		DeviceType:    record.DeviceType,
-		PolicyProfile: firstNonEmpty(record.ApprovedPolicyProfile, record.RequestedPolicyProfile),
-		CreatedAt:     now,
+	// From here the identity system owns everything durable. Nothing further is
+	// written to deviceauth: it keeps only the consumed pairing bootstrap.
+	enrolled, err := s.deps.DeviceEnroller.EnrollDevice(ctx, EnrollDeviceInput{
+		UserID:     userID,
+		DeviceName: record.DeviceName,
+		Platform:   string(record.DeviceType),
+		JWK:        input.DeviceJWK,
+		Scopes:     strings.Join(s.deps.DefaultScopes, " "),
 	})
 	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to build device record", Cause: err}
-	}
-	rotateAfter := now.Add(s.deps.DeviceGrantRotateAfter)
-	deviceGrantRecord, err := deviceauthmodel.PrepareDeviceGrantRecord(deviceauthmodel.DeviceGrantRecord{
-		GrantID:     deviceGrantID,
-		DeviceID:    deviceID,
-		GrantHash:   hashOpaqueSecret(deviceGrant),
-		IssuedAt:    now,
-		ExpiresAt:   now.Add(s.deps.DeviceGrantTTL),
-		RotateAfter: &rotateAfter,
-	})
-	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to build device grant record", Cause: err}
-	}
-	accessSessionRecord, err := deviceauthmodel.PrepareAccessSessionRecord(deviceauthmodel.AccessSessionRecord{
-		SessionID:     accessSessionID,
-		SubjectID:     record.OwnerID,
-		DeviceID:      deviceID,
-		TokenHash:     hashOpaqueSecret(accessToken),
-		PolicyVersion: s.deps.PolicyVersion,
-		Scopes:        append([]string(nil), s.deps.DefaultScopes...),
-		AuthStrength:  s.deps.AuthStrength,
-		IssuedAt:      now,
-		ExpiresAt:     now.Add(s.deps.AccessSessionTTL),
-	})
-	if err != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to build access session record", Cause: err}
-	}
-
-	if err := s.deps.StateStore.PutDevice(ctx, &deviceRecord); err != nil {
-		return nil, classifyStoreError("failed to persist device record", err)
-	}
-	if err := s.deps.StateStore.PutDeviceGrant(ctx, &deviceGrantRecord); err != nil {
-		return nil, classifyStoreError("failed to persist device grant", err)
-	}
-	if err := s.deps.StateStore.PutAccessSession(ctx, &accessSessionRecord); err != nil {
-		return nil, classifyStoreError("failed to persist access session", err)
+		return nil, &Error{
+			Kind:    ErrorInternal,
+			Message: "failed to enroll device identity",
+			Cause:   err,
+		}
 	}
 
 	s.recordAudit(ctx, AuditEvent{
 		Action:    "pairing.exchange",
 		PairingID: record.PairingID,
-		DeviceID:  deviceRecord.DeviceID,
-		GrantID:   deviceGrantRecord.GrantID,
-		SessionID: accessSessionRecord.SessionID,
+		DeviceID:  enrolled.DeviceID,
 		OwnerID:   record.OwnerID,
 		Outcome:   "ok",
 		Reason:    "consumed",
@@ -384,18 +367,17 @@ func (s *Service) Exchange(ctx context.Context, input ExchangeInput) (*ExchangeR
 	}
 
 	return &ExchangeResult{
-		PairingID:            record.PairingID,
-		DeviceID:             deviceRecord.DeviceID,
-		DeviceGrantID:        deviceGrantRecord.GrantID,
-		DeviceGrant:          deviceGrant,
-		DeviceGrantExpiresAt: deviceGrantRecord.ExpiresAt,
-		AccessSessionID:      accessSessionRecord.SessionID,
-		AccessToken:          accessToken,
-		AccessTokenExpiresAt: accessSessionRecord.ExpiresAt,
-		PolicyVersion:        accessSessionRecord.PolicyVersion,
-		Scopes:               append([]string(nil), accessSessionRecord.Scopes...),
-		Endpoints:            endpoints,
+		PairingID:     record.PairingID,
+		DeviceID:      enrolled.DeviceID,
+		TokenType:     enrolled.TokenType,
+		AccessToken:   enrolled.AccessToken,
+		RefreshToken:  enrolled.RefreshToken,
+		ExpiresIn:     enrolled.ExpiresIn,
+		Scope:         enrolled.Scope,
+		PolicyVersion: s.deps.PolicyVersion,
+		Endpoints:     endpoints,
 	}, nil
+
 }
 
 func (s *Service) lookupPairing(ctx context.Context, pairingID string) (deviceauthmodel.PairingRecord, error) {

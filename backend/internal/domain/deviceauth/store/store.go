@@ -57,19 +57,10 @@ type AccessSessionStore interface {
 	DeleteAccessSessionsByDevice(ctx context.Context, deviceID string) (int, error)
 }
 
-// WebBootstrapStore owns short-lived one-time grants that convert native device
-// access into browser cookie sessions.
-type WebBootstrapStore interface {
-	PutWebBootstrap(ctx context.Context, record *model.WebBootstrapRecord) error
-	GetWebBootstrap(ctx context.Context, bootstrapID string) (*model.WebBootstrapRecord, error)
-	UpdateWebBootstrap(ctx context.Context, bootstrapID string, fn func(*model.WebBootstrapRecord) error) (*model.WebBootstrapRecord, error)
-}
-
 // StateStore is the persistent source of truth for device enrollment and auth state.
 type StateStore interface {
 	PairingStore
 	DeviceStore
 	DeviceGrantStore
 	AccessSessionStore
-	WebBootstrapStore
 }

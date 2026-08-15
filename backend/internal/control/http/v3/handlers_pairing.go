@@ -68,18 +68,21 @@ type approvePairingResponse struct {
 	ExpiresAt             string  `json:"expiresAt"`
 }
 
+// exchangePairingResponse is identity-shaped.
+//
+// The rotating secret is a refresh token in an identity refresh family, and the
+// access token is DPoP-bound to the device key — so deviceGrant*, and
+// accessSessionId have no counterpart and are gone rather than faked.
 type exchangePairingResponse struct {
-	PairingID            string                      `json:"pairingId"`
-	DeviceID             string                      `json:"deviceId"`
-	DeviceGrantID        string                      `json:"deviceGrantId"`
-	DeviceGrant          string                      `json:"deviceGrant"`
-	DeviceGrantExpiresAt string                      `json:"deviceGrantExpiresAt"`
-	AccessSessionID      string                      `json:"accessSessionId"`
-	AccessToken          string                      `json:"accessToken"`
-	AccessTokenExpiresAt string                      `json:"accessTokenExpiresAt"`
-	PolicyVersion        string                      `json:"policyVersion"`
-	Scopes               []string                    `json:"scopes"`
-	Endpoints            []publishedEndpointResponse `json:"endpoints"`
+	PairingID     string                      `json:"pairingId"`
+	DeviceID      string                      `json:"deviceId"`
+	TokenType     string                      `json:"tokenType"`
+	AccessToken   string                      `json:"accessToken"`
+	ExpiresIn     int                         `json:"expiresIn"`
+	RefreshToken  string                      `json:"refreshToken"`
+	Scope         string                      `json:"scope"`
+	PolicyVersion string                      `json:"policyVersion"`
+	Endpoints     []publishedEndpointResponse `json:"endpoints"`
 }
 
 func (s *Server) StartPairing(w http.ResponseWriter, r *http.Request) {
@@ -198,6 +201,7 @@ func (s *Server) ExchangePairing(w http.ResponseWriter, r *http.Request, pairing
 	result, err := s.pairingProcessor().Exchange(r.Context(), v3pairing.ExchangeInput{
 		PairingID:     pairingId,
 		PairingSecret: req.PairingSecret,
+		DeviceJWK:     req.DeviceJWK,
 	})
 	if err != nil {
 		writePairingServiceError(w, r, err)
@@ -205,17 +209,15 @@ func (s *Server) ExchangePairing(w http.ResponseWriter, r *http.Request, pairing
 	}
 
 	writeJSON(w, http.StatusOK, exchangePairingResponse{
-		PairingID:            result.PairingID,
-		DeviceID:             result.DeviceID,
-		DeviceGrantID:        result.DeviceGrantID,
-		DeviceGrant:          result.DeviceGrant,
-		DeviceGrantExpiresAt: result.DeviceGrantExpiresAt.UTC().Format(http.TimeFormat),
-		AccessSessionID:      result.AccessSessionID,
-		AccessToken:          result.AccessToken,
-		AccessTokenExpiresAt: result.AccessTokenExpiresAt.UTC().Format(http.TimeFormat),
-		PolicyVersion:        result.PolicyVersion,
-		Scopes:               append([]string(nil), result.Scopes...),
-		Endpoints:            mapPublishedEndpointResponses(result.Endpoints),
+		PairingID:     result.PairingID,
+		DeviceID:      result.DeviceID,
+		TokenType:     result.TokenType,
+		AccessToken:   result.AccessToken,
+		ExpiresIn:     result.ExpiresIn,
+		RefreshToken:  result.RefreshToken,
+		Scope:         result.Scope,
+		PolicyVersion: result.PolicyVersion,
+		Endpoints:     mapPublishedEndpointResponses(result.Endpoints),
 	})
 }
 

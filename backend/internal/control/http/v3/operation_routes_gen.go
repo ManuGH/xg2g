@@ -5,12 +5,10 @@ package v3
 var operationRoutes = map[string]operationRoute{
 	"AddTimer":                         {Method: "POST", Path: "/timers"},
 	"ApprovePairing":                   {Method: "POST", Path: "/pairing/{pairingId}/approve"},
-	"CompleteWebBootstrap":             {Method: "GET", Path: "/auth/web-bootstrap/{bootstrapId}"},
 	"CreateDeviceSession":              {Method: "POST", Path: "/auth/device/session"},
 	"CreateIntent":                     {Method: "POST", Path: "/intents"},
 	"CreateSeriesRule":                 {Method: "POST", Path: "/series-rules"},
 	"CreateSession":                    {Method: "POST", Path: "/auth/session"},
-	"CreateWebBootstrap":               {Method: "POST", Path: "/auth/web-bootstrap"},
 	"DeleteHouseholdProfile":           {Method: "DELETE", Path: "/household/profiles/{profileId}"},
 	"DeleteHouseholdUnlock":            {Method: "DELETE", Path: "/household/unlock"},
 	"DeleteRecording":                  {Method: "DELETE", Path: "/recordings/{recordingId}"},
@@ -90,12 +88,10 @@ var operationRoutes = map[string]operationRoute{
 func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWrapper) {
 	register.add("AddTimer", handler.AddTimer)
 	register.add("ApprovePairing", handler.ApprovePairing)
-	register.add("CompleteWebBootstrap", handler.CompleteWebBootstrap)
 	register.add("CreateDeviceSession", handler.CreateDeviceSession)
 	register.add("CreateIntent", handler.CreateIntent)
 	register.add("CreateSeriesRule", handler.CreateSeriesRule)
 	register.add("CreateSession", handler.CreateSession)
-	register.add("CreateWebBootstrap", handler.CreateWebBootstrap)
 	register.add("DeleteHouseholdProfile", handler.DeleteHouseholdProfile)
 	register.add("DeleteHouseholdUnlock", handler.DeleteHouseholdUnlock)
 	register.add("DeleteRecording", handler.DeleteRecording)

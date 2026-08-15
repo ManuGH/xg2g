@@ -31,6 +31,7 @@ func (s *Server) pairingProcessor() *v3pairing.Service {
 	if s.pairingV3Service == nil {
 		s.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
 			StateStore:                 s.deviceAuthStateStore,
+			DeviceEnroller:             identityDeviceEnroller{server: s},
 			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
 		})
 	}

@@ -490,32 +490,6 @@ components:
           items:
             $ref: "#/components/schemas/PublishedEndpoint"
 
-    CreateWebBootstrapRequest:
-      type: object
-      additionalProperties: false
-      required: [targetPath]
-      properties:
-        targetPath:
-          type: string
-          description: Absolute same-origin path inside the xg2g web UI.
-
-    CreateWebBootstrapResponse:
-      type: object
-      additionalProperties: false
-      required: [bootstrapId, bootstrapToken, completePath, targetPath, expiresAt]
-      properties:
-        bootstrapId:
-          type: string
-        bootstrapToken:
-          type: string
-        completePath:
-          type: string
-        targetPath:
-          type: string
-        expiresAt:
-          type: string
-          format: date-time
-
     IntentRequest:
       type: object
       additionalProperties: false
@@ -3309,13 +3283,6 @@ x-xg2g-operation-policies:
     rateLimit: auth
     audit: true
     redactErrors: true
-  CompleteWebBootstrap:
-    class: device
-    auth: bootstrap_token
-    browserTrust: same_origin_or_allowed_origin
-    rateLimit: web_bootstrap
-    audit: true
-    redactErrors: true
   CreateDeviceSession:
     class: device
     auth: device_grant
@@ -3344,13 +3311,6 @@ x-xg2g-operation-policies:
     rateLimit: auth
     audit: true
     redactErrors: false
-  CreateWebBootstrap:
-    class: device
-    auth: bearer_scope
-    browserTrust: same_origin_or_allowed_origin
-    rateLimit: web_bootstrap
-    audit: true
-    redactErrors: true
   DeleteHouseholdProfile:
     class: admin
     auth: bearer_scope
@@ -5586,129 +5546,6 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
         "503":
           description: Device session store unavailable
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-
-  /auth/web-bootstrap:
-    post:
-      summary: Create a one-time web bootstrap for an authenticated device session
-      operationId: CreateWebBootstrap
-      tags:
-        - auth
-      security:
-        - BearerAuth: [v3:read]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateWebBootstrapRequest"
-      responses:
-        "201":
-          description: Web bootstrap created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreateWebBootstrapResponse"
-        "400":
-          description: Invalid web bootstrap request
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "401":
-          description: Unauthorized
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "403":
-          description: Web bootstrap forbidden
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "404":
-          description: Source access session not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "409":
-          description: Web bootstrap conflict
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "410":
-          description: Source session expired or revoked
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "503":
-          description: Web bootstrap store unavailable
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-
-  /auth/web-bootstrap/{bootstrapId}:
-    get:
-      summary: Complete a one-time web bootstrap and mint a normal session cookie
-      operationId: CompleteWebBootstrap
-      tags:
-        - auth
-      security: []
-      parameters:
-        - name: bootstrapId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: X-XG2G-Web-Bootstrap
-          in: header
-          required: true
-          schema:
-            type: string
-      responses:
-        "303":
-          description: Web bootstrap completed; the caller is redirected to the target path with a session cookie set
-          headers:
-            Location:
-              schema:
-                type: string
-            Set-Cookie:
-              schema:
-                type: string
-        "400":
-          description: Invalid bootstrap completion request or HTTPS required
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "403":
-          description: Web bootstrap token mismatch
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "404":
-          description: Web bootstrap not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "410":
-          description: Web bootstrap expired, consumed, or revoked
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "503":
-          description: Web bootstrap store unavailable
           content:
             application/problem+json:
               schema:

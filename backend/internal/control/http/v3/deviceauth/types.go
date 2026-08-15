@@ -36,7 +36,6 @@ type Deps struct {
 	DeviceGrantTTL             time.Duration
 	DeviceGrantRotateAfter     time.Duration
 	AccessSessionTTL           time.Duration
-	WebBootstrapTTL            time.Duration
 	DefaultScopes              []string
 	PolicyVersion              string
 	AuthStrength               string
@@ -58,31 +57,6 @@ type RefreshSessionResult struct {
 	PolicyVersion         string
 	Scopes                []string
 	Endpoints             []connectivitydomain.PublishedEndpoint
-}
-
-type StartWebBootstrapInput struct {
-	SourceAccessToken string
-	TargetPath        string
-}
-
-type StartWebBootstrapResult struct {
-	BootstrapID    string
-	BootstrapToken string
-	CompletePath   string
-	TargetPath     string
-	ExpiresAt      time.Time
-}
-
-type CompleteWebBootstrapInput struct {
-	BootstrapID    string
-	BootstrapToken string
-}
-
-type CompleteWebBootstrapResult struct {
-	TargetPath           string
-	AccessSessionID      string
-	AccessToken          string
-	AccessTokenExpiresAt time.Time
 }
 
 type ErrorKind uint8

@@ -13,36 +13,68 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	v3deviceauth "github.com/ManuGH/xg2g/internal/control/http/v3/deviceauth"
-	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
 	deviceauthmodel "github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
 )
 
-const webBootstrapHeaderName = "X-XG2G-Web-Bootstrap"
+func seedDeviceGrant(t *testing.T, store deviceauthstore.StateStore, now time.Time) (string, string) {
+	t.Helper()
+	device, err := deviceauthmodel.PrepareDeviceRecord(deviceauthmodel.DeviceRecord{
+		DeviceID:      "dev-test-1",
+		OwnerID:       "user-test-1",
+		DeviceName:    "test-device",
+		DeviceType:    deviceauthmodel.DeviceTypeAndroidTV,
+		PolicyProfile: "default",
+		CreatedAt:     now,
+		LastSeenAt:    &now,
+	})
+	if err != nil {
+		t.Fatalf("prepare device: %v", err)
+	}
+	if err := store.PutDevice(context.Background(), &device); err != nil {
+		t.Fatalf("put device: %v", err)
+	}
+
+	rotateAfter := now.Add(-time.Minute)
+	grant, err := deviceauthmodel.PrepareDeviceGrantRecord(deviceauthmodel.DeviceGrantRecord{
+		GrantID:     "grant-test-1",
+		DeviceID:    "dev-test-1",
+		GrantHash:   deviceauthmodel.HashOpaqueSecret("grant-secret-1"),
+		IssuedAt:    now.Add(-time.Hour),
+		ExpiresAt:   now.Add(24 * time.Hour),
+		RotateAfter: &rotateAfter,
+	})
+	if err != nil {
+		t.Fatalf("prepare grant: %v", err)
+	}
+	if err := store.PutDeviceGrant(context.Background(), &grant); err != nil {
+		t.Fatalf("put grant: %v", err)
+	}
+	return grant.GrantID, "grant-secret-1"
+}
 
 func TestDeviceSessionRoute_RefreshIssuesAccessTokenAndRotatesGrant(t *testing.T) {
 	currentNow := time.Now().UTC().Truncate(time.Second)
 	store := deviceauthstore.NewMemoryStateStore()
 	srv := NewServer(config.AppConfig{}, nil, nil)
 	srv.deviceAuthStateStore = store
-	srv.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
-		StateStore:             store,
-		Now:                    func() time.Time { return currentNow },
-		DeviceGrantRotateAfter: time.Minute,
-	})
 	srv.deviceAuthV3Service = v3deviceauth.NewService(v3deviceauth.Deps{
 		StateStore:             store,
 		Now:                    func() time.Time { return currentNow },
 		DeviceGrantRotateAfter: time.Minute,
 	})
 
-	handler, exchanged := pairAndExchangeDevice(t, srv)
+	handler, err := newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
+	if err != nil {
+		t.Fatalf("build handler: %v", err)
+	}
 
+	grantID, grantSecret := seedDeviceGrant(t, store, currentNow)
 	currentNow = currentNow.Add(2 * time.Minute)
 
 	refreshResp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/device/session", map[string]any{
-		"deviceGrantId": exchanged.DeviceGrantID,
-		"deviceGrant":   exchanged.DeviceGrant,
+		"deviceGrantId": grantID,
+		"deviceGrant":   grantSecret,
 	}, nil, false)
 	if refreshResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected device session refresh 200, got %d", refreshResp.StatusCode)
@@ -78,107 +110,25 @@ func TestDeviceSessionRoute_RefreshIssuesAccessTokenAndRotatesGrant(t *testing.T
 }
 
 func TestDeviceSessionRoute_SecretMismatchIsForbidden(t *testing.T) {
-	srv := NewServer(config.AppConfig{}, nil, nil)
-	handler, exchanged := pairAndExchangeDevice(t, srv)
-
-	resp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/device/session", map[string]any{
-		"deviceGrantId": exchanged.DeviceGrantID,
-		"deviceGrant":   "wrong-grant",
-	}, nil, false)
-	assertProblemDetails(t, resp, http.StatusForbidden, "auth/device_session/forbidden")
-}
-
-func TestWebBootstrapRoute_IssuesCookieAndRedirects(t *testing.T) {
-	srv := NewServer(config.AppConfig{}, nil, nil)
-	handler, exchanged := pairAndExchangeDevice(t, srv)
-
-	startResp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/web-bootstrap", map[string]any{
-		"targetPath": "/ui/?mode=tv",
-	}, map[string]string{
-		"Authorization": "Bearer " + exchanged.AccessToken,
-	}, false)
-	if startResp.StatusCode != http.StatusCreated {
-		t.Fatalf("expected web bootstrap start 201, got %d", startResp.StatusCode)
-	}
-	var started createWebBootstrapResponse
-	decodeJSONResponse(t, startResp, &started)
-	if started.BootstrapID == "" || started.BootstrapToken == "" || started.CompletePath == "" {
-		t.Fatalf("expected web bootstrap credentials, got %#v", started)
-	}
-
-	completeResp := doJSONRequest(t, handler, http.MethodGet, started.CompletePath, nil, map[string]string{
-		webBootstrapHeaderName: started.BootstrapToken,
-	}, true)
-	if completeResp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected web bootstrap completion redirect 303, got %d", completeResp.StatusCode)
-	}
-	if location := completeResp.Header.Get("Location"); location != "/ui/?mode=tv" {
-		t.Fatalf("expected redirect target /ui/?mode=tv, got %q", location)
-	}
-	var sessionCookie *http.Cookie
-	for _, cookie := range completeResp.Cookies() {
-		if cookie.Name == "xg2g_session" {
-			sessionCookie = cookie
-			break
-		}
-	}
-	if sessionCookie == nil {
-		t.Fatal("expected xg2g_session cookie on web bootstrap completion")
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/healthz", nil)
-	req.AddCookie(sessionCookie)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected web bootstrap cookie to authorize protected route, got %d", rr.Code)
-	}
-
-	repeatResp := doJSONRequest(t, handler, http.MethodGet, started.CompletePath, nil, map[string]string{
-		webBootstrapHeaderName: started.BootstrapToken,
-	}, true)
-	assertProblemDetails(t, repeatResp, http.StatusGone, "auth/web_bootstrap/consumed")
-}
-
-func TestWebBootstrapRoute_FailsWhenSourceSessionIsRevokedBeforeCompletion(t *testing.T) {
 	currentNow := time.Now().UTC().Truncate(time.Second)
 	store := deviceauthstore.NewMemoryStateStore()
 	srv := NewServer(config.AppConfig{}, nil, nil)
 	srv.deviceAuthStateStore = store
-	srv.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
-		StateStore: store,
-		Now: func() time.Time {
-			return currentNow
-		},
-	})
 	srv.deviceAuthV3Service = v3deviceauth.NewService(v3deviceauth.Deps{
 		StateStore: store,
 		Now:        func() time.Time { return currentNow },
 	})
-
-	handler, exchanged := pairAndExchangeDevice(t, srv)
-
-	startResp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/web-bootstrap", map[string]any{}, map[string]string{
-		"Authorization": "Bearer " + exchanged.AccessToken,
-	}, false)
-	if startResp.StatusCode != http.StatusCreated {
-		t.Fatalf("expected web bootstrap start 201, got %d", startResp.StatusCode)
+	handler, err := newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
+	if err != nil {
+		t.Fatalf("build handler: %v", err)
 	}
-	var started createWebBootstrapResponse
-	decodeJSONResponse(t, startResp, &started)
+	grantID, _ := seedDeviceGrant(t, store, currentNow)
 
-	if _, err := store.UpdateAccessSession(context.Background(), exchanged.AccessSessionID, func(current *deviceauthmodel.AccessSessionRecord) error {
-		revokedAt := currentNow
-		current.RevokedAt = &revokedAt
-		return nil
-	}); err != nil {
-		t.Fatalf("revoke source access session: %v", err)
-	}
-
-	completeResp := doJSONRequest(t, handler, http.MethodGet, started.CompletePath, nil, map[string]string{
-		webBootstrapHeaderName: started.BootstrapToken,
-	}, true)
-	assertProblemDetails(t, completeResp, http.StatusGone, "auth/web_bootstrap/revoked")
+	resp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/device/session", map[string]any{
+		"deviceGrantId": grantID,
+		"deviceGrant":   "wrong-grant",
+	}, nil, false)
+	assertProblemDetails(t, resp, http.StatusForbidden, "auth/device_session/forbidden")
 }
 
 func TestDeviceSessionRoute_ReturnsPublishedEndpoints(t *testing.T) {
@@ -202,12 +152,6 @@ func TestDeviceSessionRoute_ReturnsPublishedEndpoints(t *testing.T) {
 	store := deviceauthstore.NewMemoryStateStore()
 	srv := NewServer(cfg, nil, nil)
 	srv.deviceAuthStateStore = store
-	srv.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
-		StateStore:                 store,
-		PublishedEndpointsProvider: serverPublishedEndpointProvider{s: srv},
-		Now:                        func() time.Time { return currentNow },
-		DeviceGrantRotateAfter:     time.Minute,
-	})
 	srv.deviceAuthV3Service = v3deviceauth.NewService(v3deviceauth.Deps{
 		StateStore:                 store,
 		PublishedEndpointsProvider: serverPublishedEndpointProvider{s: srv},
@@ -215,12 +159,17 @@ func TestDeviceSessionRoute_ReturnsPublishedEndpoints(t *testing.T) {
 		DeviceGrantRotateAfter:     time.Minute,
 	})
 
-	handler, exchanged := pairAndExchangeDevice(t, srv)
+	handler, err := newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
+	if err != nil {
+		t.Fatalf("build handler: %v", err)
+	}
+
+	grantID, grantSecret := seedDeviceGrant(t, store, currentNow)
 	currentNow = currentNow.Add(2 * time.Minute)
 
 	refreshResp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/device/session", map[string]any{
-		"deviceGrantId": exchanged.DeviceGrantID,
-		"deviceGrant":   exchanged.DeviceGrant,
+		"deviceGrantId": grantID,
+		"deviceGrant":   grantSecret,
 	}, nil, false)
 	if refreshResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected device session refresh 200, got %d", refreshResp.StatusCode)
@@ -234,37 +183,6 @@ func TestDeviceSessionRoute_ReturnsPublishedEndpoints(t *testing.T) {
 	if refreshed.Endpoints[0].URL != "https://public.example" {
 		t.Fatalf("expected published endpoint url https://public.example, got %q", refreshed.Endpoints[0].URL)
 	}
-}
-
-func TestWebBootstrapRoute_BlocksWhenPublicWebContractIsBroken(t *testing.T) {
-	cfg := config.AppConfig{
-		TrustedProxies: "127.0.0.1/32",
-		Connectivity: config.ConnectivityConfig{
-			Profile: "reverse_proxy",
-			PublishedEndpoints: []config.PublishedEndpointConfig{
-				{
-					URL:             "https://public.example",
-					Kind:            "public_https",
-					Priority:        10,
-					AllowPairing:    true,
-					AllowStreaming:  true,
-					AllowWeb:        false,
-					AllowNative:     true,
-					AdvertiseReason: "native-only public reverse proxy",
-				},
-			},
-		},
-	}
-
-	srv := NewServer(cfg, nil, nil)
-	handler, exchanged := pairAndExchangeDevice(t, srv)
-
-	resp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/web-bootstrap", map[string]any{
-		"targetPath": "/ui/?mode=tv",
-	}, map[string]string{
-		"Authorization": "Bearer " + exchanged.AccessToken,
-	}, false)
-	assertProblemDetails(t, resp, http.StatusServiceUnavailable, "connectivity/contract_blocked")
 }
 
 func pairAndExchangeDevice(t *testing.T, srv *Server) (http.Handler, exchangePairingResponse) {

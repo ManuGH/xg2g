@@ -8,6 +8,7 @@ import (
 	connectivitydomain "github.com/ManuGH/xg2g/internal/domain/connectivity"
 	deviceauthmodel "github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 )
 
 type Generator interface {
@@ -43,6 +44,7 @@ type AuditEvent struct {
 
 type Deps struct {
 	StateStore                 deviceauthstore.StateStore
+	DeviceEnroller             DeviceEnroller
 	PublishedEndpointsProvider PublishedEndpointsProvider
 	AuditSink                  AuditSink
 	Generator                  Generator
@@ -106,20 +108,63 @@ type ApproveResult struct {
 type ExchangeInput struct {
 	PairingID     string
 	PairingSecret string
+	// DeviceJWK is the device's P-256 public key. Required: without it there is
+	// no cryptographic identity to bind the grant to.
+	DeviceJWK identity.JWKECPublicKey
 }
 
+// ExchangeResult is identity-shaped on purpose.
+//
+// The old deviceauth fields (deviceGrant, deviceGrantId, accessSessionId) are
+// gone because the concepts are gone: the rotating secret is now a refresh
+// token in an identity refresh family, and the access token is DPoP-bound to
+// the device key rather than tied to a separate session row.
 type ExchangeResult struct {
-	PairingID            string
-	DeviceID             string
-	DeviceGrantID        string
-	DeviceGrant          string
-	DeviceGrantExpiresAt time.Time
-	AccessSessionID      string
-	AccessToken          string
-	AccessTokenExpiresAt time.Time
-	PolicyVersion        string
-	Scopes               []string
-	Endpoints            []connectivitydomain.PublishedEndpoint
+	PairingID     string
+	DeviceID      string
+	TokenType     string
+	AccessToken   string
+	RefreshToken  string
+	ExpiresIn     int
+	Scope         string
+	PolicyVersion string
+	Endpoints     []connectivitydomain.PublishedEndpoint
+}
+
+// DeviceEnroller is the identity side of an approved pairing.
+//
+// A narrow port rather than the whole identity service: the pairing package
+// must not learn how devices, grants, refresh families or DPoP tokens are
+// built. It knows only that an approved pairing plus a validated key yields
+// exactly one bound device identity.
+type DeviceEnroller interface {
+	// ResolveOwner maps the pairing's owner to a canonical identity user.
+	//
+	// It must never create a user and must never fall back to a synthesised id.
+	// An unknown or ambiguous owner is an error, raised before the pairing is
+	// consumed so nothing is burnt by a misconfiguration.
+	ResolveOwner(ctx context.Context, ownerID string) (string, error)
+
+	// EnrollDevice registers — or re-uses, keyed by the server-computed
+	// thumbprint — the device identity, then issues its bound grant and tokens.
+	EnrollDevice(ctx context.Context, in EnrollDeviceInput) (*EnrollDeviceResult, error)
+}
+
+type EnrollDeviceInput struct {
+	UserID     string
+	DeviceName string
+	Platform   string
+	JWK        identity.JWKECPublicKey
+	Scopes     string
+}
+
+type EnrollDeviceResult struct {
+	DeviceID     string
+	TokenType    string
+	AccessToken  string
+	RefreshToken string
+	ExpiresIn    int
+	Scope        string
 }
 
 type ErrorKind uint8

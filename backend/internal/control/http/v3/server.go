@@ -578,6 +578,7 @@ func (s *Server) applyDeviceAuthDependencies(deps Dependencies) {
 		s.deviceAuthStateStore = deps.DeviceAuthStore
 		s.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
 			StateStore:                 deps.DeviceAuthStore,
+			DeviceEnroller:             identityDeviceEnroller{server: s},
 			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
 		})
 		s.deviceAuthV3Service = v3deviceauth.NewService(v3deviceauth.Deps{

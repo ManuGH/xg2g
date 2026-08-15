@@ -96,17 +96,6 @@ func (s *SqliteStore) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_access_sessions_device_id ON access_sessions(device_id);
 	CREATE INDEX IF NOT EXISTS idx_access_sessions_token_hash ON access_sessions(token_hash);
 
-	CREATE TABLE IF NOT EXISTS web_bootstraps (
-		bootstrap_id TEXT PRIMARY KEY,
-		bootstrap_secret_hash TEXT NOT NULL,
-		source_access_session_id TEXT NOT NULL,
-		target_path TEXT NOT NULL,
-		created_at_ms INTEGER NOT NULL,
-		expires_at_ms INTEGER NOT NULL,
-		consumed_at_ms INTEGER,
-		revoked_at_ms INTEGER
-	);
-	CREATE INDEX IF NOT EXISTS idx_web_bootstraps_source_session_id ON web_bootstraps(source_access_session_id);
 	`
 		if _, err := tx.Exec(schema); err != nil {
 			return err
