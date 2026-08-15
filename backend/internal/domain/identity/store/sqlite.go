@@ -1580,12 +1580,19 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 		unknownPol = "request_approval"
 	}
 
-	var creatorIDVal sql.NullString
+	var creatorID string
 	if strings.TrimSpace(profile.CreatedByUserID) != "" {
 		var exists int
 		_ = tx.QueryRowContext(ctx, `SELECT 1 FROM users WHERE id = ?`, profile.CreatedByUserID).Scan(&exists)
 		if exists == 1 {
-			creatorIDVal = sql.NullString{String: profile.CreatedByUserID, Valid: true}
+			creatorID = profile.CreatedByUserID
+		}
+	}
+	if creatorID == "" {
+		_ = tx.QueryRowContext(ctx, `SELECT id FROM users ORDER BY created_at ASC LIMIT 1`).Scan(&creatorID)
+		if creatorID == "" {
+			creatorID = "usr_admin"
+			_, _ = tx.ExecContext(ctx, `INSERT INTO users (id, username, display_name, role, created_at, updated_at) VALUES ('usr_admin', 'admin', 'Administrator', 'admin', ?, ?) ON CONFLICT(id) DO NOTHING`, profile.CreatedAt.UTC(), profile.CreatedAt.UTC())
 		}
 	}
 
@@ -1600,7 +1607,7 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 			max_parental_rating = excluded.max_parental_rating,
 			unknown_rating_policy = excluded.unknown_rating_policy,
 			storage_quota_bytes = excluded.storage_quota_bytes;
-	`, profile.ID, hID, profile.Name, profile.AvatarURL, profile.IsChild, dobVal, maxRating, unknownPol, profile.StorageQuotaBytes, creatorIDVal, profile.CreatedAt.UTC())
+	`, profile.ID, hID, profile.Name, profile.AvatarURL, profile.IsChild, dobVal, maxRating, unknownPol, profile.StorageQuotaBytes, creatorID, profile.CreatedAt.UTC())
 	if err != nil {
 		return err
 	}
