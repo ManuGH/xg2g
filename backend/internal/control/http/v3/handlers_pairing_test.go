@@ -103,6 +103,11 @@ func TestPairingRoutes_FlowAndAuthBoundaries(t *testing.T) {
 	}
 	var exchanged exchangePairingResponse
 	decodeJSONResponse(t, exchangeResp, &exchanged)
+	// ADR-032 ownership boundary: after a successful exchange the pairing store
+	// holds only the consumed bootstrap. A device, grant or session surviving
+	// here would mean the old auth model is still being written to.
+	assertDeviceAuthHoldsNoDurableState(t, srv, exchanged.DeviceID)
+
 	if exchanged.DeviceID == "" || exchanged.AccessToken == "" {
 		t.Fatalf("expected exchange credentials, got %#v", exchanged)
 	}

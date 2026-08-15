@@ -5,7 +5,6 @@ package v3
 var operationRoutes = map[string]operationRoute{
 	"AddTimer":                         {Method: "POST", Path: "/timers"},
 	"ApprovePairing":                   {Method: "POST", Path: "/pairing/{pairingId}/approve"},
-	"CreateDeviceSession":              {Method: "POST", Path: "/auth/device/session"},
 	"CreateIntent":                     {Method: "POST", Path: "/intents"},
 	"CreateSeriesRule":                 {Method: "POST", Path: "/series-rules"},
 	"CreateSession":                    {Method: "POST", Path: "/auth/session"},
@@ -88,7 +87,6 @@ var operationRoutes = map[string]operationRoute{
 func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWrapper) {
 	register.add("AddTimer", handler.AddTimer)
 	register.add("ApprovePairing", handler.ApprovePairing)
-	register.add("CreateDeviceSession", handler.CreateDeviceSession)
 	register.add("CreateIntent", handler.CreateIntent)
 	register.add("CreateSeriesRule", handler.CreateSeriesRule)
 	register.add("CreateSession", handler.CreateSession)

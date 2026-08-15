@@ -41,24 +41,6 @@ type Deps struct {
 	AuthStrength               string
 }
 
-type RefreshSessionInput struct {
-	DeviceGrantID string
-	DeviceGrant   string
-}
-
-type RefreshSessionResult struct {
-	DeviceID              string
-	RotatedDeviceGrantID  string
-	RotatedDeviceGrant    string
-	RotatedGrantExpiresAt *time.Time
-	AccessSessionID       string
-	AccessToken           string
-	AccessTokenExpiresAt  time.Time
-	PolicyVersion         string
-	Scopes                []string
-	Endpoints             []connectivitydomain.PublishedEndpoint
-}
-
 type ErrorKind uint8
 
 const (

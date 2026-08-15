@@ -221,21 +221,6 @@ export type CreateDeviceSessionResponse = {
     endpoints: Array<PublishedEndpoint>;
 };
 
-export type CreateWebBootstrapRequest = {
-    /**
-     * Absolute same-origin path inside the xg2g web UI.
-     */
-    targetPath: string;
-};
-
-export type CreateWebBootstrapResponse = {
-    bootstrapId: string;
-    bootstrapToken: string;
-    completePath: string;
-    targetPath: string;
-    expiresAt: string;
-};
-
 export type IntentRequest = {
     type?: 'stream.start' | 'stream.stop';
     /**
@@ -3574,92 +3559,6 @@ export type CreateDeviceSessionResponses = {
 };
 
 export type CreateDeviceSessionResponse2 = CreateDeviceSessionResponses[keyof CreateDeviceSessionResponses];
-
-export type CreateWebBootstrapData = {
-    body: CreateWebBootstrapRequest;
-    path?: never;
-    query?: never;
-    url: '/auth/web-bootstrap';
-};
-
-export type CreateWebBootstrapErrors = {
-    /**
-     * Invalid web bootstrap request
-     */
-    400: ProblemDetails;
-    /**
-     * Unauthorized
-     */
-    401: ProblemDetails;
-    /**
-     * Web bootstrap forbidden
-     */
-    403: ProblemDetails;
-    /**
-     * Source access session not found
-     */
-    404: ProblemDetails;
-    /**
-     * Web bootstrap conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Source session expired or revoked
-     */
-    410: ProblemDetails;
-    /**
-     * Web bootstrap store unavailable
-     */
-    503: ProblemDetails;
-};
-
-export type CreateWebBootstrapError = CreateWebBootstrapErrors[keyof CreateWebBootstrapErrors];
-
-export type CreateWebBootstrapResponses = {
-    /**
-     * Web bootstrap created
-     */
-    201: CreateWebBootstrapResponse;
-};
-
-export type CreateWebBootstrapResponse2 = CreateWebBootstrapResponses[keyof CreateWebBootstrapResponses];
-
-export type CompleteWebBootstrapData = {
-    body?: never;
-    headers: {
-        'X-XG2G-Web-Bootstrap': string;
-    };
-    path: {
-        bootstrapId: string;
-    };
-    query?: never;
-    url: '/auth/web-bootstrap/{bootstrapId}';
-};
-
-export type CompleteWebBootstrapErrors = {
-    /**
-     * Invalid bootstrap completion request or HTTPS required
-     */
-    400: ProblemDetails;
-    /**
-     * Web bootstrap token mismatch
-     */
-    403: ProblemDetails;
-    /**
-     * Web bootstrap not found
-     */
-    404: ProblemDetails;
-    /**
-     * Web bootstrap expired, consumed, or revoked
-     */
-    410: ProblemDetails;
-    /**
-     * Web bootstrap store unavailable
-     */
-    503: ProblemDetails;
-};
-
-export type CompleteWebBootstrapError = CompleteWebBootstrapErrors[keyof CompleteWebBootstrapErrors];
 
 export type GetTimersData = {
     body?: never;

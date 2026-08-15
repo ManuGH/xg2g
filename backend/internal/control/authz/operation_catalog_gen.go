@@ -5,7 +5,6 @@ package authz
 var operationScopes = map[string][]string{
 	"AddTimer":                         {"v3:write"},
 	"ApprovePairing":                   {"v3:admin"},
-	"CreateDeviceSession":              {},
 	"CreateIntent":                     {"v3:write"},
 	"CreateSeriesRule":                 {"v3:write"},
 	"CreateSession":                    {"v3:read"},
@@ -86,16 +85,14 @@ var operationScopes = map[string][]string{
 }
 
 var unscopedOperations = map[string]struct{}{
-	"CreateDeviceSession": {},
-	"ExchangePairing":     {},
-	"GetPairingStatus":    {},
-	"StartPairing":        {},
+	"ExchangePairing":  {},
+	"GetPairingStatus": {},
+	"StartPairing":     {},
 }
 
 var operationExposurePolicies = map[string]ExposurePolicy{
 	"AddTimer":                         {Class: ExposureClass("write"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: true, RedactErrors: false},
 	"ApprovePairing":                   {Class: ExposureClass("pairing"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("auth"), AuditRequired: true, RedactErrors: true},
-	"CreateDeviceSession":              {Class: ExposureClass("device"), AuthKind: ExposureAuthKind("device_grant"), BrowserTrust: ExposureBrowserTrust("not_browser"), RateLimitClass: ExposureRateLimitClass("device_grant"), AuditRequired: true, RedactErrors: true},
 	"CreateIntent":                     {Class: ExposureClass("write"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: true, RedactErrors: false},
 	"CreateSeriesRule":                 {Class: ExposureClass("write"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: true, RedactErrors: false},
 	"CreateSession":                    {Class: ExposureClass("session"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("auth"), AuditRequired: true, RedactErrors: false},

@@ -78,7 +78,6 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 	v3Routes := []expectedRoute{
 		{http.MethodPost, "/timers"},
 		{http.MethodPost, "/pairing/{pairingId}/approve"},
-		{http.MethodPost, "/auth/device/session"},
 		{http.MethodPost, "/intents"},
 		{http.MethodPost, "/series-rules"},
 		{http.MethodPost, "/auth/session"},
@@ -254,16 +253,18 @@ func TestCanonicalBaselineParity(t *testing.T) {
 
 	expected := getPhase1CanonicalBaselineMap()
 	actual := snapshotAsMap(snapshot)
-	require.Len(t, expected, 144)
-	require.Len(t, actual, 144)
-	require.NoError(t, validatePolicyBindingParity(actual, expected))
+	require.Len(t, expected, 143)
+	require.Len(t, actual, 143)
+	if err := validatePolicyBindingParity(actual, expected); err != nil {
+		t.Fatalf("parity mismatch: %v", err)
+	}
 
 	counts := map[string]int{}
 	for key := range actual {
 		counts[key.RouterID]++
 	}
 	require.Equal(t, 26, counts["outer"])
-	require.Equal(t, 118, counts["v3"])
+	require.Equal(t, 117, counts["v3"])
 }
 
 func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
@@ -286,7 +287,7 @@ func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, snapshot, err := s.buildRouterWithBindings(test.variant)
 			require.NoError(t, err)
-			require.Equal(t, 144, snapshot.Len())
+			require.Equal(t, 143, snapshot.Len())
 
 			for key, expected := range map[RegistrationKey]RoutePolicy{
 				{RouterID: "outer", Method: http.MethodGet, Pattern: "/ui/*"}:  test.uiGet,
@@ -319,7 +320,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
 	registrations, err := ValidateRouterInventory(s, ConfigVariantDevProxy)
 	require.NoError(t, err)
-	require.Len(t, registrations, 145)
+	require.Len(t, registrations, 144)
 
 	evidence := getDefaultPhase2VerifiedEvidenceRegistry()
 	runtimeReady := 0
@@ -336,7 +337,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 		}
 		runtimeReady++
 	}
-	require.Equal(t, 145, runtimeReady)
+	require.Equal(t, 144, runtimeReady)
 }
 
 func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
@@ -367,7 +368,7 @@ func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 		delete(actual, v3Key)
 		actual[RegistrationKey{RouterID: "v3", Method: known.Method, Pattern: known.Pattern}] = outerPolicy
 		actual[RegistrationKey{RouterID: "outer", Method: v3Key.Method, Pattern: v3Key.Pattern}] = v3Policy
-		require.Len(t, actual, 144)
+		require.Len(t, actual, 143)
 		require.Error(t, validatePolicyBindingParity(actual, expected))
 	})
 }

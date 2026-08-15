@@ -56,11 +56,10 @@ func TestUnscopedOperationsHaveAbuseControls(t *testing.T) {
 
 func TestPairingAndDeviceOperationsAreDedicatedSecurityClasses(t *testing.T) {
 	tests := map[string]ExposureClass{
-		"StartPairing":        ExposureClassPairing,
-		"GetPairingStatus":    ExposureClassPairing,
-		"ApprovePairing":      ExposureClassPairing,
-		"ExchangePairing":     ExposureClassPairing,
-		"CreateDeviceSession": ExposureClassDevice,
+		"StartPairing":     ExposureClassPairing,
+		"GetPairingStatus": ExposureClassPairing,
+		"ApprovePairing":   ExposureClassPairing,
+		"ExchangePairing":  ExposureClassPairing,
 	}
 
 	for operationID, wantClass := range tests {

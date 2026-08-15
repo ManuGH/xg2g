@@ -35,7 +35,6 @@ func TestProductionRouterReachesHandwrittenRoutes(t *testing.T) {
 		{http.MethodPost, "/api/v3/auth/device/grant/start"},
 		{http.MethodPost, "/api/v3/auth/device/grant/finish"},
 		{http.MethodPost, "/api/v3/auth/device/refresh"},
-		{http.MethodPost, "/api/v3/auth/device/session"},
 
 		// Passkey / identity
 		{http.MethodGet, "/api/v3/auth/status"},
