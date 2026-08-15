@@ -98,7 +98,7 @@ actor PlaybackCoordinator {
         case "dataSaver":
             intentName = "compatible"
         default:
-            intentName = isWifi ? "direct" : "quality"
+            intentName = "quality"
         }
 
         // Probe capabilities and obtain playbackDecisionToken from planner

@@ -55,51 +55,40 @@ struct PlayerScreen: View {
                         }
                     }
             } else if let failure {
-                ContentUnavailableView(
-                    "Wiedergabefehler",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(failure)
-                )
-                .foregroundStyle(Theme.Colors.textSecondary)
+                VStack(spacing: 16) {
+                    ContentUnavailableView(
+                        "Wiedergabefehler",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(failure)
+                    )
+                    .foregroundStyle(Theme.Colors.textSecondary)
+
+                    Button {
+                        Task { await startStreaming(channel: currentChannel) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Erneut versuchen")
+                        }
+                        .font(.headline)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Theme.Colors.accentAction, in: Capsule())
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    }
+                    .buttonStyle(.plain)
+                }
             } else {
                 VStack(spacing: 16) {
                     ProgressView()
                         .tint(Theme.Colors.accentLive)
                         .scaleEffect(1.3)
 
-                    Text("\(currentChannel.name) wird gestreamt…")
+                    Text("\(currentChannel.name) wird geladen…")
                         .font(.headline)
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
             }
-
-            // MARK: - Gestural Zapping & Swipe-Up Layer
-            Color.clear
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 80)
-                        .onEnded { drag in
-                            guard model.playerGesturesEnabled else { return }
-
-                            let horizontal = drag.translation.width
-                            let vertical = drag.translation.height
-
-                            // Horizontal swipe: Channel zapping (requires conscious swipe >= 100px)
-                            if abs(horizontal) > abs(vertical) && abs(horizontal) >= 100 {
-                                if horizontal < 0 {
-                                    zapNext()
-                                } else {
-                                    zapPrevious()
-                                }
-                            } else {
-                                // Vertical swipe up: Open Mini-EPG
-                                if vertical < -60 {
-                                    triggerHaptic(.light)
-                                    showMiniEPG = true
-                                }
-                            }
-                        }
-                )
 
             // MARK: - Zap HUD Banner (Translucent Toast)
             if let zapNotice {
@@ -397,6 +386,9 @@ struct PlayerScreen: View {
         )
 
         displayZapToast("Kanal: \(newChannel.name)")
+        Task {
+            await startStreaming(channel: newChannel)
+        }
     }
 
     private func zapNext() {
