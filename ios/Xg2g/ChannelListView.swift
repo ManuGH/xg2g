@@ -166,6 +166,11 @@ struct ChannelListView: View {
                 }
             }
         }
+        .task {
+            if model.channels.isEmpty {
+                await model.loadInitialData()
+            }
+        }
         .fullScreenCover(item: $model.playingChannel) { channel in
             PlayerScreen(model: model, channel: channel)
         }

@@ -586,6 +586,8 @@ final class AppModel {
                 return
             case .transport(let transport):
                 switch transport {
+                case .cancelled:
+                    return // Ignore cancelled SwiftUI task transitions
                 case .offline:
                     lastError = "Keine Internetverbindung."
                 case .timedOut:
@@ -594,8 +596,6 @@ final class AppModel {
                     lastError = "Verbindung zum Server fehlgeschlagen."
                 case .tls:
                     lastError = "TLS / Zertifikatsfehler bei Verbindung."
-                case .cancelled:
-                    lastError = "Anfrage abgebrochen."
                 case .other(let code):
                     lastError = "Netzwerkfehler (Code \(code))."
                 }
