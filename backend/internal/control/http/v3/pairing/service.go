@@ -182,10 +182,21 @@ func (s *Service) Approve(ctx context.Context, input ApproveInput) (*ApproveResu
 	}
 
 	// Support approving directly by user_code (e.g. X2VZ-ZRRF or X2VZZRRF)
-	normalizedCode := strings.ToUpper(strings.ReplaceAll(targetPairingID, "-", ""))
 	if !strings.HasPrefix(targetPairingID, "pair_") {
-		if rec, err := s.deps.StateStore.GetPairingByUserCode(ctx, normalizedCode); err == nil && rec != nil {
+		clean := strings.ToUpper(strings.ReplaceAll(targetPairingID, "-", ""))
+		var hyphenated string
+		if len(clean) == 8 {
+			hyphenated = clean[:4] + "-" + clean[4:]
+		}
+
+		if rec, err := s.deps.StateStore.GetPairingByUserCode(ctx, targetPairingID); err == nil && rec != nil {
 			targetPairingID = rec.PairingID
+		} else if rec, err := s.deps.StateStore.GetPairingByUserCode(ctx, clean); err == nil && rec != nil {
+			targetPairingID = rec.PairingID
+		} else if hyphenated != "" {
+			if rec, err := s.deps.StateStore.GetPairingByUserCode(ctx, hyphenated); err == nil && rec != nil {
+				targetPairingID = rec.PairingID
+			}
 		}
 	}
 
