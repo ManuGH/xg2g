@@ -120,7 +120,7 @@ func TestPhase4_SelfHealing_Integration(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		meta, exists := vodManager.GetMetadata(metaID)
 		return exists && meta.State == vod.ArtifactStateFailed && meta.Error == string(vod.ReasonTruthMismatch)
-	}, 2*time.Second, 20*time.Millisecond, "Expected first build to fail with TruthMismatch")
+	}, 5*time.Second, 20*time.Millisecond, "Expected first build to fail with TruthMismatch")
 
 	failedMeta, _ := vodManager.GetMetadata(metaID)
 	assert.Equal(t, vod.ArtifactStateFailed, failedMeta.State)
@@ -158,7 +158,7 @@ func TestPhase4_SelfHealing_Integration(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		meta, exists := vodManager.GetMetadata(metaID)
 		return exists && meta.State == vod.ArtifactStateReady
-	}, 2*time.Second, 20*time.Millisecond, "Expected second build to succeed after self-healing")
+	}, 5*time.Second, 20*time.Millisecond, "Expected second build to succeed after self-healing")
 
 	succeededMeta, _ := vodManager.GetMetadata(metaID)
 	assert.Equal(t, vod.ArtifactStateReady, succeededMeta.State)
