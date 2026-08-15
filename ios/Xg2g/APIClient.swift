@@ -76,9 +76,17 @@ struct HTTPAPIClient: APIClient {
     private let authorizer: RequestAuthorizer
     private let decoder: JSONDecoder
 
+    public static let sharedSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
+        config.waitsForConnectivity = true
+        return URLSession(configuration: config)
+    }()
+
     init(
         address: ServerAddress,
-        session: URLSession = .shared,
+        session: URLSession = HTTPAPIClient.sharedSession,
         authorizer: RequestAuthorizer = UnauthenticatedRequests()
     ) {
         self.address = address
@@ -170,6 +178,7 @@ struct HTTPAPIClient: APIClient {
         }
 
         var urlRequest = URLRequest(url: url)
+        urlRequest.assumesHTTP3Capable = false
         urlRequest.httpMethod = request.method.rawValue
         urlRequest.httpBody = request.body
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")

@@ -159,6 +159,7 @@ actor PlaybackCoordinator {
 
     private func waitForPlaylistReady(url: URL, ticket: PlaybackTicket) async {
         var request = URLRequest(url: url)
+        request.assumesHTTP3Capable = false
         request.httpMethod = "GET"
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         if let cookie = ticket.httpCookie(for: url) {
@@ -166,7 +167,7 @@ actor PlaybackCoordinator {
         }
 
         for _ in 0..<40 {
-            if let (_, response) = try? await URLSession.shared.data(for: request),
+            if let (_, response) = try? await HTTPAPIClient.sharedSession.data(for: request),
                let http = response as? HTTPURLResponse,
                http.statusCode == 200 {
                 return
