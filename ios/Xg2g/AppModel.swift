@@ -178,17 +178,121 @@ final class AppModel {
         favoriteChannelIDs.contains(channel.id)
     }
 
-    enum TimeFilter: String, CaseIterable, Identifiable, Sendable {
-        case now = "Jetzt"
-        case primeTime = "Heute 20:15"
+    enum TimeFilter: Hashable, Identifiable, Sendable {
+        case now
+        case next
+        case primeTimeTonight
+        case lateNightTonight
+        case day(Date)
 
-        var id: String { rawValue }
+        var id: String {
+            switch self {
+            case .now: return "now"
+            case .next: return "next"
+            case .primeTimeTonight: return "prime_2015"
+            case .lateNightTonight: return "late_2200"
+            case .day(let date):
+                let f = DateFormatter()
+                f.dateFormat = "yyyyMMdd"
+                return "day_\(f.string(from: date))"
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .now: return "Jetzt"
+            case .next: return "Gleich"
+            case .primeTimeTonight: return "20:15"
+            case .lateNightTonight: return "22:00"
+            case .day(let date):
+                let calendar = Calendar.current
+                if calendar.isDateInToday(date) {
+                    return "Heute"
+                } else if calendar.isDateInTomorrow(date) {
+                    return "Morgen"
+                } else {
+                    let f = DateFormatter()
+                    f.locale = Locale(identifier: "de_DE")
+                    f.dateFormat = "E, d. MMM"
+                    return f.string(from: date)
+                }
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .now: return "play.circle.fill"
+            case .next: return "clock.arrow.circlepath"
+            case .primeTimeTonight: return "star.fill"
+            case .lateNightTonight: return "moon.fill"
+            case .day: return "calendar"
+            }
+        }
     }
 
     var selectedTimeFilter: TimeFilter = .now
+    var selectedGenre: EpgGenre = .all
+    var epgViewMode: EpgViewMode = .list
     var playingChannel: Channel?
 
-    /// Channels filtered by selected bouquet, favorites, and search query.
+    /// List of quick time jumps and the upcoming 7 days
+    var availableTimeFilters: [TimeFilter] {
+        var list: [TimeFilter] = [.now, .next, .primeTimeTonight, .lateNightTonight]
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        for offset in 1...7 {
+            if let targetDate = calendar.date(byAdding: .day, value: offset, to: today) {
+                list.append(.day(targetDate))
+            }
+        }
+        return list
+    }
+
+    /// Resolves the programme running on a channel for the active time filter
+    func show(for channel: Channel, at filter: TimeFilter) -> NowNext.Entry? {
+        let scheduleItem = schedule[channel.serviceRef]
+        let allShows = fullEpg[channel.serviceRef] ?? []
+
+        switch filter {
+        case .now:
+            return scheduleItem?.now
+        case .next:
+            return scheduleItem?.next
+        case .primeTimeTonight:
+            let calendar = Calendar.current
+            var components = calendar.dateComponents([.year, .month, .day], from: .now)
+            components.hour = 20
+            components.minute = 15
+            components.second = 0
+            guard let target = calendar.date(from: components) else { return scheduleItem?.now }
+            return allShows.first { $0.start <= target && $0.end > target }
+                ?? allShows.first { $0.start >= target }
+                ?? scheduleItem?.now
+        case .lateNightTonight:
+            let calendar = Calendar.current
+            var components = calendar.dateComponents([.year, .month, .day], from: .now)
+            components.hour = 22
+            components.minute = 0
+            components.second = 0
+            guard let target = calendar.date(from: components) else { return scheduleItem?.now }
+            return allShows.first { $0.start <= target && $0.end > target }
+                ?? allShows.first { $0.start >= target }
+                ?? scheduleItem?.now
+        case .day(let dayDate):
+            let calendar = Calendar.current
+            var components = calendar.dateComponents([.year, .month, .day], from: dayDate)
+            components.hour = 20
+            components.minute = 15
+            components.second = 0
+            let target = calendar.date(from: components) ?? dayDate
+            return allShows.first { $0.start <= target && $0.end > target }
+                ?? allShows.first { calendar.isDate($0.start, inSameDayAs: dayDate) }
+                ?? allShows.first { $0.start >= target }
+                ?? scheduleItem?.now
+        }
+    }
+
+    /// Channels filtered by selected bouquet, favorites, genre, and search query.
     var filteredChannels: [Channel] {
         var result = channels
 
@@ -196,12 +300,21 @@ final class AppModel {
             result = result.filter { favoriteChannelIDs.contains($0.id) }
         }
 
+        if selectedGenre != .all {
+            result = result.filter { channel in
+                let currentShow = show(for: channel, at: selectedTimeFilter)
+                return currentShow?.genre == selectedGenre
+            }
+        }
+
         let query = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
             result = result.filter { channel in
-                channel.name.lowercased().contains(query) ||
-                (channel.number?.contains(query) ?? false) ||
-                (schedule[channel.serviceRef]?.now?.title.lowercased().contains(query) ?? false)
+                let currentShow = show(for: channel, at: selectedTimeFilter)
+                return channel.name.lowercased().contains(query) ||
+                    (channel.number?.contains(query) ?? false) ||
+                    (currentShow?.title.lowercased().contains(query) ?? false) ||
+                    (currentShow?.description?.lowercased().contains(query) ?? false)
             }
         }
         return result

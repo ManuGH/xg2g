@@ -88,11 +88,83 @@ struct NowNext: Equatable, Sendable {
             f.dateFormat = "yyyy-MM-dd"
             return f.string(from: start)
         }
+
+        var durationMinutes: Int {
+            max(1, Int(end.timeIntervalSince(start) / 60))
+        }
+
+        var genre: EpgGenre {
+            let combined = "\(title) \(description ?? "")".lowercased()
+            if combined.contains("spielfilm") || combined.contains("thriller") || combined.contains("komödie") || combined.contains("drama") || combined.contains("action") || combined.contains("krimi") || combined.contains("tatort") || combined.contains("abenteuerfilm") || combined.contains("film") || combined.contains("western") {
+                return .movie
+            }
+            if combined.contains("serie") || combined.contains("staffel") || combined.contains("folge") || combined.contains("sitcom") || combined.contains("telenovela") || combined.contains("soap") {
+                return .series
+            }
+            if combined.contains("sport") || combined.contains("fußball") || combined.contains("bundesliga") || combined.contains("champions") || combined.contains("formel 1") || combined.contains("tennis") || combined.contains("olympia") || combined.contains("ski") || combined.contains("motorsport") || combined.contains("golf") || combined.contains("darts") {
+                return .sport
+            }
+            if combined.contains("doku") || combined.contains("reportage") || combined.contains("wissen") || combined.contains("natur") || combined.contains("geschichte") || combined.contains("biografie") || combined.contains("planet") || combined.contains("magazin") || combined.contains("expedition") {
+                return .docu
+            }
+            if combined.contains("nachrichten") || combined.contains("tagesschau") || combined.contains("heute journal") || combined.contains("journal") || combined.contains("aktuell") || combined.contains("zeit im bild") || combined.contains("zib") || combined.contains("wetter") || combined.contains("rundschau") {
+                return .news
+            }
+            if combined.contains("kinder") || combined.contains("zeichentrick") || combined.contains("animation") || combined.contains("kika") || combined.contains("cartoon") || combined.contains("märchen") || combined.contains("disney") {
+                return .kids
+            }
+            if combined.contains("show") || combined.contains("quiz") || combined.contains("unterhaltung") || combined.contains("comedy") || combined.contains("talk") || combined.contains("late night") || combined.contains("kabarett") || combined.contains("game") {
+                return .show
+            }
+            return .all
+        }
     }
 
     let serviceRef: String
     let now: Entry?
     let next: Entry?
+}
+
+/// EPG Genre classification for filtering and highlighting (TV Pro style)
+enum EpgGenre: String, CaseIterable, Identifiable, Sendable {
+    case all = "Alle"
+    case movie = "Spielfilme"
+    case series = "Serien"
+    case sport = "Sport"
+    case docu = "Doku & Wissen"
+    case show = "Unterhaltung"
+    case news = "Nachrichten"
+    case kids = "Kinder"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .movie: return "film"
+        case .series: return "tv"
+        case .sport: return "sportscourt"
+        case .docu: return "globe.europe.africa"
+        case .show: return "sparkles.tv"
+        case .news: return "newspaper"
+        case .kids: return "teddybear"
+        }
+    }
+}
+
+/// View presentation mode: Compact List vs Magazine Grid (TV Pro style)
+enum EpgViewMode: String, CaseIterable, Identifiable, Sendable {
+    case list = "Senderliste"
+    case magazine = "Magazin"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .list: return "list.bullet"
+        case .magazine: return "square.grid.2x2"
+        }
+    }
 }
 
 /// A bouquet / channel group (e.g. "Favorites", "HD", "Sports").
