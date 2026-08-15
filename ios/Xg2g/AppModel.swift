@@ -83,6 +83,7 @@ final class AppModel {
     var selectedBouquet: Bouquet?
     var searchQuery: String = ""
     private(set) var schedule: [String: NowNext] = [:]
+    private(set) var fullEpg: [String: [NowNext.Entry]] = [:]
     private(set) var isLoadingChannels = false
 
     // MARK: - Recordings & Timers State
@@ -415,6 +416,7 @@ final class AppModel {
             channels = loaded
             lastError = nil
             schedule = (try? await channelRepository.nowNext(for: loaded.map(\.serviceRef))) ?? [:]
+            fullEpg = (try? await channelRepository.epgSchedule(bouquet: bouquet)) ?? [:]
         } catch {
             handle(error)
         }

@@ -28,11 +28,19 @@ struct Channel: Identifiable, Hashable, Equatable, Sendable {
 
 /// What is on now, and what follows.
 struct NowNext: Equatable, Sendable {
-    struct Entry: Equatable, Sendable {
+    struct Entry: Identifiable, Equatable, Sendable {
+        var id: String { "\(start.timeIntervalSince1970)_\(title)" }
         let title: String
         let description: String?
         let start: Date
         let end: Date
+
+        private static let timeFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "HH:mm"
+            f.timeZone = .current
+            return f
+        }()
 
         /// How far through the programme we are, 0…1. `nil` before it starts or
         /// after it ends, so a caller cannot mistake "not on" for "just began".
@@ -50,24 +58,15 @@ struct NowNext: Equatable, Sendable {
         }
 
         var formattedStartTime: String {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .none
-            formatter.timeStyle = .short
-            return formatter.string(from: start)
+            Self.timeFormatter.string(from: start)
         }
 
         var formattedEndTime: String {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .none
-            formatter.timeStyle = .short
-            return formatter.string(from: end)
+            Self.timeFormatter.string(from: end)
         }
 
         var formattedTimeRange: String {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .none
-            formatter.timeStyle = .short
-            return "\(formatter.string(from: start)) – \(formatter.string(from: end))"
+            "\(Self.timeFormatter.string(from: start)) – \(Self.timeFormatter.string(from: end))"
         }
     }
 
@@ -100,6 +99,39 @@ enum ChannelWire {
         func toDomain() -> Bouquet? {
             guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return nil }
             return Bouquet(name: name, servicesCount: services ?? 0)
+        }
+    }
+
+    struct EpgItem: Decodable, Sendable {
+        let serviceRef: String?
+        let title: String?
+        let desc: String?
+        let start: Int?
+        let end: Int?
+
+        func toDomain() -> (String, NowNext.Entry)? {
+            guard let serviceRef, let title, let start, let end else { return nil }
+            let sanitizedDesc: String? = {
+                guard let raw = desc?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                    return nil
+                }
+                var text = raw
+                    .replacingOccurrences(of: "\\n", with: "\n")
+                    .replacingOccurrences(of: "\\r", with: "")
+                    .replacingOccurrences(of: "\\t", with: "\t")
+                while text.contains("\n\n\n") {
+                    text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+                }
+                return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }()
+
+            let entry = NowNext.Entry(
+                title: title.replacingOccurrences(of: "\\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines),
+                description: sanitizedDesc,
+                start: Date(timeIntervalSince1970: TimeInterval(start)),
+                end: Date(timeIntervalSince1970: TimeInterval(end))
+            )
+            return (serviceRef, entry)
         }
     }
 
@@ -137,8 +169,6 @@ enum ChannelWire {
             }
 
             return Channel(
-                // The catalogue id is the stable identity; a channel without one
-                // falls back to its service reference, which is unique too.
                 id: id?.isEmpty == false ? id! : serviceRef,
                 name: name,
                 number: number?.isEmpty == false ? number : nil,
@@ -161,10 +191,6 @@ enum ChannelWire {
             let next: Entry?
         }
 
-        /// `start` and `end` are Unix seconds here, not RFC 3339 — this
-        /// endpoint speaks epoch integers while the pairing endpoints speak
-        /// timestamps. Decoded as integers on purpose rather than routed
-        /// through the date strategy, which would silently fail on a number.
         struct Entry: Decodable, Sendable {
             let title: String
             let desc: String?

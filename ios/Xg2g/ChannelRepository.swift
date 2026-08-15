@@ -73,4 +73,23 @@ actor ChannelRepository {
             uniquingKeysWith: { _, last in last }
         )
     }
+
+    /// Fetches the full EPG schedule for all channels or a specific bouquet.
+    func epgSchedule(bouquet: String? = nil) async throws -> [String: [NowNext.Entry]] {
+        let query = bouquet.map { [URLQueryItem(name: "bouquet", value: $0)] } ?? []
+        let items: [ChannelWire.EpgItem] = try await api.send(
+            APIRequest(method: .get, path: "epg", query: query)
+        )
+
+        var map: [String: [NowNext.Entry]] = [:]
+        for item in items {
+            if let (serviceRef, entry) = item.toDomain() {
+                map[serviceRef, default: []].append(entry)
+            }
+        }
+        for (key, list) in map {
+            map[key] = list.sorted { $0.start < $1.start }
+        }
+        return map
+    }
 }

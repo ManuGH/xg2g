@@ -4,11 +4,13 @@
 
 import SwiftUI
 
+/// Live TV station list with Safari WebUI visual fidelity, responsive multi-column iPadOS grid,
+/// expandable upcoming EPG schedules, direct timer programming, and 1-tap playback.
 struct ChannelListView: View {
 
     @Bindable var model: AppModel
-
     @State private var selectedDetail: ProgramDetailPayload?
+    @State private var recordConfirmationMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -16,56 +18,145 @@ struct ChannelListView: View {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    // Bouquet Picker Bar
+                    // MARK: - Bouquet Filter Bar (Horizontal Scroll)
                     if !model.bouquets.isEmpty {
-                        BouquetPicker(model: model)
-                            .padding(.vertical, 8)
-                            .background(Theme.Colors.surfaceElevated.opacity(0.4))
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                // "Alle Sender" Pill
+                                Button {
+                                    triggerHaptic(.light)
+                                    Task { await model.selectBouquet(nil) }
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "tv")
+                                            .font(.caption2)
+                                        Text("Alle Sender")
+                                            .font(.subheadline.weight(model.selectedBouquet == nil && model.favoriteChannelIDs.isEmpty ? .semibold : .regular))
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 7)
+                                    .background(
+                                        model.selectedBouquet == nil && model.favoriteChannelIDs.isEmpty ? Theme.Colors.accentAction : Theme.Colors.surfaceGlass,
+                                        in: Capsule()
+                                    )
+                                    .foregroundStyle(model.selectedBouquet == nil && model.favoriteChannelIDs.isEmpty ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                                    .overlay(
+                                        Capsule().strokeBorder(model.selectedBouquet == nil && model.favoriteChannelIDs.isEmpty ? Color.clear : Theme.Colors.borderSubtle, lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                // "Favoriten" Pill
+                                if !model.favoriteChannelIDs.isEmpty {
+                                    Button {
+                                        triggerHaptic(.light)
+                                        Task { await model.selectBouquet(Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "star.fill")
+                                                .font(.caption2)
+                                                .foregroundStyle(Theme.Colors.accentLive)
+                                            Text("Favoriten")
+                                                .font(.subheadline.weight(model.selectedBouquet?.id == AppModel.favoritesBouquetID ? .semibold : .regular))
+                                            Text("\(model.favoriteChannelIDs.count)")
+                                                .font(.caption2.monospacedDigit())
+                                                .foregroundStyle(Theme.Colors.textTertiary)
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            model.selectedBouquet?.id == AppModel.favoritesBouquetID ? Theme.Colors.accentAction : Theme.Colors.surfaceGlass,
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(model.selectedBouquet?.id == AppModel.favoritesBouquetID ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                                        .overlay(
+                                            Capsule().strokeBorder(model.selectedBouquet?.id == AppModel.favoritesBouquetID ? Color.clear : Theme.Colors.borderSubtle, lineWidth: 1)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                // Server Bouquet Pills
+                                ForEach(model.bouquets) { bouquet in
+                                    let isSelected = model.selectedBouquet?.id == bouquet.id
+                                    Button {
+                                        triggerHaptic(.light)
+                                        Task { await model.selectBouquet(bouquet) }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Text(bouquet.name)
+                                                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+
+                                            if bouquet.servicesCount > 0 {
+                                                Text("\(bouquet.servicesCount)")
+                                                    .font(.caption2.monospacedDigit())
+                                                    .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textTertiary)
+                                            }
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceGlass,
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                                        .overlay(
+                                            Capsule().strokeBorder(isSelected ? Color.clear : Theme.Colors.borderSubtle, lineWidth: 1)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                        }
+                        .background(Theme.Colors.surfaceElevated.opacity(0.4))
                     }
 
-                    // Time Window Filter Pills (Jetzt vs 20:15 / Primetime)
-                    HStack(spacing: 8) {
+                    // MARK: - Time Filter Bar (JETZT vs 20:15 HAUPTABEND)
+                    HStack(spacing: 12) {
                         ForEach(AppModel.TimeFilter.allCases) { filter in
+                            let isSelected = model.selectedTimeFilter == filter
                             Button {
                                 triggerHaptic(.light)
                                 model.selectedTimeFilter = filter
                             } label: {
-                                HStack(spacing: 5) {
-                                    if filter == .now {
-                                        PulsingLiveDot(size: 4)
-                                    } else {
-                                        Image(systemName: "moon.stars.fill")
-                                            .font(.caption2)
-                                            .foregroundStyle(model.selectedTimeFilter == filter ? Theme.Colors.textPrimary : Theme.Colors.accentLive)
-                                    }
+                                HStack(spacing: 6) {
+                                    Image(systemName: filter == .now ? "play.circle.fill" : "moon.stars.fill")
+                                        .font(.caption)
+
                                     Text(filter.rawValue)
-                                        .font(.caption.weight(model.selectedTimeFilter == filter ? .semibold : .regular))
+                                        .font(.subheadline.weight(isSelected ? .bold : .medium))
                                 }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
                                 .background(
-                                    model.selectedTimeFilter == filter
-                                        ? Theme.Colors.accentAction
-                                        : Theme.Colors.surfaceElevated,
+                                    isSelected ? Theme.Colors.accentLive : Theme.Colors.surfaceElevated,
                                     in: Capsule()
                                 )
-                                .foregroundStyle(model.selectedTimeFilter == filter ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                                .foregroundStyle(isSelected ? Theme.Colors.bgBase : Theme.Colors.textSecondary)
                                 .overlay(
-                                    Capsule().strokeBorder(model.selectedTimeFilter == filter ? Color.clear : Theme.Colors.borderSubtle, lineWidth: 1)
+                                    Capsule().strokeBorder(isSelected ? Color.clear : Theme.Colors.borderSubtle, lineWidth: 1)
                                 )
                             }
                             .buttonStyle(.plain)
                         }
+
                         Spacer()
+
+                        // Channel Counter
+                        Text("\(model.filteredChannels.count) Sender")
+                            .font(.caption.monospacedDigit().weight(.medium))
+                            .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(Theme.Colors.surfaceElevated.opacity(0.2))
+                    .padding(.vertical, 8)
 
+                    // MARK: - Channel Grid Content
                     Group {
                         if model.channels.isEmpty && model.isLoadingChannels {
                             Spacer()
-                            ProgressView("Lade Senderliste…")
+                            ProgressView("Lade Sender und EPG-Daten…")
                                 .tint(Theme.Colors.accentAction)
                                 .foregroundStyle(Theme.Colors.textSecondary)
                             Spacer()
@@ -90,6 +181,7 @@ struct ChannelListView: View {
                                         ChannelRow(
                                             channel: channel,
                                             nowNext: model.schedule[channel.serviceRef],
+                                            fullSchedule: model.fullEpg[channel.serviceRef] ?? [],
                                             timeFilter: model.selectedTimeFilter,
                                             isFavorite: model.isFavorite(channel),
                                             onPlay: {
@@ -97,6 +189,17 @@ struct ChannelListView: View {
                                             },
                                             onShowInfo: { entry in
                                                 selectedDetail = ProgramDetailPayload(channel: channel, entry: entry)
+                                            },
+                                            onRecord: { entry in
+                                                Task {
+                                                    let success = await model.scheduleProgramTimer(channel: channel, entry: entry)
+                                                    if success {
+                                                        triggerHaptic(.medium)
+                                                        withAnimation {
+                                                            recordConfirmationMessage = "„\(entry.title)“ programmiert"
+                                                        }
+                                                    }
+                                                }
                                             }
                                         )
                                         .contextMenu {
@@ -140,6 +243,31 @@ struct ChannelListView: View {
                                 await model.loadChannels(bouquet: model.selectedBouquet?.name)
                             }
                         }
+                    }
+                }
+
+                // MARK: - Floating Toast Notification
+                if let message = recordConfirmationMessage {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Theme.Colors.statusSuccess)
+                            Text(message)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Theme.Colors.surfaceElevated, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.Colors.borderElevated, lineWidth: 1))
+                        .shadow(color: Color.black.opacity(0.35), radius: 10, y: 4)
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    .task {
+                        try? await Task.sleep(for: .seconds(2.5))
+                        withAnimation { recordConfirmationMessage = nil }
                     }
                 }
             }
@@ -207,10 +335,10 @@ struct ProgramDetailSheet: View {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 18) {
                         // Channel & Broadcast Info Card
                         HStack(spacing: 12) {
-                            ChannelLogo(url: payload.channel.logoURL, name: payload.channel.name)
+                            ChannelLogo(url: payload.channel.logoURL, name: payload.channel.name, size: 52)
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(payload.channel.name)
@@ -219,7 +347,7 @@ struct ProgramDetailSheet: View {
 
                                 Text(payload.entry.formattedTimeRange)
                                     .font(.subheadline.monospaced())
-                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .foregroundStyle(Theme.Colors.accentLive)
                             }
 
                             Spacer()
@@ -251,325 +379,311 @@ struct ProgramDetailSheet: View {
                                 )
                             }
                         }
-                        .padding(14)
-                        .glassCard(cornerRadius: 14)
 
-                        // Description / Synopsis
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("BESCHREIBUNG")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.textTertiary)
+                        // Description
+                        if let description = payload.entry.description, !description.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("BESCHREIBUNG")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
 
-                            Text(payload.entry.description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-                                 ? payload.entry.description!
-                                 : "Keine ausführliche Beschreibung für diese Sendung verfügbar.")
-                                .font(.body)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                                .lineSpacing(5)
-                                .fixedSize(horizontal: false, vertical: true)
+                                Text(description)
+                                    .font(.body)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .lineSpacing(4)
+                            }
+                            .padding(16)
+                            .glassCard(cornerRadius: 14)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .glassCard(cornerRadius: 14)
 
-                        // Actions
+                        // Action Buttons
                         VStack(spacing: 12) {
-                            Button(action: onPlay) {
-                                HStack(spacing: 8) {
+                            Button {
+                                dismiss()
+                                onPlay()
+                            } label: {
+                                HStack {
                                     Image(systemName: "play.fill")
-                                    Text(isLiveNow ? "Sendung Jetzt Anschauen" : "Sender Live Starten")
+                                    Text(isLiveNow ? "Sender live ansehen" : "Sender starten")
+                                        .font(.headline)
                                 }
-                                .font(.headline)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
-                                .background(Theme.Colors.accentAction, in: RoundedRectangle(cornerRadius: 12))
-                                .foregroundStyle(Theme.Colors.textPrimary)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.borderedProminent)
+                            .tint(Theme.Colors.accentAction)
 
+                            // Record Button
                             Button {
                                 Task {
                                     isRecording = true
-                                    let success = await model.scheduleProgramTimer(channel: payload.channel, entry: payload.entry)
-                                    recordSuccess = success
+                                    let ok = await model.scheduleProgramTimer(channel: payload.channel, entry: payload.entry)
+                                    recordSuccess = ok
                                     isRecording = false
                                 }
                             } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: recordSuccess == true ? "checkmark.circle.fill" : "record.circle")
-                                    Text(recordSuccess == true ? "Aufnahme Geplant!" : (isRecording ? "Programmiere…" : "Sendung Aufnehmen"))
+                                HStack {
+                                    if isRecording {
+                                        ProgressView()
+                                            .tint(Theme.Colors.textPrimary)
+                                    } else if recordSuccess == true {
+                                        Image(systemName: "checkmark")
+                                        Text("Aufnahme programmiert!")
+                                    } else {
+                                        Image(systemName: "record.circle")
+                                        Text(isLiveNow ? "Jetzt live aufnehmen" : "Timer programmieren")
+                                    }
                                 }
-                                .font(.subheadline.weight(.semibold))
+                                .font(.headline)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
-                                .background(
-                                    recordSuccess == true ? Theme.Colors.statusSuccess.opacity(0.2) : Theme.Colors.surfaceGlass,
-                                    in: RoundedRectangle(cornerRadius: 12)
-                                )
-                                .foregroundStyle(recordSuccess == true ? Theme.Colors.statusSuccess : Theme.Colors.textPrimary)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1)
-                                )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.bordered)
+                            .tint(recordSuccess == true ? Theme.Colors.statusSuccess : Theme.Colors.statusError)
                             .disabled(isRecording || recordSuccess == true)
                         }
                     }
-                    .padding(16)
+                    .padding(20)
                 }
             }
             .navigationTitle("Sendungsdetails")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Schließen") {
-                        dismiss()
-                    }
-                    .foregroundStyle(Theme.Colors.accentAction)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Schließen") { dismiss() }
+                        .foregroundStyle(Theme.Colors.accentAction)
                 }
             }
         }
     }
 }
 
-// MARK: - Bouquet Picker Pills
-
-struct BouquetPicker: View {
-
-    let model: AppModel
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                if !model.favoriteChannelIDs.isEmpty {
-                    BouquetPill(
-                        title: "Favoriten",
-                        icon: "star.fill",
-                        count: model.favoriteChannelIDs.count,
-                        isSelected: model.selectedBouquet?.id == AppModel.favoritesBouquetID
-                    ) {
-                        Task { await model.selectBouquet(Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
-                    }
-                }
-
-                BouquetPill(
-                    title: "Alle Sender",
-                    count: model.selectedBouquet == nil && model.favoriteChannelIDs.isEmpty ? model.channels.count : nil,
-                    isSelected: model.selectedBouquet == nil
-                ) {
-                    Task { await model.selectBouquet(nil) }
-                }
-
-                ForEach(model.bouquets) { bouquet in
-                    BouquetPill(
-                        title: bouquet.name,
-                        count: bouquet.servicesCount > 0 ? bouquet.servicesCount : nil,
-                        isSelected: model.selectedBouquet?.id == bouquet.id
-                    ) {
-                        Task { await model.selectBouquet(bouquet) }
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-        }
-    }
-}
-
-struct BouquetPill: View {
-
-    let title: String
-    var icon: String? = nil
-    var count: Int? = nil
-    let isSelected: Bool
-    let onSelect: () -> Void
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 6) {
-                if let icon {
-                    Image(systemName: icon)
-                        .font(.caption2)
-                        .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.accentLive)
-                }
-
-                Text(title)
-                    .font(.subheadline.weight(isSelected ? .semibold : .regular))
-
-                if let count {
-                    Text("\(count)")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(isSelected ? Theme.Colors.textPrimary.opacity(0.8) : Theme.Colors.textTertiary)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(
-                isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated,
-                in: Capsule()
-            )
-            .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
-            .overlay(
-                Capsule()
-                    .strokeBorder(isSelected ? Color.clear : Theme.Colors.borderSubtle, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Premium Glass Channel Card
+// MARK: - Channel Row (Safari WebUI Aesthetics + Expandable Schedule)
 
 struct ChannelRow: View {
 
     let channel: Channel
     let nowNext: NowNext?
+    let fullSchedule: [NowNext.Entry]
     var timeFilter: AppModel.TimeFilter = .now
     var isFavorite: Bool = false
     var onPlay: () -> Void = {}
     var onShowInfo: (NowNext.Entry) -> Void = { _ in }
+    var onRecord: (NowNext.Entry) -> Void = { _ in }
+
+    @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Top Row: Logo, Number, Name, Live Tag, Remaining Pill, Play Button
+        VStack(alignment: .leading, spacing: 14) {
+            // MARK: - Channel Header Bar
             HStack(spacing: 12) {
-                // Channel Logo (Direct Play)
+                // Channel Logo (1-Tap Play)
                 Button(action: onPlay) {
-                    ChannelLogo(url: channel.logoURL, name: channel.name)
+                    ChannelLogo(url: channel.logoURL, name: channel.name, size: 52)
                 }
                 .buttonStyle(.plain)
 
-                // Channel Name & Number
-                VStack(alignment: .leading, spacing: 2) {
+                // Channel Name & Number Badge
+                VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         if let number = channel.number {
                             Text(number)
-                                .font(.caption2.monospacedDigit().bold())
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentAction)
-                                .padding(.horizontal, 5)
+                                .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                         }
 
                         Text(channel.name)
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 17, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
 
                         if isFavorite {
                             Image(systemName: "star.fill")
-                                .font(.caption2)
+                                .font(.caption)
                                 .foregroundStyle(.yellow)
+                        }
+                    }
+
+                    if let now = nowNext?.now {
+                        HStack(spacing: 6) {
+                            PulsingLiveDot(size: 5)
+                            Text(now.formattedTimeRange)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Theme.Colors.accentLive)
                         }
                     }
                 }
 
                 Spacer(minLength: 4)
 
-                // Live Badge or Remaining Pill
+                // Remaining Time Pill
                 if let now = nowNext?.now, let remaining = now.remainingMinutes(at: .now) {
-                    HStack(spacing: 4) {
-                        PulsingLiveDot(size: 4)
-                        Text("noch \(remaining)m")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.accentLive)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Theme.Colors.accentLive.opacity(0.12), in: Capsule())
+                    Text("noch \(remaining)m")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.accentLive)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
                 }
 
-                // Quick Play Action Button
+                // Play Button
                 Button(action: onPlay) {
                     Image(systemName: "play.circle.fill")
-                        .font(.system(size: 26))
+                        .font(.system(size: 32))
                         .foregroundStyle(Theme.Colors.accentAction)
                 }
                 .buttonStyle(.plain)
             }
 
-            // Middle Row: Current Program Info & Precision Live Scrubber
-            Button {
-                if let entry = (timeFilter == .primeTime ? nowNext?.next : nowNext?.now) {
-                    onShowInfo(entry)
-                } else {
-                    onPlay()
-                }
-            } label: {
-                VStack(alignment: .leading, spacing: 6) {
-                    if timeFilter == .primeTime, let next = nowNext?.next {
-                        HStack(spacing: 6) {
-                            Text("20:15")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.accentLive)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(Theme.Colors.accentLive.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
-
-                            Text(next.title)
-                                .font(.system(size: 14, weight: .semibold))
+            // MARK: - Current Program Details
+            if let now = nowNext?.now {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        onShowInfo(now)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(now.title)
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
-                                .lineLimit(1)
-                        }
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
 
-                        Text(next.formattedTimeRange)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    } else if let now = nowNext?.now {
-                        Text(now.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                            .lineLimit(1)
-
-                        if let description = now.description, !description.isEmpty {
-                            Text(description)
-                                .font(.caption)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                                .lineLimit(1)
-                        }
-
-                        if let fraction = now.progress(at: .now) {
-                            InfuseScrubber(
-                                progress: fraction,
-                                startTime: now.formattedStartTime,
-                                endTime: now.formattedEndTime,
-                                remainingText: nil
-                            )
-                            .padding(.top, 2)
-                        }
-
-                        if let next = nowNext?.next {
-                            HStack(spacing: 6) {
-                                Text("DANACH:")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Theme.Colors.textTertiary)
-
-                                Text(next.title)
-                                    .font(.caption2)
+                            if let desc = now.description, !desc.isEmpty {
+                                Text(desc)
+                                    .font(.subheadline)
                                     .foregroundStyle(Theme.Colors.textSecondary)
-                                    .lineLimit(1)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Precision Infuse Live Scrubber
+                    if let fraction = now.progress(at: .now) {
+                        InfuseScrubber(
+                            progress: fraction,
+                            startTime: now.formattedStartTime,
+                            endTime: now.formattedEndTime,
+                            remainingText: nil
+                        )
+                        .padding(.top, 2)
+                    }
+                }
+            } else {
+                Text("Keine Programminformationen verfügbar")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+
+            // MARK: - Next Show Preview ("DANACH")
+            if let next = nowNext?.next {
+                HStack(spacing: 8) {
+                    Text("DANACH:")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+
+                    Text(next.formattedStartTime)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.accentAction)
+
+                    Text(next.title)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    // Expand / Collapse Chevron Button (Safari WebUI Parity)
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(isExpanded ? "Weniger" : "Programm")
+                                .font(.system(size: 11, weight: .semibold))
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundStyle(Theme.Colors.accentAction)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Theme.Colors.accentAction.opacity(0.15), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 2)
+            }
+
+            // MARK: - Expandable Full Upcoming EPG Schedule (Safari WebUI Parity)
+            if isExpanded {
+                VStack(spacing: 10) {
+                    Divider()
+                        .background(Theme.Colors.borderSubtle)
+
+                    HStack {
+                        Label("WEITERER TAGESABLAUF", systemImage: "clock.arrow.circlepath")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Spacer()
+                    }
+                    .padding(.top, 2)
+
+                    let upcomingShows = fullSchedule.filter { $0.start >= (nowNext?.now?.end ?? .now) }
+                    if upcomingShows.isEmpty {
+                        Text("Keine weiteren Sendungen im EPG-Puffer.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                            .padding(.vertical, 4)
+                    } else {
+                        ForEach(upcomingShows.prefix(6)) { show in
+                            HStack(spacing: 10) {
+                                Text(show.formattedStartTime)
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                                    .frame(width: 44, alignment: .leading)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(show.title)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                        .lineLimit(1)
+
+                                    if let desc = show.description, !desc.isEmpty {
+                                        Text(desc)
+                                            .font(.caption2)
+                                            .foregroundStyle(Theme.Colors.textTertiary)
+                                            .lineLimit(1)
+                                    }
+                                }
 
                                 Spacer()
 
-                                Text(next.formattedTimeRange)
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                // 1-Click Timer Recording Button
+                                Button {
+                                    onRecord(show)
+                                } label: {
+                                    Image(systemName: "record.circle")
+                                        .font(.system(size: 20))
+                                        .foregroundStyle(Theme.Colors.statusError)
+                                        .padding(4)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .padding(.top, 2)
+                            .padding(.vertical, 4)
                         }
-                    } else {
-                        Text("Keine Programminformationen verfügbar")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .buttonStyle(.plain)
         }
-        .padding(14)
-        .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+        .padding(16)
+        .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
     }
 }
 
@@ -579,13 +693,13 @@ struct ChannelLogo: View {
 
     let url: URL?
     let name: String
-    var size: CGFloat = 46
+    var size: CGFloat = 52
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Theme.Colors.surfaceElevated)
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
 
             if let url {
                 AsyncImage(url: url) { phase in
@@ -597,7 +711,7 @@ struct ChannelLogo: View {
                         image
                             .resizable()
                             .scaledToFit()
-                            .padding(4)
+                            .padding(5)
                     case .failure:
                         fallbackText
                     @unknown default:
