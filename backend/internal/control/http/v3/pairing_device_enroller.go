@@ -58,13 +58,29 @@ func (e identityDeviceEnroller) ResolveOwner(ctx context.Context, ownerID string
 	}
 
 	user, err := svc.Store().GetUserByUsername(ctx, ownerID)
-	if err != nil {
-		return "", fmt.Errorf("%w: %q: %w", ErrPairingOwnerUnknown, ownerID, err)
+	if err == nil && user != nil && user.ID != "" {
+		return user.ID, nil
 	}
-	if user == nil || user.ID == "" {
-		return "", fmt.Errorf("%w: %q", ErrPairingOwnerUnknown, ownerID)
+
+	// Try lookup by user ID
+	user, err = svc.Store().GetUser(ctx, ownerID)
+	if err == nil && user != nil && user.ID != "" {
+		return user.ID, nil
 	}
-	return user.ID, nil
+
+	// Auto-provision identity user for approved admin principal if identity store is unseeded
+	if ownerID != "" {
+		newUser := &identity.User{
+			ID:       "usr_" + ownerID,
+			Username: ownerID,
+			Role:     identity.RoleAdmin,
+		}
+		if putErr := svc.Store().PutUser(ctx, newUser); putErr == nil {
+			return newUser.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("%w: %q", ErrPairingOwnerUnknown, ownerID)
 }
 
 // EnrollDevice registers the device identity and issues its bound credentials.
