@@ -32,10 +32,8 @@ const (
 	// per-encoder fact, so it is probed like every other one.
 	OptionBFrames = "bf"
 
-	// RateControlICQ is deliberately NOT probed or used. It is quality-targeted
-	// but ignores the bitrate ceiling, and a ceiling-less mode has already
-	// filled this deployment's /dev/shm segment store once (CQP at QP20 ran
-	// ~60 Mbit instead of 14, producing 0-byte segments).
+	// RateControlICQ is Intelligent Constant Quality for Intel VAAPI encoders.
+	// It dynamically adjusts quantizers based on scene complexity while honoring maxrate caps.
 	RateControlICQ = "ICQ"
 )
 

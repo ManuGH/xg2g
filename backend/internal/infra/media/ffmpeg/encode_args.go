@@ -317,9 +317,12 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 		// gains QVBR in a later release picks it up on the next restart, and a
 		// vendor nobody here has ever seen gets a correct answer too. Unprobed
 		// means unsupported: an unproven mode must not reach a live session.
+		av1ICQ := isAV1 && hardware.VAAPIRateControlVerified(vaapiEncoderForCodec(outputCodec), hardware.RateControlICQ)
 		av1QVBR := isAV1 && cfg.AV1QVBR &&
 			hardware.VAAPIRateControlVerified(vaapiEncoderForCodec(outputCodec), hardware.RateControlQVBR)
-		if av1QVBR {
+		if av1ICQ {
+			args = append(args, "-rc_mode", "ICQ")
+		} else if av1QVBR {
 			args = append(args, "-rc_mode", "QVBR")
 		}
 		args = append(args,
@@ -329,7 +332,13 @@ func appendVaapiRateControlArgs(args []string, prof ports.ProfileSpec, outputCod
 		if prof.VideoBufSizeK > 0 {
 			args = append(args, "-bufsize", fmt.Sprintf("%dk", prof.VideoBufSizeK))
 		}
-		if av1QVBR {
+		if av1ICQ {
+			icqQuality := 24
+			if prof.VideoQP > 0 {
+				icqQuality = prof.VideoQP
+			}
+			args = append(args, "-global_quality", strconv.Itoa(icqQuality))
+		} else if av1QVBR {
 			// Default 90 (sharpened from 110): a higher AV1 quality target that
 			// the VideoMaxRateK ceiling still bounds, so it spends the available
 			// bitrate on visibly cleaner motion. Lower XG2G_AV1_QVBR_QUALITY for

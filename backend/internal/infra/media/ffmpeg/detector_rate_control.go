@@ -12,9 +12,8 @@ import (
 // asking a driver about, per codec. VBR is absent on purpose: it is the
 // implicit fallback every VAAPI driver supports, so a probe would only confirm
 // that the encoder works at all - which the encoder preflight already proved.
-// ICQ is absent on purpose too, see hardware.RateControlICQ.
 var rateControlProbeCandidates = map[string][]string{
-	"av1_vaapi":  {hardware.RateControlQVBR},
+	"av1_vaapi":  {hardware.RateControlICQ, hardware.RateControlQVBR},
 	"hevc_vaapi": {hardware.RateControlQVBR},
 	"h264_vaapi": {hardware.RateControlQVBR},
 }
