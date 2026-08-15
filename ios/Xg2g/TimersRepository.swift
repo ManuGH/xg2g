@@ -48,11 +48,38 @@ actor TimersRepository {
             .compactMap { $0.toDomain() }
             .sorted { $0.beginDate < $1.beginDate }
     }
+    func createTimer(serviceRef: String, name: String, description: String? = nil, begin: Date, end: Date) async throws {
+        let body = TimerWire.CreateRequest(
+            serviceRef: serviceRef,
+            name: name,
+            description: description,
+            begin: Int64(begin.timeIntervalSince1970),
+            end: Int64(end.timeIntervalSince1970)
+        )
+        let data = try JSONEncoder().encode(body)
+        let _: EmptyResponse = try await api.send(
+            APIRequest(method: .post, path: "timers", body: data, contentType: "application/json")
+        )
+    }
+
+    func deleteTimer(id: String) async throws {
+        let _: EmptyResponse = try await api.send(
+            APIRequest(method: .delete, path: "timers/\(id)")
+        )
+    }
 }
 
 // MARK: - Wire
 
 enum TimerWire {
+
+    struct CreateRequest: Encodable, Sendable {
+        let serviceRef: String
+        let name: String
+        let description: String?
+        let begin: Int64
+        let end: Int64
+    }
 
     struct Item: Decodable, Sendable {
         let timerId: String?

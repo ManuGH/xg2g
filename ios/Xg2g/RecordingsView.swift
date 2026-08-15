@@ -132,6 +132,13 @@ struct RecordingsView: View {
                                     )
                                     .listRowBackground(Theme.Colors.surfaceElevated)
                                     .listRowSeparatorTint(Theme.Colors.borderSubtle)
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button(role: .destructive) {
+                                            Task { await model.deleteRecording(recording) }
+                                        } label: {
+                                            Label("Löschen", systemImage: "trash")
+                                        }
+                                    }
                                 }
                                 .listStyle(.plain)
                                 .scrollContentBackground(.hidden)

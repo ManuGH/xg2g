@@ -401,6 +401,75 @@ final class AppModel {
         }
     }
 
+    // MARK: - DVR & Timer Management
+
+    func scheduleProgramTimer(
+        channel: Channel,
+        entry: NowNext.Entry,
+        leadMinutes: Int = 3,
+        trailMinutes: Int = 7
+    ) async -> Bool {
+        guard let timersRepository else { return false }
+        let begin = entry.start.addingTimeInterval(TimeInterval(-leadMinutes * 60))
+        let end = entry.end.addingTimeInterval(TimeInterval(trailMinutes * 60))
+        do {
+            try await timersRepository.createTimer(
+                serviceRef: channel.serviceRef,
+                name: entry.title,
+                description: entry.description,
+                begin: begin,
+                end: end
+            )
+            await loadTimers()
+            return true
+        } catch {
+            handle(error)
+            return false
+        }
+    }
+
+    func recordLiveNow(channel: Channel, durationMinutes: Int = 120) async -> Bool {
+        guard let timersRepository else { return false }
+        let entry = schedule[channel.serviceRef]?.now
+        let title = entry?.title ?? "\(channel.name) Sofortaufnahme"
+        let begin = Date()
+        let end = entry?.end ?? begin.addingTimeInterval(TimeInterval(durationMinutes * 60))
+        do {
+            try await timersRepository.createTimer(
+                serviceRef: channel.serviceRef,
+                name: title,
+                description: entry?.description,
+                begin: begin,
+                end: end.addingTimeInterval(300)
+            )
+            await loadTimers()
+            return true
+        } catch {
+            handle(error)
+            return false
+        }
+    }
+
+    func deleteTimer(_ timer: DVRTimer) async {
+        guard let timersRepository else { return }
+        do {
+            try await timersRepository.deleteTimer(id: timer.id)
+            timers.removeAll { $0.id == timer.id }
+        } catch {
+            handle(error)
+        }
+    }
+
+    func deleteRecording(_ recording: Recording) async {
+        guard let recordingsRepository else { return }
+        do {
+            try await recordingsRepository.deleteRecording(id: recording.id)
+            recordings.removeAll { $0.id == recording.id }
+        } catch {
+            handle(error)
+        }
+    }
+
     // MARK: - Playback
 
     func play(_ channel: Channel) async {

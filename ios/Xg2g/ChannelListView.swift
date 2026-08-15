@@ -102,6 +102,42 @@ struct ChannelListView: View {
                                     }
                                     .tint(Theme.Colors.accentLive)
                                 }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button {
+                                        Task {
+                                            _ = await model.recordLiveNow(channel: channel)
+                                        }
+                                    } label: {
+                                        Label("Aufnehmen", systemImage: "record.circle")
+                                    }
+                                    .tint(Theme.Colors.statusError)
+                                }
+                                .contextMenu {
+                                    if let now = model.schedule[channel.serviceRef]?.now {
+                                        Button {
+                                            Task { _ = await model.scheduleProgramTimer(channel: channel, entry: now) }
+                                        } label: {
+                                            Label("„\(now.title)“ aufnehmen", systemImage: "record.circle")
+                                        }
+                                    }
+
+                                    if let next = model.schedule[channel.serviceRef]?.next {
+                                        Button {
+                                            Task { _ = await model.scheduleProgramTimer(channel: channel, entry: next) }
+                                        } label: {
+                                            Label("„\(next.title)“ programmieren", systemImage: "clock.badge.checkmark")
+                                        }
+                                    }
+
+                                    Button {
+                                        model.toggleFavorite(channel)
+                                    } label: {
+                                        Label(
+                                            model.isFavorite(channel) ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen",
+                                            systemImage: model.isFavorite(channel) ? "star.slash" : "star"
+                                        )
+                                    }
+                                }
                             }
                             .listStyle(.plain)
                             .scrollContentBackground(.hidden)

@@ -169,6 +169,19 @@ struct PlayerScreen: View {
                             .overlay(Capsule().strokeBorder(Theme.Colors.accentLive.opacity(0.3), lineWidth: 1))
                         }
 
+                        // Live Record Button
+                        Button {
+                            triggerHaptic(.medium)
+                            Task {
+                                let ok = await model.recordLiveNow(channel: currentChannel)
+                                displayZapToast(ok ? "🔴 Aufnahme gestartet: \(nowNext?.now?.title ?? currentChannel.name)" : "Fehler beim Starten der Aufnahme")
+                            }
+                        } label: {
+                            Image(systemName: "record.circle")
+                                .font(.title3)
+                                .foregroundStyle(Theme.Colors.statusError)
+                        }
+
                         // Quick EPG Button
                         Button {
                             triggerHaptic(.light)

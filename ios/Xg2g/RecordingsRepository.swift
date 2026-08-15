@@ -55,6 +55,12 @@ actor RecordingsRepository {
             .compactMap { $0.toDomain() }
             .sorted { $0.beginDate > $1.beginDate }
     }
+
+    func deleteRecording(id: String) async throws {
+        let _: EmptyResponse = try await api.send(
+            APIRequest(method: .delete, path: "recordings/\(id)")
+        )
+    }
 }
 
 // MARK: - Wire
