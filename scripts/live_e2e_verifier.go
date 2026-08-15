@@ -323,6 +323,13 @@ func main() {
 		}
 	}
 	if selectedChannel.Name == "" {
+		fmt.Printf("      (Target '%s' not found, searching UHD/4K channels in bouquet:)\n", *targetChannelFlag)
+		for _, s := range services {
+			u := strings.ToUpper(s.Name)
+			if strings.Contains(u, "UHD") || strings.Contains(u, "4K") || strings.Contains(u, "SES") || strings.Contains(u, "QVC") {
+				fmt.Printf("        • [%s] %s (%s, %s)\n", s.Number, s.Name, s.ServiceRef, s.Resolution)
+			}
+		}
 		selectedChannel = services[0]
 	}
 	fmt.Printf("      Selected Test Channel: '%s' (#%s, %s, %s)\n",

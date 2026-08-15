@@ -65,11 +65,16 @@ struct SettingsView: View {
                                     .foregroundStyle(Theme.Colors.textSecondary)
                             }
                         }
+                        Toggle("Wisch-Zappen im Player", isOn: Binding(
+                            get: { model.playerGesturesEnabled },
+                            set: { model.playerGesturesEnabled = $0 }
+                        ))
+                        .foregroundStyle(Theme.Colors.textPrimary)
                     } header: {
-                        Text("Wiedergabe & Bandbreite")
+                        Text("Wiedergabe & Steuerung")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
-                        Text("Im Modus 'Automatisch' wird im WLAN verlustfreies 1:1 Direct-Streaming (0% CPU, Originalbitrate) verwendet und bei Mobilfunk datensparend mit AV1/HEVC transcodiert.")
+                        Text("Im Modus 'Automatisch' wird im WLAN verlustfreies 1:1 Direct-Streaming (0% CPU) verwendet. 'Wisch-Zappen' erlaubt horizontales Wischen im Vollbildplayer (bei Deaktivierung erfolgt das Zappen sicher über die Bildschirm-Tasten).")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }

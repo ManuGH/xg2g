@@ -18,6 +18,7 @@ struct RecordingsView: View {
 
     @State private var selectedFilter: TabFilter = .all
     @State private var playingOffline: OfflineRecording?
+    @State private var recordingToDelete: Recording?
 
     private var downloadManager: DownloadManager {
         DownloadManager.shared
@@ -134,7 +135,7 @@ struct RecordingsView: View {
                                     .listRowSeparatorTint(Theme.Colors.borderSubtle)
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                         Button(role: .destructive) {
-                                            Task { await model.deleteRecording(recording) }
+                                            recordingToDelete = recording
                                         } label: {
                                             Label("Löschen", systemImage: "trash")
                                         }
@@ -151,6 +152,27 @@ struct RecordingsView: View {
             .navigationTitle("Aufnahmen")
             .fullScreenCover(item: $playingOffline) { offline in
                 OfflinePlayerScreen(offlineRecording: offline)
+            }
+            .confirmationDialog(
+                "Aufnahme wirklich vom Server löschen?",
+                isPresented: Binding(
+                    get: { recordingToDelete != nil },
+                    set: { if !$0 { recordingToDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let rec = recordingToDelete {
+                    Button("Aufnahme löschen", role: .destructive) {
+                        Task { await model.deleteRecording(rec) }
+                    }
+                }
+                Button("Abbrechen", role: .cancel) {
+                    recordingToDelete = nil
+                }
+            } message: {
+                if let rec = recordingToDelete {
+                    Text("„\(rec.title)“ wird dauerhaft von der Festplatte der Vu+ Uno 4K gelöscht.")
+                }
             }
             .toolbar {
                 if model.isLoadingRecordings && !model.recordings.isEmpty {

@@ -148,6 +148,15 @@ final class AppModel {
         }
     }
 
+    var playerGesturesEnabled: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: "xg2g.player_gestures_enabled")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "xg2g.player_gestures_enabled")
+        }
+    }
+
     static let favoritesBouquetID = "xg2g_local_favorites"
 
     private(set) var favoriteChannelIDs: Set<String> = {

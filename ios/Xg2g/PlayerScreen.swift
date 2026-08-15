@@ -73,16 +73,18 @@ struct PlayerScreen: View {
             Color.clear
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 40, coordinateSpace: .local)
-                        .onEnded { value in
-                            let horizontal = value.translation.width
-                            let vertical = value.translation.height
+                    DragGesture(minimumDistance: 80)
+                        .onEnded { drag in
+                            guard model.playerGesturesEnabled else { return }
 
-                            // Horizontal swipe: Channel zapping
-                            if abs(horizontal) > abs(vertical) {
-                                if horizontal < -50 {
+                            let horizontal = drag.translation.width
+                            let vertical = drag.translation.height
+
+                            // Horizontal swipe: Channel zapping (requires conscious swipe >= 100px)
+                            if abs(horizontal) > abs(vertical) && abs(horizontal) >= 100 {
+                                if horizontal < 0 {
                                     zapNext()
-                                } else if horizontal > 50 {
+                                } else {
                                     zapPrevious()
                                 }
                             } else {
