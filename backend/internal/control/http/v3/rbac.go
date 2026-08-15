@@ -106,9 +106,9 @@ func (s scopeSet) has(scope Scope) bool {
 
 // TokenPrincipal validates the token, projects active commercial entitlements,
 // and returns the associated Principal.
-func (s *Server) TokenPrincipal(ctx context.Context, token string) (*auth.Principal, bool) {
+func (s *Server) TokenPrincipal(ctx context.Context, token string) auth.Result {
 	if token == "" {
-		return nil, false
+		return auth.NoCredentials()
 	}
 	cfg := s.GetConfig()
 	cfgToken := cfg.APIToken
@@ -132,7 +132,7 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) (*auth.Princi
 			principal := auth.NewPrincipal(sess.SessionID, user.Username, scopes)
 			principal = s.projectTokenPrincipal(ctx, principal, cfg)
 			if principal != nil {
-				return principal, true
+				return auth.Authenticated(principal)
 			}
 		}
 
@@ -154,7 +154,7 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) (*auth.Princi
 							principal := auth.NewPrincipal(dpopToken.TokenHash, user.Username, scopes)
 							principal = s.projectTokenPrincipal(ctx, principal, cfg)
 							if principal != nil {
-								return principal, true
+								return auth.Authenticated(principal)
 							}
 						}
 					}
@@ -166,54 +166,69 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) (*auth.Princi
 	// 1. Check legacy single token
 	if cfgToken != "" && auth.AuthorizeToken(token, cfgToken) {
 		if len(cfgTokenScopes) == 0 {
-			return nil, false
+			// The token is genuine; the deployment granted it nothing.
+			return auth.MisconfiguredToken()
 		}
-		principal := s.projectTokenPrincipal(ctx, auth.NewPrincipal(token, "", cfgTokenScopes), cfg)
-		return principal, principal != nil
+		return auth.Authenticated(s.projectTokenPrincipal(ctx, auth.NewPrincipal(token, "", cfgTokenScopes), cfg))
 	}
 
 	// 2. Check scoped tokens list
 	for _, entry := range cfgTokens {
 		if auth.AuthorizeToken(token, entry.Token) {
 			if len(entry.Scopes) == 0 {
-				return nil, false
+				return auth.MisconfiguredToken()
 			}
-			principal := s.projectTokenPrincipal(ctx, auth.NewPrincipal(token, entry.User, entry.Scopes), cfg)
-			return principal, principal != nil
+			return auth.Authenticated(s.projectTokenPrincipal(ctx, auth.NewPrincipal(token, entry.User, entry.Scopes), cfg))
 		}
 	}
 
-	if principal, ok := s.deviceAccessPrincipal(ctx, token, cfg); ok {
-		return principal, true
+	if result := s.deviceAccessPrincipal(ctx, token, cfg); result.Outcome != auth.OutcomeInvalidCredentials {
+		return result
 	}
 
-	return nil, false
+	return auth.InvalidCredentials()
 }
 
-func (s *Server) deviceAccessPrincipal(ctx context.Context, token string, cfg config.AppConfig) (*auth.Principal, bool) {
+func (s *Server) deviceAccessPrincipal(ctx context.Context, token string, cfg config.AppConfig) auth.Result {
 	store := s.deviceAuthStore()
 	if store == nil || token == "" {
-		return nil, false
+		return auth.InvalidCredentials()
 	}
 
 	session, err := store.GetAccessSessionByTokenHash(ctx, deviceauthmodel.HashOpaqueSecret(token))
 	if err != nil || session == nil {
-		return nil, false
+		return auth.InvalidCredentials()
 	}
 
 	now := time.Now().UTC()
 	if !session.IsActive(now) {
-		return nil, false
+		return auth.InvalidCredentials()
 	}
 
 	device, err := store.GetDevice(ctx, session.DeviceID)
 	if err != nil || device == nil || !device.CanIssueSessions(now) {
-		return nil, false
+		return auth.InvalidCredentials()
 	}
 
-	principal := auth.NewPrincipal(token, session.SubjectID, session.Scopes)
-	principal = s.projectTokenPrincipal(ctx, principal, cfg)
-	return principal, principal != nil
+	principal := s.projectTokenPrincipal(ctx, auth.NewPrincipal(token, session.SubjectID, session.Scopes), cfg)
+	if principal == nil {
+		return auth.InvalidCredentials()
+	}
+
+	// The binding gate is deliberately NOT consulted here yet.
+	//
+	// Every credential in this store is cryptographically unbound — the schema
+	// has no key column — so evaluating honestly would refuse every device
+	// session, including a freshly paired one, before the bound issuance path
+	// exists to replace it. That would be a hard cutover in the middle of the
+	// implementation rather than in the finished behaviour.
+	//
+	// devicebinding.Evaluate and its transport mapping are built and tested;
+	// they are simply not wired. The final step of the convergence replaces
+	// this with an evaluation of the session's real binding state, at which
+	// point an unbound credential is refused with DEVICE_REAUTH_REQUIRED and
+	// there is no bearer fallback for a bound grant.
+	return auth.Authenticated(principal)
 }
 
 func (s *Server) RequestScopes(r *http.Request) (scopeSet, bool) {
@@ -226,9 +241,8 @@ func (s *Server) RequestScopes(r *http.Request) (scopeSet, bool) {
 	cfg := s.GetConfig()
 	token, _ := s.extractTokenDetailedWithLegacyPolicy(r, !cfg.APIDisableLegacyTokenSources)
 	if token != "" {
-		p, ok := s.TokenPrincipal(r.Context(), token)
-		if ok {
-			return newScopeSet(p.Scopes), true
+		if result := s.TokenPrincipal(r.Context(), token); result.OK() {
+			return newScopeSet(result.Principal.Scopes), true
 		}
 		return nil, false
 	}

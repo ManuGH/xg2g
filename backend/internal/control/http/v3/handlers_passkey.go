@@ -430,8 +430,8 @@ func (s *Server) resolveRequestPrincipal(r *http.Request) *auth.Principal {
 	cfg := s.GetConfig()
 	token, _ := s.extractTokenDetailedWithLegacyPolicy(r, !cfg.APIDisableLegacyTokenSources)
 	if token != "" {
-		if p, ok := s.TokenPrincipal(r.Context(), token); ok {
-			return p
+		if result := s.TokenPrincipal(r.Context(), token); result.OK() {
+			return result.Principal
 		}
 	}
 	return nil

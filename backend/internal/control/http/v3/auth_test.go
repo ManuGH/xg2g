@@ -236,7 +236,7 @@ func TestAuthMiddleware_EmptyScopesPrimaryToken(t *testing.T) {
 
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
 func TestAuthMiddleware_EmptyScopesAdditionalToken(t *testing.T) {
@@ -259,7 +259,7 @@ func TestAuthMiddleware_EmptyScopesAdditionalToken(t *testing.T) {
 
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
 // Test legacy X-API-Token header support when explicitly enabled.

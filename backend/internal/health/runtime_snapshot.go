@@ -111,15 +111,21 @@ type LifecycleRuntimeSnapshot struct {
 	Paths       LifecycleRuntimePathSnapshot    `json:"paths"`
 	State       LifecycleRuntimeStateSnapshot   `json:"state"`
 	Drift       LifecycleRuntimeAssessment      `json:"drift"`
+
+	// ADR-032 Phase 0. Omitted when no census provider was supplied.
+	DeviceAuth *LifecycleRuntimeDeviceAuthSnapshot `json:"deviceAuth,omitempty"`
 }
 
 type LifecycleRuntimeSnapshotOptions struct {
 	InstallRoot string
 	RepoRoot    string
+
+	// UnboundDeviceAuthCensus, when set, feeds the ADR-032 Phase 0 census into
+	// the snapshot. Same source as the startup log — not a second count.
+	UnboundDeviceAuthCensus UnboundDeviceAuthCensusFunc
 }
 
 func CollectLifecycleRuntimeSnapshot(ctx context.Context, cfg config.AppConfig, opts LifecycleRuntimeSnapshotOptions) LifecycleRuntimeSnapshot {
-	_ = ctx
 
 	installRoot := normalizeInstallRoot(opts.InstallRoot)
 	repoRoot := strings.TrimSpace(opts.RepoRoot)
@@ -203,6 +209,7 @@ func CollectLifecycleRuntimeSnapshot(ctx context.Context, cfg config.AppConfig, 
 		snapshot.State.DriftStateVersion = &version
 	}
 	snapshot.State.SQLiteSchemas = collectSQLiteSchemas(installRoot, cfg)
+	snapshot.DeviceAuth = collectDeviceAuthSnapshot(ctx, opts.UnboundDeviceAuthCensus)
 	snapshot.Drift = assessLifecycleRuntimeSnapshot(cfg, snapshot, envValues)
 	return snapshot
 }

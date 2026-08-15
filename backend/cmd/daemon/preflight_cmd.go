@@ -97,8 +97,9 @@ func runPreflightCLIWithIO(args []string, stdout, stderr io.Writer, detectRepoRo
 			repoRoot = detectRepoRootFn()
 		}
 		snapshot := health.CollectLifecycleRuntimeSnapshot(context.Background(), cfg, health.LifecycleRuntimeSnapshotOptions{
-			InstallRoot: installRoot,
-			RepoRoot:    repoRoot,
+			InstallRoot:             installRoot,
+			RepoRoot:                repoRoot,
+			UnboundDeviceAuthCensus: deviceAuthCensusFor(cfg),
 		})
 		runtime = &snapshot
 	}

@@ -101,7 +101,7 @@ func TestScopeMiddleware_EmptyScopesUnauthorized(t *testing.T) {
 
 		handler.ServeHTTP(w, req)
 
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	})
 
 	t.Run("token_list", func(t *testing.T) {
@@ -124,6 +124,6 @@ func TestScopeMiddleware_EmptyScopesUnauthorized(t *testing.T) {
 
 		handler.ServeHTTP(w, req)
 
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	})
 }
