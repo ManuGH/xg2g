@@ -324,7 +324,10 @@ func (a *LocalAdapter) planLiveSegmentLayout(spec ports.StreamSpec) (liveSegment
 	if layout.segmentDurationSec <= 0 {
 		return liveSegmentLayout{}, fmt.Errorf("invalid hls segment seconds: %d", layout.segmentDurationSec)
 	}
-	if a.DVRWindow > 0 {
+	if spec.Profile.DVRWindowSec > 0 {
+		dvrSize := int(math.Ceil(float64(spec.Profile.DVRWindowSec) / float64(layout.segmentDurationSec)))
+		layout.listSize = max(dvrSize, layout.listSize, minSize)
+	} else if a.DVRWindow > 0 {
 		dvrSize := int(math.Ceil(a.DVRWindow.Seconds() / float64(layout.segmentDurationSec)))
 		layout.listSize = max(dvrSize, layout.listSize, minSize)
 	}
