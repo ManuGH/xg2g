@@ -9,7 +9,8 @@ import UIKit
 
 /// Live & Timeshift playback for a channel with Plex-tier media controls,
 /// Infuse-style spatial gestures (10s skip left/right, swipe-up Mini-EPG, swipe-down close),
-/// Channels DVR live buffer & broadcast scrubber, aspect ratio fill toggle, and hardware telemetry.
+/// Channels DVR live buffer & broadcast scrubber, AirPlay 2 routing, multi-track audio selection,
+/// aspect ratio fill toggle, and hardware telemetry.
 struct PlayerScreen: View {
 
     let model: AppModel
@@ -41,6 +42,20 @@ struct PlayerScreen: View {
 
     private var isDirectStream: Bool {
         model.qualityPreference != .dataSaver
+    }
+
+    private var availableAudioTracks: [AVMediaSelectionOption] {
+        guard let group = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
+            return []
+        }
+        return group.options
+    }
+
+    private var selectedAudioTrack: AVMediaSelectionOption? {
+        guard let group = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
+            return nil
+        }
+        return player?.currentItem?.currentMediaSelection.selectedMediaOption(in: group)
     }
 
     var body: some View {
@@ -299,6 +314,38 @@ struct PlayerScreen: View {
                             }
 
                             Spacer(minLength: 8)
+
+                            // Native AirPlay Picker
+                            AirPlayButton()
+                                .frame(width: 32, height: 32)
+                                .padding(4)
+                                .background(Color.black.opacity(0.65), in: Circle())
+                                .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+
+                            // Audio Track Selector (Dolby Digital / Stereo)
+                            if !availableAudioTracks.isEmpty {
+                                Menu {
+                                    ForEach(availableAudioTracks, id: \.self) { option in
+                                        Button {
+                                            selectAudioTrack(option)
+                                        } label: {
+                                            HStack {
+                                                Text(option.displayName)
+                                                if option == selectedAudioTrack {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "speaker.wave.2")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                        .padding(8)
+                                        .background(Color.black.opacity(0.65), in: Circle())
+                                        .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                }
+                            }
 
                             // Aspect Ratio Zoom Button
                             Button {
@@ -705,6 +752,15 @@ struct PlayerScreen: View {
         scheduleControlsHiding()
     }
 
+    private func selectAudioTrack(_ option: AVMediaSelectionOption) {
+        guard let group = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
+            return
+        }
+        player?.currentItem?.select(option, in: group)
+        triggerHaptic(.light)
+        displayZapToast("Tonspur: \(option.displayName)")
+    }
+
     private func jumpToLive() {
         guard let player, let currentItem = player.currentItem else { return }
         triggerHaptic(.medium)
@@ -842,6 +898,20 @@ struct PlayerScreen: View {
         player.automaticallyWaitsToMinimizeStalling = false
         return player
     }
+}
+
+// MARK: - Native AirPlay Button
+
+struct AirPlayButton: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let picker = AVRoutePickerView()
+        picker.tintColor = .white
+        picker.activeTintColor = UIColor(Theme.Colors.accentLive)
+        picker.prioritizesVideoDevices = true
+        return picker
+    }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
 // MARK: - Native Video Player (AVPlayerViewController wrapper)
