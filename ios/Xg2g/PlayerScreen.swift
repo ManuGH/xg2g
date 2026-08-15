@@ -7,9 +7,10 @@ import CoreMedia
 import SwiftUI
 import UIKit
 
-/// Live & Timeshift playback for a channel with Infuse-tier player UX,
-/// custom precision live scrubber, ultra-thin glass HUD, spatial gesture controls,
-/// AirPlay 2 routing, multi-track audio selection, aspect ratio fill toggle, and hardware telemetry.
+/// 100% Native Apple AVPlayerViewController playback for live TV & timeshift.
+/// Matches the genuine Apple TV / Plex iOS player experience with native Apple transport bar,
+/// AirPlay 2, Picture-in-Picture, multi-track audio/subtitle selection, aspect fill zoom,
+/// and integrated Enigma2 Live EPG metadata.
 struct PlayerScreen: View {
 
     let model: AppModel
@@ -18,15 +19,10 @@ struct PlayerScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var currentChannel: Channel
     @State private var player: AVPlayer?
-    @State private var isPlaying = true
-    @State private var isTimeshifted = false
     @State private var failure: String?
-    @State private var showControls = true
-    @State private var isAspectFill = false
     @State private var showMiniEPG = false
     @State private var showInspector = false
     @State private var zapNotice: String?
-    @State private var hideControlsTask: Task<Void, Never>?
     @State private var hideZapNoticeTask: Task<Void, Never>?
 
     init(model: AppModel, channel: Channel) {
@@ -43,20 +39,6 @@ struct PlayerScreen: View {
         model.qualityPreference != .dataSaver
     }
 
-    private var availableAudioTracks: [AVMediaSelectionOption] {
-        guard let group = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
-            return []
-        }
-        return group.options
-    }
-
-    private var selectedAudioTrack: AVMediaSelectionOption? {
-        guard let group = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
-            return nil
-        }
-        return player?.currentItem?.currentMediaSelection.selectedMediaOption(in: group)
-    }
-
     var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
@@ -64,72 +46,153 @@ struct PlayerScreen: View {
             ZStack {
                 Theme.Colors.bgVideoStage.ignoresSafeArea()
 
-                // MARK: - Native Video Player Stage
                 if let player {
-                    NativeVideoPlayerView(
-                        player: player,
-                        videoGravity: isAspectFill ? .resizeAspectFill : .resizeAspect
-                    )
-                    .ignoresSafeArea()
-
-                    // Transparent Gesture Catch Layer (Infuse-Style Spatial Gestures)
-                    Color.black.opacity(0.001)
-                        .ignoresSafeArea()
-                        .onTapGesture(count: 1) {
-                            withAnimation(.easeInOut(duration: 0.22)) {
-                                showControls.toggle()
+                    VStack(spacing: 0) {
+                        // MARK: - Native iOS System Video Player (Plex / Apple TV Grade)
+                        NativeVideoPlayerView(
+                            player: player,
+                            onDismiss: {
+                                closePlayer()
                             }
-                            if showControls {
-                                scheduleControlsHiding()
-                            }
-                        }
-                        .gesture(
-                            SpatialTapGesture(count: 2)
-                                .onEnded { event in
-                                    let x = event.location.x
-                                    let width = geometry.size.width
-
-                                    if x < width * 0.33 {
-                                        // Left third: 10s Skip Backward
-                                        seek(by: -10)
-                                    } else if x > width * 0.67 {
-                                        // Right third: 10s Skip Forward
-                                        seek(by: 10)
-                                    } else {
-                                        // Center third: Aspect Zoom Toggle
-                                        triggerHaptic(.medium)
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                            isAspectFill.toggle()
-                                        }
-                                        displayZapToast(isAspectFill ? "Vollbild (Ausgefüllt)" : "Standard (16:9)")
-                                    }
-                                }
                         )
-                        .gesture(
-                            DragGesture(minimumDistance: 30)
-                                .onEnded { value in
-                                    let horiz = value.translation.width
-                                    let vert = value.translation.height
+                        .ignoresSafeArea()
 
-                                    // Swipe Down -> Close Player
-                                    if vert > 60 && vert > abs(horiz) * 1.3 {
-                                        closePlayer()
+                        // MARK: - Portrait Broadcast Detail Bar
+                        if !isLandscape {
+                            VStack(spacing: 12) {
+                                if let now = nowNext?.now {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            if let number = currentChannel.number {
+                                                Text(number)
+                                                    .font(.caption.monospacedDigit().bold())
+                                                    .foregroundStyle(Theme.Colors.accentAction)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                                            }
+
+                                            Text(currentChannel.name)
+                                                .font(.headline)
+                                                .foregroundStyle(Theme.Colors.textPrimary)
+
+                                            Spacer()
+
+                                            HStack(spacing: 4) {
+                                                PulsingLiveDot(size: 6)
+                                                Text("LIVE")
+                                                    .font(.caption2.bold().monospaced())
+                                                    .foregroundStyle(Theme.Colors.accentLive)
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 3)
+                                            .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
+                                        }
+
+                                        Text(now.title)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(Theme.Colors.textPrimary)
+                                            .lineLimit(1)
+
+                                        if let description = now.description {
+                                            Text(description)
+                                                .font(.caption)
+                                                .foregroundStyle(Theme.Colors.textSecondary)
+                                                .lineLimit(2)
+                                        }
+
+                                        if let fraction = now.progress(at: .now) {
+                                            InfuseScrubber(
+                                                progress: fraction,
+                                                startTime: now.formattedStartTime,
+                                                endTime: now.formattedEndTime,
+                                                remainingText: now.remainingMinutes(at: .now).map { "noch \($0)m" }
+                                            )
+                                            .padding(.top, 2)
+                                        }
+
+                                        if let next = nowNext?.next {
+                                            HStack(spacing: 6) {
+                                                Text("DANACH:")
+                                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                    .foregroundStyle(Theme.Colors.textTertiary)
+
+                                                Text(next.title)
+                                                    .font(.caption2)
+                                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                                    .lineLimit(1)
+
+                                                Spacer()
+
+                                                Text(next.formattedTimeRange)
+                                                    .font(.system(size: 9, design: .monospaced))
+                                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                            }
+                                            .padding(.top, 2)
+                                        }
                                     }
-                                    // Swipe Up -> Open Mini-EPG Drawer
-                                    else if vert < -60 && abs(vert) > abs(horiz) * 1.3 {
+                                    .padding(14)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
+                                }
+
+                                // Quick Zapping Bar
+                                HStack {
+                                    Button { zapPrevious() } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "chevron.left")
+                                            Text("Vorheriger")
+                                        }
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 7)
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Spacer()
+
+                                    Button {
                                         triggerHaptic(.light)
                                         showMiniEPG = true
-                                    }
-                                    // Horizontal Swipe -> Channel Zapping
-                                    else if model.playerGesturesEnabled && abs(horiz) > 50 && abs(horiz) > abs(vert) * 1.3 {
-                                        if horiz < 0 {
-                                            zapNext()
-                                        } else {
-                                            zapPrevious()
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "list.bullet.rectangle")
+                                            Text("Programm")
                                         }
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 7)
+                                        .background(Theme.Colors.accentAction, in: Capsule())
                                     }
+                                    .buttonStyle(.plain)
+
+                                    Spacer()
+
+                                    Button { zapNext() } label: {
+                                        HStack(spacing: 4) {
+                                            Text("Nächster")
+                                            Image(systemName: "chevron.right")
+                                        }
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 7)
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                        )
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 10)
+                            .padding(.bottom, max(16, geometry.safeAreaInsets.bottom))
+                        }
+                    }
+                    .ignoresSafeArea()
                 } else if let failure {
                     VStack(spacing: 20) {
                         ContentUnavailableView(
@@ -218,436 +281,6 @@ struct PlayerScreen: View {
                         Spacer()
                     }
                 }
-
-                // MARK: - Infuse-Style Floating Center HUD (Play / Pause / 10s Skip)
-                if showControls && player != nil {
-                    HStack(spacing: isLandscape ? 48 : 32) {
-                        // 10s Skip Backward
-                        Button {
-                            seek(by: -10)
-                        } label: {
-                            Image(systemName: "gobackward.10")
-                                .font(.system(size: 22, weight: .medium))
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                                .frame(width: 48, height: 48)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-                        }
-                        .buttonStyle(.plain)
-
-                        // Main Play / Pause Button
-                        Button {
-                            togglePlayPause()
-                        } label: {
-                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 28, weight: .bold))
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                                .frame(width: 64, height: 64)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().strokeBorder(Theme.Colors.accentLive.opacity(0.6), lineWidth: 1.5))
-                                .shadow(color: Theme.Colors.accentLive.opacity(0.4), radius: 10)
-                        }
-                        .buttonStyle(.plain)
-
-                        // 10s Skip Forward
-                        Button {
-                            seek(by: 10)
-                        } label: {
-                            Image(systemName: "goforward.10")
-                                .font(.system(size: 22, weight: .medium))
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                                .frame(width: 48, height: 48)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .transition(.scale(scale: 0.92).combined(with: .opacity))
-                }
-
-                // MARK: - Cinematic OSD Overlay (Top & Bottom Bars)
-                if showControls {
-                    VStack(spacing: 0) {
-                        // Top Bar
-                        HStack(spacing: 8) {
-                            Button {
-                                closePlayer()
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 12, weight: .bold))
-                                    Text("Zurück")
-                                        .font(.caption.weight(.semibold))
-                                        .lineLimit(1)
-                                }
-                                .fixedSize()
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.ultraThinMaterial, in: Capsule())
-                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-                            }
-                            .buttonStyle(.plain)
-
-                            HStack(spacing: 6) {
-                                if let number = currentChannel.number {
-                                    Text(number)
-                                        .font(.caption2.monospacedDigit().bold())
-                                        .foregroundStyle(Theme.Colors.accentAction)
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 2)
-                                        .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                                }
-
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(currentChannel.name)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(Theme.Colors.textPrimary)
-                                        .lineLimit(1)
-
-                                    if let nowTitle = nowNext?.now?.title {
-                                        Text(nowTitle)
-                                            .font(.caption2)
-                                            .foregroundStyle(Theme.Colors.textSecondary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                            }
-
-                            Spacer(minLength: 8)
-
-                            // Native AirPlay Picker
-                            AirPlayButton()
-                                .frame(width: 30, height: 30)
-                                .padding(3)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-
-                            // Audio Track Selector (Dolby Digital / Stereo)
-                            if !availableAudioTracks.isEmpty {
-                                Menu {
-                                    ForEach(availableAudioTracks, id: \.self) { option in
-                                        Button {
-                                            selectAudioTrack(option)
-                                        } label: {
-                                            HStack {
-                                                Text(option.displayName)
-                                                if option == selectedAudioTrack {
-                                                    Image(systemName: "checkmark")
-                                                }
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    Image(systemName: "speaker.wave.2")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Theme.Colors.textPrimary)
-                                        .padding(7)
-                                        .background(.ultraThinMaterial, in: Circle())
-                                        .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-                                }
-                            }
-
-                            // Aspect Ratio Zoom Button
-                            Button {
-                                triggerHaptic(.light)
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isAspectFill.toggle()
-                                }
-                                displayZapToast(isAspectFill ? "Vollbild (Ausgefüllt)" : "Standard (16:9)")
-                            } label: {
-                                Image(systemName: isAspectFill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(isAspectFill ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
-                                    .padding(7)
-                                    .background(.ultraThinMaterial, in: Circle())
-                                    .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-                            }
-                            .buttonStyle(.plain)
-
-                            // Interactive Live Button (Jump to Live when timeshifted)
-                            Button {
-                                if isTimeshifted {
-                                    jumpToLive()
-                                } else {
-                                    triggerHaptic(.light)
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        showInspector.toggle()
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    PulsingLiveDot(size: 5)
-                                    Text(isTimeshifted ? "ZUR LIVE-KANTE" : "LIVE")
-                                        .font(.caption2.bold().monospaced())
-                                        .foregroundStyle(isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive)
-                                        .lineLimit(1)
-
-                                    Image(systemName: isTimeshifted ? "forward.fill" : "info.circle")
-                                        .font(.caption2)
-                                        .foregroundStyle(Theme.Colors.textSecondary)
-                                }
-                                .fixedSize()
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 4)
-                                .background(.ultraThinMaterial, in: Capsule())
-                                .overlay(Capsule().strokeBorder(isTimeshifted ? Theme.Colors.accentAction.opacity(0.6) : Theme.Colors.accentLive.opacity(0.4), lineWidth: 0.8))
-                            }
-                            .buttonStyle(.plain)
-
-                            // Live Record Button
-                            Button {
-                                triggerHaptic(.medium)
-                                Task {
-                                    let ok = await model.recordLiveNow(channel: currentChannel)
-                                    if ok {
-                                        LiveActivityManager.shared.updateActivity(
-                                            nowNext: nowNext,
-                                            isRecording: true,
-                                            isDirectStream: isDirectStream,
-                                            channelNumber: currentChannel.number
-                                        )
-                                    }
-                                    displayZapToast(ok ? "🔴 Aufnahme: \(nowNext?.now?.title ?? currentChannel.name)" : "Fehler beim Starten der Aufnahme")
-                                }
-                            } label: {
-                                Image(systemName: "record.circle")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Theme.Colors.statusError)
-                                    .padding(7)
-                                    .background(.ultraThinMaterial, in: Circle())
-                                    .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-                            }
-                            .buttonStyle(.plain)
-
-                            // Quick EPG Button
-                            Button {
-                                triggerHaptic(.light)
-                                showMiniEPG = true
-                            } label: {
-                                Image(systemName: "list.bullet.rectangle")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Theme.Colors.textPrimary)
-                                    .padding(7)
-                                    .background(.ultraThinMaterial, in: Circle())
-                                    .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, isLandscape ? max(20, geometry.safeAreaInsets.leading) : 16)
-                        .padding(.top, isLandscape ? max(10, geometry.safeAreaInsets.top) : 12)
-                        .padding(.bottom, 12)
-                        .background(
-                            LinearGradient(
-                                colors: [Color.black.opacity(0.8), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-
-                        // Stream Telemetry Inspector Panel
-                        if showInspector {
-                            StreamInspectorOverlay(
-                                channel: currentChannel,
-                                liveStream: model.liveStream
-                            )
-                            .padding(.horizontal, isLandscape ? max(24, geometry.safeAreaInsets.leading) : 16)
-                            .transition(.scale(scale: 0.95).combined(with: .opacity))
-                        }
-
-                        Spacer()
-
-                        // MARK: - Infuse Precision Live Scrubber & Broadcast HUD
-                        if isLandscape {
-                            // Landscape HUD
-                            VStack(spacing: 8) {
-                                HStack(spacing: 12) {
-                                    if let now = nowNext?.now {
-                                        PulsingLiveDot(size: 5)
-                                        Text(now.title)
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(Theme.Colors.textPrimary)
-                                            .lineLimit(1)
-                                    } else {
-                                        Text(currentChannel.name)
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(Theme.Colors.textPrimary)
-                                    }
-
-                                    Spacer()
-
-                                    if let next = nowNext?.next {
-                                        HStack(spacing: 4) {
-                                            Text("Danach:")
-                                                .font(.caption2.bold())
-                                                .foregroundStyle(Theme.Colors.textTertiary)
-                                            Text(next.title)
-                                                .font(.caption2)
-                                                .foregroundStyle(Theme.Colors.textSecondary)
-                                                .lineLimit(1)
-                                        }
-                                    }
-                                }
-
-                                if let now = nowNext?.now, let fraction = now.progress(at: .now) {
-                                    InfuseScrubber(
-                                        progress: fraction,
-                                        startTime: now.formattedStartTime,
-                                        endTime: now.formattedEndTime,
-                                        remainingText: now.remainingMinutes(at: .now).map { "noch \($0)m" }
-                                    )
-                                }
-
-                                HStack {
-                                    Button { zapPrevious() } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "chevron.left")
-                                            Text("Vorheriger")
-                                        }
-                                        .font(.caption2.weight(.medium))
-                                        .foregroundStyle(Theme.Colors.textSecondary)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 4)
-                                        .background(.ultraThinMaterial, in: Capsule())
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    Spacer()
-
-                                    Text("Doppeltippen: ‹ 10s | Vollbild | 10s › • Wischen für EPG/Zappen")
-                                        .font(.system(size: 9, design: .monospaced))
-                                        .foregroundStyle(Theme.Colors.textTertiary)
-
-                                    Spacer()
-
-                                    Button { zapNext() } label: {
-                                        HStack(spacing: 4) {
-                                            Text("Nächster")
-                                            Image(systemName: "chevron.right")
-                                        }
-                                        .font(.caption2.weight(.medium))
-                                        .foregroundStyle(Theme.Colors.textSecondary)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 4)
-                                        .background(.ultraThinMaterial, in: Capsule())
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
-                            .padding(.horizontal, max(24, geometry.safeAreaInsets.leading))
-                            .padding(.bottom, max(8, geometry.safeAreaInsets.bottom))
-                        } else {
-                            // Portrait Mode
-                            VStack(spacing: 8) {
-                                if let now = nowNext?.now {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        HStack {
-                                            PulsingLiveDot(size: 5)
-                                            Text(now.title)
-                                                .font(.headline)
-                                                .foregroundStyle(Theme.Colors.textPrimary)
-                                                .lineLimit(1)
-
-                                            Spacer()
-
-                                            if let remaining = now.remainingMinutes(at: .now) {
-                                                Text("noch \(remaining) Min.")
-                                                    .font(.caption.monospacedDigit().weight(.medium))
-                                                    .foregroundStyle(Theme.Colors.accentLive)
-                                            }
-                                        }
-
-                                        if let description = now.description {
-                                            Text(description)
-                                                .font(.caption)
-                                                .foregroundStyle(Theme.Colors.textSecondary)
-                                                .lineLimit(2)
-                                        }
-
-                                        if let fraction = now.progress(at: .now) {
-                                            InfuseScrubber(
-                                                progress: fraction,
-                                                startTime: now.formattedStartTime,
-                                                endTime: now.formattedEndTime,
-                                                remainingText: nil
-                                            )
-                                            .padding(.top, 2)
-                                        }
-
-                                        if let next = nowNext?.next {
-                                            HStack(spacing: 6) {
-                                                Text("DANACH:")
-                                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                                    .foregroundStyle(Theme.Colors.textTertiary)
-
-                                                Text(next.title)
-                                                    .font(.caption2)
-                                                    .foregroundStyle(Theme.Colors.textSecondary)
-                                                    .lineLimit(1)
-
-                                                Spacer()
-
-                                                Text(next.formattedTimeRange)
-                                                    .font(.system(size: 9, design: .monospaced))
-                                                    .foregroundStyle(Theme.Colors.textTertiary)
-                                            }
-                                            .padding(.top, 2)
-                                        }
-                                    }
-                                    .padding(14)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-                                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
-                                }
-
-                                // Bottom Quick Controls
-                                HStack {
-                                    Button { zapPrevious() } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "chevron.left")
-                                            Text("Vorheriger")
-                                        }
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(Theme.Colors.textSecondary)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(.ultraThinMaterial, in: Capsule())
-                                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    Spacer()
-
-                                    Text("Wischen: Zappen • Hoch für EPG")
-                                        .font(.system(size: 9, design: .monospaced))
-                                        .foregroundStyle(Theme.Colors.textTertiary)
-
-                                    Spacer()
-
-                                    Button { zapNext() } label: {
-                                        HStack(spacing: 4) {
-                                            Text("Nächster")
-                                            Image(systemName: "chevron.right")
-                                        }
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(Theme.Colors.textSecondary)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(.ultraThinMaterial, in: Capsule())
-                                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 24)
-                        }
-                    }
-                    .transition(.opacity)
-                }
             }
         }
         .task(id: currentChannel.id) {
@@ -672,8 +305,6 @@ struct PlayerScreen: View {
         failure = nil
         player?.pause()
         player = nil
-        isPlaying = true
-        isTimeshifted = false
 
         AudioSessionManager.shared.configureForPlayback()
         NowPlayingManager.shared.setupRemoteCommands()
@@ -696,70 +327,8 @@ struct PlayerScreen: View {
             failure = model.lastError ?? "Der Stream konnte nicht gestartet werden."
             return
         }
-        player = Self.makePlayer(for: stream)
+        player = Self.makePlayer(for: stream, channel: channel, nowNext: nowNext)
         player?.play()
-        isPlaying = true
-        isTimeshifted = false
-        scheduleControlsHiding()
-    }
-
-    private func togglePlayPause() {
-        guard let player else { return }
-        triggerHaptic(.light)
-        if isPlaying {
-            player.pause()
-            isPlaying = false
-            isTimeshifted = true
-            displayZapToast("⏸ Pausiert (Timeshift)")
-        } else {
-            player.play()
-            isPlaying = true
-        }
-        scheduleControlsHiding()
-    }
-
-    private func seek(by seconds: Double) {
-        guard let player else { return }
-        triggerHaptic(.medium)
-        let currentTime = CMTimeGetSeconds(player.currentTime())
-        let newTime = max(0, currentTime + seconds)
-        let targetTime = CMTime(seconds: newTime, preferredTimescale: 600)
-        player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
-        if seconds < 0 {
-            isTimeshifted = true
-        }
-        displayZapToast(seconds < 0 ? "10 Sek. zurück" : "10 Sek. vor")
-        scheduleControlsHiding()
-    }
-
-    private func selectAudioTrack(_ option: AVMediaSelectionOption) {
-        guard let group = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
-            return
-        }
-        player?.currentItem?.select(option, in: group)
-        triggerHaptic(.light)
-        displayZapToast("Tonspur: \(option.displayName)")
-    }
-
-    private func jumpToLive() {
-        guard let player, let currentItem = player.currentItem else { return }
-        triggerHaptic(.medium)
-        let seekable = currentItem.seekableTimeRanges
-        if let lastRange = seekable.last {
-            let liveEnd = CMTimeRangeGetEnd(lastRange.timeRangeValue)
-            player.seek(to: liveEnd, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
-                player.play()
-                isPlaying = true
-                isTimeshifted = false
-                displayZapToast("🔴 Live-Signal")
-            }
-        } else {
-            player.play()
-            isPlaying = true
-            isTimeshifted = false
-            displayZapToast("🔴 Live-Signal")
-        }
-        scheduleControlsHiding()
     }
 
     private func switchChannel(to newChannel: Channel) {
@@ -818,18 +387,6 @@ struct PlayerScreen: View {
         generator.impactOccurred()
     }
 
-    private func scheduleControlsHiding() {
-        hideControlsTask?.cancel()
-        hideControlsTask = Task {
-            try? await Task.sleep(for: .seconds(4))
-            if !Task.isCancelled && !showInspector && isPlaying {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    showControls = false
-                }
-            }
-        }
-    }
-
     private func closePlayer() {
         triggerHaptic(.light)
         teardownPlayer()
@@ -838,7 +395,6 @@ struct PlayerScreen: View {
     }
 
     private func teardownPlayer() {
-        hideControlsTask?.cancel()
         hideZapNoticeTask?.cancel()
         LiveActivityManager.shared.endActivity()
         HandoffCoordinator.shared.clearPlaybackActivity()
@@ -846,13 +402,11 @@ struct PlayerScreen: View {
         AudioSessionManager.shared.deactivate()
         player?.pause()
         player = nil
-        isPlaying = false
-        isTimeshifted = false
         Task { await model.stopPlayback() }
     }
 
-    /// Builds the player with healthy buffering parameters for robust video & audio synchronization.
-    private static func makePlayer(for stream: LiveStream) -> AVPlayer? {
+    /// Builds the player with native metadata attached for the Apple system player.
+    private static func makePlayer(for stream: LiveStream, channel: Channel, nowNext: NowNext?) -> AVPlayer? {
         if let cookie = stream.ticket.httpCookie(for: stream.playlistURL) {
             HTTPCookieStorage.shared.setCookie(cookie)
         }
@@ -871,9 +425,82 @@ struct PlayerScreen: View {
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
         item.automaticallyPreservesTimeOffsetFromLive = false
+
+        // Inject Native iOS OSD Metadata
+        var metadata: [AVMetadataItem] = []
+
+        let titleItem = AVMutableMetadataItem()
+        titleItem.identifier = .commonIdentifierTitle
+        titleItem.value = (nowNext?.now?.title ?? channel.name) as NSString
+        metadata.append(titleItem)
+
+        let artistItem = AVMutableMetadataItem()
+        artistItem.identifier = .commonIdentifierArtist
+        artistItem.value = channel.name as NSString
+        metadata.append(artistItem)
+
+        if let description = nowNext?.now?.description {
+            let descItem = AVMutableMetadataItem()
+            descItem.identifier = .commonIdentifierDescription
+            descItem.value = description as NSString
+            metadata.append(descItem)
+        }
+
+        item.externalMetadata = metadata
+
         let player = AVPlayer(playerItem: item)
         player.automaticallyWaitsToMinimizeStalling = true
         return player
+    }
+}
+
+// MARK: - Native iOS AVPlayerViewController (Plex / Apple TV System Player)
+
+struct NativeVideoPlayerView: UIViewControllerRepresentable {
+
+    let player: AVPlayer
+    var videoGravity: AVLayerVideoGravity = .resizeAspect
+    var onDismiss: (@MainActor @Sendable () -> Void)? = nil
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.showsPlaybackControls = true
+        controller.videoGravity = videoGravity
+        controller.allowsPictureInPicturePlayback = true
+        controller.updatesNowPlayingInfoCenter = true
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+        if controller.player !== player {
+            controller.player = player
+        }
+        controller.videoGravity = videoGravity
+        controller.showsPlaybackControls = true
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate {
+        let parent: NativeVideoPlayerView
+
+        init(_ parent: NativeVideoPlayerView) {
+            self.parent = parent
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
+        ) {
+            coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+                self?.parent.onDismiss?()
+            }
+        }
     }
 }
 
@@ -932,47 +559,6 @@ struct InfuseScrubber: View {
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
         }
-    }
-}
-
-// MARK: - Native AirPlay Button
-
-struct AirPlayButton: UIViewRepresentable {
-    func makeUIView(context: Context) -> AVRoutePickerView {
-        let picker = AVRoutePickerView()
-        picker.tintColor = .white
-        picker.activeTintColor = UIColor(Theme.Colors.accentLive)
-        picker.prioritizesVideoDevices = true
-        return picker
-    }
-
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
-}
-
-// MARK: - Native Video Player (AVPlayerViewController wrapper)
-
-struct NativeVideoPlayerView: UIViewControllerRepresentable {
-
-    let player: AVPlayer
-    let videoGravity: AVLayerVideoGravity
-    var showsNativeControls: Bool = false
-
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
-        controller.player = player
-        controller.showsPlaybackControls = showsNativeControls
-        controller.videoGravity = videoGravity
-        controller.allowsPictureInPicturePlayback = true
-        controller.updatesNowPlayingInfoCenter = false
-        return controller
-    }
-
-    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
-        if controller.player !== player {
-            controller.player = player
-        }
-        controller.videoGravity = videoGravity
-        controller.showsPlaybackControls = showsNativeControls
     }
 }
 
@@ -1086,75 +672,5 @@ struct MiniEPGRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Stream Telemetry Inspector
-
-struct StreamInspectorOverlay: View {
-
-    let channel: Channel
-    let liveStream: LiveStream?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("BROADCAST TELEMETRY")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Theme.Colors.accentLive)
-
-                Spacer()
-
-                Text("HW DECODER AKTIV")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Theme.Colors.statusSuccess)
-            }
-
-            Divider().overlay(Theme.Colors.borderSubtle)
-
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-                GridRow {
-                    Text("Sender")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                    Text(channel.name)
-                        .font(.caption2.bold())
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                }
-
-                GridRow {
-                    Text("ServiceRef")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                    Text(channel.serviceRef)
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .lineLimit(1)
-                }
-
-                if let sessionID = liveStream?.sessionID {
-                    GridRow {
-                        Text("Session ID")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                        Text(sessionID)
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.accentAction)
-                            .lineLimit(1)
-                    }
-                }
-
-                GridRow {
-                    Text("Decoder Engine")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                    Text("AVSampleBufferDisplayLayer (Hardware)")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.statusSuccess)
-                }
-            }
-        }
-        .padding(12)
-        .glassCard(cornerRadius: 12)
     }
 }
