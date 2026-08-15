@@ -132,6 +132,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	if err != nil {
 		return nil, fmt.Errorf("initialize device auth store: %w", err)
 	}
+	logUnboundDeviceAuthCensus(context.Background(), deviceAuthStore, logger, time.Now())
 
 	identityStorePath := filepath.Join(cfg.Store.Path, "identity.sqlite")
 	if cfg.Store.Backend == "memory" {
