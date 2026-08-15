@@ -118,6 +118,18 @@ actor PlaybackCoordinator {
             )
         )
 
+        var params: [String: String] = [
+            "intent": intentName,
+            "playback_mode": "native_hls",
+            "client_family": "ios_safari_native",
+            "preferred_engine": "native",
+            "codecs": "hevc,h264,av1"
+        ]
+        if let token = infoResponse?.playbackDecisionToken {
+            params["playback_decision_token"] = token
+            params["capHash"] = "cap-match"
+        }
+
         let intent: PlaybackWire.IntentAcceptedResponse = try await api.send(
             APIRequest(
                 method: .post,
@@ -127,7 +139,7 @@ actor PlaybackCoordinator {
                         type: "stream.start",
                         serviceRef: serviceRef,
                         playbackDecisionToken: infoResponse?.playbackDecisionToken,
-                        params: ["intent": intentName]
+                        params: params
                     )
                 ),
                 contentType: "application/json"
@@ -242,10 +254,15 @@ enum PlaybackWire {
 
         struct Capabilities: Encodable, Sendable {
             let capabilitiesVersion = 3
-            let container = ["fmp4", "hls"]
-            let videoCodecs = ["av1", "hevc", "h264"]
-            let audioCodecs = ["aac", "ac3", "mp2"]
+            let containers = ["fmp4", "mp4", "ts"]
+            let container = ["fmp4", "mp4", "ts"]
+            let videoCodecs = ["hevc", "h264", "av1"]
+            let audioCodecs = ["aac", "ac3", "mp2", "mp3"]
             let supportsHls = true
+            let preferredHlsEngine = "native"
+            let hlsEngines = ["native"]
+            let clientFamilyFallback = "ios_safari_native"
+            let deviceType = "apple_native"
             let allowTranscode: Bool
             let networkContext: NetworkContext
         }
