@@ -61,17 +61,20 @@ struct PlayerScreen: View {
                     .gesture(
                         DragGesture(minimumDistance: 25)
                             .onEnded { value in
-                                // Swipe Down -> Close Player & return to Channel List
-                                if value.translation.height > 60 && abs(value.translation.width) < value.translation.height {
+                                let horiz = value.translation.width
+                                let vert = value.translation.height
+
+                                // Swipe Down (vertical velocity / distance) -> Close Player
+                                if vert > 50 && vert > abs(horiz) * 1.3 {
                                     closePlayer()
                                 }
-                                // Swipe Left -> Next Channel
-                                else if value.translation.width < -60 && abs(value.translation.height) < abs(value.translation.width) {
-                                    zapNext()
-                                }
-                                // Swipe Right -> Previous Channel
-                                else if value.translation.width > 60 && abs(value.translation.height) < abs(value.translation.width) {
-                                    zapPrevious()
+                                // Horizontal Swipe (if zapping gestures enabled) -> Channel Zapping
+                                else if model.playerGesturesEnabled && abs(horiz) > 50 && abs(horiz) > abs(vert) * 1.3 {
+                                    if horiz < 0 {
+                                        zapNext()
+                                    } else {
+                                        zapPrevious()
+                                    }
                                 }
                             }
                     )
@@ -562,26 +565,16 @@ struct MiniEPGDrawer: View {
                     }
 
                     List(model.filteredChannels) { channel in
-                        Button {
+                        MiniEPGRow(
+                            channel: channel,
+                            nowNext: model.schedule[channel.serviceRef],
+                            isCurrent: channel.id == currentChannel.id
+                        ) {
                             onSelect(channel)
-                        } label: {
-                            HStack {
-                                ChannelRow(
-                                    channel: channel,
-                                    nowNext: model.schedule[channel.serviceRef]
-                                )
-
-                                if channel.id == currentChannel.id {
-                                    Image(systemName: "waveform.circle.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(Theme.Colors.accentLive)
-                                }
-                            }
                         }
-                        .buttonStyle(.plain)
                         .listRowBackground(
                             channel.id == currentChannel.id
-                                ? Theme.Colors.accentAction.opacity(0.12)
+                                ? Theme.Colors.accentAction.opacity(0.15)
                                 : Theme.Colors.surfaceElevated
                         )
                         .listRowSeparatorTint(Theme.Colors.borderSubtle)
@@ -593,6 +586,75 @@ struct MiniEPGDrawer: View {
             .navigationTitle("Programm & Sender")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+}
+
+struct MiniEPGRow: View {
+
+    let channel: Channel
+    let nowNext: NowNext?
+    let isCurrent: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                ChannelLogo(url: channel.logoURL, name: channel.name)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        if let number = channel.number {
+                            Text(number)
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(Theme.Colors.accentAction)
+                                .frame(minWidth: 22, alignment: .leading)
+                        }
+                        Text(channel.name)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        if isCurrent {
+                            HStack(spacing: 4) {
+                                PulsingLiveDot(size: 5)
+                                Text("LIVE")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentLive)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
+                        }
+                    }
+
+                    if let now = nowNext?.now {
+                        Text(now.title)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .lineLimit(1)
+
+                        if let fraction = now.progress(at: .now) {
+                            ProgressView(value: fraction)
+                                .progressViewStyle(.linear)
+                                .tint(isCurrent ? Theme.Colors.accentLive : Theme.Colors.accentAction)
+                        }
+                    } else {
+                        Text("Keine Programminformationen")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                }
+
+                Image(systemName: isCurrent ? "waveform.circle.fill" : "play.circle")
+                    .font(.title3)
+                    .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textTertiary)
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
