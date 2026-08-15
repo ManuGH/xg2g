@@ -143,7 +143,36 @@ actor PlaybackCoordinator {
             throw Failure.unusableStreamURL
         }
 
+        // Prime the cookie storage before checking readiness
+        if let cookie = ticket.httpCookie(for: playlistURL) {
+            HTTPCookieStorage.shared.setCookie(cookie)
+        }
+        if let rootCookie = ticket.rootCookie(for: playlistURL) {
+            HTTPCookieStorage.shared.setCookie(rootCookie)
+        }
+
+        // Wait for transcoder/receiver to produce the initial playlist (avoids AVPlayer 404 trap)
+        await waitForPlaylistReady(url: playlistURL, ticket: ticket)
+
         return LiveStream(sessionID: sessionID, playlistURL: playlistURL, ticket: ticket)
+    }
+
+    private func waitForPlaylistReady(url: URL, ticket: PlaybackTicket) async {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        if let cookie = ticket.httpCookie(for: url) {
+            request.setValue("\(cookie.name)=\(cookie.value)", forHTTPHeaderField: "Cookie")
+        }
+
+        for _ in 0..<20 {
+            if let (_, response) = try? await URLSession.shared.data(for: request),
+               let http = response as? HTTPURLResponse,
+               http.statusCode == 200 {
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(350))
+        }
     }
 
     /// Ends the session. Best-effort by design: the server also reclaims a

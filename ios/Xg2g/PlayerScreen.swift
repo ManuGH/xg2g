@@ -459,6 +459,9 @@ struct PlayerScreen: View {
         var options: [String: Any] = [:]
         if let cookie = stream.ticket.httpCookie(for: stream.playlistURL) {
             options[AVURLAssetHTTPCookiesKey] = [cookie]
+            options["AVURLAssetHTTPHeaderFieldsKey"] = [
+                "Cookie": "\(cookie.name)=\(cookie.value)"
+            ]
         }
 
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
