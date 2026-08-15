@@ -316,6 +316,46 @@ indefinitely by being invisible. It must appear in:
 - the diagnostics snapshot,
 - a log line on every legacy grant use.
 
+## Device Self-Revocation
+
+A device ends its own enrollment through `POST /api/v3/auth/device/revoke`,
+authenticated by its live DPoP-bound credential.
+
+**The endpoint accepts no device identifier.** The calling device is read from
+the authenticated principal, where it arrives via the binding
+`ValidateDPoPAccessToken` enforces (the access token's `bound_jkt` must equal
+the proof's thumbprint). A body field would be a request to trust the caller
+about who it is; removing the field is a stronger guarantee than validating one,
+because there is then nothing left to get wrong.
+
+The device identity travels on `auth.Principal.DeviceID`, set only for
+device-bound credentials. A handler cannot re-derive it by validating the proof
+a second time: `jti` is replay-cached, so the second validation is
+indistinguishable from an attack and is refused.
+
+Revocation retires every credential the device holds — access tokens, refresh
+token families, device grants — in one transaction. A partial revocation is the
+worst available outcome, because it reports success to a client that is about to
+destroy the only key that could have revoked it. The `devices` row survives, so
+the revocation stays auditable and the enrolled public key cannot be silently
+reused by a new grant.
+
+Removing *another* device remains a household operation with a different
+authority. This endpoint cannot express it.
+
+### Client ordering
+
+Remote first, local second — the same rule that keeps `CredentialStore` from
+offering a local `revoke`:
+
+1. call the endpoint with the live credential,
+2. wait for 204, or for 401 meaning the server has already forgotten this device,
+3. only then clear credentials and destroy the device key.
+
+Anything else — a transport failure, a 5xx — destroys nothing and is safe to
+retry. Destroying the key first would leave a grant that is valid on the server
+and no longer revocable from that device, curable only by an admin.
+
 ## Consequences
 
 - The iOS client can be built against the bound contract from the start; its

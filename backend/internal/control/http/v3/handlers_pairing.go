@@ -111,7 +111,10 @@ func (s *Server) StartPairing(w http.ResponseWriter, r *http.Request) {
 		PairingSecret: result.PairingSecret,
 		UserCode:      result.UserCode,
 		QRPayload:     result.QRPayload,
-		ExpiresAt:     result.ExpiresAt.UTC().Format(http.TimeFormat),
+		// RFC 3339, as api/openapi.yaml declares (`format: date-time`). This
+		// used to be http.TimeFormat — an HTTP *header* date. Every generated
+		// client refuses it, which is how the iOS client found this.
+		ExpiresAt: result.ExpiresAt.UTC().Format(time.RFC3339),
 	})
 }
 
@@ -139,7 +142,7 @@ func (s *Server) GetPairingStatus(w http.ResponseWriter, r *http.Request, pairin
 		DeviceType:             string(result.DeviceType),
 		RequestedPolicyProfile: result.RequestedPolicyProfile,
 		ApprovedPolicyProfile:  result.ApprovedPolicyProfile,
-		ExpiresAt:              result.ExpiresAt.UTC().Format(http.TimeFormat),
+		ExpiresAt:              result.ExpiresAt.UTC().Format(time.RFC3339),
 		ApprovedAt:             formatOptionalTime(result.ApprovedAt),
 		ConsumedAt:             formatOptionalTime(result.ConsumedAt),
 	})
@@ -183,7 +186,7 @@ func (s *Server) ApprovePairing(w http.ResponseWriter, r *http.Request, pairingI
 		OwnerID:               result.OwnerID,
 		ApprovedPolicyProfile: result.ApprovedPolicyProfile,
 		ApprovedAt:            formatOptionalTime(result.ApprovedAt),
-		ExpiresAt:             result.ExpiresAt.UTC().Format(http.TimeFormat),
+		ExpiresAt:             result.ExpiresAt.UTC().Format(time.RFC3339),
 	})
 }
 
@@ -258,11 +261,14 @@ func decodePairingBody(r *http.Request, out any) error {
 	return decoder.Decode(out)
 }
 
+// formatOptionalTime renders the optional pairing timestamps in the same
+// RFC 3339 form as the required ones. A response that mixed two date formats
+// across its own fields would be worse than either one consistently.
 func formatOptionalTime(value *time.Time) *string {
 	if value == nil {
 		return nil
 	}
-	formatted := value.UTC().Format(http.TimeFormat)
+	formatted := value.UTC().Format(time.RFC3339)
 	return &formatted
 }
 

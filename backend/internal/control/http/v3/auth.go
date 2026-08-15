@@ -43,6 +43,15 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 			return
 		}
 
+		// A media request may instead carry a playback ticket: the credential
+		// class a player uses, valid only here and only for the session named
+		// in this path. Checked before anything else because a ticket is not a
+		// token and must never be fed to the token pipeline.
+		if principal, ok := s.playbackTicketPrincipal(r); ok {
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
+			return
+		}
+
 		cfg := s.GetConfig()
 		hasTokens := cfg.APIToken != "" || len(cfg.APITokens) > 0 || s.hasDeviceAuthStore()
 

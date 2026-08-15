@@ -49,6 +49,14 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		{http.MethodPost, "/auth/device/grant/start", svc.DeviceGrantStart, false},
 		{http.MethodPost, "/auth/device/grant/finish", svc.DeviceGrantFinish, false},
 		{http.MethodPost, "/auth/device/refresh", svc.DeviceRefresh, false},
+		// Authenticated, unlike the two above: a device proves who it is with
+		// its live DPoP credential, and the handler revokes exactly that
+		// device.
+		{http.MethodPost, "/auth/device/revoke", svc.DeviceSelfRevoke, true},
+
+		// Playback tickets: minted with the caller's ordinary API credential,
+		// spendable only on that session's media routes.
+		{http.MethodPost, "/sessions/{sessionID}/playback-ticket", svc.IssuePlaybackTicket, true},
 
 		// Invitations
 		{http.MethodPost, "/auth/invitations/redeem", svc.RedeemInvitation, false},

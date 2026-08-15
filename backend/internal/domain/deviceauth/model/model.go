@@ -389,6 +389,12 @@ func normalizeDeviceName(value string, deviceType DeviceType) string {
 		return "Android Tablet"
 	case DeviceTypeAndroidTV:
 		return "Android TV"
+	case DeviceTypeIOSPhone:
+		return "iPhone"
+	case DeviceTypeIOSTablet:
+		return "iPad"
+	case DeviceTypeAppleTV:
+		return "Apple TV"
 	case DeviceTypeBrowser:
 		return "Browser"
 	default:

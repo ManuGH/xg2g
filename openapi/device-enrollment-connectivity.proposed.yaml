@@ -1,8 +1,18 @@
 openapi: 3.0.3
 info:
   title: xg2g Device Enrollment and Connectivity Contract
-  version: 0.1.0-proposed
+  version: 0.1.0-proposed-superseded
   description: |
+    SUPERSEDED — historical proposal, not the target architecture.
+
+    Device auth converged onto the identity domain (see ADR-032): pairing is an
+    authorisation gesture only, the durable device identity, grant, refresh
+    family and DPoP-bound access token all live in identity, and the web
+    bootstrap flow described below was removed rather than implemented.
+
+    The normative contract is api/openapi.yaml. This file is kept for the
+    design history and must not be used as a specification.
+
     Proposed normative contract for device enrollment, device/session bootstrap,
     and published connectivity truth.
 

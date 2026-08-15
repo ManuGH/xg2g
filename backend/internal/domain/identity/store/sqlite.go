@@ -1256,6 +1256,36 @@ func (s *SQLiteStore) RevokeDeviceGrantFamily(ctx context.Context, familyID stri
 	return tx.Commit()
 }
 
+// RevokeDeviceCredentials retires everything one device can authenticate with.
+//
+// All three tables in one transaction: a partial revocation is the worst
+// possible outcome here, because it reports success to a client that is about
+// to destroy its local key while leaving a working credential on the server.
+//
+// Already-revoked rows are left untouched (`revoked_at IS NULL` guard) so a
+// repeated call cannot move an earlier revocation timestamp forward and rewrite
+// when the device actually lost access.
+func (s *SQLiteStore) RevokeDeviceCredentials(ctx context.Context, deviceID string, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	nowUTC := now.UTC()
+	statements := []string{
+		`UPDATE access_tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`,
+		`UPDATE refresh_token_families SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`,
+		`UPDATE device_grants SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement, nowUTC, deviceID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *SQLiteStore) PutDPoPAccessToken(ctx context.Context, token *identity.DPoPAccessToken) error {
 	query := `
 	INSERT INTO access_tokens (token_hash, device_id, user_id, bound_jkt, scopes, created_at, expires_at, revoked_at)

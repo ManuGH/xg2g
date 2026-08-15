@@ -79,7 +79,17 @@ components:
 
     DeviceAuthDeviceType:
       type: string
-      enum: [android_phone, android_tablet, android_tv, browser, unknown]
+      enum:
+        [
+          android_phone,
+          android_tablet,
+          android_tv,
+          ios_phone,
+          ios_tablet,
+          apple_tv,
+          browser,
+          unknown,
+        ]
 
     PairingStatus:
       type: string
@@ -401,6 +411,12 @@ components:
           type: string
           format: date-time
 
+    # Shape of the converged exchange (ADR-032). A successful exchange now
+    # yields identity credentials directly: a DPoP-bound access token plus a
+    # rotating refresh token. The former deviceGrantId/deviceGrant/
+    # accessSessionId trio is gone because the concepts are — the rotating
+    # secret is a refresh-token family entry and the access token is bound to
+    # the device key rather than to a separate session row.
     ExchangePairingResponse:
       type: object
       additionalProperties: false
@@ -408,14 +424,12 @@ components:
         [
           pairingId,
           deviceId,
-          deviceGrantId,
-          deviceGrant,
-          deviceGrantExpiresAt,
-          accessSessionId,
+          tokenType,
           accessToken,
-          accessTokenExpiresAt,
+          expiresIn,
+          refreshToken,
+          scope,
           policyVersion,
-          scopes,
           endpoints,
         ]
       properties:
@@ -423,26 +437,25 @@ components:
           type: string
         deviceId:
           type: string
-        deviceGrantId:
+        tokenType:
           type: string
-        deviceGrant:
-          type: string
-        deviceGrantExpiresAt:
-          type: string
-          format: date-time
-        accessSessionId:
-          type: string
+          description: Always "DPoP"; the token is sender-constrained to the enrolled device key.
+          example: DPoP
         accessToken:
           type: string
-        accessTokenExpiresAt:
+        expiresIn:
+          type: integer
+          description: Access-token lifetime in seconds, from the moment of the response.
+          example: 900
+        refreshToken:
           type: string
-          format: date-time
+          description: >-
+            Rotates on every refresh. Presenting a superseded value is treated
+            as replay and revokes the whole family.
+        scope:
+          type: string
         policyVersion:
           type: string
-        scopes:
-          type: array
-          items:
-            type: string
         endpoints:
           type: array
           items:

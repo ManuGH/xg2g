@@ -4,6 +4,19 @@
 
 import Foundation
 
+/// A complete credential set, as issued by one exchange or one refresh.
+///
+/// Grant and session are never independent: a single server response mints
+/// both, a refresh replaces both, and a revoke ends both. Modelling them as one
+/// value is what makes "half a credential set" unrepresentable at the API
+/// level rather than merely discouraged — a caller cannot commit a session
+/// without the grant that renews it, because there is no call that would let
+/// them.
+struct EnrolledCredentials: Equatable, Sendable {
+    let grant: DeviceGrant
+    let session: AccessSession
+}
+
 /// Long-lived proof that this device was paired with a server.
 ///
 /// Separate from the DPoP device key on purpose: the grant is a *credential*

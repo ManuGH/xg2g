@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,8 @@ import (
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	identitystore "github.com/ManuGH/xg2g/internal/domain/identity/store"
+	sessionmodel "github.com/ManuGH/xg2g/internal/domain/session/model"
+	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
@@ -44,6 +47,7 @@ type deviceAuthE2E struct {
 	handler      http.Handler
 	identity     *identity.Service
 	deviceAuthDB *deviceauthstore.SqliteStore
+	sessions     *sessionstore.MemoryStore
 }
 
 func newDeviceAuthE2E(t *testing.T) *deviceAuthE2E {
@@ -60,7 +64,8 @@ func newDeviceAuthE2E(t *testing.T) *deviceAuthE2E {
 	t.Cleanup(func() { _ = identityStore.Close() })
 
 	srv := NewServer(config.AppConfig{}, nil, nil)
-	srv.SetDependencies(Dependencies{DeviceAuthStore: deviceAuthStore})
+	sessions := sessionstore.NewMemoryStore()
+	srv.SetDependencies(Dependencies{DeviceAuthStore: deviceAuthStore, Store: sessions})
 
 	svc := identity.NewService(identity.Config{}, identityStore)
 	require.NoError(t, identityStore.PutUser(t.Context(), &identity.User{
@@ -70,7 +75,26 @@ func newDeviceAuthE2E(t *testing.T) *deviceAuthE2E {
 	}))
 	srv.SetIdentityService(svc)
 
-	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:admin"})
+	// Only the admin side is stubbed. A request presenting a device credential
+	// runs the real middleware, so anything asserting on *which device* is
+	// calling is asserting on the production path rather than on a principal
+	// this test fabricated.
+	//
+	// The two cannot simply be two handlers: the router takes `authMiddleware`
+	// as a method value and re-reads the override on every request, so swapping
+	// the field after building would change both.
+	adminStandIn := testPrincipalAuthMiddleware(t, []string{"v3:admin"})
+	srv.AuthMiddlewareOverride = func(next http.Handler) http.Handler {
+		stubbed, real := adminStandIn(next), srv.authMiddlewareImpl(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/approve") {
+				stubbed.ServeHTTP(w, r)
+				return
+			}
+			real.ServeHTTP(w, r)
+		})
+	}
+
 	handler, err := newHandlerWithMiddlewares(srv, config.AppConfig{}, nil)
 	require.NoError(t, err, "build production v3 handler")
 
@@ -80,6 +104,7 @@ func newDeviceAuthE2E(t *testing.T) *deviceAuthE2E {
 		handler:      handler,
 		identity:     svc,
 		deviceAuthDB: deviceAuthStore,
+		sessions:     sessions,
 	}
 }
 
@@ -187,6 +212,39 @@ func (e *deviceAuthE2E) do(method, path string, body any, headers map[string]str
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
+
+	rec := httptest.NewRecorder()
+	e.handler.ServeHTTP(rec, req)
+	return rec.Result()
+}
+
+func (e *deviceAuthE2E) newRequest(method, path string, body any) *http.Request {
+	e.t.Helper()
+
+	var reader *bytes.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		require.NoError(e.t, err)
+		reader = bytes.NewReader(encoded)
+	} else {
+		reader = bytes.NewReader(nil)
+	}
+
+	req := httptest.NewRequest(method, e2eHost+path, reader)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	return req
+}
+
+// asDevice issues a request the way an enrolled client does: the DPoP-bound
+// access token in `Authorization`, and a fresh proof over this exact target
+// with `ath` binding it to that token. Runs against the real auth middleware.
+func (e *deviceAuthE2E) asDevice(key deviceKey, method, path, accessToken string, body any) *http.Response {
+	e.t.Helper()
+
+	req := e.newRequest(method, path, body)
+	req.Header.Set("Authorization", "DPoP "+accessToken)
+	req.Header.Set("DPoP", key.proof(e.t, method, e2eHost+path, proofOverrides{accessToken: accessToken}))
 
 	rec := httptest.NewRecorder()
 	e.handler.ServeHTTP(rec, req)
@@ -500,4 +558,114 @@ func TestDeviceAuthE2E_LegacyGrantRequiresRePairing(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &problem))
 	require.Equal(t, problemcode.CodeDeviceReauthRequired, problem.Code)
+}
+
+// MARK: - Playback Tickets
+
+// An enrolled device exchanges its DPoP credentials for a session-scoped
+// playback ticket, and uses it to play HLS media. The ticket must follow the
+// session lifecycle: valid while the session is live, dead the moment it reaches
+// a terminal state, and refused on any other session or API endpoint.
+func TestDeviceAuthE2E_PlaybackTicketFullLifecycle(t *testing.T) {
+	e := newDeviceAuthE2E(t)
+	key := newDeviceKey(t)
+	enrolled, status := e.pairAndExchange(key)
+	require.Equal(t, http.StatusOK, status)
+
+	const sessionID = "11111111-1111-1111-1111-111111111111"
+	require.NoError(t, e.sessions.PutSession(t.Context(), &sessionmodel.SessionRecord{
+		SessionID: sessionID,
+		State:     sessionmodel.SessionReady,
+	}))
+
+	// 1. Enrolled device requests a playback ticket via DPoP
+	ticketResp := e.asDevice(key, http.MethodPost, "/api/v3/sessions/"+sessionID+"/playback-ticket", enrolled.AccessToken, nil)
+	require.Equal(t, http.StatusCreated, ticketResp.StatusCode)
+
+	var ticket playbackTicketResponse
+	decodeInto(t, ticketResp, &ticket)
+	require.Equal(t, sessionID, ticket.SessionID)
+	require.NotEmpty(t, ticket.Ticket)
+	require.Equal(t, "xg2g_playback", ticket.Cookie)
+	require.Equal(t, "/api/v3/sessions/"+sessionID+"/hls/", ticket.Path)
+
+	mediaPath := "/api/v3/sessions/" + sessionID + "/hls/index.m3u8"
+
+	// 2. A media request carrying the ticket passes authentication (non-401).
+	mediaReq := e.newRequest(http.MethodGet, mediaPath, nil)
+	mediaReq.AddCookie(&http.Cookie{Name: "xg2g_playback", Value: ticket.Ticket})
+	rec := httptest.NewRecorder()
+	e.handler.ServeHTTP(rec, mediaReq)
+	require.NotEqual(t, http.StatusUnauthorized, rec.Code, "valid playback ticket must authenticate media request")
+
+	// 3. Media request without ticket is rejected with 401
+	unauthReq := e.newRequest(http.MethodGet, mediaPath, nil)
+	recUnauth := httptest.NewRecorder()
+	e.handler.ServeHTTP(recUnauth, unauthReq)
+	require.Equal(t, http.StatusUnauthorized, recUnauth.Code, "media request without cookie must be rejected")
+
+	// 4. Ticket is refused for another session
+	const otherSessionID = "22222222-2222-2222-2222-222222222222"
+	require.NoError(t, e.sessions.PutSession(t.Context(), &sessionmodel.SessionRecord{
+		SessionID: otherSessionID,
+		State:     sessionmodel.SessionReady,
+	}))
+	otherMediaReq := e.newRequest(http.MethodGet, "/api/v3/sessions/"+otherSessionID+"/hls/index.m3u8", nil)
+	otherMediaReq.AddCookie(&http.Cookie{Name: "xg2g_playback", Value: ticket.Ticket})
+	recOther := httptest.NewRecorder()
+	e.handler.ServeHTTP(recOther, otherMediaReq)
+	require.Equal(t, http.StatusUnauthorized, recOther.Code, "ticket for session A must not authenticate session B")
+
+	// 5. Ticket is refused for API routes
+	apiReq := e.newRequest(http.MethodGet, "/api/v3/auth/effective-permissions", nil)
+	apiReq.AddCookie(&http.Cookie{Name: "xg2g_playback", Value: ticket.Ticket})
+	recAPI := httptest.NewRecorder()
+	e.handler.ServeHTTP(recAPI, apiReq)
+	require.Equal(t, http.StatusUnauthorized, recAPI.Code, "playback ticket must not authenticate API routes")
+
+	// 6. Session transitions to terminal state (SessionStopped) -> Ticket dies immediately
+	require.NoError(t, e.sessions.PutSession(t.Context(), &sessionmodel.SessionRecord{
+		SessionID: sessionID,
+		State:     sessionmodel.SessionStopped,
+	}))
+	stoppedReq := e.newRequest(http.MethodGet, mediaPath, nil)
+	stoppedReq.AddCookie(&http.Cookie{Name: "xg2g_playback", Value: ticket.Ticket})
+	recStopped := httptest.NewRecorder()
+	e.handler.ServeHTTP(recStopped, stoppedReq)
+	require.Equal(t, http.StatusUnauthorized, recStopped.Code, "ticket must fail when session is stopped")
+
+	// 7. Session transitions to SessionFailed -> Ticket dies
+	require.NoError(t, e.sessions.PutSession(t.Context(), &sessionmodel.SessionRecord{
+		SessionID: sessionID,
+		State:     sessionmodel.SessionFailed,
+	}))
+	failedReq := e.newRequest(http.MethodGet, mediaPath, nil)
+	failedReq.AddCookie(&http.Cookie{Name: "xg2g_playback", Value: ticket.Ticket})
+	recFailed := httptest.NewRecorder()
+	e.handler.ServeHTTP(recFailed, failedReq)
+	require.Equal(t, http.StatusUnauthorized, recFailed.Code, "ticket must fail when session is failed")
+}
+
+func TestDeviceAuthE2E_PlaybackTicketRequiresAuthentication(t *testing.T) {
+	e := newDeviceAuthE2E(t)
+	const sessionID = "11111111-1111-1111-1111-111111111111"
+
+	// Unauthenticated request to issue ticket fails
+	unauthResp := e.do(http.MethodPost, "/api/v3/sessions/"+sessionID+"/playback-ticket", nil, nil)
+	defer func() { _ = unauthResp.Body.Close() }()
+	require.Equal(t, http.StatusUnauthorized, unauthResp.StatusCode, "issuing a playback ticket requires auth")
+
+	// Foreign DPoP proof fails
+	keyA := newDeviceKey(t)
+	keyB := newDeviceKey(t)
+	enrolledA, status := e.pairAndExchange(keyA)
+	require.Equal(t, http.StatusOK, status)
+
+	path := "/api/v3/sessions/" + sessionID + "/playback-ticket"
+	badProofResp := e.do(http.MethodPost, path, nil, map[string]string{
+		"Authorization": "DPoP " + enrolledA.AccessToken,
+		"DPoP":          keyB.proof(t, http.MethodPost, e2eHost+path, proofOverrides{accessToken: enrolledA.AccessToken}),
+	})
+	defer func() { _ = badProofResp.Body.Close() }()
+	require.Equal(t, http.StatusUnauthorized, badProofResp.StatusCode, "foreign key proof must be refused")
 }

@@ -72,6 +72,11 @@ type DeviceStore interface {
 	GetRefreshTokenFamily(ctx context.Context, tokenHash string) (*RefreshTokenFamily, error)
 	RotateRefreshToken(ctx context.Context, oldTokenHash, newTokenHash string, newExpiresAt, now time.Time) (*RefreshTokenFamily, error)
 	RevokeDeviceGrantFamily(ctx context.Context, familyID string, now time.Time) error
+	// RevokeDeviceCredentials retires every credential belonging to one device:
+	// all grants, all refresh-token families, all DPoP access tokens. The device
+	// row itself survives so the revocation stays auditable and the enrolled
+	// public key cannot be silently reused by a new grant.
+	RevokeDeviceCredentials(ctx context.Context, deviceID string, now time.Time) error
 	PutDPoPAccessToken(ctx context.Context, token *DPoPAccessToken) error
 	GetDPoPAccessToken(ctx context.Context, tokenHash string) (*DPoPAccessToken, error)
 	RevokeDPoPAccessToken(ctx context.Context, tokenHash string, now time.Time) error

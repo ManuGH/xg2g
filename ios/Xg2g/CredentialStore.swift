@@ -32,10 +32,14 @@ protocol CredentialStore: Sendable {
     func prepareForLaunch() async throws
 
     func deviceGrant(for identity: ServerIdentity) async throws -> DeviceGrant?
-    func store(_ grant: DeviceGrant, for identity: ServerIdentity) async throws
-
     func accessSession(for identity: ServerIdentity) async throws -> AccessSession?
-    func store(_ session: AccessSession, for identity: ServerIdentity) async throws
+
+    /// Commits a complete credential set from an exchange or a refresh.
+    ///
+    /// There is deliberately no way to store a grant or a session on its own.
+    /// Both arrive from one server response, so a call that wrote only one of
+    /// them could only ever produce a state the server never issued.
+    func commit(_ credentials: EnrolledCredentials, for identity: ServerIdentity) async throws
 
     /// Log out: drop the session, keep the pairing.
     func endSession(for identity: ServerIdentity) async throws
@@ -137,16 +141,23 @@ actor KeychainCredentialStore: CredentialStore {
         try load(DeviceGrant.self, kind: .deviceGrant, identity: identity)
     }
 
-    func store(_ grant: DeviceGrant, for identity: ServerIdentity) throws {
-        try save(grant, kind: .deviceGrant, identity: identity)
-    }
-
     func accessSession(for identity: ServerIdentity) throws -> AccessSession? {
         try load(AccessSession.self, kind: .accessSession, identity: identity)
     }
 
-    func store(_ session: AccessSession, for identity: ServerIdentity) throws {
-        try save(session, kind: .accessSession, identity: identity)
+    func commit(_ credentials: EnrolledCredentials, for identity: ServerIdentity) throws {
+        try requirePrepared()
+
+        // Two Keychain items and no transaction spanning them, so the write
+        // order *is* the guarantee. The grant goes first: a grant without a
+        // session is an ordinary state the app already handles — it is what
+        // every cold start after token expiry looks like, and the refresh path
+        // recovers from it without the user noticing. A session without a grant
+        // is a dead end: nothing can renew it and, once it expires, nothing can
+        // revoke it either. Writing in this order means an interrupted commit
+        // can only leave behind the recoverable half.
+        try save(credentials.grant, kind: .deviceGrant, identity: identity)
+        try save(credentials.session, kind: .accessSession, identity: identity)
     }
 
     func endSession(for identity: ServerIdentity) throws {

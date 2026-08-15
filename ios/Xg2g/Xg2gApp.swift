@@ -8,11 +8,7 @@ import SwiftUI
 struct Xg2gApp: App {
     var body: some Scene {
         WindowGroup {
-            // Scaffolding only: replaced by the setup / web shell root in the
-            // next step. Kept minimal so the project and toolchain are verified
-            // before any UI is layered on.
-            Text("xg2g")
-                .font(.largeTitle)
+            RootView()
         }
     }
 }

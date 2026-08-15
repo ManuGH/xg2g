@@ -33,6 +33,7 @@ var (
 	ErrRecoveryCodesAlreadyAcknowledged = errors.New("recovery codes have already been acknowledged")
 	ErrRefreshTokenReplay               = errors.New("refresh token replay detected: entire device grant family revoked")
 	ErrDPoPBindingMismatch              = errors.New("dpop key binding mismatch: access token bound_jkt does not match proof jwk thumbprint")
+	ErrInvalidDeviceID                  = errors.New("no such device")
 )
 
 type BootstrapState string

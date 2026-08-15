@@ -19,6 +19,17 @@ type Principal struct {
 
 	// User is the human-readable username if configured (e.g., "dad").
 	User string
+
+	// DeviceID names the enrolled device this credential belongs to, and is
+	// set only for device-bound (DPoP) credentials — empty for config tokens,
+	// browser sessions and everything else.
+	//
+	// It exists so an endpoint that must act on "the calling device" can read
+	// the answer from the authenticated identity instead of trusting a field in
+	// the request. Re-deriving it in a handler is not an option either: the
+	// DPoP proof's jti is replay-cached, so validating the same proof a second
+	// time is indistinguishable from an attack and is refused.
+	DeviceID string
 }
 
 // NewPrincipal creates a Principal from a token and optional user/scopes.

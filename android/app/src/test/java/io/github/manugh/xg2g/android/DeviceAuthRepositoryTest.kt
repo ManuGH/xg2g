@@ -131,95 +131,6 @@ class DeviceAuthRepositoryTest {
         assertEquals("legacy-token", transport.createdCookieSessionBearer)
         assertNull(transport.refreshedGrantId)
     }
-
-    @Test
-    fun `prepareWebSession uses web bootstrap for persisted device auth`() {
-        val cookies = FakeCookieSession()
-        val transport = FakeTransport().apply {
-            startBootstrapResponse = StartedWebBootstrap(
-                completePath = "/api/v3/auth/web-bootstrap/wbs-1",
-                bootstrapToken = "bootstrap-token"
-            )
-            completeBootstrapResponse = CompletedWebBootstrap(
-                locationPath = "/ui/dashboard?mode=tv"
-            )
-        }
-        val repository = DeviceAuthRepository(
-            stateStore = FakeStateStore(
-                PersistedDeviceAuthState(
-                    serverUrl = "https://demo.example/ui/",
-                    deviceGrantId = "dgr-1",
-                    deviceGrant = "grant-secret",
-                    accessToken = "device-access",
-                    accessTokenExpiresAtEpochMs = 120_000L
-                )
-            ),
-            cookieSession = cookies,
-            transport = transport,
-            telemetry = FakeTelemetry(),
-            nowEpochMs = { 60_000L }
-        )
-
-        val preparedUrl = runSuspend {
-            repository.prepareWebSession(
-                baseUrl = "https://demo.example/ui/",
-                targetUrl = "https://demo.example/ui/dashboard?mode=tv",
-                legacyAuthToken = null
-            )
-        }
-
-        assertEquals("/ui/dashboard?mode=tv", transport.startedBootstrapTargetPath)
-        assertEquals(
-            "https://demo.example/ui/dashboard?mode=tv",
-            preparedUrl
-        )
-        assertTrue(transport.completedBootstrap)
-        assertNull(transport.createdCookieSessionBearer)
-    }
-
-    @Test
-    fun `prepareWebSession ignores stale cookie shortcut when persisted device auth exists`() {
-        val cookies = FakeCookieSession().apply {
-            hasCookie = true
-        }
-        val transport = FakeTransport().apply {
-            startBootstrapResponse = StartedWebBootstrap(
-                completePath = "/api/v3/auth/web-bootstrap/wbs-2",
-                bootstrapToken = "bootstrap-token"
-            )
-            completeBootstrapResponse = CompletedWebBootstrap(
-                locationPath = "/ui/"
-            )
-        }
-        val repository = DeviceAuthRepository(
-            stateStore = FakeStateStore(
-                PersistedDeviceAuthState(
-                    serverUrl = "https://demo.example/ui/",
-                    deviceGrantId = "dgr-1",
-                    deviceGrant = "grant-secret",
-                    accessToken = "device-access",
-                    accessTokenExpiresAtEpochMs = 120_000L
-                )
-            ),
-            cookieSession = cookies,
-            transport = transport,
-            telemetry = FakeTelemetry(),
-            nowEpochMs = { 60_000L }
-        )
-
-        val preparedUrl = runSuspend {
-            repository.prepareWebSession(
-                baseUrl = "https://demo.example/ui/",
-                targetUrl = "https://demo.example/ui/",
-                legacyAuthToken = null
-            )
-        }
-
-        assertEquals("/ui/", transport.startedBootstrapTargetPath)
-        assertTrue(transport.completedBootstrap)
-        assertEquals("https://demo.example/ui/", preparedUrl)
-    }
-
     @Test
     fun `ensureAuthSession accepts a launch base URL that matches a published endpoint`() {
         val store = FakeStateStore(
@@ -425,8 +336,6 @@ private class FakeCookieSession : AuthCookieSession {
 private class FakeTransport : DeviceAuthTransport {
     var refreshResponse: RefreshedDeviceSession? = null
     var refreshException: DeviceAuthHttpException? = null
-    var startBootstrapResponse: StartedWebBootstrap? = null
-    var completeBootstrapResponse: CompletedWebBootstrap? = null
     var refreshCalls = 0
     var createCookieSessionCalls = 0
     var refreshedGrantId: String? = null
@@ -453,25 +362,6 @@ private class FakeTransport : DeviceAuthTransport {
         createdCookieSessionBearer = bearerToken
     }
 
-    override suspend fun startWebBootstrap(
-        uiBaseUrl: HttpUrl,
-        accessToken: String,
-        targetPath: String
-    ): StartedWebBootstrap {
-        startedBootstrapTargetPath = targetPath
-        return startBootstrapResponse
-            ?: throw AssertionError("startWebBootstrap called without configured response")
-    }
-
-    override suspend fun completeWebBootstrap(
-        uiBaseUrl: HttpUrl,
-        completePath: String,
-        bootstrapToken: String
-    ): CompletedWebBootstrap {
-        completedBootstrap = true
-        return completeBootstrapResponse
-            ?: throw AssertionError("completeWebBootstrap called without configured response")
-    }
 }
 
 private class FakeTelemetry : DeviceAuthTelemetry {

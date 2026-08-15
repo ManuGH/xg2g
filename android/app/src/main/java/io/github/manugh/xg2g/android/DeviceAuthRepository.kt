@@ -175,18 +175,10 @@ internal class DeviceAuthRepository(
         val sessionUrl = apiV3Url(uiBaseUrl, "auth", "session")
         val deviceState = currentState(normalizedBaseUrl)
 
-        if (deviceState != null) {
-            telemetry.record(
-                DeviceAuthTelemetryEvent(
-                    name = "device_auth_web_session_prepare",
-                    level = DeviceAuthTelemetryLevel.INFO,
-                    stage = "prepare_web_session",
-                    outcome = "device_bootstrap_required"
-                )
-            )
-            return bootstrapDeviceWebSession(normalizedBaseUrl, uiBaseUrl, targetPath)
-        }
-
+        // A paired device no longer converts its device credential into a browser
+        // session. These are different authentication classes: the device key
+        // authenticates a device, a passkey authenticates a person. The WebView
+        // therefore establishes a user session like any other browser client.
         if (cookieSession.hasSessionCookie(sessionUrl, SESSION_COOKIE_NAME)) {
             telemetry.record(
                 DeviceAuthTelemetryEvent(
@@ -209,107 +201,6 @@ internal class DeviceAuthRepository(
             )
         )
         return uiBaseUrl.resolveAgainst(targetPath)
-    }
-
-    private suspend fun bootstrapDeviceWebSession(
-        normalizedBaseUrl: String,
-        uiBaseUrl: HttpUrl,
-        targetPath: String
-    ): String {
-        telemetry.record(
-            DeviceAuthTelemetryEvent(
-                name = "device_auth_web_bootstrap_begin",
-                level = DeviceAuthTelemetryLevel.INFO,
-                stage = "web_bootstrap",
-                outcome = "start"
-            )
-        )
-        repeat(2) { attempt ->
-            val started = startWebBootstrap(normalizedBaseUrl, uiBaseUrl, targetPath)
-            try {
-                val completed = transport.completeWebBootstrap(uiBaseUrl, started.completePath, started.bootstrapToken)
-                telemetry.record(
-                    DeviceAuthTelemetryEvent(
-                        name = "device_auth_web_bootstrap_complete",
-                        level = DeviceAuthTelemetryLevel.INFO,
-                        stage = "web_bootstrap",
-                        outcome = "session_cookie_ready"
-                    )
-                )
-                return resolveBootstrapLocation(uiBaseUrl, completed.locationPath, targetPath)
-            } catch (error: DeviceAuthHttpException) {
-                if (attempt == 0 && error.statusCode in setOf(401, 403, 409, 410)) {
-                    clearAccessSessionArtifacts(normalizedBaseUrl)
-                    return@repeat
-                }
-                if (error.statusCode in setOf(401, 403, 404, 409, 410)) {
-                    requireReenroll(
-                        baseUrl = normalizedBaseUrl,
-                        stage = "web_bootstrap_complete",
-                        error = error,
-                        message = "Android device pairing is no longer valid. Pair this device again."
-                    )
-                }
-                throw unavailable(
-                    stage = "web_bootstrap_complete",
-                    message = "Android could not open the embedded xg2g session.",
-                    error = error
-                )
-            }
-        }
-
-        throw unavailable(
-            stage = "web_bootstrap_complete",
-            message = "Android could not open the embedded xg2g session."
-        )
-    }
-
-    private suspend fun startWebBootstrap(
-        normalizedBaseUrl: String,
-        uiBaseUrl: HttpUrl,
-        targetPath: String
-    ): StartedWebBootstrap {
-        repeat(2) { attempt ->
-            val accessToken = resolveDeviceAccessToken(
-                uiBaseUrl = uiBaseUrl,
-                forceRefresh = attempt > 0
-            )
-            try {
-                val started = transport.startWebBootstrap(uiBaseUrl, accessToken, targetPath)
-                telemetry.record(
-                    DeviceAuthTelemetryEvent(
-                        name = "device_auth_web_bootstrap_started",
-                        level = DeviceAuthTelemetryLevel.INFO,
-                        stage = "web_bootstrap_start",
-                        outcome = "bootstrap_created"
-                    )
-                )
-                return started
-            } catch (error: DeviceAuthHttpException) {
-                if (error.statusCode in setOf(401, 403, 410)) {
-                    clearAccessSessionArtifacts(normalizedBaseUrl)
-                    if (attempt == 0) {
-                        return@repeat
-                    }
-                    requireReenroll(
-                        baseUrl = normalizedBaseUrl,
-                        stage = "web_bootstrap_start",
-                        error = error,
-                        message = "Android device pairing is no longer valid. Pair this device again."
-                    )
-                }
-                throw unavailable(
-                    stage = "web_bootstrap_start",
-                    message = "Android could not start the embedded xg2g session.",
-                    error = error
-                )
-            }
-        }
-
-        throw unavailable(
-            stage = "web_bootstrap_start",
-            message = "Android could not start the embedded xg2g session."
-        )
     }
 
     private suspend fun resolveDeviceAccessToken(
@@ -518,13 +409,6 @@ internal class DeviceAuthRepository(
         return "$path$query"
     }
 
-    private fun resolveBootstrapLocation(uiBaseUrl: HttpUrl, locationPath: String?, fallbackTargetPath: String): String {
-        if (locationPath.isNullOrBlank()) {
-            return uiBaseUrl.resolveAgainst(fallbackTargetPath)
-        }
-        return uiBaseUrl.resolveAgainst(locationPath)
-    }
-
     private fun isSameOrigin(candidate: HttpUrl, baseUrl: HttpUrl): Boolean {
         return candidate.scheme == baseUrl.scheme &&
             candidate.host == baseUrl.host &&
@@ -556,22 +440,6 @@ internal data class RefreshedDeviceSession(
     val policyVersion: String? = null,
     val endpoints: List<PublishedEndpoint> = emptyList()
 )
-
-internal data class StartedWebBootstrap(
-    val completePath: String,
-    val bootstrapToken: String
-)
-
-internal data class CompletedWebBootstrap(
-    val locationPath: String?
-)
-
-internal interface DeviceAuthTransport {
-    suspend fun refreshSession(uiBaseUrl: HttpUrl, deviceGrantId: String, deviceGrant: String): RefreshedDeviceSession
-    suspend fun createCookieSession(uiBaseUrl: HttpUrl, bearerToken: String)
-    suspend fun startWebBootstrap(uiBaseUrl: HttpUrl, accessToken: String, targetPath: String): StartedWebBootstrap
-    suspend fun completeWebBootstrap(uiBaseUrl: HttpUrl, completePath: String, bootstrapToken: String): CompletedWebBootstrap
-}
 
 internal class DeviceAuthHttpException(
     val statusCode: Int,
@@ -639,6 +507,13 @@ private class LogcatDeviceAuthTelemetry : DeviceAuthTelemetry {
     }
 }
 
+// Web bootstrap is gone: a device credential is no longer convertible into a
+// browser session. Refresh and the cookie-session exchange are what remain.
+internal interface DeviceAuthTransport {
+    suspend fun refreshSession(uiBaseUrl: HttpUrl, deviceGrantId: String, deviceGrant: String): RefreshedDeviceSession
+    suspend fun createCookieSession(uiBaseUrl: HttpUrl, bearerToken: String)
+}
+
 internal class OkHttpDeviceAuthTransport(
     private val cookieSession: AuthCookieSession,
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -699,63 +574,6 @@ internal class OkHttpDeviceAuthTransport(
                 }
                 Log.i(TAG, "action=create_cookie_session outcome=ok status=${response.code}")
             }
-        }
-    }
-
-    override suspend fun startWebBootstrap(
-        uiBaseUrl: HttpUrl,
-        accessToken: String,
-        targetPath: String
-    ): StartedWebBootstrap = withContext(Dispatchers.IO) {
-        Log.i(TAG, "action=start_web_bootstrap path=/api/v3/auth/web-bootstrap targetPath=$targetPath")
-        val request = Request.Builder()
-            .url(apiV3Url(uiBaseUrl, "auth", "web-bootstrap"))
-            .header("Authorization", "Bearer $accessToken")
-            .post(
-                JSONObject()
-                    .put("targetPath", targetPath)
-                    .toString()
-                    .toRequestBody(JSON_MEDIA_TYPE)
-            )
-            .build()
-
-        execute(uiBaseUrl, request).use { response ->
-            val body = response.body.string()
-            if (response.code != 201) {
-                throw response.asDeviceAuthHttpException(body)
-            }
-            val json = JSONObject(body)
-            Log.i(TAG, "action=start_web_bootstrap outcome=created status=${response.code}")
-            StartedWebBootstrap(
-                completePath = json.getString("completePath"),
-                bootstrapToken = json.getString("bootstrapToken")
-            )
-        }
-    }
-
-    override suspend fun completeWebBootstrap(
-        uiBaseUrl: HttpUrl,
-        completePath: String,
-        bootstrapToken: String
-    ): CompletedWebBootstrap = withContext(Dispatchers.IO) {
-        val resolvedUrl = uiBaseUrl.resolve(completePath)
-            ?: throw IllegalStateException("Invalid web bootstrap completion path: $completePath")
-        Log.i(TAG, "action=complete_web_bootstrap path=${resolvedUrl.encodedPath}")
-        val request = Request.Builder()
-            .url(resolvedUrl)
-            .header(WEB_BOOTSTRAP_HEADER_NAME, bootstrapToken)
-            .get()
-            .build()
-
-        execute(uiBaseUrl, request).use { response ->
-            val body = response.body.string()
-            if (response.code !in 300..399) {
-                throw response.asDeviceAuthHttpException(body)
-            }
-            Log.i(TAG, "action=complete_web_bootstrap outcome=redirect status=${response.code}")
-            CompletedWebBootstrap(
-                locationPath = response.header("Location")
-            )
         }
     }
 

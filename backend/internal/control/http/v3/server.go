@@ -60,6 +60,7 @@ type Server struct {
 	// Opaque auth session store for xg2g_session cookies.
 	authSessionStore ctrlauth.SessionTokenStore
 	authSessionTTL   time.Duration
+	playbackTickets  *playbackTicketStore
 	// Opaque household unlock store for xg2g_household_unlock cookies.
 	householdUnlockStore household.UnlockStore
 	householdUnlockTTL   time.Duration

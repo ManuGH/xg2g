@@ -153,6 +153,12 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) auth.Result {
 								scopes = []string{string(ScopeV3Read), string(ScopeV3Write)}
 							}
 							principal := auth.NewPrincipal(dpopToken.TokenHash, user.Username, scopes)
+							// The one credential class that names a device. The
+							// binding was just enforced by
+							// ValidateDPoPAccessToken, which refuses a token
+							// whose bound_jkt is not the proof's thumbprint —
+							// so this device ID is proven, not asserted.
+							principal.DeviceID = dpopToken.DeviceID
 							principal = s.projectTokenPrincipal(ctx, principal, cfg)
 							if principal != nil {
 								return auth.Authenticated(principal)
