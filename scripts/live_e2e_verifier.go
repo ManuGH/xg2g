@@ -43,6 +43,7 @@ type DPoPProofPayload struct {
 	Htu string `json:"htu"`
 	Iat int64  `json:"iat"`
 	Jti string `json:"jti"`
+	Ath string `json:"ath,omitempty"`
 }
 
 func base64URLEncode(data []byte) string {
@@ -64,7 +65,7 @@ func jwkFromPrivateKey(key *ecdsa.PrivateKey) JWK {
 	}
 }
 
-func createDPoPProof(key *ecdsa.PrivateKey, method, rawURL string) (string, error) {
+func createDPoPProof(key *ecdsa.PrivateKey, method, rawURL, accessToken string) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
@@ -86,11 +87,18 @@ func createDPoPProof(key *ecdsa.PrivateKey, method, rawURL string) (string, erro
 		return "", err
 	}
 
+	var ath string
+	if accessToken != "" {
+		hash := sha256.Sum256([]byte(accessToken))
+		ath = base64URLEncode(hash[:])
+	}
+
 	payload := DPoPProofPayload{
 		Htm: method,
 		Htu: htu,
 		Iat: time.Now().Unix(),
 		Jti: base64URLEncode(jtiBytes),
+		Ath: ath,
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -231,7 +239,7 @@ func main() {
 	// 4. Exchange Pairing for DPoP Token
 	fmt.Print("[4/7] 🔄 Exchanging Pairing for DPoP Access Token... ")
 	exchangeURL := fmt.Sprintf("%s/api/v3/pairing/%s/exchange", baseURL, startResult.PairingID)
-	proof, err := createDPoPProof(deviceKey, "POST", exchangeURL)
+	proof, err := createDPoPProof(deviceKey, "POST", exchangeURL, "")
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 		os.Exit(1)
@@ -263,7 +271,7 @@ func main() {
 	// Helper for DPoP authenticated requests
 	sendDPoPRequest := func(method, endpoint string, reqBody []byte) (*http.Response, error) {
 		fullURL := baseURL + endpoint
-		dpopProof, err := createDPoPProof(deviceKey, method, fullURL)
+		dpopProof, err := createDPoPProof(deviceKey, method, fullURL, exchangeResult.AccessToken)
 		if err != nil {
 			return nil, err
 		}
@@ -320,11 +328,46 @@ func main() {
 	fmt.Printf("      Selected Test Channel: '%s' (#%s, %s, %s)\n",
 		selectedChannel.Name, selectedChannel.Number, selectedChannel.ServiceRef, selectedChannel.Resolution)
 
-	// 6. Start Stream Intent & Mint Playback Ticket
-	fmt.Print("[6/7] 🎬 Requesting Live Stream Intent & Playback Ticket (/api/v3/intents)... ")
-	intentPayload, _ := json.Marshal(map[string]interface{}{
-		"type":       "stream.start",
+	// 6. Request Stream Info & Playback Decision Token
+	fmt.Print("[6/7] 🎬 Requesting Stream Info & Playback Decision Token (/api/v3/live/stream-info)... ")
+	infoPayload, _ := json.Marshal(map[string]interface{}{
 		"serviceRef": selectedChannel.ServiceRef,
+		"capabilities": map[string]interface{}{
+			"capabilitiesVersion": 3,
+			"container":           []string{"fmp4", "hls"},
+			"videoCodecs":         []string{"av1", "hevc", "h264"},
+			"audioCodecs":         []string{"aac", "ac3", "mp2"},
+			"supportsHls":         true,
+			"allowTranscode":      true,
+		},
+	})
+	infoResp, err := sendDPoPRequest("POST", "/api/v3/live/stream-info", infoPayload)
+	if err != nil {
+		fmt.Printf("FAILED: %v\n", err)
+		os.Exit(1)
+	}
+	defer infoResp.Body.Close()
+	if infoResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(infoResp.Body)
+		fmt.Printf("FAILED (HTTP %d): %s\n", infoResp.StatusCode, string(body))
+		os.Exit(1)
+	}
+
+	var infoResult map[string]interface{}
+	json.NewDecoder(infoResp.Body).Decode(&infoResult)
+	decisionToken, _ := infoResult["playbackDecisionToken"].(string)
+	if decisionToken == "" {
+		fmt.Println("FAILED (missing playbackDecisionToken in response)")
+		os.Exit(1)
+	}
+	fmt.Println("OK")
+
+	// Start Stream Intent
+	fmt.Print("      Starting Live Stream Intent (/api/v3/intents: stream.start)... ")
+	intentPayload, _ := json.Marshal(map[string]interface{}{
+		"type":                  "stream.start",
+		"serviceRef":            selectedChannel.ServiceRef,
+		"playbackDecisionToken": decisionToken,
 		"params": map[string]interface{}{
 			"intent": "quality",
 		},
@@ -347,13 +390,13 @@ func main() {
 
 	// Fetch Playback Ticket
 	fmt.Print("      Minting Playback Ticket (/api/v3/sessions/.../playback-ticket)... ")
-	tktResp, err := sendDPoPRequest("GET", fmt.Sprintf("/api/v3/sessions/%s/playback-ticket", sessionID), nil)
+	tktResp, err := sendDPoPRequest("POST", fmt.Sprintf("/api/v3/sessions/%s/playback-ticket", sessionID), nil)
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 		os.Exit(1)
 	}
 	defer tktResp.Body.Close()
-	if tktResp.StatusCode != http.StatusOK {
+	if tktResp.StatusCode != http.StatusOK && tktResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(tktResp.Body)
 		fmt.Printf("FAILED (HTTP %d): %s\n", tktResp.StatusCode, string(body))
 		os.Exit(1)

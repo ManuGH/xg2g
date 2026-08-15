@@ -266,13 +266,20 @@ func (s *Server) requestIsHTTPS(r *http.Request) bool {
 		return false
 	}
 
+	remoteIP := requestRemoteIP(r)
+	if remoteIP == nil {
+		return false
+	}
+	if remoteIP.IsLoopback() || remoteIP.IsPrivate() {
+		return true
+	}
+
 	trustedProxies, err := middleware.ParseCIDRs(splitCSVNonEmpty(strings.TrimSpace(s.GetConfig().TrustedProxies)))
 	if err != nil {
 		log.L().Warn().Err(err).Msg("invalid trusted proxies configuration for auth session exchange")
 		return false
 	}
-	remoteIP := requestRemoteIP(r)
-	return remoteIP != nil && middleware.IsIPAllowed(remoteIP, trustedProxies)
+	return middleware.IsIPAllowed(remoteIP, trustedProxies)
 }
 
 func requestRemoteIsLoopback(r *http.Request) bool {

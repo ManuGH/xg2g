@@ -75,11 +75,27 @@ actor PlaybackCoordinator {
 
     /// Starts a live session for a channel and returns something playable.
     func startLive(serviceRef: String) async throws -> LiveStream {
+        // Probe capabilities and obtain playbackDecisionToken from planner
+        let infoResponse: PlaybackWire.StreamInfoResponse? = try? await api.send(
+            APIRequest(
+                method: .post,
+                path: "live/stream-info",
+                body: try Self.encode(PlaybackWire.StreamInfoRequest(serviceRef: serviceRef)),
+                contentType: "application/json"
+            )
+        )
+
         let intent: PlaybackWire.IntentAcceptedResponse = try await api.send(
             APIRequest(
                 method: .post,
                 path: "intents",
-                body: try Self.encode(PlaybackWire.IntentRequest(type: "stream.start", serviceRef: serviceRef)),
+                body: try Self.encode(
+                    PlaybackWire.IntentRequest(
+                        type: "stream.start",
+                        serviceRef: serviceRef,
+                        playbackDecisionToken: infoResponse?.playbackDecisionToken
+                    )
+                ),
                 contentType: "application/json"
             )
         )
@@ -154,13 +170,32 @@ actor PlaybackCoordinator {
 
 enum PlaybackWire {
 
+    struct StreamInfoRequest: Encodable, Sendable {
+        struct Capabilities: Encodable, Sendable {
+            let capabilitiesVersion = 3
+            let container = ["fmp4", "hls"]
+            let videoCodecs = ["av1", "hevc", "h264"]
+            let audioCodecs = ["aac", "ac3", "mp2"]
+            let supportsHls = true
+            let allowTranscode = true
+        }
+
+        let serviceRef: String
+        let capabilities = Capabilities()
+    }
+
+    struct StreamInfoResponse: Decodable, Sendable {
+        let playbackDecisionToken: String?
+    }
+
     struct IntentRequest: Encodable, Sendable {
         let type: String
         var serviceRef: String?
         var sessionID: String?
+        var playbackDecisionToken: String?
 
         private enum CodingKeys: String, CodingKey {
-            case type, serviceRef
+            case type, serviceRef, playbackDecisionToken
             case sessionID = "sessionId"
         }
     }
