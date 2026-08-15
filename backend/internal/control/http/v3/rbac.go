@@ -82,6 +82,18 @@ func applyImpliedScopes(set scopeSet) {
 	if _, ok := set[ScopeV3Write]; ok {
 		set[ScopeV3Read] = struct{}{}
 	}
+	if _, ok := set["api"]; ok {
+		set[ScopeV3Write] = struct{}{}
+		set[ScopeV3Read] = struct{}{}
+	}
+	if _, ok := set["playback"]; ok {
+		set[ScopeV3Read] = struct{}{}
+	}
+	if _, ok := set["admin"]; ok {
+		set[ScopeV3Admin] = struct{}{}
+		set[ScopeV3Write] = struct{}{}
+		set[ScopeV3Read] = struct{}{}
+	}
 }
 
 func (s scopeSet) allows(required []Scope) bool {

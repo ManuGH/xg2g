@@ -801,7 +801,7 @@ func (s *Service) IssueDeviceGrant(ctx context.Context, userID, deviceName, plat
 	accessHash := hashToken(rawAccessToken)
 
 	if scopes == "" {
-		scopes = "api playback"
+		scopes = "v3:read v3:write api playback"
 	}
 
 	accessTokenObj := &DPoPAccessToken{
@@ -903,7 +903,7 @@ func (s *Service) RotateDeviceRefreshToken(ctx context.Context, rawRefreshToken,
 		DeviceID:  dev.ID,
 		UserID:    dev.UserID,
 		BoundJKT:  dev.JWKThumbprint,
-		Scopes:    "api playback",
+		Scopes:    "v3:read v3:write api playback",
 		CreatedAt: now,
 		ExpiresAt: now.Add(15 * time.Minute),
 	}
@@ -918,7 +918,7 @@ func (s *Service) RotateDeviceRefreshToken(ctx context.Context, rawRefreshToken,
 		RefreshToken: newRawRefreshToken,
 		ExpiresIn:    900,
 		DeviceID:     dev.ID,
-		Scope:        "api playback",
+		Scope:        "v3:read v3:write api playback",
 	}, nil
 }
 
