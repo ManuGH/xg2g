@@ -228,6 +228,68 @@ func (s *Server) GetProfile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// UpdateProfile handles PUT /api/v3/profiles/{id}
+func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	svc := s.getIdentityService()
+	if svc == nil {
+		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
+		return
+	}
+
+	profID := chi.URLParam(r, "id")
+	if strings.TrimSpace(profID) == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Profile ID required", nil)
+		return
+	}
+
+	var req CreateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request Body", problemcode.CodeInvalidInput, "Failed to parse JSON body", nil)
+		return
+	}
+
+	prof, pol, err := svc.Store().GetProfile(r.Context(), profID)
+	if err != nil || prof == nil {
+		writeRegisteredProblem(w, r, http.StatusNotFound, "system/not_found", "Profile Not Found", problemcode.CodeNotFound, "Profile not found", nil)
+		return
+	}
+
+	if req.Name != "" {
+		prof.Name = req.Name
+	}
+	if req.AvatarURL != "" {
+		prof.AvatarURL = req.AvatarURL
+	}
+	prof.IsChild = req.IsChild
+	if req.MaturityLevel > 0 {
+		prof.MaxParentalRating = req.MaturityLevel
+	}
+
+	if pol == nil {
+		pol = &identity.ProfilePolicy{
+			ProfileID: profID,
+		}
+	}
+	if req.MaturityLevel > 0 {
+		pol.MaturityLevel = req.MaturityLevel
+	}
+	if req.ExitPIN != "" {
+		h, _ := identity.HashProfilePIN(req.ExitPIN)
+		pol.ExitPINHash = h
+	}
+
+	if err := svc.Store().PutProfile(r.Context(), prof, pol); err != nil {
+		writeRegisteredProblem(w, r, http.StatusInternalServerError, "system/internal", "Internal Error", problemcode.CodeInternalError, "Failed to update profile", nil)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"profile": prof,
+		"policy":  pol,
+	})
+}
+
 // DeleteProfile handles DELETE /api/v3/profiles/{id}
 func (s *Server) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()

@@ -74,6 +74,7 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		{http.MethodGet, "/profiles", svc.ListProfiles, true},
 		{http.MethodPost, "/profiles", svc.CreateProfile, true},
 		{http.MethodGet, "/profiles/{id}", svc.GetProfile, true},
+		{http.MethodPut, "/profiles/{id}", svc.UpdateProfile, true},
 		{http.MethodDelete, "/profiles/{id}", svc.DeleteProfile, true},
 
 		// Household policies and approvals
@@ -94,6 +95,7 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		{http.MethodGet, "/household/profiles", svc.ListProfiles, true},
 		{http.MethodPost, "/household/profiles", svc.CreateProfile, true},
 		{http.MethodGet, "/household/profiles/{id}", svc.GetProfile, true},
+		{http.MethodPut, "/household/profiles/{id}", svc.UpdateProfile, true},
 		{http.MethodDelete, "/household/profiles/{id}", svc.DeleteProfile, true},
 
 		// Notifications

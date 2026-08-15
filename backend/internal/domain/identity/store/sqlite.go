@@ -1561,6 +1561,12 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	hID := profile.HouseholdID
+	if strings.TrimSpace(hID) == "" {
+		hID = "default_household"
+	}
+	_, _ = tx.ExecContext(ctx, `INSERT INTO households (id, name, created_at) VALUES (?, 'Haupt-Haushalt', ?) ON CONFLICT(id) DO NOTHING`, hID, profile.CreatedAt.UTC())
+
 	dobVal := sql.NullTime{}
 	if profile.DateOfBirth != nil {
 		dobVal = sql.NullTime{Time: profile.DateOfBirth.UTC(), Valid: true}
@@ -1574,6 +1580,15 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 		unknownPol = "request_approval"
 	}
 
+	var creatorIDVal sql.NullString
+	if strings.TrimSpace(profile.CreatedByUserID) != "" {
+		var exists int
+		_ = tx.QueryRowContext(ctx, `SELECT 1 FROM users WHERE id = ?`, profile.CreatedByUserID).Scan(&exists)
+		if exists == 1 {
+			creatorIDVal = sql.NullString{String: profile.CreatedByUserID, Valid: true}
+		}
+	}
+
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO profiles (id, household_id, name, avatar_url, is_child, date_of_birth, max_parental_rating, unknown_rating_policy, storage_quota_bytes, created_by_user_id, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1585,7 +1600,7 @@ func (s *SQLiteStore) PutProfile(ctx context.Context, profile *identity.Profile,
 			max_parental_rating = excluded.max_parental_rating,
 			unknown_rating_policy = excluded.unknown_rating_policy,
 			storage_quota_bytes = excluded.storage_quota_bytes;
-	`, profile.ID, profile.HouseholdID, profile.Name, profile.AvatarURL, profile.IsChild, dobVal, maxRating, unknownPol, profile.StorageQuotaBytes, profile.CreatedByUserID, profile.CreatedAt.UTC())
+	`, profile.ID, hID, profile.Name, profile.AvatarURL, profile.IsChild, dobVal, maxRating, unknownPol, profile.StorageQuotaBytes, creatorIDVal, profile.CreatedAt.UTC())
 	if err != nil {
 		return err
 	}
