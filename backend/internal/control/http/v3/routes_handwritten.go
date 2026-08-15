@@ -91,6 +91,10 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		{http.MethodGet, "/household/members", svc.ListHouseholdMembers, true},
 		{http.MethodPost, "/household/members/invite", svc.CreateInvitation, true},
 		{http.MethodDelete, "/household/members/{id}", svc.RemoveHouseholdMember, true},
+		{http.MethodGet, "/household/profiles", svc.ListProfiles, true},
+		{http.MethodPost, "/household/profiles", svc.CreateProfile, true},
+		{http.MethodGet, "/household/profiles/{id}", svc.GetProfile, true},
+		{http.MethodDelete, "/household/profiles/{id}", svc.DeleteProfile, true},
 
 		// Notifications
 		{http.MethodGet, "/notifications", svc.ListNotifications, true},
