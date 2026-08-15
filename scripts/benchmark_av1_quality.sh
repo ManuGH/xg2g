@@ -196,7 +196,7 @@ for MODE_SPEC in "${MODES[@]}"; do
 
     SSIM_VAL=$(grep -oE "All:[0-9\.]+" "$LOG_SSIM" | tail -n1 | cut -d: -f2 || echo "N/A")
     PSNR_Y_VAL=$(grep -oE "y:[0-9\.]+" "$LOG_PSNR" | tail -n1 | cut -d: -f2 || echo "N/A")
-    XPSNR_Y_VAL=$(grep -oE "y:[0-9\.]+" "$LOG_XPSNR" | tail -n1 | cut -d: -f2 || echo "N/A")
+    XPSNR_Y_VAL=$(grep -oE "y:[ ]*[0-9\.]+" "$LOG_XPSNR" | tail -n1 | sed 's/y:[ ]*//' || echo "N/A")
 
     FORMATTED_LINE="| ${TARGET_NAME} | ${ACTUAL_BITRATE_K} Kbps | ${ENC_SPEED}x | ${FORMATTED_FPS} fps | $HEADROOM_STATUS | $SSIM_VAL | $PSNR_Y_VAL dB | $XPSNR_Y_VAL dB | ${FILE_MB} MB |"
     echo "$FORMATTED_LINE"
@@ -205,7 +205,7 @@ for MODE_SPEC in "${MODES[@]}"; do
     # Multi-Frame Full Frame Extractions at 2s, 5s, 10s, 15s, 20s, 25s for visual inspection
     for TIMESTAMP_SEC in 2 5 10 15 20 25; do
         if (( TIMESTAMP_SEC < DURATION_SEC )); then
-            ffmpeg -y -hide_banner -ss "$TIMESTAMP_SEC" -i "$TEST_OUT" -vframes 1 "$OUTPUT_DIR/frame_${TIMESTAMP_SEC}s_${TARGET_NAME}.png" >/dev/null 2>&1 || true
+            ffmpeg -y -hide_banner -i "$TEST_OUT" -ss "$TIMESTAMP_SEC" -vframes 1 "$OUTPUT_DIR/frame_${TIMESTAMP_SEC}s_${TARGET_NAME}.png" >/dev/null 2>&1 || true
         fi
     done
 done
