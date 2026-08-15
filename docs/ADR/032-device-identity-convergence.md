@@ -71,6 +71,41 @@ rebuild: replacing "confirm the code in the Web UI" with "confirm with a passkey
 on your iPhone" then changes only the *approval* step, leaving the device-grant
 and DPoP substrate untouched.
 
+### One identity domain, several correct authentication mechanisms
+
+The goal is **not** that every client authenticates the same way. Forcing a
+browser through a device-key model, or reimplementing Secure Enclave semantics
+in JavaScript, would be worse security theatre than the problem being fixed.
+
+| Client | Identity | Authentication |
+| --- | --- | --- |
+| iOS / Android / tvOS | a registered *device* | device key + grant + DPoP |
+| Safari / Chrome / Firefox | a *user* and their browser session | passkey/WebAuthn + HttpOnly, Secure, SameSite cookie |
+| Web UI approving a new device | the user authorises a device | browser confirms the pairing; the device then holds its own DPoP grant |
+
+Each layer answers a different question: a **passkey identifies the human**,
+**pairing authorises a new device**, the **Secure Enclave / Android Keystore
+identifies that device**, and **DPoP binds its tokens to that key**.
+
+The separation is a feature of this design rather than a compromise. When the
+native iOS app is paired, Safari can serve as the approval surface without
+Safari ever seeing the app's device key, and without the app ever seeing the
+browser's cookies:
+
+```
+native app (Secure Enclave key) ──pairing code──▶ Safari (passkey login)
+                                                        │ approve
+                                                        ▼
+                                                   exchange
+                                                        ▼
+                                        identity device + DPoP grant
+                                                        ▼
+                                                 app authenticated
+```
+
+A PWA or installed web app is treated as a browser client until proven
+otherwise; it is not the native app with a different wrapper.
+
 ### Legacy grants are not migrated — they are expired
 
 This is a schema-level conclusion, not a preference. A legacy unbound device
