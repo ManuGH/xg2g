@@ -619,62 +619,80 @@ struct ChannelRow: View {
                 .padding(.top, 2)
             }
 
-            // MARK: - Expandable Full Upcoming EPG Schedule (Safari WebUI Parity)
+            // MARK: - Expandable Full Upcoming EPG Schedule (Full 14-Day EPG Availability)
             if isExpanded {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     Divider()
                         .background(Theme.Colors.borderSubtle)
 
-                    HStack {
-                        Label("WEITERER TAGESABLAUF", systemImage: "clock.arrow.circlepath")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                        Spacer()
-                    }
-                    .padding(.top, 2)
-
                     let upcomingShows = fullSchedule.filter { $0.start >= (nowNext?.now?.end ?? .now) }
                     if upcomingShows.isEmpty {
-                        Text("Keine weiteren Sendungen im EPG-Puffer.")
+                        Text("Keine weiteren Sendungen im EPG-Puffer vorhanden.")
                             .font(.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 8)
                     } else {
-                        ForEach(upcomingShows.prefix(6)) { show in
-                            HStack(spacing: 10) {
-                                Text(show.formattedStartTime)
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Theme.Colors.accentAction)
-                                    .frame(width: 44, alignment: .leading)
+                        let grouped = Dictionary(grouping: upcomingShows, by: \.formattedDayHeader)
+                        let sortedDayHeaders = upcomingShows.map(\.formattedDayHeader).uniqued()
 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(show.title)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(Theme.Colors.textPrimary)
-                                        .lineLimit(1)
+                        ForEach(sortedDayHeaders, id: \.self) { dayHeader in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text(dayHeader)
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(Theme.Colors.accentLive)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Theme.Colors.accentLive.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
 
-                                    if let desc = show.description, !desc.isEmpty {
-                                        Text(desc)
-                                            .font(.caption2)
-                                            .foregroundStyle(Theme.Colors.textTertiary)
-                                            .lineLimit(1)
+                                    Spacer()
+                                }
+                                .padding(.top, 4)
+
+                                if let showsForDay = grouped[dayHeader] {
+                                    ForEach(showsForDay) { show in
+                                        HStack(spacing: 10) {
+                                            Text(show.formattedStartTime)
+                                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                                .foregroundStyle(Theme.Colors.accentAction)
+                                                .frame(width: 44, alignment: .leading)
+
+                                            Button {
+                                                onShowInfo(show)
+                                            } label: {
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(show.title)
+                                                        .font(.subheadline.weight(.semibold))
+                                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                                        .lineLimit(1)
+
+                                                    if let desc = show.description, !desc.isEmpty {
+                                                        Text(desc)
+                                                            .font(.caption2)
+                                                            .foregroundStyle(Theme.Colors.textTertiary)
+                                                            .lineLimit(1)
+                                                    }
+                                                }
+                                            }
+                                            .buttonStyle(.plain)
+
+                                            Spacer()
+
+                                            // 1-Click Timer Recording Button
+                                            Button {
+                                                onRecord(show)
+                                            } label: {
+                                                Image(systemName: "record.circle")
+                                                    .font(.system(size: 20))
+                                                    .foregroundStyle(Theme.Colors.statusError)
+                                                    .padding(4)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        .padding(.vertical, 3)
                                     }
                                 }
-
-                                Spacer()
-
-                                // 1-Click Timer Recording Button
-                                Button {
-                                    onRecord(show)
-                                } label: {
-                                    Image(systemName: "record.circle")
-                                        .font(.system(size: 20))
-                                        .foregroundStyle(Theme.Colors.statusError)
-                                        .padding(4)
-                                }
-                                .buttonStyle(.plain)
                             }
-                            .padding(.vertical, 4)
                         }
                     }
                 }

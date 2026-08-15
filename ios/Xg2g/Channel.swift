@@ -68,6 +68,26 @@ struct NowNext: Equatable, Sendable {
         var formattedTimeRange: String {
             "\(Self.timeFormatter.string(from: start)) – \(Self.timeFormatter.string(from: end))"
         }
+
+        var formattedDayHeader: String {
+            let calendar = Calendar.current
+            if calendar.isDateInToday(start) {
+                return "HEUTE"
+            } else if calendar.isDateInTomorrow(start) {
+                return "MORGEN"
+            } else {
+                let f = DateFormatter()
+                f.locale = Locale(identifier: "de_DE")
+                f.dateFormat = "EEEE, d. MMMM"
+                return f.string(from: start).uppercased()
+            }
+        }
+
+        var dayIdentifier: String {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd"
+            return f.string(from: start)
+        }
     }
 
     let serviceRef: String
@@ -235,5 +255,12 @@ extension NowNext {
             now: item.now?.toDomain(),
             next: item.next?.toDomain()
         )
+    }
+}
+
+extension Sequence where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }
