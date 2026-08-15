@@ -1,7 +1,5 @@
-// Copyright (c) 2025-2026 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-
 import React, { useState, useEffect } from 'react';
+import { request } from '../../lib/api';
 
 export interface DeviceData {
   id: string;
@@ -24,13 +22,10 @@ export const DevicesManagementSection: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/v3/household/devices');
-      if (res.ok) {
-        const data = await res.json();
-        setDevices(Array.isArray(data) ? data : []);
-      }
-    } catch {
-      setError('Geräte konnten nicht geladen werden.');
+      const data = await request<DeviceData[]>('/api/v3/household/devices');
+      setDevices(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      setError(err?.message || 'Geräte konnten nicht geladen werden.');
     } finally {
       setLoading(false);
     }
@@ -44,8 +39,7 @@ export const DevicesManagementSection: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
-      const res = await fetch(`/api/v3/household/devices/${id}/revoke`, { method: 'POST' });
-      if (!res.ok) throw new Error('Gerätezugriff konnte nicht widerrufen werden.');
+      await request(`/api/v3/household/devices/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
       setSuccess('Gerätezugriff wurde erfolgreich widerrufen.');
       setRevokingId(null);
       void fetchDevices();
