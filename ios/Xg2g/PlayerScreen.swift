@@ -8,9 +8,8 @@ import SwiftUI
 import UIKit
 
 /// Live & Timeshift playback for a channel with Plex-tier media controls,
-/// 10s skip backward/forward, play/pause timeshift, native AVPlayerViewController stage,
-/// edge-to-edge aspect ratio fill toggle, conflict-free gestural zapping,
-/// swipe-up Mini-EPG, and broadcast telemetry inspector.
+/// Infuse-style spatial gestures (10s skip left/right, swipe-up Mini-EPG, swipe-down close),
+/// Channels DVR live buffer & broadcast scrubber, aspect ratio fill toggle, and hardware telemetry.
 struct PlayerScreen: View {
 
     let model: AppModel
@@ -20,6 +19,7 @@ struct PlayerScreen: View {
     @State private var currentChannel: Channel
     @State private var player: AVPlayer?
     @State private var isPlaying = true
+    @State private var isTimeshifted = false
     @State private var failure: String?
     @State private var showControls = true
     @State private var isAspectFill = false
@@ -58,16 +58,9 @@ struct PlayerScreen: View {
                     )
                     .ignoresSafeArea()
 
-                    // Transparent Gesture Catch Layer (Reliable Taps & Gestures)
+                    // Transparent Gesture Catch Layer (Infuse-Style Spatial Gestures)
                     Color.black.opacity(0.001)
                         .ignoresSafeArea()
-                        .onTapGesture(count: 2) {
-                            triggerHaptic(.medium)
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                isAspectFill.toggle()
-                            }
-                            displayZapToast(isAspectFill ? "Vollbild (Ausgefüllt)" : "Standard (16:9)")
-                        }
                         .onTapGesture(count: 1) {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 showControls.toggle()
@@ -77,14 +70,41 @@ struct PlayerScreen: View {
                             }
                         }
                         .gesture(
-                            DragGesture(minimumDistance: 25)
+                            SpatialTapGesture(count: 2)
+                                .onEnded { event in
+                                    let x = event.location.x
+                                    let width = geometry.size.width
+
+                                    if x < width * 0.33 {
+                                        // Left third: 10s Skip Backward
+                                        seek(by: -10)
+                                    } else if x > width * 0.67 {
+                                        // Right third: 10s Skip Forward
+                                        seek(by: 10)
+                                    } else {
+                                        // Center third: Aspect Zoom Toggle
+                                        triggerHaptic(.medium)
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                            isAspectFill.toggle()
+                                        }
+                                        displayZapToast(isAspectFill ? "Vollbild (Ausgefüllt)" : "Standard (16:9)")
+                                    }
+                                }
+                        )
+                        .gesture(
+                            DragGesture(minimumDistance: 30)
                                 .onEnded { value in
                                     let horiz = value.translation.width
                                     let vert = value.translation.height
 
                                     // Swipe Down -> Close Player
-                                    if vert > 50 && vert > abs(horiz) * 1.3 {
+                                    if vert > 60 && vert > abs(horiz) * 1.3 {
                                         closePlayer()
+                                    }
+                                    // Swipe Up -> Open Mini-EPG Drawer
+                                    else if vert < -60 && abs(vert) > abs(horiz) * 1.3 {
+                                        triggerHaptic(.light)
+                                        showMiniEPG = true
                                     }
                                     // Horizontal Swipe -> Channel Zapping
                                     else if model.playerGesturesEnabled && abs(horiz) > 50 && abs(horiz) > abs(vert) * 1.3 {
@@ -297,21 +317,25 @@ struct PlayerScreen: View {
                             }
                             .buttonStyle(.plain)
 
-                            // Stream Telemetry Inspector Toggle
+                            // Interactive Live Button (Channels DVR Style: Jump to Live when timeshifted)
                             Button {
-                                triggerHaptic(.light)
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    showInspector.toggle()
+                                if isTimeshifted {
+                                    jumpToLive()
+                                } else {
+                                    triggerHaptic(.light)
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        showInspector.toggle()
+                                    }
                                 }
                             } label: {
                                 HStack(spacing: 5) {
                                     PulsingLiveDot(size: 6)
-                                    Text("LIVE")
+                                    Text(isTimeshifted ? "ZUR LIVE-KANTE" : "LIVE")
                                         .font(.caption.bold().monospaced())
-                                        .foregroundStyle(Theme.Colors.accentLive)
+                                        .foregroundStyle(isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive)
                                         .lineLimit(1)
 
-                                    Image(systemName: "info.circle")
+                                    Image(systemName: isTimeshifted ? "forward.fill" : "info.circle")
                                         .font(.caption)
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
@@ -319,7 +343,7 @@ struct PlayerScreen: View {
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
                                 .background(Color.black.opacity(0.65), in: Capsule())
-                                .overlay(Capsule().strokeBorder(Theme.Colors.accentLive.opacity(0.4), lineWidth: 1))
+                                .overlay(Capsule().strokeBorder(isTimeshifted ? Theme.Colors.accentAction.opacity(0.6) : Theme.Colors.accentLive.opacity(0.4), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
 
@@ -383,7 +407,7 @@ struct PlayerScreen: View {
 
                         Spacer()
 
-                        // MARK: - Adaptive Bottom Bar (Plex-Style Scrub / Timeshift Bar)
+                        // MARK: - Adaptive Bottom Bar (Plex & Channels DVR Broadcast Scrubber)
                         if isLandscape {
                             // Sleek, unobtrusive Landscape HUD
                             VStack(spacing: 6) {
@@ -421,10 +445,24 @@ struct PlayerScreen: View {
                                     }
                                 }
 
-                                if let fraction = nowNext?.now?.progress(at: .now) {
-                                    ProgressView(value: fraction)
-                                        .progressViewStyle(.linear)
-                                        .tint(Theme.Colors.accentLive)
+                                if let now = nowNext?.now, let fraction = now.progress(at: .now) {
+                                    VStack(spacing: 3) {
+                                        ProgressView(value: fraction)
+                                            .progressViewStyle(.linear)
+                                            .tint(Theme.Colors.accentLive)
+
+                                        HStack {
+                                            Text(now.formattedStartTime)
+                                                .font(.system(size: 9, design: .monospaced))
+                                                .foregroundStyle(Theme.Colors.textTertiary)
+
+                                            Spacer()
+
+                                            Text(now.formattedEndTime)
+                                                .font(.system(size: 9, design: .monospaced))
+                                                .foregroundStyle(Theme.Colors.textTertiary)
+                                        }
+                                    }
                                 }
 
                                 HStack {
@@ -443,8 +481,8 @@ struct PlayerScreen: View {
 
                                     Spacer()
 
-                                    Text("Wischen zum Zappen • Doppeltippen für Vollbild")
-                                        .font(.system(size: 10, design: .monospaced))
+                                    Text("Doppeltippen: ‹ 10s | Vollbild | 10s › • Wischen für EPG/Zappen")
+                                        .font(.system(size: 9, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.textTertiary)
 
                                     Spacer()
@@ -557,8 +595,8 @@ struct PlayerScreen: View {
 
                                     Spacer()
 
-                                    Text("Wischen zum Zappen")
-                                        .font(.system(size: 10, design: .monospaced))
+                                    Text("Wischen: Zappen • Hoch für EPG")
+                                        .font(.system(size: 9, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.textTertiary)
 
                                     Spacer()
@@ -608,6 +646,7 @@ struct PlayerScreen: View {
         player?.pause()
         player = nil
         isPlaying = true
+        isTimeshifted = false
 
         AudioSessionManager.shared.configureForPlayback()
         NowPlayingManager.shared.setupRemoteCommands()
@@ -633,6 +672,7 @@ struct PlayerScreen: View {
         player = Self.makePlayer(for: stream)
         player?.play()
         isPlaying = true
+        isTimeshifted = false
         scheduleControlsHiding()
     }
 
@@ -642,6 +682,8 @@ struct PlayerScreen: View {
         if isPlaying {
             player.pause()
             isPlaying = false
+            isTimeshifted = true
+            displayZapToast("⏸ Pausiert (Timeshift)")
         } else {
             player.play()
             isPlaying = true
@@ -656,7 +698,31 @@ struct PlayerScreen: View {
         let newTime = max(0, currentTime + seconds)
         let targetTime = CMTime(seconds: newTime, preferredTimescale: 600)
         player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        if seconds < 0 {
+            isTimeshifted = true
+        }
         displayZapToast(seconds < 0 ? "10 Sek. zurück" : "10 Sek. vor")
+        scheduleControlsHiding()
+    }
+
+    private func jumpToLive() {
+        guard let player, let currentItem = player.currentItem else { return }
+        triggerHaptic(.medium)
+        let seekable = currentItem.seekableTimeRanges
+        if let lastRange = seekable.last {
+            let liveEnd = CMTimeRangeGetEnd(lastRange.timeRangeValue)
+            player.seek(to: liveEnd, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                player.play()
+                isPlaying = true
+                isTimeshifted = false
+                displayZapToast("🔴 Live-Signal")
+            }
+        } else {
+            player.play()
+            isPlaying = true
+            isTimeshifted = false
+            displayZapToast("🔴 Live-Signal")
+        }
         scheduleControlsHiding()
     }
 
@@ -745,6 +811,7 @@ struct PlayerScreen: View {
         player?.pause()
         player = nil
         isPlaying = false
+        isTimeshifted = false
         Task { await model.stopPlayback() }
     }
 
