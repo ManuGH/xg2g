@@ -17,9 +17,48 @@ struct ChannelListView: View {
                 VStack(spacing: 0) {
                     if !model.bouquets.isEmpty {
                         BouquetPicker(model: model)
-                            .padding(.vertical, 8)
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
                             .background(Theme.Colors.surfaceElevated.opacity(0.5))
                     }
+
+                    // Time Window Filter Pills (Jetzt vs 20:15)
+                    HStack(spacing: 8) {
+                        ForEach(AppModel.TimeFilter.allCases) { filter in
+                            Button {
+                                model.selectedTimeFilter = filter
+                            } label: {
+                                HStack(spacing: 5) {
+                                    if filter == .now {
+                                        PulsingLiveDot(size: 4)
+                                    } else {
+                                        Image(systemName: "moon.stars.fill")
+                                            .font(.caption2)
+                                            .foregroundStyle(model.selectedTimeFilter == filter ? Theme.Colors.textPrimary : Theme.Colors.accentLive)
+                                    }
+                                    Text(filter.rawValue)
+                                        .font(.caption.weight(model.selectedTimeFilter == filter ? .semibold : .regular))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(
+                                    model.selectedTimeFilter == filter
+                                        ? Theme.Colors.accentAction
+                                        : Theme.Colors.surfaceGlass,
+                                    in: Capsule()
+                                )
+                                .foregroundStyle(model.selectedTimeFilter == filter ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                                .overlay(
+                                    Capsule().strokeBorder(model.selectedTimeFilter == filter ? Color.clear : Theme.Colors.borderSubtle, lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(Theme.Colors.surfaceElevated.opacity(0.3))
 
                     Group {
                         if model.channels.isEmpty && model.isLoadingChannels {
@@ -42,7 +81,11 @@ struct ChannelListView: View {
                                 Button {
                                     selected = channel
                                 } label: {
-                                    ChannelRow(channel: channel, nowNext: model.schedule[channel.serviceRef])
+                                    ChannelRow(
+                                        channel: channel,
+                                        nowNext: model.schedule[channel.serviceRef],
+                                        timeFilter: model.selectedTimeFilter
+                                    )
                                 }
                                 .buttonStyle(.plain)
                                 .listRowBackground(Theme.Colors.surfaceElevated)
@@ -144,6 +187,7 @@ struct ChannelRow: View {
 
     let channel: Channel
     let nowNext: NowNext?
+    var timeFilter: AppModel.TimeFilter = .now
 
     var body: some View {
         HStack(spacing: 12) {
@@ -163,7 +207,27 @@ struct ChannelRow: View {
                         .lineLimit(1)
                 }
 
-                if let now = nowNext?.now {
+                if timeFilter == .primeTime, let next = nowNext?.next {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 5) {
+                            Text("20:15 / DANACH")
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Theme.Colors.accentLive)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Theme.Colors.accentLive.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
+
+                            Text(next.title)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .lineLimit(1)
+                        }
+
+                        Text(next.formattedTimeRange)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                } else if let now = nowNext?.now {
                     HStack(spacing: 5) {
                         PulsingLiveDot(size: 5)
                         Text(now.title)
