@@ -287,9 +287,14 @@ func requestRemoteIsLoopback(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+var tailscaleSubnet = &net.IPNet{
+	IP:   net.IPv4(100, 64, 0, 0),
+	Mask: net.CIDRMask(10, 32),
+}
+
 func requestRemoteIsPrivateOrLoopback(r *http.Request) bool {
 	ip := requestRemoteIP(r)
-	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || tailscaleSubnet.Contains(ip))
 }
 
 func requestRemoteIP(r *http.Request) net.IP {
