@@ -354,9 +354,6 @@ struct PlayerScreen: View {
 
         AudioSessionManager.shared.configureForPlayback()
         NowPlayingManager.shared.setupRemoteCommands()
-        NowPlayingManager.shared.onNextChannel = { [self] in zapNext() }
-        NowPlayingManager.shared.onPreviousChannel = { [self] in zapPrevious() }
-        NowPlayingManager.shared.onStop = { [self] in dismiss() }
         NowPlayingManager.shared.update(channel: channel, nowEntry: nowNext?.now)
 
         LiveActivityManager.shared.startActivity(
@@ -460,13 +457,21 @@ struct PlayerScreen: View {
 
     /// Builds the player with the playback ticket attached.
     private static func makePlayer(for stream: LiveStream) -> AVPlayer? {
-        guard let cookie = stream.ticket.httpCookie(for: stream.playlistURL) else { return nil }
+        if let cookie = stream.ticket.httpCookie(for: stream.playlistURL) {
+            HTTPCookieStorage.shared.setCookie(cookie)
+        }
+        if let rootCookie = stream.ticket.rootCookie(for: stream.playlistURL) {
+            HTTPCookieStorage.shared.setCookie(rootCookie)
+        }
 
-        let asset = AVURLAsset(
-            url: stream.playlistURL,
-            options: [AVURLAssetHTTPCookiesKey: [cookie]]
-        )
+        var options: [String: Any] = [:]
+        if let cookie = stream.ticket.httpCookie(for: stream.playlistURL) {
+            options[AVURLAssetHTTPCookiesKey] = [cookie]
+        }
+
+        let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = 2.0
         let player = AVPlayer(playerItem: item)
 
         player.automaticallyWaitsToMinimizeStalling = true

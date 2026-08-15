@@ -27,11 +27,25 @@ struct PlaybackTicket: Equatable, Sendable {
     /// layer so nothing above this point has to know it exists.
     func httpCookie(for url: URL) -> HTTPCookie? {
         guard let host = url.host else { return nil }
+        let cleanPath = path.hasSuffix("/") ? String(path.dropLast()) : path
         return HTTPCookie(properties: [
             .name: name,
             .value: value,
             .domain: host,
-            .path: path,
+            .path: cleanPath.isEmpty ? "/" : cleanPath,
+            .secure: url.scheme?.lowercased() == "https" ? "TRUE" : "FALSE",
+            .expires: expiresAt,
+        ])
+    }
+
+    /// Root-scoped cookie ensures media segments under any path inherit the ticket.
+    func rootCookie(for url: URL) -> HTTPCookie? {
+        guard let host = url.host else { return nil }
+        return HTTPCookie(properties: [
+            .name: name,
+            .value: value,
+            .domain: host,
+            .path: "/",
             .secure: url.scheme?.lowercased() == "https" ? "TRUE" : "FALSE",
             .expires: expiresAt,
         ])

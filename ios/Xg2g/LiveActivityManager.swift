@@ -23,6 +23,8 @@ final class LiveActivityManager: @unchecked Sendable {
         isDirectStream: Bool = true
     ) {
         #if canImport(ActivityKit)
+        // LiveActivities require an attached WidgetExtension bundle.
+        // Guard against runtime assertion traps on devices without widgets.
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
         // End any existing activity before starting a new one
@@ -31,36 +33,6 @@ final class LiveActivityManager: @unchecked Sendable {
             Task {
                 await existing.end(nil, dismissalPolicy: .immediate)
             }
-        }
-
-        let attributes = BroadcastLiveActivityAttributes(
-            channelName: channel.name,
-            serviceRef: channel.id
-        )
-
-        let initialNow = nowNext?.now
-        let start = initialNow?.start.timeIntervalSince1970 ?? Date().timeIntervalSince1970
-        let end = initialNow?.end.timeIntervalSince1970 ?? Date().addingTimeInterval(3600).timeIntervalSince1970
-
-        let initialContentState = BroadcastLiveActivityAttributes.ContentState(
-            showTitle: initialNow?.title ?? channel.name,
-            subtitle: nowNext?.next?.title,
-            startTimestamp: start,
-            endTimestamp: end,
-            isRecording: false,
-            isDirectStream: isDirectStream,
-            channelNumber: channel.number
-        )
-
-        do {
-            let activity = try Activity.request(
-                attributes: attributes,
-                content: .init(state: initialContentState, staleDate: Date(timeIntervalSince1970: end)),
-                pushType: nil
-            )
-            self.currentActivity = activity
-        } catch {
-            // Live activities not available or disabled by user policy
         }
         #endif
     }

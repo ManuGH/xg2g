@@ -106,10 +106,28 @@ enum ChannelWire {
         let serviceRef: String?
         let logoUrl: String?
 
-        func toDomain() -> Channel? {
+        func toDomain(baseURL: URL? = nil) -> Channel? {
             guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
                   let serviceRef = serviceRef?.trimmingCharacters(in: .whitespaces), !serviceRef.isEmpty
             else { return nil }
+
+            let resolvedLogo: URL?
+            if let rawLogo = logoUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !rawLogo.isEmpty {
+                if rawLogo.hasPrefix("http://") || rawLogo.hasPrefix("https://") {
+                    resolvedLogo = URL(string: rawLogo)
+                } else if let baseURL {
+                    let path = rawLogo.hasPrefix("/") ? String(rawLogo.dropFirst()) : rawLogo
+                    resolvedLogo = baseURL.appendingPathComponent(path)
+                } else {
+                    resolvedLogo = URL(string: rawLogo)
+                }
+            } else if let baseURL {
+                // Fallback: Default OpenWebif/xg2g logo path by normalized service reference
+                let sanitizedRef = serviceRef.replacingOccurrences(of: ":", with: "_").trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+                resolvedLogo = baseURL.appendingPathComponent("logos/\(sanitizedRef).png")
+            } else {
+                resolvedLogo = nil
+            }
 
             return Channel(
                 // The catalogue id is the stable identity; a channel without one
@@ -118,7 +136,7 @@ enum ChannelWire {
                 name: name,
                 number: number?.isEmpty == false ? number : nil,
                 serviceRef: serviceRef,
-                logoURL: logoUrl.flatMap(URL.init(string:))
+                logoURL: resolvedLogo
             )
         }
     }

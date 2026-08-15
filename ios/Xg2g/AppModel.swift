@@ -295,7 +295,7 @@ final class AppModel {
         let sessionCoord = SessionCoordinator(identity: identity, api: refreshClient, credentials: credentials)
         self.session = sessionCoord
 
-        channelRepository = ChannelRepository(api: authorized)
+        channelRepository = ChannelRepository(api: authorized, baseURL: address.rootURL)
         recordingsRepository = RecordingsRepository(api: authorized)
         timersRepository = TimersRepository(api: authorized)
         playback = PlaybackCoordinator(address: address, api: authorized)

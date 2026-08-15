@@ -13,9 +13,11 @@ import Foundation
 actor ChannelRepository {
 
     private let api: APIClient
+    private let baseURL: URL?
 
-    init(api: APIClient) {
+    init(api: APIClient, baseURL: URL? = nil) {
         self.api = api
+        self.baseURL = baseURL
     }
 
     /// Fetches all available channel bouquets / groups.
@@ -37,7 +39,7 @@ actor ChannelRepository {
         )
 
         return services
-            .compactMap { $0.toDomain() }
+            .compactMap { $0.toDomain(baseURL: baseURL) }
             .sorted { left, right in
                 left.sortKey == right.sortKey
                     ? left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
