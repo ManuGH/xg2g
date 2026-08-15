@@ -48,9 +48,32 @@ struct NowNext: Equatable, Sendable {
     let next: Entry?
 }
 
+/// A bouquet / channel group (e.g. "Favorites", "HD", "Sports").
+struct Bouquet: Identifiable, Hashable, Equatable, Sendable {
+    let id: String
+    let name: String
+    let servicesCount: Int
+
+    init(name: String, servicesCount: Int = 0) {
+        self.id = name
+        self.name = name
+        self.servicesCount = servicesCount
+    }
+}
+
 // MARK: - Wire
 
 enum ChannelWire {
+
+    struct BouquetItem: Decodable, Sendable {
+        let name: String?
+        let services: Int?
+
+        func toDomain() -> Bouquet? {
+            guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return nil }
+            return Bouquet(name: name, servicesCount: services ?? 0)
+        }
+    }
 
     /// The server sends every field as optional. A channel without a name or a
     /// service reference cannot be displayed or played, so it is dropped at the

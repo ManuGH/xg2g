@@ -246,3 +246,68 @@ struct PlaybackCoordinatorTests {
         await (try makeCoordinator(api)).stopLive(sessionID: "sess-1")
     }
 }
+
+struct BouquetTests {
+
+    @Test func bouquetsDecodesNameAndCount() async throws {
+        let api = ScriptedAPI()
+        api.stub("services/bouquets", json: """
+            [{"name":"Favoriten","services":15},
+             {"name":"HD Sender","services":42},
+             {"name":"  ","services":0}]
+            """)
+
+        let bouquets = try await ChannelRepository(api: api).bouquets()
+
+        #expect(bouquets.count == 2)
+        #expect(bouquets[0].name == "Favoriten")
+        #expect(bouquets[0].servicesCount == 15)
+        #expect(bouquets[1].name == "HD Sender")
+        #expect(bouquets[1].servicesCount == 42)
+    }
+}
+
+struct RecordingsRepositoryTests {
+
+    @Test func recordingsDecodesAndSortsByDate() async throws {
+        let api = ScriptedAPI()
+        api.stub("recordings", json: """
+            [{"recordingId":"rec_1","title":"Older Movie","beginUnixSeconds":1700000000,"durationSeconds":7200,"status":"completed"},
+             {"recordingId":"rec_2","title":"Newer Show","beginUnixSeconds":1700010000,"durationSeconds":3600,"status":"completed"}]
+            """)
+
+        let repo = RecordingsRepository(api: api)
+        let recordings = try await repo.recordings()
+
+        #expect(recordings.count == 2)
+        // Ordered newest first
+        #expect(recordings[0].id == "rec_2")
+        #expect(recordings[0].title == "Newer Show")
+        #expect(recordings[0].formattedDuration == "1h 0m")
+        #expect(recordings[1].id == "rec_1")
+        #expect(recordings[1].formattedDuration == "2h 0m")
+    }
+}
+
+struct TimersRepositoryTests {
+
+    @Test func timersDecodesAndSortsByDate() async throws {
+        let api = ScriptedAPI()
+        api.stub("timers", json: """
+            [{"timerId":"t2","name":"Late Show","serviceRef":"1:0:1:2::","serviceName":"ZDF","begin":1700020000,"end":1700023600,"state":"waiting"},
+             {"timerId":"t1","name":"Early News","serviceRef":"1:0:1:1::","serviceName":"Das Erste","begin":1700010000,"end":1700011800,"state":"running"}]
+            """)
+
+        let repo = TimersRepository(api: api)
+        let timers = try await repo.timers()
+
+        #expect(timers.count == 2)
+        // Ordered chronological
+        #expect(timers[0].id == "t1")
+        #expect(timers[0].name == "Early News")
+        #expect(timers[0].isRunning == true)
+        #expect(timers[1].id == "t2")
+        #expect(timers[1].isRunning == false)
+    }
+}
+

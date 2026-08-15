@@ -19,66 +19,162 @@ struct PlayerScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
     @State private var failure: String?
+    @State private var showControls = true
+    @State private var hideControlsTask: Task<Void, Never>?
+
+    var nowNext: NowNext? {
+        model.schedule[channel.serviceRef]
+    }
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Theme.Colors.bgVideoStage.ignoresSafeArea()
 
             if let player {
                 VideoPlayer(player: player)
                     .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showControls.toggle()
+                        }
+                        if showControls {
+                            scheduleControlsHiding()
+                        }
+                    }
             } else if let failure {
-                ContentUnavailableView("Cannot play \(channel.name)", systemImage: "exclamationmark.triangle", description: Text(failure))
-                    .foregroundStyle(.white)
+                ContentUnavailableView(
+                    "Wiedergabefehler",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(failure)
+                )
+                .foregroundStyle(Theme.Colors.textSecondary)
             } else {
-                ProgressView("Tuning \(channel.name)…")
-                    .tint(.white)
-                    .foregroundStyle(.white)
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .tint(Theme.Colors.accentLive)
+                        .scaleEffect(1.3)
+
+                    Text("\(channel.name) wird gestreamt…")
+                        .font(.headline)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                }
             }
 
-            VStack {
-                HStack {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title)
-                            .foregroundStyle(.white.opacity(0.85))
+            // MARK: - Broadcast Console OSD Overlay
+            if showControls {
+                VStack {
+                    // Top Bar
+                    HStack(spacing: 12) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.down.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(Theme.Colors.textPrimary.opacity(0.85))
+                        }
+
+                        HStack(spacing: 8) {
+                            if let number = channel.number {
+                                Text(number)
+                                    .font(.caption.monospacedDigit().bold())
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                            }
+
+                            Text(channel.name)
+                                .font(.headline)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+
+                        Spacer()
+
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Theme.Colors.accentLive)
+                                .frame(width: 8, height: 8)
+                            Text("LIVE")
+                                .font(.caption.bold().monospaced())
+                                .foregroundStyle(Theme.Colors.accentLive)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
                     }
                     .padding()
+                    .background(
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.75), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
                     Spacer()
+
+                    // Bottom Bar (Now/Next Info)
+                    if let now = nowNext?.now {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(now.title)
+                                .font(.headline)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                                .lineLimit(1)
+
+                            if let description = now.description {
+                                Text(description)
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .lineLimit(2)
+                            }
+
+                            if let fraction = now.progress(at: .now) {
+                                ProgressView(value: fraction)
+                                    .progressViewStyle(.linear)
+                                    .tint(Theme.Colors.accentLive)
+                            }
+                        }
+                        .padding(16)
+                        .glassCard(cornerRadius: 12)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 24)
+                    }
                 }
-                Spacer()
+                .transition(.opacity)
             }
         }
         .task {
             await model.play(channel)
 
             guard let stream = model.liveStream else {
-                failure = model.lastError ?? "The stream could not be started."
+                failure = model.lastError ?? "Der Stream konnte nicht gestartet werden."
                 return
             }
             player = Self.makePlayer(for: stream)
             player?.play()
+            scheduleControlsHiding()
         }
         .onDisappear {
+            hideControlsTask?.cancel()
             player?.pause()
             player = nil
             Task { await model.stopPlayback() }
         }
     }
 
+    private func scheduleControlsHiding() {
+        hideControlsTask?.cancel()
+        hideControlsTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showControls = false
+                }
+            }
+        }
+    }
+
     /// Builds the player with the playback ticket attached.
-    ///
-    /// `AVURLAssetHTTPCookiesKey` is what makes a native player possible here:
-    /// AVFoundation fetches the playlist and every segment itself, and this is
-    /// the supported way to give those internal requests a credential. The
-    /// alternative would be a token in the URL — which would then appear in
-    /// access logs, in referrers and in the player's own cache — or a resource
-    /// loader intercepting every segment, which breaks across ABR, AirPlay and
-    /// PiP.
-    ///
-    /// The cookie is passed explicitly rather than written into
-    /// `HTTPCookieStorage.shared`, so it exists only for this asset and does not
-    /// become ambient state that some other request might pick up.
     private static func makePlayer(for stream: LiveStream) -> AVPlayer? {
         guard let cookie = stream.ticket.httpCookie(for: stream.playlistURL) else { return nil }
 
@@ -89,7 +185,6 @@ struct PlayerScreen: View {
         let item = AVPlayerItem(asset: asset)
         let player = AVPlayer(playerItem: item)
 
-        // Live: catch up rather than drift further behind after a stall.
         player.automaticallyWaitsToMinimizeStalling = true
         return player
     }

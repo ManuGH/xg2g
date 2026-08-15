@@ -18,6 +18,14 @@ actor ChannelRepository {
         self.api = api
     }
 
+    /// Fetches all available channel bouquets / groups.
+    func bouquets() async throws -> [Bouquet] {
+        let items: [ChannelWire.BouquetItem] = try await api.send(
+            APIRequest(method: .get, path: "services/bouquets")
+        )
+        return items.compactMap { $0.toDomain() }
+    }
+
     /// The channel list, ordered the way a viewer expects.
     ///
     /// Entries the app cannot use — no name, no service reference — are

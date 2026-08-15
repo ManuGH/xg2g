@@ -38,9 +38,6 @@ struct ServerAddressStore: Sendable {
 }
 
 /// What the app is currently able to do.
-///
-/// One enum rather than a set of booleans: `isConfigured && !isEnrolled` and
-/// friends are exactly the combinations that produce a screen nobody designed.
 enum AppState: Equatable, Sendable {
     /// No server yet — the setup screen.
     case needsServer
@@ -53,19 +50,47 @@ enum AppState: Equatable, Sendable {
     case needsRePairing
 }
 
+/// Top-level sections in the Broadcast Console.
+enum Tab: String, CaseIterable, Identifiable, Sendable {
+    case liveTV = "Live TV"
+    case recordings = "Aufnahmen"
+    case timers = "Timer"
+    case settings = "Einstellungen"
+
+    var id: String { rawValue }
+
+    var systemImage: String {
+        switch self {
+        case .liveTV: return "tv"
+        case .recordings: return "play.rectangle.on.rectangle"
+        case .timers: return "clock"
+        case .settings: return "gearshape"
+        }
+    }
+}
+
 /// Composes the app: one server, one identity, one set of coordinators.
-///
-/// Views read state from here and call intents on it. They never see a
-/// credential, a device key, or a DPoP proof — the whole point of the auth work
-/// is that nothing above this line knows it happened.
 @Observable
 @MainActor
 final class AppModel {
 
     private(set) var state: AppState = .needsServer
+    var selectedTab: Tab = .liveTV
+
+    // MARK: - Live TV State
     private(set) var channels: [Channel] = []
+    private(set) var bouquets: [Bouquet] = []
+    var selectedBouquet: Bouquet?
+    var searchQuery: String = ""
     private(set) var schedule: [String: NowNext] = [:]
     private(set) var isLoadingChannels = false
+
+    // MARK: - Recordings & Timers State
+    private(set) var recordings: [Recording] = []
+    private(set) var isLoadingRecordings = false
+    private(set) var timers: [DVRTimer] = []
+    private(set) var isLoadingTimers = false
+
     private(set) var lastError: String?
 
     /// The stream currently handed to the player, if any.
@@ -78,9 +103,38 @@ final class AppModel {
     private var address: ServerAddress?
     private var identity: ServerIdentity?
     private var channelRepository: ChannelRepository?
+    private var recordingsRepository: RecordingsRepository?
+    private var timersRepository: TimersRepository?
     private var playback: PlaybackCoordinator?
     private var session: SessionCoordinator?
     private var enrollment: EnrollmentCoordinator?
+    private var revokeCoordinator: RevokeCoordinator?
+
+    var serverURLString: String {
+        address?.rootURL.absoluteString ?? "–"
+    }
+
+    var currentDeviceName: String {
+        Self.deviceName
+    }
+
+    var currentDeviceType: String {
+        Self.deviceType.rawValue
+    }
+
+    /// Channels filtered by selected bouquet and search query.
+    var filteredChannels: [Channel] {
+        var result = channels
+        let query = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        if !query.isEmpty {
+            result = result.filter { channel in
+                channel.name.lowercased().contains(query) ||
+                (channel.number?.contains(query) ?? false) ||
+                (schedule[channel.serviceRef]?.now?.title.lowercased().contains(query) ?? false)
+            }
+        }
+        return result
+    }
 
     init(
         addressStore: ServerAddressStore = ServerAddressStore(),
@@ -118,7 +172,7 @@ final class AppModel {
         }
 
         state = .ready
-        await loadChannels()
+        await loadInitialData()
     }
 
     // MARK: - Setup
@@ -150,14 +204,25 @@ final class AppModel {
             authorizer: DeviceProofAuthorizer(keyStore: keyStore)
         )
 
+        let sessionCoord = SessionCoordinator(identity: identity, api: refreshClient, credentials: credentials)
+        self.session = sessionCoord
+
         channelRepository = ChannelRepository(api: authorized)
+        recordingsRepository = RecordingsRepository(api: authorized)
+        timersRepository = TimersRepository(api: authorized)
         playback = PlaybackCoordinator(address: address, api: authorized)
-        session = SessionCoordinator(identity: identity, api: refreshClient, credentials: credentials)
         enrollment = EnrollmentCoordinator(
             identity: identity,
             api: HTTPAPIClient(address: address),
             keyStore: keyStore,
             credentials: credentials
+        )
+        revokeCoordinator = RevokeCoordinator(
+            identity: identity,
+            api: authorized,
+            credentials: credentials,
+            keyStore: keyStore,
+            session: sessionCoord
         )
     }
 
@@ -184,28 +249,75 @@ final class AppModel {
             await session?.resetAfterReenrollment()
             state = .ready
             lastError = nil
-            await loadChannels()
+            await loadInitialData()
         } catch {
             lastError = "Pairing could not be completed."
         }
     }
 
-    // MARK: - Channels
+    // MARK: - Data Loading
 
-    func loadChannels() async {
+    func loadInitialData() async {
+        await loadBouquets()
+        await loadChannels()
+        await loadRecordings()
+        await loadTimers()
+    }
+
+    func loadBouquets() async {
+        guard let channelRepository else { return }
+        do {
+            bouquets = try await channelRepository.bouquets()
+        } catch {
+            // Bouquets are optional metadata; failure does not block the channel list
+        }
+    }
+
+    func selectBouquet(_ bouquet: Bouquet?) async {
+        selectedBouquet = bouquet
+        await loadChannels(bouquet: bouquet?.name)
+    }
+
+    func loadChannels(bouquet: String? = nil) async {
         guard let channelRepository, !isLoadingChannels else { return }
         isLoadingChannels = true
         defer { isLoadingChannels = false }
 
         do {
-            // A refresh before the list, so an expired token is renewed once
-            // rather than surfacing as a failed screen.
             _ = try? await session?.validSession()
 
-            let loaded = try await channelRepository.channels()
+            let loaded = try await channelRepository.channels(bouquet: bouquet)
             channels = loaded
             lastError = nil
             schedule = (try? await channelRepository.nowNext(for: loaded.map(\.serviceRef))) ?? [:]
+        } catch {
+            handle(error)
+        }
+    }
+
+    func loadRecordings() async {
+        guard let recordingsRepository, !isLoadingRecordings else { return }
+        isLoadingRecordings = true
+        defer { isLoadingRecordings = false }
+
+        do {
+            _ = try? await session?.validSession()
+            recordings = try await recordingsRepository.recordings()
+            lastError = nil
+        } catch {
+            handle(error)
+        }
+    }
+
+    func loadTimers() async {
+        guard let timersRepository, !isLoadingTimers else { return }
+        isLoadingTimers = true
+        defer { isLoadingTimers = false }
+
+        do {
+            _ = try? await session?.validSession()
+            timers = try await timersRepository.timers()
+            lastError = nil
         } catch {
             handle(error)
         }
@@ -231,13 +343,30 @@ final class AppModel {
         await playback?.stopLive(sessionID: stream.sessionID)
     }
 
+    // MARK: - Revoke / Sign Out
+
+    func disconnectServer() async {
+        guard let revokeCoordinator else { return }
+        do {
+            try await revokeCoordinator.revokeThisDevice(destroyingDeviceKey: true)
+        } catch {
+            // Even if remote revoke failed, clear local state on explicit sign out
+            if let identity {
+                try? await credentials.forgetServer(identity)
+            }
+            try? await keyStore.destroyKey()
+        }
+        addressStore.clear()
+        state = .needsServer
+        channels = []
+        bouquets = []
+        recordings = []
+        timers = []
+        lastError = nil
+    }
+
     // MARK: - Errors
 
-    /// Turns a failure into either a message or a state change.
-    ///
-    /// `DEVICE_REAUTH_REQUIRED` is the one that changes state: no token this
-    /// device can produce will be accepted, so the only way forward is pairing
-    /// again — never a retry, and never a refresh loop.
     private func handle(_ error: any Error) {
         if let apiError = error as? APIError {
             Task { await session?.noteRequestFailure(apiError) }
@@ -262,9 +391,6 @@ final class AppModel {
         UIDevice.current.userInterfaceIdiom == .pad ? .iPad : .iPhone
     }
 
-    /// The name the household list will show. `UIDevice.name` is the value the
-    /// user chose for their device, which is exactly what a "which device is
-    /// this?" list should say.
     private static var deviceName: String {
         let name = UIDevice.current.name.trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? "iPhone" : name

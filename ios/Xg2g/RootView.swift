@@ -21,10 +21,47 @@ struct RootView: View {
             case .needsPairing, .needsRePairing:
                 PairingView(model: model)
             case .ready:
-                ChannelListView(model: model)
+                MainTabView(model: model)
             }
         }
+        .preferredColorScheme(.dark)
+        .tint(Theme.Colors.accentAction)
         .task { await model.start() }
+    }
+}
+
+// MARK: - Main Tab View
+
+struct MainTabView: View {
+
+    @Bindable var model: AppModel
+
+    var body: some View {
+        TabView(selection: $model.selectedTab) {
+            ChannelListView(model: model)
+                .tabItem {
+                    Label(Tab.liveTV.rawValue, systemImage: Tab.liveTV.systemImage)
+                }
+                .tag(Tab.liveTV)
+
+            RecordingsView(model: model)
+                .tabItem {
+                    Label(Tab.recordings.rawValue, systemImage: Tab.recordings.systemImage)
+                }
+                .tag(Tab.recordings)
+
+            TimersView(model: model)
+                .tabItem {
+                    Label(Tab.timers.rawValue, systemImage: Tab.timers.systemImage)
+                }
+                .tag(Tab.timers)
+
+            SettingsView(model: model)
+                .tabItem {
+                    Label(Tab.settings.rawValue, systemImage: Tab.settings.systemImage)
+                }
+                .tag(Tab.settings)
+        }
     }
 }
 
@@ -36,40 +73,67 @@ struct ServerSetupView: View {
     @State private var typed = ""
 
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "tv")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
+        ZStack {
+            Theme.Colors.bgBase.ignoresSafeArea()
 
-            Text("Connect to xg2g")
-                .font(.title.bold())
+            VStack(spacing: 28) {
+                Spacer()
 
-            Text("Enter the address of your xg2g server.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                Image(systemName: "tv")
+                    .font(.system(size: 64))
+                    .foregroundStyle(Theme.Colors.accentAction)
+                    .padding()
+                    .background(Theme.Colors.surfaceGlass, in: Circle())
+                    .overlay(Circle().strokeBorder(Theme.Colors.borderElevated, lineWidth: 1))
 
-            TextField("tv.example or 192.168.1.10:8080", text: $typed)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-                .submitLabel(.go)
-                .onSubmit { connect() }
+                VStack(spacing: 8) {
+                    Text("Mit xg2g verbinden")
+                        .font(.title2.bold())
+                        .foregroundStyle(Theme.Colors.textPrimary)
 
-            if let error = model.lastError {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
+                    Text("Gib die Adresse deines xg2g-Servers ein.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                VStack(spacing: 16) {
+                    TextField("tv.example oder 192.168.1.10:8080", text: $typed)
+                        .padding()
+                        .background(Theme.Colors.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Theme.Colors.borderElevated, lineWidth: 1)
+                        )
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .submitLabel(.go)
+                        .onSubmit { connect() }
+
+                    if let error = model.lastError {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.statusError)
+                    }
+
+                    Button(action: connect) {
+                        Text("Verbinden")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.Colors.accentAction)
+                    .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+
+                Spacer()
             }
-
-            Button("Continue", action: connect)
-                .buttonStyle(.borderedProminent)
-                .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
-
-            Spacer()
+            .padding(32)
         }
-        .padding(32)
     }
 
     private func connect() {
@@ -86,62 +150,79 @@ struct PairingView: View {
     @State private var isWaiting = false
 
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "lock.shield")
-                .font(.system(size: 56))
-                .foregroundStyle(.tint)
+        ZStack {
+            Theme.Colors.bgBase.ignoresSafeArea()
 
-            Text(model.state == .needsRePairing ? "Pair this device again" : "Pair this device")
-                .font(.title.bold())
-                .multilineTextAlignment(.center)
+            VStack(spacing: 28) {
+                Spacer()
 
-            if let invitation {
-                Text("Enter this code in xg2g on another device:")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 56))
+                    .foregroundStyle(Theme.Colors.accentLive)
+                    .padding()
+                    .background(Theme.Colors.surfaceGlass, in: Circle())
+                    .overlay(Circle().strokeBorder(Theme.Colors.borderElevated, lineWidth: 1))
 
-                Text(invitation.userCode)
-                    .font(.system(.largeTitle, design: .monospaced).bold())
-                    .textSelection(.enabled)
-                    .padding(.vertical, 8)
+                VStack(spacing: 8) {
+                    Text(model.state == .needsRePairing ? "Gerät erneut koppeln" : "Gerät koppeln")
+                        .font(.title2.bold())
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .multilineTextAlignment(.center)
 
-                if isWaiting {
-                    ProgressView("Waiting for approval…")
+                    if let invitation {
+                        Text("Gib diesen Code in xg2g auf einem bereits gekoppelten Gerät ein:")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .multilineTextAlignment(.center)
+
+                        Text(invitation.userCode)
+                            .font(.system(size: 42, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.accentLive)
+                            .textSelection(.enabled)
+                            .padding(.vertical, 16)
+                            .padding(.horizontal, 24)
+                            .glassCard(cornerRadius: 16)
+
+                        if isWaiting {
+                            ProgressView("Warte auf Genehmigung…")
+                                .tint(Theme.Colors.accentLive)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                    } else {
+                        Text("Dieses Gerät benötigt eine einmalige Genehmigung, bevor Streams gestartet werden können.")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .multilineTextAlignment(.center)
+
+                        Button("Kopplung starten") {
+                            Task { invitation = await model.beginPairing() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.Colors.accentAction)
+                    }
                 }
-            } else {
-                Text("This device needs approval before it can watch anything.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
 
-                Button("Start pairing") {
-                    Task { invitation = await model.beginPairing() }
+                if let error = model.lastError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.statusError)
                 }
-                .buttonStyle(.borderedProminent)
+
+                Spacer()
             }
+            .padding(32)
+            .task(id: invitation?.pairingID) {
+                guard invitation != nil else { return }
+                isWaiting = true
+                defer { isWaiting = false }
 
-            if let error = model.lastError {
-                Text(error).font(.footnote).foregroundStyle(.red)
-            }
-
-            Spacer()
-        }
-        .padding(32)
-        // The poll lives here rather than in the coordinator: how often to ask,
-        // and for how long, is a screen's decision. A coordinator that looped on
-        // its own would keep polling a screen the user had already left.
-        .task(id: invitation?.pairingID) {
-            guard invitation != nil else { return }
-            isWaiting = true
-            defer { isWaiting = false }
-
-            while !Task.isCancelled {
-                if await model.pairingStatus() == .approved {
-                    await model.completePairing()
-                    return
+                while !Task.isCancelled {
+                    if await model.pairingStatus() == .approved {
+                        await model.completePairing()
+                        return
+                    }
+                    try? await Task.sleep(for: .seconds(2))
                 }
-                try? await Task.sleep(for: .seconds(2))
             }
         }
     }
