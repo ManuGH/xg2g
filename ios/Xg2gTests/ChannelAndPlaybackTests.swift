@@ -348,3 +348,31 @@ struct ChannelZappingNavigationTests {
     }
 }
 
+@MainActor
+struct FavoriteChannelsTests {
+
+    @Test func togglingFavoritesUpdatesState() {
+        let model = AppModel()
+        let c1 = Channel(id: "fav_test_1", name: "ORF1 HD", number: "1", serviceRef: "ref_1", logoURL: nil)
+
+        #expect(model.isFavorite(c1) == false)
+
+        model.toggleFavorite(c1)
+        #expect(model.isFavorite(c1) == true)
+
+        model.toggleFavorite(c1)
+        #expect(model.isFavorite(c1) == false)
+    }
+}
+
+struct QualityPreferenceTests {
+
+    @Test func allCasesHaveValidDisplayNames() {
+        for pref in AppModel.StreamingQualityPreference.allCases {
+            #expect(!pref.displayName.isEmpty)
+            #expect(!pref.rawValue.isEmpty)
+        }
+    }
+}
+
+

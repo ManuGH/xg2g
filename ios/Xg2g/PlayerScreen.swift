@@ -506,6 +506,20 @@ struct StreamInspectorOverlay: View {
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
                 GridRow {
+                    Text("Streaming-Modus:")
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text(NetworkMonitor.shared.currentType == .wifi ? "1:1 Direct Stream (Passthrough)" : "Adaptive Transcode (AV1/HEVC)")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.statusSuccess)
+                }
+                GridRow {
+                    Text("Netzwerk:")
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text("\(NetworkMonitor.shared.currentType.rawValue.uppercased()) • \(NetworkMonitor.shared.isExpensive ? "Metered" : "Unmetered")")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                GridRow {
                     Text("ServiceRef:")
                         .foregroundStyle(Theme.Colors.textTertiary)
                     Text(channel.serviceRef)

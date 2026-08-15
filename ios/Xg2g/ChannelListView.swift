@@ -84,12 +84,24 @@ struct ChannelListView: View {
                                     ChannelRow(
                                         channel: channel,
                                         nowNext: model.schedule[channel.serviceRef],
-                                        timeFilter: model.selectedTimeFilter
+                                        timeFilter: model.selectedTimeFilter,
+                                        isFavorite: model.isFavorite(channel)
                                     )
                                 }
                                 .buttonStyle(.plain)
                                 .listRowBackground(Theme.Colors.surfaceElevated)
                                 .listRowSeparatorTint(Theme.Colors.borderSubtle)
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        model.toggleFavorite(channel)
+                                    } label: {
+                                        Label(
+                                            model.isFavorite(channel) ? "Entfernen" : "Favorit",
+                                            systemImage: model.isFavorite(channel) ? "star.slash.fill" : "star.fill"
+                                        )
+                                    }
+                                    .tint(Theme.Colors.accentLive)
+                                }
                             }
                             .listStyle(.plain)
                             .scrollContentBackground(.hidden)
@@ -124,6 +136,21 @@ struct BouquetPicker: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                if !model.favoriteChannelIDs.isEmpty {
+                    BouquetPill(
+                        title: "Favoriten",
+                        icon: "star.fill",
+                        count: model.favoriteChannelIDs.count,
+                        isSelected: model.selectedBouquet?.id == AppModel.favoritesBouquetID
+                    ) {
+                        model.selectedBouquet = Bouquet(
+                            id: AppModel.favoritesBouquetID,
+                            name: "Favoriten",
+                            servicesCount: model.favoriteChannelIDs.count
+                        )
+                    }
+                }
+
                 BouquetPill(
                     title: "Alle Sender",
                     isSelected: model.selectedBouquet == nil
@@ -149,6 +176,7 @@ struct BouquetPicker: View {
 struct BouquetPill: View {
 
     let title: String
+    var icon: String? = nil
     var count: Int?
     let isSelected: Bool
     let action: () -> Void
@@ -156,6 +184,12 @@ struct BouquetPill: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.caption2)
+                        .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.accentLive)
+                }
+
                 Text(title)
                     .font(.subheadline.weight(isSelected ? .semibold : .regular))
 
@@ -188,6 +222,7 @@ struct ChannelRow: View {
     let channel: Channel
     let nowNext: NowNext?
     var timeFilter: AppModel.TimeFilter = .now
+    var isFavorite: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -205,6 +240,12 @@ struct ChannelRow: View {
                         .font(.body.weight(.medium))
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .lineLimit(1)
+
+                    if isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.Colors.accentLive)
+                    }
                 }
 
                 if timeFilter == .primeTime, let next = nowNext?.next {

@@ -42,6 +42,37 @@ struct SettingsView: View {
                         Text("Server")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
+                    Section {
+                        Picker("Streaming-Modus", selection: Binding(
+                            get: { model.qualityPreference },
+                            set: { model.qualityPreference = $0 }
+                        )) {
+                            ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
+                                Text(pref.displayName).tag(pref)
+                            }
+                        }
+                        .foregroundStyle(Theme.Colors.textPrimary)
+
+                        HStack {
+                            Text("Aktuelle Verbindung")
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Spacer()
+                            HStack(spacing: 6) {
+                                Image(systemName: NetworkMonitor.shared.currentType == .wifi ? "wifi" : "antenna.radiowaves.left.and.right")
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                                Text(NetworkMonitor.shared.currentType.rawValue.uppercased())
+                                    .font(.subheadline.monospaced())
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                            }
+                        }
+                    } header: {
+                        Text("Wiedergabe & Bandbreite")
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    } footer: {
+                        Text("Im Modus 'Automatisch' wird im WLAN verlustfreies 1:1 Direct-Streaming (0% CPU, Originalbitrate) verwendet und bei Mobilfunk datensparend mit AV1/HEVC transcodiert.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
                     Section {

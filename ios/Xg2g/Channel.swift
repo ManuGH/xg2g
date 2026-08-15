@@ -75,8 +75,8 @@ struct Bouquet: Identifiable, Hashable, Equatable, Sendable {
     let name: String
     let servicesCount: Int
 
-    init(name: String, servicesCount: Int = 0) {
-        self.id = name
+    init(id: String? = nil, name: String, servicesCount: Int = 0) {
+        self.id = id ?? name
         self.name = name
         self.servicesCount = servicesCount
     }

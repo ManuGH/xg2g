@@ -122,6 +122,52 @@ final class AppModel {
         Self.deviceType.rawValue
     }
 
+    enum StreamingQualityPreference: String, CaseIterable, Identifiable, Sendable {
+        case auto = "auto"
+        case passthrough = "passthrough"
+        case dataSaver = "dataSaver"
+
+        var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .auto: return "Automatisch (WLAN: 1:1 Direct / 5G: ABR)"
+            case .passthrough: return "Immer Original (Verlustfrei 1:1)"
+            case .dataSaver: return "Datensparmodus (HEVC/AV1)"
+            }
+        }
+    }
+
+    var qualityPreference: StreamingQualityPreference {
+        get {
+            let raw = UserDefaults.standard.string(forKey: "xg2g.quality_preference") ?? "auto"
+            return StreamingQualityPreference(rawValue: raw) ?? .auto
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "xg2g.quality_preference")
+        }
+    }
+
+    static let favoritesBouquetID = "xg2g_local_favorites"
+
+    private(set) var favoriteChannelIDs: Set<String> = {
+        let stored = UserDefaults.standard.stringArray(forKey: "xg2g.favorites") ?? []
+        return Set(stored)
+    }()
+
+    func toggleFavorite(_ channel: Channel) {
+        if favoriteChannelIDs.contains(channel.id) {
+            favoriteChannelIDs.remove(channel.id)
+        } else {
+            favoriteChannelIDs.insert(channel.id)
+        }
+        UserDefaults.standard.set(Array(favoriteChannelIDs), forKey: "xg2g.favorites")
+    }
+
+    func isFavorite(_ channel: Channel) -> Bool {
+        favoriteChannelIDs.contains(channel.id)
+    }
+
     enum TimeFilter: String, CaseIterable, Identifiable, Sendable {
         case now = "Jetzt"
         case primeTime = "Heute 20:15"
@@ -131,9 +177,14 @@ final class AppModel {
 
     var selectedTimeFilter: TimeFilter = .now
 
-    /// Channels filtered by selected bouquet and search query.
+    /// Channels filtered by selected bouquet, favorites, and search query.
     var filteredChannels: [Channel] {
         var result = channels
+
+        if selectedBouquet?.id == Self.favoritesBouquetID {
+            result = result.filter { favoriteChannelIDs.contains($0.id) }
+        }
+
         let query = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
             result = result.filter { channel in
@@ -357,7 +408,10 @@ final class AppModel {
         await stopPlayback()
 
         do {
-            liveStream = try await playback.startLive(serviceRef: channel.serviceRef)
+            liveStream = try await playback.startLive(
+                serviceRef: channel.serviceRef,
+                qualityPreference: qualityPreference.rawValue
+            )
             lastError = nil
         } catch {
             handle(error)

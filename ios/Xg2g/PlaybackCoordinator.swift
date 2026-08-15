@@ -74,7 +74,19 @@ actor PlaybackCoordinator {
     }
 
     /// Starts a live session for a channel and returns something playable.
-    func startLive(serviceRef: String) async throws -> LiveStream {
+    func startLive(serviceRef: String, qualityPreference: String = "auto") async throws -> LiveStream {
+        let isWifi = NetworkMonitor.shared.currentType == .wifi || NetworkMonitor.shared.currentType == .wired
+        let allowTranscode = qualityPreference != "passthrough"
+        let intentName: String
+        switch qualityPreference {
+        case "passthrough":
+            intentName = "direct"
+        case "dataSaver":
+            intentName = "compatible"
+        default:
+            intentName = isWifi ? "direct" : "quality"
+        }
+
         // Probe capabilities and obtain playbackDecisionToken from planner
         let infoResponse: PlaybackWire.StreamInfoResponse? = try? await api.send(
             APIRequest(
@@ -84,7 +96,8 @@ actor PlaybackCoordinator {
                     PlaybackWire.StreamInfoRequest(
                         serviceRef: serviceRef,
                         networkType: NetworkMonitor.shared.currentType.rawValue,
-                        isMetered: NetworkMonitor.shared.isExpensive
+                        isMetered: NetworkMonitor.shared.isExpensive,
+                        allowTranscode: allowTranscode
                     )
                 ),
                 contentType: "application/json"
@@ -99,7 +112,8 @@ actor PlaybackCoordinator {
                     PlaybackWire.IntentRequest(
                         type: "stream.start",
                         serviceRef: serviceRef,
-                        playbackDecisionToken: infoResponse?.playbackDecisionToken
+                        playbackDecisionToken: infoResponse?.playbackDecisionToken,
+                        params: ["intent": intentName]
                     )
                 ),
                 contentType: "application/json"
@@ -188,16 +202,17 @@ enum PlaybackWire {
             let videoCodecs = ["av1", "hevc", "h264"]
             let audioCodecs = ["aac", "ac3", "mp2"]
             let supportsHls = true
-            let allowTranscode = true
+            let allowTranscode: Bool
             let networkContext: NetworkContext
         }
 
         let serviceRef: String
         let capabilities: Capabilities
 
-        init(serviceRef: String, networkType: String = "wifi", isMetered: Bool = false) {
+        init(serviceRef: String, networkType: String = "wifi", isMetered: Bool = false, allowTranscode: Bool = true) {
             self.serviceRef = serviceRef
             self.capabilities = Capabilities(
+                allowTranscode: allowTranscode,
                 networkContext: NetworkContext(kind: networkType, metered: isMetered)
             )
         }
@@ -212,9 +227,10 @@ enum PlaybackWire {
         var serviceRef: String?
         var sessionID: String?
         var playbackDecisionToken: String?
+        var params: [String: String]?
 
         private enum CodingKeys: String, CodingKey {
-            case type, serviceRef, playbackDecisionToken
+            case type, serviceRef, playbackDecisionToken, params
             case sessionID = "sessionId"
         }
     }
