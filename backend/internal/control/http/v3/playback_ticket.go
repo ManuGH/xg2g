@@ -170,9 +170,9 @@ func (s *Server) IssuePlaybackTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	effectiveHTTPS := s.requestIsHTTPS(r)
-	if !effectiveHTTPS && !requestRemoteIsLoopback(r) {
-		// A media credential must not be handed out in clear text. Loopback is
-		// exempt so the simulator and local development still work.
+	allowLocalHTTP := s.GetConfig().Connectivity.AllowLocalHTTP || s.GetConfig().Connectivity.Profile == "lan" || s.GetConfig().Connectivity.Profile == "development" || requestRemoteIsPrivateOrLoopback(r)
+	if !effectiveHTTPS && !allowLocalHTTP {
+		// A media credential must not be handed out in clear text over public internet. Loopback, private LAN/VPN and local profiles are exempt.
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "HTTPS Required", problemcode.CodeInvalidInput, "A playback ticket is only issued over HTTPS", nil)
 		return
 	}

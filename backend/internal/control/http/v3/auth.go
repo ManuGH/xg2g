@@ -287,6 +287,11 @@ func requestRemoteIsLoopback(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+func requestRemoteIsPrivateOrLoopback(r *http.Request) bool {
+	ip := requestRemoteIP(r)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
+
 func requestRemoteIP(r *http.Request) net.IP {
 	if r == nil {
 		return nil
