@@ -49,6 +49,13 @@ struct NowNext: Equatable, Sendable {
             return max(1, Int(secondsLeft / 60))
         }
 
+        var formattedStartTime: String {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            return formatter.string(from: start)
+        }
+
         var formattedEndTime: String {
             let formatter = DateFormatter()
             formatter.dateStyle = .none

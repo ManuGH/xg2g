@@ -497,9 +497,23 @@ struct PlayerScreen: View {
                                         }
 
                                         if let fraction = now.progress(at: .now) {
-                                            ProgressView(value: fraction)
-                                                .progressViewStyle(.linear)
-                                                .tint(Theme.Colors.accentLive)
+                                            VStack(spacing: 3) {
+                                                ProgressView(value: fraction)
+                                                    .progressViewStyle(.linear)
+                                                    .tint(Theme.Colors.accentLive)
+
+                                                HStack {
+                                                    Text(now.formattedStartTime)
+                                                        .font(.system(size: 9, design: .monospaced))
+                                                        .foregroundStyle(Theme.Colors.textTertiary)
+
+                                                    Spacer()
+
+                                                    Text(now.formattedEndTime)
+                                                        .font(.system(size: 9, design: .monospaced))
+                                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                                }
+                                            }
                                         }
 
                                         if let next = nowNext?.next {
