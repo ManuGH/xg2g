@@ -92,12 +92,21 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 		}
 
 		reqCtx := context.WithValue(r.Context(), dpopRequestContextKey{}, r)
-		principal, ok := s.TokenPrincipal(reqCtx, reqToken)
-		if !ok {
-			logger.Warn().Str("event", "auth.invalid_token").Msg("invalid api token")
-			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
+		result := s.TokenPrincipal(reqCtx, reqToken)
+		if !result.OK() {
+			logger.Warn().
+				Str("event", "auth.rejected").
+				Str("outcome", string(result.Outcome)).
+				Msg("authentication rejected")
+			writeAuthRejection(w, r, result)
 			return
 		}
+		principal := result.Principal
+
+		// State metadata for a successful request, set before the handler
+		// writes anything. Idempotent and not retry-relevant: a client that
+		// ignores it behaves exactly as before.
+		setDeviceStateHeader(w, result)
 
 		// Token is valid - add principal to context
 		ctx := auth.WithPrincipal(r.Context(), principal)
@@ -119,7 +128,7 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 		return
 	} else {
-		if _, ok := s.TokenPrincipal(r.Context(), reqToken); !ok {
+		if !s.TokenPrincipal(r.Context(), reqToken).OK() {
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}

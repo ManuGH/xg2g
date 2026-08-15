@@ -17,6 +17,19 @@ servers:
     description: Production API
 
 components:
+  headers:
+    Xg2gDeviceState:
+      description: |
+        Device-binding state of the authenticated session. Present only when the
+        request was authenticated as a paired device; absence means the caller
+        was not a paired device (for example an admin token or a web session),
+        never that the device is unbound.
+
+        State metadata, not a warning: the request succeeded, the header is
+        idempotent, and a client that ignores it behaves exactly as before.
+      required: false
+      schema:
+        $ref: "#/components/schemas/DeviceBindingState"
   securitySchemes:
     BearerAuth:
       type: http
@@ -35,6 +48,15 @@ components:
         type: string
 
   schemas:
+    DeviceBindingState:
+      type: string
+      description: |
+        How the authenticated device's credentials are cryptographically bound.
+        See ADR-032.
+      enum:
+        - bound
+        - legacy_unbound
+
     # ==================== V3 API Schemas ====================
     APIError:
       type: object
@@ -1615,6 +1637,7 @@ components:
         - CONCURRENT_BUILDS_EXCEEDED
         - CONFLICT
         - DELETE_FAILED
+        - DEVICE_REAUTH_REQUIRED
         - DIFF_FAILED
         - DURATION_INVALID
         - DURATION_NEGATIVE

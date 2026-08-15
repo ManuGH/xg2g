@@ -103,7 +103,42 @@ is a configuration flip rather than a data restore.
 
 Each phase is separately releasable and separately revertible.
 
-### Phase 0 — visibility before change
+### Phase 0 — visibility before change — **implemented**
+
+Shipped as a read-only census: `UnboundInventoryReader.CountUnboundDeviceAuth`,
+implemented for both the SQLite and memory backends and tested against identical
+expectations, since a census taken in one environment must say something about
+the other.
+
+It needs no schema change and no flag. The deviceauth store has no binding
+column at all, so today the legacy fleet *is* the entire fleet — counting is
+sufficient.
+
+Two views, one source:
+
+- **Startup log** (`bootstrap`) — exactly one aggregated line per process start.
+  Empty fleet at `info`, remaining fleet at `warn`, because a fleet with a
+  deadline attached is not background information. Never per device, never
+  polled.
+- **Diagnostics snapshot** (`health.LifecycleRuntimeSnapshot.deviceAuth`), fed
+  through `UnboundDeviceAuthCensusFunc` from the same reader. No second counting
+  implementation exists to drift out of step.
+
+The census records *last use* alongside the counts. A fleet whose newest use is
+months old justifies a different cutoff window from one in daily use, and "never
+used" stays distinguishable from "used at epoch 0".
+
+The diagnostics path opens the database through
+`OpenUnboundInventoryReader`, which deliberately **skips migrations**: a
+preflight report must not upgrade the schema of a live installation as a side
+effect.
+
+Still open, deferred to Phase 1 where the OpenAPI contract is touched anyway:
+the `/system/health` finding and per-device visibility. `SystemHealth` is a
+generated type guarded by the `ui-contract` CI workflow, and **no device list
+endpoint exists at all** — per-device visibility needs one built first.
+
+#### Original scope
 
 - Count legacy grants and sessions in `deviceauth.sqlite`.
 - Expose the count in the device list, in `/system/health` as a finding while
@@ -130,6 +165,78 @@ Each phase is separately releasable and separately revertible.
 - The unbound exchange remains reachable only for clients below the gate, and
   only until the cutoff.
 - **No schema change to `deviceauth`. Only additive rows in `identity`.**
+
+#### Phase 1 contract scope
+
+Phase 1 is one coherent contract change, not a series of small patches:
+
+1. Register `device_reauth_required` in the problem-code catalogue and the
+   OpenAPI `ProblemCode` schema.
+2. Fix the status code. `409 Conflict`, so a client cannot fall into refresh
+   logic — the device state conflicts with the security requirement.
+3. Define a **structured** pre-cutoff field — a device/auth state on successful
+   responses or in session metadata. Ad-hoc headers are explicitly rejected.
+4. Wire `deviceBindingPolicy()` to real configuration including the cutoff time.
+5. Add `deviceJwk` to the pairing exchange contract, starting the convergence
+   onto `identity`.
+6. Only then wire the iOS `RequestAuthorizer` for real.
+
+##### Pre-cutoff state metadata
+
+Defined once as reusable OpenAPI header components, produced in exactly one
+place — the auth middleware — so no endpoint invents its own warning field:
+
+```
+XG2G-Device-State: bound
+XG2G-Device-State: legacy_unbound
+XG2G-Device-Repair-Required-By: 2026-09-01T00:00:00Z
+```
+
+**Two scalar headers, not one compound value.** A value such as
+`legacy_unbound; repairRequiredBy=…` reads compactly but is a private
+mini-grammar: OpenAPI can only describe it as a regex, and every client has to
+implement a parser for it. That is a string-based shadow API, which is precisely
+what defining a contract type is meant to remove. Split, each header is a scalar
+the contract expresses natively — `DeviceBindingState` as a closed enum and the
+deadline as `format: date-time` — and no client parses anything.
+
+The Go constants and the contract enum are tied together by a test that reads
+`api/openapi.yaml`, in the same way `problemcode` guards its own registry.
+Without it the semantics drift straight back into strings.
+
+It is **state metadata, not a warning error**. The request succeeded; the header
+is idempotent, carries no retry semantics, and a client that ignores it behaves
+exactly as before. Its only purpose is to let a client move its own state
+machine to "re-pair by <date>" *before* the cutoff, rather than inferring its
+situation from a 401 or 409 afterwards. On iOS that means the session lifecycle
+can hold a real `repairRecommended(deadline)` state and later switch to
+`repairRequired(deadline)`, with no guessing from status codes.
+
+The value is derived **solely** from the `devicebinding.Decision` already taken
+during authentication. `auth.AuthenticatedDevice` carries that decision even
+when it allowed the request, precisely so the transport never evaluates the
+policy a second time — a second evaluation could disagree with the one that
+later produces the 409, which is the same class of bug as two URL normalizers.
+
+Two deliberate silences:
+
+- **No header at all when no device-binding decision took part.** An admin token
+  or a web session is not a paired device, and reporting `bound` for it would
+  assert a property that was never established. Absence means "not a
+  paired-device session", never "unbound".
+- **No deadline when no cutoff is configured.** The state is still reported; the
+  date is not invented.
+
+Remaining for the contract: declaring the header in `api/openapi.yaml` as a
+reusable response header so it is specified rather than merely implemented.
+
+**`misconfigured_token` must not be mapped to `401` either.** A valid token that
+its own configuration grants no scopes is a server-side deployment fault. Behind
+a 401 it reads to the client as "your credentials are broken" and sends the
+investigation to entirely the wrong place. It belongs on a 5xx or its own
+internal problem code. The typed outcome exists precisely so this information
+survives the HTTP boundary; mapping every non-success back onto 401 would throw
+it away again at the last step.
 
 ### Phase 2 — bound refresh
 
@@ -215,6 +322,46 @@ called a migration.
 
 iOS development continues in parallel throughout; only the parts that depend on
 the final exchange contract wait for step 3.
+
+### `device_reauth_required` semantics — decided centrally
+
+The decision lives in `internal/domain/devicebinding`, a pure domain package
+with no HTTP, no store and no clock of its own. It is **one** decision, not a
+per-endpoint one: otherwise six months from now some endpoints answer 409,
+others 401, and others still quietly accept legacy credentials. Transports map
+this decision; they do not make it.
+
+`Evaluate(state, policy, now)` yields exactly three outcomes:
+
+| Outcome | Meaning |
+| --- | --- |
+| `allow` | Bound device. Proceed. |
+| `allow_with_repair_warning` | Legacy, before the cutoff. The request **succeeds**, and the response must carry that this device will stop working — so it learns its fate before it fails, not by failing. |
+| `deny_repair_required` | Legacy, at or after the cutoff. Refuse; re-pairing required. |
+
+**Denial must not be modelled as `401`.** A client seeing 401 concludes "token
+missing or stale, refresh and retry". Here the session is not accidentally
+broken: the device is knowingly in an expiring security model, and no amount of
+refreshing will help. `409 Conflict` fits better — the device's current state
+conflicts with the new security requirement — but the exact number matters less
+than the invariant: **a client must never feed this into refresh/retry logic;
+it must enter a re-pair-required state.**
+
+Two safety properties are encoded and tested:
+
+- **An unconfigured cutoff can never deny.** A zero `CutoffAt` means "no cutoff
+  configured", never "cutoff at the Unix epoch". A policy nobody set up must not
+  lock out every device on the first request.
+- **An unknown state is never promoted to bound.** Anything not explicitly bound
+  is treated as legacy. Assuming security that was never established is the one
+  direction this must not fail in.
+
+Deferred to Phase 1, where the OpenAPI contract is opened anyway: registering
+the `device_reauth_required` problem code (the `problemcode` package is
+contract-tested against the spec), choosing the status code, and adding the
+structured pre-cutoff warning field. Inventing an ad-hoc response header for the
+warning is explicitly rejected — the warning belongs in the contract as an
+explicit device-state field.
 
 ### Legacy clients must be told, not silently cut off
 

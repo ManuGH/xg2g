@@ -11,6 +11,8 @@ import (
 
 const (
 	CodeUnauthorized             = "UNAUTHORIZED"
+	CodeDeviceReauthRequired     = "DEVICE_REAUTH_REQUIRED"
+	CodeServerTokenMisconfigured = "SERVER_TOKEN_MISCONFIGURED"
 	CodeForbidden                = "FORBIDDEN"
 	CodeInvalidToken             = "INVALID_TOKEN"
 	CodeHTTPSRequired            = "HTTPS_REQUIRED"
@@ -218,6 +220,8 @@ func specWithRunbookURL(spec Spec, runbookURL string) Spec {
 var registry = map[string]Spec{
 	CodeUnauthorized:             specWithRunbookURL(specWithSeverity(specWithOperatorHint(specWithDescription(newRegisteredSpec(CodeUnauthorized, "Authentication required"), "A valid bearer token or session cookie is required before this operation can proceed."), "Verify that the caller sends a valid bearer token or exchange it for a session cookie before retrying the request."), SeverityWarning), "docs/ops/SECURITY.md"),
 	CodeForbidden:                specWithRunbookURL(specWithSeverity(specWithOperatorHint(specWithDescription(newRegisteredSpec(CodeForbidden, "Access denied"), "The caller was authenticated, but the granted scopes or claims do not permit this operation."), "Check the token scopes and claims for this caller, then retry with credentials that include the required permission."), SeverityWarning), "docs/ops/SECURITY.md"),
+	CodeDeviceReauthRequired:     specWithRunbookURL(specWithRetryable(specWithSeverity(specWithOperatorHint(specWithDescription(newRegisteredSpec(CodeDeviceReauthRequired, "Device must be paired again"), "This device holds credentials from a security model that is being retired. Refreshing cannot restore access; the device has to be paired again."), "Ask the user to pair this device again. Do not retry or refresh the token - no token issued to this device will be accepted."), SeverityWarning), false), "docs/ADR/032-device-identity-convergence.md"),
+	CodeServerTokenMisconfigured: specWithRunbookURL(specWithRetryable(specWithSeverity(specWithOperatorHint(specWithDescription(newRegisteredSpec(CodeServerTokenMisconfigured, "Server token configuration is incomplete"), "A presented token verified successfully, but the server configuration grants it no scopes, so no request using it can ever be authorized."), "Server-side fault, not a client fault. Add scopes to this token in the server configuration; the caller cannot fix it by re-authenticating."), SeverityError), false), "docs/ops/SECURITY.md"),
 	CodeInvalidToken:             specWithSeverity(newRegisteredSpec(CodeInvalidToken, "Invalid or expired API token"), SeverityWarning),
 	CodeHTTPSRequired:            specWithRunbookURL(specWithSeverity(specWithOperatorHint(specWithDescription(newRegisteredSpec(CodeHTTPSRequired, "HTTPS required"), "This operation is accepted only over direct TLS, a trusted HTTPS proxy hop, or the loopback HTTP exception where explicitly supported."), "Retry this operation over HTTPS, or fix the trusted proxy configuration so `X-Forwarded-Proto=https` is presented from an allowed proxy."), SeverityWarning), "docs/ops/SECURITY.md"),
 	CodeCapabilitiesMissing:      specWithRunbookURL(specWithSeverity(specWithOperatorHint(specWithDescription(newCustomProblemSpec("recordings/capabilities-missing", "Capabilities Missing"), "The client must provide playback capabilities before the server can choose a safe playback path."), "Collect the client playback capability payload and include it in the playback-info request before retrying."), SeverityWarning), "docs/arch/ADR_PLAYBACK_DECISION.md"),
@@ -339,20 +343,23 @@ var registry = map[string]Spec{
 }
 
 var privateCodes = map[string]struct{}{
-	CodeJobConfigInvalid:        {},
-	CodeJobBouquetsFetchFailed:  {},
-	CodeJobBouquetNotFound:      {},
-	CodeJobServicesFetchFailed:  {},
-	CodeJobStreamURLBuildFailed: {},
-	CodeJobPlaylistPathInvalid:  {},
-	CodeJobPlaylistWriteFailed:  {},
-	CodeJobPlaylistWritePerm:    {},
-	CodeJobXMLTVWriteFailed:     {},
-	CodeJobXMLTVWritePerm:       {},
-	CodeJobEPGFetchInvalidInput: {},
-	CodeJobEPGFetchTimeout:      {},
-	CodeJobEPGFetchUnavailable:  {},
-	CodeJobEPGFetchFailed:       {},
+	// A server-side misconfiguration is diagnosed in logs and telemetry, not
+	// advertised as part of the public API surface.
+	CodeServerTokenMisconfigured: {},
+	CodeJobConfigInvalid:         {},
+	CodeJobBouquetsFetchFailed:   {},
+	CodeJobBouquetNotFound:       {},
+	CodeJobServicesFetchFailed:   {},
+	CodeJobStreamURLBuildFailed:  {},
+	CodeJobPlaylistPathInvalid:   {},
+	CodeJobPlaylistWriteFailed:   {},
+	CodeJobPlaylistWritePerm:     {},
+	CodeJobXMLTVWriteFailed:      {},
+	CodeJobXMLTVWritePerm:        {},
+	CodeJobEPGFetchInvalidInput:  {},
+	CodeJobEPGFetchTimeout:       {},
+	CodeJobEPGFetchUnavailable:   {},
+	CodeJobEPGFetchFailed:        {},
 }
 
 func Entries() []Entry {

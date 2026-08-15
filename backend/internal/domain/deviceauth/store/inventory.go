@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
+	sqlitepkg "github.com/ManuGH/xg2g/internal/persistence/sqlite"
 )
 
 // UnboundInventoryReader reports the ADR-032 Phase 0 census.
@@ -26,6 +27,26 @@ var (
 	_ UnboundInventoryReader = (*SqliteStore)(nil)
 	_ UnboundInventoryReader = (*MemoryStateStore)(nil)
 )
+
+// OpenUnboundInventoryReader opens the deviceauth database for the census
+// alone, **without running migrations**.
+//
+// A diagnostic must never mutate a schema as a side effect: `OpenStateStore`
+// migrates on open, which would let a read-only preflight command silently
+// upgrade a live installation. This shares the counting implementation and
+// differs only in how the database is opened.
+//
+// The returned close function must be called. When the database does not exist
+// yet, or predates these tables, the count fails and the caller reports that
+// rather than pretending the answer is zero.
+func OpenUnboundInventoryReader(dbPath string) (UnboundInventoryReader, func() error, error) {
+	db, err := sqlitepkg.Open(dbPath, sqlitepkg.DefaultConfig())
+	if err != nil {
+		return nil, nil, fmt.Errorf("device auth inventory: open %s: %w", dbPath, err)
+	}
+	store := &SqliteStore{DB: db}
+	return store, db.Close, nil
+}
 
 // CountUnboundDeviceAuth counts what a binding cutoff would affect.
 //
