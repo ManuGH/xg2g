@@ -204,13 +204,34 @@ type Device struct {
 	LastSeenAt    time.Time `json:"lastSeenAt"`
 }
 
+// GrantType records which enrollment front-end authorised this device.
+//
+// Both front-ends produce the same kind of grant on the same substrate — that
+// is the point of the convergence — but a grant must not claim to have come
+// from a mechanism it did not. Storing every grant as "passkey" made the
+// enrollment path unauditable.
+type GrantType string
+
+const (
+	// GrantTypePasskeyEnrollment: the user proved identity with a passkey and
+	// enrolled the device directly.
+	//
+	// The stored value keeps its historical spelling so existing grants stay
+	// valid; the value is data, the type is the contract.
+	GrantTypePasskeyEnrollment GrantType = "passkey_device_grant"
+
+	// GrantTypePairingEnrollment: the device was authorised through the pairing
+	// flow — a code or QR payload approved by an already-authenticated user.
+	GrantTypePairingEnrollment GrantType = "pairing_device_grant"
+)
+
 // DeviceGrant represents a persistent grant session issued to a specific device.
 type DeviceGrant struct {
 	ID        string     `json:"id"`
 	DeviceID  string     `json:"deviceId"`
 	UserID    string     `json:"userId"`
 	FamilyID  string     `json:"familyId"`
-	GrantType string     `json:"grantType"` // "passkey_device_grant"
+	GrantType GrantType  `json:"grantType"`
 	CreatedAt time.Time  `json:"createdAt"`
 	RevokedAt *time.Time `json:"revokedAt,omitempty"`
 }

@@ -20,7 +20,9 @@ import "github.com/ManuGH/xg2g/internal/domain/devicebinding"
 // from any other front end.
 type Outcome string
 
-//nolint:gosec // G101: Outcome names are status identifiers, not hardcoded credentials
+// #nosec G101 -- Outcome names are status identifiers, not hardcoded credentials
+//
+//nolint:gosec // Outcome names are status identifiers, not hardcoded credentials
 const (
 	// OutcomeAuthenticated: proceed normally.
 	OutcomeAuthenticated Outcome = "authenticated"
