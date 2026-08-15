@@ -27,20 +27,25 @@ struct TimersView: View {
                         )
                         .foregroundStyle(Theme.Colors.textSecondary)
                     } else {
-                        List(model.timers) { timer in
-                            TimerRow(timer: timer)
-                                .listRowBackground(Theme.Colors.surfaceElevated)
-                                .listRowSeparatorTint(Theme.Colors.borderSubtle)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        Task { await model.deleteTimer(timer) }
-                                    } label: {
-                                        Label("Löschen", systemImage: "trash")
-                                    }
+                        ScrollView {
+                            LazyVGrid(
+                                columns: [GridItem(.adaptive(minimum: 340, maximum: 540), spacing: 14)],
+                                spacing: 14
+                            ) {
+                                ForEach(model.timers) { timer in
+                                    TimerRow(timer: timer)
+                                        .contextMenu {
+                                            Button(role: .destructive) {
+                                                Task { await model.deleteTimer(timer) }
+                                            } label: {
+                                                Label("Timer löschen", systemImage: "trash")
+                                            }
+                                        }
                                 }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
                         }
-                        .listStyle(.plain)
-                        .scrollContentBackground(.hidden)
                         .refreshable { await model.loadTimers() }
                     }
                 }
@@ -78,51 +83,66 @@ struct TimerRow: View {
     let timer: DVRTimer
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Image(systemName: timer.isRunning ? "record.circle.fill" : "clock.fill")
-                    .font(.title2)
-                    .foregroundStyle(timer.isRunning ? Theme.Colors.statusError : Theme.Colors.accentAction)
-            }
-            .frame(width: 44, height: 44)
-            .background(Theme.Colors.surfaceGlass, in: RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(timer.isRunning ? Theme.Colors.statusError.opacity(0.15) : Theme.Colors.surfaceElevated)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(timer.isRunning ? Theme.Colors.statusError.opacity(0.3) : Theme.Colors.borderSubtle, lineWidth: 1)
+                        )
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    if timer.isRunning {
-                        PulsingLiveDot(size: 6)
+                    Image(systemName: timer.isRunning ? "record.circle.fill" : "clock.fill")
+                        .font(.title2)
+                        .foregroundStyle(timer.isRunning ? Theme.Colors.statusError : Theme.Colors.accentAction)
+                }
+                .frame(width: 44, height: 44)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        if timer.isRunning {
+                            PulsingLiveDot(size: 5)
+                            Text("NIMMT AUF")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Theme.Colors.statusError)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Theme.Colors.statusError.opacity(0.15), in: Capsule())
+                        }
+
+                        Text(timer.name)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(1)
                     }
 
-                    Text(timer.name)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    Text(timer.isRunning ? "AUFNAHME LÄUFT" : timer.state.uppercased())
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(timer.isRunning ? Theme.Colors.statusError : Theme.Colors.textTertiary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            (timer.isRunning ? Theme.Colors.statusError : Theme.Colors.borderSubtle).opacity(0.15),
-                            in: Capsule()
-                        )
+                    Text(timer.serviceName ?? "Timer")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Theme.Colors.accentLive)
                 }
 
-                if let serviceName = timer.serviceName {
-                    Text(serviceName)
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                }
+                Spacer()
+            }
 
-                Text(timer.formattedTimeRange)
-                    .font(.caption2.monospacedDigit())
+            if let description = timer.description, !description.isEmpty {
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(2)
+            }
+
+            HStack {
+                Label(timer.formattedTimeRange, systemImage: "calendar")
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
+
+                Spacer()
             }
         }
-        .padding(.vertical, 4)
+        .padding(14)
+        .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
     }
 }
 
@@ -133,10 +153,11 @@ struct AddTimerSheet: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var title: String = ""
-    @State private var selectedChannelIndex: Int = 0
-    @State private var startDate: Date = Date()
-    @State private var durationMinutes: Int = 90
+    @State private var name = ""
+    @State private var description = ""
+    @State private var selectedChannel: Channel?
+    @State private var begin = Date.now.addingTimeInterval(300)
+    @State private var end = Date.now.addingTimeInterval(3900)
     @State private var isSaving = false
 
     var body: some View {
@@ -145,34 +166,25 @@ struct AddTimerSheet: View {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 Form {
-                    Section("Sendungsdetails") {
-                        TextField("Titel der Aufnahme", text: $title)
-                            .foregroundStyle(Theme.Colors.textPrimary)
+                    Section("Sendungsdaten") {
+                        TextField("Titel", text: $name)
+                        TextField("Beschreibung (optional)", text: $description)
+                    }
+                    .listRowBackground(Theme.Colors.surfaceElevated)
 
-                        if !model.channels.isEmpty {
-                            Picker("Kanal", selection: $selectedChannelIndex) {
-                                ForEach(model.channels.indices, id: \.self) { idx in
-                                    Text(model.channels[idx].name).tag(idx)
-                                }
+                    Section("Sender") {
+                        Picker("Sender", selection: $selectedChannel) {
+                            Text("Sender wählen…").tag(nil as Channel?)
+                            ForEach(model.channels) { ch in
+                                Text(ch.name).tag(ch as Channel?)
                             }
-                            .foregroundStyle(Theme.Colors.textPrimary)
                         }
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
-                    Section("Zeitplan") {
-                        DatePicker("Startzeit", selection: $startDate)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-
-                        Picker("Dauer", selection: $durationMinutes) {
-                            Text("30 Min.").tag(30)
-                            Text("45 Min.").tag(45)
-                            Text("60 Min.").tag(60)
-                            Text("90 Min.").tag(90)
-                            Text("120 Min.").tag(120)
-                            Text("180 Min.").tag(180)
-                        }
-                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Section("Sendezeit") {
+                        DatePicker("Startzeit", selection: $begin)
+                        DatePicker("Endzeit", selection: $end)
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
                 }
@@ -182,33 +194,32 @@ struct AddTimerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { dismiss() }
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Speichern") {
-                        saveTimer()
+                    Button("Abbrechen") {
+                        dismiss()
                     }
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || model.channels.isEmpty || isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Planen") {
+                        save()
+                    }
+                    .disabled(name.isEmpty || selectedChannel == nil || isSaving)
                 }
             }
         }
     }
 
-    private func saveTimer() {
-        guard !model.channels.isEmpty else { return }
-        let channel = model.channels[selectedChannelIndex]
-        let end = startDate.addingTimeInterval(TimeInterval(durationMinutes * 60))
+    private func save() {
+        guard let channel = selectedChannel, !name.isEmpty else { return }
         isSaving = true
-
         Task {
-            let entry = NowNext.Entry(
-                title: title.trimmingCharacters(in: .whitespaces),
-                description: nil,
-                start: startDate,
+            _ = await model.addCustomTimer(
+                channel: channel,
+                name: name,
+                description: description,
+                start: begin,
                 end: end
             )
-            _ = await model.scheduleProgramTimer(channel: channel, entry: entry, leadMinutes: 0, trailMinutes: 0)
+            isSaving = false
             dismiss()
         }
     }

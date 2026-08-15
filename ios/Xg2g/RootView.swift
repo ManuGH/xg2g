@@ -21,7 +21,7 @@ struct RootView: View {
             case .needsPairing, .needsRePairing:
                 PairingView(model: model)
             case .ready:
-                MainTabView(model: model)
+                AdaptiveAppNavigation(model: model)
             }
         }
         .preferredColorScheme(.dark)
@@ -41,7 +41,138 @@ struct RootView: View {
     }
 }
 
-// MARK: - Main Tab View
+// MARK: - Adaptive App Navigation (iPhone TabView vs iPadOS NavigationSplitView)
+
+struct AdaptiveAppNavigation: View {
+
+    @Bindable var model: AppModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    var body: some View {
+        if horizontalSizeClass == .regular {
+            // MARK: - iPadOS NavigationSplitView with Glass Sidebar
+            NavigationSplitView {
+                iPadSidebar(model: model)
+            } detail: {
+                switch model.selectedTab {
+                case .liveTV:
+                    ChannelListView(model: model)
+                case .recordings:
+                    RecordingsView(model: model)
+                case .timers:
+                    TimersView(model: model)
+                case .settings:
+                    SettingsView(model: model)
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+        } else {
+            // MARK: - iOS Compact TabView
+            MainTabView(model: model)
+        }
+    }
+}
+
+// MARK: - iPadOS Sidebar
+
+struct iPadSidebar: View {
+
+    @Bindable var model: AppModel
+
+    var body: some View {
+        List {
+            Section("Mediathek") {
+                ForEach(Tab.allCases) { tab in
+                    Button {
+                        model.selectedTab = tab
+                    } label: {
+                        HStack {
+                            Label(tab.rawValue, systemImage: tab.systemImage)
+                                .font(.body.weight(model.selectedTab == tab ? .semibold : .regular))
+                            Spacer()
+                            if model.selectedTab == tab {
+                                Image(systemName: "checkmark")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                            }
+                        }
+                    }
+                    .foregroundStyle(model.selectedTab == tab ? Theme.Colors.accentAction : Theme.Colors.textPrimary)
+                }
+            }
+
+            if model.selectedTab == .liveTV && !model.bouquets.isEmpty {
+                Section("Bouquets & Sendergruppen") {
+                    Button {
+                        Task { await model.selectBouquet(nil) }
+                    } label: {
+                        HStack {
+                            Label("Alle Sender", systemImage: "tv")
+                            Spacer()
+                            Text("\(model.channels.count)")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+                    }
+                    .foregroundStyle(model.selectedBouquet == nil && model.favoriteChannelIDs.isEmpty ? Theme.Colors.accentAction : Theme.Colors.textPrimary)
+
+                    if !model.favoriteChannelIDs.isEmpty {
+                        Button {
+                            Task { await model.selectBouquet(Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
+                        } label: {
+                            HStack {
+                                Label("Favoriten", systemImage: "star.fill")
+                                    .foregroundStyle(Theme.Colors.accentLive)
+                                Spacer()
+                                Text("\(model.favoriteChannelIDs.count)")
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            }
+                        }
+                        .foregroundStyle(model.selectedBouquet?.id == AppModel.favoritesBouquetID ? Theme.Colors.accentAction : Theme.Colors.textPrimary)
+                    }
+
+                    ForEach(model.bouquets) { bouquet in
+                        Button {
+                            Task { await model.selectBouquet(bouquet) }
+                        } label: {
+                            HStack {
+                                Label(bouquet.name, systemImage: "folder")
+                                Spacer()
+                                if bouquet.servicesCount > 0 {
+                                    Text("\(bouquet.servicesCount)")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                }
+                            }
+                        }
+                        .foregroundStyle(model.selectedBouquet?.id == bouquet.id ? Theme.Colors.accentAction : Theme.Colors.textPrimary)
+                    }
+                }
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        PulsingLiveDot(size: 6)
+                        Text(model.serverURLString)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                            .lineLimit(1)
+                    }
+                    Text("Broadcast Console 2026")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textDisabled)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationTitle("xg2g TV")
+    }
+}
+
+// MARK: - Main Tab View (Compact iPhone Mode)
 
 struct MainTabView: View {
 
@@ -142,60 +273,65 @@ struct ServerSetupView: View {
                             .foregroundStyle(Theme.Colors.statusError)
                     }
 
-                    Button(action: connect) {
+                    Button {
+                        connect()
+                    } label: {
                         Text("Verbinden")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 12)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.Colors.accentAction)
                     .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+                .frame(maxWidth: 420)
 
                 Spacer()
             }
-            .padding(32)
+            .padding(28)
         }
     }
 
     private func connect() {
-        Task { await model.useServer(typed) }
+        let trimmed = typed.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        Task { await model.useServer(trimmed) }
     }
 }
 
-// MARK: - Pairing
+// MARK: - Pairing View
 
 struct PairingView: View {
 
     let model: AppModel
+
     @State private var invitation: EnrollmentCoordinator.Invitation?
-    @State private var isWaiting = false
     @State private var isStarting = false
+    @State private var isWaiting = false
 
     var body: some View {
         ZStack {
             Theme.Colors.bgBase.ignoresSafeArea()
 
-            VStack(spacing: 24) {
+            VStack(spacing: 28) {
                 Spacer()
 
                 Image(systemName: "lock.shield")
-                    .font(.system(size: 56))
+                    .font(.system(size: 64))
                     .foregroundStyle(Theme.Colors.accentLive)
                     .padding()
                     .background(Theme.Colors.surfaceGlass, in: Circle())
                     .overlay(Circle().strokeBorder(Theme.Colors.borderElevated, lineWidth: 1))
 
-                VStack(spacing: 12) {
-                    Text(model.state == .needsRePairing ? "Gerät erneut koppeln" : "Gerät koppeln")
+                VStack(spacing: 8) {
+                    Text("Geräte-Kopplung")
                         .font(.title2.bold())
                         .foregroundStyle(Theme.Colors.textPrimary)
-                        .multilineTextAlignment(.center)
 
                     Text(model.serverURLString)
                         .font(.caption.monospaced())
-                        .foregroundStyle(Theme.Colors.accentAction)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Theme.Colors.surfaceElevated, in: Capsule())

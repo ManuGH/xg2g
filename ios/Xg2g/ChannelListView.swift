@@ -80,7 +80,12 @@ struct ChannelListView: View {
                             Spacer()
                         } else {
                             ScrollView {
-                                LazyVStack(spacing: 10) {
+                                LazyVGrid(
+                                    columns: [
+                                        GridItem(.adaptive(minimum: 340, maximum: 540), spacing: 14)
+                                    ],
+                                    spacing: 14
+                                ) {
                                     ForEach(model.filteredChannels) { channel in
                                         ChannelRow(
                                             channel: channel,

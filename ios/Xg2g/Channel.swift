@@ -14,7 +14,7 @@ import Foundation
 /// `serviceRef` is the identifier that matters: it is what a stream intent and
 /// a now/next lookup are keyed on. `id` is the catalogue key and is not
 /// interchangeable with it.
-struct Channel: Identifiable, Equatable, Sendable {
+struct Channel: Identifiable, Hashable, Equatable, Sendable {
     let id: String
     let name: String
     let number: String?

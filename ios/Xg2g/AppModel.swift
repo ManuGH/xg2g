@@ -475,6 +475,30 @@ final class AppModel {
         }
     }
 
+    func addCustomTimer(
+        channel: Channel,
+        name: String,
+        description: String?,
+        start: Date,
+        end: Date
+    ) async -> Bool {
+        guard let timersRepository else { return false }
+        do {
+            try await timersRepository.createTimer(
+                serviceRef: channel.serviceRef,
+                name: name,
+                description: description,
+                begin: start,
+                end: end
+            )
+            await loadTimers()
+            return true
+        } catch {
+            handle(error)
+            return false
+        }
+    }
+
     func recordLiveNow(channel: Channel, durationMinutes: Int = 120) async -> Bool {
         guard let timersRepository else { return false }
         let entry = schedule[channel.serviceRef]?.now
