@@ -27,6 +27,17 @@ struct RootView: View {
         .preferredColorScheme(.dark)
         .tint(Theme.Colors.accentAction)
         .task { await model.start() }
+        .onContinueUserActivity(HandoffCoordinator.activityType) { userActivity in
+            guard let serviceRef = HandoffCoordinator.extractServiceRef(from: userActivity) else { return }
+            Task { @MainActor in
+                if model.channels.isEmpty {
+                    await model.loadChannels()
+                }
+                if let target = model.channels.first(where: { $0.id == serviceRef || $0.serviceRef == serviceRef }) {
+                    model.playingChannel = target
+                }
+            }
+        }
     }
 }
 

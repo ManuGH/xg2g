@@ -395,5 +395,56 @@ struct OfflineRecordingTests {
     }
 }
 
+struct HandoffCoordinatorTests {
+
+    @Test func extractsServiceRefFromMatchingUserActivity() {
+        let activity = NSUserActivity(activityType: HandoffCoordinator.activityType)
+        activity.userInfo = [
+            "serviceRef": "1:0:19:132F:3EF:1:C00000:0:0:0",
+            "channelName": "ORF1 HD"
+        ]
+
+        let extracted = HandoffCoordinator.extractServiceRef(from: activity)
+        #expect(extracted == "1:0:19:132F:3EF:1:C00000:0:0:0")
+    }
+
+    @Test func ignoresMismatchedActivityType() {
+        let activity = NSUserActivity(activityType: "com.other.app.activity")
+        activity.userInfo = ["serviceRef": "1:0:19:132F:3EF:1:C00000:0:0:0"]
+
+        let extracted = HandoffCoordinator.extractServiceRef(from: activity)
+        #expect(extracted == nil)
+    }
+}
+
+#if canImport(ActivityKit)
+struct BroadcastActivityAttributesTests {
+
+    @Test func attributesAndContentStateInitializeProperly() {
+        let attrs = BroadcastLiveActivityAttributes(
+            channelName: "ORF1 HD",
+            serviceRef: "1:0:19:132F:3EF:1:C00000:0:0:0"
+        )
+        #expect(attrs.channelName == "ORF1 HD")
+        #expect(attrs.serviceRef == "1:0:19:132F:3EF:1:C00000:0:0:0")
+
+        let state = BroadcastLiveActivityAttributes.ContentState(
+            showTitle: "Formel 1",
+            subtitle: "GP von Monaco",
+            startTimestamp: 1000,
+            endTimestamp: 5000,
+            isRecording: true,
+            isDirectStream: true,
+            channelNumber: "1"
+        )
+        #expect(state.showTitle == "Formel 1")
+        #expect(state.subtitle == "GP von Monaco")
+        #expect(state.isRecording == true)
+        #expect(state.isDirectStream == true)
+        #expect(state.channelNumber == "1")
+    }
+}
+#endif
+
 
 

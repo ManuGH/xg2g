@@ -6,6 +6,16 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		AAAA0000000000000000AAC3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAAA0000000000000000AAAA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AAAA0000000000000000AAAD;
+			remoteInfo = Xg2g;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		AAAA0000000000000000AAAF /* Xg2g.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Xg2g.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AAAA0000000000000000AAB0 /* Xg2gTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Xg2gTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -197,16 +207,6 @@
 		};
 /* End PBXTargetDependency section */
 
-/* Begin PBXContainerItemProxy section */
-		AAAA0000000000000000AAC3 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AAAA0000000000000000AAAA /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = AAAA0000000000000000AAAD;
-			remoteInfo = Xg2g;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin XCBuildConfiguration section */
 		AAAA0000000000000000AABC /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -265,6 +265,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YTM9QRNJ42;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = "Support/Info-Debug.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -285,6 +286,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YTM9QRNJ42;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Support/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

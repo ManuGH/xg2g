@@ -7,7 +7,6 @@ import SwiftUI
 struct ChannelListView: View {
 
     @Bindable var model: AppModel
-    @State private var selected: Channel?
 
     var body: some View {
         NavigationStack {
@@ -79,7 +78,7 @@ struct ChannelListView: View {
                         } else {
                             List(model.filteredChannels) { channel in
                                 Button {
-                                    selected = channel
+                                    model.playingChannel = channel
                                 } label: {
                                     ChannelRow(
                                         channel: channel,
@@ -157,7 +156,7 @@ struct ChannelListView: View {
                 }
             }
         }
-        .fullScreenCover(item: $selected) { channel in
+        .fullScreenCover(item: $model.playingChannel) { channel in
             PlayerScreen(model: model, channel: channel)
         }
     }

@@ -74,6 +74,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>io.github.manugh.xg2g.playback</string>
+	</array>
+
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>xg2g connects to your receiver and xg2g server on your local network.</string>
 </dict>

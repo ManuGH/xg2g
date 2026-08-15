@@ -34,6 +34,10 @@ struct PlayerScreen: View {
         model.schedule[currentChannel.serviceRef]
     }
 
+    private var isDirectStream: Bool {
+        model.qualityPreference != .dataSaver
+    }
+
     var body: some View {
         ZStack {
             Theme.Colors.bgVideoStage.ignoresSafeArea()
@@ -176,6 +180,14 @@ struct PlayerScreen: View {
                             triggerHaptic(.medium)
                             Task {
                                 let ok = await model.recordLiveNow(channel: currentChannel)
+                                if ok {
+                                    LiveActivityManager.shared.updateActivity(
+                                        nowNext: nowNext,
+                                        isRecording: true,
+                                        isDirectStream: isDirectStream,
+                                        channelNumber: currentChannel.number
+                                    )
+                                }
                                 displayZapToast(ok ? "🔴 Aufnahme gestartet: \(nowNext?.now?.title ?? currentChannel.name)" : "Fehler beim Starten der Aufnahme")
                             }
                         } label: {
@@ -347,6 +359,17 @@ struct PlayerScreen: View {
         NowPlayingManager.shared.onStop = { [self] in dismiss() }
         NowPlayingManager.shared.update(channel: channel, nowEntry: nowNext?.now)
 
+        LiveActivityManager.shared.startActivity(
+            channel: channel,
+            nowNext: nowNext,
+            isDirectStream: isDirectStream
+        )
+        HandoffCoordinator.shared.updatePlaybackActivity(
+            channel: channel,
+            nowNext: nowNext,
+            serverAddress: model.serverURLString
+        )
+
         await model.play(channel)
 
         guard let stream = model.liveStream else {
@@ -362,7 +385,20 @@ struct PlayerScreen: View {
         guard newChannel.id != currentChannel.id else { return }
         triggerHaptic(.medium)
         currentChannel = newChannel
-        NowPlayingManager.shared.update(channel: newChannel, nowEntry: model.schedule[newChannel.serviceRef]?.now)
+        let newSchedule = model.schedule[newChannel.serviceRef]
+        NowPlayingManager.shared.update(channel: newChannel, nowEntry: newSchedule?.now)
+
+        LiveActivityManager.shared.startActivity(
+            channel: newChannel,
+            nowNext: newSchedule,
+            isDirectStream: isDirectStream
+        )
+        HandoffCoordinator.shared.updatePlaybackActivity(
+            channel: newChannel,
+            nowNext: newSchedule,
+            serverAddress: model.serverURLString
+        )
+
         displayZapToast("Kanal: \(newChannel.name)")
     }
 
@@ -413,6 +449,8 @@ struct PlayerScreen: View {
     private func teardownPlayer() {
         hideControlsTask?.cancel()
         hideZapNoticeTask?.cancel()
+        LiveActivityManager.shared.endActivity()
+        HandoffCoordinator.shared.clearPlaybackActivity()
         NowPlayingManager.shared.clear()
         AudioSessionManager.shared.deactivate()
         player?.pause()

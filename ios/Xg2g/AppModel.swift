@@ -185,6 +185,7 @@ final class AppModel {
     }
 
     var selectedTimeFilter: TimeFilter = .now
+    var playingChannel: Channel?
 
     /// Channels filtered by selected bouquet, favorites, and search query.
     var filteredChannels: [Channel] {
