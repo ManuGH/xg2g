@@ -195,6 +195,8 @@ struct ProgramDetailPayload: Identifiable {
 
 // MARK: - Program Detail Sheet
 
+// MARK: - Program Detail Sheet
+
 struct ProgramDetailSheet: View {
 
     let model: AppModel
@@ -204,6 +206,11 @@ struct ProgramDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var recordSuccess: Bool?
     @State private var isRecording = false
+
+    private var isLiveNow: Bool {
+        let now = Date()
+        return now >= payload.entry.start && now <= payload.entry.end
+    }
 
     var body: some View {
         NavigationStack {
@@ -216,24 +223,29 @@ struct ProgramDetailSheet: View {
                         HStack(spacing: 12) {
                             ChannelLogo(url: payload.channel.logoURL, name: payload.channel.name)
 
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: 3) {
                                 Text(payload.channel.name)
                                     .font(.headline)
                                     .foregroundStyle(Theme.Colors.textPrimary)
 
-                                Text(payload.entry.formattedTimeRange)
-                                    .font(.subheadline.monospacedDigit())
-                                    .foregroundStyle(Theme.Colors.accentLive)
+                                HStack(spacing: 6) {
+                                    if isLiveNow {
+                                        PulsingLiveDot(size: 6)
+                                    }
+                                    Text(payload.entry.formattedTimeRange)
+                                        .font(.subheadline.monospacedDigit().weight(.medium))
+                                        .foregroundStyle(isLiveNow ? Theme.Colors.accentLive : Theme.Colors.textSecondary)
+                                }
                             }
 
                             Spacer()
 
                             if let remaining = payload.entry.remainingMinutes(at: .now) {
                                 Text("noch \(remaining)m")
-                                    .font(.caption.weight(.semibold).monospacedDigit())
+                                    .font(.caption.weight(.bold).monospacedDigit())
                                     .foregroundStyle(Theme.Colors.accentLive)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
                                     .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
                             }
                         }
@@ -241,13 +253,13 @@ struct ProgramDetailSheet: View {
                         .glassCard(cornerRadius: 14)
 
                         // Title & Progress
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 10) {
                             Text(payload.entry.title)
                                 .font(.title2.weight(.bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
 
                             if let progress = payload.entry.progress(at: .now) {
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: 6) {
                                     ProgressView(value: progress)
                                         .progressViewStyle(.linear)
                                         .tint(Theme.Colors.accentLive)
@@ -265,28 +277,30 @@ struct ProgramDetailSheet: View {
                             }
                         }
 
-                        // Description / Synopsis
-                        if let desc = payload.entry.description, !desc.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("ÜBER DIESE SENDUNG")
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Theme.Colors.textTertiary)
+                        // Description / Synopsis (Full readability just like Safari WebUI)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("BESCHREIBUNG")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Theme.Colors.textTertiary)
 
-                                Text(desc)
-                                    .font(.body)
-                                    .foregroundStyle(Theme.Colors.textSecondary)
-                                    .lineSpacing(4)
-                            }
-                            .padding(14)
-                            .glassCard(cornerRadius: 14)
+                            Text(payload.entry.description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                                 ? payload.entry.description!
+                                 : "Keine ausführliche Beschreibung für diese Sendung verfügbar.")
+                                .font(.body)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .lineSpacing(5)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .glassCard(cornerRadius: 14)
 
                         // Actions
-                        VStack(spacing: 10) {
+                        VStack(spacing: 12) {
                             Button(action: onPlay) {
-                                HStack {
+                                HStack(spacing: 8) {
                                     Image(systemName: "play.fill")
-                                    Text("Sender Jetzt Live Ansehen")
+                                    Text(isLiveNow ? "Sendung Jetzt Anschauen" : "Sender Live Starten")
                                 }
                                 .font(.headline)
                                 .frame(maxWidth: .infinity)
@@ -304,9 +318,9 @@ struct ProgramDetailSheet: View {
                                     isRecording = false
                                 }
                             } label: {
-                                HStack {
+                                HStack(spacing: 8) {
                                     Image(systemName: recordSuccess == true ? "checkmark.circle.fill" : "record.circle")
-                                    Text(recordSuccess == true ? "Timer Erstellt!" : (isRecording ? "Programmiere…" : "Sendung Aufnehmen"))
+                                    Text(recordSuccess == true ? "Aufnahme Geplant!" : (isRecording ? "Programmiere…" : "Sendung Aufnehmen"))
                                 }
                                 .font(.subheadline.weight(.semibold))
                                 .frame(maxWidth: .infinity)
@@ -332,7 +346,7 @@ struct ProgramDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fertig") {
+                    Button("Schließen") {
                         dismiss()
                     }
                     .foregroundStyle(Theme.Colors.accentAction)
@@ -439,10 +453,21 @@ struct ChannelRow: View {
     var onShowInfo: (NowNext.Entry) -> Void = { _ in }
 
     var body: some View {
-        Button(action: onPlay) {
-            HStack(spacing: 12) {
+        HStack(spacing: 12) {
+            // Direct Live Play on Channel Logo tap
+            Button(action: onPlay) {
                 ChannelLogo(url: channel.logoURL, name: channel.name)
+            }
+            .buttonStyle(.plain)
 
+            // Tapping Program info opens the full EPG Detail Modal (identical to Safari WebUI)
+            Button {
+                if let entry = (timeFilter == .primeTime ? nowNext?.next : nowNext?.now) {
+                    onShowInfo(entry)
+                } else {
+                    onPlay()
+                }
+            } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         if let number = channel.number {
@@ -529,29 +554,22 @@ struct ChannelRow: View {
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                 }
-
-                Spacer(minLength: 0)
-
-                // Info Button for Program Sheet
-                if let entry = (timeFilter == .primeTime ? nowNext?.next : nowNext?.now) {
-                    Button {
-                        onShowInfo(entry)
-                    } label: {
-                        Image(systemName: "info.circle")
-                            .font(.body)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                            .padding(6)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Image(systemName: "play.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(Theme.Colors.accentAction)
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            // Direct Play Action Button
+            Button(action: onPlay) {
+                Image(systemName: "play.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Theme.Colors.accentAction)
+                    .padding(4)
+            }
+            .buttonStyle(.plain)
         }
+        .padding(.vertical, 4)
     }
 }
 
