@@ -46,6 +46,10 @@ struct PlayerScreen: View {
             if let player {
                 VideoPlayer(player: player)
                     .ignoresSafeArea()
+
+                // Transparent Gesture Catch Layer (Reliable Taps & Gestures)
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
                     .onTapGesture {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             showControls.toggle()
@@ -54,8 +58,25 @@ struct PlayerScreen: View {
                             scheduleControlsHiding()
                         }
                     }
+                    .gesture(
+                        DragGesture(minimumDistance: 25)
+                            .onEnded { value in
+                                // Swipe Down -> Close Player & return to Channel List
+                                if value.translation.height > 60 && abs(value.translation.width) < value.translation.height {
+                                    closePlayer()
+                                }
+                                // Swipe Left -> Next Channel
+                                else if value.translation.width < -60 && abs(value.translation.height) < abs(value.translation.width) {
+                                    zapNext()
+                                }
+                                // Swipe Right -> Previous Channel
+                                else if value.translation.width > 60 && abs(value.translation.height) < abs(value.translation.width) {
+                                    zapPrevious()
+                                }
+                            }
+                    )
             } else if let failure {
-                VStack(spacing: 16) {
+                VStack(spacing: 20) {
                     ContentUnavailableView(
                         "Wiedergabefehler",
                         systemImage: "exclamationmark.triangle",
@@ -63,20 +84,37 @@ struct PlayerScreen: View {
                     )
                     .foregroundStyle(Theme.Colors.textSecondary)
 
-                    Button {
-                        Task { await startStreaming(channel: currentChannel) }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.clockwise")
-                            Text("Erneut versuchen")
+                    HStack(spacing: 12) {
+                        Button {
+                            closePlayer()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "xmark")
+                                Text("Zurück")
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Theme.Colors.surfaceGlass, in: Capsule())
+                            .foregroundStyle(Theme.Colors.textSecondary)
                         }
-                        .font(.headline)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Theme.Colors.accentAction, in: Capsule())
-                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .buttonStyle(.plain)
+
+                        Button {
+                            Task { await startStreaming(channel: currentChannel) }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Erneut versuchen")
+                            }
+                            .font(.headline)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Theme.Colors.accentAction, in: Capsule())
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             } else {
                 VStack(spacing: 16) {
@@ -87,6 +125,19 @@ struct PlayerScreen: View {
                     Text("\(currentChannel.name) wird geladen…")
                         .font(.headline)
                         .foregroundStyle(Theme.Colors.textPrimary)
+
+                    Button {
+                        closePlayer()
+                    } label: {
+                        Text("Abbrechen")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Theme.Colors.surfaceGlass, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 10)
                 }
             }
 
@@ -117,12 +168,21 @@ struct PlayerScreen: View {
                     // Top Bar
                     HStack(spacing: 12) {
                         Button {
-                            dismiss()
+                            closePlayer()
                         } label: {
-                            Image(systemName: "chevron.down.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(Theme.Colors.textPrimary.opacity(0.85))
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("Zurück")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Color.black.opacity(0.6), in: Capsule())
+                            .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
                         }
+                        .buttonStyle(.plain)
 
                         HStack(spacing: 8) {
                             if let number = currentChannel.number {
@@ -433,6 +493,13 @@ struct PlayerScreen: View {
                 }
             }
         }
+    }
+
+    private func closePlayer() {
+        triggerHaptic(.light)
+        teardownPlayer()
+        model.playingChannel = nil
+        dismiss()
     }
 
     private func teardownPlayer() {
