@@ -9,12 +9,13 @@ import UIKit
 
 /// 100% Native Apple AVPlayerViewController playback inspired by
 /// MagentaTV 2.0, Zattoo & Channels DVR:
+/// - Single persistent Video Stage: Seamless orientation transitions with ZERO reload or seek resets
 /// - In-Playback Live EPG Guide in portrait with 1-tap instant zapping
 /// - Landscape Quick-Zap Channel Carousel
 /// - Swipe-to-Zap gestures on the video stage
 /// - „Von Beginn ansehen“ (Restart) & „Zur Live-Kante“ Timeshift controls
 /// - Automatic Picture-in-Picture (PiP) on Home swipe
-/// - Instant 4K/HD streaming with native Apple transport bar
+/// - Instant 4K/HD streaming with native Apple transport bar & DVR Timeshift timeline
 struct PlayerScreen: View {
 
     let model: AppModel
@@ -47,408 +48,379 @@ struct PlayerScreen: View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
 
-            ZStack {
+            ZStack(alignment: .top) {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
-                if let player {
-                    if isLandscape {
-                        // MARK: - Landscape 100% Fullscreen OLED Cinema Mode with Quick-Zap Carousel
-                        ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    // MARK: - Single Persistent Video Stage (NEVER recreated across rotations)
+                    ZStack(alignment: .topLeading) {
+                        if let player {
                             NativeVideoPlayerView(
                                 player: player,
                                 onDismiss: { closePlayer() }
                             )
-                            .ignoresSafeArea()
+                            .ignoresSafeArea(isLandscape ? .all : [])
+                        } else if let failure {
+                            ZStack {
+                                Color.black
+                                VStack(spacing: 16) {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .font(.system(size: 36))
+                                        .foregroundStyle(Theme.Colors.statusError)
 
-                            // Landscape Quick-Zap Channel Carousel (MagentaTV / Zattoo Grade)
-                            if showLandscapeGuide {
-                                LandscapeQuickZapBar(
-                                    channels: model.filteredChannels,
-                                    currentChannel: currentChannel,
-                                    schedule: model.schedule,
-                                    onSelect: { ch in
-                                        switchChannel(to: ch)
-                                    },
-                                    onClose: {
-                                        withAnimation(.easeInOut(duration: 0.25)) {
-                                            showLandscapeGuide = false
-                                        }
+                                    Text(failure)
+                                        .font(.subheadline)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .multilineTextAlignment(.center)
+
+                                    Button("Erneut versuchen") {
+                                        Task { await startStreaming(channel: currentChannel) }
                                     }
-                                )
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, max(12, geometry.safeAreaInsets.bottom))
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                            }
-                        }
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                showLandscapeGuide.toggle()
-                            }
-                        }
-                    } else {
-                        // MARK: - Portrait Dual-Stage (16:9 Top Player + In-Playback EPG Guide)
-                        VStack(spacing: 0) {
-                            // Top 16:9 Native Video Player Stage with Swipe-to-Zap Gesture
-                            ZStack(alignment: .topLeading) {
-                                NativeVideoPlayerView(
-                                    player: player,
-                                    onDismiss: { closePlayer() }
-                                )
-                                .frame(width: geometry.size.width, height: geometry.size.width * 9 / 16)
-                                .background(Color.black)
-                                .gesture(
-                                    DragGesture(minimumDistance: 35)
-                                        .onEnded { value in
-                                            if value.translation.width < -40 {
-                                                zapNext()
-                                            } else if value.translation.width > 40 {
-                                                zapPrevious()
-                                            }
-                                        }
-                                )
-
-                                // Minimal Dismiss Button (Chevron)
-                                Button {
-                                    closePlayer()
-                                } label: {
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .padding(8)
-                                        .background(Color.black.opacity(0.65), in: Circle())
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(Theme.Colors.accentAction)
                                 }
-                                .buttonStyle(.plain)
-                                .padding(.top, max(6, geometry.safeAreaInsets.top))
-                                .padding(.leading, 12)
+                                .padding()
                             }
-                            .frame(width: geometry.size.width, height: geometry.size.width * 9 / 16)
+                        } else {
+                            ZStack {
+                                Color.black
+                                VStack(spacing: 12) {
+                                    ProgressView()
+                                        .tint(Theme.Colors.accentLive)
+                                        .scaleEffect(1.2)
 
-                            // Bottom Interactive Live TV Channel & EPG Guide
-                            ScrollView {
-                                VStack(spacing: 14) {
-                                    // Active Channel & Program Card with Timeshift Controls
-                                    if let now = nowNext?.now {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            HStack {
-                                                if let number = currentChannel.number {
-                                                    Text(number)
-                                                        .font(.caption.monospacedDigit().bold())
-                                                        .foregroundStyle(Theme.Colors.accentAction)
-                                                        .padding(.horizontal, 6)
-                                                        .padding(.vertical, 2)
-                                                        .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                                                }
+                                    Text("\(currentChannel.name) wird geladen…")
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                }
+                            }
+                        }
 
-                                                Text(currentChannel.name)
-                                                    .font(.headline)
-                                                    .foregroundStyle(Theme.Colors.textPrimary)
+                        // Minimal Portrait Dismiss Chevron
+                        if !isLandscape {
+                            Button {
+                                closePlayer()
+                            } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(8)
+                                    .background(Color.black.opacity(0.65), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, max(6, geometry.safeAreaInsets.top))
+                            .padding(.leading, 12)
+                        }
+                    }
+                    .frame(
+                        width: geometry.size.width,
+                        height: isLandscape ? geometry.size.height : (geometry.size.width * 9 / 16)
+                    )
+                    .background(Color.black)
+                    .gesture(
+                        DragGesture(minimumDistance: 35)
+                            .onEnded { value in
+                                if value.translation.width < -40 {
+                                    zapNext()
+                                } else if value.translation.width > 40 {
+                                    zapPrevious()
+                                }
+                            }
+                    )
 
-                                                Spacer()
-
-                                                HStack(spacing: 4) {
-                                                    PulsingLiveDot(size: 6)
-                                                    Text(isTimeshifted ? "TIMESHIFT" : "LIVE")
-                                                        .font(.caption2.bold().monospaced())
-                                                        .foregroundStyle(isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive)
-                                                }
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 3)
-                                                .background(
-                                                    (isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive).opacity(0.15),
-                                                    in: Capsule()
-                                                )
-
-                                                // Quick Record Button
-                                                Button {
-                                                    triggerHaptic(.medium)
-                                                    Task {
-                                                        let ok = await model.recordLiveNow(channel: currentChannel)
-                                                        displayZapToast(ok ? "🔴 Aufnahme gestartet" : "Aufnahmefehler")
-                                                    }
-                                                } label: {
-                                                    Image(systemName: "record.circle")
-                                                        .font(.title3)
-                                                        .foregroundStyle(Theme.Colors.statusError)
-                                                        .padding(4)
-                                                }
-                                                .buttonStyle(.plain)
+                    // MARK: - Portrait Dual-Stage Bottom Interactive EPG Guide
+                    if !isLandscape {
+                        ScrollView {
+                            VStack(spacing: 14) {
+                                // Active Channel & Program Card with Timeshift Controls
+                                if let now = nowNext?.now {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            if let number = currentChannel.number {
+                                                Text(number)
+                                                    .font(.caption.monospacedDigit().bold())
+                                                    .foregroundStyle(Theme.Colors.accentAction)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                                             }
 
-                                            Text(now.title)
-                                                .font(.subheadline.weight(.semibold))
+                                            Text(currentChannel.name)
+                                                .font(.headline)
                                                 .foregroundStyle(Theme.Colors.textPrimary)
 
-                                            if let description = now.description {
-                                                Text(description)
-                                                    .font(.caption)
-                                                    .foregroundStyle(Theme.Colors.textSecondary)
-                                                    .lineLimit(3)
-                                            }
+                                            Spacer()
 
-                                            if let fraction = now.progress(at: .now) {
-                                                InfuseScrubber(
-                                                    progress: fraction,
-                                                    startTime: now.formattedStartTime,
-                                                    endTime: now.formattedEndTime,
-                                                    remainingText: now.remainingMinutes(at: .now).map { "noch \($0)m" }
-                                                )
-                                                .padding(.top, 2)
+                                            HStack(spacing: 4) {
+                                                PulsingLiveDot(size: 6)
+                                                Text(isTimeshifted ? "TIMESHIFT" : "LIVE")
+                                                    .font(.caption2.bold().monospaced())
+                                                    .foregroundStyle(isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive)
                                             }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 3)
+                                            .background(
+                                                (isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive).opacity(0.15),
+                                                in: Capsule()
+                                            )
 
-                                            // Timeshift Actions: Restart / Live Jump (A1 / Drei / MagentaTV Feature)
-                                            HStack(spacing: 8) {
+                                            // Quick Record Button
+                                            Button {
+                                                triggerHaptic(.medium)
+                                                Task {
+                                                    let ok = await model.recordLiveNow(channel: currentChannel)
+                                                    displayZapToast(ok ? "🔴 Aufnahme gestartet" : "Aufnahmefehler")
+                                                }
+                                            } label: {
+                                                Image(systemName: "record.circle")
+                                                    .font(.title3)
+                                                    .foregroundStyle(Theme.Colors.statusError)
+                                                    .padding(4)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+
+                                        Text(now.title)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(Theme.Colors.textPrimary)
+
+                                        if let description = now.description {
+                                            Text(description)
+                                                .font(.caption)
+                                                .foregroundStyle(Theme.Colors.textSecondary)
+                                                .lineLimit(3)
+                                        }
+
+                                        if let fraction = now.progress(at: .now) {
+                                            InfuseScrubber(
+                                                progress: fraction,
+                                                startTime: now.formattedStartTime,
+                                                endTime: now.formattedEndTime,
+                                                remainingText: now.remainingMinutes(at: .now).map { "noch \($0)m" }
+                                            )
+                                            .padding(.top, 2)
+                                        }
+
+                                        // Timeshift Actions: Restart / Live Jump
+                                        HStack(spacing: 8) {
+                                            Button {
+                                                seekToBeginning()
+                                            } label: {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "arrow.counterclockwise")
+                                                        .font(.caption2)
+                                                    Text("Von Beginn ansehen")
+                                                        .font(.caption.weight(.medium))
+                                                }
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 5)
+                                                .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                                .foregroundStyle(Theme.Colors.textSecondary)
+                                                .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                            }
+                                            .buttonStyle(.plain)
+
+                                            if isTimeshifted {
                                                 Button {
-                                                    seekToBeginning()
+                                                    jumpToLive()
                                                 } label: {
                                                     HStack(spacing: 4) {
-                                                        Image(systemName: "arrow.counterclockwise")
-                                                            .font(.caption2)
-                                                        Text("Von Beginn ansehen")
-                                                            .font(.caption.weight(.medium))
+                                                        PulsingLiveDot(size: 5)
+                                                        Text("Zur Live-Kante")
+                                                            .font(.caption.weight(.bold))
                                                     }
                                                     .padding(.horizontal, 10)
                                                     .padding(.vertical, 5)
-                                                    .background(Theme.Colors.surfaceGlass, in: Capsule())
-                                                    .foregroundStyle(Theme.Colors.textSecondary)
-                                                    .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                                    .background(Theme.Colors.accentLive, in: Capsule())
+                                                    .foregroundStyle(Color.black)
                                                 }
                                                 .buttonStyle(.plain)
+                                            }
 
-                                                if isTimeshifted {
-                                                    Button {
-                                                        jumpToLive()
-                                                    } label: {
-                                                        HStack(spacing: 4) {
-                                                            PulsingLiveDot(size: 5)
-                                                            Text("Zur Live-Kante")
-                                                                .font(.caption.weight(.bold))
-                                                        }
-                                                        .padding(.horizontal, 10)
-                                                        .padding(.vertical, 5)
-                                                        .background(Theme.Colors.accentLive, in: Capsule())
-                                                        .foregroundStyle(Color.black)
-                                                    }
-                                                    .buttonStyle(.plain)
-                                                }
+                                            Spacer()
+                                        }
+                                        .padding(.top, 2)
+
+                                        if let next = nowNext?.next {
+                                            HStack(spacing: 6) {
+                                                Text("DANACH:")
+                                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                    .foregroundStyle(Theme.Colors.textTertiary)
+
+                                                Text(next.title)
+                                                    .font(.caption2)
+                                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                                    .lineLimit(1)
 
                                                 Spacer()
+
+                                                Text(next.formattedTimeRange)
+                                                    .font(.system(size: 9, design: .monospaced))
+                                                    .foregroundStyle(Theme.Colors.textTertiary)
                                             }
                                             .padding(.top, 2)
-
-                                            if let next = nowNext?.next {
-                                                HStack(spacing: 6) {
-                                                    Text("DANACH:")
-                                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                                        .foregroundStyle(Theme.Colors.textTertiary)
-
-                                                    Text(next.title)
-                                                        .font(.caption2)
-                                                        .foregroundStyle(Theme.Colors.textSecondary)
-                                                        .lineLimit(1)
-
-                                                    Spacer()
-
-                                                    Text(next.formattedTimeRange)
-                                                        .font(.system(size: 9, design: .monospaced))
-                                                        .foregroundStyle(Theme.Colors.textTertiary)
-                                                }
-                                                .padding(.top, 2)
-                                            }
-                                        }
-                                        .padding(14)
-                                        .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 14))
-                                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
-                                    }
-
-                                    // Bouquet Selector Pills (Filter while watching!)
-                                    if !model.bouquets.isEmpty {
-                                        ScrollView(.horizontal, showsIndicators: false) {
-                                            HStack(spacing: 8) {
-                                                ForEach(model.bouquets) { bouquet in
-                                                    let isSelected = model.selectedBouquet?.id == bouquet.id
-                                                    Button {
-                                                        triggerHaptic(.light)
-                                                        model.selectedBouquet = isSelected ? nil : bouquet
-                                                    } label: {
-                                                        Text(bouquet.name)
-                                                            .font(.caption.weight(isSelected ? .semibold : .regular))
-                                                            .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
-                                                            .padding(.horizontal, 12)
-                                                            .padding(.vertical, 6)
-                                                            .background(
-                                                                isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated,
-                                                                in: Capsule()
-                                                            )
-                                                            .overlay(
-                                                                Capsule().strokeBorder(isSelected ? Color.clear : Theme.Colors.borderSubtle, lineWidth: 1)
-                                                            )
-                                                    }
-                                                    .buttonStyle(.plain)
-                                                }
-                                            }
-                                            .padding(.horizontal, 2)
                                         }
                                     }
+                                    .padding(14)
+                                    .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 14))
+                                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                }
 
-                                    // Section Header
-                                    HStack {
-                                        Text("SENDER & LIVE-PROGRAMM")
-                                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(Theme.Colors.textTertiary)
-
-                                        Spacer()
-
-                                        Text("\(model.filteredChannels.count) Sender")
-                                            .font(.caption2.monospacedDigit())
-                                            .foregroundStyle(Theme.Colors.textTertiary)
+                                // Bouquet Selector Pills (Filter while watching!)
+                                if !model.bouquets.isEmpty {
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 8) {
+                                            ForEach(model.bouquets) { bouquet in
+                                                let isSelected = model.selectedBouquet?.id == bouquet.id
+                                                Button {
+                                                    triggerHaptic(.light)
+                                                    model.selectedBouquet = isSelected ? nil : bouquet
+                                                } label: {
+                                                    Text(bouquet.name)
+                                                        .font(.caption.weight(isSelected ? .semibold : .regular))
+                                                        .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                                                        .padding(.horizontal, 12)
+                                                        .padding(.vertical, 6)
+                                                        .background(
+                                                            isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated,
+                                                            in: Capsule()
+                                                        )
+                                                        .overlay(
+                                                            Capsule().strokeBorder(isSelected ? Color.clear : Theme.Colors.borderSubtle, lineWidth: 1)
+                                                        )
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                        .padding(.horizontal, 2)
                                     }
-                                    .padding(.horizontal, 4)
+                                }
 
-                                    // Interactive Channel List (1-Tap Zapping!)
-                                    LazyVStack(spacing: 8) {
-                                        ForEach(model.filteredChannels) { ch in
-                                            let isCurrent = ch.id == currentChannel.id
-                                            Button {
-                                                switchChannel(to: ch)
-                                            } label: {
-                                                HStack(spacing: 12) {
-                                                    ChannelLogo(url: ch.logoURL, name: ch.name)
+                                // Section Header
+                                HStack {
+                                    Text("SENDER & LIVE-PROGRAMM")
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(Theme.Colors.textTertiary)
 
-                                                    VStack(alignment: .leading, spacing: 4) {
-                                                        HStack(spacing: 6) {
-                                                            if let number = ch.number {
-                                                                Text(number)
-                                                                    .font(.caption.monospacedDigit().bold())
-                                                                    .foregroundStyle(Theme.Colors.accentAction)
-                                                                    .frame(minWidth: 20, alignment: .leading)
-                                                            }
+                                    Spacer()
 
-                                                            Text(ch.name)
-                                                                .font(.body.weight(.semibold))
-                                                                .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
-                                                                .lineLimit(1)
+                                    Text("\(model.filteredChannels.count) Sender")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                }
+                                .padding(.horizontal, 4)
 
-                                                            Spacer()
+                                // Interactive Channel List (1-Tap Zapping!)
+                                LazyVStack(spacing: 8) {
+                                    ForEach(model.filteredChannels) { ch in
+                                        let isCurrent = ch.id == currentChannel.id
+                                        Button {
+                                            switchChannel(to: ch)
+                                        } label: {
+                                            HStack(spacing: 12) {
+                                                ChannelLogo(url: ch.logoURL, name: ch.name)
 
-                                                            if isCurrent {
-                                                                HStack(spacing: 4) {
-                                                                    PulsingLiveDot(size: 5)
-                                                                    Text("LÄUFT")
-                                                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                                                        .foregroundStyle(Theme.Colors.accentLive)
-                                                                }
-                                                                .padding(.horizontal, 6)
-                                                                .padding(.vertical, 2)
-                                                                .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
-                                                            }
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    HStack(spacing: 6) {
+                                                        if let number = ch.number {
+                                                            Text(number)
+                                                                .font(.caption.monospacedDigit().bold())
+                                                                .foregroundStyle(Theme.Colors.accentAction)
+                                                                .frame(minWidth: 20, alignment: .leading)
                                                         }
 
-                                                        if let nowEntry = model.schedule[ch.serviceRef]?.now {
+                                                        Text(ch.name)
+                                                            .font(.body.weight(.semibold))
+                                                            .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
+                                                            .lineLimit(1)
+
+                                                        Spacer()
+
+                                                        if isCurrent {
+                                                            HStack(spacing: 4) {
+                                                                PulsingLiveDot(size: 5)
+                                                                Text("LÄUFT")
+                                                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                                    .foregroundStyle(Theme.Colors.accentLive)
+                                                            }
+                                                            .padding(.horizontal, 6)
+                                                            .padding(.vertical, 2)
+                                                            .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
+                                                        }
+                                                    }
+
+                                                    if let nowEntry = model.schedule[ch.serviceRef]?.now {
+                                                        HStack {
                                                             Text(nowEntry.title)
                                                                 .font(.caption)
                                                                 .foregroundStyle(Theme.Colors.textSecondary)
                                                                 .lineLimit(1)
 
-                                                            if let frac = nowEntry.progress(at: .now) {
-                                                                ProgressView(value: frac)
-                                                                    .progressViewStyle(.linear)
-                                                                    .tint(isCurrent ? Theme.Colors.accentLive : Theme.Colors.accentAction)
-                                                            }
-                                                        } else {
-                                                            Text("Keine Programminformationen")
-                                                                .font(.caption2)
+                                                            Spacer()
+
+                                                            Text(nowEntry.formattedTimeRange)
+                                                                .font(.system(size: 10, design: .monospaced))
                                                                 .foregroundStyle(Theme.Colors.textTertiary)
                                                         }
-                                                    }
 
-                                                    Image(systemName: isCurrent ? "waveform.circle.fill" : "play.circle")
-                                                        .font(.title3)
-                                                        .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textTertiary)
+                                                        if let frac = nowEntry.progress(at: .now) {
+                                                            ProgressView(value: frac)
+                                                                .progressViewStyle(.linear)
+                                                                .tint(isCurrent ? Theme.Colors.accentLive : Theme.Colors.accentAction)
+                                                        }
+                                                    } else {
+                                                        Text("Keine Programminformationen")
+                                                            .font(.caption2)
+                                                            .foregroundStyle(Theme.Colors.textTertiary)
+                                                    }
                                                 }
-                                                .padding(12)
-                                                .background(
-                                                    isCurrent
-                                                        ? Theme.Colors.accentAction.opacity(0.15)
-                                                        : Theme.Colors.surfaceElevated,
-                                                    in: RoundedRectangle(cornerRadius: 12)
-                                                )
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 12)
-                                                        .strokeBorder(isCurrent ? Theme.Colors.accentLive.opacity(0.6) : Theme.Colors.borderSubtle, lineWidth: 1)
-                                                )
+
+                                                Image(systemName: isCurrent ? "waveform.circle.fill" : "play.circle")
+                                                    .font(.title3)
+                                                    .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textTertiary)
                                             }
-                                            .buttonStyle(.plain)
+                                            .padding(12)
+                                            .background(
+                                                isCurrent
+                                                    ? Theme.Colors.accentAction.opacity(0.15)
+                                                    : Theme.Colors.surfaceElevated,
+                                                in: RoundedRectangle(cornerRadius: 12)
+                                            )
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .strokeBorder(isCurrent ? Theme.Colors.accentLive.opacity(0.6) : Theme.Colors.borderSubtle, lineWidth: 1)
+                                            )
                                         }
+                                        .buttonStyle(.plain)
                                     }
                                 }
-                                .padding(14)
                             }
+                            .padding(14)
                         }
                     }
-                } else if let failure {
-                    VStack(spacing: 20) {
-                        ContentUnavailableView(
-                            "Wiedergabefehler",
-                            systemImage: "exclamationmark.triangle",
-                            description: Text(failure)
+                }
+
+                // MARK: - Landscape Quick-Zap Channel Carousel
+                if isLandscape && showLandscapeGuide {
+                    VStack {
+                        Spacer()
+                        LandscapeQuickZapBar(
+                            channels: model.filteredChannels,
+                            currentChannel: currentChannel,
+                            schedule: model.schedule,
+                            onSelect: { ch in
+                                switchChannel(to: ch)
+                            },
+                            onClose: {
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    showLandscapeGuide = false
+                                }
+                            }
                         )
-                        .foregroundStyle(Theme.Colors.textSecondary)
-
-                        HStack(spacing: 12) {
-                            Button {
-                                closePlayer()
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "xmark")
-                                    Text("Zurück")
-                                }
-                                .font(.subheadline.weight(.medium))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(Theme.Colors.surfaceGlass, in: Capsule())
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                Task { await startStreaming(channel: currentChannel) }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "arrow.clockwise")
-                                    Text("Erneut versuchen")
-                                }
-                                .font(.headline)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                                .background(Theme.Colors.accentAction, in: Capsule())
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, max(12, geometry.safeAreaInsets.bottom))
                     }
-                } else {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                            .tint(Theme.Colors.accentLive)
-                            .scaleEffect(1.2)
-
-                        Text("\(currentChannel.name) wird geladen…")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(Theme.Colors.textSecondary)
-
-                        Button {
-                            closePlayer()
-                        } label: {
-                            Text("Abbrechen")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(Theme.Colors.surfaceGlass, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 6)
-                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 // MARK: - Zap HUD Banner (Translucent Toast)
@@ -471,6 +443,14 @@ struct PlayerScreen: View {
                         .padding(.top, isLandscape ? 16 : 56)
 
                         Spacer()
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if isLandscape {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showLandscapeGuide.toggle()
                     }
                 }
             }
@@ -535,9 +515,7 @@ struct PlayerScreen: View {
         )
 
         displayZapToast("Kanal: \(newChannel.name)")
-        Task {
-            await startStreaming(channel: newChannel)
-        }
+        // Setting currentChannel automatically triggers .task(id: currentChannel.id) without race condition
     }
 
     private func zapNext() {
@@ -610,7 +588,7 @@ struct PlayerScreen: View {
         Task { await model.stopPlayback() }
     }
 
-    /// Builds the player with native metadata attached for the Apple system player.
+    /// Builds the player with native metadata attached for the Apple system player and DVR Timeshift.
     private static func makePlayer(for stream: LiveStream, channel: Channel, nowNext: NowNext?) -> AVPlayer? {
         if let cookie = stream.ticket.httpCookie(for: stream.playlistURL) {
             HTTPCookieStorage.shared.setCookie(cookie)
@@ -629,9 +607,10 @@ struct PlayerScreen: View {
 
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
-        item.automaticallyPreservesTimeOffsetFromLive = false
+        item.automaticallyPreservesTimeOffsetFromLive = true
+        item.configuredTimeOffsetFromLive = CMTime(seconds: 3.0, preferredTimescale: 600)
 
-        // Inject Native iOS OSD Metadata
+        // Inject Native iOS OSD Metadata for Apple's Transport Bar
         var metadata: [AVMetadataItem] = []
 
         let titleItem = AVMutableMetadataItem()
