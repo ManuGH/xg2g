@@ -3,12 +3,14 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import AVKit
+import CoreMedia
 import SwiftUI
 import UIKit
 
-/// Live playback for a channel with native AVPlayerViewController stage,
+/// Live & Timeshift playback for a channel with Plex-tier media controls,
+/// 10s skip backward/forward, play/pause timeshift, native AVPlayerViewController stage,
 /// edge-to-edge aspect ratio fill toggle, conflict-free gestural zapping,
-/// swipe-up Mini-EPG, broadcast telemetry inspector, and adaptive landscape HUD.
+/// swipe-up Mini-EPG, and broadcast telemetry inspector.
 struct PlayerScreen: View {
 
     let model: AppModel
@@ -17,6 +19,7 @@ struct PlayerScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var currentChannel: Channel
     @State private var player: AVPlayer?
+    @State private var isPlaying = true
     @State private var failure: String?
     @State private var showControls = true
     @State private var isAspectFill = false
@@ -180,7 +183,53 @@ struct PlayerScreen: View {
                     }
                 }
 
-                // MARK: - Broadcast Console OSD Overlay
+                // MARK: - Plex-Style Center Media Controls (Play / Pause / 10s Skip)
+                if showControls && player != nil {
+                    HStack(spacing: isLandscape ? 50 : 36) {
+                        // 10s Skip Backward
+                        Button {
+                            seek(by: -10)
+                        } label: {
+                            Image(systemName: "gobackward.10")
+                                .font(.system(size: 26, weight: .medium))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                                .frame(width: 52, height: 52)
+                                .background(Color.black.opacity(0.6), in: Circle())
+                                .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+
+                        // Main Play / Pause Button
+                        Button {
+                            togglePlayPause()
+                        } label: {
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 32, weight: .bold))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                                .frame(width: 72, height: 72)
+                                .background(Color.black.opacity(0.7), in: Circle())
+                                .overlay(Circle().strokeBorder(Theme.Colors.accentLive.opacity(0.6), lineWidth: 1.5))
+                                .shadow(color: Theme.Colors.accentLive.opacity(0.35), radius: 12)
+                        }
+                        .buttonStyle(.plain)
+
+                        // 10s Skip Forward
+                        Button {
+                            seek(by: 10)
+                        } label: {
+                            Image(systemName: "goforward.10")
+                                .font(.system(size: 26, weight: .medium))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                                .frame(width: 52, height: 52)
+                                .background(Color.black.opacity(0.6), in: Circle())
+                                .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                }
+
+                // MARK: - Broadcast Console OSD Overlay (Top & Bottom Bars)
                 if showControls {
                     VStack(spacing: 0) {
                         // Top Bar
@@ -214,10 +263,19 @@ struct PlayerScreen: View {
                                         .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                                 }
 
-                                Text(currentChannel.name)
-                                    .font(.headline)
-                                    .foregroundStyle(Theme.Colors.textPrimary)
-                                    .lineLimit(1)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(currentChannel.name)
+                                        .font(.headline)
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                        .lineLimit(1)
+
+                                    if let nowTitle = nowNext?.now?.title {
+                                        Text(nowTitle)
+                                            .font(.caption2)
+                                            .foregroundStyle(Theme.Colors.textSecondary)
+                                            .lineLimit(1)
+                                    }
+                                }
                             }
 
                             Spacer(minLength: 8)
@@ -325,7 +383,7 @@ struct PlayerScreen: View {
 
                         Spacer()
 
-                        // MARK: - Adaptive Bottom Bar (Portrait Card vs Landscape Slim HUD)
+                        // MARK: - Adaptive Bottom Bar (Plex-Style Scrub / Timeshift Bar)
                         if isLandscape {
                             // Sleek, unobtrusive Landscape HUD
                             VStack(spacing: 6) {
@@ -411,7 +469,7 @@ struct PlayerScreen: View {
                             .padding(.horizontal, max(24, geometry.safeAreaInsets.leading))
                             .padding(.bottom, max(8, geometry.safeAreaInsets.bottom))
                         } else {
-                            // Portrait Rich Info Card
+                            // Portrait Rich Info Card with Clean Controls
                             VStack(spacing: 8) {
                                 if let now = nowNext?.now {
                                     VStack(alignment: .leading, spacing: 6) {
@@ -535,6 +593,7 @@ struct PlayerScreen: View {
         failure = nil
         player?.pause()
         player = nil
+        isPlaying = true
 
         AudioSessionManager.shared.configureForPlayback()
         NowPlayingManager.shared.setupRemoteCommands()
@@ -559,6 +618,31 @@ struct PlayerScreen: View {
         }
         player = Self.makePlayer(for: stream)
         player?.play()
+        isPlaying = true
+        scheduleControlsHiding()
+    }
+
+    private func togglePlayPause() {
+        guard let player else { return }
+        triggerHaptic(.light)
+        if isPlaying {
+            player.pause()
+            isPlaying = false
+        } else {
+            player.play()
+            isPlaying = true
+        }
+        scheduleControlsHiding()
+    }
+
+    private func seek(by seconds: Double) {
+        guard let player else { return }
+        triggerHaptic(.medium)
+        let currentTime = CMTimeGetSeconds(player.currentTime())
+        let newTime = max(0, currentTime + seconds)
+        let targetTime = CMTime(seconds: newTime, preferredTimescale: 600)
+        player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        displayZapToast(seconds < 0 ? "10 Sek. zurück" : "10 Sek. vor")
         scheduleControlsHiding()
     }
 
@@ -622,7 +706,7 @@ struct PlayerScreen: View {
         hideControlsTask?.cancel()
         hideControlsTask = Task {
             try? await Task.sleep(for: .seconds(4))
-            if !Task.isCancelled && !showInspector {
+            if !Task.isCancelled && !showInspector && isPlaying {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     showControls = false
                 }
@@ -646,6 +730,7 @@ struct PlayerScreen: View {
         AudioSessionManager.shared.deactivate()
         player?.pause()
         player = nil
+        isPlaying = false
         Task { await model.stopPlayback() }
     }
 
@@ -668,6 +753,7 @@ struct PlayerScreen: View {
 
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
+        // Linear playback without unwanted startup seeking
         item.automaticallyPreservesTimeOffsetFromLive = false
         item.preferredForwardBufferDuration = 1.0
         let player = AVPlayer(playerItem: item)
