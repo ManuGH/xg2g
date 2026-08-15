@@ -165,9 +165,28 @@ enum ChannelWire {
             let end: Int
 
             func toDomain() -> NowNext.Entry {
-                NowNext.Entry(
-                    title: title,
-                    description: desc?.isEmpty == false ? desc : nil,
+                let sanitizedDesc: String? = {
+                    guard let raw = desc?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                        return nil
+                    }
+                    var text = raw
+                        .replacingOccurrences(of: "\\n", with: "\n")
+                        .replacingOccurrences(of: "\\r", with: "")
+                        .replacingOccurrences(of: "\\t", with: "\t")
+                    while text.contains("\n\n\n") {
+                        text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+                    }
+                    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+                }()
+
+                let sanitizedTitle = title
+                    .replacingOccurrences(of: "\\n", with: " ")
+                    .replacingOccurrences(of: "\\r", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                return NowNext.Entry(
+                    title: sanitizedTitle,
+                    description: sanitizedDesc,
                     start: Date(timeIntervalSince1970: TimeInterval(start)),
                     end: Date(timeIntervalSince1970: TimeInterval(end))
                 )

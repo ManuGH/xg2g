@@ -120,14 +120,14 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 			}
 
 			entry := &epgEntry{
-				Title:      program.Title.Text,
+				Title:      cleanEPGText(program.Title.Text),
 				Start:      start.Unix(),
 				End:        stop.Unix(),
 				StartXMLTV: program.Start,
 				EndXMLTV:   program.Stop,
 			}
 			if program.Desc != nil {
-				entry.Desc = program.Desc.Text
+				entry.Desc = cleanEPGText(program.Desc.Text)
 			}
 
 			if now.After(start) && now.Before(stop) {
@@ -147,6 +147,13 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 	}
 
 	return items
+}
+
+func cleanEPGText(s string) string {
+	s = strings.ReplaceAll(s, "\\n", "\n")
+	s = strings.ReplaceAll(s, "\\r", "")
+	s = strings.ReplaceAll(s, "\\t", " ")
+	return strings.TrimSpace(s)
 }
 
 func epgCachePrograms(cache *epg.TV) []epg.Programme {
