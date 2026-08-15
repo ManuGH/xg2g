@@ -97,7 +97,6 @@ func getRequestOrigin(r *http.Request) string {
 	return normalizedRefererOrigin
 }
 
-// isOriginAllowed implements the core CSRF decision logic (Option A).
 func isOriginAllowed(requestOrigin string, allowedOrigins map[string]bool, r *http.Request) bool {
 	// 1. If explicitly allowed in config.
 	// Wildcard origins are intentionally ignored for CSRF decisions on unsafe
