@@ -191,8 +191,8 @@ func TestGetRecordingHLSPlaylist_FailedTriggersRebuild(t *testing.T) {
 	}
 
 	srv := NewServer(cfg, nil, nil)
-	// Use successRunner
-	vodMgr, err := vod.NewManager(&successRunner{fsRoot: t.TempDir()}, &noopProber{}, nil)
+	runner := &countingRunner{started: make(chan struct{})}
+	vodMgr, err := vod.NewManager(runner, &noopProber{}, nil)
 	require.NoError(t, err)
 	defer vodMgr.Shutdown()
 	srv.SetDependencies(Dependencies{VODManager: vodMgr})
