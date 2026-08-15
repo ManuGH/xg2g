@@ -17,13 +17,6 @@ type sqlRowScanner interface {
 	Scan(dest ...any) error
 }
 
-func marshalCapabilities(capabilities map[string]any) ([]byte, error) {
-	if capabilities == nil {
-		return []byte(`{}`), nil
-	}
-	return json.Marshal(capabilities)
-}
-
 func unmarshalCapabilities(raw []byte) (map[string]any, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return map[string]any{}, nil

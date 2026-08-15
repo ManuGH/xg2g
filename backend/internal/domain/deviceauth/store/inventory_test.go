@@ -33,55 +33,100 @@ func forEachInventoryStore(t *testing.T, fn func(t *testing.T, store StateStore,
 	})
 }
 
+// Legacy rows are seeded directly rather than through the store API, because
+// that API no longer has write methods: nothing in production writes durable
+// auth state to this database any more. Seeding at the storage layer is also
+// the honest simulation — the census exists precisely to count rows that
+// predate the convergence.
 func seedDevice(t *testing.T, store StateStore, deviceID, ownerID string, revoked *time.Time) {
 	t.Helper()
-	record := &model.DeviceRecord{
-		DeviceID:      deviceID,
-		OwnerID:       ownerID,
-		DeviceName:    deviceID,
-		DeviceType:    model.DeviceTypeAndroidTV,
-		PolicyProfile: "default",
-		CreatedAt:     time.UnixMilli(1_000_000),
-		RevokedAt:     revoked,
-	}
-	if err := store.PutDevice(context.Background(), record); err != nil {
-		t.Fatalf("put device: %v", err)
+	revokedMs := nullableMs(revoked)
+
+	switch s := store.(type) {
+	case *SqliteStore:
+		_, err := s.DB.Exec(
+			`INSERT INTO devices (device_id, owner_id, device_name, device_type, policy_profile,
+			 capabilities_json, created_at_ms, last_seen_at_ms, revoked_at_ms)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+			deviceID, ownerID, deviceID, string(model.DeviceTypeAndroidTV), "default", "{}",
+			int64(1_000_000), revokedMs,
+		)
+		if err != nil {
+			t.Fatalf("seed device: %v", err)
+		}
+	case *MemoryStateStore:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.devices[deviceID] = model.DeviceRecord{
+			DeviceID: deviceID, OwnerID: ownerID, DeviceName: deviceID,
+			DeviceType: model.DeviceTypeAndroidTV, PolicyProfile: "default",
+			CreatedAt: time.UnixMilli(1_000_000), RevokedAt: revoked,
+		}
+	default:
+		t.Fatalf("unsupported store %T", store)
 	}
 }
 
 func seedGrant(t *testing.T, store StateStore, grantID, deviceID string, issued, expires time.Time, lastUsed, revoked *time.Time) {
 	t.Helper()
-	record := &model.DeviceGrantRecord{
-		GrantID:    grantID,
-		DeviceID:   deviceID,
-		GrantHash:  "hash-" + grantID,
-		IssuedAt:   issued,
-		ExpiresAt:  expires,
-		LastUsedAt: lastUsed,
-		RevokedAt:  revoked,
-	}
-	if err := store.PutDeviceGrant(context.Background(), record); err != nil {
-		t.Fatalf("put grant: %v", err)
+
+	switch s := store.(type) {
+	case *SqliteStore:
+		_, err := s.DB.Exec(
+			`INSERT INTO device_grants (grant_id, device_id, grant_hash, issued_at_ms, expires_at_ms,
+			 rotate_after_ms, last_used_at_ms, revoked_at_ms) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+			grantID, deviceID, "hash-"+grantID, issued.UnixMilli(), expires.UnixMilli(),
+			nullableMs(lastUsed), nullableMs(revoked),
+		)
+		if err != nil {
+			t.Fatalf("seed grant: %v", err)
+		}
+	case *MemoryStateStore:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.grants[grantID] = model.DeviceGrantRecord{
+			GrantID: grantID, DeviceID: deviceID, GrantHash: "hash-" + grantID,
+			IssuedAt: issued, ExpiresAt: expires, LastUsedAt: lastUsed, RevokedAt: revoked,
+		}
+	default:
+		t.Fatalf("unsupported store %T", store)
 	}
 }
 
 func seedSession(t *testing.T, store StateStore, sessionID, deviceID string, expires time.Time, revoked *time.Time) {
 	t.Helper()
-	record := &model.AccessSessionRecord{
-		SessionID:     sessionID,
-		SubjectID:     "owner",
-		DeviceID:      deviceID,
-		TokenHash:     "token-" + sessionID,
-		PolicyVersion: "v1",
-		Scopes:        []string{"v3:read"},
-		AuthStrength:  "device",
-		IssuedAt:      time.UnixMilli(1_000_000),
-		ExpiresAt:     expires,
-		RevokedAt:     revoked,
+
+	switch s := store.(type) {
+	case *SqliteStore:
+		_, err := s.DB.Exec(
+			`INSERT INTO access_sessions (session_id, subject_id, device_id, token_hash, policy_version,
+			 scopes_json, auth_strength, issued_at_ms, expires_at_ms, revoked_at_ms)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			sessionID, "owner", deviceID, "token-"+sessionID, "v1", `["v3:read"]`, "device",
+			int64(1_000_000), expires.UnixMilli(), nullableMs(revoked),
+		)
+		if err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+	case *MemoryStateStore:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.sessions[sessionID] = model.AccessSessionRecord{
+			SessionID: sessionID, SubjectID: "owner", DeviceID: deviceID,
+			TokenHash: "token-" + sessionID, PolicyVersion: "v1",
+			Scopes: []string{"v3:read"}, AuthStrength: "device",
+			IssuedAt: time.UnixMilli(1_000_000), ExpiresAt: expires, RevokedAt: revoked,
+		}
+	default:
+		t.Fatalf("unsupported store %T", store)
 	}
-	if err := store.PutAccessSession(context.Background(), record); err != nil {
-		t.Fatalf("put session: %v", err)
+}
+
+func nullableMs(t *time.Time) any {
+	if t == nil {
+		return nil
 	}
+	return t.UnixMilli()
 }
 
 func TestUnboundInventoryEmptyStore(t *testing.T) {

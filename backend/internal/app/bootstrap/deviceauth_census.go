@@ -13,8 +13,8 @@ import (
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
 )
 
-// logUnboundDeviceAuthCensus reports how many devices a binding cutoff would
-// affect. See ADR-032 Phase 0.
+// logUnboundDeviceAuthCensus reports how many devices predate device binding.
+// See ADR-032.
 //
 // Read-only: no schema change, no write path, no behaviour change. It exists so
 // the cutoff window is chosen from measured numbers rather than from a guess,
@@ -22,7 +22,10 @@ import (
 //
 // A non-empty fleet logs at warn level on purpose. It is an actionable
 // condition with a deadline attached, not background information.
-func logUnboundDeviceAuthCensus(ctx context.Context, store deviceauthstore.StateStore, logger zerolog.Logger, now time.Time) {
+// The store parameter is `any` because this only needs the optional census
+// interface. Demanding the full StateStore would force every caller — and every
+// test — to supply a complete store for what is a one-method read.
+func logUnboundDeviceAuthCensus(ctx context.Context, store any, logger zerolog.Logger, now time.Time) {
 	reader, ok := store.(deviceauthstore.UnboundInventoryReader)
 	if !ok {
 		// A store backend without the census is not a failure; it simply cannot

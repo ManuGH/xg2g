@@ -8,14 +8,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
 )
 
-func (s *SqliteStore) PutDevice(ctx context.Context, record *model.DeviceRecord) error {
-	prepared, err := cloneDeviceValue(record)
-	if err != nil {
-		return err
-	}
-	return putDevice(ctx, s.DB, prepared)
-}
-
 func (s *SqliteStore) GetDevice(ctx context.Context, deviceID string) (*model.DeviceRecord, error) {
 	row := s.DB.QueryRowContext(ctx, `
 		SELECT device_id, owner_id, device_name, device_type, policy_profile, capabilities_json,
@@ -47,72 +39,6 @@ func (s *SqliteStore) ListDevicesByOwner(ctx context.Context, ownerID string) ([
 		out = append(out, record)
 	}
 	return out, rows.Err()
-}
-
-func (s *SqliteStore) UpdateDevice(ctx context.Context, deviceID string, fn func(*model.DeviceRecord) error) (*model.DeviceRecord, error) {
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	record, err := getDeviceTx(ctx, tx, deviceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := fn(&record); err != nil {
-		return nil, err
-	}
-	record, err = model.PrepareDeviceRecord(record)
-	if err != nil {
-		return nil, err
-	}
-	if err := putDevice(ctx, tx, record); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return &record, nil
-}
-
-func cloneDeviceValue(record *model.DeviceRecord) (model.DeviceRecord, error) {
-	if record == nil {
-		return model.DeviceRecord{}, model.ErrInvalidDeviceID
-	}
-	return model.PrepareDeviceRecord(*record)
-}
-
-func putDevice(ctx context.Context, exec sqliteExecContext, record model.DeviceRecord) error {
-	capabilitiesJSON, err := marshalCapabilities(record.Capabilities)
-	if err != nil {
-		return err
-	}
-	_, err = exec.ExecContext(ctx, `
-		INSERT INTO devices (
-			device_id, owner_id, device_name, device_type, policy_profile, capabilities_json,
-			created_at_ms, last_seen_at_ms, revoked_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(device_id) DO UPDATE SET
-			owner_id = excluded.owner_id,
-			device_name = excluded.device_name,
-			device_type = excluded.device_type,
-			policy_profile = excluded.policy_profile,
-			capabilities_json = excluded.capabilities_json,
-			created_at_ms = excluded.created_at_ms,
-			last_seen_at_ms = excluded.last_seen_at_ms,
-			revoked_at_ms = excluded.revoked_at_ms`,
-		record.DeviceID, record.OwnerID, record.DeviceName, string(record.DeviceType),
-		record.PolicyProfile, capabilitiesJSON, toMillis(record.CreatedAt),
-		toNullableMillis(record.LastSeenAt), toNullableMillis(record.RevokedAt),
-	)
-	return normalizeSQLError(err)
-}
-
-func getDeviceTx(ctx context.Context, tx *sql.Tx, deviceID string) (model.DeviceRecord, error) {
-	return scanDevice(tx.QueryRowContext(ctx, `
-		SELECT device_id, owner_id, device_name, device_type, policy_profile, capabilities_json,
-			created_at_ms, last_seen_at_ms, revoked_at_ms
-		FROM devices WHERE device_id = ?`, deviceID))
 }
 
 func scanDevice(row sqlRowScanner) (model.DeviceRecord, error) {

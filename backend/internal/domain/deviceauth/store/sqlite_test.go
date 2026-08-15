@@ -1,7 +1,3 @@
-// Copyright (c) 2025 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package store
 
 import (
@@ -13,118 +9,67 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
 )
 
-func TestSqliteStore_PersistsRecordsAcrossReopenAndSupportsTokenHashLookup(t *testing.T) {
+// The store keeps only pairing bootstrap state now. Device, grant and session
+// writes were removed with the convergence onto identity, so the durable
+// surface worth testing is the pairing round trip.
+func TestSqliteStore_PersistsPairingAcrossReopen(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "deviceauth.sqlite")
-	now := time.Date(2026, time.April, 9, 12, 0, 0, 0, time.UTC)
-	approvedAt := now.Add(-2 * time.Minute)
-	rotateAfter := now.Add(7 * 24 * time.Hour)
 
 	store, err := NewSqliteStore(dbPath)
 	if err != nil {
-		t.Fatalf("new sqlite store: %v", err)
+		t.Fatalf("open sqlite store: %v", err)
 	}
 
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	pairing, err := model.PreparePairingRecord(model.PairingRecord{
-		PairingID:             "pair-1",
-		PairingSecretHash:     model.HashOpaqueSecret("pair-secret"),
-		UserCode:              "ABCD1234",
-		QRPayload:             "xg2g://pair?pairing_id=pair-1",
-		DeviceName:            "Living Room TV",
-		DeviceType:            model.DeviceTypeAndroidTV,
-		ApprovedPolicyProfile: "tv-default",
-		OwnerID:               "owner-1",
-		Status:                model.PairingApproved,
-		CreatedAt:             now.Add(-5 * time.Minute),
-		ExpiresAt:             now.Add(5 * time.Minute),
-		ApprovedAt:            &approvedAt,
+		PairingID:              "pair-1",
+		PairingSecretHash:      model.HashOpaqueSecret("pair-secret"),
+		UserCode:               "ABCD-1234",
+		QRPayload:              "xg2g://pair?pairing_id=pair-1&user_code=ABCD-1234",
+		DeviceName:             "Living Room TV",
+		DeviceType:             model.DeviceTypeAndroidTV,
+		RequestedPolicyProfile: "tv-default",
+		ApprovedPolicyProfile:  "tv-default",
+		OwnerID:                "owner-1",
+		Status:                 model.PairingApproved,
+		CreatedAt:              now,
+		ExpiresAt:              now.Add(10 * time.Minute),
+		ApprovedAt:             &now,
 	})
 	if err != nil {
 		t.Fatalf("prepare pairing: %v", err)
 	}
-	device, err := model.PrepareDeviceRecord(model.DeviceRecord{
-		DeviceID:      "dev-1",
-		OwnerID:       "owner-1",
-		DeviceName:    "Living Room TV",
-		DeviceType:    model.DeviceTypeAndroidTV,
-		PolicyProfile: "tv-default",
-		CreatedAt:     now,
-	})
-	if err != nil {
-		t.Fatalf("prepare device: %v", err)
-	}
-	grant, err := model.PrepareDeviceGrantRecord(model.DeviceGrantRecord{
-		GrantID:     "grant-1",
-		DeviceID:    device.DeviceID,
-		GrantHash:   model.HashOpaqueSecret("grant-secret"),
-		IssuedAt:    now,
-		ExpiresAt:   now.Add(30 * 24 * time.Hour),
-		RotateAfter: &rotateAfter,
-	})
-	if err != nil {
-		t.Fatalf("prepare grant: %v", err)
-	}
-	session, err := model.PrepareAccessSessionRecord(model.AccessSessionRecord{
-		SessionID:     "sess-1",
-		SubjectID:     "owner-1",
-		DeviceID:      device.DeviceID,
-		TokenHash:     model.HashOpaqueSecret("access-token"),
-		PolicyVersion: "device-auth-v1",
-		Scopes:        []string{"v3:read"},
-		AuthStrength:  "paired_device",
-		IssuedAt:      now,
-		ExpiresAt:     now.Add(15 * time.Minute),
-	})
-	if err != nil {
-		t.Fatalf("prepare session: %v", err)
-	}
+
 	if err := store.PutPairing(ctx, &pairing); err != nil {
 		t.Fatalf("put pairing: %v", err)
 	}
-	if err := store.PutDevice(ctx, &device); err != nil {
-		t.Fatalf("put device: %v", err)
-	}
-	if err := store.PutDeviceGrant(ctx, &grant); err != nil {
-		t.Fatalf("put device grant: %v", err)
-	}
-	if err := store.PutAccessSession(ctx, &session); err != nil {
-		t.Fatalf("put access session: %v", err)
-	}
 	if err := store.Close(); err != nil {
-		t.Fatalf("close initial sqlite store: %v", err)
+		t.Fatalf("close initial store: %v", err)
 	}
 
 	reopened, err := NewSqliteStore(dbPath)
 	if err != nil {
 		t.Fatalf("reopen sqlite store: %v", err)
 	}
-	defer func() {
-		if err := reopened.Close(); err != nil {
-			t.Fatalf("close reopened sqlite store: %v", err)
-		}
-	}()
+	defer func() { _ = reopened.Close() }()
 
-	gotPairing, err := reopened.GetPairing(ctx, pairing.PairingID)
+	got, err := reopened.GetPairing(ctx, pairing.PairingID)
 	if err != nil {
 		t.Fatalf("get pairing after reopen: %v", err)
 	}
-	if gotPairing.Status != model.PairingApproved {
-		t.Fatalf("expected approved pairing after reopen, got %s", gotPairing.Status)
+	if got.Status != model.PairingApproved {
+		t.Fatalf("status = %s, want %s", got.Status, model.PairingApproved)
+	}
+	if got.OwnerID != "owner-1" {
+		t.Fatalf("ownerID = %q, want %q", got.OwnerID, "owner-1")
 	}
 
-	gotSession, err := reopened.GetAccessSessionByTokenHash(ctx, model.HashOpaqueSecret("access-token"))
+	byCode, err := reopened.GetPairingByUserCode(ctx, pairing.UserCode)
 	if err != nil {
-		t.Fatalf("get access session by token hash: %v", err)
+		t.Fatalf("get pairing by user code: %v", err)
 	}
-	if gotSession.SessionID != session.SessionID {
-		t.Fatalf("expected session %q, got %q", session.SessionID, gotSession.SessionID)
-	}
-
-	gotDevice, err := reopened.GetDevice(ctx, device.DeviceID)
-	if err != nil {
-		t.Fatalf("get device after reopen: %v", err)
-	}
-	if gotDevice.OwnerID != "owner-1" {
-		t.Fatalf("expected device owner to persist, got %q", gotDevice.OwnerID)
+	if byCode.PairingID != pairing.PairingID {
+		t.Fatalf("user-code lookup returned %q, want %q", byCode.PairingID, pairing.PairingID)
 	}
 }
