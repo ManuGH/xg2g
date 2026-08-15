@@ -45,7 +45,7 @@ func TestPreflightVAAPIRateControlModes_RecordsPerEncoderVerdicts(t *testing.T) 
 	assert.True(t, hardware.VAAPIRateControlVerified("hevc_vaapi", hardware.RateControlQVBR))
 	assert.Equal(t, []string{hardware.RateControlQVBR}, hardware.VAAPIRateControlModes("hevc_vaapi"))
 	assert.Empty(t, hardware.VAAPIRateControlModes("av1_vaapi"))
-	require.Len(t, asked, 2, "only verified encoders are probed")
+	require.Len(t, asked, 3, "only verified encoders and candidate modes are probed")
 }
 
 func TestPreflightVAAPIRateControlModes_SkipsUnverifiedEncoders(t *testing.T) {
@@ -69,7 +69,7 @@ func TestPreflightVAAPIRateControlModes_RunsOnce(t *testing.T) {
 
 	d.PreflightVAAPIRateControlModes()
 	d.PreflightVAAPIRateControlModes()
-	assert.Equal(t, 2, calls, "second call must reuse the cached verdicts")
+	assert.Equal(t, 3, calls, "second call must reuse the cached verdicts")
 }
 
 func TestPreflightVAAPIRateControlModes_NoDeviceIsNotProbed(t *testing.T) {
