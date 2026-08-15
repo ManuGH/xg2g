@@ -173,6 +173,8 @@ struct HTTPAPIClient: APIClient {
         urlRequest.httpMethod = request.method.rawValue
         urlRequest.httpBody = request.body
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        urlRequest.setValue(address.origin.description, forHTTPHeaderField: "Origin")
+        urlRequest.setValue("xg2g-ios/3.0", forHTTPHeaderField: "User-Agent")
         if let contentType = request.contentType {
             urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
