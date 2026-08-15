@@ -14,6 +14,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	deviceauthmodel "github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
+	"github.com/ManuGH/xg2g/internal/domain/devicebinding"
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/log"
 )
@@ -210,25 +211,16 @@ func (s *Server) deviceAccessPrincipal(ctx context.Context, token string, cfg co
 		return auth.InvalidCredentials()
 	}
 
-	principal := s.projectTokenPrincipal(ctx, auth.NewPrincipal(token, session.SubjectID, session.Scopes), cfg)
-	if principal == nil {
-		return auth.InvalidCredentials()
-	}
-
-	// The binding gate is deliberately NOT consulted here yet.
+	// Hard cutover. Every credential in this store predates device binding —
+	// the schema has no key column, so there is nothing else it could be — and
+	// the bound issuance path now exists to replace it.
 	//
-	// Every credential in this store is cryptographically unbound — the schema
-	// has no key column — so evaluating honestly would refuse every device
-	// session, including a freshly paired one, before the bound issuance path
-	// exists to replace it. That would be a hard cutover in the middle of the
-	// implementation rather than in the finished behaviour.
-	//
-	// devicebinding.Evaluate and its transport mapping are built and tested;
-	// they are simply not wired. The final step of the convergence replaces
-	// this with an evaluation of the session's real binding state, at which
-	// point an unbound credential is refused with DEVICE_REAUTH_REQUIRED and
-	// there is no bearer fallback for a bound grant.
-	return auth.Authenticated(principal)
+	// The lookup above is deliberately kept rather than short-circuited: it is
+	// what lets a genuine legacy device be told to re-pair instead of receiving
+	// an anonymous 401 that is indistinguishable from a broken token. There is
+	// no bearer fallback; this credential class is finished.
+	decision := devicebinding.Evaluate(devicebinding.StateLegacyUnbound)
+	return auth.RepairRequired(decision)
 }
 
 func (s *Server) RequestScopes(r *http.Request) (scopeSet, bool) {

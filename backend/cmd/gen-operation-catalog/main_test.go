@@ -25,9 +25,9 @@ func TestLoadCatalogPreservesSecurityContract(t *testing.T) {
 	assertScopes(t, byID, "GetSystemConfig", "v3:read")
 	assertScopes(t, byID, "GetSystemScanStatus", "v3:admin")
 	assertScopes(t, byID, "TriggerSystemScan", "v3:admin")
-	assertScopes(t, byID, "CreateDeviceSession")
-	if got := byID["CreateDeviceSession"].Policy.Auth; got != "device_grant" {
-		t.Fatalf("CreateDeviceSession auth = %q, want device_grant", got)
+	assertScopes(t, byID, "ExchangePairing")
+	if got := byID["ExchangePairing"].Policy.Auth; got != "pairing_secret" {
+		t.Fatalf("ExchangePairing auth = %q, want pairing_secret", got)
 	}
 }
 
