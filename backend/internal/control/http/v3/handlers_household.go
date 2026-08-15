@@ -576,3 +576,103 @@ func (s *Server) RevokeUserSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// ListHouseholdDevices handles GET /api/v3/household/devices
+func (s *Server) ListHouseholdDevices(w http.ResponseWriter, r *http.Request) {
+	p := s.resolveRequestPrincipal(r)
+	if p == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	type deviceResponseItem struct {
+		ID             string `json:"id"`
+		Name           string `json:"name"`
+		DeviceType     string `json:"deviceType"`
+		DPoPThumbprint string `json:"dpopThumbprint,omitempty"`
+		TrustedUntil   string `json:"trustedUntil,omitempty"`
+		LastActiveAt   string `json:"lastActiveAt,omitempty"`
+		IPAddress      string `json:"ipAddress,omitempty"`
+	}
+
+	out := make([]deviceResponseItem, 0)
+	seen := make(map[string]bool)
+
+	// 1. Identity Store devices
+	if svc := s.getIdentityService(); svc != nil {
+		devs, err := svc.Store().ListDevicesByUser(r.Context(), "usr_admin")
+		if err == nil {
+			for _, d := range devs {
+				if seen[d.ID] {
+					continue
+				}
+				seen[d.ID] = true
+				dType := "mobile"
+				if strings.Contains(strings.ToLower(d.Platform), "tv") {
+					dType = "android_tv"
+				} else if strings.Contains(strings.ToLower(d.Platform), "web") {
+					dType = "web"
+				}
+				out = append(out, deviceResponseItem{
+					ID:             d.ID,
+					Name:           d.DeviceName,
+					DeviceType:     dType,
+					DPoPThumbprint: d.JWKThumbprint,
+					LastActiveAt:   d.LastSeenAt.UTC().Format(time.RFC3339),
+				})
+			}
+		}
+	}
+
+	// 2. DeviceAuth memory / state store devices
+	if s.hasDeviceAuthStore() {
+		memDevs, err := s.deviceAuthStore().ListDevicesByOwner(r.Context(), "admin")
+		if err == nil {
+			for _, d := range memDevs {
+				if seen[d.DeviceID] {
+					continue
+				}
+				seen[d.DeviceID] = true
+				dType := "mobile"
+				if strings.Contains(strings.ToLower(string(d.DeviceType)), "tv") {
+					dType = "android_tv"
+				}
+				lastActive := d.CreatedAt.UTC().Format(time.RFC3339)
+				if d.LastSeenAt != nil {
+					lastActive = d.LastSeenAt.UTC().Format(time.RFC3339)
+				}
+				out = append(out, deviceResponseItem{
+					ID:           d.DeviceID,
+					Name:         d.DeviceName,
+					DeviceType:   dType,
+					LastActiveAt: lastActive,
+				})
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// RevokeHouseholdDevice handles POST /api/v3/household/devices/{id}/revoke
+func (s *Server) RevokeHouseholdDevice(w http.ResponseWriter, r *http.Request) {
+	p := s.resolveRequestPrincipal(r)
+	if p == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Device ID required", nil)
+		return
+	}
+
+	now := time.Now().UTC()
+	if svc := s.getIdentityService(); svc != nil {
+		_ = svc.Store().RevokeDeviceCredentials(r.Context(), id, now)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
