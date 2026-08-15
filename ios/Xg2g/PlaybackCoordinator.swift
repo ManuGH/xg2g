@@ -165,13 +165,13 @@ actor PlaybackCoordinator {
             request.setValue("\(cookie.name)=\(cookie.value)", forHTTPHeaderField: "Cookie")
         }
 
-        for _ in 0..<20 {
+        for _ in 0..<40 {
             if let (_, response) = try? await URLSession.shared.data(for: request),
                let http = response as? HTTPURLResponse,
                http.statusCode == 200 {
                 return
             }
-            try? await Task.sleep(for: .milliseconds(350))
+            try? await Task.sleep(for: .milliseconds(100))
         }
     }
 

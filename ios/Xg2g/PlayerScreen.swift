@@ -668,11 +668,11 @@ struct PlayerScreen: View {
 
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
-        item.automaticallyPreservesTimeOffsetFromLive = true
-        item.preferredForwardBufferDuration = 2.0
+        item.automaticallyPreservesTimeOffsetFromLive = false
+        item.preferredForwardBufferDuration = 1.0
         let player = AVPlayer(playerItem: item)
 
-        player.automaticallyWaitsToMinimizeStalling = true
+        player.automaticallyWaitsToMinimizeStalling = false
         return player
     }
 }
