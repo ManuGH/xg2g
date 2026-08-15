@@ -207,16 +207,15 @@ extension JSONDecoder {
     ///
     /// Go's `time.Time` marshals as RFC 3339 **Nano**: fractional seconds appear
     /// only when non-zero, so the same field is `…T12:00:00Z` one moment and
-    /// `…T12:00:00.529Z` the next. Foundation's `.iso8601` strategy rejects the
-    /// fractional form outright, which would make token expiry decoding fail
-    /// intermittently — roughly whenever the server's clock lands on a
-    /// non-integral second.
+    /// `…T12:00:00.529Z` the next.
     static var xg2g: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let text = try container.decode(String.self)
 
+            if let date = iso8601FormatterWithFraction.date(from: text) { return date }
+            if let date = iso8601Formatter.date(from: text) { return date }
             if let date = try? rfc3339WithFraction.parse(text) { return date }
             if let date = try? rfc3339.parse(text) { return date }
 
@@ -228,8 +227,18 @@ extension JSONDecoder {
         return decoder
     }
 
-    // `Date.ISO8601FormatStyle` is a value type and therefore `Sendable`,
-    // unlike `ISO8601DateFormatter` — no shared mutable state to reason about.
+    nonisolated(unsafe) private static let iso8601FormatterWithFraction: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    nonisolated(unsafe) private static let iso8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
     private static let rfc3339WithFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
     private static let rfc3339 = Date.ISO8601FormatStyle(includingFractionalSeconds: false)
 }

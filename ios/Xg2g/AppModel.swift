@@ -342,7 +342,7 @@ final class AppModel {
                     lastError = "Netzwerkfehler: \(tr)"
                 }
             case .unexpectedPayload(let payload):
-                lastError = "Unerwartete Serverantwort (Status \(payload.status))."
+                lastError = "Unerwartete Serverantwort (Status \(payload.status)): \(payload.bodyPreview)"
             case .invalidEndpoint(let path):
                 lastError = "Ungültiger API-Pfad: \(path)"
             }
