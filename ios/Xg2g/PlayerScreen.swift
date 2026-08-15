@@ -7,10 +7,9 @@ import CoreMedia
 import SwiftUI
 import UIKit
 
-/// Live & Timeshift playback for a channel with Plex-tier media controls,
-/// Infuse-style spatial gestures (10s skip left/right, swipe-up Mini-EPG, swipe-down close),
-/// Channels DVR live buffer & broadcast scrubber, AirPlay 2 routing, multi-track audio selection,
-/// aspect ratio fill toggle, and hardware telemetry.
+/// Live & Timeshift playback for a channel with Infuse-tier player UX,
+/// custom precision live scrubber, ultra-thin glass HUD, spatial gesture controls,
+/// AirPlay 2 routing, multi-track audio selection, aspect ratio fill toggle, and hardware telemetry.
 struct PlayerScreen: View {
 
     let model: AppModel
@@ -77,7 +76,7 @@ struct PlayerScreen: View {
                     Color.black.opacity(0.001)
                         .ignoresSafeArea()
                         .onTapGesture(count: 1) {
-                            withAnimation(.easeInOut(duration: 0.25)) {
+                            withAnimation(.easeInOut(duration: 0.22)) {
                                 showControls.toggle()
                             }
                             if showControls {
@@ -176,11 +175,11 @@ struct PlayerScreen: View {
                     VStack(spacing: 16) {
                         ProgressView()
                             .tint(Theme.Colors.accentLive)
-                            .scaleEffect(1.3)
+                            .scaleEffect(1.2)
 
                         Text("\(currentChannel.name) wird geladen…")
-                            .font(.headline)
-                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Theme.Colors.textSecondary)
 
                         Button {
                             closePlayer()
@@ -193,7 +192,7 @@ struct PlayerScreen: View {
                                 .background(Theme.Colors.surfaceGlass, in: Capsule())
                         }
                         .buttonStyle(.plain)
-                        .padding(.top, 10)
+                        .padding(.top, 6)
                     }
                 }
 
@@ -202,6 +201,7 @@ struct PlayerScreen: View {
                     VStack {
                         HStack(spacing: 8) {
                             Image(systemName: "bolt.fill")
+                                .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(Theme.Colors.accentLive)
                             Text(zapNotice)
                                 .font(.subheadline.weight(.semibold))
@@ -209,28 +209,29 @@ struct PlayerScreen: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .glassCard(cornerRadius: 20)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
                         .shadow(color: Color.black.opacity(0.4), radius: 10, y: 5)
                         .transition(.move(edge: .top).combined(with: .opacity))
-                        .padding(.top, isLandscape ? 20 : 60)
+                        .padding(.top, isLandscape ? 16 : 56)
 
                         Spacer()
                     }
                 }
 
-                // MARK: - Plex-Style Center Media Controls (Play / Pause / 10s Skip)
+                // MARK: - Infuse-Style Floating Center HUD (Play / Pause / 10s Skip)
                 if showControls && player != nil {
-                    HStack(spacing: isLandscape ? 50 : 36) {
+                    HStack(spacing: isLandscape ? 48 : 32) {
                         // 10s Skip Backward
                         Button {
                             seek(by: -10)
                         } label: {
                             Image(systemName: "gobackward.10")
-                                .font(.system(size: 26, weight: .medium))
+                                .font(.system(size: 22, weight: .medium))
                                 .foregroundStyle(Theme.Colors.textPrimary)
-                                .frame(width: 52, height: 52)
-                                .background(Color.black.opacity(0.6), in: Circle())
-                                .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                .frame(width: 48, height: 48)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
                         }
                         .buttonStyle(.plain)
 
@@ -239,12 +240,12 @@ struct PlayerScreen: View {
                             togglePlayPause()
                         } label: {
                             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 32, weight: .bold))
+                                .font(.system(size: 28, weight: .bold))
                                 .foregroundStyle(Theme.Colors.textPrimary)
-                                .frame(width: 72, height: 72)
-                                .background(Color.black.opacity(0.7), in: Circle())
+                                .frame(width: 64, height: 64)
+                                .background(.ultraThinMaterial, in: Circle())
                                 .overlay(Circle().strokeBorder(Theme.Colors.accentLive.opacity(0.6), lineWidth: 1.5))
-                                .shadow(color: Theme.Colors.accentLive.opacity(0.35), radius: 12)
+                                .shadow(color: Theme.Colors.accentLive.opacity(0.4), radius: 10)
                         }
                         .buttonStyle(.plain)
 
@@ -253,54 +254,54 @@ struct PlayerScreen: View {
                             seek(by: 10)
                         } label: {
                             Image(systemName: "goforward.10")
-                                .font(.system(size: 26, weight: .medium))
+                                .font(.system(size: 22, weight: .medium))
                                 .foregroundStyle(Theme.Colors.textPrimary)
-                                .frame(width: 52, height: 52)
-                                .background(Color.black.opacity(0.6), in: Circle())
-                                .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                .frame(width: 48, height: 48)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
                         }
                         .buttonStyle(.plain)
                     }
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
                 }
 
-                // MARK: - Broadcast Console OSD Overlay (Top & Bottom Bars)
+                // MARK: - Cinematic OSD Overlay (Top & Bottom Bars)
                 if showControls {
                     VStack(spacing: 0) {
                         // Top Bar
-                        HStack(spacing: 10) {
+                        HStack(spacing: 8) {
                             Button {
                                 closePlayer()
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "chevron.down")
-                                        .font(.system(size: 13, weight: .bold))
+                                        .font(.system(size: 12, weight: .bold))
                                     Text("Zurück")
-                                        .font(.subheadline.weight(.semibold))
+                                        .font(.caption.weight(.semibold))
                                         .lineLimit(1)
                                 }
                                 .fixedSize()
                                 .foregroundStyle(Theme.Colors.textPrimary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Color.black.opacity(0.65), in: Capsule())
-                                .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
                             }
                             .buttonStyle(.plain)
 
                             HStack(spacing: 6) {
                                 if let number = currentChannel.number {
                                     Text(number)
-                                        .font(.caption.monospacedDigit().bold())
+                                        .font(.caption2.monospacedDigit().bold())
                                         .foregroundStyle(Theme.Colors.accentAction)
-                                        .padding(.horizontal, 6)
+                                        .padding(.horizontal, 5)
                                         .padding(.vertical, 2)
                                         .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                                 }
 
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(currentChannel.name)
-                                        .font(.headline)
+                                        .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.textPrimary)
                                         .lineLimit(1)
 
@@ -317,10 +318,10 @@ struct PlayerScreen: View {
 
                             // Native AirPlay Picker
                             AirPlayButton()
-                                .frame(width: 32, height: 32)
-                                .padding(4)
-                                .background(Color.black.opacity(0.65), in: Circle())
-                                .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                .frame(width: 30, height: 30)
+                                .padding(3)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
 
                             // Audio Track Selector (Dolby Digital / Stereo)
                             if !availableAudioTracks.isEmpty {
@@ -339,11 +340,11 @@ struct PlayerScreen: View {
                                     }
                                 } label: {
                                     Image(systemName: "speaker.wave.2")
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(.system(size: 12, weight: .medium))
                                         .foregroundStyle(Theme.Colors.textPrimary)
-                                        .padding(8)
-                                        .background(Color.black.opacity(0.65), in: Circle())
-                                        .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                        .padding(7)
+                                        .background(.ultraThinMaterial, in: Circle())
+                                        .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
                                 }
                             }
 
@@ -356,15 +357,15 @@ struct PlayerScreen: View {
                                 displayZapToast(isAspectFill ? "Vollbild (Ausgefüllt)" : "Standard (16:9)")
                             } label: {
                                 Image(systemName: isAspectFill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                                    .font(.system(size: 14, weight: .medium))
+                                    .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(isAspectFill ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
-                                    .padding(8)
-                                    .background(Color.black.opacity(0.65), in: Circle())
-                                    .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                    .padding(7)
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
                             }
                             .buttonStyle(.plain)
 
-                            // Interactive Live Button (Channels DVR Style: Jump to Live when timeshifted)
+                            // Interactive Live Button (Jump to Live when timeshifted)
                             Button {
                                 if isTimeshifted {
                                     jumpToLive()
@@ -375,22 +376,22 @@ struct PlayerScreen: View {
                                     }
                                 }
                             } label: {
-                                HStack(spacing: 5) {
-                                    PulsingLiveDot(size: 6)
+                                HStack(spacing: 4) {
+                                    PulsingLiveDot(size: 5)
                                     Text(isTimeshifted ? "ZUR LIVE-KANTE" : "LIVE")
-                                        .font(.caption.bold().monospaced())
+                                        .font(.caption2.bold().monospaced())
                                         .foregroundStyle(isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive)
                                         .lineLimit(1)
 
                                     Image(systemName: isTimeshifted ? "forward.fill" : "info.circle")
-                                        .font(.caption)
+                                        .font(.caption2)
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
                                 .fixedSize()
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(Color.black.opacity(0.65), in: Capsule())
-                                .overlay(Capsule().strokeBorder(isTimeshifted ? Theme.Colors.accentAction.opacity(0.6) : Theme.Colors.accentLive.opacity(0.4), lineWidth: 1))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 4)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().strokeBorder(isTimeshifted ? Theme.Colors.accentAction.opacity(0.6) : Theme.Colors.accentLive.opacity(0.4), lineWidth: 0.8))
                             }
                             .buttonStyle(.plain)
 
@@ -407,14 +408,15 @@ struct PlayerScreen: View {
                                             channelNumber: currentChannel.number
                                         )
                                     }
-                                    displayZapToast(ok ? "🔴 Aufnahme gestartet: \(nowNext?.now?.title ?? currentChannel.name)" : "Fehler beim Starten der Aufnahme")
+                                    displayZapToast(ok ? "🔴 Aufnahme: \(nowNext?.now?.title ?? currentChannel.name)" : "Fehler beim Starten der Aufnahme")
                                 }
                             } label: {
                                 Image(systemName: "record.circle")
-                                    .font(.title3)
+                                    .font(.system(size: 14, weight: .medium))
                                     .foregroundStyle(Theme.Colors.statusError)
-                                    .padding(6)
-                                    .background(Color.black.opacity(0.65), in: Circle())
+                                    .padding(7)
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
                             }
                             .buttonStyle(.plain)
 
@@ -424,19 +426,20 @@ struct PlayerScreen: View {
                                 showMiniEPG = true
                             } label: {
                                 Image(systemName: "list.bullet.rectangle")
-                                    .font(.title3)
-                                    .foregroundStyle(Theme.Colors.textPrimary.opacity(0.9))
-                                    .padding(6)
-                                    .background(Color.black.opacity(0.65), in: Circle())
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                    .padding(7)
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
                             }
                             .buttonStyle(.plain)
                         }
                         .padding(.horizontal, isLandscape ? max(20, geometry.safeAreaInsets.leading) : 16)
-                        .padding(.top, isLandscape ? max(10, geometry.safeAreaInsets.top) : 16)
+                        .padding(.top, isLandscape ? max(10, geometry.safeAreaInsets.top) : 12)
                         .padding(.bottom, 12)
                         .background(
                             LinearGradient(
-                                colors: [Color.black.opacity(0.85), Color.clear],
+                                colors: [Color.black.opacity(0.8), Color.clear],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -454,10 +457,10 @@ struct PlayerScreen: View {
 
                         Spacer()
 
-                        // MARK: - Adaptive Bottom Bar (Plex & Channels DVR Broadcast Scrubber)
+                        // MARK: - Infuse Precision Live Scrubber & Broadcast HUD
                         if isLandscape {
-                            // Sleek, unobtrusive Landscape HUD
-                            VStack(spacing: 6) {
+                            // Landscape HUD
+                            VStack(spacing: 8) {
                                 HStack(spacing: 12) {
                                     if let now = nowNext?.now {
                                         PulsingLiveDot(size: 5)
@@ -465,12 +468,6 @@ struct PlayerScreen: View {
                                             .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(Theme.Colors.textPrimary)
                                             .lineLimit(1)
-
-                                        if let remaining = now.remainingMinutes(at: .now) {
-                                            Text("• noch \(remaining)m")
-                                                .font(.caption.monospacedDigit().weight(.medium))
-                                                .foregroundStyle(Theme.Colors.accentLive)
-                                        }
                                     } else {
                                         Text(currentChannel.name)
                                             .font(.subheadline.weight(.semibold))
@@ -493,23 +490,12 @@ struct PlayerScreen: View {
                                 }
 
                                 if let now = nowNext?.now, let fraction = now.progress(at: .now) {
-                                    VStack(spacing: 3) {
-                                        ProgressView(value: fraction)
-                                            .progressViewStyle(.linear)
-                                            .tint(Theme.Colors.accentLive)
-
-                                        HStack {
-                                            Text(now.formattedStartTime)
-                                                .font(.system(size: 9, design: .monospaced))
-                                                .foregroundStyle(Theme.Colors.textTertiary)
-
-                                            Spacer()
-
-                                            Text(now.formattedEndTime)
-                                                .font(.system(size: 9, design: .monospaced))
-                                                .foregroundStyle(Theme.Colors.textTertiary)
-                                        }
-                                    }
+                                    InfuseScrubber(
+                                        progress: fraction,
+                                        startTime: now.formattedStartTime,
+                                        endTime: now.formattedEndTime,
+                                        remainingText: now.remainingMinutes(at: .now).map { "noch \($0)m" }
+                                    )
                                 }
 
                                 HStack {
@@ -518,11 +504,11 @@ struct PlayerScreen: View {
                                             Image(systemName: "chevron.left")
                                             Text("Vorheriger")
                                         }
-                                        .font(.caption.weight(.medium))
+                                        .font(.caption2.weight(.medium))
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
-                                        .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                        .background(.ultraThinMaterial, in: Capsule())
                                     }
                                     .buttonStyle(.plain)
 
@@ -539,27 +525,28 @@ struct PlayerScreen: View {
                                             Text("Nächster")
                                             Image(systemName: "chevron.right")
                                         }
-                                        .font(.caption.weight(.medium))
+                                        .font(.caption2.weight(.medium))
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
-                                        .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                        .background(.ultraThinMaterial, in: Capsule())
                                     }
                                     .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .glassCard(cornerRadius: 14)
+                            .padding(.vertical, 10)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
                             .padding(.horizontal, max(24, geometry.safeAreaInsets.leading))
                             .padding(.bottom, max(8, geometry.safeAreaInsets.bottom))
                         } else {
-                            // Portrait Rich Info Card with Clean Controls
+                            // Portrait Mode
                             VStack(spacing: 8) {
                                 if let now = nowNext?.now {
-                                    VStack(alignment: .leading, spacing: 6) {
+                                    VStack(alignment: .leading, spacing: 8) {
                                         HStack {
-                                            PulsingLiveDot(size: 6)
+                                            PulsingLiveDot(size: 5)
                                             Text(now.title)
                                                 .font(.headline)
                                                 .foregroundStyle(Theme.Colors.textPrimary)
@@ -582,23 +569,13 @@ struct PlayerScreen: View {
                                         }
 
                                         if let fraction = now.progress(at: .now) {
-                                            VStack(spacing: 3) {
-                                                ProgressView(value: fraction)
-                                                    .progressViewStyle(.linear)
-                                                    .tint(Theme.Colors.accentLive)
-
-                                                HStack {
-                                                    Text(now.formattedStartTime)
-                                                        .font(.system(size: 9, design: .monospaced))
-                                                        .foregroundStyle(Theme.Colors.textTertiary)
-
-                                                    Spacer()
-
-                                                    Text(now.formattedEndTime)
-                                                        .font(.system(size: 9, design: .monospaced))
-                                                        .foregroundStyle(Theme.Colors.textTertiary)
-                                                }
-                                            }
+                                            InfuseScrubber(
+                                                progress: fraction,
+                                                startTime: now.formattedStartTime,
+                                                endTime: now.formattedEndTime,
+                                                remainingText: nil
+                                            )
+                                            .padding(.top, 2)
                                         }
 
                                         if let next = nowNext?.next {
@@ -622,7 +599,8 @@ struct PlayerScreen: View {
                                         }
                                     }
                                     .padding(14)
-                                    .glassCard(cornerRadius: 12)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
                                 }
 
                                 // Bottom Quick Controls
@@ -636,7 +614,8 @@ struct PlayerScreen: View {
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
-                                        .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
                                     }
                                     .buttonStyle(.plain)
 
@@ -657,7 +636,8 @@ struct PlayerScreen: View {
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
-                                        .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -871,7 +851,7 @@ struct PlayerScreen: View {
         Task { await model.stopPlayback() }
     }
 
-    /// Builds the player with the playback ticket attached.
+    /// Builds the player with healthy buffering parameters for robust video & audio synchronization.
     private static func makePlayer(for stream: LiveStream) -> AVPlayer? {
         if let cookie = stream.ticket.httpCookie(for: stream.playlistURL) {
             HTTPCookieStorage.shared.setCookie(cookie)
@@ -890,13 +870,68 @@ struct PlayerScreen: View {
 
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
-        // Linear playback without unwanted startup seeking
         item.automaticallyPreservesTimeOffsetFromLive = false
-        item.preferredForwardBufferDuration = 1.0
         let player = AVPlayer(playerItem: item)
-
-        player.automaticallyWaitsToMinimizeStalling = false
+        player.automaticallyWaitsToMinimizeStalling = true
         return player
+    }
+}
+
+// MARK: - Infuse Custom Precision Scrubber
+
+struct InfuseScrubber: View {
+    let progress: Double // 0.0 to 1.0
+    let startTime: String
+    let endTime: String
+    let remainingText: String?
+
+    var body: some View {
+        VStack(spacing: 5) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.18))
+                        .frame(height: 3)
+
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Theme.Colors.accentAction, Theme.Colors.accentLive],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(progress))), height: 3)
+
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: Theme.Colors.accentLive.opacity(0.8), radius: 3)
+                        .offset(x: max(0, min(geo.size.width - 8, geo.size.width * CGFloat(progress) - 4)))
+                }
+            }
+            .frame(height: 8)
+
+            HStack {
+                Text(startTime)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+
+                Spacer()
+
+                if let remainingText {
+                    Text(remainingText)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.accentLive)
+                }
+
+                Spacer()
+
+                Text(endTime)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+        }
     }
 }
 
