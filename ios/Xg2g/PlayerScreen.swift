@@ -7,9 +7,14 @@ import CoreMedia
 import SwiftUI
 import UIKit
 
-/// 100% Native Apple AVPlayerViewController playback with YouTube TV / Zattoo-grade
-/// in-playback live EPG channel guide, 1-tap instant zapping, bouquet filtering,
-/// AirPlay 2, Picture-in-Picture, and fullscreen OLED rotation.
+/// 100% Native Apple AVPlayerViewController playback inspired by
+/// MagentaTV 2.0, Zattoo & Channels DVR:
+/// - In-Playback Live EPG Guide in portrait with 1-tap instant zapping
+/// - Landscape Quick-Zap Channel Carousel
+/// - Swipe-to-Zap gestures on the video stage
+/// - „Von Beginn ansehen“ (Restart) & „Zur Live-Kante“ Timeshift controls
+/// - Automatic Picture-in-Picture (PiP) on Home swipe
+/// - Instant 4K/HD streaming with native Apple transport bar
 struct PlayerScreen: View {
 
     let model: AppModel
@@ -19,6 +24,8 @@ struct PlayerScreen: View {
     @State private var currentChannel: Channel
     @State private var player: AVPlayer?
     @State private var failure: String?
+    @State private var isTimeshifted = false
+    @State private var showLandscapeGuide = false
     @State private var zapNotice: String?
     @State private var hideZapNoticeTask: Task<Void, Never>?
 
@@ -45,16 +52,43 @@ struct PlayerScreen: View {
 
                 if let player {
                     if isLandscape {
-                        // MARK: - Landscape 100% Fullscreen OLED Cinema Mode
-                        NativeVideoPlayerView(
-                            player: player,
-                            onDismiss: { closePlayer() }
-                        )
-                        .ignoresSafeArea()
+                        // MARK: - Landscape 100% Fullscreen OLED Cinema Mode with Quick-Zap Carousel
+                        ZStack(alignment: .bottom) {
+                            NativeVideoPlayerView(
+                                player: player,
+                                onDismiss: { closePlayer() }
+                            )
+                            .ignoresSafeArea()
+
+                            // Landscape Quick-Zap Channel Carousel (MagentaTV / Zattoo Grade)
+                            if showLandscapeGuide {
+                                LandscapeQuickZapBar(
+                                    channels: model.filteredChannels,
+                                    currentChannel: currentChannel,
+                                    schedule: model.schedule,
+                                    onSelect: { ch in
+                                        switchChannel(to: ch)
+                                    },
+                                    onClose: {
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            showLandscapeGuide = false
+                                        }
+                                    }
+                                )
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, max(12, geometry.safeAreaInsets.bottom))
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                            }
+                        }
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showLandscapeGuide.toggle()
+                            }
+                        }
                     } else {
                         // MARK: - Portrait Dual-Stage (16:9 Top Player + In-Playback EPG Guide)
                         VStack(spacing: 0) {
-                            // Top 16:9 Native Video Player Stage
+                            // Top 16:9 Native Video Player Stage with Swipe-to-Zap Gesture
                             ZStack(alignment: .topLeading) {
                                 NativeVideoPlayerView(
                                     player: player,
@@ -62,8 +96,18 @@ struct PlayerScreen: View {
                                 )
                                 .frame(width: geometry.size.width, height: geometry.size.width * 9 / 16)
                                 .background(Color.black)
+                                .gesture(
+                                    DragGesture(minimumDistance: 35)
+                                        .onEnded { value in
+                                            if value.translation.width < -40 {
+                                                zapNext()
+                                            } else if value.translation.width > 40 {
+                                                zapPrevious()
+                                            }
+                                        }
+                                )
 
-                                // Minimal Dismiss Button
+                                // Minimal Dismiss Button (Chevron)
                                 Button {
                                     closePlayer()
                                 } label: {
@@ -82,7 +126,7 @@ struct PlayerScreen: View {
                             // Bottom Interactive Live TV Channel & EPG Guide
                             ScrollView {
                                 VStack(spacing: 14) {
-                                    // Active Channel & Program Card
+                                    // Active Channel & Program Card with Timeshift Controls
                                     if let now = nowNext?.now {
                                         VStack(alignment: .leading, spacing: 8) {
                                             HStack {
@@ -103,13 +147,16 @@ struct PlayerScreen: View {
 
                                                 HStack(spacing: 4) {
                                                     PulsingLiveDot(size: 6)
-                                                    Text("LIVE")
+                                                    Text(isTimeshifted ? "TIMESHIFT" : "LIVE")
                                                         .font(.caption2.bold().monospaced())
-                                                        .foregroundStyle(Theme.Colors.accentLive)
+                                                        .foregroundStyle(isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive)
                                                 }
                                                 .padding(.horizontal, 8)
                                                 .padding(.vertical, 3)
-                                                .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
+                                                .background(
+                                                    (isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive).opacity(0.15),
+                                                    in: Capsule()
+                                                )
 
                                                 // Quick Record Button
                                                 Button {
@@ -147,6 +194,46 @@ struct PlayerScreen: View {
                                                 )
                                                 .padding(.top, 2)
                                             }
+
+                                            // Timeshift Actions: Restart / Live Jump (A1 / Drei / MagentaTV Feature)
+                                            HStack(spacing: 8) {
+                                                Button {
+                                                    seekToBeginning()
+                                                } label: {
+                                                    HStack(spacing: 4) {
+                                                        Image(systemName: "arrow.counterclockwise")
+                                                            .font(.caption2)
+                                                        Text("Von Beginn ansehen")
+                                                            .font(.caption.weight(.medium))
+                                                    }
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 5)
+                                                    .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                                    .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                                                }
+                                                .buttonStyle(.plain)
+
+                                                if isTimeshifted {
+                                                    Button {
+                                                        jumpToLive()
+                                                    } label: {
+                                                        HStack(spacing: 4) {
+                                                            PulsingLiveDot(size: 5)
+                                                            Text("Zur Live-Kante")
+                                                                .font(.caption.weight(.bold))
+                                                        }
+                                                        .padding(.horizontal, 10)
+                                                        .padding(.vertical, 5)
+                                                        .background(Theme.Colors.accentLive, in: Capsule())
+                                                        .foregroundStyle(Color.black)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+
+                                                Spacer()
+                                            }
+                                            .padding(.top, 2)
 
                                             if let next = nowNext?.next {
                                                 HStack(spacing: 6) {
@@ -400,6 +487,7 @@ struct PlayerScreen: View {
 
     private func startStreaming(channel: Channel) async {
         failure = nil
+        isTimeshifted = false
         player?.pause()
         player = nil
 
@@ -449,6 +537,38 @@ struct PlayerScreen: View {
         displayZapToast("Kanal: \(newChannel.name)")
         Task {
             await startStreaming(channel: newChannel)
+        }
+    }
+
+    private func zapNext() {
+        if let nextChannel = model.channelAfter(currentChannel) {
+            switchChannel(to: nextChannel)
+        }
+    }
+
+    private func zapPrevious() {
+        if let prevChannel = model.channelBefore(currentChannel) {
+            switchChannel(to: prevChannel)
+        }
+    }
+
+    private func seekToBeginning() {
+        guard let player, let item = player.currentItem else { return }
+        triggerHaptic(.medium)
+        if let firstRange = item.seekableTimeRanges.first?.timeRangeValue {
+            player.seek(to: firstRange.start, toleranceBefore: .zero, toleranceAfter: .zero)
+            isTimeshifted = true
+            displayZapToast("⏪ Beginn der Sendung / Puffer")
+        }
+    }
+
+    private func jumpToLive() {
+        guard let player, let item = player.currentItem else { return }
+        triggerHaptic(.medium)
+        if let lastRange = item.seekableTimeRanges.last?.timeRangeValue {
+            player.seek(to: lastRange.end, toleranceBefore: .zero, toleranceAfter: .zero)
+            isTimeshifted = false
+            displayZapToast("🔴 Live-Kante")
         }
     }
 
@@ -539,6 +659,89 @@ struct PlayerScreen: View {
     }
 }
 
+// MARK: - Landscape Quick-Zap Channel Carousel (MagentaTV 2.0 / Zattoo Pattern)
+
+struct LandscapeQuickZapBar: View {
+
+    let channels: [Channel]
+    let currentChannel: Channel
+    let schedule: [String: NowNext]
+    let onSelect: (Channel) -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("SCHNELL-ZAPPING")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+
+                Spacer()
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 8)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(channels) { ch in
+                        let isCurrent = ch.id == currentChannel.id
+                        Button {
+                            onSelect(ch)
+                        } label: {
+                            HStack(spacing: 8) {
+                                ChannelLogo(url: ch.logoURL, name: ch.name, size: 36)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 4) {
+                                        if let num = ch.number {
+                                            Text(num)
+                                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                                .foregroundStyle(Theme.Colors.accentAction)
+                                        }
+                                        Text(ch.name)
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(isCurrent ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
+                                            .lineLimit(1)
+                                    }
+
+                                    if let title = schedule[ch.serviceRef]?.now?.title {
+                                        Text(title)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Theme.Colors.textSecondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                isCurrent ? Theme.Colors.accentAction.opacity(0.25) : Theme.Colors.surfaceElevated,
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .strokeBorder(isCurrent ? Theme.Colors.accentLive : Theme.Colors.borderSubtle, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
+        .shadow(color: Color.black.opacity(0.4), radius: 12, y: 6)
+    }
+}
+
 // MARK: - Native iOS AVPlayerViewController (Plex / Apple TV System Player)
 
 struct NativeVideoPlayerView: UIViewControllerRepresentable {
@@ -553,6 +756,7 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         controller.showsPlaybackControls = true
         controller.videoGravity = videoGravity
         controller.allowsPictureInPicturePlayback = true
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.updatesNowPlayingInfoCenter = true
         controller.delegate = context.coordinator
         return controller
