@@ -198,6 +198,10 @@ func (s *Server) ListProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if profs == nil {
+		profs = []identity.Profile{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(profs)
 }
