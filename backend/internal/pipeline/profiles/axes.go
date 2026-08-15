@@ -260,11 +260,6 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 	case VideoActionAV1:
 		spec.VideoCodec = "av1"
 		spec.Deinterlace = interlacedOrUnknown(cap)
-		spec.VideoMaxRateK = 32000
-		spec.VideoBufSizeK = 64000
-		if canonical == ProfileAV1HW {
-			spec.VideoQP = 22
-		}
 		if useGPU {
 			// Ask for the full GPU chain, exactly like hardware HEVC above. This
 			// is an intent, not a guarantee: the FFmpeg layer still drops AV1 to

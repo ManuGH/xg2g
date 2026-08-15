@@ -397,6 +397,7 @@ func ResolveWithConfig(requested, userAgent string, dvrWindowSec int, cap *scan.
 	canonical := resolveCanonicalProfile(requested, isSafari)
 
 	spec := newResolvedSpec(canonical)
+	spec.Intent = playbackprofile.NormalizeRequestedIntent(requested)
 
 	// Carry the verified source height so downstream bitrate budgeting can scale
 	// with resolution (SD sources get a lower ceiling than HD).

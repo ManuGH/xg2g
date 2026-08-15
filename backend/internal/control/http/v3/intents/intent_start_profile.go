@@ -188,6 +188,12 @@ func (s *Service) resolveStartProfile(ctx context.Context, intent Intent, capabi
 		s.iosNativeHEVCHWMode,
 	)
 	resolution.profileSpec = adaptStartProfileForNetworkContext(intent, resolution.profileSpec)
+
+	reqIntent := playbackprofile.NormalizeRequestedIntent(intent.Params["intent"])
+	if reqIntent == playbackprofile.IntentUnknown {
+		reqIntent = playbackprofile.NormalizeRequestedIntent(reqProfileID)
+	}
+	resolution.profileSpec.Intent = reqIntent
 	requestedCodecs := requestedCodecsForIntentWithPolicy(intent, requestedPlaybackMode, s.clientAV1Disabled)
 	resolution.requestedCodecs = requestedCodecs
 	if shouldTraceAutoCodecDecision(intent, requestedCodecs) {
