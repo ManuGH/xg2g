@@ -203,24 +203,6 @@ export type ExchangePairingResponse = {
     endpoints: Array<PublishedEndpoint>;
 };
 
-export type CreateDeviceSessionRequest = {
-    deviceGrantId: string;
-    deviceGrant: string;
-};
-
-export type CreateDeviceSessionResponse = {
-    deviceId: string;
-    rotatedDeviceGrantId?: string;
-    rotatedDeviceGrant?: string;
-    rotatedDeviceGrantExpiresAt?: string;
-    accessSessionId: string;
-    accessToken: string;
-    accessTokenExpiresAt: string;
-    policyVersion: string;
-    scopes: Array<string>;
-    endpoints: Array<PublishedEndpoint>;
-};
-
 export type IntentRequest = {
     type?: 'stream.start' | 'stream.stop';
     /**
@@ -3510,55 +3492,6 @@ export type ExchangePairingResponses = {
 };
 
 export type ExchangePairingResponse2 = ExchangePairingResponses[keyof ExchangePairingResponses];
-
-export type CreateDeviceSessionData = {
-    body: CreateDeviceSessionRequest;
-    path?: never;
-    query?: never;
-    url: '/auth/device/session';
-};
-
-export type CreateDeviceSessionErrors = {
-    /**
-     * Invalid device session request
-     */
-    400: ProblemDetails;
-    /**
-     * Invalid or missing device grant secret
-     */
-    401: ProblemDetails;
-    /**
-     * Device grant forbidden
-     */
-    403: ProblemDetails;
-    /**
-     * Device grant not found
-     */
-    404: ProblemDetails;
-    /**
-     * Device session conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Device grant expired or revoked
-     */
-    410: ProblemDetails;
-    /**
-     * Device session store unavailable
-     */
-    503: ProblemDetails;
-};
-
-export type CreateDeviceSessionError = CreateDeviceSessionErrors[keyof CreateDeviceSessionErrors];
-
-export type CreateDeviceSessionResponses = {
-    /**
-     * Device access session issued
-     */
-    200: CreateDeviceSessionResponse;
-};
-
-export type CreateDeviceSessionResponse2 = CreateDeviceSessionResponses[keyof CreateDeviceSessionResponses];
 
 export type GetTimersData = {
     body?: never;

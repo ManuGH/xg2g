@@ -12,7 +12,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/admission"
 	ctrlauth "github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/autocodec"
-	v3deviceauth "github.com/ManuGH/xg2g/internal/control/http/v3/deviceauth"
 	"github.com/ManuGH/xg2g/internal/control/http/v3/dpop"
 	v3intents "github.com/ManuGH/xg2g/internal/control/http/v3/intents"
 	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
@@ -115,7 +114,6 @@ type Server struct {
 	exposureLimiter         *exposureRateLimiter
 	intentService           *v3intents.Service
 	pairingV3Service        *v3pairing.Service
-	deviceAuthV3Service     *v3deviceauth.Service
 	recordingsV3Service     *v3recordings.Service
 	sessionsV3Service       *v3sessions.Service
 	playbackInfoV3Service   *v3playbackinfo.Service
@@ -579,10 +577,6 @@ func (s *Server) applyDeviceAuthDependencies(deps Dependencies) {
 		s.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
 			StateStore:                 deps.DeviceAuthStore,
 			DeviceEnroller:             identityDeviceEnroller{server: s},
-			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
-		})
-		s.deviceAuthV3Service = v3deviceauth.NewService(v3deviceauth.Deps{
-			StateStore:                 deps.DeviceAuthStore,
 			PublishedEndpointsProvider: serverPublishedEndpointProvider{s: s},
 		})
 	}
