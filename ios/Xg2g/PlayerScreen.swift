@@ -6,8 +6,9 @@ import AVKit
 import SwiftUI
 import UIKit
 
-/// Live playback for a channel with gestural channel zapping, swipe-up Mini-EPG,
-/// broadcast telemetry inspector, and native haptic feedback.
+/// Live playback for a channel with native AVPlayerViewController stage,
+/// edge-to-edge aspect ratio fill toggle, conflict-free gestural zapping,
+/// swipe-up Mini-EPG, broadcast telemetry inspector, and adaptive landscape HUD.
 struct PlayerScreen: View {
 
     let model: AppModel
@@ -18,6 +19,7 @@ struct PlayerScreen: View {
     @State private var player: AVPlayer?
     @State private var failure: String?
     @State private var showControls = true
+    @State private var isAspectFill = false
     @State private var showMiniEPG = false
     @State private var showInspector = false
     @State private var zapNotice: String?
@@ -39,346 +41,476 @@ struct PlayerScreen: View {
     }
 
     var body: some View {
-        ZStack {
-            Theme.Colors.bgVideoStage.ignoresSafeArea()
+        GeometryReader { geometry in
+            let isLandscape = geometry.size.width > geometry.size.height
 
-            // Video Player Layer
-            if let player {
-                VideoPlayer(player: player)
+            ZStack {
+                Theme.Colors.bgVideoStage.ignoresSafeArea()
+
+                // MARK: - Native Video Player Stage
+                if let player {
+                    NativeVideoPlayerView(
+                        player: player,
+                        videoGravity: isAspectFill ? .resizeAspectFill : .resizeAspect
+                    )
                     .ignoresSafeArea()
 
-                // Transparent Gesture Catch Layer (Reliable Taps & Gestures)
-                Color.black.opacity(0.001)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showControls.toggle()
+                    // Transparent Gesture Catch Layer (Reliable Taps & Gestures)
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .onTapGesture(count: 2) {
+                            triggerHaptic(.medium)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                isAspectFill.toggle()
+                            }
+                            displayZapToast(isAspectFill ? "Vollbild (Ausgefüllt)" : "Standard (16:9)")
                         }
-                        if showControls {
-                            scheduleControlsHiding()
+                        .onTapGesture(count: 1) {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showControls.toggle()
+                            }
+                            if showControls {
+                                scheduleControlsHiding()
+                            }
                         }
-                    }
-                    .gesture(
-                        DragGesture(minimumDistance: 25)
-                            .onEnded { value in
-                                let horiz = value.translation.width
-                                let vert = value.translation.height
+                        .gesture(
+                            DragGesture(minimumDistance: 25)
+                                .onEnded { value in
+                                    let horiz = value.translation.width
+                                    let vert = value.translation.height
 
-                                // Swipe Down (vertical velocity / distance) -> Close Player
-                                if vert > 50 && vert > abs(horiz) * 1.3 {
-                                    closePlayer()
-                                }
-                                // Horizontal Swipe (if zapping gestures enabled) -> Channel Zapping
-                                else if model.playerGesturesEnabled && abs(horiz) > 50 && abs(horiz) > abs(vert) * 1.3 {
-                                    if horiz < 0 {
-                                        zapNext()
-                                    } else {
-                                        zapPrevious()
+                                    // Swipe Down -> Close Player
+                                    if vert > 50 && vert > abs(horiz) * 1.3 {
+                                        closePlayer()
+                                    }
+                                    // Horizontal Swipe -> Channel Zapping
+                                    else if model.playerGesturesEnabled && abs(horiz) > 50 && abs(horiz) > abs(vert) * 1.3 {
+                                        if horiz < 0 {
+                                            zapNext()
+                                        } else {
+                                            zapPrevious()
+                                        }
                                     }
                                 }
+                        )
+                } else if let failure {
+                    VStack(spacing: 20) {
+                        ContentUnavailableView(
+                            "Wiedergabefehler",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(failure)
+                        )
+                        .foregroundStyle(Theme.Colors.textSecondary)
+
+                        HStack(spacing: 12) {
+                            Button {
+                                closePlayer()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "xmark")
+                                    Text("Zurück")
+                                }
+                                .font(.subheadline.weight(.medium))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                .foregroundStyle(Theme.Colors.textSecondary)
                             }
-                    )
-            } else if let failure {
-                VStack(spacing: 20) {
-                    ContentUnavailableView(
-                        "Wiedergabefehler",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(failure)
-                    )
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                            .buttonStyle(.plain)
 
-                    HStack(spacing: 12) {
-                        Button {
-                            closePlayer()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "xmark")
-                                Text("Zurück")
-                            }
-                            .font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Theme.Colors.surfaceGlass, in: Capsule())
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button {
-                            Task { await startStreaming(channel: currentChannel) }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Erneut versuchen")
-                            }
-                            .font(.headline)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(Theme.Colors.accentAction, in: Capsule())
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            } else {
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .tint(Theme.Colors.accentLive)
-                        .scaleEffect(1.3)
-
-                    Text("\(currentChannel.name) wird geladen…")
-                        .font(.headline)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-
-                    Button {
-                        closePlayer()
-                    } label: {
-                        Text("Abbrechen")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(Theme.Colors.surfaceGlass, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 10)
-                }
-            }
-
-            // MARK: - Zap HUD Banner (Translucent Toast)
-            if let zapNotice {
-                VStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: "bolt.fill")
-                            .foregroundStyle(Theme.Colors.accentLive)
-                        Text(zapNotice)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .glassCard(cornerRadius: 20)
-                    .shadow(color: Color.black.opacity(0.4), radius: 10, y: 5)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .padding(.top, 60)
-
-                    Spacer()
-                }
-            }
-
-            // MARK: - Broadcast Console OSD Overlay
-            if showControls {
-                VStack {
-                    // Top Bar
-                    HStack(spacing: 12) {
-                        Button {
-                            closePlayer()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 14, weight: .bold))
-                                Text("Zurück")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(Color.black.opacity(0.6), in: Capsule())
-                            .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-
-                        HStack(spacing: 8) {
-                            if let number = currentChannel.number {
-                                Text(number)
-                                    .font(.caption.monospacedDigit().bold())
-                                    .foregroundStyle(Theme.Colors.accentAction)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                            }
-
-                            Text(currentChannel.name)
+                            Button {
+                                Task { await startStreaming(channel: currentChannel) }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.clockwise")
+                                    Text("Erneut versuchen")
+                                }
                                 .font(.headline)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(Theme.Colors.accentAction, in: Capsule())
                                 .foregroundStyle(Theme.Colors.textPrimary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } else {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .tint(Theme.Colors.accentLive)
+                            .scaleEffect(1.3)
+
+                        Text("\(currentChannel.name) wird geladen…")
+                            .font(.headline)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+
+                        Button {
+                            closePlayer()
+                        } label: {
+                            Text("Abbrechen")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(Theme.Colors.surfaceGlass, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 10)
+                    }
+                }
+
+                // MARK: - Zap HUD Banner (Translucent Toast)
+                if let zapNotice {
+                    VStack {
+                        HStack(spacing: 8) {
+                            Image(systemName: "bolt.fill")
+                                .foregroundStyle(Theme.Colors.accentLive)
+                            Text(zapNotice)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .glassCard(cornerRadius: 20)
+                        .shadow(color: Color.black.opacity(0.4), radius: 10, y: 5)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.top, isLandscape ? 20 : 60)
+
+                        Spacer()
+                    }
+                }
+
+                // MARK: - Broadcast Console OSD Overlay
+                if showControls {
+                    VStack(spacing: 0) {
+                        // Top Bar
+                        HStack(spacing: 10) {
+                            Button {
+                                closePlayer()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 13, weight: .bold))
+                                    Text("Zurück")
+                                        .font(.subheadline.weight(.semibold))
+                                        .lineLimit(1)
+                                }
+                                .fixedSize()
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Color.black.opacity(0.65), in: Capsule())
+                                .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+
+                            HStack(spacing: 6) {
+                                if let number = currentChannel.number {
+                                    Text(number)
+                                        .font(.caption.monospacedDigit().bold())
+                                        .foregroundStyle(Theme.Colors.accentAction)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                                }
+
+                                Text(currentChannel.name)
+                                    .font(.headline)
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            // Aspect Ratio Zoom Button
+                            Button {
+                                triggerHaptic(.light)
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isAspectFill.toggle()
+                                }
+                                displayZapToast(isAspectFill ? "Vollbild (Ausgefüllt)" : "Standard (16:9)")
+                            } label: {
+                                Image(systemName: isAspectFill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(isAspectFill ? Theme.Colors.accentLive : Theme.Colors.textPrimary)
+                                    .padding(8)
+                                    .background(Color.black.opacity(0.65), in: Circle())
+                                    .overlay(Circle().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+
+                            // Stream Telemetry Inspector Toggle
+                            Button {
+                                triggerHaptic(.light)
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    showInspector.toggle()
+                                }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    PulsingLiveDot(size: 6)
+                                    Text("LIVE")
+                                        .font(.caption.bold().monospaced())
+                                        .foregroundStyle(Theme.Colors.accentLive)
+                                        .lineLimit(1)
+
+                                    Image(systemName: "info.circle")
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                }
+                                .fixedSize()
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(Color.black.opacity(0.65), in: Capsule())
+                                .overlay(Capsule().strokeBorder(Theme.Colors.accentLive.opacity(0.4), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+
+                            // Live Record Button
+                            Button {
+                                triggerHaptic(.medium)
+                                Task {
+                                    let ok = await model.recordLiveNow(channel: currentChannel)
+                                    if ok {
+                                        LiveActivityManager.shared.updateActivity(
+                                            nowNext: nowNext,
+                                            isRecording: true,
+                                            isDirectStream: isDirectStream,
+                                            channelNumber: currentChannel.number
+                                        )
+                                    }
+                                    displayZapToast(ok ? "🔴 Aufnahme gestartet: \(nowNext?.now?.title ?? currentChannel.name)" : "Fehler beim Starten der Aufnahme")
+                                }
+                            } label: {
+                                Image(systemName: "record.circle")
+                                    .font(.title3)
+                                    .foregroundStyle(Theme.Colors.statusError)
+                                    .padding(6)
+                                    .background(Color.black.opacity(0.65), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+
+                            // Quick EPG Button
+                            Button {
+                                triggerHaptic(.light)
+                                showMiniEPG = true
+                            } label: {
+                                Image(systemName: "list.bullet.rectangle")
+                                    .font(.title3)
+                                    .foregroundStyle(Theme.Colors.textPrimary.opacity(0.9))
+                                    .padding(6)
+                                    .background(Color.black.opacity(0.65), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, isLandscape ? max(20, geometry.safeAreaInsets.leading) : 16)
+                        .padding(.top, isLandscape ? max(10, geometry.safeAreaInsets.top) : 16)
+                        .padding(.bottom, 12)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.black.opacity(0.85), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                        // Stream Telemetry Inspector Panel
+                        if showInspector {
+                            StreamInspectorOverlay(
+                                channel: currentChannel,
+                                liveStream: model.liveStream
+                            )
+                            .padding(.horizontal, isLandscape ? max(24, geometry.safeAreaInsets.leading) : 16)
+                            .transition(.scale(scale: 0.95).combined(with: .opacity))
                         }
 
                         Spacer()
 
-                        // Stream Telemetry Inspector Toggle
-                        Button {
-                            triggerHaptic(.light)
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                showInspector.toggle()
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                PulsingLiveDot(size: 6)
-                                Text("LIVE")
-                                    .font(.caption.bold().monospaced())
-                                    .foregroundStyle(Theme.Colors.accentLive)
+                        // MARK: - Adaptive Bottom Bar (Portrait Card vs Landscape Slim HUD)
+                        if isLandscape {
+                            // Sleek, unobtrusive Landscape HUD
+                            VStack(spacing: 6) {
+                                HStack(spacing: 12) {
+                                    if let now = nowNext?.now {
+                                        PulsingLiveDot(size: 5)
+                                        Text(now.title)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(Theme.Colors.textPrimary)
+                                            .lineLimit(1)
 
-                                Image(systemName: "info.circle")
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.Colors.textSecondary)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
-                            .overlay(Capsule().strokeBorder(Theme.Colors.accentLive.opacity(0.3), lineWidth: 1))
-                        }
-
-                        // Live Record Button
-                        Button {
-                            triggerHaptic(.medium)
-                            Task {
-                                let ok = await model.recordLiveNow(channel: currentChannel)
-                                if ok {
-                                    LiveActivityManager.shared.updateActivity(
-                                        nowNext: nowNext,
-                                        isRecording: true,
-                                        isDirectStream: isDirectStream,
-                                        channelNumber: currentChannel.number
-                                    )
-                                }
-                                displayZapToast(ok ? "🔴 Aufnahme gestartet: \(nowNext?.now?.title ?? currentChannel.name)" : "Fehler beim Starten der Aufnahme")
-                            }
-                        } label: {
-                            Image(systemName: "record.circle")
-                                .font(.title3)
-                                .foregroundStyle(Theme.Colors.statusError)
-                        }
-
-                        // Quick EPG Button
-                        Button {
-                            triggerHaptic(.light)
-                            showMiniEPG = true
-                        } label: {
-                            Image(systemName: "list.bullet.rectangle")
-                                .font(.title3)
-                                .foregroundStyle(Theme.Colors.textPrimary.opacity(0.85))
-                        }
-                    }
-                    .padding()
-                    .background(
-                        LinearGradient(
-                            colors: [Color.black.opacity(0.85), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-
-                    // Stream Telemetry Inspector Panel
-                    if showInspector {
-                        StreamInspectorOverlay(
-                            channel: currentChannel,
-                            liveStream: model.liveStream
-                        )
-                        .padding(.horizontal, 16)
-                        .transition(.scale(scale: 0.95).combined(with: .opacity))
-                    }
-
-                    Spacer()
-
-                    // Bottom Bar (Now/Next Info & Zapping Bar)
-                    VStack(spacing: 8) {
-                        if let now = nowNext?.now {
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    PulsingLiveDot(size: 6)
-                                    Text(now.title)
-                                        .font(.headline)
-                                        .foregroundStyle(Theme.Colors.textPrimary)
-                                        .lineLimit(1)
+                                        if let remaining = now.remainingMinutes(at: .now) {
+                                            Text("• noch \(remaining)m")
+                                                .font(.caption.monospacedDigit().weight(.medium))
+                                                .foregroundStyle(Theme.Colors.accentLive)
+                                        }
+                                    } else {
+                                        Text(currentChannel.name)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(Theme.Colors.textPrimary)
+                                    }
 
                                     Spacer()
 
-                                    if let remaining = now.remainingMinutes(at: .now) {
-                                        Text("noch \(remaining) Min.")
-                                            .font(.caption.monospacedDigit().weight(.medium))
-                                            .foregroundStyle(Theme.Colors.accentLive)
+                                    if let next = nowNext?.next {
+                                        HStack(spacing: 4) {
+                                            Text("Danach:")
+                                                .font(.caption2.bold())
+                                                .foregroundStyle(Theme.Colors.textTertiary)
+                                            Text(next.title)
+                                                .font(.caption2)
+                                                .foregroundStyle(Theme.Colors.textSecondary)
+                                                .lineLimit(1)
+                                        }
                                     }
                                 }
 
-                                if let description = now.description {
-                                    Text(description)
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.Colors.textSecondary)
-                                        .lineLimit(2)
-                                }
-
-                                if let fraction = now.progress(at: .now) {
+                                if let fraction = nowNext?.now?.progress(at: .now) {
                                     ProgressView(value: fraction)
                                         .progressViewStyle(.linear)
                                         .tint(Theme.Colors.accentLive)
                                 }
 
-                                if let next = nowNext?.next {
-                                    HStack(spacing: 6) {
-                                        Text("DANACH:")
-                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(Theme.Colors.textTertiary)
-
-                                        Text(next.title)
-                                            .font(.caption2)
-                                            .foregroundStyle(Theme.Colors.textSecondary)
-                                            .lineLimit(1)
-
-                                        Spacer()
-
-                                        Text(next.formattedTimeRange)
-                                            .font(.system(size: 9, design: .monospaced))
-                                            .foregroundStyle(Theme.Colors.textTertiary)
+                                HStack {
+                                    Button { zapPrevious() } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "chevron.left")
+                                            Text("Vorheriger")
+                                        }
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(Theme.Colors.surfaceGlass, in: Capsule())
                                     }
-                                    .padding(.top, 2)
+                                    .buttonStyle(.plain)
+
+                                    Spacer()
+
+                                    Text("Wischen zum Zappen • Doppeltippen für Vollbild")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+
+                                    Spacer()
+
+                                    Button { zapNext() } label: {
+                                        HStack(spacing: 4) {
+                                            Text("Nächster")
+                                            Image(systemName: "chevron.right")
+                                        }
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
-                            .padding(14)
-                            .glassCard(cornerRadius: 12)
-                        }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .glassCard(cornerRadius: 14)
+                            .padding(.horizontal, max(24, geometry.safeAreaInsets.leading))
+                            .padding(.bottom, max(8, geometry.safeAreaInsets.bottom))
+                        } else {
+                            // Portrait Rich Info Card
+                            VStack(spacing: 8) {
+                                if let now = nowNext?.now {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            PulsingLiveDot(size: 6)
+                                            Text(now.title)
+                                                .font(.headline)
+                                                .foregroundStyle(Theme.Colors.textPrimary)
+                                                .lineLimit(1)
 
-                        // Bottom Quick Controls
-                        HStack {
-                            Button {
-                                zapPrevious()
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "chevron.left")
-                                    Text("Vorheriger")
+                                            Spacer()
+
+                                            if let remaining = now.remainingMinutes(at: .now) {
+                                                Text("noch \(remaining) Min.")
+                                                    .font(.caption.monospacedDigit().weight(.medium))
+                                                    .foregroundStyle(Theme.Colors.accentLive)
+                                            }
+                                        }
+
+                                        if let description = now.description {
+                                            Text(description)
+                                                .font(.caption)
+                                                .foregroundStyle(Theme.Colors.textSecondary)
+                                                .lineLimit(2)
+                                        }
+
+                                        if let fraction = now.progress(at: .now) {
+                                            ProgressView(value: fraction)
+                                                .progressViewStyle(.linear)
+                                                .tint(Theme.Colors.accentLive)
+                                        }
+
+                                        if let next = nowNext?.next {
+                                            HStack(spacing: 6) {
+                                                Text("DANACH:")
+                                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                    .foregroundStyle(Theme.Colors.textTertiary)
+
+                                                Text(next.title)
+                                                    .font(.caption2)
+                                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                                    .lineLimit(1)
+
+                                                Spacer()
+
+                                                Text(next.formattedTimeRange)
+                                                    .font(.system(size: 9, design: .monospaced))
+                                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                            }
+                                            .padding(.top, 2)
+                                        }
+                                    }
+                                    .padding(14)
+                                    .glassCard(cornerRadius: 12)
                                 }
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Theme.Colors.surfaceGlass, in: Capsule())
-                            }
 
-                            Spacer()
+                                // Bottom Quick Controls
+                                HStack {
+                                    Button { zapPrevious() } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "chevron.left")
+                                            Text("Vorheriger")
+                                        }
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
 
-                            Text("Wischen zum Zappen")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.textTertiary)
+                                    Spacer()
 
-                            Spacer()
+                                    Text("Wischen zum Zappen")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(Theme.Colors.textTertiary)
 
-                            Button {
-                                zapNext()
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Text("Nächster")
-                                    Image(systemName: "chevron.right")
+                                    Spacer()
+
+                                    Button { zapNext() } label: {
+                                        HStack(spacing: 4) {
+                                            Text("Nächster")
+                                            Image(systemName: "chevron.right")
+                                        }
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Theme.Colors.surfaceGlass, in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Theme.Colors.surfaceGlass, in: Capsule())
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 24)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 24)
+                    .transition(.opacity)
                 }
-                .transition(.opacity)
             }
         }
         .task(id: currentChannel.id) {
@@ -545,6 +677,33 @@ struct PlayerScreen: View {
     }
 }
 
+// MARK: - Native Video Player (AVPlayerViewController wrapper)
+
+struct NativeVideoPlayerView: UIViewControllerRepresentable {
+
+    let player: AVPlayer
+    let videoGravity: AVLayerVideoGravity
+    var showsNativeControls: Bool = false
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.showsPlaybackControls = showsNativeControls
+        controller.videoGravity = videoGravity
+        controller.allowsPictureInPicturePlayback = true
+        controller.updatesNowPlayingInfoCenter = false
+        return controller
+    }
+
+    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+        if controller.player !== player {
+            controller.player = player
+        }
+        controller.videoGravity = videoGravity
+        controller.showsPlaybackControls = showsNativeControls
+    }
+}
+
 // MARK: - Mini-EPG Drawer Sheet
 
 struct MiniEPGDrawer: View {
@@ -681,52 +840,49 @@ struct StreamInspectorOverlay: View {
 
             Divider().overlay(Theme.Colors.borderSubtle)
 
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
                 GridRow {
-                    Text("Kanal:")
+                    Text("Sender")
+                        .font(.caption2)
                         .foregroundStyle(Theme.Colors.textTertiary)
-                    Text("\(channel.name) (#\(channel.number ?? "–"))")
+                    Text(channel.name)
+                        .font(.caption2.bold())
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
+
                 GridRow {
-                    Text("Streaming-Modus:")
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                    Text(NetworkMonitor.shared.currentType == .wifi ? "1:1 Direct Stream (Passthrough)" : "Adaptive Transcode (AV1/HEVC)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.statusSuccess)
-                }
-                GridRow {
-                    Text("Netzwerk:")
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                    Text("\(NetworkMonitor.shared.currentType.rawValue.uppercased()) • \(NetworkMonitor.shared.isExpensive ? "Metered" : "Unmetered")")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                }
-                GridRow {
-                    Text("ServiceRef:")
+                    Text("ServiceRef")
+                        .font(.caption2)
                         .foregroundStyle(Theme.Colors.textTertiary)
                     Text(channel.serviceRef)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
                 }
-                GridRow {
-                    Text("Session ID:")
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                    Text(liveStream?.sessionID ?? "–")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.textSecondary)
+
+                if let sessionID = liveStream?.sessionID {
+                    GridRow {
+                        Text("Session ID")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Text(sessionID)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.accentAction)
+                            .lineLimit(1)
+                    }
                 }
+
                 GridRow {
-                    Text("Auth Ticket:")
+                    Text("Decoder Engine")
+                        .font(.caption2)
                         .foregroundStyle(Theme.Colors.textTertiary)
-                    Text("xg2g_playback (4h Session-Bound)")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.accentAction)
+                    Text("AVSampleBufferDisplayLayer (Hardware)")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.statusSuccess)
                 }
             }
-            .font(.caption)
         }
         .padding(12)
-        .glassCard(cornerRadius: 10)
+        .glassCard(cornerRadius: 12)
     }
 }
