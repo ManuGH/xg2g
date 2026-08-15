@@ -80,9 +80,9 @@ func TestPairingRoutes_FlowAndAuthBoundaries(t *testing.T) {
 	if exchangeResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected exchange pairing 200, got %d", exchangeResp.StatusCode)
 	}
-	var exchanged exchangePairingResponse
+	var exchanged ExchangePairingResponse
 	decodeJSONResponse(t, exchangeResp, &exchanged)
-	if exchanged.DeviceID == "" || exchanged.DeviceGrant == "" || exchanged.AccessToken == "" {
+	if exchanged.DeviceId == "" || exchanged.DeviceGrant == "" || exchanged.AccessToken == "" {
 		t.Fatalf("expected exchange credentials, got %#v", exchanged)
 	}
 
@@ -196,7 +196,7 @@ func TestPairingRoutes_ExchangedAccessTokenAuthorizesProtectedRoute(t *testing.T
 	if exchangeResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected exchange pairing 200, got %d", exchangeResp.StatusCode)
 	}
-	var exchanged exchangePairingResponse
+	var exchanged ExchangePairingResponse
 	decodeJSONResponse(t, exchangeResp, &exchanged)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/healthz", nil)

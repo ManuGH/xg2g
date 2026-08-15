@@ -41,7 +41,7 @@ func TestDeviceSessionRoute_RefreshIssuesAccessTokenAndRotatesGrant(t *testing.T
 	currentNow = currentNow.Add(2 * time.Minute)
 
 	refreshResp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/device/session", map[string]any{
-		"deviceGrantId": exchanged.DeviceGrantID,
+		"deviceGrantId": exchanged.DeviceGrantId,
 		"deviceGrant":   exchanged.DeviceGrant,
 	}, nil, false)
 	if refreshResp.StatusCode != http.StatusOK {
@@ -82,7 +82,7 @@ func TestDeviceSessionRoute_SecretMismatchIsForbidden(t *testing.T) {
 	handler, exchanged := pairAndExchangeDevice(t, srv)
 
 	resp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/device/session", map[string]any{
-		"deviceGrantId": exchanged.DeviceGrantID,
+		"deviceGrantId": exchanged.DeviceGrantId,
 		"deviceGrant":   "wrong-grant",
 	}, nil, false)
 	assertProblemDetails(t, resp, http.StatusForbidden, "auth/device_session/forbidden")
@@ -167,7 +167,7 @@ func TestWebBootstrapRoute_FailsWhenSourceSessionIsRevokedBeforeCompletion(t *te
 	var started createWebBootstrapResponse
 	decodeJSONResponse(t, startResp, &started)
 
-	if _, err := store.UpdateAccessSession(context.Background(), exchanged.AccessSessionID, func(current *deviceauthmodel.AccessSessionRecord) error {
+	if _, err := store.UpdateAccessSession(context.Background(), exchanged.AccessSessionId, func(current *deviceauthmodel.AccessSessionRecord) error {
 		revokedAt := currentNow
 		current.RevokedAt = &revokedAt
 		return nil
@@ -219,7 +219,7 @@ func TestDeviceSessionRoute_ReturnsPublishedEndpoints(t *testing.T) {
 	currentNow = currentNow.Add(2 * time.Minute)
 
 	refreshResp := doJSONRequest(t, handler, http.MethodPost, "/api/v3/auth/device/session", map[string]any{
-		"deviceGrantId": exchanged.DeviceGrantID,
+		"deviceGrantId": exchanged.DeviceGrantId,
 		"deviceGrant":   exchanged.DeviceGrant,
 	}, nil, false)
 	if refreshResp.StatusCode != http.StatusOK {
@@ -267,24 +267,22 @@ func TestWebBootstrapRoute_BlocksWhenPublicWebContractIsBroken(t *testing.T) {
 	assertProblemDetails(t, resp, http.StatusServiceUnavailable, "connectivity/contract_blocked")
 }
 
-func pairAndExchangeDevice(t *testing.T, srv *Server) (http.Handler, exchangePairingResponse) {
-	t.Helper()
-
+func pairAndExchangeDevice(t *testing.T, srv *Server) (http.Handler, ExchangePairingResponse) {
+	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:admin"})
 	handler, err := newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
 	if err != nil {
 		t.Fatalf("build handler: %v", err)
 	}
 
 	startResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/start", map[string]any{
-		"deviceType": "android_tablet",
+		"deviceType": "android_tv",
 	})
-	if startResp.StatusCode != http.StatusCreated {
-		t.Fatalf("expected start pairing 201, got %d", startResp.StatusCode)
+	if startResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected start pairing 200, got %d", startResp.StatusCode)
 	}
 	var started startPairingResponse
 	decodeJSONResponse(t, startResp, &started)
 
-	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:admin"})
 	authedHandler, err := newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
 	if err != nil {
 		t.Fatalf("build authed handler: %v", err)
@@ -306,7 +304,7 @@ func pairAndExchangeDevice(t *testing.T, srv *Server) (http.Handler, exchangePai
 		t.Fatalf("expected exchange pairing 200, got %d", exchangeResp.StatusCode)
 	}
 
-	var exchanged exchangePairingResponse
+	var exchanged ExchangePairingResponse
 	decodeJSONResponse(t, exchangeResp, &exchanged)
 	return handler, exchanged
 }
