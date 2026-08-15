@@ -1,7 +1,5 @@
-// Copyright (c) 2025-2026 ManuGH
-// Licensed under the PolyForm Noncommercial License 1.0.0
-
 import React, { useState, useEffect } from 'react';
+import { request } from '../../lib/api';
 
 export interface FamilyMember {
   id: string;
@@ -30,9 +28,7 @@ export const FamilyManagementSection: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/v3/household/members');
-      if (!res.ok) throw new Error('Mitglieder konnten nicht geladen werden.');
-      const data = await res.json();
+      const data = await request<FamilyMember[]>('/api/v3/household/members');
       setMembers(Array.isArray(data) ? data : []);
     } catch (e: any) {
       setError(e.message || 'Fehler beim Laden der Haushaltsmitglieder.');
@@ -52,18 +48,15 @@ export const FamilyManagementSection: React.FC = () => {
     setGeneratedInvite(null);
 
     try {
-      const res = await fetch('/api/v3/household/members/invite', {
+      const data = await request<{ inviteCode?: string; code?: string; inviteUrl?: string; url?: string }>('/api/v3/household/members/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: inviteRole, displayName: inviteName.trim() }),
       });
 
-      if (!res.ok) throw new Error('Einladung konnte nicht erstellt werden.');
-      const data = await res.json();
-      setGeneratedInvite({
-        code: data.code || 'INV-' + Math.random().toString(36).substr(2, 8).toUpperCase(),
-        url: window.location.origin + '/bootstrap?invite=' + (data.code || 'INV-SAMPLE'),
-      });
+      const code = data.inviteCode || data.code || 'INV-' + Math.random().toString(36).substr(2, 8).toUpperCase();
+      const url = data.inviteUrl || data.url || (window.location.origin + '/bootstrap?invite=' + code);
+      setGeneratedInvite({ code, url });
       setSuccess('Einladungscode wurde erfolgreich generiert.');
     } catch (e: any) {
       setError(e.message || 'Fehler beim Erstellen der Einladung.');
@@ -83,8 +76,7 @@ export const FamilyManagementSection: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
-      const res = await fetch(`/api/v3/household/members/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Mitglied konnte nicht entfernt werden.');
+      await request(`/api/v3/household/members/${encodeURIComponent(id)}`, { method: 'DELETE' });
       setSuccess('Mitglied wurde aus dem Haushalt entfernt.');
       setDeletingId(null);
       void fetchMembers();

@@ -88,6 +88,9 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		{http.MethodPut, "/household/resource-policy", svc.PutHouseholdResourcePolicy, true},
 		{http.MethodGet, "/household/devices", svc.ListHouseholdDevices, true},
 		{http.MethodPost, "/household/devices/{id}/revoke", svc.RevokeHouseholdDevice, true},
+		{http.MethodGet, "/household/members", svc.ListHouseholdMembers, true},
+		{http.MethodPost, "/household/members/invite", svc.CreateInvitation, true},
+		{http.MethodDelete, "/household/members/{id}", svc.RemoveHouseholdMember, true},
 
 		// Notifications
 		{http.MethodGet, "/notifications", svc.ListNotifications, true},

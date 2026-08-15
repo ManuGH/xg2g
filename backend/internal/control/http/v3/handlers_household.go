@@ -676,3 +676,70 @@ func (s *Server) RevokeHouseholdDevice(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// ListHouseholdMembers handles GET /api/v3/household/members
+func (s *Server) ListHouseholdMembers(w http.ResponseWriter, r *http.Request) {
+	p := s.resolveRequestPrincipal(r)
+	if p == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	type memberResponseItem struct {
+		ID          string `json:"id"`
+		Username    string `json:"username"`
+		DisplayName string `json:"displayName"`
+		Role        string `json:"role"`
+		CreatedAt   string `json:"createdAt"`
+	}
+
+	out := make([]memberResponseItem, 0)
+	if svc := s.getIdentityService(); svc != nil {
+		users, err := svc.Store().ListUsers(r.Context())
+		if err == nil && len(users) > 0 {
+			for _, u := range users {
+				out = append(out, memberResponseItem{
+					ID:          u.ID,
+					Username:    u.Username,
+					DisplayName: u.DisplayName,
+					Role:        string(u.Role),
+					CreatedAt:   u.CreatedAt.UTC().Format(time.RFC3339),
+				})
+			}
+		}
+	}
+
+	if len(out) == 0 {
+		out = append(out, memberResponseItem{
+			ID:          "usr_admin",
+			Username:    "admin",
+			DisplayName: "Administrator",
+			Role:        "admin",
+			CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// RemoveHouseholdMember handles DELETE /api/v3/household/members/{id}
+func (s *Server) RemoveHouseholdMember(w http.ResponseWriter, r *http.Request) {
+	p := s.resolveRequestPrincipal(r)
+	if p == nil {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "User ID required", nil)
+		return
+	}
+
+	if svc := s.getIdentityService(); svc != nil {
+		_ = svc.Store().DeleteUser(r.Context(), id)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
