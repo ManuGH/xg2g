@@ -319,9 +319,35 @@ final class AppModel {
     func beginPairing() async -> EnrollmentCoordinator.Invitation? {
         guard let enrollment else { return nil }
         do {
+            lastError = nil
             return try await enrollment.startPairing(deviceName: Self.deviceName, deviceType: Self.deviceType)
+        } catch let apiErr as APIError {
+            switch apiErr {
+            case .problem(let prob):
+                lastError = prob.detail ?? prob.title
+            case .http(let status, _, let body):
+                lastError = "Server antwortete mit HTTP \(status): \(body)"
+            case .transport(let tr):
+                switch tr {
+                case .offline:
+                    lastError = "Keine Netzwerkverbindung oder Server nicht erreichbar."
+                case .timedOut:
+                    lastError = "Zeitüberschreitung beim Verbinden mit \(serverURLString)."
+                case .cannotConnect:
+                    lastError = "Verbindung zu \(serverURLString) fehlgeschlagen. Bitte Server-Adresse prüfen."
+                case .tls:
+                    lastError = "Sichere TLS/HTTPS-Verbindung fehlgeschlagen."
+                default:
+                    lastError = "Netzwerkfehler: \(tr)"
+                }
+            case .unexpectedPayload(let payload):
+                lastError = "Unerwartete Serverantwort (Status \(payload.status))."
+            case .invalidEndpoint(let path):
+                lastError = "Ungültiger API-Pfad: \(path)"
+            }
+            return nil
         } catch {
-            lastError = "The server would not start a pairing."
+            lastError = "Fehler bei der Kopplung: \(error.localizedDescription)"
             return nil
         }
     }
@@ -339,8 +365,18 @@ final class AppModel {
             lastError = nil
             await loadInitialData()
         } catch {
-            lastError = "Pairing could not be completed."
+            lastError = "Pairing could not be completed: \(error.localizedDescription)"
         }
+    }
+
+    func changeServer() {
+        addressStore.clear()
+        address = nil
+        identity = nil
+        enrollment = nil
+        session = nil
+        lastError = nil
+        state = .needsServer
     }
 
     // MARK: - Data Loading
