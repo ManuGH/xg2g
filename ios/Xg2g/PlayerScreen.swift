@@ -325,6 +325,13 @@ struct PlayerScreen: View {
         player?.pause()
         player = nil
 
+        AudioSessionManager.shared.configureForPlayback()
+        NowPlayingManager.shared.setupRemoteCommands()
+        NowPlayingManager.shared.onNextChannel = { [self] in zapNext() }
+        NowPlayingManager.shared.onPreviousChannel = { [self] in zapPrevious() }
+        NowPlayingManager.shared.onStop = { [self] in dismiss() }
+        NowPlayingManager.shared.update(channel: channel, nowEntry: nowNext?.now)
+
         await model.play(channel)
 
         guard let stream = model.liveStream else {
@@ -340,6 +347,7 @@ struct PlayerScreen: View {
         guard newChannel.id != currentChannel.id else { return }
         triggerHaptic(.medium)
         currentChannel = newChannel
+        NowPlayingManager.shared.update(channel: newChannel, nowEntry: model.schedule[newChannel.serviceRef]?.now)
         displayZapToast("Kanal: \(newChannel.name)")
     }
 
@@ -390,6 +398,8 @@ struct PlayerScreen: View {
     private func teardownPlayer() {
         hideControlsTask?.cancel()
         hideZapNoticeTask?.cancel()
+        NowPlayingManager.shared.clear()
+        AudioSessionManager.shared.deactivate()
         player?.pause()
         player = nil
         Task { await model.stopPlayback() }

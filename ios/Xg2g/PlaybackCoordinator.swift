@@ -80,7 +80,13 @@ actor PlaybackCoordinator {
             APIRequest(
                 method: .post,
                 path: "live/stream-info",
-                body: try Self.encode(PlaybackWire.StreamInfoRequest(serviceRef: serviceRef)),
+                body: try Self.encode(
+                    PlaybackWire.StreamInfoRequest(
+                        serviceRef: serviceRef,
+                        networkType: NetworkMonitor.shared.currentType.rawValue,
+                        isMetered: NetworkMonitor.shared.isExpensive
+                    )
+                ),
                 contentType: "application/json"
             )
         )
@@ -171,6 +177,11 @@ actor PlaybackCoordinator {
 enum PlaybackWire {
 
     struct StreamInfoRequest: Encodable, Sendable {
+        struct NetworkContext: Encodable, Sendable {
+            let kind: String
+            let metered: Bool
+        }
+
         struct Capabilities: Encodable, Sendable {
             let capabilitiesVersion = 3
             let container = ["fmp4", "hls"]
@@ -178,10 +189,18 @@ enum PlaybackWire {
             let audioCodecs = ["aac", "ac3", "mp2"]
             let supportsHls = true
             let allowTranscode = true
+            let networkContext: NetworkContext
         }
 
         let serviceRef: String
-        let capabilities = Capabilities()
+        let capabilities: Capabilities
+
+        init(serviceRef: String, networkType: String = "wifi", isMetered: Bool = false) {
+            self.serviceRef = serviceRef
+            self.capabilities = Capabilities(
+                networkContext: NetworkContext(kind: networkType, metered: isMetered)
+            )
+        }
     }
 
     struct StreamInfoResponse: Decodable, Sendable {
