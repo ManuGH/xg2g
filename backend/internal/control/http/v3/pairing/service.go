@@ -525,15 +525,6 @@ func buildQRPayload(pairingID, userCode string) string {
 	return fmt.Sprintf("xg2g://pair?pairing_id=%s&user_code=%s", pairingID, userCode)
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
 func cloneTime(value *time.Time) *time.Time {
 	if value == nil {
 		return nil
