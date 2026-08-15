@@ -14,6 +14,7 @@ import (
 	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
 	connectivitydomain "github.com/ManuGH/xg2g/internal/domain/connectivity"
 	deviceauthmodel "github.com/ManuGH/xg2g/internal/domain/deviceauth/model"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
@@ -30,6 +31,11 @@ type approvePairingRequest struct {
 
 type pairingSecretRequest struct {
 	PairingSecret string `json:"pairingSecret"`
+	// DeviceJWK is the device's P-256 public key. Required: without it there is
+	// no cryptographic device identity to bind the grant to, so no grant is
+	// issued. The server derives the thumbprint; a client-supplied one is never
+	// trusted.
+	DeviceJWK identity.JWKECPublicKey `json:"deviceJwk"`
 }
 
 type startPairingResponse struct {

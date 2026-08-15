@@ -102,7 +102,7 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Issue DPoP-bound Device Grant & Access Token
-	grantRes, err := svc.IssueDeviceGrant(r.Context(), user.ID, req.DeviceName, req.Platform, proofClaims.Header.JWK, req.Scopes)
+	grantRes, err := svc.IssueDeviceGrant(r.Context(), user.ID, req.DeviceName, req.Platform, proofClaims.Header.JWK, req.Scopes, identity.GrantTypePasskeyEnrollment)
 	if err != nil {
 		log.FromContext(r.Context()).Error().Err(err).Msg("failed to issue device grant")
 		writeRegisteredProblem(w, r, http.StatusInternalServerError, "auth/grant_failed", "Grant Failed", problemcode.CodeInternalServerError, "Failed to issue device grant", nil)

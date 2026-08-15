@@ -737,7 +737,7 @@ type DeviceGrantResult struct {
 }
 
 // IssueDeviceGrant registers/updates the Android device and issues a DPoP-bound Grant & Access Token.
-func (s *Service) IssueDeviceGrant(ctx context.Context, userID, deviceName, platform string, jwk JWKECPublicKey, scopes string) (*DeviceGrantResult, error) {
+func (s *Service) IssueDeviceGrant(ctx context.Context, userID, deviceName, platform string, jwk JWKECPublicKey, scopes string, grantType GrantType) (*DeviceGrantResult, error) {
 	jkt, err := ComputeJWKThumbprint(jwk)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute RFC 7638 JWK thumbprint: %w", err)
@@ -776,7 +776,7 @@ func (s *Service) IssueDeviceGrant(ctx context.Context, userID, deviceName, plat
 		DeviceID:  dev.ID,
 		UserID:    userID,
 		FamilyID:  familyID,
-		GrantType: "passkey_device_grant",
+		GrantType: grantType,
 		CreatedAt: now,
 	}
 
