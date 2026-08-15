@@ -311,3 +311,40 @@ struct TimersRepositoryTests {
     }
 }
 
+struct NowNextCountdownTests {
+
+    @Test func remainingMinutesComputesCorrectly() {
+        let start = Date(timeIntervalSince1970: 1000)
+        let end = Date(timeIntervalSince1970: 2200) // 20 minutes duration
+
+        let entry = NowNext.Entry(title: "Movie", description: nil, start: start, end: end)
+
+        // Mid-way at 1600 (10 minutes remaining)
+        let mid = Date(timeIntervalSince1970: 1600)
+        #expect(entry.remainingMinutes(at: mid) == 10)
+
+        // Before start -> nil
+        let before = Date(timeIntervalSince1970: 500)
+        #expect(entry.remainingMinutes(at: before) == nil)
+
+        // After end -> nil
+        let after = Date(timeIntervalSince1970: 3000)
+        #expect(entry.remainingMinutes(at: after) == nil)
+    }
+}
+
+@MainActor
+struct ChannelZappingNavigationTests {
+
+    @Test func zappingWrapsAroundProperly() {
+        let model = AppModel()
+        let c1 = Channel(id: "1", name: "ORF1", number: "1", serviceRef: "ref1", logoURL: nil)
+        let c2 = Channel(id: "2", name: "ORF2", number: "2", serviceRef: "ref2", logoURL: nil)
+        let c3 = Channel(id: "3", name: "ATV", number: "3", serviceRef: "ref3", logoURL: nil)
+
+        // In empty state
+        #expect(model.channelAfter(c1) == nil)
+        #expect(model.channelBefore(c1) == nil)
+    }
+}
+

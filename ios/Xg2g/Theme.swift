@@ -4,7 +4,7 @@
 
 import SwiftUI
 
-/// Broadcast Console 2026 Design Tokens
+/// Broadcast Console 2026 Design Tokens & Component Styles.
 /// Aligned 1:1 with `apps/webui/src/index.css`.
 enum Theme {
 
@@ -43,12 +43,40 @@ enum Theme {
 
         func body(content: Content) -> some View {
             content
+                .background(.ultraThinMaterial)
                 .background(Colors.surfaceGlass)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(Colors.borderSubtle, lineWidth: 1)
                 )
+        }
+    }
+}
+
+/// A softly pulsing broadcast amber dot for live status indicators.
+struct PulsingLiveDot: View {
+
+    @State private var isPulsing = false
+    var size: CGFloat = 8
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Theme.Colors.accentLive.opacity(0.35))
+                .frame(width: isPulsing ? size * 2.0 : size, height: isPulsing ? size * 2.0 : size)
+                .scaleEffect(isPulsing ? 1.2 : 0.8)
+                .opacity(isPulsing ? 0 : 0.8)
+
+            Circle()
+                .fill(Theme.Colors.accentLive)
+                .frame(width: size, height: size)
+        }
+        .frame(width: size * 2, height: size * 2)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: false)) {
+                isPulsing = true
+            }
         }
     }
 }

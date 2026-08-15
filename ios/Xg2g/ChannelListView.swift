@@ -164,10 +164,13 @@ struct ChannelRow: View {
                 }
 
                 if let now = nowNext?.now {
-                    Text(now.title)
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        PulsingLiveDot(size: 5)
+                        Text(now.title)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .lineLimit(1)
+                    }
 
                     if let fraction = now.progress(at: .now) {
                         HStack(spacing: 6) {
@@ -175,9 +178,15 @@ struct ChannelRow: View {
                                 .progressViewStyle(.linear)
                                 .tint(Theme.Colors.accentLive)
 
-                            Text("\(Int(fraction * 100))%")
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.textTertiary)
+                            if let remaining = now.remainingMinutes(at: .now) {
+                                Text("noch \(remaining)m")
+                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentLive)
+                            } else {
+                                Text("\(Int(fraction * 100))%")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            }
                         }
                     }
                 } else {

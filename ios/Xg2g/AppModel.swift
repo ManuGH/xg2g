@@ -122,6 +122,15 @@ final class AppModel {
         Self.deviceType.rawValue
     }
 
+    enum TimeFilter: String, CaseIterable, Identifiable, Sendable {
+        case now = "Jetzt"
+        case primeTime = "Heute 20:15"
+
+        var id: String { rawValue }
+    }
+
+    var selectedTimeFilter: TimeFilter = .now
+
     /// Channels filtered by selected bouquet and search query.
     var filteredChannels: [Channel] {
         var result = channels
@@ -134,6 +143,24 @@ final class AppModel {
             }
         }
         return result
+    }
+
+    /// Next channel in the active list (wraps around).
+    func channelAfter(_ channel: Channel) -> Channel? {
+        let list = filteredChannels
+        guard !list.isEmpty else { return nil }
+        guard let idx = list.firstIndex(where: { $0.id == channel.id }) else { return list.first }
+        let nextIdx = (idx + 1) % list.count
+        return list[nextIdx]
+    }
+
+    /// Previous channel in the active list (wraps around).
+    func channelBefore(_ channel: Channel) -> Channel? {
+        let list = filteredChannels
+        guard !list.isEmpty else { return nil }
+        guard let idx = list.firstIndex(where: { $0.id == channel.id }) else { return list.last }
+        let prevIdx = (idx - 1 + list.count) % list.count
+        return list[prevIdx]
     }
 
     init(

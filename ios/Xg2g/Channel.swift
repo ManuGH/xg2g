@@ -41,6 +41,27 @@ struct NowNext: Equatable, Sendable {
             guard total > 0, now >= start, now <= end else { return nil }
             return now.timeIntervalSince(start) / total
         }
+
+        /// Minutes left in the currently running programme.
+        func remainingMinutes(at now: Date) -> Int? {
+            guard now >= start, now <= end else { return nil }
+            let secondsLeft = end.timeIntervalSince(now)
+            return max(1, Int(secondsLeft / 60))
+        }
+
+        var formattedEndTime: String {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            return formatter.string(from: end)
+        }
+
+        var formattedTimeRange: String {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            return "\(formatter.string(from: start)) – \(formatter.string(from: end))"
+        }
     }
 
     let serviceRef: String
