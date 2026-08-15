@@ -16,14 +16,14 @@ import { getStoredToken, setStoredToken, clearStoredToken } from '../../utils/to
 import { useAppContext } from '../../context/AppContext';
 
 export default function SecuritySettingsSection() {
-  const { setToken } = useAppContext();
+  const { auth, setToken } = useAppContext();
   const [passkeys, setPasskeys] = useState<PasskeyCredentialSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [tokenInput, setTokenInput] = useState('');
-  const [hasActiveToken, setHasActiveToken] = useState<boolean>(() => Boolean(getStoredToken()));
+  const [hasActiveToken, setHasActiveToken] = useState<boolean>(() => Boolean(auth.token || auth.isAuthenticated || getStoredToken()));
 
   // In-UI action confirmations (No native browser confirm popups!)
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -49,8 +49,11 @@ export default function SecuritySettingsSection() {
   };
 
   useEffect(() => {
+    if (auth.token || auth.isAuthenticated) {
+      setHasActiveToken(true);
+    }
     void fetchPasskeys();
-  }, []);
+  }, [auth.token, auth.isAuthenticated]);
 
   const handleSaveAdminToken = () => {
     const token = tokenInput.trim();
