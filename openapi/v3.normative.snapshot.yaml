@@ -293,13 +293,39 @@ components:
         requestedPolicyProfile:
           type: string
 
+    ECPublicKeyJWK:
+      type: object
+      description: |
+        P-256 public key in JWK form. The server computes the RFC 7638
+        thumbprint itself; a client-supplied thumbprint is never trusted.
+
+        additionalProperties is false so private key parameters (notably "d")
+        are refused by the contract, not merely by the decoder.
+      additionalProperties: false
+      required: [kty, crv, x, y]
+      properties:
+        kty:
+          type: string
+          enum: [EC]
+        crv:
+          type: string
+          enum: [P-256]
+        x:
+          type: string
+          description: Unpadded base64url; must decode to exactly 32 bytes.
+        y:
+          type: string
+          description: Unpadded base64url; must decode to exactly 32 bytes.
+
     PairingSecretRequest:
       type: object
       additionalProperties: false
-      required: [pairingSecret]
+      required: [pairingSecret, deviceJwk]
       properties:
         pairingSecret:
           type: string
+        deviceJwk:
+          $ref: "#/components/schemas/ECPublicKeyJWK"
 
     ApprovePairingRequest:
       type: object

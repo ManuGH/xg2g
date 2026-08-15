@@ -315,7 +315,7 @@ func TestIdentityService_AndroidDeviceGrantAndDPoPBinding(t *testing.T) {
 	require.NoError(t, err)
 
 	// Issue Device Grant
-	grantRes, err := svc.IssueDeviceGrant(ctx, user.ID, "Pixel 8", "android", deviceJWK, "api playback")
+	grantRes, err := svc.IssueDeviceGrant(ctx, user.ID, "Pixel 8", "android", deviceJWK, "api playback", identity.GrantTypePasskeyEnrollment)
 	require.NoError(t, err)
 	assert.Equal(t, "DPoP", grantRes.TokenType)
 	assert.NotEmpty(t, grantRes.AccessToken)
