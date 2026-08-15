@@ -283,10 +283,6 @@ final class AppModel {
         self.address = address
         self.identity = identity
 
-        let authorized = HTTPAPIClient(
-            address: address,
-            authorizer: DPoPRequestAuthorizer(identity: identity, credentials: credentials, keyStore: keyStore)
-        )
         let refreshClient = HTTPAPIClient(
             address: address,
             authorizer: DeviceProofAuthorizer(keyStore: keyStore)
@@ -294,6 +290,11 @@ final class AppModel {
 
         let sessionCoord = SessionCoordinator(identity: identity, api: refreshClient, credentials: credentials)
         self.session = sessionCoord
+
+        let authorized = HTTPAPIClient(
+            address: address,
+            authorizer: DPoPRequestAuthorizer(identity: identity, credentials: credentials, keyStore: keyStore, sessionCoordinator: sessionCoord)
+        )
 
         channelRepository = ChannelRepository(api: authorized, baseURL: address.rootURL)
         recordingsRepository = RecordingsRepository(api: authorized)
@@ -566,19 +567,53 @@ final class AppModel {
     private func handle(_ error: any Error) {
         if let apiError = error as? APIError {
             Task { await session?.noteRequestFailure(apiError) }
-            if case .problem(let problem) = apiError,
-               problem.code == SessionCoordinator.deviceReauthRequiredCode {
-                state = .needsRePairing
-                lastError = "This device has to be paired again."
+            switch apiError {
+            case .problem(let problem):
+                if problem.code == SessionCoordinator.deviceReauthRequiredCode {
+                    state = .needsRePairing
+                    lastError = "Dieses Gerät muss erneut gekoppelt werden."
+                    return
+                }
+                lastError = problem.detail ?? problem.title
+                return
+            case .http(let status, _, let preview):
+                if status == 401 {
+                    state = .needsRePairing
+                    lastError = "Authentifizierung abgelaufen. Bitte neu koppeln."
+                    return
+                }
+                lastError = "Server-Fehler (HTTP \(status)): \(preview)"
+                return
+            case .transport(let transport):
+                switch transport {
+                case .offline:
+                    lastError = "Keine Internetverbindung."
+                case .timedOut:
+                    lastError = "Zeitüberschreitung bei der Serververbindung."
+                case .cannotConnect:
+                    lastError = "Verbindung zum Server fehlgeschlagen."
+                case .tls:
+                    lastError = "TLS / Zertifikatsfehler bei Verbindung."
+                case .cancelled:
+                    lastError = "Anfrage abgebrochen."
+                case .other(let code):
+                    lastError = "Netzwerkfehler (Code \(code))."
+                }
+                return
+            case .invalidEndpoint(let path):
+                lastError = "Endpunkt nicht verfügbar (\(path))"
+                return
+            case .unexpectedPayload(let payload):
+                lastError = "Unerwartete Server-Antwort (Status \(payload.status))"
                 return
             }
         }
         if case SessionCoordinator.Failure.reauthenticationRequired = error {
             state = .needsRePairing
-            lastError = "This device has to be paired again."
+            lastError = "Dieses Gerät muss erneut gekoppelt werden."
             return
         }
-        lastError = "The server could not be reached."
+        lastError = error.localizedDescription
     }
 
     // MARK: - Device description

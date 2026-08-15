@@ -29,17 +29,20 @@ actor DPoPRequestAuthorizer: RequestAuthorizer {
     private let identity: ServerIdentity
     private let credentials: CredentialStore
     private let keyStore: DeviceKeyStore
+    private let sessionCoordinator: SessionCoordinator?
     private let now: @Sendable () -> Date
 
     init(
         identity: ServerIdentity,
         credentials: CredentialStore,
         keyStore: DeviceKeyStore,
+        sessionCoordinator: SessionCoordinator? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.identity = identity
         self.credentials = credentials
         self.keyStore = keyStore
+        self.sessionCoordinator = sessionCoordinator
         self.now = now
     }
 
@@ -48,12 +51,12 @@ actor DPoPRequestAuthorizer: RequestAuthorizer {
             throw Failure.malformedRequest
         }
 
-        guard let session = try await credentials.accessSession(for: identity),
-              session.isUsable(at: now())
-        else {
-            // Deliberately not "sign anyway and let the server decide": an
-            // expired token produces a guaranteed 401, and the caller needs to
-            // distinguish "refresh first" from "the server rejected us".
+        let session: AccessSession
+        if let stored = try await credentials.accessSession(for: identity), stored.isUsable(at: now()) {
+            session = stored
+        } else if let sessionCoordinator {
+            session = try await sessionCoordinator.validSession()
+        } else {
             throw Failure.noUsableSession
         }
 
