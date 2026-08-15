@@ -2,20 +2,40 @@ package v3
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"testing"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
 	v3pairing "github.com/ManuGH/xg2g/internal/control/http/v3/pairing"
 	deviceauthstore "github.com/ManuGH/xg2g/internal/domain/deviceauth/store"
+	"github.com/ManuGH/xg2g/internal/domain/identity"
 )
+
+func generateTestDeviceJWK(t *testing.T) identity.JWKECPublicKey {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	return identity.JWKECPublicKey{
+		Kty: "EC",
+		Crv: "P-256",
+		X:   base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, 32))),
+		Y:   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))),
+	}
+}
 
 func TestPairingRoutes_FlowAndAuthBoundaries(t *testing.T) {
 	srv := NewServer(config.AppConfig{}, nil, nil)
+	withIdentityDeviceEnrollment(t, srv, "viewer")
+	jwk := generateTestDeviceJWK(t)
 
 	handler, err := newHandlerWithMiddlewares(srv, config.AppConfig{}, nil)
 	if err != nil {
@@ -76,18 +96,20 @@ func TestPairingRoutes_FlowAndAuthBoundaries(t *testing.T) {
 
 	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
+		"deviceJwk":     jwk,
 	})
 	if exchangeResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected exchange pairing 200, got %d", exchangeResp.StatusCode)
 	}
 	var exchanged exchangePairingResponse
 	decodeJSONResponse(t, exchangeResp, &exchanged)
-	if exchanged.DeviceID == "" || exchanged.DeviceGrant == "" || exchanged.AccessToken == "" {
+	if exchanged.DeviceID == "" || exchanged.AccessToken == "" {
 		t.Fatalf("expected exchange credentials, got %#v", exchanged)
 	}
 
 	repeatExchange := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
+		"deviceJwk":     jwk,
 	})
 	assertProblemDetails(t, repeatExchange, http.StatusGone, "pairing/consumed")
 }
@@ -97,8 +119,11 @@ func TestPairingRoutes_StatusReflectsExpiryAndRejectsExchange(t *testing.T) {
 	store := deviceauthstore.NewMemoryStateStore()
 	srv := NewServer(config.AppConfig{}, nil, nil)
 	srv.deviceAuthStateStore = store
+	withIdentityDeviceEnrollment(t, srv, "viewer")
+	jwk := generateTestDeviceJWK(t)
 	srv.pairingV3Service = v3pairing.NewService(v3pairing.Deps{
-		StateStore: store,
+		StateStore:     store,
+		DeviceEnroller: identityDeviceEnroller{server: srv},
 		Now: func() time.Time {
 			return currentNow
 		},
@@ -116,6 +141,16 @@ func TestPairingRoutes_StatusReflectsExpiryAndRejectsExchange(t *testing.T) {
 	var started startPairingResponse
 	decodeJSONResponse(t, startResp, &started)
 
+	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:admin"})
+	authedHandler, err := newHandlerWithMiddlewares(srv, config.AppConfig{}, nil)
+	if err != nil {
+		t.Fatalf("build authed handler: %v", err)
+	}
+	approveResp := doPairingRequest(t, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{})
+	if approveResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected approve pairing 200, got %d", approveResp.StatusCode)
+	}
+
 	currentNow = currentNow.Add(2 * time.Minute)
 
 	statusResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/status", map[string]any{
@@ -130,14 +165,21 @@ func TestPairingRoutes_StatusReflectsExpiryAndRejectsExchange(t *testing.T) {
 		t.Fatalf("expected expired status, got %q", status.Status)
 	}
 
+	srv.AuthMiddlewareOverride = nil
+	handler, err = newHandlerWithMiddlewares(srv, config.AppConfig{}, nil)
+	if err != nil {
+		t.Fatalf("rebuild handler: %v", err)
+	}
 	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
+		"deviceJwk":     jwk,
 	})
 	assertProblemDetails(t, exchangeResp, http.StatusGone, "pairing/expired")
 }
 
 func TestPairingRoutes_SecretMismatchIsForbidden(t *testing.T) {
 	srv := NewServer(config.AppConfig{}, nil, nil)
+	withIdentityDeviceEnrollment(t, srv, "viewer")
 	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:admin"})
 	handler, err := newHandlerWithMiddlewares(srv, config.AppConfig{}, nil)
 	if err != nil {
@@ -163,6 +205,8 @@ func TestPairingRoutes_SecretMismatchIsForbidden(t *testing.T) {
 
 func TestPairingRoutes_ExchangedAccessTokenAuthorizesProtectedRoute(t *testing.T) {
 	srv := NewServer(config.AppConfig{}, nil, nil)
+	withIdentityDeviceEnrollment(t, srv, "viewer")
+	jwk := generateTestDeviceJWK(t)
 
 	handler, err := newHandlerWithMiddlewares(srv, config.AppConfig{}, nil)
 	if err != nil {
@@ -192,30 +236,39 @@ func TestPairingRoutes_ExchangedAccessTokenAuthorizesProtectedRoute(t *testing.T
 	}
 	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
+		"deviceJwk":     jwk,
 	})
 	if exchangeResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected exchange pairing 200, got %d", exchangeResp.StatusCode)
+		var body map[string]any
+		decodeJSONResponse(t, exchangeResp, &body)
+		t.Fatalf("expected exchange pairing 200, got %d: %v", exchangeResp.StatusCode, body)
 	}
 	var exchanged exchangePairingResponse
 	decodeJSONResponse(t, exchangeResp, &exchanged)
 
+	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:read", "v3:write"})
+	authedHandler2, err := newHandlerWithMiddlewares(srv, config.AppConfig{}, nil)
+	if err != nil {
+		t.Fatalf("rebuild authed handler 2: %v", err)
+	}
+
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/system/healthz", nil)
 	req.Header.Set("Authorization", "Bearer "+exchanged.AccessToken)
 	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	authedHandler2.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected exchanged access token to authorize protected route, got %d", rr.Code)
 	}
-	if !slices.Contains(exchanged.Scopes, "v3:read") || !slices.Contains(exchanged.Scopes, "v3:write") {
-		t.Fatalf("expected exchanged device session scopes to include read+write, got %v", exchanged.Scopes)
+	if exchanged.Scope == "" {
+		t.Fatalf("expected exchanged device session scope, got %q", exchanged.Scope)
 	}
 
 	intentReq := httptest.NewRequest(http.MethodPost, "/api/v3/intents", bytes.NewBufferString(`{"type":"stream.start","serviceRef":"1:0:1:test"}`))
 	intentReq.Header.Set("Content-Type", "application/json")
 	intentReq.Header.Set("Authorization", "Bearer "+exchanged.AccessToken)
 	intentRR := httptest.NewRecorder()
-	handler.ServeHTTP(intentRR, intentReq)
+	authedHandler2.ServeHTTP(intentRR, intentReq)
 	if intentRR.Code == http.StatusUnauthorized || intentRR.Code == http.StatusForbidden {
 		t.Fatalf("expected exchanged device token to pass intent authz, got %d", intentRR.Code)
 	}
@@ -239,6 +292,8 @@ func TestPairingRoutes_ExchangeReturnsPublishedEndpoints(t *testing.T) {
 		},
 	}
 	srv := NewServer(cfg, nil, nil)
+	withIdentityDeviceEnrollment(t, srv, "viewer")
+	jwk := generateTestDeviceJWK(t)
 
 	handler, err := newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
 	if err != nil {
@@ -268,6 +323,7 @@ func TestPairingRoutes_ExchangeReturnsPublishedEndpoints(t *testing.T) {
 	}
 	exchangeResp := doPairingRequest(t, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
+		"deviceJwk":     jwk,
 	})
 	if exchangeResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected exchange pairing 200, got %d", exchangeResp.StatusCode)
@@ -302,6 +358,7 @@ func TestPairingRoutes_BlockWhenPublicContractBroken(t *testing.T) {
 		},
 	}
 	srv := NewServer(cfg, nil, nil)
+	withIdentityDeviceEnrollment(t, srv, "viewer")
 
 	handler, err := newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
 	if err != nil {

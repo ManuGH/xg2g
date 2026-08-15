@@ -78,18 +78,6 @@ func TestSqliteStore_PersistsRecordsAcrossReopenAndSupportsTokenHashLookup(t *te
 	if err != nil {
 		t.Fatalf("prepare session: %v", err)
 	}
-	webBootstrap, err := model.PrepareWebBootstrapRecord(model.WebBootstrapRecord{
-		BootstrapID:           "wb-1",
-		BootstrapSecretHash:   model.HashOpaqueSecret("wb-secret"),
-		SourceAccessSessionID: session.SessionID,
-		TargetPath:            "/ui/",
-		CreatedAt:             now,
-		ExpiresAt:             now.Add(90 * time.Second),
-	})
-	if err != nil {
-		t.Fatalf("prepare web bootstrap: %v", err)
-	}
-
 	if err := store.PutPairing(ctx, &pairing); err != nil {
 		t.Fatalf("put pairing: %v", err)
 	}
@@ -101,9 +89,6 @@ func TestSqliteStore_PersistsRecordsAcrossReopenAndSupportsTokenHashLookup(t *te
 	}
 	if err := store.PutAccessSession(ctx, &session); err != nil {
 		t.Fatalf("put access session: %v", err)
-	}
-	if err := store.PutWebBootstrap(ctx, &webBootstrap); err != nil {
-		t.Fatalf("put web bootstrap: %v", err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("close initial sqlite store: %v", err)
@@ -133,13 +118,6 @@ func TestSqliteStore_PersistsRecordsAcrossReopenAndSupportsTokenHashLookup(t *te
 	}
 	if gotSession.SessionID != session.SessionID {
 		t.Fatalf("expected session %q, got %q", session.SessionID, gotSession.SessionID)
-	}
-	gotWebBootstrap, err := reopened.GetWebBootstrap(ctx, webBootstrap.BootstrapID)
-	if err != nil {
-		t.Fatalf("get web bootstrap after reopen: %v", err)
-	}
-	if gotWebBootstrap.SourceAccessSessionID != session.SessionID {
-		t.Fatalf("expected web bootstrap source session %q, got %q", session.SessionID, gotWebBootstrap.SourceAccessSessionID)
 	}
 
 	gotDevice, err := reopened.GetDevice(ctx, device.DeviceID)

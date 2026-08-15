@@ -6,7 +6,6 @@ package model
 
 import (
 	"errors"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -44,15 +43,6 @@ var (
 	ErrInvalidSessionIssuedAt  = errors.New("access session issued_at must not be zero")
 	ErrInvalidSessionExpiresAt = errors.New("access session expires_at must be after issued_at")
 	ErrInvalidSessionRevokedAt = errors.New("access session revoked_at must not be before issued_at")
-
-	ErrInvalidWebBootstrapID            = errors.New("web bootstrap id must not be empty")
-	ErrInvalidWebBootstrapSecretHash    = errors.New("web bootstrap secret hash must not be empty")
-	ErrInvalidWebBootstrapSourceSession = errors.New("web bootstrap source session id must not be empty")
-	ErrInvalidWebBootstrapTargetPath    = errors.New("web bootstrap target path must be an absolute same-origin path")
-	ErrInvalidWebBootstrapCreatedAt     = errors.New("web bootstrap created_at must not be zero")
-	ErrInvalidWebBootstrapExpiresAt     = errors.New("web bootstrap expires_at must be after created_at")
-	ErrInvalidWebBootstrapConsumedAt    = errors.New("web bootstrap consumed_at must not be before created_at")
-	ErrInvalidWebBootstrapRevokedAt     = errors.New("web bootstrap revoked_at must not be before created_at")
 )
 
 // PairingRecord is the server-side enrollment truth for one pending device.
@@ -114,20 +104,6 @@ type AccessSessionRecord struct {
 	IssuedAt      time.Time
 	ExpiresAt     time.Time
 	RevokedAt     *time.Time
-}
-
-// WebBootstrapRecord is a short-lived one-time grant used to convert a native
-// device access session into an HttpOnly browser cookie session without
-// exposing the device access token to browser JavaScript.
-type WebBootstrapRecord struct {
-	BootstrapID           string
-	BootstrapSecretHash   string
-	SourceAccessSessionID string
-	TargetPath            string
-	CreatedAt             time.Time
-	ExpiresAt             time.Time
-	ConsumedAt            *time.Time
-	RevokedAt             *time.Time
 }
 
 func PreparePairingRecord(record PairingRecord) (PairingRecord, error) {
@@ -333,54 +309,6 @@ func PrepareAccessSessionRecord(record AccessSessionRecord) (AccessSessionRecord
 	return normalized, nil
 }
 
-func PrepareWebBootstrapRecord(record WebBootstrapRecord) (WebBootstrapRecord, error) {
-	targetPath, err := normalizeWebBootstrapTargetPath(record.TargetPath)
-	if err != nil {
-		return WebBootstrapRecord{}, err
-	}
-
-	normalized := WebBootstrapRecord{
-		BootstrapID:           trimOpaqueID(record.BootstrapID),
-		BootstrapSecretHash:   strings.TrimSpace(record.BootstrapSecretHash),
-		SourceAccessSessionID: trimOpaqueID(record.SourceAccessSessionID),
-		TargetPath:            targetPath,
-		CreatedAt:             record.CreatedAt.UTC(),
-		ExpiresAt:             record.ExpiresAt.UTC(),
-		ConsumedAt:            cloneTimePtr(record.ConsumedAt),
-		RevokedAt:             cloneTimePtr(record.RevokedAt),
-	}
-
-	if normalized.BootstrapID == "" {
-		return WebBootstrapRecord{}, ErrInvalidWebBootstrapID
-	}
-	if normalized.BootstrapSecretHash == "" {
-		return WebBootstrapRecord{}, ErrInvalidWebBootstrapSecretHash
-	}
-	if normalized.SourceAccessSessionID == "" {
-		return WebBootstrapRecord{}, ErrInvalidWebBootstrapSourceSession
-	}
-	if normalized.CreatedAt.IsZero() {
-		return WebBootstrapRecord{}, ErrInvalidWebBootstrapCreatedAt
-	}
-	if !normalized.ExpiresAt.After(normalized.CreatedAt) {
-		return WebBootstrapRecord{}, ErrInvalidWebBootstrapExpiresAt
-	}
-	if normalized.ConsumedAt != nil {
-		normalized.ConsumedAt = utcTimePtr(normalized.ConsumedAt)
-		if normalized.ConsumedAt.Before(normalized.CreatedAt) {
-			return WebBootstrapRecord{}, ErrInvalidWebBootstrapConsumedAt
-		}
-	}
-	if normalized.RevokedAt != nil {
-		normalized.RevokedAt = utcTimePtr(normalized.RevokedAt)
-		if normalized.RevokedAt.Before(normalized.CreatedAt) {
-			return WebBootstrapRecord{}, ErrInvalidWebBootstrapRevokedAt
-		}
-	}
-
-	return normalized, nil
-}
-
 func (r PairingRecord) IsExpired(now time.Time) bool {
 	if r.ExpiresAt.IsZero() {
 		return true
@@ -439,28 +367,6 @@ func (r AccessSessionRecord) IsActive(now time.Time) bool {
 	return now.UTC().Before(r.ExpiresAt.UTC())
 }
 
-func (r WebBootstrapRecord) IsRevoked() bool {
-	return r.RevokedAt != nil
-}
-
-func (r WebBootstrapRecord) IsConsumed() bool {
-	return r.ConsumedAt != nil
-}
-
-func (r WebBootstrapRecord) IsExpired(now time.Time) bool {
-	if r.ExpiresAt.IsZero() {
-		return true
-	}
-	return !now.UTC().Before(r.ExpiresAt.UTC())
-}
-
-func (r WebBootstrapRecord) CanConsume(now time.Time) bool {
-	if r.IsRevoked() || r.IsConsumed() {
-		return false
-	}
-	return !r.IsExpired(now)
-}
-
 func trimOpaqueID(value string) string {
 	return strings.TrimSpace(value)
 }
@@ -510,36 +416,6 @@ func normalizeScopes(values []string) []string {
 	}
 	slices.Sort(out)
 	return out
-}
-
-func normalizeWebBootstrapTargetPath(value string) (string, error) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		trimmed = "/ui/"
-	}
-	if strings.ContainsAny(trimmed, "\r\n") {
-		return "", ErrInvalidWebBootstrapTargetPath
-	}
-	// Reject backslashes. Browsers normalize "\" to "/" before navigating, so a
-	// target like "/\evil.com" becomes the protocol-relative "//evil.com" — an
-	// open redirect to an external host that slips past the "//" prefix check
-	// below (url.Parse treats "\" as an ordinary path byte, not a separator).
-	if strings.Contains(trimmed, "\\") {
-		return "", ErrInvalidWebBootstrapTargetPath
-	}
-
-	parsed, err := url.Parse(trimmed)
-	if err != nil {
-		return "", ErrInvalidWebBootstrapTargetPath
-	}
-	if parsed.Scheme != "" || parsed.Host != "" || parsed.User != nil || parsed.Fragment != "" {
-		return "", ErrInvalidWebBootstrapTargetPath
-	}
-	if parsed.Path == "" || !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") {
-		return "", ErrInvalidWebBootstrapTargetPath
-	}
-
-	return trimmed, nil
 }
 
 func cloneCapabilities(values map[string]any) map[string]any {

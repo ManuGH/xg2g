@@ -5,12 +5,10 @@ package authz
 var operationScopes = map[string][]string{
 	"AddTimer":                         {"v3:write"},
 	"ApprovePairing":                   {"v3:admin"},
-	"CompleteWebBootstrap":             {},
 	"CreateDeviceSession":              {},
 	"CreateIntent":                     {"v3:write"},
 	"CreateSeriesRule":                 {"v3:write"},
 	"CreateSession":                    {"v3:read"},
-	"CreateWebBootstrap":               {"v3:read"},
 	"DeleteHouseholdProfile":           {"v3:admin"},
 	"DeleteHouseholdUnlock":            {"v3:read"},
 	"DeleteRecording":                  {"v3:write"},
@@ -88,22 +86,19 @@ var operationScopes = map[string][]string{
 }
 
 var unscopedOperations = map[string]struct{}{
-	"CompleteWebBootstrap": {},
-	"CreateDeviceSession":  {},
-	"ExchangePairing":      {},
-	"GetPairingStatus":     {},
-	"StartPairing":         {},
+	"CreateDeviceSession": {},
+	"ExchangePairing":     {},
+	"GetPairingStatus":    {},
+	"StartPairing":        {},
 }
 
 var operationExposurePolicies = map[string]ExposurePolicy{
 	"AddTimer":                         {Class: ExposureClass("write"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: true, RedactErrors: false},
 	"ApprovePairing":                   {Class: ExposureClass("pairing"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("auth"), AuditRequired: true, RedactErrors: true},
-	"CompleteWebBootstrap":             {Class: ExposureClass("device"), AuthKind: ExposureAuthKind("bootstrap_token"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("web_bootstrap"), AuditRequired: true, RedactErrors: true},
 	"CreateDeviceSession":              {Class: ExposureClass("device"), AuthKind: ExposureAuthKind("device_grant"), BrowserTrust: ExposureBrowserTrust("not_browser"), RateLimitClass: ExposureRateLimitClass("device_grant"), AuditRequired: true, RedactErrors: true},
 	"CreateIntent":                     {Class: ExposureClass("write"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: true, RedactErrors: false},
 	"CreateSeriesRule":                 {Class: ExposureClass("write"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: true, RedactErrors: false},
 	"CreateSession":                    {Class: ExposureClass("session"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("auth"), AuditRequired: true, RedactErrors: false},
-	"CreateWebBootstrap":               {Class: ExposureClass("device"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("web_bootstrap"), AuditRequired: true, RedactErrors: true},
 	"DeleteHouseholdProfile":           {Class: ExposureClass("admin"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("auth"), AuditRequired: true, RedactErrors: false},
 	"DeleteHouseholdUnlock":            {Class: ExposureClass("read"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("auth"), AuditRequired: true, RedactErrors: false},
 	"DeleteRecording":                  {Class: ExposureClass("write"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: true, RedactErrors: false},

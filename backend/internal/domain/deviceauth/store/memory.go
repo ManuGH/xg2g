@@ -19,7 +19,6 @@ type MemoryStateStore struct {
 	devices        map[string]model.DeviceRecord
 	grants         map[string]model.DeviceGrantRecord
 	sessions       map[string]model.AccessSessionRecord
-	webBootstraps  map[string]model.WebBootstrapRecord
 }
 
 func NewMemoryStateStore() *MemoryStateStore {
@@ -29,7 +28,6 @@ func NewMemoryStateStore() *MemoryStateStore {
 		devices:        make(map[string]model.DeviceRecord),
 		grants:         make(map[string]model.DeviceGrantRecord),
 		sessions:       make(map[string]model.AccessSessionRecord),
-		webBootstraps:  make(map[string]model.WebBootstrapRecord),
 	}
 }
 
@@ -388,56 +386,6 @@ func (s *MemoryStateStore) DeleteAccessSessionsByDevice(_ context.Context, devic
 	return deleted, nil
 }
 
-func (s *MemoryStateStore) PutWebBootstrap(_ context.Context, record *model.WebBootstrapRecord) error {
-	if record == nil {
-		return model.ErrInvalidWebBootstrapID
-	}
-	prepared, err := cloneWebBootstrap(*record)
-	if err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.webBootstraps[prepared.BootstrapID] = prepared
-	return nil
-}
-
-func (s *MemoryStateStore) GetWebBootstrap(_ context.Context, bootstrapID string) (*model.WebBootstrapRecord, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	record, ok := s.webBootstraps[bootstrapID]
-	if !ok {
-		return nil, ErrNotFound
-	}
-	cloned, err := cloneWebBootstrap(record)
-	if err != nil {
-		return nil, err
-	}
-	return &cloned, nil
-}
-
-func (s *MemoryStateStore) UpdateWebBootstrap(_ context.Context, bootstrapID string, fn func(*model.WebBootstrapRecord) error) (*model.WebBootstrapRecord, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	record, ok := s.webBootstraps[bootstrapID]
-	if !ok {
-		return nil, ErrNotFound
-	}
-	working, err := cloneWebBootstrap(record)
-	if err != nil {
-		return nil, err
-	}
-	if err := fn(&working); err != nil {
-		return nil, err
-	}
-	working, err = cloneWebBootstrap(working)
-	if err != nil {
-		return nil, err
-	}
-	s.webBootstraps[working.BootstrapID] = working
-	return ptrWebBootstrap(working)
-}
-
 func clonePairing(record model.PairingRecord) (model.PairingRecord, error) {
 	return model.PreparePairingRecord(record)
 }
@@ -452,10 +400,6 @@ func cloneGrant(record model.DeviceGrantRecord) (model.DeviceGrantRecord, error)
 
 func cloneSession(record model.AccessSessionRecord) (model.AccessSessionRecord, error) {
 	return model.PrepareAccessSessionRecord(record)
-}
-
-func cloneWebBootstrap(record model.WebBootstrapRecord) (model.WebBootstrapRecord, error) {
-	return model.PrepareWebBootstrapRecord(record)
 }
 
 func ptrPairing(record model.PairingRecord) (*model.PairingRecord, error) {
@@ -484,14 +428,6 @@ func ptrGrant(record model.DeviceGrantRecord) (*model.DeviceGrantRecord, error) 
 
 func ptrSession(record model.AccessSessionRecord) (*model.AccessSessionRecord, error) {
 	cloned, err := cloneSession(record)
-	if err != nil {
-		return nil, err
-	}
-	return &cloned, nil
-}
-
-func ptrWebBootstrap(record model.WebBootstrapRecord) (*model.WebBootstrapRecord, error) {
-	cloned, err := cloneWebBootstrap(record)
 	if err != nil {
 		return nil, err
 	}

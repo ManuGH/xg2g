@@ -64,9 +64,6 @@ func (m *MockPreparingServer) ApprovePairing(w http.ResponseWriter, r *http.Requ
 func (m *MockPreparingServer) ExchangePairing(w http.ResponseWriter, r *http.Request, pairingId string) {
 }
 func (m *MockPreparingServer) CreateDeviceSession(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) CreateWebBootstrap(w http.ResponseWriter, r *http.Request)  {}
-func (m *MockPreparingServer) CompleteWebBootstrap(w http.ResponseWriter, r *http.Request, bootstrapId string, params v3.CompleteWebBootstrapParams) {
-}
 func (m *MockPreparingServer) GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request, recordingId string) {
 }
 func (m *MockPreparingServer) GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Request, recordingId string) {
