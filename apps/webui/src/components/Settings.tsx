@@ -356,7 +356,7 @@ function Settings() {
                 role="tab"
                 aria-selected={activeSection === 'android-tv'}
               >
-                {t('settings.androidTv.title')}
+                📱 Geräte & Apps koppeln
               </Button>
               <Button
                 variant="secondary"
@@ -442,9 +442,11 @@ function Settings() {
         <div className={styles.onboardingCard}>
           <div className={styles.onboardingHero}>
             <div className={styles.onboardingIntro}>
-              <p className={styles.onboardingEyebrow}>{t('settings.androidTv.eyebrow')}</p>
-              <h3 className={styles.onboardingTitle}>📱 Smart-TV mit PIN-Code koppeln</h3>
-              <p className={styles.onboardingCopy}>Starte die xg2g-App auf deinem TV-Gerät und gib den angezeigten Code hier ein.</p>
+              <p className={styles.onboardingEyebrow}>UNIVERSAL ZERO-TRUST ENROLLMENT</p>
+              <h3 className={styles.onboardingTitle}>📱 iPhone, Apple TV & Smart-TV mit PIN koppeln</h3>
+              <p className={styles.onboardingCopy}>
+                Starte die xg2g-App auf deinem iPhone, iPad, Apple TV oder Android TV und gib den auf dem Bildschirm angezeigten Code hier ein.
+              </p>
             </div>
           </div>
 
@@ -456,22 +458,35 @@ function Settings() {
             </div>
 
             <div className={`${styles.group} ${styles.pairingGroup}`}>
-              <label className={styles.pairingLabel} htmlFor="android-tv-pairing-code">📱 Android TV mit PIN koppeln (Device Pairing)</label>
+              <label className={styles.pairingLabel} htmlFor="android-tv-pairing-code">
+                🔑 Geräteschlüssel freigeben (Device Authorization)
+              </label>
               <p className={`${styles.hint} ${styles.pairingHint}`}>
-                Gib den 6- bis 8-stelligen Code ein, der auf deinem Smart-TV Bildschirm angezeigt wird:
+                Gib den 8-stelligen Code ein, der in deiner xg2g App angezeigt wird:
               </p>
               <div className={styles.pairingControls}>
                 <input
                   id="android-tv-pairing-code"
                   className={styles.pairingInput}
                   type="text"
-                  placeholder="z.B. X2VZ-ZRRF"
+                  placeholder="z.B. MCDA-R2GC oder MCDAR2GC"
                   value={pairingCodeDraft}
-                  onChange={(e) => { setPairingCodeDraft(e.target.value); setPairingFeedback(null); }}
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  onChange={(e) => { setPairingCodeDraft(e.target.value.toUpperCase()); setPairingFeedback(null); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const button = document.getElementById('btn-approve-pairing');
+                      button?.click();
+                    }
+                  }}
                 />
                 <Button
+                  id="btn-approve-pairing"
                   onClick={async () => {
-                    const code = pairingCodeDraft.trim();
+                    const code = pairingCodeDraft.trim().toUpperCase();
                     if (!code) return;
                     setPairingSubmitting(true);
                     setPairingFeedback(null);
@@ -481,13 +496,21 @@ function Settings() {
                         body: {}
                       });
                       if (res.data?.status === 'approved') {
-                        setPairingFeedback({ success: true, message: '✅ Smart-TV erfolgreich autorisiert! Der TV schaltet sich sofort frei.' });
+                        setPairingFeedback({ success: true, message: '✅ Gerät erfolgreich autorisiert! Der TV-Stream öffnet sich jetzt auf dem Gerät.' });
                         setPairingCodeDraft('');
                       } else {
                         setPairingFeedback({ success: false, message: 'Kopplung konnte nicht autorisiert werden.' });
                       }
                     } catch (e: any) {
-                      setPairingFeedback({ success: false, message: `Fehler: ${e?.message || 'Ungültiger Code oder abgelaufen'}` });
+                      const msg = e?.message || '';
+                      if (msg.includes('Authentication required') || e?.status === 401) {
+                        setPairingFeedback({
+                          success: false,
+                          message: '🔐 Admin-Authentifizierung erforderlich. Bitte gehe zuerst auf den Tab "Sicherheit" und melde dich mit dem Admin-Token (test04) an.'
+                        });
+                      } else {
+                        setPairingFeedback({ success: false, message: `Fehler: ${msg || 'Ungültiger Code oder abgelaufen'}` });
+                      }
                     } finally {
                       setPairingSubmitting(false);
                     }
@@ -495,7 +518,7 @@ function Settings() {
                   disabled={pairingSubmitting || !pairingCodeDraft.trim()}
                   className={styles.onboardingButton}
                 >
-                  {pairingSubmitting ? 'Autorisiere…' : 'TV Jetzt Koppeln'}
+                  {pairingSubmitting ? 'Autorisiere…' : 'Gerät Jetzt Koppeln'}
                 </Button>
               </div>
               {pairingFeedback ? (

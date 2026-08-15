@@ -12,13 +12,18 @@ import {
   type PasskeyCredentialSummary,
 } from '../../services/passkeyApi';
 import { createPasskeyCredential } from '../../lib/webauthn';
+import { getStoredToken, setStoredToken, clearStoredToken } from '../../utils/tokenStorage';
+import { useAppContext } from '../../context/AppContext';
 
 export default function SecuritySettingsSection() {
+  const { setToken } = useAppContext();
   const [passkeys, setPasskeys] = useState<PasskeyCredentialSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [tokenInput, setTokenInput] = useState('');
+  const [hasActiveToken, setHasActiveToken] = useState<boolean>(() => Boolean(getStoredToken()));
 
   // In-UI action confirmations (No native browser confirm popups!)
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -30,8 +35,14 @@ export default function SecuritySettingsSection() {
     try {
       const data = await listPasskeys();
       setPasskeys(data);
+      setHasActiveToken(true);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Passkeys konnten nicht geladen werden.');
+      if (err?.message?.includes('Authentication required') || err?.status === 401) {
+        setErrorMsg('Admin-Authentifizierung erforderlich. Bitte melde dich unten mit deinem Admin-Token an.');
+        setHasActiveToken(false);
+      } else {
+        setErrorMsg(err.message || 'Passkeys konnten nicht geladen werden.');
+      }
     } finally {
       setLoading(false);
     }
@@ -40,6 +51,25 @@ export default function SecuritySettingsSection() {
   useEffect(() => {
     void fetchPasskeys();
   }, []);
+
+  const handleSaveAdminToken = () => {
+    const token = tokenInput.trim();
+    if (!token) return;
+    setStoredToken(token);
+    setToken(token);
+    setHasActiveToken(true);
+    setTokenInput('');
+    setSuccessMsg('✅ Admin-Token erfolgreich gespeichert!');
+    void fetchPasskeys();
+  };
+
+  const handleLogoutToken = () => {
+    clearStoredToken();
+    setToken('');
+    setHasActiveToken(false);
+    setPasskeys([]);
+    setSuccessMsg('Admin-Sitzung abgemeldet.');
+  };
 
   const [passkeyNickname, setPasskeyNickname] = useState('');
   const [showNicknameModal, setShowNicknameModal] = useState(false);
@@ -104,11 +134,56 @@ export default function SecuritySettingsSection() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', maxWidth: '720px' }}>
       <div>
         <h3 style={{ fontSize: '1.25rem', fontWeight: 600, margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>
-          Sicherheit & Passkeys
+          Sicherheit, Admin-Zugang & Passkeys
         </h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)', margin: 0 }}>
-          Verwalte deine registrierten Passkeys und aktiven Gerätesitzungen.
+          Verwalte deine Admin-Authentifizierung, registrierte Passkeys und aktive Gerätesitzungen.
         </p>
+      </div>
+
+      {/* SECTION 0: ADMIN AUTHENTICATION CARD */}
+      <div style={{ backgroundColor: hasActiveToken ? 'rgba(34, 197, 94, 0.05)' : 'rgba(56, 189, 248, 0.06)', border: `1px solid ${hasActiveToken ? 'rgba(34, 197, 94, 0.25)' : 'rgba(56, 189, 248, 0.25)'}`, borderRadius: '12px', padding: '1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '1.2rem' }}>{hasActiveToken ? '🟢' : '🔑'}</span>
+            <strong style={{ color: 'var(--text-primary)', fontSize: '0.95rem' }}>
+              {hasActiveToken ? 'Admin-Sitzung aktiv' : 'Admin-Authentifizierung'}
+            </strong>
+          </div>
+          {hasActiveToken && (
+            <Button size="sm" variant="ghost" onClick={handleLogoutToken}>
+              Abmelden
+            </Button>
+          )}
+        </div>
+
+        {!hasActiveToken ? (
+          <div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem 0' }}>
+              Gib dein Admin-Token ein (Standard: <code>test04</code>), um Passkeys und gekoppelte Geräte zu verwalten.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <input
+                type="password"
+                placeholder="Admin-Token eingeben (z.B. test04)"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveAdminToken(); }}
+                style={{ flex: 1, minWidth: '200px', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', backgroundColor: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '0.875rem' }}
+              />
+              <Button size="sm" onClick={handleSaveAdminToken} disabled={!tokenInput.trim()}>
+                Anmelden
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => { setTokenInput('test04'); }}>
+                test04 einsetzen
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p style={{ fontSize: '0.85rem', color: 'var(--status-success)', margin: 0 }}>
+            Du bist erfolgreich als Administrator authentifiziert. Alle Admin-Funktionen sind freigeschaltet.
+          </p>
+        )}
       </div>
 
       {errorMsg ? (
@@ -133,7 +208,7 @@ export default function SecuritySettingsSection() {
           <Button
             size="sm"
             onClick={() => setShowNicknameModal(true)}
-            disabled={actionLoading}
+            disabled={actionLoading || !hasActiveToken}
             data-testid="add-passkey-button"
           >
             {actionLoading ? 'Registriere...' : 'Passkey hinzufügen'}
