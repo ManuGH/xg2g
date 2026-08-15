@@ -88,25 +88,43 @@ struct RecordingsView: View {
                             .foregroundStyle(Theme.Colors.textSecondary)
                             Spacer()
                         } else {
-                            List(downloadManager.offlineRecordings) { offline in
-                                Button {
-                                    playingOffline = offline
-                                } label: {
-                                    OfflineRecordingRow(offline: offline)
+                            VStack(spacing: 0) {
+                                // Storage Breakdown Card (Netflix/Apple TV+ Style)
+                                HStack {
+                                    Label("Offline-Speicher", systemImage: "internaldrive.fill")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+
+                                    Spacer()
+
+                                    Text("\(downloadManager.formattedTotalStorage) belegt")
+                                        .font(.caption.monospacedDigit().bold())
+                                        .foregroundStyle(Theme.Colors.accentAction)
                                 }
-                                .buttonStyle(.plain)
-                                .listRowBackground(Theme.Colors.surfaceElevated)
-                                .listRowSeparatorTint(Theme.Colors.borderSubtle)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        downloadManager.deleteOfflineRecording(id: offline.id)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Theme.Colors.surfaceElevated.opacity(0.3))
+
+                                List(downloadManager.offlineRecordings) { offline in
+                                    Button {
+                                        playingOffline = offline
                                     } label: {
-                                        Label("Löschen", systemImage: "trash")
+                                        OfflineRecordingRow(offline: offline)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .listRowBackground(Theme.Colors.surfaceElevated)
+                                    .listRowSeparatorTint(Theme.Colors.borderSubtle)
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                        Button(role: .destructive) {
+                                            downloadManager.deleteOfflineRecording(id: offline.id)
+                                        } label: {
+                                            Label("Löschen", systemImage: "trash")
+                                        }
                                     }
                                 }
+                                .listStyle(.plain)
+                                .scrollContentBackground(.hidden)
                             }
-                            .listStyle(.plain)
-                            .scrollContentBackground(.hidden)
                         }
                     } else {
                         Group {
