@@ -208,7 +208,19 @@ func (o *Orchestrator) acquireLeases(
 					return
 				case <-t.C:
 					if o.TopologyService != nil {
-						o.TopologyService.HeartbeatStream(event.SessionID, o.LeaseTTL)
+						if ok := o.TopologyService.HeartbeatStream(event.SessionID, o.LeaseTTL); !ok {
+							logger.Warn().Str("sid", event.SessionID).Msg("topology stream lease lost, aborting")
+							leaseLostTotalLegacy.WithLabelValues().Inc()
+							_, _ = o.Store.UpdateSession(hbCtx, event.SessionID, func(r *model.SessionRecord) error {
+								if !r.State.IsTerminal() {
+									cause := lifecycle.NewReasonError(model.RLeaseExpired, "topology stream lease lost", nil)
+									_, _ = lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvTerminalize}, cause, false, time.Now())
+								}
+								return nil
+							})
+							hbCancel()
+							return
+						}
 					}
 					if res.TunerHandle != nil {
 						controller := o.TunerLeaseController

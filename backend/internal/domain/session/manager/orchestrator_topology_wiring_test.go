@@ -141,3 +141,84 @@ func TestOrchestrator_TopologyService_StreamLifecycleAndMultiplexReuse(t *testin
 	runtimeSnapshot4 := topoSvc.CloneRuntime()
 	assert.Empty(t, runtimeSnapshot4.ActiveMultiplexes, "All demodulators and multiplexes must be completely freed")
 }
+
+func TestOrchestrator_TopologyService_HeartbeatLoss(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+	memBus := NewStubBus()
+
+	topo := receivertopology.ReceiverTopology{
+		Model:      "Vu+ Uno 4K SE",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "input_a", DeliveryType: receivertopology.DeliveryLegacyUniversal},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+
+	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+
+	evaluator := receiverusage.NewEvaluatorWithTopology(topoSvc)
+	pipe := NewThreadSafeFakeMediaPipeline()
+
+	orch := &Orchestrator{
+		Bus:            memBus,
+		Store:          st,
+		LeaseTTL:       50 * time.Millisecond,
+		HeartbeatEvery: 20 * time.Millisecond,
+		Owner:          "test-worker-heartbeat",
+		TunerSlots:     []int{0},
+		ReceiverID:     "rec-hb",
+		Pipeline:       pipe,
+		UsagePolicy: receiverusage.ReceiverUsagePolicy{
+			Mode:                        receiverusage.ReceiverUsageModeEnforce,
+			MaxLiveSessions:             4,
+			MaxRestrictedAccessSessions: 4,
+		},
+		UsageEvaluator:  evaluator,
+		TopologyService: topoSvc,
+		LeaseKeyFunc: func(e model.StartSessionEvent) string {
+			return model.LeaseKeyService(e.ServiceRef)
+		},
+		startSem: make(chan struct{}, 10),
+		stopSem:  make(chan struct{}, 10),
+		active:   make(map[string]context.CancelFunc),
+	}
+
+	dasErsteHD := "1:0:19:283D:3FB:1:C00000:0:0:0:"
+	evt := model.StartSessionEvent{
+		SessionID:  "sess-hb-loss",
+		ServiceRef: dasErsteHD,
+		ProfileID:  "hd",
+	}
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  "sess-hb-loss",
+		ServiceRef: dasErsteHD,
+		State:      model.SessionNew,
+	}))
+
+	sessionCtx := &sessionContext{
+		SessionID:  "sess-hb-loss",
+		Mode:       model.ModeLive,
+		ServiceRef: dasErsteHD,
+	}
+
+	leases, err := orch.acquireLeases(ctx, sessionCtx, evt, "worker-hb", zerolog.Nop())
+	require.NoError(t, err)
+	defer leases.ReleaseTuner()
+
+	// Deliberately release / sweep the lease in TopologyService to simulate lease loss
+	topoSvc.ReleaseStream("sess-hb-loss")
+
+	// Wait for the heartbeat worker to tick and detect the lost lease
+	require.Eventually(t, func() bool {
+		sess, getErr := st.GetSession(ctx, "sess-hb-loss")
+		if getErr != nil || sess == nil {
+			return false
+		}
+		return sess.State.IsTerminal()
+	}, 500*time.Millisecond, 20*time.Millisecond, "Session must be terminalized when topology stream lease is lost")
+}
