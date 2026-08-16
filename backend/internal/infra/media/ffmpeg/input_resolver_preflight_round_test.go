@@ -142,8 +142,8 @@ func TestPreflightRound_ScrambledThroughoutIsBounded(t *testing.T) {
 	if err == nil || result.OK {
 		t.Fatalf("expected scrambled failure, got OK=%v err=%v", result.OK, err)
 	}
-	if calls != preflightMaxTries {
-		t.Fatalf("expected exactly %d reads for a source scrambled throughout, got %d", preflightMaxTries, calls)
+	if calls != preflightScrambleTries {
+		t.Fatalf("expected exactly %d reads for a source scrambled throughout, got %d", preflightScrambleTries, calls)
 	}
 }
 
