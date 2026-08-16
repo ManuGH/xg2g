@@ -16,6 +16,7 @@ import (
 	pipelinePolicy "github.com/ManuGH/xg2g/internal/pipeline/policy"
 	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 	"github.com/rs/zerolog"
 )
 
@@ -56,6 +57,7 @@ func (o *Orchestrator) acquireLeases(
 		}
 	}
 
+	requiresTunerSlot := true
 	// E2.5c: Receiver Usage Policy Evaluation & Multi-Resource Plan Execution
 	if o.UsageEvaluator != nil {
 		req := BuildUsageRequest(sessionCtx, o.ReceiverID, leaseOwner, true, true, time.Now())
@@ -77,40 +79,46 @@ func (o *Orchestrator) acquireLeases(
 			res.ReleaseDedup()
 			return nil, newReasonError(decision.Reason, decision.Message, nil)
 		case receiverusage.DecisionAllow:
-			for _, reqItem := range decision.Requirements {
-				if reqItem.Kind == receiverusage.ReqRestrictedAccessSlot {
-					ctrl := o.RestrictedAccessCtrl
-					if ctrl == nil {
-						ctrl = receiverusage.NewRestrictedAccessController(o.Store)
+			if len(decision.Requirements) > 0 {
+				requiresTunerSlot = false
+				for _, reqItem := range decision.Requirements {
+					if reqItem.Kind == receiverusage.ReqTunerSlot {
+						requiresTunerSlot = true
 					}
-					cap := policy.MaxRestrictedAccessSessions
-					if cap <= 0 {
-						cap = 1
-					}
-					h, err := ctrl.Acquire(ctx, o.ReceiverID, leaseOwner, cap, o.LeaseTTL)
-					if err != nil {
-						res.ReleaseDedup()
-						return nil, newReasonError(model.RReceiverUsageRestrictedAccessLimitExceeded, "restricted access slot limit exceeded", err)
-					}
-					res.RestrictedAccessHandle = h
-					res.ReleaseRestrictedAccess = func() error {
-						ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-						defer cancel()
-						if err := ctrl.Release(ctxRel, h); err != nil {
-							logger.Error().Err(err).
-								Str("scope", h.Scope).
-								Str("owner", h.Owner).
-								Msg("failed to release restricted access lease")
-							return err
+					if reqItem.Kind == receiverusage.ReqRestrictedAccessSlot {
+						ctrl := o.RestrictedAccessCtrl
+						if ctrl == nil {
+							ctrl = receiverusage.NewRestrictedAccessController(o.Store)
 						}
-						return nil
+						cap := policy.MaxRestrictedAccessSessions
+						if cap <= 0 {
+							cap = 1
+						}
+						h, err := ctrl.Acquire(ctx, o.ReceiverID, leaseOwner, cap, o.LeaseTTL)
+						if err != nil {
+							res.ReleaseDedup()
+							return nil, newReasonError(model.RReceiverUsageRestrictedAccessLimitExceeded, "restricted access slot limit exceeded", err)
+						}
+						res.RestrictedAccessHandle = h
+						res.ReleaseRestrictedAccess = func() error {
+							ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+							defer cancel()
+							if err := ctrl.Release(ctxRel, h); err != nil {
+								logger.Error().Err(err).
+									Str("scope", h.Scope).
+									Str("owner", h.Owner).
+									Msg("failed to release restricted access lease")
+								return err
+							}
+							return nil
+						}
 					}
 				}
 			}
 		}
 	}
 
-	if sessionCtx.Mode == model.ModeLive {
+	if sessionCtx.Mode == model.ModeLive && requiresTunerSlot {
 		slot, tunerLease, tunerHandle, err := o.acquireTunerLease(ctx, o.TunerSlots, leaseOwner)
 		if err != nil {
 			relErr := res.ReleaseRestrictedAccess()
@@ -166,6 +174,24 @@ func (o *Orchestrator) acquireLeases(
 		}
 	}
 
+	// Topology Service Stream Registration & Lifecycle Hook
+	if o.TopologyService != nil && sessionCtx.ServiceRef != "" {
+		_, topoErr := o.TopologyService.RegisterStream(sessionCtx.ServiceRef, event.SessionID)
+		if topoErr != nil && o.TopologyService.Mode() == receivertopology.EvaluationModeEnforce && o.TopologyService.Topology().Confidence == receivertopology.ConfidenceVerified {
+			_ = res.ReleaseRestrictedAccess()
+			res.ReleaseTuner()
+			res.ReleaseDedup()
+			return nil, newReasonError(model.RLeaseBusy, "receiver physical topology allocation failed: "+topoErr.Error(), topoErr)
+		}
+		prevReleaseTuner := res.ReleaseTuner
+		res.ReleaseTuner = func() {
+			if prevReleaseTuner != nil {
+				prevReleaseTuner()
+			}
+			o.TopologyService.ReleaseStream(event.SessionID)
+		}
+	}
+
 	hbCtx, hbCancel := context.WithCancel(ctx)
 	res.HBCancel = hbCancel
 	res.HBCtx = hbCtx
@@ -181,26 +207,31 @@ func (o *Orchestrator) acquireLeases(
 				case <-hbCtx.Done():
 					return
 				case <-t.C:
-					controller := o.TunerLeaseController
-					if controller == nil {
-						controller = pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
+					if o.TopologyService != nil {
+						o.TopologyService.HeartbeatStream(event.SessionID, o.LeaseTTL)
 					}
-					err := controller.Renew(hbCtx, res.TunerHandle, o.LeaseTTL)
-					if err != nil {
-						if errors.Is(err, pipelineLease.ErrLeaseInactive) || errors.Is(err, pipelineLease.ErrNotFound) {
-							logger.Warn().Str("lease", string(res.TunerHandle.Scope)).Str("sid", event.SessionID).Msg("tuner lease lost, aborting")
-							leaseLostTotalLegacy.WithLabelValues().Inc()
-							_, _ = o.Store.UpdateSession(hbCtx, event.SessionID, func(r *model.SessionRecord) error {
-								if !r.State.IsTerminal() {
-									cause := lifecycle.NewReasonError(model.RLeaseExpired, "", nil)
-									_, _ = lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvTerminalize}, cause, false, time.Now())
-								}
-								return nil
-							})
-							hbCancel()
-							return
+					if res.TunerHandle != nil {
+						controller := o.TunerLeaseController
+						if controller == nil {
+							controller = pipelineLease.NewSessionStoreTunerLeaseController(o.Store)
 						}
-						logger.Warn().Err(err).Msg("heartbeat renewal error")
+						err := controller.Renew(hbCtx, res.TunerHandle, o.LeaseTTL)
+						if err != nil {
+							if errors.Is(err, pipelineLease.ErrLeaseInactive) || errors.Is(err, pipelineLease.ErrNotFound) {
+								logger.Warn().Str("lease", string(res.TunerHandle.Scope)).Str("sid", event.SessionID).Msg("tuner lease lost, aborting")
+								leaseLostTotalLegacy.WithLabelValues().Inc()
+								_, _ = o.Store.UpdateSession(hbCtx, event.SessionID, func(r *model.SessionRecord) error {
+									if !r.State.IsTerminal() {
+										cause := lifecycle.NewReasonError(model.RLeaseExpired, "", nil)
+										_, _ = lifecycle.Dispatch(r, lifecycle.PhaseFromState(r.State), lifecycle.Event{Kind: lifecycle.EvTerminalize}, cause, false, time.Now())
+									}
+									return nil
+								})
+								hbCancel()
+								return
+							}
+							logger.Warn().Err(err).Msg("heartbeat renewal error")
+						}
 					}
 				}
 			}

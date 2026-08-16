@@ -25,6 +25,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/pipeline/lease"
 	pipelinePolicy "github.com/ManuGH/xg2g/internal/pipeline/policy"
 	platformnet "github.com/ManuGH/xg2g/internal/platform/net"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 	"github.com/ManuGH/xg2g/internal/telemetry"
 )
 
@@ -64,6 +65,7 @@ type Orchestrator struct {
 	ReceiverID           string
 	UsagePolicy          receiverusage.ReceiverUsagePolicy
 	UsageEvaluator       receiverusage.Evaluator
+	TopologyService      *receivertopology.Service
 	RestrictedAccessCtrl *receiverusage.RestrictedAccessController
 
 	PipelineStopTimeout time.Duration

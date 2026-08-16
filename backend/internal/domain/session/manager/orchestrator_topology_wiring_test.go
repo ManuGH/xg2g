@@ -1,0 +1,143 @@
+// Copyright (c) 2026 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package manager
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestOrchestrator_TopologyService_StreamLifecycleAndMultiplexReuse(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+	memBus := NewStubBus()
+
+	// 1 Demodulator, 1 Physical Input (Single Cable Sat)
+	topo := receivertopology.ReceiverTopology{
+		Model:      "Vu+ Uno 4K SE",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "input_a", DeliveryType: receivertopology.DeliveryLegacyUniversal},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+
+	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+
+	evaluator := receiverusage.NewEvaluatorWithTopology(topoSvc)
+	pipe := NewThreadSafeFakeMediaPipeline()
+
+	orch := &Orchestrator{
+		Bus:            memBus,
+		Store:          st,
+		LeaseTTL:       24 * time.Hour,
+		HeartbeatEvery: 0,
+		Owner:          "test-worker-topo",
+		TunerSlots:     []int{0}, // Single flat slot
+		ReceiverID:     "rec-1",
+		Pipeline:       pipe,
+		UsagePolicy: receiverusage.ReceiverUsagePolicy{
+			Mode:                        receiverusage.ReceiverUsageModeEnforce,
+			MaxLiveSessions:             4,
+			MaxRestrictedAccessSessions: 4,
+		},
+		UsageEvaluator:  evaluator,
+		TopologyService: topoSvc,
+		LeaseKeyFunc: func(e model.StartSessionEvent) string {
+			return model.LeaseKeyService(e.ServiceRef)
+		},
+	}
+
+	// Two services on the EXACT SAME physical transport stream multiplex (ONID: 1, TSID: 0x3fb, Namespace: 0xc00000)
+	dasErsteHD := "1:0:19:283D:3FB:1:C00000:0:0:0:"
+	arteHD := "1:0:19:283E:3FB:1:C00000:0:0:0:"
+
+	// --- 1. Start Session 1 (Das Erste HD) ---
+	evt1 := model.StartSessionEvent{
+		SessionID:  "sess-live-1",
+		ServiceRef: dasErsteHD,
+		ProfileID:  "hd",
+	}
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  "sess-live-1",
+		ServiceRef: dasErsteHD,
+		State:      model.SessionNew,
+	}))
+
+	sessionCtx1 := &sessionContext{
+		SessionID:  "sess-live-1",
+		Mode:       model.ModeLive,
+		ServiceRef: dasErsteHD,
+	}
+
+	leases1, err := orch.acquireLeases(ctx, sessionCtx1, evt1, "worker-1", zerolog.Nop())
+	require.NoError(t, err, "Session 1 should acquire demodulator successfully")
+	assert.Equal(t, 0, leases1.Slot)
+
+	// Verify runtime allocation in TopologyService
+	runtimeSnapshot := topoSvc.CloneRuntime()
+	assert.Len(t, runtimeSnapshot.ActiveMultiplexes, 1)
+	for _, alloc := range runtimeSnapshot.ActiveMultiplexes {
+		assert.Contains(t, alloc.SessionIDs, "sess-live-1")
+	}
+
+	// --- 2. Start Session 2 (Arte HD - Same Transponder, Reuses Demodulator) ---
+	evt2 := model.StartSessionEvent{
+		SessionID:  "sess-live-2",
+		ServiceRef: arteHD,
+		ProfileID:  "hd",
+	}
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  "sess-live-2",
+		ServiceRef: arteHD,
+		State:      model.SessionNew,
+	}))
+
+	sessionCtx2 := &sessionContext{
+		SessionID:  "sess-live-2",
+		Mode:       model.ModeLive,
+		ServiceRef: arteHD,
+	}
+
+	leases2, err := orch.acquireLeases(ctx, sessionCtx2, evt2, "worker-2", zerolog.Nop())
+	require.NoError(t, err, "Session 2 should reuse the active demodulator via Multiplex-Reuse")
+	assert.Equal(t, -1, leases2.Slot, "Multiplex-reuse session does not consume a physical tuner slot")
+
+	// Verify both sessions share the same multiplex allocation in TopologyService
+	runtimeSnapshot2 := topoSvc.CloneRuntime()
+	assert.Len(t, runtimeSnapshot2.ActiveMultiplexes, 1)
+	for _, alloc := range runtimeSnapshot2.ActiveMultiplexes {
+		assert.Contains(t, alloc.SessionIDs, "sess-live-1")
+		assert.Contains(t, alloc.SessionIDs, "sess-live-2")
+	}
+
+	// --- 3. Release Session 1 ---
+	leases1.ReleaseTuner()
+
+	runtimeSnapshot3 := topoSvc.CloneRuntime()
+	assert.Len(t, runtimeSnapshot3.ActiveMultiplexes, 1)
+	for _, alloc := range runtimeSnapshot3.ActiveMultiplexes {
+		assert.NotContains(t, alloc.SessionIDs, "sess-live-1")
+		assert.Contains(t, alloc.SessionIDs, "sess-live-2")
+	}
+
+	// --- 4. Release Session 2 ---
+	leases2.ReleaseTuner()
+
+	runtimeSnapshot4 := topoSvc.CloneRuntime()
+	assert.Empty(t, runtimeSnapshot4.ActiveMultiplexes, "All demodulators and multiplexes must be completely freed")
+}

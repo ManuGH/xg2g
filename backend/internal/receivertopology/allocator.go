@@ -114,7 +114,11 @@ type Allocator struct {
 }
 
 // NewAllocator creates a new Allocator for a given verified or observed receiver topology.
+// Defense-in-depth: If topology is not ConfidenceVerified, mode is unconditionally clamped to AUDIT_ONLY.
 func NewAllocator(topology ReceiverTopology, mode EvaluationMode) *Allocator {
+	if topology.Confidence != ConfidenceVerified {
+		mode = EvaluationModeAuditOnly
+	}
 	return &Allocator{
 		topology: topology,
 		mode:     mode,
@@ -274,7 +278,7 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 		failureReason = "RF Plane conflict: no free input available for requested satellite polarization/band"
 	}
 
-	if a.mode == EvaluationModeEnforce {
+	if a.mode == EvaluationModeEnforce && a.topology.Confidence == ConfidenceVerified {
 		return AllocationDecision{
 			Allowed:        false,
 			Reason:         failureReason,

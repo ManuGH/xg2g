@@ -26,12 +26,27 @@ type Service struct {
 	planner   *ReservationPlanner
 }
 
+var (
+	// ErrInvalidTransition indicates a disallowed topology confidence state transition.
+	ErrInvalidTransition = fmt.Errorf("invalid topology confidence state transition")
+	// ErrEnforceRequiresVerified indicates that ENFORCE mode was requested for a non-verified topology.
+	ErrEnforceRequiresVerified = fmt.Errorf("evaluation mode ENFORCE requires ConfidenceVerified")
+)
+
 // NewService initializes a receiver topology service with the given topology and evaluation mode.
+// Enforces that ENFORCE mode is strictly permitted ONLY for ConfidenceVerified topologies.
 func NewService(topology ReceiverTopology, mode EvaluationMode) (*Service, error) {
+	if mode == EvaluationModeEnforce && topology.Confidence != ConfidenceVerified {
+		return nil, fmt.Errorf("%w: cannot use ENFORCE with confidence %q", ErrEnforceRequiresVerified, topology.Confidence)
+	}
+
 	if topology.Confidence == ConfidenceVerified {
 		if err := Validate(topology); err != nil {
 			return nil, fmt.Errorf("cannot initialize verified topology: %w", err)
 		}
+	} else {
+		// Non-verified topologies (Observed, Default) are strictly pinned to AUDIT_ONLY mode.
+		mode = EvaluationModeAuditOnly
 	}
 
 	allocator := NewAllocator(topology, mode)
@@ -50,6 +65,11 @@ func (s *Service) Topology() ReceiverTopology {
 	return s.allocator.Topology()
 }
 
+// CloneRuntime returns a deep copy snapshot of active runtime allocations for inspection.
+func (s *Service) CloneRuntime() *RuntimeAllocation {
+	return s.runtime.Clone()
+}
+
 // Mode returns the active evaluation mode (ENFORCE or AUDIT_ONLY).
 func (s *Service) Mode() EvaluationMode {
 	s.mu.RLock()
@@ -57,17 +77,19 @@ func (s *Service) Mode() EvaluationMode {
 	return s.allocator.Mode()
 }
 
-var (
-	// ErrInvalidTransition indicates a disallowed topology confidence state transition.
-	ErrInvalidTransition = fmt.Errorf("invalid topology confidence state transition")
-)
-
 // UpdateTopology updates the receiver topology (e.g. after config reload or discovery).
+// Enforces that ENFORCE mode is strictly rejected for non-verified topologies.
 func (s *Service) UpdateTopology(topology ReceiverTopology, mode EvaluationMode) error {
+	if mode == EvaluationModeEnforce && topology.Confidence != ConfidenceVerified {
+		return fmt.Errorf("%w: cannot use ENFORCE with confidence %q", ErrEnforceRequiresVerified, topology.Confidence)
+	}
+
 	if topology.Confidence == ConfidenceVerified {
 		if err := Validate(topology); err != nil {
 			return fmt.Errorf("cannot update to verified topology: %w", err)
 		}
+	} else {
+		mode = EvaluationModeAuditOnly
 	}
 
 	s.mu.Lock()
@@ -77,11 +99,11 @@ func (s *Service) UpdateTopology(topology ReceiverTopology, mode EvaluationMode)
 }
 
 // UpdateTopologyWithPriority updates the active topology following strict confidence transition invariants:
-// 1. Default -> Observed: Allowed (mode: AUDIT_ONLY)
-// 2. Observed -> Observed: Allowed (mode: AUDIT_ONLY)
+// 1. Default -> Observed: Allowed (mode: strictly AUDIT_ONLY)
+// 2. Observed -> Observed: Allowed (mode: strictly AUDIT_ONLY)
 // 3. Observed -> Default: Forbidden
 // 4. Verified -> Observed / Default: Forbidden (verified config is sticky)
-// 5. Any -> Verified: Allowed on explicit reload (mode: ENFORCE unless explicitly set)
+// 5. Any -> Verified: Allowed on explicit reload (mode: ENFORCE unless explicitly set to AUDIT_ONLY)
 func (s *Service) UpdateTopologyWithPriority(newTopology ReceiverTopology, explicitReload bool, desiredMode ...EvaluationMode) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -109,14 +131,12 @@ func (s *Service) UpdateTopologyWithPriority(newTopology ReceiverTopology, expli
 		return fmt.Errorf("%w: cannot overwrite VERIFIED topology with %s", ErrInvalidTransition, newTopology.Confidence)
 	}
 
-	// Observed transitions
+	// Observed transitions - MUST strictly be AUDIT_ONLY
 	if newTopology.Confidence == ConfidenceObserved {
-		// Default -> Observed or Observed -> Observed are both allowed
-		mode := EvaluationModeAuditOnly
-		if len(desiredMode) > 0 && desiredMode[0] != "" {
-			mode = desiredMode[0]
+		if len(desiredMode) > 0 && desiredMode[0] == EvaluationModeEnforce {
+			return fmt.Errorf("%w: cannot use ENFORCE with confidence OBSERVED", ErrEnforceRequiresVerified)
 		}
-		s.allocator = NewAllocator(newTopology, mode)
+		s.allocator = NewAllocator(newTopology, EvaluationModeAuditOnly)
 		return nil
 	}
 
@@ -125,7 +145,10 @@ func (s *Service) UpdateTopologyWithPriority(newTopology ReceiverTopology, expli
 		return fmt.Errorf("%w: cannot downgrade OBSERVED topology to DEFAULT", ErrInvalidTransition)
 	}
 
-	// Default -> Default
+	// Default -> Default - MUST strictly be AUDIT_ONLY
+	if len(desiredMode) > 0 && desiredMode[0] == EvaluationModeEnforce {
+		return fmt.Errorf("%w: cannot use ENFORCE with confidence DEFAULT", ErrEnforceRequiresVerified)
+	}
 	s.allocator = NewAllocator(newTopology, EvaluationModeAuditOnly)
 	return nil
 }

@@ -141,6 +141,7 @@ func (f v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orche
 		TunerLeaseController: f.tunerController,
 		UsagePolicy:          cfg.ReceiverUsage,
 		UsageEvaluator:       evaluator,
+		TopologyService:      f.topologyService,
 		HLSRoot:              cfg.HLS.Root,
 		LiveReadySegments:    cfg.HLS.ReadySegments,
 		LiveSegmentSeconds:   cfg.HLS.SegmentSeconds,

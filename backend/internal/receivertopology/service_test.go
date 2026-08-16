@@ -177,3 +177,64 @@ func TestService_ConfidenceTransitions(t *testing.T) {
 		t.Fatalf("expected updated dual-cable verified topology with 2 inputs")
 	}
 }
+
+func TestService_ConfidenceModeInvariants(t *testing.T) {
+	observedTopo := ReceiverTopology{
+		Model:      "Observed Receiver",
+		Confidence: ConfidenceObserved,
+		Inputs: []PhysicalInput{
+			{ID: "input_a", DeliveryType: DeliveryLegacyUniversal},
+		},
+		Demodulators: []Demodulator{
+			{ID: "demod_a", InputID: "input_a", DVBTypes: []DVBType{DVBTypeSat}},
+		},
+	}
+
+	defaultTopo := DefaultFallbackTopology()
+
+	// 1. NewService with ENFORCE on OBSERVED -> Must fail
+	_, err := NewService(observedTopo, EvaluationModeEnforce)
+	if err == nil {
+		t.Fatalf("expected NewService(Observed, ENFORCE) to fail")
+	}
+
+	// 2. NewService with ENFORCE on DEFAULT -> Must fail
+	_, err = NewService(defaultTopo, EvaluationModeEnforce)
+	if err == nil {
+		t.Fatalf("expected NewService(Default, ENFORCE) to fail")
+	}
+
+	// 3. NewService with AUDIT_ONLY on OBSERVED -> Must succeed with AUDIT_ONLY
+	svc, err := NewService(observedTopo, EvaluationModeAuditOnly)
+	if err != nil {
+		t.Fatalf("expected NewService(Observed, AUDIT_ONLY) to succeed: %v", err)
+	}
+	if svc.Mode() != EvaluationModeAuditOnly {
+		t.Fatalf("expected mode AUDIT_ONLY, got %s", svc.Mode())
+	}
+
+	// 4. UpdateTopology with ENFORCE on OBSERVED -> Must fail
+	err = svc.UpdateTopology(observedTopo, EvaluationModeEnforce)
+	if err == nil {
+		t.Fatalf("expected UpdateTopology(Observed, ENFORCE) to fail")
+	}
+
+	// 5. UpdateTopologyWithPriority with ENFORCE on OBSERVED -> Must fail
+	err = svc.UpdateTopologyWithPriority(observedTopo, false, EvaluationModeEnforce)
+	if err == nil {
+		t.Fatalf("expected UpdateTopologyWithPriority(Observed, ENFORCE) to fail")
+	}
+
+	// 6. UpdateTopologyWithPriority with ENFORCE on DEFAULT -> Must fail
+	defaultSvc, _ := NewService(defaultTopo, EvaluationModeAuditOnly)
+	err = defaultSvc.UpdateTopologyWithPriority(defaultTopo, false, EvaluationModeEnforce)
+	if err == nil {
+		t.Fatalf("expected UpdateTopologyWithPriority(Default, ENFORCE) to fail")
+	}
+
+	// 7. Allocator constructor clamps non-verified topologies to AUDIT_ONLY
+	alloc := NewAllocator(observedTopo, EvaluationModeEnforce)
+	if alloc.Mode() != EvaluationModeAuditOnly {
+		t.Fatalf("expected NewAllocator(Observed, ENFORCE) to clamp to AUDIT_ONLY, got %s", alloc.Mode())
+	}
+}
