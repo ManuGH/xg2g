@@ -36,8 +36,10 @@ type NIMSlot struct {
 }
 
 // ParseNIMSettings parses Enigma2 /etc/enigma2/settings text into a structured ReceiverTopology.
-// Enforces strict empirical extraction without guessing or heuristic defaults.
-// Discovered topologies are assigned ConfidenceObserved.
+// It maps Enigma2 NIM conventions (Slots 0/1 physical connectors, auto/loopthrough virtual demods, Sat config modes)
+// into an observed topology model.
+// Because settings-derived topologies rely on Enigma2 structural conventions rather than verified physical wiring,
+// discovered topologies are strictly assigned ConfidenceObserved and evaluated in AUDIT_ONLY mode.
 func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 	if strings.TrimSpace(settingsContent) == "" {
 		return ReceiverTopology{}, ErrNoNIMConfigFound
