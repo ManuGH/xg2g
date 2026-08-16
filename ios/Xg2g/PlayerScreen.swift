@@ -24,11 +24,14 @@ struct PlayerScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var currentChannel: Channel
     @State private var player: AVPlayer?
+    @State private var isPlaying = true
     @State private var failure: String?
     @State private var isTimeshifted = false
     @State private var showLandscapeGuide = false
+    @State private var showLandscapeControls = true
     @State private var zapNotice: String?
     @State private var hideZapNoticeTask: Task<Void, Never>?
+    @State private var autoHideControlsTask: Task<Void, Never>?
 
     init(model: AppModel, channel: Channel) {
         self.model = model
@@ -57,6 +60,7 @@ struct PlayerScreen: View {
                         if let player {
                             NativeVideoPlayerView(
                                 player: player,
+                                showsPlaybackControls: !isLandscape,
                                 onDismiss: { closePlayer() }
                             )
                         } else if let failure {
@@ -190,6 +194,53 @@ struct PlayerScreen: View {
                     }
                 }
 
+                // MARK: - Landscape Broadcast OSD Overlay
+                if isLandscape && showLandscapeControls && !showLandscapeGuide {
+                    LandscapeBroadcastOverlay(
+                        currentChannel: currentChannel,
+                        nowNext: nowNext,
+                        isPlaying: isPlaying,
+                        isTimeshifted: isTimeshifted,
+                        isFavorite: model.isFavorite(currentChannel),
+                        onToggleFavorite: {
+                            resetControlsTimeout()
+                            model.toggleFavorite(currentChannel)
+                        },
+                        onRecord: {
+                            resetControlsTimeout()
+                            triggerHaptic(.medium)
+                            Task {
+                                let ok = await model.recordLiveNow(channel: currentChannel)
+                                displayZapToast(ok ? "🔴 Aufnahme gestartet" : "Aufnahmefehler")
+                            }
+                        },
+                        onTogglePlayPause: {
+                            togglePlayPause()
+                        },
+                        onSeekRelative: { secs in
+                            seekRelative(seconds: secs)
+                        },
+                        onSeekToBeginning: {
+                            resetControlsTimeout()
+                            seekToBeginning()
+                        },
+                        onJumpToLive: {
+                            resetControlsTimeout()
+                            jumpToLive()
+                        },
+                        onOpenChannels: {
+                            autoHideControlsTask?.cancel()
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showLandscapeGuide = true
+                            }
+                        },
+                        onClose: {
+                            closePlayer()
+                        }
+                    )
+                    .transition(.opacity)
+                }
+
                 // MARK: - Landscape Quick-Zap Channel Carousel
                 if isLandscape && showLandscapeGuide {
                     VStack {
@@ -200,11 +251,16 @@ struct PlayerScreen: View {
                             schedule: model.schedule,
                             onSelect: { ch in
                                 switchChannel(to: ch)
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    showLandscapeGuide = false
+                                }
+                                resetControlsTimeout()
                             },
                             onClose: {
                                 withAnimation(.easeInOut(duration: 0.25)) {
                                     showLandscapeGuide = false
                                 }
+                                resetControlsTimeout()
                             }
                         )
                         .padding(.horizontal, 16)
@@ -239,8 +295,18 @@ struct PlayerScreen: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 if isLandscape {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        showLandscapeGuide.toggle()
+                    if showLandscapeGuide {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showLandscapeGuide = false
+                        }
+                        resetControlsTimeout()
+                    } else if showLandscapeControls {
+                        autoHideControlsTask?.cancel()
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showLandscapeControls = false
+                        }
+                    } else {
+                        resetControlsTimeout()
                     }
                 }
             }
@@ -368,6 +434,45 @@ struct PlayerScreen: View {
         }
     }
 
+    private func seekRelative(seconds: Double) {
+        guard let player, let item = player.currentItem else { return }
+        triggerHaptic(.light)
+        let current = player.currentTime()
+        let target = CMTimeAdd(current, CMTime(seconds: seconds, preferredTimescale: 600))
+        player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+        isTimeshifted = true
+        resetControlsTimeout()
+        displayZapToast(seconds > 0 ? "▶▶ +\(Int(seconds))s" : "◀◀ \(Int(-seconds))s")
+    }
+
+    private func togglePlayPause() {
+        guard let player else { return }
+        triggerHaptic(.medium)
+        if player.timeControlStatus == .playing {
+            player.pause()
+            isPlaying = false
+        } else {
+            player.play()
+            isPlaying = true
+        }
+        resetControlsTimeout()
+    }
+
+    private func resetControlsTimeout() {
+        autoHideControlsTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showLandscapeControls = true
+        }
+        autoHideControlsTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showLandscapeControls = false
+                }
+            }
+        }
+    }
+
     private func seekToBeginning() {
         guard let player, let item = player.currentItem else { return }
         triggerHaptic(.medium)
@@ -417,6 +522,7 @@ struct PlayerScreen: View {
 
     private func teardownPlayer() {
         hideZapNoticeTask?.cancel()
+        autoHideControlsTask?.cancel()
         LiveActivityManager.shared.endActivity()
         HandoffCoordinator.shared.clearPlaybackActivity()
         NowPlayingManager.shared.clear()
@@ -445,7 +551,8 @@ struct PlayerScreen: View {
 
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
-        item.preferredForwardBufferDuration = 6.0
+        // 4.0s forward buffer keeps 2 segments loaded to prevent buffer underflow stalls
+        item.preferredForwardBufferDuration = 4.0
 
         Self.updatePlayerMetadata(for: item, channel: channel, nowNext: nowNext)
 
@@ -566,18 +673,257 @@ struct LandscapeQuickZapBar: View {
     }
 }
 
+// MARK: - Landscape Fullscreen Broadcast OSD Overlay
+
+struct LandscapeBroadcastOverlay: View {
+    let currentChannel: Channel
+    let nowNext: NowNext?
+    let isPlaying: Bool
+    let isTimeshifted: Bool
+    let isFavorite: Bool
+    let onToggleFavorite: () -> Void
+    let onRecord: () -> Void
+    let onTogglePlayPause: () -> Void
+    let onSeekRelative: (Double) -> Void
+    let onSeekToBeginning: () -> Void
+    let onJumpToLive: () -> Void
+    let onOpenChannels: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            // Dark vignette gradient for readability
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.75),
+                    Color.clear,
+                    Color.clear,
+                    Color.black.opacity(0.85)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
+                // Top Header Bar
+                HStack(spacing: 12) {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+
+                    ChannelLogo(url: currentChannel.logoURL, name: currentChannel.name, size: 36)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            if let number = currentChannel.number {
+                                Text(number)
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Theme.Colors.accentAction.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                            }
+
+                            Text(currentChannel.name)
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.white)
+
+                            Button(action: onToggleFavorite) {
+                                Image(systemName: isFavorite ? "star.fill" : "star")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(isFavorite ? .yellow : .white.opacity(0.5))
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        if let now = nowNext?.now {
+                            HStack(spacing: 6) {
+                                Text(now.title)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.9))
+                                    .lineLimit(1)
+
+                                Text("• \(now.formattedTimeRange)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.6))
+
+                                if let rem = now.remainingMinutes(at: .now) {
+                                    Text("(noch \(rem) Min)")
+                                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Theme.Colors.accentLive)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    // Quick Record Button
+                    Button(action: onRecord) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "record.circle")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Aufnehmen")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Theme.Colors.statusError.opacity(0.25), in: Capsule())
+                        .foregroundStyle(Theme.Colors.statusError)
+                        .overlay(Capsule().strokeBorder(Theme.Colors.statusError.opacity(0.5), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+
+                Spacer()
+
+                // Center Transport Controls (-10s / Play-Pause / +30s)
+                HStack(spacing: 48) {
+                    Button {
+                        onSeekRelative(-10)
+                    } label: {
+                        Image(systemName: "gobackward.10")
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(14)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onTogglePlayPause) {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 36, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(20)
+                            .background(Theme.Colors.accentAction.opacity(0.85), in: Circle())
+                            .shadow(color: Theme.Colors.accentAction.opacity(0.5), radius: 12)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        onSeekRelative(30)
+                    } label: {
+                        Image(systemName: "goforward.30")
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(14)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                // Bottom Timeshift & Progress Bar
+                VStack(spacing: 8) {
+                    // Timeline Scrubber
+                    if let now = nowNext?.now, let frac = now.progress(at: .now) {
+                        VStack(spacing: 4) {
+                            LiveScrubberBar(progress: frac)
+                            HStack {
+                                Text(now.formattedStartTime)
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.6))
+                                Spacer()
+                                Text(now.formattedEndTime)
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        }
+                    }
+
+                    // Timeshift Controls & Status
+                    HStack(spacing: 12) {
+                        // Von Beginn (Restart)
+                        Button(action: onSeekToBeginning) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("Von Beginn")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .foregroundStyle(.white)
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 0.8))
+                        }
+                        .buttonStyle(.plain)
+
+                        // Live / Timeshift Status
+                        if isTimeshifted {
+                            Button(action: onJumpToLive) {
+                                HStack(spacing: 4) {
+                                    PulsingLiveDot(size: 5)
+                                    Text("Zur Live-Kante")
+                                        .font(.system(size: 11, weight: .bold))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Theme.Colors.accentLive, in: Capsule())
+                                .foregroundStyle(Color.black)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            HStack(spacing: 5) {
+                                PulsingLiveDot(size: 5)
+                                Text("LIVE • DVR")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentLive)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
+                        }
+
+                        Spacer()
+
+                        // Kanäle Quick Zap Button
+                        Button(action: onOpenChannels) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "tv")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text("Sender")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(Theme.Colors.surfaceElevated, in: Capsule())
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+            }
+        }
+    }
+}
+
 // MARK: - Native iOS AVPlayerViewController (Plex / Apple TV System Player)
 
 struct NativeVideoPlayerView: UIViewControllerRepresentable {
 
     let player: AVPlayer
     var videoGravity: AVLayerVideoGravity = .resizeAspect
+    var showsPlaybackControls: Bool = true
     var onDismiss: (@MainActor @Sendable () -> Void)? = nil
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
-        controller.showsPlaybackControls = true
+        controller.showsPlaybackControls = showsPlaybackControls
         controller.videoGravity = videoGravity
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
@@ -591,6 +937,9 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         if controller.player !== player {
             controller.player = player
+        }
+        if controller.showsPlaybackControls != showsPlaybackControls {
+            controller.showsPlaybackControls = showsPlaybackControls
         }
         if controller.videoGravity != videoGravity {
             controller.videoGravity = videoGravity

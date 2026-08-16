@@ -49,6 +49,24 @@ func TestAndroidTVNativeStartupSkipsFPSProbeForDirectTuner(t *testing.T) {
 	assert.Zero(t, probeCalls)
 }
 
+func TestIOSNativeStartupSkipsFPSProbeForDirectTuner(t *testing.T) {
+	adapter := NewLocalAdapter(
+		"ffmpeg", "", t.TempDir(), nil, zerolog.New(io.Discard),
+		"", "", 0, 0, false, 2*time.Second, 6, 0, 0, "",
+	)
+	probeCalls := 0
+	adapter.fpsProbeFn = func(context.Context, string) (int, string, error) {
+		probeCalls++
+		return 0, "", errors.New("native iOS direct tuner must not run fps probe")
+	}
+
+	iosSpec := androidTVNativeTranscodeSpec()
+	iosSpec.ClientFamily = "ios_safari_native"
+	_, err := adapter.buildArgs(context.Background(), iosSpec, "http://10.10.55.64:8001/live")
+	require.NoError(t, err)
+	assert.Zero(t, probeCalls)
+}
+
 func TestAndroidTVNativeStartupSkipsAudioProbeWithoutChangingWeb(t *testing.T) {
 	adapter := &LocalAdapter{Logger: zerolog.Nop()}
 	probeCalls := 0

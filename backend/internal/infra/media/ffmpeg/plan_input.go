@@ -197,19 +197,27 @@ func (a *LocalAdapter) resolveLiveFPS(ctx context.Context, spec ports.StreamSpec
 	return a.resolveProbedLiveFPS(ctx, spec, inputURL, sourceKey, fps)
 }
 
+func isNativeAppClientSpec(spec ports.StreamSpec) bool {
+	f := strings.ToLower(strings.TrimSpace(spec.ClientFamily))
+	return isAndroidTVNativeSpec(spec) || f == "ios_safari_native" || f == "safari_native" || f == "xg2g-ios" || strings.Contains(f, "ios")
+}
+
 func (a *LocalAdapter) resolveSkippedLiveFPS(ctx context.Context, spec ports.StreamSpec, inputURL, sourceKey string, fallback int) (int, bool) {
-	if isAndroidTVNativeSpec(spec) && spec.Source.Type == ports.SourceTuner {
+	if isNativeAppClientSpec(spec) && spec.Source.Type == ports.SourceTuner {
 		logEvt := a.Logger.Info().
 			Str("session_id", spec.SessionID).
-			Str("startup_phase", "fps_probe_skipped_android_tv_native").
+			Str("startup_phase", "fps_probe_skipped_native_app").
 			Str("source_key", sourceKey)
 		if cachedFPS, ok := a.cachedFPS(sourceKey); ok {
 			logEvt.Int("cached_fps", cachedFPS).
-				Msg("skipping fps probe for native Android TV; using cached fps")
+				Msg("skipping fps probe for native app; using cached fps")
 			return cachedFPS, true
 		}
+		if fallback <= 0 {
+			fallback = 50
+		}
 		logEvt.Int("fallback_fps", fallback).
-			Msg("skipping fps probe for native Android TV; using profile fallback fps")
+			Msg("skipping fps probe for native app; using profile fallback fps")
 		return fallback, true
 	}
 	if isStreamRelayURL(inputURL) {
