@@ -24,6 +24,9 @@ struct RootView: View {
                 AdaptiveAppNavigation(model: model)
             }
         }
+        .fullScreenCover(item: $model.playingChannel) { channel in
+            PlayerScreen(model: model, channel: channel)
+        }
         .preferredColorScheme(.dark)
         .tint(Theme.Colors.accentAction)
         .task { await model.start() }
@@ -46,10 +49,9 @@ struct RootView: View {
 struct AdaptiveAppNavigation: View {
 
     @Bindable var model: AppModel
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        if horizontalSizeClass == .regular {
+        if UIDevice.current.userInterfaceIdiom == .pad {
             // MARK: - iPadOS NavigationSplitView with Glass Sidebar
             NavigationSplitView {
                 iPadSidebar(model: model)

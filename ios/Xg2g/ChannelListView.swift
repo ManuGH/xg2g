@@ -454,9 +454,6 @@ struct ChannelListView: View {
                     }
                 )
             }
-            .fullScreenCover(item: $model.playingChannel) { channel in
-                PlayerScreen(model: model, channel: channel)
-            }
         }
     }
 

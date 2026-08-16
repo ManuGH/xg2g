@@ -309,9 +309,6 @@ struct GuideView: View {
                     }
                 )
             }
-            .fullScreenCover(item: $model.playingChannel) { channel in
-                PlayerScreen(model: model, channel: channel)
-            }
             .task {
                 if model.fullEpg.isEmpty {
                     await model.loadChannels()
