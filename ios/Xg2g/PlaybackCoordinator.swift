@@ -264,9 +264,9 @@ enum PlaybackWire {
 
         struct Capabilities: Encodable, Sendable {
             let capabilitiesVersion = 3
-            let container = ["fmp4", "mp4", "ts"]
+            let container = ["mp4", "ts", "fmp4"]
             let videoCodecs = DeviceCapabilities.supportedCodecsList
-            let audioCodecs = ["aac", "ac3", "mp2", "mp3"]
+            let audioCodecs = ["aac", "ac3", "mp3"]
             let supportsHls = true
             let preferredHlsEngine = "native"
             let hlsEngines = ["native"]
