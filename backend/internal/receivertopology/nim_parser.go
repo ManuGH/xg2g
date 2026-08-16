@@ -16,7 +16,7 @@ import (
 var (
 	// ErrNoNIMConfigFound is returned when no valid NIM configuration keys exist in settings.
 	ErrNoNIMConfigFound = errors.New("no valid Enigma2 NIM configuration found in settings")
-	// ErrInvalidNIMConfig is returned when NIM settings are contradictory or invalid.
+	// ErrInvalidNIMConfig is returned when NIM settings are contradictory, broken, or ambiguous.
 	ErrInvalidNIMConfig = errors.New("invalid Enigma2 NIM configuration")
 )
 
@@ -36,6 +36,7 @@ type NIMSlot struct {
 }
 
 // ParseNIMSettings parses Enigma2 /etc/enigma2/settings text into a structured ReceiverTopology.
+// Enforces strict empirical extraction without guessing or heuristic defaults.
 // Discovered topologies are assigned ConfidenceObserved.
 func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 	if strings.TrimSpace(settingsContent) == "" {
@@ -132,19 +133,28 @@ func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 	inputMap := make(map[InputID]bool)
 	slotToInput := make(map[int]InputID)
 
-	// Check if this is an FBC front-end (typically 8 slots with slots >= 2 auto-configured/virtual)
-	isFBC := len(indices) >= 8
-
-	// Detect unicable user bands count across all slots
+	// Detect unicable and JESS indicators
 	unicableSCRs := make(map[int]bool)
+	isJESS := false
+	hasUnicable := false
+
 	for _, idx := range indices {
 		slot := slotsMap[idx]
 		if slot.ConfigMode == "unicable" || strings.Contains(slot.UnicableMode, "unicable") || slot.SCR >= 0 {
 			slot.Unicable = true
+			hasUnicable = true
 			if slot.SCR >= 0 {
 				unicableSCRs[slot.SCR] = true
 			}
+			if isJESSProtocol(slot) {
+				isJESS = true
+			}
 		}
+	}
+
+	// If unicable was configured, validate that at least one valid SCR channel is present
+	if hasUnicable && len(unicableSCRs) == 0 {
+		return ReceiverTopology{}, fmt.Errorf("%w: unicable configuration present but 0 SCR user bands found", ErrInvalidNIMConfig)
 	}
 
 	for _, idx := range indices {
@@ -157,11 +167,9 @@ func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 			continue
 		}
 
-		dvbTypes := []DVBType{DVBTypeSat}
-		if slot.DVBType == "DVB-C" || strings.Contains(slot.RawKeys["dvbType"], "DVB-C") {
-			dvbTypes = []DVBType{DVBTypeCable}
-		} else if slot.DVBType == "DVB-T" || strings.Contains(slot.RawKeys["dvbType"], "DVB-T") {
-			dvbTypes = []DVBType{DVBTypeTerrestrial}
+		dvbTypes, err := resolveNIMDVBTypes(slot)
+		if err != nil {
+			return ReceiverTopology{}, err
 		}
 
 		// Determine Physical Input assignment
@@ -172,11 +180,8 @@ func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 			assignedInput = "input_a"
 			if !inputMap[assignedInput] {
 				userBands := len(unicableSCRs)
-				if userBands < 1 {
-					userBands = 8 // Default standard unicable capacity
-				}
 				delivery := DeliveryUnicable1
-				if userBands > 8 {
+				if isJESS {
 					delivery = DeliveryUnicable2JESS
 				}
 				inputs = append(inputs, PhysicalInput{
@@ -190,14 +195,14 @@ func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 			slotToInput[idx] = assignedInput
 
 		} else if slot.ConfigMode == "loopthrough" || slot.ConnectedTo >= 0 {
-			// Linked / loopthrough to a parent tuner
+			// Linked / loopthrough to a parent tuner - MUST point to a valid parent slot
 			parentIdx := slot.ConnectedTo
 			if parentIdx < 0 {
-				parentIdx = 0
+				return ReceiverTopology{}, fmt.Errorf("%w: slot %d is configured as loopthrough but missing connectedTo property", ErrInvalidNIMConfig, idx)
 			}
 			parentInput, ok := slotToInput[parentIdx]
 			if !ok {
-				parentInput = "input_a"
+				return ReceiverTopology{}, fmt.Errorf("%w: slot %d loopthrough references unconfigured or non-existent slot %d", ErrInvalidNIMConfig, idx, parentIdx)
 			}
 			assignedInput = parentInput
 			slotToInput[idx] = assignedInput
@@ -228,27 +233,27 @@ func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 			}
 			slotToInput[idx] = assignedInput
 
+		} else if slot.ConfigMode == "auto" {
+			// FBC automatic virtual demodulator routing through primary input
+			assignedInput = "input_a"
+			slotToInput[idx] = assignedInput
+
 		} else {
-			// Slots >= 2 (FBC virtual demods or secondary discrete tuners)
-			if isFBC {
-				// FBC virtual demods route through primary input_a by default
-				assignedInput = "input_a"
-			} else {
-				// Discrete multi-tuner
-				assignedInput = InputID(fmt.Sprintf("input_%c", 'a'+idx))
-				if !inputMap[assignedInput] {
-					inputs = append(inputs, PhysicalInput{
-						ID:           assignedInput,
-						Label:        fmt.Sprintf("Tuner %c (In)", 'A'+idx),
-						DeliveryType: DeliveryLegacyUniversal,
-					})
-					inputMap[assignedInput] = true
-				}
+			// Discrete multi-tuner
+			assignedInput = InputID(fmt.Sprintf("input_%c", 'a'+idx))
+			if !inputMap[assignedInput] {
+				inputs = append(inputs, PhysicalInput{
+					ID:           assignedInput,
+					Label:        fmt.Sprintf("Tuner %c (In)", 'A'+idx),
+					DeliveryType: DeliveryLegacyUniversal,
+				})
+				inputMap[assignedInput] = true
 			}
 			slotToInput[idx] = assignedInput
 		}
 
-		isVirtual := isFBC && idx >= 2
+		// In Enigma2 FBC front-ends, virtual demods are designated by configMode == "auto" or loopthrough
+		isVirtual := (slot.ConfigMode == "auto" || slot.ConfigMode == "loopthrough") && idx >= 2
 		demods = append(demods, Demodulator{
 			ID:           demodID,
 			InputID:      assignedInput,
@@ -267,4 +272,40 @@ func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 		Inputs:       inputs,
 		Demodulators: demods,
 	}, nil
+}
+
+func isJESSProtocol(slot *NIMSlot) bool {
+	for k, v := range slot.RawKeys {
+		vLower := strings.ToLower(v)
+		kLower := strings.ToLower(k)
+		if strings.Contains(vLower, "jess") || strings.Contains(vLower, "en50607") || strings.Contains(vLower, "dcss") {
+			return true
+		}
+		if kLower == "unicableformat" && (vLower == "jess" || vLower == "en50607") {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveNIMDVBTypes(slot *NIMSlot) ([]DVBType, error) {
+	dvbRaw := strings.ToUpper(slot.DVBType)
+	if dvbRaw == "" {
+		dvbRaw = strings.ToUpper(slot.RawKeys["dvbType"])
+	}
+
+	switch {
+	case strings.Contains(dvbRaw, "DVB-C") || strings.Contains(dvbRaw, "CABLE"):
+		return []DVBType{DVBTypeCable}, nil
+	case strings.Contains(dvbRaw, "DVB-T") || strings.Contains(dvbRaw, "TERRESTRIAL"):
+		return []DVBType{DVBTypeTerrestrial}, nil
+	case strings.Contains(dvbRaw, "DVB-S") || strings.Contains(dvbRaw, "SAT"):
+		return []DVBType{DVBTypeSat}, nil
+	case slot.ConfigMode == "simple" || slot.ConfigMode == "advanced" || slot.ConfigMode == "unicable" ||
+		slot.ConfigMode == "loopthrough" || slot.ConfigMode == "equal" || slot.ConfigMode == "satposdepends" || slot.ConfigMode == "auto":
+		// Standard Sat NIM config modes
+		return []DVBType{DVBTypeSat}, nil
+	default:
+		return nil, fmt.Errorf("%w: slot %d has unrecognized dvbType %q", ErrInvalidNIMConfig, slot.Index, dvbRaw)
+	}
 }

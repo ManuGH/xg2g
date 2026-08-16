@@ -12,15 +12,36 @@ import (
 )
 
 // ToDomainTopology maps the decoupled YAML DTO ReceiverTopologyFileConfig into a validated Domain ReceiverTopology.
+// Enforces complete, explicit hardware specifications without guessing or phantom defaults.
 // Returns (domainTopology, evaluationMode, isConfigured, err).
 func ToDomainTopology(dto *ReceiverTopologyFileConfig) (receivertopology.ReceiverTopology, receivertopology.EvaluationMode, bool, error) {
-	if dto == nil || len(dto.Inputs) == 0 {
+	if dto == nil || (len(dto.Inputs) == 0 && len(dto.Demodulators) == 0 && strings.TrimSpace(dto.Model) == "") {
 		return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, nil
+	}
+
+	if len(dto.Inputs) == 0 {
+		return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("receiver topology configuration must define at least one physical input")
+	}
+
+	if len(dto.Demodulators) == 0 {
+		return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("receiver topology configuration must explicitly define demodulators")
 	}
 
 	model := strings.TrimSpace(dto.Model)
 	if model == "" {
 		model = "Configured Receiver"
+	}
+
+	// Validate Mode
+	modeStr := strings.ToLower(strings.TrimSpace(dto.Mode))
+	var mode receivertopology.EvaluationMode
+	switch modeStr {
+	case "enforce", "":
+		mode = receivertopology.EvaluationModeEnforce
+	case "audit_only":
+		mode = receivertopology.EvaluationModeAuditOnly
+	default:
+		return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("invalid receiver topology mode %q: must be 'enforce' or 'audit_only'", dto.Mode)
 	}
 
 	var domainInputs []receivertopology.PhysicalInput
@@ -29,7 +50,7 @@ func ToDomainTopology(dto *ReceiverTopologyFileConfig) (receivertopology.Receive
 	for i, in := range dto.Inputs {
 		id := receivertopology.InputID(strings.TrimSpace(in.ID))
 		if id == "" {
-			id = receivertopology.InputID(fmt.Sprintf("input_%c", 'a'+i))
+			return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("input at index %d has empty id", i)
 		}
 		if inputIDs[id] {
 			return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("duplicate physical input id %q", id)
@@ -41,7 +62,10 @@ func ToDomainTopology(dto *ReceiverTopologyFileConfig) (receivertopology.Receive
 			label = fmt.Sprintf("Input %s", string(id))
 		}
 
-		delivery := mapDeliveryType(in.DeliveryType)
+		delivery, err := parseDeliveryType(in.DeliveryType, string(id))
+		if err != nil {
+			return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, err
+		}
 
 		var sats []receivertopology.SatellitePosition
 		for _, s := range in.Satellites {
@@ -58,74 +82,45 @@ func ToDomainTopology(dto *ReceiverTopologyFileConfig) (receivertopology.Receive
 	}
 
 	var domainDemods []receivertopology.Demodulator
-	if len(dto.Demodulators) > 0 {
-		for i, d := range dto.Demodulators {
-			demodID := receivertopology.DemodulatorID(strings.TrimSpace(d.ID))
-			if demodID == "" {
-				demodID = receivertopology.DemodulatorID(fmt.Sprintf("demod_%c", 'a'+i))
-			}
-			inputID := receivertopology.InputID(strings.TrimSpace(d.InputID))
-			if inputID == "" {
-				inputID = domainInputs[0].ID
-			}
+	demodIDs := make(map[receivertopology.DemodulatorID]bool)
 
-			var dvbTypes []receivertopology.DVBType
-			for _, dt := range d.DVBTypes {
-				switch strings.ToUpper(strings.TrimSpace(dt)) {
-				case "DVB-C", "CABLE":
-					dvbTypes = append(dvbTypes, receivertopology.DVBTypeCable)
-				case "DVB-T", "DVB-T2", "TERRESTRIAL":
-					dvbTypes = append(dvbTypes, receivertopology.DVBTypeTerrestrial)
-				default:
-					dvbTypes = append(dvbTypes, receivertopology.DVBTypeSat)
-				}
-			}
-			if len(dvbTypes) == 0 {
-				dvbTypes = []receivertopology.DVBType{receivertopology.DVBTypeSat}
-			}
+	for i, d := range dto.Demodulators {
+		demodID := receivertopology.DemodulatorID(strings.TrimSpace(d.ID))
+		if demodID == "" {
+			return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("demodulator at index %d has empty id", i)
+		}
+		if demodIDs[demodID] {
+			return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("duplicate demodulator id %q", demodID)
+		}
+		demodIDs[demodID] = true
 
-			domainDemods = append(domainDemods, receivertopology.Demodulator{
-				ID:           demodID,
-				InputID:      inputID,
-				DVBTypes:     dvbTypes,
-				IsFBCVirtual: d.IsFBCVirtual,
-			})
+		inputID := receivertopology.InputID(strings.TrimSpace(d.InputID))
+		if inputID == "" {
+			return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("demodulator %q has empty input_id", demodID)
 		}
-	} else {
-		// Auto-expand demodulators if inputs are defined without explicit demodulator map
-		if len(domainInputs) == 1 && (domainInputs[0].DeliveryType == receivertopology.DeliveryUnicable1 || domainInputs[0].DeliveryType == receivertopology.DeliveryUnicable2JESS) {
-			// Unicable FBC: 8 demods on primary input
-			for i := 0; i < 8; i++ {
-				domainDemods = append(domainDemods, receivertopology.Demodulator{
-					ID:           receivertopology.DemodulatorID(fmt.Sprintf("demod_%c", 'a'+i)),
-					InputID:      domainInputs[0].ID,
-					DVBTypes:     []receivertopology.DVBType{receivertopology.DVBTypeSat},
-					IsFBCVirtual: i >= 2,
-				})
-			}
-		} else if len(domainInputs) >= 2 {
-			// Multi-cable FBC: 8 demods mapped across inputs (Demod A -> In A, Demod B -> In B, C..H virtual)
-			for i := 0; i < 8; i++ {
-				inID := domainInputs[0].ID
-				if i == 1 {
-					inID = domainInputs[1].ID
-				}
-				domainDemods = append(domainDemods, receivertopology.Demodulator{
-					ID:           receivertopology.DemodulatorID(fmt.Sprintf("demod_%c", 'a'+i)),
-					InputID:      inID,
-					DVBTypes:     []receivertopology.DVBType{receivertopology.DVBTypeSat},
-					IsFBCVirtual: i >= 2,
-				})
-			}
-		} else {
-			// Single standard tuner
-			domainDemods = append(domainDemods, receivertopology.Demodulator{
-				ID:           "demod_a",
-				InputID:      domainInputs[0].ID,
-				DVBTypes:     []receivertopology.DVBType{receivertopology.DVBTypeSat},
-				IsFBCVirtual: false,
-			})
+		if !inputIDs[inputID] {
+			return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("demodulator %q references non-existent input_id %q", demodID, inputID)
 		}
+
+		if len(d.DVBTypes) == 0 {
+			return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("demodulator %q has empty dvb_types", demodID)
+		}
+
+		var dvbTypes []receivertopology.DVBType
+		for _, dt := range d.DVBTypes {
+			parsedDT, err := parseDVBType(dt, string(demodID))
+			if err != nil {
+				return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, err
+			}
+			dvbTypes = append(dvbTypes, parsedDT)
+		}
+
+		domainDemods = append(domainDemods, receivertopology.Demodulator{
+			ID:           demodID,
+			InputID:      inputID,
+			DVBTypes:     dvbTypes,
+			IsFBCVirtual: d.IsFBCVirtual,
+		})
 	}
 
 	domainTopo := receivertopology.ReceiverTopology{
@@ -139,25 +134,37 @@ func ToDomainTopology(dto *ReceiverTopologyFileConfig) (receivertopology.Receive
 		return receivertopology.ReceiverTopology{}, receivertopology.EvaluationModeAuditOnly, false, fmt.Errorf("invalid receiver topology configuration: %w", err)
 	}
 
-	mode := receivertopology.EvaluationModeEnforce
-	if strings.EqualFold(strings.TrimSpace(dto.Mode), "audit_only") {
-		mode = receivertopology.EvaluationModeAuditOnly
-	}
-
 	return domainTopo, mode, true, nil
 }
 
-func mapDeliveryType(raw string) receivertopology.DeliveryType {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
+func parseDeliveryType(raw, inputID string) (receivertopology.DeliveryType, error) {
+	norm := strings.ToLower(strings.TrimSpace(raw))
+	switch norm {
+	case "legacy_universal", "universal", "legacy":
+		return receivertopology.DeliveryLegacyUniversal, nil
 	case "unicable_1", "unicable", "scr":
-		return receivertopology.DeliveryUnicable1
+		return receivertopology.DeliveryUnicable1, nil
 	case "unicable_2_jess", "jess", "unicable2":
-		return receivertopology.DeliveryUnicable2JESS
-	case "cable", "dvb-c":
-		return receivertopology.DeliveryCable
-	case "terrestrial", "dvb-t", "dvb-t2":
-		return receivertopology.DeliveryTerrestrial
+		return receivertopology.DeliveryUnicable2JESS, nil
+	case "cable", "dvb-c", "dvb_c":
+		return receivertopology.DeliveryCable, nil
+	case "terrestrial", "dvb-t", "dvb-t2", "dvb_t", "dvb_t2":
+		return receivertopology.DeliveryTerrestrial, nil
 	default:
-		return receivertopology.DeliveryLegacyUniversal
+		return "", fmt.Errorf("invalid delivery_type %q for input %q", raw, inputID)
+	}
+}
+
+func parseDVBType(raw, demodID string) (receivertopology.DVBType, error) {
+	norm := strings.ToUpper(strings.TrimSpace(raw))
+	switch norm {
+	case "DVB-S", "DVB_S", "DVB-S2", "DVB_S2", "SAT":
+		return receivertopology.DVBTypeSat, nil
+	case "DVB-C", "DVB_C", "CABLE":
+		return receivertopology.DVBTypeCable, nil
+	case "DVB-T", "DVB_T", "DVB-T2", "DVB_T2", "TERRESTRIAL":
+		return receivertopology.DVBTypeTerrestrial, nil
+	default:
+		return "", fmt.Errorf("invalid dvb_type %q for demodulator %q", raw, demodID)
 	}
 }
