@@ -3,15 +3,18 @@ package manager
 import (
 	"context"
 	"fmt"
-	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
-	"github.com/ManuGH/xg2g/internal/domain/session/model"
-	"github.com/ManuGH/xg2g/internal/domain/session/ports"
-	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
-	"github.com/rs/zerolog"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/audiotopology"
+	"github.com/ManuGH/xg2g/internal/domain/session/lifecycle"
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/ports"
+	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/pipeline/profiles"
+	"github.com/rs/zerolog"
 )
 
 func detectTerminationCause(ctx context.Context, retErr error) terminationCause {
@@ -253,6 +256,7 @@ func (o *Orchestrator) runExecutionLoop(
 		}
 
 		if playlistReadyResult {
+			o.startAudioTopologyMonitorIfSupported(hbCtx, e.SessionID, sessionCtx.ServiceRef, currentProfileSpec)
 			return handle, currentProfileSpec, nil
 		}
 
@@ -484,4 +488,35 @@ func (o *Orchestrator) finalizeDeferred(
 	if !*startRecorded {
 		recordStart(startResultForReason(outcome.Reason), outcome.Reason)
 	}
+}
+
+func (o *Orchestrator) startAudioTopologyMonitorIfSupported(
+	ctx context.Context,
+	sessionID string,
+	serviceRef string,
+	profile model.ProfileSpec,
+) {
+	if profile.VOD {
+		return
+	}
+	prober, ok := o.Pipeline.(ports.AudioTopologyProber)
+	if !ok || prober == nil {
+		return
+	}
+
+	_ = o.goSessionWorker(func() {
+		cfg := DefaultAudioTopologyMonitorConfig()
+		monitor := NewSessionAudioTopologyMonitor(
+			sessionID,
+			serviceRef,
+			"", // resolved internally by prober with serviceRef
+			audiotopology.AudioTopology{},
+			cfg,
+			func(probeCtx context.Context, sid, sref, url string) (audiotopology.AudioTopology, error) {
+				return prober.ProbeAudioTopology(probeCtx, sid, sref, url)
+			},
+			*log.L(),
+		)
+		monitor.Start(ctx)
+	})
 }

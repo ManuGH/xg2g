@@ -22,17 +22,22 @@ func ClassifyPurpose(
 		return AudioPurposeCommentary, ConfidenceHigh
 	}
 
-	// 2. DVB ETSI original audio / multiple language indicator
-	if lang.IsOriginal || lang.ISO639_2 == "mul" {
+	// 2. DVB ETSI original audio indicator
+	if lang.IsOriginal {
 		return AudioPurposeAlternate, ConfidenceExplicit
 	}
 
 	// 3. Clean effects / Stadium sound without commentary
-	if cleanEffects {
+	if cleanEffects || strings.Contains(descLower, "stadion") || strings.Contains(descLower, "stadium") {
+		return AudioPurposeAlternate, ConfidenceHigh
+	}
+
+	// 4. Multiple languages code (mul) without explicit description
+	if lang.ISO639_2 == "mul" {
 		return AudioPurposeAlternate, ConfidenceMedium
 	}
 
-	// 4. Non-primary language on the service
+	// 5. Non-primary language on the service
 	if !isPrimary && !lang.IsUndefined {
 		return AudioPurposeAlternate, ConfidenceMedium
 	}
@@ -95,8 +100,12 @@ func BuildTrackLabel(
 		} else {
 			parts = append(parts, "Klare Sprache")
 		}
-	case purpose == AudioPurposeAlternate && (strings.Contains(e2Lower, "original") || lang.IsOriginal || lang.ISO639_2 == "mul"):
+	case purpose == AudioPurposeAlternate && (strings.Contains(e2Lower, "original") || lang.IsOriginal):
 		parts = append(parts, "Originalton")
+	case strings.Contains(e2Lower, "stadion") || strings.Contains(e2Lower, "stadium"):
+		parts = append(parts, "Stadionton")
+	case purpose == AudioPurposeCommentary || strings.Contains(e2Lower, "kommentar"):
+		parts = append(parts, "Kommentar")
 	case strings.Contains(e2Lower, "französisch"):
 		parts = append(parts, "Französisch")
 	case strings.Contains(e2Lower, "englisch"):
@@ -141,6 +150,8 @@ func languageDisplayName(lang LanguageInfo) string {
 		return "Italienisch"
 	case "es":
 		return "Spanisch"
+	case "mul":
+		return "Mehrsprachig"
 	default:
 		if lang.IsOriginal {
 			return "Originalton"

@@ -89,10 +89,10 @@ func NormalizeLanguage(raw string) LanguageInfo {
 		info.ISO639_2 = "mis"
 		info.ISO639_1 = "und"
 		info.IsUndefined = true
-	case "mul": // Multiple languages (DVB standard for Original audio / Two-channel sound)
+	case "mul": // Multiple languages
 		info.ISO639_2 = "mul"
 		info.ISO639_1 = "mul"
-		info.IsOriginal = true
+		info.IsOriginal = false
 		info.IsUndefined = false
 	case "und", "nar", "":
 		info.ISO639_2 = "und"

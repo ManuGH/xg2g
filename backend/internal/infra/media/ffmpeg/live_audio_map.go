@@ -399,3 +399,63 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 		inputURL,
 	)
 }
+
+// ProbeAudioTopology dynamically inspects the live input stream and returns its current AudioTopology.
+func (a *LocalAdapter) ProbeAudioTopology(ctx context.Context, sessionID, serviceRef, inputURL string) (audiotopology.AudioTopology, error) {
+	if inputURL == "" && a.E2 != nil && serviceRef != "" {
+		resolved, err := a.E2.ResolveStreamURL(ctx, serviceRef)
+		if err == nil {
+			inputURL = a.injectCredentialsIfAllowed(resolved)
+		}
+	}
+	if inputURL == "" {
+		return audiotopology.AudioTopology{}, fmt.Errorf("no input URL for audio topology probe")
+	}
+
+	spec := ports.StreamSpec{
+		SessionID: sessionID,
+		Source: ports.StreamSource{
+			ID: serviceRef,
+		},
+	}
+	streams, err := a.probeLiveAudioStreams(ctx, spec, inputURL)
+	if err != nil {
+		return audiotopology.AudioTopology{}, err
+	}
+
+	var probeObs []audiotopology.ProbeTrackObservation
+	for _, s := range streams {
+		var pid uint16
+		if s.ID != "" {
+			var p uint64
+			if strings.HasPrefix(strings.ToLower(s.ID), "0x") {
+				if _, err := fmt.Sscanf(s.ID, "0x%x", &p); err == nil {
+					pid = uint16(p)
+				}
+			} else {
+				if _, err := fmt.Sscanf(s.ID, "%d", &p); err == nil {
+					pid = uint16(p)
+				}
+			}
+		}
+		if pid == 0 {
+			pid = uint16(s.Index + 1)
+		}
+
+		probeObs = append(probeObs, audiotopology.ProbeTrackObservation{
+			StreamIndex:                 s.Index,
+			PID:                         pid,
+			Codec:                       s.CodecName,
+			Channels:                    s.Channels,
+			ChannelLayout:               s.ChannelLayout,
+			Language:                    s.Tags["language"],
+			DispositionVisualImpaired:   s.Disposition.VisualImpaired > 0,
+			DispositionHearingImpaired:  s.Disposition.HearingImpaired > 0,
+			DispositionCleanEffects:     s.Disposition.CleanEffects > 0,
+			DispositionDescriptions:     s.Disposition.Descriptions > 0,
+			DispositionBroadcastDefault: s.Disposition.Default > 0,
+		})
+	}
+
+	return audiotopology.BuildTopology(serviceRef, nil, probeObs, nil, time.Now()), nil
+}

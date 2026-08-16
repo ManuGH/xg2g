@@ -174,8 +174,9 @@ func TestLayeringRules(t *testing.T) {
 			"github.com/ManuGH/xg2g/internal/domain/session/ports",
 			"github.com/ManuGH/xg2g/internal/domain/playbackprofile/ports",
 			"github.com/ManuGH/xg2g/internal/domain/vod",
+			"github.com/ManuGH/xg2g/internal/domain/audiotopology",
 		},
-		"Infra layer must not import domain logic (except domain/*/ports and domain/vod types)",
+		"Infra layer must not import domain logic (except domain/*/ports, domain/audiotopology and domain/vod types)",
 	)...)
 
 	// Rule 4: infra/* MUST NOT import control/* (infra is lowest layer)
