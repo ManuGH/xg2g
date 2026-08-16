@@ -188,17 +188,23 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 		}
 
 		topoDec, err := e.topologyService.CanStartStreamWithPriority(req.Source.ServiceReference, req.SessionID, priority)
-		if err == nil {
-			if !topoDec.Allowed {
-				return UsageDecision{
-					Kind:           DecisionReject,
-					Reason:         model.RLeaseBusy,
-					Message:        topoDec.Reason,
-					Classification: req.Access,
-				}
+		if err != nil {
+			return UsageDecision{
+				Kind:           DecisionReject,
+				Reason:         model.RLeaseBusy,
+				Message:        "receiver topology evaluation failed: " + err.Error(),
+				Classification: req.Access,
 			}
-			isMultiplexReuse = topoDec.ReusedDemod
 		}
+		if !topoDec.Allowed {
+			return UsageDecision{
+				Kind:           DecisionReject,
+				Reason:         model.RLeaseBusy,
+				Message:        topoDec.Reason,
+				Classification: req.Access,
+			}
+		}
+		isMultiplexReuse = topoDec.ReusedDemod
 	}
 
 	// 6. Build Lease Requirements Plan
