@@ -142,7 +142,7 @@ func TestOrchestrator_TopologyService_StreamLifecycleAndMultiplexReuse(t *testin
 	assert.Empty(t, runtimeSnapshot4.ActiveMultiplexes, "All demodulators and multiplexes must be completely freed")
 }
 
-func TestOrchestrator_TopologyService_HeartbeatLoss(t *testing.T) {
+func TestOrchestrator_TopologyService_HeartbeatLoss_EnforceMode(t *testing.T) {
 	ctx := context.Background()
 	st := store.NewMemoryStore()
 	memBus := NewStubBus()
@@ -190,18 +190,18 @@ func TestOrchestrator_TopologyService_HeartbeatLoss(t *testing.T) {
 
 	dasErsteHD := "1:0:19:283D:3FB:1:C00000:0:0:0:"
 	evt := model.StartSessionEvent{
-		SessionID:  "sess-hb-loss",
+		SessionID:  "sess-hb-loss-enforce",
 		ServiceRef: dasErsteHD,
 		ProfileID:  "hd",
 	}
 	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
-		SessionID:  "sess-hb-loss",
+		SessionID:  "sess-hb-loss-enforce",
 		ServiceRef: dasErsteHD,
 		State:      model.SessionNew,
 	}))
 
 	sessionCtx := &sessionContext{
-		SessionID:  "sess-hb-loss",
+		SessionID:  "sess-hb-loss-enforce",
 		Mode:       model.ModeLive,
 		ServiceRef: dasErsteHD,
 	}
@@ -210,15 +210,106 @@ func TestOrchestrator_TopologyService_HeartbeatLoss(t *testing.T) {
 	require.NoError(t, err)
 	defer leases.ReleaseTuner()
 
-	// Deliberately release / sweep the lease in TopologyService to simulate lease loss
-	topoSvc.ReleaseStream("sess-hb-loss")
+	// Deliberately trigger TTL sweep in TopologyService simulating lease expiration
+	swept := topoSvc.SweepExpiredLeases(time.Now().UTC().Add(1 * time.Hour))
+	require.Contains(t, swept, "sess-hb-loss-enforce", "SweepExpiredLeases must sweep the expired lease")
 
-	// Wait for the heartbeat worker to tick and detect the lost lease
-	require.Eventually(t, func() bool {
-		sess, getErr := st.GetSession(ctx, "sess-hb-loss")
-		if getErr != nil || sess == nil {
-			return false
-		}
-		return sess.State.IsTerminal()
-	}, 500*time.Millisecond, 20*time.Millisecond, "Session must be terminalized when topology stream lease is lost")
+	// Wait for the heartbeat worker to tick and detect the lost lease in ENFORCE mode
+	select {
+	case <-leases.HBCtx.Done():
+	case <-time.NewTimer(1 * time.Second).C:
+		t.Fatalf("timeout waiting for heartbeat worker to cancel context on lost lease in ENFORCE mode")
+	}
+
+	sess, err := st.GetSession(ctx, "sess-hb-loss-enforce")
+	require.NoError(t, err)
+	assert.True(t, sess.State.IsTerminal(), "Session must be terminalized in ENFORCE mode when topology stream lease is lost")
+}
+
+func TestOrchestrator_TopologyService_HeartbeatLoss_AuditOnly_FailOpen(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemoryStore()
+	memBus := NewStubBus()
+
+	// Observed topology clamped unconditionally to AUDIT_ONLY
+	topo := receivertopology.ReceiverTopology{
+		Model:      "Vu+ Uno 4K SE",
+		Confidence: receivertopology.ConfidenceObserved,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "input_a", DeliveryType: receivertopology.DeliveryLegacyUniversal},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+
+	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeAuditOnly)
+	require.NoError(t, err)
+
+	evaluator := receiverusage.NewEvaluatorWithTopology(topoSvc)
+	pipe := NewThreadSafeFakeMediaPipeline()
+
+	orch := &Orchestrator{
+		Bus:            memBus,
+		Store:          st,
+		LeaseTTL:       50 * time.Millisecond,
+		HeartbeatEvery: 20 * time.Millisecond,
+		Owner:          "test-worker-heartbeat-audit",
+		TunerSlots:     []int{0},
+		ReceiverID:     "rec-hb-audit",
+		Pipeline:       pipe,
+		UsagePolicy: receiverusage.ReceiverUsagePolicy{
+			Mode:                        receiverusage.ReceiverUsageModeEnforce,
+			MaxLiveSessions:             4,
+			MaxRestrictedAccessSessions: 4,
+		},
+		UsageEvaluator:  evaluator,
+		TopologyService: topoSvc,
+		LeaseKeyFunc: func(e model.StartSessionEvent) string {
+			return model.LeaseKeyService(e.ServiceRef)
+		},
+		startSem: make(chan struct{}, 10),
+		stopSem:  make(chan struct{}, 10),
+		active:   make(map[string]context.CancelFunc),
+	}
+
+	dasErsteHD := "1:0:19:283D:3FB:1:C00000:0:0:0:"
+	evt := model.StartSessionEvent{
+		SessionID:  "sess-hb-loss-audit",
+		ServiceRef: dasErsteHD,
+		ProfileID:  "hd",
+	}
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  "sess-hb-loss-audit",
+		ServiceRef: dasErsteHD,
+		State:      model.SessionNew,
+	}))
+
+	sessionCtx := &sessionContext{
+		SessionID:  "sess-hb-loss-audit",
+		Mode:       model.ModeLive,
+		ServiceRef: dasErsteHD,
+	}
+
+	leases, err := orch.acquireLeases(ctx, sessionCtx, evt, "worker-hb-audit", zerolog.Nop())
+	require.NoError(t, err)
+	defer leases.ReleaseTuner()
+
+	// Deliberately trigger TTL sweep in TopologyService simulating lease expiration
+	swept := topoSvc.SweepExpiredLeases(time.Now().UTC().Add(1 * time.Hour))
+	require.Contains(t, swept, "sess-hb-loss-audit")
+
+	// Verify heartbeat ticker runs without canceling context (fail-open)
+	select {
+	case <-leases.HBCtx.Done():
+		t.Fatalf("Heartbeat context must not be canceled in AUDIT_ONLY mode (fail-open)")
+	case <-time.NewTimer(60 * time.Millisecond).C:
+		// Ticked through multiple heartbeat intervals successfully
+	}
+
+	assert.Nil(t, leases.HBCtx.Err(), "Heartbeat context must remain active in AUDIT_ONLY mode (fail-open)")
+
+	sess, err := st.GetSession(ctx, "sess-hb-loss-audit")
+	require.NoError(t, err)
+	assert.False(t, sess.State.IsTerminal(), "Session must NOT be terminalized in AUDIT_ONLY mode on missing lease")
 }
