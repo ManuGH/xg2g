@@ -129,7 +129,7 @@ func requiresPlannedTranscode(ev PlaybackEvidence) bool {
 	case "transcode", "repair", "abr", "mobile_abr", "3tier", "2tier", "normalize":
 		return true
 	default:
-		if strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") {
+		if ev.Scope == "live" && strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") {
 			return true
 		}
 		return false
@@ -147,7 +147,7 @@ func requiresVideoNormalization(ev PlaybackEvidence) bool {
 	case "normalize":
 		return true
 	default:
-		if strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") {
+		if ev.Scope == "live" && strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") {
 			return true
 		}
 		return false
