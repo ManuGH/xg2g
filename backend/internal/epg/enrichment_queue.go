@@ -50,6 +50,7 @@ type EnrichmentQueue struct {
 	wg        sync.WaitGroup
 	isRunning atomic.Bool
 	isStopped atomic.Bool
+	stopOnce  sync.Once
 }
 
 // NewEnrichmentQueue creates a new deduplicated enrichment queue.
@@ -104,9 +105,11 @@ func (q *EnrichmentQueue) contextWatcher() {
 	defer q.wg.Done()
 	<-q.ctx.Done()
 
-	// Atomic mark stopped and drain active keys for unhandled queued jobs
-	q.isStopped.Store(true)
-	q.isRunning.Store(false)
+	// Ensure atomic stopped state and key cleanup
+	q.stopOnce.Do(func() {
+		q.isStopped.Store(true)
+		q.isRunning.Store(false)
+	})
 	q.drainAndCleanup()
 }
 
@@ -240,18 +243,15 @@ func (q *EnrichmentQueue) drainAndCleanup() {
 }
 
 // Stop cleanly terminates workers, cancels in-flight jobs, and waits for all goroutines.
+// Guaranteed to wait for all workers/goroutines to finish even if called after parent context cancellation.
 func (q *EnrichmentQueue) Stop() {
-	q.mu.Lock()
-	if q.isStopped.Load() || !q.isRunning.Load() {
-		q.mu.Unlock()
-		return
-	}
-	q.isStopped.Store(true)
-	q.isRunning.Store(false)
-	if q.cancel != nil {
-		q.cancel()
-	}
-	q.mu.Unlock()
+	q.stopOnce.Do(func() {
+		q.isStopped.Store(true)
+		q.isRunning.Store(false)
+		if q.cancel != nil {
+			q.cancel()
+		}
+	})
 
 	q.wg.Wait()
 	q.drainAndCleanup()

@@ -330,3 +330,48 @@ func TestEnrichmentQueue_StopWhileJobsQueued_ReleasesAllKeys(t *testing.T) {
 
 	assert.Equal(t, 0, q.ActiveKeyCount(), "All active keys must be released after Stop()")
 }
+
+func TestEnrichmentQueue_StopAfterParentCancel_WaitsForWorkersToFinish(t *testing.T) {
+	var inFlightCount int64
+	var workerFinishedCleanly atomic.Bool
+
+	workerEntered := make(chan struct{})
+	provider := &mockProvider{
+		lookupFn: func(ctx context.Context, fp ProgrammeFingerprint) (*EnrichmentData, error) {
+			atomic.AddInt64(&inFlightCount, 1)
+			defer atomic.AddInt64(&inFlightCount, -1)
+
+			close(workerEntered)
+			<-ctx.Done()
+
+			// Simulate non-zero teardown/cleanup time in worker
+			time.Sleep(50 * time.Millisecond)
+			workerFinishedCleanly.Store(true)
+			return nil, ctx.Err()
+		},
+	}
+
+	cfg := QueueConfig{Capacity: 10, WorkerCount: 1, JobTimeout: 5 * time.Second}
+	q := NewEnrichmentQueue(cfg, newMockStore(), provider)
+
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	require.NoError(t, q.Start(parentCtx))
+
+	fp := ProgrammeFingerprint{NormalizedTitle: "slow shutdown", FingerprintVersion: CurrentFingerprintVersion}
+	ok, _ := q.Enqueue(fp)
+	require.True(t, ok)
+
+	<-workerEntered
+
+	// Cancel parent context
+	parentCancel()
+
+	// Call Stop() after parent context was canceled
+	// Stop() MUST block until the worker has fully finished its teardown loop
+	q.Stop()
+
+	// Assertions: by the time Stop() returned, in-flight count MUST be 0 and teardown finished
+	assert.Equal(t, int64(0), atomic.LoadInt64(&inFlightCount), "Stop() must block until all in-flight workers exit")
+	assert.True(t, workerFinishedCleanly.Load(), "Worker cleanup must be completed when Stop() returns")
+	assert.Equal(t, 0, q.ActiveKeyCount())
+}
