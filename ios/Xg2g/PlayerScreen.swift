@@ -296,6 +296,13 @@ struct PlayerScreen: View {
     // MARK: - Streaming & Channel Switching
 
     private func startStreaming(channel: Channel) async {
+        if player != nil && model.liveStream != nil && model.playingChannel?.id == channel.id {
+            if player?.timeControlStatus != .playing && player?.error == nil {
+                player?.play()
+            }
+            return
+        }
+
         failure = nil
         isTimeshifted = false
         player?.pause()
