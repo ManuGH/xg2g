@@ -12,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/epg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockEpgSource is a mock implementation of the EpgSource interface
@@ -211,4 +212,62 @@ func TestBuildNowNextItems_PreservesXmltvOffsets(t *testing.T) {
 		assert.Equal(t, "20260329013000 +0100", items[0].Now.StartXMLTV)
 		assert.Equal(t, "20260329033000 +0200", items[0].Now.EndXMLTV)
 	}
+}
+
+func TestPostServicesNowNext_CanonicalMetadataInResponse(t *testing.T) {
+	mockSource := new(MockEpgSource)
+	server := &Server{
+		epgSource: mockSource,
+	}
+
+	now := time.Now()
+	serviceRef := "1:0:19:132F:3EF:1:C00000:0:0:0"
+	progs := []epg.Programme{
+		{
+			Channel:  serviceRef,
+			Title:    epg.Title{Text: "Babylon Berlin S03E05"},
+			Desc:     &epg.Description{Text: "Krimi im Berlin der 1920er Jahre. FSK: 16. Regie: Tom Tykwer."},
+			Start:    now.Add(-10 * time.Minute).Format(xmltvTimeFormat),
+			Stop:     now.Add(35 * time.Minute).Format(xmltvTimeFormat),
+			Category: []string{"Krimiserie"},
+		},
+	}
+	// Enrich once as done on ingest
+	epg.EnrichProgramme(&progs[0])
+
+	mockSource.On("GetPrograms", mock.Anything).Return(progs, nil).Once()
+
+	body := bytes.NewBufferString(`{"services":["1:0:19:132F:3EF:1:C00000:0:0:0"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/services/now-next", body)
+	w := httptest.NewRecorder()
+
+	server.PostServicesNowNext(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var payload struct {
+		Items []nowNextItem `json:"items"`
+	}
+	err := json.NewDecoder(resp.Body).Decode(&payload)
+	require.NoError(t, err)
+	require.Len(t, payload.Items, 1)
+
+	nowItem := payload.Items[0].Now
+	require.NotNil(t, nowItem)
+	assert.Equal(t, "Babylon Berlin S03E05", nowItem.Title)
+	assert.Equal(t, "series", nowItem.Genre)
+	assert.Equal(t, "dvb_category", nowItem.GenreSource)
+
+	require.NotNil(t, nowItem.AgeRating)
+	assert.Equal(t, 16, nowItem.AgeRating.Value)
+	assert.Equal(t, "FSK", nowItem.AgeRating.Scheme)
+	assert.Equal(t, "DE", nowItem.AgeRating.Country)
+	assert.Equal(t, epg.RatingSourceDVBText, nowItem.AgeRating.Source)
+	assert.Equal(t, epg.RatingConfidenceObserved, nowItem.AgeRating.Confidence)
+
+	require.NotNil(t, nowItem.EpisodeInfo)
+	assert.Equal(t, 3, nowItem.EpisodeInfo.SeasonNumber)
+	assert.Equal(t, 5, nowItem.EpisodeInfo.EpisodeNumber)
+	assert.Equal(t, "SxxExx", nowItem.EpisodeInfo.SourcePattern)
 }

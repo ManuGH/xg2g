@@ -123,9 +123,8 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 				}
 			}
 
-			// Add Genre if available (from parser or event)
-			// Note: OpenWebIF event doesn't have Genre field yet, but we can add it later
-			// For now, we rely on what we parsed or what might be added to EPGEvent
+			// Parse canonical metadata (FSK / Broadcaster Age, Episode info, DVB Genre) once on ingest
+			epg.EnrichProgramme(&prog)
 
 			allProgrammes = append(allProgrammes, prog)
 		}

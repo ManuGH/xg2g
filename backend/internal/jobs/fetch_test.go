@@ -324,3 +324,50 @@ func TestAggregateEvents_NoMatchingChannels(t *testing.T) {
 		t.Errorf("expected 0 programmes (no matching channels), got %d", len(programmes))
 	}
 }
+
+func TestAggregateEvents_PopulatesCanonicalMetadataOnIngest(t *testing.T) {
+	ctx := context.Background()
+	items := []playlist.Item{
+		{ServiceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:", Name: "Das Erste HD"},
+	}
+
+	agg := newEPGAggregator(ctx, items)
+	srefMap := agg.buildSRefMap()
+
+	events := []openwebif.EPGEvent{
+		{
+			ID:          1001,
+			Title:       "Tatort: Das Team S01E02",
+			Description: "Krimi. FSK 12. Regie: Jan Georg Schütte",
+			LongDesc:    "Krimi. FSK 12. Regie: Jan Georg Schütte. Darsteller: Charly Hübner",
+			Begin:       1609459200,
+			Duration:    5400,
+			SRef:        "1:0:19:283D:3FB:1:C00000:0:0:0:",
+		},
+	}
+
+	programmes := agg.aggregateEvents(events, srefMap)
+
+	if len(programmes) != 1 {
+		t.Fatalf("expected 1 programme, got %d", len(programmes))
+	}
+
+	prog := programmes[0]
+	if prog.Canonical == nil {
+		t.Fatal("expected prog.Canonical to be populated on ingest")
+	}
+
+	if prog.Canonical.AgeRating == nil {
+		t.Fatal("expected AgeRating to be extracted")
+	}
+	if prog.Canonical.AgeRating.Value != 12 || prog.Canonical.AgeRating.Scheme != "FSK" || prog.Canonical.AgeRating.Country != "DE" {
+		t.Errorf("unexpected AgeRating: %+v", prog.Canonical.AgeRating)
+	}
+
+	if prog.Canonical.EpisodeInfo == nil {
+		t.Fatal("expected EpisodeInfo to be extracted")
+	}
+	if prog.Canonical.EpisodeInfo.SeasonNumber != 1 || prog.Canonical.EpisodeInfo.EpisodeNumber != 2 {
+		t.Errorf("unexpected EpisodeInfo: %+v", prog.Canonical.EpisodeInfo)
+	}
+}
