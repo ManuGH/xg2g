@@ -30,27 +30,41 @@ var (
 	}
 )
 
-// NormalizeTitle strips broadcast noise, resolution markers, bracketed tags,
-// and parenthesized episode counters (e.g. (98), (1/2), (1144)) from programme titles,
-// while strictly preserving plausible 4-digit production years (1900-2099, e.g. (2009))
-// from being stripped as episode counters.
-func NormalizeTitle(title string) string {
+// TitleNormalizationEvidence captures both normalized title text and structural broadcast markers.
+type TitleNormalizationEvidence struct {
+	NormalizedTitle   string `json:"normalizedTitle"`
+	HadEpisodeCounter bool   `json:"hadEpisodeCounter"`
+	HadFractionalPart bool   `json:"hadFractionalPart"`
+	ExtractedYear     int    `json:"extractedYear"`
+}
+
+// NormalizeTitleWithEvidence analyzes the title, extracts year or episode counters,
+// and produces a clean NormalizedTitle with all year/episode brackets removed.
+func NormalizeTitleWithEvidence(title string) TitleNormalizationEvidence {
+	ev := TitleNormalizationEvidence{}
 	cleaned := title
 
-	// 1. Remove fractional episode counters in parentheses: (1/2), (101/116)
-	cleaned = fractionalEpisodeParenRegex.ReplaceAllString(cleaned, " ")
+	// 1. Check & strip fractional episode counters in parentheses: (1/2), (101/116)
+	if fractionalEpisodeParenRegex.MatchString(cleaned) {
+		ev.HadFractionalPart = true
+		cleaned = fractionalEpisodeParenRegex.ReplaceAllString(cleaned, " ")
+	}
 
-	// 2. Remove integer episode numbers in parentheses ONLY if NOT a plausible production year (1900-2099)
+	// 2. Check & strip integer parentheses: (98), (533), (1144), (2009)
 	cleaned = integerParenRegex.ReplaceAllStringFunc(cleaned, func(match string) string {
 		sub := integerParenRegex.FindStringSubmatch(match)
 		if len(sub) > 1 {
 			val, err := strconv.Atoi(sub[1])
 			if err == nil && val >= 1900 && val <= 2099 {
-				// Keep year in parentheses as is (e.g. (2009)) so noiseRegexes can clean parens while year is extracted
-				return match
+				// Record extracted 4-digit production year
+				ev.ExtractedYear = val
+				// Strip year from normalized title so "Castle (2009)" becomes "castle"
+				return " "
 			}
+			// Standalone episode counter (e.g. (98), (533), (1144))
+			ev.HadEpisodeCounter = true
+			return " "
 		}
-		// Strip episode counter (e.g. (98), (533), (1144))
 		return " "
 	})
 
@@ -63,16 +77,33 @@ func NormalizeTitle(title string) string {
 	cleaned = strings.ToLower(cleaned)
 	// Replace consecutive spaces with a single space
 	cleaned = strings.Join(strings.Fields(cleaned), " ")
-	return cleaned
+	ev.NormalizedTitle = cleaned
+	return ev
+}
+
+// NormalizeTitle strips broadcast noise, resolution markers, bracketed tags,
+// and parenthesized episode/year counters from programme titles.
+func NormalizeTitle(title string) string {
+	return NormalizeTitleWithEvidence(title).NormalizedTitle
 }
 
 // BuildFingerprint constructs a deterministic ProgrammeFingerprint from title and canonical metadata.
-func BuildFingerprint(title string, year int, episode *epg.EpisodeInfo, genre string) epg.ProgrammeFingerprint {
-	norm := NormalizeTitle(title)
+func BuildFingerprint(title string, year int, yearSource epg.YearSource, episode *epg.EpisodeInfo, genre string, hadEpisodeMarker bool) epg.ProgrammeFingerprint {
+	ev := NormalizeTitleWithEvidence(title)
+	if ev.ExtractedYear > 0 && year == 0 {
+		year = ev.ExtractedYear
+		yearSource = epg.YearSourceTitle
+	}
+	if ev.HadEpisodeCounter || ev.HadFractionalPart {
+		hadEpisodeMarker = true
+	}
+
 	fp := epg.ProgrammeFingerprint{
-		NormalizedTitle:    norm,
+		NormalizedTitle:    ev.NormalizedTitle,
 		Year:               year,
+		YearSource:         yearSource,
 		EventGenre:         genre,
+		HadEpisodeMarker:   hadEpisodeMarker,
 		FingerprintVersion: epg.CurrentFingerprintVersion,
 	}
 
@@ -85,28 +116,28 @@ func BuildFingerprint(title string, year int, episode *epg.EpisodeInfo, genre st
 }
 
 // ExtractFingerprint constructs a ProgrammeFingerprint directly from an epg.Programme,
-// automatically extracting 4-digit production years from parenthesized titles if not present in Date.
+// automatically extracting 4-digit production years from parenthesized titles or XMLTV Date.
 func ExtractFingerprint(prog *epg.Programme) epg.ProgrammeFingerprint {
 	if prog == nil {
 		return epg.ProgrammeFingerprint{FingerprintVersion: epg.CurrentFingerprintVersion}
 	}
 
+	ev := NormalizeTitleWithEvidence(prog.Title.Text)
+
 	var (
-		year    int
-		episode *epg.EpisodeInfo
-		genre   string
+		year       int
+		yearSource epg.YearSource
+		episode    *epg.EpisodeInfo
+		genre      string
 	)
 
-	if prog.Date != "" {
+	if ev.ExtractedYear > 0 {
+		year = ev.ExtractedYear
+		yearSource = epg.YearSourceTitle
+	} else if prog.Date != "" {
 		year = parseYear(prog.Date)
-	}
-
-	// If no year was in Date, extract plausible production year from title if present in parentheses e.g. "Castle (2009)"
-	if year == 0 {
-		if sub := yearInParenRegex.FindStringSubmatch(prog.Title.Text); len(sub) > 1 {
-			if y, err := strconv.Atoi(sub[1]); err == nil && y >= 1900 && y <= 2099 {
-				year = y
-			}
+		if year > 0 {
+			yearSource = epg.YearSourceXMLTVDate
 		}
 	}
 
@@ -115,7 +146,24 @@ func ExtractFingerprint(prog *epg.Programme) epg.ProgrammeFingerprint {
 		genre = prog.Canonical.Genre
 	}
 
-	return BuildFingerprint(prog.Title.Text, year, episode, genre)
+	hadEpisodeMarker := ev.HadEpisodeCounter || ev.HadFractionalPart
+
+	var seasonNum, episodeNum int
+	if episode != nil {
+		seasonNum = episode.SeasonNumber
+		episodeNum = episode.EpisodeNumber
+	}
+
+	return epg.ProgrammeFingerprint{
+		NormalizedTitle:    ev.NormalizedTitle,
+		Year:               year,
+		YearSource:         yearSource,
+		Season:             seasonNum,
+		Episode:            episodeNum,
+		EventGenre:         genre,
+		HadEpisodeMarker:   hadEpisodeMarker,
+		FingerprintVersion: epg.CurrentFingerprintVersion,
+	}
 }
 
 // AttachEnrichment decorates an epg.Programme with external provider enrichment data without mutating E1 observed ratings.

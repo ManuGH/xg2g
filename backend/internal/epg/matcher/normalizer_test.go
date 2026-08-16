@@ -61,8 +61,8 @@ func TestNormalizeTitle(t *testing.T) {
 			want:  "csi: miami",
 		},
 		{
-			input: "CSI: Vegas",
-			want:  "csi: vegas",
+			input: "Castle (2009)",
+			want:  "castle",
 		},
 	}
 
@@ -74,14 +74,17 @@ func TestNormalizeTitle(t *testing.T) {
 	}
 }
 
-func TestExtractFingerprint_PreservesYearInTitle(t *testing.T) {
+func TestExtractFingerprint_ExtractsYearAndEpisodeMarkers(t *testing.T) {
 	prog := &epg.Programme{
 		Title: epg.Title{Text: "Castle (2009)"},
 	}
 
 	fp := ExtractFingerprint(prog)
+	assert.Equal(t, "castle", fp.NormalizedTitle)
 	assert.Equal(t, 2009, fp.Year)
-	assert.Equal(t, 2, fp.FingerprintVersion)
+	assert.Equal(t, epg.YearSourceTitle, fp.YearSource)
+	assert.False(t, fp.HadEpisodeMarker)
+	assert.Equal(t, 3, fp.FingerprintVersion)
 
 	prog2 := &epg.Programme{
 		Title: epg.Title{Text: "Hubert und Staller (98)"},
@@ -89,6 +92,8 @@ func TestExtractFingerprint_PreservesYearInTitle(t *testing.T) {
 	fp2 := ExtractFingerprint(prog2)
 	assert.Equal(t, "hubert und staller", fp2.NormalizedTitle)
 	assert.Equal(t, 0, fp2.Year)
+	assert.True(t, fp2.HadEpisodeMarker)
+	assert.Equal(t, 3, fp2.FingerprintVersion)
 }
 
 func TestBuildFingerprint(t *testing.T) {
@@ -98,19 +103,20 @@ func TestBuildFingerprint(t *testing.T) {
 		SourcePattern: "SxxExx",
 	}
 
-	fp := BuildFingerprint("Der Bergdoktor (HD)", 2021, ep, "series")
+	fp := BuildFingerprint("Der Bergdoktor (HD)", 2021, epg.YearSourceXMLTVDate, ep, "series", false)
 
 	assert.Equal(t, "der bergdoktor", fp.NormalizedTitle)
 	assert.Equal(t, 2021, fp.Year)
+	assert.Equal(t, epg.YearSourceXMLTVDate, fp.YearSource)
 	assert.Equal(t, 3, fp.Season)
 	assert.Equal(t, 12, fp.Episode)
 	assert.Equal(t, "series", fp.EventGenre)
-	assert.Equal(t, 2, fp.FingerprintVersion)
+	assert.Equal(t, 3, fp.FingerprintVersion)
 
 	key1 := fp.Key()
 	assert.NotEmpty(t, key1)
 
 	// Idempotency: same fingerprint must produce exact same Key
-	fp2 := BuildFingerprint("Der Bergdoktor [HD]", 2021, ep, "series")
+	fp2 := BuildFingerprint("Der Bergdoktor [HD]", 2021, epg.YearSourceXMLTVDate, ep, "series", false)
 	assert.Equal(t, key1, fp2.Key())
 }

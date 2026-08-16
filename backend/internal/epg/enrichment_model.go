@@ -16,8 +16,20 @@ import (
 
 // Current versions for fingerprint generation and provider matcher logic.
 const (
-	CurrentFingerprintVersion = 2
-	CurrentMatcherVersion     = 1
+	CurrentFingerprintVersion = 3
+	CurrentMatcherVersion     = 2
+)
+
+// YearSource specifies where a programme's year was extracted from.
+type YearSource string
+
+const (
+	// YearSourceNone indicates no year was observed.
+	YearSourceNone YearSource = ""
+	// YearSourceTitle indicates year was explicitly in title (e.g. "Castle (2009)").
+	YearSourceTitle YearSource = "title"
+	// YearSourceXMLTVDate indicates year was in XMLTV date element (e.g. episode production date).
+	YearSourceXMLTVDate YearSource = "xmltv_date"
 )
 
 // MatchStatus represents the outcome of an external provider enrichment attempt.
@@ -37,12 +49,14 @@ const (
 // ProgrammeFingerprint represents the canonical, normalized local identity of a programme
 // before any external provider matching occurs.
 type ProgrammeFingerprint struct {
-	NormalizedTitle    string `json:"normalizedTitle"`
-	Year               int    `json:"year,omitempty"`
-	Season             int    `json:"season,omitempty"`
-	Episode            int    `json:"episode,omitempty"`
-	EventGenre         string `json:"eventGenre,omitempty"`
-	FingerprintVersion int    `json:"fingerprintVersion"`
+	NormalizedTitle    string     `json:"normalizedTitle"`
+	Year               int        `json:"year,omitempty"`
+	YearSource         YearSource `json:"yearSource,omitempty"`
+	Season             int        `json:"season,omitempty"`
+	Episode            int        `json:"episode,omitempty"`
+	EventGenre         string     `json:"eventGenre,omitempty"`
+	HadEpisodeMarker   bool       `json:"hadEpisodeMarker,omitempty"`
+	FingerprintVersion int        `json:"fingerprintVersion"`
 }
 
 // Key computes a stable, deterministic canonical string key and hash for storage lookups.
@@ -55,6 +69,10 @@ func (f ProgrammeFingerprint) Key() string {
 	if f.Year > 0 {
 		sb.WriteString(":y")
 		sb.WriteString(strconv.Itoa(f.Year))
+		if f.YearSource != "" {
+			sb.WriteString("@")
+			sb.WriteString(string(f.YearSource))
+		}
 	}
 	if f.Season > 0 || f.Episode > 0 {
 		sb.WriteString(fmt.Sprintf(":s%de%d", f.Season, f.Episode))
@@ -62,6 +80,9 @@ func (f ProgrammeFingerprint) Key() string {
 	if f.EventGenre != "" {
 		sb.WriteString(":g")
 		sb.WriteString(f.EventGenre)
+	}
+	if f.HadEpisodeMarker {
+		sb.WriteString(":epm1")
 	}
 
 	raw := sb.String()
