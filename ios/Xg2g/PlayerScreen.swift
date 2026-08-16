@@ -438,7 +438,6 @@ struct PlayerScreen: View {
 
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
-        item.automaticallyPreservesTimeOffsetFromLive = true
         item.preferredForwardBufferDuration = 6.0
 
         Self.updatePlayerMetadata(for: item, channel: channel, nowNext: nowNext)
