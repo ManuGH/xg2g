@@ -5,6 +5,7 @@
 package receivertopology
 
 import (
+	"context"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -169,18 +170,22 @@ func ExtractExternalAllocations(
 	return external
 }
 
-// DefaultFallbackTopology provides a safe generic fallback with 2 standard universal tuners.
+// TopologyEvidenceSource abstracts retrieving raw Enigma2 configuration evidence.
+type TopologyEvidenceSource interface {
+	FetchNIMSettings(ctx context.Context) (string, error)
+}
+
+// DefaultFallbackTopology provides a conservative generic fallback with a single universal tuner.
+// Zero phantom capacity: does not assume multiple independent physical cables.
 func DefaultFallbackTopology() ReceiverTopology {
 	inputA := PhysicalInput{ID: "input_a", Label: "Tuner A", DeliveryType: DeliveryLegacyUniversal}
-	inputB := PhysicalInput{ID: "input_b", Label: "Tuner B", DeliveryType: DeliveryLegacyUniversal}
 
 	return ReceiverTopology{
-		Model:      "Generic Dual Receiver",
+		Model:      "Generic Single Receiver",
 		Confidence: ConfidenceDefault,
-		Inputs:     []PhysicalInput{inputA, inputB},
+		Inputs:     []PhysicalInput{inputA},
 		Demodulators: []Demodulator{
 			{ID: "demod_a", InputID: "input_a", DVBTypes: []DVBType{DVBTypeSat}},
-			{ID: "demod_b", InputID: "input_b", DVBTypes: []DVBType{DVBTypeSat}},
 		},
 	}
 }

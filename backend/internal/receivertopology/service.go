@@ -57,6 +57,11 @@ func (s *Service) Mode() EvaluationMode {
 	return s.allocator.Mode()
 }
 
+var (
+	// ErrInvalidTransition indicates a disallowed topology confidence state transition.
+	ErrInvalidTransition = fmt.Errorf("invalid topology confidence state transition")
+)
+
 // UpdateTopology updates the receiver topology (e.g. after config reload or discovery).
 func (s *Service) UpdateTopology(topology ReceiverTopology, mode EvaluationMode) error {
 	if topology.Confidence == ConfidenceVerified {
@@ -68,6 +73,60 @@ func (s *Service) UpdateTopology(topology ReceiverTopology, mode EvaluationMode)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.allocator = NewAllocator(topology, mode)
+	return nil
+}
+
+// UpdateTopologyWithPriority updates the active topology following strict confidence transition invariants:
+// 1. Default -> Observed: Allowed (mode: AUDIT_ONLY)
+// 2. Observed -> Observed: Allowed (mode: AUDIT_ONLY)
+// 3. Observed -> Default: Forbidden
+// 4. Verified -> Observed / Default: Forbidden (verified config is sticky)
+// 5. Any -> Verified: Allowed on explicit reload (mode: ENFORCE unless explicitly set)
+func (s *Service) UpdateTopologyWithPriority(newTopology ReceiverTopology, explicitReload bool, desiredMode ...EvaluationMode) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current := s.allocator.Topology()
+
+	// Handle Verified transitions
+	if newTopology.Confidence == ConfidenceVerified {
+		if !explicitReload && current.Confidence == ConfidenceVerified {
+			return nil // No change
+		}
+		if err := Validate(newTopology); err != nil {
+			return fmt.Errorf("cannot update to verified topology: %w", err)
+		}
+		mode := EvaluationModeEnforce
+		if len(desiredMode) > 0 && desiredMode[0] != "" {
+			mode = desiredMode[0]
+		}
+		s.allocator = NewAllocator(newTopology, mode)
+		return nil
+	}
+
+	// Current is Verified -> reject non-verified updates
+	if current.Confidence == ConfidenceVerified {
+		return fmt.Errorf("%w: cannot overwrite VERIFIED topology with %s", ErrInvalidTransition, newTopology.Confidence)
+	}
+
+	// Observed transitions
+	if newTopology.Confidence == ConfidenceObserved {
+		// Default -> Observed or Observed -> Observed are both allowed
+		mode := EvaluationModeAuditOnly
+		if len(desiredMode) > 0 && desiredMode[0] != "" {
+			mode = desiredMode[0]
+		}
+		s.allocator = NewAllocator(newTopology, mode)
+		return nil
+	}
+
+	// New is Default
+	if current.Confidence == ConfidenceObserved {
+		return fmt.Errorf("%w: cannot downgrade OBSERVED topology to DEFAULT", ErrInvalidTransition)
+	}
+
+	// Default -> Default
+	s.allocator = NewAllocator(newTopology, EvaluationModeAuditOnly)
 	return nil
 }
 

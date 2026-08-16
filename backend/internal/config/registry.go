@@ -327,6 +327,12 @@ func buildRegistry() (*Registry, error) {
 		{Path: "receiver_usage.channel_change_limiter.minimum_interval", Env: "", FieldPath: "ReceiverUsage.ChannelChangeLimiter.MinimumInterval", Profile: ProfileAdvanced, Status: StatusActive, Default: 0 * time.Second},
 		{Path: "receiver_usage.channel_change_limiter.duplicate_window", Env: "", FieldPath: "ReceiverUsage.ChannelChangeLimiter.DuplicateWindow", Profile: ProfileAdvanced, Status: StatusActive, Default: 0 * time.Second},
 
+		// --- RECEIVER TOPOLOGY OVERRIDE ---
+		{Path: "receiver_topology.mode", Env: "", FieldPath: "ReceiverTopology.Mode", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "receiver_topology.model", Env: "", FieldPath: "ReceiverTopology.Model", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "receiver_topology.inputs", Env: "", FieldPath: "ReceiverTopology.Inputs", Profile: ProfileAdvanced, Status: StatusActive},
+		{Path: "receiver_topology.demodulators", Env: "", FieldPath: "ReceiverTopology.Demodulators", Profile: ProfileAdvanced, Status: StatusActive},
+
 		// --- LIBRARY ---
 		{Path: "library.enabled", Env: "", FieldPath: "Library.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: false},
 		{Path: "library.db_path", Env: "", FieldPath: "Library.DBPath", Profile: ProfileAdvanced, Status: StatusActive},

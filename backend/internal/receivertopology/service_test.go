@@ -87,3 +87,93 @@ func TestService_ReconcileActiveSessions(t *testing.T) {
 		t.Fatalf("expected 0 active multiplexes after empty reconciliation")
 	}
 }
+
+func TestService_ConfidenceTransitions(t *testing.T) {
+	defaultTopo := DefaultFallbackTopology()
+	svc, err := NewService(defaultTopo, EvaluationModeAuditOnly)
+	if err != nil {
+		t.Fatalf("failed to create default service: %v", err)
+	}
+
+	// 1. Initial state: DEFAULT -> Mode: AUDIT_ONLY
+	if svc.Topology().Confidence != ConfidenceDefault {
+		t.Fatalf("expected initial ConfidenceDefault, got %s", svc.Topology().Confidence)
+	}
+	if svc.Mode() != EvaluationModeAuditOnly {
+		t.Fatalf("expected initial EvaluationModeAuditOnly, got %s", svc.Mode())
+	}
+
+	// 2. DEFAULT -> OBSERVED (Allowed, AUDIT_ONLY)
+	observedTopo := ReceiverTopology{
+		Model:      "Observed Model",
+		Confidence: ConfidenceObserved,
+		Inputs: []PhysicalInput{
+			{ID: "input_a", DeliveryType: DeliveryLegacyUniversal},
+		},
+		Demodulators: []Demodulator{
+			{ID: "demod_a", InputID: "input_a", DVBTypes: []DVBType{DVBTypeSat}},
+		},
+	}
+	err = svc.UpdateTopologyWithPriority(observedTopo, false)
+	if err != nil {
+		t.Fatalf("expected DEFAULT -> OBSERVED success, got: %v", err)
+	}
+	if svc.Topology().Confidence != ConfidenceObserved || svc.Topology().Model != "Observed Model" {
+		t.Fatalf("failed to update to OBSERVED")
+	}
+	if svc.Mode() != EvaluationModeAuditOnly {
+		t.Fatalf("expected mode AUDIT_ONLY for OBSERVED, got %s", svc.Mode())
+	}
+
+	// 3. OBSERVED -> OBSERVED (Allowed, e.g. re-poll with updated info)
+	observedTopo2 := observedTopo
+	observedTopo2.Model = "Observed Model Updated"
+	err = svc.UpdateTopologyWithPriority(observedTopo2, false)
+	if err != nil {
+		t.Fatalf("expected OBSERVED -> OBSERVED success, got: %v", err)
+	}
+	if svc.Topology().Model != "Observed Model Updated" {
+		t.Fatalf("failed to update OBSERVED -> OBSERVED")
+	}
+
+	// 4. OBSERVED -> DEFAULT (Forbidden)
+	err = svc.UpdateTopologyWithPriority(defaultTopo, false)
+	if err == nil {
+		t.Fatalf("expected OBSERVED -> DEFAULT to be rejected")
+	}
+
+	// 5. OBSERVED -> VERIFIED (Allowed, ENFORCE)
+	verifiedTopo := buildVuPlusUno4K_FBC_SingleCable() // ConfidenceVerified
+	err = svc.UpdateTopologyWithPriority(verifiedTopo, true)
+	if err != nil {
+		t.Fatalf("expected OBSERVED -> VERIFIED success, got: %v", err)
+	}
+	if svc.Topology().Confidence != ConfidenceVerified {
+		t.Fatalf("expected ConfidenceVerified, got %s", svc.Topology().Confidence)
+	}
+	if svc.Mode() != EvaluationModeEnforce {
+		t.Fatalf("expected EvaluationModeEnforce for VERIFIED, got %s", svc.Mode())
+	}
+
+	// 6. VERIFIED -> OBSERVED (Forbidden, verified is sticky)
+	err = svc.UpdateTopologyWithPriority(observedTopo, false)
+	if err == nil {
+		t.Fatalf("expected VERIFIED -> OBSERVED to be rejected")
+	}
+
+	// 7. VERIFIED -> DEFAULT (Forbidden)
+	err = svc.UpdateTopologyWithPriority(defaultTopo, false)
+	if err == nil {
+		t.Fatalf("expected VERIFIED -> DEFAULT to be rejected")
+	}
+
+	// 8. VERIFIED -> VERIFIED on explicit reload (Allowed)
+	verifiedTopo2 := buildVuPlusUno4K_FBC_DualCable()
+	err = svc.UpdateTopologyWithPriority(verifiedTopo2, true, EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("expected VERIFIED -> VERIFIED with explicit reload success, got: %v", err)
+	}
+	if len(svc.Topology().Inputs) != 2 {
+		t.Fatalf("expected updated dual-cable verified topology with 2 inputs")
+	}
+}

@@ -48,6 +48,20 @@ func (p *ExternalSyncPoller) SyncOnce(ctx context.Context) error {
 	// 1. Sync external tuner allocations from /api/about
 	about, err := p.client.About(ctx)
 	if err == nil && about != nil {
+		// If current topology is on ConfidenceDefault, elevate to ConfidenceObserved (Audit-Only)
+		if p.service.Topology().Confidence == ConfidenceDefault {
+			discovered := DiscoverTopology(about)
+			if err := p.service.UpdateTopologyWithPriority(discovered, false); err != nil {
+				p.log.Debug().Err(err).Msg("failed to update topology to observed")
+			} else {
+				p.log.Info().
+					Str("model", discovered.Model).
+					Int("inputs", len(discovered.Inputs)).
+					Int("demods", len(discovered.Demodulators)).
+					Msg("elevated receiver topology from default to observed")
+			}
+		}
+
 		activeDemods := p.service.ActiveDemods()
 		external := ExtractExternalAllocations(about, p.service.Topology(), activeDemods)
 		p.service.UpdateExternalAllocations(external)

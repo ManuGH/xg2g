@@ -57,6 +57,7 @@ type FileConfig struct {
 	Picons                PiconsConfig                      `yaml:"picons,omitempty"`
 	HDHR                  HDHRConfig                        `yaml:"hdhr,omitempty"`
 	ReceiverUsage         receiverusage.ReceiverUsagePolicy `yaml:"receiver_usage,omitempty"`
+	ReceiverTopology      *ReceiverTopologyFileConfig       `yaml:"receiver_topology,omitempty"`
 	Engine                EngineFileConfig                  `yaml:"engine,omitempty"`
 	TLS                   TLSConfig                         `yaml:"tls,omitempty"`
 	Library               LibraryFileConfig                 `yaml:"library,omitempty"`
@@ -585,8 +586,9 @@ type AppConfig struct {
 	HLS    HLSConfig
 
 	// Enigma2 Config (Runtime settings with Durations)
-	Enigma2       Enigma2Settings
-	ReceiverUsage receiverusage.ReceiverUsagePolicy
+	Enigma2          Enigma2Settings
+	ReceiverUsage    receiverusage.ReceiverUsagePolicy
+	ReceiverTopology *ReceiverTopologyFileConfig
 
 	// FFmpeg Config
 	FFmpeg FFmpegConfig
@@ -829,4 +831,29 @@ type OutboundConfig struct {
 // LANConfig defines runtime LAN access policy.
 type LANConfig struct {
 	Allow LANAllowlist
+}
+
+// ReceiverTopologyFileConfig is the transport YAML DTO for receiver physical topology settings.
+type ReceiverTopologyFileConfig struct {
+	Mode         string                    `yaml:"mode,omitempty"`
+	Model        string                    `yaml:"model,omitempty"`
+	Inputs       []PhysicalInputFileConfig `yaml:"inputs,omitempty"`
+	Demodulators []DemodulatorFileConfig   `yaml:"demodulators,omitempty"`
+}
+
+// PhysicalInputFileConfig is the transport YAML DTO for a physical RF input connector.
+type PhysicalInputFileConfig struct {
+	ID           string `yaml:"id"`
+	Label        string `yaml:"label,omitempty"`
+	DeliveryType string `yaml:"delivery_type"`
+	UserBands    int    `yaml:"user_bands,omitempty"`
+	Satellites   []int  `yaml:"satellites,omitempty"`
+}
+
+// DemodulatorFileConfig is the transport YAML DTO for a demodulator.
+type DemodulatorFileConfig struct {
+	ID           string   `yaml:"id"`
+	InputID      string   `yaml:"input_id"`
+	DVBTypes     []string `yaml:"dvb_types,omitempty"`
+	IsFBCVirtual bool     `yaml:"is_fbc_virtual,omitempty"`
 }

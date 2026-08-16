@@ -303,10 +303,29 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		Int("missing", startupReport.Summary.Missing).
 		Msg("mandatory startup reconciliation completed successfully")
 
-	topoSvc, err := receivertopology.NewService(receivertopology.DefaultFallbackTopology(), receivertopology.EvaluationModeEnforce)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize receiver topology service: %w", err)
+	var topoSvc *receivertopology.Service
+	if domainTopo, mode, configured, err := config.ToDomainTopology(cfg.ReceiverTopology); configured {
+		if err != nil {
+			return nil, fmt.Errorf("invalid configured receiver topology: %w", err)
+		}
+		topoSvc, err = receivertopology.NewService(domainTopo, mode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize verified receiver topology service: %w", err)
+		}
+		logger.Info().
+			Str("model", domainTopo.Model).
+			Str("confidence", string(domainTopo.Confidence)).
+			Str("mode", string(mode)).
+			Int("inputs", len(domainTopo.Inputs)).
+			Int("demods", len(domainTopo.Demodulators)).
+			Msg("initialized verified receiver topology from configuration")
+	} else {
+		topoSvc, err = receivertopology.NewService(receivertopology.DefaultFallbackTopology(), receivertopology.EvaluationModeAuditOnly)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize fallback receiver topology service: %w", err)
+		}
 	}
+
 	if owiClient != nil {
 		syncPoller := receivertopology.NewExternalSyncPoller(owiClient, topoSvc, 3*time.Second, logger)
 		go syncPoller.Run(ctx)

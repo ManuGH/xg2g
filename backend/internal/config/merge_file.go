@@ -53,6 +53,9 @@ func (l *Loader) mergeFileConfig(dst *AppConfig, src *FileConfig) error {
 		return err
 	}
 	l.mergeFileVOD(dst, src)
+	if src.ReceiverTopology != nil {
+		dst.ReceiverTopology = src.ReceiverTopology
+	}
 
 	return nil
 }
