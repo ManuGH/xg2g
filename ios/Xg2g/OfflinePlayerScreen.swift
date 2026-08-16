@@ -89,10 +89,21 @@ struct OfflinePlayerScreen: View {
                     Spacer()
 
                     // Bottom Details
-                    HStack {
+                    HStack(spacing: 8) {
                         Text("\(offlineRecording.formattedDuration) • \(offlineRecording.formattedSize)")
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(Theme.Colors.textSecondary)
+
+                        if let q = offlineRecording.quality {
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+
+                            Label(q.title, systemImage: q.icon)
+                                .font(.caption.bold())
+                                .foregroundStyle(Theme.Colors.accentLive)
+                        }
+
                         Spacer()
                     }
                     .padding(16)

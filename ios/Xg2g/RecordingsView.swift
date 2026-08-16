@@ -160,7 +160,8 @@ struct RecordingsView: View {
                                         ForEach(model.recordings) { recording in
                                             RecordingRow(
                                                 recording: recording,
-                                                serverAddress: model.serverURLString
+                                                serverAddress: model.serverURLString,
+                                                model: model
                                             )
                                             .contextMenu {
                                                 Button(role: .destructive) {
@@ -225,6 +226,7 @@ struct RecordingRow: View {
 
     let recording: Recording
     let serverAddress: String
+    var model: AppModel? = nil
 
     @State private var showPlayer = false
     @State private var downloadManager = DownloadManager.shared
@@ -272,6 +274,7 @@ struct RecordingRow: View {
                 DownloadButton(
                     recording: recording,
                     serverAddress: serverAddress,
+                    model: model,
                     status: downloadStatus
                 )
             }
@@ -358,6 +361,7 @@ struct DownloadButton: View {
 
     let recording: Recording
     let serverAddress: String
+    var model: AppModel? = nil
     let status: DownloadManager.DownloadStatus
 
     private var downloadManager: DownloadManager {
@@ -406,7 +410,16 @@ struct DownloadButton: View {
         case .notDownloaded, .failed:
             let base = serverAddress.starts(with: "http") ? serverAddress : "https://\(serverAddress)"
             if let url = URL(string: base) {
-                downloadManager.startDownload(recording: recording, serverBaseURL: url)
+                Task {
+                    let token = try? await model?.currentAccessToken()
+                    await MainActor.run {
+                        downloadManager.startDownload(
+                            recording: recording,
+                            serverBaseURL: url,
+                            authToken: token
+                        )
+                    }
+                }
             }
         case .downloading:
             downloadManager.cancelDownload(recordingId: recording.id)

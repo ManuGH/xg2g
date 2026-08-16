@@ -765,4 +765,11 @@ final class AppModel {
         let name = UIDevice.current.name.trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? "iPhone" : name
     }
+
+    // MARK: - Download Auth Access
+
+    /// Returns the current valid access token for media download requests.
+    func currentAccessToken() async throws -> String? {
+        try await session?.validSession().token
+    }
 }
