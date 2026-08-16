@@ -224,6 +224,35 @@ func TestOrchestrator_TopologyService_HeartbeatLoss_EnforceMode(t *testing.T) {
 	sess, err := st.GetSession(ctx, "sess-hb-loss-enforce")
 	require.NoError(t, err)
 	assert.True(t, sess.State.IsTerminal(), "Session must be terminalized in ENFORCE mode when topology stream lease is lost")
+	assert.Equal(t, model.RLeaseExpired, sess.Reason)
+
+	// Perform deferred resource cleanup (as executed by orchestrator handleStart unwind)
+	leases.ReleaseTuner()
+	leases.ReleaseDedup()
+
+	// 1. Verify Topology runtime allocations are completely empty
+	assert.Empty(t, topoSvc.CloneRuntime().ActiveMultiplexes, "All topology runtime multiplexes must be fully cleared")
+
+	// 2. Verify a subsequent session can cleanly re-acquire the freed tuner slot and demodulator without conflicts
+	evtNext := model.StartSessionEvent{
+		SessionID:  "sess-hb-reacquire",
+		ServiceRef: dasErsteHD,
+		ProfileID:  "hd",
+	}
+	require.NoError(t, st.PutSession(ctx, &model.SessionRecord{
+		SessionID:  "sess-hb-reacquire",
+		ServiceRef: dasErsteHD,
+		State:      model.SessionNew,
+	}))
+	sessionCtxNext := &sessionContext{
+		SessionID:  "sess-hb-reacquire",
+		Mode:       model.ModeLive,
+		ServiceRef: dasErsteHD,
+	}
+	leasesNext, err := orch.acquireLeases(ctx, sessionCtxNext, evtNext, "worker-next", zerolog.Nop())
+	require.NoError(t, err, "Subsequent session must acquire freed tuner and demodulator without resource contention")
+	defer leasesNext.ReleaseTuner()
+	assert.Equal(t, 0, leasesNext.Slot, "Must acquire slot 0 cleanly")
 }
 
 func TestOrchestrator_TopologyService_HeartbeatLoss_AuditOnly_FailOpen(t *testing.T) {
