@@ -247,11 +247,30 @@ struct PlayerScreen: View {
         }
         .task(id: currentChannel.id) {
             await startStreaming(channel: currentChannel)
+            var pollCounter = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 if Task.isCancelled { break }
                 if let stream = model.liveStream {
                     try? await model.heartbeat(sessionID: stream.sessionID)
+                }
+                pollCounter += 5
+                if pollCounter >= 30 {
+                    pollCounter = 0
+                    await model.refreshSchedule(for: [currentChannel.serviceRef])
+                    let updatedSchedule = model.schedule[currentChannel.serviceRef]
+                    NowPlayingManager.shared.update(channel: currentChannel, nowEntry: updatedSchedule?.now)
+                    LiveActivityManager.shared.startActivity(
+                        channel: currentChannel,
+                        nowNext: updatedSchedule,
+                        isDirectStream: isDirectStream
+                    )
+                    HandoffCoordinator.shared.updatePlaybackActivity(
+                        channel: currentChannel,
+                        nowNext: updatedSchedule,
+                        serverAddress: model.serverURLString
+                    )
+                    Self.updatePlayerMetadata(for: player?.currentItem, channel: currentChannel, nowNext: updatedSchedule)
                 }
             }
         }
@@ -422,7 +441,18 @@ struct PlayerScreen: View {
         item.automaticallyPreservesTimeOffsetFromLive = true
         item.preferredForwardBufferDuration = 6.0
 
-        // Inject Native iOS OSD Metadata for Apple's Transport Bar
+        Self.updatePlayerMetadata(for: item, channel: channel, nowNext: nowNext)
+
+        let player = AVPlayer(playerItem: item)
+        player.automaticallyWaitsToMinimizeStalling = true
+        player.allowsExternalPlayback = true
+        player.usesExternalPlaybackWhileExternalScreenIsActive = true
+        return player
+    }
+
+    /// Updates native iOS OSD metadata (Title, Artist, Description) for Apple's Transport Bar on the fly.
+    static func updatePlayerMetadata(for item: AVPlayerItem?, channel: Channel, nowNext: NowNext?) {
+        guard let item else { return }
         var metadata: [AVMetadataItem] = []
 
         let titleItem = AVMutableMetadataItem()
@@ -443,12 +473,6 @@ struct PlayerScreen: View {
         }
 
         item.externalMetadata = metadata
-
-        let player = AVPlayer(playerItem: item)
-        player.automaticallyWaitsToMinimizeStalling = true
-        player.allowsExternalPlayback = true
-        player.usesExternalPlaybackWhileExternalScreenIsActive = true
-        return player
     }
 }
 

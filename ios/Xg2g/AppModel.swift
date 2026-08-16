@@ -660,6 +660,17 @@ final class AppModel {
         }
     }
 
+    /// Refresh the live Now/Next EPG schedule for specific channels or all channels.
+    func refreshSchedule(for serviceRefs: [String] = []) async {
+        let targets = serviceRefs.isEmpty ? channels.map(\.serviceRef) : serviceRefs
+        guard !targets.isEmpty else { return }
+        if let updated = try? await channelRepository?.nowNext(for: targets) {
+            for (ref, nn) in updated {
+                schedule[ref] = nn
+            }
+        }
+    }
+
     /// Returns the full chronological schedule for a given channel.
     func channelSchedule(for channel: Channel) -> [NowNext.Entry] {
         if let list = fullEpg[channel.serviceRef], !list.isEmpty {
