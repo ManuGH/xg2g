@@ -97,12 +97,7 @@ struct HTTPAPIClient: APIClient {
 
     func send<Response>(_ request: APIRequest<Response>) async throws -> Response {
         let urlRequest = try makeURLRequest(for: request)
-        let authorized: URLRequest
-        do {
-            authorized = try await authorizer.authorized(urlRequest)
-        } catch {
-            throw APIError.invalidEndpoint(path: request.path)
-        }
+        let authorized = try await authorizer.authorized(urlRequest)
 
         let data: Data
         let response: URLResponse

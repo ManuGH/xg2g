@@ -53,6 +53,7 @@ enum AppState: Equatable, Sendable {
 /// Top-level sections in the Broadcast Console.
 enum Tab: String, CaseIterable, Identifiable, Sendable {
     case liveTV = "Live TV"
+    case guide = "Programm"
     case recordings = "Aufnahmen"
     case timers = "Timer"
     case settings = "Einstellungen"
@@ -62,9 +63,31 @@ enum Tab: String, CaseIterable, Identifiable, Sendable {
     var systemImage: String {
         switch self {
         case .liveTV: return "tv"
+        case .guide: return "calendar.badge.clock"
         case .recordings: return "play.rectangle.on.rectangle"
         case .timers: return "clock"
         case .settings: return "gearshape"
+        }
+    }
+}
+
+/// An upcoming rerun/repeat airing of a show on any channel.
+struct RerunItem: Identifiable, Sendable {
+    var id: String { "\(channel.id)_\(entry.id)_\(entry.start.timeIntervalSince1970)" }
+    let channel: Channel
+    let entry: NowNext.Entry
+
+    var formattedRelativeTime: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(entry.start) {
+            return "Heute, \(entry.formattedStartTime) Uhr"
+        } else if calendar.isDateInTomorrow(entry.start) {
+            return "Morgen, \(entry.formattedStartTime) Uhr"
+        } else {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "de_DE")
+            f.dateFormat = "E, d. MMM • HH:mm"
+            return "\(f.string(from: entry.start)) Uhr"
         }
     }
 }
@@ -139,22 +162,48 @@ final class AppModel {
         }
     }
 
-    var qualityPreference: StreamingQualityPreference {
-        get {
-            let raw = UserDefaults.standard.string(forKey: "xg2g.quality_preference") ?? "auto"
-            return StreamingQualityPreference(rawValue: raw) ?? .auto
-        }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "xg2g.quality_preference")
+    var qualityPreference: StreamingQualityPreference = {
+        let raw = UserDefaults.standard.string(forKey: "xg2g.quality_preference") ?? "auto"
+        return StreamingQualityPreference(rawValue: raw) ?? .auto
+    }() {
+        didSet {
+            UserDefaults.standard.set(qualityPreference.rawValue, forKey: "xg2g.quality_preference")
         }
     }
 
-    var playerGesturesEnabled: Bool {
-        get {
-            UserDefaults.standard.bool(forKey: "xg2g.player_gestures_enabled")
+    var playerGesturesEnabled: Bool = {
+        UserDefaults.standard.object(forKey: "xg2g.player_gestures_enabled") as? Bool ?? true
+    }() {
+        didSet {
+            UserDefaults.standard.set(playerGesturesEnabled, forKey: "xg2g.player_gestures_enabled")
         }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "xg2g.player_gestures_enabled")
+    }
+
+    enum EpgPreviewHours: Int, CaseIterable, Identifiable, Sendable {
+        case twoHours = 2
+        case fourHours = 4
+        case sixHours = 6
+        case twelveHours = 12
+        case twentyFourHours = 24
+
+        var id: Int { rawValue }
+        var displayName: String {
+            switch self {
+            case .twoHours: return "2 Stunden"
+            case .fourHours: return "4 Stunden (Empfohlen)"
+            case .sixHours: return "6 Stunden"
+            case .twelveHours: return "12 Stunden"
+            case .twentyFourHours: return "24 Stunden (1 Tag)"
+            }
+        }
+    }
+
+    var epgPreviewHours: EpgPreviewHours = {
+        let raw = UserDefaults.standard.integer(forKey: "xg2g.epg_preview_hours")
+        return EpgPreviewHours(rawValue: raw) ?? .fourHours
+    }() {
+        didSet {
+            UserDefaults.standard.set(epgPreviewHours.rawValue, forKey: "xg2g.epg_preview_hours")
         }
     }
 
@@ -176,6 +225,73 @@ final class AppModel {
 
     func isFavorite(_ channel: Channel) -> Bool {
         favoriteChannelIDs.contains(channel.id)
+    }
+
+    var favoriteChannels: [Channel] {
+        channels.filter { favoriteChannelIDs.contains($0.id) }
+    }
+
+    // MARK: - Recently Watched (Google TV "Jump Back In")
+    private(set) var recentChannelIDs: [String] = {
+        UserDefaults.standard.stringArray(forKey: "xg2g.recents") ?? []
+    }()
+
+    func recordChannelPlayback(_ channel: Channel) {
+        var recents = recentChannelIDs.filter { $0 != channel.id }
+        recents.insert(channel.id, at: 0)
+        if recents.count > 8 {
+            recents = Array(recents.prefix(8))
+        }
+        recentChannelIDs = recents
+        UserDefaults.standard.set(recents, forKey: "xg2g.recents")
+    }
+
+    var recentChannels: [Channel] {
+        recentChannelIDs.compactMap { id in
+            channels.first { $0.id == id }
+        }
+    }
+
+    // MARK: - Recording Playback Resume Tracking
+    private(set) var recordingProgress: [String: Double] = {
+        let dict = UserDefaults.standard.dictionary(forKey: "xg2g.recordingProgress") as? [String: Double] ?? [:]
+        return dict
+    }()
+
+    func updateRecordingProgress(id: String, currentTime: Double, totalDuration: Double, title: String? = nil, channelName: String? = nil) {
+        guard totalDuration > 0 else { return }
+        let fraction = min(1.0, max(0.0, currentTime / totalDuration))
+        let finished = fraction > 0.95
+        if finished {
+            // Finished
+            recordingProgress.removeValue(forKey: id)
+        } else if fraction > 0.02 {
+            recordingProgress[id] = currentTime
+        }
+        UserDefaults.standard.set(recordingProgress, forKey: "xg2g.recordingProgress")
+
+        // Sync to xg2g server profile in background (Cross-Device Sync)
+        if let repo = recordingsRepository {
+            Task {
+                _ = try? await session?.validSession()
+                try? await repo.saveResume(
+                    id: id,
+                    position: currentTime,
+                    total: totalDuration,
+                    finished: finished,
+                    title: title ?? "",
+                    channel: channelName ?? ""
+                )
+            }
+        }
+    }
+
+    func resumePosition(for id: String) -> Double? {
+        recordingProgress[id]
+    }
+
+    func currentAccessToken() async throws -> String? {
+        try await session?.validSession().token
     }
 
     enum TimeFilter: Hashable, Identifiable, Sendable {
@@ -233,19 +349,17 @@ final class AppModel {
     var selectedTimeFilter: TimeFilter = .now
     var selectedGenre: EpgGenre = .all
     var epgViewMode: EpgViewMode = .list
-    var playingChannel: Channel?
-
-    /// List of quick time jumps and the upcoming 7 days
-    var availableTimeFilters: [TimeFilter] {
-        var list: [TimeFilter] = [.now, .next, .primeTimeTonight, .lateNightTonight]
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: .now)
-        for offset in 1...7 {
-            if let targetDate = calendar.date(byAdding: .day, value: offset, to: today) {
-                list.append(.day(targetDate))
+    var playingChannel: Channel? {
+        didSet {
+            if let playingChannel {
+                recordChannelPlayback(playingChannel)
             }
         }
-        return list
+    }
+
+    /// Sleek essential quick time jumps (Live, 20:15, 22:00)
+    var availableTimeFilters: [TimeFilter] {
+        [.now, .primeTimeTonight, .lateNightTonight]
     }
 
     /// Resolves the programme running on a channel for the active time filter
@@ -267,7 +381,7 @@ final class AppModel {
             guard let target = calendar.date(from: components) else { return scheduleItem?.now }
             return allShows.first { $0.start <= target && $0.end > target }
                 ?? allShows.first { $0.start >= target }
-                ?? scheduleItem?.now
+                ?? (allShows.isEmpty ? scheduleItem?.now : nil)
         case .lateNightTonight:
             let calendar = Calendar.current
             var components = calendar.dateComponents([.year, .month, .day], from: .now)
@@ -277,7 +391,7 @@ final class AppModel {
             guard let target = calendar.date(from: components) else { return scheduleItem?.now }
             return allShows.first { $0.start <= target && $0.end > target }
                 ?? allShows.first { $0.start >= target }
-                ?? scheduleItem?.now
+                ?? (allShows.isEmpty ? scheduleItem?.now : nil)
         case .day(let dayDate):
             let calendar = Calendar.current
             var components = calendar.dateComponents([.year, .month, .day], from: dayDate)
@@ -288,7 +402,7 @@ final class AppModel {
             return allShows.first { $0.start <= target && $0.end > target }
                 ?? allShows.first { calendar.isDate($0.start, inSameDayAs: dayDate) }
                 ?? allShows.first { $0.start >= target }
-                ?? scheduleItem?.now
+                ?? (allShows.isEmpty ? scheduleItem?.now : nil)
         }
     }
 
@@ -303,7 +417,11 @@ final class AppModel {
         if selectedGenre != .all {
             result = result.filter { channel in
                 let currentShow = show(for: channel, at: selectedTimeFilter)
-                return currentShow?.genre == selectedGenre
+                if let currentShow {
+                    return currentShow.matches(genre: selectedGenre, channelName: channel.name)
+                } else {
+                    return EpgGenreClassifier.channelMatches(genre: selectedGenre, channelName: channel.name)
+                }
             }
         }
 
@@ -317,7 +435,12 @@ final class AppModel {
                     (currentShow?.description?.lowercased().contains(query) ?? false)
             }
         }
-        return result
+        var seen = Set<String>()
+        return result.filter { channel in
+            guard !seen.contains(channel.serviceRef) else { return false }
+            seen.insert(channel.serviceRef)
+            return true
+        }
     }
 
     /// Next channel in the active list (wraps around).
@@ -535,6 +658,73 @@ final class AppModel {
         }
     }
 
+    /// Returns the full chronological schedule for a given channel.
+    func channelSchedule(for channel: Channel) -> [NowNext.Entry] {
+        if let list = fullEpg[channel.serviceRef], !list.isEmpty {
+            return list.sorted { $0.start < $1.start }
+        }
+        var list: [NowNext.Entry] = []
+        if let nn = schedule[channel.serviceRef] {
+            if let now = nn.now { list.append(now) }
+            if let next = nn.next { list.append(next) }
+        }
+        return list
+    }
+
+    /// Finds all other airings / reruns of a given show across all channels in the full EPG buffer.
+    func findReruns(for entry: NowNext.Entry, excludingChannelID: String? = nil) -> [RerunItem] {
+        let targetNorm = normalizeShowTitle(entry.title)
+        guard targetNorm.count >= 3 else { return [] }
+
+        var results: [RerunItem] = []
+
+        for channel in channels {
+            let shows = fullEpg[channel.serviceRef] ?? []
+            for show in shows {
+                // Skip the exact same event instance if on the same channel
+                if show.id == entry.id && channel.id == excludingChannelID {
+                    continue
+                }
+                // Skip past events that already ended
+                if show.end < .now {
+                    continue
+                }
+
+                let showNorm = normalizeShowTitle(show.title)
+                if showNorm == targetNorm ||
+                   (targetNorm.count > 4 && (showNorm.contains(targetNorm) || targetNorm.contains(showNorm))) {
+                    results.append(RerunItem(channel: channel, entry: show))
+                }
+            }
+        }
+
+        // Deduplicate and sort chronologically
+        var seen = Set<String>()
+        var unique: [RerunItem] = []
+        for item in results.sorted(by: { $0.entry.start < $1.entry.start }) {
+            let key = "\(item.channel.id)_\(Int(item.entry.start.timeIntervalSince1970))"
+            if !seen.contains(key) {
+                seen.insert(key)
+                unique.append(item)
+            }
+        }
+        return unique
+    }
+
+    private static let parenRegex = try? NSRegularExpression(pattern: #"\(.*?\)|\[.*?\]"#, options: [])
+    private static let seasonEpisodeRegex = try? NSRegularExpression(pattern: #"\b(staffel|folge|episode|s\d+|e\d+|hd|live|wh\.|wiederholung)\b"#, options: [.caseInsensitive])
+
+    private func normalizeShowTitle(_ title: String) -> String {
+        var s = title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if let r = Self.parenRegex {
+            s = r.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "")
+        }
+        if let r = Self.seasonEpisodeRegex {
+            s = r.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "")
+        }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func loadRecordings() async {
         guard let recordingsRepository, !isLoadingRecordings else { return }
         isLoadingRecordings = true
@@ -542,7 +732,16 @@ final class AppModel {
 
         do {
             _ = try? await session?.validSession()
-            recordings = try await recordingsRepository.recordings()
+            let list = try await recordingsRepository.recordings()
+            recordings = list
+
+            // Seed local cache from server profile resume states
+            for rec in list {
+                if let sPos = rec.serverResumePos, sPos > 0 {
+                    recordingProgress[rec.id] = sPos
+                }
+            }
+            UserDefaults.standard.set(recordingProgress, forKey: "xg2g.recordingProgress")
             lastError = nil
         } catch {
             handle(error)
@@ -764,12 +963,5 @@ final class AppModel {
     private static var deviceName: String {
         let name = UIDevice.current.name.trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? "iPhone" : name
-    }
-
-    // MARK: - Download Auth Access
-
-    /// Returns the current valid access token for media download requests.
-    func currentAccessToken() async throws -> String? {
-        try await session?.validSession().token
     }
 }

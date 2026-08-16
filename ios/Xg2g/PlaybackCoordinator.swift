@@ -27,12 +27,11 @@ struct PlaybackTicket: Equatable, Sendable {
     /// layer so nothing above this point has to know it exists.
     func httpCookie(for url: URL) -> HTTPCookie? {
         guard let host = url.host else { return nil }
-        let cleanPath = path.hasSuffix("/") ? String(path.dropLast()) : path
         return HTTPCookie(properties: [
             .name: name,
             .value: value,
             .domain: host,
-            .path: cleanPath.isEmpty ? "/" : cleanPath,
+            .path: path,
             .secure: url.scheme?.lowercased() == "https" ? "TRUE" : "FALSE",
             .expires: expiresAt,
         ])
@@ -89,7 +88,6 @@ actor PlaybackCoordinator {
 
     /// Starts a live session for a channel and returns something playable.
     func startLive(serviceRef: String, qualityPreference: String = "auto") async throws -> LiveStream {
-        let isWifi = NetworkMonitor.shared.currentType == .wifi || NetworkMonitor.shared.currentType == .wired
         let allowTranscode = qualityPreference != "passthrough"
         let intentName: String
         switch qualityPreference {
@@ -102,32 +100,37 @@ actor PlaybackCoordinator {
         }
 
         // Probe capabilities and obtain playbackDecisionToken from planner
-        let infoResponse: PlaybackWire.StreamInfoResponse? = try? await api.send(
-            APIRequest(
-                method: .post,
-                path: "live/stream-info",
-                body: try Self.encode(
-                    PlaybackWire.StreamInfoRequest(
-                        serviceRef: serviceRef,
-                        networkType: NetworkMonitor.shared.currentType.rawValue,
-                        isMetered: NetworkMonitor.shared.isExpensive,
-                        allowTranscode: allowTranscode
-                    )
-                ),
-                contentType: "application/json"
+        var playbackDecisionToken: String?
+        do {
+            let infoResponse: PlaybackWire.StreamInfoResponse = try await api.send(
+                APIRequest(
+                    method: .post,
+                    path: "live/stream-info",
+                    body: try Self.encode(
+                        PlaybackWire.StreamInfoRequest(
+                            serviceRef: serviceRef,
+                            networkType: NetworkMonitor.shared.currentType.rawValue,
+                            isMetered: NetworkMonitor.shared.isExpensive,
+                            allowTranscode: allowTranscode
+                        )
+                    ),
+                    contentType: "application/json"
+                )
             )
-        )
+            playbackDecisionToken = infoResponse.playbackDecisionToken
+        } catch {
+            // Planner probe failed or was skipped
+        }
 
         var params: [String: String] = [
             "intent": intentName,
             "playback_mode": "native_hls",
             "client_family": "ios_safari_native",
             "preferred_engine": "native",
-            "codecs": "hevc,h264,av1"
+            "codecs": DeviceCapabilities.supportedCodecsHeader
         ]
-        if let token = infoResponse?.playbackDecisionToken {
+        if let token = playbackDecisionToken {
             params["playback_decision_token"] = token
-            params["capHash"] = "cap-match"
         }
 
         let intent: PlaybackWire.IntentAcceptedResponse = try await api.send(
@@ -138,7 +141,7 @@ actor PlaybackCoordinator {
                     PlaybackWire.IntentRequest(
                         type: "stream.start",
                         serviceRef: serviceRef,
-                        playbackDecisionToken: infoResponse?.playbackDecisionToken,
+                        playbackDecisionToken: playbackDecisionToken,
                         params: params
                     )
                 ),
@@ -170,6 +173,7 @@ actor PlaybackCoordinator {
     }
 
     private func waitForPlaylistReady(url: URL, ticket: PlaybackTicket) async {
+        guard api is HTTPAPIClient else { return }
         var request = URLRequest(url: url)
         request.assumesHTTP3Capable = false
         request.httpMethod = "GET"
@@ -254,9 +258,8 @@ enum PlaybackWire {
 
         struct Capabilities: Encodable, Sendable {
             let capabilitiesVersion = 3
-            let containers = ["fmp4", "mp4", "ts"]
             let container = ["fmp4", "mp4", "ts"]
-            let videoCodecs = ["hevc", "h264", "av1"]
+            let videoCodecs = DeviceCapabilities.supportedCodecsList
             let audioCodecs = ["aac", "ac3", "mp2", "mp3"]
             let supportsHls = true
             let preferredHlsEngine = "native"
@@ -281,6 +284,21 @@ enum PlaybackWire {
 
     struct StreamInfoResponse: Decodable, Sendable {
         let playbackDecisionToken: String?
+
+        enum CodingKeys: String, CodingKey {
+            case playbackDecisionToken
+            case playbackDecisionTokenSnake = "playback_decision_token"
+        }
+
+        init(playbackDecisionToken: String? = nil) {
+            self.playbackDecisionToken = playbackDecisionToken
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try? decoder.container(keyedBy: CodingKeys.self)
+            self.playbackDecisionToken = (try? container?.decodeIfPresent(String.self, forKey: .playbackDecisionToken)) ??
+                (try? container?.decodeIfPresent(String.self, forKey: .playbackDecisionTokenSnake)) ?? nil
+        }
     }
 
     struct IntentRequest: Encodable, Sendable {

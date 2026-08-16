@@ -13,9 +13,13 @@ enum DownloadQuality: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var id: String { rawValue }
 
-    /// Returns the available download quality options.
+    /// Returns only the qualities supported by the local device's hardware decoder.
     static var supportedQualities: [DownloadQuality] {
-        [.original, .av1, .compact, .high]
+        if DeviceCapabilities.supportsAV1 {
+            return [.original, .av1, .compact, .high]
+        } else {
+            return [.original, .compact, .high]
+        }
     }
 
     var title: String {

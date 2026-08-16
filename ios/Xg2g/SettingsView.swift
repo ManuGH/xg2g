@@ -6,7 +6,7 @@ import SwiftUI
 
 struct SettingsView: View {
 
-    let model: AppModel
+    @Bindable var model: AppModel
     @State private var showingRevokeConfirmation = false
 
     var body: some View {
@@ -16,7 +16,8 @@ struct SettingsView: View {
 
                 List {
                     Section {
-                        HStack {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "server.rack", backgroundColor: Theme.Colors.accentAction)
                             Text("Server-Adresse")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
@@ -25,7 +26,8 @@ struct SettingsView: View {
                                 .foregroundStyle(Theme.Colors.textSecondary)
                         }
 
-                        HStack {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "checkmark.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
                             Text("Status")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
@@ -42,19 +44,22 @@ struct SettingsView: View {
                         Text("Server")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
-                    Section {
-                        Picker("Streaming-Modus", selection: Binding(
-                            get: { model.qualityPreference },
-                            set: { model.qualityPreference = $0 }
-                        )) {
-                            ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
-                                Text(pref.displayName).tag(pref)
-                            }
-                        }
-                        .foregroundStyle(Theme.Colors.textPrimary)
+                    .listRowBackground(Theme.Colors.surfaceElevated)
 
-                        HStack {
-                            Text("Aktuelle Verbindung")
+                    Section {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "bolt.badge.automatic", backgroundColor: Theme.Colors.accentLive)
+                            Picker("Streaming-Modus", selection: $model.qualityPreference) {
+                                ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
+                                    Text(pref.displayName).tag(pref)
+                                }
+                            }
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "wifi", backgroundColor: Color.teal)
+                            Text("Verbindung")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
                             HStack(spacing: 6) {
@@ -65,23 +70,54 @@ struct SettingsView: View {
                                     .foregroundStyle(Theme.Colors.textSecondary)
                             }
                         }
-                        Toggle("Wisch-Zappen im Player", isOn: Binding(
-                            get: { model.playerGesturesEnabled },
-                            set: { model.playerGesturesEnabled = $0 }
-                        ))
-                        .foregroundStyle(Theme.Colors.textPrimary)
                     } header: {
-                        Text("Wiedergabe & Steuerung")
+                        Text("Wiedergabe")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
-                        Text("Im Modus 'Automatisch' wird im WLAN verlustfreies 1:1 Direct-Streaming (0% CPU) verwendet. 'Wisch-Zappen' erlaubt horizontales Wischen im Vollbildplayer (bei Deaktivierung erfolgt das Zappen sicher über die Bildschirm-Tasten).")
+                        Text("Im Modus 'Automatisch' schaltet xg2g im WLAN automatisch auf verlustfreies 1:1 Direct-Streaming (0% Server-CPU) und mobil auf adaptives Streaming.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
                     Section {
-                        HStack {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "arrow.down.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
+                            Picker("Standard-Download", selection: Binding(
+                                get: { DownloadManager.shared.defaultQuality },
+                                set: { DownloadManager.shared.defaultQuality = $0 }
+                            )) {
+                                ForEach(DownloadQuality.supportedQualities) { q in
+                                    Text(q.title).tag(q)
+                                }
+                            }
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+
+                        Toggle(isOn: Binding(
+                            get: { DownloadManager.shared.wifiOnly },
+                            set: { DownloadManager.shared.wifiOnly = $0 }
+                        )) {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "wifi", backgroundColor: Color.blue)
+                                Text("Nur über WLAN laden")
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                            }
+                        }
+                        .tint(Theme.Colors.accentAction)
+                    } header: {
+                        Text("Offline & Downloads")
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    } footer: {
+                        Text("Kompakt (HEVC) spart bis zu 75% Speicherplatz auf deinem Gerät und ist ideal für Flugreisen und lange Serien-Staffeln.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .listRowBackground(Theme.Colors.surfaceElevated)
+
+                    Section {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "iphone.gen3", backgroundColor: Color.blue.opacity(0.85))
                             Text("Gerätename")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
@@ -89,7 +125,8 @@ struct SettingsView: View {
                                 .foregroundStyle(Theme.Colors.textSecondary)
                         }
 
-                        HStack {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "cpu", backgroundColor: Color(white: 0.35))
                             Text("Gerätetyp")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
@@ -97,7 +134,8 @@ struct SettingsView: View {
                                 .foregroundStyle(Theme.Colors.textSecondary)
                         }
 
-                        HStack {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "lock.shield.fill", backgroundColor: Color.purple)
                             Text("Schlüsselspeicher")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
@@ -119,9 +157,9 @@ struct SettingsView: View {
                         Button(role: .destructive) {
                             showingRevokeConfirmation = true
                         } label: {
-                            HStack {
-                                Spacer()
-                                Label("Gerät trennen & abmelden", systemImage: "rectangle.portrait.and.arrow.right")
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "rectangle.portrait.and.arrow.right", backgroundColor: Theme.Colors.statusError)
+                                Text("Gerät trennen & abmelden")
                                     .foregroundStyle(Theme.Colors.statusError)
                                     .fontWeight(.medium)
                                 Spacer()
@@ -137,6 +175,7 @@ struct SettingsView: View {
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
                 }
+                .safeAreaPadding(.bottom, 80)
                 .scrollContentBackground(.hidden)
                 .confirmationDialog(
                     "Möchtest du dieses Gerät wirklich trennen?",

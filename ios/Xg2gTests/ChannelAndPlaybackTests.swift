@@ -51,6 +51,20 @@ struct ChannelRepositoryTests {
         #expect(channel.id == "1:0:1:9::")
     }
 
+    /// Duplicate service references across bouquets or master list are deduplicated cleanly.
+    @Test func duplicateServicesAreDeduplicatedByServiceReference() async throws {
+        let api = ScriptedAPI()
+        api.stub("services", json: """
+            [{"id":"orf1_main","name":"ORF1 HD","number":"1","serviceRef":"1:0:19:132F:3EF:1:C00000:0:0:0:"},
+             {"id":"orf1_fav","name":"ORF1 HD","number":"1","serviceRef":"1:0:19:132F:3EF:1:C00000:0:0:0:"},
+             {"id":"orf2_main","name":"ORF2 HD","number":"2","serviceRef":"1:0:19:1330:3EF:1:C00000:0:0:0:"}]
+            """)
+
+        let channels = try await repository(api).channels()
+        #expect(channels.count == 2)
+        #expect(channels.map(\.name) == ["ORF1 HD", "ORF2 HD"])
+    }
+
     @Test func bouquetFilterIsSentAsAQueryItem() async throws {
         let api = ScriptedAPI()
         api.stub("services", json: "[]")

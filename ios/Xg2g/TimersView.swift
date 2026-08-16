@@ -7,6 +7,7 @@ import SwiftUI
 struct TimersView: View {
 
     let model: AppModel
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showingAddTimer = false
 
     var body: some View {
@@ -27,10 +28,11 @@ struct TimersView: View {
                         )
                         .foregroundStyle(Theme.Colors.textSecondary)
                     } else {
+                        let isRegular = sizeClass == .regular
                         ScrollView {
                             LazyVGrid(
-                                columns: [GridItem(.adaptive(minimum: 340, maximum: 540), spacing: 14)],
-                                spacing: 14
+                                columns: [GridItem(.adaptive(minimum: isRegular ? 320 : 280, maximum: 460), spacing: isRegular ? 16 : 12)],
+                                spacing: isRegular ? 16 : 12
                             ) {
                                 ForEach(model.timers) { timer in
                                     TimerRow(timer: timer)
@@ -43,8 +45,9 @@ struct TimersView: View {
                                         }
                                 }
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, isRegular ? 20 : 12)
+                            .padding(.vertical, isRegular ? 16 : 10)
+                            .safeAreaPadding(.bottom, 80)
                         }
                         .refreshable { await model.loadTimers() }
                     }
@@ -141,8 +144,12 @@ struct TimerRow: View {
             }
         }
         .padding(14)
-        .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+        .background(Theme.Gradients.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(timer.isRunning ? Theme.Gradients.recordingAlertBorder : Theme.Gradients.specularBorder, lineWidth: 1)
+        )
+        .shadow(color: timer.isRunning ? Theme.Colors.statusError.opacity(0.18) : Color.black.opacity(0.18), radius: 6, y: 2)
     }
 }
 

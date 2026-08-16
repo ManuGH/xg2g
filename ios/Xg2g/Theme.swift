@@ -38,18 +38,87 @@ enum Theme {
         static let statusError = Color(red: 0.973, green: 0.443, blue: 0.443)
     }
 
+    enum Gradients {
+        /// Specular lighting border: Top-left light source giving cards physical depth (VisionOS style)
+        static let specularBorder = LinearGradient(
+            colors: [Color.white.opacity(0.20), Color.white.opacity(0.05)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        /// Live aura border for on-air broadcast programs
+        static let liveAuraBorder = LinearGradient(
+            colors: [Colors.accentLive.opacity(0.60), Colors.accentLive.opacity(0.15)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        /// Ambient background card gradient
+        static let cardSurface = LinearGradient(
+            colors: [Colors.surfaceElevated.opacity(0.88), Colors.surfaceElevated.opacity(0.65)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+
+        /// Recording alert border
+        static let recordingAlertBorder = LinearGradient(
+            colors: [Colors.statusError.opacity(0.85), Colors.statusError.opacity(0.35)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        /// Active sidebar selection highlight
+        static let sidebarActiveSelection = LinearGradient(
+            colors: [Colors.accentAction.opacity(0.22), Colors.accentAction.opacity(0.08)],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
     struct GlassCardModifier: ViewModifier {
         var cornerRadius: CGFloat = 12
+        var isLive: Bool = false
 
         func body(content: Content) -> some View {
             content
                 .background(.ultraThinMaterial)
-                .background(Colors.surfaceGlass)
+                .background(Gradients.cardSurface)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Colors.borderSubtle, lineWidth: 1)
+                        .strokeBorder(isLive ? Gradients.liveAuraBorder : Gradients.specularBorder, lineWidth: 1)
                 )
+                .shadow(
+                    color: isLive ? Colors.accentLive.opacity(0.18) : Color.black.opacity(0.25),
+                    radius: isLive ? 10 : 4,
+                    y: isLive ? 2 : 2
+                )
+        }
+    }
+
+    struct FadingHorizontalEdgesModifier: ViewModifier {
+        var fadeWidth: CGFloat = 16
+
+        func body(content: Content) -> some View {
+            content
+                .overlay(alignment: .leading) {
+                    LinearGradient(
+                        colors: [Colors.bgBase.opacity(0.85), Color.clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: fadeWidth)
+                    .allowsHitTesting(false)
+                }
+                .overlay(alignment: .trailing) {
+                    LinearGradient(
+                        colors: [Color.clear, Colors.bgBase.opacity(0.85)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: fadeWidth)
+                    .allowsHitTesting(false)
+                }
         }
     }
 }
@@ -63,16 +132,14 @@ struct PulsingLiveDot: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(Theme.Colors.accentLive.opacity(0.35))
-                .frame(width: isPulsing ? size * 2.0 : size, height: isPulsing ? size * 2.0 : size)
-                .scaleEffect(isPulsing ? 1.2 : 0.8)
+                .fill(Theme.Colors.accentLive.opacity(0.4))
+                .scaleEffect(isPulsing ? 1.8 : 1.0)
                 .opacity(isPulsing ? 0 : 0.8)
 
             Circle()
                 .fill(Theme.Colors.accentLive)
-                .frame(width: size, height: size)
         }
-        .frame(width: size * 2, height: size * 2)
+        .frame(width: size, height: size)
         .onAppear {
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: false)) {
                 isPulsing = true
@@ -81,8 +148,53 @@ struct PulsingLiveDot: View {
     }
 }
 
+/// Apple-native squircle icon container for settings rows (iOS Settings style).
+struct SettingsIconBadge: View {
+    let systemName: String
+    let backgroundColor: Color
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(backgroundColor)
+                .frame(width: 28, height: 28)
+
+            Image(systemName: systemName)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: 28, height: 28)
+    }
+}
+
+/// Deterministic channel color generator for vibrant, non-monotone fallback logo badges.
+enum ChannelColorGenerator {
+    private static let gradients: [(Color, Color)] = [
+        (Color(red: 0.08, green: 0.22, blue: 0.45), Color(red: 0.04, green: 0.12, blue: 0.28)), // Navy / Cobalt
+        (Color(red: 0.45, green: 0.12, blue: 0.18), Color(red: 0.25, green: 0.05, blue: 0.09)), // Crimson / Wine
+        (Color(red: 0.08, green: 0.38, blue: 0.32), Color(red: 0.03, green: 0.20, blue: 0.16)), // Emerald / Teal
+        (Color(red: 0.35, green: 0.14, blue: 0.45), Color(red: 0.18, green: 0.06, blue: 0.25)), // Violet / Plum
+        (Color(red: 0.48, green: 0.28, blue: 0.08), Color(red: 0.25, green: 0.14, blue: 0.03)), // Amber / Bronze
+        (Color(red: 0.15, green: 0.32, blue: 0.48), Color(red: 0.07, green: 0.18, blue: 0.28)), // Steel / Cyan
+    ]
+
+    static func gradient(for name: String) -> LinearGradient {
+        let hash = abs(name.utf8.reduce(0) { ($0 &* 31) &+ Int($1) })
+        let pair = gradients[hash % gradients.count]
+        return LinearGradient(
+            colors: [pair.0, pair.1],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+}
+
 extension View {
-    func glassCard(cornerRadius: CGFloat = 12) -> some View {
-        modifier(Theme.GlassCardModifier(cornerRadius: cornerRadius))
+    func glassCard(cornerRadius: CGFloat = 12, isLive: Bool = false) -> some View {
+        modifier(Theme.GlassCardModifier(cornerRadius: cornerRadius, isLive: isLive))
+    }
+
+    func fadingHorizontalEdges(fadeWidth: CGFloat = 16) -> some View {
+        modifier(Theme.FadingHorizontalEdgesModifier(fadeWidth: fadeWidth))
     }
 }

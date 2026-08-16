@@ -14,6 +14,7 @@ struct Recording: Identifiable, Equatable, Sendable {
     let serviceRef: String?
     let filename: String?
     let status: String
+    let serverResumePos: Double?
 
     var formattedDuration: String {
         let minutes = durationSeconds / 60
@@ -31,9 +32,13 @@ struct Recording: Identifiable, Equatable, Sendable {
         formatter.timeStyle = .short
         return formatter.string(from: beginDate)
     }
+
+    var genre: EpgGenre {
+        EpgGenreClassifier.classify(title: title, description: description, channelName: nil)
+    }
 }
 
-/// Reads recordings from the DVR library.
+/// Reads recordings from the DVR library and manages server-side resume state.
 actor RecordingsRepository {
 
     private let api: APIClient
@@ -61,11 +66,40 @@ actor RecordingsRepository {
             APIRequest(method: .delete, path: "recordings/\(id)")
         )
     }
+
+    func saveResume(id: String, position: Double, total: Double, finished: Bool, title: String, channel: String) async throws {
+        struct ResumeRequest: Encodable {
+            let position: Double
+            let total: Double
+            let finished: Bool
+            let title: String
+            let channel: String
+        }
+
+        let body = try JSONEncoder().encode(ResumeRequest(
+            position: position,
+            total: total,
+            finished: finished,
+            title: title,
+            channel: channel
+        ))
+
+        let _: EmptyResponse = try await api.send(
+            APIRequest(method: .put, path: "recordings/\(id)/resume", body: body, contentType: "application/json")
+        )
+    }
 }
 
 // MARK: - Wire
 
 enum RecordingWire {
+
+    struct ResumeInfo: Decodable, Sendable {
+        let posSeconds: Int64?
+        let durationSeconds: Int64?
+        let finished: Bool?
+        let updatedAt: String?
+    }
 
     struct Item: Decodable, Sendable {
         let recordingId: String?
@@ -77,6 +111,7 @@ enum RecordingWire {
         let filename: String?
         let serviceRef: String?
         let status: String?
+        let resume: ResumeInfo?
 
         func toDomain() -> Recording? {
             guard let title = title?.trimmingCharacters(in: .whitespaces), !title.isEmpty,
@@ -86,6 +121,11 @@ enum RecordingWire {
             let startSeconds = beginUnixSeconds ?? 0
             let duration = Int(durationSeconds ?? 0)
 
+            var serverResume: Double? = nil
+            if let r = resume, let pos = r.posSeconds, pos > 0, !(r.finished ?? false) {
+                serverResume = Double(pos)
+            }
+
             return Recording(
                 id: id,
                 title: title,
@@ -94,7 +134,8 @@ enum RecordingWire {
                 durationSeconds: duration,
                 serviceRef: serviceRef,
                 filename: filename,
-                status: status ?? "completed"
+                status: status ?? "completed",
+                serverResumePos: serverResume
             )
         }
     }

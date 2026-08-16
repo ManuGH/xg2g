@@ -38,13 +38,21 @@ actor ChannelRepository {
             APIRequest(method: .get, path: "services", query: query)
         )
 
-        return services
+        let domainChannels = services
             .compactMap { $0.toDomain(baseURL: baseURL) }
             .sorted { left, right in
                 left.sortKey == right.sortKey
                     ? left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
                     : left.sortKey < right.sortKey
             }
+
+        // Deduplicate channels by serviceRef so duplicate entries in the master list or across bouquets appear exactly once
+        var seenServiceRefs = Set<String>()
+        return domainChannels.filter { channel in
+            guard !seenServiceRefs.contains(channel.serviceRef) else { return false }
+            seenServiceRefs.insert(channel.serviceRef)
+            return true
+        }
     }
 
     /// Now and next for the given channels, keyed by service reference.
