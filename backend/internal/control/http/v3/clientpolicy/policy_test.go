@@ -189,3 +189,18 @@ func TestAllowExperimentalNativeAV1TransportStream_DisablesNativeWebKitAV1TS(t *
 		t.Fatal("did not expect iOS Safari to keep the AV1 TS experiment")
 	}
 }
+
+func TestApplyStartPackagingPolicy_IOSSafariNativeH264CopyForcesFMP4(t *testing.T) {
+	spec := ApplyStartPackagingPolicy(
+		playbackprofile.ClientIOSSafariNative,
+		"copy",
+		model.ProfileSpec{Name: "copy", Container: "mpegts", TranscodeVideo: false},
+		"h264", "native",
+	)
+	if spec.Container != "fmp4" {
+		t.Fatalf("ApplyStartPackagingPolicy() container = %q, want %q", spec.Container, "fmp4")
+	}
+	if spec.TranscodeVideo {
+		t.Fatalf("ApplyStartPackagingPolicy() must stay a copy (TranscodeVideo=false)")
+	}
+}

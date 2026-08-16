@@ -70,6 +70,14 @@ func ApplyStartPackagingPolicy(clientFamily, effectiveProfileID string, profileS
 		// and TranscodeVideo is untouched, so buildCopyVideoArgs (-c:v copy) is used.
 		profileSpec.VideoCodec = "hevc"
 	}
+	if normalize.Token(clientFamily) == playbackprofile.ClientIOSSafariNative &&
+		strings.EqualFold(strings.TrimSpace(preferredEngine), "native") &&
+		!profileSpec.TranscodeVideo {
+		// 1:1 Passthrough (Copy) for Native iOS AVPlayer must use fMP4/CMAF
+		// instead of legacy MPEG-TS (.ts) to allow Apple Silicon zero-copy DMA
+		// hardware decoding without high CPU demuxing and thermal warming.
+		profileSpec.Container = "fmp4"
+	}
 	return profileSpec
 }
 
