@@ -268,7 +268,9 @@ struct PlayerScreen: View {
             }
         }
         .onDisappear {
-            teardownPlayer()
+            if model.playingChannel == nil {
+                teardownPlayer()
+            }
         }
     }
 
@@ -578,6 +580,13 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
 
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
+            willBeginFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
+        ) {
+            // Keep playback continuous and retain active state during system fullscreen modal presentation
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
             willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
         ) {
             // Inline stage: exiting fullscreen transitions back to inline video stage without tearing down playback
@@ -688,7 +697,7 @@ struct PortraitBroadcastHeroCard: View {
 
                     HStack(spacing: 5) {
                         PulsingLiveDot(size: 5)
-                        Text(isTimeshifted ? "TIMESHIFT" : "LIVE")
+                        Text(isTimeshifted ? "TIMESHIFT" : "LIVE • DVR")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundStyle(isTimeshifted ? Theme.Colors.accentAction : Theme.Colors.accentLive)
                     }
