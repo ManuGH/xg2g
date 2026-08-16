@@ -168,6 +168,36 @@ func CollectRuntimeSnapshot(ctx context.Context, client OpenWebIFPoller, now tim
 	return snap
 }
 
+// resolveDemodulatorIdentity accurately maps an observed stream to the authoritative topology demodulator.
+func resolveDemodulatorIdentity(st ObservedStream, snapshot ReceiverRuntimeSnapshot, topology ReceiverTopology) (DemodulatorID, *InputID) {
+	// 1. Direct match by TunerIndex against topology's ordered demodulators
+	if st.TunerIndex >= 0 && st.TunerIndex < len(topology.Demodulators) {
+		demod := topology.Demodulators[st.TunerIndex]
+		in := demod.InputID
+		return demod.ID, &in
+	}
+
+	// 2. Match via sanitizeTunerID from snapshot.Tuners (preserving Discovery naming)
+	for _, t := range snapshot.Tuners {
+		if t.Index == st.TunerIndex {
+			sanitized := DemodulatorID(sanitizeTunerID(t.Name, t.Index))
+			if demod, ok := topology.FindDemod(sanitized); ok {
+				in := demod.InputID
+				return demod.ID, &in
+			}
+		}
+	}
+
+	// 3. Fallback letter format if within bounds
+	fallbackID := DemodulatorID(fmt.Sprintf("tuner_%c", 'a'+st.TunerIndex))
+	if demod, ok := topology.FindDemod(fallbackID); ok {
+		in := demod.InputID
+		return demod.ID, &in
+	}
+
+	return fallbackID, nil
+}
+
 // ExtractExternalAllocationsFromSnapshot derives external tuner allocations from an evidentiary runtime snapshot.
 func ExtractExternalAllocationsFromSnapshot(
 	snapshot ReceiverRuntimeSnapshot,
@@ -199,17 +229,12 @@ func ExtractExternalAllocationsFromSnapshot(
 	// 3. External Streams reported by OpenWebIF (suppressed when StreamPresence is Empty)
 	if snapshot.StreamPresence != StreamPresenceEmpty {
 		for _, st := range snapshot.ReportedStreams {
-			demodID := DemodulatorID(fmt.Sprintf("tuner_%c", 'a'+st.TunerIndex))
+			demodID, inputID := resolveDemodulatorIdentity(st, snapshot, topology)
 			if activeXG2GDemods[demodID] {
 				// Correlated with an xg2g-owned session -> skip
 				continue
 			}
 			if st.MultiplexID != nil {
-				var inputID *InputID
-				if demod, ok := topology.FindDemod(demodID); ok {
-					in := demod.InputID
-					inputID = &in
-				}
 				external = append(external, ExternalAllocation{
 					Source:      "external_stream_client",
 					DemodID:     &demodID,
