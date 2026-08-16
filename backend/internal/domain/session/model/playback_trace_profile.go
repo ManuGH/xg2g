@@ -45,7 +45,7 @@ func TraceTargetProfileFromProfile(profile ProfileSpec) *playbackprofile.TargetP
 
 	audioBitrate := profile.AudioBitrateK
 	if audioBitrate <= 0 {
-		audioBitrate = 192
+		audioBitrate = 320
 	}
 
 	hwAccel := playbackprofile.HWAccelNone

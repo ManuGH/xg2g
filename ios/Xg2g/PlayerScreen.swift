@@ -32,6 +32,8 @@ struct PlayerScreen: View {
     @State private var zapNotice: String?
     @State private var hideZapNoticeTask: Task<Void, Never>?
     @State private var autoHideControlsTask: Task<Void, Never>?
+    @State private var timeObserverToken: Any?
+    @State private var stallObserverToken: (any NSObjectProtocol)?
 
     init(model: AppModel, channel: Channel) {
         self.model = model
@@ -267,47 +269,43 @@ struct PlayerScreen: View {
                         .padding(.bottom, max(12, geometry.safeAreaInsets.bottom))
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .ignoresSafeArea(.container, edges: .bottom)
                 }
 
                 // MARK: - Zap HUD Banner (Translucent Toast)
                 if let zapNotice {
                     VStack {
+                        Spacer().frame(height: isLandscape ? 16 : 70)
                         HStack(spacing: 8) {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Theme.Colors.accentLive)
+                            PulsingLiveDot(size: 6)
                             Text(zapNotice)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Theme.Colors.textPrimary)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-                        .shadow(color: Color.black.opacity(0.4), radius: 10, y: 5)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .padding(.top, isLandscape ? 16 : 56)
-
+                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        .shadow(color: Color.black.opacity(0.4), radius: 8, y: 3)
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
                         Spacer()
                     }
+                    .allowsHitTesting(false)
                 }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                if isLandscape {
-                    if showLandscapeGuide {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showLandscapeGuide = false
+                // MARK: - Landscape Tap Gesture for OSD Toggle
+                if isLandscape && !showLandscapeGuide {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if showLandscapeControls {
+                                autoHideControlsTask?.cancel()
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showLandscapeControls = false
+                                }
+                            } else {
+                                resetControlsTimeout()
+                            }
                         }
-                        resetControlsTimeout()
-                    } else if showLandscapeControls {
-                        autoHideControlsTask?.cancel()
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showLandscapeControls = false
-                        }
-                    } else {
-                        resetControlsTimeout()
-                    }
                 }
             }
         }
@@ -352,6 +350,29 @@ struct PlayerScreen: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notif in
+            guard let userInfo = notif.userInfo,
+                  let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+            if type == .began {
+                isPlaying = false
+            } else if type == .ended {
+                let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                if options.contains(.shouldResume) {
+                    player?.play()
+                    isPlaying = true
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { notif in
+            guard let reasonValue = notif.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
+            if reason == .oldDeviceUnavailable {
+                player?.pause()
+                isPlaying = false
+            }
+        }
         .onDisappear {
             if model.playingChannel == nil {
                 teardownPlayer()
@@ -374,8 +395,32 @@ struct PlayerScreen: View {
         player?.pause()
         player = nil
 
+        UIApplication.shared.isIdleTimerDisabled = true
+
         AudioSessionManager.shared.configureForPlayback()
         NowPlayingManager.shared.setupRemoteCommands()
+        NowPlayingManager.shared.onNextChannel = {
+            zapNext()
+        }
+        NowPlayingManager.shared.onPreviousChannel = {
+            zapPrevious()
+        }
+        NowPlayingManager.shared.onStop = {
+            closePlayer()
+        }
+        NowPlayingManager.shared.onPlay = {
+            if player?.timeControlStatus != .playing && player?.error == nil {
+                player?.play()
+                isPlaying = true
+            }
+        }
+        NowPlayingManager.shared.onPause = {
+            player?.pause()
+            isPlaying = false
+        }
+        NowPlayingManager.shared.onSeekRelative = { secs in
+            seekRelative(seconds: secs)
+        }
         NowPlayingManager.shared.update(channel: channel, nowEntry: nowNext?.now)
 
         LiveActivityManager.shared.startActivity(
@@ -397,6 +442,39 @@ struct PlayerScreen: View {
         }
         let p = Self.makePlayer(for: stream, channel: channel, nowNext: nowNext)
         player = p
+
+        let interval = CMTime(seconds: 1.0, preferredTimescale: 600)
+        timeObserverToken = p?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak p] _ in
+            guard let p, let item = p.currentItem else { return }
+            guard let lastRange = item.seekableTimeRanges.last?.timeRangeValue else { return }
+            let liveEnd = lastRange.end.seconds
+            let current = p.currentTime().seconds
+            if liveEnd.isFinite && current.isFinite {
+                let offset = liveEnd - current
+                let timeshifted = offset > 10.0
+                Task { @MainActor in
+                    if isTimeshifted != timeshifted {
+                        isTimeshifted = timeshifted
+                    }
+                }
+            }
+        }
+
+        if let currentItem = p?.currentItem {
+            stallObserverToken = NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.playbackStalledNotification,
+                object: currentItem,
+                queue: .main
+            ) { [weak p] _ in
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    if p?.timeControlStatus != .playing && p?.error == nil {
+                        p?.play()
+                    }
+                }
+            }
+        }
+
         p?.play()
     }
 
@@ -521,6 +599,15 @@ struct PlayerScreen: View {
     }
 
     private func teardownPlayer() {
+        UIApplication.shared.isIdleTimerDisabled = false
+        if let token = timeObserverToken, let player {
+            player.removeTimeObserver(token)
+            timeObserverToken = nil
+        }
+        if let stall = stallObserverToken {
+            NotificationCenter.default.removeObserver(stall)
+            stallObserverToken = nil
+        }
         hideZapNoticeTask?.cancel()
         autoHideControlsTask?.cancel()
         LiveActivityManager.shared.endActivity()
@@ -551,6 +638,8 @@ struct PlayerScreen: View {
 
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
+        // Maintain user's timeshift position when seeking, pausing, or transitioning to fullscreen
+        item.automaticallyPreservesTimeOffsetFromLive = true
         // 4.0s forward buffer keeps 2 segments loaded to prevent buffer underflow stalls
         item.preferredForwardBufferDuration = 4.0
 
@@ -976,7 +1065,10 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
             willBeginFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
         ) {
             coordinator.animate(alongsideTransition: nil) { [weak self] _ in
-                self?.parent.player.play()
+                guard let self else { return }
+                if self.parent.player.timeControlStatus != .playing && self.parent.player.error == nil {
+                    self.parent.player.play()
+                }
             }
         }
 
@@ -985,7 +1077,10 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
             willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
         ) {
             coordinator.animate(alongsideTransition: nil) { [weak self] _ in
-                self?.parent.player.play()
+                guard let self else { return }
+                if self.parent.player.timeControlStatus != .playing && self.parent.player.error == nil {
+                    self.parent.player.play()
+                }
             }
         }
 

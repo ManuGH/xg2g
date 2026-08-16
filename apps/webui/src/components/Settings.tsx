@@ -240,6 +240,37 @@ function Settings() {
     : t(`settings.context.section.${activeSection}`, {
       defaultValue: 'This area is part of Settings and can also be reached directly by URL.',
     });
+  const handleApprovePairing = async () => {
+    const code = pairingCodeDraft.trim().toUpperCase();
+    if (!code || pairingSubmitting) return;
+    setPairingSubmitting(true);
+    setPairingFeedback(null);
+    try {
+      const res = await approvePairing({
+        path: { pairingId: code },
+        body: {}
+      });
+      if (res.data?.status === 'approved') {
+        setPairingFeedback({ success: true, message: '✅ Gerät erfolgreich autorisiert! Der TV-Stream öffnet sich jetzt auf dem Gerät.' });
+        setPairingCodeDraft('');
+      } else {
+        setPairingFeedback({ success: false, message: 'Kopplung konnte nicht autorisiert werden.' });
+      }
+    } catch (e: any) {
+      const msg = e?.message || '';
+      if (msg.includes('Authentication required') || e?.status === 401) {
+        setPairingFeedback({
+          success: false,
+          message: '🔐 Admin-Authentifizierung erforderlich. Bitte gehe zuerst auf den Tab "Sicherheit" und melde dich mit dem Admin-Token (test04) an.'
+        });
+      } else {
+        setPairingFeedback({ success: false, message: `Fehler: ${msg || 'Ungültiger Code oder abgelaufen'}` });
+      }
+    } finally {
+      setPairingSubmitting(false);
+    }
+  };
+
   const handleStartScan = async () => {
     setScanError(null);
     try {
@@ -478,43 +509,13 @@ function Settings() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      const button = document.getElementById('btn-approve-pairing');
-                      button?.click();
+                      void handleApprovePairing();
                     }
                   }}
                 />
                 <Button
-                  id="btn-approve-pairing"
-                  onClick={async () => {
-                    const code = pairingCodeDraft.trim().toUpperCase();
-                    if (!code) return;
-                    setPairingSubmitting(true);
-                    setPairingFeedback(null);
-                    try {
-                      const res = await approvePairing({
-                        path: { pairingId: code },
-                        body: {}
-                      });
-                      if (res.data?.status === 'approved') {
-                        setPairingFeedback({ success: true, message: '✅ Gerät erfolgreich autorisiert! Der TV-Stream öffnet sich jetzt auf dem Gerät.' });
-                        setPairingCodeDraft('');
-                      } else {
-                        setPairingFeedback({ success: false, message: 'Kopplung konnte nicht autorisiert werden.' });
-                      }
-                    } catch (e: any) {
-                      const msg = e?.message || '';
-                      if (msg.includes('Authentication required') || e?.status === 401) {
-                        setPairingFeedback({
-                          success: false,
-                          message: '🔐 Admin-Authentifizierung erforderlich. Bitte gehe zuerst auf den Tab "Sicherheit" und melde dich mit dem Admin-Token (test04) an.'
-                        });
-                      } else {
-                        setPairingFeedback({ success: false, message: `Fehler: ${msg || 'Ungültiger Code oder abgelaufen'}` });
-                      }
-                    } finally {
-                      setPairingSubmitting(false);
-                    }
-                  }}
+                  id="pairing-approve-submit"
+                  onClick={() => { void handleApprovePairing(); }}
                   disabled={pairingSubmitting || !pairingCodeDraft.trim()}
                   className={styles.onboardingButton}
                 >

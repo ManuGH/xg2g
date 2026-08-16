@@ -17,6 +17,9 @@ final class NowPlayingManager {
     var onNextChannel: (() -> Void)?
     var onPreviousChannel: (() -> Void)?
     var onStop: (() -> Void)?
+    var onPlay: (() -> Void)?
+    var onPause: (() -> Void)?
+    var onSeekRelative: ((Double) -> Void)?
 
     private var isConfigured = false
     private var currentArtworkTask: Task<Void, Never>?
@@ -30,29 +33,68 @@ final class NowPlayingManager {
         let commandCenter = MPRemoteCommandCenter.shared()
 
         commandCenter.playCommand.isEnabled = true
-        commandCenter.playCommand.addTarget { _ in .success }
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.onPlay?()
+            }
+            return .success
+        }
 
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.onStop?()
+            DispatchQueue.main.async {
+                self?.onPause?()
+            }
+            return .success
+        }
+
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.onPlay?()
+            }
             return .success
         }
 
         commandCenter.stopCommand.isEnabled = true
         commandCenter.stopCommand.addTarget { [weak self] _ in
-            self?.onStop?()
+            DispatchQueue.main.async {
+                self?.onStop?()
+            }
             return .success
         }
 
         commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            self?.onNextChannel?()
+            DispatchQueue.main.async {
+                self?.onNextChannel?()
+            }
             return .success
         }
 
         commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            self?.onPreviousChannel?()
+            DispatchQueue.main.async {
+                self?.onPreviousChannel?()
+            }
+            return .success
+        }
+
+        commandCenter.skipForwardCommand.isEnabled = true
+        commandCenter.skipForwardCommand.preferredIntervals = [30]
+        commandCenter.skipForwardCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.onSeekRelative?(30)
+            }
+            return .success
+        }
+
+        commandCenter.skipBackwardCommand.isEnabled = true
+        commandCenter.skipBackwardCommand.preferredIntervals = [10]
+        commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.onSeekRelative?(-10)
+            }
             return .success
         }
     }
@@ -74,26 +116,25 @@ final class NowPlayingManager {
 
         // 1. If logo is already cached in memory, attach immediately
         if let logoURL = channel.logoURL, let cached = LogoImageCache.shared.image(for: logoURL) {
-            info[MPMediaItemPropertyArtwork] = makeArtwork(from: cached)
+            info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: cached)
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
             return
         }
 
         // 2. Set default badge artwork immediately
-        let fallback = createFallbackArtwork(for: channel)
-        info[MPMediaItemPropertyArtwork] = makeArtwork(from: fallback)
+        let fallback = Self.createFallbackArtwork(for: channel.name)
+        info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: fallback)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
 
         // 3. Asynchronously fetch the channel logo and update Lock Screen artwork
         if let logoURL = channel.logoURL {
-            currentArtworkTask = Task { [weak self] in
-                guard let self else { return }
+            currentArtworkTask = Task {
                 if let (data, _) = try? await URLSession.shared.data(from: logoURL),
                    let image = UIImage(data: data) {
                     LogoImageCache.shared.store(image, for: logoURL)
                     if !Task.isCancelled {
                         var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
-                        updated[MPMediaItemPropertyArtwork] = self.makeArtwork(from: image)
+                        updated[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: image)
                         MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
                     }
                 }
@@ -106,7 +147,7 @@ final class NowPlayingManager {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
-    private func makeArtwork(from image: UIImage) -> MPMediaItemArtwork {
+    private nonisolated static func makeArtwork(from image: UIImage) -> MPMediaItemArtwork {
         let targetSize = CGSize(width: 512, height: 512)
         let rendered = UIGraphicsImageRenderer(size: targetSize).image { ctx in
             // Studio Dark Gradient Background
@@ -131,7 +172,7 @@ final class NowPlayingManager {
         }
     }
 
-    private func createFallbackArtwork(for channel: Channel) -> UIImage {
+    private nonisolated static func createFallbackArtwork(for channelName: String) -> UIImage {
         let size = CGSize(width: 512, height: 512)
         return UIGraphicsImageRenderer(size: size).image { ctx in
             let colors = [
@@ -143,7 +184,7 @@ final class NowPlayingManager {
                 ctx.cgContext.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: size.height), options: [])
             }
 
-            let text = channel.name
+            let text = channelName
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.alignment = .center
             let attrs: [NSAttributedString.Key: Any] = [

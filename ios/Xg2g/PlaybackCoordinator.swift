@@ -129,7 +129,6 @@ actor PlaybackCoordinator {
 
         var params: [String: String] = [
             "intent": intentName,
-            "playback_mode": "native_hls",
             "client_family": "ios_safari_native",
             "preferred_engine": "native",
             "codecs": DeviceCapabilities.supportedCodecsHeader
@@ -139,6 +138,7 @@ actor PlaybackCoordinator {
         }
         if let token = playbackDecisionToken {
             params["playback_decision_token"] = token
+            params["playback_mode"] = "native_hls"
         }
 
         let intent: PlaybackWire.IntentAcceptedResponse = try await api.send(
@@ -190,13 +190,17 @@ actor PlaybackCoordinator {
             request.setValue("\(cookie.name)=\(cookie.value)", forHTTPHeaderField: "Cookie")
         }
 
-        for _ in 0..<40 {
-            if let (_, response) = try? await HTTPAPIClient.sharedSession.data(for: request),
+        for _ in 0..<60 {
+            if let (data, response) = try? await HTTPAPIClient.sharedSession.data(for: request),
                let http = response as? HTTPURLResponse,
-               http.statusCode == 200 {
-                return
+               http.statusCode == 200,
+               let text = String(data: data, encoding: .utf8) {
+                let segmentCount = text.components(separatedBy: "#EXTINF:").count - 1
+                if segmentCount >= 2 {
+                    return
+                }
             }
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(for: .milliseconds(200))
         }
     }
 
@@ -274,13 +278,17 @@ enum PlaybackWire {
             let capabilitiesVersion = 3
             let container = ["mp4", "ts", "fmp4"]
             let videoCodecs = DeviceCapabilities.supportedCodecsList
+            let videoCodecSignals = DeviceCapabilities.codecSignals
             let audioCodecs = ["aac", "ac3", "mp3"]
             let supportsHls = true
             let preferredHlsEngine = "native"
             let hlsEngines = ["native"]
             let clientFamilyFallback = "ios_safari_native"
             let deviceType = "apple_native"
+            let runtimeProbeUsed = true
+            let runtimeProbeVersion = 3
             let allowTranscode: Bool
+            let deviceContext = DeviceCapabilities.deviceContext
             let networkContext: NetworkContext
         }
 

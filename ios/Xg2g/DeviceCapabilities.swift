@@ -4,12 +4,29 @@
 
 import AVFoundation
 import Foundation
+import UIKit
 
 /// Runtime hardware capability inspector for Apple silicon and iOS devices.
 ///
 /// Ensures the client strictly negotiates codecs supported by its local hardware decoder
 /// (e.g. AV1 on A17 Pro / M3 / M4, HEVC on A10+), preventing unsupported codec crashes.
 enum DeviceCapabilities {
+
+    struct VideoCodecSignal: Encodable, Sendable {
+        let codec: String
+        let supported: Bool
+        let smooth: Bool
+        let powerEfficient: Bool
+    }
+
+    struct DeviceContext: Encodable, Sendable {
+        let brand: String = "Apple"
+        let manufacturer: String = "Apple"
+        let platform: String = "darwin"
+        let model: String
+        let osName: String = "ios"
+        let osVersion: String
+    }
 
     /// Detects whether the current device hardware supports native AV1 video decoding.
     ///
@@ -44,6 +61,43 @@ enum DeviceCapabilities {
         }
         codecs.append("h264")
         return codecs
+    }
+
+    /// Returns structured codec capability signals for backend planner runtime validation.
+    static var codecSignals: [VideoCodecSignal] {
+        var signals: [VideoCodecSignal] = []
+        if supportsAV1 {
+            signals.append(VideoCodecSignal(codec: "av1", supported: true, smooth: true, powerEfficient: true))
+        }
+        if supportsHEVC {
+            signals.append(VideoCodecSignal(codec: "hevc", supported: true, smooth: true, powerEfficient: true))
+        }
+        signals.append(VideoCodecSignal(codec: "h264", supported: true, smooth: true, powerEfficient: true))
+        return signals
+    }
+
+    /// Hardware context identifier payload (e.g. model "iPhone17,1", OS "18.0").
+    static var deviceContext: DeviceContext {
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        let osVersion = version.patchVersion > 0
+            ? "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
+            : "\(version.majorVersion).\(version.minorVersion)"
+        return DeviceContext(
+            model: machineIdentifier,
+            osVersion: osVersion
+        )
+    }
+
+    /// Native sysctl hw.machine string.
+    static var machineIdentifier: String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machineMirror = Mirror(reflecting: systemInfo.machine)
+        let identifier = machineMirror.children.reduce("") { identifier, element in
+            guard let value = element.value as? Int8, value != 0 else { return identifier }
+            return identifier + String(UnicodeScalar(UInt8(value)))
+        }
+        return identifier.isEmpty ? "iPhone" : identifier
     }
 
     /// Returns a comma-separated list of codecs for API negotiation (e.g. "av1,hevc,h264" or "hevc,h264").

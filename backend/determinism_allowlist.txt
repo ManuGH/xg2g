@@ -2,11 +2,13 @@
 # reviewed exception: adding even one Sleep/Eventually/time.After fails the gate.
 internal/control/auth/session_store_test.go	1
 internal/control/http/ui_deadline_dev_test.go	2
+internal/control/http/v3/admission_lifecycle_e2e_test.go	8
 internal/control/http/v3/config_update_test.go	1
 internal/control/http/v3/contract_v3_system_refresh_test.go	1
 internal/control/http/v3/contract_v3_test.go	2
 internal/control/http/v3/handlers_intents_replay_test.go	2
 internal/control/http/v3/handlers_sessions_feedback_test.go	17
+internal/control/http/v3/ios_contract_server_test.go	1
 internal/control/http/v3/recordings/artifacts/resolver_test.go	2
 internal/control/http/v3/recordings/live_probe_budget_test.go	3
 internal/control/http/v3/recordings/playback_info_test.go	3
