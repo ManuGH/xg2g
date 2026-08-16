@@ -22,8 +22,8 @@ func ClassifyPurpose(
 		return AudioPurposeCommentary, ConfidenceHigh
 	}
 
-	// 2. DVB ETSI original audio indicator
-	if lang.IsOriginal {
+	// 2. DVB ETSI original audio / multiple language indicator
+	if lang.IsOriginal || lang.ISO639_2 == "mul" {
 		return AudioPurposeAlternate, ConfidenceExplicit
 	}
 
@@ -63,9 +63,9 @@ func ClassifyAccessibility(
 
 	// Only explicit Clear Voice / Klare Sprache signals ClearDialogue.
 	// Generic "barrierefrei" is not mapped to ClearDialogue.
-	if strings.Contains(descLower, "klare sprache") || strings.Contains(descLower, "clear voice") {
+	if strings.Contains(descLower, "klare sprache") ||
+		strings.Contains(descLower, "dialog") {
 		acc.ClearDialogue = true
-		acc.HearingImpaired = true
 	}
 
 	return acc
@@ -95,7 +95,7 @@ func BuildTrackLabel(
 		} else {
 			parts = append(parts, "Klare Sprache")
 		}
-	case purpose == AudioPurposeAlternate && (strings.Contains(e2Lower, "original") || lang.IsOriginal):
+	case purpose == AudioPurposeAlternate && (strings.Contains(e2Lower, "original") || lang.IsOriginal || lang.ISO639_2 == "mul"):
 		parts = append(parts, "Originalton")
 	case strings.Contains(e2Lower, "französisch"):
 		parts = append(parts, "Französisch")

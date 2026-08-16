@@ -146,26 +146,81 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 	}
 
 	topo := audiotopology.BuildTopology(spec.Source.ID, nil, probeObs, nil, time.Now())
-	plannedTopo := audiotopology.PlanAudioOutput(topo, clientCaps)
+	multiPlan := audiotopology.PlanMultiAudioOutput(topo, clientCaps)
 
 	a.Logger.Info().
 		Str("session_id", spec.SessionID).
 		Str("startup_phase", "audio_topology_resolved").
-		Uint64("structural_revision", plannedTopo.StructuralRevision).
+		Uint64("structural_revision", multiPlan.StructuralRevision).
 		Uint64("metadata_revision", topo.MetadataRevision).
-		Str("presence", string(plannedTopo.Presence)).
-		Int("tracks_count", len(plannedTopo.Tracks)).
+		Str("presence", string(multiPlan.Presence)).
+		Int("tracks_count", len(multiPlan.Tracks)).
 		Msg("evaluated audio topology and output policy")
 
-	var selectedPlan audiotopology.TrackPlan
-	if len(plannedTopo.Tracks) > 0 {
-		selectedPlan = plannedTopo.Tracks[0]
-		for _, tp := range plannedTopo.Tracks {
-			if tp.IsDefault {
-				selectedPlan = tp
-				break
+	if len(multiPlan.Tracks) > 1 {
+		var maps []string
+		var audioArgs []string
+
+		for i, tp := range multiPlan.Tracks {
+			matchedStream, ok := streamByPID[tp.PID]
+			if !ok {
+				matchedStream = audioStreams[0]
 			}
+			mapArg := fmt.Sprintf("0:%d?", matchedStream.Index)
+			maps = append(maps, mapArg)
+
+			if tp.Strategy == audiotopology.CodecStrategyPassthrough || !spec.Profile.TranscodesAudio() {
+				audioArgs = append(audioArgs, fmt.Sprintf("-c:a:%d", i), "copy")
+			} else {
+				encoderCodec := tp.EncoderCodec
+				if encoderCodec == "" {
+					encoderCodec = spec.Profile.ResolvedAudioCodec()
+				}
+				bitrateKbps := tp.BitrateKbps
+				if bitrateKbps <= 0 {
+					bitrateKbps = 192
+				}
+				channels := tp.Channels
+				if channels <= 0 {
+					channels = 2
+				}
+				audioArgs = append(audioArgs,
+					fmt.Sprintf("-c:a:%d", i), encoderCodec,
+					fmt.Sprintf("-b:a:%d", i), fmt.Sprintf("%dk", bitrateKbps),
+					fmt.Sprintf("-ac:a:%d", i), fmt.Sprintf("%d", channels),
+					fmt.Sprintf("-ar:a:%d", i), "48000",
+				)
+			}
+
+			a.Logger.Info().
+				Str("session_id", spec.SessionID).
+				Str("startup_phase", "live_multi_audio_track_planned").
+				Int("audio_index", i).
+				Str("audio_map", mapArg).
+				Str("audio_strategy", string(tp.Strategy)).
+				Uint16("pid", tp.PID).
+				Str("encoder_codec", tp.EncoderCodec).
+				Str("hls_codec", tp.HLSCodec).
+				Int("channels", tp.Channels).
+				Int("bitrate_kbps", tp.BitrateKbps).
+				Str("track_name", tp.Name).
+				Bool("is_default", tp.IsDefault).
+				Msg("configured multi-audio rendition")
 		}
+		audioArgs = append(audioArgs, "-sn")
+
+		vsm := multiPlan.BuildVarStreamMap()
+		return liveAudioSelection{
+			Maps:         maps,
+			AudioArgs:    audioArgs,
+			IsMultiAudio: true,
+			VarStreamMap: vsm,
+		}
+	}
+
+	var selectedPlan audiotopology.TrackPlan
+	if len(multiPlan.Tracks) > 0 {
+		selectedPlan = multiPlan.Tracks[0]
 	}
 
 	matchedStream, ok := streamByPID[selectedPlan.PID]
