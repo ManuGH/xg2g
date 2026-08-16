@@ -49,7 +49,7 @@ struct PlayerScreen: View {
             let isLandscape = geometry.size.width > geometry.size.height
 
             ZStack(alignment: .top) {
-                Theme.Colors.bgBase.ignoresSafeArea()
+                Color.black.ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     // MARK: - Single Persistent Video Stage (NEVER recreated across rotations)
@@ -59,7 +59,6 @@ struct PlayerScreen: View {
                                 player: player,
                                 onDismiss: { closePlayer() }
                             )
-                            .ignoresSafeArea(isLandscape ? .all : [])
                         } else if let failure {
                             ZStack {
                                 Color.black
@@ -120,8 +119,8 @@ struct PlayerScreen: View {
                         }
                     }
                     .frame(
-                        width: geometry.size.width,
-                        height: isLandscape ? geometry.size.height : (geometry.size.width * 9 / 16)
+                        maxWidth: .infinity,
+                        maxHeight: isLandscape ? .infinity : (geometry.size.width * 9 / 16)
                     )
                     .background(Color.black)
                     .simultaneousGesture(
@@ -433,7 +432,7 @@ struct PlayerScreen: View {
         let asset = AVURLAsset(url: stream.playlistURL, options: options)
         let item = AVPlayerItem(asset: asset)
         item.automaticallyPreservesTimeOffsetFromLive = true
-        item.configuredTimeOffsetFromLive = CMTime(seconds: 3.0, preferredTimescale: 600)
+        item.preferredForwardBufferDuration = 6.0
 
         // Inject Native iOS OSD Metadata for Apple's Transport Bar
         var metadata: [AVMetadataItem] = []
@@ -565,7 +564,6 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.updatesNowPlayingInfoCenter = true
-        controller.allowsVideoFrameAnalysis = true
         controller.delegate = context.coordinator
         return controller
     }
@@ -574,8 +572,9 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         if controller.player !== player {
             controller.player = player
         }
-        controller.videoGravity = videoGravity
-        controller.showsPlaybackControls = true
+        if controller.videoGravity != videoGravity {
+            controller.videoGravity = videoGravity
+        }
     }
 
     func makeCoordinator() -> Coordinator {
