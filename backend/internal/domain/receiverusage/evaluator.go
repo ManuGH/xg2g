@@ -5,6 +5,7 @@ package receiverusage
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/receivertopology"
@@ -76,18 +77,20 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 	case AccessCapacityRestricted:
 		isRestricted = true
 	case AccessCapacityUnknown:
-		switch policy.UnknownAccessHandling {
-		case UnknownAccessCountAsRestricted:
-			isRestricted = true
-		case UnknownAccessCountAsNone:
+		switch strings.ToLower(string(policy.UnknownAccessHandling)) {
+		case "count_as_none":
 			isRestricted = false
-		case UnknownAccessReject:
+		case "reject":
 			return UsageDecision{
 				Kind:           DecisionReject,
 				Reason:         model.RReceiverUsageAccessClassificationUnknown,
 				Message:        "unknown access capacity classification rejected by policy",
 				Classification: req.Access,
 			}
+		case "count_as_restricted", "":
+			fallthrough
+		default:
+			isRestricted = true
 		}
 	}
 

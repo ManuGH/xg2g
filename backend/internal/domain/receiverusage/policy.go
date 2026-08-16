@@ -6,6 +6,7 @@ package receiverusage
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -32,8 +33,8 @@ type ReceiverUsagePolicy struct {
 
 // Validate checks policy configuration. Zero values (e.g. MaxRecordingSessions = 0) are valid. Negative values or unknown enums are invalid.
 func (p ReceiverUsagePolicy) Validate() error {
-	switch p.Mode {
-	case "", ReceiverUsageModeDisabled, ReceiverUsageModeAuditOnly, ReceiverUsageModeEnforce:
+	switch strings.ToLower(string(p.Mode)) {
+	case "", "disabled", "audit-only", "audit_only", "enforce":
 		// Valid
 	default:
 		return fmt.Errorf("%w: unknown mode %q", ErrInvalidPolicyConfiguration, p.Mode)
@@ -49,8 +50,8 @@ func (p ReceiverUsagePolicy) Validate() error {
 		return fmt.Errorf("%w: max_restricted_access_sessions cannot be negative (%d)", ErrInvalidPolicyConfiguration, p.MaxRestrictedAccessSessions)
 	}
 
-	switch p.UnknownAccessHandling {
-	case "", UnknownAccessCountAsRestricted, UnknownAccessCountAsNone, UnknownAccessReject:
+	switch strings.ToLower(string(p.UnknownAccessHandling)) {
+	case "", "count_as_restricted", "count_as_none", "reject":
 		// Valid
 	default:
 		return fmt.Errorf("%w: unknown unknown_access_handling enum %q", ErrInvalidPolicyConfiguration, p.UnknownAccessHandling)

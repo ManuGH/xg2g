@@ -54,9 +54,9 @@ const (
 type UnknownAccessHandling string
 
 const (
-	UnknownAccessCountAsRestricted UnknownAccessHandling = "COUNT_AS_RESTRICTED"
-	UnknownAccessCountAsNone       UnknownAccessHandling = "COUNT_AS_NONE"
-	UnknownAccessReject            UnknownAccessHandling = "REJECT"
+	UnknownAccessCountAsRestricted UnknownAccessHandling = "count_as_restricted"
+	UnknownAccessCountAsNone       UnknownAccessHandling = "count_as_none"
+	UnknownAccessReject            UnknownAccessHandling = "reject"
 )
 
 type RetroDVRSourceType string
