@@ -303,7 +303,10 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		Int("missing", startupReport.Summary.Missing).
 		Msg("mandatory startup reconciliation completed successfully")
 
-	topoSvc, _ := receivertopology.NewService(receivertopology.DefaultFallbackTopology(), receivertopology.EvaluationModeEnforce)
+	topoSvc, err := receivertopology.NewService(receivertopology.DefaultFallbackTopology(), receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize receiver topology service: %w", err)
+	}
 	if owiClient != nil {
 		syncPoller := receivertopology.NewExternalSyncPoller(owiClient, topoSvc, 3*time.Second, logger)
 		go syncPoller.Run(ctx)
