@@ -107,12 +107,12 @@ func deriveHLSStartupPolicy(rec *model.SessionRecord, content []byte) hlsStartup
 	// (three target durations from the end) applies.
 	if metrics.TotalDurationSec > 0 {
 		available := int(metrics.TotalDurationSec) - metrics.TargetDurationSec
-		if clientFamily == "android_tv_native" && rec != nil && !rec.Profile.TranscodeVideo {
+		if isNativePlaybackClientFamily(clientFamily) && rec != nil && !rec.Profile.TranscodeVideo {
 			// The native copy playlist is withheld until READY, so its startup GOP
 			// has already been verified and several segments are available. Start
 			// at that window head to retain the accumulated reserve; the generic
 			// one-target-from-head clamp would throw most of it away and place
-			// Media3 back on the irregular broadcaster edge.
+			// native players (Media3, AVPlayer) back on the irregular broadcaster edge.
 			available = int(metrics.TotalDurationSec)
 		}
 		if available < 0 {

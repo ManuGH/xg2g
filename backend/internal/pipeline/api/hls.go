@@ -343,13 +343,22 @@ func isStartupHLSState(state model.SessionState) bool {
 	return state == model.SessionNew || state == model.SessionStarting || state == model.SessionPriming
 }
 
-func shouldHoldAndroidTVNativeCopyPlaylist(req hlsRequest, rec *model.SessionRecord) bool {
-	return req.isPlaylist && rec != nil && isStartupHLSState(rec.State) &&
-		!rec.Profile.TranscodeVideo &&
-		strings.EqualFold(sessionPlaybackClientFamily(rec), "android_tv_native")
+func isNativePlaybackClientFamily(family string) bool {
+	switch strings.ToLower(strings.TrimSpace(family)) {
+	case "android_tv_native", "ios_safari_native", "safari_native":
+		return true
+	default:
+		return false
+	}
 }
 
-func awaitAndroidTVNativeCopyReady(ctx context.Context, store HLSStore, rec *model.SessionRecord, timeout time.Duration) (*model.SessionRecord, bool) {
+func shouldHoldNativeCopyPlaylist(req hlsRequest, rec *model.SessionRecord) bool {
+	return req.isPlaylist && rec != nil && isStartupHLSState(rec.State) &&
+		!rec.Profile.TranscodeVideo &&
+		isNativePlaybackClientFamily(sessionPlaybackClientFamily(rec))
+}
+
+func awaitNativeCopyReady(ctx context.Context, store HLSStore, rec *model.SessionRecord, timeout time.Duration) (*model.SessionRecord, bool) {
 	if rec == nil || !isStartupHLSState(rec.State) {
 		return rec, rec != nil && rec.State == model.SessionReady
 	}
@@ -744,14 +753,14 @@ func ServeHLS(w http.ResponseWriter, r *http.Request, store HLSStore, storeRegis
 
 	// Native copy streams inherit the broadcaster's GOP cadence. Their first
 	// playlist can therefore contain only a short tune-in fragment followed by
-	// multi-second keyframe gaps. Media3 would consume that fragment immediately
-	// and repeatedly hit the live edge. Hold only this native-copy playlist until
-	// the normal READY gate has verified three complete segments. Transcodes have
-	// a fixed one-second cadence and keep their fast first-playlist path; browser
-	// clients retain their existing startup behavior.
-	if shouldHoldAndroidTVNativeCopyPlaylist(req, rec) {
+	// multi-second keyframe gaps. Native players (Media3, AVPlayer) would consume
+	// that fragment immediately and repeatedly hit the live edge. Hold only native-copy
+	// playlists until the normal READY gate has verified three complete segments.
+	// Transcodes have a fixed one-second cadence and keep their fast first-playlist path;
+	// browser clients retain their existing startup behavior.
+	if shouldHoldNativeCopyPlaylist(req, rec) {
 		var ready bool
-		rec, ready = awaitAndroidTVNativeCopyReady(r.Context(), store, rec, nativeCopyPlaylistReadyTimeout)
+		rec, ready = awaitNativeCopyReady(r.Context(), store, rec, nativeCopyPlaylistReadyTimeout)
 		if !ready {
 			w.Header().Set("Cache-Control", "no-store")
 			if rec != nil && rec.State.IsTerminal() {

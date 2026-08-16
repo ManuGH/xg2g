@@ -1063,9 +1063,12 @@ seg_000000.m4s
 		Profile: model.ProfileSpec{Container: "fmp4", DVRWindowSec: 60, TranscodeVideo: false},
 	}}
 	nativeReq := hlsRequest{isPlaylist: true}
-	assert.True(t, shouldHoldAndroidTVNativeCopyPlaylist(nativeReq, store.Session))
-	_, ready := awaitAndroidTVNativeCopyReady(context.Background(), store, store.Session, 0)
+	assert.True(t, shouldHoldNativeCopyPlaylist(nativeReq, store.Session))
+	_, ready := awaitNativeCopyReady(context.Background(), store, store.Session, 0)
 	assert.False(t, ready)
+
+	store.Session.ContextData[model.CtxKeyClientFamily] = "ios_safari_native"
+	assert.True(t, shouldHoldNativeCopyPlaylist(nativeReq, store.Session), "iOS Safari Native must also be held until ready")
 
 	req := httptest.NewRequest(http.MethodGet, "/index.m3u8", nil)
 	store.Session.ContextData[model.CtxKeyClientFamily] = "chromium_hlsjs"
@@ -1075,7 +1078,7 @@ seg_000000.m4s
 
 	store.Session.ContextData[model.CtxKeyClientFamily] = "android_tv_native"
 	store.Session.State = model.SessionReady
-	_, ready = awaitAndroidTVNativeCopyReady(context.Background(), store, store.Session, time.Second)
+	_, ready = awaitNativeCopyReady(context.Background(), store, store.Session, time.Second)
 	assert.True(t, ready)
 	w = httptest.NewRecorder()
 	ServeHLS(w, req, store, nil, tmpDir, sessionID, "index.m3u8")
