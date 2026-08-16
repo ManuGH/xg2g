@@ -459,6 +459,8 @@ struct PlayerScreen: View {
 
         let player = AVPlayer(playerItem: item)
         player.automaticallyWaitsToMinimizeStalling = true
+        player.allowsExternalPlayback = true
+        player.usesExternalPlaybackWhileExternalScreenIsActive = true
         return player
     }
 }
@@ -563,6 +565,7 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.updatesNowPlayingInfoCenter = true
+        controller.allowsVideoFrameAnalysis = true
         controller.delegate = context.coordinator
         return controller
     }
