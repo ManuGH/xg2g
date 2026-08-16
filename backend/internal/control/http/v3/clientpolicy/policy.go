@@ -16,12 +16,9 @@ import (
 func ResolveProfileUserAgent(requestedPlaybackMode, clientFamily, requestUserAgent string) string {
 	switch normalize.Token(requestedPlaybackMode) {
 	case "", "native_hls":
-		// iPhone native HLS follows the explicit runtime packaging contract rather
-		// than Safari UA sniffing. Other start paths keep the historical UA-based
-		// profile resolution behavior.
 		if normalize.Token(requestedPlaybackMode) == "native_hls" &&
 			normalize.Token(clientFamily) == playbackprofile.ClientIOSSafariNative {
-			return ""
+			return "xg2g-ios-native"
 		}
 		return requestUserAgent
 	case "hlsjs":

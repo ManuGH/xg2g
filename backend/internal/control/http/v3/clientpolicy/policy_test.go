@@ -11,8 +11,8 @@ import (
 
 func TestResolveProfileUserAgent_NativeHLSIOSSafariBypassesUA(t *testing.T) {
 	got := ResolveProfileUserAgent("native_hls", playbackprofile.ClientIOSSafariNative, "ua-string")
-	if got != "" {
-		t.Fatalf("ResolveProfileUserAgent() = %q, want empty string", got)
+	if got != "xg2g-ios-native" {
+		t.Fatalf("ResolveProfileUserAgent() = %q, want %q", got, "xg2g-ios-native")
 	}
 }
 
