@@ -384,12 +384,13 @@ func (p PlannedAudioTopology) BuildVarStreamMap() string {
 		if t.IsDefault {
 			defStr = "yes"
 		}
-		// Escape colons and spaces in name for FFmpeg var_stream_map syntax
-		safeName := strings.ReplaceAll(t.Name, ":", "\\:")
-		safeName = strings.ReplaceAll(safeName, " ", "\\ ")
+		lang := t.Language
+		if lang == "" {
+			lang = "und"
+		}
 
-		entry := fmt.Sprintf("a:%d,agroup:audio,name:%s,language:%s,default:%s",
-			i, safeName, t.Language, defStr)
+		entry := fmt.Sprintf("a:%d,agroup:audio,language:%s,default:%s",
+			i, lang, defStr)
 		parts = append(parts, entry)
 	}
 
