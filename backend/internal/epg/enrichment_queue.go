@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	xglog "github.com/ManuGH/xg2g/internal/log"
@@ -16,7 +17,7 @@ import (
 // EnrichmentStoreReader is the minimal store interface required by the queue worker.
 type EnrichmentStoreReader interface {
 	Get(ctx context.Context, fp ProgrammeFingerprint) (*EnrichmentData, bool, error)
-	Put(ctx context.Context, data *EnrichmentData) error
+	Put(ctx context.Context, fp ProgrammeFingerprint, data *EnrichmentData) error
 }
 
 // QueueConfig holds operational parameters for the enrichment queue.
@@ -47,8 +48,8 @@ type EnrichmentQueue struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
-	isRunning bool
-	isStopped bool
+	isRunning atomic.Bool
+	isStopped atomic.Bool
 }
 
 // NewEnrichmentQueue creates a new deduplicated enrichment queue.
@@ -77,22 +78,47 @@ func (q *EnrichmentQueue) Start(parentCtx context.Context) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if q.isRunning {
+	if q.isRunning.Load() {
 		return fmt.Errorf("enrichment queue already running")
 	}
-	if q.isStopped {
+	if q.isStopped.Load() {
 		return fmt.Errorf("enrichment queue has been stopped")
 	}
 
 	q.ctx, q.cancel = context.WithCancel(parentCtx)
-	q.isRunning = true
+	q.isRunning.Store(true)
 
 	for i := 0; i < q.cfg.WorkerCount; i++ {
 		q.wg.Add(1)
 		go q.workerLoop(i)
 	}
 
+	// Spawn context watcher to ensure atomic state transition on parent context cancellation
+	q.wg.Add(1)
+	go q.contextWatcher()
+
 	return nil
+}
+
+func (q *EnrichmentQueue) contextWatcher() {
+	defer q.wg.Done()
+	<-q.ctx.Done()
+
+	// Atomic mark stopped and drain active keys for unhandled queued jobs
+	q.isStopped.Store(true)
+	q.isRunning.Store(false)
+	q.drainAndCleanup()
+}
+
+// isAlive checks whether the queue is active and its context is valid.
+func (q *EnrichmentQueue) isAlive() bool {
+	if !q.isRunning.Load() || q.isStopped.Load() {
+		return false
+	}
+	if q.ctx != nil && q.ctx.Err() != nil {
+		return false
+	}
+	return true
 }
 
 // Enqueue attempts non-blocking job intake with in-flight deduplication.
@@ -100,12 +126,16 @@ func (q *EnrichmentQueue) Start(parentCtx context.Context) error {
 // - (true, ""): Successfully queued.
 // - (false, "already_active"): Key is already in-flight or in queue.
 // - (false, "queue_full"): Capacity exceeded, key dropped (retryable on next EPG cycle).
-// - (false, "stopped"): Queue is shut down.
+// - (false, "stopped"): Queue is shut down or context canceled.
 func (q *EnrichmentQueue) Enqueue(fp ProgrammeFingerprint) (bool, string) {
+	if !q.isAlive() {
+		return false, "stopped"
+	}
+
 	key := fp.Key()
 
 	q.mu.Lock()
-	if !q.isRunning || q.isStopped {
+	if !q.isAlive() {
 		q.mu.Unlock()
 		return false, "stopped"
 	}
@@ -186,8 +216,25 @@ func (q *EnrichmentQueue) processJob(fp ProgrammeFingerprint) {
 
 	// 3. Persist valid matches or deterministic negative matches to store
 	if q.store != nil && (data.Status == MatchStatusFound || data.Status == MatchStatusNoMatch) {
-		if putErr := q.store.Put(q.ctx, data); putErr != nil {
+		if putErr := q.store.Put(q.ctx, fp, data); putErr != nil {
 			logger.Warn().Err(putErr).Str("key", key).Msg("Failed to persist enrichment record")
+		}
+	}
+}
+
+// drainAndCleanup clears any remaining queued jobs from the channel and releases their activeKeys.
+func (q *EnrichmentQueue) drainAndCleanup() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	for {
+		select {
+		case fp := <-q.jobs:
+			delete(q.activeKeys, fp.Key())
+		default:
+			// Reset map to ensure 0 active keys
+			q.activeKeys = make(map[string]struct{})
+			return
 		}
 	}
 }
@@ -195,16 +242,19 @@ func (q *EnrichmentQueue) processJob(fp ProgrammeFingerprint) {
 // Stop cleanly terminates workers, cancels in-flight jobs, and waits for all goroutines.
 func (q *EnrichmentQueue) Stop() {
 	q.mu.Lock()
-	if !q.isRunning || q.isStopped {
+	if q.isStopped.Load() || !q.isRunning.Load() {
 		q.mu.Unlock()
 		return
 	}
-	q.isStopped = true
-	q.isRunning = false
-	q.cancel()
+	q.isStopped.Store(true)
+	q.isRunning.Store(false)
+	if q.cancel != nil {
+		q.cancel()
+	}
 	q.mu.Unlock()
 
 	q.wg.Wait()
+	q.drainAndCleanup()
 }
 
 // PendingCount returns the number of jobs currently waiting in the channel buffer.

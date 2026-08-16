@@ -55,7 +55,7 @@ func (s *MemoryEnrichmentStore) Get(ctx context.Context, fp epg.ProgrammeFingerp
 	return &copied, true, nil
 }
 
-func (s *MemoryEnrichmentStore) Put(ctx context.Context, data *epg.EnrichmentData) error {
+func (s *MemoryEnrichmentStore) Put(ctx context.Context, fp epg.ProgrammeFingerprint, data *epg.EnrichmentData) error {
 	if data == nil {
 		return nil
 	}
@@ -67,9 +67,15 @@ func (s *MemoryEnrichmentStore) Put(ctx context.Context, data *epg.EnrichmentDat
 		return nil
 	}
 
-	// Store copy
+	key := fp.Key()
 	copied := *data
-	s.records[data.FingerprintKey] = &copied
+	copied.FingerprintKey = key
+	copied.FingerprintVersion = fp.FingerprintVersion
+	if copied.MatcherVersion == 0 {
+		copied.MatcherVersion = epg.CurrentMatcherVersion
+	}
+
+	s.records[key] = &copied
 	return nil
 }
 

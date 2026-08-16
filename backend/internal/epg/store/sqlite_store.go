@@ -13,10 +13,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/epg"
-	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
 )
-
-const schemaVersion = 1
 
 // SQLiteEnrichmentStore provides persistent, SQLite-backed storage for EPG metadata enrichment.
 type SQLiteEnrichmentStore struct {
@@ -25,32 +22,37 @@ type SQLiteEnrichmentStore struct {
 	closed bool
 }
 
-// NewSQLiteEnrichmentStore creates a new SQLite-backed enrichment store and runs migrations.
+// NewSQLiteEnrichmentStore creates a new SQLite-backed enrichment store.
+// Uses dedicated idempotent DDLs with table existence verification to ensure robust operation
+// regardless of whether the SQLite handle is shared or standalone.
 func NewSQLiteEnrichmentStore(db *sql.DB) (*SQLiteEnrichmentStore, error) {
 	if db == nil {
 		return nil, fmt.Errorf("sqlite enrichment store: nil db handle")
 	}
 
-	err := sqlite.RunMigration(db, schemaVersion, func(tx *sql.Tx, currentVersion int) error {
-		schema := `
-		CREATE TABLE IF NOT EXISTS epg_enrichment (
-			fingerprint_key TEXT PRIMARY KEY,
-			fingerprint_version INTEGER NOT NULL,
-			matcher_version INTEGER NOT NULL,
-			status TEXT NOT NULL,
-			provider TEXT NOT NULL,
-			provider_id TEXT NOT NULL,
-			data_json TEXT NOT NULL,
-			fetched_at_unix INTEGER NOT NULL,
-			expires_at_unix INTEGER NOT NULL
-		);
-		CREATE INDEX IF NOT EXISTS idx_epg_enrichment_expires ON epg_enrichment(expires_at_unix);
-		`
-		_, err := tx.Exec(schema)
-		return err
-	})
+	schema := `
+	CREATE TABLE IF NOT EXISTS epg_enrichment (
+		fingerprint_key TEXT PRIMARY KEY,
+		fingerprint_version INTEGER NOT NULL,
+		matcher_version INTEGER NOT NULL,
+		status TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		provider_id TEXT NOT NULL,
+		data_json TEXT NOT NULL,
+		fetched_at_unix INTEGER NOT NULL,
+		expires_at_unix INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_epg_enrichment_expires ON epg_enrichment(expires_at_unix);
+	`
+	if _, err := db.Exec(schema); err != nil {
+		return nil, fmt.Errorf("sqlite enrichment store table creation failed: %w", err)
+	}
+
+	// Post-creation existence guard to guarantee table is ready
+	var tableName string
+	err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='epg_enrichment'").Scan(&tableName)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite enrichment store migration failed: %w", err)
+		return nil, fmt.Errorf("sqlite enrichment store verification failed: table not found: %w", err)
 	}
 
 	return &SQLiteEnrichmentStore{db: db}, nil
@@ -103,7 +105,7 @@ func (s *SQLiteEnrichmentStore) Get(ctx context.Context, fp epg.ProgrammeFingerp
 	return &data, true, nil
 }
 
-func (s *SQLiteEnrichmentStore) Put(ctx context.Context, data *epg.EnrichmentData) error {
+func (s *SQLiteEnrichmentStore) Put(ctx context.Context, fp epg.ProgrammeFingerprint, data *epg.EnrichmentData) error {
 	if data == nil {
 		return nil
 	}
@@ -115,7 +117,16 @@ func (s *SQLiteEnrichmentStore) Put(ctx context.Context, data *epg.EnrichmentDat
 		return nil
 	}
 
-	dataJSON, err := json.Marshal(data)
+	// Authoritatively derive key and versions from fingerprint
+	key := fp.Key()
+	copied := *data
+	copied.FingerprintKey = key
+	copied.FingerprintVersion = fp.FingerprintVersion
+	if copied.MatcherVersion == 0 {
+		copied.MatcherVersion = epg.CurrentMatcherVersion
+	}
+
+	dataJSON, err := json.Marshal(&copied)
 	if err != nil {
 		return fmt.Errorf("sqlite enrichment store marshal: %w", err)
 	}
@@ -144,21 +155,21 @@ func (s *SQLiteEnrichmentStore) Put(ctx context.Context, data *epg.EnrichmentDat
 	`
 
 	var expiresUnix int64
-	if !data.ExpiresAt.IsZero() {
-		expiresUnix = data.ExpiresAt.Unix()
+	if !copied.ExpiresAt.IsZero() {
+		expiresUnix = copied.ExpiresAt.Unix()
 	}
 
 	_, err = s.db.ExecContext(
 		ctx,
 		query,
-		data.FingerprintKey,
-		data.FingerprintVersion,
-		data.MatcherVersion,
-		string(data.Status),
-		data.Identity.Provider,
-		data.Identity.ID,
+		key,
+		copied.FingerprintVersion,
+		copied.MatcherVersion,
+		string(copied.Status),
+		copied.Identity.Provider,
+		copied.Identity.ID,
 		string(dataJSON),
-		data.FetchedAt.Unix(),
+		copied.FetchedAt.Unix(),
 		expiresUnix,
 	)
 	if err != nil {
@@ -190,6 +201,5 @@ func (s *SQLiteEnrichmentStore) Close() error {
 	defer s.mu.Unlock()
 
 	s.closed = true
-	// The DB handle lifecycle itself is managed by the persistence owner.
 	return nil
 }

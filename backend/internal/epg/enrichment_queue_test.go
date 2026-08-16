@@ -65,10 +65,10 @@ func (m *mockStore) Get(ctx context.Context, fp ProgrammeFingerprint) (*Enrichme
 	return rec, ok, nil
 }
 
-func (m *mockStore) Put(ctx context.Context, data *EnrichmentData) error {
+func (m *mockStore) Put(ctx context.Context, fp ProgrammeFingerprint, data *EnrichmentData) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.records[data.FingerprintKey] = data
+	m.records[fp.Key()] = data
 	return nil
 }
 
@@ -121,7 +121,6 @@ func TestEnrichmentQueue_Deduplication(t *testing.T) {
 }
 
 func TestEnrichmentQueue_QueueFullNonBlockingAndNoKeyLeak(t *testing.T) {
-	// Tiny queue capacity of 1, blocking provider
 	worker1Started := make(chan struct{})
 	var worker1Once sync.Once
 	blockCh := make(chan struct{})
@@ -251,4 +250,83 @@ func TestEnrichmentQueue_GracefulShutdownLifecycle(t *testing.T) {
 	okPost, reasonPost := q.Enqueue(fp)
 	assert.False(t, okPost)
 	assert.Equal(t, "stopped", reasonPost)
+}
+
+func TestEnrichmentQueue_ParentContextCancel_StopsEnqueueAndReleasesKeys(t *testing.T) {
+	// Tests parent context cancellation without calling Stop() explicitly
+	blockCh := make(chan struct{})
+	provider := &mockProvider{
+		lookupFn: func(ctx context.Context, fp ProgrammeFingerprint) (*EnrichmentData, error) {
+			select {
+			case <-blockCh:
+				return nil, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+
+	cfg := QueueConfig{Capacity: 10, WorkerCount: 1, JobTimeout: 5 * time.Second}
+	q := NewEnrichmentQueue(cfg, newMockStore(), provider)
+
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	require.NoError(t, q.Start(parentCtx))
+
+	fp1 := ProgrammeFingerprint{NormalizedTitle: "job 1", FingerprintVersion: CurrentFingerprintVersion}
+	fp2 := ProgrammeFingerprint{NormalizedTitle: "job 2", FingerprintVersion: CurrentFingerprintVersion}
+
+	ok1, _ := q.Enqueue(fp1)
+	assert.True(t, ok1)
+	ok2, _ := q.Enqueue(fp2)
+	assert.True(t, ok2)
+
+	assert.Equal(t, 2, q.ActiveKeyCount())
+
+	// Cancel parent context
+	parentCancel()
+
+	// Enqueue must immediately reject new items as stopped
+	require.Eventually(t, func() bool {
+		ok, reason := q.Enqueue(ProgrammeFingerprint{NormalizedTitle: "new job", FingerprintVersion: CurrentFingerprintVersion})
+		return !ok && reason == "stopped"
+	}, 1*time.Second, 10*time.Millisecond)
+
+	// All queued active keys must be cleanly released (ActiveKeyCount becomes 0)
+	require.Eventually(t, func() bool {
+		return q.ActiveKeyCount() == 0
+	}, 1*time.Second, 10*time.Millisecond)
+}
+
+func TestEnrichmentQueue_StopWhileJobsQueued_ReleasesAllKeys(t *testing.T) {
+	// Worker blocked on 1 job, 3 jobs queued in buffer
+	blockCh := make(chan struct{})
+	provider := &mockProvider{
+		lookupFn: func(ctx context.Context, fp ProgrammeFingerprint) (*EnrichmentData, error) {
+			select {
+			case <-blockCh:
+				return nil, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+
+	cfg := QueueConfig{Capacity: 10, WorkerCount: 1, JobTimeout: 5 * time.Second}
+	q := NewEnrichmentQueue(cfg, newMockStore(), provider)
+
+	ctx := context.Background()
+	require.NoError(t, q.Start(ctx))
+
+	for i := 1; i <= 4; i++ {
+		fp := ProgrammeFingerprint{NormalizedTitle: string(rune('a' + i)), FingerprintVersion: CurrentFingerprintVersion}
+		ok, _ := q.Enqueue(fp)
+		assert.True(t, ok)
+	}
+
+	assert.Equal(t, 4, q.ActiveKeyCount())
+
+	// Stop must cleanly terminate and drain all active keys
+	q.Stop()
+
+	assert.Equal(t, 0, q.ActiveKeyCount(), "All active keys must be released after Stop()")
 }

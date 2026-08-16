@@ -18,6 +18,7 @@ const (
 )
 
 // EnrichmentStore is the storage interface for persisting and retrieving EPG enrichment data.
+// Invariant: Key derivation is strictly authoritative from ProgrammeFingerprint.
 // Invariant: Expired rows or entries with matcher_version mismatch are treated as misses.
 type EnrichmentStore interface {
 	// Get retrieves enrichment data for the given fingerprint.
@@ -25,8 +26,8 @@ type EnrichmentStore interface {
 	// Returns (nil, false, nil) on a miss, expired entry, or matcher_version mismatch.
 	Get(ctx context.Context, fp epg.ProgrammeFingerprint) (*epg.EnrichmentData, bool, error)
 
-	// Put stores an enrichment record with an expiration timestamp.
-	Put(ctx context.Context, data *epg.EnrichmentData) error
+	// Put stores an enrichment record. The store authoritatively computes the storage key from fp.
+	Put(ctx context.Context, fp epg.ProgrammeFingerprint, data *epg.EnrichmentData) error
 
 	// PruneExpired removes all records whose ExpiresAt is before the specified time.
 	PruneExpired(ctx context.Context, now time.Time) (int64, error)
