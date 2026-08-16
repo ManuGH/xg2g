@@ -4,7 +4,10 @@
 
 package receivertopology
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // Confidence represents the verification state of the receiver physical topology.
 type Confidence string
@@ -221,4 +224,75 @@ type FrontendRuntimeState struct {
 	Usage      FrontendUsageKind `json:"usage"`
 	ServiceRef string            `json:"serviceRef,omitempty"`
 	Owner      string            `json:"owner,omitempty"`
+}
+
+// EvidenceLevel indicates the provenance and confidence of an observed receiver runtime fact.
+type EvidenceLevel string
+
+const (
+	// EvidenceObserved indicates the fact was directly observed from an authoritative OpenWebIF endpoint field.
+	EvidenceObserved EvidenceLevel = "observed"
+
+	// EvidenceInferred indicates the fact was derived from multiple contextual or temporal clues (e.g. active timer window + global isRecording flag).
+	EvidenceInferred EvidenceLevel = "inferred"
+
+	// EvidenceUnknown indicates the fact could not be determined or is missing/unreliable.
+	EvidenceUnknown EvidenceLevel = "unknown"
+)
+
+// ObservedService contains observed details of a service running on the receiver.
+type ObservedService struct {
+	ServiceRef  string         `json:"serviceRef"`
+	ServiceName string         `json:"serviceName,omitempty"`
+	MultiplexID *MultiplexID   `json:"multiplexId,omitempty"`
+	RFPlane     *RFPlane       `json:"rfPlane,omitempty"`
+	PIDs        map[string]any `json:"pids,omitempty"`
+	Evidence    EvidenceLevel  `json:"evidence"`
+}
+
+// ObservedRecording contains information on an active or upcoming local DVR timer on the receiver.
+type ObservedRecording struct {
+	TimerID     string        `json:"timerId"`
+	Title       string        `json:"title"`
+	ServiceRef  string        `json:"serviceRef"`
+	MultiplexID *MultiplexID  `json:"multiplexId,omitempty"`
+	StartTime   time.Time     `json:"startTime"`
+	EndTime     time.Time     `json:"endTime"`
+	IsActiveNow bool          `json:"isActiveNow"`
+	Evidence    EvidenceLevel `json:"evidence"`
+}
+
+// ObservedStream represents a stream connection reported by OpenWebIF.
+type ObservedStream struct {
+	RawRef      string        `json:"rawRef"`
+	ServiceRef  string        `json:"serviceRef,omitempty"`
+	MultiplexID *MultiplexID  `json:"multiplexId,omitempty"`
+	TunerIndex  int           `json:"tunerIndex,omitempty"`
+	ClientInfo  string        `json:"clientInfo,omitempty"`
+	Evidence    EvidenceLevel `json:"evidence"`
+}
+
+// ObservedTunerSlot represents the raw status of a physical tuner slot in /api/about.
+type ObservedTunerSlot struct {
+	Index     int           `json:"index"`
+	Name      string        `json:"name"`
+	Type      string        `json:"type"`
+	RawLive   string        `json:"rawLive,omitempty"`
+	RawRec    string        `json:"rawRec,omitempty"`
+	RawStream string        `json:"rawStream,omitempty"`
+	Evidence  EvidenceLevel `json:"evidence"`
+}
+
+// ReceiverRuntimeSnapshot captures a point-in-time evidentiary observation of receiver state
+// aggregated across multiple OpenWebIF endpoints (/api/about, /api/getcurrent, /api/statusinfo, /api/timerlist).
+type ReceiverRuntimeSnapshot struct {
+	ObservedAt         time.Time           `json:"observedAt"`
+	InStandby          bool                `json:"inStandby"`
+	StandbyEvidence    EvidenceLevel       `json:"standbyEvidence"`
+	HDMIPlayback       *ObservedService    `json:"hdmiPlayback,omitempty"` // Retained even during standby, paired with InStandby
+	ActiveRecordings   []ObservedRecording `json:"activeRecordings,omitempty"`
+	UpcomingRecordings []ObservedRecording `json:"upcomingRecordings,omitempty"`
+	ReportedStreams    []ObservedStream    `json:"reportedStreams,omitempty"`
+	StreamPresence     StreamPresence      `json:"streamPresence"`
+	Tuners             []ObservedTunerSlot `json:"tuners,omitempty"`
 }

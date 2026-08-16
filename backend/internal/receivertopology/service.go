@@ -19,11 +19,12 @@ type ActiveSessionInfo struct {
 // Service coordinates receiver physical topology evaluation, capacity checking,
 // atomic leases, recording reservations, and external receiver activity.
 type Service struct {
-	mu        sync.RWMutex
-	allocator *Allocator
-	runtime   *RuntimeAllocation
-	leases    *LeaseStore
-	planner   *ReservationPlanner
+	mu           sync.RWMutex
+	allocator    *Allocator
+	runtime      *RuntimeAllocation
+	leases       *LeaseStore
+	planner      *ReservationPlanner
+	lastSnapshot ReceiverRuntimeSnapshot
 }
 
 var (
@@ -63,6 +64,20 @@ func (s *Service) Topology() ReceiverTopology {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.allocator.Topology()
+}
+
+// EvidentiarySnapshot returns the most recently collected evidentiary receiver runtime snapshot.
+func (s *Service) EvidentiarySnapshot() ReceiverRuntimeSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastSnapshot
+}
+
+// UpdateEvidentiarySnapshot stores a new evidentiary runtime observation snapshot.
+func (s *Service) UpdateEvidentiarySnapshot(snap ReceiverRuntimeSnapshot) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastSnapshot = snap
 }
 
 // EffectiveTunerCapacity returns the maximum physically independent concurrent tuner capacity of the active topology.
