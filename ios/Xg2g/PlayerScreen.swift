@@ -435,7 +435,7 @@ struct PlayerScreen: View {
     }
 
     private func seekRelative(seconds: Double) {
-        guard let player, let item = player.currentItem else { return }
+        guard let player, player.currentItem != nil else { return }
         triggerHaptic(.light)
         let current = player.currentTime()
         let target = CMTimeAdd(current, CMTime(seconds: seconds, preferredTimescale: 600))
@@ -583,6 +583,16 @@ struct PlayerScreen: View {
             descItem.identifier = .commonIdentifierDescription
             descItem.value = description as NSString
             metadata.append(descItem)
+        }
+
+        if let logoURL = channel.logoURL,
+           let image = LogoImageCache.shared.image(for: logoURL),
+           let data = image.pngData() {
+            let artItem = AVMutableMetadataItem()
+            artItem.identifier = .commonIdentifierArtwork
+            artItem.value = data as NSData
+            artItem.dataType = kCMMetadataBaseDataType_PNG as String
+            metadata.append(artItem)
         }
 
         item.externalMetadata = metadata
