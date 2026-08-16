@@ -577,6 +577,7 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.updatesNowPlayingInfoCenter = false
         controller.allowsVideoFrameAnalysis = false
+        controller.exitsFullScreenWhenPlaybackEnds = false
         controller.delegate = context.coordinator
         return controller
     }
@@ -587,6 +588,9 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         }
         if controller.videoGravity != videoGravity {
             controller.videoGravity = videoGravity
+        }
+        if player.timeControlStatus != .playing && player.error == nil {
+            player.play()
         }
     }
 
@@ -606,14 +610,25 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
             _ playerViewController: AVPlayerViewController,
             willBeginFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
         ) {
-            // Keep playback continuous and retain active state during system fullscreen modal presentation
+            coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+                self?.parent.player.play()
+            }
         }
 
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
             willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
         ) {
-            // Inline stage: exiting fullscreen transitions back to inline video stage without tearing down playback
+            coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+                self?.parent.player.play()
+            }
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+        ) {
+            completionHandler(true)
         }
     }
 }
