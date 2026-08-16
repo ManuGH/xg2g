@@ -123,20 +123,6 @@ struct PlayerScreen: View {
                         maxHeight: isLandscape ? .infinity : (geometry.size.width * 9 / 16)
                     )
                     .background(Color.black)
-                    .simultaneousGesture(
-                        DragGesture(minimumDistance: 30)
-                            .onEnded { value in
-                                guard model.playerGesturesEnabled else { return }
-                                let horizontal = value.translation.width
-                                let vertical = value.translation.height
-                                guard abs(horizontal) > abs(vertical) * 1.5, abs(horizontal) > 45 else { return }
-                                if horizontal < 0 {
-                                    zapNext()
-                                } else {
-                                    zapPrevious()
-                                }
-                            }
-                    )
 
                     // MARK: - Portrait Dual-Stage Bottom Interactive EPG Guide (Modern Sleek UI)
                     if !isLandscape {
