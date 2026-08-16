@@ -56,6 +56,7 @@ type Deps interface {
 	HouseholdAdmission() *policy.HouseholdResourceAdmission
 	HouseholdResourcePolicy() *identity.HouseholdResourcePolicy
 	ResolveServerIdentity(ctx context.Context, userID, profileID string) (role identity.Role, pol *identity.ProfilePolicy, access *identity.AccessPolicy, decision identity.PolicyDecision, err error)
+	CanStartService(serviceRef, sessionID string) (allowed bool, problemCode, reason string)
 	RecordReject(code string)
 	RecordAdmit()
 	RecordIntent(intentType, mode, outcome string)

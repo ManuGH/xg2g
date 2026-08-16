@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/control/admission"
@@ -116,6 +117,28 @@ func (s *Service) checkStartAdmission(ctx context.Context, intent Intent, profil
 				Msg("admission rejected")
 
 			return &Error{Kind: ErrorAdmissionRejected, Message: problemCode, RetryAfter: retryAfter, AdmissionProblem: decision.Problem}
+		}
+	}
+
+	if allowed, probCode, reason := s.deps.CanStartService(intent.ServiceRef, intent.SessionID); !allowed {
+		s.deps.RecordReject(probCode)
+		intent.Logger.Info().
+			Str("serviceRef", intent.ServiceRef).
+			Str("code", probCode).
+			Str("reason", reason).
+			Msg("physical topology admission rejected")
+
+		return &Error{
+			Kind:       ErrorAdmissionRejected,
+			Message:    probCode,
+			RetryAfter: "5",
+			AdmissionProblem: &admission.Problem{
+				Status: http.StatusServiceUnavailable,
+				Type:   "admission/" + strings.ToLower(strings.ReplaceAll(probCode, "ADMISSION_", "")),
+				Title:  "Physical Front-End Capacity Exceeded",
+				Code:   probCode,
+				Detail: reason,
+			},
 		}
 	}
 

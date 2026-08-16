@@ -1,7 +1,5 @@
 // Copyright (c) 2026 ManuGH
 // Licensed under the PolyForm Noncommercial License 1.0.0
-// Since v2.0.0, this software is restricted to non-commercial use only.
-
 package receivertopology
 
 import (
@@ -9,6 +7,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+)
+
+// Admission Problem Codes (matches standard codes without cycle)
+const (
+	ProblemCodeNoTuners                     = "ADMISSION_NO_TUNERS"
+	ProblemCodePlaneConflict                = "ADMISSION_PLANE_CONFLICT"
+	ProblemCodeRecordingReservationConflict = "ADMISSION_RECORDING_RESERVATION_CONFLICT"
 )
 
 // AllocationOwner denotes whether an allocation belongs to an xg2g session or an external receiver activity.
@@ -104,6 +111,7 @@ type AllocationDecision struct {
 	InputID        InputID        `json:"inputId,omitempty"`
 	ReusedDemod    bool           `json:"reusedDemod"`
 	Reason         string         `json:"reason"`
+	ProblemCode    string         `json:"problemCode,omitempty"`
 	EvaluationMode EvaluationMode `json:"evaluationMode"`
 }
 
@@ -143,13 +151,16 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 	// 1. Multiplex-Reuse: If identical physical transport stream is already tuned on an active demodulator
 	for _, alloc := range runtime.ActiveMultiplexes {
 		if alloc.MultiplexID.IsSamePhysicalMultiplex(target) {
-			return AllocationDecision{
-				Allowed:        true,
-				DemodID:        alloc.DemodID,
-				InputID:        alloc.InputID,
-				ReusedDemod:    true,
-				Reason:         fmt.Sprintf("Reusing active multiplex %s on demod %s", target.String(), alloc.DemodID),
-				EvaluationMode: a.mode,
+			// Invariant: verify that the underlying demod and input are valid in the active topology
+			if demod, ok := a.topology.FindDemod(alloc.DemodID); ok && supportsDVBType(demod.DVBTypes, target.DVBType) {
+				return AllocationDecision{
+					Allowed:        true,
+					DemodID:        alloc.DemodID,
+					InputID:        alloc.InputID,
+					ReusedDemod:    true,
+					Reason:         fmt.Sprintf("Reusing active multiplex %s on demod %s", target.String(), alloc.DemodID),
+					EvaluationMode: a.mode,
+				}
 			}
 		}
 	}
@@ -272,16 +283,20 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 
 	// 4. Overload / Capacity Exhaustion
 	var failureReason string
+	var problemCode string
 	if len(occupiedDemods) >= len(a.topology.Demodulators) {
 		failureReason = fmt.Sprintf("All %d hardware demodulators occupied", len(a.topology.Demodulators))
+		problemCode = ProblemCodeNoTuners
 	} else {
 		failureReason = "RF Plane conflict: no free input available for requested satellite polarization/band"
+		problemCode = ProblemCodePlaneConflict
 	}
 
 	if a.mode == EvaluationModeEnforce && a.topology.Confidence == ConfidenceVerified {
 		return AllocationDecision{
 			Allowed:        false,
 			Reason:         failureReason,
+			ProblemCode:    problemCode,
 			EvaluationMode: a.mode,
 		}
 	}
@@ -290,6 +305,7 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 	return AllocationDecision{
 		Allowed:        true,
 		Reason:         fmt.Sprintf("Audit-only override: %s (permitting stream)", failureReason),
+		ProblemCode:    problemCode,
 		EvaluationMode: a.mode,
 	}
 }
@@ -340,12 +356,14 @@ func (a *Allocator) EvaluateWithUpcomingReservations(
 				return AllocationDecision{
 					Allowed:        false,
 					Reason:         reason,
+					ProblemCode:    ProblemCodeRecordingReservationConflict,
 					EvaluationMode: a.mode,
 				}
 			}
 			return AllocationDecision{
 				Allowed:        true,
 				Reason:         fmt.Sprintf("Audit-only override: %s (permitting stream)", reason),
+				ProblemCode:    ProblemCodeRecordingReservationConflict,
 				EvaluationMode: a.mode,
 			}
 		}
@@ -353,6 +371,57 @@ func (a *Allocator) EvaluateWithUpcomingReservations(
 	}
 
 	return basicDecision
+}
+
+// PlanClaimSet converts a verified allocation decision into a transactional ClaimSetRequest.
+func (a *Allocator) PlanClaimSet(
+	runtime *RuntimeAllocation,
+	planner *ReservationPlanner,
+	target MultiplexID,
+	serviceRef string,
+	sessionID string,
+	priority Priority,
+	ttl time.Duration,
+	now time.Time,
+) (model.ClaimSetRequest, AllocationDecision) {
+	decision := a.EvaluateWithUpcomingReservations(runtime, planner, target, sessionID, priority, now)
+	if !decision.Allowed {
+		return model.ClaimSetRequest{}, decision
+	}
+
+	var planeStr string
+	if target.RFPlane != nil {
+		planeStr = target.RFPlane.String()
+	}
+
+	var scrSlot *int
+	if input, ok := a.topology.FindInput(decision.InputID); ok {
+		if input.DeliveryType == DeliveryUnicable1 || input.DeliveryType == DeliveryUnicable2JESS {
+			slotNum := 0
+			runtime.mu.RLock()
+			for _, m := range runtime.ActiveMultiplexes {
+				if m.InputID == decision.InputID {
+					slotNum++
+				}
+			}
+			runtime.mu.RUnlock()
+			scrSlot = &slotNum
+		}
+	}
+
+	req := model.ClaimSetRequest{
+		SessionID:     sessionID,
+		ServiceRef:    serviceRef,
+		MultiplexID:   target.String(),
+		InputID:       string(decision.InputID),
+		RequiredPlane: planeStr,
+		DemodID:       string(decision.DemodID),
+		SCRSlot:       scrSlot,
+		TTL:           ttl,
+		Priority:      int(priority),
+	}
+
+	return req, decision
 }
 
 // Allocate commits an allocation if permitted by capacity constraints.

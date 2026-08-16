@@ -224,6 +224,10 @@ func (m *mockDeps) ResolveServerIdentity(ctx context.Context, userID, profileID 
 	return identity.RoleMember, nil, nil, identity.PolicyDecision{Allowed: true}, nil
 }
 
+func (m *mockDeps) CanStartService(serviceRef, sessionID string) (bool, string, string) {
+	return true, "", ""
+}
+
 func (m *mockDeps) RecordReject(code string) {
 	m.rejectCodes = append(m.rejectCodes, code)
 }

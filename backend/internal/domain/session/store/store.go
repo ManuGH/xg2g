@@ -53,6 +53,10 @@ type LeaseStore interface {
 	ReleaseLease(ctx context.Context, key, owner string) error
 	DeleteAllLeases(ctx context.Context) (int, error)
 	ListLeases(ctx context.Context) ([]Lease, error)
+	// Multi-Resource Transactional Claim Engine (Phase 3)
+	TryAcquireClaimSet(ctx context.Context, req model.ClaimSetRequest) (model.ClaimSetResult, error)
+	ReleaseClaimSet(ctx context.Context, sessionID string) error
+	ReapExpiredClaimMembers(ctx context.Context) (reapedMembers int, reapedMuxes int, err error)
 }
 
 // IntentStore exposes only the state/idempotency/lease operations required by intent admission.
@@ -100,4 +104,8 @@ type StateStore interface {
 	ReleaseLease(ctx context.Context, key, owner string) error
 	DeleteAllLeases(ctx context.Context) (int, error)
 	ListLeases(ctx context.Context) ([]Lease, error)
+	// Multi-Resource Transactional Claim Engine (Phase 3)
+	TryAcquireClaimSet(ctx context.Context, req model.ClaimSetRequest) (model.ClaimSetResult, error)
+	ReleaseClaimSet(ctx context.Context, sessionID string) error
+	ReapExpiredClaimMembers(ctx context.Context) (reapedMembers int, reapedMuxes int, err error)
 }

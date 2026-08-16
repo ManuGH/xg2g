@@ -37,6 +37,31 @@ func (d *serverIntentDeps) HasTunerSlots() bool {
 	return true
 }
 
+func (d *serverIntentDeps) CanStartService(serviceRef, sessionID string) (bool, string, string) {
+	d.s.mu.RLock()
+	topoSvc := d.s.topologyService
+	d.s.mu.RUnlock()
+
+	if topoSvc == nil {
+		return true, "", ""
+	}
+
+	decision, err := topoSvc.CanStartStream(serviceRef, sessionID)
+	if err != nil {
+		return true, "", ""
+	}
+
+	if !decision.Allowed {
+		probCode := decision.ProblemCode
+		if probCode == "" {
+			probCode = admission.CodeNoTuners
+		}
+		return false, probCode, decision.Reason
+	}
+
+	return true, "", ""
+}
+
 func (d *serverIntentDeps) SessionLeaseTTL() time.Duration {
 	return d.s.GetConfig().Sessions.LeaseTTL
 }

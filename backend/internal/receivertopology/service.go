@@ -5,9 +5,13 @@
 package receivertopology
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/domain/session/store"
 )
 
 // ActiveSessionInfo provides basic information about an active stream session for topology reconciliation.
@@ -85,6 +89,18 @@ func (s *Service) EffectiveTunerCapacity() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.allocator.Topology().EffectiveTunerCapacity()
+}
+
+// Allocator returns the active Allocator instance.
+func (s *Service) Allocator() *Allocator {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.allocator
+}
+
+// Runtime returns the active RuntimeAllocation instance.
+func (s *Service) Runtime() *RuntimeAllocation {
+	return s.runtime
 }
 
 // CloneRuntime returns a deep copy snapshot of active runtime allocations for inspection.
@@ -271,6 +287,59 @@ func (s *Service) ReserveStreamLeaseAtomic(
 	s.leases.Put(lease)
 
 	return lease, decision, nil
+}
+
+// AcquireClaimSetAtomic evaluates topology constraints and commits a multi-resource ClaimSet
+// atomically via the authoritative LeaseStore under database-level transaction lock.
+func (s *Service) AcquireClaimSetAtomic(
+	ctx context.Context,
+	store store.LeaseStore,
+	serviceRef string,
+	sessionID string,
+	priority Priority,
+	ttl time.Duration,
+) (model.ClaimSetResult, AllocationDecision, error) {
+	mux, err := ParseServiceRef(serviceRef)
+	if err != nil {
+		return model.ClaimSetResult{}, AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+	}
+
+	if ttl <= 0 {
+		ttl = 30 * time.Second
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, decision := s.allocator.PlanClaimSet(s.runtime, s.planner, mux, serviceRef, sessionID, priority, ttl, time.Now().UTC())
+	if !decision.Allowed {
+		return model.ClaimSetResult{
+			Success:      false,
+			ConflictType: model.ConflictKind(decision.ProblemCode),
+			ConflictDesc: decision.Reason,
+		}, decision, nil
+	}
+
+	if store != nil {
+		claimRes, err := store.TryAcquireClaimSet(ctx, req)
+		if err != nil {
+			return claimRes, decision, err
+		}
+		if !claimRes.Success {
+			return claimRes, decision, nil
+		}
+	}
+
+	// Commit runtime allocation
+	_, _ = s.allocator.Allocate(s.runtime, mux, sessionID, AllocationOwnerXG2G)
+
+	return model.ClaimSetResult{
+		Success:   true,
+		ReusedMux: decision.ReusedDemod,
+		DemodID:   string(decision.DemodID),
+		InputID:   string(decision.InputID),
+		ExpiresAt: time.Now().UTC().Add(ttl),
+	}, decision, nil
 }
 
 // HeartbeatStream extends the lease TTL for an active session.

@@ -114,6 +114,36 @@ func (s *SqliteStore) migrate() error {
 		expires_at_ms INTEGER NOT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS input_claims (
+		input_id TEXT PRIMARY KEY,
+		active_plane TEXT NOT NULL,
+		expires_at_ms INTEGER NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS input_claim_owners (
+		input_id TEXT NOT NULL,
+		session_id TEXT NOT NULL,
+		expires_at_ms INTEGER NOT NULL,
+		PRIMARY KEY (input_id, session_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS mux_allocations (
+		multiplex_id TEXT PRIMARY KEY,
+		input_id TEXT NOT NULL,
+		demod_id TEXT NOT NULL,
+		required_plane TEXT,
+		scr_slot INTEGER,
+		expires_at_ms INTEGER NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS mux_members (
+		multiplex_id TEXT NOT NULL,
+		session_id TEXT NOT NULL,
+		joined_at_ms INTEGER NOT NULL,
+		expires_at_ms INTEGER NOT NULL,
+		PRIMARY KEY (multiplex_id, session_id)
+	);
+
 	CREATE TABLE IF NOT EXISTS migration_history (
 		module TEXT PRIMARY KEY,
 		source_type TEXT NOT NULL,
@@ -676,4 +706,341 @@ func nullStringToTime(ns sql.NullString) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("invalid RFC3339 timestamp %q: %w", ns.String, err)
 	}
 	return t, nil
+}
+
+// --- Multi-Resource Transactional Claim Engine (Phase 3) ---
+
+func (s *SqliteStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSetRequest) (model.ClaimSetResult, error) {
+	if req.SessionID == "" {
+		return model.ClaimSetResult{Success: false, ConflictType: model.ConflictCapacityExhausted, ConflictDesc: "session_id required"}, nil
+	}
+	if req.TTL <= 0 {
+		req.TTL = 30 * time.Second
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return model.ClaimSetResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UnixMilli()
+	expiresAt := time.Now().Add(req.TTL).UnixMilli()
+
+	// 1. Multiplex-Reuse: check if active multiplex allocation already exists
+	if req.MultiplexID != "" {
+		var existingInput, existingDemod string
+		var existingPlane sql.NullString
+		var existingSCR sql.NullInt64
+		var muxExpires int64
+
+		err = tx.QueryRowContext(ctx,
+			"SELECT input_id, demod_id, required_plane, scr_slot, expires_at_ms FROM mux_allocations WHERE multiplex_id = ?",
+			req.MultiplexID,
+		).Scan(&existingInput, &existingDemod, &existingPlane, &existingSCR, &muxExpires)
+
+		if err == nil && muxExpires > now {
+			// Invariant: verify parent hardware claims are still held and not expired
+			var demodOwner string
+			var demodExpires int64
+			demodKey := model.LeaseKeyDemod(existingDemod)
+			errDemod := tx.QueryRowContext(ctx, "SELECT owner, expires_at_ms FROM leases WHERE key = ?", demodKey).Scan(&demodOwner, &demodExpires)
+			if errDemod == nil && demodExpires > now {
+				// Parent demod is valid -> join multiplex as member!
+				_, err = tx.ExecContext(ctx,
+					"INSERT OR REPLACE INTO mux_members (multiplex_id, session_id, joined_at_ms, expires_at_ms) VALUES (?, ?, ?, ?)",
+					req.MultiplexID, req.SessionID, now, expiresAt,
+				)
+				if err != nil {
+					return model.ClaimSetResult{}, err
+				}
+
+				// Extend mux_allocations expiry if member extends past it
+				if expiresAt > muxExpires {
+					_, _ = tx.ExecContext(ctx, "UPDATE mux_allocations SET expires_at_ms = ? WHERE multiplex_id = ?", expiresAt, req.MultiplexID)
+					_, _ = tx.ExecContext(ctx, "UPDATE leases SET expires_at_ms = ? WHERE key = ?", expiresAt, demodKey)
+					if existingInput != "" {
+						_, _ = tx.ExecContext(ctx, "UPDATE input_claims SET expires_at_ms = ? WHERE input_id = ?", expiresAt, existingInput)
+						_, _ = tx.ExecContext(ctx, "UPDATE input_claim_owners SET expires_at_ms = ? WHERE input_id = ?", expiresAt, existingInput)
+					}
+				}
+
+				if err := tx.Commit(); err != nil {
+					return model.ClaimSetResult{}, err
+				}
+
+				return model.ClaimSetResult{
+					Success:   true,
+					ReusedMux: true,
+					DemodID:   existingDemod,
+					InputID:   existingInput,
+					ExpiresAt: time.UnixMilli(expiresAt),
+				}, nil
+			}
+		}
+	}
+
+	// 2. Compatible-Shared Input Check
+	if req.InputID != "" && req.RequiredPlane != "" {
+		var activePlane string
+		var inputExpires int64
+		err = tx.QueryRowContext(ctx, "SELECT active_plane, expires_at_ms FROM input_claims WHERE input_id = ?", req.InputID).Scan(&activePlane, &inputExpires)
+
+		if err == nil && inputExpires > now {
+			if activePlane != req.RequiredPlane {
+				// Plane conflict on same physical coaxial input
+				return model.ClaimSetResult{
+					Success:      false,
+					ConflictType: model.ConflictPlaneConflict,
+					ConflictDesc: fmt.Sprintf("input %s is locked to plane %s (requested %s)", req.InputID, activePlane, req.RequiredPlane),
+				}, nil
+			}
+			// Compatible: extend input expiry if needed
+			if expiresAt > inputExpires {
+				_, _ = tx.ExecContext(ctx, "UPDATE input_claims SET expires_at_ms = ? WHERE input_id = ?", expiresAt, req.InputID)
+			}
+		} else {
+			// Input is free or expired -> claim with requested plane
+			_, err = tx.ExecContext(ctx,
+				"INSERT OR REPLACE INTO input_claims (input_id, active_plane, expires_at_ms) VALUES (?, ?, ?)",
+				req.InputID, req.RequiredPlane, expiresAt,
+			)
+			if err != nil {
+				return model.ClaimSetResult{}, err
+			}
+		}
+
+		// Register session as owner of this input
+		_, err = tx.ExecContext(ctx,
+			"INSERT OR REPLACE INTO input_claim_owners (input_id, session_id, expires_at_ms) VALUES (?, ?, ?)",
+			req.InputID, req.SessionID, expiresAt,
+		)
+		if err != nil {
+			return model.ClaimSetResult{}, err
+		}
+	}
+
+	// 3. Exclusive Demod Check
+	if req.DemodID != "" {
+		demodKey := model.LeaseKeyDemod(req.DemodID)
+		var currentOwner string
+		var currentExpires int64
+		err = tx.QueryRowContext(ctx, "SELECT owner, expires_at_ms FROM leases WHERE key = ?", demodKey).Scan(&currentOwner, &currentExpires)
+		if err == nil && currentExpires > now && currentOwner != req.SessionID {
+			return model.ClaimSetResult{
+				Success:      false,
+				ConflictType: model.ConflictDemodOccupied,
+				ConflictDesc: fmt.Sprintf("demod %s is occupied by session %s", req.DemodID, currentOwner),
+			}, nil
+		}
+
+		_, err = tx.ExecContext(ctx, "INSERT OR REPLACE INTO leases (key, owner, expires_at_ms) VALUES (?, ?, ?)", demodKey, req.SessionID, expiresAt)
+		if err != nil {
+			return model.ClaimSetResult{}, err
+		}
+	}
+
+	// 4. Exclusive SCR Slot Check
+	if req.SCRSlot != nil && req.InputID != "" {
+		scrKey := model.LeaseKeySCR(req.InputID, *req.SCRSlot)
+		var currentOwner string
+		var currentExpires int64
+		err = tx.QueryRowContext(ctx, "SELECT owner, expires_at_ms FROM leases WHERE key = ?", scrKey).Scan(&currentOwner, &currentExpires)
+		if err == nil && currentExpires > now && currentOwner != req.SessionID {
+			return model.ClaimSetResult{
+				Success:      false,
+				ConflictType: model.ConflictSCROccupied,
+				ConflictDesc: fmt.Sprintf("scr slot %d on input %s is occupied by %s", *req.SCRSlot, req.InputID, currentOwner),
+			}, nil
+		}
+
+		_, err = tx.ExecContext(ctx, "INSERT OR REPLACE INTO leases (key, owner, expires_at_ms) VALUES (?, ?, ?)", scrKey, req.SessionID, expiresAt)
+		if err != nil {
+			return model.ClaimSetResult{}, err
+		}
+	}
+
+	// 5. Multiplex Creation (Parent Hardware + Initial Member)
+	if req.MultiplexID != "" {
+		var planeVal *string
+		if req.RequiredPlane != "" {
+			planeVal = &req.RequiredPlane
+		}
+		_, err = tx.ExecContext(ctx,
+			"INSERT OR REPLACE INTO mux_allocations (multiplex_id, input_id, demod_id, required_plane, scr_slot, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?)",
+			req.MultiplexID, req.InputID, req.DemodID, planeVal, req.SCRSlot, expiresAt,
+		)
+		if err != nil {
+			return model.ClaimSetResult{}, err
+		}
+
+		_, err = tx.ExecContext(ctx,
+			"INSERT OR REPLACE INTO mux_members (multiplex_id, session_id, joined_at_ms, expires_at_ms) VALUES (?, ?, ?, ?)",
+			req.MultiplexID, req.SessionID, now, expiresAt,
+		)
+		if err != nil {
+			return model.ClaimSetResult{}, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return model.ClaimSetResult{}, err
+	}
+
+	return model.ClaimSetResult{
+		Success:   true,
+		ReusedMux: false,
+		DemodID:   req.DemodID,
+		InputID:   req.InputID,
+		ExpiresAt: time.UnixMilli(expiresAt),
+	}, nil
+}
+
+func (s *SqliteStore) ReleaseClaimSet(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UnixMilli()
+
+	// 1. Find all multiplexes where this session is a member
+	rows, err := tx.QueryContext(ctx, "SELECT multiplex_id FROM mux_members WHERE session_id = ?", sessionID)
+	if err == nil {
+		var muxIDs []string
+		for rows.Next() {
+			var mID string
+			if err := rows.Scan(&mID); err == nil {
+				muxIDs = append(muxIDs, mID)
+			}
+		}
+		_ = rows.Close()
+
+		// Remove session from mux_members
+		_, _ = tx.ExecContext(ctx, "DELETE FROM mux_members WHERE session_id = ?", sessionID)
+
+		// Check if any mux now has 0 remaining active members
+		for _, mID := range muxIDs {
+			var activeMembers int
+			_ = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM mux_members WHERE multiplex_id = ? AND expires_at_ms > ?", mID, now).Scan(&activeMembers)
+			if activeMembers == 0 {
+				// Free parent hardware
+				var inID, dID string
+				var scrSlot sql.NullInt64
+				errMux := tx.QueryRowContext(ctx, "SELECT input_id, demod_id, scr_slot FROM mux_allocations WHERE multiplex_id = ?", mID).Scan(&inID, &dID, &scrSlot)
+				if errMux == nil {
+					_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeyDemod(dID))
+					if scrSlot.Valid {
+						_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeySCR(inID, int(scrSlot.Int64)))
+					}
+				}
+				_, _ = tx.ExecContext(ctx, "DELETE FROM mux_allocations WHERE multiplex_id = ?", mID)
+			}
+		}
+	}
+
+	// 2. Remove session from input_claim_owners
+	rowsIn, errIn := tx.QueryContext(ctx, "SELECT input_id FROM input_claim_owners WHERE session_id = ?", sessionID)
+	if errIn == nil {
+		var inIDs []string
+		for rowsIn.Next() {
+			var inID string
+			if err := rowsIn.Scan(&inID); err == nil {
+				inIDs = append(inIDs, inID)
+			}
+		}
+		_ = rowsIn.Close()
+
+		_, _ = tx.ExecContext(ctx, "DELETE FROM input_claim_owners WHERE session_id = ?", sessionID)
+
+		for _, inID := range inIDs {
+			var activeOwners int
+			_ = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM input_claim_owners WHERE input_id = ? AND expires_at_ms > ?", inID, now).Scan(&activeOwners)
+			if activeOwners == 0 {
+				_, _ = tx.ExecContext(ctx, "DELETE FROM input_claims WHERE input_id = ?", inID)
+			}
+		}
+	}
+
+	// 3. Delete standalone leases owned by this session (excluding demod/scr leases held by active mux allocations)
+	_, _ = tx.ExecContext(ctx, `
+		DELETE FROM leases
+		WHERE owner = ?
+		  AND key NOT IN (SELECT 'demod:' || demod_id FROM mux_allocations WHERE expires_at_ms > ?)
+		  AND key NOT IN (SELECT 'scr:' || input_id || ':' || scr_slot FROM mux_allocations WHERE scr_slot IS NOT NULL AND expires_at_ms > ?)
+	`, sessionID, now, now)
+
+	return tx.Commit()
+}
+
+func (s *SqliteStore) ReapExpiredClaimMembers(ctx context.Context) (int, int, error) {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UnixMilli()
+
+	// 1. Delete expired mux members
+	resMembers, err := tx.ExecContext(ctx, "DELETE FROM mux_members WHERE expires_at_ms <= ?", now)
+	if err != nil {
+		return 0, 0, err
+	}
+	reapedMembersCount, _ := resMembers.RowsAffected()
+
+	// 2. Delete expired input owners
+	_, _ = tx.ExecContext(ctx, "DELETE FROM input_claim_owners WHERE expires_at_ms <= ?", now)
+
+	// Clean up input claims with no active owners
+	_, _ = tx.ExecContext(ctx, `
+		DELETE FROM input_claims
+		WHERE input_id NOT IN (SELECT DISTINCT input_id FROM input_claim_owners WHERE expires_at_ms > ?)
+		   OR expires_at_ms <= ?
+	`, now, now)
+
+	// 3. Find mux allocations with 0 active members
+	rows, err := tx.QueryContext(ctx, `
+		SELECT multiplex_id, input_id, demod_id, scr_slot
+		FROM mux_allocations
+		WHERE multiplex_id NOT IN (SELECT DISTINCT multiplex_id FROM mux_members WHERE expires_at_ms > ?)
+		   OR expires_at_ms <= ?
+	`, now, now)
+
+	reapedMuxCount := 0
+	if err == nil {
+		type orphanedMux struct {
+			muxID   string
+			inputID string
+			demodID string
+			scrSlot sql.NullInt64
+		}
+		var orphans []orphanedMux
+		for rows.Next() {
+			var o orphanedMux
+			if err := rows.Scan(&o.muxID, &o.inputID, &o.demodID, &o.scrSlot); err == nil {
+				orphans = append(orphans, o)
+			}
+		}
+		_ = rows.Close()
+
+		for _, o := range orphans {
+			reapedMuxCount++
+			_, _ = tx.ExecContext(ctx, "DELETE FROM mux_allocations WHERE multiplex_id = ?", o.muxID)
+			_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeyDemod(o.demodID))
+			if o.scrSlot.Valid {
+				_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeySCR(o.inputID, int(o.scrSlot.Int64)))
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+
+	return int(reapedMembersCount), reapedMuxCount, nil
 }
