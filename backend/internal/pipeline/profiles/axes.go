@@ -65,19 +65,15 @@ func resolveProfileAxes(canonical string, isSafari bool, cap *scan.Capability, c
 			PolicyModeHint: ports.RuntimeModeCopy,
 		}
 	case ProfileSafari:
+		policyHint := ports.RuntimeModeHQ50
 		if cap != nil && !cap.Interlaced {
-			return ProfileAxes{
-				Video:          VideoActionCopy,
-				AudioBitrateK:  320,
-				Container:      safariFamilyContainer(isSafari),
-				PolicyModeHint: ports.RuntimeModeCopy,
-			}
+			policyHint = ports.RuntimeModeHQ50
 		}
 		return ProfileAxes{
 			Video:          VideoActionH264,
 			AudioBitrateK:  320,
 			Container:      safariFamilyContainer(isSafari),
-			PolicyModeHint: ports.RuntimeModeHQ25,
+			PolicyModeHint: policyHint,
 		}
 	case ProfileSafariDirty:
 		return ProfileAxes{
@@ -171,7 +167,7 @@ func applyVideoQualityOverlay(spec *model.ProfileSpec, axes ProfileAxes, canonic
 			spec.VideoMaxRateK = 3000
 			spec.VideoBufSizeK = 6000
 		case ProfileSafari:
-			spec.Deinterlace = true
+			spec.Deinterlace = interlacedOrUnknown(cap)
 			if useGPU {
 				applyH264GPUSettings(
 					spec,

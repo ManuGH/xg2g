@@ -26,15 +26,18 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 		wantPreset          string
 	}{
 		{
-			name:                "safari macos auto progressive stays safari-compatible copy path",
+			name:                "safari macos auto progressive uses QSV normalization for closed GOP",
 			clientFixture:       playbackprofile.ClientSafariNative,
 			requestedProfile:    "auto",
 			cap:                 &scan.Capability{Interlaced: false},
+			hasGPU:              true,
+			hwaccelMode:         HWAccelAuto,
 			wantInternalProfile: ProfileSafari,
 			wantPublicProfile:   PublicProfileCompatible,
-			wantTranscodeVideo:  false,
+			wantTranscodeVideo:  true,
 			wantContainer:       "mpegts",
 			wantDeinterlace:     false,
+			wantVideoQP:         20,
 		},
 		{
 			name:                "safari macos auto interlaced stays safari-compatible transcode path",
@@ -70,11 +73,14 @@ func TestResolve_ClientFamilyMatrix(t *testing.T) {
 			clientFixture:       playbackprofile.ClientIOSSafariNative,
 			requestedProfile:    "auto",
 			cap:                 &scan.Capability{Interlaced: false},
+			hasGPU:              true,
+			hwaccelMode:         HWAccelAuto,
 			wantInternalProfile: ProfileSafari,
 			wantPublicProfile:   PublicProfileCompatible,
-			wantTranscodeVideo:  false,
+			wantTranscodeVideo:  true,
 			wantContainer:       "mpegts",
 			wantDeinterlace:     false,
+			wantVideoQP:         20,
 		},
 		{
 			name:                "firefox hlsjs auto resolves to compatible high profile",
