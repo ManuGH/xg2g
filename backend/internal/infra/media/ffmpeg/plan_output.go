@@ -386,10 +386,14 @@ func appendLiveAudioArgs(args []string, spec ports.StreamSpec, channels int) []s
 	if spec.Profile.AudioBitrateK > 0 {
 		audioBitrate = fmt.Sprintf("%dk", spec.Profile.AudioBitrateK)
 	}
+	chStr := "2"
+	if channels > 0 {
+		chStr = strconv.Itoa(channels)
+	}
 	return append(args,
 		"-c:a", audioCodec,
 		"-b:a", audioBitrate,
-		"-ac", "2",
+		"-ac", chStr,
 		"-ar", "48000",
 		"-sn",
 	)
