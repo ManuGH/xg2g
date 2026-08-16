@@ -84,3 +84,126 @@ func TestDiscovery_ExternalAllocations(t *testing.T) {
 		t.Fatalf("expected local_timer_dvr on second external allocation, got %s", external[1].Source)
 	}
 }
+
+func TestDiscovery_StreamPresence_Matrix(t *testing.T) {
+	topology := ReceiverTopology{
+		Inputs: []PhysicalInput{
+			{ID: "input_a", DeliveryType: DeliveryLegacyUniversal},
+		},
+		Demodulators: []Demodulator{
+			{ID: "tuner_a", InputID: "input_a", DVBTypes: []DVBType{DVBTypeSat}},
+		},
+	}
+
+	// 1. Unknown streams payload (nil) -> fail-safe retains t.Stream
+	aboutUnknown := &openwebif.AboutInfo{}
+	aboutUnknown.Info.Streams = nil
+	aboutUnknown.Info.Tuners = []openwebif.AboutTuner{
+		{Name: "Tuner A", Type: "Vuplus DVB-S", Stream: "1:0:19:283F:3FB:1:C00000:0:0:0:"},
+	}
+	allocsUnknown := ExtractExternalAllocations(aboutUnknown, topology, nil)
+	if len(allocsUnknown) != 1 || allocsUnknown[0].Source != "external_stream_client" {
+		t.Fatalf("expected fail-safe external allocation on unknown streams payload, got %v", allocsUnknown)
+	}
+
+	// 2. Explicitly empty streams payload ([]any{}) -> suppresses stale t.Stream
+	aboutEmpty := &openwebif.AboutInfo{}
+	aboutEmpty.Info.Streams = []any{}
+	aboutEmpty.Info.Tuners = []openwebif.AboutTuner{
+		{Name: "Tuner A", Type: "Vuplus DVB-S", Stream: "1:0:19:283F:3FB:1:C00000:0:0:0:"},
+	}
+	allocsEmpty := ExtractExternalAllocations(aboutEmpty, topology, nil)
+	if len(allocsEmpty) != 0 {
+		t.Fatalf("expected 0 external allocations when streams payload is explicitly empty, got %d", len(allocsEmpty))
+	}
+
+	// 3. Active streams payload -> confirms t.Stream
+	aboutActive := &openwebif.AboutInfo{}
+	aboutActive.Info.Streams = []any{"1:0:19:283F:3FB:1:C00000:0:0:0:"}
+	aboutActive.Info.Tuners = []openwebif.AboutTuner{
+		{Name: "Tuner A", Type: "Vuplus DVB-S", Stream: "1:0:19:283F:3FB:1:C00000:0:0:0:"},
+	}
+	allocsActive := ExtractExternalAllocations(aboutActive, topology, nil)
+	if len(allocsActive) != 1 || allocsActive[0].Source != "external_stream_client" {
+		t.Fatalf("expected active external stream client allocation, got %v", allocsActive)
+	}
+}
+
+func TestTopology_EffectiveTunerCapacity(t *testing.T) {
+	// 1. Single Legacy Cable with 8 FBC demods -> Capacity = 1
+	fbcSingle := ReceiverTopology{
+		Inputs: []PhysicalInput{
+			{ID: "input_a", DeliveryType: DeliveryLegacyUniversal},
+		},
+		Demodulators: []Demodulator{
+			{ID: "tuner_a", InputID: "input_a"},
+			{ID: "tuner_b", InputID: "input_a"},
+			{ID: "tuner_c", InputID: "input_a"},
+			{ID: "tuner_d", InputID: "input_a"},
+			{ID: "tuner_e", InputID: "input_a"},
+			{ID: "tuner_f", InputID: "input_a"},
+			{ID: "tuner_g", InputID: "input_a"},
+			{ID: "tuner_h", InputID: "input_a"},
+		},
+	}
+	if cap := fbcSingle.EffectiveTunerCapacity(); cap != 1 {
+		t.Fatalf("expected single legacy FBC capacity 1, got %d", cap)
+	}
+
+	// 2. Dual Legacy Cables with 8 FBC demods -> Capacity = 2
+	fbcDual := ReceiverTopology{
+		Inputs: []PhysicalInput{
+			{ID: "input_a", DeliveryType: DeliveryLegacyUniversal},
+			{ID: "input_b", DeliveryType: DeliveryLegacyUniversal},
+		},
+		Demodulators: []Demodulator{
+			{ID: "tuner_a", InputID: "input_a"},
+			{ID: "tuner_b", InputID: "input_b"},
+			{ID: "tuner_c", InputID: "input_a"},
+			{ID: "tuner_d", InputID: "input_a"},
+			{ID: "tuner_e", InputID: "input_b"},
+			{ID: "tuner_f", InputID: "input_b"},
+			{ID: "tuner_g", InputID: "input_a"},
+			{ID: "tuner_h", InputID: "input_b"},
+		},
+	}
+	if cap := fbcDual.EffectiveTunerCapacity(); cap != 2 {
+		t.Fatalf("expected dual legacy FBC capacity 2, got %d", cap)
+	}
+
+	// 3. Unicable with 8 User Bands -> Capacity = 8
+	unicable := ReceiverTopology{
+		Inputs: []PhysicalInput{
+			{ID: "input_a", DeliveryType: DeliveryUnicable1, UserBands: 8},
+		},
+		Demodulators: []Demodulator{
+			{ID: "tuner_a", InputID: "input_a"},
+			{ID: "tuner_b", InputID: "input_a"},
+			{ID: "tuner_c", InputID: "input_a"},
+			{ID: "tuner_d", InputID: "input_a"},
+			{ID: "tuner_e", InputID: "input_a"},
+			{ID: "tuner_f", InputID: "input_a"},
+			{ID: "tuner_g", InputID: "input_a"},
+			{ID: "tuner_h", InputID: "input_a"},
+		},
+	}
+	if cap := unicable.EffectiveTunerCapacity(); cap != 8 {
+		t.Fatalf("expected Unicable 8 user bands capacity 8, got %d", cap)
+	}
+
+	// 4. Quad DVB-C Tuners -> Capacity = 4
+	cable := ReceiverTopology{
+		Inputs: []PhysicalInput{
+			{ID: "input_cable", DeliveryType: DeliveryCable},
+		},
+		Demodulators: []Demodulator{
+			{ID: "tuner_a", InputID: "input_cable"},
+			{ID: "tuner_b", InputID: "input_cable"},
+			{ID: "tuner_c", InputID: "input_cable"},
+			{ID: "tuner_d", InputID: "input_cable"},
+		},
+	}
+	if cap := cable.EffectiveTunerCapacity(); cap != 4 {
+		t.Fatalf("expected Quad DVB-C capacity 4, got %d", cap)
+	}
+}

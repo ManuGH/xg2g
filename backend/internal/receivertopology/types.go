@@ -151,3 +151,74 @@ func (t ReceiverTopology) FindDemod(id DemodulatorID) (Demodulator, bool) {
 	}
 	return Demodulator{}, false
 }
+
+// EffectiveTunerCapacity calculates the number of physically independent concurrent tuner streams
+// supported by the topology based on physical RF inputs, user bands, and delivery types.
+func (t ReceiverTopology) EffectiveTunerCapacity() int {
+	if len(t.Inputs) == 0 {
+		return 0
+	}
+	total := 0
+	for _, input := range t.Inputs {
+		switch input.DeliveryType {
+		case DeliveryLegacyUniversal:
+			// 1 physical coaxial cable = 1 independent RF plane at a time
+			total += 1
+		case DeliveryUnicable1, DeliveryUnicable2JESS:
+			userBands := input.UserBands
+			if userBands <= 0 {
+				userBands = 8
+			}
+			demodsOnInput := 0
+			for _, d := range t.Demodulators {
+				if d.InputID == input.ID {
+					demodsOnInput++
+				}
+			}
+			if demodsOnInput > 0 && demodsOnInput < userBands {
+				total += demodsOnInput
+			} else {
+				total += userBands
+			}
+		case DeliveryCable, DeliveryTerrestrial:
+			demodsOnInput := 0
+			for _, d := range t.Demodulators {
+				if d.InputID == input.ID {
+					demodsOnInput++
+				}
+			}
+			if demodsOnInput > 0 {
+				total += demodsOnInput
+			} else {
+				total += 1
+			}
+		default:
+			total += 1
+		}
+	}
+	if total <= 0 {
+		return 1
+	}
+	return total
+}
+
+// FrontendUsageKind describes what activity currently occupies a receiver frontend/demodulator.
+type FrontendUsageKind string
+
+const (
+	FrontendUsageIdle           FrontendUsageKind = "idle"
+	FrontendUsageLiveTV         FrontendUsageKind = "hdmi_live"
+	FrontendUsageRecording      FrontendUsageKind = "local_dvr"
+	FrontendUsageExternalStream FrontendUsageKind = "external_stream"
+	FrontendUsageXG2G           FrontendUsageKind = "xg2g_stream"
+	FrontendUsageUnknown        FrontendUsageKind = "unknown"
+)
+
+// FrontendRuntimeState describes the real-time operational state of a receiver frontend.
+type FrontendRuntimeState struct {
+	DemodID    DemodulatorID     `json:"demodId"`
+	InputID    InputID           `json:"inputId"`
+	Usage      FrontendUsageKind `json:"usage"`
+	ServiceRef string            `json:"serviceRef,omitempty"`
+	Owner      string            `json:"owner,omitempty"`
+}

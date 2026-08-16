@@ -96,6 +96,54 @@ func DiscoverTopology(about *openwebif.AboutInfo) ReceiverTopology {
 	}
 }
 
+// StreamPresence indicates whether OpenWebIF reported active streams on the receiver.
+type StreamPresence int
+
+const (
+	// StreamPresenceUnknown indicates that streams information was missing, nil, or could not be determined.
+	// Fail-safe requirement: Must NOT assume zero streams.
+	StreamPresenceUnknown StreamPresence = iota
+
+	// StreamPresenceEmpty indicates that OpenWebIF successfully replied with an explicitly empty stream list.
+	// Safe to suppress stale t.Stream entries.
+	StreamPresenceEmpty
+
+	// StreamPresenceActive indicates that OpenWebIF reported one or more active external streams.
+	StreamPresenceActive
+)
+
+// ParseStreamPresence evaluates the streams payload from OpenWebIF.
+func ParseStreamPresence(v any) StreamPresence {
+	if v == nil {
+		return StreamPresenceUnknown
+	}
+	switch s := v.(type) {
+	case []any:
+		if len(s) == 0 {
+			return StreamPresenceEmpty
+		}
+		return StreamPresenceActive
+	case map[string]any:
+		if len(s) == 0 {
+			return StreamPresenceEmpty
+		}
+		return StreamPresenceActive
+	case string:
+		trimmed := strings.TrimSpace(s)
+		if trimmed == "" || trimmed == "[]" || trimmed == "{}" {
+			return StreamPresenceEmpty
+		}
+		return StreamPresenceActive
+	case bool:
+		if s {
+			return StreamPresenceActive
+		}
+		return StreamPresenceEmpty
+	default:
+		return StreamPresenceUnknown
+	}
+}
+
 // ExtractExternalAllocations identifies receiver-observed tuner usage not owned by xg2g sessions.
 // Checks demodulator ownership and accurately resolves the associated physical RF input.
 func ExtractExternalAllocations(
@@ -108,6 +156,7 @@ func ExtractExternalAllocations(
 	}
 
 	var external []ExternalAllocation
+	presence := ParseStreamPresence(about.Info.Streams)
 
 	for i, t := range about.Info.Tuners {
 		demodID := DemodulatorID(sanitizeTunerID(t.Name, i))
@@ -154,6 +203,11 @@ func ExtractExternalAllocations(
 
 		// Check External Streaming Client
 		if sRef := strings.TrimSpace(t.Stream); sRef != "" {
+			// If streams list is explicitly known to be empty, suppress stale t.Stream left by OpenWebIF
+			if presence == StreamPresenceEmpty {
+				continue
+			}
+			// If streams are active OR unknown (fail-safe), treat as active external allocation
 			if mux, err := ParseServiceRef(sRef); err == nil {
 				external = append(external, ExternalAllocation{
 					Source:      "external_stream_client",

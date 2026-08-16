@@ -65,6 +65,13 @@ func (s *Service) Topology() ReceiverTopology {
 	return s.allocator.Topology()
 }
 
+// EffectiveTunerCapacity returns the maximum physically independent concurrent tuner capacity of the active topology.
+func (s *Service) EffectiveTunerCapacity() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.allocator.Topology().EffectiveTunerCapacity()
+}
+
 // CloneRuntime returns a deep copy snapshot of active runtime allocations for inspection.
 func (s *Service) CloneRuntime() *RuntimeAllocation {
 	return s.runtime.Clone()

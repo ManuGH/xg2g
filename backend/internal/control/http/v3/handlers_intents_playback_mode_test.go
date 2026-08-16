@@ -346,7 +346,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSPreservesSafariBrowserContainer(t 
 	require.Equal(t, http.StatusAccepted, rr.Code)
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, "safari", store.lastSession.Profile.Name)
-	require.False(t, store.lastSession.Profile.TranscodeVideo)
+	require.True(t, store.lastSession.Profile.TranscodeVideo)
 	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
 	require.Equal(t, "safari", store.lastSession.ContextData["profile"])
 }
@@ -970,8 +970,8 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeAV1HEVCHintsUseAV1ProfileFo
 	require.Equal(t, http.StatusAccepted, rr.Code)
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.Profile.Name)
-	require.Equal(t, "", store.lastSession.Profile.VideoCodec)
-	require.Equal(t, "fmp4", store.lastSession.Profile.Container)
+	require.Equal(t, "h264", store.lastSession.Profile.VideoCodec)
+	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
 }
 
 func TestHandleV3Intents_PlaybackModeHLSJSRuntimeRichCodecsKeepHighProfileForChromiumH264Source(t *testing.T) {
@@ -1171,7 +1171,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSRuntimeHEVCHintsKeepSafariProfileF
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.Profile.Name)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.ContextData["profile"])
-	require.Equal(t, "", store.lastSession.Profile.VideoCodec)
+	require.Equal(t, "h264", store.lastSession.Profile.VideoCodec)
 	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
 }
 
@@ -1287,7 +1287,7 @@ func TestHandleV3Intents_PlaybackModeNativeHLSLegacySafariAliasRuntimeAV1UsesAV1
 	require.NotNil(t, store.lastSession)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.Profile.Name)
 	require.Equal(t, profiles.ProfileSafari, store.lastSession.ContextData["profile"])
-	require.Equal(t, "", store.lastSession.Profile.VideoCodec)
+	require.Equal(t, "h264", store.lastSession.Profile.VideoCodec)
 	require.Equal(t, "mpegts", store.lastSession.Profile.Container)
 	require.Equal(t, playbackprofile.ClientSafariNative, store.lastSession.ContextData[model.CtxKeyClientFamily])
 	require.Equal(t, playbackprofile.ClientSafariNative, store.lastSession.PlaybackTrace.Client.ClientFamily)

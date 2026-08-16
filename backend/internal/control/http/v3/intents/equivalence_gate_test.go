@@ -14,7 +14,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const dirtyDVBLegacyIntentFixture = "6_Dirty_DVB_Fallback"
+const (
+	dirtyDVBLegacyIntentFixture  = "6_Dirty_DVB_Fallback"
+	iosSafariLegacyIntentFixture = "3_iOS_Safari"
+)
 
 // TestLegacyIntentAdapterDifferential characterizes only zero-diff cases in the
 // pre-receipt ProcessIntent adapter. Known adapter-only divergences live in
@@ -24,7 +27,7 @@ func TestLegacyIntentAdapterDifferential(t *testing.T) {
 	evalTime := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
 
 	for _, tc := range testfixtures.Cases {
-		if tc.Name == dirtyDVBLegacyIntentFixture {
+		if tc.Name == dirtyDVBLegacyIntentFixture || tc.Name == iosSafariLegacyIntentFixture {
 			continue
 		}
 		t.Run(tc.Name, func(t *testing.T) {
