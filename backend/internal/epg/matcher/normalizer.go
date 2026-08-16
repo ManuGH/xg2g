@@ -17,8 +17,6 @@ var (
 	fractionalEpisodeParenRegex = regexp.MustCompile(`\(\s*\d+\s*/\s*\d+\s*\)`)
 	// Single integer in parentheses: (98), (533), (1144), (2009)
 	integerParenRegex = regexp.MustCompile(`\(\s*(\d+)\s*\)`)
-	// Plausible 4-digit production year in parentheses: (1900) - (2099)
-	yearInParenRegex = regexp.MustCompile(`\(\s*(19\d\d|20\d\d)\s*\)`)
 
 	// Noise patterns commonly found in broadcast EPG titles
 	noiseRegexes = []*regexp.Regexp{

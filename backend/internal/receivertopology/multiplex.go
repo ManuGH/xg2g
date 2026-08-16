@@ -87,10 +87,10 @@ func ParseServiceRef(serviceRef string) (MultiplexID, error) {
 
 // DetermineDVBType derives DVB broadcast type from standard Enigma2 DVB Namespace upper bits.
 func DetermineDVBType(namespace uint32) DVBType {
-	switch {
-	case namespace == 0xFFFF0000 || namespace == 0xFFFF:
+	switch namespace {
+	case 0xFFFF0000, 0xFFFF:
 		return DVBTypeCable
-	case namespace == 0xEEEE0000 || namespace == 0xEEEE:
+	case 0xEEEE0000, 0xEEEE:
 		return DVBTypeTerrestrial
 	default:
 		return DVBTypeSat

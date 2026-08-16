@@ -299,6 +299,15 @@ Legacy YAML section `openWebIF.*` is rejected at load time; use `enigma2.*`.
 | `rateLimit.global` | - | `100` | Active | Advanced |
 | `rateLimit.whitelist` | `XG2G_RATE_LIMIT_WHITELIST` | - | Active | Advanced |
 
+### receiver_topology
+
+| Path | Env | Default | Status | Profile |
+| --- | --- | --- | --- | --- |
+| `receiver_topology.demodulators` | - | - | Active | Advanced |
+| `receiver_topology.inputs` | - | - | Active | Advanced |
+| `receiver_topology.mode` | - | - | Active | Advanced |
+| `receiver_topology.model` | - | - | Active | Advanced |
+
 ### receiver_usage
 
 | Path | Env | Default | Status | Profile |

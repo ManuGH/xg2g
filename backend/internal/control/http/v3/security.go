@@ -18,16 +18,6 @@ func (s *Server) extractTokenDetailedWithLegacyPolicy(r *http.Request, allowLega
 	})
 }
 
-func extractBearerToken(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	if header := r.Header.Get("Authorization"); strings.HasPrefix(header, "Bearer ") {
-		return strings.TrimSpace(header[7:])
-	}
-	return ""
-}
-
 func isMediaRequest(r *http.Request) bool {
 	if r == nil {
 		return false

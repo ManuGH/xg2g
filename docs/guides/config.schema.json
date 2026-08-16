@@ -982,6 +982,29 @@
       "default": false,
       "type": "boolean"
     },
+    "receiver_topology": {
+      "properties": {
+        "demodulators": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "inputs": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "receiver_usage": {
       "properties": {
         "allow_live_with_recording": {

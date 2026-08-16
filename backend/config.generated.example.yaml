@@ -150,6 +150,11 @@ rateLimit:
   global: 100
   whitelist: []
 readyStrict: false
+receiver_topology:
+  demodulators: []
+  inputs: []
+  mode: ""
+  model: ""
 receiver_usage:
   allow_live_with_recording: false
   allow_retro_dvr_restricted: true

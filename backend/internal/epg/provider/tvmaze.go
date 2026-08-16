@@ -193,15 +193,15 @@ func (c *TVMazeClient) executeJSONRequest(ctx context.Context, requestURL string
 			c.circuitBreaker.RecordTechnicalFailure()
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode == http.StatusTooManyRequests {
 			c.circuitBreaker.RecordTechnicalFailure()
-			retryAfterSec := parseRetryAfter(resp.Header.Get("Retry-After"))
+			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
 			c.mu.Lock()
-			c.backoffUntil = time.Now().Add(retryAfterSec)
+			c.backoffUntil = time.Now().Add(retryAfter)
 			c.mu.Unlock()
-			return fmt.Errorf("tvmaze returned 429 Too Many Requests (retry after %s)", retryAfterSec)
+			return fmt.Errorf("tvmaze returned 429 Too Many Requests (retry after %s)", retryAfter)
 		}
 
 		if resp.StatusCode >= 500 {
