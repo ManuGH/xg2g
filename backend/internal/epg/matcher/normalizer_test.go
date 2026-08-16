@@ -36,6 +36,34 @@ func TestNormalizeTitle(t *testing.T) {
 			input: "   Dokumentation:   Die Alpen  [Neu]   ",
 			want:  "dokumentation: die alpen",
 		},
+		{
+			input: "Hubert und Staller (98)",
+			want:  "hubert und staller",
+		},
+		{
+			input: "In aller Freundschaft (1144)",
+			want:  "in aller freundschaft",
+		},
+		{
+			input: "Alles über Maria (1/2)",
+			want:  "alles über maria",
+		},
+		{
+			input: "Wildes Großbritannien (2/4)",
+			want:  "wildes großbritannien",
+		},
+		{
+			input: "Hubert und Staller (101/116)",
+			want:  "hubert und staller",
+		},
+		{
+			input: "CSI: Miami (HD)",
+			want:  "csi: miami",
+		},
+		{
+			input: "CSI: Vegas",
+			want:  "csi: vegas",
+		},
 	}
 
 	for _, tt := range tests {
@@ -44,6 +72,23 @@ func TestNormalizeTitle(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestExtractFingerprint_PreservesYearInTitle(t *testing.T) {
+	prog := &epg.Programme{
+		Title: epg.Title{Text: "Castle (2009)"},
+	}
+
+	fp := ExtractFingerprint(prog)
+	assert.Equal(t, 2009, fp.Year)
+	assert.Equal(t, 2, fp.FingerprintVersion)
+
+	prog2 := &epg.Programme{
+		Title: epg.Title{Text: "Hubert und Staller (98)"},
+	}
+	fp2 := ExtractFingerprint(prog2)
+	assert.Equal(t, "hubert und staller", fp2.NormalizedTitle)
+	assert.Equal(t, 0, fp2.Year)
 }
 
 func TestBuildFingerprint(t *testing.T) {
@@ -60,7 +105,7 @@ func TestBuildFingerprint(t *testing.T) {
 	assert.Equal(t, 3, fp.Season)
 	assert.Equal(t, 12, fp.Episode)
 	assert.Equal(t, "series", fp.EventGenre)
-	assert.Equal(t, epg.CurrentFingerprintVersion, fp.FingerprintVersion)
+	assert.Equal(t, 2, fp.FingerprintVersion)
 
 	key1 := fp.Key()
 	assert.NotEmpty(t, key1)

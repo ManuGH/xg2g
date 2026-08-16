@@ -16,7 +16,7 @@ import (
 
 // Current versions for fingerprint generation and provider matcher logic.
 const (
-	CurrentFingerprintVersion = 1
+	CurrentFingerprintVersion = 2
 	CurrentMatcherVersion     = 1
 )
 
