@@ -547,18 +547,20 @@ func (a *Allocator) Allocate(runtime *RuntimeAllocation, target MultiplexID, ses
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
 
-	// 1. If multiplex is already allocated, join the session to it
-	for _, alloc := range runtime.ActiveMultiplexes {
-		if alloc.MultiplexID.IsSamePhysicalMultiplex(target) {
-			if !alloc.HasSession(sessionID) {
-				alloc.SessionIDs = append(alloc.SessionIDs, sessionID)
+	// 1. If multiplex is already allocated and we are reusing this demod, join the session to it
+	if decision.ReusedDemod {
+		for _, alloc := range runtime.ActiveMultiplexes {
+			if alloc.DemodID == decision.DemodID && alloc.MultiplexID.IsSamePhysicalMultiplex(target) {
+				if !alloc.HasSession(sessionID) {
+					alloc.SessionIDs = append(alloc.SessionIDs, sessionID)
+				}
+				return decision, nil
 			}
-			return decision, nil
 		}
 	}
 
 	// 2. Register new allocation on the chosen demodulator
-	key := target.String()
+	key := fmt.Sprintf("%s:%s", target.String(), decision.DemodID)
 	alloc := &DemodAllocation{
 		DemodID:     decision.DemodID,
 		InputID:     decision.InputID,

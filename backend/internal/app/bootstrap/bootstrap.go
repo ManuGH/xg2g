@@ -362,8 +362,27 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		}
 	}
 
-	if owiClient != nil {
+	if topoSvc != nil && v3Store != nil {
+		// Mandatory startup reconciliation for receiver topology hardware claims
+		sessions, err := v3Store.ListSessions(ctx)
+		if err == nil {
+			var activeSessionIDs []string
+			for _, s := range sessions {
+				if !s.State.IsTerminal() {
+					activeSessionIDs = append(activeSessionIDs, s.SessionID)
+				}
+			}
+			if recErr := topoSvc.ReconcileStartupClaims(ctx, v3Store, activeSessionIDs, nil); recErr != nil {
+				logger.Warn().Err(recErr).Msg("topology startup claim reconciliation encountered non-fatal issue")
+			} else {
+				logger.Info().Int("active_sessions", len(activeSessionIDs)).Msg("topology startup claim reconciliation completed")
+			}
+		}
+	}
+
+	if owiClient != nil && topoSvc != nil {
 		syncPoller := receivertopology.NewExternalSyncPoller(owiClient, topoSvc, 3*time.Second, logger)
+		topoSvc.SetPoller(syncPoller)
 		go syncPoller.Run(ctx)
 	}
 

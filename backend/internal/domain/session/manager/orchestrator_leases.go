@@ -174,21 +174,39 @@ func (o *Orchestrator) acquireLeases(
 		}
 	}
 
-	// Topology Service Stream Registration & Lifecycle Hook
+	// Topology Service Stream Registration & Lifecycle Hook with Strict Generation Fencing
 	if o.TopologyService != nil && sessionCtx.ServiceRef != "" {
-		_, topoErr := o.TopologyService.RegisterStream(sessionCtx.ServiceRef, event.SessionID)
-		if topoErr != nil && o.TopologyService.Mode() == receivertopology.EvaluationModeEnforce && o.TopologyService.Topology().Confidence == receivertopology.ConfidenceVerified {
+		claimRes, topoDec, topoErr := o.TopologyService.AcquireClaimSetAtomic(
+			ctx,
+			o.Store,
+			sessionCtx.ServiceRef,
+			event.SessionID,
+			receivertopology.PriorityLive,
+			o.LeaseTTL,
+		)
+		if topoErr != nil || (!topoDec.Allowed && o.TopologyService.Mode() == receivertopology.EvaluationModeEnforce && o.TopologyService.Topology().Confidence == receivertopology.ConfidenceVerified) {
 			_ = res.ReleaseRestrictedAccess()
 			res.ReleaseTuner()
 			res.ReleaseDedup()
-			return nil, newReasonError(model.RLeaseBusy, "receiver physical topology allocation failed: "+topoErr.Error(), topoErr)
+			errMsg := "receiver physical topology allocation failed"
+			if topoErr != nil {
+				errMsg += ": " + topoErr.Error()
+			} else if topoDec.Reason != "" {
+				errMsg += ": " + topoDec.Reason
+			}
+			return nil, newReasonError(model.RLeaseBusy, errMsg, topoErr)
 		}
+
+		res.GenerationToken = claimRes.GenerationToken
+
 		prevReleaseTuner := res.ReleaseTuner
 		res.ReleaseTuner = func() {
 			if prevReleaseTuner != nil {
 				prevReleaseTuner()
 			}
-			o.TopologyService.ReleaseStream(event.SessionID)
+			ctxRel, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = o.TopologyService.ReleaseClaimSetAtomic(ctxRel, o.Store, event.SessionID, res.GenerationToken)
 		}
 	}
 

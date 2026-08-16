@@ -948,26 +948,27 @@ func (s *SqliteStore) ReleaseClaimSet(ctx context.Context, sessionID string, gen
 		_ = rows.Close()
 
 		// Remove session from mux_members matching generationToken
-		resDel, _ := tx.ExecContext(ctx, "DELETE FROM mux_members WHERE session_id = ? AND generation_token = ?", sessionID, generationToken)
-		rowsAffected, _ := resDel.RowsAffected()
-
-		if rowsAffected > 0 {
-			// Check if any affected mux now has 0 remaining active members
-			for _, mID := range muxIDs {
-				var activeMembers int
-				_ = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM mux_members WHERE multiplex_id = ? AND expires_at_ms > ?", mID, now).Scan(&activeMembers)
-				if activeMembers == 0 {
-					// Free parent hardware
-					var inID, dID string
-					var scrSlot sql.NullInt64
-					errMux := tx.QueryRowContext(ctx, "SELECT input_id, demod_id, scr_slot FROM mux_allocations WHERE multiplex_id = ?", mID).Scan(&inID, &dID, &scrSlot)
-					if errMux == nil {
-						_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeyDemod(dID))
-						if scrSlot.Valid {
-							_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeySCR(inID, int(scrSlot.Int64)))
+		resDel, errDel := tx.ExecContext(ctx, "DELETE FROM mux_members WHERE session_id = ? AND generation_token = ?", sessionID, generationToken)
+		if errDel == nil && resDel != nil {
+			rowsAffected, _ := resDel.RowsAffected()
+			if rowsAffected > 0 {
+				// Check if any affected mux now has 0 remaining active members
+				for _, mID := range muxIDs {
+					var activeMembers int
+					_ = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM mux_members WHERE multiplex_id = ? AND expires_at_ms > ?", mID, now).Scan(&activeMembers)
+					if activeMembers == 0 {
+						// Free parent hardware
+						var inID, dID string
+						var scrSlot sql.NullInt64
+						errMux := tx.QueryRowContext(ctx, "SELECT input_id, demod_id, scr_slot FROM mux_allocations WHERE multiplex_id = ?", mID).Scan(&inID, &dID, &scrSlot)
+						if errMux == nil {
+							_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeyDemod(dID))
+							if scrSlot.Valid {
+								_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeySCR(inID, int(scrSlot.Int64)))
+							}
 						}
+						_, _ = tx.ExecContext(ctx, "DELETE FROM mux_allocations WHERE multiplex_id = ?", mID)
 					}
-					_, _ = tx.ExecContext(ctx, "DELETE FROM mux_allocations WHERE multiplex_id = ?", mID)
 				}
 			}
 		}

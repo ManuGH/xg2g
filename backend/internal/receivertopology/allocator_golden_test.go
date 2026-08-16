@@ -377,3 +377,67 @@ func TestGolden_Phase4_OutOfLockStaleSnapshotRefresh(t *testing.T) {
 	assert.Equal(t, 1, poller.syncCalls, "Must NOT invoke sync poller when snapshot is fresh")
 	assert.True(t, dec.Diagnostics.SnapshotAgeMs >= 0)
 }
+
+func TestGolden_Phase4_SaturatedDemux_NoSecondRFPath_Rejects(t *testing.T) {
+	ctx := context.Background()
+	// Single Input, Dual Demod (Legacy FBC)
+	topo := receivertopology.ReceiverTopology{
+		Model:      "Vu+ Uno 4K SE (Dual Demod Legacy)",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{
+				ID:           "input_a",
+				DeliveryType: receivertopology.DeliveryLegacyUniversal,
+				Satellites:   []receivertopology.SatellitePosition{192},
+			},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+			{ID: "demod_1", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+
+	// Set demux capacity limit to 1
+	svc.Allocator().SetMaxMuxMembers(1)
+
+	serviceRefHighH := "1:0:19:2B90:3F3:1:C00000:0:0:0:" // ZDF HD (19.2 HIGH:H)
+
+	// 1. Session 1 takes demod_0 on HIGH:H
+	res1, dec1, err := svc.AcquireClaimSetAtomic(ctx, nil, serviceRefHighH, "sess-sat-1", receivertopology.PriorityLive, 10*time.Second)
+	require.NoError(t, err)
+	require.True(t, res1.Success)
+	require.True(t, dec1.Allowed)
+	assert.Equal(t, "demod_0", res1.DemodID)
+
+	// 2. Session 2 requests ZDF HD (HIGH:H) -> demux saturated (1/1) on demod_0 -> allocates second demod_1
+	res2, dec2, err := svc.AcquireClaimSetAtomic(ctx, nil, serviceRefHighH, "sess-sat-2", receivertopology.PriorityLive, 10*time.Second)
+	require.NoError(t, err)
+	require.True(t, res2.Success)
+	require.True(t, dec2.Allowed)
+	assert.Equal(t, "demod_1", res2.DemodID)
+
+	// 3. Session 3 requests ZDF HD (HIGH:H) -> both demod_0 and demod_1 are saturated (1/1) -> rejected with DEMUX_EXHAUSTED
+	res3, dec3, err := svc.AcquireClaimSetAtomic(ctx, nil, serviceRefHighH, "sess-sat-3", receivertopology.PriorityLive, 10*time.Second)
+	require.NoError(t, err)
+	assert.False(t, res3.Success, "Must reject when all demods on compatible plane are demux-saturated")
+	assert.False(t, dec3.Allowed)
+	assert.Equal(t, receivertopology.ProblemCodeDemuxExhausted, dec3.ProblemCode)
+
+	// 4. Release Session 2 -> demod_1 becomes free, but input_a remains locked to HIGH:H by Session 1
+	_ = svc.ReleaseClaimSetAtomic(ctx, nil, "sess-sat-2", res2.GenerationToken)
+
+	// 5. Session 4 requests LOW:V -> demod_1 is free, but input_a has plane conflict (HIGH:H vs LOW:V) -> rejected with PLANE_CONFLICT
+	lowVPlane := receivertopology.RFPlane{SatPosition: 192, Band: receivertopology.BandLow, Polarization: receivertopology.PolarizationVertical}
+	lowVMux := receivertopology.MultiplexID{
+		DVBType:      receivertopology.DVBTypeSat,
+		TSID:         999,
+		ONID:         1,
+		DVBNamespace: 0xC00000,
+		RFPlane:      &lowVPlane,
+	}
+	dec4 := svc.Allocator().CanAllocate(svc.Runtime(), lowVMux, "sess-sat-4")
+	assert.False(t, dec4.Allowed)
+	assert.Equal(t, receivertopology.ProblemCodePlaneConflict, dec4.ProblemCode)
+}

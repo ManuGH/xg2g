@@ -413,3 +413,115 @@ func TestClaimSet_ReaperCleansOrphanedMuxAndHardware(t *testing.T) {
 		})
 	}
 }
+
+func TestClaimSet_ReAcquireSameSessionGenerationFencing(t *testing.T) {
+	for _, st := range createTestStores(t) {
+		name := fmt.Sprintf("%T", st)
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+
+			// 1. Initial acquire -> Generation 1
+			req1 := model.ClaimSetRequest{
+				SessionID:     "reacquire-sess",
+				ServiceRef:    "1:0:1:1:1:1:1:0:0:0:",
+				MultiplexID:   "mux-reacquire",
+				InputID:       "input_a",
+				RequiredPlane: "192:HIGH:H",
+				DemodID:       "demod_reacq",
+				TTL:           10 * time.Second,
+			}
+			res1, err := st.TryAcquireClaimSet(ctx, req1)
+			require.NoError(t, err)
+			require.True(t, res1.Success)
+			gen1 := res1.GenerationToken
+			require.NotEmpty(t, gen1)
+
+			// 2. Re-acquire same session (e.g. channel switch / retune) -> Generation 2
+			req2 := model.ClaimSetRequest{
+				SessionID:     "reacquire-sess",
+				ServiceRef:    "1:0:1:2:1:1:1:0:0:0:",
+				MultiplexID:   "mux-reacquire",
+				InputID:       "input_a",
+				RequiredPlane: "192:HIGH:H",
+				DemodID:       "demod_reacq",
+				TTL:           10 * time.Second,
+			}
+			res2, err := st.TryAcquireClaimSet(ctx, req2)
+			require.NoError(t, err)
+			require.True(t, res2.Success)
+			gen2 := res2.GenerationToken
+			require.NotEmpty(t, gen2)
+			assert.NotEqual(t, gen1, gen2, "New acquisition must generate fresh fencing token")
+
+			// 3. Stale teardown handler from Gen 1 fires -> must NOT delete Gen 2 claim
+			err = st.ReleaseClaimSet(ctx, "reacquire-sess", gen1)
+			require.NoError(t, err)
+
+			demodLease, hasLease, _ := st.GetLease(ctx, model.LeaseKeyDemod("demod_reacq"))
+			assert.True(t, hasLease, "Claim for Generation 2 must NOT be deleted by Generation 1 release")
+			assert.NotNil(t, demodLease)
+
+			// 4. Current teardown handler from Gen 2 fires -> successfully deletes claim
+			err = st.ReleaseClaimSet(ctx, "reacquire-sess", gen2)
+			require.NoError(t, err)
+
+			_, hasLeaseAfter, _ := st.GetLease(ctx, model.LeaseKeyDemod("demod_reacq"))
+			assert.False(t, hasLeaseAfter, "Claim must be deleted when releasing with Generation 2 token")
+		})
+	}
+}
+
+func TestClaimSet_ConcurrentAcquireReleaseReaperRace(t *testing.T) {
+	for _, st := range createTestStores(t) {
+		name := fmt.Sprintf("%T", st)
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			const workers = 6
+			var wg sync.WaitGroup
+
+			for i := 0; i < workers; i++ {
+				wg.Add(1)
+				go func(workerID int) {
+					defer wg.Done()
+					sessID := fmt.Sprintf("race-sess-%d", workerID)
+					for ctx.Err() == nil {
+						req := model.ClaimSetRequest{
+							SessionID:     sessID,
+							ServiceRef:    "1:0:1:100:1:1:1:0:0:0:",
+							MultiplexID:   "mux-race",
+							InputID:       "input_a",
+							RequiredPlane: "192:HIGH:H",
+							DemodID:       fmt.Sprintf("demod_race_%d", workerID),
+							TTL:           50 * time.Millisecond,
+						}
+						res, err := st.TryAcquireClaimSet(ctx, req)
+						if err == nil && res.Success && res.GenerationToken != "" {
+							time.Sleep(10 * time.Millisecond)
+							_ = st.ReleaseClaimSet(ctx, sessID, res.GenerationToken)
+						}
+					}
+				}(i)
+			}
+
+			// Run Reaper concurrently
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ticker := time.NewTicker(20 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						_, _, _ = st.ReapExpiredClaimMembers(ctx)
+					}
+				}
+			}()
+
+			wg.Wait()
+		})
+	}
+}

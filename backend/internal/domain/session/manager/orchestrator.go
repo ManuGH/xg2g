@@ -694,6 +694,19 @@ func (o *Orchestrator) ForceReleaseLeases(ctx context.Context, sid, ref string, 
 			}
 		}
 	}
+
+	if o.TopologyService != nil {
+		genToken := ""
+		if s != nil && s.ContextData != nil {
+			genToken = s.ContextData[model.CtxKeyGenerationToken]
+		}
+		if genToken != "" {
+			_ = o.TopologyService.ReleaseClaimSetAtomic(ctx, o.Store, sid, genToken)
+		} else {
+			_ = o.Store.ForceAdminReleaseClaimSet(ctx, sid)
+			o.TopologyService.ReleaseStream(sid)
+		}
+	}
 }
 
 func (o *Orchestrator) goSessionWorker(fn func()) bool {

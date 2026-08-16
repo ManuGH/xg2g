@@ -458,9 +458,21 @@ func (s *Service) AcquireClaimSetAtomic(
 		genToken = claimRes.GenerationToken
 	}
 
-	// 4. COMMIT RUNTIME ALLOCATION UNDER SERVICE LOCK
+	// 4. COMMIT RUNTIME ALLOCATION AND LEASE UNDER SERVICE LOCK
 	s.mu.Lock()
 	_, _ = s.allocator.Allocate(s.runtime, mux, sessionID, AllocationOwnerXG2G)
+	lease := &Lease{
+		LeaseID:     GenerateLeaseID(),
+		SessionID:   sessionID,
+		MultiplexID: mux,
+		DemodID:     decision.DemodID,
+		InputID:     decision.InputID,
+		Priority:    priority,
+		Owner:       AllocationOwnerXG2G,
+		ExpiresAt:   time.Now().UTC().Add(ttl),
+		ReusedDemod: decision.ReusedDemod,
+	}
+	s.leases.Put(lease)
 	s.mu.Unlock()
 
 	return model.ClaimSetResult{

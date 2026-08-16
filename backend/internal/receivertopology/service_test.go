@@ -6,6 +6,7 @@ package receivertopology
 
 import (
 	"testing"
+	"time"
 )
 
 func TestService_StreamLifecycle(t *testing.T) {
@@ -236,5 +237,33 @@ func TestService_ConfidenceModeInvariants(t *testing.T) {
 	alloc := NewAllocator(observedTopo, EvaluationModeEnforce)
 	if alloc.Mode() != EvaluationModeAuditOnly {
 		t.Fatalf("expected NewAllocator(Observed, ENFORCE) to clamp to AUDIT_ONLY, got %s", alloc.Mode())
+	}
+}
+
+func TestReconciliation_EvidenceUnknownPreservesClaims(t *testing.T) {
+	topo := buildVuPlusUno4K_FBC_SingleCable()
+	svc, err := NewService(topo, EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("unexpected NewService error: %v", err)
+	}
+
+	// 1. Snapshot with EvidenceUnknown / missing OpenWebIF data
+	svc.UpdateEvidentiarySnapshot(ReceiverRuntimeSnapshot{
+		ObservedAt:      time.Now().UTC().Add(-1 * time.Hour), // Stale
+		StandbyEvidence: EvidenceUnknown,
+	})
+
+	// 2. Active lease running in memory
+	_, _, err = svc.ReserveStreamLease("1:0:19:2B90:3F3:1:C00000:0:0:0:", "active-sess-1", PriorityLive, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("unexpected ReserveStreamLease error: %v", err)
+	}
+
+	// 3. BuildReconciliationPlan when session is active in session store
+	plan := svc.BuildReconciliationPlan([]string{"active-sess-1"}, nil, time.Now().UTC())
+
+	// INVARIANT: Active session MUST NOT be flagged for reap even if OpenWebIF snapshot is unknown/stale
+	if len(plan.SessionsToReap) > 0 {
+		t.Fatalf("expected 0 sessions to reap, got %v", plan.SessionsToReap)
 	}
 }
