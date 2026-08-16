@@ -72,31 +72,57 @@ func TestMatchTVMazeResults(t *testing.T) {
 		assert.Equal(t, MatchNone, class)
 	})
 
-	t.Run("FalsePositive_LadiesNight_Rejected", func(t *testing.T) {
-		// WDR Ladies Night (2) has no year, no S/E, but had an episode counter (2)
-		// TVMaze returns US BET docuseries (Type: Reality, Language: English, Genres: Music)
+	t.Run("FalsePositive_LadiesNight_RejectedEvenWithShowOrMusicGenre", func(t *testing.T) {
+		// Even if DVB E1 assigns genre "show", "music", or "series",
+		// a foreign non-scripted show (Reality/Music/Talk in English) must be rejected without S/E.
+		genres := []string{"", "show", "music", "series"}
+		for _, g := range genres {
+			fp := epg.ProgrammeFingerprint{
+				NormalizedTitle:  "ladies night",
+				HadEpisodeMarker: true,
+				Year:             0,
+				EventGenre:       g,
+			}
+
+			results := []TVMazeSearchResult{
+				{
+					Show: TVMazeShow{
+						ID:       42013,
+						Name:     "Ladies Night",
+						Type:     "Reality",
+						Language: "English",
+						Genres:   []string{"Music"},
+					},
+				},
+			}
+
+			matched, class := MatchTVMazeResults(fp, results)
+			assert.Nil(t, matched, "Ladies Night English reality show must be rejected regardless of DVB genre %q", g)
+			assert.Equal(t, MatchNone, class)
+		}
+	})
+
+	t.Run("GermanRealityShow_WithShowGenre_Allowed", func(t *testing.T) {
 		fp := epg.ProgrammeFingerprint{
-			NormalizedTitle:  "ladies night",
-			HadEpisodeMarker: true,
-			Year:             0,
-			EventGenre:       "",
+			NormalizedTitle: "bares für rares",
+			EventGenre:      "show",
 		}
 
 		results := []TVMazeSearchResult{
 			{
 				Show: TVMazeShow{
-					ID:       42013,
-					Name:     "Ladies Night",
+					ID:       48351,
+					Name:     "Bares für Rares",
 					Type:     "Reality",
-					Language: "English",
-					Genres:   []string{"Music"},
+					Language: "German",
 				},
 			},
 		}
 
 		matched, class := MatchTVMazeResults(fp, results)
-		assert.Nil(t, matched, "Ladies Night non-scripted English reality show must be rejected")
-		assert.Equal(t, MatchNone, class)
+		require.NotNil(t, matched)
+		assert.Equal(t, MatchStrong, class)
+		assert.Equal(t, 48351, matched.ID)
 	})
 
 	t.Run("MovieGenre_StrictlyRejectedForTVMaze", func(t *testing.T) {
@@ -200,7 +226,7 @@ func TestMatchTVMazeResults(t *testing.T) {
 
 	t.Run("StrongMatch_CanonicalGenreShow", func(t *testing.T) {
 		fp := epg.ProgrammeFingerprint{
-			NormalizedTitle: "wer weiß denn sowas",
+			NormalizedTitle: NormalizeTitle("Wer weiß denn sowas?"),
 			EventGenre:      "show",
 		}
 

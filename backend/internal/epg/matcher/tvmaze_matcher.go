@@ -140,6 +140,7 @@ func isCanonicalGenreCompatible(dvbGenre string, show *TVMazeShow) bool {
 		return false
 	}
 	showTypeLower := strings.ToLower(show.Type)
+	showLangLower := strings.ToLower(show.Language)
 	showGenres := make([]string, len(show.Genres))
 	for i, g := range show.Genres {
 		showGenres[i] = strings.ToLower(g)
@@ -156,11 +157,11 @@ func isCanonicalGenreCompatible(dvbGenre string, show *TVMazeShow) bool {
 
 	switch dvbGenre {
 	case "series":
-		return showTypeLower == "scripted" || showTypeLower == "animation" || showTypeLower == "reality"
+		return showTypeLower == "scripted" || showTypeLower == "animation" || (showTypeLower == "reality" && (showLangLower == "german" || showLangLower == "deutsch"))
 	case "kids":
 		return showTypeLower == "animation" || hasGenre("children") || hasGenre("family") || hasGenre("anime")
 	case "show":
-		return showTypeLower == "game show" || showTypeLower == "variety" || showTypeLower == "talk show" || showTypeLower == "reality"
+		return showTypeLower == "game show" || showTypeLower == "variety" || showTypeLower == "talk show" || (showTypeLower == "reality" && (showLangLower == "german" || showLangLower == "deutsch"))
 	case "docu":
 		return showTypeLower == "documentary" || hasGenre("nature") || hasGenre("history") || hasGenre("medical")
 	case "sport":
@@ -188,9 +189,10 @@ func evaluateStrongMatchEvidence(fp epg.ProgrammeFingerprint, show *TVMazeShow) 
 	showLangLower := strings.ToLower(show.Language)
 	isScriptedOrAnim := showTypeLower == "scripted" || showTypeLower == "animation"
 
-	if !isScriptedOrAnim && showLangLower == "english" {
-		// Non-scripted English show (Reality, Music, Talk) requires explicit DVB S/E or DVB genre match
-		if fp.Season == 0 && fp.Episode == 0 && fp.EventGenre != "music" && fp.EventGenre != "show" {
+	if !isScriptedOrAnim && showLangLower != "" && showLangLower != "german" && showLangLower != "deutsch" {
+		// Non-scripted foreign show (Reality, Music, Talk, Variety, Game Show)
+		// cannot match generic German DVB broadcasts without explicit Season and Episode numbers.
+		if fp.Season == 0 || fp.Episode == 0 {
 			return false
 		}
 	}

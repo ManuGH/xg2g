@@ -120,3 +120,25 @@ func TestBuildFingerprint(t *testing.T) {
 	fp2 := BuildFingerprint("Der Bergdoktor [HD]", 2021, epg.YearSourceXMLTVDate, ep, "series", false)
 	assert.Equal(t, key1, fp2.Key())
 }
+
+func TestBuildFingerprint_PrioritizesTitleYearOverExplicitYear(t *testing.T) {
+	// If title contains explicit year "Castle (2009)", both ExtractFingerprint and BuildFingerprint
+	// must prioritize Year=2009 and YearSource=title over XMLTV date 2015
+	prog := &epg.Programme{
+		Title:     epg.Title{Text: "Castle (2009)"},
+		Date:      "2015",
+		Canonical: &epg.CanonicalMetadata{Genre: "series"},
+	}
+
+	fpExtracted := ExtractFingerprint(prog)
+	assert.Equal(t, "castle", fpExtracted.NormalizedTitle)
+	assert.Equal(t, 2009, fpExtracted.Year)
+	assert.Equal(t, epg.YearSourceTitle, fpExtracted.YearSource)
+
+	fpBuilt := BuildFingerprint("Castle (2009)", 2015, epg.YearSourceXMLTVDate, nil, "series", false)
+	assert.Equal(t, "castle", fpBuilt.NormalizedTitle)
+	assert.Equal(t, 2009, fpBuilt.Year)
+	assert.Equal(t, epg.YearSourceTitle, fpBuilt.YearSource)
+
+	assert.Equal(t, fpExtracted.Key(), fpBuilt.Key(), "ExtractFingerprint and BuildFingerprint must produce identical keys")
+}

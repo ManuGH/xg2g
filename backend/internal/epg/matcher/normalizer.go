@@ -90,7 +90,7 @@ func NormalizeTitle(title string) string {
 // BuildFingerprint constructs a deterministic ProgrammeFingerprint from title and canonical metadata.
 func BuildFingerprint(title string, year int, yearSource epg.YearSource, episode *epg.EpisodeInfo, genre string, hadEpisodeMarker bool) epg.ProgrammeFingerprint {
 	ev := NormalizeTitleWithEvidence(title)
-	if ev.ExtractedYear > 0 && year == 0 {
+	if ev.ExtractedYear > 0 {
 		year = ev.ExtractedYear
 		yearSource = epg.YearSourceTitle
 	}
