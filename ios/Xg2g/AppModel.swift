@@ -133,6 +133,7 @@ final class AppModel {
     private var session: SessionCoordinator?
     private var enrollment: EnrollmentCoordinator?
     private var revokeCoordinator: RevokeCoordinator?
+    private var api: (any APIClient)?
 
     var serverURLString: String {
         address?.rootURL.absoluteString ?? "–"
@@ -532,6 +533,7 @@ final class AppModel {
             address: address,
             authorizer: DPoPRequestAuthorizer(identity: identity, credentials: credentials, keyStore: keyStore, sessionCoordinator: sessionCoord)
         )
+        self.api = authorized
 
         channelRepository = ChannelRepository(api: authorized, baseURL: address.rootURL)
         recordingsRepository = RecordingsRepository(api: authorized)
@@ -963,5 +965,33 @@ final class AppModel {
     private static var deviceName: String {
         let name = UIDevice.current.name.trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? "iPhone" : name
+    }
+
+    // MARK: - Download Auth Access
+
+    /// Obtains a short-lived, media-scoped session cookie for background downloads.
+    func mediaSessionCookie() async throws -> String {
+        struct SessionResponse: Decodable, Sendable {
+            let sessionId: String?
+            let session_id: String?
+
+            var effectiveID: String? {
+                sessionId ?? session_id
+            }
+        }
+
+        guard let api else {
+            throw APIError.transport(.other(code: 401))
+        }
+
+        let request = APIRequest<SessionResponse>(
+            method: .post,
+            path: "auth/session"
+        )
+        let response = try await api.send(request)
+        guard let id = response.effectiveID, !id.isEmpty else {
+            throw APIError.transport(.other(code: 500))
+        }
+        return id
     }
 }

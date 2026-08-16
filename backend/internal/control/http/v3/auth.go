@@ -123,27 +123,29 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 	})
 }
 
-// CreateSession creates a secure HTTP-only session cookie exchange for the provided Bearer token.
+// CreateSession creates a secure HTTP-only session cookie exchange for the provided Bearer or DPoP token.
 // POST /api/v3/auth/session
 // Requires Authentication (via Header) to be successful first.
 func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	// 1. Re-extract the token that was successfully validated.
-	// Require Bearer header for this "login" exchange.
-	reqToken := extractBearerToken(r)
+	reqToken, authSource := s.extractTokenDetailedWithLegacyPolicy(r, false)
 
-	// The client MUST present a valid bearer token to exchange it for a session cookie.
-	if reqToken == "" {
-		// Fail if no token presented and auth is required
+	// The client MUST present a valid Bearer or DPoP token to exchange it for a session cookie.
+	if reqToken == "" || (authSource != auth.BearerSource && authSource != auth.DPoPSource) {
 		RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 		return
-	} else {
-		if !s.TokenPrincipal(r.Context(), reqToken).OK() {
+	}
+	principal := auth.PrincipalFromContext(r.Context())
+	if principal == nil {
+		reqCtx := context.WithValue(r.Context(), dpopRequestContextKey{}, r)
+		if !s.TokenPrincipal(reqCtx, reqToken).OK() {
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
 	}
 
-	if _, err := s.issueCookieSession(w, r, reqToken, s.authSessionTTLOrDefault()); err != nil {
+	sessionID, err := s.issueCookieSession(w, r, reqToken, s.authSessionTTLOrDefault())
+	if err != nil {
 		if errors.Is(err, ErrHTTPSRequired) {
 			RespondError(w, r, http.StatusBadRequest, ErrHTTPSRequired, "session exchange requires HTTPS or a trusted HTTPS proxy; plain HTTP is only accepted from loopback")
 			return
@@ -152,7 +154,14 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK) // 200 OK
+	w.Header().Set("Cache-Control", "no-store, no-cache, private")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"session_id": sessionID,
+		"sessionId":  sessionID,
+		"cookie":     sessionCookieName,
+		"path":       "/api/v3/",
+		"expires_in": int(s.authSessionTTLOrDefault() / time.Second),
+	})
 }
 
 // DeleteSession clears the auth session cookie and any active household unlock cookie.

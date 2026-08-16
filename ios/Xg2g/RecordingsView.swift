@@ -997,13 +997,13 @@ struct DownloadButton: View {
         guard let url = URL(string: base) else { return }
 
         Task {
-            let token = try? await model?.currentAccessToken()
+            let sessionCookie = try? await model?.mediaSessionCookie()
             await MainActor.run {
                 downloadManager.startDownload(
                     recording: recording,
                     serverBaseURL: url,
                     quality: quality,
-                    authToken: token
+                    sessionCookie: sessionCookie
                 )
             }
         }
