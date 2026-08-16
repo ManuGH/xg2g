@@ -25,13 +25,21 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 192, Channels: 2, SampleRate: 48000}
 		autoTranscodeProfile := false
 		plan.Packaging = Packaging{Container: "mpegts"}
-		if ev.ClientEvidence.PrefersFMP4 {
+		if ev.ClientEvidence.PrefersFMP4 || strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") {
 			plan.Packaging.Container = "fmp4"
 		}
 
 		isABRIntent := isABRRequested(ev)
 		if isABRIntent {
 			plan.Video = TrackPlan{Mode: "transcode", Codec: "h264", EnableABR: true}
+		} else if codec, ok := selectAutoTranscodeVideoCodec(ev); ok {
+			plan.Video.Codec = codec
+			autoTranscodeProfile = true
+			if codec == "av1" && ev.OperatorPolicy.ExperimentalAV1MPEGTS && !nativeWebKitClient(ev.ClientEvidence.Family) {
+				plan.Packaging.Container = "mpegts"
+			} else {
+				plan.Packaging.Container = "fmp4"
+			}
 		} else if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" && !requiresVideoNormalization(ev) {
 			plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		} else {
@@ -41,31 +49,20 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			if ev.ClientEvidence.MaxVideoWidth > 0 && ev.SourceTruth.Width > ev.ClientEvidence.MaxVideoWidth {
 				plan.Filters.ScaleWidth = ev.ClientEvidence.MaxVideoWidth
 			}
+			isChromium := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chromium") ||
+				strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chrome")
 
-			if codec, ok := selectAutoTranscodeVideoCodec(ev); ok {
-				plan.Video.Codec = codec
-				autoTranscodeProfile = true
-				if codec == "av1" && ev.OperatorPolicy.ExperimentalAV1MPEGTS && !nativeWebKitClient(ev.ClientEvidence.Family) {
-					plan.Packaging.Container = "mpegts"
-				} else {
-					plan.Packaging.Container = "fmp4"
-				}
-			} else {
-				isChromium := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chromium") ||
-					strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chrome")
+			isSafari := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "safari") ||
+				strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "ios") ||
+				ev.ClientEvidence.Family == "safari_hevc" ||
+				ev.ClientEvidence.Family == "safari_hevc_hw"
 
-				isSafari := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "safari") ||
-					strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "ios") ||
-					ev.ClientEvidence.Family == "safari_hevc" ||
-					ev.ClientEvidence.Family == "safari_hevc_hw"
+			isHLSJS := strings.EqualFold(ev.ClientEvidence.PreferredEngine, "hlsjs")
 
-				isHLSJS := strings.EqualFold(ev.ClientEvidence.PreferredEngine, "hlsjs")
-
-				if isSafari && !isChromium && !isHLSJS &&
-					explicitlyRequestsHEVCProfile(ev.RequestedIntent) &&
-					contains(ev.ClientEvidence.SupportedVideoCodecs, "hevc") {
-					plan.Video.Codec = "hevc"
-				}
+			if isSafari && !isChromium && !isHLSJS &&
+				explicitlyRequestsHEVCProfile(ev.RequestedIntent) &&
+				contains(ev.ClientEvidence.SupportedVideoCodecs, "hevc") {
+				plan.Video.Codec = "hevc"
 			}
 		}
 

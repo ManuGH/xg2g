@@ -124,14 +124,14 @@ func requiresPlannedTranscode(ev PlaybackEvidence) bool {
 		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
 	}
 	switch requested {
+	case "direct", "passthrough", "copy":
+		return false
 	case "transcode", "repair", "abr", "mobile_abr", "3tier", "2tier", "normalize":
 		return true
-	case "quality":
-		if strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") || ev.ClientEvidence.PrefersFMP4 {
+	default:
+		if nativeWebKitClient(ev.ClientEvidence.Family) {
 			return true
 		}
-		return false
-	default:
 		return false
 	}
 }
@@ -142,11 +142,14 @@ func requiresVideoNormalization(ev PlaybackEvidence) bool {
 		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
 	}
 	switch requested {
+	case "direct", "passthrough", "copy":
+		return false
 	case "normalize":
 		return true
-	case "quality":
-		return strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") || ev.ClientEvidence.PrefersFMP4
 	default:
+		if nativeWebKitClient(ev.ClientEvidence.Family) {
+			return true
+		}
 		return false
 	}
 }
