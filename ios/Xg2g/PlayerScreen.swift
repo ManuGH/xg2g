@@ -29,6 +29,7 @@ struct PlayerScreen: View {
     @State private var showLandscapeGuide = false
     @State private var zapNotice: String?
     @State private var hideZapNoticeTask: Task<Void, Never>?
+    @State private var itemObservers: [NSObjectProtocol] = []
 
     init(model: AppModel, channel: Channel) {
         self.model = model
@@ -304,8 +305,35 @@ struct PlayerScreen: View {
             failure = model.lastError ?? "Der Stream konnte nicht gestartet werden."
             return
         }
-        player = Self.makePlayer(for: stream, channel: channel, nowNext: nowNext)
-        player?.play()
+        let p = Self.makePlayer(for: stream, channel: channel, nowNext: nowNext)
+        player = p
+
+        for obs in itemObservers {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        itemObservers.removeAll()
+
+        if let currentItem = p?.currentItem {
+            let stallObs = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemPlaybackStalled,
+                object: currentItem,
+                queue: .main
+            ) { [weak p] _ in
+                p?.play()
+            }
+            let failObs = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemFailedToPlayToEndTime,
+                object: currentItem,
+                queue: .main
+            ) { [weak self] notif in
+                if let err = notif.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
+                    self?.failure = "Wiedergabefehler: \(err.localizedDescription)"
+                }
+            }
+            itemObservers.append(contentsOf: [stallObs, failObs])
+        }
+
+        p?.play()
     }
 
     private func switchChannel(to newChannel: Channel) {
@@ -391,6 +419,10 @@ struct PlayerScreen: View {
 
     private func teardownPlayer() {
         hideZapNoticeTask?.cancel()
+        for obs in itemObservers {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        itemObservers.removeAll()
         LiveActivityManager.shared.endActivity()
         HandoffCoordinator.shared.clearPlaybackActivity()
         NowPlayingManager.shared.clear()
