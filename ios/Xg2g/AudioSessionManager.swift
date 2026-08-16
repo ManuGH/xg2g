@@ -16,6 +16,9 @@ final class AudioSessionManager: @unchecked Sendable {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .moviePlayback, options: [])
+            if #available(iOS 15.0, *) {
+                try session.setSupportsMultichannelContent(true)
+            }
             try session.setActive(true)
         } catch {
             // Audio session setup is best-effort on simulators

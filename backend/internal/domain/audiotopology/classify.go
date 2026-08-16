@@ -10,7 +10,7 @@ func ClassifyPurpose(
 	lang LanguageInfo,
 	e2Desc string,
 	cleanEffects bool,
-	isPrimaryLang bool,
+	isPrimary bool,
 ) (AudioPurpose, Confidence) {
 	descLower := strings.ToLower(strings.TrimSpace(e2Desc))
 
@@ -33,7 +33,7 @@ func ClassifyPurpose(
 	}
 
 	// 4. Non-primary language on the service
-	if !isPrimaryLang && !lang.IsUndefined {
+	if !isPrimary && !lang.IsUndefined {
 		return AudioPurposeAlternate, ConfidenceMedium
 	}
 
@@ -56,15 +56,14 @@ func ClassifyAccessibility(
 	if strings.Contains(descLower, "audiodeskription") ||
 		strings.Contains(descLower, "hörfilm") ||
 		strings.Contains(descLower, "mit audiodeskription") {
-		// Caution: "ohne Audiodeskription" is handled via conflict checking in merge.go
 		if !strings.Contains(descLower, "ohne audiodeskription") {
 			acc.AudioDescription = true
 		}
 	}
 
-	if strings.Contains(descLower, "klare sprache") ||
-		strings.Contains(descLower, "barrierefrei") ||
-		strings.Contains(descLower, "clear voice") {
+	// Only explicit Clear Voice / Klare Sprache signals ClearDialogue.
+	// Generic "barrierefrei" is not mapped to ClearDialogue.
+	if strings.Contains(descLower, "klare sprache") || strings.Contains(descLower, "clear voice") {
 		acc.ClearDialogue = true
 		acc.HearingImpaired = true
 	}
@@ -119,7 +118,6 @@ func BuildTrackLabel(
 	case channels == 6:
 		parts = append(parts, "5.1 Surround")
 	case channels == 2:
-		// Stereo is implicit for basic tracks unless needed for disambiguation
 		if len(parts) == 1 && !acc.AudioDescription && !acc.ClearDialogue {
 			parts = append(parts, "Stereo")
 		}

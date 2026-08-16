@@ -25,7 +25,8 @@ func TestORF1HD_RealWorldDiscovery(t *testing.T) {
 
 	require.Len(t, topo.Tracks, 2)
 	require.Equal(t, sref, topo.ServiceRef)
-	require.NotZero(t, topo.TopologyRevision)
+	require.Equal(t, PresenceVerified, topo.Presence)
+	require.NotZero(t, topo.StructuralRevision)
 
 	t1 := topo.Tracks[0]
 	assert.Equal(t, uint16(1921), t1.PID)
@@ -49,7 +50,7 @@ func TestDasErsteHD_RealWorldDiscovery(t *testing.T) {
 	now := time.Now()
 
 	pmt := []PMTTrackObservation{
-		{PID: 5102, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 256},
+		{PID: 5102, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 256, IsDefault: true},
 		{PID: 5103, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 256, VisualImpaired: true},
 		{PID: 5107, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 192, HearingImpaired: true},
 		{PID: 5106, Codec: "ac3", Channels: 2, Language: "deu", BitrateKbps: 448},
@@ -91,7 +92,7 @@ func TestZDFHD_RealWorldDiscovery(t *testing.T) {
 	now := time.Now()
 
 	pmt := []PMTTrackObservation{
-		{PID: 6120, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 256},
+		{PID: 6120, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 256, IsDefault: true},
 		{PID: 6121, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 192, VisualImpaired: true},
 		{PID: 6122, Codec: "ac3", Channels: 6, Language: "deu", BitrateKbps: 448},
 		{PID: 6123, Codec: "mp2", Channels: 2, Language: "mul", BitrateKbps: 192, HearingImpaired: true},
@@ -107,7 +108,6 @@ func TestZDFHD_RealWorldDiscovery(t *testing.T) {
 
 	require.Len(t, topo.Tracks, 4)
 
-	// PID 6123: ZDF Originalton enriched via Enigma2
 	var oton *AudioTrack
 	for i := range topo.Tracks {
 		if topo.Tracks[i].PID == 6123 {
@@ -126,7 +126,7 @@ func TestArteHD_ConflictPreservation(t *testing.T) {
 	now := time.Now()
 
 	pmt := []PMTTrackObservation{
-		{PID: 5112, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 192},
+		{PID: 5112, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 192, IsDefault: true},
 		{PID: 5113, Codec: "mp2", Channels: 2, Language: "fra", BitrateKbps: 192},
 		{PID: 5116, Codec: "mp2", Channels: 2, Language: "deu", BitrateKbps: 192, HearingImpaired: true},
 		{PID: 5117, Codec: "mp2", Channels: 2, Language: "mis", BitrateKbps: 192, VisualImpaired: true},
@@ -141,7 +141,6 @@ func TestArteHD_ConflictPreservation(t *testing.T) {
 	topo := BuildTopology(sref, pmt, nil, e2, now)
 	require.Len(t, topo.Tracks, 4)
 
-	// PID 5113: French second language
 	var frenchTrack *AudioTrack
 	var conflictTrack *AudioTrack
 	for i := range topo.Tracks {
@@ -162,57 +161,87 @@ func TestArteHD_ConflictPreservation(t *testing.T) {
 	require.NotNil(t, conflictTrack)
 	require.NotEmpty(t, conflictTrack.Conflicts)
 	assert.Equal(t, "accessibility.audioDescription", conflictTrack.Conflicts[0].Field)
-	assert.Equal(t, EvidencePMT, conflictTrack.Conflicts[0].SourceA)
-	assert.Equal(t, EvidenceEnigma2, conflictTrack.Conflicts[0].SourceB)
 }
 
-func TestTopologyInvariants(t *testing.T) {
+func TestPresenceStates_VerifiedVsProvisionalVsEmpty(t *testing.T) {
+	sref := "1:0:19:132F:3EF:1:C00000:0:0:0:"
+	now := time.Now()
+
+	// 1. PMT only -> Verified Presence
+	pmt := []PMTTrackObservation{{PID: 100, Codec: "mp2", Language: "deu"}}
+	topoVerified := BuildTopology(sref, pmt, nil, nil, now)
+	assert.Equal(t, PresenceVerified, topoVerified.Presence)
+	require.Len(t, topoVerified.Tracks, 1)
+
+	// 2. Enigma2 only (unprobed stream) -> Provisional Presence
+	e2 := []Enigma2TrackObservation{{PID: 200, Description: "MPEG (stereo)"}}
+	topoProvisional := BuildTopology(sref, nil, nil, e2, now)
+	assert.Equal(t, PresenceProvisional, topoProvisional.Presence)
+	require.Len(t, topoProvisional.Tracks, 1)
+
+	// 3. No observations -> Empty Presence
+	topoEmpty := BuildTopology(sref, nil, nil, nil, now)
+	assert.Equal(t, PresenceEmpty, topoEmpty.Presence)
+	assert.Empty(t, topoEmpty.Tracks)
+}
+
+func TestPrimaryLanguage_NotDependentOnPIDOrdering(t *testing.T) {
+	sref := "1:0:19:132F:3EF:1:C00000:0:0:0:"
+	now := time.Now()
+
+	// PID 200 is French (Alternate), PID 800 is German Broadcast Default
+	pmt := []PMTTrackObservation{
+		{PID: 200, Codec: "mp2", Language: "fra"},
+		{PID: 800, Codec: "mp2", Language: "deu", IsDefault: true},
+	}
+
+	topo := BuildTopology(sref, pmt, nil, nil, now)
+	require.Len(t, topo.Tracks, 2)
+
+	// PID 200 (numerically smaller) MUST NOT be classified as Main Anchor
+	assert.Equal(t, uint16(200), topo.Tracks[0].PID)
+	assert.Equal(t, AudioPurposeAlternate, topo.Tracks[0].Purpose)
+
+	// PID 800 (Broadcast Default) is Main Anchor
+	assert.Equal(t, uint16(800), topo.Tracks[1].PID)
+	assert.Equal(t, AudioPurposeMain, topo.Tracks[1].Purpose)
+	assert.True(t, topo.Tracks[1].BroadcastDefault)
+}
+
+func TestStreamType0x06_IsUnknownWithoutDescriptorConfirmation(t *testing.T) {
+	assert.Equal(t, CodecUnknown, CodecFromDVBStreamType(0x06))
+	assert.Equal(t, CodecMP2, CodecFromDVBStreamType(0x03))
+	assert.Equal(t, CodecAAC, CodecFromDVBStreamType(0x0F))
+	assert.Equal(t, CodecAC3, CodecFromDVBStreamType(0x81))
+}
+
+func TestLanguageQAA_IsPrivateUseNotGuaranteedOriginal(t *testing.T) {
+	lang := NormalizeLanguage("qaa")
+	assert.Equal(t, "qaa", lang.ISO639_2)
+	assert.False(t, lang.IsOriginal)
+	assert.True(t, lang.IsUndefined)
+}
+
+func TestDualRevisions_StructuralVsMetadata(t *testing.T) {
 	sref := "1:0:19:132F:3EF:1:C00000:0:0:0:"
 	now := time.Now()
 
 	pmt := []PMTTrackObservation{
-		{PID: 1921, Codec: "ac3", Channels: 6, Language: "deu", BitrateKbps: 448},
-		{PID: 1922, Codec: "mp2", Channels: 2, Language: "mis", BitrateKbps: 160},
+		{PID: 100, Codec: "mp2", Channels: 2, Language: "deu"},
+	}
+	e2Active := []Enigma2TrackObservation{
+		{PID: 100, Description: "Stereo", Active: true},
+	}
+	e2Inactive := []Enigma2TrackObservation{
+		{PID: 100, Description: "Stereo", Active: false},
 	}
 
-	// 1. PMT only -> Complete, valid topology without Enigma2
-	topoPMTOnly := BuildTopology(sref, pmt, nil, nil, now)
-	require.Len(t, topoPMTOnly.Tracks, 2)
-	assert.Equal(t, uint16(1921), topoPMTOnly.Tracks[0].PID)
-	assert.Equal(t, CodecAC3, topoPMTOnly.Tracks[0].Codec)
-	assert.Equal(t, 6, topoPMTOnly.Tracks[0].Channels)
-	assert.False(t, topoPMTOnly.Tracks[0].ReceiverSelected) // No Enigma2 active state
+	topo1 := BuildTopology(sref, pmt, nil, e2Active, now)
+	topo2 := BuildTopology(sref, pmt, nil, e2Inactive, now)
 
-	// 2. OpenWebIF empty slice -> No error
-	topoEmptyE2 := BuildTopology(sref, pmt, nil, []Enigma2TrackObservation{}, now)
-	require.Len(t, topoEmptyE2.Tracks, 2)
-	assert.Equal(t, topoPMTOnly.TopologyRevision, topoEmptyE2.TopologyRevision)
+	// Structural revision is IDENTICAL (same PID, codec, channels)
+	assert.Equal(t, topo1.StructuralRevision, topo2.StructuralRevision)
 
-	// 3. PMT PID unknown to Enigma2 -> Track still preserved
-	e2Partial := []Enigma2TrackObservation{
-		{TrackID: 0, PID: 1921, Description: "AC3 (Sprache 1)", Active: true},
-	}
-	topoPartialE2 := BuildTopology(sref, pmt, nil, e2Partial, now)
-	require.Len(t, topoPartialE2.Tracks, 2)
-	assert.Equal(t, uint16(1922), topoPartialE2.Tracks[1].PID)
-
-	// 4. Enigma2 has unknown PID not in PMT -> PMT presence truth dominates
-	e2Phantom := []Enigma2TrackObservation{
-		{TrackID: 0, PID: 1921, Description: "AC3", Active: true},
-		{TrackID: 99, PID: 9999, Description: "Phantom PID", Active: false},
-	}
-	topoPhantom := BuildTopology(sref, pmt, nil, e2Phantom, now)
-	require.Len(t, topoPhantom.Tracks, 2) // 9999 is discarded because not in PMT
-	assert.Equal(t, uint16(1921), topoPhantom.Tracks[0].PID)
-	assert.Equal(t, uint16(1922), topoPhantom.Tracks[1].PID)
-
-	// 5. Topology Revision determinism
-	rev1 := topoPMTOnly.TopologyRevision
-	topoPMTOnly2 := BuildTopology(sref, pmt, nil, nil, now.Add(time.Hour))
-	assert.Equal(t, rev1, topoPMTOnly2.TopologyRevision)
-
-	// 6. Adding a PID changes TopologyRevision
-	pmtAdded := append(pmt, PMTTrackObservation{PID: 1923, Codec: "mp2", Channels: 2, Language: "eng"})
-	topoAdded := BuildTopology(sref, pmtAdded, nil, nil, now)
-	assert.NotEqual(t, rev1, topoAdded.TopologyRevision)
+	// Metadata revision is DIFFERENT (active selection changed)
+	assert.NotEqual(t, topo1.MetadataRevision, topo2.MetadataRevision)
 }

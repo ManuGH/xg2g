@@ -15,7 +15,6 @@ func BuildTopology(
 	e2Tracks []Enigma2TrackObservation,
 	now time.Time,
 ) AudioTopology {
-	// Index observations by PID
 	pmtMap := make(map[uint16]PMTTrackObservation, len(pmtTracks))
 	for _, p := range pmtTracks {
 		pmtMap[p.PID] = p
@@ -31,8 +30,10 @@ func BuildTopology(
 		e2Map[e.PID] = e
 	}
 
-	// 1. Gather all physically present PIDs (Presence Truth from PMT or Probe)
+	// 1. Determine Presence State and physical PID candidates
 	pidSet := make(map[uint16]struct{})
+	presence := PresenceVerified
+
 	for pid := range pmtMap {
 		pidSet[pid] = struct{}{}
 	}
@@ -40,14 +41,24 @@ func BuildTopology(
 		pidSet[pid] = struct{}{}
 	}
 
-	// Fallback: If no PMT/Probe exists yet, permit Enigma2 tracks (graceful start)
 	if len(pidSet) == 0 {
-		for pid := range e2Map {
-			pidSet[pid] = struct{}{}
+		if len(e2Map) > 0 {
+			// Provisional state: Receiver metadata exists, but transport stream is unverified
+			presence = PresenceProvisional
+			for pid := range e2Map {
+				pidSet[pid] = struct{}{}
+			}
+		} else {
+			return AudioTopology{
+				ServiceRef: serviceRef,
+				Presence:   PresenceEmpty,
+				Tracks:     nil,
+				CreatedAt:  now,
+			}
 		}
 	}
 
-	// Sort PIDs for determinism
+	// Sort PIDs for canonical ordering
 	sortedPIDs := make([]uint16, 0, len(pidSet))
 	for pid := range pidSet {
 		sortedPIDs = append(sortedPIDs, pid)
@@ -56,9 +67,12 @@ func BuildTopology(
 		return sortedPIDs[i] < sortedPIDs[j]
 	})
 
+	// Pre-pass: Find primary language on the service from defaults or first declared stream
+	primaryLangCode := determineServicePrimaryLanguage(pmtTracks, probeTracks, e2Tracks)
+
 	var tracks []AudioTrack
 
-	for i, pid := range sortedPIDs {
+	for _, pid := range sortedPIDs {
 		var pmtPtr *PMTTrackObservation
 		if p, ok := pmtMap[pid]; ok {
 			pmtPtr = &p
@@ -74,23 +88,51 @@ func BuildTopology(
 			e2Ptr = &e
 		}
 
-		track := buildTrack(i, pid, pmtPtr, probePtr, e2Ptr)
+		track := buildTrack(pid, primaryLangCode, pmtPtr, probePtr, e2Ptr)
 		tracks = append(tracks, track)
 	}
 
-	revision := computeTopologyRevision(tracks)
+	structuralRev := computeStructuralRevision(tracks)
+	metadataRev := computeMetadataRevision(tracks)
 
 	return AudioTopology{
-		ServiceRef:       serviceRef,
-		TopologyRevision: revision,
-		Tracks:           tracks,
-		CreatedAt:        now,
+		ServiceRef:         serviceRef,
+		StructuralRevision: structuralRev,
+		MetadataRevision:   metadataRev,
+		TopologyRevision:   structuralRev,
+		Presence:           presence,
+		Tracks:             tracks,
+		CreatedAt:          now,
 	}
 }
 
+func determineServicePrimaryLanguage(
+	pmtTracks []PMTTrackObservation,
+	probeTracks []ProbeTrackObservation,
+	e2Tracks []Enigma2TrackObservation,
+) string {
+	for _, p := range pmtTracks {
+		if p.IsDefault && p.Language != "" {
+			return NormalizeLanguage(p.Language).ISO639_2
+		}
+	}
+	for _, pr := range probeTracks {
+		if pr.DispositionBroadcastDefault && pr.Language != "" {
+			return NormalizeLanguage(pr.Language).ISO639_2
+		}
+	}
+	if len(pmtTracks) > 0 && pmtTracks[0].Language != "" {
+		return NormalizeLanguage(pmtTracks[0].Language).ISO639_2
+	}
+	if len(probeTracks) > 0 && probeTracks[0].Language != "" {
+		return NormalizeLanguage(probeTracks[0].Language).ISO639_2
+	}
+	return "deu" // Default fallback for DVB DACH services
+}
+
 func buildTrack(
-	index int,
 	pid uint16,
+	primaryLangCode string,
 	pmt *PMTTrackObservation,
 	probe *ProbeTrackObservation,
 	e2 *Enigma2TrackObservation,
@@ -128,7 +170,7 @@ func buildTrack(
 	}
 	lang := NormalizeLanguage(rawLang)
 
-	// 3. Resolve Channels & Audio Properties
+	// 3. Resolve Channels & Bitrates
 	channels := 2
 	sampleRate := 48000
 	bitrateKbps := 0
@@ -205,8 +247,10 @@ func buildTrack(
 	}
 
 	acc := ClassifyAccessibility(visualImpaired, hearingImpaired, e2Desc)
-	isPrimaryLang := (index == 0)
-	purpose, confidence := ClassifyPurpose(lang, e2Desc, cleanEffects, isPrimaryLang)
+
+	// IsPrimary is based on broadcast default, receiver selection, or matching primary service language
+	isPrimary := broadcastDefault || receiverSelected || (lang.ISO639_2 == primaryLangCode)
+	purpose, confidence := ClassifyPurpose(lang, e2Desc, cleanEffects, isPrimary)
 	label := BuildTrackLabel(lang, codec, channels, purpose, acc, e2Desc)
 	conflicts := DetectConflicts(pmt, probe, e2)
 
@@ -229,8 +273,8 @@ func buildTrack(
 	}
 }
 
-// computeTopologyRevision calculates a deterministic 64-bit hash over the track topology.
-func computeTopologyRevision(tracks []AudioTrack) uint64 {
+// computeStructuralRevision computes a hash over stream structure (PIDs, codecs, channels, language, purpose, accessibility).
+func computeStructuralRevision(tracks []AudioTrack) uint64 {
 	hasher := fnv.New64a()
 	for _, t := range tracks {
 		fmt.Fprintf(hasher, "%d:%s:%d:%s:%s:%t:%t:%t|",
@@ -242,6 +286,23 @@ func computeTopologyRevision(tracks []AudioTrack) uint64 {
 			t.Accessibility.AudioDescription,
 			t.Accessibility.HearingImpaired,
 			t.Accessibility.ClearDialogue,
+		)
+	}
+	return hasher.Sum64()
+}
+
+// computeMetadataRevision computes a hash over user-facing metadata, selections, and evidence states.
+func computeMetadataRevision(tracks []AudioTrack) uint64 {
+	hasher := fnv.New64a()
+	for _, t := range tracks {
+		fmt.Fprintf(hasher, "%d:%s:%t:%t:%s:%d:%d|",
+			t.PID,
+			t.Label,
+			t.BroadcastDefault,
+			t.ReceiverSelected,
+			t.Confidence,
+			len(t.Evidence),
+			len(t.Conflicts),
 		)
 	}
 	return hasher.Sum64()

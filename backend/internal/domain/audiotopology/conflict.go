@@ -13,13 +13,26 @@ func DetectConflicts(
 ) []Conflict {
 	var conflicts []Conflict
 
-	if pmt != nil && e2 != nil {
-		// 1. Accessibility contradiction (e.g. arte PID 5117: PMT visual_impaired vs E2 "ohne Audiodeskription")
+	visualImpaired := false
+	if pmt != nil && (pmt.VisualImpaired || pmt.AudioType == 0x03) {
+		visualImpaired = true
+	}
+	if probe != nil && (probe.DispositionVisualImpaired || probe.DispositionDescriptions) {
+		visualImpaired = true
+	}
+
+	if e2 != nil {
 		e2DescLower := strings.ToLower(strings.TrimSpace(e2.Description))
-		if pmt.VisualImpaired && strings.Contains(e2DescLower, "ohne audiodeskription") {
+
+		// 1. Accessibility contradiction (PMT/Probe visual_impaired vs E2 "ohne Audiodeskription")
+		if visualImpaired && strings.Contains(e2DescLower, "ohne audiodeskription") {
+			sourceA := EvidencePMT
+			if pmt == nil && probe != nil {
+				sourceA = EvidenceProbe
+			}
 			conflicts = append(conflicts, Conflict{
 				Field:      "accessibility.audioDescription",
-				SourceA:    EvidencePMT,
+				SourceA:    sourceA,
 				ValueA:     "visual_impaired=true",
 				SourceB:    EvidenceEnigma2,
 				ValueB:     e2.Description,
@@ -27,16 +40,26 @@ func DetectConflicts(
 			})
 		}
 
-		// 2. Language contradiction
-		if strings.Contains(e2DescLower, "französisch") && pmt.Language != "" && pmt.Language != "fra" && pmt.Language != "fre" && pmt.Language != "und" && pmt.Language != "mis" {
-			conflicts = append(conflicts, Conflict{
-				Field:      "language",
-				SourceA:    EvidencePMT,
-				ValueA:     pmt.Language,
-				SourceB:    EvidenceEnigma2,
-				ValueB:     e2.Description,
-				Resolution: "preferred_enigma2_semantic_label",
-			})
+		// 2. Language contradiction between physical stream and Enigma2 label
+		var streamLang string
+		if pmt != nil && pmt.Language != "" {
+			streamLang = pmt.Language
+		} else if probe != nil && probe.Language != "" {
+			streamLang = probe.Language
+		}
+
+		if streamLang != "" {
+			streamNorm := NormalizeLanguage(streamLang).ISO639_2
+			if strings.Contains(e2DescLower, "französisch") && streamNorm != "fra" && !streamNormIsGeneric(streamNorm) {
+				conflicts = append(conflicts, Conflict{
+					Field:      "language",
+					SourceA:    EvidencePMT,
+					ValueA:     streamLang,
+					SourceB:    EvidenceEnigma2,
+					ValueB:     e2.Description,
+					Resolution: "preferred_enigma2_semantic_label",
+				})
+			}
 		}
 	}
 
@@ -69,4 +92,8 @@ func DetectConflicts(
 	}
 
 	return conflicts
+}
+
+func streamNormIsGeneric(code string) bool {
+	return code == "und" || code == "mis" || code == "mul" || code == ""
 }

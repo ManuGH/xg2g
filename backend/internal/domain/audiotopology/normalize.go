@@ -28,6 +28,8 @@ func NormalizeCodec(raw string) AudioCodec {
 }
 
 // CodecFromDVBStreamType maps standard MPEG-2/DVB TS stream_type identifiers to AudioCodec.
+// Note: 0x06 is generic Private PES data (can be AC-3, E-AC-3, DTS, Teletext, DVB Subtitles).
+// It returns CodecUnknown unless confirmed by specific registration descriptors or active probing.
 func CodecFromDVBStreamType(streamType uint8) AudioCodec {
 	switch streamType {
 	case 0x03, 0x04: // ISO/IEC 11172-3 / 13818-3 Audio (MP2)
@@ -36,12 +38,12 @@ func CodecFromDVBStreamType(streamType uint8) AudioCodec {
 		return CodecAAC
 	case 0x11: // ISO/IEC 14496-3 Audio with LATM (AAC)
 		return CodecAAC
-	case 0x06: // Private PES data (frequently AC-3 or E-AC-3 in DVB when registered via descriptor)
-		return CodecAC3
 	case 0x81: // ATSC A/52 AC-3
 		return CodecAC3
 	case 0x87: // ATSC A/52b E-AC-3
 		return CodecEAC3
+	case 0x06: // Generic Private PES data - requires descriptor confirmation
+		return CodecUnknown
 	default:
 		return CodecUnknown
 	}
@@ -83,10 +85,6 @@ func NormalizeLanguage(raw string) LanguageInfo {
 	case "rus", "ru":
 		info.ISO639_2 = "rus"
 		info.ISO639_1 = "ru"
-	case "qaa": // ETSI reserved for original language
-		info.ISO639_2 = "qaa"
-		info.ISO639_1 = "und"
-		info.IsOriginal = true
 	case "mis": // Miscellaneous languages
 		info.ISO639_2 = "mis"
 		info.ISO639_1 = "und"
@@ -100,8 +98,15 @@ func NormalizeLanguage(raw string) LanguageInfo {
 		info.ISO639_1 = "und"
 		info.IsUndefined = true
 	default:
-		info.ISO639_2 = val
-		info.ISO639_1 = val
+		// ISO 639-2 qaa..qtz are reserved for local/private use, NOT guaranteed Originalton.
+		if len(val) == 3 && val[0] == 'q' && val[1] >= 'a' && val[1] <= 't' {
+			info.ISO639_2 = val
+			info.ISO639_1 = "und"
+			info.IsUndefined = true
+		} else {
+			info.ISO639_2 = val
+			info.ISO639_1 = val
+		}
 	}
 
 	if info.Code == "" {

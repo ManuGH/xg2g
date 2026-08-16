@@ -13,6 +13,15 @@ const (
 	EvidenceProbe   EvidenceSource = "probe"
 )
 
+// PresenceState indicates the degree of physical verification for the topology.
+type PresenceState string
+
+const (
+	PresenceVerified    PresenceState = "verified"    // Backed by actual PMT or elementary stream probe
+	PresenceProvisional PresenceState = "provisional" // Derived from receiver metadata prior to stream verification
+	PresenceEmpty       PresenceState = "empty"       // No tracks present or discovered
+)
+
 // Confidence expresses the epistemic reliability of a derived track property.
 type Confidence string
 
@@ -101,10 +110,13 @@ type AudioTrack struct {
 // AudioTopology represents a complete, immutable snapshot of the audio layout
 // for a service session at a specific revision.
 type AudioTopology struct {
-	ServiceRef       string       `json:"serviceRef"`
-	TopologyRevision uint64       `json:"topologyRevision"`
-	Tracks           []AudioTrack `json:"tracks"`
-	CreatedAt        time.Time    `json:"createdAt"`
+	ServiceRef         string        `json:"serviceRef"`
+	StructuralRevision uint64        `json:"structuralRevision"` // Changes when streamset, PIDs, codecs, channels change (HLS epoch rollover)
+	MetadataRevision   uint64        `json:"metadataRevision"`   // Changes when labels, selection, or confidence change (in-place manifest refresh)
+	TopologyRevision   uint64        `json:"topologyRevision"`   // Legacy alias matching StructuralRevision
+	Presence           PresenceState `json:"presence"`
+	Tracks             []AudioTrack  `json:"tracks"`
+	CreatedAt          time.Time     `json:"createdAt"`
 }
 
 // PMTTrackObservation represents raw elementary stream data parsed from a DVB PMT.
