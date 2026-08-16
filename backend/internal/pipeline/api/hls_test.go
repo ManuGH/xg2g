@@ -455,7 +455,7 @@ seg_000005.ts
 	// EXT-X-PLAYLIST-TYPE:EVENT is append-only per spec and breaks the moment
 	// delete_segments prunes the window head (~at DVR-window age) -> client hard-stop.
 	assert.NotContains(t, content, "#EXT-X-PLAYLIST-TYPE", "DVR live MUST NOT force a playlist type so delete_segments can slide the window without violating an append-only EVENT contract")
-	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-8,PRECISE=YES", "DVR MUST inject EXT-X-START with enough live headroom for Safari")
+	assert.Contains(t, content, "#EXT-X-START:TIME-OFFSET=-8,PRECISE=NO", "DVR MUST inject EXT-X-START with enough live headroom for Safari")
 	assert.NotContains(t, content, "#EXT-X-ENDLIST", "DVR (Rolling) MUST NOT contain ENDLIST")
 
 	// Check tag order: the start tag follows the header.
