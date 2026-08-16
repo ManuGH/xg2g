@@ -223,6 +223,28 @@ func playbackTicketPath(sessionID string) string {
 	return "/api/v3/sessions/" + sessionID + "/hls/"
 }
 
+func extractPlaybackTicket(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if cookie, err := r.Cookie(playbackTicketCookieName); err == nil && cookie.Value != "" {
+		return cookie.Value
+	}
+	if qTicket := r.URL.Query().Get("ticket"); qTicket != "" {
+		return qTicket
+	}
+	if qTicket := r.URL.Query().Get("t"); qTicket != "" {
+		return qTicket
+	}
+	if hTicket := r.Header.Get("X-Playback-Ticket"); hTicket != "" {
+		return hTicket
+	}
+	if authHdr := r.Header.Get("Authorization"); strings.HasPrefix(strings.ToLower(authHdr), "bearer ") {
+		return strings.TrimSpace(authHdr[7:])
+	}
+	return ""
+}
+
 // playbackTicketPrincipal authenticates a media request carrying a ticket.
 //
 // Returns false for everything else, including a syntactically fine ticket
@@ -234,12 +256,12 @@ func (s *Server) playbackTicketPrincipal(r *http.Request) (*auth.Principal, bool
 		return nil, false
 	}
 
-	cookie, err := r.Cookie(playbackTicketCookieName)
-	if err != nil || cookie.Value == "" {
+	ticketVal := extractPlaybackTicket(r)
+	if ticketVal == "" {
 		return nil, false
 	}
 
-	ticket, ok := s.playbackTicketStoreOrDefault().resolve(cookie.Value, time.Now().UTC())
+	ticket, ok := s.playbackTicketStoreOrDefault().resolve(ticketVal, time.Now().UTC())
 	if !ok {
 		return nil, false
 	}
@@ -260,7 +282,7 @@ func (s *Server) playbackTicketPrincipal(r *http.Request) (*auth.Principal, bool
 
 	// Read only, always. A ticket must never be able to start a stream, change
 	// a timer, or read household state — it exists to fetch segments.
-	return auth.NewPrincipal(cookie.Value, ticket.principal, []string{string(ScopeV3Read)}), true
+	return auth.NewPrincipal(ticketVal, ticket.principal, []string{string(ScopeV3Read)}), true
 }
 
 // sessionIsLive answers whether the session still exists and has not reached a

@@ -52,12 +52,33 @@ func TestPlaybackTicket_AuthenticatesItsOwnSession(t *testing.T) {
 	id, err := store.issue("sess-a", "usr_1", time.Now().UTC())
 	require.NoError(t, err)
 
+	// 1. Via Cookie
 	principal, ok := srv.playbackTicketPrincipal(
 		mediaRequest(t, "/api/v3/sessions/sess-a/hls/index.m3u8", id),
 	)
 	require.True(t, ok)
 	require.Equal(t, []string{string(ScopeV3Read)}, principal.Scopes,
 		"a ticket must carry read scope and nothing more")
+
+	// 2. Via Query Param ?ticket=
+	reqQuery := httptest.NewRequest(http.MethodGet, "https://xg2g.test/api/v3/sessions/sess-a/hls/index.m3u8?ticket="+id, nil)
+	principalQ, okQ := srv.playbackTicketPrincipal(reqQuery)
+	require.True(t, okQ)
+	require.Equal(t, []string{string(ScopeV3Read)}, principalQ.Scopes)
+
+	// 3. Via Header X-Playback-Ticket
+	reqHdr := httptest.NewRequest(http.MethodGet, "https://xg2g.test/api/v3/sessions/sess-a/hls/index.m3u8", nil)
+	reqHdr.Header.Set("X-Playback-Ticket", id)
+	principalH, okH := srv.playbackTicketPrincipal(reqHdr)
+	require.True(t, okH)
+	require.Equal(t, []string{string(ScopeV3Read)}, principalH.Scopes)
+
+	// 4. Via Bearer Auth
+	reqBearer := httptest.NewRequest(http.MethodGet, "https://xg2g.test/api/v3/sessions/sess-a/hls/index.m3u8", nil)
+	reqBearer.Header.Set("Authorization", "Bearer "+id)
+	principalB, okB := srv.playbackTicketPrincipal(reqBearer)
+	require.True(t, okB)
+	require.Equal(t, []string{string(ScopeV3Read)}, principalB.Scopes)
 }
 
 func TestPlaybackTicket_WorksForVariantPlaylistsAndSegments(t *testing.T) {

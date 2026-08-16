@@ -262,6 +262,13 @@ struct PlayerScreen: View {
         }
         .task(id: currentChannel.id) {
             await startStreaming(channel: currentChannel)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                if Task.isCancelled { break }
+                if let stream = model.liveStream {
+                    try? await model.heartbeat(sessionID: stream.sessionID)
+                }
+            }
         }
         .onDisappear {
             teardownPlayer()
@@ -571,9 +578,7 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
             _ playerViewController: AVPlayerViewController,
             willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
         ) {
-            coordinator.animate(alongsideTransition: nil) { [weak self] _ in
-                self?.parent.onDismiss?()
-            }
+            // Inline stage: exiting fullscreen transitions back to inline video stage without tearing down playback
         }
     }
 }

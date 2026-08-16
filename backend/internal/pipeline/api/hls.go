@@ -448,7 +448,7 @@ func awaitArtifact(ctx context.Context, filePath string, req hlsRequest, rec *mo
 	return info, err
 }
 
-func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir string, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, bool, error) {
+func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir string, ticket string, logger zerolog.Logger) (*bytes.Reader, *hlsStartupPolicy, bool, error) {
 	forcePlaylistType := ""
 	insertStartTag := ""
 	var startupPolicy *hlsStartupPolicy
@@ -525,9 +525,34 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 		}
 		if strings.HasPrefix(line, "#EXT-X-MAP:") {
 			hasMap = true
+			if ticket != "" && !strings.Contains(line, "ticket=") && !strings.Contains(line, "t=") {
+				if idx := strings.Index(line, "URI=\""); idx != -1 {
+					endIdx := strings.Index(line[idx+5:], "\"")
+					if endIdx != -1 {
+						uri := line[idx+5 : idx+5+endIdx]
+						var newURI string
+						if strings.Contains(uri, "?") {
+							newURI = uri + "&ticket=" + ticket
+						} else {
+							newURI = uri + "?ticket=" + ticket
+						}
+						line = line[:idx+5] + newURI + line[idx+5+endIdx:]
+					}
+				}
+			}
 		}
 		if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {
 			line = normalizeProgramDateTimeLine(line)
+		}
+		if !strings.HasPrefix(line, "#") && strings.TrimSpace(line) != "" {
+			// Segment URI line
+			if ticket != "" && !strings.Contains(line, "ticket=") && !strings.Contains(line, "t=") {
+				if strings.Contains(line, "?") {
+					line = line + "&ticket=" + ticket
+				} else {
+					line = line + "?ticket=" + ticket
+				}
+			}
 		}
 		b.WriteString(line)
 		b.WriteByte('\n')
@@ -558,6 +583,25 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 	return bytes.NewReader(b.Bytes()), startupPolicy, valid, nil
 }
 
+func extractRequestTicket(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if qTicket := r.URL.Query().Get("ticket"); qTicket != "" {
+		return qTicket
+	}
+	if qTicket := r.URL.Query().Get("t"); qTicket != "" {
+		return qTicket
+	}
+	if hTicket := r.Header.Get("X-Playback-Ticket"); hTicket != "" {
+		return hTicket
+	}
+	if c, err := r.Cookie("xg2g_playback"); err == nil && c.Value != "" {
+		return c.Value
+	}
+	return ""
+}
+
 func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, req hlsRequest, rec *model.SessionRecord, sessionDir string, content io.ReadSeeker, modTime time.Time, logger zerolog.Logger) {
 	if req.isPlaylist {
 		w.Header().Set("Content-Type", httpx.ContentTypeHLSPlaylist)
@@ -581,7 +625,8 @@ func serveStreamContent(w http.ResponseWriter, r *http.Request, store HLSStore, 
 	}
 
 	if req.isPlaylist {
-		playlist, startupPolicy, valid, rewriteErr := rewritePlaylist(content, rec, sessionDir, logger)
+		ticket := extractRequestTicket(r)
+		playlist, startupPolicy, valid, rewriteErr := rewritePlaylist(content, rec, sessionDir, ticket, logger)
 		if rewriteErr != nil || !valid {
 			if errors.Is(rewriteErr, hls.ErrNoSafeSegmentAvailable) {
 				w.Header().Set("Retry-After", "1")

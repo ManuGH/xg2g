@@ -880,6 +880,10 @@ final class AppModel {
         await playback?.stopLive(sessionID: stream.sessionID)
     }
 
+    func heartbeat(sessionID: String) async throws {
+        try await playback?.heartbeat(sessionID: sessionID)
+    }
+
     // MARK: - Revoke / Sign Out
 
     func disconnectServer() async {
