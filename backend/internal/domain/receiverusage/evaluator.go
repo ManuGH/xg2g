@@ -175,6 +175,7 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 	}
 
 	// 5.5. Topology & RF Front-End Capacity Evaluation
+	isMultiplexReuse := false
 	if e.topologyService != nil && req.Source.ServiceReference != "" {
 		priority := receivertopology.PriorityLive
 		switch req.Intent {
@@ -186,14 +187,17 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 			priority = receivertopology.PriorityPreview
 		}
 
-		topoDec, err := e.topologyService.CanStartStreamWithPriority(req.Source.ServiceReference, req.Source.TransponderID, priority)
-		if err == nil && !topoDec.Allowed {
-			return UsageDecision{
-				Kind:           DecisionReject,
-				Reason:         model.RLeaseBusy,
-				Message:        topoDec.Reason,
-				Classification: req.Access,
+		topoDec, err := e.topologyService.CanStartStreamWithPriority(req.Source.ServiceReference, req.SessionID, priority)
+		if err == nil {
+			if !topoDec.Allowed {
+				return UsageDecision{
+					Kind:           DecisionReject,
+					Reason:         model.RLeaseBusy,
+					Message:        topoDec.Reason,
+					Classification: req.Access,
+				}
 			}
+			isMultiplexReuse = topoDec.ReusedDemod
 		}
 	}
 
@@ -206,11 +210,21 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 			Quantity:   1,
 		})
 	}
-	reqs = append(reqs, LeaseRequirement{
-		Kind:       ReqTunerSlot,
-		ReceiverID: req.ReceiverID,
-		Quantity:   1,
-	})
+
+	if isMultiplexReuse {
+		// Multiplex reuse consumes 0 additional physical demodulator tuner slots
+		reqs = append(reqs, LeaseRequirement{
+			Kind:       ReqReceiverMultiplex,
+			ReceiverID: req.ReceiverID,
+			Quantity:   1,
+		})
+	} else {
+		reqs = append(reqs, LeaseRequirement{
+			Kind:       ReqTunerSlot,
+			ReceiverID: req.ReceiverID,
+			Quantity:   1,
+		})
+	}
 
 	return UsageDecision{
 		Kind:           DecisionAllow,

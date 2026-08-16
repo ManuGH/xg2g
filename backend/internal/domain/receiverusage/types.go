@@ -78,6 +78,7 @@ type LeaseRequirementKind string
 const (
 	ReqRestrictedAccessSlot LeaseRequirementKind = "RESTRICTED_ACCESS_SLOT"
 	ReqTunerSlot            LeaseRequirementKind = "TUNER_SLOT"
+	ReqReceiverMultiplex    LeaseRequirementKind = "RECEIVER_MULTIPLEX"
 )
 
 type LeaseRequirement struct {
@@ -104,6 +105,7 @@ type UsageDecision struct {
 }
 
 type UsageRequest struct {
+	SessionID   string
 	ReceiverID  string
 	Owner       string
 	Intent      SessionIntent

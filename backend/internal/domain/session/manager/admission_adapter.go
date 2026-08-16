@@ -45,11 +45,14 @@ func BuildUsageRequest(sCtx *sessionContext, receiverID, owner string, channelPr
 	}
 
 	serviceRef := ""
+	sessionID := ""
 	if sCtx != nil {
 		serviceRef = sCtx.ServiceRef
+		sessionID = sCtx.SessionID
 	}
 
 	return receiverusage.UsageRequest{
+		SessionID:  sessionID,
 		ReceiverID: recID,
 		Owner:      owner,
 		Intent:     intent,

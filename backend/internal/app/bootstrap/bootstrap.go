@@ -43,6 +43,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/receipts"
 	receiptamazon "github.com/ManuGH/xg2g/internal/receipts/amazon"
 	receiptgoogle "github.com/ManuGH/xg2g/internal/receipts/google"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 	xgtls "github.com/ManuGH/xg2g/internal/tls"
 	"github.com/ManuGH/xg2g/internal/verification"
 	"github.com/ManuGH/xg2g/internal/verification/checks"
@@ -302,6 +303,12 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		Int("missing", startupReport.Summary.Missing).
 		Msg("mandatory startup reconciliation completed successfully")
 
+	topoSvc, _ := receivertopology.NewService(receivertopology.DefaultFallbackTopology(), receivertopology.EvaluationModeEnforce)
+	if owiClient != nil {
+		syncPoller := receivertopology.NewExternalSyncPoller(owiClient, topoSvc, 3*time.Second, logger)
+		go syncPoller.Run(ctx)
+	}
+
 	deps := daemon.Deps{
 		Logger:                logger,
 		Config:                cfg,
@@ -317,7 +324,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		ScanManager:           v3Scan,
 		ReceiverHealthCheck:   newReceiverHealthCheck(cfg, e2Client),
 		MediaPipeline:         mediaPipeline,
-		V3OrchestratorFactory: buildV3OrchestratorFactory(trackedTunerController),
+		V3OrchestratorFactory: buildV3OrchestratorFactory(trackedTunerController, topoSvc),
 	}
 
 	mgr, err := daemon.NewManager(serverCfg, deps)

@@ -329,6 +329,7 @@ func (o *Orchestrator) handleStart(ctx context.Context, e model.StartSessionEven
 		Msg("session startup started")
 
 	sessionCtx := &sessionContext{
+		SessionID:  e.SessionID,
 		Mode:       model.ModeLive,
 		ServiceRef: e.ServiceRef,
 		IsVOD:      false,

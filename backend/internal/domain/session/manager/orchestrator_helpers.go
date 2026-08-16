@@ -13,6 +13,7 @@ import (
 )
 
 type sessionContext struct {
+	SessionID    string
 	Mode         string
 	ServiceRef   string
 	ClientFamily string

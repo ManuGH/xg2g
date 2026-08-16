@@ -732,10 +732,10 @@ func TestDeadlineClassification_RawInventoryDiagnostics(t *testing.T) {
 	t.Logf("Combined Classifiable Registrations: %d", (rawOuterCount-filteredDelegateCount)+rawV3Count)
 
 	assert.Equal(t, 35, rawOuterCount, "raw outer walk contains 26 routes + 9 method expansions of /api/v3/* delegate mount")
-	assert.Equal(t, 120, rawV3Count, "raw v3 walk contains 120 routes")
+	assert.Equal(t, 131, rawV3Count, "raw v3 walk contains 131 routes")
 	assert.Equal(t, 9, filteredDelegateCount, "chi expands /api/v3/* wildcard mount to 9 HTTP methods")
 	assert.Equal(t, 26, rawOuterCount-filteredDelegateCount)
-	assert.Equal(t, 146, (rawOuterCount-filteredDelegateCount)+rawV3Count)
+	assert.Equal(t, 157, (rawOuterCount-filteredDelegateCount)+rawV3Count)
 }
 
 func TestDeadlineClassification_MethodSpecificUI(t *testing.T) {

@@ -32,12 +32,15 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 	ssePolicy := RoutePolicy{Class: RouteDeadlineStreaming, RequiresFlush: true}
 
 	baseline := make(map[RegistrationKey]RoutePolicy, 105)
-	add := func(routerID, method, path string, policy RoutePolicy) {
-		key := RegistrationKey{RouterID: routerID, Method: method, Pattern: path}
+	addWithOrdinal := func(routerID, method, path string, ordinal int, policy RoutePolicy) {
+		key := RegistrationKey{RouterID: routerID, Method: method, Pattern: path, Ordinal: ordinal}
 		if _, exists := baseline[key]; exists {
 			panic("duplicate static Phase 1 key: " + key.String())
 		}
 		baseline[key] = policy
+	}
+	add := func(routerID, method, path string, policy RoutePolicy) {
+		addWithOrdinal(routerID, method, path, 0, policy)
 	}
 
 	for _, route := range []expectedRoute{
@@ -195,10 +198,22 @@ func getPhase1CanonicalBaselineMap() map[RegistrationKey]RoutePolicy {
 		{http.MethodDelete, "/notifications/{id}"},
 		{http.MethodGet, "/notifications/vapid-key"},
 		{http.MethodPost, "/notifications/push-subscriptions"},
+		{http.MethodGet, "/household/devices"},
+		{http.MethodPost, "/household/devices/{id}/revoke"},
+		{http.MethodGet, "/household/members"},
+		{http.MethodPost, "/household/members/invite"},
+		{http.MethodDelete, "/household/members/{id}"},
+		{http.MethodGet, "/household/profiles/{id}"},
+		{http.MethodPut, "/household/profiles/{id}"},
+		{http.MethodDelete, "/household/profiles/{id}"},
+		{http.MethodPut, "/profiles/{id}"},
 	}
 	for _, route := range v3Routes {
 		add("v3", route.method, "/api/v3"+route.path, apiPolicy)
 	}
+	addWithOrdinal("v3", http.MethodGet, "/api/v3/household/profiles", 1, apiPolicy)
+	addWithOrdinal("v3", http.MethodPost, "/api/v3/household/profiles", 1, apiPolicy)
+
 	setV3Policy := func(method, path string, policy RoutePolicy) {
 		key := RegistrationKey{RouterID: "v3", Method: method, Pattern: "/api/v3" + path}
 		if _, exists := baseline[key]; !exists {
@@ -255,8 +270,8 @@ func TestCanonicalBaselineParity(t *testing.T) {
 
 	expected := getPhase1CanonicalBaselineMap()
 	actual := snapshotAsMap(snapshot)
-	require.Len(t, expected, 145)
-	require.Len(t, actual, 145)
+	require.Len(t, expected, 156)
+	require.Len(t, actual, 156)
 	if err := validatePolicyBindingParity(actual, expected); err != nil {
 		t.Fatalf("parity mismatch: %v", err)
 	}
@@ -266,7 +281,7 @@ func TestCanonicalBaselineParity(t *testing.T) {
 		counts[key.RouterID]++
 	}
 	require.Equal(t, 26, counts["outer"])
-	require.Equal(t, 119, counts["v3"])
+	require.Equal(t, 130, counts["v3"])
 }
 
 func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
@@ -289,7 +304,7 @@ func TestPolicyBindingSnapshotTracksBuildSpecificUIVariant(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, snapshot, err := s.buildRouterWithBindings(test.variant)
 			require.NoError(t, err)
-			require.Equal(t, 145, snapshot.Len())
+			require.Equal(t, 156, snapshot.Len())
 
 			for key, expected := range map[RegistrationKey]RoutePolicy{
 				{RouterID: "outer", Method: http.MethodGet, Pattern: "/ui/*"}:  test.uiGet,
@@ -322,7 +337,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 	s := mustNewServer(t, config.AppConfig{}, config.NewManager(""))
 	registrations, err := ValidateRouterInventory(s, ConfigVariantDevProxy)
 	require.NoError(t, err)
-	require.Len(t, registrations, 146)
+	require.Len(t, registrations, 157)
 
 	evidence := getDefaultPhase2VerifiedEvidenceRegistry()
 	runtimeReady := 0
@@ -339,7 +354,7 @@ func TestPhase2RuntimeReadinessAll103Routes(t *testing.T) {
 		}
 		runtimeReady++
 	}
-	require.Equal(t, 146, runtimeReady)
+	require.Equal(t, 157, runtimeReady)
 }
 
 func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
@@ -370,7 +385,7 @@ func TestPolicyBindingGovernanceDetectsSnapshotMutations(t *testing.T) {
 		delete(actual, v3Key)
 		actual[RegistrationKey{RouterID: "v3", Method: known.Method, Pattern: known.Pattern}] = outerPolicy
 		actual[RegistrationKey{RouterID: "outer", Method: v3Key.Method, Pattern: v3Key.Pattern}] = v3Policy
-		require.Len(t, actual, 145)
+		require.Len(t, actual, 156)
 		require.Error(t, validatePolicyBindingParity(actual, expected))
 	})
 }

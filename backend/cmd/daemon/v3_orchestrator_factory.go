@@ -11,6 +11,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/daemon"
+	"github.com/ManuGH/xg2g/internal/domain/receiverusage"
 	worker "github.com/ManuGH/xg2g/internal/domain/session/manager"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/infra/bus"
@@ -53,6 +54,8 @@ func (v3OrchestratorFactory) Build(cfg config.AppConfig, inputs daemon.V3Orchest
 		HeartbeatEvery:      10 * time.Second,
 		Owner:               workerOwner,
 		TunerSlots:          cfg.Engine.TunerSlots,
+		UsagePolicy:         cfg.ReceiverUsage,
+		UsageEvaluator:      receiverusage.NewEvaluator(),
 		HLSRoot:             cfg.HLS.Root,
 		LiveReadySegments:   cfg.HLS.ReadySegments,
 		LiveSegmentSeconds:  cfg.HLS.SegmentSeconds,
