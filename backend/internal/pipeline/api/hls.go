@@ -492,7 +492,8 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 			raw = filteredRaw
 		}
 	}
-	if isLive {
+	isAudioMediaPlaylist := !isMaster && bytes.Contains(raw, []byte("#EXT-X-MAP:URI=\"init_")) && !bytes.Contains(raw, []byte("#EXT-X-MAP:URI=\"init_0.mp4\""))
+	if isLive && !isAudioMediaPlaylist {
 		// Start clients with explicit headroom behind the live edge instead of at
 		// the very head (EXT-X-START is valid for live playlists too). The reserve
 		// absorbs playlist-poll/segment-timing jitter that otherwise shows up as
@@ -550,6 +551,26 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 				}
 			}
 		}
+		if strings.HasPrefix(line, "#EXT-X-MEDIA:") {
+			if ticket != "" && !strings.Contains(line, "ticket=") && !strings.Contains(line, "t=") {
+				if idx := strings.Index(line, "URI=\""); idx != -1 {
+					endIdx := strings.Index(line[idx+5:], "\"")
+					if endIdx != -1 {
+						uri := line[idx+5 : idx+5+endIdx]
+						var newURI string
+						if strings.Contains(uri, "?") {
+							newURI = uri + "&ticket=" + ticket
+						} else {
+							newURI = uri + "?ticket=" + ticket
+						}
+						line = line[:idx+5] + newURI + line[idx+5+endIdx:]
+					}
+				}
+			}
+			if strings.Contains(line, "NAME=\"audio_") {
+				line = humanizeHLSMediaTrackName(line)
+			}
+		}
 		if strings.HasPrefix(line, "#EXT-X-PROGRAM-DATE-TIME:") {
 			line = normalizeProgramDateTimeLine(line)
 		}
@@ -590,6 +611,71 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 	}
 
 	return bytes.NewReader(b.Bytes()), startupPolicy, valid, nil
+}
+
+func humanizeHLSMediaTrackName(line string) string {
+	langMatch := extractHLSAttribute(line, "LANGUAGE")
+	channelsMatch := extractHLSAttribute(line, "CHANNELS")
+
+	var langLabel string
+	switch strings.ToLower(langMatch) {
+	case "de", "deu", "ger":
+		langLabel = "Deutsch"
+	case "en", "eng":
+		langLabel = "Originalton (Englisch)"
+	case "mul":
+		langLabel = "Mehrsprachig"
+	case "fr", "fra", "fre":
+		langLabel = "Französisch"
+	case "it", "ita":
+		langLabel = "Italienisch"
+	case "es", "spa":
+		langLabel = "Spanisch"
+	case "qae":
+		langLabel = "Hauptton"
+	case "qaf":
+		langLabel = "Stadionton"
+	default:
+		if langMatch != "" && !strings.EqualFold(langMatch, "und") {
+			langLabel = strings.ToUpper(langMatch)
+		} else {
+			langLabel = "Audio"
+		}
+	}
+
+	var channelLabel string
+	switch channelsMatch {
+	case "6":
+		channelLabel = "Dolby Digital 5.1"
+	case "2":
+		channelLabel = "Stereo"
+	case "1":
+		channelLabel = "Mono"
+	}
+
+	displayName := langLabel
+	if channelLabel != "" {
+		displayName = fmt.Sprintf("%s (%s)", langLabel, channelLabel)
+	}
+
+	if idx := strings.Index(line, "NAME=\""); idx != -1 {
+		endIdx := strings.Index(line[idx+6:], "\"")
+		if endIdx != -1 {
+			return line[:idx+6] + displayName + line[idx+6+endIdx:]
+		}
+	}
+	return line
+}
+
+func extractHLSAttribute(line, attr string) string {
+	target := attr + "=\""
+	if idx := strings.Index(line, target); idx != -1 {
+		start := idx + len(target)
+		if end := strings.Index(line[start:], "\""); end != -1 {
+			return line[start : start+end]
+		}
+	}
+	return ""
 }
 
 func extractRequestTicket(r *http.Request) string {

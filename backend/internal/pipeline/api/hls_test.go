@@ -881,6 +881,70 @@ seg_000001.m4s
 	assert.Contains(t, outStr, "seg_000001.m4s?ticket=ticket12345")
 }
 
+func TestRewritePlaylist_MultiAudioMasterAndAudioRenditions(t *testing.T) {
+	masterContent := `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="group_audio",NAME="audio_1",DEFAULT=YES,LANGUAGE="de",CHANNELS="6",URI="stream_1.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="group_audio",NAME="audio_2",DEFAULT=NO,LANGUAGE="en",CHANNELS="2",URI="stream_2.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=422400,RESOLUTION=1920x1080,CODECS="av01.0.13M.10.0.111.01.01.01.0,ac-3",AUDIO="group_audio"
+stream_0.m3u8
+`
+	rec := &model.SessionRecord{
+		State: model.SessionReady,
+		Profile: model.ProfileSpec{
+			DVRWindowSec: 60,
+			Container:    "fmp4",
+		},
+	}
+
+	rdr, _, valid, err := rewritePlaylist(strings.NewReader(masterContent), rec, "", "t123", zerolog.Logger{})
+	require.NoError(t, err)
+	require.True(t, valid)
+	out, _ := io.ReadAll(rdr)
+	outStr := string(out)
+	assert.Contains(t, outStr, `URI="stream_1.m3u8?ticket=t123"`)
+	assert.Contains(t, outStr, `URI="stream_2.m3u8?ticket=t123"`)
+	assert.Contains(t, outStr, `stream_0.m3u8?ticket=t123`)
+	assert.Contains(t, outStr, `NAME="Deutsch (Dolby Digital 5.1)"`)
+	assert.Contains(t, outStr, `NAME="Originalton (Englisch) (Stereo)"`)
+
+	// Now check that an audio rendition playlist (init_2.mp4) does NOT have EXT-X-START injected
+	audioPlContent := `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-MAP:URI="init_2.mp4"
+#EXT-X-DISCONTINUITY
+#EXTINF:2.000000,
+seg_2_000000.m4s
+#EXTINF:2.000000,
+seg_2_000001.m4s
+#EXTINF:2.000000,
+seg_2_000002.m4s
+#EXTINF:2.000000,
+seg_2_000003.m4s
+#EXTINF:2.000000,
+seg_2_000004.m4s
+`
+	recClient := &model.SessionRecord{
+		State: model.SessionReady,
+		Profile: model.ProfileSpec{
+			DVRWindowSec: 60,
+			Container:    "fmp4",
+		},
+		ContextData: map[string]string{
+			model.CtxKeyClientFamily: "ios_safari_native",
+		},
+	}
+	rdrAudio, _, validAudio, errAudio := rewritePlaylist(strings.NewReader(audioPlContent), recClient, "", "t123", zerolog.Logger{})
+	require.NoError(t, errAudio)
+	require.True(t, validAudio)
+	outAudio, _ := io.ReadAll(rdrAudio)
+	assert.NotContains(t, string(outAudio), "#EXT-X-START:")
+	assert.Contains(t, string(outAudio), `URI="init_2.mp4?ticket=t123"`)
+	assert.Contains(t, string(outAudio), "seg_2_000000.m4s?ticket=t123")
+}
+
 func buildTestTSPacket(pid int, pusi bool, payload []byte) []byte {
 	pkt := make([]byte, 188)
 	pkt[0] = 0x47
