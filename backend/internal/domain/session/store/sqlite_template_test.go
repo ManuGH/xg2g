@@ -342,8 +342,8 @@ func TestSqliteStore_SchemaVersion_INV_SQLITE_005(t *testing.T) {
 		t.Fatalf("PRAGMA user_version query failed: %v", err)
 	}
 
-	// Expected version: 5 (as per store implementation const schemaVersion = 5)
-	expectedVersion := 5
+	// Expected version: 6 (as per store implementation const schemaVersion = 6)
+	expectedVersion := 6
 	if version != expectedVersion {
 		t.Errorf("Schema version mismatch: got %d, want %d", version, expectedVersion)
 	}
@@ -397,7 +397,7 @@ func TestSqliteStore_Schema_TablesExist_INV_SQLITE_007(t *testing.T) {
 	}
 	defer store.Close()
 
-	requiredTables := []string{"sessions", "idempotency", "leases"}
+	requiredTables := []string{"sessions", "idempotency", "leases", "input_claims", "input_claim_owners", "mux_allocations", "mux_members"}
 
 	for _, table := range requiredTables {
 		var count int

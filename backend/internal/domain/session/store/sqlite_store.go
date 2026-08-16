@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	schemaVersion = 5 // Incremented for playback trace persistence
+	schemaVersion = 6 // Incremented for physical topology claim tables (input_claims, mux_allocations, etc.)
 	SchemaVersion = schemaVersion
 )
 

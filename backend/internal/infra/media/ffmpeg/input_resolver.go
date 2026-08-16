@@ -609,13 +609,22 @@ func (a *LocalAdapter) runPreflightWithRetry(ctx context.Context, sessionID, raw
 func maxPreflightTries(result ports.PreflightResult) int {
 	normalized := result.Normalized()
 	if normalized.ResolvedPort == 8001 || normalized.ResolvedPort == 8002 {
-		if normalized.HTTPStatus == 0 || normalized.HTTPStatus == http.StatusOK {
-			if normalized.Reason == ports.PreflightReasonCorruptInput && normalized.Bytes < preflightMinBytes {
+		if normalized.HTTPStatus == 0 || normalized.HTTPStatus == http.StatusOK || isTransientEnigma2HTTPStatus(normalized.HTTPStatus) {
+			if (normalized.Reason == ports.PreflightReasonCorruptInput && normalized.Bytes < preflightMinBytes) || isTransientEnigma2HTTPStatus(normalized.HTTPStatus) {
 				return preflightDirectWarmupTries
 			}
 		}
 	}
 	return preflightMaxTries
+}
+
+func isTransientEnigma2HTTPStatus(status int) bool {
+	switch status {
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
 }
 
 func shouldRetryTSPreflight(result ports.PreflightResult) bool {
@@ -631,7 +640,7 @@ func shouldRetryTSPreflight(result ports.PreflightResult) bool {
 	}
 
 	if normalized.HTTPStatus != 0 && normalized.HTTPStatus != http.StatusOK {
-		return false
+		return isTransientEnigma2HTTPStatus(normalized.HTTPStatus)
 	}
 
 	switch normalized.Reason {
