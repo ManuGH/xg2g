@@ -30,12 +30,16 @@ type nowNextRequest struct {
 }
 
 type epgEntry struct {
-	Title      string `json:"title,omitempty"`
-	Desc       string `json:"desc,omitempty"`  // short programme synopsis
-	Start      int64  `json:"start,omitempty"` // unix seconds
-	End        int64  `json:"end,omitempty"`   // unix seconds
-	StartXMLTV string `json:"startXmltv,omitempty"`
-	EndXMLTV   string `json:"endXmltv,omitempty"`
+	Title       string           `json:"title,omitempty"`
+	Desc        string           `json:"desc,omitempty"`  // short programme synopsis
+	Start       int64            `json:"start,omitempty"` // unix seconds
+	End         int64            `json:"end,omitempty"`   // unix seconds
+	StartXMLTV  string           `json:"startXmltv,omitempty"`
+	EndXMLTV    string           `json:"endXmltv,omitempty"`
+	AgeRating   *epg.AgeRating   `json:"ageRating,omitempty"`
+	EpisodeInfo *epg.EpisodeInfo `json:"episodeInfo,omitempty"`
+	Genre       string           `json:"genre,omitempty"`
+	GenreSource string           `json:"genreSource,omitempty"`
 }
 
 type nowNextItem struct {
@@ -128,6 +132,15 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 			}
 			if program.Desc != nil {
 				entry.Desc = cleanEPGText(program.Desc.Text)
+			}
+			if program.Canonical == nil {
+				epg.EnrichProgramme(&program)
+			}
+			if program.Canonical != nil {
+				entry.AgeRating = program.Canonical.AgeRating
+				entry.EpisodeInfo = program.Canonical.EpisodeInfo
+				entry.Genre = program.Canonical.Genre
+				entry.GenreSource = program.Canonical.GenreSource
 			}
 
 			if now.After(start) && now.Before(stop) {

@@ -722,7 +722,7 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 	require.True(t, ok)
 	selected, ok := dec["selected"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "ts", selected["container"])
+	assert.Equal(t, "fmp4", selected["container"])
 	assert.Equal(t, "h264", selected["videoCodec"])
 	assert.Equal(t, "aac", selected["audioCodec"])
 
@@ -736,8 +736,8 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 
 	targetProfileRaw, ok := trace["targetProfile"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "ts", targetProfileRaw["container"])
-	assert.Equal(t, "ts", targetProfileRaw["packaging"])
+	assert.Equal(t, "fmp4", targetProfileRaw["container"])
+	assert.Equal(t, "fmp4", targetProfileRaw["packaging"])
 }
 
 func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testing.T) {

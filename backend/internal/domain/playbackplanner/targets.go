@@ -16,7 +16,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 		plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		plan.Audio = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.AudioCodec}
 		plan.Packaging = Packaging{Container: "mpegts"}
-		if ev.ClientEvidence.PrefersFMP4 {
+		if ev.ClientEvidence.PrefersFMP4 || strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") {
 			plan.Packaging.Container = "fmp4"
 		}
 
@@ -103,7 +103,11 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 }
 
 func allowsCopiedH264FMP4(client ClientEvidence) bool {
-	return strings.EqualFold(strings.TrimSpace(client.Family), "android_tv_native") && client.PrefersFMP4
+	fam := strings.ToLower(strings.TrimSpace(client.Family))
+	if fam == "ios_safari_native" {
+		return true
+	}
+	return fam == "android_tv_native" && client.PrefersFMP4
 }
 
 func copyCodecRequiresFMP4(codec string) bool {

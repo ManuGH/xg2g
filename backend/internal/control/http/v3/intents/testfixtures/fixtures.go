@@ -57,7 +57,7 @@ var Cases = []CharacterizationTest{
 		WantProfile:    "high",
 		WantVideoRung:  "",
 		WantVideoCodec: "",
-		WantContainer:  "",
+		WantContainer:  "fmp4",
 		WantResolved:   "compatible",
 	},
 	{
