@@ -14,6 +14,7 @@ const (
 	IntentCompatible PlaybackIntent = "compatible"
 	IntentQuality    PlaybackIntent = "quality"
 	IntentCinema     PlaybackIntent = "cinema"
+	IntentNormalize  PlaybackIntent = "normalize"
 	IntentRepair     PlaybackIntent = "repair"
 )
 
@@ -41,6 +42,8 @@ func NormalizeRequestedIntent(raw string) PlaybackIntent {
 		return IntentCompatible
 	case "quality":
 		return IntentQuality
+	case "normalize", "qsv_normalize", "qsv":
+		return IntentNormalize
 	case "cinema":
 		return IntentCinema
 	case "repair":
@@ -58,6 +61,8 @@ func PublicIntentName(intent PlaybackIntent) string {
 		return string(IntentCompatible)
 	case IntentQuality:
 		return string(IntentQuality)
+	case IntentNormalize:
+		return string(IntentNormalize)
 	case IntentCinema:
 		return string(IntentCinema)
 	case IntentRepair:

@@ -90,9 +90,14 @@ actor PlaybackCoordinator {
     func startLive(serviceRef: String, qualityPreference: String = "auto") async throws -> LiveStream {
         let allowTranscode = qualityPreference != "passthrough"
         let intentName: String
+        var profileParam: String?
         switch qualityPreference {
         case "passthrough":
             intentName = "direct"
+            profileParam = "copy"
+        case "qsvNormalize":
+            intentName = "normalize"
+            profileParam = "normalize"
         case "dataSaver":
             intentName = "compatible"
         default:
@@ -129,6 +134,9 @@ actor PlaybackCoordinator {
             "preferred_engine": "native",
             "codecs": DeviceCapabilities.supportedCodecsHeader
         ]
+        if let profile = profileParam {
+            params["profile"] = profile
+        }
         if let token = playbackDecisionToken {
             params["playback_decision_token"] = token
         }

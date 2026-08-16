@@ -150,14 +150,16 @@ final class AppModel {
     enum StreamingQualityPreference: String, CaseIterable, Identifiable, Sendable {
         case auto = "auto"
         case passthrough = "passthrough"
+        case qsvNormalize = "qsvNormalize"
         case dataSaver = "dataSaver"
 
         var id: String { rawValue }
 
         var displayName: String {
             switch self {
-            case .auto: return "Automatisch (WLAN: 1:1 Direct / 5G: ABR)"
-            case .passthrough: return "Immer Original (Verlustfrei 1:1)"
+            case .auto: return "A: Copy fMP4 (Original Video + AAC)"
+            case .passthrough: return "B: Copy MPEG-TS (1:1 Bitstream Passthrough)"
+            case .qsvNormalize: return "C: QSV Normalisierung (Closed-GOP 50fps fMP4)"
             case .dataSaver: return "Datensparmodus (HEVC/AV1)"
             }
         }

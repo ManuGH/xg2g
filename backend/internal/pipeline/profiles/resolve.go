@@ -64,6 +64,9 @@ var aliasMap = map[string]string{
 	"safari_hq":         ProfileSafariRuntimeHQ, // Legacy internal name kept for persisted sessions and traces.
 	"av1_hw":            ProfileAV1HW,
 	"h264_fmp4":         ProfileH264FMP4,
+	"normalize":         ProfileH264FMP4,
+	"qsv_normalize":     ProfileH264FMP4,
+	"qsv":               ProfileH264FMP4,
 	"android":           ProfileAndroid,
 	"android_native":    ProfileAndroid,
 	"android_tv_native": ProfileAndroid,
