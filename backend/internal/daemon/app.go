@@ -19,6 +19,8 @@ import (
 	"github.com/ManuGH/xg2g/internal/api"
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/dvr"
+	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/epg/store"
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/rs/zerolog"
 )
@@ -31,6 +33,8 @@ type App struct {
 	cfgHolder    *config.ConfigHolder
 	apiServer    *api.Server
 	piconPool    *jobs.PiconPool
+	epgStore     store.EnrichmentStore
+	epgQueue     *epg.EnrichmentQueue
 	proxyOnly    bool
 	reloadSignal os.Signal
 }
@@ -49,6 +53,11 @@ func NewApp(logger zerolog.Logger, manager Manager, cfgHolder *config.ConfigHold
 
 func (a *App) SetPiconPool(pool *jobs.PiconPool) {
 	a.piconPool = pool
+}
+
+func (a *App) SetEPGEnrichment(store store.EnrichmentStore, queue *epg.EnrichmentQueue) {
+	a.epgStore = store
+	a.epgQueue = queue
 }
 
 // Run starts all owned background subsystems and blocks until ctx is cancelled or a fatal error occurs.
@@ -174,7 +183,7 @@ func (a *App) Run(ctx context.Context) error {
 						}
 
 						a.logger.Info().Msg("Starting scheduled EPG refresh")
-						if st, err := jobs.RefreshWithOptions(ctx, *snap, jobs.WithPiconPool(a.piconPool)); err != nil {
+						if st, err := jobs.RefreshWithOptions(ctx, *snap, jobs.WithPiconPool(a.piconPool), jobs.WithEnrichment(a.epgStore, a.epgQueue)); err != nil {
 							a.logger.Error().Err(err).Msg("Scheduled EPG refresh failed")
 						} else {
 							a.logger.Info().Msg("Scheduled EPG refresh completed")

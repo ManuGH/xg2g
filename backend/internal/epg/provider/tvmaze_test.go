@@ -91,6 +91,118 @@ func TestTVMazeClient_Lookup_Success(t *testing.T) {
 	assert.Equal(t, "https://example.com/bb_s2e5.jpg", data.PosterURL)
 }
 
+func TestTVMazeClient_Lookup_EpisodeNotFound_FallsBackToShowLevelFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/search/shows" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[
+				{
+					"score": 0.95,
+					"show": {
+						"id": 169,
+						"name": "Breaking Bad",
+						"premiered": "2008-01-20",
+						"rating": {"average": 9.2},
+						"image": {"medium": "https://example.com/breakingbad.jpg"},
+						"summary": "<p>A high school chemistry teacher.</p>"
+					}
+				}
+			]`))
+			return
+		}
+
+		if r.URL.Path == "/shows/169/episodebynumber" {
+			// Episode is not in TVMaze DB (404 Not Found)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	cfg := TVMazeConfig{
+		BaseURL:           server.URL,
+		RequestsPerSecond: 100,
+		Burst:             10,
+		Timeout:           2 * time.Second,
+	}
+	client := NewTVMazeClient(cfg)
+
+	fp := epg.ProgrammeFingerprint{
+		NormalizedTitle:    "breaking bad",
+		Year:               2008,
+		Season:             99, // Nonexistent episode
+		Episode:            99,
+		FingerprintVersion: epg.CurrentFingerprintVersion,
+	}
+
+	data, err := client.Lookup(context.Background(), fp)
+	require.NoError(t, err)
+	require.NotNil(t, data)
+
+	// Invariant: 404 on episode is a deterministic missing episode, falling back to show match
+	assert.Equal(t, epg.MatchStatusFound, data.Status)
+	assert.Equal(t, "tvmaze", data.Identity.Provider)
+	assert.Equal(t, "show", data.Identity.Type)
+	assert.Equal(t, "169", data.Identity.ID)
+	assert.Equal(t, "https://example.com/breakingbad.jpg", data.PosterURL)
+}
+
+func TestTVMazeClient_Lookup_EpisodeTransientFailure_ReturnsTransientFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/search/shows" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[
+				{
+					"score": 0.95,
+					"show": {
+						"id": 169,
+						"name": "Breaking Bad",
+						"premiered": "2008-01-20"
+					}
+				}
+			]`))
+			return
+		}
+
+		if r.URL.Path == "/shows/169/episodebynumber" {
+			// 500 Internal Server Error on episode endpoint
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	cfg := TVMazeConfig{
+		BaseURL:           server.URL,
+		RequestsPerSecond: 100,
+		Burst:             10,
+		Timeout:           2 * time.Second,
+	}
+	client := NewTVMazeClient(cfg)
+
+	fp := epg.ProgrammeFingerprint{
+		NormalizedTitle:    "breaking bad",
+		Year:               2008,
+		Season:             2,
+		Episode:            5,
+		FingerprintVersion: epg.CurrentFingerprintVersion,
+	}
+
+	data, err := client.Lookup(context.Background(), fp)
+	require.Error(t, err)
+	require.NotNil(t, data)
+
+	// Invariant: Server error on episode MUST be treated as TransientFailure (NOT swallowed into 30-day cache)
+	assert.Equal(t, epg.MatchStatusTransientFailure, data.Status)
+	assert.Contains(t, err.Error(), "episode lookup transient failure")
+}
+
 func TestTVMazeClient_Lookup_EmptyResultsReturnsNoMatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

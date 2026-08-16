@@ -485,3 +485,106 @@ func TestAggregateEvents_AsyncEnrichmentPipelineIntegration(t *testing.T) {
 	assert.Equal(t, "https://example.com/poster99.jpg", progsSecondPass[0].Canonical.PosterURL)
 	assert.Equal(t, "Enriched summary from provider.", progsSecondPass[0].Canonical.ProviderSummary)
 }
+
+func TestCollectEPGProgrammes_ProductionEntryPointWithEnrichment(t *testing.T) {
+	ctx := context.Background()
+	sref := "1:0:19:283D:3FB:1:C00000:0:0:0:"
+	items := []playlist.Item{
+		{ServiceRef: sref, Name: "Das Erste HD", TvgID: sref},
+	}
+
+	events := []openwebif.EPGEvent{
+		{
+			ID:          2002,
+			Title:       "Dark S01E03",
+			Description: "FSK 16. Mysteryserie",
+			LongDesc:    "FSK 16. Mysteryserie",
+			Begin:       time.Now().Unix(),
+			Duration:    3600,
+			SRef:        sref,
+			Genre:       "Serie",
+		},
+	}
+
+	mockClient := &mockEPGFetchClient{
+		perServiceEPG: map[string][]openwebif.EPGEvent{
+			sref: events,
+		},
+	}
+
+	memStore := store.NewMemoryEnrichmentStore()
+	defer memStore.Close()
+
+	provider := &mockJobsMetadataProvider{
+		lookupFn: func(ctx context.Context, fp epg.ProgrammeFingerprint) (*epg.EnrichmentData, error) {
+			return &epg.EnrichmentData{
+				FingerprintKey:     fp.Key(),
+				FingerprintVersion: fp.FingerprintVersion,
+				MatcherVersion:     epg.CurrentMatcherVersion,
+				Status:             epg.MatchStatusFound,
+				Identity: epg.ProviderIdentity{
+					Provider: "tvmaze",
+					Type:     "episode",
+					ID:       "178403",
+				},
+				Rating: &epg.RatingScore{
+					Score:  8.7,
+					Scale:  10.0,
+					Source: "tvmaze",
+				},
+				PosterURL: "https://example.com/dark_s1e3.jpg",
+				Summary:   "Past and Present.",
+				FetchedAt: time.Now(),
+				ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+			}, nil
+		},
+	}
+
+	queue := epg.NewEnrichmentQueue(epg.DefaultQueueConfig(), memStore, provider)
+	require.NoError(t, queue.Start(ctx))
+	defer queue.Stop()
+
+	cfg := config.AppConfig{
+		EPGMaxConcurrency: 2,
+		EPGTimeoutMS:      1000,
+		EPGRetries:        0,
+		EPGDays:           1,
+	}
+
+	// 1. First Pass via production entrypoint collectEPGProgrammes: Miss in cache -> enqueued to queue
+	progsFirstPass := collectEPGProgrammes(ctx, mockClient, items, cfg, memStore, queue)
+	require.Len(t, progsFirstPass, 1)
+	require.NotNil(t, progsFirstPass[0].Canonical)
+	assert.Equal(t, 16, progsFirstPass[0].Canonical.AgeRating.Value)
+	assert.Nil(t, progsFirstPass[0].Canonical.RatingScore)
+
+	// 2. Wait for worker to finish processing and save to store
+	require.Eventually(t, func() bool {
+		fp := epg.ProgrammeFingerprint{
+			NormalizedTitle:    "dark",
+			Season:             1,
+			Episode:            3,
+			EventGenre:         "series",
+			FingerprintVersion: epg.CurrentFingerprintVersion,
+		}
+		data, found, err := memStore.Get(ctx, fp)
+		return err == nil && found && data != nil
+	}, 2*time.Second, 20*time.Millisecond)
+
+	// 3. Second Pass via production entrypoint collectEPGProgrammes: Store hit -> Enriched!
+	progsSecondPass := collectEPGProgrammes(ctx, mockClient, items, cfg, memStore, queue)
+	require.Len(t, progsSecondPass, 1)
+	require.NotNil(t, progsSecondPass[0].Canonical)
+
+	// E1 rating intact
+	require.NotNil(t, progsSecondPass[0].Canonical.AgeRating)
+	assert.Equal(t, 16, progsSecondPass[0].Canonical.AgeRating.Value)
+	assert.Equal(t, "FSK", progsSecondPass[0].Canonical.AgeRating.Scheme)
+
+	// E2 provider rating & poster attached
+	require.NotNil(t, progsSecondPass[0].Canonical.RatingScore)
+	assert.Equal(t, 8.7, progsSecondPass[0].Canonical.RatingScore.Score)
+	assert.Equal(t, "tvmaze", progsSecondPass[0].Canonical.RatingScore.Source)
+	assert.Equal(t, "https://example.com/dark_s1e3.jpg", progsSecondPass[0].Canonical.PosterURL)
+	assert.Equal(t, "Past and Present.", progsSecondPass[0].Canonical.ProviderSummary)
+}

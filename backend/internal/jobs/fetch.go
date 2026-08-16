@@ -173,14 +173,14 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 
 // collectEPGProgrammes is the main entry point for EPG collection.
 // It uses per-service fetching to ensure reliability (OpenATV 7.6.0 bugs with bouquet endpoints).
-func collectEPGProgrammes(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
+func collectEPGProgrammes(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig, enrichmentStore store.EnrichmentStore, enrichmentQueue *epg.EnrichmentQueue) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 	logger.Info().Msg("Fetching EPG via per-service requests")
-	return collectEPGPerService(ctx, client, items, cfg)
+	return collectEPGPerService(ctx, client, items, cfg, enrichmentStore, enrichmentQueue)
 }
 
 // collectEPGPerService fetches EPG data using per-service requests with bounded concurrency
-func collectEPGPerService(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig) []epg.Programme {
+func collectEPGPerService(ctx context.Context, client epgFetchClient, items []playlist.Item, cfg config.AppConfig, enrichmentStore store.EnrichmentStore, enrichmentQueue *epg.EnrichmentQueue) []epg.Programme {
 	logger := xglog.FromContext(ctx)
 
 	// Clamp concurrency to sane bounds [1,10]
@@ -248,8 +248,8 @@ func collectEPGPerService(ctx context.Context, client epgFetchClient, items []pl
 		allEvents = append(allEvents, res.events...)
 	}
 
-	// Use aggregator for consistent event processing
-	aggregator := newEPGAggregator(ctx, items)
+	// Use aggregator with wired store and queue for consistent event processing & enrichment
+	aggregator := newEPGAggregator(ctx, items).withEnrichment(enrichmentStore, enrichmentQueue)
 	srefMap := aggregator.buildSRefMap()
 	allProgrammes := aggregator.aggregateEvents(allEvents, srefMap)
 

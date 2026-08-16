@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,9 @@ import (
 	identitystore "github.com/ManuGH/xg2g/internal/domain/identity/store"
 	sessionstore "github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/entitlements"
+	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/epg/provider"
+	"github.com/ManuGH/xg2g/internal/epg/store"
 	"github.com/ManuGH/xg2g/internal/health"
 	"github.com/ManuGH/xg2g/internal/household"
 	"github.com/ManuGH/xg2g/internal/jobs"
@@ -69,6 +73,8 @@ type Container struct {
 	piconPool        *jobs.PiconPool
 	scanManager      *scan.Manager
 	verificationWork *verification.Worker
+	epgStore         store.EnrichmentStore
+	epgQueue         *epg.EnrichmentQueue
 
 	startOnce        sync.Once
 	runtimeHooksOnce sync.Once
@@ -205,6 +211,36 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	entitlementService := monetization.entitlements
 	householdService := monetization.households
 	receiptService := monetization.receipts
+
+	var (
+		epgStore store.EnrichmentStore
+		epgQueue *epg.EnrichmentQueue
+	)
+	if cfg.Store.Backend == "memory" {
+		epgStore = store.NewMemoryEnrichmentStore()
+	} else {
+		epgDBPath := filepath.Join(cfg.Store.Path, "epg_enrichment.sqlite")
+		db, err := sql.Open("sqlite", epgDBPath)
+		if err != nil {
+			logger.Warn().Err(err).Msg("failed to open epg_enrichment.sqlite, falling back to memory store")
+			epgStore = store.NewMemoryEnrichmentStore()
+		} else {
+			sStore, err := store.NewSQLiteEnrichmentStore(db)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to initialize SQLiteEnrichmentStore, falling back to memory store")
+				epgStore = store.NewMemoryEnrichmentStore()
+			} else {
+				epgStore = sStore
+			}
+		}
+	}
+
+	tvmazeClient := provider.NewTVMazeClient(provider.DefaultTVMazeConfig())
+	epgQueue = epg.NewEnrichmentQueue(epg.DefaultQueueConfig(), epgStore, tvmazeClient)
+
+	s.SetRefreshFunc(func(jobCtx context.Context, snap config.Snapshot) (*jobs.Status, error) {
+		return jobs.RefreshWithOptions(jobCtx, snap, jobs.WithEnrichment(epgStore, epgQueue))
+	})
 
 	playlistPath, err := paths.ValidatePlaylistPath(cfg.DataDir, snap.Runtime.PlaylistFilename)
 	if err != nil {
@@ -359,6 +395,7 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	}
 
 	app := daemon.NewApp(logger, mgr, cfgHolder, s, false)
+	app.SetEPGEnrichment(epgStore, epgQueue)
 
 	wireSuccess = true
 	return &Container{
@@ -374,6 +411,8 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		snapshot:         snap,
 		scanManager:      v3Scan,
 		verificationWork: verifyWorker,
+		epgStore:         epgStore,
+		epgQueue:         epgQueue,
 	}, nil
 }
 
@@ -386,6 +425,11 @@ func (c *Container) Close() error {
 	if closer, ok := c.IntentStore.(io.Closer); ok {
 		if err := closer.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close intent store: %w", err))
+		}
+	}
+	if c.epgStore != nil {
+		if err := c.epgStore.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close epg store: %w", err))
 		}
 	}
 	return errors.Join(errs...)
@@ -827,6 +871,16 @@ func (c *Container) Run(ctx context.Context, stop context.CancelFunc) error {
 		c.Manager.RegisterShutdownHook("api_server_shutdown", func(shutdownCtx context.Context) error {
 			return c.Server.Shutdown(shutdownCtx)
 		})
+		if c.epgQueue != nil {
+			if err := c.epgQueue.Start(ctx); err != nil {
+				c.Logger.Warn().Err(err).Msg("failed to start EPG enrichment queue")
+			} else {
+				c.Manager.RegisterShutdownHook("epg_queue_shutdown", func(shutdownCtx context.Context) error {
+					c.epgQueue.Stop()
+					return nil
+				})
+			}
+		}
 	})
 
 	return c.App.Run(ctx)
@@ -841,7 +895,7 @@ func (c *Container) runInitialRefresh(ctx context.Context) {
 	case <-timer.C:
 	}
 	c.Logger.Info().Msg("performing initial data refresh (background)")
-	st, err := jobs.RefreshWithOptions(ctx, c.snapshot, jobs.WithPiconPool(c.piconPool))
+	st, err := jobs.RefreshWithOptions(ctx, c.snapshot, jobs.WithPiconPool(c.piconPool), jobs.WithEnrichment(c.epgStore, c.epgQueue))
 	if err != nil {
 		c.Logger.Error().Err(err).Msg("initial data refresh failed")
 		c.Logger.Warn().Msg("→ Channels will be empty until manual refresh via /api/refresh")

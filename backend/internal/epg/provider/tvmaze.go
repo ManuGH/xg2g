@@ -113,30 +113,75 @@ func (c *TVMazeClient) Lookup(ctx context.Context, fp epg.ProgrammeFingerprint) 
 		}, nil
 	}
 
-	// 1. Check adaptive backoff (HTTP 429 Retry-After)
-	c.mu.RLock()
-	if !c.backoffUntil.IsZero() && time.Now().Before(c.backoffUntil) {
-		c.mu.RUnlock()
+	// 1. Search shows
+	var results []matcher.TVMazeSearchResult
+	searchURL := fmt.Sprintf("%s/search/shows?q=%s", c.cfg.BaseURL, url.QueryEscape(fp.NormalizedTitle))
+
+	notFound, err := c.executeJSONRequest(ctx, searchURL, &results)
+	if err != nil {
 		return &epg.EnrichmentData{
 			FingerprintKey:     fp.Key(),
 			FingerprintVersion: fp.FingerprintVersion,
 			MatcherVersion:     epg.CurrentMatcherVersion,
 			Status:             epg.MatchStatusTransientFailure,
-		}, fmt.Errorf("tvmaze: rate limited, backing off until %s", c.backoffUntil)
+		}, err
+	}
+
+	if notFound || len(results) == 0 {
+		// Deterministic negative match
+		return matcher.BuildEnrichmentFromShow(fp, nil, nil, time.Now()), nil
+	}
+
+	// 2. Deterministic candidate matching
+	matchedShow, class := matcher.MatchTVMazeResults(fp, results)
+	if class == matcher.MatchNone || matchedShow == nil {
+		// Deterministic negative match
+		return matcher.BuildEnrichmentFromShow(fp, nil, nil, time.Now()), nil
+	}
+
+	// 3. Episode refinement (if season and episode are specified)
+	var matchedEpisode *matcher.TVMazeEpisode
+	if fp.Season > 0 && fp.Episode > 0 {
+		epURL := fmt.Sprintf("%s/shows/%d/episodebynumber?season=%d&number=%d", c.cfg.BaseURL, matchedShow.ID, fp.Season, fp.Episode)
+		var ep matcher.TVMazeEpisode
+		epNotFound, epErr := c.executeJSONRequest(ctx, epURL, &ep)
+		if epErr != nil {
+			// Invariant: Transient failures on episode lookup must NOT silently downgrade to a cached show hit!
+			return &epg.EnrichmentData{
+				FingerprintKey:     fp.Key(),
+				FingerprintVersion: fp.FingerprintVersion,
+				MatcherVersion:     epg.CurrentMatcherVersion,
+				Status:             epg.MatchStatusTransientFailure,
+			}, fmt.Errorf("tvmaze: episode lookup transient failure: %w", epErr)
+		}
+		if !epNotFound {
+			matchedEpisode = &ep
+		}
+		// If epNotFound == true (404 Not Found), episode is deterministically missing; matchedShow is used without episode
+	}
+
+	return matcher.BuildEnrichmentFromShow(fp, matchedShow, matchedEpisode, time.Now()), nil
+}
+
+// executeJSONRequest performs a rate-limited, circuit-breaker-protected HTTP request with adaptive 429 backoff.
+func (c *TVMazeClient) executeJSONRequest(ctx context.Context, requestURL string, target any) (notFound bool, err error) {
+	// 1. Check adaptive backoff (HTTP 429 Retry-After)
+	c.mu.RLock()
+	if !c.backoffUntil.IsZero() && time.Now().Before(c.backoffUntil) {
+		backoffDuration := time.Until(c.backoffUntil)
+		c.mu.RUnlock()
+		return false, fmt.Errorf("tvmaze: rate limited, backing off for %s", backoffDuration)
 	}
 	c.mu.RUnlock()
 
 	// 2. Wait for rate limiter permission
 	if err := c.rateLimiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("tvmaze rate limiter wait: %w", err)
+		return false, fmt.Errorf("tvmaze rate limiter wait: %w", err)
 	}
 
-	var results []matcher.TVMazeSearchResult
-	searchURL := fmt.Sprintf("%s/search/shows?q=%s", c.cfg.BaseURL, url.QueryEscape(fp.NormalizedTitle))
-
-	// 3. Execute search call within circuit breaker
-	err := c.circuitBreaker.Execute(func() error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
+	// 3. Execute request inside circuit breaker
+	cbErr := c.circuitBreaker.Execute(func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
 			return err
 		}
@@ -165,7 +210,7 @@ func (c *TVMazeClient) Lookup(ctx context.Context, fp epg.ProgrammeFingerprint) 
 		}
 
 		if resp.StatusCode == http.StatusNotFound {
-			results = nil
+			notFound = true
 			c.circuitBreaker.RecordSuccess()
 			return nil
 		}
@@ -174,7 +219,7 @@ func (c *TVMazeClient) Lookup(ctx context.Context, fp epg.ProgrammeFingerprint) 
 			return fmt.Errorf("tvmaze unexpected status: %d", resp.StatusCode)
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
 			return fmt.Errorf("tvmaze json decode error: %w", err)
 		}
 
@@ -182,56 +227,11 @@ func (c *TVMazeClient) Lookup(ctx context.Context, fp epg.ProgrammeFingerprint) 
 		return nil
 	})
 
-	if err != nil {
-		return &epg.EnrichmentData{
-			FingerprintKey:     fp.Key(),
-			FingerprintVersion: fp.FingerprintVersion,
-			MatcherVersion:     epg.CurrentMatcherVersion,
-			Status:             epg.MatchStatusTransientFailure,
-		}, err
+	if cbErr != nil {
+		return false, cbErr
 	}
 
-	// 4. Deterministic candidate matching
-	matchedShow, class := matcher.MatchTVMazeResults(fp, results)
-	if class == matcher.MatchNone || matchedShow == nil {
-		// Deterministic negative match
-		return matcher.BuildEnrichmentFromShow(fp, nil, nil, time.Now()), nil
-	}
-
-	// 5. Episode refinement (if season and episode are present)
-	var matchedEpisode *matcher.TVMazeEpisode
-	if fp.Season > 0 && fp.Episode > 0 {
-		matchedEpisode = c.fetchEpisode(ctx, matchedShow.ID, fp.Season, fp.Episode)
-	}
-
-	return matcher.BuildEnrichmentFromShow(fp, matchedShow, matchedEpisode, time.Now()), nil
-}
-
-func (c *TVMazeClient) fetchEpisode(ctx context.Context, showID, season, episode int) *matcher.TVMazeEpisode {
-	epURL := fmt.Sprintf("%s/shows/%d/episodebynumber?season=%d&number=%d", c.cfg.BaseURL, showID, season, episode)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, epURL, nil)
-	if err != nil {
-		return nil
-	}
-	req.Header.Set("User-Agent", c.cfg.UserAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-		return nil
-	}
-	defer resp.Body.Close()
-
-	var ep matcher.TVMazeEpisode
-	if err := json.NewDecoder(resp.Body).Decode(&ep); err != nil {
-		return nil
-	}
-
-	return &ep
+	return notFound, nil
 }
 
 func parseRetryAfter(header string) time.Duration {
