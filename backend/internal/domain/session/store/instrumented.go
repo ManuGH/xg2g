@@ -171,14 +171,26 @@ func (i *instrumentedStore) TryAcquireClaimSet(ctx context.Context, req model.Cl
 	return i.inner.TryAcquireClaimSet(ctx, req)
 }
 
-func (i *instrumentedStore) ReleaseClaimSet(ctx context.Context, sessionID string) (err error) {
+func (i *instrumentedStore) ReleaseClaimSet(ctx context.Context, sessionID string, generationToken string) (err error) {
 	start := time.Now()
 	defer func() { i.observe("release_claim_set", start, err) }()
-	return i.inner.ReleaseClaimSet(ctx, sessionID)
+	return i.inner.ReleaseClaimSet(ctx, sessionID, generationToken)
+}
+
+func (i *instrumentedStore) ForceAdminReleaseClaimSet(ctx context.Context, sessionID string) (err error) {
+	start := time.Now()
+	defer func() { i.observe("force_admin_release_claim_set", start, err) }()
+	return i.inner.ForceAdminReleaseClaimSet(ctx, sessionID)
 }
 
 func (i *instrumentedStore) ReapExpiredClaimMembers(ctx context.Context) (reapedMembers int, reapedMuxes int, err error) {
 	start := time.Now()
 	defer func() { i.observe("reap_claim_members", start, err) }()
 	return i.inner.ReapExpiredClaimMembers(ctx)
+}
+
+func (i *instrumentedStore) ApplyReconciliationPlan(ctx context.Context, plan model.ReconciliationPlan) (err error) {
+	start := time.Now()
+	defer func() { i.observe("apply_reconciliation_plan", start, err) }()
+	return i.inner.ApplyReconciliationPlan(ctx, plan)
 }

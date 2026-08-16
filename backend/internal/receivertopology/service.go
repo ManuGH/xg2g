@@ -20,6 +20,11 @@ type ActiveSessionInfo struct {
 	ServiceRef string
 }
 
+// SyncPoller defines the interface for on-demand synchronous snapshot refresh.
+type SyncPoller interface {
+	SyncOnce(ctx context.Context) error
+}
+
 // Service coordinates receiver physical topology evaluation, capacity checking,
 // atomic leases, recording reservations, and external receiver activity.
 type Service struct {
@@ -28,6 +33,7 @@ type Service struct {
 	runtime      *RuntimeAllocation
 	leases       *LeaseStore
 	planner      *ReservationPlanner
+	poller       SyncPoller
 	lastSnapshot ReceiverRuntimeSnapshot
 }
 
@@ -82,6 +88,13 @@ func (s *Service) UpdateEvidentiarySnapshot(snap ReceiverRuntimeSnapshot) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastSnapshot = snap
+}
+
+// SetPoller sets the synchronous snapshot refresh poller.
+func (s *Service) SetPoller(poller SyncPoller) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.poller = poller
 }
 
 // EffectiveTunerCapacity returns the maximum physically independent concurrent tuner capacity of the active topology.
@@ -191,14 +204,31 @@ func (s *Service) UpdateTopologyWithPriority(newTopology ReceiverTopology, expli
 	return nil
 }
 
+// SetEvaluationMode changes the runtime evaluation mode (ENFORCE or AUDIT_ONLY).
+// Returns an error if ENFORCE is requested on a non-verified topology.
+func (s *Service) SetEvaluationMode(mode EvaluationMode) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	currentTopo := s.allocator.Topology()
+	if mode == EvaluationModeEnforce && currentTopo.Confidence != ConfidenceVerified {
+		return fmt.Errorf("%w: cannot switch to ENFORCE on %s topology", ErrEnforceRequiresVerified, currentTopo.Confidence)
+	}
+
+	s.allocator = NewAllocator(currentTopo, mode)
+	return nil
+}
+
 // Planner returns the recording reservation planner.
 func (s *Service) Planner() *ReservationPlanner {
 	return s.planner
 }
 
-// SyncTimers updates the recording reservation planner with upcoming Enigma2 timer recordings.
-func (s *Service) SyncTimers(timers []RecordingReservation) {
-	s.planner.SyncTimers(timers)
+// SyncTimers synchronizes local DVR timer reservations with the reservation planner.
+func (s *Service) SyncTimers(reservations []RecordingReservation) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.planner.SyncTimers(reservations)
 }
 
 // CanStartStream evaluates whether a stream for serviceRef can be allocated without committing.
@@ -227,10 +257,82 @@ func (s *Service) CanStartStreamWithPriority(serviceRef, sessionID string, prior
 	), nil
 }
 
+// CanStartService evaluates whether starting the requested service is permissible under current capacity.
+func (s *Service) CanStartService(serviceRef string, sessionID string, priority Priority) (AllocationDecision, error) {
+	mux, err := ParseServiceRef(serviceRef)
+	if err != nil {
+		return AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	decision := s.allocator.EvaluateWithUpcomingReservations(
+		s.runtime,
+		s.planner,
+		mux,
+		sessionID,
+		priority,
+		time.Now().UTC(),
+	)
+
+	return decision, nil
+}
+
 // RegisterStream commits the hardware/multiplex allocation for a newly starting stream.
 func (s *Service) RegisterStream(serviceRef, sessionID string) (AllocationDecision, error) {
 	_, decision, err := s.ReserveStreamLeaseAtomic(serviceRef, sessionID, PriorityLive, time.Minute)
 	return decision, err
+}
+
+// ReserveStreamLease performs an atomic, time-bounded hardware reservation lease for a service.
+func (s *Service) ReserveStreamLease(serviceRef string, sessionID string, priority Priority, ttl time.Duration) (*Lease, AllocationDecision, error) {
+	mux, err := ParseServiceRef(serviceRef)
+	if err != nil {
+		return nil, AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+	}
+
+	if ttl <= 0 {
+		ttl = 30 * time.Second
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	decision := s.allocator.EvaluateWithUpcomingReservations(
+		s.runtime,
+		s.planner,
+		mux,
+		sessionID,
+		priority,
+		time.Now().UTC(),
+	)
+
+	if !decision.Allowed {
+		return nil, decision, fmt.Errorf("allocation rejected: %s", decision.Reason)
+	}
+
+	// Commit runtime allocation
+	_, err = s.allocator.Allocate(s.runtime, mux, sessionID, AllocationOwnerXG2G)
+	if err != nil {
+		return nil, decision, fmt.Errorf("runtime allocation failed: %w", err)
+	}
+
+	// Commit lease
+	lease := &Lease{
+		LeaseID:     GenerateLeaseID(),
+		SessionID:   sessionID,
+		MultiplexID: mux,
+		DemodID:     decision.DemodID,
+		InputID:     decision.InputID,
+		Priority:    priority,
+		Owner:       AllocationOwnerXG2G,
+		ExpiresAt:   time.Now().UTC().Add(ttl),
+		ReusedDemod: decision.ReusedDemod,
+	}
+	s.leases.Put(lease)
+
+	return lease, decision, nil
 }
 
 // ReserveStreamLeaseAtomic performs an atomic check + allocate + lease commit inside a single lock.
@@ -308,10 +410,33 @@ func (s *Service) AcquireClaimSetAtomic(
 		ttl = 30 * time.Second
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// 1. OUT-OF-LOCK STALE SNAPSHOT REFRESH (Zero Locks Held)
+	snap := s.EvidentiarySnapshot()
+	if !snap.IsFresh(15*time.Second, time.Now().UTC()) {
+		s.mu.RLock()
+		poller := s.poller
+		s.mu.RUnlock()
 
+		if poller != nil {
+			syncCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+			_ = poller.SyncOnce(syncCtx)
+			cancel()
+			snap = s.EvidentiarySnapshot()
+		}
+	}
+
+	// 2. IN-MEMORY TOPOLOGY EVALUATION UNDER SERVICE LOCK
+	s.mu.Lock()
 	req, decision := s.allocator.PlanClaimSet(s.runtime, s.planner, mux, serviceRef, sessionID, priority, ttl, time.Now().UTC())
+	s.mu.Unlock()
+
+	// Update sanitized diagnostic metadata
+	decision.Diagnostics.ServiceRef = serviceRef
+	if !snap.ObservedAt.IsZero() {
+		decision.Diagnostics.SnapshotAgeMs = time.Since(snap.ObservedAt).Milliseconds()
+		decision.Diagnostics.SnapshotFresh = snap.IsFresh(15*time.Second, time.Now().UTC())
+	}
+
 	if !decision.Allowed {
 		return model.ClaimSetResult{
 			Success:      false,
@@ -320,6 +445,8 @@ func (s *Service) AcquireClaimSetAtomic(
 		}, decision, nil
 	}
 
+	// 3. STORE-LEVEL TRANSACTIONAL COMMIT (Zero Service Lock Held)
+	var genToken string
 	if store != nil {
 		claimRes, err := store.TryAcquireClaimSet(ctx, req)
 		if err != nil {
@@ -328,18 +455,35 @@ func (s *Service) AcquireClaimSetAtomic(
 		if !claimRes.Success {
 			return claimRes, decision, nil
 		}
+		genToken = claimRes.GenerationToken
 	}
 
-	// Commit runtime allocation
+	// 4. COMMIT RUNTIME ALLOCATION UNDER SERVICE LOCK
+	s.mu.Lock()
 	_, _ = s.allocator.Allocate(s.runtime, mux, sessionID, AllocationOwnerXG2G)
+	s.mu.Unlock()
 
 	return model.ClaimSetResult{
-		Success:   true,
-		ReusedMux: decision.ReusedDemod,
-		DemodID:   string(decision.DemodID),
-		InputID:   string(decision.InputID),
-		ExpiresAt: time.Now().UTC().Add(ttl),
+		Success:         true,
+		GenerationToken: genToken,
+		ReusedMux:       decision.ReusedDemod,
+		DemodID:         string(decision.DemodID),
+		InputID:         string(decision.InputID),
+		ExpiresAt:       time.Now().UTC().Add(ttl),
 	}, decision, nil
+}
+
+// ReleaseClaimSetAtomic releases hardware claims in the authoritative LeaseStore and updates local topology.
+func (s *Service) ReleaseClaimSetAtomic(ctx context.Context, store store.LeaseStore, sessionID string, generationToken string) error {
+	s.mu.Lock()
+	s.leases.Remove(sessionID)
+	s.allocator.Release(s.runtime, sessionID)
+	s.mu.Unlock()
+
+	if store != nil && generationToken != "" {
+		return store.ReleaseClaimSet(ctx, sessionID, generationToken)
+	}
+	return nil
 }
 
 // HeartbeatStream extends the lease TTL for an active session.
@@ -426,4 +570,57 @@ func (s *Service) ReconcileActiveSessions(active []ActiveSessionInfo) {
 			}
 		}
 	}
+}
+
+// BuildReconciliationPlan classifies active claims against stored sessions, TTL, and receiver evidentiary snapshot.
+// INVARIANT: States with EvidenceUnknown or missing OpenWebIF evidence MUST NEVER be classified as dead/reapable.
+func (s *Service) BuildReconciliationPlan(
+	activeSessionIDs []string,
+	storedMuxIDs []string,
+	now time.Time,
+) model.ReconciliationPlan {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	activeSet := make(map[string]bool, len(activeSessionIDs))
+	for _, id := range activeSessionIDs {
+		activeSet[id] = true
+	}
+
+	var sessionsToReap []string
+	for _, l := range s.leases.ListLeases() {
+		if !activeSet[l.SessionID] && l.IsExpired(now) {
+			sessionsToReap = append(sessionsToReap, l.SessionID)
+		}
+	}
+
+	var expiredMuxes []string
+	for _, mID := range storedMuxIDs {
+		if alloc, ok := s.runtime.ActiveMultiplexes[mID]; ok {
+			hasActive := false
+			for _, sID := range alloc.SessionIDs {
+				if activeSet[sID] {
+					hasActive = true
+					break
+				}
+			}
+			if !hasActive {
+				expiredMuxes = append(expiredMuxes, mID)
+			}
+		}
+	}
+
+	return model.ReconciliationPlan{
+		SessionsToReap: sessionsToReap,
+		ExpiredMuxes:   expiredMuxes,
+	}
+}
+
+// ReconcileStartupClaims builds a safe reconciliation plan and executes it transactionally against the store.
+func (s *Service) ReconcileStartupClaims(ctx context.Context, store store.LeaseStore, activeSessionIDs []string, storedMuxIDs []string) error {
+	if store == nil {
+		return nil
+	}
+	plan := s.BuildReconciliationPlan(activeSessionIDs, storedMuxIDs, time.Now().UTC())
+	return store.ApplyReconciliationPlan(ctx, plan)
 }

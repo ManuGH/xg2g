@@ -16,6 +16,8 @@ const (
 	ProblemCodeNoTuners                     = "ADMISSION_NO_TUNERS"
 	ProblemCodePlaneConflict                = "ADMISSION_PLANE_CONFLICT"
 	ProblemCodeRecordingReservationConflict = "ADMISSION_RECORDING_RESERVATION_CONFLICT"
+	ProblemCodeDemuxExhausted               = "ADMISSION_DEMUX_EXHAUSTED"
+	ProblemCodeStaleSnapshot                = "ADMISSION_STALE_SNAPSHOT"
 )
 
 // AllocationOwner denotes whether an allocation belongs to an xg2g session or an external receiver activity.
@@ -106,19 +108,21 @@ func (r *RuntimeAllocation) Clone() *RuntimeAllocation {
 
 // AllocationDecision contains the verdict and assignment details for a stream allocation request.
 type AllocationDecision struct {
-	Allowed        bool           `json:"allowed"`
-	DemodID        DemodulatorID  `json:"demodId,omitempty"`
-	InputID        InputID        `json:"inputId,omitempty"`
-	ReusedDemod    bool           `json:"reusedDemod"`
-	Reason         string         `json:"reason"`
-	ProblemCode    string         `json:"problemCode,omitempty"`
-	EvaluationMode EvaluationMode `json:"evaluationMode"`
+	Allowed        bool                  `json:"allowed"`
+	DemodID        DemodulatorID         `json:"demodId,omitempty"`
+	InputID        InputID               `json:"inputId,omitempty"`
+	ReusedDemod    bool                  `json:"reusedDemod"`
+	Reason         string                `json:"reason"`
+	ProblemCode    string                `json:"problemCode,omitempty"`
+	EvaluationMode EvaluationMode        `json:"evaluationMode"`
+	Diagnostics    AllocationDiagnostics `json:"diagnostics,omitempty"`
 }
 
 // Allocator evaluates and manages front-end physical RF topology capacity.
 type Allocator struct {
-	topology ReceiverTopology
-	mode     EvaluationMode
+	topology      ReceiverTopology
+	mode          EvaluationMode
+	maxMuxMembers int
 }
 
 // NewAllocator creates a new Allocator for a given verified or observed receiver topology.
@@ -128,9 +132,25 @@ func NewAllocator(topology ReceiverTopology, mode EvaluationMode) *Allocator {
 		mode = EvaluationModeAuditOnly
 	}
 	return &Allocator{
-		topology: topology,
-		mode:     mode,
+		topology:      topology,
+		mode:          mode,
+		maxMuxMembers: 8, // Standard default: up to 8 services per multiplex demux
 	}
+}
+
+// SetMaxMuxMembers configures the maximum concurrent session limit per tuned multiplex.
+func (a *Allocator) SetMaxMuxMembers(limit int) {
+	if limit > 0 {
+		a.maxMuxMembers = limit
+	}
+}
+
+// MaxMuxMembers returns the active demux capacity limit per multiplex.
+func (a *Allocator) MaxMuxMembers() int {
+	if a.maxMuxMembers <= 0 {
+		return 8
+	}
+	return a.maxMuxMembers
 }
 
 // Topology returns the active receiver topology.
@@ -148,19 +168,41 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 	runtime.mu.RLock()
 	defer runtime.mu.RUnlock()
 
+	var reqPlaneStr string
+	if target.RFPlane != nil {
+		reqPlaneStr = target.RFPlane.String()
+	}
+
+	demuxSaturated := false
+	var saturatedMuxAlloc *DemodAllocation
+
 	// 1. Multiplex-Reuse: If identical physical transport stream is already tuned on an active demodulator
 	for _, alloc := range runtime.ActiveMultiplexes {
 		if alloc.MultiplexID.IsSamePhysicalMultiplex(target) {
 			// Invariant: verify that the underlying demod and input are valid in the active topology
 			if demod, ok := a.topology.FindDemod(alloc.DemodID); ok && supportsDVBType(demod.DVBTypes, target.DVBType) {
-				return AllocationDecision{
-					Allowed:        true,
-					DemodID:        alloc.DemodID,
-					InputID:        alloc.InputID,
-					ReusedDemod:    true,
-					Reason:         fmt.Sprintf("Reusing active multiplex %s on demod %s", target.String(), alloc.DemodID),
-					EvaluationMode: a.mode,
+				if len(alloc.SessionIDs) < a.MaxMuxMembers() {
+					return AllocationDecision{
+						Allowed:        true,
+						DemodID:        alloc.DemodID,
+						InputID:        alloc.InputID,
+						ReusedDemod:    true,
+						Reason:         fmt.Sprintf("Reusing active multiplex %s on demod %s", target.String(), alloc.DemodID),
+						EvaluationMode: a.mode,
+						Diagnostics: AllocationDiagnostics{
+							MultiplexID:      target.String(),
+							RequiredPlane:    reqPlaneStr,
+							EvaluatedInputID: string(alloc.InputID),
+							EvaluatedDemodID: string(alloc.DemodID),
+							DemuxMemberCount: len(alloc.SessionIDs),
+							DemuxMaxMembers:  a.MaxMuxMembers(),
+							DecisionCode:     "REUSE_DEMOD",
+						},
+					}
 				}
+				// Demux limit reached for this specific demod allocation: mark saturated and check for secondary demod
+				demuxSaturated = true
+				saturatedMuxAlloc = alloc
 			}
 		}
 	}
@@ -169,6 +211,8 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 	occupiedDemods := make(map[DemodulatorID]bool)
 	inputMuxCount := make(map[InputID]int)
 	effectivePlanes := make(map[InputID]RFPlane, len(runtime.ActiveInputPlanes))
+	var lastConflictingInput InputID
+	var lastActivePlane string
 
 	for inID, pl := range runtime.ActiveInputPlanes {
 		effectivePlanes[inID] = pl
@@ -190,7 +234,7 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 		}
 	}
 
-	// 3. Search for an available, physically compatible demodulator
+	// 3. Search for an available, physically compatible demodulator (independent physical tune)
 	for _, demod := range a.topology.Demodulators {
 		if occupiedDemods[demod.ID] {
 			continue
@@ -218,6 +262,15 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 					ReusedDemod:    false,
 					Reason:         fmt.Sprintf("Allocating free demod %s on input %s", demod.ID, input.ID),
 					EvaluationMode: a.mode,
+					Diagnostics: AllocationDiagnostics{
+						MultiplexID:      target.String(),
+						RequiredPlane:    reqPlaneStr,
+						EvaluatedInputID: string(input.ID),
+						EvaluatedDemodID: string(demod.ID),
+						DemuxMemberCount: 1,
+						DemuxMaxMembers:  a.MaxMuxMembers(),
+						DecisionCode:     "ALLOCATE_FREE_DEMOD",
+					},
 				}
 			}
 
@@ -231,6 +284,15 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 					ReusedDemod:    false,
 					Reason:         fmt.Sprintf("Allocating free demod %s, locking input %s to plane %s", demod.ID, input.ID, target.RFPlane.String()),
 					EvaluationMode: a.mode,
+					Diagnostics: AllocationDiagnostics{
+						MultiplexID:      target.String(),
+						RequiredPlane:    reqPlaneStr,
+						EvaluatedInputID: string(input.ID),
+						EvaluatedDemodID: string(demod.ID),
+						DemuxMemberCount: 1,
+						DemuxMaxMembers:  a.MaxMuxMembers(),
+						DecisionCode:     "LOCK_INPUT_PLANE",
+					},
 				}
 			}
 
@@ -244,10 +306,21 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 					ReusedDemod:    false,
 					Reason:         fmt.Sprintf("Allocating free demod %s sharing active plane %s on input %s", demod.ID, activePlane.String(), input.ID),
 					EvaluationMode: a.mode,
+					Diagnostics: AllocationDiagnostics{
+						MultiplexID:      target.String(),
+						RequiredPlane:    reqPlaneStr,
+						EvaluatedInputID: string(input.ID),
+						EvaluatedDemodID: string(demod.ID),
+						DemuxMemberCount: 1,
+						DemuxMaxMembers:  a.MaxMuxMembers(),
+						DecisionCode:     "SHARE_INPUT_PLANE",
+					},
 				}
 			}
 
-			// Plane conflict on this input -> try next demodulator/input
+			// Plane conflict on this input -> record and try next demodulator/input
+			lastConflictingInput = input.ID
+			lastActivePlane = activePlane.String()
 			continue
 
 		case DeliveryUnicable1, DeliveryUnicable2JESS:
@@ -263,6 +336,15 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 					ReusedDemod:    false,
 					Reason:         fmt.Sprintf("Allocating Unicable demod %s on input %s (slot %d/%d)", demod.ID, input.ID, inputMuxCount[input.ID]+1, maxBands),
 					EvaluationMode: a.mode,
+					Diagnostics: AllocationDiagnostics{
+						MultiplexID:      target.String(),
+						RequiredPlane:    reqPlaneStr,
+						EvaluatedInputID: string(input.ID),
+						EvaluatedDemodID: string(demod.ID),
+						DemuxMemberCount: 1,
+						DemuxMaxMembers:  a.MaxMuxMembers(),
+						DecisionCode:     "ALLOCATE_UNICABLE_SCR",
+					},
 				}
 			}
 			// User bands exhausted on this input -> try next
@@ -277,6 +359,15 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 				ReusedDemod:    false,
 				Reason:         fmt.Sprintf("Allocating free demod %s on input %s", demod.ID, input.ID),
 				EvaluationMode: a.mode,
+				Diagnostics: AllocationDiagnostics{
+					MultiplexID:      target.String(),
+					RequiredPlane:    reqPlaneStr,
+					EvaluatedInputID: string(input.ID),
+					EvaluatedDemodID: string(demod.ID),
+					DemuxMemberCount: 1,
+					DemuxMaxMembers:  a.MaxMuxMembers(),
+					DecisionCode:     "ALLOCATE_CABLE_TERRESTRIAL",
+				},
 			}
 		}
 	}
@@ -284,12 +375,31 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 	// 4. Overload / Capacity Exhaustion
 	var failureReason string
 	var problemCode string
-	if len(occupiedDemods) >= len(a.topology.Demodulators) {
+	diag := AllocationDiagnostics{
+		MultiplexID:   target.String(),
+		RequiredPlane: reqPlaneStr,
+	}
+
+	if demuxSaturated {
+		failureReason = fmt.Sprintf("Demux service limit (%d) reached on active multiplex %s and no secondary demodulator available", a.MaxMuxMembers(), target.String())
+		problemCode = ProblemCodeDemuxExhausted
+		diag.DemuxMaxMembers = a.MaxMuxMembers()
+		if saturatedMuxAlloc != nil {
+			diag.DemuxMemberCount = len(saturatedMuxAlloc.SessionIDs)
+			diag.EvaluatedDemodID = string(saturatedMuxAlloc.DemodID)
+			diag.EvaluatedInputID = string(saturatedMuxAlloc.InputID)
+		}
+		diag.DecisionCode = ProblemCodeDemuxExhausted
+	} else if len(occupiedDemods) >= len(a.topology.Demodulators) {
 		failureReason = fmt.Sprintf("All %d hardware demodulators occupied", len(a.topology.Demodulators))
 		problemCode = ProblemCodeNoTuners
+		diag.DecisionCode = ProblemCodeNoTuners
 	} else {
 		failureReason = "RF Plane conflict: no free input available for requested satellite polarization/band"
 		problemCode = ProblemCodePlaneConflict
+		diag.ConflictingInputID = string(lastConflictingInput)
+		diag.ActivePlaneOnInput = lastActivePlane
+		diag.DecisionCode = ProblemCodePlaneConflict
 	}
 
 	if a.mode == EvaluationModeEnforce && a.topology.Confidence == ConfidenceVerified {
@@ -298,6 +408,7 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 			Reason:         failureReason,
 			ProblemCode:    problemCode,
 			EvaluationMode: a.mode,
+			Diagnostics:    diag,
 		}
 	}
 
@@ -307,6 +418,7 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 		Reason:         fmt.Sprintf("Audit-only override: %s (permitting stream)", failureReason),
 		ProblemCode:    problemCode,
 		EvaluationMode: a.mode,
+		Diagnostics:    diag,
 	}
 }
 
@@ -417,6 +529,7 @@ func (a *Allocator) PlanClaimSet(
 		RequiredPlane: planeStr,
 		DemodID:       string(decision.DemodID),
 		SCRSlot:       scrSlot,
+		MaxMuxMembers: a.MaxMuxMembers(),
 		TTL:           ttl,
 		Priority:      int(priority),
 	}

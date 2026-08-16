@@ -276,7 +276,7 @@ func TestGolden_StoreLevelAtomicClaimSet(t *testing.T) {
 	assert.Equal(t, "demod_0", res2.DemodID)
 
 	// 3. Release first session -> hardware must remain active for second session
-	err = sqlStore.ReleaseClaimSet(ctx, "sess-atom-1")
+	err = sqlStore.ReleaseClaimSet(ctx, "sess-atom-1", res.GenerationToken)
 	require.NoError(t, err)
 
 	demodLease, hasLease, err := sqlStore.GetLease(ctx, model.LeaseKeyDemod("demod_0"))
@@ -285,9 +285,95 @@ func TestGolden_StoreLevelAtomicClaimSet(t *testing.T) {
 	assert.NotNil(t, demodLease)
 
 	// 4. Release second session -> hardware is cleanly freed
-	err = sqlStore.ReleaseClaimSet(ctx, "sess-atom-2")
+	err = sqlStore.ReleaseClaimSet(ctx, "sess-atom-2", res2.GenerationToken)
 	require.NoError(t, err)
 
 	_, hasLeaseAfter, _ := sqlStore.GetLease(ctx, model.LeaseKeyDemod("demod_0"))
 	assert.False(t, hasLeaseAfter, "Demod lease must be deleted after all sessions leave")
+}
+
+func TestGolden_Phase4_DemuxSaturationAndSecondaryDemod(t *testing.T) {
+	ctx := context.Background()
+	topo := newFBCSingleCableLegacyTopology()
+	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+
+	// Set demux capacity limit to 2 for this test
+	svc.Allocator().SetMaxMuxMembers(2)
+
+	dbPath := filepath.Join(t.TempDir(), "golden_demux.db")
+	sqlStore, err := store.NewSqliteStore(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlStore.Close() })
+
+	serviceRef := "1:0:19:2B90:3F3:1:C00000:0:0:0:" // ZDF HD (19.2 HIGH:H)
+
+	// 1. Session 1 tunes ZDF HD -> gets demod_0
+	res1, dec1, err := svc.AcquireClaimSetAtomic(ctx, sqlStore, serviceRef, "sess-d1", receivertopology.PriorityLive, 10*time.Second)
+	require.NoError(t, err)
+	require.True(t, res1.Success)
+	assert.False(t, res1.ReusedMux)
+	assert.Equal(t, "demod_0", res1.DemodID)
+	assert.Equal(t, 2, dec1.Diagnostics.DemuxMaxMembers)
+
+	// 2. Session 2 tunes ZDF HD -> reuses demod_0 (member count: 2/2)
+	res2, dec2, err := svc.AcquireClaimSetAtomic(ctx, sqlStore, serviceRef, "sess-d2", receivertopology.PriorityLive, 10*time.Second)
+	require.NoError(t, err)
+	require.True(t, res2.Success)
+	assert.True(t, dec2.Allowed)
+	assert.True(t, res2.ReusedMux)
+	assert.Equal(t, "demod_0", res2.DemodID)
+
+	// 3. Session 3 tunes ZDF HD -> demux is saturated on demod_0, but demod_1 on input_a (HIGH:H) is free!
+	// Allocates SECOND physical tune on demod_1
+	res3, dec3, err := svc.AcquireClaimSetAtomic(ctx, sqlStore, serviceRef, "sess-d3", receivertopology.PriorityLive, 10*time.Second)
+	require.NoError(t, err)
+	require.True(t, res3.Success)
+	assert.False(t, res3.ReusedMux, "Must allocate second physical demod when demux limit is reached")
+	assert.Equal(t, "demod_1", res3.DemodID, "Must allocate free demod_1 on compatible input_a plane")
+	assert.Equal(t, "SHARE_INPUT_PLANE", dec3.Diagnostics.DecisionCode)
+
+	// Cleanup
+	_ = svc.ReleaseClaimSetAtomic(ctx, sqlStore, "sess-d1", res1.GenerationToken)
+	_ = svc.ReleaseClaimSetAtomic(ctx, sqlStore, "sess-d2", res2.GenerationToken)
+	_ = svc.ReleaseClaimSetAtomic(ctx, sqlStore, "sess-d3", res3.GenerationToken)
+}
+
+type mockPoller struct {
+	syncCalls int
+}
+
+func (m *mockPoller) SyncOnce(ctx context.Context) error {
+	m.syncCalls++
+	return nil
+}
+
+func TestGolden_Phase4_OutOfLockStaleSnapshotRefresh(t *testing.T) {
+	ctx := context.Background()
+	topo := newFBCSingleCableLegacyTopology()
+	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	require.NoError(t, err)
+
+	poller := &mockPoller{}
+	svc.SetPoller(poller)
+
+	// 1. Initial snapshot is zero / stale -> must trigger SyncOnce
+	serviceRef := "1:0:19:2B90:3F3:1:C00000:0:0:0:"
+	res, dec, err := svc.AcquireClaimSetAtomic(ctx, nil, serviceRef, "sess-sync-1", receivertopology.PriorityLive, 10*time.Second)
+	require.NoError(t, err)
+	require.True(t, res.Success)
+	assert.Equal(t, 1, poller.syncCalls, "Must invoke sync poller on stale snapshot")
+
+	// 2. Set fresh snapshot
+	freshSnap := receivertopology.ReceiverRuntimeSnapshot{
+		ObservedAt:      time.Now().UTC(),
+		StandbyEvidence: receivertopology.EvidenceObserved,
+	}
+	svc.UpdateEvidentiarySnapshot(freshSnap)
+
+	// Second claim within freshness window -> must NOT trigger SyncOnce
+	_, _, err = svc.AcquireClaimSetAtomic(ctx, nil, serviceRef, "sess-sync-2", receivertopology.PriorityLive, 10*time.Second)
+	require.NoError(t, err)
+	assert.Equal(t, 1, poller.syncCalls, "Must NOT invoke sync poller when snapshot is fresh")
+	assert.True(t, dec.Diagnostics.SnapshotAgeMs >= 0)
 }

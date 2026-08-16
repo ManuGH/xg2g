@@ -167,3 +167,28 @@ func (s *LeaseStore) ActiveDemods() map[DemodulatorID]bool {
 	}
 	return out
 }
+
+// ActiveSessions returns all session IDs currently having registered leases.
+func (s *LeaseStore) ActiveSessions() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]string, 0, len(s.leases))
+	for sID := range s.leases {
+		out = append(out, sID)
+	}
+	return out
+}
+
+// ListLeases returns shallow copies of all tracked leases.
+func (s *LeaseStore) ListLeases() []*Lease {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*Lease, 0, len(s.leases))
+	for _, l := range s.leases {
+		copyL := *l
+		out = append(out, &copyL)
+	}
+	return out
+}

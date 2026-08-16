@@ -1,6 +1,6 @@
 package receivertopology
 
-func buildVuPlusUno4K_FBC_SingleCable() ReceiverTopology {
+func BuildVuPlusUno4K_FBC_SingleCable() ReceiverTopology {
 	return ReceiverTopology{
 		Model:      "Vu+ Uno 4K SE (FBC Legacy)",
 		Confidence: ConfidenceVerified,
@@ -24,7 +24,7 @@ func buildVuPlusUno4K_FBC_SingleCable() ReceiverTopology {
 	}
 }
 
-func buildVuPlusUno4K_FBC_DualCable() ReceiverTopology {
+func BuildVuPlusUno4K_FBC_DualCable() ReceiverTopology {
 	return ReceiverTopology{
 		Model:      "Vu+ Uno 4K SE (FBC Dual-Cable)",
 		Confidence: ConfidenceVerified,
@@ -51,4 +51,12 @@ func buildVuPlusUno4K_FBC_DualCable() ReceiverTopology {
 			{ID: "demod_7", InputID: "input_b", DVBTypes: []DVBType{DVBTypeSat}},
 		},
 	}
+}
+
+func buildVuPlusUno4K_FBC_SingleCable() ReceiverTopology {
+	return BuildVuPlusUno4K_FBC_SingleCable()
+}
+
+func buildVuPlusUno4K_FBC_DualCable() ReceiverTopology {
+	return BuildVuPlusUno4K_FBC_DualCable()
 }

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 )
@@ -30,15 +32,20 @@ type MemoryStore struct {
 	// idemKey -> sessionID (with expiry)
 	idem map[string]idemState
 
-	// Multi-resource claims (Phase 3)
+	// Multi-resource claims (Phase 3 & Phase 4)
 	inputClaims map[string]*memInputClaim
 	muxClaims   map[string]*memMuxClaim
-	muxMembers  map[string]map[string]time.Time // muxID -> (sessionID -> exp)
+	muxMembers  map[string]map[string]memMemberState // muxID -> (sessionID -> memMemberState)
+}
+
+type memMemberState struct {
+	generationToken string
+	exp             time.Time
 }
 
 type memInputClaim struct {
 	activePlane string
-	owners      map[string]time.Time // sessionID -> exp
+	owners      map[string]memMemberState // sessionID -> memMemberState
 	exp         time.Time
 }
 
@@ -69,7 +76,7 @@ func NewMemoryStore() *MemoryStore {
 		idem:        make(map[string]idemState),
 		inputClaims: make(map[string]*memInputClaim),
 		muxClaims:   make(map[string]*memMuxClaim),
-		muxMembers:  make(map[string]map[string]time.Time),
+		muxMembers:  make(map[string]map[string]memMemberState),
 	}
 }
 
@@ -437,7 +444,7 @@ func (m *MemoryStore) ListRecordings(ctx context.Context, _ any) ([]model.Record
 	return list, nil
 }
 
-// --- Multi-Resource Transactional Claim Engine (Phase 3) ---
+// --- Multi-Resource Transactional Claim Engine (Phase 3 & Phase 4) ---
 
 func (m *MemoryStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSetRequest) (model.ClaimSetResult, error) {
 	if req.SessionID == "" {
@@ -445,6 +452,14 @@ func (m *MemoryStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 	}
 	if req.TTL <= 0 {
 		req.TTL = 30 * time.Second
+	}
+	genToken := req.GenerationToken
+	if genToken == "" {
+		genToken = uuid.New().String()
+	}
+	maxMembers := req.MaxMuxMembers
+	if maxMembers <= 0 {
+		maxMembers = 8
 	}
 
 	m.mu.Lock()
@@ -459,36 +474,50 @@ func (m *MemoryStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 			// Invariant: verify parent hardware claims are still held
 			demodKey := model.LeaseKeyDemod(existing.demodID)
 			if demodLease, okDemod := m.leases[demodKey]; okDemod && demodLease.exp.After(now) {
-				// Join members
-				if m.muxMembers[req.MultiplexID] == nil {
-					m.muxMembers[req.MultiplexID] = make(map[string]time.Time)
-				}
-				m.muxMembers[req.MultiplexID][req.SessionID] = expiresAt
-
-				// Extend expiry if needed
-				if expiresAt.After(existing.exp) {
-					existing.exp = expiresAt
-					demodLease.exp = expiresAt
-					m.leases[demodKey] = demodLease
-					if existing.inputID != "" {
-						if inClaim, okIn := m.inputClaims[existing.inputID]; okIn {
-							if expiresAt.After(inClaim.exp) {
-								inClaim.exp = expiresAt
-							}
-							if inClaim.owners != nil {
-								inClaim.owners[req.SessionID] = expiresAt
-							}
+				// Count active members
+				activeCount := 0
+				if members, ok := m.muxMembers[req.MultiplexID]; ok {
+					for _, st := range members {
+						if st.exp.After(now) {
+							activeCount++
 						}
 					}
 				}
 
-				return model.ClaimSetResult{
-					Success:   true,
-					ReusedMux: true,
-					DemodID:   existing.demodID,
-					InputID:   existing.inputID,
-					ExpiresAt: expiresAt,
-				}, nil
+				if activeCount < maxMembers {
+					// Join members
+					if m.muxMembers[req.MultiplexID] == nil {
+						m.muxMembers[req.MultiplexID] = make(map[string]memMemberState)
+					}
+					m.muxMembers[req.MultiplexID][req.SessionID] = memMemberState{generationToken: genToken, exp: expiresAt}
+
+					// Extend expiry if needed
+					if expiresAt.After(existing.exp) {
+						existing.exp = expiresAt
+						demodLease.exp = expiresAt
+						m.leases[demodKey] = demodLease
+						if existing.inputID != "" {
+							if inClaim, okIn := m.inputClaims[existing.inputID]; okIn {
+								if expiresAt.After(inClaim.exp) {
+									inClaim.exp = expiresAt
+								}
+								if inClaim.owners != nil {
+									inClaim.owners[req.SessionID] = memMemberState{generationToken: genToken, exp: expiresAt}
+								}
+							}
+						}
+					}
+
+					return model.ClaimSetResult{
+						Success:         true,
+						GenerationToken: genToken,
+						ReusedMux:       true,
+						DemodID:         existing.demodID,
+						InputID:         existing.inputID,
+						ExpiresAt:       expiresAt,
+					}, nil
+				}
+				// If mux is full (activeCount >= maxMembers), fall through to allocate separate demod
 			}
 		}
 	}
@@ -507,13 +536,13 @@ func (m *MemoryStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 				inClaim.exp = expiresAt
 			}
 			if inClaim.owners == nil {
-				inClaim.owners = make(map[string]time.Time)
+				inClaim.owners = make(map[string]memMemberState)
 			}
-			inClaim.owners[req.SessionID] = expiresAt
+			inClaim.owners[req.SessionID] = memMemberState{generationToken: genToken, exp: expiresAt}
 		} else {
 			m.inputClaims[req.InputID] = &memInputClaim{
 				activePlane: req.RequiredPlane,
-				owners:      map[string]time.Time{req.SessionID: expiresAt},
+				owners:      map[string]memMemberState{req.SessionID: {generationToken: genToken, exp: expiresAt}},
 				exp:         expiresAt,
 			}
 		}
@@ -556,35 +585,41 @@ func (m *MemoryStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 			exp:           expiresAt,
 		}
 		if m.muxMembers[req.MultiplexID] == nil {
-			m.muxMembers[req.MultiplexID] = make(map[string]time.Time)
+			m.muxMembers[req.MultiplexID] = make(map[string]memMemberState)
 		}
-		m.muxMembers[req.MultiplexID][req.SessionID] = expiresAt
+		m.muxMembers[req.MultiplexID][req.SessionID] = memMemberState{generationToken: genToken, exp: expiresAt}
 	}
 
 	return model.ClaimSetResult{
-		Success:   true,
-		ReusedMux: false,
-		DemodID:   req.DemodID,
-		InputID:   req.InputID,
-		ExpiresAt: expiresAt,
+		Success:         true,
+		GenerationToken: genToken,
+		ReusedMux:       false,
+		DemodID:         req.DemodID,
+		InputID:         req.InputID,
+		ExpiresAt:       expiresAt,
 	}, nil
 }
 
-func (m *MemoryStore) ReleaseClaimSet(ctx context.Context, sessionID string) error {
+func (m *MemoryStore) ReleaseClaimSet(ctx context.Context, sessionID string, generationToken string) error {
 	if sessionID == "" {
 		return nil
+	}
+	if generationToken == "" {
+		return errors.New("generation_token is required for ReleaseClaimSet; use ForceAdminReleaseClaimSet for admin override")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	now := time.Now()
 
-	// 1. Remove session from mux members
+	// 1. Remove session from mux members matching generationToken
 	for muxID, members := range m.muxMembers {
-		delete(members, sessionID)
+		if st, ok := members[sessionID]; ok && st.generationToken == generationToken {
+			delete(members, sessionID)
+		}
 		activeCount := 0
-		for _, exp := range members {
-			if exp.After(now) {
+		for _, st := range members {
+			if st.exp.After(now) {
 				activeCount++
 			}
 		}
@@ -600,13 +635,15 @@ func (m *MemoryStore) ReleaseClaimSet(ctx context.Context, sessionID string) err
 		}
 	}
 
-	// 2. Remove session from input owners
+	// 2. Remove session from input owners matching generationToken
 	for inputID, claim := range m.inputClaims {
 		if claim.owners != nil {
-			delete(claim.owners, sessionID)
+			if st, ok := claim.owners[sessionID]; ok && st.generationToken == generationToken {
+				delete(claim.owners, sessionID)
+			}
 			activeCount := 0
-			for _, exp := range claim.owners {
-				if exp.After(now) {
+			for _, st := range claim.owners {
+				if st.exp.After(now) {
 					activeCount++
 				}
 			}
@@ -641,6 +678,77 @@ func (m *MemoryStore) ReleaseClaimSet(ctx context.Context, sessionID string) err
 	return nil
 }
 
+func (m *MemoryStore) ForceAdminReleaseClaimSet(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+
+	// 1. Remove session from mux members regardless of generation token
+	for muxID, members := range m.muxMembers {
+		delete(members, sessionID)
+		activeCount := 0
+		for _, st := range members {
+			if st.exp.After(now) {
+				activeCount++
+			}
+		}
+		if activeCount == 0 {
+			if claim, ok := m.muxClaims[muxID]; ok {
+				delete(m.leases, model.LeaseKeyDemod(claim.demodID))
+				if claim.scrSlot != nil {
+					delete(m.leases, model.LeaseKeySCR(claim.inputID, *claim.scrSlot))
+				}
+				delete(m.muxClaims, muxID)
+			}
+			delete(m.muxMembers, muxID)
+		}
+	}
+
+	// 2. Remove session from input owners
+	for inputID, claim := range m.inputClaims {
+		if claim.owners != nil {
+			delete(claim.owners, sessionID)
+			activeCount := 0
+			for _, st := range claim.owners {
+				if st.exp.After(now) {
+					activeCount++
+				}
+			}
+			if activeCount == 0 {
+				delete(m.inputClaims, inputID)
+			}
+		}
+	}
+
+	// 3. Delete standalone leases
+	for key, l := range m.leases {
+		if l.owner == sessionID {
+			isHeldByMux := false
+			for _, claim := range m.muxClaims {
+				if claim.exp.After(now) {
+					if key == model.LeaseKeyDemod(claim.demodID) {
+						isHeldByMux = true
+						break
+					}
+					if claim.scrSlot != nil && key == model.LeaseKeySCR(claim.inputID, *claim.scrSlot) {
+						isHeldByMux = true
+						break
+					}
+				}
+			}
+			if !isHeldByMux {
+				delete(m.leases, key)
+			}
+		}
+	}
+
+	return nil
+}
+
 func (m *MemoryStore) ReapExpiredClaimMembers(ctx context.Context) (int, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -651,15 +759,15 @@ func (m *MemoryStore) ReapExpiredClaimMembers(ctx context.Context) (int, int, er
 
 	// 1. Clean mux members
 	for muxID, members := range m.muxMembers {
-		for sID, exp := range members {
-			if !exp.After(now) {
+		for sID, st := range members {
+			if !st.exp.After(now) {
 				delete(members, sID)
 				reapedMembers++
 			}
 		}
 		activeCount := 0
-		for _, exp := range members {
-			if exp.After(now) {
+		for _, st := range members {
+			if st.exp.After(now) {
 				activeCount++
 			}
 		}
@@ -679,14 +787,14 @@ func (m *MemoryStore) ReapExpiredClaimMembers(ctx context.Context) (int, int, er
 	// 2. Clean input claims
 	for inputID, claim := range m.inputClaims {
 		if claim.owners != nil {
-			for sID, exp := range claim.owners {
-				if !exp.After(now) {
+			for sID, st := range claim.owners {
+				if !st.exp.After(now) {
 					delete(claim.owners, sID)
 				}
 			}
 			activeCount := 0
-			for _, exp := range claim.owners {
-				if exp.After(now) {
+			for _, st := range claim.owners {
+				if st.exp.After(now) {
 					activeCount++
 				}
 			}
@@ -697,4 +805,67 @@ func (m *MemoryStore) ReapExpiredClaimMembers(ctx context.Context) (int, int, er
 	}
 
 	return reapedMembers, reapedMuxes, nil
+}
+
+func (m *MemoryStore) ApplyReconciliationPlan(ctx context.Context, plan model.ReconciliationPlan) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+
+	// 1. Reap specific sessions
+	for _, sID := range plan.SessionsToReap {
+		for muxID, members := range m.muxMembers {
+			delete(members, sID)
+			activeCount := 0
+			for _, st := range members {
+				if st.exp.After(now) {
+					activeCount++
+				}
+			}
+			if activeCount == 0 {
+				if claim, ok := m.muxClaims[muxID]; ok {
+					delete(m.leases, model.LeaseKeyDemod(claim.demodID))
+					if claim.scrSlot != nil {
+						delete(m.leases, model.LeaseKeySCR(claim.inputID, *claim.scrSlot))
+					}
+					delete(m.muxClaims, muxID)
+				}
+				delete(m.muxMembers, muxID)
+			}
+		}
+		for inputID, claim := range m.inputClaims {
+			if claim.owners != nil {
+				delete(claim.owners, sID)
+				activeCount := 0
+				for _, st := range claim.owners {
+					if st.exp.After(now) {
+						activeCount++
+					}
+				}
+				if activeCount == 0 {
+					delete(m.inputClaims, inputID)
+				}
+			}
+		}
+		for key, l := range m.leases {
+			if l.owner == sID {
+				delete(m.leases, key)
+			}
+		}
+	}
+
+	// 2. Reap explicitly expired muxes
+	for _, muxID := range plan.ExpiredMuxes {
+		if claim, ok := m.muxClaims[muxID]; ok {
+			delete(m.leases, model.LeaseKeyDemod(claim.demodID))
+			if claim.scrSlot != nil {
+				delete(m.leases, model.LeaseKeySCR(claim.inputID, *claim.scrSlot))
+			}
+			delete(m.muxClaims, muxID)
+		}
+		delete(m.muxMembers, muxID)
+	}
+
+	return nil
 }

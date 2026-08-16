@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
 	"github.com/ManuGH/xg2g/internal/persistence/sqlite"
@@ -28,11 +30,11 @@ const sessionListOrderBy = " ORDER BY updated_at_ms DESC, created_at_ms DESC, se
 // reason_detail_debug, playback_trace_json) would arrive out of scanSession's
 // positional order and corrupt every read. An explicit list is order-stable.
 const sessionColumns = "session_id, service_ref, profile_json, state, pipeline_state, reason, " +
-	"reason_detail, reason_detail_code, reason_detail_debug, " +
-	"fallback_reason, fallback_at_ms, correlation_id, created_at_ms, updated_at_ms, " +
-	"last_access_ms, expires_at_ms, lease_expires_at_ms, heartbeat_interval, " +
-	"last_heartbeat_ms, stop_reason, latest_segment_at, last_playlist_access_at, " +
-	"playlist_published_at, context_data_json, playback_trace_json"
+	"reason_detail, reason_detail_code, reason_detail_debug, fallback_reason, fallback_at_ms, " +
+	"correlation_id, created_at_ms, updated_at_ms, last_access_ms, expires_at_ms, " +
+	"lease_expires_at_ms, heartbeat_interval, last_heartbeat_ms, stop_reason, " +
+	"latest_segment_at, last_playlist_access_at, playlist_published_at, " +
+	"context_data_json, playback_trace_json"
 
 // SqliteStore implements StateStore using SQLite.
 type SqliteStore struct {
@@ -76,9 +78,9 @@ func (s *SqliteStore) migrate() error {
 		state TEXT NOT NULL,
 		pipeline_state TEXT NOT NULL,
 		reason TEXT NOT NULL,
-	reason_detail TEXT,
-	reason_detail_code TEXT,
-	reason_detail_debug TEXT,
+		reason_detail TEXT,
+		reason_detail_code TEXT,
+		reason_detail_debug TEXT,
 		fallback_reason TEXT,
 		fallback_at_ms INTEGER,
 		correlation_id TEXT NOT NULL,
@@ -123,6 +125,7 @@ func (s *SqliteStore) migrate() error {
 	CREATE TABLE IF NOT EXISTS input_claim_owners (
 		input_id TEXT NOT NULL,
 		session_id TEXT NOT NULL,
+		generation_token TEXT NOT NULL DEFAULT '',
 		expires_at_ms INTEGER NOT NULL,
 		PRIMARY KEY (input_id, session_id)
 	);
@@ -139,6 +142,7 @@ func (s *SqliteStore) migrate() error {
 	CREATE TABLE IF NOT EXISTS mux_members (
 		multiplex_id TEXT NOT NULL,
 		session_id TEXT NOT NULL,
+		generation_token TEXT NOT NULL DEFAULT '',
 		joined_at_ms INTEGER NOT NULL,
 		expires_at_ms INTEGER NOT NULL,
 		PRIMARY KEY (multiplex_id, session_id)
@@ -170,6 +174,8 @@ func (s *SqliteStore) migrate() error {
 		if currentVersion < 5 {
 			_, _ = tx.Exec("ALTER TABLE sessions ADD COLUMN playback_trace_json TEXT")
 		}
+		_, _ = tx.Exec("ALTER TABLE input_claim_owners ADD COLUMN generation_token TEXT NOT NULL DEFAULT ''")
+		_, _ = tx.Exec("ALTER TABLE mux_members ADD COLUMN generation_token TEXT NOT NULL DEFAULT ''")
 		return nil
 	})
 }
@@ -717,6 +723,14 @@ func (s *SqliteStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 	if req.TTL <= 0 {
 		req.TTL = 30 * time.Second
 	}
+	genToken := req.GenerationToken
+	if genToken == "" {
+		genToken = uuid.New().String()
+	}
+	maxMembers := req.MaxMuxMembers
+	if maxMembers <= 0 {
+		maxMembers = 8
+	}
 
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -746,36 +760,45 @@ func (s *SqliteStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 			demodKey := model.LeaseKeyDemod(existingDemod)
 			errDemod := tx.QueryRowContext(ctx, "SELECT owner, expires_at_ms FROM leases WHERE key = ?", demodKey).Scan(&demodOwner, &demodExpires)
 			if errDemod == nil && demodExpires > now {
-				// Parent demod is valid -> join multiplex as member!
-				_, err = tx.ExecContext(ctx,
-					"INSERT OR REPLACE INTO mux_members (multiplex_id, session_id, joined_at_ms, expires_at_ms) VALUES (?, ?, ?, ?)",
-					req.MultiplexID, req.SessionID, now, expiresAt,
-				)
-				if err != nil {
-					return model.ClaimSetResult{}, err
-				}
+				// Check member count against MaxMuxMembers
+				var activeMemberCount int
+				_ = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM mux_members WHERE multiplex_id = ? AND expires_at_ms > ?", req.MultiplexID, now).Scan(&activeMemberCount)
 
-				// Extend mux_allocations expiry if member extends past it
-				if expiresAt > muxExpires {
-					_, _ = tx.ExecContext(ctx, "UPDATE mux_allocations SET expires_at_ms = ? WHERE multiplex_id = ?", expiresAt, req.MultiplexID)
-					_, _ = tx.ExecContext(ctx, "UPDATE leases SET expires_at_ms = ? WHERE key = ?", expiresAt, demodKey)
-					if existingInput != "" {
-						_, _ = tx.ExecContext(ctx, "UPDATE input_claims SET expires_at_ms = ? WHERE input_id = ?", expiresAt, existingInput)
-						_, _ = tx.ExecContext(ctx, "UPDATE input_claim_owners SET expires_at_ms = ? WHERE input_id = ?", expiresAt, existingInput)
+				if activeMemberCount < maxMembers {
+					// Parent demod is valid and capacity allows -> join multiplex as member!
+					_, err = tx.ExecContext(ctx,
+						"INSERT OR REPLACE INTO mux_members (multiplex_id, session_id, generation_token, joined_at_ms, expires_at_ms) VALUES (?, ?, ?, ?, ?)",
+						req.MultiplexID, req.SessionID, genToken, now, expiresAt,
+					)
+					if err != nil {
+						return model.ClaimSetResult{}, err
 					}
-				}
 
-				if err := tx.Commit(); err != nil {
-					return model.ClaimSetResult{}, err
-				}
+					// Extend mux_allocations expiry if member extends past it
+					if expiresAt > muxExpires {
+						_, _ = tx.ExecContext(ctx, "UPDATE mux_allocations SET expires_at_ms = ? WHERE multiplex_id = ?", expiresAt, req.MultiplexID)
+						_, _ = tx.ExecContext(ctx, "UPDATE leases SET expires_at_ms = ? WHERE key = ?", expiresAt, demodKey)
+						if existingInput != "" {
+							_, _ = tx.ExecContext(ctx, "UPDATE input_claims SET expires_at_ms = ? WHERE input_id = ?", expiresAt, existingInput)
+							_, _ = tx.ExecContext(ctx, "UPDATE input_claim_owners SET expires_at_ms = ? WHERE input_id = ?", expiresAt, existingInput)
+						}
+					}
 
-				return model.ClaimSetResult{
-					Success:   true,
-					ReusedMux: true,
-					DemodID:   existingDemod,
-					InputID:   existingInput,
-					ExpiresAt: time.UnixMilli(expiresAt),
-				}, nil
+					if err := tx.Commit(); err != nil {
+						return model.ClaimSetResult{}, err
+					}
+
+					return model.ClaimSetResult{
+						Success:         true,
+						GenerationToken: genToken,
+						ReusedMux:       true,
+						DemodID:         existingDemod,
+						InputID:         existingInput,
+						ExpiresAt:       time.UnixMilli(expiresAt),
+					}, nil
+				}
+				// If multiplex is at capacity (activeMemberCount >= maxMembers), fall through
+				// to attempt independent demod allocation or return ConflictDemuxExhausted if hardware unavailable.
 			}
 		}
 	}
@@ -812,8 +835,8 @@ func (s *SqliteStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 
 		// Register session as owner of this input
 		_, err = tx.ExecContext(ctx,
-			"INSERT OR REPLACE INTO input_claim_owners (input_id, session_id, expires_at_ms) VALUES (?, ?, ?)",
-			req.InputID, req.SessionID, expiresAt,
+			"INSERT OR REPLACE INTO input_claim_owners (input_id, session_id, generation_token, expires_at_ms) VALUES (?, ?, ?, ?)",
+			req.InputID, req.SessionID, genToken, expiresAt,
 		)
 		if err != nil {
 			return model.ClaimSetResult{}, err
@@ -875,8 +898,8 @@ func (s *SqliteStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 		}
 
 		_, err = tx.ExecContext(ctx,
-			"INSERT OR REPLACE INTO mux_members (multiplex_id, session_id, joined_at_ms, expires_at_ms) VALUES (?, ?, ?, ?)",
-			req.MultiplexID, req.SessionID, now, expiresAt,
+			"INSERT OR REPLACE INTO mux_members (multiplex_id, session_id, generation_token, joined_at_ms, expires_at_ms) VALUES (?, ?, ?, ?, ?)",
+			req.MultiplexID, req.SessionID, genToken, now, expiresAt,
 		)
 		if err != nil {
 			return model.ClaimSetResult{}, err
@@ -888,15 +911,103 @@ func (s *SqliteStore) TryAcquireClaimSet(ctx context.Context, req model.ClaimSet
 	}
 
 	return model.ClaimSetResult{
-		Success:   true,
-		ReusedMux: false,
-		DemodID:   req.DemodID,
-		InputID:   req.InputID,
-		ExpiresAt: time.UnixMilli(expiresAt),
+		Success:         true,
+		GenerationToken: genToken,
+		ReusedMux:       false,
+		DemodID:         req.DemodID,
+		InputID:         req.InputID,
+		ExpiresAt:       time.UnixMilli(expiresAt),
 	}, nil
 }
 
-func (s *SqliteStore) ReleaseClaimSet(ctx context.Context, sessionID string) error {
+func (s *SqliteStore) ReleaseClaimSet(ctx context.Context, sessionID string, generationToken string) error {
+	if sessionID == "" {
+		return nil
+	}
+	if generationToken == "" {
+		return errors.New("generation_token is required for ReleaseClaimSet; use ForceAdminReleaseClaimSet for admin override")
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UnixMilli()
+
+	// 1. Find multiplexes where this session is a member matching generationToken
+	rows, err := tx.QueryContext(ctx, "SELECT multiplex_id FROM mux_members WHERE session_id = ? AND generation_token = ?", sessionID, generationToken)
+	if err == nil {
+		var muxIDs []string
+		for rows.Next() {
+			var mID string
+			if err := rows.Scan(&mID); err == nil {
+				muxIDs = append(muxIDs, mID)
+			}
+		}
+		_ = rows.Close()
+
+		// Remove session from mux_members matching generationToken
+		resDel, _ := tx.ExecContext(ctx, "DELETE FROM mux_members WHERE session_id = ? AND generation_token = ?", sessionID, generationToken)
+		rowsAffected, _ := resDel.RowsAffected()
+
+		if rowsAffected > 0 {
+			// Check if any affected mux now has 0 remaining active members
+			for _, mID := range muxIDs {
+				var activeMembers int
+				_ = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM mux_members WHERE multiplex_id = ? AND expires_at_ms > ?", mID, now).Scan(&activeMembers)
+				if activeMembers == 0 {
+					// Free parent hardware
+					var inID, dID string
+					var scrSlot sql.NullInt64
+					errMux := tx.QueryRowContext(ctx, "SELECT input_id, demod_id, scr_slot FROM mux_allocations WHERE multiplex_id = ?", mID).Scan(&inID, &dID, &scrSlot)
+					if errMux == nil {
+						_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeyDemod(dID))
+						if scrSlot.Valid {
+							_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeySCR(inID, int(scrSlot.Int64)))
+						}
+					}
+					_, _ = tx.ExecContext(ctx, "DELETE FROM mux_allocations WHERE multiplex_id = ?", mID)
+				}
+			}
+		}
+	}
+
+	// 2. Remove session from input_claim_owners matching generationToken
+	rowsIn, errIn := tx.QueryContext(ctx, "SELECT input_id FROM input_claim_owners WHERE session_id = ? AND generation_token = ?", sessionID, generationToken)
+	if errIn == nil {
+		var inIDs []string
+		for rowsIn.Next() {
+			var inID string
+			if err := rowsIn.Scan(&inID); err == nil {
+				inIDs = append(inIDs, inID)
+			}
+		}
+		_ = rowsIn.Close()
+
+		_, _ = tx.ExecContext(ctx, "DELETE FROM input_claim_owners WHERE session_id = ? AND generation_token = ?", sessionID, generationToken)
+
+		for _, inID := range inIDs {
+			var activeOwners int
+			_ = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM input_claim_owners WHERE input_id = ? AND expires_at_ms > ?", inID, now).Scan(&activeOwners)
+			if activeOwners == 0 {
+				_, _ = tx.ExecContext(ctx, "DELETE FROM input_claims WHERE input_id = ?", inID)
+			}
+		}
+	}
+
+	// 3. Delete standalone leases owned by this session (excluding demod/scr leases held by active mux allocations)
+	_, _ = tx.ExecContext(ctx, `
+		DELETE FROM leases
+		WHERE owner = ?
+		  AND key NOT IN (SELECT 'demod:' || demod_id FROM mux_allocations WHERE expires_at_ms > ?)
+		  AND key NOT IN (SELECT 'scr:' || input_id || ':' || scr_slot FROM mux_allocations WHERE scr_slot IS NOT NULL AND expires_at_ms > ?)
+	`, sessionID, now, now)
+
+	return tx.Commit()
+}
+
+func (s *SqliteStore) ForceAdminReleaseClaimSet(ctx context.Context, sessionID string) error {
 	if sessionID == "" {
 		return nil
 	}
@@ -908,7 +1019,7 @@ func (s *SqliteStore) ReleaseClaimSet(ctx context.Context, sessionID string) err
 
 	now := time.Now().UnixMilli()
 
-	// 1. Find all multiplexes where this session is a member
+	// Find all multiplexes where this session is a member
 	rows, err := tx.QueryContext(ctx, "SELECT multiplex_id FROM mux_members WHERE session_id = ?", sessionID)
 	if err == nil {
 		var muxIDs []string
@@ -920,15 +1031,12 @@ func (s *SqliteStore) ReleaseClaimSet(ctx context.Context, sessionID string) err
 		}
 		_ = rows.Close()
 
-		// Remove session from mux_members
 		_, _ = tx.ExecContext(ctx, "DELETE FROM mux_members WHERE session_id = ?", sessionID)
 
-		// Check if any mux now has 0 remaining active members
 		for _, mID := range muxIDs {
 			var activeMembers int
 			_ = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM mux_members WHERE multiplex_id = ? AND expires_at_ms > ?", mID, now).Scan(&activeMembers)
 			if activeMembers == 0 {
-				// Free parent hardware
 				var inID, dID string
 				var scrSlot sql.NullInt64
 				errMux := tx.QueryRowContext(ctx, "SELECT input_id, demod_id, scr_slot FROM mux_allocations WHERE multiplex_id = ?", mID).Scan(&inID, &dID, &scrSlot)
@@ -943,7 +1051,7 @@ func (s *SqliteStore) ReleaseClaimSet(ctx context.Context, sessionID string) err
 		}
 	}
 
-	// 2. Remove session from input_claim_owners
+	// Remove session from input_claim_owners
 	rowsIn, errIn := tx.QueryContext(ctx, "SELECT input_id FROM input_claim_owners WHERE session_id = ?", sessionID)
 	if errIn == nil {
 		var inIDs []string
@@ -966,7 +1074,6 @@ func (s *SqliteStore) ReleaseClaimSet(ctx context.Context, sessionID string) err
 		}
 	}
 
-	// 3. Delete standalone leases owned by this session (excluding demod/scr leases held by active mux allocations)
 	_, _ = tx.ExecContext(ctx, `
 		DELETE FROM leases
 		WHERE owner = ?
@@ -1043,4 +1150,80 @@ func (s *SqliteStore) ReapExpiredClaimMembers(ctx context.Context) (int, int, er
 	}
 
 	return int(reapedMembersCount), reapedMuxCount, nil
+}
+
+func (s *SqliteStore) ApplyReconciliationPlan(ctx context.Context, plan model.ReconciliationPlan) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UnixMilli()
+
+	// 1. Reap specific sessions identified in plan
+	for _, sessionID := range plan.SessionsToReap {
+		// Delete from mux_members
+		_, _ = tx.ExecContext(ctx, "DELETE FROM mux_members WHERE session_id = ?", sessionID)
+		// Delete from input_claim_owners
+		_, _ = tx.ExecContext(ctx, "DELETE FROM input_claim_owners WHERE session_id = ?", sessionID)
+		// Delete standalone leases
+		_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE owner = ?", sessionID)
+	}
+
+	// 2. Delete explicitly expired mux allocations identified in plan
+	for _, muxID := range plan.ExpiredMuxes {
+		var inID, dID string
+		var scrSlot sql.NullInt64
+		errMux := tx.QueryRowContext(ctx, "SELECT input_id, demod_id, scr_slot FROM mux_allocations WHERE multiplex_id = ?", muxID).Scan(&inID, &dID, &scrSlot)
+		if errMux == nil {
+			_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeyDemod(dID))
+			if scrSlot.Valid {
+				_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeySCR(inID, int(scrSlot.Int64)))
+			}
+		}
+		_, _ = tx.ExecContext(ctx, "DELETE FROM mux_members WHERE multiplex_id = ?", muxID)
+		_, _ = tx.ExecContext(ctx, "DELETE FROM mux_allocations WHERE multiplex_id = ?", muxID)
+	}
+
+	// 3. Clean up any remaining orphaned input claims and mux allocations
+	_, _ = tx.ExecContext(ctx, `
+		DELETE FROM input_claims
+		WHERE input_id NOT IN (SELECT DISTINCT input_id FROM input_claim_owners WHERE expires_at_ms > ?)
+		   OR expires_at_ms <= ?
+	`, now, now)
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT multiplex_id, input_id, demod_id, scr_slot
+		FROM mux_allocations
+		WHERE multiplex_id NOT IN (SELECT DISTINCT multiplex_id FROM mux_members WHERE expires_at_ms > ?)
+		   OR expires_at_ms <= ?
+	`, now, now)
+
+	if err == nil {
+		type orphanedMux struct {
+			muxID   string
+			inputID string
+			demodID string
+			scrSlot sql.NullInt64
+		}
+		var orphans []orphanedMux
+		for rows.Next() {
+			var o orphanedMux
+			if err := rows.Scan(&o.muxID, &o.inputID, &o.demodID, &o.scrSlot); err == nil {
+				orphans = append(orphans, o)
+			}
+		}
+		_ = rows.Close()
+
+		for _, o := range orphans {
+			_, _ = tx.ExecContext(ctx, "DELETE FROM mux_allocations WHERE multiplex_id = ?", o.muxID)
+			_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeyDemod(o.demodID))
+			if o.scrSlot.Valid {
+				_, _ = tx.ExecContext(ctx, "DELETE FROM leases WHERE key = ?", model.LeaseKeySCR(o.inputID, int(o.scrSlot.Int64)))
+			}
+		}
+	}
+
+	return tx.Commit()
 }

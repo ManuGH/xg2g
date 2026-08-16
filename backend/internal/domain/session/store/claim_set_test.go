@@ -178,7 +178,7 @@ func TestClaimSet_MultiplexReuseAndRefCountLifecycle(t *testing.T) {
 			assert.Equal(t, "demod_a", resB.DemodID, "Session B must bind to M1's parent demod_a")
 
 			// 3. Session A leaves -> Mux M1 remains active because Session B is still a member
-			err = st.ReleaseClaimSet(ctx, "session-A")
+			err = st.ReleaseClaimSet(ctx, "session-A", resA.GenerationToken)
 			require.NoError(t, err)
 
 			// Verify parent demod is STILL occupied by mux
@@ -187,11 +187,193 @@ func TestClaimSet_MultiplexReuseAndRefCountLifecycle(t *testing.T) {
 			assert.NotNil(t, demodLease)
 
 			// 4. Session B leaves -> Now 0 members remain, parent demod and mux are freed
-			err = st.ReleaseClaimSet(ctx, "session-B")
+			err = st.ReleaseClaimSet(ctx, "session-B", resB.GenerationToken)
 			require.NoError(t, err)
 
 			_, hasLeaseAfter, _ := st.GetLease(ctx, model.LeaseKeyDemod("demod_a"))
 			assert.False(t, hasLeaseAfter, "Parent demod lease must be freed after last session leaves")
+		})
+	}
+}
+
+func TestClaimSet_StrictGenerationFencing(t *testing.T) {
+	for _, st := range createTestStores(t) {
+		name := fmt.Sprintf("%T", st)
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+
+			// 1. Session acquired under Generation 1
+			req1 := model.ClaimSetRequest{
+				SessionID:     "session-fenced",
+				ServiceRef:    "1:0:1:1:1:1:1:0:0:0:",
+				MultiplexID:   "mux-fenced",
+				InputID:       "input_a",
+				RequiredPlane: "192:HIGH:H",
+				DemodID:       "demod_fenced",
+				TTL:           10 * time.Second,
+			}
+			res1, err := st.TryAcquireClaimSet(ctx, req1)
+			require.NoError(t, err)
+			require.True(t, res1.Success)
+			require.NotEmpty(t, res1.GenerationToken)
+
+			// 2. Attempt release with empty token -> must error
+			errEmpty := st.ReleaseClaimSet(ctx, "session-fenced", "")
+			assert.Error(t, errEmpty, "Must reject tokenless release")
+
+			// 3. Attempt release with mismatched token -> must NOT delete claims
+			errWrong := st.ReleaseClaimSet(ctx, "session-fenced", "wrong-generation-token")
+			require.NoError(t, errWrong) // Safe no-op or mismatch
+
+			// Verify claim is still active
+			demodLease, hasLease, _ := st.GetLease(ctx, model.LeaseKeyDemod("demod_fenced"))
+			assert.True(t, hasLease, "Claim must NOT be deleted by mismatched generation token")
+			assert.NotNil(t, demodLease)
+
+			// 4. Release with correct token -> succeeds and removes claim
+			errCorrect := st.ReleaseClaimSet(ctx, "session-fenced", res1.GenerationToken)
+			require.NoError(t, errCorrect)
+
+			_, hasLeaseAfter, _ := st.GetLease(ctx, model.LeaseKeyDemod("demod_fenced"))
+			assert.False(t, hasLeaseAfter, "Claim must be deleted with valid generation token")
+		})
+	}
+}
+
+func TestClaimSet_ForceAdminRelease(t *testing.T) {
+	for _, st := range createTestStores(t) {
+		name := fmt.Sprintf("%T", st)
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+
+			req := model.ClaimSetRequest{
+				SessionID:     "session-admin-force",
+				ServiceRef:    "1:0:1:1:1:1:1:0:0:0:",
+				MultiplexID:   "mux-admin",
+				InputID:       "input_a",
+				RequiredPlane: "192:HIGH:H",
+				DemodID:       "demod_admin",
+				TTL:           10 * time.Second,
+			}
+			res, err := st.TryAcquireClaimSet(ctx, req)
+			require.NoError(t, err)
+			require.True(t, res.Success)
+
+			// Admin force release without token
+			err = st.ForceAdminReleaseClaimSet(ctx, "session-admin-force")
+			require.NoError(t, err)
+
+			_, hasLease, _ := st.GetLease(ctx, model.LeaseKeyDemod("demod_admin"))
+			assert.False(t, hasLease, "Demod lease must be cleared by admin force release")
+		})
+	}
+}
+
+func TestClaimSet_ApplyReconciliationPlan(t *testing.T) {
+	for _, st := range createTestStores(t) {
+		name := fmt.Sprintf("%T", st)
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+
+			// Start two sessions
+			req1 := model.ClaimSetRequest{
+				SessionID:     "sess-reconcile-1",
+				ServiceRef:    "1:0:1:1:1:1:1:0:0:0:",
+				MultiplexID:   "mux-rec-1",
+				InputID:       "input_a",
+				RequiredPlane: "192:HIGH:H",
+				DemodID:       "demod_rec_1",
+				TTL:           10 * time.Second,
+			}
+			res1, err := st.TryAcquireClaimSet(ctx, req1)
+			require.NoError(t, err)
+			require.True(t, res1.Success)
+
+			req2 := model.ClaimSetRequest{
+				SessionID:     "sess-reconcile-2",
+				ServiceRef:    "1:0:1:2:2:2:2:0:0:0:",
+				MultiplexID:   "mux-rec-2",
+				InputID:       "input_b",
+				RequiredPlane: "192:LOW:V",
+				DemodID:       "demod_rec_2",
+				TTL:           10 * time.Second,
+			}
+			res2, err := st.TryAcquireClaimSet(ctx, req2)
+			require.NoError(t, err)
+			require.True(t, res2.Success)
+
+			// Apply reconciliation plan that reaps session 1 and mux 1
+			plan := model.ReconciliationPlan{
+				SessionsToReap: []string{"sess-reconcile-1"},
+				ExpiredMuxes:   []string{"mux-rec-1"},
+			}
+			err = st.ApplyReconciliationPlan(ctx, plan)
+			require.NoError(t, err)
+
+			// Verify session 1 is reaped, but session 2 remains untouched
+			_, hasLease1, _ := st.GetLease(ctx, model.LeaseKeyDemod("demod_rec_1"))
+			assert.False(t, hasLease1, "Demod 1 must be reaped by plan")
+
+			_, hasLease2, _ := st.GetLease(ctx, model.LeaseKeyDemod("demod_rec_2"))
+			assert.True(t, hasLease2, "Demod 2 must remain active")
+		})
+	}
+}
+
+func TestClaimSet_DemuxSaturationLimit(t *testing.T) {
+	for _, st := range createTestStores(t) {
+		name := fmt.Sprintf("%T", st)
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+
+			// Max members configured to 2
+			reqA := model.ClaimSetRequest{
+				SessionID:     "sess-demux-1",
+				ServiceRef:    "1:0:1:1:1:1:1:0:0:0:",
+				MultiplexID:   "mux-demux-test",
+				InputID:       "input_a",
+				RequiredPlane: "192:HIGH:H",
+				DemodID:       "demod_demux_1",
+				MaxMuxMembers: 2,
+				TTL:           10 * time.Second,
+			}
+			resA, err := st.TryAcquireClaimSet(ctx, reqA)
+			require.NoError(t, err)
+			require.True(t, resA.Success)
+			assert.False(t, resA.ReusedMux)
+
+			reqB := model.ClaimSetRequest{
+				SessionID:     "sess-demux-2",
+				ServiceRef:    "1:0:1:2:1:1:1:0:0:0:",
+				MultiplexID:   "mux-demux-test",
+				InputID:       "input_a",
+				RequiredPlane: "192:HIGH:H",
+				DemodID:       "demod_demux_2",
+				MaxMuxMembers: 2,
+				TTL:           10 * time.Second,
+			}
+			resB, err := st.TryAcquireClaimSet(ctx, reqB)
+			require.NoError(t, err)
+			require.True(t, resB.Success)
+			assert.True(t, resB.ReusedMux, "Session 2 must reuse multiplex")
+
+			// Third session on same multiplex hits MaxMuxMembers (2) -> cannot reuse demod_demux_1
+			// It should allocate a second independent demod (demod_demux_3) on compatible plane
+			reqC := model.ClaimSetRequest{
+				SessionID:     "sess-demux-3",
+				ServiceRef:    "1:0:1:3:1:1:1:0:0:0:",
+				MultiplexID:   "mux-demux-test",
+				InputID:       "input_a",
+				RequiredPlane: "192:HIGH:H",
+				DemodID:       "demod_demux_3",
+				MaxMuxMembers: 2,
+				TTL:           10 * time.Second,
+			}
+			resC, err := st.TryAcquireClaimSet(ctx, reqC)
+			require.NoError(t, err)
+			require.True(t, resC.Success)
+			assert.False(t, resC.ReusedMux, "Session 3 must NOT reuse saturated mux; must allocate demod_demux_3")
+			assert.Equal(t, "demod_demux_3", resC.DemodID)
 		})
 	}
 }

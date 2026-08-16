@@ -16,6 +16,8 @@ const (
 	CodeStateUnknown                 = "ADMISSION_STATE_UNKNOWN"
 	CodePlaneConflict                = "ADMISSION_PLANE_CONFLICT"
 	CodeRecordingReservationConflict = "ADMISSION_RECORDING_RESERVATION_CONFLICT"
+	CodeDemuxExhausted               = "ADMISSION_DEMUX_EXHAUSTED"
+	CodeStaleSnapshot                = "ADMISSION_STALE_SNAPSHOT"
 )
 
 // Problem is a lightweight wrapper around RFC7807 data for internal passing.

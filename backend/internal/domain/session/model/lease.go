@@ -41,30 +41,50 @@ const (
 	ConflictSCROccupied          ConflictKind = "scr_occupied"
 	ConflictRecordingReservation ConflictKind = "recording_reservation_conflict"
 	ConflictCapacityExhausted    ConflictKind = "capacity_exhausted"
+	ConflictDemuxExhausted       ConflictKind = "demux_exhausted"
+	ConflictStaleSnapshot        ConflictKind = "stale_snapshot"
 )
+
+// DemuxLimitSource denotes the origin of the demux service limit constraint.
+type DemuxLimitSource string
+
+const (
+	DemuxLimitSourceObserved   DemuxLimitSource = "OBSERVED"
+	DemuxLimitSourceConfigured DemuxLimitSource = "CONFIGURED"
+	DemuxLimitSourceDefault    DemuxLimitSource = "DEFAULT"
+)
+
+// ReconciliationPlan defines a classified set of claims to be transactionally applied by the store.
+type ReconciliationPlan struct {
+	SessionsToReap []string `json:"sessionsToReap,omitempty"`
+	ExpiredMuxes   []string `json:"expiredMuxes,omitempty"`
+}
 
 // ClaimSetRequest defines a multi-resource atomic hardware reservation plan.
 type ClaimSetRequest struct {
-	SessionID     string        `json:"sessionId"`
-	ServiceRef    string        `json:"serviceRef"`
-	MultiplexID   string        `json:"multiplexId"`
-	InputID       string        `json:"inputId"`
-	RequiredPlane string        `json:"requiredPlane,omitempty"` // e.g. "192:HIGH:H"
-	DemodID       string        `json:"demodId"`
-	SCRSlot       *int          `json:"scrSlot,omitempty"`
-	TTL           time.Duration `json:"ttl"`
-	Priority      int           `json:"priority"`
+	SessionID       string        `json:"sessionId"`
+	GenerationToken string        `json:"generationToken"` // Immutable fencing token (UUIDv4)
+	ServiceRef      string        `json:"serviceRef"`
+	MultiplexID     string        `json:"multiplexId"`
+	InputID         string        `json:"inputId"`
+	RequiredPlane   string        `json:"requiredPlane,omitempty"` // e.g. "192:HIGH:H"
+	DemodID         string        `json:"demodId"`
+	SCRSlot         *int          `json:"scrSlot,omitempty"`
+	MaxMuxMembers   int           `json:"maxMuxMembers,omitempty"` // Optional capacity limit per tuned mux (0 = default 8)
+	TTL             time.Duration `json:"ttl"`
+	Priority        int           `json:"priority"`
 }
 
 // ClaimSetResult contains the outcome of an atomic claim acquisition attempt.
 type ClaimSetResult struct {
-	Success      bool         `json:"success"`
-	ReusedMux    bool         `json:"reusedMux"`
-	ConflictType ConflictKind `json:"conflictType,omitempty"`
-	ConflictDesc string       `json:"conflictDesc,omitempty"`
-	DemodID      string       `json:"demodId,omitempty"`
-	InputID      string       `json:"inputId,omitempty"`
-	ExpiresAt    time.Time    `json:"expiresAt,omitempty"`
+	Success         bool         `json:"success"`
+	GenerationToken string       `json:"generationToken,omitempty"`
+	ReusedMux       bool         `json:"reusedMux"`
+	ConflictType    ConflictKind `json:"conflictType,omitempty"`
+	ConflictDesc    string       `json:"conflictDesc,omitempty"`
+	DemodID         string       `json:"demodId,omitempty"`
+	InputID         string       `json:"inputId,omitempty"`
+	ExpiresAt       time.Time    `json:"expiresAt,omitempty"`
 }
 
 // MuxAllocationRecord represents an active hardware transport stream allocation.
@@ -80,10 +100,11 @@ type MuxAllocationRecord struct {
 
 // MuxMemberRecord represents an active session consumer on a shared multiplex.
 type MuxMemberRecord struct {
-	MultiplexID string    `json:"multiplexId"`
-	SessionID   string    `json:"sessionId"`
-	JoinedAt    time.Time `json:"joinedAt"`
-	ExpiresAt   time.Time `json:"expiresAt"`
+	MultiplexID     string    `json:"multiplexId"`
+	SessionID       string    `json:"sessionId"`
+	GenerationToken string    `json:"generationToken"`
+	JoinedAt        time.Time `json:"joinedAt"`
+	ExpiresAt       time.Time `json:"expiresAt"`
 }
 
 // InputClaimRecord represents the active RF plane state on a physical coaxial input.

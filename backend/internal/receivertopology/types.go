@@ -296,3 +296,42 @@ type ReceiverRuntimeSnapshot struct {
 	StreamPresence     StreamPresence      `json:"streamPresence"`
 	Tuners             []ObservedTunerSlot `json:"tuners,omitempty"`
 }
+
+// IsFresh reports whether the evidentiary snapshot was observed within maxAge.
+func (s ReceiverRuntimeSnapshot) IsFresh(maxAge time.Duration, now time.Time) bool {
+	if s.ObservedAt.IsZero() {
+		return false
+	}
+	if maxAge <= 0 {
+		maxAge = 15 * time.Second
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	return now.Sub(s.ObservedAt) <= maxAge
+}
+
+// DemuxLimitConfig specifies demux limits and their provenance.
+type DemuxLimitConfig struct {
+	MaxMuxMembers int    `json:"maxMuxMembers"`
+	Source        string `json:"source"`
+}
+
+// AllocationDiagnostics provides sanitized, structured operational facts explaining an admission decision.
+// STRICT INVARIANT: Must NEVER include bearer tokens, credentials, IP addresses, or principal IDs.
+type AllocationDiagnostics struct {
+	ServiceRef         string `json:"serviceRef"`
+	MultiplexID        string `json:"multiplexId,omitempty"`
+	RequiredPlane      string `json:"requiredPlane,omitempty"`
+	EvaluatedInputID   string `json:"evaluatedInputId,omitempty"`
+	EvaluatedDemodID   string `json:"evaluatedDemodId,omitempty"`
+	ConflictingInputID string `json:"conflictingInputId,omitempty"`
+	ActivePlaneOnInput string `json:"activePlaneOnInput,omitempty"`
+	ConflictingOwner   string `json:"conflictingOwner,omitempty"`
+	ConflictingTimer   string `json:"conflictingTimer,omitempty"`
+	DemuxMemberCount   int    `json:"demuxMemberCount,omitempty"`
+	DemuxMaxMembers    int    `json:"demuxMaxMembers,omitempty"`
+	SnapshotAgeMs      int64  `json:"snapshotAgeMs"`
+	SnapshotFresh      bool   `json:"snapshotFresh"`
+	DecisionCode       string `json:"decisionCode"`
+}
