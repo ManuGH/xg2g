@@ -124,8 +124,28 @@ func requiresPlannedTranscode(ev PlaybackEvidence) bool {
 		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
 	}
 	switch requested {
-	case "transcode", "repair", "abr", "mobile_abr", "3tier", "2tier":
+	case "transcode", "repair", "abr", "mobile_abr", "3tier", "2tier", "normalize":
 		return true
+	case "quality":
+		if strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") || ev.ClientEvidence.PrefersFMP4 {
+			return true
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+func requiresVideoNormalization(ev PlaybackEvidence) bool {
+	requested := strings.ToLower(strings.TrimSpace(ev.OperatorPolicy.ForceIntent))
+	if requested == "" {
+		requested = strings.ToLower(strings.TrimSpace(ev.RequestedIntent))
+	}
+	switch requested {
+	case "normalize":
+		return true
+	case "quality":
+		return strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") || ev.ClientEvidence.PrefersFMP4
 	default:
 		return false
 	}

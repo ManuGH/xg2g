@@ -32,7 +32,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 		isABRIntent := isABRRequested(ev)
 		if isABRIntent {
 			plan.Video = TrackPlan{Mode: "transcode", Codec: "h264", EnableABR: true}
-		} else if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" {
+		} else if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" && !requiresVideoNormalization(ev) {
 			plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		} else {
 			if requiresInterlaceRepair(ev) {
