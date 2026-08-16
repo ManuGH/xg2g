@@ -172,39 +172,71 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 	if !ok {
 		matchedStream = audioStreams[0]
 	}
-
 	mapArg := fmt.Sprintf("0:%d?", matchedStream.Index)
-	var audioArgs []string
-	if selectedPlan.Strategy == audiotopology.CodecStrategyPassthrough {
-		audioArgs = []string{"-c:a", "copy", "-sn"}
-		a.Logger.Info().
+
+	if selectedPlan.Strategy == audiotopology.CodecStrategyUnsupported {
+		a.Logger.Warn().
 			Str("session_id", spec.SessionID).
-			Str("startup_phase", "live_audio_stream_selected").
-			Str("audio_map", mapArg).
-			Str("audio_strategy", "passthrough").
+			Str("startup_phase", "live_audio_strategy_unsupported").
 			Uint16("pid", selectedPlan.PID).
-			Str("hls_codec", selectedPlan.HLSCodec).
-			Int("channels", selectedPlan.Channels).
-			Str("track_name", selectedPlan.Name).
-			Msg("selected live audio stream for bitstream passthrough")
-	} else {
-		audioArgs = appendLiveAudioArgs(nil, spec, selectedPlan.Channels)
-		a.Logger.Info().
-			Str("session_id", spec.SessionID).
-			Str("startup_phase", "live_audio_stream_selected").
-			Str("audio_map", mapArg).
-			Str("audio_strategy", "transcode_aac").
-			Uint16("pid", selectedPlan.PID).
-			Int("channels", selectedPlan.Channels).
-			Int("bitrate_kbps", selectedPlan.BitrateKbps).
-			Str("track_name", selectedPlan.Name).
-			Msg("selected live audio stream for synchronized AAC transcode")
+			Str("input_codec", string(selectedPlan.InputCodec)).
+			Msg("track plan strategy unsupported by client capabilities; applying safe stereo transcode fallback")
+		selectedPlan.Strategy = audiotopology.CodecStrategyTranscode
+		selectedPlan.EncoderCodec = "aac"
+		selectedPlan.Channels = 2
+		selectedPlan.BitrateKbps = 192
 	}
+
+	audioArgs := appendPlannedAudioArgs(nil, spec, selectedPlan)
+
+	a.Logger.Info().
+		Str("session_id", spec.SessionID).
+		Str("startup_phase", "live_audio_stream_selected").
+		Str("audio_map", mapArg).
+		Str("audio_strategy", string(selectedPlan.Strategy)).
+		Uint16("pid", selectedPlan.PID).
+		Str("encoder_codec", selectedPlan.EncoderCodec).
+		Str("hls_codec", selectedPlan.HLSCodec).
+		Int("channels", selectedPlan.Channels).
+		Int("bitrate_kbps", selectedPlan.BitrateKbps).
+		Str("track_name", selectedPlan.Name).
+		Msg("selected live audio stream for playback pipeline")
 
 	return liveAudioSelection{
 		Maps:      []string{mapArg},
 		AudioArgs: audioArgs,
 	}
+}
+
+func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopology.TrackPlan) []string {
+	if plan.Strategy == audiotopology.CodecStrategyPassthrough || !spec.Profile.TranscodesAudio() {
+		return append(args, "-c:a", "copy", "-sn")
+	}
+
+	encoderCodec := plan.EncoderCodec
+	if encoderCodec == "" {
+		encoderCodec = spec.Profile.ResolvedAudioCodec()
+	}
+
+	bitrateKbps := plan.BitrateKbps
+	if spec.Profile.AudioBitrateK > 0 {
+		bitrateKbps = spec.Profile.AudioBitrateK
+	} else if bitrateKbps <= 0 {
+		bitrateKbps = 192
+	}
+
+	channels := plan.Channels
+	if channels <= 0 {
+		channels = 2
+	}
+
+	return append(args,
+		"-c:a", encoderCodec,
+		"-b:a", fmt.Sprintf("%dk", bitrateKbps),
+		"-ac", fmt.Sprintf("%d", channels),
+		"-ar", "48000",
+		"-sn",
+	)
 }
 
 func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.StreamSpec, inputURL string) ([]liveAudioStream, error) {

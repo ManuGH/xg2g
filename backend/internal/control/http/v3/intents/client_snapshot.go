@@ -23,7 +23,12 @@ func clientFamilyForIntent(intent Intent) string {
 		return playbackprofile.NormalizeClientFamilyID(clientFamily)
 	}
 	if intent.ClientCaps != nil {
-		return playbackprofile.NormalizeClientFamilyID(intent.ClientCaps.ClientFamilyFallback)
+		if intent.ClientCaps.ClientFamilyFallback != "" {
+			return playbackprofile.NormalizeClientFamilyID(intent.ClientCaps.ClientFamilyFallback)
+		}
+		if intent.ClientCaps.DeviceContext != nil && strings.EqualFold(strings.TrimSpace(intent.ClientCaps.DeviceContext.Platform), "ios") {
+			return playbackprofile.ClientIOSSafariNative
+		}
 	}
 	return ""
 }
