@@ -29,6 +29,13 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 			plan.Packaging.Container = "fmp4"
 		}
 
+		if requiresInterlaceRepair(ev) {
+			plan.Filters.Deinterlace = true
+		}
+		if ev.ClientEvidence.MaxVideoWidth > 0 && ev.SourceTruth.Width > ev.ClientEvidence.MaxVideoWidth {
+			plan.Filters.ScaleWidth = ev.ClientEvidence.MaxVideoWidth
+		}
+
 		isABRIntent := isABRRequested(ev)
 		if isABRIntent {
 			plan.Video = TrackPlan{Mode: "transcode", Codec: "h264", EnableABR: true}
@@ -43,12 +50,6 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 		} else if isVideoCodecCompatible(ev) && !requiresInterlaceRepair(ev) && !exceedsMaxVideoLimits(ev) && ev.SourceTruth.VideoCodec != "" && !requiresVideoNormalization(ev) {
 			plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		} else {
-			if requiresInterlaceRepair(ev) {
-				plan.Filters.Deinterlace = true
-			}
-			if ev.ClientEvidence.MaxVideoWidth > 0 && ev.SourceTruth.Width > ev.ClientEvidence.MaxVideoWidth {
-				plan.Filters.ScaleWidth = ev.ClientEvidence.MaxVideoWidth
-			}
 			isChromium := strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chromium") ||
 				strings.Contains(strings.ToLower(ev.ClientEvidence.Family), "chrome")
 
