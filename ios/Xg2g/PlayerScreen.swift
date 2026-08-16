@@ -563,7 +563,8 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         controller.videoGravity = videoGravity
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
-        controller.updatesNowPlayingInfoCenter = true
+        controller.updatesNowPlayingInfoCenter = false
+        controller.allowsVideoFrameAnalysis = false
         controller.delegate = context.coordinator
         return controller
     }
