@@ -143,3 +143,27 @@ func (s *LeaseStore) SweepExpired(now time.Time) []string {
 	}
 	return expired
 }
+
+// RetainActive removes leases not in activeSet in a thread-safe manner.
+func (s *LeaseStore) RetainActive(activeSet map[string]bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for sessionID := range s.leases {
+		if !activeSet[sessionID] {
+			delete(s.leases, sessionID)
+		}
+	}
+}
+
+// ActiveDemods returns a set of all demodulators currently occupied by active leases.
+func (s *LeaseStore) ActiveDemods() map[DemodulatorID]bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make(map[DemodulatorID]bool, len(s.leases))
+	for _, l := range s.leases {
+		out[l.DemodID] = true
+	}
+	return out
+}

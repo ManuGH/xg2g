@@ -7,16 +7,25 @@ import (
 	"context"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 )
 
 type Evaluator interface {
 	Evaluate(ctx context.Context, policy ReceiverUsagePolicy, req UsageRequest, snapshot SystemSnapshot) (UsageDecision, error)
 }
 
-type ReceiverUsageEvaluator struct{}
+type ReceiverUsageEvaluator struct {
+	topologyService *receivertopology.Service
+}
 
 func NewEvaluator() *ReceiverUsageEvaluator {
 	return &ReceiverUsageEvaluator{}
+}
+
+func NewEvaluatorWithTopology(topologyService *receivertopology.Service) *ReceiverUsageEvaluator {
+	return &ReceiverUsageEvaluator{
+		topologyService: topologyService,
+	}
 }
 
 func (e *ReceiverUsageEvaluator) Evaluate(ctx context.Context, policy ReceiverUsagePolicy, req UsageRequest, snapshot SystemSnapshot) (UsageDecision, error) {
@@ -160,6 +169,29 @@ func (e *ReceiverUsageEvaluator) evaluateInternal(policy ReceiverUsagePolicy, re
 				Kind:           DecisionReject,
 				Reason:         model.RReceiverUsageRestrictedAccessLimitExceeded,
 				Message:        "maximum simultaneous restricted access sessions limit reached",
+				Classification: req.Access,
+			}
+		}
+	}
+
+	// 5.5. Topology & RF Front-End Capacity Evaluation
+	if e.topologyService != nil && req.Source.ServiceReference != "" {
+		priority := receivertopology.PriorityLive
+		switch req.Intent {
+		case IntentRecording:
+			priority = receivertopology.PriorityActiveRecording
+		case IntentPictureInPicture:
+			priority = receivertopology.PriorityPiP
+		case IntentFastChannelPreview:
+			priority = receivertopology.PriorityPreview
+		}
+
+		topoDec, err := e.topologyService.CanStartStreamWithPriority(req.Source.ServiceReference, req.Source.TransponderID, priority)
+		if err == nil && !topoDec.Allowed {
+			return UsageDecision{
+				Kind:           DecisionReject,
+				Reason:         model.RLeaseBusy,
+				Message:        topoDec.Reason,
 				Classification: req.Access,
 			}
 		}

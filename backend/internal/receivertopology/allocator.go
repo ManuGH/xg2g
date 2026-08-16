@@ -150,9 +150,14 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 		}
 	}
 
-	// 2. Identify occupied demodulators and input usage counts
+	// 2. Identify occupied demodulators, input usage counts, and active RF planes
 	occupiedDemods := make(map[DemodulatorID]bool)
 	inputMuxCount := make(map[InputID]int)
+	effectivePlanes := make(map[InputID]RFPlane, len(runtime.ActiveInputPlanes))
+
+	for inID, pl := range runtime.ActiveInputPlanes {
+		effectivePlanes[inID] = pl
+	}
 
 	for _, alloc := range runtime.ActiveMultiplexes {
 		occupiedDemods[alloc.DemodID] = true
@@ -164,6 +169,9 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 		}
 		if ext.InputID != nil {
 			inputMuxCount[*ext.InputID]++
+			if ext.RFPlane != nil {
+				effectivePlanes[*ext.InputID] = *ext.RFPlane
+			}
 		}
 	}
 
@@ -198,7 +206,7 @@ func (a *Allocator) CanAllocate(runtime *RuntimeAllocation, target MultiplexID, 
 				}
 			}
 
-			activePlane, planeActive := runtime.ActiveInputPlanes[input.ID]
+			activePlane, planeActive := effectivePlanes[input.ID]
 			if !planeActive {
 				// Input is idle -> can lock to new RFPlane
 				return AllocationDecision{

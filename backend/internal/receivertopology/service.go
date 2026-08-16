@@ -210,6 +210,11 @@ func (s *Service) RuntimeSnapshot() *RuntimeAllocation {
 	return s.runtime.Clone()
 }
 
+// ActiveDemods returns all demodulators currently occupied by active xg2g stream leases.
+func (s *Service) ActiveDemods() map[DemodulatorID]bool {
+	return s.leases.ActiveDemods()
+}
+
 // ReconcileActiveSessions synchronizes runtime allocations and leases with the authoritative active sessions list.
 func (s *Service) ReconcileActiveSessions(active []ActiveSessionInfo) {
 	activeSet := make(map[string]bool, len(active))
@@ -220,12 +225,8 @@ func (s *Service) ReconcileActiveSessions(active []ActiveSessionInfo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Clean up abandoned leases
-	for sessionID := range s.leases.leases {
-		if !activeSet[sessionID] {
-			delete(s.leases.leases, sessionID)
-		}
-	}
+	// Clean up abandoned leases thread-safely
+	s.leases.RetainActive(activeSet)
 
 	// Clean up runtime allocations
 	for key, alloc := range s.runtime.ActiveMultiplexes {

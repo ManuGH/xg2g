@@ -35,6 +35,10 @@ func TestDiscovery_VuPlusUno4K_FBC(t *testing.T) {
 	if topology.Model != "Vu+ Uno 4K" {
 		t.Fatalf("expected model Vu+ Uno 4K, got %s", topology.Model)
 	}
+	// Verify generic discovery leaves Satellites unrestricted (nil), not hardcoded to 192
+	if len(topology.Inputs) != 1 || topology.Inputs[0].Satellites != nil {
+		t.Fatalf("expected unrestricted satellite list on generic discovery, got %v", topology.Inputs[0].Satellites)
+	}
 }
 
 func TestDiscovery_ExternalAllocations(t *testing.T) {
@@ -57,12 +61,14 @@ func TestDiscovery_ExternalAllocations(t *testing.T) {
 		},
 	}
 
-	// Active xg2g session owns Tuner C's serviceRef
-	activeXG2G := map[string]bool{
-		"1:0:19:283F:3FB:1:C00000:0:0:0:": true,
+	topology := DiscoverTopology(about)
+
+	// Demod C is occupied by our own active xg2g session
+	activeDemods := map[DemodulatorID]bool{
+		"tuner_c": true,
 	}
 
-	external := ExtractExternalAllocations(about, activeXG2G)
+	external := ExtractExternalAllocations(about, topology, activeDemods)
 
 	if len(external) != 2 {
 		t.Fatalf("expected 2 external allocations (ignoring xg2g session on Tuner C), got %d", len(external))
@@ -70,6 +76,9 @@ func TestDiscovery_ExternalAllocations(t *testing.T) {
 
 	if external[0].Source != "hdmi_live_tv" {
 		t.Fatalf("expected hdmi_live_tv on first external allocation, got %s", external[0].Source)
+	}
+	if external[0].InputID == nil || *external[0].InputID != "input_a" {
+		t.Fatalf("expected InputID input_a resolved for external allocation 0, got %v", external[0].InputID)
 	}
 	if external[1].Source != "local_timer_dvr" {
 		t.Fatalf("expected local_timer_dvr on second external allocation, got %s", external[1].Source)

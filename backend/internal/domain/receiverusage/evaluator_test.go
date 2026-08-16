@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 )
 
 var fixedTime = time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
@@ -474,5 +475,80 @@ func TestReceiverUsage_ZeroSideEffects_PureEvaluation(t *testing.T) {
 	}
 	if snapshot.ActiveSessions[0] != origSessState {
 		t.Fatalf("evaluator mutated active session content")
+	}
+}
+
+func TestReceiverUsage_TopologyAwareRejection(t *testing.T) {
+	topo := receivertopology.ReceiverTopology{
+		Model:      "Test FBC Receiver",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{ID: "input_a", Label: "Tuner A", DeliveryType: receivertopology.DeliveryLegacyUniversal},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_a", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topo service: %v", err)
+	}
+
+	// Occupy the only demodulator with stream 1 on High-H
+	sRef1 := "1:0:19:283D:3FB:1:C00000:0:0:0:"
+	_, _, err = topoSvc.ReserveStreamLeaseAtomic(sRef1, "sess-1", receivertopology.PriorityLive, time.Minute)
+	if err != nil {
+		t.Fatalf("failed to seed session 1: %v", err)
+	}
+
+	evaluator := NewEvaluatorWithTopology(topoSvc)
+	policy := ReceiverUsagePolicy{
+		Mode:            ReceiverUsageModeEnforce,
+		MaxLiveSessions: 10, // High session limit, but hardware only has 1 demod!
+	}
+
+	// Stream 2 requests a different transponder -> hardware exhausted!
+	req2 := UsageRequest{
+		ReceiverID: "rec-1",
+		Owner:      "user-2",
+		Intent:     IntentLive,
+		Source:     SourceIdentity{ReceiverID: "rec-1", ServiceReference: "1:0:19:9999:999:1:C00000:0:0:0:"},
+		Access: AccessClassification{
+			Class:      AccessCapacityNone,
+			Confidence: ConfidenceVerified,
+		},
+		RequestedAt: fixedTime,
+	}
+
+	decision, err := evaluator.Evaluate(context.Background(), policy, req2, SystemSnapshot{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision.Kind != DecisionReject {
+		t.Fatalf("expected DecisionReject due to demod exhaustion, got %v", decision.Kind)
+	}
+	if decision.Reason != model.RLeaseBusy {
+		t.Fatalf("expected Reason RLeaseBusy, got %v", decision.Reason)
+	}
+
+	// Stream 3 requests the SAME multiplex as Stream 1 -> Multiplex Reuse -> ALLOW!
+	req3 := UsageRequest{
+		ReceiverID: "rec-1",
+		Owner:      "user-3",
+		Intent:     IntentLive,
+		Source:     SourceIdentity{ReceiverID: "rec-1", ServiceReference: sRef1},
+		Access: AccessClassification{
+			Class:      AccessCapacityNone,
+			Confidence: ConfidenceVerified,
+		},
+		RequestedAt: fixedTime,
+	}
+
+	decision3, err := evaluator.Evaluate(context.Background(), policy, req3, SystemSnapshot{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision3.Kind != DecisionAllow {
+		t.Fatalf("expected DecisionAllow via multiplex reuse, got %v", decision3.Kind)
 	}
 }

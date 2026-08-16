@@ -11,7 +11,8 @@ import (
 )
 
 // DiscoverTopology infers receiver physical topology from OpenWebIF /api/about metadata.
-// Topologies derived from discovery obtain ConfidenceObserved (audit-only / fail-open evaluation).
+// Discovered topologies obtain ConfidenceObserved (fail-open / audit-only evaluation).
+// Configured / verified topologies with explicit multi-cable or Unicable routing take precedence.
 func DiscoverTopology(about *openwebif.AboutInfo) ReceiverTopology {
 	if about == nil {
 		return DefaultFallbackTopology()
@@ -43,53 +44,25 @@ func DiscoverTopology(about *openwebif.AboutInfo) ReceiverTopology {
 	}
 
 	if hasFBC {
-		// FBC Architecture: Tuner A is physical root, Tuners B-H are FBC multi-demods
+		// Generic FBC Observed: Root Input A with N multi-demodulators
+		// No hardcoded orbital positions or assumptions on secondary cabling
 		inputA := PhysicalInput{
 			ID:           "input_a",
-			Label:        "Tuner A (FBC LNB 1)",
+			Label:        "Tuner A (FBC In)",
 			DeliveryType: DeliveryLegacyUniversal,
-			Satellites:   []SatellitePosition{192},
+			Satellites:   nil, // Unrestricted satellite positions
 		}
 		inputs = append(inputs, inputA)
 
-		// Check if Tuner B is also a separate physical input or linked
-		hasSecondPhysicalInput := len(rawTuners) > 1 && !strings.Contains(strings.ToLower(rawTuners[1].Name), "virtual")
-		if hasSecondPhysicalInput && len(rawTuners) >= 8 {
-			inputB := PhysicalInput{
-				ID:           "input_b",
-				Label:        "Tuner B (FBC LNB 2)",
-				DeliveryType: DeliveryLegacyUniversal,
-				Satellites:   []SatellitePosition{192},
-			}
-			inputs = append(inputs, inputB)
-
-			// 8 Demods split across Input A and B
-			for i, t := range rawTuners {
-				demodID := DemodulatorID(sanitizeTunerID(t.Name, i))
-				inputID := InputID("input_a")
-				if i == 1 || i >= 4 { // Standard FBC dual mapping
-					inputID = "input_b"
-				}
-				dvbTypes := parseDVBTypes(t.Type)
-				demods = append(demods, Demodulator{
-					ID:           demodID,
-					InputID:      inputID,
-					DVBTypes:     dvbTypes,
-					IsFBCVirtual: i >= 2,
-				})
-			}
-		} else {
-			// Single-cable FBC: all demods route through Input A
-			for i, t := range rawTuners {
-				demodID := DemodulatorID(sanitizeTunerID(t.Name, i))
-				dvbTypes := parseDVBTypes(t.Type)
-				demods = append(demods, Demodulator{
-					ID:           demodID,
-					InputID:      "input_a",
-					DVBTypes:     dvbTypes,
-					IsFBCVirtual: i >= 1,
-				})
-			}
+		for i, t := range rawTuners {
+			demodID := DemodulatorID(sanitizeTunerID(t.Name, i))
+			dvbTypes := parseDVBTypes(t.Type)
+			demods = append(demods, Demodulator{
+				ID:           demodID,
+				InputID:      "input_a",
+				DVBTypes:     dvbTypes,
+				IsFBCVirtual: i >= 1,
+			})
 		}
 	} else {
 		// Standard Discrete Tuners (Single, Dual, Triple)
@@ -100,6 +73,7 @@ func DiscoverTopology(about *openwebif.AboutInfo) ReceiverTopology {
 				ID:           inputID,
 				Label:        t.Name,
 				DeliveryType: delivery,
+				Satellites:   nil,
 			})
 
 			demodID := DemodulatorID(sanitizeTunerID(t.Name, i))
@@ -122,7 +96,12 @@ func DiscoverTopology(about *openwebif.AboutInfo) ReceiverTopology {
 }
 
 // ExtractExternalAllocations identifies receiver-observed tuner usage not owned by xg2g sessions.
-func ExtractExternalAllocations(about *openwebif.AboutInfo, activeXG2GServiceRefs map[string]bool) []ExternalAllocation {
+// Checks demodulator ownership and accurately resolves the associated physical RF input.
+func ExtractExternalAllocations(
+	about *openwebif.AboutInfo,
+	topology ReceiverTopology,
+	activeXG2GDemods map[DemodulatorID]bool,
+) []ExternalAllocation {
 	if about == nil {
 		return nil
 	}
@@ -132,39 +111,57 @@ func ExtractExternalAllocations(about *openwebif.AboutInfo, activeXG2GServiceRef
 	for i, t := range about.Info.Tuners {
 		demodID := DemodulatorID(sanitizeTunerID(t.Name, i))
 
+		// If xg2g currently holds a lease on this specific demodulator, it is our own stream
+		if activeXG2GDemods[demodID] {
+			continue
+		}
+
+		// Resolve physical input connected to this demodulator
+		var inputID *InputID
+		if demod, ok := topology.FindDemod(demodID); ok {
+			in := demod.InputID
+			inputID = &in
+		}
+
 		// Check Live TV on HDMI output
-		if sRef := strings.TrimSpace(t.Live); sRef != "" && !activeXG2GServiceRefs[sRef] {
+		if sRef := strings.TrimSpace(t.Live); sRef != "" {
 			if mux, err := ParseServiceRef(sRef); err == nil {
 				external = append(external, ExternalAllocation{
 					Source:      "hdmi_live_tv",
 					DemodID:     &demodID,
+					InputID:     inputID,
 					MultiplexID: &mux,
 					RFPlane:     mux.RFPlane,
 				})
+				continue
 			}
 		}
 
 		// Check Local Receiver Timer Recording
-		if sRef := strings.TrimSpace(t.Rec); sRef != "" && !activeXG2GServiceRefs[sRef] {
+		if sRef := strings.TrimSpace(t.Rec); sRef != "" {
 			if mux, err := ParseServiceRef(sRef); err == nil {
 				external = append(external, ExternalAllocation{
 					Source:      "local_timer_dvr",
 					DemodID:     &demodID,
+					InputID:     inputID,
 					MultiplexID: &mux,
 					RFPlane:     mux.RFPlane,
 				})
+				continue
 			}
 		}
 
-		// Check External Non-XG2G Streaming Client
-		if sRef := strings.TrimSpace(t.Stream); sRef != "" && !activeXG2GServiceRefs[sRef] {
+		// Check External Streaming Client
+		if sRef := strings.TrimSpace(t.Stream); sRef != "" {
 			if mux, err := ParseServiceRef(sRef); err == nil {
 				external = append(external, ExternalAllocation{
 					Source:      "external_stream_client",
 					DemodID:     &demodID,
+					InputID:     inputID,
 					MultiplexID: &mux,
 					RFPlane:     mux.RFPlane,
 				})
+				continue
 			}
 		}
 	}
@@ -210,7 +207,7 @@ func parseDVBTypes(typeStr string) []DVBType {
 		types = append(types, DVBTypeTerrestrial)
 	}
 	if len(types) == 0 {
-		types = append(types, DVBTypeSat) // Default SAT
+		types = append(types, DVBTypeSat)
 	}
 	return types
 }
