@@ -30,16 +30,19 @@ type nowNextRequest struct {
 }
 
 type epgEntry struct {
-	Title       string           `json:"title,omitempty"`
-	Desc        string           `json:"desc,omitempty"`  // short programme synopsis
-	Start       int64            `json:"start,omitempty"` // unix seconds
-	End         int64            `json:"end,omitempty"`   // unix seconds
-	StartXMLTV  string           `json:"startXmltv,omitempty"`
-	EndXMLTV    string           `json:"endXmltv,omitempty"`
-	AgeRating   *epg.AgeRating   `json:"ageRating,omitempty"`
-	EpisodeInfo *epg.EpisodeInfo `json:"episodeInfo,omitempty"`
-	Genre       string           `json:"genre,omitempty"`
-	GenreSource string           `json:"genreSource,omitempty"`
+	Title           string           `json:"title,omitempty"`
+	Desc            string           `json:"desc,omitempty"`  // short programme synopsis
+	Start           int64            `json:"start,omitempty"` // unix seconds
+	End             int64            `json:"end,omitempty"`   // unix seconds
+	StartXMLTV      string           `json:"startXmltv,omitempty"`
+	EndXMLTV        string           `json:"endXmltv,omitempty"`
+	AgeRating       *epg.AgeRating   `json:"ageRating,omitempty"`
+	EpisodeInfo     *epg.EpisodeInfo `json:"episodeInfo,omitempty"`
+	Genre           string           `json:"genre,omitempty"`
+	GenreSource     string           `json:"genreSource,omitempty"`
+	RatingScore     *epg.RatingScore `json:"ratingScore,omitempty"`
+	PosterURL       string           `json:"posterUrl,omitempty"`
+	ProviderSummary string           `json:"providerSummary,omitempty"`
 }
 
 type nowNextItem struct {
@@ -138,6 +141,9 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 				entry.EpisodeInfo = program.Canonical.EpisodeInfo
 				entry.Genre = program.Canonical.Genre
 				entry.GenreSource = program.Canonical.GenreSource
+				entry.RatingScore = program.Canonical.RatingScore
+				entry.PosterURL = program.Canonical.PosterURL
+				entry.ProviderSummary = program.Canonical.ProviderSummary
 			}
 
 			if now.After(start) && now.Before(stop) {
