@@ -665,7 +665,7 @@ func TestResolvePlaybackInfo_Shadow_RealScenarios_Matrix(t *testing.T) {
 		t.Logf("Scenario %s Legacy: %+v\nPlanner: %+v", name, ob.Legacy, plannerComp)
 
 		rawDiffs := playbackshadow.DiffComparablePlans(ob.Legacy, plannerComp)
-		unexplained := playbackshadow.UnexplainedDiffCodes(ob.Legacy, plannerComp)
+		unexplained := playbackshadow.UnexplainedDiffCodesWithEvidence(ob.Legacy, plannerComp, ob.Evidence)
 		t.Logf("Scenario %s raw diffs: %v", name, rawDiffs)
 		require.Empty(t, unexplained, "Expected exactly 0 unexplained diffs for scenario %s, got: %v", name, unexplained)
 	}
