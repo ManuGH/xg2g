@@ -30,7 +30,7 @@ func TestNormalizeTitle(t *testing.T) {
 		},
 		{
 			input: "Breaking Bad S02E05",
-			want:  "breaking bad s02e05",
+			want:  "breaking bad",
 		},
 		{
 			input: "   Dokumentation:   Die Alpen  [Neu]   ",

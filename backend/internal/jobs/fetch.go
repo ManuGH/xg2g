@@ -17,6 +17,8 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/config"
 	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/epg/matcher"
+	"github.com/ManuGH/xg2g/internal/epg/store"
 	xglog "github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/metrics"
 	"github.com/ManuGH/xg2g/internal/openwebif"
@@ -38,8 +40,10 @@ type epgFetchClient interface {
 // It builds service reference maps, matches events to channels,
 // and converts them to XMLTV programmes.
 type epgAggregator struct {
-	ctx   context.Context
-	items []playlist.Item
+	ctx             context.Context
+	items           []playlist.Item
+	enrichmentStore store.EnrichmentStore
+	enrichmentQueue *epg.EnrichmentQueue
 }
 
 // newEPGAggregator creates a new EPG aggregator
@@ -48,6 +52,13 @@ func newEPGAggregator(ctx context.Context, items []playlist.Item) *epgAggregator
 		ctx:   ctx,
 		items: items,
 	}
+}
+
+// withEnrichment configures optional async enrichment pipeline
+func (a *epgAggregator) withEnrichment(store store.EnrichmentStore, queue *epg.EnrichmentQueue) *epgAggregator {
+	a.enrichmentStore = store
+	a.enrichmentQueue = queue
+	return a
 }
 
 // buildSRefMap creates a mapping from service reference to the desired Channel ID (which is now the ServiceRef)
@@ -129,6 +140,21 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 
 			// Parse canonical metadata (FSK / Broadcaster Age, Episode info, DVB Genre) once on ingest
 			epg.EnrichProgramme(&prog)
+
+			// Async Provider Enrichment (Phase E2)
+			if a.enrichmentStore != nil || a.enrichmentQueue != nil {
+				fp := matcher.ExtractFingerprint(&prog)
+				if a.enrichmentStore != nil {
+					if cached, found, err := a.enrichmentStore.Get(a.ctx, fp); err == nil && found && cached != nil {
+						matcher.AttachEnrichment(&prog, cached)
+					} else if a.enrichmentQueue != nil {
+						// Non-blocking enqueue for async background lookup
+						a.enrichmentQueue.Enqueue(fp)
+					}
+				} else if a.enrichmentQueue != nil {
+					a.enrichmentQueue.Enqueue(fp)
+				}
+			}
 
 			allProgrammes = append(allProgrammes, prog)
 		}

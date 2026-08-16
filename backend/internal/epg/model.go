@@ -45,12 +45,16 @@ type EpisodeInfo struct {
 
 // CanonicalMetadata contains pre-parsed, deterministic EPG metadata attached to a Programme on ingest.
 type CanonicalMetadata struct {
-	AgeRating   *AgeRating   `json:"ageRating,omitempty"`
-	EpisodeInfo *EpisodeInfo `json:"episodeInfo,omitempty"`
-	Genre       string       `json:"genre,omitempty"`
-	GenreSource string       `json:"genreSource,omitempty"` // "dvb_descriptor", "dvb_category", "dvb_text"
-	Year        string       `json:"year,omitempty"`
-	Country     string       `json:"country,omitempty"`
-	Directors   []string     `json:"directors,omitempty"`
-	Actors      []string     `json:"actors,omitempty"`
+	AgeRating          *AgeRating   `json:"ageRating,omitempty"` // Strictly from DVB source (E1)
+	EpisodeInfo        *EpisodeInfo `json:"episodeInfo,omitempty"`
+	Genre              string       `json:"genre,omitempty"`
+	GenreSource        string       `json:"genreSource,omitempty"` // "dvb_descriptor", "dvb_category", "dvb_text"
+	Year               string       `json:"year,omitempty"`
+	Country            string       `json:"country,omitempty"`
+	Directors          []string     `json:"directors,omitempty"`
+	Actors             []string     `json:"actors,omitempty"`
+	RatingScore        *RatingScore `json:"ratingScore,omitempty"`        // External provider rating (E2)
+	ProviderAgeRatings []AgeRating  `json:"providerAgeRatings,omitempty"` // External provider ratings (E2)
+	PosterURL          string       `json:"posterUrl,omitempty"`          // External provider poster (E2)
+	ProviderSummary    string       `json:"providerSummary,omitempty"`    // External provider summary (E2)
 }

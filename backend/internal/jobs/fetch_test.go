@@ -10,11 +10,16 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/config"
+	"github.com/ManuGH/xg2g/internal/epg"
+	"github.com/ManuGH/xg2g/internal/epg/store"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/playlist"
 	"github.com/ManuGH/xg2g/internal/problemcode"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockEPGFetchClient struct {
@@ -370,4 +375,113 @@ func TestAggregateEvents_PopulatesCanonicalMetadataOnIngest(t *testing.T) {
 	if prog.Canonical.EpisodeInfo.SeasonNumber != 1 || prog.Canonical.EpisodeInfo.EpisodeNumber != 2 {
 		t.Errorf("unexpected EpisodeInfo: %+v", prog.Canonical.EpisodeInfo)
 	}
+}
+
+type mockJobsMetadataProvider struct {
+	lookupFn func(ctx context.Context, fp epg.ProgrammeFingerprint) (*epg.EnrichmentData, error)
+}
+
+func (m *mockJobsMetadataProvider) Name() string { return "mock_jobs" }
+func (m *mockJobsMetadataProvider) Lookup(ctx context.Context, fp epg.ProgrammeFingerprint) (*epg.EnrichmentData, error) {
+	if m.lookupFn != nil {
+		return m.lookupFn(ctx, fp)
+	}
+	return nil, nil
+}
+
+func TestAggregateEvents_AsyncEnrichmentPipelineIntegration(t *testing.T) {
+	ctx := context.Background()
+	items := []playlist.Item{
+		{ServiceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:", Name: "Das Erste HD"},
+	}
+
+	memStore := store.NewMemoryEnrichmentStore()
+	defer memStore.Close()
+
+	provider := &mockJobsMetadataProvider{
+		lookupFn: func(ctx context.Context, fp epg.ProgrammeFingerprint) (*epg.EnrichmentData, error) {
+			return &epg.EnrichmentData{
+				FingerprintKey:     fp.Key(),
+				FingerprintVersion: fp.FingerprintVersion,
+				MatcherVersion:     epg.CurrentMatcherVersion,
+				Status:             epg.MatchStatusFound,
+				Identity: epg.ProviderIdentity{
+					Provider: "tvmaze",
+					Type:     "episode",
+					ID:       "998877",
+				},
+				Rating: &epg.RatingScore{
+					Score:  8.9,
+					Scale:  10.0,
+					Source: "tvmaze",
+				},
+				PosterURL: "https://example.com/poster99.jpg",
+				Summary:   "Enriched summary from provider.",
+				FetchedAt: time.Now(),
+				ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+			}, nil
+		},
+	}
+
+	queue := epg.NewEnrichmentQueue(epg.DefaultQueueConfig(), memStore, provider)
+	require.NoError(t, queue.Start(ctx))
+	defer queue.Stop()
+
+	events := []openwebif.EPGEvent{
+		{
+			ID:          1001,
+			Title:       "Breaking Bad S02E05",
+			Description: "FSK 16. Krimiserie",
+			LongDesc:    "FSK 16. Krimiserie",
+			Begin:       time.Now().Unix(),
+			Duration:    3600,
+			SRef:        "1:0:19:283D:3FB:1:C00000:0:0:0:",
+			Genre:       "Serie",
+		},
+	}
+
+	agg := newEPGAggregator(ctx, items).withEnrichment(memStore, queue)
+	srefMap := agg.buildSRefMap()
+
+	// 1. First Pass: Cache is empty. Programme gets E1 canonical metadata, and fp is enqueued to queue
+	progsFirstPass := agg.aggregateEvents(events, srefMap)
+	require.Len(t, progsFirstPass, 1)
+	require.NotNil(t, progsFirstPass[0].Canonical)
+	// E1 observed rating is preserved
+	require.NotNil(t, progsFirstPass[0].Canonical.AgeRating)
+	assert.Equal(t, 16, progsFirstPass[0].Canonical.AgeRating.Value)
+	assert.Equal(t, "FSK", progsFirstPass[0].Canonical.AgeRating.Scheme)
+	// Provider rating not yet attached on first pass
+	assert.Nil(t, progsFirstPass[0].Canonical.RatingScore)
+
+	// 2. Wait for background worker to process the job and write to memStore
+	require.Eventually(t, func() bool {
+		fp := epg.ProgrammeFingerprint{
+			NormalizedTitle:    "breaking bad",
+			Season:             2,
+			Episode:            5,
+			EventGenre:         "series",
+			FingerprintVersion: epg.CurrentFingerprintVersion,
+		}
+		data, found, err := memStore.Get(ctx, fp)
+		return err == nil && found && data != nil
+	}, 2*time.Second, 20*time.Millisecond)
+
+	// 3. Second Ingest Pass: Store now has cached enrichment. Programme gets both E1 DVB data AND E2 provider data attached
+	progsSecondPass := agg.aggregateEvents(events, srefMap)
+	require.Len(t, progsSecondPass, 1)
+	require.NotNil(t, progsSecondPass[0].Canonical)
+
+	// Invariant Check: E1 DVB observed rating remains 100% intact and unmutated
+	require.NotNil(t, progsSecondPass[0].Canonical.AgeRating)
+	assert.Equal(t, 16, progsSecondPass[0].Canonical.AgeRating.Value)
+	assert.Equal(t, "FSK", progsSecondPass[0].Canonical.AgeRating.Scheme)
+	assert.Equal(t, "DE", progsSecondPass[0].Canonical.AgeRating.Country)
+
+	// Provider Enrichment data is now attached
+	require.NotNil(t, progsSecondPass[0].Canonical.RatingScore)
+	assert.Equal(t, 8.9, progsSecondPass[0].Canonical.RatingScore.Score)
+	assert.Equal(t, "tvmaze", progsSecondPass[0].Canonical.RatingScore.Source)
+	assert.Equal(t, "https://example.com/poster99.jpg", progsSecondPass[0].Canonical.PosterURL)
+	assert.Equal(t, "Enriched summary from provider.", progsSecondPass[0].Canonical.ProviderSummary)
 }
