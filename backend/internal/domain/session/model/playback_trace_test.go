@@ -157,7 +157,7 @@ func TestTraceTargetProfileFromProfile_DefaultsToCompatibleHLSOutput(t *testing.
 	assert.Equal(t, playbackprofile.MediaModeCopy, target.Video.Mode)
 	assert.Equal(t, playbackprofile.MediaModeTranscode, target.Audio.Mode)
 	assert.Equal(t, "aac", target.Audio.Codec)
-	assert.Equal(t, 192, target.Audio.BitrateKbps)
+	assert.Equal(t, 320, target.Audio.BitrateKbps)
 }
 
 func TestTraceTargetProfileFromProfile_MapsCPUH264VideoLadderFields(t *testing.T) {
