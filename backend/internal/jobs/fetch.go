@@ -123,6 +123,10 @@ func (a *epgAggregator) aggregateEvents(events []openwebif.EPGEvent, srefMap map
 				}
 			}
 
+			if event.Genre != "" {
+				prog.Category = []string{event.Genre}
+			}
+
 			// Parse canonical metadata (FSK / Broadcaster Age, Episode info, DVB Genre) once on ingest
 			epg.EnrichProgramme(&prog)
 

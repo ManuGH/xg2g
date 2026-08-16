@@ -133,9 +133,6 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 			if program.Desc != nil {
 				entry.Desc = cleanEPGText(program.Desc.Text)
 			}
-			if program.Canonical == nil {
-				epg.EnrichProgramme(&program)
-			}
 			if program.Canonical != nil {
 				entry.AgeRating = program.Canonical.AgeRating
 				entry.EpisodeInfo = program.Canonical.EpisodeInfo
