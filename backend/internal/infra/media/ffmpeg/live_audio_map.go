@@ -317,13 +317,23 @@ func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.Str
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
+	filterAudio := func(raw []liveAudioStream) []liveAudioStream {
+		var filtered []liveAudioStream
+		for _, s := range raw {
+			if s.CodecType == "audio" || (s.CodecType == "" && s.Channels > 0) {
+				filtered = append(filtered, s)
+			}
+		}
+		return filtered
+	}
+
 	if err != nil {
 		var parsed struct {
 			Streams []liveAudioStream `json:"streams"`
 		}
 		if len(out) > 0 && json.Unmarshal(out, &parsed) == nil && len(parsed.Streams) > 0 {
 			a.Logger.Warn().Err(err).Msg("probeLiveAudioStreams exited non-zero but returned valid streams json")
-			return parsed.Streams, nil
+			return filterAudio(parsed.Streams), nil
 		}
 		return nil, decorateProbeError(err, stderr.String())
 	}
@@ -334,7 +344,7 @@ func (a *LocalAdapter) probeLiveAudioStreams(ctx context.Context, spec ports.Str
 	if err := json.Unmarshal(out, &parsed); err != nil {
 		return nil, err
 	}
-	return parsed.Streams, nil
+	return filterAudio(parsed.Streams), nil
 }
 
 func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL string) []string {
@@ -384,8 +394,7 @@ func (a *LocalAdapter) buildLiveAudioProbeArgs(spec ports.StreamSpec, inputURL s
 		args = append(args, "-probesize", probeSize)
 	}
 	return append(args,
-		"-select_streams", "a",
-		"-show_entries", "stream=index,id,codec_type,codec_name,channels,channel_layout,tags,disposition",
+		"-show_entries", "stream=index,id,codec_type,codec_name,channels,channel_layout:stream_tags=language,title:stream_disposition=default,visual_impaired,hearing_impaired,clean_effects,descriptions",
 		"-of", "json",
 		inputURL,
 	)
