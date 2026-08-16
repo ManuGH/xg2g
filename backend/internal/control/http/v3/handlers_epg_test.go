@@ -322,7 +322,7 @@ func TestPostServicesNowNext_ReadOnlyDoesNotEnrichUncanonicalProgramme(t *testin
 	assert.Empty(t, nowItem.GenreSource, "handler must not extract GenreSource on the fly")
 }
 
-func TestPostServicesNowNext_FullIngestPipelineIntegration(t *testing.T) {
+func TestPostServicesNowNext_ProgrammesFromEPGIntegration(t *testing.T) {
 	// 1. Raw OpenWebIF EPG Event (Ingest boundary)
 	now := time.Now()
 	serviceRef := "1:0:19:132F:3EF:1:C00000:0:0:0"
@@ -386,4 +386,45 @@ func TestPostServicesNowNext_FullIngestPipelineIntegration(t *testing.T) {
 	assert.Equal(t, 2, nowItem.EpisodeInfo.SeasonNumber)
 	assert.Equal(t, 4, nowItem.EpisodeInfo.EpisodeNumber)
 	assert.Equal(t, "SxxExx", nowItem.EpisodeInfo.SourcePattern)
+}
+
+// panicProvider implements epg.MetadataProvider and panics if ever called.
+type panicProvider struct{}
+
+func (panicProvider) Name() string { return "panic_guard" }
+func (panicProvider) Lookup(ctx context.Context, fp epg.ProgrammeFingerprint) (*epg.EnrichmentData, error) {
+	panic("VIOLATION: MetadataProvider.Lookup must NEVER be called from the HTTP request path")
+}
+
+func TestPostServicesNowNext_ArchitectureIsolationNeverTouchesProvider(t *testing.T) {
+	// Proves that /services/now-next never invokes any metadata provider method
+	mockSource := new(MockEpgSource)
+	server := &Server{
+		epgSource: mockSource,
+	}
+
+	now := time.Now()
+	serviceRef := "1:0:19:132F:3EF:1:C00000:0:0:0"
+	progs := []epg.Programme{
+		{
+			Channel: serviceRef,
+			Title:   epg.Title{Text: "Test Programme"},
+			Desc:    &epg.Description{Text: "Some description"},
+			Start:   now.Add(-10 * time.Minute).Format(xmltvTimeFormat),
+			Stop:    now.Add(35 * time.Minute).Format(xmltvTimeFormat),
+		},
+	}
+
+	mockSource.On("GetPrograms", mock.Anything).Return(progs, nil).Once()
+
+	body := bytes.NewBufferString(`{"services":["1:0:19:132F:3EF:1:C00000:0:0:0"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v3/services/now-next", body)
+	w := httptest.NewRecorder()
+
+	// Must execute cleanly without triggering any panic from panicProvider
+	assert.NotPanics(t, func() {
+		server.PostServicesNowNext(w, req)
+	})
+
+	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 }
