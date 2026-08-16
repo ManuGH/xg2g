@@ -30,7 +30,7 @@ export type ApiError = {
     details?: unknown;
 };
 
-export type DeviceAuthDeviceType = 'android_phone' | 'android_tablet' | 'android_tv' | 'browser' | 'unknown';
+export type DeviceAuthDeviceType = 'android_phone' | 'android_tablet' | 'android_tv' | 'ios_phone' | 'ios_tablet' | 'apple_tv' | 'browser' | 'unknown';
 
 export type PairingStatus = 'pending' | 'approved' | 'expired' | 'consumed' | 'revoked';
 
@@ -192,14 +192,21 @@ export type ApprovePairingResponse = {
 export type ExchangePairingResponse = {
     pairingId: string;
     deviceId: string;
-    deviceGrantId: string;
-    deviceGrant: string;
-    deviceGrantExpiresAt: string;
-    accessSessionId: string;
+    /**
+     * Always "DPoP"; the token is sender-constrained to the enrolled device key.
+     */
+    tokenType: string;
     accessToken: string;
-    accessTokenExpiresAt: string;
+    /**
+     * Access-token lifetime in seconds, from the moment of the response.
+     */
+    expiresIn: number;
+    /**
+     * Rotates on every refresh. Presenting a superseded value is treated as replay and revokes the whole family.
+     */
+    refreshToken: string;
+    scope: string;
     policyVersion: string;
-    scopes: Array<string>;
     endpoints: Array<PublishedEndpoint>;
 };
 
