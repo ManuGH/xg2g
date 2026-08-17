@@ -50,10 +50,12 @@ public final class MetalVideoView: UIView {
     private var jitterAccumulator: Double = 0
     private var jitterSampleCount: Int = 0
     private var fieldCadenceAccumulator: Double = 0
+    private var isBuffering: Bool = true
 
     public func resetForChannelZap() {
         frameQueue.clear()
         hasReportedFirstFrame = false
+        isBuffering = true
         // Keep currentFrame to avoid black flash between channel switches
     }
 
@@ -143,24 +145,7 @@ public final class MetalVideoView: UIView {
         ) {
             constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
             float2 uv = in.texCoords;
-            float yValue = 0.0;
-
-            if (params.isInterlaced == 0) {
-                yValue = textureY.sample(s, uv).r;
-            } else {
-                float lineIndex = floor(uv.y * params.frameHeight);
-                bool isEvenLine = (fmod(lineIndex, 2.0) == 0.0);
-                bool fieldMatchesLine = (params.isTopField == 1) ? isEvenLine : !isEvenLine;
-
-                if (fieldMatchesLine) {
-                    yValue = textureY.sample(s, uv).r;
-                } else {
-                    float stepY = 1.0 / params.frameHeight;
-                    float yAbove = textureY.sample(s, float2(uv.x, uv.y - stepY)).r;
-                    float yBelow = textureY.sample(s, float2(uv.x, uv.y + stepY)).r;
-                    yValue = (yAbove + yBelow) * 0.5;
-                }
-            }
+            float yValue = textureY.sample(s, uv).r;
 
             float2 cbcr = textureCbCr.sample(s, uv).rg;
             float cb = cbcr.r - 0.5;
@@ -217,6 +202,14 @@ public final class MetalVideoView: UIView {
     }
 
     @objc private func displayLinkFired(_ link: CADisplayLink) {
+        if isBuffering {
+            if frameQueue.count >= 4 {
+                isBuffering = false
+            } else {
+                return
+            }
+        }
+
         let now = link.timestamp
         callbackCount += 1
 
@@ -409,7 +402,7 @@ private final class ThreadSafeFrameQueue: @unchecked Sendable {
     private var queue: [DecodedVideoFrame] = []
     private let lock = NSLock()
 
-    func push(_ frame: DecodedVideoFrame, maxCapacity: Int = 10) -> Bool {
+    func push(_ frame: DecodedVideoFrame, maxCapacity: Int = 60) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         var dropped = false
