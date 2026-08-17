@@ -61,6 +61,25 @@ public final class MetalVideoView: UIView {
         // Keep currentFrame to avoid black flash between channel switches
     }
 
+    public func captureCurrentFrameJPEG() -> Data? {
+        if let pixelBuffer = currentFrame?.pixelBuffer {
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let context = CIContext(options: nil)
+            if let cgImage = context.createCGImage(ciImage, from: ciImage.extent) {
+                let uiImage = UIImage(cgImage: cgImage)
+                return uiImage.jpegData(compressionQuality: 0.8)
+            }
+        }
+        if let window = self.window {
+            let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+            let image = renderer.image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+            }
+            return image.jpegData(compressionQuality: 0.8)
+        }
+        return nil
+    }
+
     public var metalLayer: CAMetalLayer {
         return layer as! CAMetalLayer
     }

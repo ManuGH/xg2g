@@ -63,6 +63,17 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         TelemetryServer.shared.setTelemetryProvider { [weak self] in
             return self?.telemetry.toDictionary() ?? [:]
         }
+        TelemetryServer.shared.setScreenshotProvider { [weak self] in
+            if Thread.isMainThread {
+                return MainActor.assumeIsolated {
+                    self?.renderView?.captureCurrentFrameJPEG()
+                }
+            } else {
+                return DispatchQueue.main.sync {
+                    self?.renderView?.captureCurrentFrameJPEG()
+                }
+            }
+        }
     }
 
     deinit {

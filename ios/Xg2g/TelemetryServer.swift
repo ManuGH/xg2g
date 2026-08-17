@@ -16,6 +16,7 @@ public final class TelemetryServer: @unchecked Sendable {
     private let lock = NSLock()
     private let maxLogEntries = 500
     private var currentTelemetryProvider: (() -> [String: Any])?
+    private var screenshotProvider: (@Sendable () -> Data?)?
 
     public var port: UInt16 = 8099
 
@@ -25,6 +26,12 @@ public final class TelemetryServer: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         self.currentTelemetryProvider = provider
+    }
+
+    public func setScreenshotProvider(_ provider: @escaping @Sendable () -> Data?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.screenshotProvider = provider
     }
 
     public func log(_ message: String) {
@@ -96,6 +103,30 @@ public final class TelemetryServer: @unchecked Sendable {
         let firstLine = request.components(separatedBy: "\r\n").first ?? ""
         let parts = firstLine.components(separatedBy: " ")
         let path = parts.count > 1 ? parts[1] : "/"
+
+        if path.hasPrefix("/screenshot") || path.hasPrefix("/frame") {
+            var imageData: Data? = nil
+            if Thread.isMainThread {
+                imageData = self.screenshotProvider?()
+            } else {
+                DispatchQueue.main.sync {
+                    imageData = self.screenshotProvider?()
+                }
+            }
+
+            if let jpeg = imageData {
+                let headers = "HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: \(jpeg.count)\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
+                var response = headers.data(using: .utf8)!
+                response.append(jpeg)
+                return response
+            } else {
+                let notFound = "No frame or screenshot available".data(using: .utf8)!
+                let headers = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: \(notFound.count)\r\nConnection: close\r\n\r\n"
+                var response = headers.data(using: .utf8)!
+                response.append(notFound)
+                return response
+            }
+        }
 
         if path.hasPrefix("/logs") {
             lock.lock()
