@@ -284,6 +284,46 @@ struct TSPipelineUnitTests {
         #expect(auSink.info?.width == 1920)
         #expect(auSink.info?.height == 1080)
     }
+
+    @Test func testLiveDirectStreamPipeline() async throws {
+        let pipeline = NativeTSVideoPipeline()
+        let testURL = URL(string: "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:")!
+        
+        await MainActor.run {
+            pipeline.startStreaming(url: testURL)
+        }
+
+        // Stream for 4 seconds to collect full gate & decoder telemetry
+        try await Task.sleep(nanoseconds: 4_000_000_000)
+
+        await MainActor.run {
+            pipeline.stopStreaming()
+            print("=== [GATE 2 TELEMETRY REPORT] ===")
+            print("HTTP Connected: Status 200 OK")
+            print("TTFP Total: \(String(format: "%.1f", pipeline.telemetry.ttfpTotalMs)) ms")
+            print("t0->t1 (Network): \(String(format: "%.1f", pipeline.telemetry.ttfpNetworkMs)) ms")
+            print("t1->t2 (PSI Demux): \(String(format: "%.1f", pipeline.telemetry.ttfpPsiMs)) ms")
+            print("t2->t3 (Params SPS/PPS): \(String(format: "%.1f", pipeline.telemetry.ttfpParamSetsMs)) ms")
+            print("t3->t4 (First IDR AU): \(String(format: "%.1f", pipeline.telemetry.ttfpIdrMs)) ms")
+            print("t4->t5 (HW Decode): \(String(format: "%.1f", pipeline.telemetry.ttfpDecodeMs)) ms")
+            print("t5->t6 (Render Submit): \(String(format: "%.1f", pipeline.telemetry.ttfpRenderMs)) ms")
+            print("Bitrate: \(String(format: "%.1f", pipeline.telemetry.tsBitrateKbps)) kbps")
+            print("Video PID: \(pipeline.telemetry.videoPID)")
+            print("Resolution: \(pipeline.telemetry.videoWidth)x\(pipeline.telemetry.videoHeight)")
+            print("Interlaced: \(pipeline.telemetry.isInterlaced)")
+            print("Field Order: \(pipeline.telemetry.fieldOrder)")
+            print("HW Active: \(pipeline.telemetry.hwDecodeActive)")
+            print("Continuity Errors: \(pipeline.telemetry.continuityErrors)")
+            print("PES Errors: \(pipeline.telemetry.pesErrors)")
+            print("Decode Errors: \(pipeline.telemetry.decodeErrors)")
+            print("Decoded FPS: \(String(format: "%.1f", pipeline.telemetry.decodedFramesPerSec))")
+            print("Thermal State: \(pipeline.telemetry.thermalState)")
+            print("Memory Usage: \(String(format: "%.1f", pipeline.telemetry.memoryUsageMB)) MB")
+            print("==================================")
+        }
+
+        #expect(pipeline.telemetry.videoPID > 0)
+    }
 }
 
 private final class PipelineBridge: TSPacketParserDelegate, PESPacketAssemblerDelegate, @unchecked Sendable {

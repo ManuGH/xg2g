@@ -253,8 +253,8 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         var avccBuffer = Data()
         for nal in currentAUNALs {
             let nalType = nal[0] & 0x1F
-            if nalType == 7 || nalType == 8 {
-                // SPS and PPS parameter sets are already provided in the CMVideoFormatDescription
+            if nalType == 7 || nalType == 8 || nalType == 9 || nalType == 12 {
+                // SPS (7), PPS (8), AUD (9), Filler (12) are omitted from AVCC sample buffers
                 continue
             }
             var length = UInt32(nal.count).bigEndian

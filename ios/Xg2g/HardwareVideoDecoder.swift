@@ -63,10 +63,16 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         invalidateSession()
         guard let format = formatDescription else { return }
 
+        #if targetEnvironment(simulator)
+        let decoderSpecification: [CFString: Any] = [
+            kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: kCFBooleanTrue as Any
+        ]
+        #else
         let decoderSpecification: [CFString: Any] = [
             kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: kCFBooleanTrue as Any,
             kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: kCFBooleanTrue as Any
         ]
+        #endif
 
         let destinationImageBufferAttributes: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
