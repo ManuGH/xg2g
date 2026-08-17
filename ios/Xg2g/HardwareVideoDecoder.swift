@@ -63,21 +63,13 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         invalidateSession()
         guard let format = formatDescription else { return }
 
-        #if targetEnvironment(simulator)
         let decoderSpecification: [CFString: Any] = [
             kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: kCFBooleanTrue as Any
         ]
-        #else
-        let decoderSpecification: [CFString: Any] = [
-            kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: kCFBooleanTrue as Any,
-            kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: kCFBooleanTrue as Any
-        ]
-        #endif
 
         let destinationImageBufferAttributes: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-            kCVPixelBufferMetalCompatibilityKey: kCFBooleanTrue as Any,
-            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+            kCVPixelBufferMetalCompatibilityKey: kCFBooleanTrue as Any
         ]
 
         var callbackRecord = VTDecompressionOutputCallbackRecord(
@@ -96,9 +88,16 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         )
 
         guard status == noErr, let activeSession = session else {
+            let msg = "[1080i50-DEC-CREATE-ERR] VTDecompressionSessionCreate failed with OSStatus: \(status)"
+            print(msg)
+            TelemetryServer.shared.log(msg)
             delegate?.hardwareDecoder(self, didEncounterDecodeError: status)
             return
         }
+
+        let successMsg = "[1080i50-DEC] ✅ Decompression session created successfully!"
+        print(successMsg)
+        TelemetryServer.shared.log(successMsg)
 
         // Apply Path B native VideoToolbox deinterlace property if requested and verify
         var isVTDeinterlaceAccepted = false
