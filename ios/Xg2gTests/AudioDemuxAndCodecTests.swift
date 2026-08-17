@@ -247,23 +247,20 @@ struct AudioDemuxAndCodecTests {
         parser.feed(data: data)
         assembler.flush()
 
-        #expect(parser.videoPID != nil)
+        #expect(parser.videoPID == 1279, "Must discover Video PID 1279 in PULS 24 PMT")
         #expect(!parser.audioTracks.isEmpty)
 
-        // PULS 24 HD carries AC-3 audio (PID 1283, deu)
-        if let ac3Track = parser.audioTracks.first(where: { $0.codec == .ac3 }) {
-            #expect(ac3Track.pid == 1283)
-            #expect(ac3Track.language == "deu")
-        }
+        // PULS 24 HD carries AC-3 audio (PID 1283, deu) - FAIL-CLOSED requirement
+        let ac3Track = try #require(parser.audioTracks.first(where: { $0.codec == .ac3 }), "Must discover AC-3 audio track in PULS 24 PMT")
+        #expect(ac3Track.pid == 1283)
+        #expect(ac3Track.language == "deu")
 
-        #expect(!sink.emittedPackets.isEmpty)
-        if sink.emittedPackets.count >= 2 {
-            let p1 = sink.emittedPackets[0]
-            let p2 = sink.emittedPackets[1]
-            if let pts1 = p1.pts90k, let pts2 = p2.pts90k {
-                #expect(pts2 >= pts1)
-            }
-        }
+        #expect(sink.emittedPackets.count >= 2, "Must emit at least 2 audio PES packets from capture")
+        let p1 = try #require(sink.emittedPackets.first)
+        let p2 = sink.emittedPackets[1]
+        let pts1 = try #require(p1.pts90k)
+        let pts2 = try #require(p2.pts90k)
+        #expect(pts2 >= pts1)
     }
 
     // MARK: - 7. Production AudioPESAssembler 33-Bit PTS Wrap Verification

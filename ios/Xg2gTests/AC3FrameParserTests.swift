@@ -238,26 +238,21 @@ struct AC3FrameParserTests {
         tsParser.feed(data: data)
         pesAssembler.flush()
 
-        #expect(sink.emittedSampleBuffers.count > 0)
-        #expect(sink.formatDescription != nil)
+        #expect(sink.emittedSampleBuffers.count >= 2, "Must emit at least 2 CMSampleBuffers from capture")
+        let formatDesc = try #require(sink.formatDescription, "Must create valid CMAudioFormatDescription")
 
-        if let firstSB = sink.emittedSampleBuffers.first {
-            let format = CMSampleBufferGetFormatDescription(firstSB)
-            let asbd = format.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee }
+        let asbd = try #require(CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc)?.pointee)
+        #expect(asbd.mFormatID == kAudioFormatAC3)
+        #expect(asbd.mSampleRate == 48000)
+        #expect(asbd.mChannelsPerFrame == 6) // PULS 24 HD carries 5.1 Surround audio
 
-            #expect(asbd?.mFormatID == kAudioFormatAC3)
-            #expect(asbd?.mSampleRate == 48000)
-            #expect(asbd?.mChannelsPerFrame == 2 || asbd?.mChannelsPerFrame == 6)
-        }
-
-        // Verify monotonically increasing PTS
-        if sink.emittedSampleBuffers.count >= 2 {
-            let sb1 = sink.emittedSampleBuffers[0]
-            let sb2 = sink.emittedSampleBuffers[1]
-            let pts1 = CMSampleBufferGetPresentationTimeStamp(sb1)
-            let pts2 = CMSampleBufferGetPresentationTimeStamp(sb2)
-            #expect(pts2 > pts1)
-        }
+        let sb1 = sink.emittedSampleBuffers[0]
+        let sb2 = sink.emittedSampleBuffers[1]
+        let pts1 = CMSampleBufferGetPresentationTimeStamp(sb1)
+        let pts2 = CMSampleBufferGetPresentationTimeStamp(sb2)
+        #expect(pts1.isValid)
+        #expect(pts2.isValid)
+        #expect(pts2 > pts1)
     }
 }
 
