@@ -52,6 +52,9 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     }
 
     public func configure(with formatDescription: CMVideoFormatDescription) {
+        if let current = self.formatDescription, CMFormatDescriptionEqual(current, otherFormatDescription: formatDescription), decompressionSession != nil {
+            return
+        }
         self.formatDescription = formatDescription
         recreateSession()
     }
@@ -155,12 +158,14 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 
         if status != noErr {
             _ = Unmanaged<FrameContext>.fromOpaque(contextPtr).takeRetainedValue()
+            print("[1080i50-DECODE-FAIL] VTDecompressionSessionDecodeFrame error: \(status)")
             delegate?.hardwareDecoder(self, didEncounterDecodeError: status)
         }
     }
 
     fileprivate func handleDecodedFrame(status: OSStatus, imageBuffer: CVImageBuffer?, context: FrameContext) {
         guard status == noErr, let buffer = imageBuffer else {
+            print("[1080i50-DECODE-FAIL] handleDecodedFrame async error: \(status)")
             delegate?.hardwareDecoder(self, didEncounterDecodeError: status)
             return
         }

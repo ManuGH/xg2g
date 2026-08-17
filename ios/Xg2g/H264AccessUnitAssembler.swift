@@ -88,7 +88,10 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         if let (startCodeOffset, prefixLen) = findNextStartCode(in: streamBuffer, from: 0) {
             let nalStart = startCodeOffset + prefixLen
             if nalStart < streamBuffer.count {
-                let nalData = Data(streamBuffer[nalStart..<streamBuffer.count])
+                var nalData = Data(streamBuffer[nalStart..<streamBuffer.count])
+                while nalData.count > 0 && nalData.last == 0 {
+                    nalData.removeLast()
+                }
                 if !nalData.isEmpty {
                     handleNALUnit(nalData)
                 }
@@ -122,7 +125,10 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
                 break
             }
 
-            let nalData = Data(streamBuffer[nalStart..<nextStartCodeOffset])
+            var nalData = Data(streamBuffer[nalStart..<nextStartCodeOffset])
+            while nalData.count > 0 && nalData.last == 0 {
+                nalData.removeLast()
+            }
             if !nalData.isEmpty {
                 handleNALUnit(nalData)
             }
@@ -365,8 +371,15 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         }
 
         if status == noErr, let fd = formatDesc {
+            let isDifferent: Bool
+            if let existing = self.currentFormatDescription {
+                isDifferent = !CMFormatDescriptionEqual(existing, otherFormatDescription: fd)
+            } else {
+                isDifferent = true
+            }
+
             self.currentFormatDescription = fd
-            if let info = self.decodedInfo {
+            if isDifferent, let info = self.decodedInfo {
                 delegate?.accessUnitAssembler(self, didUpdateFormat: fd, info: info)
             }
         }
