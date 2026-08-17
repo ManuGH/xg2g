@@ -125,6 +125,17 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         audioRenderer.activateAudioSession()
 
         let targetURL = normalizeStreamURL(url)
+        let channelKey = targetURL.absoluteString
+        accessUnitAssembler.channelKey = channelKey
+
+        if let cached = H264ParameterSetCache.shared.parameterSets(for: channelKey) {
+            accessUnitAssembler.primeWithParameterSets(sps: cached.sps, pps: cached.pps)
+            paramsReadyTime = CACurrentMediaTime()
+            let logMsg = "[1080i50-CACHE] ⚡ Primed decoder with cached SPS/PPS for instant tuning!"
+            print(logMsg)
+            logger.notice("\(logMsg, privacy: .public)")
+            TelemetryServer.shared.log(logMsg)
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -138,8 +149,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             }
         }
 
-        let config = URLSessionConfiguration.default
+        let config = URLSessionConfiguration.ephemeral
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.timeoutIntervalForRequest = 5.0
+        config.waitsForConnectivity = false
+        config.allowsCellularAccess = true
+        config.allowsExpensiveNetworkAccess = true
+        config.allowsConstrainedNetworkAccess = true
+        config.httpShouldUsePipelining = true
+
         let opQueue = OperationQueue()
         opQueue.maxConcurrentOperationCount = 1
         opQueue.qualityOfService = .userInteractive

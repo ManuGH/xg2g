@@ -39,6 +39,33 @@ public struct H264PictureStructure: Sendable {
     )
 }
 
+/// Thread-safe in-memory cache for SPS / PPS parameter sets per channel URL or stream key.
+public final class H264ParameterSetCache: @unchecked Sendable {
+    public static let shared = H264ParameterSetCache()
+    private var cache: [String: (sps: Data, pps: Data)] = [:]
+    private let lock = NSLock()
+
+    public init() {}
+
+    public func setParameterSets(sps: Data, pps: Data, for key: String) {
+        lock.lock()
+        cache[key] = (sps, pps)
+        lock.unlock()
+    }
+
+    public func parameterSets(for key: String) -> (sps: Data, pps: Data)? {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache[key]
+    }
+
+    public func clear() {
+        lock.lock()
+        cache.removeAll()
+        lock.unlock()
+    }
+}
+
 public protocol H264AccessUnitAssemblerDelegate: AnyObject, Sendable {
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo)
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, structure: H264PictureStructure)
@@ -75,10 +102,19 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     private var ppsData: Data?
     private var currentFormatDescription: CMVideoFormatDescription?
     public private(set) var decodedInfo: H264DecodedInfo?
+    public var channelKey: String?
 
     public weak var delegate: H264AccessUnitAssemblerDelegate?
 
     public init() {}
+
+    /// Primes the assembler with pre-cached SPS and PPS parameter sets for immediate decoding.
+    public func primeWithParameterSets(sps: Data, pps: Data) {
+        self.spsData = sps
+        self.ppsData = pps
+        parseSPS(sps)
+        updateFormatDescriptionIfNeeded()
+    }
 
     public func reset() {
         streamBuffer.removeAll(keepingCapacity: true)
@@ -423,6 +459,10 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             }
 
             self.currentFormatDescription = fd
+            if let sps = spsData, let pps = ppsData, let key = channelKey {
+                H264ParameterSetCache.shared.setParameterSets(sps: sps, pps: pps, for: key)
+            }
+
             if isDifferent, let info = self.decodedInfo {
                 delegate?.accessUnitAssembler(self, didUpdateFormat: fd, info: info)
             }

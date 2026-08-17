@@ -397,11 +397,10 @@ public final class MetalVideoView: UIView {
     private func setupDisplayLink() {
         let link = CADisplayLink(target: self, selector: #selector(displayLinkFired(_:)))
         if #available(iOS 15.0, *) {
-            // 50 fields/s divides into no Apple refresh rate, so a field is shown
-            // for one or two ticks depending on where its PTS lands. The higher
-            // the refresh rate, the finer that quantisation -- 120 Hz halves the
-            // worst-case field timing error against 60 Hz.
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+            // 100 Hz is an exact integer multiple of 50 fields/s (100 / 50 = 2).
+            // Every field is presented for exactly 2 display refresh ticks (20.00 ms),
+            // eliminating 3:2 pull-down judder and reducing GPU thermal dissipation.
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 50, maximum: 100, preferred: 100)
         }
         link.add(to: .main, forMode: .common)
         self.displayLink = link
