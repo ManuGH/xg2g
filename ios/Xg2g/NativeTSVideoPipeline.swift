@@ -178,6 +178,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         audioRenderer.reset()
         isAudioClockStarted = false
         audioBuffersPreRolledCount = 0
+        firstAudioPTS = nil
         selectedAudioPID = nil
         availableAudioTracks.removeAll()
 
@@ -370,23 +371,27 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
+    private var firstAudioPTS: CMTime?
+
     public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime) {
         audioRenderer.enqueue(sampleBuffer: sampleBuffer)
         audioBuffersPreRolledCount += 1
 
-        if !isAudioClockStarted && audioBuffersPreRolledCount >= 3 {
-            let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            if pts.isValid {
-                audioRenderer.setRate(1.0, time: pts)
-                isAudioClockStarted = true
-                let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", pts.seconds))s (\(codec))"
-                print(clockLog)
-                logger.notice("\(clockLog, privacy: .public)")
-                TelemetryServer.shared.log(clockLog)
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        if firstAudioPTS == nil && pts.isValid {
+            firstAudioPTS = pts
+        }
 
-                telemetry.mutate {
-                    $0.isAudioMasterClockActive = true
-                }
+        if !isAudioClockStarted && audioBuffersPreRolledCount >= 8, let startPTS = firstAudioPTS {
+            audioRenderer.setRate(1.0, time: startPTS)
+            isAudioClockStarted = true
+            let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", startPTS.seconds))s (\(codec), prerolled: \(audioBuffersPreRolledCount) buffers)"
+            print(clockLog)
+            logger.notice("\(clockLog, privacy: .public)")
+            TelemetryServer.shared.log(clockLog)
+
+            telemetry.mutate {
+                $0.isAudioMasterClockActive = true
             }
         }
     }

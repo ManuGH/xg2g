@@ -57,24 +57,33 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         guard !isAudioSessionActive else { return }
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
+            try session.setCategory(.playback, mode: .moviePlayback, options: [.defaultToSpeaker, .allowBluetooth, .allowAirPlay])
             try session.setPreferredIOBufferDuration(0.02) // 20 ms low latency
-            try session.setActive(true)
+            try session.setActive(true, options: [])
             isAudioSessionActive = true
-            logger.notice("[AudioRenderer] ✅ AVAudioSession activated (.playback / .moviePlayback)")
+            audioRenderer.isMuted = false
+            audioRenderer.volume = 1.0
+            logger.notice("[AudioRenderer] ✅ AVAudioSession activated (.playback / .moviePlayback / defaultToSpeaker)")
+            print("[AudioRenderer] ✅ AVAudioSession activated (.playback / .moviePlayback / defaultToSpeaker)")
         } catch {
             logger.error("[AudioRenderer] ❌ Failed to activate AVAudioSession: \(error.localizedDescription)")
+            print("[AudioRenderer] ❌ Failed to activate AVAudioSession: \(error.localizedDescription)")
         }
     }
 
     /// Enqueues a parsed `CMSampleBuffer` (AC-3, E-AC-3, or AAC) for playback.
     public func enqueue(sampleBuffer: CMSampleBuffer) {
+        startRequestingMediaDataIfNeeded()
+
         bufferLock.lock()
         pendingBuffers.append(sampleBuffer)
         bufferLock.unlock()
 
         drainPendingBuffers()
     }
+
+    private var enqueuedCount = 0
+    private var lastDiagnosticLogTime: CFTimeInterval = 0
 
     private func drainPendingBuffers() {
         renderQueue.async { [weak self] in
@@ -83,8 +92,6 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
             self.bufferLock.lock()
             while !self.pendingBuffers.isEmpty {
                 if !self.audioRenderer.isReadyForMoreMediaData {
-                    // Renderer buffer full, wait for next drain callback
-                    self.startRequestingMediaDataIfNeeded()
                     self.bufferLock.unlock()
                     return
                 }
@@ -93,10 +100,29 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
                 self.bufferLock.unlock()
 
                 self.audioRenderer.enqueue(buffer)
+                self.enqueuedCount += 1
+
+                let now = CACurrentMediaTime()
+                if now - self.lastDiagnosticLogTime >= 2.0 {
+                    self.lastDiagnosticLogTime = now
+                    let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
+                    let statusStr: String
+                    switch self.audioRenderer.status {
+                    case .unknown: statusStr = "unknown"
+                    case .rendering: statusStr = "rendering"
+                    case .failed: statusStr = "failed (\(self.audioRenderer.error?.localizedDescription ?? "unknown"))"
+                    @unknown default: statusStr = "other"
+                    }
+                    let diag = "[AudioRenderer] 📊 Enqueued: \(self.enqueuedCount) | Status: \(statusStr) | PTS: \(String(format: "%.3f", pts.seconds))s | Rate: \(CMTimebaseGetRate(self.synchronizer.timebase)) | Time: \(String(format: "%.3f", CMTimebaseGetTime(self.synchronizer.timebase).seconds))s | Ready: \(self.audioRenderer.isReadyForMoreMediaData)"
+                    print(diag)
+                    logger.notice("\(diag, privacy: .public)")
+                }
 
                 if self.audioRenderer.status == .failed {
                     if let error = self.audioRenderer.error {
-                        logger.error("[AudioRenderer] ❌ Render error: \(error.localizedDescription)")
+                        let errStr = "[AudioRenderer] ❌ Render error: \(error.localizedDescription)"
+                        print(errStr)
+                        logger.error("\(errStr, privacy: .public)")
                         self.delegate?.audioRendererDidEncounterError(self, error: error)
                     }
                 }
@@ -112,17 +138,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         isRequestingData = true
 
         audioRenderer.requestMediaDataWhenReady(on: renderQueue) { [weak self] in
-            guard let self = self else { return }
-            self.drainPendingBuffers()
-
-            self.bufferLock.lock()
-            let hasPending = !self.pendingBuffers.isEmpty
-            self.bufferLock.unlock()
-
-            if !hasPending {
-                self.audioRenderer.stopRequestingMediaData()
-                self.isRequestingData = false
-            }
+            self?.drainPendingBuffers()
         }
     }
 
