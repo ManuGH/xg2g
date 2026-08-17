@@ -68,13 +68,8 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     /// Ingests elementary stream data from a PES packet with optional PTS/DTS.
     public func feed(payload: PESVideoData) {
         if let pts = payload.pts, pts.isValid {
-            if currentAUHasVCL {
-                emitCurrentAccessUnit()
-            }
             pendingPTS = pts
             pendingDTS = payload.dts
-            currentAUPTS = pts
-            currentAUDTS = payload.dts
         }
 
         streamBuffer.append(payload.data)
