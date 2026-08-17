@@ -169,9 +169,8 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     private var values = TelemetryValues()
     private var publishScheduled = false
 
-    /// 4 Hz: fast enough to read as live, slow enough that a 50 fps pipeline
-    /// cannot saturate the main thread with view invalidations.
-    private static let publishInterval: TimeInterval = 0.25
+    /// 2 Hz: fast enough to read as live, with minimal main thread and SwiftUI invalidation overhead.
+    private static let publishInterval: TimeInterval = 0.50
 
     public init() {}
 

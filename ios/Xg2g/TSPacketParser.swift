@@ -100,24 +100,29 @@ public final class TSPacketParser: @unchecked Sendable {
     }
 
     private func processBuffer() {
-        while buffer.count >= Self.packetSize {
+        var offset = buffer.startIndex
+        let count = buffer.count
+
+        while count - offset >= Self.packetSize {
             // Find 0x47 sync byte
-            guard let syncIndex = buffer.firstIndex(of: Self.syncByte) else {
+            guard let syncIndex = buffer[offset...].firstIndex(of: Self.syncByte) else {
                 buffer.removeAll(keepingCapacity: true)
                 return
             }
+            offset = syncIndex
 
-            if syncIndex > buffer.startIndex {
-                buffer.removeSubrange(buffer.startIndex..<syncIndex)
-                if buffer.count < Self.packetSize {
-                    return
-                }
+            if count - offset < Self.packetSize {
+                break
             }
 
-            let packetRange = buffer.startIndex..<(buffer.startIndex + Self.packetSize)
+            let packetRange = offset..<(offset + Self.packetSize)
             let packet = buffer.subdata(in: packetRange)
-            buffer.removeSubrange(packetRange)
+            offset += Self.packetSize
             parsePacket(packet)
+        }
+
+        if offset > buffer.startIndex {
+            buffer.removeSubrange(buffer.startIndex..<offset)
         }
     }
 
