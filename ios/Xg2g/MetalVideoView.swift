@@ -2,6 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
+import AVFoundation
 import CoreImage
 import CoreMedia
 import Metal
@@ -52,6 +53,9 @@ public final class MetalVideoView: UIView {
     private var displayLink: CADisplayLink?
     private let reorderBuffer = FrameReorderBuffer()
     private var observers: ObserverRegistration?
+
+    /// Master render synchronizer clock (driven by AVSampleBufferAudioRenderer).
+    public var synchronizer: AVSampleBufferRenderSynchronizer?
 
     // MARK: - Presentation state (main thread only)
 
@@ -420,60 +424,68 @@ public final class MetalVideoView: UIView {
         drainReorderedFrames()
 
         let targetHost = link.targetTimestamp
+        var streamNow: Double
 
-        if !isClockAnchored {
-            guard let first = fieldQueue.first, let last = fieldQueue.last,
-                  last.ptsSeconds - first.ptsSeconds >= Self.targetLatencySeconds else {
-                return
-            }
-            anchorHost = targetHost
-            anchorStream = first.ptsSeconds
+        let syncRate = synchronizer.map { CMTimebaseGetRate($0.timebase) } ?? 0.0
+        if syncRate > 0, let sync = synchronizer {
+            let baseTime = CMTimebaseGetTime(sync.timebase)
+            streamNow = baseTime.isValid ? baseTime.seconds : 0.0
             isClockAnchored = true
-        }
-
-        var streamNow = anchorStream + (targetHost - anchorHost)
-
-        // Coming out of an underrun, resume from the field that actually
-        // arrived. The clock kept running through the gap, so everything
-        // buffered during the stall is already past due and would be consumed
-        // and discarded in a single tick — that cascade is what held the field
-        // rate at 40–49/s and skewed the top/bottom balance, because a burst of
-        // two fields always kept the second one.
-        if isStarved, let next = fieldQueue.first {
-            anchorHost = targetHost
-            anchorStream = next.ptsSeconds
-            streamNow = next.ptsSeconds
-            isStarved = false
-            starveResyncCount += 1
-        }
-
-        // The decoder and the display clock drift apart, so the anchor is
-        // trimmed rather than the interval reset, keeping presentation monotonic.
-        if let newest = fieldQueue.last {
-            let latency = newest.ptsSeconds - streamNow
-
-            if latency < 0 {
-                // The clock has overrun everything buffered. Hold it where it is
-                // and let the queue refill. Advancing only ages fields that have
-                // not arrived yet, and moving the anchor backwards — which the
-                // previous resync did — re-presents fields already shown.
+        } else {
+            if !isClockAnchored {
+                guard let first = fieldQueue.first, let last = fieldQueue.last,
+                      last.ptsSeconds - first.ptsSeconds >= Self.targetLatencySeconds else {
+                    return
+                }
                 anchorHost = targetHost
-                anchorStream = streamNow
-                clockHoldCount += 1
-            } else {
-                let error = latency - Self.targetLatencySeconds
-                // Deliberately a very weak trim. Broadcast PTS advances at real
-                // time, so the clock needs no real rate correction — only a
-                // nudge for buffer level. A stronger gain made the queue's own
-                // burstiness dominate: it sits above target more often than
-                // below, so the mean correction came out positive, the clock ran
-                // 3–5 % fast, and consumption (52 fields/s) outran supply
-                // (median 48 fields/s) until the buffer starved.
-                let tick = link.duration > 0 ? link.duration : 1.0 / 120.0
-                let maxTrim = tick * 0.01
-                let correction = max(-maxTrim, min(maxTrim, error * 0.01))
-                anchorStream += correction
-                streamNow += correction
+                anchorStream = first.ptsSeconds
+                isClockAnchored = true
+            }
+
+            streamNow = anchorStream + (targetHost - anchorHost)
+
+            // Coming out of an underrun, resume from the field that actually
+            // arrived. The clock kept running through the gap, so everything
+            // buffered during the stall is already past due and would be consumed
+            // and discarded in a single tick — that cascade is what held the field
+            // rate at 40–49/s and skewed the top/bottom balance, because a burst of
+            // two fields always kept the second one.
+            if isStarved, let next = fieldQueue.first {
+                anchorHost = targetHost
+                anchorStream = next.ptsSeconds
+                streamNow = next.ptsSeconds
+                isStarved = false
+                starveResyncCount += 1
+            }
+
+            // The decoder and the display clock drift apart, so the anchor is
+            // trimmed rather than the interval reset, keeping presentation monotonic.
+            if let newest = fieldQueue.last {
+                let latency = newest.ptsSeconds - streamNow
+
+                if latency < 0 {
+                    // The clock has overrun everything buffered. Hold it where it is
+                    // and let the queue refill. Advancing only ages fields that have
+                    // not arrived yet, and moving the anchor backwards — which the
+                    // previous resync did — re-presents fields already shown.
+                    anchorHost = targetHost
+                    anchorStream = streamNow
+                    clockHoldCount += 1
+                } else {
+                    let error = latency - Self.targetLatencySeconds
+                    // Deliberately a very weak trim. Broadcast PTS advances at real
+                    // time, so the clock needs no real rate correction — only a
+                    // nudge for buffer level. A stronger gain made the queue's own
+                    // burstiness dominate: it sits above target more often than
+                    // below, so the mean correction came out positive, the clock ran
+                    // 3–5 % fast, and consumption (52 fields/s) outran supply
+                    // (median 48 fields/s) until the buffer starved.
+                    let tick = link.duration > 0 ? link.duration : 1.0 / 120.0
+                    let maxTrim = tick * 0.01
+                    let correction = max(-maxTrim, min(maxTrim, error * 0.01))
+                    anchorStream += correction
+                    streamNow += correction
+                }
             }
         }
 

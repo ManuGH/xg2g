@@ -9,12 +9,15 @@ import UIKit
 
 private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "telemetry")
 
-/// Coordinates the end-to-end native DVB TS $\rightarrow$ VideoToolbox $\rightarrow$ Metal Deinterlace pipeline.
+/// Coordinates the end-to-end native DVB TS $\rightarrow$ VideoToolbox $\rightarrow$ Metal Deinterlace pipeline
+/// and synchronized Audio Engine (AC-3/E-AC-3/AAC $\rightarrow$ AVSampleBufferAudioRenderer).
 public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked Sendable,
     TSPacketParserDelegate,
     PESPacketAssemblerDelegate,
     H264AccessUnitAssemblerDelegate,
     HardwareVideoDecoderDelegate,
+    AudioPESAssemblerDelegate,
+    AudioSampleBufferAssemblerDelegate,
     URLSessionDataDelegate {
 
     public let telemetry = StreamTelemetry()
@@ -23,6 +26,17 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private let pesAssembler = PESPacketAssembler()
     private let accessUnitAssembler = H264AccessUnitAssembler()
     private let decoder = HardwareVideoDecoder()
+
+    // Audio Engine Subsystems
+    private let audioPesAssembler = AudioPESAssembler()
+    private let ac3FrameParser = AC3FrameParser()
+    private let audioSampleBufferAssembler = AudioSampleBufferAssembler()
+    public let audioRenderer = NativeTSAudioRenderer()
+
+    public private(set) var selectedAudioPID: UInt16?
+    public private(set) var availableAudioTracks: [AudioTrackInfo] = []
+    private var isAudioClockStarted = false
+    private var audioBuffersPreRolledCount = 0
 
     public weak var renderView: MetalVideoView?
 
@@ -72,6 +86,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         pesAssembler.delegate = self
         accessUnitAssembler.delegate = self
         decoder.delegate = self
+        audioPesAssembler.delegate = self
+        ac3FrameParser.delegate = audioSampleBufferAssembler
+        audioSampleBufferAssembler.delegate = self
 
         TelemetryServer.shared.start()
         TelemetryServer.shared.setTelemetryProvider { [weak self] in
@@ -86,6 +103,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     deinit {
         stopStreaming()
+        TelemetryServer.shared.setTelemetryProvider { [:] }
+        TelemetryServer.shared.setScreenshotProvider { nil }
     }
 
     public func startStreaming(url: URL) {
@@ -100,10 +119,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         firstDecodedTime = 0
         firstPictureDeliveredTime = 0
 
+        audioRenderer.activateAudioSession()
+
         let targetURL = normalizeStreamURL(url)
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.renderView?.synchronizer = self.audioRenderer.synchronizer
             self.renderView?.resetForChannelZap()
             self.renderView?.onFirstFrameRendered = { [weak self] in
                 self?.handleFirstFrameRendered()
@@ -150,6 +172,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         stopSystemMonitoring()
 
+        audioRenderer.reset()
+        isAudioClockStarted = false
+        audioBuffersPreRolledCount = 0
+        selectedAudioPID = nil
+        availableAudioTracks.removeAll()
+
         // Retire any feeds still queued for this stream first, so the barrier
         // below returns promptly instead of waiting out the whole backlog.
         ingestStateLock.lock()
@@ -164,6 +192,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             pesAssembler.reset()
             accessUnitAssembler.reset()
             decoder.reset()
+            audioPesAssembler.reset()
+            ac3FrameParser.reset()
+            audioSampleBufferAssembler.reset()
         }
     }
 
@@ -257,12 +288,85 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         telemetry.mutate { $0.videoPID = pid }
     }
 
+    public func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo]) {
+        self.availableAudioTracks = tracks
+        let trackListLog = tracks.map { "PID \($0.pid) [\($0.codec), \($0.language ?? "und")]" }.joined(separator: ", ")
+        let logMsg = "[1080i50-PMT] 🎵 Discovered \(tracks.count) audio tracks: \(trackListLog)"
+        print(logMsg)
+        logger.notice("\(logMsg, privacy: .public)")
+        TelemetryServer.shared.log(logMsg)
+
+        // Policy: Prefer German audio if available, else AC-3, else first track
+        if selectedAudioPID == nil || !tracks.contains(where: { $0.pid == selectedAudioPID }) {
+            let preferred: AudioTrackInfo?
+            if let deu = tracks.first(where: { $0.language == "deu" }) {
+                preferred = deu
+            } else if let ac3 = tracks.first(where: { $0.codec == .ac3 || $0.codec == .eac3 }) {
+                preferred = ac3
+            } else {
+                preferred = tracks.first
+            }
+
+            if let track = preferred {
+                self.selectedAudioPID = track.pid
+                let selLog = "[1080i50-AUDIO] 🎯 Selected audio track: PID \(track.pid) (\(track.codec), lang: \(track.language ?? "und"))"
+                print(selLog)
+                logger.notice("\(selLog, privacy: .public)")
+                TelemetryServer.shared.log(selLog)
+            }
+        }
+    }
+
     public func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool) {
-        pesAssembler.feed(payload: data, unitStart: unitStart)
+        if let vPid = tsParser.videoPID, pid == vPid {
+            pesAssembler.feed(payload: data, unitStart: unitStart)
+        } else if let aPid = selectedAudioPID, pid == aPid {
+            audioPesAssembler.feed(payload: data, pid: pid, unitStart: unitStart)
+        }
     }
 
     public func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8) {
         telemetry.mutate { $0.continuityErrors += 1 }
+    }
+
+    // MARK: - AudioPESAssemblerDelegate
+
+    public func audioPESAssembler(_ assembler: AudioPESAssembler, didEmitAudioPES payload: AudioPESData) {
+        ac3FrameParser.feed(data: payload.payload, pts: payload.pts, pts90k: payload.pts90k)
+    }
+
+    public func audioPESAssembler(_ assembler: AudioPESAssembler, didEncounterPESError reason: String, onPID pid: UInt16) {
+        telemetry.mutate { $0.pesErrors += 1 }
+    }
+
+    // MARK: - AudioSampleBufferAssemblerDelegate
+
+    public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didUpdateFormat formatDescription: CMAudioFormatDescription, info: AC3FrameInfo) {
+        let logMsg = "[1080i50-AUDIO] Format: \(info.isEnhanced ? "E-AC-3" : "AC-3") | \(info.sampleRate) Hz | \(info.channelCount) ch (\(info.isLFEOn ? ".1 LFE" : "no LFE")) | \(info.bitrateKbps) kbps"
+        print(logMsg)
+        logger.notice("\(logMsg, privacy: .public)")
+        TelemetryServer.shared.log(logMsg)
+    }
+
+    public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, info: AC3FrameInfo) {
+        audioRenderer.enqueue(sampleBuffer: sampleBuffer)
+        audioBuffersPreRolledCount += 1
+
+        if !isAudioClockStarted && audioBuffersPreRolledCount >= 3 {
+            let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            if pts.isValid {
+                audioRenderer.setRate(1.0, time: pts)
+                isAudioClockStarted = true
+                let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", pts.seconds))s"
+                print(clockLog)
+                logger.notice("\(clockLog, privacy: .public)")
+                TelemetryServer.shared.log(clockLog)
+            }
+        }
+    }
+
+    public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEncounterError reason: String) {
+        telemetry.mutate { $0.decodeErrors += 1 }
     }
 
     // MARK: - PESPacketAssemblerDelegate
