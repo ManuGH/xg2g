@@ -92,7 +92,7 @@ public final class PESPacketAssembler: @unchecked Sendable {
             dts = CMTime(value: CMTimeValue(dtsVal), timescale: 90000)
         }
 
-        let esData = data.subdata(in: headerEnd..<data.count)
+        let esData = Data(data.dropFirst(headerEnd))
         guard !esData.isEmpty else { return }
 
         let payload = PESVideoData(data: esData, pts: pts, dts: dts)
@@ -100,11 +100,13 @@ public final class PESPacketAssembler: @unchecked Sendable {
     }
 
     private func decode33BitTimestamp(data: Data, offset: Int) -> UInt64 {
-        let b0 = UInt64(data[offset])
-        let b1 = UInt64(data[offset + 1])
-        let b2 = UInt64(data[offset + 2])
-        let b3 = UInt64(data[offset + 3])
-        let b4 = UInt64(data[offset + 4])
+        let bytes = [UInt8](data.dropFirst(offset).prefix(5))
+        guard bytes.count == 5 else { return 0 }
+        let b0 = UInt64(bytes[0])
+        let b1 = UInt64(bytes[1])
+        let b2 = UInt64(bytes[2])
+        let b3 = UInt64(bytes[3])
+        let b4 = UInt64(bytes[4])
 
         let pts32_30 = (b0 & 0x0E) >> 1
         let pts29_15 = ((b1 & 0xFF) << 7) | ((b2 & 0xFE) >> 1)
