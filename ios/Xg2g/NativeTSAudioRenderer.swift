@@ -73,29 +73,34 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
 
     /// Enqueues a parsed `CMSampleBuffer` (AC-3, E-AC-3, or AAC) for playback.
     public func enqueue(sampleBuffer: CMSampleBuffer) {
-        startRequestingMediaDataIfNeeded()
-
         bufferLock.lock()
         pendingBuffers.append(sampleBuffer)
         bufferLock.unlock()
 
-        drainPendingBuffers()
+        startRequestingMediaDataIfNeeded()
     }
 
     private var enqueuedCount = 0
     private var lastDiagnosticLogTime: CFTimeInterval = 0
 
-    private func drainPendingBuffers() {
-        renderQueue.async { [weak self] in
+    private func startRequestingMediaDataIfNeeded() {
+        bufferLock.lock()
+        guard !isRequestingData else {
+            bufferLock.unlock()
+            return
+        }
+        isRequestingData = true
+        bufferLock.unlock()
+
+        audioRenderer.requestMediaDataWhenReady(on: renderQueue) { [weak self] in
             guard let self = self else { return }
 
-            self.bufferLock.lock()
-            while !self.pendingBuffers.isEmpty {
-                if !self.audioRenderer.isReadyForMoreMediaData {
+            while true {
+                self.bufferLock.lock()
+                guard self.audioRenderer.isReadyForMoreMediaData, !self.pendingBuffers.isEmpty else {
                     self.bufferLock.unlock()
-                    return
+                    break
                 }
-
                 let buffer = self.pendingBuffers.removeFirst()
                 self.bufferLock.unlock()
 
@@ -126,19 +131,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
                         self.delegate?.audioRendererDidEncounterError(self, error: error)
                     }
                 }
-
-                self.bufferLock.lock()
             }
-            self.bufferLock.unlock()
-        }
-    }
-
-    private func startRequestingMediaDataIfNeeded() {
-        guard !isRequestingData else { return }
-        isRequestingData = true
-
-        audioRenderer.requestMediaDataWhenReady(on: renderQueue) { [weak self] in
-            self?.drainPendingBuffers()
         }
     }
 

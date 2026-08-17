@@ -391,42 +391,37 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     private var firstAudioPTS: CMTime?
 
-    public func audioSampleBufferAssemblerDidDetectDiscontinuity(_ assembler: AudioSampleBufferAssembler, newPTS: CMTime) {
-        let oldStr = firstAudioPTS != nil ? String(format: "%.3f", firstAudioPTS!.seconds) + "s" : "none"
-        let logMsg = "[1080i50-AUDIO] ⚡ Audio Discontinuity detected -> Resyncing master clock from \(oldStr) to \(String(format: "%.3f", newPTS.seconds))s"
-        print(logMsg)
-        logger.notice("\(logMsg, privacy: .public)")
-        TelemetryServer.shared.log(logMsg)
-
-        audioRenderer.flush()
-        audioBuffersPreRolledCount = 0
-        firstAudioPTS = newPTS
-
-        if isAudioClockStarted {
-            audioRenderer.setRate(1.0, time: newPTS)
-        }
-    }
-
     public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime) {
         audioRenderer.enqueue(sampleBuffer: sampleBuffer)
         audioBuffersPreRolledCount += 1
 
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        if firstAudioPTS == nil && pts.isValid {
-            firstAudioPTS = pts
-        }
+        guard pts.isValid else { return }
 
-        if !isAudioClockStarted && audioBuffersPreRolledCount >= 8 {
-            let startPTS = firstAudioPTS ?? pts
-            audioRenderer.setRate(1.0, time: startPTS)
-            isAudioClockStarted = true
-            let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", startPTS.seconds))s (\(codec), prerolled: \(audioBuffersPreRolledCount) buffers)"
-            print(clockLog)
-            logger.notice("\(clockLog, privacy: .public)")
-            TelemetryServer.shared.log(clockLog)
+        if !isAudioClockStarted {
+            if let first = firstAudioPTS {
+                // If a stray packet arrived at t0 with a radically different timestamp (> 2.0s jump), reset
+                if abs(pts.seconds - first.seconds) > 2.0 {
+                    firstAudioPTS = pts
+                    audioBuffersPreRolledCount = 1
+                    audioRenderer.flush()
+                    return
+                }
+            } else {
+                firstAudioPTS = pts
+            }
 
-            telemetry.mutate {
-                $0.isAudioMasterClockActive = true
+            if audioBuffersPreRolledCount >= 8, let startPTS = firstAudioPTS {
+                audioRenderer.setRate(1.0, time: startPTS)
+                isAudioClockStarted = true
+                let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", startPTS.seconds))s (\(codec), prerolled: \(audioBuffersPreRolledCount) buffers)"
+                print(clockLog)
+                logger.notice("\(clockLog, privacy: .public)")
+                TelemetryServer.shared.log(clockLog)
+
+                telemetry.mutate {
+                    $0.isAudioMasterClockActive = true
+                }
             }
         }
     }
