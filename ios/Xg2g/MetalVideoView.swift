@@ -156,44 +156,25 @@ public final class MetalVideoView: UIView {
             constant DeinterlaceParams &params [[buffer(0)]]
         ) {
             constexpr sampler s_linear(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
-            constexpr sampler s_nearest(mag_filter::nearest, min_filter::nearest, address::clamp_to_edge);
 
             float2 uv = in.texCoords;
-            float yNorm = 0.0;
-            float cb = 0.0;
-            float cr = 0.0;
+            float h = params.frameHeight > 0.0 ? params.frameHeight : 1080.0;
+            float stepY = 1.0 / h;
 
-            if (params.isInterlaced != 0) {
-                float h = params.frameHeight > 0.0 ? params.frameHeight : 1080.0;
-                float lineIdx = uv.y * h;
-                float baseLine = floor(lineIdx / 2.0) * 2.0;
+            // 3-Tap Vertical FIR filter: suppresses interlaced combing artifacts while preventing 1-pixel vertical shimmer
+            float yCenter = textureY.sample(s_linear, uv).r;
+            float yAbove = textureY.sample(s_linear, float2(uv.x, max(uv.y - stepY, 0.0))).r;
+            float yBelow = textureY.sample(s_linear, float2(uv.x, min(uv.y + stepY, 1.0))).r;
+            float yRaw = (yCenter * 0.5) + (yAbove * 0.25) + (yBelow * 0.25);
 
-                // Top field = even lines (0, 2, 4...), Bottom field = odd lines (1, 3, 5...)
-                float fieldOffset = (params.isTopField != 0) ? 0.0 : 1.0;
-                float y1 = (baseLine + fieldOffset) / h;
-                float y2 = (baseLine + fieldOffset + 2.0) / h;
+            float2 cbcrRaw = textureCbCr.sample(s_linear, uv).rg;
 
-                float sampleY1 = textureY.sample(s_nearest, float2(uv.x, y1)).r;
-                float sampleY2 = textureY.sample(s_nearest, float2(uv.x, y2)).r;
-                float yRaw = (sampleY1 + sampleY2) * 0.5;
+            // VideoToolbox kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
+            float yNorm = clamp((yRaw - 0.06275) * 1.16438, 0.0, 1.0);
+            float cb = cbcrRaw.r - 0.50196;
+            float cr = cbcrRaw.g - 0.50196;
 
-                float2 cbcr1 = textureCbCr.sample(s_nearest, float2(uv.x, y1)).rg;
-                float2 cbcr2 = textureCbCr.sample(s_nearest, float2(uv.x, y2)).rg;
-                float2 cbcrRaw = (cbcr1 + cbcr2) * 0.5;
-
-                // VideoToolbox kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
-                yNorm = clamp((yRaw - 0.06275) * 1.16438, 0.0, 1.0);
-                cb = cbcrRaw.r - 0.50196;
-                cr = cbcrRaw.g - 0.50196;
-            } else {
-                float yRaw = textureY.sample(s_linear, uv).r;
-                float2 cbcrRaw = textureCbCr.sample(s_linear, uv).rg;
-                yNorm = clamp((yRaw - 0.06275) * 1.16438, 0.0, 1.0);
-                cb = cbcrRaw.r - 0.50196;
-                cr = cbcrRaw.g - 0.50196;
-            }
-
-            // ITU-R BT.709 HDTV matrix for HD broadcast
+            // ITU-R BT.709 HDTV color matrix for 1080i HD broadcast
             float r = yNorm + 1.79274 * cr;
             float g = yNorm - 0.21325 * cb - 0.53291 * cr;
             float b = yNorm + 2.11240 * cb;
@@ -292,21 +273,10 @@ public final class MetalVideoView: UIView {
 
         guard let frame = currentFrame else { return }
 
-        // Field cadence: 50 fields/sec (Field 1: 0..50%, Field 2: 50..100% of frame duration)
-        let elapsedInFrame = now - lastFrameDisplayTime
-        let isSecondField = (elapsedInFrame >= (targetInterval * 0.45))
-
-        let renderedFieldIsTop: Bool
-        if frame.isTopFieldFirst {
-            renderedFieldIsTop = !isSecondField
-        } else {
-            renderedFieldIsTop = isSecondField
-        }
-
         let isFirst = !hasReportedFirstFrame
         renderPixelBuffer(
             frame.pixelBuffer,
-            isTopField: renderedFieldIsTop,
+            isTopField: true,
             isTopFieldFirst: frame.isTopFieldFirst,
             isFirstFrame: isFirst
         )
@@ -316,11 +286,8 @@ public final class MetalVideoView: UIView {
             repeatedFieldPresentationCount += 1
             cumulativeRepeatedFieldCount += 1
         } else {
-            if renderedFieldIsTop {
-                topFieldPresentationCount += 1
-            } else {
-                bottomFieldPresentationCount += 1
-            }
+            topFieldPresentationCount += 1
+            bottomFieldPresentationCount += 1
         }
 
         if isFirst {
