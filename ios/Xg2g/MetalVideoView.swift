@@ -391,10 +391,11 @@ public final class MetalVideoView: UIView {
     private func setupDisplayLink() {
         let link = CADisplayLink(target: self, selector: #selector(displayLinkFired(_:)))
         if #available(iOS 15.0, *) {
-            // 50 Hz exactly matches 50 fields/s DVB broadcast stream cadence (1 field = 1 tick = 20.00ms).
-            // This locks ProMotion to 50 Hz, eliminating 100/120 Hz display over-clocking,
-            // halving CPU display-link wakeups and cutting GPU thermal dissipation.
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 50, maximum: 50, preferred: 50)
+            // ProMotion display range (50-120 Hz, preferred 100/60 Hz).
+            // On ProMotion hardware (iPhone 13-16 Pro), setting maximum 50 Hz causes iOS to snap
+            // down to 48 Hz, creating a 48 Hz vs 50 Hz cadence mismatch that drops 2 fields/sec.
+            // Allowing preferred 100 Hz gives integer 2 ticks per 50 Hz field with zero dropped frames.
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 50, maximum: 120, preferred: 100)
         }
         link.add(to: .main, forMode: .common)
         self.displayLink = link
@@ -488,6 +489,14 @@ public final class MetalVideoView: UIView {
                     anchorStream += correction
                     streamNow += correction
                 }
+            }
+        }
+
+        // Memory & Thermal Optimization: Bound field queue depth to prevent buffer ballooning.
+        // If the queue exceeds 25 fields (>500ms), prune stale fields behind the current stream clock.
+        if fieldQueue.count > 25 {
+            while fieldQueue.count > 20, let first = fieldQueue.first, first.ptsSeconds <= streamNow {
+                _ = fieldQueue.removeFirst()
             }
         }
 

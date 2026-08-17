@@ -15,13 +15,13 @@ final class AudioSessionManager: @unchecked Sendable {
     func configureForPlayback() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP])
+            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
             if #available(iOS 15.0, *) {
                 try session.setSupportsMultichannelContent(true)
             }
             try session.setActive(true)
         } catch {
-            // Audio session setup is best-effort on simulators
+            print("[AudioSessionManager] ⚠️ Audio session config warning: \(error)")
         }
     }
 
