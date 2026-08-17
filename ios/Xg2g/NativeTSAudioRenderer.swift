@@ -57,7 +57,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         guard !isAudioSessionActive else { return }
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .moviePlayback, options: [.defaultToSpeaker, .allowBluetooth, .allowAirPlay])
+            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowBluetoothHFP, .allowAirPlay])
             try session.setPreferredIOBufferDuration(0.02) // 20 ms low latency
             try session.setActive(true, options: [])
             isAudioSessionActive = true

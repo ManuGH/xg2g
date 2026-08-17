@@ -613,9 +613,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     private func stopSystemMonitoring() {
-        DispatchQueue.main.async { [weak self] in
-            self?.systemMonitoringTimer?.invalidate()
-            self?.systemMonitoringTimer = nil
+        let timer = systemMonitoringTimer
+        systemMonitoringTimer = nil
+        if Thread.isMainThread {
+            timer?.invalidate()
+        } else {
+            DispatchQueue.main.async {
+                timer?.invalidate()
+            }
         }
     }
 }
