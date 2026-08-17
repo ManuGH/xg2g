@@ -492,9 +492,13 @@ public final class MetalVideoView: UIView {
         var presentedNewField = false
         while let next = fieldQueue.first, next.ptsSeconds <= streamNow {
             if presentedNewField {
-                // A field became due and was superseded within the same tick;
-                // it can never be shown, so it is a genuine miss.
-                skippedLateFieldCount += 1
+                // Only drop subsequent fields in the same tick if they are severely late (> 80ms)
+                // or if the queue is severely backlogged (> 10 fields), preventing buffer collapse.
+                if fieldQueue.count > 10 || streamNow - next.ptsSeconds > 0.080 {
+                    skippedLateFieldCount += 1
+                } else {
+                    break
+                }
             }
             currentField = fieldQueue.removeFirst()
             presentedNewField = true
