@@ -32,7 +32,35 @@ type NIMSlot struct {
 	Frequency    int
 	ConnectedTo  int // -1 if not linked
 	DVBType      string
+	// DVBNamespace holds the delivery-system segment the receiver filed this
+	// slot's keys under, canonicalised to "DVB-S"/"DVB-C"/"DVB-T". It is often
+	// the only type signal available: Enigma2 persists just non-default values,
+	// so a DVB-S-only box writes neither dvbType nor configMode.
+	DVBNamespace string
 	RawKeys      map[string]string
+}
+
+// splitDVBNamespace separates a leading delivery-system segment from a NIM
+// sub-key and canonicalises it, e.g. "dvbs.diseqcA" -> ("DVB-S", "diseqcA").
+//
+// Current Enigma2 images namespace tuner keys this way
+// (config.Nims.0.dvbs.diseqcA); older images and some forks write them flat
+// (config.Nims.0.diseqcA). Both layouts have to parse, so the namespace is
+// stripped before sub-keys are matched and kept separately as type evidence.
+func splitDVBNamespace(subKey string) (namespace string, rest string, ok bool) {
+	head, tail, found := strings.Cut(subKey, ".")
+	if !found {
+		return "", subKey, false
+	}
+	switch strings.ToLower(head) {
+	case "dvbs", "dvbs2":
+		return "DVB-S", tail, true
+	case "dvbc":
+		return "DVB-C", tail, true
+	case "dvbt", "dvbt2":
+		return "DVB-T", tail, true
+	}
+	return "", subKey, false
 }
 
 // ParseNIMSettings parses Enigma2 /etc/enigma2/settings text into a structured ReceiverTopology.
@@ -89,6 +117,12 @@ func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 		}
 
 		subKey := strings.Join(keyParts[3:], ".")
+		if namespace, rest, ok := splitDVBNamespace(subKey); ok {
+			if slot.DVBNamespace == "" {
+				slot.DVBNamespace = namespace
+			}
+			subKey = rest
+		}
 		slot.RawKeys[subKey] = val
 
 		switch subKey {
@@ -121,6 +155,16 @@ func ParseNIMSettings(settingsContent string) (ReceiverTopology, error) {
 
 	if len(slotsMap) == 0 {
 		return ReceiverTopology{}, ErrNoNIMConfigFound
+	}
+
+	for _, slot := range slotsMap {
+		if slot.ConfigMode == "" {
+			// Enigma2 persists only values changed from their default, so an
+			// absent configMode means the default is in force, not that the
+			// slot is unconfigured. Treating it as unconfigured made the whole
+			// parse fail on a receiver that simply had nothing customised.
+			slot.ConfigMode = "simple"
+		}
 	}
 
 	// Sort slot indices
@@ -294,6 +338,11 @@ func resolveNIMDVBTypes(slot *NIMSlot) ([]DVBType, error) {
 	dvbRaw := strings.ToUpper(slot.DVBType)
 	if dvbRaw == "" {
 		dvbRaw = strings.ToUpper(slot.RawKeys["dvbType"])
+	}
+	if dvbRaw == "" {
+		// Last resort, and on a real receiver usually the only one: the
+		// namespace the box filed this slot's keys under.
+		dvbRaw = slot.DVBNamespace
 	}
 
 	switch {
