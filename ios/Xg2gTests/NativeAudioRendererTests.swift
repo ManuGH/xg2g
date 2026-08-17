@@ -57,6 +57,29 @@ struct NativeAudioRendererTests {
 
         #expect(renderer.status != .failed)
     }
+
+    @Test func testSkySportF1RealStreamAudioPlayback() async throws {
+        guard FileManager.default.fileExists(atPath: "/tmp/sky_f1_10s.ts") else { return }
+        let tsData = try Data(contentsOf: URL(fileURLWithPath: "/tmp/sky_f1_10s.ts"))
+        let pipeline = NativeTSVideoPipeline()
+        pipeline.audioRenderer.activateAudioSession()
+        
+        let chunkSize = 32768
+        var offset = 0
+        while offset < tsData.count {
+            let end = min(offset + chunkSize, tsData.count)
+            pipeline.feedData(tsData.subdata(in: offset..<end))
+            offset = end
+            try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+        }
+
+        try await Task.sleep(nanoseconds: 500_000_000) // wait 500ms for queue drain
+
+        print("[TestSkyF1] Ingest completed.")
+        print("[TestSkyF1] AudioRenderer status: \(pipeline.audioRenderer.status)")
+        let tb = pipeline.audioRenderer.synchronizer.timebase
+        print("[TestSkyF1] Synchronizer rate: \(CMTimebaseGetRate(tb)), time: \(CMTimebaseGetTime(tb).seconds)s")
+    }
 }
 
 private final class MockAudioSinkCollector: AudioSampleBufferAssemblerDelegate, @unchecked Sendable {

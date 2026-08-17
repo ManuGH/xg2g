@@ -185,6 +185,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         return url
     }
 
+    public func feedData(_ data: Data) {
+        ingestQueue.sync {
+            self.tsParser.feed(data: data)
+        }
+    }
+
     public func stopStreaming() {
         streamTask?.cancel()
         streamTask = nil
@@ -411,7 +417,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 firstAudioPTS = pts
             }
 
-            if audioBuffersPreRolledCount >= 8, let startPTS = firstAudioPTS {
+            // Pre-roll 20 frames (~640ms of audio buffer) for smooth jitter-free playback
+            if audioBuffersPreRolledCount >= 20, let startPTS = firstAudioPTS {
                 audioRenderer.setRate(1.0, time: startPTS)
                 isAudioClockStarted = true
                 let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", startPTS.seconds))s (\(codec), prerolled: \(audioBuffersPreRolledCount) buffers)"
