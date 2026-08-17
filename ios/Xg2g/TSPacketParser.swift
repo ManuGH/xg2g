@@ -4,10 +4,59 @@
 
 import Foundation
 
+public enum AudioStreamCodec: Sendable, Equatable, CustomStringConvertible {
+    case ac3
+    case eac3
+    case aac
+    case mpegAudio
+    case unknown(UInt8)
+
+    public var description: String {
+        switch self {
+        case .ac3: return "AC-3"
+        case .eac3: return "E-AC-3"
+        case .aac: return "AAC"
+        case .mpegAudio: return "MPEG Audio"
+        case .unknown(let type): return "Unknown (0x\(String(type, radix: 16, uppercase: true)))"
+        }
+    }
+}
+
+public struct AudioTrackInfo: Sendable, Equatable, Identifiable {
+    public var id: UInt16 { pid }
+    public let pid: UInt16
+    public let streamType: UInt8
+    public let codec: AudioStreamCodec
+    public let language: String?
+    public let audioType: UInt8
+    public let descriptorTags: [UInt8]
+
+    public init(
+        pid: UInt16,
+        streamType: UInt8,
+        codec: AudioStreamCodec,
+        language: String? = nil,
+        audioType: UInt8 = 0,
+        descriptorTags: [UInt8] = []
+    ) {
+        self.pid = pid
+        self.streamType = streamType
+        self.codec = codec
+        self.language = language
+        self.audioType = audioType
+        self.descriptorTags = descriptorTags
+    }
+}
+
 public protocol TSPacketParserDelegate: AnyObject, Sendable {
     func tsParser(_ parser: TSPacketParser, didDiscoverVideoPID pid: UInt16)
+    func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo])
     func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool)
     func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8)
+}
+
+public extension TSPacketParserDelegate {
+    func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo]) {}
 }
 
 /// MPEG-TS (ISO/IEC 13818-1) transport stream packet parser.
@@ -15,7 +64,8 @@ public protocol TSPacketParserDelegate: AnyObject, Sendable {
 /// Features:
 /// - 188-byte TS packet synchronization and recovery.
 /// - PAT (Program Association Table) demuxing.
-/// - PMT (Program Map Table) parsing to discover the H.264 video PID (`stream_type = 0x1B`).
+/// - PMT (Program Map Table) parsing to discover Video and Audio PIDs with DVB descriptors.
+/// - Multi-track audio discovery (AC-3, E-AC-3, AAC, MPEG-Audio) and ISO 639 language tagging.
 /// - Continuity counter tracking per PID.
 /// - Adaptation field skipping and payload extraction.
 public final class TSPacketParser: @unchecked Sendable {
@@ -26,6 +76,8 @@ public final class TSPacketParser: @unchecked Sendable {
     private var buffer = Data()
     private var pmtPIDs = Set<UInt16>()
     public private(set) var videoPID: UInt16?
+    public private(set) var audioTracks: [AudioTrackInfo] = []
+    public private(set) var audioPIDs = Set<UInt16>()
     private var continuityCounters: [UInt16: UInt8] = [:]
 
     public weak var delegate: TSPacketParserDelegate?
@@ -36,6 +88,8 @@ public final class TSPacketParser: @unchecked Sendable {
         buffer.removeAll(keepingCapacity: true)
         pmtPIDs.removeAll()
         videoPID = nil
+        audioTracks.removeAll()
+        audioPIDs.removeAll()
         continuityCounters.removeAll()
     }
 
@@ -117,6 +171,9 @@ public final class TSPacketParser: @unchecked Sendable {
         } else if let vPid = videoPID, pid == vPid {
             // Video Elementary Stream
             delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
+        } else if audioPIDs.contains(pid) {
+            // Audio Elementary Stream
+            delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
         } else if videoPID == nil && payloadUnitStart && payload.count >= 4 {
             // Fast-track auto-detection of video PID from PES video start code (0x000001E0 - 0x000001EF)
             if payload[0] == 0x00 && payload[1] == 0x00 && payload[2] == 0x01 && (payload[3] >= 0xE0 && payload[3] <= 0xEF) {
@@ -176,23 +233,118 @@ public final class TSPacketParser: @unchecked Sendable {
         var streamOffset = offset + 12 + programInfoLength
         let endOffset = offset + 3 + sectionLength - 4 // minus 4 CRC bytes
 
+        var discoveredVideo: UInt16?
+        var tracks: [AudioTrackInfo] = []
+
         while streamOffset + 5 <= endOffset {
             let streamType = payload[streamOffset]
             let elementaryPID = UInt16(payload[streamOffset + 1] & 0x1F) << 8 | UInt16(payload[streamOffset + 2])
             let esInfoLength = Int(UInt16(payload[streamOffset + 3] & 0x0F) << 8 | UInt16(payload[streamOffset + 4]))
+            let descStart = streamOffset + 5
+            let descEnd = min(descStart + esInfoLength, endOffset)
 
-            // stream_type 0x1B = H.264 / AVC Video
-            // stream_type 0x24 = HEVC / H.265 Video
-            // stream_type 0x02 = MPEG-2 Video
-            if streamType == 0x1B || streamType == 0x24 || streamType == 0x02 {
-                if self.videoPID != elementaryPID {
-                    self.videoPID = elementaryPID
-                    delegate?.tsParser(self, didDiscoverVideoPID: elementaryPID)
+            // Parse ES descriptors
+            var descOffset = descStart
+            var descriptorTags: [UInt8] = []
+            var language: String?
+            var audioType: UInt8 = 0
+            var isAC3Descriptor = false
+            var isEAC3Descriptor = false
+
+            while descOffset + 2 <= descEnd {
+                let tag = payload[descOffset]
+                let len = Int(payload[descOffset + 1])
+                descriptorTags.append(tag)
+
+                let tagDataStart = descOffset + 2
+                let tagDataEnd = min(tagDataStart + len, descEnd)
+
+                if tag == 0x6A {
+                    // DVB AC-3 descriptor
+                    isAC3Descriptor = true
+                } else if tag == 0x7A {
+                    // DVB Enhanced AC-3 descriptor
+                    isEAC3Descriptor = true
+                } else if tag == 0x0A && tagDataStart + 3 <= tagDataEnd {
+                    // ISO 639-2 language descriptor
+                    let langBytes = [payload[tagDataStart], payload[tagDataStart + 1], payload[tagDataStart + 2]]
+                    if let langStr = String(bytes: langBytes, encoding: .ascii)?.trimmingCharacters(in: .whitespacesAndNewlines), !langStr.isEmpty {
+                        language = langStr.lowercased()
+                    }
+                    if tagDataStart + 4 <= tagDataEnd {
+                        audioType = payload[tagDataStart + 3]
+                    }
+                } else if tag == 0x05 && tagDataStart + 4 <= tagDataEnd {
+                    // Registration descriptor
+                    let regBytes = [payload[tagDataStart], payload[tagDataStart + 1], payload[tagDataStart + 2], payload[tagDataStart + 3]]
+                    if let regStr = String(bytes: regBytes, encoding: .ascii) {
+                        if regStr == "AC-3" {
+                            isAC3Descriptor = true
+                        } else if regStr == "EAC3" {
+                            isEAC3Descriptor = true
+                        }
+                    }
                 }
-                break
+
+                descOffset += 2 + len
+            }
+
+            // Stream classification
+            if streamType == 0x1B || streamType == 0x24 || streamType == 0x02 || streamType == 0x01 {
+                // Video stream
+                if discoveredVideo == nil {
+                    discoveredVideo = elementaryPID
+                }
+            } else {
+                // Audio stream
+                let codec: AudioStreamCodec?
+                switch streamType {
+                case 0x03, 0x04:
+                    codec = .mpegAudio
+                case 0x0F, 0x11:
+                    codec = .aac
+                case 0x81:
+                    codec = .ac3
+                case 0x87:
+                    codec = .eac3
+                case 0x06:
+                    // DVB Private PES: Check descriptors
+                    if isEAC3Descriptor {
+                        codec = .eac3
+                    } else if isAC3Descriptor {
+                        codec = .ac3
+                    } else {
+                        codec = nil
+                    }
+                default:
+                    codec = nil
+                }
+
+                if let codec = codec {
+                    let track = AudioTrackInfo(
+                        pid: elementaryPID,
+                        streamType: streamType,
+                        codec: codec,
+                        language: language,
+                        audioType: audioType,
+                        descriptorTags: descriptorTags
+                    )
+                    tracks.append(track)
+                }
             }
 
             streamOffset += 5 + esInfoLength
+        }
+
+        if let vPid = discoveredVideo, self.videoPID != vPid {
+            self.videoPID = vPid
+            delegate?.tsParser(self, didDiscoverVideoPID: vPid)
+        }
+
+        if !tracks.isEmpty && self.audioTracks != tracks {
+            self.audioTracks = tracks
+            self.audioPIDs = Set(tracks.map(\.pid))
+            delegate?.tsParser(self, didDiscoverAudioTracks: tracks)
         }
     }
 }
