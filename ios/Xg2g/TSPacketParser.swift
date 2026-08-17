@@ -100,38 +100,53 @@ public final class TSPacketParser: @unchecked Sendable {
     }
 
     private func processBuffer() {
-        var offset = buffer.startIndex
-        let count = buffer.count
+        guard !buffer.isEmpty else { return }
 
-        while count - offset >= Self.packetSize {
-            // Find 0x47 sync byte
-            guard let syncIndex = buffer[offset...].firstIndex(of: Self.syncByte) else {
-                buffer.removeAll(keepingCapacity: true)
-                return
+        var consumedBytes = 0
+        buffer.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return }
+            let ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
+            var offset = 0
+            let count = rawBuffer.count
+
+            while count - offset >= Self.packetSize {
+                // Find 0x47 sync byte
+                var foundSync = false
+                while offset < count {
+                    if ptr[offset] == Self.syncByte {
+                        foundSync = true
+                        break
+                    }
+                    offset += 1
+                }
+
+                guard foundSync, count - offset >= Self.packetSize else {
+                    break
+                }
+
+                let packetPtr = ptr.advanced(by: offset)
+                parsePacket(bytes: packetPtr, length: Self.packetSize)
+                offset += Self.packetSize
             }
-            offset = syncIndex
 
-            if count - offset < Self.packetSize {
-                break
-            }
-
-            let packetRange = offset..<(offset + Self.packetSize)
-            let packet = buffer.subdata(in: packetRange)
-            offset += Self.packetSize
-            parsePacket(packet)
+            consumedBytes = offset
         }
 
-        if offset > buffer.startIndex {
-            buffer.removeSubrange(buffer.startIndex..<offset)
+        if consumedBytes > 0 {
+            if consumedBytes >= buffer.count {
+                buffer.removeAll(keepingCapacity: true)
+            } else {
+                buffer.removeSubrange(0..<consumedBytes)
+            }
         }
     }
 
-    private func parsePacket(_ packet: Data) {
-        guard packet.count == Self.packetSize, packet[0] == Self.syncByte else { return }
+    private func parsePacket(bytes: UnsafePointer<UInt8>, length: Int) {
+        guard length == Self.packetSize, bytes[0] == Self.syncByte else { return }
 
-        let byte1 = packet[1]
-        let byte2 = packet[2]
-        let byte3 = packet[3]
+        let byte1 = bytes[1]
+        let byte2 = bytes[2]
+        let byte3 = bytes[3]
 
         let transportError = (byte1 & 0x80) != 0
         if transportError { return }
@@ -155,7 +170,7 @@ public final class TSPacketParser: @unchecked Sendable {
         // Calculate payload offset
         var payloadOffset = 4
         if adaptationControl == 0x02 || adaptationControl == 0x03 { // Adaptation field present
-            let adaptationLength = Int(packet[4])
+            let adaptationLength = Int(bytes[4])
             payloadOffset = 5 + adaptationLength
             if payloadOffset > Self.packetSize { return }
         }
@@ -165,7 +180,8 @@ public final class TSPacketParser: @unchecked Sendable {
             return
         }
 
-        let payload = packet.subdata(in: payloadOffset..<Self.packetSize)
+        let payloadLength = Self.packetSize - payloadOffset
+        let payload = Data(bytes: bytes.advanced(by: payloadOffset), count: payloadLength)
 
         if pid == 0 {
             // PAT
@@ -179,9 +195,9 @@ public final class TSPacketParser: @unchecked Sendable {
         } else if audioPIDs.contains(pid) {
             // Audio Elementary Stream
             delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
-        } else if videoPID == nil && payloadUnitStart && payload.count >= 4 {
+        } else if videoPID == nil && payloadUnitStart && payloadLength >= 4 {
             // Fast-track auto-detection of video PID from PES video start code (0x000001E0 - 0x000001EF)
-            if payload[0] == 0x00 && payload[1] == 0x00 && payload[2] == 0x01 && (payload[3] >= 0xE0 && payload[3] <= 0xEF) {
+            if bytes[payloadOffset] == 0x00 && bytes[payloadOffset + 1] == 0x00 && bytes[payloadOffset + 2] == 0x01 && (bytes[payloadOffset + 3] >= 0xE0 && bytes[payloadOffset + 3] <= 0xEF) {
                 self.videoPID = pid
                 delegate?.tsParser(self, didDiscoverVideoPID: pid)
                 delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
