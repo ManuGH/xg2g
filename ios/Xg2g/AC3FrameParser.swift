@@ -65,8 +65,8 @@ public protocol AC3FrameParserDelegate: AnyObject, Sendable {
 public final class AC3FrameParser: @unchecked Sendable {
 
     private var buffer = Data()
-    private var pendingPTS: CMTime?
-    private var pendingPTS90k: UInt64?
+    private var runningPTS: CMTime?
+    private var runningPTS90k: UInt64?
     private var normalizer = PTS33BitNormalizer()
 
     public weak var delegate: AC3FrameParserDelegate?
@@ -75,17 +75,25 @@ public final class AC3FrameParser: @unchecked Sendable {
 
     public func reset() {
         buffer.removeAll(keepingCapacity: true)
-        pendingPTS = nil
-        pendingPTS90k = nil
+        runningPTS = nil
+        runningPTS90k = nil
         normalizer.reset()
     }
 
     /// Ingests elementary stream data chunk from an audio PES packet.
     public func feed(data: Data, pts: CMTime? = nil, pts90k: UInt64? = nil) {
-        if let pts = pts, let pts90k = pts90k {
-            // Anchor pending PTS to the next syncframe that begins in or follows this buffer
-            self.pendingPTS = pts
-            self.pendingPTS90k = pts90k
+        if let pts = pts, pts.isValid {
+            if let running = runningPTS, running.isValid {
+                let drift = abs(pts.seconds - running.seconds)
+                // If stream timestamps jump by > 80 ms (e.g. channel zap or splice), resync timeline
+                if drift > 0.080 {
+                    self.runningPTS = pts
+                    self.runningPTS90k = pts90k
+                }
+            } else {
+                self.runningPTS = pts
+                self.runningPTS90k = pts90k
+            }
         }
         buffer.append(data)
         processBuffer()
@@ -122,15 +130,15 @@ public final class AC3FrameParser: @unchecked Sendable {
             let frameData = buffer.subdata(in: buffer.startIndex..<(buffer.startIndex + frameInfo.frameSizeBytes))
             buffer.removeSubrange(buffer.startIndex..<(buffer.startIndex + frameInfo.frameSizeBytes))
 
-            let framePTS = pendingPTS
-            let framePTS90k = pendingPTS90k
+            let framePTS = runningPTS
+            let framePTS90k = runningPTS90k
 
-            if let pts = pendingPTS {
-                // Advance pending PTS by exact frame duration for subsequent frames in the same buffer
-                self.pendingPTS = pts + frameInfo.duration
-                if let p90 = pendingPTS90k {
+            if let pts = runningPTS {
+                // Advance continuous sample-accurate audio timebase by exact frame duration
+                self.runningPTS = pts + frameInfo.duration
+                if let p90 = runningPTS90k {
                     let ticks = UInt64((Int64(frameInfo.samplesPerFrame) * 90000) / Int64(frameInfo.sampleRate))
-                    self.pendingPTS90k = p90 + ticks
+                    self.runningPTS90k = p90 + ticks
                 }
             }
 

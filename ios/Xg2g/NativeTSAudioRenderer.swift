@@ -58,13 +58,13 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .moviePlayback, options: [.allowBluetoothHFP, .allowAirPlay])
-            try session.setPreferredIOBufferDuration(0.02) // 20 ms low latency
+            try session.setPreferredIOBufferDuration(0.05) // 50 ms jitter-resilient broadcast audio buffer
             try session.setActive(true, options: [])
             isAudioSessionActive = true
             audioRenderer.isMuted = false
             audioRenderer.volume = 1.0
-            logger.notice("[AudioRenderer] ✅ AVAudioSession activated (.playback / .moviePlayback / defaultToSpeaker)")
-            print("[AudioRenderer] ✅ AVAudioSession activated (.playback / .moviePlayback / defaultToSpeaker)")
+            logger.notice("[AudioRenderer] ✅ AVAudioSession activated (.playback / .moviePlayback)")
+            print("[AudioRenderer] ✅ AVAudioSession activated (.playback / .moviePlayback)")
         } catch {
             logger.error("[AudioRenderer] ❌ Failed to activate AVAudioSession: \(error.localizedDescription)")
             print("[AudioRenderer] ❌ Failed to activate AVAudioSession: \(error.localizedDescription)")
