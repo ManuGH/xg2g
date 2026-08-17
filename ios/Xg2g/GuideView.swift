@@ -4,34 +4,33 @@
 
 import SwiftUI
 
-/// Dedicated Multi-Day TV Guide & Full EPG Program Schedule
+/// Multi-day TV guide.
 ///
-/// Features:
-/// - 7-Day Timeline Navigation (Heute, Morgen, Wochentage)
-/// - Prime-Time & Time-Jump Shortcuts (Ganztägig, 20:15, 22:00)
-/// - Comprehensive Genre & Bouquet Filtering
-/// - Smart Rerun / Wiederholungen Detection across all channels
-/// - 1-Tap Instant Timer Programming
+/// Three modes over one projection, because a guide gets asked three different
+/// questions: what is on *now* (`onAir`), what is on *next* (`timeline`), and
+/// what does the evening *look like* (`grid`). The previous single view answered
+/// none of them well — it listed every programme of a channel in one unbounded
+/// card, so reading across channels at a given time was impossible.
+///
+/// Clock time is the organising principle throughout: monospaced digits in a
+/// fixed leading column in the list modes, a ruler and a live now-line in the
+/// grid. Broadcast amber marks on-air state and nothing else.
 struct GuideView: View {
 
     @Bindable var model: AppModel
     @Environment(\.horizontalSizeClass) private var sizeClass
 
+    @State private var mode: GuideMode = .onAir
     @State private var selectedDayOffset: Int = 0
-    @State private var selectedTimeWindow: TimeWindow = .allDay
+    @State private var anchor: GuideAnchor = .now
     @State private var selectedGenre: EpgGenre = .all
     @State private var guideSearchText = ""
     @State private var selectedDetail: ProgramDetailPayload?
     @State private var recordConfirmationMessage: String?
 
-    enum TimeWindow: String, CaseIterable, Identifiable {
-        case allDay = "Ganztägig"
-        case now = "🔴 Jetzt"
-        case primeTime = "20:15"
-        case lateNight = "22:00"
-
-        var id: String { rawValue }
-    }
+    /// Built by `rebuildProjection`, never by `body`.
+    @State private var projection: GuideProjection = .empty
+    @State private var hasBuiltProjection = false
 
     var body: some View {
         NavigationStack {
@@ -39,510 +38,497 @@ struct GuideView: View {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    // MARK: - 1. Top Days Navigation Bar
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(0..<7, id: \.self) { offset in
-                                let isSelected = selectedDayOffset == offset
-                                Button {
-                                    triggerHaptic(.light)
-                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                        selectedDayOffset = offset
-                                        if offset > 0 && selectedTimeWindow == .now {
-                                            selectedTimeWindow = .allDay
-                                        }
-                                    }
-                                } label: {
-                                    VStack(spacing: 2) {
-                                        Text(dayTitle(for: offset))
-                                            .font(.system(size: 13, weight: isSelected ? .bold : .medium))
-                                        Text(dayDateString(for: offset))
-                                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                            .opacity(0.8)
-                                    }
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        isSelected ? Theme.Colors.accentLive : Theme.Colors.surfaceElevated.opacity(0.85),
-                                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    )
-                                    .foregroundStyle(isSelected ? Theme.Colors.bgBase : Theme.Colors.textPrimary)
-                                    .overlay {
-                                        if !isSelected {
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8)
-                                        }
-                                    }
-                                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                    if mode != .onAir {
+                        windowBar
                     }
-                    .background(Theme.Colors.surfaceElevated.opacity(0.25))
 
-                    // MARK: - 2. Time & Genre Filter Row
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            // Time Window Jumps
-                            ForEach(availableTimeWindows) { window in
-                                let isSelected = selectedTimeWindow == window
-                                Button {
-                                    triggerHaptic(.light)
-                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                        selectedTimeWindow = window
-                                    }
-                                } label: {
-                                    Text(window.rawValue)
-                                        .font(.system(size: 12, weight: isSelected ? .bold : .medium))
-                                        .padding(.horizontal, 11)
-                                        .padding(.vertical, 5)
-                                        .background(isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated.opacity(0.6), in: Capsule())
-                                        .foregroundStyle(isSelected ? .white : Theme.Colors.textSecondary)
-                                        .contentShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            Divider()
-                                .frame(height: 16)
-                                .background(Theme.Colors.borderSubtle)
-
-                            // Genre Filter Badges
-                            ForEach(EpgGenre.allCases) { genre in
-                                let isSelected = selectedGenre == genre
-                                Button {
-                                    triggerHaptic(.light)
-                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                                        selectedGenre = genre
-                                    }
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        if genre != .all {
-                                            Image(systemName: genre.icon)
-                                                .font(.system(size: 10))
-                                        }
-                                        Text(genre.rawValue)
-                                            .font(.system(size: 12, weight: isSelected ? .bold : .medium))
-                                    }
-                                    .padding(.horizontal, 11)
-                                    .padding(.vertical, 5)
-                                    .background(isSelected ? Theme.Colors.accentLive : Theme.Colors.surfaceElevated.opacity(0.6), in: Capsule())
-                                    .foregroundStyle(isSelected ? Theme.Colors.bgBase : Theme.Colors.textSecondary)
-                                    .contentShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                    }
-                    .background(Theme.Colors.bgBase)
-
-                    // MARK: - 3. Guide Schedule List
-                    let channelSchedules = computedChannelSchedules
-
-                    if channelSchedules.isEmpty {
-                        Spacer()
-                        ContentUnavailableView(
-                            guideSearchText.isEmpty ? "Keine Sendungen gefunden" : "Keine Treffer für „\(guideSearchText)“",
-                            systemImage: "calendar.badge.exclamationmark",
-                            description: Text("Passe deinen Datums-, Zeit- oder Genre-Filter an.")
-                        )
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        Spacer()
-                    } else {
-                        let isRegular = sizeClass == .regular
-                        ScrollView {
-                            LazyVGrid(
-                                columns: [
-                                    GridItem(.adaptive(minimum: isRegular ? 360 : 300, maximum: 540), spacing: isRegular ? 16 : 12)
-                                ],
-                                spacing: isRegular ? 16 : 12
-                            ) {
-                                ForEach(channelSchedules, id: \.channel.id) { item in
-                                    GuideChannelCard(
-                                        channel: item.channel,
-                                        shows: item.shows,
-                                        model: model,
-                                        onPlay: {
-                                            model.playingChannel = item.channel
-                                        },
-                                        onShowInfo: { show in
-                                            selectedDetail = ProgramDetailPayload(channel: item.channel, entry: show)
-                                        },
-                                        onRecord: { show in
-                                            Task {
-                                                let ok = await model.scheduleProgramTimer(channel: item.channel, entry: show)
-                                                if ok {
-                                                    triggerHaptic(.medium)
-                                                    withAnimation {
-                                                        recordConfirmationMessage = "„\(show.title)“ programmiert"
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                            .padding(.horizontal, isRegular ? 20 : 12)
-                            .padding(.vertical, isRegular ? 16 : 12)
-                            .safeAreaPadding(.bottom, 80)
-                        }
-                        .refreshable {
-                            await model.refreshLiveContent()
-                        }
-                    }
+                    content
                 }
 
-                // MARK: - Toast Banner (Timer Scheduled)
                 if let message = recordConfirmationMessage {
-                    VStack {
-                        Spacer()
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(Theme.Colors.statusSuccess)
-                            Text(message)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Theme.Colors.surfaceElevated, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
-                        .shadow(color: .black.opacity(0.35), radius: 10, y: 5)
-                        .padding(.bottom, 20)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                    .onAppear {
-                        Task {
-                            try? await Task.sleep(for: .seconds(3))
-                            withAnimation {
-                                recordConfirmationMessage = nil
-                            }
-                        }
-                    }
+                    confirmationToast(message)
                 }
             }
-            .navigationTitle("TV-Guide")
+            .task(id: inputs) {
+                await rebuildProjection()
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Button {
-                            triggerHaptic(.light)
-                            Task { await model.selectBouquet(nil) }
-                        } label: {
-                            HStack {
-                                Text("Alle Sender")
-                                if model.selectedBouquet == nil {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-
-                        if !model.favoriteChannelIDs.isEmpty {
-                            Button {
-                                triggerHaptic(.light)
-                                Task { await model.selectBouquet(Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")) }
-                            } label: {
-                                HStack {
-                                    Text("Favoriten (\(model.favoriteChannelIDs.count))")
-                                    if model.selectedBouquet?.id == AppModel.favoritesBouquetID {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-
-                        if !model.bouquets.isEmpty {
-                            Divider()
-                            ForEach(model.bouquets) { bouquet in
-                                Button {
-                                    triggerHaptic(.light)
-                                    Task { await model.selectBouquet(bouquet) }
-                                } label: {
-                                    HStack {
-                                        Text("\(bouquet.name)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
-                                        if model.selectedBouquet?.id == bouquet.id {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Text(model.selectedBouquet?.name ?? "Alle Sender")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                            Image(systemName: "chevron.down.circle.fill")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.accentAction)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Theme.Colors.surfaceElevated.opacity(0.8), in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
-                    }
-                }
+                ToolbarItem(placement: .topBarLeading) { bouquetMenu }
+                ToolbarItem(placement: .principal) { modePicker }
+                ToolbarItem(placement: .topBarTrailing) { genreMenu }
             }
-            .searchable(text: $guideSearchText, prompt: "Sendung, Film, Schauspieler suchen…")
+            .searchable(text: $guideSearchText, prompt: "Sendung oder Sender suchen…")
             .sheet(item: $selectedDetail) { payload in
                 ProgramDetailSheet(
                     channel: payload.channel,
                     entry: payload.entry,
                     channelSchedule: model.channelSchedule(for: payload.channel),
                     model: model,
-                    onRecord: { entry in
-                        Task {
-                            let ok = await model.scheduleProgramTimer(channel: payload.channel, entry: entry)
-                            if ok {
-                                triggerHaptic(.medium)
-                                withAnimation {
-                                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
-                                }
-                            }
-                        }
-                    }
+                    onRecord: { entry in record(entry, on: payload.channel) }
                 )
             }
             .task {
                 if model.fullEpg.isEmpty {
                     await model.loadChannels()
-                } else if let last = model.lastDataRefreshTime, Date().timeIntervalSince(last) > 300 {
+                } else if let last = model.lastDataRefreshTime,
+                          Date().timeIntervalSince(last) > 300 {
                     await model.refreshLiveContent()
                 }
             }
         }
     }
 
-    // MARK: - Computed Schedules & Filtering
+    // MARK: - Chrome
 
-    private struct ChannelScheduleItem {
-        let channel: Channel
-        let shows: [NowNext.Entry]
+    /// The mode switch stands in for the screen title. It is the first decision
+    /// a reader makes here, so it takes the most prominent slot rather than
+    /// sitting in a third row of chips.
+    private var modePicker: some View {
+        Picker("Darstellung", selection: $mode.animation(.easeInOut(duration: 0.2))) {
+            ForEach(GuideMode.allCases) { mode in
+                Label(mode.rawValue, systemImage: mode.symbol).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 320)
+        .onChange(of: mode) { _, newValue in
+            triggerHaptic(.light)
+            // "Jetzt" is always today and always the current moment; carrying a
+            // day or anchor selection into it would be a lie.
+            if newValue == .onAir {
+                selectedDayOffset = 0
+                anchor = .now
+            }
+        }
     }
 
-    private var computedChannelSchedules: [ChannelScheduleItem] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: .now)
-        guard let targetDayStart = calendar.date(byAdding: .day, value: selectedDayOffset, to: today),
-              let targetDayEnd = calendar.date(byAdding: .day, value: 1, to: targetDayStart) else {
-            return []
+    /// Day and start time in a single row: the day as a menu, the anchors as
+    /// chips. Both used to be full-width horizontal scrollers stacked on top of
+    /// each other, which cost two rows of height and hid the genre filter
+    /// off-screen behind a divider.
+    private var windowBar: some View {
+        HStack(spacing: 10) {
+            Menu {
+                ForEach(0..<7, id: \.self) { offset in
+                    Button {
+                        triggerHaptic(.light)
+                        selectedDayOffset = offset
+                    } label: {
+                        HStack {
+                            Text(dayTitle(for: offset))
+                            Text(dayDateString(for: offset))
+                            if selectedDayOffset == offset {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Text(dayTitle(for: selectedDayOffset))
+                        .font(.system(size: 13, weight: .bold))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(Theme.Colors.surfaceElevated, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(availableAnchors) { option in
+                        let isSelected = anchor == option
+                        Button {
+                            triggerHaptic(.light)
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                                anchor = option
+                            }
+                        } label: {
+                            Text(option.rawValue)
+                                .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .monospaced))
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                                .background(
+                                    isSelected ? Theme.Colors.accentAction : Theme.Colors.surfaceElevated.opacity(0.6),
+                                    in: Capsule()
+                                )
+                                .foregroundStyle(isSelected ? .white : Theme.Colors.textSecondary)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.trailing, 16)
+            }
+            .fadingHorizontalEdges(fadeWidth: 12)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Theme.Colors.bgBase)
+    }
+
+    private var bouquetMenu: some View {
+        Menu {
+            Button {
+                triggerHaptic(.light)
+                Task { await model.selectBouquet(nil) }
+            } label: {
+                HStack {
+                    Text("Alle Sender")
+                    if model.selectedBouquet == nil { Image(systemName: "checkmark") }
+                }
+            }
+
+            if !model.favoriteChannelIDs.isEmpty {
+                Button {
+                    triggerHaptic(.light)
+                    Task {
+                        await model.selectBouquet(
+                            Bouquet(id: AppModel.favoritesBouquetID, name: "Favoriten")
+                        )
+                    }
+                } label: {
+                    HStack {
+                        Text("Favoriten (\(model.favoriteChannelIDs.count))")
+                        if model.selectedBouquet?.id == AppModel.favoritesBouquetID {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+
+            if !model.bouquets.isEmpty {
+                Divider()
+                ForEach(model.bouquets) { bouquet in
+                    Button {
+                        triggerHaptic(.light)
+                        Task { await model.selectBouquet(bouquet) }
+                    } label: {
+                        HStack {
+                            Text("\(bouquet.name)\(bouquet.servicesCount > 0 ? " (\(bouquet.servicesCount))" : "")")
+                            if model.selectedBouquet?.id == bouquet.id {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "tv.badge.wifi")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.Colors.accentAction)
+        }
+        .accessibilityLabel("Senderliste: \(model.selectedBouquet?.name ?? "Alle Sender")")
+    }
+
+    /// Genres moved out of the chip row. They refine a result set rather than
+    /// define it, and eight of them in a shared horizontal scroller meant most
+    /// were never seen.
+    private var genreMenu: some View {
+        Menu {
+            ForEach(EpgGenre.allCases) { genre in
+                Button {
+                    triggerHaptic(.light)
+                    selectedGenre = genre
+                } label: {
+                    HStack {
+                        Label(genre.rawValue, systemImage: genre.icon)
+                        if selectedGenre == genre { Image(systemName: "checkmark") }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: selectedGenre == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(selectedGenre == .all ? Theme.Colors.textSecondary : Theme.Colors.accentLive)
+        }
+        .accessibilityLabel("Genre: \(selectedGenre.rawValue)")
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder
+    private var content: some View {
+        if !hasBuiltProjection {
+            centeredState {
+                ProgressView("Programm wird geladen…")
+                    .tint(Theme.Colors.accentAction)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+        } else if projection.isEmpty {
+            centeredState {
+                ContentUnavailableView(
+                    emptyTitle,
+                    systemImage: "calendar.badge.exclamationmark",
+                    description: Text(emptyDescription)
+                )
+                .foregroundStyle(Theme.Colors.textSecondary)
+            }
+        } else {
+            // One clock for every live element on screen, ticking twice a minute.
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                switch mode {
+                case .onAir:
+                    onAirList(now: context.date)
+                case .timeline:
+                    timelineList(now: context.date)
+                case .grid:
+                    GuideGrid(
+                        projection: projection,
+                        now: context.date,
+                        onOpen: { entry in
+                            selectedDetail = ProgramDetailPayload(channel: entry.channel, entry: entry.show)
+                        },
+                        onPlay: { channel in
+                            triggerHaptic(.light)
+                            model.playingChannel = channel
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private func onAirList(now: Date) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(projection.onAir) { entry in
+                    GuideShowRow(
+                        channel: entry.channel,
+                        show: entry.show,
+                        now: now,
+                        // This list is ordered by channel, so the leading column
+                        // is the channel number.
+                        leading: .channelNumber,
+                        onOpen: { selectedDetail = ProgramDetailPayload(channel: entry.channel, entry: entry.show) },
+                        onPlay: {
+                            triggerHaptic(.light)
+                            model.playingChannel = entry.channel
+                        },
+                        onRecord: { record(entry.show, on: entry.channel) }
+                    )
+                    .padding(.horizontal, 16)
+
+                    Divider()
+                        .background(Theme.Colors.borderSubtle)
+                        .padding(.leading, 16)
+                }
+            }
+            .safeAreaPadding(.bottom, 80)
+        }
+        .refreshable { await model.refreshLiveContent() }
+    }
+
+    private func timelineList(now: Date) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                ForEach(projection.slots) { slot in
+                    Section {
+                        ForEach(slot.entries) { entry in
+                            GuideShowRow(
+                                channel: entry.channel,
+                                show: entry.show,
+                                now: now,
+                                onOpen: { selectedDetail = ProgramDetailPayload(channel: entry.channel, entry: entry.show) },
+                                onPlay: {
+                                    triggerHaptic(.light)
+                                    model.playingChannel = entry.channel
+                                },
+                                onRecord: { record(entry.show, on: entry.channel) }
+                            )
+                            .padding(.horizontal, 16)
+
+                            Divider()
+                                .background(Theme.Colors.borderSubtle)
+                                .padding(.leading, 16)
+                        }
+                    } header: {
+                        GuideSlotHeader(
+                            start: slot.start,
+                            count: slot.entries.count,
+                            isCurrent: isCurrentSlot(slot, now: now)
+                        )
+                    }
+                }
+            }
+            .safeAreaPadding(.bottom, 80)
+        }
+        .refreshable { await model.refreshLiveContent() }
+    }
+
+    private func centeredState<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack {
+            Spacer()
+            content()
+            Spacer()
+        }
+    }
+
+    private func confirmationToast(_ message: String) -> some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Theme.Colors.statusSuccess)
+                Text(message)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Theme.Colors.surfaceElevated, in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.Colors.borderSubtle, lineWidth: 1))
+            .shadow(color: .black.opacity(0.35), radius: 10, y: 5)
+            .padding(.bottom, 20)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        .onAppear {
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation { recordConfirmationMessage = nil }
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func record(_ entry: NowNext.Entry, on channel: Channel) {
+        Task {
+            let ok = await model.scheduleProgramTimer(channel: channel, entry: entry)
+            if ok {
+                triggerHaptic(.medium)
+                withAnimation {
+                    recordConfirmationMessage = "„\(entry.title)“ programmiert"
+                }
+            }
+        }
+    }
+
+    // MARK: - Projection
+
+    private struct GuideInputs: Equatable {
+        let dayOffset: Int
+        let anchor: GuideAnchor
+        let genre: EpgGenre
+        let query: String
+        let contentRevision: Int
+        let modelGenre: EpgGenre
+        let modelQuery: String
+        let modelTimeFilter: AppModel.TimeFilter
+        let modelBouquetID: String?
+        let favoritesCount: Int
+        /// Minute bucket, so a programme that has ended stops being "on air".
+        /// Zero outside the modes that depend on the clock, so browsing a future
+        /// day does not rebuild once a minute for nothing.
+        let minuteBucket: Int
+    }
+
+    private var inputs: GuideInputs {
+        let tracksClock = mode == .onAir || (selectedDayOffset == 0 && anchor == .now)
+        return GuideInputs(
+            dayOffset: selectedDayOffset,
+            anchor: anchor,
+            genre: selectedGenre,
+            query: guideSearchText,
+            contentRevision: model.contentRevision,
+            modelGenre: model.selectedGenre,
+            modelQuery: model.searchQuery,
+            modelTimeFilter: model.selectedTimeFilter,
+            modelBouquetID: model.selectedBouquet?.id,
+            favoritesCount: model.favoriteChannelIDs.count,
+            minuteBucket: tracksClock ? Int(Date.now.timeIntervalSince1970 / 60) : 0
+        )
+    }
+
+    private func rebuildProjection() async {
+        // Only typing needs the delay; a filter tap should feel immediate.
+        if !guideSearchText.isEmpty {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
         }
 
-        let query = guideSearchText.trimmingCharacters(in: .whitespaces).lowercased()
+        let channels = model.filteredChannels
+        let epg = model.fullEpg
+        let dayOffset = selectedDayOffset
+        let currentAnchor = mode == .onAir ? GuideAnchor.now : anchor
+        let genre = selectedGenre
+        let query = guideSearchText
+        let now = Date.now
 
-        var items: [ChannelScheduleItem] = []
+        let built = await Task.detached(priority: .userInitiated) {
+            GuideProjectionBuilder.build(
+                channels: channels,
+                epg: epg,
+                dayOffset: dayOffset,
+                anchor: currentAnchor,
+                genre: genre,
+                searchText: query,
+                now: now
+            )
+        }.value
 
-        for channel in model.filteredChannels {
-            var shows = model.fullEpg[channel.serviceRef] ?? []
-
-            // Filter for the target day
-            shows = shows.filter { show in
-                show.start < targetDayEnd && show.end > targetDayStart
-            }
-
-            // Filter for Time Window
-            switch selectedTimeWindow {
-            case .allDay:
-                break
-            case .now:
-                shows = shows.filter { $0.start <= .now && $0.end > .now }
-            case .primeTime:
-                var components = calendar.dateComponents([.year, .month, .day], from: targetDayStart)
-                components.hour = 20
-                components.minute = 15
-                if let primeDate = calendar.date(from: components) {
-                    shows = shows.filter { $0.start <= primeDate && $0.end > primeDate }
-                }
-            case .lateNight:
-                var components = calendar.dateComponents([.year, .month, .day], from: targetDayStart)
-                components.hour = 22
-                components.minute = 0
-                if let lateDate = calendar.date(from: components) {
-                    shows = shows.filter { $0.start <= lateDate && $0.end > lateDate }
-                }
-            }
-
-            // Filter for Genre
-            if selectedGenre != .all {
-                shows = shows.filter { show in
-                    show.matches(genre: selectedGenre, channelName: channel.name)
-                }
-            }
-
-            // Filter for Search Query
-            if !query.isEmpty {
-                shows = shows.filter { show in
-                    show.title.lowercased().contains(query) ||
-                    (show.description?.lowercased().contains(query) ?? false) ||
-                    channel.name.lowercased().contains(query)
-                }
-            }
-
-            if !shows.isEmpty {
-                items.append(ChannelScheduleItem(channel: channel, shows: shows))
-            }
-        }
-
-        return items
+        guard !Task.isCancelled else { return }
+        projection = built
+        hasBuiltProjection = true
     }
 
     // MARK: - Helpers
 
-    private var availableTimeWindows: [TimeWindow] {
-        if selectedDayOffset == 0 {
-            return [.allDay, .now, .primeTime, .lateNight]
-        } else {
-            return [.allDay, .primeTime, .lateNight]
-        }
+    /// "Jetzt" only makes sense for today.
+    private var availableAnchors: [GuideAnchor] {
+        selectedDayOffset == 0
+            ? GuideAnchor.allCases
+            : GuideAnchor.allCases.filter { $0 != .now }
+    }
+
+    private func isCurrentSlot(_ slot: GuideSlot, now: Date) -> Bool {
+        now >= slot.start && now < slot.start.addingTimeInterval(1800)
+    }
+
+    private var emptyTitle: String {
+        if !guideSearchText.isEmpty { return "Keine Treffer für „\(guideSearchText)“" }
+        if selectedGenre != .all { return "Nichts in \(selectedGenre.rawValue)" }
+        return "Keine Sendungen im Zeitraum"
+    }
+
+    private var emptyDescription: String {
+        if !guideSearchText.isEmpty { return "Andere Schreibweise oder anderer Tag." }
+        if selectedGenre != .all { return "Genre zurücksetzen oder Zeitraum wechseln." }
+        return "Wähle einen anderen Tag oder eine andere Startzeit."
     }
 
     private func dayTitle(for offset: Int) -> String {
+        let date = Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()
         if offset == 0 { return "Heute" }
         if offset == 1 { return "Morgen" }
-        let target = Calendar.current.date(byAdding: .day, value: offset, to: .now) ?? .now
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "de_DE")
-        f.dateFormat = "EEEE"
-        return f.string(from: target)
+        return Self.weekdayFormatter.string(from: date)
     }
 
     private func dayDateString(for offset: Int) -> String {
-        let target = Calendar.current.date(byAdding: .day, value: offset, to: .now) ?? .now
+        let date = Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()
+        return Self.dayMonthFormatter.string(from: date)
+    }
+
+    private static let weekdayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "de_DE")
-        f.dateFormat = "d. MMM"
-        return f.string(from: target)
-    }
+        f.dateFormat = "EEEE"
+        return f
+    }()
 
-    private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        UIImpactFeedbackGenerator(style: style).impactOccurred()
-    }
+    private static let dayMonthFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "de_DE")
+        f.dateFormat = "d.M."
+        return f
+    }()
 }
 
-// MARK: - Guide Channel Card
-
-struct GuideChannelCard: View {
-
-    let channel: Channel
-    let shows: [NowNext.Entry]
-    let model: AppModel
-    var onPlay: () -> Void = {}
-    var onShowInfo: (NowNext.Entry) -> Void = { _ in }
-    var onRecord: (NowNext.Entry) -> Void = { _ in }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Channel Header Bar
-            HStack(spacing: 12) {
-                Button(action: onPlay) {
-                    ChannelLogo(url: channel.logoURL, name: channel.name, size: 44)
-                }
-                .buttonStyle(.plain)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        if let number = channel.number {
-                            Text(number)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.accentAction)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Theme.Colors.accentAction.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                        }
-
-                        Text(channel.name)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                            .lineLimit(1)
-                    }
-
-                    Text("\(shows.count) Sendungen gelistet")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                }
-
-                Spacer()
-
-                // 1-Tap Play Button
-                Button(action: onPlay) {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(Theme.Colors.accentAction)
-                }
-                .buttonStyle(.plain)
-            }
-
-            Divider()
-                .background(Theme.Colors.borderSubtle)
-
-            // Timeline Show Rows
-            VStack(spacing: 8) {
-                ForEach(shows) { show in
-                    HStack(spacing: 12) {
-                        Text(show.formattedStartTime)
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.accentAction)
-                            .frame(width: 44, alignment: .leading)
-
-                        Button {
-                            onShowInfo(show)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text(show.title)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(Theme.Colors.textPrimary)
-                                        .lineLimit(1)
-
-                                    let g = show.genre(channelName: channel.name)
-                                    if g != .all {
-                                        Text(g.rawValue)
-                                            .font(.system(size: 9, weight: .semibold))
-                                            .foregroundStyle(Theme.Colors.textTertiary)
-                                    }
-                                }
-
-                                if let desc = show.description, !desc.isEmpty {
-                                    Text(desc)
-                                        .font(.caption2)
-                                        .foregroundStyle(Theme.Colors.textTertiary)
-                                        .lineLimit(1)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer()
-
-                        // 1-Click Timer Button
-                        Button {
-                            onRecord(show)
-                        } label: {
-                            Image(systemName: "record.circle")
-                                .font(.system(size: 20))
-                                .foregroundStyle(Theme.Colors.statusError)
-                                .padding(4)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Theme.Gradients.cardSurface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1)
-        )
-    }
+@MainActor
+private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    Haptics.shared.impact(style)
 }

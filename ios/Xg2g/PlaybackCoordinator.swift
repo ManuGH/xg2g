@@ -190,17 +190,19 @@ actor PlaybackCoordinator {
             request.setValue("\(cookie.name)=\(cookie.value)", forHTTPHeaderField: "Cookie")
         }
 
-        for _ in 0..<60 {
+        for _ in 0..<30 {
             if let (data, response) = try? await HTTPAPIClient.sharedSession.data(for: request),
                let http = response as? HTTPURLResponse,
                http.statusCode == 200,
                let text = String(data: data, encoding: .utf8) {
-                let segmentCount = text.components(separatedBy: "#EXTINF:").count - 1
-                if segmentCount >= 2 {
+                // If the playlist has at least 1 segment or is a valid master playlist, hand off to AVPlayer immediately
+                let hasSegment = text.contains("#EXTINF:")
+                let isMaster = text.contains("#EXT-X-STREAM-INF")
+                if hasSegment || isMaster {
                     return
                 }
             }
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await Task.sleep(for: .milliseconds(100))
         }
     }
 

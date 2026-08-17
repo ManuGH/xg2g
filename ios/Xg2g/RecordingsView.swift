@@ -405,7 +405,7 @@ struct RecordingsView: View {
     }
 
     private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        UIImpactFeedbackGenerator(style: style).impactOccurred()
+        Haptics.shared.impact(style)
     }
 }
 
@@ -1010,6 +1010,6 @@ struct DownloadButton: View {
     }
 
     private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        UIImpactFeedbackGenerator(style: style).impactOccurred()
+        Haptics.shared.impact(style)
     }
 }

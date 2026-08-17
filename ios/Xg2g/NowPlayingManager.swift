@@ -14,6 +14,10 @@ final class NowPlayingManager {
 
     static let shared = NowPlayingManager()
 
+    /// Lock screen artwork is drawn much larger than an in-app logo, so it gets
+    /// the top `LogoImageCache` bucket.
+    private static let artworkBucket = 256
+
     var onNextChannel: (() -> Void)?
     var onPreviousChannel: (() -> Void)?
     var onStop: (() -> Void)?
@@ -115,7 +119,7 @@ final class NowPlayingManager {
         }
 
         // 1. If logo is already cached in memory, attach immediately
-        if let logoURL = channel.logoURL, let cached = LogoImageCache.shared.image(for: logoURL) {
+        if let logoURL = channel.logoURL, let cached = LogoImageCache.shared.anyImage(for: logoURL) {
             info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: cached)
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
             return
@@ -129,15 +133,22 @@ final class NowPlayingManager {
         // 3. Asynchronously fetch the channel logo and update Lock Screen artwork
         if let logoURL = channel.logoURL {
             currentArtworkTask = Task {
-                if let (data, _) = try? await URLSession.shared.data(from: logoURL),
-                   let image = UIImage(data: data) {
-                    LogoImageCache.shared.store(image, for: logoURL)
-                    if !Task.isCancelled {
-                        var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
-                        updated[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: image)
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
-                    }
-                }
+                guard let (data, _) = try? await URLSession.shared.data(from: logoURL) else { return }
+
+                // Lock screen artwork is the largest rendition the app asks for,
+                // and decoding it here keeps a full-resolution bitmap out of both
+                // the cache and the main thread.
+                let bucket = Self.artworkBucket
+                let image = await Task.detached(priority: .utility) {
+                    LogoImageCache.downsampledImage(from: data, bucket: bucket)
+                }.value
+
+                guard let image, !Task.isCancelled else { return }
+                LogoImageCache.shared.store(image, for: logoURL, bucket: bucket)
+
+                var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
+                updated[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: image)
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
             }
         }
     }

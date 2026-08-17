@@ -101,14 +101,22 @@ final class AppModel {
     var selectedTab: Tab = .liveTV
 
     // MARK: - Live TV State
-    private(set) var channels: [Channel] = []
+    private(set) var channels: [Channel] = [] { didSet { contentRevision &+= 1 } }
     private(set) var bouquets: [Bouquet] = []
     var selectedBouquet: Bouquet?
     var searchQuery: String = ""
-    private(set) var schedule: [String: NowNext] = [:]
-    private(set) var fullEpg: [String: [NowNext.Entry]] = [:]
+    private(set) var schedule: [String: NowNext] = [:] { didSet { contentRevision &+= 1 } }
+    private(set) var fullEpg: [String: [NowNext.Entry]] = [:] { didSet { contentRevision &+= 1 } }
     private(set) var isLoadingChannels = false
     private(set) var lastDataRefreshTime: Date?
+
+    /// Bumped whenever the channel list, Now/Next schedule or full EPG is replaced.
+    ///
+    /// Views that derive an expensive projection from this data key their
+    /// recomputation on this counter instead of diffing the collections
+    /// themselves — a refresh that returns the same number of channels still
+    /// has to invalidate them.
+    private(set) var contentRevision: Int = 0
 
     // MARK: - Recordings & Timers State
     private(set) var recordings: [Recording] = []
@@ -366,6 +374,24 @@ final class AppModel {
         [.now, .primeTimeTonight, .lateNightTonight]
     }
 
+    private static func primeTimeTarget(for date: Date = .now) -> Date {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: date)
+        components.hour = 20
+        components.minute = 15
+        components.second = 0
+        return calendar.date(from: components) ?? date
+    }
+
+    private static func lateNightTarget(for date: Date = .now) -> Date {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: date)
+        components.hour = 22
+        components.minute = 0
+        components.second = 0
+        return calendar.date(from: components) ?? date
+    }
+
     /// Resolves the programme running on a channel for the active time filter
     func show(for channel: Channel, at filter: TimeFilter) -> NowNext.Entry? {
         let scheduleItem = schedule[channel.serviceRef]
@@ -373,15 +399,17 @@ final class AppModel {
 
         switch filter {
         case .now:
-            if let now = scheduleItem?.now, now.start <= .now && now.end > .now {
+            let currentTime = Date.now
+            if let now = scheduleItem?.now, now.start <= currentTime && now.end > currentTime {
                 return now
             }
-            if let current = allShows.first(where: { $0.start <= .now && $0.end > .now }) {
+            if let current = allShows.first(where: { $0.start <= currentTime && $0.end > currentTime }) {
                 return current
             }
             return scheduleItem?.now
         case .next:
-            if let next = scheduleItem?.next, next.start >= .now {
+            let currentTime = Date.now
+            if let next = scheduleItem?.next, next.start >= currentTime {
                 return next
             }
             if let current = show(for: channel, at: .now),
@@ -390,32 +418,18 @@ final class AppModel {
             }
             return scheduleItem?.next
         case .primeTimeTonight:
-            let calendar = Calendar.current
-            var components = calendar.dateComponents([.year, .month, .day], from: .now)
-            components.hour = 20
-            components.minute = 15
-            components.second = 0
-            guard let target = calendar.date(from: components) else { return scheduleItem?.now }
+            let target = Self.primeTimeTarget()
             return allShows.first { $0.start <= target && $0.end > target }
                 ?? allShows.first { $0.start >= target }
                 ?? (allShows.isEmpty ? scheduleItem?.now : nil)
         case .lateNightTonight:
-            let calendar = Calendar.current
-            var components = calendar.dateComponents([.year, .month, .day], from: .now)
-            components.hour = 22
-            components.minute = 0
-            components.second = 0
-            guard let target = calendar.date(from: components) else { return scheduleItem?.now }
+            let target = Self.lateNightTarget()
             return allShows.first { $0.start <= target && $0.end > target }
                 ?? allShows.first { $0.start >= target }
                 ?? (allShows.isEmpty ? scheduleItem?.now : nil)
         case .day(let dayDate):
+            let target = Self.primeTimeTarget(for: dayDate)
             let calendar = Calendar.current
-            var components = calendar.dateComponents([.year, .month, .day], from: dayDate)
-            components.hour = 20
-            components.minute = 15
-            components.second = 0
-            let target = calendar.date(from: components) ?? dayDate
             return allShows.first { $0.start <= target && $0.end > target }
                 ?? allShows.first { calendar.isDate($0.start, inSameDayAs: dayDate) }
                 ?? allShows.first { $0.start >= target }
@@ -423,41 +437,108 @@ final class AppModel {
         }
     }
 
-    /// Channels filtered by selected bouquet, favorites, genre, and search query.
+    /// Identifies one filter configuration, so a repeated read can reuse its result.
+    ///
+    /// `contentRevision` stands in for `channels`, `schedule` and `fullEpg`:
+    /// comparing the collections themselves on every read would cost as much as
+    /// the filtering it is meant to avoid. Comparing the favourites set is cheap
+    /// because an unchanged `Set` hits the identical-storage fast path.
+    private struct FilterKey: Equatable {
+        let revision: Int
+        let bouquetID: String?
+        let genre: EpgGenre
+        let query: String
+        let timeFilter: TimeFilter
+        let favorites: Set<String>
+        /// Minute bucket, and only when a filter actually resolves the running
+        /// show — otherwise the result does not depend on the clock at all.
+        let minuteBucket: Int
+    }
+
+    /// `@ObservationIgnored`: this is a cache of observable state, not state of
+    /// its own. Writing it from the `filteredChannels` getter must not itself
+    /// count as a mutation — views track the inputs read to build the key.
+    @ObservationIgnored private var filteredChannelsCache: (key: FilterKey, value: [Channel])?
+
+    /// Channels filtered by selected bouquet, favorites, genre, and search query (Single-pass optimized).
+    ///
+    /// Memoized: a channel zap calls `channelAfter`/`channelBefore`, and each of
+    /// those used to rebuild the whole list — dedup set included — from scratch.
     var filteredChannels: [Channel] {
-        var result = channels
+        let resolvesCurrentShow = selectedGenre != .all
+            || !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty
 
-        if selectedBouquet?.id == Self.favoritesBouquetID {
-            result = result.filter { favoriteChannelIDs.contains($0.id) }
+        let key = FilterKey(
+            revision: contentRevision,
+            bouquetID: selectedBouquet?.id,
+            genre: selectedGenre,
+            query: searchQuery,
+            timeFilter: selectedTimeFilter,
+            favorites: favoriteChannelIDs,
+            minuteBucket: resolvesCurrentShow ? Int(Date.now.timeIntervalSince1970 / 60) : 0
+        )
+
+        if let cached = filteredChannelsCache, cached.key == key {
+            return cached.value
         }
 
-        if selectedGenre != .all {
-            result = result.filter { channel in
-                let currentShow = show(for: channel, at: selectedTimeFilter)
-                if let currentShow {
-                    return currentShow.matches(genre: selectedGenre, channelName: channel.name)
-                } else {
-                    return EpgGenreClassifier.channelMatches(genre: selectedGenre, channelName: channel.name)
-                }
-            }
-        }
+        let result = computeFilteredChannels()
+        filteredChannelsCache = (key, result)
+        return result
+    }
 
+    private func computeFilteredChannels() -> [Channel] {
+        let isFavBouquet = selectedBouquet?.id == Self.favoritesBouquetID
+        let favSet = isFavBouquet ? favoriteChannelIDs : nil
+        let hasGenreFilter = selectedGenre != .all
         let query = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
-        if !query.isEmpty {
-            result = result.filter { channel in
-                let currentShow = show(for: channel, at: selectedTimeFilter)
-                return channel.name.lowercased().contains(query) ||
-                    (channel.number?.contains(query) ?? false) ||
-                    (currentShow?.title.lowercased().contains(query) ?? false) ||
-                    (currentShow?.description?.lowercased().contains(query) ?? false)
-            }
-        }
+        let hasQuery = !query.isEmpty
+        let activeTimeFilter = selectedTimeFilter
+        let activeGenre = selectedGenre
+
+        var result: [Channel] = []
+        result.reserveCapacity(channels.count)
         var seen = Set<String>()
-        return result.filter { channel in
-            guard !seen.contains(channel.serviceRef) else { return false }
-            seen.insert(channel.serviceRef)
-            return true
+
+        for channel in channels {
+            // 1. Deduplication
+            guard seen.insert(channel.serviceRef).inserted else { continue }
+
+            // 2. Favorites check
+            if let favSet, !favSet.contains(channel.id) { continue }
+
+            // 3. Resolve show only if needed for genre or search
+            let currentShow: NowNext.Entry?
+            if hasGenreFilter || hasQuery {
+                currentShow = show(for: channel, at: activeTimeFilter)
+            } else {
+                currentShow = nil
+            }
+
+            // 4. Genre check
+            if hasGenreFilter {
+                let matches: Bool
+                if let currentShow {
+                    matches = currentShow.matches(genre: activeGenre, channelName: channel.name)
+                } else {
+                    matches = EpgGenreClassifier.channelMatches(genre: activeGenre, channelName: channel.name)
+                }
+                guard matches else { continue }
+            }
+
+            // 5. Search query check
+            if hasQuery {
+                let nameMatches = channel.name.lowercased().contains(query)
+                let numberMatches = channel.number?.contains(query) ?? false
+                let titleMatches = currentShow?.title.lowercased().contains(query) ?? false
+                let descMatches = currentShow?.description?.lowercased().contains(query) ?? false
+                guard nameMatches || numberMatches || titleMatches || descMatches else { continue }
+            }
+
+            result.append(channel)
         }
+
+        return result
     }
 
     /// Next channel in the active list (wraps around).
@@ -731,9 +812,9 @@ final class AppModel {
         let targets = serviceRefs.isEmpty ? channels.map(\.serviceRef) : serviceRefs
         guard !targets.isEmpty else { return }
         if let updated = try? await channelRepository?.nowNext(for: targets) {
-            for (ref, nn) in updated {
-                schedule[ref] = nn
-            }
+            // One merge rather than a per-key loop: each individual assignment
+            // would be its own observation notification.
+            schedule.merge(updated) { _, new in new }
             lastDataRefreshTime = Date()
         }
     }

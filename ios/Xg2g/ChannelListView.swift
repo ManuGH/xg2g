@@ -3,7 +3,7 @@ import UIKit
 
 @MainActor
 private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-    UIImpactFeedbackGenerator(style: style).impactOccurred()
+    Haptics.shared.impact(style)
 }
 
 /// Live TV station list & TV Pro inspired EPG with Quick Time-Jumps (Jetzt, 20:15, 22:00, Tage-Picker),
@@ -1342,14 +1342,78 @@ struct ChannelRow: View {
 
 final class LogoImageCache: @unchecked Sendable {
     static let shared = LogoImageCache()
-    private let cache = NSCache<NSURL, UIImage>()
+    private let cache = NSCache<NSString, UIImage>()
 
-    func image(for url: URL) -> UIImage? {
-        cache.object(forKey: url as NSURL)
+    init() {
+        cache.countLimit = 500
+        cache.totalCostLimit = 32 * 1024 * 1024
     }
 
-    func store(_ image: UIImage, for url: URL) {
-        cache.setObject(image, forKey: url as NSURL)
+    /// Rounds a required pixel size up to a shared bucket.
+    ///
+    /// The app draws logos at six different point sizes; keyed verbatim that
+    /// would be six decoded copies of every logo. Two buckets cover all of them
+    /// and still decode far below the source resolution.
+    static func bucket(forPointSize points: CGFloat, scale: CGFloat) -> Int {
+        let pixels = Int((points * scale).rounded(.up))
+        let rounded = ((pixels + 63) / 64) * 64
+        return max(128, rounded)
+    }
+
+    /// Every bucket `bucket(forPointSize:scale:)` can currently produce, ascending.
+    /// Used only to look up "whatever we already have" — a miss just means no
+    /// artwork yet, which is what an uncached logo produced before as well.
+    private static let knownBuckets = [128, 192, 256]
+
+    func image(for url: URL, bucket: Int) -> UIImage? {
+        cache.object(forKey: Self.key(url, bucket))
+    }
+
+    /// The largest cached rendition for this URL, for consumers that do not draw
+    /// at a fixed size — Now Playing artwork, for instance.
+    func anyImage(for url: URL) -> UIImage? {
+        for bucket in Self.knownBuckets.reversed() {
+            if let image = cache.object(forKey: Self.key(url, bucket)) {
+                return image
+            }
+        }
+        return nil
+    }
+
+    /// Stores with an explicit `cost`. Without one every entry counts as zero and
+    /// `totalCostLimit` never evicts anything — only `countLimit` applied.
+    func store(_ image: UIImage, for url: URL, bucket: Int) {
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? bucket * bucket * 4
+        cache.setObject(image, forKey: Self.key(url, bucket), cost: cost)
+    }
+
+    private static func key(_ url: URL, _ bucket: Int) -> NSString {
+        "\(url.absoluteString)|\(bucket)" as NSString
+    }
+
+    /// Decodes straight to the target size via ImageIO.
+    ///
+    /// `UIImage(data:)` defers decoding until draw time, which put a full
+    /// resolution bitmap decode on the main thread during scrolling. The
+    /// thumbnail path decodes once, off the main thread, at the size actually
+    /// drawn.
+    static func downsampledImage(from data: Data, bucket: Int) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return nil
+        }
+
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: bucket
+        ] as CFDictionary
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 }
 
@@ -1358,46 +1422,56 @@ struct ChannelLogo: View {
     let name: String
     var size: CGFloat = 48
 
-    @State private var cachedImage: UIImage?
+    @State private var loadedImage: UIImage?
+
+    private var bucket: Int {
+        LogoImageCache.bucket(forPointSize: size, scale: UIScreen.main.scale)
+    }
 
     var body: some View {
+        let currentImage = loadedImage ?? (url.flatMap { LogoImageCache.shared.image(for: $0, bucket: bucket) })
+
         ZStack {
-            if let img = cachedImage {
+            if let img = currentImage {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFit()
                     .frame(width: size, height: size)
                     .shadow(color: Color.black.opacity(0.55), radius: 3, y: 1.5)
             } else if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: size, height: size)
-                            .shadow(color: Color.black.opacity(0.55), radius: 3, y: 1.5)
-                    case .failure, .empty:
-                        fallbackBadge
-                    @unknown default:
-                        fallbackBadge
+                fallbackBadge
+                    .task(id: url) {
+                        await loadLogo(from: url)
                     }
-                }
-                .frame(width: size, height: size)
-                .task(id: url) {
-                    if let loaded = LogoImageCache.shared.image(for: url) {
-                        cachedImage = loaded
-                    } else if let (data, _) = try? await URLSession.shared.data(from: url),
-                              let uiImg = UIImage(data: data) {
-                        LogoImageCache.shared.store(uiImg, for: url)
-                        cachedImage = uiImg
-                    }
-                }
             } else {
                 fallbackBadge
             }
         }
         .frame(width: size, height: size)
+    }
+
+    private func loadLogo(from url: URL) async {
+        let target = bucket
+
+        if let cached = LogoImageCache.shared.image(for: url, bucket: target) {
+            loadedImage = cached
+            return
+        }
+
+        guard let (data, _) = try? await URLSession.shared.data(from: url),
+              !Task.isCancelled else {
+            return
+        }
+
+        // Decoding is CPU work on a scrolling list's critical path, so it runs
+        // off the main actor rather than implicitly during draw.
+        let image = await Task.detached(priority: .utility) {
+            LogoImageCache.downsampledImage(from: data, bucket: target)
+        }.value
+
+        guard let image, !Task.isCancelled else { return }
+        LogoImageCache.shared.store(image, for: url, bucket: target)
+        loadedImage = image
     }
 
     private var fallbackBadge: some View {

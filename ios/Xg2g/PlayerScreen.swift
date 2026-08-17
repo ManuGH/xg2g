@@ -196,6 +196,22 @@ struct PlayerScreen: View {
                     }
                 }
 
+                // MARK: - Landscape Tap Gesture for OSD Toggle (Behind controls so buttons receive taps)
+                if isLandscape && !showLandscapeGuide {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if showLandscapeControls {
+                                autoHideControlsTask?.cancel()
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showLandscapeControls = false
+                                }
+                            } else {
+                                resetControlsTimeout()
+                            }
+                        }
+                }
+
                 // MARK: - Landscape Broadcast OSD Overlay
                 if isLandscape && showLandscapeControls && !showLandscapeGuide {
                     LandscapeBroadcastOverlay(
@@ -291,21 +307,6 @@ struct PlayerScreen: View {
                         Spacer()
                     }
                     .allowsHitTesting(false)
-                }
-                // MARK: - Landscape Tap Gesture for OSD Toggle
-                if isLandscape && !showLandscapeGuide {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if showLandscapeControls {
-                                autoHideControlsTask?.cancel()
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    showLandscapeControls = false
-                                }
-                            } else {
-                                resetControlsTimeout()
-                            }
-                        }
                 }
             }
         }
@@ -587,8 +588,7 @@ struct PlayerScreen: View {
     }
 
     private func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        let generator = UIImpactFeedbackGenerator(style: style)
-        generator.impactOccurred()
+        Haptics.shared.impact(style)
     }
 
     private func closePlayer() {
@@ -675,7 +675,7 @@ struct PlayerScreen: View {
         }
 
         if let logoURL = channel.logoURL,
-           let image = LogoImageCache.shared.image(for: logoURL),
+           let image = LogoImageCache.shared.anyImage(for: logoURL),
            let data = image.pngData() {
             let artItem = AVMutableMetadataItem()
             artItem.identifier = .commonIdentifierArtwork
@@ -717,7 +717,11 @@ struct LandscapeQuickZapBar: View {
             .padding(.horizontal, 8)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                // Lazy: `channels` is the full filtered channel list, and every row
+                // carries a `ChannelLogo` that starts its own request on appear.
+                // An eager HStack built all of them — and fired all those requests —
+                // the moment the zap bar opened.
+                LazyHStack(spacing: 10) {
                     ForEach(channels) { ch in
                         let isCurrent = ch.id == currentChannel.id
                         Button {
