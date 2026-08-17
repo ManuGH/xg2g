@@ -217,10 +217,19 @@ public final class MetalVideoView: UIView {
         }
         let becomeActive = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
+                guard let self else { return }
                 // The stream clock kept running while suspended; re-anchor
                 // instead of trying to catch up on a backlog that is now stale.
-                self?.isClockAnchored = false
-                self?.displayLink?.isPaused = false
+                self.isClockAnchored = false
+                // The measurement windows have to restart with it. Carrying them
+                // across the gap made the first interval after a resume span the
+                // whole suspension — a 25-minute pause was reported as 61472 ms
+                // of field cadence and jitter.
+                self.lastDistinctPresentationHost = 0
+                self.lastTelemetryUpdate = CACurrentMediaTime()
+                self.lastPublishedStreamNow = .nan
+                self.resetPerSecondCounters()
+                self.displayLink?.isPaused = false
             }
         }
         observers = ObserverRegistration(tokens: [resign, becomeActive])
@@ -723,6 +732,13 @@ public final class MetalVideoView: UIView {
         logger.notice("\(perfLog, privacy: .public)")
         TelemetryServer.shared.log(perfLog)
 
+        resetPerSecondCounters()
+        lastTelemetryUpdate = now
+    }
+
+    /// Clears everything accumulated over one reporting window. Shared with the
+    /// resume path, which must not carry counters across a suspension.
+    private func resetPerSecondCounters() {
         callbackCount = 0
         presentationCount = 0
         topFieldCount = 0
@@ -742,7 +758,6 @@ public final class MetalVideoView: UIView {
         gapFrameCount = 0
         gapWideCount = 0
         gapNegativeCount = 0
-        lastTelemetryUpdate = now
     }
 
     // MARK: - Rendering

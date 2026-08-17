@@ -11,7 +11,6 @@ public struct TestTSPlayerScreen: View {
     @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:"
     @State private var isStreaming: Bool = false
     @State private var showHUD: Bool = true
-    @State private var usePathB: Bool = false
 
     private struct ChannelPreset: Identifiable {
         let id = UUID()
@@ -104,7 +103,7 @@ public struct TestTSPlayerScreen: View {
                                 hudRow("VT Session", pipeline.telemetry.display.vtSessionActive ? "Active 🟢" : "Inactive ⚪️")
                                 hudRow("HW Required", "YES (kVT...RequireHW)")
                                 hudRow("HW Active", pipeline.telemetry.display.hwDecodeActive ? "YES (Verified 🚀)" : "Pending…", highlight: pipeline.telemetry.display.hwDecodeActive)
-                                hudRow("VT Deinterlace", pipeline.useNativeVTDeinterlace ? (pipeline.telemetry.display.vtDeinterlaceAccepted ? "Accepted 🟢" : "Key nicht akzeptiert ⚪️") : "Aus (Pfad A aktiv) ⚪️")
+                                hudRow("Deinterlace", "Metal Bob (Pfad A)")
                                 hudRow("Decoded AU", String(format: "%.1f AU/s", pipeline.telemetry.display.decodedFramesPerSec), alert: pipeline.telemetry.display.sourceFrameRate > 0 && abs(pipeline.telemetry.display.decodedFramesPerSec - pipeline.telemetry.display.sourceFrameRate) > 3.0)
                                 hudRow("PTS Delta (Frame)", pipeline.telemetry.display.ptsProgressionMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ptsProgressionMs) : "Pending…", highlight: abs(pipeline.telemetry.display.ptsProgressionMs - 40.0) < 3.0)
                                 hudRow("Decode Errors", "\(pipeline.telemetry.display.decodeErrors)", alert: pipeline.telemetry.display.decodeErrors > 0)
@@ -132,18 +131,6 @@ public struct TestTSPlayerScreen: View {
                             }
                         }
 
-                        // A/B Path Switch
-                        HStack {
-                            Toggle("Pfad B (VideoToolbox Deinterlace)", isOn: $usePathB)
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.white)
-                                .onChange(of: usePathB) { newValue in
-                                    pipeline.useNativeVTDeinterlace = newValue
-                                }
-                        }
-                        .padding(8)
-                        .background(Color.black.opacity(0.6))
-                        .cornerRadius(8)
                     }
                     .padding(12)
                 }

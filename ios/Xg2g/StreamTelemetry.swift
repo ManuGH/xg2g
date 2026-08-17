@@ -56,7 +56,6 @@ public struct TelemetryValues: Sendable {
 
     // MARK: - DECODER Metrics
     public var vtSessionActive: Bool = false
-    public var hwDecodeRequired: Bool = true
     public var hwDecodeActive: Bool = false
     public var vtDeinterlaceAccepted: Bool = false
     public var decodedFramesPerSec: Double = 0.0
@@ -81,13 +80,14 @@ public struct TelemetryValues: Sendable {
     public var displayCallbacksPerSec: Double = 0.0
     public var droppedFrames: Int = 0               // Reorder overflow + texture failures
     public var lateFrames: Int = 0                  // Became due and were superseded unseen
-    public var duplicatePresentations: Int = 0
     public var presentationJitterMs: Double = 0.0   // |actual - ideal| field interval
     public var queuedFieldCount: Int = 0            // Current scheduler backlog
 
     // MARK: - SYSTEM Metrics
-    public var cpuUsagePercent: Double = 0.0
-    public var gpuTimePerFrameMs: Double = 0.0
+    //
+    // CPU and GPU-time counters used to live here and were never measured — they
+    // reported a constant 0.0 as if that were a reading. Removed rather than
+    // left in place; add them back with an actual sampler behind them.
     public var thermalState: String = "Nominal"
     public var memoryUsageMB: Double = 0.0
 
@@ -193,10 +193,7 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
         lock.lock()
         var fresh = TelemetryValues()
         fresh.codec = values.codec
-        fresh.hwDecodeRequired = values.hwDecodeRequired
         fresh.activeDecoderMode = values.activeDecoderMode
-        fresh.cpuUsagePercent = values.cpuUsagePercent
-        fresh.gpuTimePerFrameMs = values.gpuTimePerFrameMs
         fresh.thermalState = values.thermalState
         fresh.memoryUsageMB = values.memoryUsageMB
         fresh.sampleBuffersEmittedCount = values.sampleBuffersEmittedCount
