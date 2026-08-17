@@ -16,6 +16,8 @@ public struct TestTSPlayerScreen: View {
     @State private var showHUD: Bool = false
     @State private var showControls: Bool = true
     @State private var autoHideControlsTask: Task<Void, Never>?
+    @State private var zapToast: String?
+    @State private var hideZapToastTask: Task<Void, Never>?
 
     private struct ChannelPreset: Identifiable, Hashable {
         let id = UUID()
@@ -78,6 +80,31 @@ public struct TestTSPlayerScreen: View {
                         }
                         if showControls {
                             scheduleControlsAutoHide()
+                        }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 40)
+                            .onEnded { value in
+                                if value.translation.width < -50 {
+                                    Haptics.shared.impact(.medium)
+                                    zapRelative(delta: 1)
+                                } else if value.translation.width > 50 {
+                                    Haptics.shared.impact(.medium)
+                                    zapRelative(delta: -1)
+                                }
+                            }
+                    )
+                    .overlay(alignment: .center) {
+                        if let zapToast {
+                            Text(zapToast)
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                                .shadow(color: Color.black.opacity(0.4), radius: 8)
+                                .transition(.scale(scale: 0.9).combined(with: .opacity))
                         }
                     }
 
@@ -469,6 +496,11 @@ public struct TestTSPlayerScreen: View {
 
     private func setupPlayback() {
         AudioSessionManager.shared.configureForPlayback()
+        NowPlayingManager.shared.setupRemoteCommands()
+        NowPlayingManager.shared.onNextChannel = { zapRelative(delta: 1) }
+        NowPlayingManager.shared.onPreviousChannel = { zapRelative(delta: -1) }
+        NowPlayingManager.shared.onPlay = { startCurrentPreset() }
+        NowPlayingManager.shared.onPause = { togglePlayPause() }
         startCurrentPreset()
         scheduleControlsAutoHide()
     }
@@ -477,6 +509,8 @@ public struct TestTSPlayerScreen: View {
         pipeline.stopStreaming()
         isStreaming = false
         autoHideControlsTask?.cancel()
+        hideZapToastTask?.cancel()
+        NowPlayingManager.shared.clear()
     }
 
     private func startCurrentPreset() {
@@ -484,12 +518,14 @@ public struct TestTSPlayerScreen: View {
             pipeline.startStreaming(url: url)
             isStreaming = true
             isPlaying = true
+            NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
         }
     }
 
     private func switchTo(preset: ChannelPreset) {
         streamURLString = preset.url
         currentChannelName = preset.name
+        displayZapToast("Kanal: \(preset.name)")
         startCurrentPreset()
     }
 
@@ -506,8 +542,23 @@ public struct TestTSPlayerScreen: View {
             pipeline.stopStreaming()
             isPlaying = false
             isStreaming = false
+            NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
         } else {
             startCurrentPreset()
+        }
+    }
+
+    private func displayZapToast(_ message: String) {
+        hideZapToastTask?.cancel()
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+            zapToast = message
+        }
+        hideZapToastTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                zapToast = nil
+            }
         }
     }
 
