@@ -227,6 +227,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
 
         decoder.configure(with: formatDescription)
+        print("[1080i50-CODEC] Format: \(info.width)x\(info.height) | Interlaced: \(info.isInterlaced) | TFF: \(info.isTopFieldFirst)")
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.telemetry.videoWidth = info.width
@@ -246,7 +247,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, isTopFieldFirst: Bool) {
-        if isIDR && firstIdrTime == 0 {
+        if firstIdrTime == 0 {
             firstIdrTime = CACurrentMediaTime()
             let base = paramsReadyTime > 0 ? paramsReadyTime : (psiParsedTime > 0 ? psiParsedTime : requestStartTime)
             let idrMs = (firstIdrTime - base) * 1000.0
@@ -348,6 +349,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             self.telemetry.ttfpRenderMs = renderMs
             self.telemetry.ttfpRating = rating
             self.telemetry.isFirstPicturePresented = true
+            print("[1080i50-TTFP] Total: \(String(format: "%.1f", totalMs))ms | Net: \(String(format: "%.1f", self.telemetry.ttfpNetworkMs))ms | PSI: \(String(format: "%.1f", self.telemetry.ttfpPsiMs))ms | Params: \(String(format: "%.1f", self.telemetry.ttfpParamSetsMs))ms | FirstAU: \(String(format: "%.1f", self.telemetry.ttfpIdrMs))ms | Dec: \(String(format: "%.1f", self.telemetry.ttfpDecodeMs))ms | Render: \(String(format: "%.1f", renderMs))ms")
         }
     }
 
@@ -366,31 +368,35 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         stopSystemMonitoring()
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.updateSystemMetrics()
             self.systemMonitoringTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
-                let state = ProcessInfo.processInfo.thermalState
-                let thermalString: String
-                switch state {
-                case .nominal: thermalString = "Nominal 🟢"
-                case .fair: thermalString = "Fair 🟡"
-                case .serious: thermalString = "Serious 🟠"
-                case .critical: thermalString = "Critical 🔴"
-                @unknown default: thermalString = "Unknown"
-                }
-
-                var info = mach_task_basic_info()
-                var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-                let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
-                    $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                        task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-                    }
-                }
-                let memMB = (kerr == KERN_SUCCESS) ? Double(info.resident_size) / (1024.0 * 1024.0) : 0.0
-
-                self.telemetry.thermalState = thermalString
-                self.telemetry.memoryUsageMB = memMB
+                self?.updateSystemMetrics()
             }
         }
+    }
+
+    private func updateSystemMetrics() {
+        let state = ProcessInfo.processInfo.thermalState
+        let thermalString: String
+        switch state {
+        case .nominal: thermalString = "Nominal 🟢"
+        case .fair: thermalString = "Fair 🟡"
+        case .serious: thermalString = "Serious 🟠"
+        case .critical: thermalString = "Critical 🔴"
+        @unknown default: thermalString = "Unknown"
+        }
+
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        let memMB = (kerr == KERN_SUCCESS) ? Double(info.resident_size) / (1024.0 * 1024.0) : 0.0
+
+        telemetry.thermalState = thermalString
+        telemetry.memoryUsageMB = memMB
     }
 
     private func stopSystemMonitoring() {

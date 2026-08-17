@@ -200,6 +200,8 @@ public final class MetalVideoView: UIView {
         }
         link.add(to: .main, forMode: .common)
         self.displayLink = link
+        self.lastDisplayTimestamp = 0
+        self.lastTelemetryUpdate = CACurrentMediaTime()
     }
 
     nonisolated public func enqueueFrame(_ frame: DecodedVideoFrame) {
@@ -301,6 +303,8 @@ public final class MetalVideoView: UIView {
                 telemetry.fieldCadenceMs = avgCadence
                 telemetry.sourceFieldRate = actualTopFields + actualBottomFields
                 telemetry.sourceFrameRate = (actualTopFields + actualBottomFields) / 2.0
+
+                print("[1080i50-PERF] Metal: \(String(format: "%.1f", actualPresentations)) fps | Top/Bot: \(String(format: "%.1f", actualTopFields))/\(String(format: "%.1f", actualBottomFields)) | Cadence: \(String(format: "%.2f", avgCadence))ms | Jitter: \(String(format: "%.2f", avgJitter))ms | Rep: \(self.cumulativeRepeatedFieldCount)")
             }
 
             callbackCount = 0
