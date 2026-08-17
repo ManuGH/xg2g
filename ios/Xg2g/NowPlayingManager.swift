@@ -153,6 +153,12 @@ final class NowPlayingManager {
         }
     }
 
+    func updatePlaybackState(isPlaying: Bool) {
+        guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
     func clear() {
         currentArtworkTask?.cancel()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil

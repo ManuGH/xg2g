@@ -15,7 +15,7 @@ final class AudioSessionManager: @unchecked Sendable {
     func configureForPlayback() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .moviePlayback, options: [])
+            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP])
             if #available(iOS 15.0, *) {
                 try session.setSupportsMultichannelContent(true)
             }

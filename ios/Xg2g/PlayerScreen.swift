@@ -106,22 +106,33 @@ struct PlayerScreen: View {
                             }
                         }
 
-                        // Minimal Portrait Dismiss Chevron
+                        // Minimal Portrait Dismiss Chevron & AirPlay Controls
                         if !isLandscape {
-                            Button {
-                                closePlayer()
-                            } label: {
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(9)
+                            HStack {
+                                Button {
+                                    closePlayer()
+                                } label: {
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .padding(9)
+                                        .background(.ultraThinMaterial, in: Circle())
+                                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                                        .shadow(color: Color.black.opacity(0.4), radius: 6)
+                                }
+                                .buttonStyle(.plain)
+
+                                Spacer()
+
+                                AirPlayButton()
+                                    .frame(width: 34, height: 34)
+                                    .padding(2)
                                     .background(.ultraThinMaterial, in: Circle())
                                     .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                                     .shadow(color: Color.black.opacity(0.4), radius: 6)
                             }
-                            .buttonStyle(.plain)
                             .padding(.top, max(6, geometry.safeAreaInsets.top))
-                            .padding(.leading, 12)
+                            .padding(.horizontal, 12)
                         }
                     }
                     .frame(
@@ -865,6 +876,13 @@ struct LandscapeBroadcastOverlay: View {
                     }
 
                     Spacer()
+
+                    // AirPlay Route Picker
+                    AirPlayButton()
+                        .frame(width: 32, height: 32)
+                        .padding(4)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
 
                     // Quick Record Button
                     Button(action: onRecord) {
