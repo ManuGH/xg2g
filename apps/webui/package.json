@@ -31,7 +31,7 @@
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@tanstack/react-query": "^5.101.2",
-    "hls.js": "^1.6.17",
+    "hls.js": "^1.7.0",
     "i18next": "^26.3.6",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -52,7 +52,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.4",
     "fast-check": "^4.9.0",
-    "globals": "^17.10.0",
+    "globals": "^17.11.0",
     "jsdom": "^30.0.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
