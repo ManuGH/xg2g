@@ -4,7 +4,10 @@
 
 import CoreMedia
 import Foundation
+import OSLog
 import UIKit
+
+private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "telemetry")
 
 /// Coordinates the end-to-end native DVB TS $\rightarrow$ VideoToolbox $\rightarrow$ Metal Deinterlace pipeline.
 public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked Sendable,
@@ -227,7 +230,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
 
         decoder.configure(with: formatDescription)
-        print("[1080i50-CODEC] Format: \(info.width)x\(info.height) | Interlaced: \(info.isInterlaced) | TFF: \(info.isTopFieldFirst)")
+        let logMsg = "[1080i50-CODEC] Format: \(info.width)x\(info.height) | Interlaced: \(info.isInterlaced) | TFF: \(info.isTopFieldFirst)"
+        print(logMsg)
+        logger.notice("\(logMsg, privacy: .public)")
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.telemetry.videoWidth = info.width
@@ -349,7 +354,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             self.telemetry.ttfpRenderMs = renderMs
             self.telemetry.ttfpRating = rating
             self.telemetry.isFirstPicturePresented = true
-            print("[1080i50-TTFP] Total: \(String(format: "%.1f", totalMs))ms | Net: \(String(format: "%.1f", self.telemetry.ttfpNetworkMs))ms | PSI: \(String(format: "%.1f", self.telemetry.ttfpPsiMs))ms | Params: \(String(format: "%.1f", self.telemetry.ttfpParamSetsMs))ms | FirstAU: \(String(format: "%.1f", self.telemetry.ttfpIdrMs))ms | Dec: \(String(format: "%.1f", self.telemetry.ttfpDecodeMs))ms | Render: \(String(format: "%.1f", renderMs))ms")
+            let ttfpLog = "[1080i50-TTFP] Total: \(String(format: "%.1f", totalMs))ms | Net: \(String(format: "%.1f", self.telemetry.ttfpNetworkMs))ms | PSI: \(String(format: "%.1f", self.telemetry.ttfpPsiMs))ms | Params: \(String(format: "%.1f", self.telemetry.ttfpParamSetsMs))ms | FirstAU: \(String(format: "%.1f", self.telemetry.ttfpIdrMs))ms | Dec: \(String(format: "%.1f", self.telemetry.ttfpDecodeMs))ms | Render: \(String(format: "%.1f", renderMs))ms"
+            print(ttfpLog)
+            logger.notice("\(ttfpLog, privacy: .public)")
         }
     }
 

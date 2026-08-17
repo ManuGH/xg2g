@@ -5,8 +5,11 @@
 import CoreMedia
 import Metal
 import MetalKit
+import OSLog
 import QuartzCore
 import UIKit
+
+private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "metal")
 
 private struct DeinterlaceShaderParams {
     var isTopField: UInt32
@@ -304,7 +307,9 @@ public final class MetalVideoView: UIView {
                 telemetry.sourceFieldRate = actualTopFields + actualBottomFields
                 telemetry.sourceFrameRate = (actualTopFields + actualBottomFields) / 2.0
 
-                print("[1080i50-PERF] Metal: \(String(format: "%.1f", actualPresentations)) fps | Top/Bot: \(String(format: "%.1f", actualTopFields))/\(String(format: "%.1f", actualBottomFields)) | Cadence: \(String(format: "%.2f", avgCadence))ms | Jitter: \(String(format: "%.2f", avgJitter))ms | Rep: \(self.cumulativeRepeatedFieldCount)")
+                let perfLog = "[1080i50-PERF] Metal: \(String(format: "%.1f", actualPresentations)) fps | Top/Bot: \(String(format: "%.1f", actualTopFields))/\(String(format: "%.1f", actualBottomFields)) | Cadence: \(String(format: "%.2f", avgCadence))ms | Jitter: \(String(format: "%.2f", avgJitter))ms | Rep: \(self.cumulativeRepeatedFieldCount)"
+                print(perfLog)
+                logger.notice("\(perfLog, privacy: .public)")
             }
 
             callbackCount = 0
