@@ -39,6 +39,7 @@ public final class MetalVideoView: UIView {
     private var lastTelemetryUpdate: CFTimeInterval = 0
     private var jitterAccumulator: Double = 0
     private var jitterSampleCount: Int = 0
+    private var fieldCadenceAccumulator: Double = 0
 
     public var metalLayer: CAMetalLayer {
         return layer as! CAMetalLayer
@@ -207,6 +208,7 @@ public final class MetalVideoView: UIView {
             let jitter = abs(delta - expectedDelta) * 1000.0 // ms
             jitterAccumulator += jitter
             jitterSampleCount += 1
+            fieldCadenceAccumulator += (delta * 1000.0)
         }
         lastDisplayTimestamp = now
 
@@ -236,6 +238,7 @@ public final class MetalVideoView: UIView {
             let actualCallbacks = Double(callbackCount) / elapsed
             let actualPresentations = Double(presentationCount) / elapsed
             let avgJitter = jitterSampleCount > 0 ? (jitterAccumulator / Double(jitterSampleCount)) : 0.0
+            let avgCadence = jitterSampleCount > 0 ? (fieldCadenceAccumulator / Double(jitterSampleCount)) : 0.0
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, let telemetry = self.telemetry else { return }
@@ -243,6 +246,7 @@ public final class MetalVideoView: UIView {
                 telemetry.presentedFramesPerSec = actualPresentations
                 telemetry.generatedFieldsPerSec = actualPresentations
                 telemetry.presentationJitterMs = avgJitter
+                telemetry.fieldCadenceMs = avgCadence
                 telemetry.sourceFieldRate = actualPresentations
                 telemetry.sourceFrameRate = actualPresentations / 2.0
             }
@@ -251,6 +255,7 @@ public final class MetalVideoView: UIView {
             presentationCount = 0
             jitterAccumulator = 0
             jitterSampleCount = 0
+            fieldCadenceAccumulator = 0
             lastTelemetryUpdate = now
         }
     }

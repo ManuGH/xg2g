@@ -250,9 +250,13 @@ struct TSPipelineUnitTests {
 
             let pts1 = CMSampleBufferGetPresentationTimeStamp(sb1)
             let pts2 = CMSampleBufferGetPresentationTimeStamp(sb2)
+            let dur1 = CMSampleBufferGetDuration(sb1)
+            let dur2 = CMSampleBufferGetDuration(sb2)
 
             #expect(pts1.seconds == 1.0)
             #expect(pts2.seconds == 1.04)
+            #expect(dur1.seconds == 0.02 || dur1.seconds == 0.04)
+            #expect(dur2.seconds == 0.04)
             #expect(sink.isIDRFlags[0] == true)
             #expect(sink.isIDRFlags[1] == false)
         }

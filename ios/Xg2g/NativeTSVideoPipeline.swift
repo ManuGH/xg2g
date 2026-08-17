@@ -30,6 +30,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var bytesReceived: Int = 0
     private var lastBitrateCheck: Date = Date()
     private var systemMonitoringTimer: Timer?
+    private var lastDecodedPTS: CMTime = .invalid
 
     public var useNativeVTDeinterlace: Bool {
         get { decoder.useNativeVTDeinterlace }
@@ -54,6 +55,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     public func startStreaming(url: URL) {
         stopStreaming()
         telemetry.reset()
+        lastDecodedPTS = .invalid
 
         let config = URLSessionConfiguration.default
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -164,6 +166,19 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             }
             decodedFrameCounter = 0
             lastDecodedRateCheck = now
+        }
+
+        if lastDecodedPTS.isValid && frame.pts.isValid {
+            let delta = CMTimeSubtract(frame.pts, lastDecodedPTS)
+            if delta.isValid && delta.seconds > 0.0 && delta.seconds < 1.0 {
+                let deltaMs = delta.seconds * 1000.0
+                DispatchQueue.main.async { [weak self] in
+                    self?.telemetry.ptsProgressionMs = deltaMs
+                }
+            }
+        }
+        if frame.pts.isValid {
+            lastDecodedPTS = frame.pts
         }
 
         renderView?.enqueueFrame(frame)

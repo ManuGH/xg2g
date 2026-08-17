@@ -28,12 +28,14 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     @Published public var hwDecodeActive: Bool = false
     @Published public var vtDeinterlaceAccepted: Bool = false
     @Published public var decodedFramesPerSec: Double = 0.0
+    @Published public var ptsProgressionMs: Double = 0.0 // ~40.0 ms per coded frame in 1080i50
     @Published public var decodeErrors: Int = 0
     @Published public var activeDecoderMode: String = "Metal Shader (Path A)" // or "VideoToolbox Native (Path B)"
 
     // MARK: - RENDER Metrics
     @Published public var generatedFieldsPerSec: Double = 0.0
     @Published public var presentedFramesPerSec: Double = 0.0
+    @Published public var fieldCadenceMs: Double = 0.0 // ~20.0 ms between field presentations
     @Published public var displayCallbacksPerSec: Double = 0.0
     @Published public var droppedFrames: Int = 0
     @Published public var lateFrames: Int = 0
@@ -63,9 +65,11 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
         hwDecodeActive = false
         vtDeinterlaceAccepted = false
         decodedFramesPerSec = 0
+        ptsProgressionMs = 0
         decodeErrors = 0
         generatedFieldsPerSec = 0
         presentedFramesPerSec = 0
+        fieldCadenceMs = 0
         displayCallbacksPerSec = 0
         droppedFrames = 0
         lateFrames = 0

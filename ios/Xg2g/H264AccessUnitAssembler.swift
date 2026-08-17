@@ -37,6 +37,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     private var currentAUHasVCL: Bool = false
     private var currentAUHasIDR: Bool = false
     private var currentAUIsTopFieldFirst: Bool = true
+    private var lastEmittedPTS: CMTime = .invalid
 
     private var spsData: Data?
     private var ppsData: Data?
@@ -57,6 +58,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         currentAUHasVCL = false
         currentAUHasIDR = false
         currentAUIsTopFieldFirst = true
+        lastEmittedPTS = .invalid
         spsData = nil
         ppsData = nil
         currentFormatDescription = nil
@@ -152,7 +154,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         }
     }
 
-    // MARK: - Access Unit Boundary Detection (ITU-T H.264 7.4.1.2.3)
+    // MARK: - Access Unit Boundary Detection (Broadcast DVB Optimized)
 
     private func handleNALUnit(_ nal: Data) {
         guard !nal.isEmpty else { return }
@@ -167,7 +169,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             }
 
         case 7, 8, 6: // SPS, PPS, SEI
-            // If we encounter non-VCL after VCL, a new picture starts
+            // If non-VCL parameter sets arrive after VCL, a new picture boundary is marked
             if currentAUHasVCL {
                 isNewAccessUnit = true
             }
@@ -175,7 +177,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         case 1, 5: // VCL Slice (Non-IDR or IDR)
             let firstMB = parseFirstMBInSlice(nal)
             if currentAUHasVCL && firstMB == 0 {
-                // First macroblock in slice == 0 marks a new picture boundary
+                // First macroblock in slice == 0 marks start of next coded picture
                 isNewAccessUnit = true
             }
 
@@ -285,8 +287,27 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
 
         guard copyStatus == kCMBlockBufferNoErr else { return }
 
+        // Compute coded frame duration:
+        // In 1080i50, each coded frame represents 2 fields (40 ms = 1/25s).
+        // If consecutive PTS timestamps are available, derive exact duration from PTS delta.
+        var frameDuration: CMTime
+        if currentAUPTS.isValid, lastEmittedPTS.isValid {
+            let delta = CMTimeSubtract(currentAUPTS, lastEmittedPTS)
+            if delta.isValid && delta.seconds >= 0.01 && delta.seconds <= 0.2 {
+                frameDuration = delta
+            } else {
+                frameDuration = (decodedInfo?.isInterlaced == false) ? CMTime(value: 1, timescale: 50) : CMTime(value: 1, timescale: 25)
+            }
+        } else {
+            frameDuration = (decodedInfo?.isInterlaced == false) ? CMTime(value: 1, timescale: 50) : CMTime(value: 1, timescale: 25)
+        }
+
+        if currentAUPTS.isValid {
+            lastEmittedPTS = currentAUPTS
+        }
+
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 50),
+            duration: frameDuration,
             presentationTimeStamp: currentAUPTS.isValid ? currentAUPTS : .invalid,
             decodeTimeStamp: currentAUDTS ?? .invalid
         )

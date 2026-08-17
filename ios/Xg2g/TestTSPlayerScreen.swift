@@ -51,7 +51,8 @@ public struct TestTSPlayerScreen: View {
                                 hudRow("HW Required", "YES (kVT...RequireHW)")
                                 hudRow("HW Active", pipeline.telemetry.hwDecodeActive ? "YES (Verified 🚀)" : "Pending…", highlight: pipeline.telemetry.hwDecodeActive)
                                 hudRow("VT Deinterlace", pipeline.useNativeVTDeinterlace ? (pipeline.telemetry.vtDeinterlaceAccepted ? "Accepted 🟢" : "Unsupported ⚠️") : "Disabled ⚪️", highlight: pipeline.telemetry.vtDeinterlaceAccepted, alert: pipeline.useNativeVTDeinterlace && !pipeline.telemetry.vtDeinterlaceAccepted)
-                                hudRow("Decoded Frames", String(format: "%.1f frames/s", pipeline.telemetry.decodedFramesPerSec))
+                                hudRow("Decoded Frames", String(format: "%.1f frames/s", pipeline.telemetry.decodedFramesPerSec), highlight: abs(pipeline.telemetry.decodedFramesPerSec - 25.0) < 2.0)
+                                hudRow("PTS Delta (Frame)", pipeline.telemetry.ptsProgressionMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ptsProgressionMs) : "Pending…")
                                 hudRow("Decode Errors", "\(pipeline.telemetry.decodeErrors)", alert: pipeline.telemetry.decodeErrors > 0)
                                 hudRow("Pipeline Mode", pipeline.telemetry.activeDecoderMode)
                             }
@@ -59,6 +60,7 @@ public struct TestTSPlayerScreen: View {
                             hudSection(title: "RENDER (Metal 50p Presentation)") {
                                 hudRow("Generated Fields", String(format: "%.1f fields/s", pipeline.telemetry.generatedFieldsPerSec))
                                 hudRow("Presented Frames", String(format: "%.1f fps", pipeline.telemetry.presentedFramesPerSec), highlight: abs(pipeline.telemetry.presentedFramesPerSec - 50.0) < 2.0)
+                                hudRow("Field Cadence", pipeline.telemetry.fieldCadenceMs > 0 ? String(format: "%.2f ms", pipeline.telemetry.fieldCadenceMs) : "20.00 ms (Target)", highlight: abs(pipeline.telemetry.fieldCadenceMs - 20.0) < 2.0)
                                 hudRow("Display Callbacks", String(format: "%.1f /s", pipeline.telemetry.displayCallbacksPerSec))
                                 hudRow("Dropped Frames", "\(pipeline.telemetry.droppedFrames)", alert: pipeline.telemetry.droppedFrames > 0)
                                 hudRow("Presentation Jitter", String(format: "%.2f ms", pipeline.telemetry.presentationJitterMs))
