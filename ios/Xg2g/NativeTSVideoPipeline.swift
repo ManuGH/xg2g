@@ -169,7 +169,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             let elapsed = now.timeIntervalSince(lastBitrateCheck)
             let kbps = (Double(bytesReceived * 8) / 1000.0) / elapsed
             DispatchQueue.main.async { [weak self] in
-                self?.telemetry.tsBitrateKbps = kbps
+                guard let self = self else { return }
+                self.telemetry.tsBitrateKbps = kbps
+                let qualityLog = "[1080i50-QUALITY] Bitrate: \(String(format: "%.1f", kbps)) kbps | VideoPID: \(self.telemetry.videoPID) | ContinuityErr: \(self.telemetry.continuityErrors) | PESErr: \(self.telemetry.pesErrors) | DecErrors: \(self.telemetry.decodeErrors)"
+                print(qualityLog)
+                logger.notice("\(qualityLog, privacy: .public)")
             }
             bytesReceived = 0
             lastBitrateCheck = now
@@ -282,7 +286,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             let elapsed = now.timeIntervalSince(lastDecodedRateCheck)
             let rate = Double(decodedFrameCounter) / elapsed
             DispatchQueue.main.async { [weak self] in
-                self?.telemetry.decodedFramesPerSec = rate
+                guard let self = self else { return }
+                self.telemetry.decodedFramesPerSec = rate
+                let decLog = "[1080i50-DECODER] HW: \(self.telemetry.hwDecodeActive) | Decoded FPS: \(String(format: "%.1f", rate)) | PTS Delta: \(String(format: "%.1f", self.telemetry.ptsProgressionMs))ms"
+                print(decLog)
+                logger.notice("\(decLog, privacy: .public)")
             }
             decodedFrameCounter = 0
             lastDecodedRateCheck = now
@@ -404,6 +412,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         telemetry.thermalState = thermalString
         telemetry.memoryUsageMB = memMB
+        let sysLog = "[1080i50-SYSTEM] Thermal: \(thermalString) | RAM: \(String(format: "%.1f", memMB)) MB"
+        print(sysLog)
+        logger.notice("\(sysLog, privacy: .public)")
     }
 
     private func stopSystemMonitoring() {
