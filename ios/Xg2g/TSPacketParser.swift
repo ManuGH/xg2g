@@ -60,20 +60,8 @@ public final class TSPacketParser: @unchecked Sendable {
                 }
             }
 
-            // Check if next packet boundary also has 0x47 or if this is true packet
             let packetRange = buffer.startIndex..<(buffer.startIndex + Self.packetSize)
             let packet = buffer.subdata(in: packetRange)
-
-            // Validate next packet sync byte if enough data is available
-            if buffer.count >= Self.packetSize * 2 {
-                let nextSync = buffer[buffer.startIndex + Self.packetSize]
-                if nextSync != Self.syncByte {
-                    // False sync byte, drop 1 byte and scan again
-                    buffer.removeFirst(1)
-                    continue
-                }
-            }
-
             buffer.removeSubrange(packetRange)
             parsePacket(packet)
         }
