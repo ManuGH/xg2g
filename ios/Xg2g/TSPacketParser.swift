@@ -24,7 +24,7 @@ public final class TSPacketParser: @unchecked Sendable {
     private static let syncByte: UInt8 = 0x47
 
     private var buffer = Data()
-    private var pmtPID: UInt16?
+    private var pmtPIDs = Set<UInt16>()
     public private(set) var videoPID: UInt16?
     private var continuityCounters: [UInt16: UInt8] = [:]
 
@@ -34,7 +34,7 @@ public final class TSPacketParser: @unchecked Sendable {
 
     public func reset() {
         buffer.removeAll(keepingCapacity: true)
-        pmtPID = nil
+        pmtPIDs.removeAll()
         videoPID = nil
         continuityCounters.removeAll()
     }
@@ -123,12 +123,19 @@ public final class TSPacketParser: @unchecked Sendable {
         if pid == 0 {
             // PAT
             parsePAT(payload: payload, unitStart: payloadUnitStart)
-        } else if let pmt = pmtPID, pid == pmt {
+        } else if pmtPIDs.contains(pid) {
             // PMT
             parsePMT(payload: payload, unitStart: payloadUnitStart)
         } else if let vPid = videoPID, pid == vPid {
             // Video Elementary Stream
             delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
+        } else if videoPID == nil && payloadUnitStart && payload.count >= 4 {
+            // Fast-track auto-detection of video PID from PES video start code (0x000001E0 - 0x000001EF)
+            if payload[0] == 0x00 && payload[1] == 0x00 && payload[2] == 0x01 && (payload[3] >= 0xE0 && payload[3] <= 0xEF) {
+                self.videoPID = pid
+                delegate?.tsParser(self, didDiscoverVideoPID: pid)
+                delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
+            }
         }
     }
 
@@ -157,9 +164,7 @@ public final class TSPacketParser: @unchecked Sendable {
             let programPID = UInt16(payload[progOffset + 2] & 0x1F) << 8 | UInt16(payload[progOffset + 3])
 
             if programNumber != 0 {
-                // First non-NIT program is our PMT PID
-                self.pmtPID = programPID
-                break
+                self.pmtPIDs.insert(programPID)
             }
             progOffset += 4
         }
@@ -190,6 +195,7 @@ public final class TSPacketParser: @unchecked Sendable {
 
             // stream_type 0x1B = H.264 / AVC Video
             // stream_type 0x24 = HEVC / H.265 Video
+            // stream_type 0x02 = MPEG-2 Video
             if streamType == 0x1B || streamType == 0x24 || streamType == 0x02 {
                 if self.videoPID != elementaryPID {
                     self.videoPID = elementaryPID
