@@ -51,11 +51,13 @@ public final class MetalVideoView: UIView {
     private var jitterSampleCount: Int = 0
     private var fieldCadenceAccumulator: Double = 0
     private var isBuffering: Bool = true
+    private var lastFrameDisplayTime: CFTimeInterval = 0
 
     public func resetForChannelZap() {
         frameQueue.clear()
         hasReportedFirstFrame = false
         isBuffering = true
+        lastFrameDisplayTime = 0
         // Keep currentFrame to avoid black flash between channel switches
     }
 
@@ -155,18 +157,19 @@ public final class MetalVideoView: UIView {
         ) {
             constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
             float2 uv = in.texCoords;
-            float yValue = textureY.sample(s, uv).r;
+            float y = textureY.sample(s, uv).r;
+            float2 uvCbCr = textureCbCr.sample(s, uv).rg;
 
-            float2 cbcr = textureCbCr.sample(s, uv).rg;
-            float cb = cbcr.r - 0.5;
-            float cr = cbcr.g - 0.5;
+            // VideoToolbox kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
+            // Y is [16/255, 235/255], CbCr is [16/255, 240/255] with center at 128/255
+            float yNorm = clamp((y - 0.06275) * 1.16438, 0.0, 1.0);
+            float cb = uvCbCr.r - 0.50196;
+            float cr = uvCbCr.g - 0.50196;
 
-            float yNorm = (yValue - (16.0 / 255.0)) * (255.0 / (235.0 - 16.0));
-            yNorm = clamp(yNorm, 0.0, 1.0);
-
-            float r = yNorm + 1.5748 * cr;
-            float g = yNorm - 0.1873 * cb - 0.4681 * cr;
-            float b = yNorm + 1.8556 * cb;
+            // ITU-R BT.709 HDTV matrix for HD broadcast
+            float r = yNorm + 1.79274 * cr;
+            float g = yNorm - 0.21325 * cb - 0.53291 * cr;
+            float b = yNorm + 2.11240 * cb;
 
             return float4(clamp(float3(r, g, b), 0.0, 1.0), 1.0);
         }
@@ -235,29 +238,22 @@ public final class MetalVideoView: UIView {
         }
         lastDisplayTimestamp = now
 
-        // Advance to next frame or next field
+        // Frame progression: 25 fps broadcast cadence (40ms per frame)
         var isRepeatedField = false
-        var renderedFieldIsTop = false
+        var renderedFieldIsTop = true
 
-        if currentFrame == nil || fieldCycleCount >= 2 {
+        let timeSinceLastFrame = (lastFrameDisplayTime > 0) ? (now - lastFrameDisplayTime) : 1.0
+        if currentFrame == nil || timeSinceLastFrame >= 0.038 {
             if let nextFrame = frameQueue.pop() {
                 currentFrame = nextFrame
-                fieldCycleCount = 0
-                currentFieldIsTop = nextFrame.isTopFieldFirst
+                lastFrameDisplayTime = now
                 renderedFieldIsTop = nextFrame.isTopFieldFirst
             } else if currentFrame != nil {
-                // Queue underrun: repeating previous field to avoid black frame
                 isRepeatedField = true
-                renderedFieldIsTop = currentFieldIsTop
             }
-        } else {
-            // Normal 2nd field of the current decoded frame (50 fields/s)
-            currentFieldIsTop.toggle()
-            renderedFieldIsTop = currentFieldIsTop
         }
 
         let frameToRender = currentFrame
-        fieldCycleCount += 1
 
         if let frame = frameToRender {
             let isFirst = !hasReportedFirstFrame

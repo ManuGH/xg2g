@@ -97,8 +97,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         let config = URLSessionConfiguration.default
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        config.timeoutIntervalForRequest = 10
-        let session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue())
+        let opQueue = OperationQueue()
+        opQueue.maxConcurrentOperationCount = 1
+        opQueue.qualityOfService = .userInteractive
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: opQueue)
         self.urlSession = session
 
         var request = URLRequest(url: targetURL)
