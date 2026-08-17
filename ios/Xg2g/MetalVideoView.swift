@@ -155,16 +155,43 @@ public final class MetalVideoView: UIView {
             texture2d<float, access::sample> textureCbCr [[texture(1)]],
             constant DeinterlaceParams &params [[buffer(0)]]
         ) {
-            constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
-            float2 uv = in.texCoords;
-            float y = textureY.sample(s, uv).r;
-            float2 uvCbCr = textureCbCr.sample(s, uv).rg;
+            constexpr sampler s_linear(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
+            constexpr sampler s_nearest(mag_filter::nearest, min_filter::nearest, address::clamp_to_edge);
 
-            // VideoToolbox kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
-            // Y is [16/255, 235/255], CbCr is [16/255, 240/255] with center at 128/255
-            float yNorm = clamp((y - 0.06275) * 1.16438, 0.0, 1.0);
-            float cb = uvCbCr.r - 0.50196;
-            float cr = uvCbCr.g - 0.50196;
+            float2 uv = in.texCoords;
+            float yNorm = 0.0;
+            float cb = 0.0;
+            float cr = 0.0;
+
+            if (params.isInterlaced != 0) {
+                float h = params.frameHeight > 0.0 ? params.frameHeight : 1080.0;
+                float lineIdx = uv.y * h;
+                float baseLine = floor(lineIdx / 2.0) * 2.0;
+
+                // Top field = even lines (0, 2, 4...), Bottom field = odd lines (1, 3, 5...)
+                float fieldOffset = (params.isTopField != 0) ? 0.0 : 1.0;
+                float y1 = (baseLine + fieldOffset) / h;
+                float y2 = (baseLine + fieldOffset + 2.0) / h;
+
+                float sampleY1 = textureY.sample(s_nearest, float2(uv.x, y1)).r;
+                float sampleY2 = textureY.sample(s_nearest, float2(uv.x, y2)).r;
+                float yRaw = (sampleY1 + sampleY2) * 0.5;
+
+                float2 cbcr1 = textureCbCr.sample(s_nearest, float2(uv.x, y1)).rg;
+                float2 cbcr2 = textureCbCr.sample(s_nearest, float2(uv.x, y2)).rg;
+                float2 cbcrRaw = (cbcr1 + cbcr2) * 0.5;
+
+                // VideoToolbox kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
+                yNorm = clamp((yRaw - 0.06275) * 1.16438, 0.0, 1.0);
+                cb = cbcrRaw.r - 0.50196;
+                cr = cbcrRaw.g - 0.50196;
+            } else {
+                float yRaw = textureY.sample(s_linear, uv).r;
+                float2 cbcrRaw = textureCbCr.sample(s_linear, uv).rg;
+                yNorm = clamp((yRaw - 0.06275) * 1.16438, 0.0, 1.0);
+                cb = cbcrRaw.r - 0.50196;
+                cr = cbcrRaw.g - 0.50196;
+            }
 
             // ITU-R BT.709 HDTV matrix for HD broadcast
             float r = yNorm + 1.79274 * cr;
@@ -177,19 +204,20 @@ public final class MetalVideoView: UIView {
 
         do {
             let library = try metalDevice.makeLibrary(source: shaderSource, options: nil)
-            guard let vertexFunc = library.makeFunction(name: "deinterlaceVertexShader"),
-                  let fragmentFunc = library.makeFunction(name: "deinterlaceFragmentShader") else {
-                return
-            }
+            let vertexFunction = library.makeFunction(name: "deinterlaceVertexShader")
+            let fragmentFunction = library.makeFunction(name: "deinterlaceFragmentShader")
 
-            let pipelineDesc = MTLRenderPipelineDescriptor()
-            pipelineDesc.vertexFunction = vertexFunc
-            pipelineDesc.fragmentFunction = fragmentFunc
-            pipelineDesc.colorAttachments[0].pixelFormat = .bgra8Unorm
+            let pipelineDescriptor = MTLRenderPipelineDescriptor()
+            pipelineDescriptor.vertexFunction = vertexFunction
+            pipelineDescriptor.fragmentFunction = fragmentFunction
+            pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
 
-            pipelineState = try metalDevice.makeRenderPipelineState(descriptor: pipelineDesc)
+            pipelineState = try metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
         } catch {
-            print("Failed to compile runtime Metal shaders: \(error)")
+            let errorLog = "[1080i50-METAL-FAIL] Shader compile error: \(error)"
+            print(errorLog)
+            logger.error("\(errorLog, privacy: .public)")
+            TelemetryServer.shared.log(errorLog)
         }
     }
 
@@ -240,46 +268,53 @@ public final class MetalVideoView: UIView {
 
         // Frame progression: 25 fps broadcast cadence (40ms per frame)
         var isRepeatedField = false
-        var renderedFieldIsTop = true
 
         let timeSinceLastFrame = (lastFrameDisplayTime > 0) ? (now - lastFrameDisplayTime) : 1.0
         if currentFrame == nil || timeSinceLastFrame >= 0.038 {
             if let nextFrame = frameQueue.pop() {
                 currentFrame = nextFrame
                 lastFrameDisplayTime = now
-                renderedFieldIsTop = nextFrame.isTopFieldFirst
             } else if currentFrame != nil {
                 isRepeatedField = true
             }
         }
 
-        let frameToRender = currentFrame
+        guard let frame = currentFrame else { return }
 
-        if let frame = frameToRender {
-            let isFirst = !hasReportedFirstFrame
-            renderPixelBuffer(
-                frame.pixelBuffer,
-                isTopField: renderedFieldIsTop,
-                isTopFieldFirst: frame.isTopFieldFirst,
-                isFirstFrame: isFirst
-            )
+        // Field cadence: 50 fields/sec (Field 1: 0..20ms, Field 2: 20..40ms)
+        let elapsedInFrame = now - lastFrameDisplayTime
+        let isSecondField = (elapsedInFrame >= 0.018)
 
-            presentationCount += 1
-            if isRepeatedField {
-                repeatedFieldPresentationCount += 1
-                cumulativeRepeatedFieldCount += 1
+        let renderedFieldIsTop: Bool
+        if frame.isTopFieldFirst {
+            renderedFieldIsTop = !isSecondField
+        } else {
+            renderedFieldIsTop = isSecondField
+        }
+
+        let isFirst = !hasReportedFirstFrame
+        renderPixelBuffer(
+            frame.pixelBuffer,
+            isTopField: renderedFieldIsTop,
+            isTopFieldFirst: frame.isTopFieldFirst,
+            isFirstFrame: isFirst
+        )
+
+        presentationCount += 1
+        if isRepeatedField {
+            repeatedFieldPresentationCount += 1
+            cumulativeRepeatedFieldCount += 1
+        } else {
+            if renderedFieldIsTop {
+                topFieldPresentationCount += 1
             } else {
-                if renderedFieldIsTop {
-                    topFieldPresentationCount += 1
-                } else {
-                    bottomFieldPresentationCount += 1
-                }
+                bottomFieldPresentationCount += 1
             }
+        }
 
-            if isFirst {
-                hasReportedFirstFrame = true
-                onFirstFrameRendered?()
-            }
+        if isFirst {
+            hasReportedFirstFrame = true
+            onFirstFrameRendered?()
         }
 
         // Periodic telemetry calculation (every 1 second)
