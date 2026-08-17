@@ -19,6 +19,8 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     @Published public var ttfpDecodeMs: Double = 0.0       // t4 -> t5: IDR AU -> VideoToolbox decoded frame
     @Published public var ttfpRenderMs: Double = 0.0       // t5 -> t6: Decoded frame -> Metal Display Submit
     @Published public var earlyStabilityIssues: Int = 0    // Drops or glitches in first 2 seconds
+    @Published public var sampleBuffersEmittedCount: Int = 0
+    @Published public var sampleBuffersDecodedCount: Int = 0
 
     // MARK: - INPUT Metrics
     @Published public var tsBitrateKbps: Double = 0.0
@@ -126,6 +128,8 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
             "ttfp_idr_ms": ttfpIdrMs,
             "ttfp_decode_ms": ttfpDecodeMs,
             "ttfp_render_ms": ttfpRenderMs,
+            "sample_buffers_emitted": sampleBuffersEmittedCount,
+            "sample_buffers_decoded": sampleBuffersDecodedCount,
             "ts_bitrate_kbps": tsBitrateKbps,
             "video_pid": videoPID,
             "continuity_errors": continuityErrors,

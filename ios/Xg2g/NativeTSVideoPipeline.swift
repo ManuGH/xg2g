@@ -279,6 +279,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             }
         }
 
+        DispatchQueue.main.async { [weak self] in
+            self?.telemetry.sampleBuffersEmittedCount += 1
+        }
+
         decoder.decode(sampleBuffer: sampleBuffer, isTopFieldFirst: isTopFieldFirst)
     }
 
@@ -292,6 +296,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             DispatchQueue.main.async { [weak self] in
                 self?.telemetry.ttfpDecodeMs = decMs
             }
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.telemetry.sampleBuffersDecodedCount += 1
         }
 
         decodedFrameCounter += 1
