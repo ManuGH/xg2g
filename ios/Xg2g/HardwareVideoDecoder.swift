@@ -148,7 +148,12 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     }
 
     public func decode(sampleBuffer: CMSampleBuffer, isTopFieldFirst: Bool) {
-        guard let session = decompressionSession else { return }
+        guard let session = decompressionSession else {
+            let msg = "[1080i50-DEC] ⚠️ No active decompression session"
+            print(msg)
+            TelemetryServer.shared.log(msg)
+            return
+        }
 
         var flagsOut: VTDecodeInfoFlags = []
         let context = FrameContext(isTopFieldFirst: isTopFieldFirst, pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
@@ -157,21 +162,25 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         let status = VTDecompressionSessionDecodeFrame(
             session,
             sampleBuffer: sampleBuffer,
-            flags: [._EnableAsynchronousDecompression],
+            flags: [._EnableAsynchronousDecompression, ._1xRealTimePlayback],
             frameRefcon: contextPtr,
             infoFlagsOut: &flagsOut
         )
 
         if status != noErr {
             _ = Unmanaged<FrameContext>.fromOpaque(contextPtr).takeRetainedValue()
-            print("[1080i50-DECODE-FAIL] VTDecompressionSessionDecodeFrame error: \(status)")
+            let msg = "[1080i50-DECODE-FAIL] VTDecompressionSessionDecodeFrame error: \(status)"
+            print(msg)
+            TelemetryServer.shared.log(msg)
             delegate?.hardwareDecoder(self, didEncounterDecodeError: status)
         }
     }
 
     fileprivate func handleDecodedFrame(status: OSStatus, imageBuffer: CVImageBuffer?, context: FrameContext) {
         guard status == noErr, let buffer = imageBuffer else {
-            print("[1080i50-DECODE-FAIL] handleDecodedFrame async error: \(status)")
+            let msg = "[1080i50-DECODE-FAIL] handleDecodedFrame async error: \(status)"
+            print(msg)
+            TelemetryServer.shared.log(msg)
             delegate?.hardwareDecoder(self, didEncounterDecodeError: status)
             return
         }
