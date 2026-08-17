@@ -74,6 +74,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         firstDecodedTime = 0
         firstPictureDeliveredTime = 0
 
+        let targetURL = normalizeStreamURL(url)
+
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.renderView?.resetForChannelZap()
@@ -91,7 +93,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue())
         self.urlSession = session
 
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: targetURL)
         request.setValue("xg2g-ios-native-poc/1.0", forHTTPHeaderField: "User-Agent")
 
         let task = session.dataTask(with: request)
@@ -99,6 +101,17 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         task.resume()
 
         startSystemMonitoring()
+    }
+
+    private func normalizeStreamURL(_ url: URL) -> URL {
+        var urlString = url.absoluteString
+        if urlString.contains(":8001/1:0:") && !urlString.hasSuffix(":") {
+            urlString += ":"
+            if let normalized = URL(string: urlString) {
+                return normalized
+            }
+        }
+        return url
     }
 
     public func stopStreaming() {
@@ -116,6 +129,27 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     // MARK: - URLSessionDataDelegate (Streaming Ingest)
+
+    public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        if let httpResponse = response as? HTTPURLResponse {
+            if httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 {
+                DispatchQueue.main.async { [weak self] in
+                    self?.telemetry.ttfpRating = "❌ HTTP \(httpResponse.statusCode) (\(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)))"
+                }
+                completionHandler(.cancel)
+                return
+            }
+        }
+        completionHandler(.allow)
+    }
+
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error as NSError?, error.code != NSURLErrorCancelled {
+            DispatchQueue.main.async { [weak self] in
+                self?.telemetry.ttfpRating = "❌ Connection Error: \(error.localizedDescription)"
+            }
+        }
+    }
 
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         if firstDataTime == 0 && requestStartTime > 0 {

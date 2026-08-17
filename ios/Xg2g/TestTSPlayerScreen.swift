@@ -8,7 +8,7 @@ import SwiftUI
 public struct TestTSPlayerScreen: View {
 
     @StateObject private var pipeline = NativeTSVideoPipeline()
-    @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:14B8:407:1:C00000:0:0:0"
+    @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:14B8:407:1:C00000:0:0:0:"
     @State private var isStreaming: Bool = false
     @State private var showHUD: Bool = true
     @State private var usePathB: Bool = false
@@ -143,8 +143,15 @@ public struct TestTSPlayerScreen: View {
                 .background(.ultraThinMaterial)
             }
         }
+        .onAppear {
+            if !isStreaming, let url = URL(string: streamURLString) {
+                pipeline.startStreaming(url: url)
+                isStreaming = true
+            }
+        }
         .onDisappear {
             pipeline.stopStreaming()
+            isStreaming = false
         }
     }
 
