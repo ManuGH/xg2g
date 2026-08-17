@@ -78,10 +78,20 @@ public final class MetalVideoView: UIView {
 
         setupMetal()
         setupDisplayLink()
+        setupLifecycleObservers()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupLifecycleObservers() {
+        NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.displayLink?.isPaused = true
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.displayLink?.isPaused = false
+        }
     }
 
     public override func didMoveToWindow() {
@@ -183,8 +193,8 @@ public final class MetalVideoView: UIView {
     private func setupDisplayLink() {
         let link = CADisplayLink(target: self, selector: #selector(displayLinkFired(_:)))
         if #available(iOS 15.0, *) {
-            // Target presentation cadence: 50 fps for European 50 Hz broadcast
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 50, maximum: 50, preferred: 50)
+            // Target presentation cadence: 50 fps for European 50 Hz broadcast (compatible with 120 Hz ProMotion)
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 50, maximum: 120, preferred: 50)
         }
         link.add(to: .main, forMode: .common)
         self.displayLink = link
@@ -202,6 +212,8 @@ public final class MetalVideoView: UIView {
     }
 
     @objc private func displayLinkFired(_ link: CADisplayLink) {
+        guard UIApplication.shared.applicationState == .active else { return }
+
         if isBuffering {
             if frameQueue.count >= 4 {
                 isBuffering = false
@@ -319,7 +331,8 @@ public final class MetalVideoView: UIView {
     }
 
     private func renderPixelBuffer(_ pixelBuffer: CVPixelBuffer, isTopField: Bool, isTopFieldFirst: Bool, isFirstFrame: Bool) {
-        guard let cache = textureCache,
+        guard UIApplication.shared.applicationState == .active,
+              let cache = textureCache,
               let pipeline = pipelineState,
               let drawable = metalLayer.nextDrawable(),
               let commandBuffer = commandQueue.makeCommandBuffer() else {
