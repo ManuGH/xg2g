@@ -422,19 +422,7 @@ public final class MetalVideoView: UIView {
         let syncRate = synchronizer.map { CMTimebaseGetRate($0.timebase) } ?? 0.0
         if syncRate > 0, let sync = synchronizer {
             let baseTime = CMTimebaseGetTime(sync.timebase)
-            var currentStreamTime = baseTime.isValid ? baseTime.seconds : 0.0
-
-            // If audio clock and video stream drifted apart (e.g. during initial PSI/SPS lock-in),
-            // resync the master clock to the video stream head so playback starts immediately without freezing.
-            if let first = fieldQueue.first {
-                let drift = first.ptsSeconds - currentStreamTime
-                if abs(drift) > 0.200 {
-                    sync.setRate(1.0, time: CMTime(seconds: first.ptsSeconds, preferredTimescale: 90000))
-                    currentStreamTime = first.ptsSeconds
-                }
-            }
-
-            streamNow = currentStreamTime
+            streamNow = baseTime.isValid ? baseTime.seconds : 0.0
             isClockAnchored = true
         } else {
             if !isClockAnchored {

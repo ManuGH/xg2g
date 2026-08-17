@@ -514,11 +514,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             let base = firstIdrTime > 0 ? firstIdrTime : (paramsReadyTime > 0 ? paramsReadyTime : requestStartTime)
             let decMs = (firstDecodedTime - base) * 1000.0
             telemetry.mutate { $0.ttfpDecodeMs = decMs }
-
-            // Align master audio clock to the first video frame PTS for instant lip-sync and freeze-free start
-            if isAudioClockStarted, frame.pts.isValid {
-                audioRenderer.setRate(1.0, time: frame.pts)
-            }
         }
 
         telemetry.mutate { $0.sampleBuffersDecodedCount += 1 }
