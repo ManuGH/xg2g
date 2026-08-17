@@ -53,7 +53,12 @@ public struct ParsedAudioFrame: Sendable {
 
 public protocol AC3FrameParserDelegate: AnyObject, Sendable {
     func ac3FrameParser(_ parser: AC3FrameParser, didEmitFrame frame: ParsedAudioFrame)
+    func ac3FrameParserDidDetectDiscontinuity(_ parser: AC3FrameParser, newPTS: CMTime)
     func ac3FrameParser(_ parser: AC3FrameParser, didEncounterError reason: String)
+}
+
+public extension AC3FrameParserDelegate {
+    func ac3FrameParserDidDetectDiscontinuity(_ parser: AC3FrameParser, newPTS: CMTime) {}
 }
 
 /// Parses raw AC-3 / E-AC-3 elementary bitstreams into discrete audio syncframes.
@@ -85,10 +90,11 @@ public final class AC3FrameParser: @unchecked Sendable {
         if let pts = pts, pts.isValid {
             if let running = runningPTS, running.isValid {
                 let drift = abs(pts.seconds - running.seconds)
-                // If stream timestamps jump by > 80 ms (e.g. channel zap or splice), resync timeline
+                // If stream timestamps jump by > 80 ms (e.g. channel zap, stream splice or stray initial PES), resync timeline
                 if drift > 0.080 {
                     self.runningPTS = pts
                     self.runningPTS90k = pts90k
+                    delegate?.ac3FrameParserDidDetectDiscontinuity(self, newPTS: pts)
                 }
             } else {
                 self.runningPTS = pts

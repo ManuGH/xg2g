@@ -9,7 +9,12 @@ import Foundation
 public protocol AudioSampleBufferAssemblerDelegate: AnyObject, Sendable {
     func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didUpdateFormat formatDescription: CMAudioFormatDescription, codec: AudioStreamCodec, sampleRate: Int, channels: Int, bitrateKbps: Int)
     func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime)
+    func audioSampleBufferAssemblerDidDetectDiscontinuity(_ assembler: AudioSampleBufferAssembler, newPTS: CMTime)
     func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEncounterError reason: String)
+}
+
+public extension AudioSampleBufferAssemblerDelegate {
+    func audioSampleBufferAssemblerDidDetectDiscontinuity(_ assembler: AudioSampleBufferAssembler, newPTS: CMTime) {}
 }
 
 /// Converts parsed AC-3, E-AC-3, and AAC audio syncframes into valid CoreMedia `CMSampleBuffer`s.
@@ -53,6 +58,10 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
         emitSampleBuffer(data: frame.data, formatDescription: formatDesc, pts: frame.pts, codec: info.isEnhanced ? .eac3 : .ac3, duration: info.duration)
     }
 
+    public func ac3FrameParserDidDetectDiscontinuity(_ parser: AC3FrameParser, newPTS: CMTime) {
+        delegate?.audioSampleBufferAssemblerDidDetectDiscontinuity(self, newPTS: newPTS)
+    }
+
     public func ac3FrameParser(_ parser: AC3FrameParser, didEncounterError reason: String) {
         delegate?.audioSampleBufferAssembler(self, didEncounterError: reason)
     }
@@ -77,6 +86,10 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
         guard let formatDesc = currentFormatDescription else { return }
 
         emitSampleBuffer(data: frame.rawPayload, formatDescription: formatDesc, pts: frame.pts, codec: .aac, duration: info.duration)
+    }
+
+    public func aacFrameParserDidDetectDiscontinuity(_ parser: AACADTSFrameParser, newPTS: CMTime) {
+        delegate?.audioSampleBufferAssemblerDidDetectDiscontinuity(self, newPTS: newPTS)
     }
 
     public func aacFrameParser(_ parser: AACADTSFrameParser, didEncounterError reason: String) {

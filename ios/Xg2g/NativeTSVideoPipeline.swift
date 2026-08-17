@@ -391,6 +391,22 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     private var firstAudioPTS: CMTime?
 
+    public func audioSampleBufferAssemblerDidDetectDiscontinuity(_ assembler: AudioSampleBufferAssembler, newPTS: CMTime) {
+        let oldStr = firstAudioPTS != nil ? String(format: "%.3f", firstAudioPTS!.seconds) + "s" : "none"
+        let logMsg = "[1080i50-AUDIO] ⚡ Audio Discontinuity detected -> Resyncing master clock from \(oldStr) to \(String(format: "%.3f", newPTS.seconds))s"
+        print(logMsg)
+        logger.notice("\(logMsg, privacy: .public)")
+        TelemetryServer.shared.log(logMsg)
+
+        audioRenderer.flush()
+        audioBuffersPreRolledCount = 0
+        firstAudioPTS = newPTS
+
+        if isAudioClockStarted {
+            audioRenderer.setRate(1.0, time: newPTS)
+        }
+    }
+
     public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime) {
         audioRenderer.enqueue(sampleBuffer: sampleBuffer)
         audioBuffersPreRolledCount += 1
@@ -400,7 +416,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             firstAudioPTS = pts
         }
 
-        if !isAudioClockStarted && audioBuffersPreRolledCount >= 8, let startPTS = firstAudioPTS {
+        if !isAudioClockStarted && audioBuffersPreRolledCount >= 8 {
+            let startPTS = firstAudioPTS ?? pts
             audioRenderer.setRate(1.0, time: startPTS)
             isAudioClockStarted = true
             let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", startPTS.seconds))s (\(codec), prerolled: \(audioBuffersPreRolledCount) buffers)"
