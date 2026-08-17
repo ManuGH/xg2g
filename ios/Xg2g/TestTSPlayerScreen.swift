@@ -8,10 +8,24 @@ import SwiftUI
 public struct TestTSPlayerScreen: View {
 
     @StateObject private var pipeline = NativeTSVideoPipeline()
-    @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:14B8:407:1:C00000:0:0:0:"
+    @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:"
     @State private var isStreaming: Bool = false
     @State private var showHUD: Bool = true
     @State private var usePathB: Bool = false
+
+    private struct ChannelPreset: Identifiable {
+        let id = UUID()
+        let name: String
+        let url: String
+    }
+
+    private let presets: [ChannelPreset] = [
+        ChannelPreset(name: "Sky Sport Top Event", url: "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:"),
+        ChannelPreset(name: "PULS 24 HD", url: "http://10.10.55.64:8001/1:0:19:14B8:407:1:C00000:0:0:0:"),
+        ChannelPreset(name: "Sky Sport F1", url: "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:"),
+        ChannelPreset(name: "Sky Sport Bundesliga", url: "http://10.10.55.64:8001/1:0:19:69:C:85:C00000:0:0:0:"),
+        ChannelPreset(name: "Sky Sport Premier League", url: "http://10.10.55.64:8001/1:0:19:91:4:85:C00000:0:0:0:")
+    ]
 
     public init() {}
 
@@ -28,6 +42,33 @@ public struct TestTSPlayerScreen: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         hudHeader
+
+                        if let warning = pipeline.telemetry.validationWarning {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.yellow)
+                                Text(warning)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.red.opacity(0.85))
+                            .cornerRadius(8)
+                        } else if pipeline.telemetry.isDirect1080iVerified {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .foregroundStyle(.green)
+                                Text("✅ Echter 1080i50 Direct-Stream (Kein Server-Transcode!)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.green.opacity(0.25))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.6), lineWidth: 1))
+                            .cornerRadius(8)
+                        }
 
                         Group {
                             hudSection(title: "STARTUP GATES (Time-To-First-Picture)") {
@@ -52,7 +93,7 @@ public struct TestTSPlayerScreen: View {
                             hudSection(title: "CODEC") {
                                 hudRow("Codec", pipeline.telemetry.codec)
                                 hudRow("Resolution", pipeline.telemetry.videoWidth > 0 ? "\(pipeline.telemetry.videoWidth)x\(pipeline.telemetry.videoHeight)" : "Waiting…")
-                                hudRow("Interlaced", pipeline.telemetry.isInterlaced ? "YES (1080i)" : "NO (Progressive)", highlight: pipeline.telemetry.isInterlaced)
+                                hudRow("Interlaced", pipeline.telemetry.isInterlaced ? "YES (1080i) ✅" : "NO (Progressive) ❌", highlight: pipeline.telemetry.isInterlaced, alert: !pipeline.telemetry.isInterlaced && pipeline.telemetry.videoWidth > 0)
                                 hudRow("Field Order", pipeline.telemetry.fieldOrder, highlight: pipeline.telemetry.fieldOrder == "TFF")
                                 hudRow("Source Field Rate", String(format: "%.1f fields/s", pipeline.telemetry.sourceFieldRate))
                                 hudRow("Source Frame Rate", String(format: "%.1f fps", pipeline.telemetry.sourceFrameRate))
@@ -109,8 +150,33 @@ public struct TestTSPlayerScreen: View {
             }
 
             // 3. Bottom Control Bar
-            VStack {
+            VStack(spacing: 8) {
                 Spacer()
+
+                // Channel Presets Chips
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(presets) { preset in
+                            Button {
+                                streamURLString = preset.url
+                                if let url = URL(string: preset.url) {
+                                    pipeline.startStreaming(url: url)
+                                    isStreaming = true
+                                }
+                            } label: {
+                                Text(preset.name)
+                                    .font(.caption.weight(streamURLString == preset.url ? .bold : .regular))
+                                    .foregroundStyle(streamURLString == preset.url ? .black : .white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(streamURLString == preset.url ? Color.orange : Color.white.opacity(0.2))
+                                    .cornerRadius(12)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+
                 HStack(spacing: 12) {
                     TextField("Stream URL", text: $streamURLString)
                         .textFieldStyle(.roundedBorder)

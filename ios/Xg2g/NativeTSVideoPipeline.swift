@@ -234,6 +234,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             self.telemetry.isInterlaced = info.isInterlaced
             self.telemetry.fieldOrder = info.isInterlaced ? (info.isTopFieldFirst ? "TFF" : "BFF") : "Progressive"
             self.telemetry.vtSessionActive = true
+
+            if info.isInterlaced {
+                self.telemetry.isDirect1080iVerified = true
+                self.telemetry.validationWarning = nil
+            } else {
+                self.telemetry.isDirect1080iVerified = false
+                self.telemetry.validationWarning = "⚠️ WARNUNG: Stream ist PROGRESSIV (\(info.width)x\(info.height)p) – Server-Transcode aktiv!"
+            }
         }
     }
 

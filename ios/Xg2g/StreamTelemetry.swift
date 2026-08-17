@@ -26,7 +26,7 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     @Published public var continuityErrors: Int = 0
     @Published public var pesErrors: Int = 0
 
-    // MARK: - CODEC Metrics
+    // MARK: - CODEC Metrics & Direct Source Validation
     @Published public var codec: String = "H.264"
     @Published public var videoWidth: Int = 0
     @Published public var videoHeight: Int = 0
@@ -34,6 +34,8 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     @Published public var fieldOrder: String = "Unknown" // "TFF", "BFF", "Progressive"
     @Published public var sourceFrameRate: Double = 0.0  // ~25 fps
     @Published public var sourceFieldRate: Double = 0.0  // ~50 fields/s
+    @Published public var isDirect1080iVerified: Bool = false
+    @Published public var validationWarning: String? = nil
 
     // MARK: - DECODER Metrics
     @Published public var vtSessionActive: Bool = false
@@ -88,6 +90,8 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
         videoHeight = 0
         isInterlaced = false
         fieldOrder = "Unknown"
+        isDirect1080iVerified = false
+        validationWarning = nil
         sourceFrameRate = 0
         sourceFieldRate = 0
         vtSessionActive = false
