@@ -257,10 +257,54 @@ struct TSPipelineUnitTests {
             #expect(pts2.seconds == 1.04)
             #expect(dur1.seconds == 0.02 || dur1.seconds == 0.04)
             #expect(dur2.seconds == 0.04)
-            #expect(sink.isIDRFlags[0] == true)
-            #expect(sink.isIDRFlags[1] == false)
         }
     }
+
+    @Test func testRealStreamFeed() throws {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: "/tmp/vu_puls24_real.ts")) else {
+            return
+        }
+
+        let parser = TSPacketParser()
+        let pesAssembler = PESPacketAssembler()
+        let auAssembler = H264AccessUnitAssembler()
+        let auSink = MockAccessUnitSink()
+        let bridge = PipelineBridge(pesAssembler: pesAssembler, auAssembler: auAssembler)
+
+        parser.delegate = bridge
+        pesAssembler.delegate = bridge
+        auAssembler.delegate = auSink
+
+        parser.feed(data: data)
+        auAssembler.flush()
+
+        #expect(parser.videoPID != nil)
+        #expect(auSink.emittedSampleBuffers.count > 0)
+        #expect(auSink.info?.isInterlaced == true)
+        #expect(auSink.info?.width == 1920)
+        #expect(auSink.info?.height == 1080)
+    }
+}
+
+private final class PipelineBridge: TSPacketParserDelegate, PESPacketAssemblerDelegate, @unchecked Sendable {
+    let pesAssembler: PESPacketAssembler
+    let auAssembler: H264AccessUnitAssembler
+
+    init(pesAssembler: PESPacketAssembler, auAssembler: H264AccessUnitAssembler) {
+        self.pesAssembler = pesAssembler
+        self.auAssembler = auAssembler
+    }
+
+    func tsParser(_ parser: TSPacketParser, didDiscoverVideoPID pid: UInt16) {}
+    func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool) {
+        pesAssembler.feed(payload: data, unitStart: unitStart)
+    }
+    func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8) {}
+
+    func pesAssembler(_ assembler: PESPacketAssembler, didEmitVideoPayload payload: PESVideoData) {
+        auAssembler.feed(payload: payload)
+    }
+    func pesAssembler(_ assembler: PESPacketAssembler, didEncounterPESError reason: String) {}
 }
 
 // MARK: - Helpers

@@ -88,7 +88,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         if let (startCodeOffset, prefixLen) = findNextStartCode(in: streamBuffer, from: 0) {
             let nalStart = startCodeOffset + prefixLen
             if nalStart < streamBuffer.count {
-                let nalData = streamBuffer.subdata(in: nalStart..<streamBuffer.count)
+                let nalData = Data(streamBuffer[nalStart..<streamBuffer.count])
                 if !nalData.isEmpty {
                     handleNALUnit(nalData)
                 }
@@ -108,8 +108,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             guard let (startCodeOffset, prefixLen) = findNextStartCode(in: streamBuffer, from: 0) else {
                 // Keep only the last 3 bytes in case a start code is split across incoming chunks
                 if streamBuffer.count > 3 {
-                    let keepFrom = streamBuffer.count - 3
-                    streamBuffer = streamBuffer.subdata(in: keepFrom..<streamBuffer.count)
+                    streamBuffer = Data(streamBuffer.suffix(3))
                 }
                 break
             }
@@ -118,17 +117,17 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             guard let (nextStartCodeOffset, _) = findNextStartCode(in: streamBuffer, from: nalStart) else {
                 // Incomplete trailing NAL in buffer; keep buffer from startCodeOffset for next chunk
                 if startCodeOffset > 0 {
-                    streamBuffer = streamBuffer.subdata(in: startCodeOffset..<streamBuffer.count)
+                    streamBuffer = Data(streamBuffer.dropFirst(startCodeOffset))
                 }
                 break
             }
 
-            let nalData = streamBuffer.subdata(in: nalStart..<nextStartCodeOffset)
+            let nalData = Data(streamBuffer[nalStart..<nextStartCodeOffset])
             if !nalData.isEmpty {
                 handleNALUnit(nalData)
             }
 
-            streamBuffer = streamBuffer.subdata(in: nextStartCodeOffset..<streamBuffer.count)
+            streamBuffer = Data(streamBuffer.dropFirst(nextStartCodeOffset))
         }
     }
 
