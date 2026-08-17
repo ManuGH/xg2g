@@ -22,8 +22,8 @@ public protocol NativeTSAudioRendererDelegate: AnyObject, Sendable {
 /// - Supports immediate `flush()` on discontinuity, channel zap, or reset.
 public final class NativeTSAudioRenderer: @unchecked Sendable {
 
-    public let audioRenderer: AVSampleBufferAudioRenderer
-    public let synchronizer: AVSampleBufferRenderSynchronizer
+    public private(set) var audioRenderer: AVSampleBufferAudioRenderer
+    public private(set) var synchronizer: AVSampleBufferRenderSynchronizer
 
     private let renderQueue = DispatchQueue(label: "io.github.manugh.xg2g.audio.renderer", qos: .userInteractive)
     private var isAudioSessionActive = false
@@ -170,5 +170,20 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     public func reset() {
         flush()
         stopClock()
+
+        let oldRenderer = audioRenderer
+        synchronizer.removeRenderer(oldRenderer, at: .invalid) { _ in }
+
+        self.audioRenderer = AVSampleBufferAudioRenderer()
+        self.synchronizer = AVSampleBufferRenderSynchronizer()
+        self.synchronizer.addRenderer(self.audioRenderer)
+
+        if isAudioSessionActive {
+            audioRenderer.isMuted = false
+            audioRenderer.volume = 1.0
+        }
+
+        enqueuedCount = 0
+        lastDiagnosticLogTime = 0
     }
 }

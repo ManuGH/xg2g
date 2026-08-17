@@ -492,9 +492,9 @@ public final class MetalVideoView: UIView {
         var presentedNewField = false
         while let next = fieldQueue.first, next.ptsSeconds <= streamNow {
             if presentedNewField {
-                // Only drop subsequent fields in the same tick if they are severely late (> 80ms)
-                // or if the queue is severely backlogged (> 10 fields), preventing buffer collapse.
-                if fieldQueue.count > 10 || streamNow - next.ptsSeconds > 0.080 {
+                // If a field was already selected for this display tick, only discard subsequent
+                // fields if they are genuinely stale (> 100ms behind master timebase).
+                if streamNow - next.ptsSeconds > 0.100 {
                     skippedLateFieldCount += 1
                 } else {
                     break
