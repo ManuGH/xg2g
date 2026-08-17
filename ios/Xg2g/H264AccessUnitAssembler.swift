@@ -233,7 +233,8 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
 
     private func parseFirstMBInSlice(_ nal: Data) -> Int {
         guard nal.count > 1 else { return 0 }
-        let rbsp = removeEmulationPreventionBytes(from: nal.subdata(in: 1..<min(nal.count, 6)))
+        let sliceHeader = Data(nal.dropFirst(1).prefix(5))
+        let rbsp = removeEmulationPreventionBytes(from: sliceHeader)
         var reader = BitReader(data: rbsp)
         return reader.readExpGolomb()
     }
@@ -407,7 +408,8 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
 
     private func parseSPS(_ nal: Data) {
         guard nal.count >= 4 else { return }
-        let rbsp = removeEmulationPreventionBytes(from: nal.subdata(in: 1..<nal.count))
+        let rawSPS = Data(nal.dropFirst(1))
+        let rbsp = removeEmulationPreventionBytes(from: rawSPS)
         var reader = BitReader(data: rbsp)
 
         let profileIDC = reader.readBits(8)
@@ -505,12 +507,12 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
 // MARK: - BitReader for SPS exponential golomb parsing
 
 private struct BitReader {
-    private let data: Data
+    private let data: [UInt8]
     private var byteOffset: Int = 0
     private var bitOffset: Int = 0
 
     init(data: Data) {
-        self.data = data
+        self.data = [UInt8](data)
     }
 
     mutating func readBits(_ count: Int) -> Int {
