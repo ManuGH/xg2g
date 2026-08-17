@@ -30,10 +30,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // Audio Engine Subsystems
     private let audioPesAssembler = AudioPESAssembler()
     private let ac3FrameParser = AC3FrameParser()
+    private let aacFrameParser = AACADTSFrameParser()
     private let audioSampleBufferAssembler = AudioSampleBufferAssembler()
     public let audioRenderer = NativeTSAudioRenderer()
 
     public private(set) var selectedAudioPID: UInt16?
+    public private(set) var selectedAudioCodec: AudioStreamCodec = .ac3
     public private(set) var availableAudioTracks: [AudioTrackInfo] = []
     private var isAudioClockStarted = false
     private var audioBuffersPreRolledCount = 0
@@ -88,6 +90,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         decoder.delegate = self
         audioPesAssembler.delegate = self
         ac3FrameParser.delegate = audioSampleBufferAssembler
+        aacFrameParser.delegate = audioSampleBufferAssembler
         audioSampleBufferAssembler.delegate = self
 
         TelemetryServer.shared.start()
@@ -194,6 +197,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             decoder.reset()
             audioPesAssembler.reset()
             ac3FrameParser.reset()
+            aacFrameParser.reset()
             audioSampleBufferAssembler.reset()
         }
     }
@@ -309,6 +313,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
             if let track = preferred {
                 self.selectedAudioPID = track.pid
+                self.selectedAudioCodec = track.codec
                 let selLog = "[1080i50-AUDIO] 🎯 Selected audio track: PID \(track.pid) (\(track.codec), lang: \(track.language ?? "und"))"
                 print(selLog)
                 logger.notice("\(selLog, privacy: .public)")
@@ -338,7 +343,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - AudioPESAssemblerDelegate
 
     public func audioPESAssembler(_ assembler: AudioPESAssembler, didEmitAudioPES payload: AudioPESData) {
-        ac3FrameParser.feed(data: payload.payload, pts: payload.pts, pts90k: payload.pts90k)
+        if selectedAudioCodec == .aac {
+            aacFrameParser.feed(data: payload.payload, pts: payload.pts, pts90k: payload.pts90k)
+        } else {
+            ac3FrameParser.feed(data: payload.payload, pts: payload.pts, pts90k: payload.pts90k)
+        }
     }
 
     public func audioPESAssembler(_ assembler: AudioPESAssembler, didEncounterPESError reason: String, onPID pid: UInt16) {
@@ -347,20 +356,21 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     // MARK: - AudioSampleBufferAssemblerDelegate
 
-    public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didUpdateFormat formatDescription: CMAudioFormatDescription, info: AC3FrameInfo) {
-        let logMsg = "[1080i50-AUDIO] Format: \(info.isEnhanced ? "E-AC-3" : "AC-3") | \(info.sampleRate) Hz | \(info.channelCount) ch (\(info.isLFEOn ? ".1 LFE" : "no LFE")) | \(info.bitrateKbps) kbps"
+    public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didUpdateFormat formatDescription: CMAudioFormatDescription, codec: AudioStreamCodec, sampleRate: Int, channels: Int, bitrateKbps: Int) {
+        let logMsg = "[1080i50-AUDIO] Format: \(codec) | \(sampleRate) Hz | \(channels) ch | \(bitrateKbps > 0 ? "\(bitrateKbps) kbps" : "VBR")"
         print(logMsg)
         logger.notice("\(logMsg, privacy: .public)")
         TelemetryServer.shared.log(logMsg)
 
         telemetry.mutate {
-            $0.audioSampleRate = info.sampleRate
-            $0.audioChannels = info.channelCount
-            $0.audioBitrateKbps = info.bitrateKbps
+            $0.audioCodec = codec.description
+            $0.audioSampleRate = sampleRate
+            $0.audioChannels = channels
+            $0.audioBitrateKbps = bitrateKbps
         }
     }
 
-    public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, info: AC3FrameInfo) {
+    public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime) {
         audioRenderer.enqueue(sampleBuffer: sampleBuffer)
         audioBuffersPreRolledCount += 1
 
@@ -369,7 +379,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             if pts.isValid {
                 audioRenderer.setRate(1.0, time: pts)
                 isAudioClockStarted = true
-                let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", pts.seconds))s"
+                let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", pts.seconds))s (\(codec))"
                 print(clockLog)
                 logger.notice("\(clockLog, privacy: .public)")
                 TelemetryServer.shared.log(clockLog)

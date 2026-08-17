@@ -233,9 +233,8 @@ struct AudioDemuxAndCodecTests {
     // MARK: - 6. Real Stream Audio Track & PES Demuxing
 
     @Test func demuxesRealBroadcastAudioFromTSCapture() throws {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: "/tmp/vu_puls24_real.ts")) else {
-            return
-        }
+        let data = PULS24CaptureFixture.data
+        #expect(!data.isEmpty, "Embedded PULS24 capture fixture must not be empty")
 
         let parser = TSPacketParser()
         let assembler = AudioPESAssembler()
@@ -264,6 +263,38 @@ struct AudioDemuxAndCodecTests {
             if let pts1 = p1.pts90k, let pts2 = p2.pts90k {
                 #expect(pts2 >= pts1)
             }
+        }
+    }
+
+    // MARK: - 7. Production AudioPESAssembler 33-Bit PTS Wrap Verification
+
+    @Test func audioPESAssemblerUnwrapsPTSAcrossBoundaryInProductionPath() throws {
+        let assembler = AudioPESAssembler()
+        let sink = MockAudioPESSink()
+        assembler.delegate = sink
+
+        let nearWrapPTS: UInt64 = 8_589_934_500
+        let wrappedPTS: UInt64  = 100
+
+        let payload1 = Data([0x0B, 0x77, 0x01, 0x02])
+        let pes1 = makeAudioPESPacket(streamID: 0xBD, pts90k: nearWrapPTS, payload: payload1)
+        assembler.feed(payload: pes1, pid: 770, unitStart: true)
+
+        let payload2 = Data([0x0B, 0x77, 0x03, 0x04])
+        let pes2 = makeAudioPESPacket(streamID: 0xBD, pts90k: wrappedPTS, payload: payload2)
+        assembler.feed(payload: pes2, pid: 770, unitStart: true)
+
+        assembler.flush(pid: 770)
+
+        #expect(sink.emittedPackets.count == 2)
+        if sink.emittedPackets.count == 2 {
+            let p1 = sink.emittedPackets[0]
+            let p2 = sink.emittedPackets[1]
+
+            #expect(p1.pts90k == nearWrapPTS)
+            #expect(p2.pts90k == 8_589_934_592 + 100) // Unwrapped across 33-bit boundary
+            #expect(p2.pts90k! > p1.pts90k!)
+            #expect(p2.pts!.seconds > p1.pts!.seconds)
         }
     }
 }

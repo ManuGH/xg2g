@@ -7,16 +7,17 @@ import CoreMedia
 import Foundation
 
 public protocol AudioSampleBufferAssemblerDelegate: AnyObject, Sendable {
-    func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didUpdateFormat formatDescription: CMAudioFormatDescription, info: AC3FrameInfo)
-    func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, info: AC3FrameInfo)
+    func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didUpdateFormat formatDescription: CMAudioFormatDescription, codec: AudioStreamCodec, sampleRate: Int, channels: Int, bitrateKbps: Int)
+    func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime)
     func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEncounterError reason: String)
 }
 
-/// Converts parsed audio syncframes into valid CoreMedia `CMSampleBuffer`s.
-public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FrameParserDelegate {
+/// Converts parsed AC-3, E-AC-3, and AAC audio syncframes into valid CoreMedia `CMSampleBuffer`s.
+public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FrameParserDelegate, AACFrameParserDelegate {
 
     public private(set) var currentFormatDescription: CMAudioFormatDescription?
-    public private(set) var currentFrameInfo: AC3FrameInfo?
+    public private(set) var currentAC3FrameInfo: AC3FrameInfo?
+    public private(set) var currentAACFrameInfo: AACFrameInfo?
 
     public weak var delegate: AudioSampleBufferAssemblerDelegate?
 
@@ -24,7 +25,8 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
 
     public func reset() {
         currentFormatDescription = nil
-        currentFrameInfo = nil
+        currentAC3FrameInfo = nil
+        currentAACFrameInfo = nil
     }
 
     // MARK: - AC3FrameParserDelegate
@@ -33,11 +35,13 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
         let info = frame.info
 
         // Update format description if audio properties changed
-        if currentFormatDescription == nil || currentFrameInfo != info {
-            if let newFormat = createAudioFormatDescription(for: info) {
+        if currentFormatDescription == nil || currentAC3FrameInfo != info {
+            if let newFormat = createAC3FormatDescription(for: info) {
                 self.currentFormatDescription = newFormat
-                self.currentFrameInfo = info
-                delegate?.audioSampleBufferAssembler(self, didUpdateFormat: newFormat, info: info)
+                self.currentAC3FrameInfo = info
+                self.currentAACFrameInfo = nil
+                let codec: AudioStreamCodec = info.isEnhanced ? .eac3 : .ac3
+                delegate?.audioSampleBufferAssembler(self, didUpdateFormat: newFormat, codec: codec, sampleRate: info.sampleRate, channels: info.channelCount, bitrateKbps: info.bitrateKbps)
             } else {
                 delegate?.audioSampleBufferAssembler(self, didEncounterError: "Failed to create CMAudioFormatDescription for \(info.isEnhanced ? "E-AC-3" : "AC-3")")
                 return
@@ -46,16 +50,51 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
 
         guard let formatDesc = currentFormatDescription else { return }
 
-        // Create CMBlockBuffer
+        emitSampleBuffer(data: frame.data, formatDescription: formatDesc, pts: frame.pts, codec: info.isEnhanced ? .eac3 : .ac3, duration: info.duration)
+    }
+
+    public func ac3FrameParser(_ parser: AC3FrameParser, didEncounterError reason: String) {
+        delegate?.audioSampleBufferAssembler(self, didEncounterError: reason)
+    }
+
+    // MARK: - AACFrameParserDelegate
+
+    public func aacFrameParser(_ parser: AACADTSFrameParser, didEmitFrame frame: ParsedAACFrame) {
+        let info = frame.info
+
+        if currentFormatDescription == nil || currentAACFrameInfo != info {
+            if let newFormat = createAACFormatDescription(for: info) {
+                self.currentFormatDescription = newFormat
+                self.currentAACFrameInfo = info
+                self.currentAC3FrameInfo = nil
+                delegate?.audioSampleBufferAssembler(self, didUpdateFormat: newFormat, codec: .aac, sampleRate: info.sampleRate, channels: info.channelCount, bitrateKbps: 0)
+            } else {
+                delegate?.audioSampleBufferAssembler(self, didEncounterError: "Failed to create CMAudioFormatDescription for AAC")
+                return
+            }
+        }
+
+        guard let formatDesc = currentFormatDescription else { return }
+
+        emitSampleBuffer(data: frame.rawPayload, formatDescription: formatDesc, pts: frame.pts, codec: .aac, duration: info.duration)
+    }
+
+    public func aacFrameParser(_ parser: AACADTSFrameParser, didEncounterError reason: String) {
+        delegate?.audioSampleBufferAssembler(self, didEncounterError: reason)
+    }
+
+    // MARK: - SampleBuffer Construction
+
+    private func emitSampleBuffer(data: Data, formatDescription: CMAudioFormatDescription, pts: CMTime?, codec: AudioStreamCodec, duration: CMTime) {
         var blockBuffer: CMBlockBuffer?
         let status = CMBlockBufferCreateWithMemoryBlock(
             allocator: kCFAllocatorDefault,
             memoryBlock: nil,
-            blockLength: frame.data.count,
+            blockLength: data.count,
             blockAllocator: kCFAllocatorDefault,
             customBlockSource: nil,
             offsetToData: 0,
-            dataLength: frame.data.count,
+            dataLength: data.count,
             flags: 0,
             blockBufferOut: &blockBuffer
         )
@@ -65,26 +104,24 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
             return
         }
 
-        // Copy frame bytes into block buffer
-        frame.data.withUnsafeBytes { rawBuffer in
+        data.withUnsafeBytes { rawBuffer in
             if let base = rawBuffer.baseAddress {
                 CMBlockBufferReplaceDataBytes(
                     with: base,
                     blockBuffer: buffer,
                     offsetIntoDestination: 0,
-                    dataLength: frame.data.count
+                    dataLength: data.count
                 )
             }
         }
 
-        // Prepare packet descriptions and timing info
         var packetDesc = AudioStreamPacketDescription(
             mStartOffset: 0,
             mVariableFramesInPacket: 0,
-            mDataByteSize: UInt32(frame.data.count)
+            mDataByteSize: UInt32(data.count)
         )
 
-        let pts = frame.pts ?? .invalid
+        let presentationPTS = pts ?? .invalid
         var sampleBuffer: CMSampleBuffer?
         let sampleBufferStatus = withUnsafePointer(to: &packetDesc) { descPtr in
             CMAudioSampleBufferCreateWithPacketDescriptions(
@@ -93,9 +130,9 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
                 dataReady: true,
                 makeDataReadyCallback: nil,
                 refcon: nil,
-                formatDescription: formatDesc,
+                formatDescription: formatDescription,
                 sampleCount: 1,
-                presentationTimeStamp: pts,
+                presentationTimeStamp: presentationPTS,
                 packetDescriptions: descPtr,
                 sampleBufferOut: &sampleBuffer
             )
@@ -106,16 +143,12 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
             return
         }
 
-        delegate?.audioSampleBufferAssembler(self, didEmitSampleBuffer: sb, info: info)
+        delegate?.audioSampleBufferAssembler(self, didEmitSampleBuffer: sb, codec: codec, duration: duration)
     }
 
-    public func ac3FrameParser(_ parser: AC3FrameParser, didEncounterError reason: String) {
-        delegate?.audioSampleBufferAssembler(self, didEncounterError: reason)
-    }
+    // MARK: - Format Description Helpers
 
-    // MARK: - Format Description Helper
-
-    private func createAudioFormatDescription(for info: AC3FrameInfo) -> CMAudioFormatDescription? {
+    private func createAC3FormatDescription(for info: AC3FrameInfo) -> CMAudioFormatDescription? {
         let formatID: AudioFormatID = info.isEnhanced ? kAudioFormatEnhancedAC3 : kAudioFormatAC3
 
         var asbd = AudioStreamBasicDescription(
@@ -142,9 +175,37 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
             formatDescriptionOut: &format
         )
 
-        if status == noErr {
-            return format
+        return status == noErr ? format : nil
+    }
+
+    private func createAACFormatDescription(for info: AACFrameInfo) -> CMAudioFormatDescription? {
+        var asbd = AudioStreamBasicDescription(
+            mSampleRate: Float64(info.sampleRate),
+            mFormatID: kAudioFormatMPEG4AAC,
+            mFormatFlags: AudioFormatFlags(MPEG4ObjectID.AAC_LC.rawValue),
+            mBytesPerPacket: 0,
+            mFramesPerPacket: UInt32(info.samplesPerFrame),
+            mBytesPerFrame: 0,
+            mChannelsPerFrame: UInt32(info.channelCount),
+            mBitsPerChannel: 0,
+            mReserved: 0
+        )
+
+        var format: CMAudioFormatDescription?
+        let cookieData = info.audioSpecificConfig
+        let status = cookieData.withUnsafeBytes { rawCookie in
+            CMAudioFormatDescriptionCreate(
+                allocator: kCFAllocatorDefault,
+                asbd: &asbd,
+                layoutSize: 0,
+                layout: nil,
+                magicCookieSize: cookieData.count,
+                magicCookie: rawCookie.baseAddress,
+                extensions: nil,
+                formatDescriptionOut: &format
+            )
         }
-        return nil
+
+        return status == noErr ? format : nil
     }
 }

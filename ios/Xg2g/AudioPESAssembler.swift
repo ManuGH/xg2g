@@ -90,6 +90,7 @@ public struct PTS33BitNormalizer: Sendable {
 public final class AudioPESAssembler: @unchecked Sendable {
 
     private var buffersPerPID: [UInt16: Data] = [:]
+    private var normalizersPerPID: [UInt16: PTS33BitNormalizer] = [:]
     public weak var delegate: AudioPESAssemblerDelegate?
 
     public init() {}
@@ -97,8 +98,10 @@ public final class AudioPESAssembler: @unchecked Sendable {
     public func reset(pid: UInt16? = nil) {
         if let pid = pid {
             buffersPerPID.removeValue(forKey: pid)
+            normalizersPerPID.removeValue(forKey: pid)
         } else {
             buffersPerPID.removeAll(keepingCapacity: true)
+            normalizersPerPID.removeAll(keepingCapacity: true)
         }
     }
 
@@ -171,9 +174,13 @@ public final class AudioPESAssembler: @unchecked Sendable {
         guard validData.count >= headerEnd else { return }
 
         if (ptsDtsFlags == 0x02 || ptsDtsFlags == 0x03) && headerDataLength >= 5 {
-            let ptsVal = decode33BitTimestamp(data: validData, offset: 9)
-            pts90k = ptsVal
-            pts = CMTime(value: CMTimeValue(ptsVal), timescale: 90000)
+            let rawPTS = decode33BitTimestamp(data: validData, offset: 9)
+            if normalizersPerPID[pid] == nil {
+                normalizersPerPID[pid] = PTS33BitNormalizer()
+            }
+            let unwrappedPTS = normalizersPerPID[pid]!.unwrap(rawPTS: rawPTS)
+            pts90k = unwrappedPTS
+            pts = CMTime(value: CMTimeValue(unwrappedPTS), timescale: 90000)
         }
 
         let esData = Data(validData.dropFirst(headerEnd))

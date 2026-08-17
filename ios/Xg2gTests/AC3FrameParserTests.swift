@@ -215,9 +215,8 @@ struct AC3FrameParserTests {
     // MARK: - 7. Real DVB TS Stream End-to-End Audio Ingest
 
     @Test func parsesRealTSAudioIntoCMSampleBuffers() throws {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: "/tmp/vu_puls24_real.ts")) else {
-            return
-        }
+        let data = PULS24CaptureFixture.data
+        #expect(!data.isEmpty, "Embedded PULS24 capture fixture must not be empty")
 
         let tsParser = TSPacketParser()
         let pesAssembler = AudioPESAssembler()
@@ -298,8 +297,7 @@ private func makeAC3Frame(fscod: Int, frmsizecod: Int, bsid: Int, acmod: Int, lf
         // For acmod = 7 (3/2): bit 4-3 cmixlev, bit 2-1 surmixlev, bit 0 lfeon
         b6 |= 0x01 // LFE on
     } else if acmod == 2 && lfeon {
-        // For acmod = 2 (2/0): bit 4-3 dsurmod, bit 2 lfeon
-        b6 |= 0x04
+        b6 |= 0x01
     }
     frame[6] = b6
 
@@ -348,11 +346,11 @@ private final class MockSampleBufferSink: AudioSampleBufferAssemblerDelegate, @u
     var emittedSampleBuffers: [CMSampleBuffer] = []
     var errors: [String] = []
 
-    func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didUpdateFormat formatDescription: CMAudioFormatDescription, info: AC3FrameInfo) {
+    func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didUpdateFormat formatDescription: CMAudioFormatDescription, codec: AudioStreamCodec, sampleRate: Int, channels: Int, bitrateKbps: Int) {
         self.formatDescription = formatDescription
     }
 
-    func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, info: AC3FrameInfo) {
+    func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime) {
         emittedSampleBuffers.append(sampleBuffer)
     }
 
