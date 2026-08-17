@@ -11,6 +11,7 @@ import SwiftUI
 /// on a view nobody designed.
 struct RootView: View {
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model = AppModel()
 
     var body: some View {
@@ -30,6 +31,24 @@ struct RootView: View {
         .preferredColorScheme(.dark)
         .tint(Theme.Colors.accentAction)
         .task { await model.start() }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task { await model.handleAppBecameActive() }
+            }
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            // Periodic background heartbeat / EPG refresh while app is active in foreground
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                if scenePhase == .active && model.state == .ready {
+                    await model.refreshSchedule()
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task { await model.handleAppBecameActive() }
+        }
         .onContinueUserActivity(HandoffCoordinator.activityType) { userActivity in
             guard let serviceRef = HandoffCoordinator.extractServiceRef(from: userActivity) else { return }
             Task { @MainActor in

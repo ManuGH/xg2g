@@ -323,7 +323,7 @@ struct ChannelListView: View {
                                 .safeAreaPadding(.bottom, 80)
                             }
                             .refreshable {
-                                await model.loadChannels()
+                                await model.refreshLiveContent()
                             }
                         }
                     }

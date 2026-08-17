@@ -192,7 +192,7 @@ struct GuideView: View {
                             .safeAreaPadding(.bottom, 80)
                         }
                         .refreshable {
-                            await model.loadChannels()
+                            await model.refreshLiveContent()
                         }
                     }
                 }
@@ -312,6 +312,8 @@ struct GuideView: View {
             .task {
                 if model.fullEpg.isEmpty {
                     await model.loadChannels()
+                } else if let last = model.lastDataRefreshTime, Date().timeIntervalSince(last) > 300 {
+                    await model.refreshLiveContent()
                 }
             }
         }

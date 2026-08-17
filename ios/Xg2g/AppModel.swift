@@ -108,6 +108,7 @@ final class AppModel {
     private(set) var schedule: [String: NowNext] = [:]
     private(set) var fullEpg: [String: [NowNext.Entry]] = [:]
     private(set) var isLoadingChannels = false
+    private(set) var lastDataRefreshTime: Date?
 
     // MARK: - Recordings & Timers State
     private(set) var recordings: [Recording] = []
@@ -372,8 +373,21 @@ final class AppModel {
 
         switch filter {
         case .now:
+            if let now = scheduleItem?.now, now.start <= .now && now.end > .now {
+                return now
+            }
+            if let current = allShows.first(where: { $0.start <= .now && $0.end > .now }) {
+                return current
+            }
             return scheduleItem?.now
         case .next:
+            if let next = scheduleItem?.next, next.start >= .now {
+                return next
+            }
+            if let current = show(for: channel, at: .now),
+               let upcoming = allShows.first(where: { $0.start >= current.end }) {
+                return upcoming
+            }
             return scheduleItem?.next
         case .primeTimeTonight:
             let calendar = Calendar.current
@@ -628,6 +642,55 @@ final class AppModel {
         await loadChannels()
         await loadRecordings()
         await loadTimers()
+        lastDataRefreshTime = Date()
+    }
+
+    /// Called when the app returns from background/suspended state.
+    func handleAppBecameActive() async {
+        guard state == .ready else { return }
+
+        let now = Date()
+        let interval = lastDataRefreshTime.map { now.timeIntervalSince($0) } ?? Double.infinity
+
+        if channels.isEmpty {
+            await loadInitialData()
+            return
+        }
+
+        // If it has been more than 60 seconds (or overnight) since the last refresh, refresh live content
+        if interval >= 60 {
+            await refreshLiveContent()
+        }
+    }
+
+    /// Fast, comprehensive background refresh of Now/Next schedule, multi-day EPG, and DVR states.
+    func refreshLiveContent() async {
+        guard let channelRepository, state == .ready else { return }
+
+        _ = try? await session?.validSession()
+
+        // 1. Refresh live Now/Next immediately
+        let targets = channels.map(\.serviceRef)
+        if !targets.isEmpty {
+            if let updated = try? await channelRepository.nowNext(for: targets) {
+                schedule = updated
+            }
+        }
+
+        // 2. Refresh full EPG schedule
+        if let epgUpdated = try? await channelRepository.epgSchedule(bouquet: selectedBouquet?.name) {
+            fullEpg = epgUpdated
+        }
+
+        lastDataRefreshTime = Date()
+
+        // 3. Refresh timers and recordings in background
+        if let tr = timersRepository, let list = try? await tr.timers() {
+            timers = list
+        }
+        if let rr = recordingsRepository, let list = try? await rr.recordings() {
+            recordings = list
+        }
     }
 
     func loadBouquets() async {
@@ -657,6 +720,7 @@ final class AppModel {
             lastError = nil
             schedule = (try? await channelRepository.nowNext(for: loaded.map(\.serviceRef))) ?? [:]
             fullEpg = (try? await channelRepository.epgSchedule(bouquet: bouquet)) ?? [:]
+            lastDataRefreshTime = Date()
         } catch {
             handle(error)
         }
@@ -670,6 +734,7 @@ final class AppModel {
             for (ref, nn) in updated {
                 schedule[ref] = nn
             }
+            lastDataRefreshTime = Date()
         }
     }
 
