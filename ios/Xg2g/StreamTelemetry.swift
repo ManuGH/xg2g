@@ -114,4 +114,43 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
         duplicatePresentations = 0
         presentationJitterMs = 0
     }
+
+    public func toDictionary() -> [String: Any] {
+        return [
+            "ttfp_total_ms": ttfpTotalMs,
+            "ttfp_gpu_completed_ms": ttfpGpuCompletedMs,
+            "ttfp_rating": ttfpRating,
+            "ttfp_network_ms": ttfpNetworkMs,
+            "ttfp_psi_ms": ttfpPsiMs,
+            "ttfp_param_sets_ms": ttfpParamSetsMs,
+            "ttfp_idr_ms": ttfpIdrMs,
+            "ttfp_decode_ms": ttfpDecodeMs,
+            "ttfp_render_ms": ttfpRenderMs,
+            "ts_bitrate_kbps": tsBitrateKbps,
+            "video_pid": videoPID,
+            "continuity_errors": continuityErrors,
+            "pes_errors": pesErrors,
+            "codec": codec,
+            "resolution": "\(videoWidth)x\(videoHeight)",
+            "is_interlaced": isInterlaced,
+            "field_order": fieldOrder,
+            "source_frame_rate": sourceFrameRate,
+            "source_field_rate": sourceFieldRate,
+            "hw_decode_active": hwDecodeActive,
+            "vt_session_active": vtSessionActive,
+            "vt_deinterlace_accepted": vtDeinterlaceAccepted,
+            "decoded_fps": decodedFramesPerSec,
+            "pts_delta_ms": ptsProgressionMs,
+            "decode_errors": decodeErrors,
+            "top_fields_per_sec": topFieldsPerSec,
+            "bottom_fields_per_sec": bottomFieldsPerSec,
+            "fields_submitted_per_sec": fieldsSubmittedPerSec,
+            "field_cadence_ms": fieldCadenceMs,
+            "presentation_jitter_ms": presentationJitterMs,
+            "repeated_field_count": repeatedFieldCount,
+            "dropped_frames": droppedFrames,
+            "thermal_state": thermalState,
+            "memory_usage_mb": memoryUsageMB
+        ]
+    }
 }

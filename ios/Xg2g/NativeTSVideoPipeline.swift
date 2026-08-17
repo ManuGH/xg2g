@@ -58,6 +58,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         pesAssembler.delegate = self
         accessUnitAssembler.delegate = self
         decoder.delegate = self
+
+        TelemetryServer.shared.start()
+        TelemetryServer.shared.setTelemetryProvider { [weak self] in
+            return self?.telemetry.toDictionary() ?? [:]
+        }
     }
 
     deinit {
@@ -140,6 +145,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             let httpLog = "[1080i50-HTTP] Connected: Status \(httpResponse.statusCode) | Type: \(contentType) | Server: \(serverName)"
             print(httpLog)
             logger.notice("\(httpLog, privacy: .public)")
+            TelemetryServer.shared.log(httpLog)
 
             if httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 {
                 DispatchQueue.main.async { [weak self] in
@@ -180,6 +186,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 let qualityLog = "[1080i50-QUALITY] Bitrate: \(String(format: "%.1f", kbps)) kbps | VideoPID: \(self.telemetry.videoPID) | ContinuityErr: \(self.telemetry.continuityErrors) | PESErr: \(self.telemetry.pesErrors) | DecErrors: \(self.telemetry.decodeErrors)"
                 print(qualityLog)
                 logger.notice("\(qualityLog, privacy: .public)")
+                TelemetryServer.shared.log(qualityLog)
             }
             bytesReceived = 0
             lastBitrateCheck = now
@@ -243,6 +250,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let logMsg = "[1080i50-CODEC] Format: \(info.width)x\(info.height) | Interlaced: \(info.isInterlaced) | TFF: \(info.isTopFieldFirst)"
         print(logMsg)
         logger.notice("\(logMsg, privacy: .public)")
+        TelemetryServer.shared.log(logMsg)
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.telemetry.videoWidth = info.width
@@ -297,6 +305,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 let decLog = "[1080i50-DECODER] HW: \(self.telemetry.hwDecodeActive) | Decoded FPS: \(String(format: "%.1f", rate)) | PTS Delta: \(String(format: "%.1f", self.telemetry.ptsProgressionMs))ms"
                 print(decLog)
                 logger.notice("\(decLog, privacy: .public)")
+                TelemetryServer.shared.log(decLog)
             }
             decodedFrameCounter = 0
             lastDecodedRateCheck = now
@@ -371,6 +380,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             let ttfpLog = "[1080i50-TTFP] Total: \(String(format: "%.1f", totalMs))ms | Net: \(String(format: "%.1f", self.telemetry.ttfpNetworkMs))ms | PSI: \(String(format: "%.1f", self.telemetry.ttfpPsiMs))ms | Params: \(String(format: "%.1f", self.telemetry.ttfpParamSetsMs))ms | FirstAU: \(String(format: "%.1f", self.telemetry.ttfpIdrMs))ms | Dec: \(String(format: "%.1f", self.telemetry.ttfpDecodeMs))ms | Render: \(String(format: "%.1f", renderMs))ms"
             print(ttfpLog)
             logger.notice("\(ttfpLog, privacy: .public)")
+            TelemetryServer.shared.log(ttfpLog)
         }
     }
 
@@ -421,6 +431,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let sysLog = "[1080i50-SYSTEM] Thermal: \(thermalString) | RAM: \(String(format: "%.1f", memMB)) MB"
         print(sysLog)
         logger.notice("\(sysLog, privacy: .public)")
+        TelemetryServer.shared.log(sysLog)
     }
 
     private func stopSystemMonitoring() {
