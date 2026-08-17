@@ -55,20 +55,12 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     /// Configures and activates the system AVAudioSession for low-latency broadcast playback.
     public func activateAudioSession() {
         guard !isAudioSessionActive else { return }
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowBluetoothHFP, .allowAirPlay])
-            try session.setPreferredIOBufferDuration(0.05) // 50 ms jitter-resilient broadcast audio buffer
-            try session.setActive(true, options: [])
-            isAudioSessionActive = true
-            audioRenderer.isMuted = false
-            audioRenderer.volume = 1.0
-            logger.notice("[AudioRenderer] ✅ AVAudioSession activated (.playback / .moviePlayback)")
-            print("[AudioRenderer] ✅ AVAudioSession activated (.playback / .moviePlayback)")
-        } catch {
-            logger.error("[AudioRenderer] ❌ Failed to activate AVAudioSession: \(error.localizedDescription)")
-            print("[AudioRenderer] ❌ Failed to activate AVAudioSession: \(error.localizedDescription)")
-        }
+        AudioSessionManager.shared.configureForPlayback()
+        isAudioSessionActive = true
+        audioRenderer.isMuted = false
+        audioRenderer.volume = 1.0
+        logger.notice("[AudioRenderer] ✅ AVAudioSession activated via AudioSessionManager")
+        print("[AudioRenderer] ✅ AVAudioSession activated via AudioSessionManager")
     }
 
     /// Enqueues a parsed `CMSampleBuffer` (AC-3, E-AC-3, or AAC) for playback.

@@ -429,7 +429,7 @@ public final class MetalVideoView: UIView {
             if let first = fieldQueue.first {
                 let drift = first.ptsSeconds - currentStreamTime
                 if abs(drift) > 0.200 {
-                    CMTimebaseSetTime(sync.timebase, time: CMTime(seconds: first.ptsSeconds, preferredTimescale: 90000))
+                    sync.setRate(1.0, time: CMTime(seconds: first.ptsSeconds, preferredTimescale: 90000))
                     currentStreamTime = first.ptsSeconds
                 }
             }
