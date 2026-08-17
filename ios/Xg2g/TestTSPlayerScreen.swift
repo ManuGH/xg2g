@@ -30,6 +30,18 @@ public struct TestTSPlayerScreen: View {
                         hudHeader
 
                         Group {
+                            hudSection(title: "STARTUP GATES (Time-To-First-Picture)") {
+                                hudRow("Total TTFP", pipeline.telemetry.ttfpTotalMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpTotalMs) : "Measuring…", highlight: pipeline.telemetry.ttfpTotalMs <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
+                                hudRow("Performance Rating", pipeline.telemetry.ttfpRating, highlight: pipeline.telemetry.ttfpTotalMs <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
+                                hudRow("t0→t1: Request→TS Data", pipeline.telemetry.ttfpNetworkMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpNetworkMs) : "Waiting…")
+                                hudRow("t1→t2: TS→PAT/PMT", pipeline.telemetry.ttfpPsiMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpPsiMs) : "Waiting…")
+                                hudRow("t2→t3: PSI→SPS/PPS", pipeline.telemetry.ttfpParamSetsMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpParamSetsMs) : "Waiting…")
+                                hudRow("t3→t4: Params→First IDR", pipeline.telemetry.ttfpIdrMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpIdrMs) : "Waiting…")
+                                hudRow("t4→t5: IDR→Decoded", pipeline.telemetry.ttfpDecodeMs > 0 ? String(format: "%.1f ms (≤100ms)", pipeline.telemetry.ttfpDecodeMs) : "Waiting…", highlight: pipeline.telemetry.ttfpDecodeMs <= 100.0 && pipeline.telemetry.ttfpDecodeMs > 0)
+                                hudRow("t5→t6: Decoded→Display", pipeline.telemetry.ttfpRenderMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpRenderMs) : "Waiting…")
+                                hudRow("Early Glitches (2s)", "\(pipeline.telemetry.earlyStabilityIssues)", alert: pipeline.telemetry.earlyStabilityIssues > 0)
+                            }
+
                             hudSection(title: "INPUT") {
                                 hudRow("TS Bitrate", String(format: "%.1f kbps", pipeline.telemetry.tsBitrateKbps))
                                 hudRow("Video PID", pipeline.telemetry.videoPID > 0 ? String(format: "0x%04X (%d)", pipeline.telemetry.videoPID, pipeline.telemetry.videoPID) : "Searching…")

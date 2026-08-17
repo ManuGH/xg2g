@@ -32,6 +32,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var systemMonitoringTimer: Timer?
     private var lastDecodedPTS: CMTime = .invalid
 
+    // TTFP Stage Timestamps
+    private var requestStartTime: CFTimeInterval = 0
+    private var firstDataTime: CFTimeInterval = 0
+    private var psiParsedTime: CFTimeInterval = 0
+    private var paramsReadyTime: CFTimeInterval = 0
+    private var firstIdrTime: CFTimeInterval = 0
+    private var firstDecodedTime: CFTimeInterval = 0
+    private var firstPictureDeliveredTime: CFTimeInterval = 0
+
     public var useNativeVTDeinterlace: Bool {
         get { decoder.useNativeVTDeinterlace }
         set {
@@ -56,6 +65,22 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         stopStreaming()
         telemetry.reset()
         lastDecodedPTS = .invalid
+
+        requestStartTime = CACurrentMediaTime()
+        firstDataTime = 0
+        psiParsedTime = 0
+        paramsReadyTime = 0
+        firstIdrTime = 0
+        firstDecodedTime = 0
+        firstPictureDeliveredTime = 0
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.renderView?.resetForChannelZap()
+            self.renderView?.onFirstFrameRendered = { [weak self] in
+                self?.handleFirstFrameRendered()
+            }
+        }
 
         let config = URLSessionConfiguration.default
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -90,6 +115,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - URLSessionDataDelegate (Streaming Ingest)
 
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        if firstDataTime == 0 && requestStartTime > 0 {
+            firstDataTime = CACurrentMediaTime()
+            let netMs = (firstDataTime - requestStartTime) * 1000.0
+            DispatchQueue.main.async { [weak self] in
+                self?.telemetry.ttfpNetworkMs = netMs
+            }
+        }
+
         bytesReceived += data.count
         let now = Date()
         if now.timeIntervalSince(lastBitrateCheck) >= 1.0 {
@@ -108,6 +141,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - TSPacketParserDelegate
 
     public func tsParser(_ parser: TSPacketParser, didDiscoverVideoPID pid: UInt16) {
+        if psiParsedTime == 0 {
+            psiParsedTime = CACurrentMediaTime()
+            let base = firstDataTime > 0 ? firstDataTime : requestStartTime
+            let psiMs = (psiParsedTime - base) * 1000.0
+            DispatchQueue.main.async { [weak self] in
+                self?.telemetry.ttfpPsiMs = psiMs
+            }
+        }
+
         DispatchQueue.main.async { [weak self] in
             self?.telemetry.videoPID = pid
         }
@@ -138,6 +180,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - H264AccessUnitAssemblerDelegate
 
     public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
+        if paramsReadyTime == 0 {
+            paramsReadyTime = CACurrentMediaTime()
+            let base = psiParsedTime > 0 ? psiParsedTime : (firstDataTime > 0 ? firstDataTime : requestStartTime)
+            let paramMs = (paramsReadyTime - base) * 1000.0
+            DispatchQueue.main.async { [weak self] in
+                self?.telemetry.ttfpParamSetsMs = paramMs
+            }
+        }
+
         decoder.configure(with: formatDescription)
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -150,12 +201,30 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, isTopFieldFirst: Bool) {
+        if isIDR && firstIdrTime == 0 {
+            firstIdrTime = CACurrentMediaTime()
+            let base = paramsReadyTime > 0 ? paramsReadyTime : (psiParsedTime > 0 ? psiParsedTime : requestStartTime)
+            let idrMs = (firstIdrTime - base) * 1000.0
+            DispatchQueue.main.async { [weak self] in
+                self?.telemetry.ttfpIdrMs = idrMs
+            }
+        }
+
         decoder.decode(sampleBuffer: sampleBuffer, isTopFieldFirst: isTopFieldFirst)
     }
 
     // MARK: - HardwareVideoDecoderDelegate
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEmitFrame frame: DecodedVideoFrame) {
+        if firstDecodedTime == 0 {
+            firstDecodedTime = CACurrentMediaTime()
+            let base = firstIdrTime > 0 ? firstIdrTime : (paramsReadyTime > 0 ? paramsReadyTime : requestStartTime)
+            let decMs = (firstDecodedTime - base) * 1000.0
+            DispatchQueue.main.async { [weak self] in
+                self?.telemetry.ttfpDecodeMs = decMs
+            }
+        }
+
         decodedFrameCounter += 1
         let now = Date()
         if now.timeIntervalSince(lastDecodedRateCheck) >= 1.0 {
@@ -198,7 +267,42 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEncounterDecodeError error: OSStatus) {
         DispatchQueue.main.async { [weak self] in
-            self?.telemetry.decodeErrors += 1
+            guard let self = self else { return }
+            self.telemetry.decodeErrors += 1
+            if self.firstPictureDeliveredTime > 0 && CACurrentMediaTime() - self.firstPictureDeliveredTime <= 2.0 {
+                self.telemetry.earlyStabilityIssues += 1
+            }
+        }
+    }
+
+    // MARK: - TTFP Completion Handler
+
+    private func handleFirstFrameRendered() {
+        guard firstPictureDeliveredTime == 0, requestStartTime > 0 else { return }
+        firstPictureDeliveredTime = CACurrentMediaTime()
+        let totalMs = (firstPictureDeliveredTime - requestStartTime) * 1000.0
+        let renderBase = firstDecodedTime > 0 ? firstDecodedTime : (firstIdrTime > 0 ? firstIdrTime : requestStartTime)
+        let renderMs = (firstPictureDeliveredTime - renderBase) * 1000.0
+
+        let rating: String
+        if totalMs <= 800.0 {
+            rating = "🎯 Zielwert (≤ 800 ms)"
+        } else if totalMs <= 1200.0 {
+            rating = "🟢 Gut (≤ 1.2 s)"
+        } else if totalMs <= 1500.0 {
+            rating = "🟡 Noch gut (≤ 1.5 s)"
+        } else if totalMs <= 2000.0 {
+            rating = "🟠 Optimierungsbedarf (> 1.5 s)"
+        } else {
+            rating = "🔴 Inakzeptabel (> 2.0 s)"
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.telemetry.ttfpTotalMs = totalMs
+            self.telemetry.ttfpRenderMs = renderMs
+            self.telemetry.ttfpRating = rating
+            self.telemetry.isFirstPicturePresented = true
         }
     }
 

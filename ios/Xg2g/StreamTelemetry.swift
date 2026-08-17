@@ -7,6 +7,18 @@ import Foundation
 /// Comprehensive live telemetry metrics for the native DVB-TS VideoToolbox + Metal pipeline.
 public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
 
+    // MARK: - TTFP (Time-to-First-Picture) & STARTUP GATES
+    @Published public var ttfpTotalMs: Double = 0.0
+    @Published public var ttfpRating: String = "Pending…"
+    @Published public var isFirstPicturePresented: Bool = false
+    @Published public var ttfpNetworkMs: Double = 0.0      // t0 -> t1: Request sent -> First TS packet
+    @Published public var ttfpPsiMs: Double = 0.0          // t1 -> t2: First TS -> PAT/PMT/Video PID known
+    @Published public var ttfpParamSetsMs: Double = 0.0    // t2 -> t3: Video PID -> SPS/PPS ready
+    @Published public var ttfpIdrMs: Double = 0.0          // t3 -> t4: SPS/PPS -> First complete IDR AU
+    @Published public var ttfpDecodeMs: Double = 0.0       // t4 -> t5: IDR AU -> VideoToolbox decoded frame
+    @Published public var ttfpRenderMs: Double = 0.0       // t5 -> t6: Decoded frame -> Metal Display presentation
+    @Published public var earlyStabilityIssues: Int = 0    // Drops or glitches in first 2 seconds
+
     // MARK: - INPUT Metrics
     @Published public var tsBitrateKbps: Double = 0.0
     @Published public var videoPID: UInt16 = 0
@@ -51,6 +63,16 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     public init() {}
 
     public func reset() {
+        ttfpTotalMs = 0
+        ttfpRating = "Pending…"
+        isFirstPicturePresented = false
+        ttfpNetworkMs = 0
+        ttfpPsiMs = 0
+        ttfpParamSetsMs = 0
+        ttfpIdrMs = 0
+        ttfpDecodeMs = 0
+        ttfpRenderMs = 0
+        earlyStabilityIssues = 0
         tsBitrateKbps = 0
         videoPID = 0
         continuityErrors = 0

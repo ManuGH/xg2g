@@ -31,8 +31,10 @@ public final class MetalVideoView: UIView {
     private var currentFieldIsTop: Bool = true
     private var fieldCycleCount: Int = 0
 
-    // Telemetry tracking
+    // Telemetry tracking & Startup gates
     public var telemetry: StreamTelemetry?
+    public var onFirstFrameRendered: (@MainActor () -> Void)?
+    private var hasReportedFirstFrame: Bool = false
     private var lastDisplayTimestamp: CFTimeInterval = 0
     private var callbackCount: Int = 0
     private var presentationCount: Int = 0
@@ -40,6 +42,12 @@ public final class MetalVideoView: UIView {
     private var jitterAccumulator: Double = 0
     private var jitterSampleCount: Int = 0
     private var fieldCadenceAccumulator: Double = 0
+
+    public func resetForChannelZap() {
+        frameQueue.clear()
+        hasReportedFirstFrame = false
+        // Keep currentFrame to avoid black flash between channel switches
+    }
 
     public var metalLayer: CAMetalLayer {
         return layer as! CAMetalLayer
@@ -230,6 +238,10 @@ public final class MetalVideoView: UIView {
         if let frame = frameToRender {
             renderPixelBuffer(frame.pixelBuffer, isTopField: fieldIsTop)
             presentationCount += 1
+            if !hasReportedFirstFrame {
+                hasReportedFirstFrame = true
+                onFirstFrameRendered?()
+            }
         }
 
         // Periodic telemetry calculation (every 1 second)
@@ -352,5 +364,11 @@ private final class ThreadSafeFrameQueue: @unchecked Sendable {
         defer { lock.unlock() }
         guard !queue.isEmpty else { return nil }
         return queue.removeFirst()
+    }
+
+    func clear() {
+        lock.lock()
+        defer { lock.unlock() }
+        queue.removeAll(keepingCapacity: true)
     }
 }
