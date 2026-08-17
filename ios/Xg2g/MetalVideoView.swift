@@ -34,10 +34,15 @@ public final class MetalVideoView: UIView {
     // Telemetry tracking & Startup gates
     public var telemetry: StreamTelemetry?
     public var onFirstFrameRendered: (@MainActor () -> Void)?
+    public var onFirstFrameActuallyPresentedOnScreen: (@MainActor (Double) -> Void)?
     private var hasReportedFirstFrame: Bool = false
     private var lastDisplayTimestamp: CFTimeInterval = 0
     private var callbackCount: Int = 0
     private var presentationCount: Int = 0
+    private var topFieldPresentationCount: Int = 0
+    private var bottomFieldPresentationCount: Int = 0
+    private var repeatedFieldPresentationCount: Int = 0
+    private var cumulativeRepeatedFieldCount: Int = 0
     private var lastTelemetryUpdate: CFTimeInterval = 0
     private var jitterAccumulator: Double = 0
     private var jitterSampleCount: Int = 0
@@ -221,24 +226,51 @@ public final class MetalVideoView: UIView {
         lastDisplayTimestamp = now
 
         // Advance to next frame or next field
+        var isRepeatedField = false
+        var renderedFieldIsTop = false
+
         if currentFrame == nil || fieldCycleCount >= 2 {
             if let nextFrame = frameQueue.pop() {
                 currentFrame = nextFrame
                 fieldCycleCount = 0
                 currentFieldIsTop = nextFrame.isTopFieldFirst
+                renderedFieldIsTop = nextFrame.isTopFieldFirst
+            } else if currentFrame != nil {
+                // Queue underrun: repeating previous field to avoid black frame
+                isRepeatedField = true
+                renderedFieldIsTop = currentFieldIsTop
             }
         } else {
-            // In 1080i50, each decoded frame yields 2 fields (50 fields/s)
+            // Normal 2nd field of the current decoded frame (50 fields/s)
             currentFieldIsTop.toggle()
+            renderedFieldIsTop = currentFieldIsTop
         }
+
         let frameToRender = currentFrame
-        let fieldIsTop = currentFieldIsTop
         fieldCycleCount += 1
 
         if let frame = frameToRender {
-            renderPixelBuffer(frame.pixelBuffer, isTopField: fieldIsTop)
+            let isFirst = !hasReportedFirstFrame
+            renderPixelBuffer(
+                frame.pixelBuffer,
+                isTopField: renderedFieldIsTop,
+                isTopFieldFirst: frame.isTopFieldFirst,
+                isFirstFrame: isFirst
+            )
+
             presentationCount += 1
-            if !hasReportedFirstFrame {
+            if isRepeatedField {
+                repeatedFieldPresentationCount += 1
+                cumulativeRepeatedFieldCount += 1
+            } else {
+                if renderedFieldIsTop {
+                    topFieldPresentationCount += 1
+                } else {
+                    bottomFieldPresentationCount += 1
+                }
+            }
+
+            if isFirst {
                 hasReportedFirstFrame = true
                 onFirstFrameRendered?()
             }
@@ -249,6 +281,9 @@ public final class MetalVideoView: UIView {
             let elapsed = now - lastTelemetryUpdate
             let actualCallbacks = Double(callbackCount) / elapsed
             let actualPresentations = Double(presentationCount) / elapsed
+            let actualTopFields = Double(topFieldPresentationCount) / elapsed
+            let actualBottomFields = Double(bottomFieldPresentationCount) / elapsed
+            let actualRepeatedFields = Double(repeatedFieldPresentationCount) / elapsed
             let avgJitter = jitterSampleCount > 0 ? (jitterAccumulator / Double(jitterSampleCount)) : 0.0
             let avgCadence = jitterSampleCount > 0 ? (fieldCadenceAccumulator / Double(jitterSampleCount)) : 0.0
 
@@ -257,14 +292,22 @@ public final class MetalVideoView: UIView {
                 telemetry.displayCallbacksPerSec = actualCallbacks
                 telemetry.presentedFramesPerSec = actualPresentations
                 telemetry.generatedFieldsPerSec = actualPresentations
+                telemetry.topFieldsPerSec = actualTopFields
+                telemetry.bottomFieldsPerSec = actualBottomFields
+                telemetry.repeatedFieldsPerSec = actualRepeatedFields
+                telemetry.repeatedFieldCount = self.cumulativeRepeatedFieldCount
+                telemetry.fieldsSubmittedPerSec = actualPresentations
                 telemetry.presentationJitterMs = avgJitter
                 telemetry.fieldCadenceMs = avgCadence
-                telemetry.sourceFieldRate = actualPresentations
-                telemetry.sourceFrameRate = actualPresentations / 2.0
+                telemetry.sourceFieldRate = actualTopFields + actualBottomFields
+                telemetry.sourceFrameRate = (actualTopFields + actualBottomFields) / 2.0
             }
 
             callbackCount = 0
             presentationCount = 0
+            topFieldPresentationCount = 0
+            bottomFieldPresentationCount = 0
+            repeatedFieldPresentationCount = 0
             jitterAccumulator = 0
             jitterSampleCount = 0
             fieldCadenceAccumulator = 0
@@ -272,7 +315,7 @@ public final class MetalVideoView: UIView {
         }
     }
 
-    private func renderPixelBuffer(_ pixelBuffer: CVPixelBuffer, isTopField: Bool) {
+    private func renderPixelBuffer(_ pixelBuffer: CVPixelBuffer, isTopField: Bool, isTopFieldFirst: Bool, isFirstFrame: Bool) {
         guard let cache = textureCache,
               let pipeline = pipelineState,
               let drawable = metalLayer.nextDrawable(),
@@ -330,13 +373,22 @@ public final class MetalVideoView: UIView {
         var params = DeinterlaceShaderParams(
             isTopField: isTopField ? 1 : 0,
             isInterlaced: 1, // 1080i
-            isTopFieldFirst: 1,
+            isTopFieldFirst: isTopFieldFirst ? 1 : 0,
             frameHeight: Float(height)
         )
         encoder.setFragmentBytes(&params, length: MemoryLayout<DeinterlaceShaderParams>.size, index: 0)
 
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
+
+        if isFirstFrame {
+            commandBuffer.addCompletedHandler { [weak self] _ in
+                let gpuTime = CACurrentMediaTime()
+                DispatchQueue.main.async {
+                    self?.onFirstFrameActuallyPresentedOnScreen?(gpuTime)
+                }
+            }
+        }
 
         commandBuffer.present(drawable)
         commandBuffer.commit()

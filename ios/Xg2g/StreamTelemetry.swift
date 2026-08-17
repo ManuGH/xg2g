@@ -8,7 +8,8 @@ import Foundation
 public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
 
     // MARK: - TTFP (Time-to-First-Picture) & STARTUP GATES
-    @Published public var ttfpTotalMs: Double = 0.0
+    @Published public var ttfpTotalMs: Double = 0.0        // t0 -> t6: Request -> Metal Present Submitted
+    @Published public var ttfpScreenMs: Double = 0.0       // t0 -> t6_screen: Request -> Hardware VSync Display Presentation
     @Published public var ttfpRating: String = "Pending…"
     @Published public var isFirstPicturePresented: Bool = false
     @Published public var ttfpNetworkMs: Double = 0.0      // t0 -> t1: Request sent -> First TS packet
@@ -16,7 +17,7 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     @Published public var ttfpParamSetsMs: Double = 0.0    // t2 -> t3: Video PID -> SPS/PPS ready
     @Published public var ttfpIdrMs: Double = 0.0          // t3 -> t4: SPS/PPS -> First complete IDR AU
     @Published public var ttfpDecodeMs: Double = 0.0       // t4 -> t5: IDR AU -> VideoToolbox decoded frame
-    @Published public var ttfpRenderMs: Double = 0.0       // t5 -> t6: Decoded frame -> Metal Display presentation
+    @Published public var ttfpRenderMs: Double = 0.0       // t5 -> t6: Decoded frame -> Metal Display Submit
     @Published public var earlyStabilityIssues: Int = 0    // Drops or glitches in first 2 seconds
 
     // MARK: - INPUT Metrics
@@ -44,10 +45,15 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     @Published public var decodeErrors: Int = 0
     @Published public var activeDecoderMode: String = "Metal Shader (Path A)" // or "VideoToolbox Native (Path B)"
 
-    // MARK: - RENDER Metrics
+    // MARK: - RENDER (Independent Field Presentation Counters)
+    @Published public var topFieldsPerSec: Double = 0.0        // ~25.0 /s (Top Fields)
+    @Published public var bottomFieldsPerSec: Double = 0.0     // ~25.0 /s (Bottom Fields)
+    @Published public var repeatedFieldsPerSec: Double = 0.0   // 0.0 /s (Repeated fields)
+    @Published public var repeatedFieldCount: Int = 0          // Cumulative repeats
+    @Published public var fieldsSubmittedPerSec: Double = 0.0  // ~50.0 fps total
     @Published public var generatedFieldsPerSec: Double = 0.0
     @Published public var presentedFramesPerSec: Double = 0.0
-    @Published public var fieldCadenceMs: Double = 0.0 // ~20.0 ms between field presentations
+    @Published public var fieldCadenceMs: Double = 0.0         // ~20.0 ms between field presentations
     @Published public var displayCallbacksPerSec: Double = 0.0
     @Published public var droppedFrames: Int = 0
     @Published public var lateFrames: Int = 0
@@ -64,6 +70,7 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
 
     public func reset() {
         ttfpTotalMs = 0
+        ttfpScreenMs = 0
         ttfpRating = "Pending…"
         isFirstPicturePresented = false
         ttfpNetworkMs = 0
@@ -89,6 +96,11 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
         decodedFramesPerSec = 0
         ptsProgressionMs = 0
         decodeErrors = 0
+        topFieldsPerSec = 0
+        bottomFieldsPerSec = 0
+        repeatedFieldsPerSec = 0
+        repeatedFieldCount = 0
+        fieldsSubmittedPerSec = 0
         generatedFieldsPerSec = 0
         presentedFramesPerSec = 0
         fieldCadenceMs = 0

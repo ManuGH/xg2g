@@ -31,14 +31,14 @@ public struct TestTSPlayerScreen: View {
 
                         Group {
                             hudSection(title: "STARTUP GATES (Time-To-First-Picture)") {
-                                hudRow("Total TTFP", pipeline.telemetry.ttfpTotalMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpTotalMs) : "Measuring…", highlight: pipeline.telemetry.ttfpTotalMs <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
+                                hudRow("TTFP (On-Screen VSync)", pipeline.telemetry.ttfpScreenMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpScreenMs) : (pipeline.telemetry.ttfpTotalMs > 0 ? String(format: "%.1f ms (Submitted)", pipeline.telemetry.ttfpTotalMs) : "Measuring…"), highlight: (pipeline.telemetry.ttfpScreenMs > 0 ? pipeline.telemetry.ttfpScreenMs : pipeline.telemetry.ttfpTotalMs) <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
                                 hudRow("Performance Rating", pipeline.telemetry.ttfpRating, highlight: pipeline.telemetry.ttfpTotalMs <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
                                 hudRow("t0→t1: Request→TS Data", pipeline.telemetry.ttfpNetworkMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpNetworkMs) : "Waiting…")
                                 hudRow("t1→t2: TS→PAT/PMT", pipeline.telemetry.ttfpPsiMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpPsiMs) : "Waiting…")
                                 hudRow("t2→t3: PSI→SPS/PPS", pipeline.telemetry.ttfpParamSetsMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpParamSetsMs) : "Waiting…")
                                 hudRow("t3→t4: Params→First IDR", pipeline.telemetry.ttfpIdrMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpIdrMs) : "Waiting…")
                                 hudRow("t4→t5: IDR→Decoded", pipeline.telemetry.ttfpDecodeMs > 0 ? String(format: "%.1f ms (≤100ms)", pipeline.telemetry.ttfpDecodeMs) : "Waiting…", highlight: pipeline.telemetry.ttfpDecodeMs <= 100.0 && pipeline.telemetry.ttfpDecodeMs > 0)
-                                hudRow("t5→t6: Decoded→Display", pipeline.telemetry.ttfpRenderMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpRenderMs) : "Waiting…")
+                                hudRow("t5→t6: Decoded→Submit", pipeline.telemetry.ttfpRenderMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpRenderMs) : "Waiting…")
                                 hudRow("Early Glitches (2s)", "\(pipeline.telemetry.earlyStabilityIssues)", alert: pipeline.telemetry.earlyStabilityIssues > 0)
                             }
 
@@ -69,9 +69,11 @@ public struct TestTSPlayerScreen: View {
                                 hudRow("Pipeline Mode", pipeline.telemetry.activeDecoderMode)
                             }
 
-                            hudSection(title: "RENDER (Metal 50p Presentation)") {
-                                hudRow("Generated Fields", String(format: "%.1f fields/s", pipeline.telemetry.generatedFieldsPerSec))
-                                hudRow("Presented Frames", String(format: "%.1f fps", pipeline.telemetry.presentedFramesPerSec), highlight: abs(pipeline.telemetry.presentedFramesPerSec - 50.0) < 2.0)
+                            hudSection(title: "RENDER (Metal 50p Field Presentation)") {
+                                hudRow("Top Fields", String(format: "%.1f /s (~25)", pipeline.telemetry.topFieldsPerSec), highlight: abs(pipeline.telemetry.topFieldsPerSec - 25.0) < 2.0)
+                                hudRow("Bottom Fields", String(format: "%.1f /s (~25)", pipeline.telemetry.bottomFieldsPerSec), highlight: abs(pipeline.telemetry.bottomFieldsPerSec - 25.0) < 2.0)
+                                hudRow("Repeated Fields", String(format: "%.1f /s (Total: %d)", pipeline.telemetry.repeatedFieldsPerSec, pipeline.telemetry.repeatedFieldCount), alert: pipeline.telemetry.repeatedFieldCount > 0)
+                                hudRow("Fields Submitted", String(format: "%.1f fps", pipeline.telemetry.fieldsSubmittedPerSec), highlight: abs(pipeline.telemetry.fieldsSubmittedPerSec - 50.0) < 2.0)
                                 hudRow("Field Cadence", pipeline.telemetry.fieldCadenceMs > 0 ? String(format: "%.2f ms", pipeline.telemetry.fieldCadenceMs) : "20.00 ms (Target)", highlight: abs(pipeline.telemetry.fieldCadenceMs - 20.0) < 2.0)
                                 hudRow("Display Callbacks", String(format: "%.1f /s", pipeline.telemetry.displayCallbacksPerSec))
                                 hudRow("Dropped Frames", "\(pipeline.telemetry.droppedFrames)", alert: pipeline.telemetry.droppedFrames > 0)

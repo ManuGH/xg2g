@@ -80,6 +80,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             self.renderView?.onFirstFrameRendered = { [weak self] in
                 self?.handleFirstFrameRendered()
             }
+            self.renderView?.onFirstFrameActuallyPresentedOnScreen = { [weak self] screenTime in
+                self?.handleFirstFrameActuallyPresented(screenTimestamp: screenTime)
+            }
         }
 
         let config = URLSessionConfiguration.default
@@ -303,6 +306,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             self.telemetry.ttfpRenderMs = renderMs
             self.telemetry.ttfpRating = rating
             self.telemetry.isFirstPicturePresented = true
+        }
+    }
+
+    private func handleFirstFrameActuallyPresented(screenTimestamp: Double) {
+        guard requestStartTime > 0 else { return }
+        let screenMs = (screenTimestamp - requestStartTime) * 1000.0
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.telemetry.ttfpScreenMs = screenMs
         }
     }
 
