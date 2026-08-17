@@ -29,6 +29,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var lastDecodedRateCheck: Date = Date()
     private var bytesReceived: Int = 0
     private var lastBitrateCheck: Date = Date()
+    private var systemMonitoringTimer: Timer?
 
     public var useNativeVTDeinterlace: Bool {
         get { decoder.useNativeVTDeinterlace }
@@ -44,6 +45,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         pesAssembler.delegate = self
         accessUnitAssembler.delegate = self
         decoder.delegate = self
+    }
+
+    deinit {
+        stopStreaming()
     }
 
     public func startStreaming(url: URL) {
@@ -71,6 +76,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         streamTask = nil
         urlSession?.invalidateAndCancel()
         urlSession = nil
+
+        stopSystemMonitoring()
 
         tsParser.reset()
         pesAssembler.reset()
@@ -116,8 +123,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     // MARK: - PESPacketAssemblerDelegate
 
-    public func pesAssembler(_ assembler: PESPacketAssembler, didEmitVideoUnit unit: PESVideoAccessUnit) {
-        accessUnitAssembler.process(unit: unit)
+    public func pesAssembler(_ assembler: PESPacketAssembler, didEmitVideoPayload payload: PESVideoData) {
+        accessUnitAssembler.feed(payload: payload)
     }
 
     public func pesAssembler(_ assembler: PESPacketAssembler, didEncounterPESError reason: String) {
@@ -168,6 +175,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
+    public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeVTDeinterlaceAccepted isAccepted: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            self?.telemetry.vtDeinterlaceAccepted = isAccepted
+        }
+    }
+
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEncounterDecodeError error: OSStatus) {
         DispatchQueue.main.async { [weak self] in
             self?.telemetry.decodeErrors += 1
@@ -177,31 +190,40 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - System Telemetry Monitoring
 
     private func startSystemMonitoring() {
-        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        stopSystemMonitoring()
+        DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            let state = ProcessInfo.processInfo.thermalState
-            let thermalString: String
-            switch state {
-            case .nominal: thermalString = "Nominal 🟢"
-            case .fair: thermalString = "Fair 🟡"
-            case .serious: thermalString = "Serious 🟠"
-            case .critical: thermalString = "Critical 🔴"
-            @unknown default: thermalString = "Unknown"
-            }
-
-            var info = mach_task_basic_info()
-            var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-            let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
-                $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                    task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            self.systemMonitoringTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                let state = ProcessInfo.processInfo.thermalState
+                let thermalString: String
+                switch state {
+                case .nominal: thermalString = "Nominal 🟢"
+                case .fair: thermalString = "Fair 🟡"
+                case .serious: thermalString = "Serious 🟠"
+                case .critical: thermalString = "Critical 🔴"
+                @unknown default: thermalString = "Unknown"
                 }
-            }
-            let memMB = (kerr == KERN_SUCCESS) ? Double(info.resident_size) / (1024.0 * 1024.0) : 0.0
 
-            DispatchQueue.main.async {
+                var info = mach_task_basic_info()
+                var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+                let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
+                    $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                        task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+                    }
+                }
+                let memMB = (kerr == KERN_SUCCESS) ? Double(info.resident_size) / (1024.0 * 1024.0) : 0.0
+
                 self.telemetry.thermalState = thermalString
                 self.telemetry.memoryUsageMB = memMB
             }
+        }
+    }
+
+    private func stopSystemMonitoring() {
+        DispatchQueue.main.async { [weak self] in
+            self?.systemMonitoringTimer?.invalidate()
+            self?.systemMonitoringTimer = nil
         }
     }
 }

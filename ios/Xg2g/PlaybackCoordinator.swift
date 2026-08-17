@@ -162,7 +162,7 @@ actor PlaybackCoordinator {
 
         let ticket = try await mintTicket(for: sessionID)
 
-        guard let playlistURL = playlistURL(for: sessionID, ticket: ticket) else {
+        guard let playlistURL = playlistURL(for: sessionID) else {
             throw Failure.unusableStreamURL
         }
 
@@ -247,15 +247,9 @@ actor PlaybackCoordinator {
 
     /// The playlist lives under the API base like any other resource, so it is
     /// built the same way and checked against the same containment boundary.
-    private func playlistURL(for sessionID: String, ticket: PlaybackTicket? = nil) -> URL? {
-        var components = URLComponents(
-            url: address.apiBaseURL.appendingPathComponent("sessions/\(sessionID)/hls/index.m3u8"),
-            resolvingAgainstBaseURL: true
-        )
-        if let ticket {
-            components?.queryItems = [URLQueryItem(name: "ticket", value: ticket.value)]
-        }
-        guard let url = components?.url, address.apiScope.contains(url) else { return nil }
+    private func playlistURL(for sessionID: String) -> URL? {
+        let url = address.apiBaseURL.appendingPathComponent("sessions/\(sessionID)/hls/index.m3u8")
+        guard address.apiScope.contains(url) else { return nil }
         return url
     }
 

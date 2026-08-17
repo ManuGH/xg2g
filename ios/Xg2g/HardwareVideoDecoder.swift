@@ -15,6 +15,7 @@ public struct DecodedVideoFrame: @unchecked Sendable {
 public protocol HardwareVideoDecoderDelegate: AnyObject, Sendable {
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEmitFrame frame: DecodedVideoFrame)
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeHWActiveState isHWActive: Bool)
+    func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeVTDeinterlaceAccepted isAccepted: Bool)
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEncounterDecodeError error: OSStatus)
 }
 
@@ -90,11 +91,22 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
             return
         }
 
-        // Apply Path B native VideoToolbox deinterlace property if requested
+        // Apply Path B native VideoToolbox deinterlace property if requested and verify
+        var isVTDeinterlaceAccepted = false
         if useNativeVTDeinterlace {
             let deinterlacePropKey = "DeinterlaceMode" as CFString
             let deinterlacePropVal = "Temporal" as CFString
-            VTSessionSetProperty(activeSession, key: deinterlacePropKey, value: deinterlacePropVal)
+            let deintStatus = VTSessionSetProperty(activeSession, key: deinterlacePropKey, value: deinterlacePropVal)
+            if deintStatus == noErr {
+                var readVal: CFTypeRef?
+                let copyStatus = VTSessionCopyProperty(activeSession, key: deinterlacePropKey, allocator: kCFAllocatorDefault, valueOut: &readVal)
+                if copyStatus == noErr, let val = readVal, CFGetTypeID(val) == CFStringGetTypeID() {
+                    let str = unsafeBitCast(val, to: CFString.self) as String
+                    if str == "Temporal" || str == "VerticalFilter" {
+                        isVTDeinterlaceAccepted = true
+                    }
+                }
+            }
         }
 
         // Verify if Hardware Acceleration is active
@@ -116,6 +128,7 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 
         self.decompressionSession = activeSession
         delegate?.hardwareDecoder(self, didChangeHWActiveState: isHWActive)
+        delegate?.hardwareDecoder(self, didChangeVTDeinterlaceAccepted: isVTDeinterlaceAccepted)
     }
 
     private func invalidateSession() {

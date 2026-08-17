@@ -5,14 +5,15 @@
 import CoreMedia
 import Foundation
 
-public struct PESVideoAccessUnit: Sendable {
+/// Elementary Stream video data chunk extracted from a PES packet.
+public struct PESVideoData: Sendable {
     public let data: Data
-    public let pts: CMTime
+    public let pts: CMTime?
     public let dts: CMTime?
 }
 
 public protocol PESPacketAssemblerDelegate: AnyObject, Sendable {
-    func pesAssembler(_ assembler: PESPacketAssembler, didEmitVideoUnit unit: PESVideoAccessUnit)
+    func pesAssembler(_ assembler: PESPacketAssembler, didEmitVideoPayload payload: PESVideoData)
     func pesAssembler(_ assembler: PESPacketAssembler, didEncounterPESError reason: String)
 }
 
@@ -22,6 +23,7 @@ public protocol PESPacketAssemblerDelegate: AnyObject, Sendable {
 /// - Reassembles fragmented payloads across TS packets.
 /// - Parses PES header, PTS and DTS flags.
 /// - Decodes 33-bit MPEG-2 90 kHz timestamps into `CMTime`.
+/// - Emits continuous Elementary Stream data chunks to the Access Unit Assembler.
 public final class PESPacketAssembler: @unchecked Sendable {
 
     private var currentPESBuffer = Data()
@@ -60,7 +62,7 @@ public final class PESPacketAssembler: @unchecked Sendable {
         }
 
         let streamID = data[3]
-        // Video stream IDs: 0xE0 - 0xEF or 0xFD (extended)
+        // Video stream IDs: 0xE0 - 0xEF or 0xFD (extended) or 0xBD (private stream)
         guard (streamID >= 0xE0 && streamID <= 0xEF) || streamID == 0xFD || streamID == 0xBD else {
             return
         }
@@ -72,7 +74,7 @@ public final class PESPacketAssembler: @unchecked Sendable {
         let headerDataLength = Int(data[8])
         let ptsDtsFlags = (flags2 & 0xC0) >> 6
 
-        var pts: CMTime = .invalid
+        var pts: CMTime? = nil
         var dts: CMTime? = nil
 
         let headerEnd = 9 + headerDataLength
@@ -93,8 +95,8 @@ public final class PESPacketAssembler: @unchecked Sendable {
         let esData = data.subdata(in: headerEnd..<data.count)
         guard !esData.isEmpty else { return }
 
-        let unit = PESVideoAccessUnit(data: esData, pts: pts, dts: dts)
-        delegate?.pesAssembler(self, didEmitVideoUnit: unit)
+        let payload = PESVideoData(data: esData, pts: pts, dts: dts)
+        delegate?.pesAssembler(self, didEmitVideoPayload: payload)
     }
 
     private func decode33BitTimestamp(data: Data, offset: Int) -> UInt64 {

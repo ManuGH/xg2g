@@ -26,6 +26,7 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     @Published public var vtSessionActive: Bool = false
     @Published public var hwDecodeRequired: Bool = true
     @Published public var hwDecodeActive: Bool = false
+    @Published public var vtDeinterlaceAccepted: Bool = false
     @Published public var decodedFramesPerSec: Double = 0.0
     @Published public var decodeErrors: Int = 0
     @Published public var activeDecoderMode: String = "Metal Shader (Path A)" // or "VideoToolbox Native (Path B)"
@@ -60,6 +61,7 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
         sourceFieldRate = 0
         vtSessionActive = false
         hwDecodeActive = false
+        vtDeinterlaceAccepted = false
         decodedFramesPerSec = 0
         decodeErrors = 0
         generatedFieldsPerSec = 0

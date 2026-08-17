@@ -18,9 +18,25 @@ public protocol H264AccessUnitAssemblerDelegate: AnyObject, Sendable {
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, isTopFieldFirst: Bool)
 }
 
-/// Parses Annex-B H.264 bitstream, detects SPS/PPS, constructs `CMVideoFormatDescription`,
-/// analyzes interlaced field order (TFF / BFF), and packs `CMSampleBuffer`s for VideoToolbox.
+/// Stream-level Annex-B H.264 Access Unit Assembler.
+///
+/// Features:
+/// - Ingests arbitrary continuous Elementary Stream chunks from PES packets.
+/// - Buffers across packet boundaries and splits Annex-B NAL units (`00 00 01` / `00 00 00 01`).
+/// - Implements ITU-T H.264 Access Unit (AU) boundary detection (AUD, SPS/PPS/SEI transitions, `first_mb_in_slice == 0`).
+/// - Synchronizes PTS/DTS timestamps with Access Unit start boundaries.
+/// - Converts Annex-B NALs into 4-byte AVCC format and constructs valid `CMSampleBuffer`s for VideoToolbox.
 public final class H264AccessUnitAssembler: @unchecked Sendable {
+
+    private var streamBuffer = Data()
+    private var currentAUNALs: [Data] = []
+    private var currentAUPTS: CMTime = .invalid
+    private var currentAUDTS: CMTime? = nil
+    private var pendingPTS: CMTime = .invalid
+    private var pendingDTS: CMTime? = nil
+    private var currentAUHasVCL: Bool = false
+    private var currentAUHasIDR: Bool = false
+    private var currentAUIsTopFieldFirst: Bool = true
 
     private var spsData: Data?
     private var ppsData: Data?
@@ -32,61 +48,222 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     public init() {}
 
     public func reset() {
+        streamBuffer.removeAll(keepingCapacity: true)
+        currentAUNALs.removeAll(keepingCapacity: true)
+        currentAUPTS = .invalid
+        currentAUDTS = nil
+        pendingPTS = .invalid
+        pendingDTS = nil
+        currentAUHasVCL = false
+        currentAUHasIDR = false
+        currentAUIsTopFieldFirst = true
         spsData = nil
         ppsData = nil
         currentFormatDescription = nil
         decodedInfo = nil
     }
 
-    /// Processes a video access unit with associated presentation timestamp.
-    public func process(unit: PESVideoAccessUnit) {
-        let nals = extractAnnexBNALUnits(from: unit.data)
-        guard !nals.isEmpty else { return }
+    /// Ingests elementary stream data from a PES packet with optional PTS/DTS.
+    public func feed(payload: PESVideoData) {
+        if let pts = payload.pts, pts.isValid {
+            pendingPTS = pts
+            pendingDTS = payload.dts
+        }
 
-        var avccBuffer = Data()
-        var hasIDR = false
-        var isTopField = true
+        streamBuffer.append(payload.data)
+        processStreamBuffer()
+    }
 
-        for nal in nals {
-            guard !nal.isEmpty else { continue }
-            let nalType = nal[0] & 0x1F
+    /// Convenience feed for direct data / tests.
+    public func feed(data: Data, pts: CMTime? = nil, dts: CMTime? = nil) {
+        let payload = PESVideoData(data: data, pts: pts, dts: dts)
+        feed(payload: payload)
+    }
 
-            switch nalType {
-            case 7: // SPS
-                spsData = nal
-                parseSPS(nal)
-                updateFormatDescriptionIfNeeded()
+    /// Flushes any pending Access Unit in the buffer (e.g. at end of stream).
+    public func flush() {
+        // Extract any remaining trailing NAL unit in streamBuffer
+        if let (startCodeOffset, prefixLen) = findNextStartCode(in: streamBuffer, from: 0) {
+            let nalStart = startCodeOffset + prefixLen
+            if nalStart < streamBuffer.count {
+                let nalData = streamBuffer.subdata(in: nalStart..<streamBuffer.count)
+                if !nalData.isEmpty {
+                    handleNALUnit(nalData)
+                }
+            }
+            streamBuffer.removeAll(keepingCapacity: true)
+        }
 
-            case 8: // PPS
-                ppsData = nal
-                updateFormatDescriptionIfNeeded()
+        if !currentAUNALs.isEmpty && currentAUHasVCL {
+            emitCurrentAccessUnit()
+        }
+    }
 
-            case 5: // IDR Slice
-                hasIDR = true
-                isTopField = detectFieldOrder(from: nal, nalType: nalType)
-                appendAVCCNAL(nal, to: &avccBuffer)
+    // MARK: - Stream & NAL Parsing
 
-            case 1: // Non-IDR Slice
-                isTopField = detectFieldOrder(from: nal, nalType: nalType)
-                appendAVCCNAL(nal, to: &avccBuffer)
+    private func processStreamBuffer() {
+        while true {
+            guard let (startCodeOffset, prefixLen) = findNextStartCode(in: streamBuffer, from: 0) else {
+                // Keep only the last 3 bytes in case a start code is split across incoming chunks
+                if streamBuffer.count > 3 {
+                    let keepFrom = streamBuffer.count - 3
+                    streamBuffer = streamBuffer.subdata(in: keepFrom..<streamBuffer.count)
+                }
+                break
+            }
 
-            default:
-                appendAVCCNAL(nal, to: &avccBuffer)
+            let nalStart = startCodeOffset + prefixLen
+            guard let (nextStartCodeOffset, _) = findNextStartCode(in: streamBuffer, from: nalStart) else {
+                // Incomplete trailing NAL in buffer; keep buffer from startCodeOffset for next chunk
+                if startCodeOffset > 0 {
+                    streamBuffer = streamBuffer.subdata(in: startCodeOffset..<streamBuffer.count)
+                }
+                break
+            }
+
+            let nalData = streamBuffer.subdata(in: nalStart..<nextStartCodeOffset)
+            if !nalData.isEmpty {
+                handleNALUnit(nalData)
+            }
+
+            streamBuffer = streamBuffer.subdata(in: nextStartCodeOffset..<streamBuffer.count)
+        }
+    }
+
+    private func findNextStartCode(in data: Data, from offset: Int) -> (Int, Int)? {
+        let count = data.count
+        guard count >= 3 && offset <= count - 3 else { return nil }
+
+        var i = offset
+        return data.withUnsafeBytes { rawBuffer -> (Int, Int)? in
+            guard let ptr = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return nil }
+
+            while i < count - 2 {
+                if ptr[i] == 0 && ptr[i + 1] == 0 {
+                    if ptr[i + 2] == 1 {
+                        return (i, 3)
+                    } else if i < count - 3 && ptr[i + 2] == 0 && ptr[i + 3] == 1 {
+                        return (i, 4)
+                    }
+                }
+                i += 1
+            }
+            return nil
+        }
+    }
+
+    // MARK: - Access Unit Boundary Detection (ITU-T H.264 7.4.1.2.3)
+
+    private func handleNALUnit(_ nal: Data) {
+        guard !nal.isEmpty else { return }
+        let nalType = nal[0] & 0x1F
+
+        var isNewAccessUnit = false
+
+        switch nalType {
+        case 9: // AUD (Access Unit Delimiter)
+            if currentAUHasVCL {
+                isNewAccessUnit = true
+            }
+
+        case 7, 8, 6: // SPS, PPS, SEI
+            // If we encounter non-VCL after VCL, a new picture starts
+            if currentAUHasVCL {
+                isNewAccessUnit = true
+            }
+
+        case 1, 5: // VCL Slice (Non-IDR or IDR)
+            let firstMB = parseFirstMBInSlice(nal)
+            if currentAUHasVCL && firstMB == 0 {
+                // First macroblock in slice == 0 marks a new picture boundary
+                isNewAccessUnit = true
+            }
+
+        default:
+            break
+        }
+
+        if isNewAccessUnit {
+            emitCurrentAccessUnit()
+        }
+
+        // Adopt pending timestamp if this starts an Access Unit
+        if currentAUNALs.isEmpty {
+            if pendingPTS.isValid {
+                currentAUPTS = pendingPTS
+                currentAUDTS = pendingDTS
+                pendingPTS = .invalid
+                pendingDTS = nil
             }
         }
 
-        guard !avccBuffer.isEmpty, let formatDesc = currentFormatDescription else { return }
+        // Process parameter sets or slices
+        switch nalType {
+        case 7: // SPS
+            spsData = nal
+            parseSPS(nal)
+            updateFormatDescriptionIfNeeded()
 
-        // Construct CMBlockBuffer
+        case 8: // PPS
+            ppsData = nal
+            updateFormatDescriptionIfNeeded()
+
+        case 5: // IDR Slice
+            currentAUHasVCL = true
+            currentAUHasIDR = true
+            currentAUIsTopFieldFirst = detectFieldOrder(from: nal)
+
+        case 1: // Non-IDR Slice
+            currentAUHasVCL = true
+            currentAUIsTopFieldFirst = detectFieldOrder(from: nal)
+
+        default:
+            break
+        }
+
+        currentAUNALs.append(nal)
+    }
+
+    private func parseFirstMBInSlice(_ nal: Data) -> Int {
+        guard nal.count > 1 else { return 0 }
+        let rbsp = removeEmulationPreventionBytes(from: nal.subdata(in: 1..<min(nal.count, 6)))
+        var reader = BitReader(data: rbsp)
+        return reader.readExpGolomb()
+    }
+
+    private func emitCurrentAccessUnit() {
+        defer {
+            currentAUNALs.removeAll(keepingCapacity: true)
+            currentAUHasVCL = false
+            currentAUHasIDR = false
+            currentAUPTS = .invalid
+            currentAUDTS = nil
+        }
+
+        guard !currentAUNALs.isEmpty, currentAUHasVCL, let formatDesc = currentFormatDescription else { return }
+
+        // Assemble AVCC buffer with 4-byte big endian length prefixes
+        var avccBuffer = Data()
+        for nal in currentAUNALs {
+            let nalType = nal[0] & 0x1F
+            if nalType == 7 || nalType == 8 {
+                // SPS and PPS parameter sets are already provided in the CMVideoFormatDescription
+                continue
+            }
+            var length = UInt32(nal.count).bigEndian
+            avccBuffer.append(Data(bytes: &length, count: 4))
+            avccBuffer.append(nal)
+        }
+
+        guard !avccBuffer.isEmpty else { return }
+
+        // Construct CMBlockBuffer with safe native allocation
         var blockBuffer: CMBlockBuffer?
-        let memoryBlock = UnsafeMutablePointer<UInt8>.allocate(capacity: avccBuffer.count)
-        avccBuffer.copyBytes(to: memoryBlock, count: avccBuffer.count)
-
-        let status = CMBlockBufferCreateWithMemoryBlock(
+        let blockStatus = CMBlockBufferCreateWithMemoryBlock(
             allocator: kCFAllocatorDefault,
-            memoryBlock: memoryBlock,
+            memoryBlock: nil,
             blockLength: avccBuffer.count,
-            blockAllocator: kCFAllocatorMalloc,
+            blockAllocator: kCFAllocatorDefault,
             customBlockSource: nil,
             offsetToData: 0,
             dataLength: avccBuffer.count,
@@ -94,15 +271,24 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             blockBufferOut: &blockBuffer
         )
 
-        guard status == kCMBlockBufferNoErr, let block = blockBuffer else {
-            memoryBlock.deallocate()
-            return
+        guard blockStatus == kCMBlockBufferNoErr, let block = blockBuffer else { return }
+
+        let copyStatus = avccBuffer.withUnsafeBytes { rawBytes -> OSStatus in
+            guard let ptr = rawBytes.baseAddress else { return -1 }
+            return CMBlockBufferReplaceDataBytes(
+                with: ptr,
+                blockBuffer: block,
+                offsetIntoDestination: 0,
+                dataLength: avccBuffer.count
+            )
         }
 
+        guard copyStatus == kCMBlockBufferNoErr else { return }
+
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 50), // 50 Hz default cadence
-            presentationTimeStamp: unit.pts.isValid ? unit.pts : .invalid,
-            decodeTimeStamp: unit.dts ?? .invalid
+            duration: CMTime(value: 1, timescale: 50),
+            presentationTimeStamp: currentAUPTS.isValid ? currentAUPTS : .invalid,
+            decodeTimeStamp: currentAUDTS ?? .invalid
         )
 
         var sampleBuffer: CMSampleBuffer?
@@ -122,10 +308,10 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
 
         guard sampleStatus == noErr, let sb = sampleBuffer else { return }
 
-        // Attach sample attachments for field order / display
+        // Attach sample attachments for field order / sync
         if let attachments = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true) {
             let dict = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
-            if hasIDR {
+            if currentAUHasIDR {
                 CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque(), Unmanaged.passUnretained(kCFBooleanFalse).toOpaque())
             } else {
                 CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque(), Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
@@ -133,13 +319,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(), Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
         }
 
-        delegate?.accessUnitAssembler(self, didEmitSampleBuffer: sb, isIDR: hasIDR, isTopFieldFirst: isTopField)
-    }
-
-    private func appendAVCCNAL(_ nal: Data, to buffer: inout Data) {
-        var length = UInt32(nal.count).bigEndian
-        buffer.append(Data(bytes: &length, count: 4))
-        buffer.append(nal)
+        delegate?.accessUnitAssembler(self, didEmitSampleBuffer: sb, isIDR: currentAUHasIDR, isTopFieldFirst: currentAUIsTopFieldFirst)
     }
 
     private func updateFormatDescriptionIfNeeded() {
@@ -283,56 +463,9 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         )
     }
 
-    private func detectFieldOrder(from nal: Data, nalType: UInt8) -> Bool {
+    private func detectFieldOrder(from nal: Data) -> Bool {
         // DVB 1080i HD broadcast standard is Top Field First (TFF).
-        // If slice header specifies field_pic_flag / bottom_field_flag, we read it.
-        guard nal.count > 1 else { return true }
-        var reader = BitReader(data: nal.subdata(in: 1..<nal.count))
-        _ = reader.readExpGolomb() // first_mb_in_slice
-        _ = reader.readExpGolomb() // slice_type
-        _ = reader.readExpGolomb() // pic_parameter_set_id
-
-        // In standard DVB 1080i frame pairs or MBAFF, Top Field is rendered first.
         return true
-    }
-
-    private func extractAnnexBNALUnits(from data: Data) -> [Data] {
-        var nals: [Data] = []
-        var startIndex: Int? = nil
-        let bytes = [UInt8](data)
-        let count = bytes.count
-
-        var i = 0
-        while i < count - 3 {
-            var prefixLen = 0
-            if bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 1 {
-                prefixLen = 3
-            } else if bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 0 && bytes[i + 3] == 1 {
-                prefixLen = 4
-            }
-
-            if prefixLen > 0 {
-                if let start = startIndex {
-                    let nalData = data.subdata(in: start..<i)
-                    if !nalData.isEmpty {
-                        nals.append(nalData)
-                    }
-                }
-                startIndex = i + prefixLen
-                i += prefixLen
-            } else {
-                i += 1
-            }
-        }
-
-        if let start = startIndex, start < count {
-            let nalData = data.subdata(in: start..<count)
-            if !nalData.isEmpty {
-                nals.append(nalData)
-            }
-        }
-
-        return nals
     }
 }
 

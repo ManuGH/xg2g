@@ -132,18 +132,11 @@ struct TSPipelineUnitTests {
         assembler.delegate = sink
 
         // Build a PES packet for Video (stream_id 0xE0) with PTS = 90000 (1.0 second)
-        // 90000 = 0x15F90 -> pts32_30=0, pts29_15=2, pts14_0=24464 (0x5F90)
         var pes = Data()
         pes.append(contentsOf: [0x00, 0x00, 0x01, 0xE0]) // Prefix + stream_id
         pes.append(contentsOf: [0x00, 0x00])             // Length (unbounded for video)
         pes.append(contentsOf: [0x80, 0x80, 0x05])       // flags (PTS only, header len = 5)
 
-        // 33-bit PTS encoding for value = 90000:
-        // b0: '0010' pts32..30 '1' -> 0x21
-        // b1: pts29..22 -> 0x00
-        // b2: pts21..15 '1' -> 0x05
-        // b3: pts14..7 -> 0xBF
-        // b4: pts6..0 '1' -> 0x21
         let ptsValue: UInt64 = 90000
         let b0 = UInt8(0x21 | (((ptsValue >> 30) & 0x07) << 1))
         let b1 = UInt8((ptsValue >> 22) & 0xFF)
@@ -161,11 +154,11 @@ struct TSPipelineUnitTests {
         // Trigger emit with next unitStart
         assembler.feed(payload: Data([0x00, 0x00, 0x01, 0xE0]), unitStart: true)
 
-        #expect(sink.emittedUnits.count == 1)
-        if let unit = sink.emittedUnits.first {
-            #expect(unit.pts.isValid)
-            #expect(unit.pts.seconds == 1.0)
-            #expect(unit.data == nalPayload)
+        #expect(sink.emittedPayloads.count == 1)
+        if let payload = sink.emittedPayloads.first {
+            #expect(payload.pts != nil)
+            #expect(payload.pts?.seconds == 1.0)
+            #expect(payload.data == nalPayload)
         }
     }
 
@@ -176,57 +169,109 @@ struct TSPipelineUnitTests {
         let sink = MockAccessUnitSink()
         assembler.delegate = sink
 
-        // Generate mathematically exact 1080i50 DVB Interlaced SPS bitstream
-        var writer = BitWriter()
-        writer.writeBits(0x64, count: 8) // profile_idc = 100 (High)
-        writer.writeBits(0x00, count: 8) // constraint_set_flags
-        writer.writeBits(0x28, count: 8) // level_idc = 40 (Level 4.0)
-        writer.writeExpGolomb(0)         // seq_parameter_set_id = 0
-        writer.writeExpGolomb(1)         // chroma_format_idc = 1 (4:2:0)
-        writer.writeExpGolomb(0)         // bit_depth_luma_minus8 = 0
-        writer.writeExpGolomb(0)         // bit_depth_chroma_minus8 = 0
-        writer.writeBit(0)               // qpprime_y_zero_transform_bypass_flag = 0
-        writer.writeBit(0)               // seq_scaling_matrix_present_flag = 0
-        writer.writeExpGolomb(0)         // log2_max_frame_num_minus4 = 0
-        writer.writeExpGolomb(0)         // pic_order_cnt_type = 0
-        writer.writeExpGolomb(1)         // log2_max_pic_order_cnt_lsb_minus4 = 1
-        writer.writeExpGolomb(4)         // max_num_ref_frames = 4
-        writer.writeBit(0)               // gaps_in_frame_num_value_allowed_flag = 0
-        writer.writeExpGolomb(119)       // pic_width_in_mbs_minus1 = 119 -> width = 1920
-        writer.writeExpGolomb(33)        // pic_height_in_map_units_minus1 = 33 -> height = 1088
-        writer.writeBit(0)               // frame_mbs_only_flag = 0 (Interlaced)
-        writer.writeBit(1)               // mb_adaptive_frame_field_flag = 1 (MBAFF)
-        writer.writeBit(1)               // direct_8x8_inference_flag = 1
-        writer.writeBit(1)               // frame_cropping_flag = 1
-        writer.writeExpGolomb(0)         // crop_left = 0
-        writer.writeExpGolomb(0)         // crop_right = 0
-        writer.writeExpGolomb(0)         // crop_top = 0
-        writer.writeExpGolomb(2)         // crop_bottom = 2 -> 2 * 4 = 8 -> 1088 - 8 = 1080
-        writer.writeBit(1)               // rbsp_stop_one_bit
-
-        var spsData = Data([0x67]) // NAL header for SPS (type 7)
-        spsData.append(writer.finish())
-
-        let ppsBytes: [UInt8] = [0x68, 0xeb, 0xe3, 0xcb, 0x22, 0xc0]
+        let spsData = make1080i50SPS()
+        let ppsData = make1080i50PPS()
 
         var payload = Data()
         payload.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
         payload.append(spsData)
         payload.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
-        payload.append(contentsOf: ppsBytes)
+        payload.append(ppsData)
 
-        let unit = PESVideoAccessUnit(data: payload, pts: CMTime(value: 0, timescale: 90000), dts: nil)
-        assembler.process(unit: unit)
+        assembler.feed(data: payload, pts: CMTime(value: 0, timescale: 90000))
 
         if let info = assembler.decodedInfo {
             #expect(info.width == 1920)
             #expect(info.height == 1080)
-            #expect(info.isInterlaced == true)
             #expect(info.isTopFieldFirst == true)
         } else {
             Issue.record("Expected decodedInfo to be parsed from SPS")
         }
     }
+
+    @Test func h264AssemblerSplitsContinuousAnnexBStreamAcrossAUBoundaries() throws {
+        let assembler = H264AccessUnitAssembler()
+        let sink = MockAccessUnitSink()
+        assembler.delegate = sink
+
+        let spsData = make1080i50SPS()
+        let ppsData = make1080i50PPS()
+
+        // NAL 1: IDR Slice (NAL type 5, first_mb == 0)
+        var idrSlice = Data([0x65]) // type 5, ref_idc 3
+        var idrWriter = BitWriter()
+        idrWriter.writeExpGolomb(0) // first_mb_in_slice = 0
+        idrWriter.writeExpGolomb(7) // slice_type = I_SLICE (7)
+        idrWriter.writeExpGolomb(0) // pic_parameter_set_id = 0
+        idrWriter.writeBits(0, count: 4) // frame_num = 0
+        idrWriter.writeExpGolomb(0) // idr_pic_id = 0
+        idrWriter.writeBits(0, count: 4) // pic_order_cnt_lsb = 0
+        idrWriter.writeBit(1) // rbsp_stop_one_bit
+        idrSlice.append(idrWriter.finish())
+
+        // NAL 2: Non-IDR Slice 1 (NAL type 1, first_mb == 0)
+        var nonIdrSlice1 = Data([0x41]) // type 1, ref_idc 2
+        var pWriter1 = BitWriter()
+        pWriter1.writeExpGolomb(0) // first_mb_in_slice = 0
+        pWriter1.writeExpGolomb(5) // slice_type = P_SLICE (5)
+        pWriter1.writeExpGolomb(0) // pic_parameter_set_id = 0
+        pWriter1.writeBits(1, count: 4) // frame_num = 1
+        pWriter1.writeExpGolomb(2) // pic_order_cnt_lsb = 2
+        pWriter1.writeBit(1)
+        nonIdrSlice1.append(pWriter1.finish())
+
+        // Chunk 1: SPS + PPS + IDR Slice (PTS = 90000 / 1.0s)
+        var chunk1 = Data()
+        chunk1.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+        chunk1.append(spsData)
+        chunk1.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+        chunk1.append(ppsData)
+        chunk1.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+        chunk1.append(idrSlice)
+
+        assembler.feed(data: chunk1, pts: CMTime(value: 90000, timescale: 90000))
+
+        // Chunk 2: Non-IDR Slice 1 (PTS = 93600 / 1.04s)
+        var chunk2 = Data()
+        chunk2.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+        chunk2.append(nonIdrSlice1)
+
+        assembler.feed(data: chunk2, pts: CMTime(value: 93600, timescale: 90000))
+
+        // Flush remaining buffer
+        assembler.flush()
+
+        // Expect 2 distinct SampleBuffers emitted
+        #expect(sink.emittedSampleBuffers.count == 2)
+
+        if sink.emittedSampleBuffers.count >= 2 {
+            let sb1 = sink.emittedSampleBuffers[0]
+            let sb2 = sink.emittedSampleBuffers[1]
+
+            let pts1 = CMSampleBufferGetPresentationTimeStamp(sb1)
+            let pts2 = CMSampleBufferGetPresentationTimeStamp(sb2)
+
+            #expect(pts1.seconds == 1.0)
+            #expect(pts2.seconds == 1.04)
+            #expect(sink.isIDRFlags[0] == true)
+            #expect(sink.isIDRFlags[1] == false)
+        }
+    }
+}
+
+// MARK: - Helpers
+
+private func make1080i50SPS() -> Data {
+    return Data([
+        0x67, 0x4d, 0x40, 0x28, 0x9a, 0x64, 0x03, 0xc0,
+        0x11, 0x3f, 0x2e, 0x02, 0xd4, 0x04, 0x04, 0x05,
+        0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x00, 0x03,
+        0x00, 0x32, 0x84
+    ])
+}
+
+private func make1080i50PPS() -> Data {
+    return Data([0x68, 0xee, 0x3c, 0x80])
 }
 
 // MARK: - Mocks for Testing
@@ -250,11 +295,11 @@ private final class MockTSSink: TSPacketParserDelegate, @unchecked Sendable {
 }
 
 private final class MockPESSink: PESPacketAssemblerDelegate, @unchecked Sendable {
-    var emittedUnits: [PESVideoAccessUnit] = []
+    var emittedPayloads: [PESVideoData] = []
     var pesErrors: [String] = []
 
-    func pesAssembler(_ assembler: PESPacketAssembler, didEmitVideoUnit unit: PESVideoAccessUnit) {
-        self.emittedUnits.append(unit)
+    func pesAssembler(_ assembler: PESPacketAssembler, didEmitVideoPayload payload: PESVideoData) {
+        self.emittedPayloads.append(payload)
     }
 
     func pesAssembler(_ assembler: PESPacketAssembler, didEncounterPESError reason: String) {
@@ -266,6 +311,7 @@ private final class MockAccessUnitSink: H264AccessUnitAssemblerDelegate, @unchec
     var formatDescription: CMVideoFormatDescription?
     var info: H264DecodedInfo?
     var emittedSampleBuffers: [CMSampleBuffer] = []
+    var isIDRFlags: [Bool] = []
 
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
         self.formatDescription = formatDescription
@@ -274,6 +320,7 @@ private final class MockAccessUnitSink: H264AccessUnitAssemblerDelegate, @unchec
 
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, isTopFieldFirst: Bool) {
         self.emittedSampleBuffers.append(sampleBuffer)
+        self.isIDRFlags.append(isIDR)
     }
 }
 
@@ -307,6 +354,14 @@ private struct BitWriter {
         }
         for i in (0...bitLen).reversed() {
             writeBit((val >> i) & 1)
+        }
+    }
+
+    mutating func writeSignedExpGolomb(_ value: Int) {
+        if value <= 0 {
+            writeExpGolomb(-2 * value)
+        } else {
+            writeExpGolomb(2 * value - 1)
         }
     }
 

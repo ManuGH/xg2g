@@ -50,6 +50,7 @@ public struct TestTSPlayerScreen: View {
                                 hudRow("VT Session", pipeline.telemetry.vtSessionActive ? "Active 🟢" : "Inactive ⚪️")
                                 hudRow("HW Required", "YES (kVT...RequireHW)")
                                 hudRow("HW Active", pipeline.telemetry.hwDecodeActive ? "YES (Verified 🚀)" : "Pending…", highlight: pipeline.telemetry.hwDecodeActive)
+                                hudRow("VT Deinterlace", pipeline.useNativeVTDeinterlace ? (pipeline.telemetry.vtDeinterlaceAccepted ? "Accepted 🟢" : "Unsupported ⚠️") : "Disabled ⚪️", highlight: pipeline.telemetry.vtDeinterlaceAccepted, alert: pipeline.useNativeVTDeinterlace && !pipeline.telemetry.vtDeinterlaceAccepted)
                                 hudRow("Decoded Frames", String(format: "%.1f frames/s", pipeline.telemetry.decodedFramesPerSec))
                                 hudRow("Decode Errors", "\(pipeline.telemetry.decodeErrors)", alert: pipeline.telemetry.decodeErrors > 0)
                                 hudRow("Pipeline Mode", pipeline.telemetry.activeDecoderMode)
