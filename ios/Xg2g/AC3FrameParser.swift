@@ -90,8 +90,8 @@ public final class AC3FrameParser: @unchecked Sendable {
         if let pts = pts, pts.isValid {
             if let running = runningPTS, running.isValid {
                 let drift = abs(pts.seconds - running.seconds)
-                // If stream timestamps jump by > 80 ms (e.g. channel zap, stream splice or stray initial PES), resync timeline
-                if drift > 0.080 {
+                // If stream timestamps jump by > 500 ms (e.g. channel zap, stream splice or stray initial PES), resync timeline
+                if drift > 0.500 {
                     self.runningPTS = pts
                     self.runningPTS90k = pts90k
                     delegate?.ac3FrameParserDidDetectDiscontinuity(self, newPTS: pts)
