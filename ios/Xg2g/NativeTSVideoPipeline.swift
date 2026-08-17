@@ -311,10 +311,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     private func handleFirstFrameActuallyPresented(screenTimestamp: Double) {
         guard requestStartTime > 0 else { return }
-        let screenMs = (screenTimestamp - requestStartTime) * 1000.0
+        let gpuDoneMs = (screenTimestamp - requestStartTime) * 1000.0
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.telemetry.ttfpScreenMs = screenMs
+            self.telemetry.ttfpGpuCompletedMs = gpuDoneMs
         }
     }
 

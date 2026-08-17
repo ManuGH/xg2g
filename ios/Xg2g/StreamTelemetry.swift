@@ -8,8 +8,8 @@ import Foundation
 public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
 
     // MARK: - TTFP (Time-to-First-Picture) & STARTUP GATES
-    @Published public var ttfpTotalMs: Double = 0.0        // t0 -> t6: Request -> Metal Present Submitted
-    @Published public var ttfpScreenMs: Double = 0.0       // t0 -> t6_screen: Request -> Hardware VSync Display Presentation
+    @Published public var ttfpTotalMs: Double = 0.0               // t0 -> t6: Request -> Metal Present Submitted
+    @Published public var ttfpGpuCompletedMs: Double = 0.0        // t0 -> t6_gpu: Request -> GPU Present Completed
     @Published public var ttfpRating: String = "Pending…"
     @Published public var isFirstPicturePresented: Bool = false
     @Published public var ttfpNetworkMs: Double = 0.0      // t0 -> t1: Request sent -> First TS packet
@@ -70,7 +70,7 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
 
     public func reset() {
         ttfpTotalMs = 0
-        ttfpScreenMs = 0
+        ttfpGpuCompletedMs = 0
         ttfpRating = "Pending…"
         isFirstPicturePresented = false
         ttfpNetworkMs = 0

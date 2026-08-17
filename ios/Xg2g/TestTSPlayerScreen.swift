@@ -31,7 +31,7 @@ public struct TestTSPlayerScreen: View {
 
                         Group {
                             hudSection(title: "STARTUP GATES (Time-To-First-Picture)") {
-                                hudRow("TTFP (On-Screen VSync)", pipeline.telemetry.ttfpScreenMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpScreenMs) : (pipeline.telemetry.ttfpTotalMs > 0 ? String(format: "%.1f ms (Submitted)", pipeline.telemetry.ttfpTotalMs) : "Measuring…"), highlight: (pipeline.telemetry.ttfpScreenMs > 0 ? pipeline.telemetry.ttfpScreenMs : pipeline.telemetry.ttfpTotalMs) <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
+                                hudRow("TTFP (GPU Completed)", pipeline.telemetry.ttfpGpuCompletedMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpGpuCompletedMs) : (pipeline.telemetry.ttfpTotalMs > 0 ? String(format: "%.1f ms (Submitted)", pipeline.telemetry.ttfpTotalMs) : "Measuring…"), highlight: (pipeline.telemetry.ttfpGpuCompletedMs > 0 ? pipeline.telemetry.ttfpGpuCompletedMs : pipeline.telemetry.ttfpTotalMs) <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
                                 hudRow("Performance Rating", pipeline.telemetry.ttfpRating, highlight: pipeline.telemetry.ttfpTotalMs <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
                                 hudRow("t0→t1: Request→TS Data", pipeline.telemetry.ttfpNetworkMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpNetworkMs) : "Waiting…")
                                 hudRow("t1→t2: TS→PAT/PMT", pipeline.telemetry.ttfpPsiMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpPsiMs) : "Waiting…")
