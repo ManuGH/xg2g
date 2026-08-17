@@ -307,7 +307,7 @@ public final class MetalVideoView: UIView {
                 telemetry.sourceFieldRate = actualTopFields + actualBottomFields
                 telemetry.sourceFrameRate = (actualTopFields + actualBottomFields) / 2.0
 
-                let perfLog = "[1080i50-PERF] Metal: \(String(format: "%.1f", actualPresentations)) fps | Top/Bot: \(String(format: "%.1f", actualTopFields))/\(String(format: "%.1f", actualBottomFields)) | Cadence: \(String(format: "%.2f", avgCadence))ms | Jitter: \(String(format: "%.2f", avgJitter))ms | Rep: \(self.cumulativeRepeatedFieldCount)"
+                let perfLog = "[1080i50-PERF] Metal: \(String(format: "%.1f", actualPresentations)) fps | Top/Bot: \(String(format: "%.1f", actualTopFields))/\(String(format: "%.1f", actualBottomFields)) | Cadence: \(String(format: "%.2f", avgCadence))ms | Jitter: \(String(format: "%.2f", avgJitter))ms | Queue: \(self.frameQueue.count) | Rep: \(self.cumulativeRepeatedFieldCount)"
                 print(perfLog)
                 logger.notice("\(perfLog, privacy: .public)")
             }
@@ -425,6 +425,12 @@ private final class ThreadSafeFrameQueue: @unchecked Sendable {
         defer { lock.unlock() }
         guard !queue.isEmpty else { return nil }
         return queue.removeFirst()
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return queue.count
     }
 
     func clear() {

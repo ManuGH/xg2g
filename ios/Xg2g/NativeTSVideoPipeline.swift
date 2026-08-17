@@ -135,6 +135,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         if let httpResponse = response as? HTTPURLResponse {
+            let serverName = httpResponse.value(forHTTPHeaderField: "Server") ?? "Enigma2 Streamserver"
+            let contentType = httpResponse.mimeType ?? "video/mp2t"
+            let httpLog = "[1080i50-HTTP] Connected: Status \(httpResponse.statusCode) | Type: \(contentType) | Server: \(serverName)"
+            print(httpLog)
+            logger.notice("\(httpLog, privacy: .public)")
+
             if httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 {
                 DispatchQueue.main.async { [weak self] in
                     self?.telemetry.ttfpRating = "❌ HTTP \(httpResponse.statusCode) (\(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)))"
