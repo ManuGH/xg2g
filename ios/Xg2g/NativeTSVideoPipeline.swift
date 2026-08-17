@@ -417,8 +417,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 firstAudioPTS = pts
             }
 
-            // Pre-roll 20 frames (~640ms of audio buffer) for smooth jitter-free playback
-            if audioBuffersPreRolledCount >= 20, let startPTS = firstAudioPTS {
+            // Pre-roll 6 frames (~192ms of audio buffer) for instant tuning and jitter-free playback
+            if audioBuffersPreRolledCount >= 6, let startPTS = firstAudioPTS {
                 audioRenderer.setRate(1.0, time: startPTS)
                 isAudioClockStarted = true
                 let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", startPTS.seconds))s (\(codec), prerolled: \(audioBuffersPreRolledCount) buffers)"

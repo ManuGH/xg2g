@@ -126,14 +126,8 @@ public final class MetalVideoView: UIView {
     private var gapWideCount: Int = 0          // > 50 ms
     private var gapNegativeCount: Int = 0
 
-    /// How far ahead of the presentation clock the field queue is kept.
-    ///
-    /// Measured field supply swings between 18 and 94 per second around a median
-    /// of 48, with the parse chain keeping up throughout (ingest backlog stays
-    /// under 15 KiB) — so this is delivery jitter from the receiver, and the only
-    /// defence is depth. A one-second dip to 18 is a deficit of ~32 fields, so
-    /// 700 ms keeps the floor clear of zero at the cost of zap latency.
-    private static let targetLatencySeconds: Double = 0.70
+    /// How far ahead of the presentation clock the field queue is kept in video-only fallback.
+    private static let targetLatencySeconds: Double = 0.20
 
     /// Set from the pipeline's format callback on the ingest queue, read on the
     /// display link. A single Bool write is atomic on ARM, and a one-tick-stale
@@ -431,6 +425,15 @@ public final class MetalVideoView: UIView {
             streamNow = baseTime.isValid ? baseTime.seconds : 0.0
             isClockAnchored = true
         } else {
+            // Instant first picture presentation:
+            // Display the very first decoded keyframe immediately so the screen lights up instantly!
+            if !hasReportedFirstFrame, let first = fieldQueue.first {
+                currentField = first
+                renderField(first, isFirstFrame: true)
+                hasReportedFirstFrame = true
+                onFirstFrameRendered?()
+            }
+
             if !isClockAnchored {
                 guard let first = fieldQueue.first, let last = fieldQueue.last,
                       last.ptsSeconds - first.ptsSeconds >= Self.targetLatencySeconds else {
@@ -555,7 +558,7 @@ public final class MetalVideoView: UIView {
     /// already one field and becomes one. Splitting the latter as well is what
     /// produced the late-drop bursts and the skewed top/bottom balance.
     private func drainReorderedFrames() {
-        for released in reorderBuffer.drainSettled() {
+        for released in reorderBuffer.drainSettled(allowImmediateFirst: !hasReportedFirstFrame) {
             let frame = released.frame
             let pts: Double
             if frame.pts.isValid {
@@ -1054,9 +1057,19 @@ private final class FrameReorderBuffer: @unchecked Sendable {
     /// field, and it costs no extra latency: `reorderDepth` frames are held
     /// back regardless, so the successor of every released frame is already in
     /// hand.
-    func drainSettled() -> [ReleasedFrame] {
+    func drainSettled(allowImmediateFirst: Bool = false) -> [ReleasedFrame] {
         lock.lock()
         defer { lock.unlock() }
+
+        // Fast-track the very first keyframe for instantaneous Time-To-First-Picture (TTFP)
+        if allowImmediateFirst, let first = frames.first {
+            frames.removeFirst()
+            let nextGap = frames.first.flatMap { next in
+                (first.pts.isValid && next.pts.isValid) ? (next.pts.seconds - first.pts.seconds) : nil
+            } ?? .nan
+            return [ReleasedFrame(frame: first, gapToNext: nextGap)]
+        }
+
         guard frames.count > reorderDepth, reorderDepth > 0 else { return [] }
 
         let releaseCount = frames.count - reorderDepth
