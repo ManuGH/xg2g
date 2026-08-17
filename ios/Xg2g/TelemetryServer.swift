@@ -15,27 +15,37 @@ public final class TelemetryServer: @unchecked Sendable {
     private var logRingBuffer: [String] = []
     private let lock = NSLock()
     private let maxLogEntries = 500
-    private var currentTelemetryProvider: (() -> [String: Any])?
-    private var screenshotProvider: (@Sendable () -> Data?)?
+    private var currentTelemetryProvider: (@Sendable () -> [String: Any])?
+    private var screenshotProvider: (@MainActor @Sendable () -> Data?)?
+
+    /// Reused: constructing a formatter per log line is expensive, and `log` is
+    /// called from the render path. `ISO8601DateFormatter` is documented as safe
+    /// for concurrent formatting, matching `HTTPAPIClient`'s shared formatters.
+    nonisolated(unsafe) private static let timestampFormatter = ISO8601DateFormatter()
+
+    /// Upper bound on how long a `/screenshot` request may wait for the main
+    /// thread. Without it a stalled main thread would pin a server connection
+    /// indefinitely.
+    private static let screenshotTimeout: TimeInterval = 2.0
 
     public var port: UInt16 = 8099
 
     public init() {}
 
-    public func setTelemetryProvider(_ provider: @escaping () -> [String: Any]) {
+    public func setTelemetryProvider(_ provider: @escaping @Sendable () -> [String: Any]) {
         lock.lock()
         defer { lock.unlock() }
         self.currentTelemetryProvider = provider
     }
 
-    public func setScreenshotProvider(_ provider: @escaping @Sendable () -> Data?) {
+    public func setScreenshotProvider(_ provider: @escaping @MainActor @Sendable () -> Data?) {
         lock.lock()
         defer { lock.unlock() }
         self.screenshotProvider = provider
     }
 
     public func log(_ message: String) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = Self.timestampFormatter.string(from: Date())
         let entry = "[\(timestamp)] \(message)"
         lock.lock()
         logRingBuffer.append(entry)
@@ -99,22 +109,39 @@ public final class TelemetryServer: @unchecked Sendable {
         }
     }
 
+    /// Grabs a frame from the render view on the main thread, giving up after
+    /// `screenshotTimeout` rather than blocking the server queue forever.
+    private func captureScreenshot() -> Data? {
+        lock.lock()
+        let provider = screenshotProvider
+        lock.unlock()
+
+        guard let provider else { return nil }
+
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { provider() }
+        }
+
+        let box = ScreenshotBox()
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.main.async {
+            box.store(MainActor.assumeIsolated { provider() })
+            semaphore.signal()
+        }
+
+        guard semaphore.wait(timeout: .now() + Self.screenshotTimeout) == .success else {
+            return nil
+        }
+        return box.take()
+    }
+
     private func generateHTTPResponse(for request: String) -> Data {
         let firstLine = request.components(separatedBy: "\r\n").first ?? ""
         let parts = firstLine.components(separatedBy: " ")
         let path = parts.count > 1 ? parts[1] : "/"
 
         if path.hasPrefix("/screenshot") || path.hasPrefix("/frame") {
-            var imageData: Data? = nil
-            if Thread.isMainThread {
-                imageData = self.screenshotProvider?()
-            } else {
-                DispatchQueue.main.sync {
-                    imageData = self.screenshotProvider?()
-                }
-            }
-
-            if let jpeg = imageData {
+            if let jpeg = captureScreenshot() {
                 let headers = "HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: \(jpeg.count)\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
                 var response = headers.data(using: .utf8)!
                 response.append(jpeg)
@@ -130,8 +157,9 @@ public final class TelemetryServer: @unchecked Sendable {
 
         if path.hasPrefix("/logs") {
             lock.lock()
-            let logsText = logRingBuffer.joined(separator: "\n")
+            let entries = logRingBuffer
             lock.unlock()
+            let logsText = entries.joined(separator: "\n")
 
             let payload = logsText.data(using: .utf8) ?? Data()
             let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: \(payload.count)\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
@@ -141,19 +169,45 @@ public final class TelemetryServer: @unchecked Sendable {
         }
 
         // Default: /telemetry JSON
+        //
+        // The provider is fetched under the lock but invoked outside it: `lock` is
+        // an NSLock and therefore not reentrant, so any provider that logged would
+        // otherwise deadlock the whole app against itself.
         lock.lock()
-        let telemetryDict = currentTelemetryProvider?() ?? [:]
+        let provider = currentTelemetryProvider
         let recentLogs = Array(logRingBuffer.suffix(30))
         lock.unlock()
 
-        var combined: [String: Any] = telemetryDict
+        var combined: [String: Any] = provider?() ?? [:]
         combined["recent_logs"] = recentLogs
-        combined["server_time"] = ISO8601DateFormatter().string(from: Date())
+        combined["server_time"] = Self.timestampFormatter.string(from: Date())
 
         let jsonData = (try? JSONSerialization.data(withJSONObject: combined, options: [.prettyPrinted])) ?? Data()
         let headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: \(jsonData.count)\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
         var response = headers.data(using: .utf8)!
         response.append(jsonData)
         return response
+    }
+}
+
+/// Carries a screenshot across the main-thread hop in `captureScreenshot`.
+///
+/// A locked box rather than a captured `var`: if the wait times out, the main
+/// thread may still write its result afterwards, and that write must not race
+/// the server queue's read.
+private final class ScreenshotBox: @unchecked Sendable {
+    private var data: Data?
+    private let lock = NSLock()
+
+    func store(_ value: Data?) {
+        lock.lock()
+        defer { lock.unlock() }
+        data = value
+    }
+
+    func take() -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return data
     }
 }

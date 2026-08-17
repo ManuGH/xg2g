@@ -43,7 +43,7 @@ public struct TestTSPlayerScreen: View {
                     VStack(alignment: .leading, spacing: 12) {
                         hudHeader
 
-                        if let warning = pipeline.telemetry.validationWarning {
+                        if let warning = pipeline.telemetry.display.validationWarning {
                             HStack(spacing: 8) {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(.yellow)
@@ -55,7 +55,7 @@ public struct TestTSPlayerScreen: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.red.opacity(0.85))
                             .cornerRadius(8)
-                        } else if pipeline.telemetry.isDirect1080iVerified {
+                        } else if pipeline.telemetry.display.isDirect1080iVerified {
                             HStack(spacing: 8) {
                                 Image(systemName: "checkmark.seal.fill")
                                     .foregroundStyle(.green)
@@ -72,58 +72,63 @@ public struct TestTSPlayerScreen: View {
 
                         Group {
                             hudSection(title: "STARTUP GATES (Time-To-First-Picture)") {
-                                hudRow("TTFP (GPU Completed)", pipeline.telemetry.ttfpGpuCompletedMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpGpuCompletedMs) : (pipeline.telemetry.ttfpTotalMs > 0 ? String(format: "%.1f ms (Submitted)", pipeline.telemetry.ttfpTotalMs) : "Measuring…"), highlight: (pipeline.telemetry.ttfpGpuCompletedMs > 0 ? pipeline.telemetry.ttfpGpuCompletedMs : pipeline.telemetry.ttfpTotalMs) <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
-                                hudRow("Performance Rating", pipeline.telemetry.ttfpRating, highlight: pipeline.telemetry.ttfpTotalMs <= 800.0 && pipeline.telemetry.ttfpTotalMs > 0, alert: pipeline.telemetry.ttfpTotalMs > 1500.0)
-                                hudRow("t0→t1: Request→TS Data", pipeline.telemetry.ttfpNetworkMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpNetworkMs) : "Waiting…")
-                                hudRow("t1→t2: TS→PAT/PMT", pipeline.telemetry.ttfpPsiMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpPsiMs) : "Waiting…")
-                                hudRow("t2→t3: PSI→SPS/PPS", pipeline.telemetry.ttfpParamSetsMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpParamSetsMs) : "Waiting…")
-                                hudRow("t3→t4: Params→First IDR", pipeline.telemetry.ttfpIdrMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpIdrMs) : "Waiting…")
-                                hudRow("t4→t5: IDR→Decoded", pipeline.telemetry.ttfpDecodeMs > 0 ? String(format: "%.1f ms (≤100ms)", pipeline.telemetry.ttfpDecodeMs) : "Waiting…", highlight: pipeline.telemetry.ttfpDecodeMs <= 100.0 && pipeline.telemetry.ttfpDecodeMs > 0)
-                                hudRow("t5→t6: Decoded→Submit", pipeline.telemetry.ttfpRenderMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ttfpRenderMs) : "Waiting…")
-                                hudRow("Early Glitches (2s)", "\(pipeline.telemetry.earlyStabilityIssues)", alert: pipeline.telemetry.earlyStabilityIssues > 0)
+                                hudRow("TTFP (GPU Completed)", pipeline.telemetry.display.ttfpGpuCompletedMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ttfpGpuCompletedMs) : (pipeline.telemetry.display.ttfpTotalMs > 0 ? String(format: "%.1f ms (Submitted)", pipeline.telemetry.display.ttfpTotalMs) : "Measuring…"), highlight: (pipeline.telemetry.display.ttfpGpuCompletedMs > 0 ? pipeline.telemetry.display.ttfpGpuCompletedMs : pipeline.telemetry.display.ttfpTotalMs) <= 800.0 && pipeline.telemetry.display.ttfpTotalMs > 0, alert: pipeline.telemetry.display.ttfpTotalMs > 1500.0)
+                                hudRow("Performance Rating", pipeline.telemetry.display.ttfpRating, highlight: pipeline.telemetry.display.ttfpTotalMs <= 800.0 && pipeline.telemetry.display.ttfpTotalMs > 0, alert: pipeline.telemetry.display.ttfpTotalMs > 1500.0)
+                                hudRow("t0→t1: Request→TS Data", pipeline.telemetry.display.ttfpNetworkMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ttfpNetworkMs) : "Waiting…")
+                                hudRow("t1→t2: TS→PAT/PMT", pipeline.telemetry.display.ttfpPsiMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ttfpPsiMs) : "Waiting…")
+                                hudRow("t2→t3: PSI→SPS/PPS", pipeline.telemetry.display.ttfpParamSetsMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ttfpParamSetsMs) : "Waiting…")
+                                hudRow("t3→t4: Params→First IDR", pipeline.telemetry.display.ttfpIdrMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ttfpIdrMs) : "Waiting…")
+                                hudRow("t4→t5: IDR→Decoded", pipeline.telemetry.display.ttfpDecodeMs > 0 ? String(format: "%.1f ms (≤100ms)", pipeline.telemetry.display.ttfpDecodeMs) : "Waiting…", highlight: pipeline.telemetry.display.ttfpDecodeMs <= 100.0 && pipeline.telemetry.display.ttfpDecodeMs > 0)
+                                hudRow("t5→t6: Decoded→Submit", pipeline.telemetry.display.ttfpRenderMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ttfpRenderMs) : "Waiting…")
+                                hudRow("Early Glitches (2s)", "\(pipeline.telemetry.display.earlyStabilityIssues)", alert: pipeline.telemetry.display.earlyStabilityIssues > 0)
                             }
 
                             hudSection(title: "INPUT") {
-                                hudRow("TS Bitrate", String(format: "%.1f kbps", pipeline.telemetry.tsBitrateKbps))
-                                hudRow("Video PID", pipeline.telemetry.videoPID > 0 ? String(format: "0x%04X (%d)", pipeline.telemetry.videoPID, pipeline.telemetry.videoPID) : "Searching…")
-                                hudRow("Continuity Errors", "\(pipeline.telemetry.continuityErrors)", alert: pipeline.telemetry.continuityErrors > 0)
-                                hudRow("PES Errors", "\(pipeline.telemetry.pesErrors)", alert: pipeline.telemetry.pesErrors > 0)
+                                hudRow("TS Bitrate", String(format: "%.1f kbps", pipeline.telemetry.display.tsBitrateKbps))
+                                hudRow("Video PID", pipeline.telemetry.display.videoPID > 0 ? String(format: "0x%04X (%d)", pipeline.telemetry.display.videoPID, pipeline.telemetry.display.videoPID) : "Searching…")
+                                hudRow("Continuity Errors", "\(pipeline.telemetry.display.continuityErrors)", alert: pipeline.telemetry.display.continuityErrors > 0)
+                                hudRow("PES Errors", "\(pipeline.telemetry.display.pesErrors)", alert: pipeline.telemetry.display.pesErrors > 0)
+                                hudRow("AUs ohne PTS", "\(pipeline.telemetry.display.accessUnitsWithoutPTS)", alert: pipeline.telemetry.display.accessUnitsWithoutPTS > 0)
                             }
 
                             hudSection(title: "CODEC") {
-                                hudRow("Codec", pipeline.telemetry.codec)
-                                hudRow("Resolution", pipeline.telemetry.videoWidth > 0 ? "\(pipeline.telemetry.videoWidth)x\(pipeline.telemetry.videoHeight)" : "Waiting…")
-                                hudRow("Interlaced", pipeline.telemetry.isInterlaced ? "YES (1080i) ✅" : "NO (Progressive) ❌", highlight: pipeline.telemetry.isInterlaced, alert: !pipeline.telemetry.isInterlaced && pipeline.telemetry.videoWidth > 0)
-                                hudRow("Field Order", pipeline.telemetry.fieldOrder, highlight: pipeline.telemetry.fieldOrder == "TFF")
-                                hudRow("Source Field Rate", String(format: "%.1f fields/s", pipeline.telemetry.sourceFieldRate))
-                                hudRow("Source Frame Rate", String(format: "%.1f fps", pipeline.telemetry.sourceFrameRate))
+                                hudRow("Codec", pipeline.telemetry.display.codec)
+                                hudRow("Resolution", pipeline.telemetry.display.videoWidth > 0 ? "\(pipeline.telemetry.display.videoWidth)x\(pipeline.telemetry.display.videoHeight)" : "Waiting…")
+                                hudRow("Interlaced", pipeline.telemetry.display.isInterlaced ? "YES (1080i) ✅" : "NO (Progressive) ❌", highlight: pipeline.telemetry.display.isInterlaced, alert: !pipeline.telemetry.display.isInterlaced && pipeline.telemetry.display.videoWidth > 0)
+                                hudRow("Field Order", pipeline.telemetry.display.fieldOrder, highlight: pipeline.telemetry.display.fieldOrder == "TFF")
+                                hudRow("Source Field Rate", String(format: "%.1f fields/s", pipeline.telemetry.display.sourceFieldRate))
+                                hudRow("Source Frame Rate", String(format: "%.1f fps", pipeline.telemetry.display.sourceFrameRate))
                             }
 
                             hudSection(title: "DECODER (Apple Silicon HW)") {
-                                hudRow("VT Session", pipeline.telemetry.vtSessionActive ? "Active 🟢" : "Inactive ⚪️")
+                                hudRow("VT Session", pipeline.telemetry.display.vtSessionActive ? "Active 🟢" : "Inactive ⚪️")
                                 hudRow("HW Required", "YES (kVT...RequireHW)")
-                                hudRow("HW Active", pipeline.telemetry.hwDecodeActive ? "YES (Verified 🚀)" : "Pending…", highlight: pipeline.telemetry.hwDecodeActive)
-                                hudRow("VT Deinterlace", pipeline.useNativeVTDeinterlace ? (pipeline.telemetry.vtDeinterlaceAccepted ? "Accepted 🟢" : "Unsupported ⚠️") : "Disabled ⚪️", highlight: pipeline.telemetry.vtDeinterlaceAccepted, alert: pipeline.useNativeVTDeinterlace && !pipeline.telemetry.vtDeinterlaceAccepted)
-                                hudRow("Decoded Frames", String(format: "%.1f frames/s", pipeline.telemetry.decodedFramesPerSec), highlight: abs(pipeline.telemetry.decodedFramesPerSec - 25.0) < 2.0)
-                                hudRow("PTS Delta (Frame)", pipeline.telemetry.ptsProgressionMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.ptsProgressionMs) : "Pending…")
-                                hudRow("Decode Errors", "\(pipeline.telemetry.decodeErrors)", alert: pipeline.telemetry.decodeErrors > 0)
-                                hudRow("Pipeline Mode", pipeline.telemetry.activeDecoderMode)
+                                hudRow("HW Active", pipeline.telemetry.display.hwDecodeActive ? "YES (Verified 🚀)" : "Pending…", highlight: pipeline.telemetry.display.hwDecodeActive)
+                                hudRow("VT Deinterlace", pipeline.useNativeVTDeinterlace ? (pipeline.telemetry.display.vtDeinterlaceAccepted ? "Accepted 🟢" : "Key nicht akzeptiert ⚪️") : "Aus (Pfad A aktiv) ⚪️")
+                                hudRow("Decoded AU", String(format: "%.1f AU/s", pipeline.telemetry.display.decodedFramesPerSec), alert: pipeline.telemetry.display.sourceFrameRate > 0 && abs(pipeline.telemetry.display.decodedFramesPerSec - pipeline.telemetry.display.sourceFrameRate) > 3.0)
+                                hudRow("PTS Delta (Frame)", pipeline.telemetry.display.ptsProgressionMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ptsProgressionMs) : "Pending…", highlight: abs(pipeline.telemetry.display.ptsProgressionMs - 40.0) < 3.0)
+                                hudRow("Decode Errors", "\(pipeline.telemetry.display.decodeErrors)", alert: pipeline.telemetry.display.decodeErrors > 0)
+                                hudRow("Pipeline Mode", pipeline.telemetry.display.activeDecoderMode)
                             }
 
-                            hudSection(title: "RENDER (Metal 50p Field Presentation)") {
-                                hudRow("Top Fields", String(format: "%.1f /s (~25)", pipeline.telemetry.topFieldsPerSec), highlight: abs(pipeline.telemetry.topFieldsPerSec - 25.0) < 2.0)
-                                hudRow("Bottom Fields", String(format: "%.1f /s (~25)", pipeline.telemetry.bottomFieldsPerSec), highlight: abs(pipeline.telemetry.bottomFieldsPerSec - 25.0) < 2.0)
-                                hudRow("Repeated Fields", String(format: "%.1f /s (Total: %d)", pipeline.telemetry.repeatedFieldsPerSec, pipeline.telemetry.repeatedFieldCount), alert: pipeline.telemetry.repeatedFieldCount > 0)
-                                hudRow("Fields Submitted", String(format: "%.1f fps", pipeline.telemetry.fieldsSubmittedPerSec), highlight: abs(pipeline.telemetry.fieldsSubmittedPerSec - 50.0) < 2.0)
-                                hudRow("Field Cadence", pipeline.telemetry.fieldCadenceMs > 0 ? String(format: "%.2f ms", pipeline.telemetry.fieldCadenceMs) : "20.00 ms (Target)", highlight: abs(pipeline.telemetry.fieldCadenceMs - 20.0) < 2.0)
-                                hudRow("Display Callbacks", String(format: "%.1f /s", pipeline.telemetry.displayCallbacksPerSec))
-                                hudRow("Dropped Frames", "\(pipeline.telemetry.droppedFrames)", alert: pipeline.telemetry.droppedFrames > 0)
-                                hudRow("Presentation Jitter", String(format: "%.2f ms", pipeline.telemetry.presentationJitterMs))
+                            hudSection(title: "RENDER (Bob-Deinterlace, PTS-Scheduling)") {
+                                hudRow("Top Fields", String(format: "%.1f /s (~25)", pipeline.telemetry.display.topFieldsPerSec), highlight: abs(pipeline.telemetry.display.topFieldsPerSec - 25.0) < 2.0)
+                                hudRow("Bottom Fields", String(format: "%.1f /s (~25)", pipeline.telemetry.display.bottomFieldsPerSec), highlight: abs(pipeline.telemetry.display.bottomFieldsPerSec - 25.0) < 2.0)
+                                hudRow("Fields Submitted", String(format: "%.1f /s (~50)", pipeline.telemetry.display.fieldsSubmittedPerSec), highlight: abs(pipeline.telemetry.display.fieldsSubmittedPerSec - 50.0) < 2.0)
+                                hudRow("Field Cadence", pipeline.telemetry.display.fieldCadenceMs > 0 ? String(format: "%.2f ms (~20)", pipeline.telemetry.display.fieldCadenceMs) : "Pending…", highlight: abs(pipeline.telemetry.display.fieldCadenceMs - 20.0) < 1.0)
+                                hudRow("Presentation Jitter", String(format: "%.2f ms", pipeline.telemetry.display.presentationJitterMs), alert: pipeline.telemetry.display.presentationJitterMs > 8.0)
+                                // Expected: display rate minus field rate. Re-showing a
+                                // field is how 50 fields/s fits a 60 or 120 Hz panel.
+                                hudRow("Repeated Draws", String(format: "%.1f /s (Total: %d)", pipeline.telemetry.display.repeatedFieldsPerSec, pipeline.telemetry.display.repeatedFieldCount))
+                                hudRow("Draws / Callbacks", String(format: "%.1f / %.1f /s", pipeline.telemetry.display.presentedFramesPerSec, pipeline.telemetry.display.displayCallbacksPerSec))
+                                hudRow("Queue Depth", "\(pipeline.telemetry.display.queuedFieldCount) fields")
+                                hudRow("Dropped Frames", "\(pipeline.telemetry.display.droppedFrames)", alert: pipeline.telemetry.display.droppedFrames > 0)
+                                hudRow("Late Fields", "\(pipeline.telemetry.display.lateFrames)", alert: pipeline.telemetry.display.lateFrames > 0)
                             }
 
                             hudSection(title: "SYSTEM") {
-                                hudRow("Thermal State", pipeline.telemetry.thermalState)
-                                hudRow("Memory Usage", String(format: "%.1f MB", pipeline.telemetry.memoryUsageMB))
+                                hudRow("Thermal State", pipeline.telemetry.display.thermalState)
+                                hudRow("Memory Usage", String(format: "%.1f MB", pipeline.telemetry.display.memoryUsageMB))
                             }
                         }
 

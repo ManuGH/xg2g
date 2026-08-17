@@ -13,9 +13,35 @@ public struct H264DecodedInfo: Sendable {
     public let isTopFieldFirst: Bool
 }
 
+/// How a coded picture maps onto fields, read from the slice header.
+///
+/// A PAFF broadcast switches between frame and field pictures per picture, and
+/// the two need a different number of presentations — a frame carries both
+/// fields and is bobbed into two, a field picture is one. Inferring that from
+/// PTS spacing works only until the spacing wobbles, so it is read instead.
+public struct H264PictureStructure: Sendable {
+    /// True when this coded picture carries a single field.
+    public let isFieldPicture: Bool
+    /// Which field it carries. Only meaningful when `isFieldPicture` is true.
+    public let isBottomField: Bool
+    /// For a frame picture, which of its two fields is temporally first.
+    public let isTopFieldFirst: Bool
+
+    public init(isFieldPicture: Bool, isBottomField: Bool, isTopFieldFirst: Bool) {
+        self.isFieldPicture = isFieldPicture
+        self.isBottomField = isBottomField
+        self.isTopFieldFirst = isTopFieldFirst
+    }
+
+    /// DVB 1080i frame picture: both fields woven, top field first.
+    public static let wovenTopFieldFirst = H264PictureStructure(
+        isFieldPicture: false, isBottomField: false, isTopFieldFirst: true
+    )
+}
+
 public protocol H264AccessUnitAssemblerDelegate: AnyObject, Sendable {
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo)
-    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, isTopFieldFirst: Bool)
+    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, structure: H264PictureStructure)
 }
 
 /// Stream-level Annex-B H.264 Access Unit Assembler.
@@ -36,8 +62,14 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     private var pendingDTS: CMTime? = nil
     private var currentAUHasVCL: Bool = false
     private var currentAUHasIDR: Bool = false
-    private var currentAUIsTopFieldFirst: Bool = true
+    private var currentAUStructure: H264PictureStructure = .wovenTopFieldFirst
     private var lastEmittedPTS: CMTime = .invalid
+
+    // Slice-header geometry, needed to reach `field_pic_flag`. Captured from the
+    // active SPS; the defaults describe a progressive frame-only stream.
+    private var log2MaxFrameNum: Int = 4
+    private var separateColourPlaneFlag: Bool = false
+    private var frameMbsOnlyFlag: Bool = true
 
     private var spsData: Data?
     private var ppsData: Data?
@@ -57,7 +89,10 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         pendingDTS = nil
         currentAUHasVCL = false
         currentAUHasIDR = false
-        currentAUIsTopFieldFirst = true
+        currentAUStructure = .wovenTopFieldFirst
+        log2MaxFrameNum = 4
+        separateColourPlaneFlag = false
+        frameMbsOnlyFlag = true
         lastEmittedPTS = .invalid
         spsData = nil
         ppsData = nil
@@ -216,13 +251,20 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             updateFormatDescriptionIfNeeded()
 
         case 5: // IDR Slice
+            // Only the AU's first slice is parsed; later slices of the same
+            // picture repeat these fields, and their `first_mb_in_slice` is
+            // large enough to push the header past the bytes read here.
+            if !currentAUHasVCL {
+                currentAUStructure = parseSliceStructure(from: nal)
+            }
             currentAUHasVCL = true
             currentAUHasIDR = true
-            currentAUIsTopFieldFirst = detectFieldOrder(from: nal)
 
         case 1: // Non-IDR Slice
+            if !currentAUHasVCL {
+                currentAUStructure = parseSliceStructure(from: nal)
+            }
             currentAUHasVCL = true
-            currentAUIsTopFieldFirst = detectFieldOrder(from: nal)
 
         default:
             break
@@ -244,6 +286,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             currentAUNALs.removeAll(keepingCapacity: true)
             currentAUHasVCL = false
             currentAUHasIDR = false
+            currentAUStructure = .wovenTopFieldFirst
             currentAUPTS = .invalid
             currentAUDTS = nil
         }
@@ -346,7 +389,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(), Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
         }
 
-        delegate?.accessUnitAssembler(self, didEmitSampleBuffer: sb, isIDR: currentAUHasIDR, isTopFieldFirst: currentAUIsTopFieldFirst)
+        delegate?.accessUnitAssembler(self, didEmitSampleBuffer: sb, isIDR: currentAUHasIDR, structure: currentAUStructure)
     }
 
     private func updateFormatDescriptionIfNeeded() {
@@ -418,10 +461,11 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         _ = reader.readExpGolomb() // seq_parameter_set_id
 
         var chromaFormatIDC = 1
+        var separateColourPlane = false
         if profileIDC == 100 || profileIDC == 110 || profileIDC == 122 || profileIDC == 244 || profileIDC == 44 || profileIDC == 83 || profileIDC == 86 || profileIDC == 118 || profileIDC == 128 {
             chromaFormatIDC = reader.readExpGolomb()
             if chromaFormatIDC == 3 {
-                _ = reader.readBits(1) // separate_colour_plane_flag
+                separateColourPlane = reader.readBits(1) == 1
             }
             _ = reader.readExpGolomb() // bit_depth_luma_minus8
             _ = reader.readExpGolomb() // bit_depth_chroma_minus8
@@ -447,7 +491,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             }
         }
 
-        _ = reader.readExpGolomb() // log2_max_frame_num_minus4
+        let log2MaxFrameNumMinus4 = reader.readExpGolomb()
         let picOrderCntType = reader.readExpGolomb()
         if picOrderCntType == 0 {
             _ = reader.readExpGolomb() // log2_max_pic_order_cnt_lsb_minus4
@@ -474,6 +518,12 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
 
         let isInterlaced = !frameMbsOnlyFlag || mbAdaptiveFrameFieldFlag
 
+        // Retained for slice-header parsing: reaching `field_pic_flag` requires
+        // knowing the width of `frame_num` and whether `colour_plane_id` is present.
+        self.log2MaxFrameNum = min(max(log2MaxFrameNumMinus4 + 4, 4), 32)
+        self.separateColourPlaneFlag = separateColourPlane
+        self.frameMbsOnlyFlag = frameMbsOnlyFlag
+
         var width = (picWidthInMbsMinus1 + 1) * 16
         var height = (picHeightInMapUnitsMinus1 + 1) * 16 * (frameMbsOnlyFlag ? 1 : 2)
 
@@ -498,9 +548,44 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         )
     }
 
-    private func detectFieldOrder(from nal: Data) -> Bool {
-        // DVB 1080i HD broadcast standard is Top Field First (TFF).
-        return true
+    /// Reads `field_pic_flag` and `bottom_field_flag` from a slice header
+    /// (ITU-T H.264 §7.3.3).
+    ///
+    /// Field order for a *frame* picture is not in the slice header — it lives in
+    /// an SEI `pic_struct` this assembler does not parse — so TFF stays the
+    /// documented assumption for DVB 1080i there. A *field* picture states its
+    /// own parity, and that is what gets read.
+    private func parseSliceStructure(from nal: Data) -> H264PictureStructure {
+        // frame_mbs_only_flag == 1 means field pictures cannot occur, and
+        // field_pic_flag is then absent from the header entirely.
+        guard !frameMbsOnlyFlag, nal.count > 1 else { return .wovenTopFieldFirst }
+
+        // 16 bytes of RBSP comfortably covers the header up to bottom_field_flag
+        // for a slice with first_mb_in_slice == 0, which is the only kind parsed.
+        let rbsp = removeEmulationPreventionBytes(from: Data(nal.dropFirst(1).prefix(24)))
+        var reader = BitReader(data: rbsp)
+
+        _ = reader.readExpGolomb()      // first_mb_in_slice
+        _ = reader.readExpGolomb()      // slice_type
+        _ = reader.readExpGolomb()      // pic_parameter_set_id
+        if separateColourPlaneFlag {
+            _ = reader.readBits(2)      // colour_plane_id
+        }
+        _ = reader.readBits(log2MaxFrameNum)   // frame_num
+
+        guard !reader.isExhausted else { return .wovenTopFieldFirst }
+
+        let isFieldPicture = reader.readBits(1) == 1
+        let isBottomField = isFieldPicture ? (reader.readBits(1) == 1) : false
+
+        // A header that ran out mid-read yields values that cannot be trusted.
+        guard !reader.isExhausted || !isFieldPicture else { return .wovenTopFieldFirst }
+
+        return H264PictureStructure(
+            isFieldPicture: isFieldPicture,
+            isBottomField: isBottomField,
+            isTopFieldFirst: true
+        )
     }
 }
 
@@ -514,6 +599,10 @@ private struct BitReader {
     init(data: Data) {
         self.data = [UInt8](data)
     }
+
+    /// True once the reader has run past the end of its data, so callers can
+    /// tell a real bit value from a zero returned by exhaustion.
+    var isExhausted: Bool { byteOffset >= data.count }
 
     mutating func readBits(_ count: Int) -> Int {
         var value = 0
@@ -534,6 +623,9 @@ private struct BitReader {
         var leadingZeros = 0
         while byteOffset < data.count && readBits(1) == 0 {
             leadingZeros += 1
+            // A malformed header can otherwise run the prefix past Int's width
+            // and trap on the shift below.
+            if leadingZeros >= 32 { return 0 }
         }
         if leadingZeros == 0 { return 0 }
         let suffix = readBits(leadingZeros)

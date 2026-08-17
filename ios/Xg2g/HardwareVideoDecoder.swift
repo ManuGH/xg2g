@@ -9,7 +9,10 @@ import VideoToolbox
 public struct DecodedVideoFrame: @unchecked Sendable {
     public let pixelBuffer: CVPixelBuffer
     public let pts: CMTime
-    public let isTopFieldFirst: Bool
+    /// How the coded picture maps onto fields, carried through from the slice
+    /// header so the renderer knows how many presentations it owes and which
+    /// parity each one is.
+    public let structure: H264PictureStructure
 }
 
 public protocol HardwareVideoDecoderDelegate: AnyObject, Sendable {
@@ -99,7 +102,13 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         print(successMsg)
         TelemetryServer.shared.log(successMsg)
 
-        // Apply Path B native VideoToolbox deinterlace property if requested and verify
+        // Path B probes for a native VideoToolbox deinterlace property.
+        //
+        // `DeinterlaceMode` is not a documented `kVTDecompressionPropertyKey_*`
+        // constant — it is a speculative string key, and `VTSessionSetProperty`
+        // has never accepted it on any tested device. The probe is kept because
+        // it is self-verifying (the value is read back before being reported as
+        // accepted), but Path A is what actually deinterlaces.
         var isVTDeinterlaceAccepted = false
         if useNativeVTDeinterlace {
             let deinterlacePropKey = "DeinterlaceMode" as CFString
@@ -146,7 +155,7 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         }
     }
 
-    public func decode(sampleBuffer: CMSampleBuffer, isTopFieldFirst: Bool) {
+    public func decode(sampleBuffer: CMSampleBuffer, structure: H264PictureStructure) {
         guard let session = decompressionSession else {
             let msg = "[1080i50-DEC] ⚠️ No active decompression session"
             print(msg)
@@ -155,7 +164,7 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         }
 
         var flagsOut: VTDecodeInfoFlags = []
-        let context = FrameContext(isTopFieldFirst: isTopFieldFirst, pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        let context = FrameContext(structure: structure, pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
         let contextPtr = Unmanaged.passRetained(context).toOpaque()
 
         let status = VTDecompressionSessionDecodeFrame(
@@ -187,18 +196,18 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         let frame = DecodedVideoFrame(
             pixelBuffer: buffer,
             pts: context.pts,
-            isTopFieldFirst: context.isTopFieldFirst
+            structure: context.structure
         )
         delegate?.hardwareDecoder(self, didEmitFrame: frame)
     }
 }
 
 private final class FrameContext {
-    let isTopFieldFirst: Bool
+    let structure: H264PictureStructure
     let pts: CMTime
 
-    init(isTopFieldFirst: Bool, pts: CMTime) {
-        self.isTopFieldFirst = isTopFieldFirst
+    init(structure: H264PictureStructure, pts: CMTime) {
+        self.structure = structure
         self.pts = pts
     }
 }

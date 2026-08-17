@@ -4,118 +4,94 @@
 
 import Foundation
 
-/// Comprehensive live telemetry metrics for the native DVB-TS VideoToolbox + Metal pipeline.
-public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
+/// Every live metric of the native DVB-TS pipeline as one plain value.
+///
+/// A struct, not 51 `@Published` properties: the pipeline touches these from
+/// the TS parse queue, the decoder callback queue and the display link, dozens
+/// of times per second. Individual published properties turned each of those
+/// into its own main-queue hop and its own SwiftUI invalidation.
+public struct TelemetryValues: Sendable {
 
     // MARK: - TTFP (Time-to-First-Picture) & STARTUP GATES
-    @Published public var ttfpTotalMs: Double = 0.0               // t0 -> t6: Request -> Metal Present Submitted
-    @Published public var ttfpGpuCompletedMs: Double = 0.0        // t0 -> t6_gpu: Request -> GPU Present Completed
-    @Published public var ttfpRating: String = "Pending…"
-    @Published public var isFirstPicturePresented: Bool = false
-    @Published public var ttfpNetworkMs: Double = 0.0      // t0 -> t1: Request sent -> First TS packet
-    @Published public var ttfpPsiMs: Double = 0.0          // t1 -> t2: First TS -> PAT/PMT/Video PID known
-    @Published public var ttfpParamSetsMs: Double = 0.0    // t2 -> t3: Video PID -> SPS/PPS ready
-    @Published public var ttfpIdrMs: Double = 0.0          // t3 -> t4: SPS/PPS -> First complete IDR AU
-    @Published public var ttfpDecodeMs: Double = 0.0       // t4 -> t5: IDR AU -> VideoToolbox decoded frame
-    @Published public var ttfpRenderMs: Double = 0.0       // t5 -> t6: Decoded frame -> Metal Display Submit
-    @Published public var earlyStabilityIssues: Int = 0    // Drops or glitches in first 2 seconds
-    @Published public var sampleBuffersEmittedCount: Int = 0
-    @Published public var sampleBuffersDecodedCount: Int = 0
+    public var ttfpTotalMs: Double = 0.0               // t0 -> t6: Request -> Metal Present Submitted
+    public var ttfpGpuCompletedMs: Double = 0.0        // t0 -> t6_gpu: Request -> GPU Present Completed
+    public var ttfpRating: String = "Pending…"
+    public var isFirstPicturePresented: Bool = false
+    public var ttfpNetworkMs: Double = 0.0      // t0 -> t1: Request sent -> First TS packet
+    public var ttfpPsiMs: Double = 0.0          // t1 -> t2: First TS -> PAT/PMT/Video PID known
+    public var ttfpParamSetsMs: Double = 0.0    // t2 -> t3: Video PID -> SPS/PPS ready
+    public var ttfpIdrMs: Double = 0.0          // t3 -> t4: SPS/PPS -> First complete IDR AU
+    public var ttfpDecodeMs: Double = 0.0       // t4 -> t5: IDR AU -> VideoToolbox decoded frame
+    public var ttfpRenderMs: Double = 0.0       // t5 -> t6: Decoded frame -> Metal Display Submit
+    public var earlyStabilityIssues: Int = 0    // Drops or glitches in first 2 seconds
+    public var sampleBuffersEmittedCount: Int = 0
+    public var sampleBuffersDecodedCount: Int = 0
 
     // MARK: - INPUT Metrics
-    @Published public var tsBitrateKbps: Double = 0.0
-    @Published public var videoPID: UInt16 = 0
-    @Published public var continuityErrors: Int = 0
-    @Published public var pesErrors: Int = 0
+    public var tsBitrateKbps: Double = 0.0
+    public var videoPID: UInt16 = 0
+    public var continuityErrors: Int = 0
+    public var pesErrors: Int = 0
+
+    /// Access units emitted without a PES timestamp. A healthy broadcast stream
+    /// carries one PTS per coded picture, so a rising count means the assembler
+    /// is splitting pictures into multiple access units.
+    public var accessUnitsWithoutPTS: Int = 0
+
+    /// Bytes accepted from the socket but not yet parsed. Stays near zero when
+    /// the parse chain keeps up; a standing backlog means decode is the
+    /// bottleneck and picture delivery will arrive in bursts.
+    public var ingestBacklogBytes: Int = 0
 
     // MARK: - CODEC Metrics & Direct Source Validation
-    @Published public var codec: String = "H.264"
-    @Published public var videoWidth: Int = 0
-    @Published public var videoHeight: Int = 0
-    @Published public var isInterlaced: Bool = false
-    @Published public var fieldOrder: String = "Unknown" // "TFF", "BFF", "Progressive"
-    @Published public var sourceFrameRate: Double = 0.0  // ~25 fps
-    @Published public var sourceFieldRate: Double = 0.0  // ~50 fields/s
-    @Published public var isDirect1080iVerified: Bool = false
-    @Published public var validationWarning: String? = nil
+    public var codec: String = "H.264"
+    public var videoWidth: Int = 0
+    public var videoHeight: Int = 0
+    public var isInterlaced: Bool = false
+    public var fieldOrder: String = "Unknown" // "TFF", "BFF", "Progressive"
+    public var sourceFrameRate: Double = 0.0  // ~25 fps
+    public var sourceFieldRate: Double = 0.0  // ~50 fields/s
+    public var isDirect1080iVerified: Bool = false
+    public var validationWarning: String?
 
     // MARK: - DECODER Metrics
-    @Published public var vtSessionActive: Bool = false
-    @Published public var hwDecodeRequired: Bool = true
-    @Published public var hwDecodeActive: Bool = false
-    @Published public var vtDeinterlaceAccepted: Bool = false
-    @Published public var decodedFramesPerSec: Double = 0.0
-    @Published public var ptsProgressionMs: Double = 0.0 // ~40.0 ms per coded frame in 1080i50
-    @Published public var decodeErrors: Int = 0
-    @Published public var activeDecoderMode: String = "Metal Shader (Path A)" // or "VideoToolbox Native (Path B)"
+    public var vtSessionActive: Bool = false
+    public var hwDecodeRequired: Bool = true
+    public var hwDecodeActive: Bool = false
+    public var vtDeinterlaceAccepted: Bool = false
+    public var decodedFramesPerSec: Double = 0.0
+    public var ptsProgressionMs: Double = 0.0 // ~40.0 ms per coded frame in 1080i50
+    public var decodeErrors: Int = 0
+    public var activeDecoderMode: String = "Metal Shader (Path A)" // or "VideoToolbox Native (Path B)"
 
-    // MARK: - RENDER (Independent Field Presentation Counters)
-    @Published public var topFieldsPerSec: Double = 0.0        // ~25.0 /s (Top Fields)
-    @Published public var bottomFieldsPerSec: Double = 0.0     // ~25.0 /s (Bottom Fields)
-    @Published public var repeatedFieldsPerSec: Double = 0.0   // 0.0 /s (Repeated fields)
-    @Published public var repeatedFieldCount: Int = 0          // Cumulative repeats
-    @Published public var fieldsSubmittedPerSec: Double = 0.0  // ~50.0 fps total
-    @Published public var generatedFieldsPerSec: Double = 0.0
-    @Published public var presentedFramesPerSec: Double = 0.0
-    @Published public var fieldCadenceMs: Double = 0.0         // ~20.0 ms between field presentations
-    @Published public var displayCallbacksPerSec: Double = 0.0
-    @Published public var droppedFrames: Int = 0
-    @Published public var lateFrames: Int = 0
-    @Published public var duplicatePresentations: Int = 0
-    @Published public var presentationJitterMs: Double = 0.0
+    // MARK: - RENDER (Field Presentation Counters)
+    //
+    // A "field" here is a distinct bob-deinterlaced presentation, counted once
+    // by the parity actually rendered. Re-drawing the same field because
+    // 50 fields/s does not divide into the display refresh rate counts under
+    // `repeatedFieldsPerSec`, never as a new field.
+    public var topFieldsPerSec: Double = 0.0        // ~25.0 /s
+    public var bottomFieldsPerSec: Double = 0.0     // ~25.0 /s
+    public var repeatedFieldsPerSec: Double = 0.0   // ~10 /s at 60 Hz, ~70 /s at 120 Hz
+    public var repeatedFieldCount: Int = 0          // Cumulative repeats
+    public var fieldsSubmittedPerSec: Double = 0.0  // top + bottom, ~50.0 /s
+    public var generatedFieldsPerSec: Double = 0.0
+    public var presentedFramesPerSec: Double = 0.0  // Draw calls, i.e. display refresh rate
+    public var fieldCadenceMs: Double = 0.0         // ~20.0 ms between distinct fields
+    public var displayCallbacksPerSec: Double = 0.0
+    public var droppedFrames: Int = 0               // Reorder overflow + texture failures
+    public var lateFrames: Int = 0                  // Became due and were superseded unseen
+    public var duplicatePresentations: Int = 0
+    public var presentationJitterMs: Double = 0.0   // |actual - ideal| field interval
+    public var queuedFieldCount: Int = 0            // Current scheduler backlog
 
     // MARK: - SYSTEM Metrics
-    @Published public var cpuUsagePercent: Double = 0.0
-    @Published public var gpuTimePerFrameMs: Double = 0.0
-    @Published public var thermalState: String = "Nominal"
-    @Published public var memoryUsageMB: Double = 0.0
+    public var cpuUsagePercent: Double = 0.0
+    public var gpuTimePerFrameMs: Double = 0.0
+    public var thermalState: String = "Nominal"
+    public var memoryUsageMB: Double = 0.0
 
     public init() {}
-
-    public func reset() {
-        ttfpTotalMs = 0
-        ttfpGpuCompletedMs = 0
-        ttfpRating = "Pending…"
-        isFirstPicturePresented = false
-        ttfpNetworkMs = 0
-        ttfpPsiMs = 0
-        ttfpParamSetsMs = 0
-        ttfpIdrMs = 0
-        ttfpDecodeMs = 0
-        ttfpRenderMs = 0
-        earlyStabilityIssues = 0
-        tsBitrateKbps = 0
-        videoPID = 0
-        continuityErrors = 0
-        pesErrors = 0
-        videoWidth = 0
-        videoHeight = 0
-        isInterlaced = false
-        fieldOrder = "Unknown"
-        isDirect1080iVerified = false
-        validationWarning = nil
-        sourceFrameRate = 0
-        sourceFieldRate = 0
-        vtSessionActive = false
-        hwDecodeActive = false
-        vtDeinterlaceAccepted = false
-        decodedFramesPerSec = 0
-        ptsProgressionMs = 0
-        decodeErrors = 0
-        topFieldsPerSec = 0
-        bottomFieldsPerSec = 0
-        repeatedFieldsPerSec = 0
-        repeatedFieldCount = 0
-        fieldsSubmittedPerSec = 0
-        generatedFieldsPerSec = 0
-        presentedFramesPerSec = 0
-        fieldCadenceMs = 0
-        displayCallbacksPerSec = 0
-        droppedFrames = 0
-        lateFrames = 0
-        duplicatePresentations = 0
-        presentationJitterMs = 0
-    }
 
     public func toDictionary() -> [String: Any] {
         return [
@@ -149,12 +125,104 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
             "top_fields_per_sec": topFieldsPerSec,
             "bottom_fields_per_sec": bottomFieldsPerSec,
             "fields_submitted_per_sec": fieldsSubmittedPerSec,
+            "repeated_fields_per_sec": repeatedFieldsPerSec,
+            "presented_frames_per_sec": presentedFramesPerSec,
+            "display_callbacks_per_sec": displayCallbacksPerSec,
             "field_cadence_ms": fieldCadenceMs,
             "presentation_jitter_ms": presentationJitterMs,
             "repeated_field_count": repeatedFieldCount,
+            "queued_field_count": queuedFieldCount,
             "dropped_frames": droppedFrames,
+            "late_frames": lateFrames,
+            "access_units_without_pts": accessUnitsWithoutPTS,
+            "ingest_backlog_bytes": ingestBacklogBytes,
             "thermal_state": thermalState,
             "memory_usage_mb": memoryUsageMB
         ]
+    }
+}
+
+/// Thread-safe holder for `TelemetryValues` that publishes a coalesced copy to SwiftUI.
+///
+/// Producers call `mutate` from whatever thread they are already on — no main-queue
+/// hop, no per-metric invalidation. The HUD binds to `display`, which is refreshed on
+/// the main thread at most every `publishInterval` seconds however hot the pipeline runs.
+public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
+
+    /// Coalesced main-thread mirror. This is what SwiftUI observes.
+    @Published public private(set) var display = TelemetryValues()
+
+    private let lock = NSLock()
+    private var values = TelemetryValues()
+    private var publishScheduled = false
+
+    /// 4 Hz: fast enough to read as live, slow enough that a 50 fps pipeline
+    /// cannot saturate the main thread with view invalidations.
+    private static let publishInterval: TimeInterval = 0.25
+
+    public init() {}
+
+    /// Apply a mutation under the lock. Safe from any thread.
+    public func mutate(_ body: (inout TelemetryValues) -> Void) {
+        lock.lock()
+        body(&values)
+        let needsSchedule = !publishScheduled
+        publishScheduled = true
+        lock.unlock()
+
+        if needsSchedule {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.publishInterval) { [weak self] in
+                self?.publishNow()
+            }
+        }
+    }
+
+    /// Current values, consistent as of this call. Safe from any thread.
+    public func snapshot() -> TelemetryValues {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+
+    /// Clears per-stream metrics for a channel zap.
+    ///
+    /// Deliberately keeps the values that describe the app rather than the stream —
+    /// decoder mode, codec, thermal and memory readings, and the cumulative sample
+    /// buffer counters — matching the pre-refactor behaviour.
+    public func reset() {
+        lock.lock()
+        var fresh = TelemetryValues()
+        fresh.codec = values.codec
+        fresh.hwDecodeRequired = values.hwDecodeRequired
+        fresh.activeDecoderMode = values.activeDecoderMode
+        fresh.cpuUsagePercent = values.cpuUsagePercent
+        fresh.gpuTimePerFrameMs = values.gpuTimePerFrameMs
+        fresh.thermalState = values.thermalState
+        fresh.memoryUsageMB = values.memoryUsageMB
+        fresh.sampleBuffersEmittedCount = values.sampleBuffersEmittedCount
+        fresh.sampleBuffersDecodedCount = values.sampleBuffersDecodedCount
+        values = fresh
+        lock.unlock()
+
+        publishNow()
+    }
+
+    public func toDictionary() -> [String: Any] {
+        snapshot().toDictionary()
+    }
+
+    private func publishNow() {
+        lock.lock()
+        let current = values
+        publishScheduled = false
+        lock.unlock()
+
+        if Thread.isMainThread {
+            display = current
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.display = current
+            }
+        }
     }
 }

@@ -33,7 +33,20 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var bytesReceived: Int = 0
     private var lastBitrateCheck: Date = Date()
     private var systemMonitoringTimer: Timer?
-    private var lastDecodedPTS: CMTime = .invalid
+
+    /// Owns the parse chain: TS → PES → access units → VideoToolbox.
+    ///
+    /// Serial, and deliberately not the URLSession delegate queue. Parsing and
+    /// decode submission used to run inline on that queue, which accepts no new
+    /// data while a delegate callback is executing — so every slow stretch
+    /// stalled the socket and the backlog then arrived as a burst. Picture
+    /// delivery measured 0–49/s against a 25/s source because of it.
+    private let ingestQueue = DispatchQueue(label: "io.github.manugh.xg2g.ingest", qos: .userInitiated)
+    private let ingestStateLock = NSLock()
+    /// Bumped on stop so feeds queued for a previous stream bail out instead of
+    /// corrupting the assembler state of the next one.
+    private var ingestGeneration: Int = 0
+    private var pendingIngestBytes: Int = 0
 
     // TTFP Stage Timestamps
     private var requestStartTime: CFTimeInterval = 0
@@ -48,7 +61,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         get { decoder.useNativeVTDeinterlace }
         set {
             decoder.useNativeVTDeinterlace = newValue
-            telemetry.activeDecoderMode = newValue ? "VideoToolbox Native (Path B)" : "Metal Shader (Path A)"
+            let mode = newValue ? "VideoToolbox Native (Path B)" : "Metal Shader (Path A)"
+            telemetry.mutate { $0.activeDecoderMode = mode }
         }
     }
 
@@ -63,16 +77,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         TelemetryServer.shared.setTelemetryProvider { [weak self] in
             return self?.telemetry.toDictionary() ?? [:]
         }
+        // The server owns the main-thread hop and its timeout; this closure only
+        // has to promise it runs there.
         TelemetryServer.shared.setScreenshotProvider { [weak self] in
-            if Thread.isMainThread {
-                return MainActor.assumeIsolated {
-                    self?.renderView?.captureCurrentFrameJPEG()
-                }
-            } else {
-                return DispatchQueue.main.sync {
-                    self?.renderView?.captureCurrentFrameJPEG()
-                }
-            }
+            self?.renderView?.captureCurrentFrameJPEG()
         }
     }
 
@@ -83,7 +91,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     public func startStreaming(url: URL) {
         stopStreaming()
         telemetry.reset()
-        lastDecodedPTS = .invalid
 
         requestStartTime = CACurrentMediaTime()
         firstDataTime = 0
@@ -143,10 +150,21 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         stopSystemMonitoring()
 
-        tsParser.reset()
-        pesAssembler.reset()
-        accessUnitAssembler.reset()
-        decoder.reset()
+        // Retire any feeds still queued for this stream first, so the barrier
+        // below returns promptly instead of waiting out the whole backlog.
+        ingestStateLock.lock()
+        ingestGeneration += 1
+        pendingIngestBytes = 0
+        ingestStateLock.unlock()
+
+        // The parse chain is owned by `ingestQueue`; resetting it from here while
+        // a feed is in flight would corrupt the assembler state mid-packet.
+        ingestQueue.sync {
+            tsParser.reset()
+            pesAssembler.reset()
+            accessUnitAssembler.reset()
+            decoder.reset()
+        }
     }
 
     // MARK: - URLSessionDataDelegate (Streaming Ingest)
@@ -161,9 +179,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             TelemetryServer.shared.log(httpLog)
 
             if httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 {
-                DispatchQueue.main.async { [weak self] in
-                    self?.telemetry.ttfpRating = "❌ HTTP \(httpResponse.statusCode) (\(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)))"
-                }
+                let rating = "❌ HTTP \(httpResponse.statusCode) (\(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)))"
+                telemetry.mutate { $0.ttfpRating = rating }
                 completionHandler(.cancel)
                 return
             }
@@ -173,9 +190,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error as NSError?, error.code != NSURLErrorCancelled {
-            DispatchQueue.main.async { [weak self] in
-                self?.telemetry.ttfpRating = "❌ Connection Error: \(error.localizedDescription)"
-            }
+            let rating = "❌ Connection Error: \(error.localizedDescription)"
+            telemetry.mutate { $0.ttfpRating = rating }
         }
     }
 
@@ -183,29 +199,49 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         if firstDataTime == 0 && requestStartTime > 0 {
             firstDataTime = CACurrentMediaTime()
             let netMs = (firstDataTime - requestStartTime) * 1000.0
-            DispatchQueue.main.async { [weak self] in
-                self?.telemetry.ttfpNetworkMs = netMs
-            }
+            telemetry.mutate { $0.ttfpNetworkMs = netMs }
         }
 
         bytesReceived += data.count
+
+        ingestStateLock.lock()
+        let generation = ingestGeneration
+        pendingIngestBytes += data.count
+        let backlog = pendingIngestBytes
+        ingestStateLock.unlock()
+
         let now = Date()
         if now.timeIntervalSince(lastBitrateCheck) >= 1.0 {
             let elapsed = now.timeIntervalSince(lastBitrateCheck)
             let kbps = (Double(bytesReceived * 8) / 1000.0) / elapsed
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.telemetry.tsBitrateKbps = kbps
-                let qualityLog = "[1080i50-QUALITY] Bitrate: \(String(format: "%.1f", kbps)) kbps | VideoPID: \(self.telemetry.videoPID) | ContinuityErr: \(self.telemetry.continuityErrors) | PESErr: \(self.telemetry.pesErrors) | DecErrors: \(self.telemetry.decodeErrors)"
-                print(qualityLog)
-                logger.notice("\(qualityLog, privacy: .public)")
-                TelemetryServer.shared.log(qualityLog)
+            telemetry.mutate {
+                $0.tsBitrateKbps = kbps
+                $0.ingestBacklogBytes = backlog
             }
+
+            let snapshot = telemetry.snapshot()
+            let qualityLog = "[1080i50-QUALITY] Bitrate: \(String(format: "%.1f", kbps)) kbps | VideoPID: \(snapshot.videoPID) | ContinuityErr: \(snapshot.continuityErrors) | PESErr: \(snapshot.pesErrors) | DecErrors: \(snapshot.decodeErrors) | Backlog: \(backlog / 1024) KiB"
+            print(qualityLog)
+            logger.notice("\(qualityLog, privacy: .public)")
+            TelemetryServer.shared.log(qualityLog)
+
             bytesReceived = 0
             lastBitrateCheck = now
         }
 
-        tsParser.feed(data: data)
+        // Hand off and return, so the socket keeps draining while this chunk is
+        // parsed and its access units are submitted to the decoder.
+        ingestQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            self.ingestStateLock.lock()
+            self.pendingIngestBytes -= data.count
+            let isStale = generation != self.ingestGeneration
+            self.ingestStateLock.unlock()
+
+            guard !isStale else { return }
+            self.tsParser.feed(data: data)
+        }
     }
 
     // MARK: - TSPacketParserDelegate
@@ -215,14 +251,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             psiParsedTime = CACurrentMediaTime()
             let base = firstDataTime > 0 ? firstDataTime : requestStartTime
             let psiMs = (psiParsedTime - base) * 1000.0
-            DispatchQueue.main.async { [weak self] in
-                self?.telemetry.ttfpPsiMs = psiMs
-            }
+            telemetry.mutate { $0.ttfpPsiMs = psiMs }
         }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.telemetry.videoPID = pid
-        }
+        telemetry.mutate { $0.videoPID = pid }
     }
 
     public func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool) {
@@ -230,9 +262,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8) {
-        DispatchQueue.main.async { [weak self] in
-            self?.telemetry.continuityErrors += 1
-        }
+        telemetry.mutate { $0.continuityErrors += 1 }
     }
 
     // MARK: - PESPacketAssemblerDelegate
@@ -242,9 +272,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func pesAssembler(_ assembler: PESPacketAssembler, didEncounterPESError reason: String) {
-        DispatchQueue.main.async { [weak self] in
-            self?.telemetry.pesErrors += 1
-        }
+        telemetry.mutate { $0.pesErrors += 1 }
     }
 
     // MARK: - H264AccessUnitAssemblerDelegate
@@ -254,49 +282,56 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             paramsReadyTime = CACurrentMediaTime()
             let base = psiParsedTime > 0 ? psiParsedTime : (firstDataTime > 0 ? firstDataTime : requestStartTime)
             let paramMs = (paramsReadyTime - base) * 1000.0
-            DispatchQueue.main.async { [weak self] in
-                self?.telemetry.ttfpParamSetsMs = paramMs
-            }
+            telemetry.mutate { $0.ttfpParamSetsMs = paramMs }
         }
 
         decoder.configure(with: formatDescription)
+
+        // Drives whether the render view bob-deinterlaces or passes through.
+        let interlaced = info.isInterlaced
+        DispatchQueue.main.async { [weak self] in
+            self?.renderView?.sourceIsInterlaced = interlaced
+        }
+
         let logMsg = "[1080i50-CODEC] Format: \(info.width)x\(info.height) | Interlaced: \(info.isInterlaced) | TFF: \(info.isTopFieldFirst)"
         print(logMsg)
         logger.notice("\(logMsg, privacy: .public)")
         TelemetryServer.shared.log(logMsg)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.telemetry.videoWidth = info.width
-            self.telemetry.videoHeight = info.height
-            self.telemetry.isInterlaced = info.isInterlaced
-            self.telemetry.fieldOrder = info.isInterlaced ? (info.isTopFieldFirst ? "TFF" : "BFF") : "Progressive"
-            self.telemetry.vtSessionActive = true
+        telemetry.mutate {
+            $0.videoWidth = info.width
+            $0.videoHeight = info.height
+            $0.isInterlaced = info.isInterlaced
+            $0.fieldOrder = info.isInterlaced ? (info.isTopFieldFirst ? "TFF" : "BFF") : "Progressive"
+            $0.vtSessionActive = true
 
             if info.isInterlaced {
-                self.telemetry.isDirect1080iVerified = true
-                self.telemetry.validationWarning = nil
+                $0.isDirect1080iVerified = true
+                $0.validationWarning = nil
             } else {
-                self.telemetry.isDirect1080iVerified = false
-                self.telemetry.validationWarning = "⚠️ WARNUNG: Stream ist PROGRESSIV (\(info.width)x\(info.height)p) – Server-Transcode aktiv!"
+                $0.isDirect1080iVerified = false
+                $0.validationWarning = "⚠️ WARNUNG: Stream ist PROGRESSIV (\(info.width)x\(info.height)p) – Server-Transcode aktiv!"
             }
         }
     }
 
-    public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, isTopFieldFirst: Bool) {
+    public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, structure: H264PictureStructure) {
         if firstIdrTime == 0 {
             firstIdrTime = CACurrentMediaTime()
             let base = paramsReadyTime > 0 ? paramsReadyTime : (psiParsedTime > 0 ? psiParsedTime : requestStartTime)
             let idrMs = (firstIdrTime - base) * 1000.0
-            DispatchQueue.main.async { [weak self] in
-                self?.telemetry.ttfpIdrMs = idrMs
-            }
+            telemetry.mutate { $0.ttfpIdrMs = idrMs }
         }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.telemetry.sampleBuffersEmittedCount += 1
+        // One PTS per coded picture is what a well-formed stream carries. Access
+        // units arriving without one mean the assembler split a picture, which
+        // inflates the decode rate above the broadcast frame rate.
+        let hasPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).isValid
+        telemetry.mutate {
+            $0.sampleBuffersEmittedCount += 1
+            if !hasPTS { $0.accessUnitsWithoutPTS += 1 }
         }
 
-        decoder.decode(sampleBuffer: sampleBuffer, isTopFieldFirst: isTopFieldFirst)
+        decoder.decode(sampleBuffer: sampleBuffer, structure: structure)
     }
 
     // MARK: - HardwareVideoDecoderDelegate
@@ -306,66 +341,49 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             firstDecodedTime = CACurrentMediaTime()
             let base = firstIdrTime > 0 ? firstIdrTime : (paramsReadyTime > 0 ? paramsReadyTime : requestStartTime)
             let decMs = (firstDecodedTime - base) * 1000.0
-            DispatchQueue.main.async { [weak self] in
-                self?.telemetry.ttfpDecodeMs = decMs
-            }
+            telemetry.mutate { $0.ttfpDecodeMs = decMs }
         }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.telemetry.sampleBuffersDecodedCount += 1
-        }
+        telemetry.mutate { $0.sampleBuffersDecodedCount += 1 }
 
         decodedFrameCounter += 1
         let now = Date()
         if now.timeIntervalSince(lastDecodedRateCheck) >= 1.0 {
             let elapsed = now.timeIntervalSince(lastDecodedRateCheck)
             let rate = Double(decodedFrameCounter) / elapsed
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.telemetry.decodedFramesPerSec = rate
-                let decLog = "[1080i50-DECODER] HW: \(self.telemetry.hwDecodeActive) | Decoded FPS: \(String(format: "%.1f", rate)) | PTS Delta: \(String(format: "%.1f", self.telemetry.ptsProgressionMs))ms"
-                print(decLog)
-                logger.notice("\(decLog, privacy: .public)")
-                TelemetryServer.shared.log(decLog)
-            }
+            telemetry.mutate { $0.decodedFramesPerSec = rate }
+
+            let snapshot = telemetry.snapshot()
+            let decLog = "[1080i50-DECODER] HW: \(snapshot.hwDecodeActive) | Decoded AU/s: \(String(format: "%.1f", rate)) | Source: \(String(format: "%.1f", snapshot.sourceFrameRate)) fps (PTS delta \(String(format: "%.1f", snapshot.ptsProgressionMs))ms) | AUs w/o PTS: \(snapshot.accessUnitsWithoutPTS)"
+            print(decLog)
+            logger.notice("\(decLog, privacy: .public)")
+            TelemetryServer.shared.log(decLog)
+
             decodedFrameCounter = 0
             lastDecodedRateCheck = now
         }
 
-        if lastDecodedPTS.isValid && frame.pts.isValid {
-            let delta = CMTimeSubtract(frame.pts, lastDecodedPTS)
-            if delta.isValid && delta.seconds > 0.0 && delta.seconds < 1.0 {
-                let deltaMs = delta.seconds * 1000.0
-                DispatchQueue.main.async { [weak self] in
-                    self?.telemetry.ptsProgressionMs = deltaMs
-                }
-            }
-        }
-        if frame.pts.isValid {
-            lastDecodedPTS = frame.pts
-        }
-
+        // `ptsProgressionMs` is measured by the render view instead: VideoToolbox
+        // emits in decode order, so consecutive deltas here run backwards across
+        // every B-frame and only the reorder buffer sees the true cadence.
         renderView?.enqueueFrame(frame)
     }
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeHWActiveState isHWActive: Bool) {
-        DispatchQueue.main.async { [weak self] in
-            self?.telemetry.hwDecodeActive = isHWActive
-        }
+        telemetry.mutate { $0.hwDecodeActive = isHWActive }
     }
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeVTDeinterlaceAccepted isAccepted: Bool) {
-        DispatchQueue.main.async { [weak self] in
-            self?.telemetry.vtDeinterlaceAccepted = isAccepted
-        }
+        telemetry.mutate { $0.vtDeinterlaceAccepted = isAccepted }
     }
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEncounterDecodeError error: OSStatus) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.telemetry.decodeErrors += 1
-            if self.firstPictureDeliveredTime > 0 && CACurrentMediaTime() - self.firstPictureDeliveredTime <= 2.0 {
-                self.telemetry.earlyStabilityIssues += 1
+        let isEarly = firstPictureDeliveredTime > 0
+            && CACurrentMediaTime() - firstPictureDeliveredTime <= 2.0
+        telemetry.mutate {
+            $0.decodeErrors += 1
+            if isEarly {
+                $0.earlyStabilityIssues += 1
             }
         }
     }
@@ -392,26 +410,24 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             rating = "🔴 Inakzeptabel (> 2.0 s)"
         }
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.telemetry.ttfpTotalMs = totalMs
-            self.telemetry.ttfpRenderMs = renderMs
-            self.telemetry.ttfpRating = rating
-            self.telemetry.isFirstPicturePresented = true
-            let ttfpLog = "[1080i50-TTFP] Total: \(String(format: "%.1f", totalMs))ms | Net: \(String(format: "%.1f", self.telemetry.ttfpNetworkMs))ms | PSI: \(String(format: "%.1f", self.telemetry.ttfpPsiMs))ms | Params: \(String(format: "%.1f", self.telemetry.ttfpParamSetsMs))ms | FirstAU: \(String(format: "%.1f", self.telemetry.ttfpIdrMs))ms | Dec: \(String(format: "%.1f", self.telemetry.ttfpDecodeMs))ms | Render: \(String(format: "%.1f", renderMs))ms"
-            print(ttfpLog)
-            logger.notice("\(ttfpLog, privacy: .public)")
-            TelemetryServer.shared.log(ttfpLog)
+        telemetry.mutate {
+            $0.ttfpTotalMs = totalMs
+            $0.ttfpRenderMs = renderMs
+            $0.ttfpRating = rating
+            $0.isFirstPicturePresented = true
         }
+
+        let snapshot = telemetry.snapshot()
+        let ttfpLog = "[1080i50-TTFP] Total: \(String(format: "%.1f", totalMs))ms | Net: \(String(format: "%.1f", snapshot.ttfpNetworkMs))ms | PSI: \(String(format: "%.1f", snapshot.ttfpPsiMs))ms | Params: \(String(format: "%.1f", snapshot.ttfpParamSetsMs))ms | FirstAU: \(String(format: "%.1f", snapshot.ttfpIdrMs))ms | Dec: \(String(format: "%.1f", snapshot.ttfpDecodeMs))ms | Render: \(String(format: "%.1f", renderMs))ms"
+        print(ttfpLog)
+        logger.notice("\(ttfpLog, privacy: .public)")
+        TelemetryServer.shared.log(ttfpLog)
     }
 
     private func handleFirstFrameActuallyPresented(screenTimestamp: Double) {
         guard requestStartTime > 0 else { return }
         let gpuDoneMs = (screenTimestamp - requestStartTime) * 1000.0
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.telemetry.ttfpGpuCompletedMs = gpuDoneMs
-        }
+        telemetry.mutate { $0.ttfpGpuCompletedMs = gpuDoneMs }
     }
 
     // MARK: - System Telemetry Monitoring
@@ -447,9 +463,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
         let memMB = (kerr == KERN_SUCCESS) ? Double(info.resident_size) / (1024.0 * 1024.0) : 0.0
 
-        telemetry.thermalState = thermalString
-        telemetry.memoryUsageMB = memMB
-        let sysLog = "[1080i50-SYSTEM] Thermal: \(thermalString) | RAM: \(String(format: "%.1f", memMB)) MB"
+        telemetry.mutate {
+            $0.thermalState = thermalString
+            $0.memoryUsageMB = memMB
+        }
+        // Low Power Mode caps ProMotion at 60 Hz regardless of the display link's
+        // preferred range, so it has to be visible before a 60 Hz reading gets
+        // blamed on the Info.plist key or the frame-rate request.
+        let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let sysLog = "[1080i50-SYSTEM] Thermal: \(thermalString) | RAM: \(String(format: "%.1f", memMB)) MB | LowPower: \(lowPower)"
         print(sysLog)
         logger.notice("\(sysLog, privacy: .public)")
         TelemetryServer.shared.log(sysLog)

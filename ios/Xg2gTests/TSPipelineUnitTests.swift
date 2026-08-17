@@ -298,31 +298,32 @@ struct TSPipelineUnitTests {
 
         await MainActor.run {
             pipeline.stopStreaming()
+            let telemetry = pipeline.telemetry.snapshot()
             print("=== [GATE 2 TELEMETRY REPORT] ===")
             print("HTTP Connected: Status 200 OK")
-            print("TTFP Total: \(String(format: "%.1f", pipeline.telemetry.ttfpTotalMs)) ms")
-            print("t0->t1 (Network): \(String(format: "%.1f", pipeline.telemetry.ttfpNetworkMs)) ms")
-            print("t1->t2 (PSI Demux): \(String(format: "%.1f", pipeline.telemetry.ttfpPsiMs)) ms")
-            print("t2->t3 (Params SPS/PPS): \(String(format: "%.1f", pipeline.telemetry.ttfpParamSetsMs)) ms")
-            print("t3->t4 (First IDR AU): \(String(format: "%.1f", pipeline.telemetry.ttfpIdrMs)) ms")
-            print("t4->t5 (HW Decode): \(String(format: "%.1f", pipeline.telemetry.ttfpDecodeMs)) ms")
-            print("t5->t6 (Render Submit): \(String(format: "%.1f", pipeline.telemetry.ttfpRenderMs)) ms")
-            print("Bitrate: \(String(format: "%.1f", pipeline.telemetry.tsBitrateKbps)) kbps")
-            print("Video PID: \(pipeline.telemetry.videoPID)")
-            print("Resolution: \(pipeline.telemetry.videoWidth)x\(pipeline.telemetry.videoHeight)")
-            print("Interlaced: \(pipeline.telemetry.isInterlaced)")
-            print("Field Order: \(pipeline.telemetry.fieldOrder)")
-            print("HW Active: \(pipeline.telemetry.hwDecodeActive)")
-            print("Continuity Errors: \(pipeline.telemetry.continuityErrors)")
-            print("PES Errors: \(pipeline.telemetry.pesErrors)")
-            print("Decode Errors: \(pipeline.telemetry.decodeErrors)")
-            print("Decoded FPS: \(String(format: "%.1f", pipeline.telemetry.decodedFramesPerSec))")
-            print("Thermal State: \(pipeline.telemetry.thermalState)")
-            print("Memory Usage: \(String(format: "%.1f", pipeline.telemetry.memoryUsageMB)) MB")
+            print("TTFP Total: \(String(format: "%.1f", telemetry.ttfpTotalMs)) ms")
+            print("t0->t1 (Network): \(String(format: "%.1f", telemetry.ttfpNetworkMs)) ms")
+            print("t1->t2 (PSI Demux): \(String(format: "%.1f", telemetry.ttfpPsiMs)) ms")
+            print("t2->t3 (Params SPS/PPS): \(String(format: "%.1f", telemetry.ttfpParamSetsMs)) ms")
+            print("t3->t4 (First IDR AU): \(String(format: "%.1f", telemetry.ttfpIdrMs)) ms")
+            print("t4->t5 (HW Decode): \(String(format: "%.1f", telemetry.ttfpDecodeMs)) ms")
+            print("t5->t6 (Render Submit): \(String(format: "%.1f", telemetry.ttfpRenderMs)) ms")
+            print("Bitrate: \(String(format: "%.1f", telemetry.tsBitrateKbps)) kbps")
+            print("Video PID: \(telemetry.videoPID)")
+            print("Resolution: \(telemetry.videoWidth)x\(telemetry.videoHeight)")
+            print("Interlaced: \(telemetry.isInterlaced)")
+            print("Field Order: \(telemetry.fieldOrder)")
+            print("HW Active: \(telemetry.hwDecodeActive)")
+            print("Continuity Errors: \(telemetry.continuityErrors)")
+            print("PES Errors: \(telemetry.pesErrors)")
+            print("Decode Errors: \(telemetry.decodeErrors)")
+            print("Decoded FPS: \(String(format: "%.1f", telemetry.decodedFramesPerSec))")
+            print("Thermal State: \(telemetry.thermalState)")
+            print("Memory Usage: \(String(format: "%.1f", telemetry.memoryUsageMB)) MB")
             print("==================================")
         }
 
-        #expect(pipeline.telemetry.videoPID > 0)
+        #expect(pipeline.telemetry.snapshot().videoPID > 0)
     }
 }
 
@@ -400,15 +401,17 @@ private final class MockAccessUnitSink: H264AccessUnitAssemblerDelegate, @unchec
     var info: H264DecodedInfo?
     var emittedSampleBuffers: [CMSampleBuffer] = []
     var isIDRFlags: [Bool] = []
+    var structures: [H264PictureStructure] = []
 
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
         self.formatDescription = formatDescription
         self.info = info
     }
 
-    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, isTopFieldFirst: Bool) {
+    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, structure: H264PictureStructure) {
         self.emittedSampleBuffers.append(sampleBuffer)
         self.isIDRFlags.append(isIDR)
+        self.structures.append(structure)
     }
 }
 
