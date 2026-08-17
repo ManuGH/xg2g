@@ -266,11 +266,22 @@ public final class MetalVideoView: UIView {
         }
         lastDisplayTimestamp = now
 
-        // Frame progression: 25 fps broadcast cadence (40ms per frame)
+        // Frame progression: 25 fps broadcast cadence with adaptive queue drift compensation
         var isRepeatedField = false
+        let queueCount = frameQueue.count
+
+        // Target jitter buffer: ~4-8 frames
+        var targetInterval: Double = 0.038
+        if queueCount > 15 {
+            targetInterval = 0.025 // Drain fast if buffered too much
+        } else if queueCount > 8 {
+            targetInterval = 0.032 // Drain slightly faster to catch up
+        } else if queueCount < 3 {
+            targetInterval = 0.045 // Extend slightly to prevent underrun
+        }
 
         let timeSinceLastFrame = (lastFrameDisplayTime > 0) ? (now - lastFrameDisplayTime) : 1.0
-        if currentFrame == nil || timeSinceLastFrame >= 0.038 {
+        if currentFrame == nil || timeSinceLastFrame >= targetInterval {
             if let nextFrame = frameQueue.pop() {
                 currentFrame = nextFrame
                 lastFrameDisplayTime = now
@@ -281,9 +292,9 @@ public final class MetalVideoView: UIView {
 
         guard let frame = currentFrame else { return }
 
-        // Field cadence: 50 fields/sec (Field 1: 0..20ms, Field 2: 20..40ms)
+        // Field cadence: 50 fields/sec (Field 1: 0..50%, Field 2: 50..100% of frame duration)
         let elapsedInFrame = now - lastFrameDisplayTime
-        let isSecondField = (elapsedInFrame >= 0.018)
+        let isSecondField = (elapsedInFrame >= (targetInterval * 0.45))
 
         let renderedFieldIsTop: Bool
         if frame.isTopFieldFirst {
