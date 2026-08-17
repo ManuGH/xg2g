@@ -163,7 +163,6 @@ public final class AC3FrameParser: @unchecked Sendable {
         let b1 = buffer[start + 1]
         guard b0 == 0x0B && b1 == 0x77 else { return nil }
 
-        let b4 = buffer[start + 4]
         let b5 = buffer[start + 5]
 
         let bsid = Int((b5 >> 3) & 0x1F)

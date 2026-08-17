@@ -115,12 +115,14 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
             let deinterlacePropVal = "Temporal" as CFString
             let deintStatus = VTSessionSetProperty(activeSession, key: deinterlacePropKey, value: deinterlacePropVal)
             if deintStatus == noErr {
-                var readVal: CFTypeRef?
+                var readVal: Unmanaged<CFPropertyList>?
                 let copyStatus = VTSessionCopyProperty(activeSession, key: deinterlacePropKey, allocator: kCFAllocatorDefault, valueOut: &readVal)
-                if copyStatus == noErr, let val = readVal, CFGetTypeID(val) == CFStringGetTypeID() {
-                    let str = unsafeBitCast(val, to: CFString.self) as String
-                    if str == "Temporal" || str == "VerticalFilter" {
-                        isVTDeinterlaceAccepted = true
+                if copyStatus == noErr, let unmanaged = readVal {
+                    let val = unmanaged.takeRetainedValue()
+                    if let str = val as? String {
+                        if str == "Temporal" || str == "VerticalFilter" {
+                            isVTDeinterlaceAccepted = true
+                        }
                     }
                 }
             }
@@ -128,16 +130,21 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 
         // Verify if Hardware Acceleration is active
         var isHWActive: Bool = false
-        var usingHW: CFTypeRef?
+        var usingHW: Unmanaged<CFPropertyList>?
         let hwStatus = VTSessionCopyProperty(
             activeSession,
             key: kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
             allocator: kCFAllocatorDefault,
             valueOut: &usingHW
         )
-        if hwStatus == noErr, let val = usingHW, CFGetTypeID(val) == CFBooleanGetTypeID() {
-            let cfBool = unsafeBitCast(val, to: CFBoolean.self)
-            isHWActive = CFBooleanGetValue(cfBool)
+        if hwStatus == noErr, let unmanaged = usingHW {
+            let val = unmanaged.takeRetainedValue()
+            if let boolVal = val as? Bool {
+                isHWActive = boolVal
+            } else if CFGetTypeID(val) == CFBooleanGetTypeID() {
+                let cfBool = unsafeDowncast(val, to: CFBoolean.self)
+                isHWActive = CFBooleanGetValue(cfBool)
+            }
         } else {
             // Since RequireHardwareAcceleratedVideoDecoder was set to true, session creation success implies HW is active
             isHWActive = true
