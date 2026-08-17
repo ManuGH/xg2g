@@ -55,7 +55,17 @@ public final class TelemetryServer: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// Starts the diagnostic listener. Debug builds only.
+    ///
+    /// The endpoints are unauthenticated and bind every interface, and
+    /// `/screenshot` returns a live capture of whatever is on screen. That is
+    /// acceptable on a development device and would be a privacy hole in a
+    /// shipped build, so release builds never open the socket. `log` stays live
+    /// either way — it only feeds an in-process ring buffer.
     public func start() {
+#if !DEBUG
+        return
+#else
         guard listener == nil else { return }
 
         do {
@@ -83,6 +93,7 @@ public final class TelemetryServer: @unchecked Sendable {
         } catch {
             print("[TelemetryServer] ❌ Failed to create NWListener: \(error)")
         }
+#endif
     }
 
     public func stop() {
