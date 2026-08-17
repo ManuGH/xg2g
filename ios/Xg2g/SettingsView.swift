@@ -153,6 +153,7 @@ struct SettingsView: View {
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
+#if DEBUG
                     Section {
                         NavigationLink {
                             TestTSPlayerScreen()
@@ -177,6 +178,7 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
+#endif
 
                     Section {
                         Button(role: .destructive) {

@@ -99,6 +99,15 @@ public struct TestTSPlayerScreen: View {
                                 hudRow("Source Frame Rate", String(format: "%.1f fps", pipeline.telemetry.display.sourceFrameRate))
                             }
 
+                            hudSection(title: "AUDIO (AVSampleBufferAudioRenderer)") {
+                                hudRow("Audio Codec", pipeline.telemetry.display.audioCodec)
+                                hudRow("Audio Track", pipeline.telemetry.display.audioPID > 0 ? String(format: "0x%04X (%d) [%@]", pipeline.telemetry.display.audioPID, pipeline.telemetry.display.audioPID, pipeline.telemetry.display.audioLanguage) : "Searching…")
+                                hudRow("Channels", pipeline.telemetry.display.audioChannels > 0 ? "\(pipeline.telemetry.display.audioChannels) ch (\(pipeline.telemetry.display.audioChannels == 6 ? "5.1 Surround" : (pipeline.telemetry.display.audioChannels == 2 ? "Stereo" : "Mono")))" : "Pending…")
+                                hudRow("Sample Rate", pipeline.telemetry.display.audioSampleRate > 0 ? "\(pipeline.telemetry.display.audioSampleRate) Hz" : "Pending…")
+                                hudRow("Audio Bitrate", pipeline.telemetry.display.audioBitrateKbps > 0 ? "\(pipeline.telemetry.display.audioBitrateKbps) kbps" : "Pending…")
+                                hudRow("Master Clock", pipeline.telemetry.display.isAudioMasterClockActive ? "Synchronized 🟢 (Audio Master)" : "Pre-roll / Free Run ⚪️", highlight: pipeline.telemetry.display.isAudioMasterClockActive)
+                            }
+
                             hudSection(title: "DECODER (Apple Silicon HW)") {
                                 hudRow("VT Session", pipeline.telemetry.display.vtSessionActive ? "Active 🟢" : "Inactive ⚪️")
                                 hudRow("HW Required", "YES (kVT...RequireHW)")

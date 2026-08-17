@@ -313,6 +313,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 print(selLog)
                 logger.notice("\(selLog, privacy: .public)")
                 TelemetryServer.shared.log(selLog)
+
+                telemetry.mutate {
+                    $0.audioPID = track.pid
+                    $0.audioCodec = track.codec.description
+                    $0.audioLanguage = track.language ?? "und"
+                }
             }
         }
     }
@@ -346,6 +352,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         print(logMsg)
         logger.notice("\(logMsg, privacy: .public)")
         TelemetryServer.shared.log(logMsg)
+
+        telemetry.mutate {
+            $0.audioSampleRate = info.sampleRate
+            $0.audioChannels = info.channelCount
+            $0.audioBitrateKbps = info.bitrateKbps
+        }
     }
 
     public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, info: AC3FrameInfo) {
@@ -361,6 +373,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 print(clockLog)
                 logger.notice("\(clockLog, privacy: .public)")
                 TelemetryServer.shared.log(clockLog)
+
+                telemetry.mutate {
+                    $0.isAudioMasterClockActive = true
+                }
             }
         }
     }

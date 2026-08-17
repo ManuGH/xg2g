@@ -30,6 +30,13 @@ public struct TelemetryValues: Sendable {
     // MARK: - INPUT Metrics
     public var tsBitrateKbps: Double = 0.0
     public var videoPID: UInt16 = 0
+    public var audioPID: UInt16 = 0
+    public var audioCodec: String = "Searching…"
+    public var audioLanguage: String = "und"
+    public var audioChannels: Int = 0
+    public var audioSampleRate: Int = 0
+    public var audioBitrateKbps: Int = 0
+    public var isAudioMasterClockActive: Bool = false
     public var continuityErrors: Int = 0
     public var pesErrors: Int = 0
 
@@ -108,6 +115,12 @@ public struct TelemetryValues: Sendable {
             "sample_buffers_decoded": sampleBuffersDecodedCount,
             "ts_bitrate_kbps": tsBitrateKbps,
             "video_pid": videoPID,
+            "audio_pid": audioPID,
+            "audio_codec": audioCodec,
+            "audio_language": audioLanguage,
+            "audio_channels": audioChannels,
+            "audio_sample_rate": audioSampleRate,
+            "audio_master_clock_active": isAudioMasterClockActive,
             "continuity_errors": continuityErrors,
             "pes_errors": pesErrors,
             "codec": codec,
