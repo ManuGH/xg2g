@@ -489,7 +489,9 @@ func alignAutoCodecDecisionWithPolicy(req PlaybackInfoRequest, resolvedCaps capa
 	// snapshot falls through to its interlaced/unknown branch (TranscodeVideo=true)
 	// and would clobber the copy. Just skip the auto-codec; it still applies below
 	// when the video itself needs transcoding (video.Mode == transcode).
-	if dec.TargetProfile != nil && dec.TargetProfile.Video.Mode == playbackprofile.MediaModeCopy {
+	sourceContainer := strings.ToLower(strings.TrimSpace(dec.Selected.Container))
+	sourceIsTS := sourceContainer == "ts" || sourceContainer == "mpegts"
+	if dec.TargetProfile != nil && dec.TargetProfile.Video.Mode == playbackprofile.MediaModeCopy && !sourceIsTS {
 		// Surface the audio transcode the target already specifies
 		// (buildTargetProfile forces Audio -> transcode/AAC when the video stays
 		// copy) so the selected formats match the executed stream. Leave the
