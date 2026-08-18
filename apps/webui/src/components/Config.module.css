@@ -164,12 +164,6 @@
   border: 1px solid var(--status-success-border);
 }
 
-.alertWarning {
-  background-color: var(--status-warning-subtle);
-  color: var(--status-warning);
-  border: 1px solid var(--status-warning-border);
-}
-
 .hintText {
   color: var(--text-secondary);
   margin-top: -0.25rem;

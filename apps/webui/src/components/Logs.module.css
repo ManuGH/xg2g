@@ -26,19 +26,6 @@
   color: var(--text-color);
 }
 
-.alert {
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle);
-  padding: 12px 14px;
-  background: var(--card-bg);
-  color: var(--text-secondary);
-}
-
-.alertError {
-  border-color: color-mix(in srgb, var(--accent-danger) 45%, var(--border-subtle));
-  background: color-mix(in srgb, var(--accent-danger) 10%, var(--card-bg));
-}
-
 .tableWrap {
   background: var(--card-bg);
   border: 1px solid var(--border-subtle);

@@ -116,7 +116,6 @@
   transition: opacity var(--motion-standard) var(--ease-standard), width var(--motion-standard) var(--ease-standard);
 }
 
-
 .headerToggleBtn {
   margin-left: auto;
   width: 32px;
@@ -570,32 +569,4 @@
 }
 
 /* Collapsed Toggle Button - Sleek Top-Left Corner Icon */
-.floatingSidebarToggle {
-  position: fixed;
-  top: 16px;
-  left: 14px;
-  z-index: 1300;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-shell-safe) 88%, var(--surface-stage) 12%);
-  border: 1px solid var(--border-elevated);
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: var(--shadow-elevated);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  transition: transform 0.16s ease, background 0.16s ease;
-}
 
-.floatingSidebarToggle:hover {
-  background: color-mix(in srgb, var(--surface-shell-safe) 75%, var(--accent-action-subtle) 25%);
-  transform: scale(1.05);
-}
-
-.floatingSidebarToggle:active {
-  transform: scale(0.94);
-}

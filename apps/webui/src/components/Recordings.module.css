@@ -685,14 +685,6 @@
   height: 20px;
 }
 
-.playerFallback {
-  z-index: 9100;
-}
-
-.playerFallbackPanel {
-  pointer-events: none;
-}
-
 .preplayOverlay {
   position: fixed;
   inset: 0;
@@ -911,7 +903,6 @@
   font-size: var(--text-sm);
   line-height: 1.5;
 }
-
 
 @media (max-width: 980px) {
   .heroHeadingRow {
