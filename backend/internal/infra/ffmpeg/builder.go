@@ -11,7 +11,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/vod"
 )
 
-const stableTranscodeAudioFilter = "aresample=async=1:first_pts=0,asetpts=N/SR/TB"
+const stableTranscodeAudioFilter = "aresample=async=1"
 
 // mapProfileToArgs converts the high-level intent into FFmpeg flags.
 func mapProfileToArgs(spec vod.Spec) ([]string, error) {
