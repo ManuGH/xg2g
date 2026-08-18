@@ -4,18 +4,90 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-PATTERN='#[0-9a-fA-F]{3,8}'
+# CTO Contract: colour is declared once, in the tokens at the top of
+# src/index.css, and every other file references those tokens.
+#
+# This gate used to look for '#rrggbb' alone, which is why it reported green
+# while whole modules were styled in rgba(). It now covers the functional
+# notations too, and because that surfaces a body of pre-existing violations,
+# it holds them in a baseline instead of exempting the directories they live
+# in. A directory exemption is permanent in practice; a per-file count can
+# only be met or lowered.
+#
+# Rules:
+#   - a file with no baseline entry must have no hardcoded colour at all
+#   - a file with a baseline entry must not exceed its recorded count
+#   - a file below its recorded count is reported so the baseline can be
+#     tightened with --update, which is how the debt actually shrinks
+#
+# rgba(var(--token)) is deliberately not matched: the pattern requires a digit
+# after the opening parenthesis, so referencing a token stays legal.
 
-if command -v rg >/dev/null 2>&1; then
-  if rg -n --glob '*.{css,ts,tsx}' --glob '!index.css' "$PATTERN" src; then
-    echo "❌ Hardcoded hex colors detected in webui/src. Use design tokens instead."
-    exit 1
-  fi
-else
-  if grep -R -n -E "$PATTERN" src --include='*.css' --include='*.ts' --include='*.tsx' --exclude='index.css'; then
-    echo "❌ Hardcoded hex colors detected in webui/src. Use design tokens instead."
-    exit 1
-  fi
+BASELINE="scripts/hardcoded-colors-baseline.txt"
+PATTERN='#[0-9a-fA-F]{3,8}|rgba?\([[:space:]]*[0-9]|hsla?\([[:space:]]*[0-9]'
+
+scan() {
+  grep -rEc "$PATTERN" src \
+    --include='*.css' --include='*.ts' --include='*.tsx' 2>/dev/null \
+    | grep -v ':0$' \
+    | grep -v '^src/index\.css:' \
+    | sed 's/:\([0-9]*\)$/ \1/' \
+    | sort
+}
+
+CURRENT="$(scan || true)"
+
+if [ "${1:-}" = "--update" ]; then
+  {
+    echo "# Files carrying hardcoded colours, with the number of offending lines."
+    echo "# Regenerate with: npm run design:colors:baseline"
+    echo "# Entries may only shrink. A new file here needs a reason in review."
+    printf '%s\n' "$CURRENT"
+  } > "$BASELINE"
+  echo "✅ Baseline written to $BASELINE."
+  exit 0
 fi
 
-echo "✅ No hardcoded hex colors detected."
+baseline_for() {
+  [ -f "$BASELINE" ] || { echo 0; return; }
+  awk -v p="$1" '!/^#/ && $1 == p { print $2; found = 1 } END { if (!found) print 0 }' "$BASELINE"
+}
+
+FAILED=0
+IMPROVED=""
+
+while read -r path count; do
+  [ -n "$path" ] || continue
+  allowed="$(baseline_for "$path")"
+  if [ "$count" -gt "$allowed" ]; then
+    echo "❌ $path: $count line(s) with hardcoded colour, baseline allows $allowed."
+    grep -nE "$PATTERN" "$path" | head -5
+    FAILED=1
+  elif [ "$count" -lt "$allowed" ]; then
+    IMPROVED="$IMPROVED  $path: $count now, baseline says $allowed"$'\n'
+  fi
+done <<< "$CURRENT"
+
+# A file that dropped out of the scan entirely is progress the baseline has
+# not caught up with yet.
+if [ -f "$BASELINE" ]; then
+  while read -r path count; do
+    case "$path" in ''|'#'*) continue ;; esac
+    if ! printf '%s\n' "$CURRENT" | grep -q "^$path "; then
+      IMPROVED="$IMPROVED  $path: clean now, baseline says $count"$'\n'
+    fi
+  done < "$BASELINE"
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+  echo "   Use the tokens in src/index.css. If a value genuinely has no token yet, add one."
+  exit 1
+fi
+
+if [ -n "$IMPROVED" ]; then
+  echo "ℹ️  Hardcoded colours below baseline:"
+  printf '%s' "$IMPROVED"
+  echo "   Tighten it with: npm run design:colors:baseline"
+fi
+
+echo "✅ No hardcoded colours beyond the recorded baseline."

@@ -1,0 +1,16 @@
+# Files carrying hardcoded colours, with the number of offending lines.
+# Regenerate with: npm run design:colors:baseline
+# Entries may only shrink. A new file here needs a reason in review.
+src/components/admin/AccessTimesSection.tsx 10
+src/components/admin/AdminLayout.tsx 7
+src/components/admin/AuditNotificationsSection.tsx 10
+src/components/admin/ConcurrencySettingsSection.tsx 8
+src/components/admin/DevicesManagementSection.tsx 7
+src/components/admin/FamilyManagementSection.tsx 11
+src/components/admin/ParentalControlSection.tsx 7
+src/components/admin/ProfileManagementSection.tsx 15
+src/components/auth/PasskeyAuthFlow.tsx 5
+src/components/notifications/NotificationCenter.tsx 14
+src/components/settings/SecuritySettingsSection.tsx 12
+src/features/epg/EPG.module.css 1
+src/features/player/components/V3Player.module.css 5
