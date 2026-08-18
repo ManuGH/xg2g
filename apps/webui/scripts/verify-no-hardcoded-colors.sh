@@ -26,20 +26,26 @@ cd "$ROOT_DIR"
 BASELINE="scripts/hardcoded-colors-baseline.txt"
 PATTERN='#[0-9a-fA-F]{3,8}|rgba?\([[:space:]]*[0-9]|hsla?\([[:space:]]*[0-9]'
 
+# Counts colour values, not lines carrying one. These files put whole style
+# objects on a single line, so a line-based count let someone add a second and
+# third literal to an existing line without moving the number - a hole in the
+# ratchet exactly where the offending code is densest.
 scan() {
-  grep -rEc "$PATTERN" src \
-    --include='*.css' --include='*.ts' --include='*.tsx' 2>/dev/null \
-    | grep -v ':0$' \
-    | grep -v '^src/index\.css:' \
-    | sed 's/:\([0-9]*\)$/ \1/' \
-    | sort
+  while IFS= read -r file; do
+    n="$(grep -oE "$PATTERN" "$file" | wc -l | tr -d ' ')"
+    [ "$n" -gt 0 ] && printf '%s %s\n' "$file" "$n"
+  done < <(
+    grep -rlE "$PATTERN" src \
+      --include='*.css' --include='*.ts' --include='*.tsx' 2>/dev/null \
+      | grep -v '^src/index\.css$'
+  ) | sort
 }
 
 CURRENT="$(scan || true)"
 
 if [ "${1:-}" = "--update" ]; then
   {
-    echo "# Files carrying hardcoded colours, with the number of offending lines."
+    echo "# Files carrying hardcoded colours, with the number of colour values."
     echo "# Regenerate with: npm run design:colors:baseline"
     echo "# Entries may only shrink. A new file here needs a reason in review."
     printf '%s\n' "$CURRENT"
@@ -60,7 +66,7 @@ while read -r path count; do
   [ -n "$path" ] || continue
   allowed="$(baseline_for "$path")"
   if [ "$count" -gt "$allowed" ]; then
-    echo "❌ $path: $count line(s) with hardcoded colour, baseline allows $allowed."
+    echo "❌ $path: $count hardcoded colour value(s), baseline allows $allowed."
     grep -nE "$PATTERN" "$path" | head -5
     FAILED=1
   elif [ "$count" -lt "$allowed" ]; then
