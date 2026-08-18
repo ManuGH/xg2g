@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "generate-client": "openapi-ts --input ../../backend/api/openapi.yaml --output ./src/client-ts",
-    "design:check": "bash scripts/verify-no-hardcoded-colors.sh && bash scripts/verify-motion-contract.sh && bash scripts/verify-no-window-dialogs.sh && bash scripts/verify-no-btn-classes.sh",
+    "design:check": "bash scripts/verify-no-hardcoded-colors.sh && bash scripts/verify-motion-contract.sh && bash scripts/verify-no-window-dialogs.sh && bash scripts/verify-no-btn-classes.sh && bash scripts/verify-typography-contract.sh",
     "gate:no-appledouble": "node scripts/no-appledouble.mjs",
     "gate:no-duration-guessing": "node scripts/no-duration-guessing.mjs",
     "gate:no-raw-json-fetch": "node scripts/no-raw-json-fetch.mjs",
