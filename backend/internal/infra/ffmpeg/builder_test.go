@@ -349,3 +349,55 @@ func TestMapProfileToArgs_InputStabilityFlagsPrecedeInput(t *testing.T) {
 		t.Fatalf("expected input stability flags before -i, got %v", args)
 	}
 }
+
+func TestMapProfileToArgs_TargetProfileSupportsAV1VAAPI(t *testing.T) {
+	spec := vod.Spec{
+		Input:      "/media/nfs-recordings/test.ts",
+		WorkDir:    "/tmp/work",
+		OutputTemp: "index.live.m3u8",
+		Intent: &ports.BuildIntent{Target: ports.TargetPlaybackProfile{
+			Container: "mp4",
+			Packaging: ports.PackagingFMP4,
+			Video: ports.VideoTarget{
+				Mode:  ports.MediaModeTranscode,
+				Codec: "av1",
+			},
+			Audio: ports.AudioTarget{
+				Mode:        ports.MediaModeTranscode,
+				Codec:       "aac",
+				Channels:    2,
+				BitrateKbps: 320,
+				SampleRate:  48000,
+			},
+			HLS: ports.HLSTarget{
+				Enabled:          true,
+				SegmentContainer: "fmp4",
+				SegmentSeconds:   6,
+			},
+			HWAccel: ports.HWAccelVAAPI,
+		}},
+	}
+
+	args, err := mapProfileToArgs(spec)
+	if err != nil {
+		t.Fatalf("mapProfileToArgs returned error: %v", err)
+	}
+
+	joined := ""
+	for _, a := range args {
+		joined += " " + a
+	}
+
+	if !containsSubstring(args, "-init_hw_device") || !containsSubstring(args, "av1_vaapi") || !containsSubstring(args, "format=nv12,hwupload") {
+		t.Fatalf("expected VAAPI hardware args and av1_vaapi encoder in args, got %s", joined)
+	}
+}
+
+func containsSubstring(slice []string, val string) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
+	}
+	return false
+}
