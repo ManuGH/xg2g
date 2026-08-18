@@ -325,10 +325,6 @@
     "controlSummary": "Kontrollübersicht",
     "heroStreamingMoment": "Streaming aktiv",
     "heroControlDeck": "Steuerzentrale",
-    "heroStreamingSummary": "{{count}} aktive Sitzung(en) über die Receiver-Bridge.",
-    "heroStandbySummary": "Der Receiver befindet sich im Standby-Modus.",
-    "heroNextUp": "Als Nächstes auf dem Receiver: {{title}}",
-    "heroDefaultSummary": "Live-TV, Timer, Aufnahmen und Diagnose über eine einzige Steuerfläche starten.",
     "readOnlySummary": "Reine Statusübersicht für Receiver, Sitzungen, Programmführer und Recorder.",
     "connectedDevices": "Verbundene Geräte",
     "liveViewerSessions": "Live-Zuschauer-Sitzungen",
@@ -459,6 +455,18 @@
     },
     "startLive": {
       "detailStandby": "Der Receiver ist im Standby. Daten werden automatisch aktualisiert, sobald die Box aktiv ist."
+    },
+    "onAir": {
+      "eyebrow": "Auf Sendung",
+      "standbyEyebrow": "Standby",
+      "standbyTitle": "Der Receiver schläft",
+      "noProgramme": "Keine Programmdaten für diesen Kanal",
+      "elapsed": "seit {{minutes}} min",
+      "remaining": "noch {{minutes}} min",
+      "nextUp": "Danach",
+      "recording": "Nimmt auf",
+      "recordingService": "Nimmt {{service}} auf",
+      "timelineLabel": "Sendungsverlauf"
     }
   },
   "epg": {

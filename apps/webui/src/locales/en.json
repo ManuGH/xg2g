@@ -325,10 +325,6 @@
     "controlSummary": "Control summary",
     "heroStreamingMoment": "Streaming moment",
     "heroControlDeck": "Control deck",
-    "heroStreamingSummary": "Streaming {{count}} active session(s) from the receiver bridge.",
-    "heroStandbySummary": "The receiver is currently in standby mode.",
-    "heroNextUp": "Next on the receiver: {{title}}",
-    "heroDefaultSummary": "Launch live TV, timers, recordings, and diagnostics from a single control surface.",
     "readOnlySummary": "Read-only view of receiver, session, guide, and recorder state.",
     "connectedDevices": "Connected devices",
     "liveViewerSessions": "live viewer sessions",
@@ -459,6 +455,18 @@
     },
     "startLive": {
       "detailStandby": "The receiver is in standby. Data will refresh automatically once the box is active."
+    },
+    "onAir": {
+      "eyebrow": "On air",
+      "standbyEyebrow": "Standby",
+      "standbyTitle": "The receiver is asleep",
+      "noProgramme": "No guide data for this channel",
+      "elapsed": "{{minutes}} min in",
+      "remaining": "{{minutes}} min left",
+      "nextUp": "Next",
+      "recording": "Recording",
+      "recordingService": "Recording {{service}}",
+      "timelineLabel": "Programme progress"
     }
   },
   "epg": {

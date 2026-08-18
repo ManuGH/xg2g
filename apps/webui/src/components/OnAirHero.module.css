@@ -1,0 +1,141 @@
+/* On-air hero - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css) */
+
+.hero {
+  display: grid;
+  gap: 18px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* The channel is the identity of the signal, so it labels the card rather than
+   competing with the programme title for the headline slot. */
+.eyebrow {
+  color: var(--text-tertiary);
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.indicators {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.title {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.timeline {
+  display: grid;
+  gap: 6px;
+}
+
+.timelineTrack {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Clock times are data, not labels, so they take the data face. */
+.timelineEdge {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.timelineRail {
+  position: relative;
+  flex: 1 1 auto;
+  block-size: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-highlight);
+}
+
+.timelineFill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: inherit;
+  background: var(--accent-live);
+  transition: inline-size var(--motion-slow) var(--ease-standard);
+}
+
+/* The marker is the only thing on this surface that moves on its own, and it
+   moves because time passed, not to decorate the card. */
+.timelineMarker {
+  position: absolute;
+  inset-block-start: 50%;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 999px;
+  background: var(--accent-live);
+  box-shadow: var(--shadow-accent-live);
+  transform: translate(-50%, -50%);
+  transition: inset-inline-start var(--motion-slow) var(--ease-standard);
+}
+
+.timelineCounters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.counterLabel {
+  color: var(--text-tertiary);
+  font-family: var(--font-label);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* With nothing to say about what follows, the action carries the row alone
+   rather than being pushed over by an empty placeholder. */
+.footerActionOnly {
+  justify-content: flex-end;
+}
+
+.nextUp {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.nextLabel {
+  color: var(--text-tertiary);
+  font-family: var(--font-label);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+
+.nextTitle {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}

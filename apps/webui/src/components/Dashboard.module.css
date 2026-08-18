@@ -14,90 +14,6 @@
   color: var(--text-secondary);
 }
 
-/* 1. HERO BANNER */
-.heroBanner {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--radius-xl);
-  border: none;
-  background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
-  box-shadow: var(--shadow-dashboard-hero);
-  padding: clamp(16px, 2vw, 24px) clamp(22px, 3vw, 32px);
-  min-height: 0;
-}
-
-.heroBanner::before,
-.heroBanner::after {
-  display: none;
-}
-
-.heroBanner {
-  background: 
-    radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--accent-action) 12%, transparent), transparent 50%),
-    color-mix(in srgb, var(--surface-panel-strong) 40%, transparent);
-}
-
-.summaryStreaming {
-  background: 
-    radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--accent-live) 15%, transparent), transparent 50%),
-    color-mix(in srgb, var(--accent-live-subtle) 25%, transparent);
-}
-
-.summaryControl {
-  background: 
-    radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--accent-action) 15%, transparent), transparent 50%),
-    color-mix(in srgb, var(--accent-action-subtle) 25%, transparent);
-}
-
-.summaryStandby {
-  background: 
-    radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--status-warning) 15%, transparent), transparent 50%),
-    color-mix(in srgb, var(--status-warning-subtle) 25%, transparent);
-}
-
-.heroContent {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
-}
-
-.heroIdentity {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 48rem;
-}
-
-.heroTitleRow {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.heroTitle {
-  margin: 0;
-  font-family: var(--font-heading);
-  font-size: clamp(1.75rem, 2.5vw, 2.25rem);
-  line-height: 1.1;
-  color: var(--text-primary);
-  text-wrap: balance;
-}
-
-.heroDescription {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-base);
-  line-height: 1.5;
-}
-
-.heroAction {
-  flex-shrink: 0;
-}
-
 /* 2. MAIN SECTION (Streams) */
 .mainSection {
   display: flex;
@@ -209,15 +125,6 @@
 
 /* MEDIA QUERIES */
 @media (max-width: 768px), (max-height: 500px) and (hover: none) and (pointer: coarse) {
-  .heroContent {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
-
-  .heroAction, .heroAction > * {
-    width: 100%;
-  }
 
   .healthGrid {
     grid-template-columns: repeat(2, 1fr);

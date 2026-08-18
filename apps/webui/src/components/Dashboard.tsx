@@ -15,10 +15,8 @@ import ErrorPanel from './ErrorPanel';
 import LoadingSkeleton from './LoadingSkeleton';
 import StreamsList from './StreamsList';
 import ContinueWatchingRail from '../features/resume/ContinueWatchingRail';
+import OnAirHero from './OnAirHero';
 import styles from './Dashboard.module.css';
-
-type SummaryTone = 'streaming' | 'control' | 'standby';
-
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -57,21 +55,8 @@ export default function Dashboard() {
   const streamCount = streams.length;
   const receiverUnavailable = receiver?.status === 'unavailable';
   const currentChannel = receiver?.channel?.name || (receiverUnavailable ? t('common.receiverStandby') : t('dashboard.receiverReady'));
-  const now = receiver?.now;
-  const next = receiver?.next;
   const missingChannels = health.epg?.missingChannels || 0;
-  const summaryTone: SummaryTone = streamCount > 0 ? 'streaming' : receiverUnavailable ? 'standby' : 'control';
 
-
-  const summaryTitle = currentChannel;
-
-  const summaryDescription = streamCount > 0
-    ? (now?.description || t('dashboard.heroStreamingSummary', { count: streamCount }))
-    : receiverUnavailable
-      ? t('dashboard.heroStandbySummary')
-      : next?.title
-        ? t('dashboard.heroNextUp', { title: next.title })
-        : t('dashboard.heroDefaultSummary');
 
   const healthChip = mapHealthChip(health.status, t);
   const guideHealthLabel = missingChannels === 0
@@ -213,23 +198,13 @@ export default function Dashboard() {
   return (
     <div className={`${styles.page} animate-enter`.trim()} data-testid="dashboard-view">
       
-      {/* 1. SLIM HERO BANNER */}
-      <Card variant="action" className={[styles.heroBanner, styles[`summary${capitalize(summaryTone)}`]].join(' ')}>
-        <div className={styles.heroContent}>
-          <div className={styles.heroIdentity}>
-            <div className={styles.heroTitleRow}>
-              <h1 className={styles.heroTitle}>{summaryTitle}</h1>
-              <StatusChip state={healthChip.state} label={healthChip.label} />
-            </div>
-            <p className={styles.heroDescription}>{summaryDescription}</p>
-          </div>
-          <div className={styles.heroAction}>
-            <Button variant="primary" onClick={summarySpotlight.primaryAction.onAction}>
-              {summarySpotlight.primaryAction.label}
-            </Button>
-          </div>
-        </div>
-      </Card>
+      {/* 1. WHAT IS ON AIR RIGHT NOW */}
+      <OnAirHero
+        receiver={receiver}
+        recording={recording}
+        healthChip={healthChip}
+        primaryAction={summarySpotlight.primaryAction}
+      />
 
       <ContinueWatchingRail />
 
@@ -296,10 +271,6 @@ function mapHealthChip(status: string | undefined, t: (key: string) => string): 
   if (status === 'ok') return { state: 'success', label: t('dashboard.systemHealthy') };
   if (!status) return { state: 'warning', label: t('dashboard.healthUnknown') };
   return { state: 'warning', label: t('dashboard.systemDegraded') };
-}
-
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function formatTimeAgo(dateString: string | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string {
