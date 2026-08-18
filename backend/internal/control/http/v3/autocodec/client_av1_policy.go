@@ -59,6 +59,9 @@ func ClientAV1PlaybackAllowedWithPolicy(caps capabilities.PlaybackCapabilities, 
 
 func hasRuntimeAV1Signal(caps capabilities.PlaybackCapabilities) bool {
 	source := normalize.Token(caps.ClientCapsSource)
+	if source == "" && (caps.RuntimeProbeUsed || len(caps.VideoCodecSignals) > 0) {
+		source = capabilities.ClientCapsSourceRuntime
+	}
 	if source != capabilities.ClientCapsSourceRuntime && source != capabilities.ClientCapsSourceRuntimePlusFam {
 		return false
 	}

@@ -54,7 +54,13 @@ func ResolveAutoTranscodeCodecsWithPolicy(caps capabilities.PlaybackCapabilities
 		return nil
 	}
 
-	if av1 := signalFor("av1"); av1 != nil && av1.Supported && ClientAV1PlaybackAllowedWithPolicy(caps, caps.ClientFamilyFallback, clientAV1Disabled) {
+	av1Allowed := false
+	if av1 := signalFor("av1"); av1 != nil {
+		av1Allowed = av1.Supported
+	} else if containsCodec(caps.VideoCodecs, "av1") {
+		av1Allowed = true
+	}
+	if av1Allowed && ClientAV1PlaybackAllowedWithPolicy(caps, caps.ClientFamilyFallback, clientAV1Disabled) {
 		out = append(out, "av1")
 	}
 
