@@ -106,6 +106,9 @@ public final class TSPacketParser: @unchecked Sendable {
     public private(set) var audioPIDs = Set<UInt16>()
     private var continuityCounters: [UInt16: UInt8] = [:]
 
+    /// Partially received PMT sections, keyed by the PID carrying them.
+    private var pmtSectionBuffers: [UInt16: [UInt8]] = [:]
+
     /// Packets skipped on the video or audio PID because their payload was
     /// still scrambled.
     ///
@@ -127,6 +130,7 @@ public final class TSPacketParser: @unchecked Sendable {
         audioTracks.removeAll()
         audioPIDs.removeAll()
         continuityCounters.removeAll()
+        pmtSectionBuffers.removeAll()
         scrambledPackets = 0
     }
 
@@ -251,7 +255,7 @@ public final class TSPacketParser: @unchecked Sendable {
             parsePAT(payload: payload, unitStart: payloadUnitStart)
         } else if pmtPIDs.contains(pid) {
             // PMT
-            parsePMT(payload: payload, unitStart: payloadUnitStart)
+            parsePMT(payload: payload, unitStart: payloadUnitStart, pid: pid)
         } else if let vPid = videoPID, pid == vPid {
             // Video Elementary Stream
             delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
@@ -299,19 +303,57 @@ public final class TSPacketParser: @unchecked Sendable {
         }
     }
 
-    private func parsePMT(payload: Data, unitStart: Bool) {
-        var offset = 0
+    /// Collects a PMT section across as many transport packets as it takes.
+    ///
+    /// A section is not obliged to fit in one packet, and on a channel with many
+    /// elementary streams it does not: Das Erste HD announces twelve, a 191-byte
+    /// section against the 183 bytes one packet can carry. Requiring a single
+    /// packet dropped that table whole, and silently — a table that never parses
+    /// reports nothing, so no counter moved and no log line appeared.
+    ///
+    /// From outside it did not look like a table problem. Video played, because
+    /// the video PID is also found by sniffing PES headers rather than from the
+    /// table, so the picture came up in 1.6 s and looked correct. Then the master
+    /// clock, which starts on audio, had no audio to start on. The display layer
+    /// never reported readiness — 121 pulls, ready 0 — the field queue filled to
+    /// its cap of 180 and shed everything after it: 1394 fields dropped against
+    /// 13 delivered. The channel showed one still frame in silence while every
+    /// metric in the app read healthy.
+    ///
+    /// Buffered per PID: a transport may carry several programmes, and their
+    /// sections interleave.
+    private func parsePMT(payload: Data, unitStart: Bool, pid: UInt16) {
         if unitStart {
-            let pointerField = Int(payload[0])
-            offset = 1 + pointerField
+            guard let pointerField = payload.first else { return }
+            let start = 1 + Int(pointerField)
+            guard start < payload.count else { pmtSectionBuffers[pid] = nil; return }
+            pmtSectionBuffers[pid] = [UInt8](payload[start...])
+        } else {
+            // The tail of a section whose head was never seen: its offsets cannot
+            // be trusted, and a stream joined mid-table is the normal case at
+            // tune-in.
+            guard pmtSectionBuffers[pid] != nil else { return }
+            pmtSectionBuffers[pid]?.append(contentsOf: payload)
         }
+
+        guard var section = pmtSectionBuffers[pid], section.count >= 3 else { return }
+        guard section[0] == 0x02 else { pmtSectionBuffers[pid] = nil; return }
+
+        let sectionLength = Int(UInt16(section[1] & 0x0F) << 8 | UInt16(section[2]))
+        let sectionTotal = 3 + sectionLength
+        // Still arriving.
+        guard section.count >= sectionTotal else { return }
+
+        section = Array(section.prefix(sectionTotal))
+        pmtSectionBuffers[pid] = nil
+        parsePMTSection(Data(section))
+    }
+
+    private func parsePMTSection(_ payload: Data) {
+        let offset = 0
         guard offset + 12 < payload.count else { return }
 
-        let tableID = payload[offset]
-        guard tableID == 0x02 else { return } // PMT table_id is 0x02
-
         let sectionLength = Int(UInt16(payload[offset + 1] & 0x0F) << 8 | UInt16(payload[offset + 2]))
-        guard offset + 3 + sectionLength <= payload.count else { return }
 
         let programInfoLength = Int(UInt16(payload[offset + 10] & 0x0F) << 8 | UInt16(payload[offset + 11]))
         var streamOffset = offset + 12 + programInfoLength
