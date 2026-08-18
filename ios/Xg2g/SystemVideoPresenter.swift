@@ -195,6 +195,12 @@ public final class SystemVideoPresenter: NSObject {
         pictureInPictureController?.isPictureInPicturePossible ?? false
     }
 
+    /// Whether the picture currently lives in the PiP window.
+    ///
+    /// Asked of the controller rather than tracked, so it cannot drift out of
+    /// step with what AVKit thinks. The renderer has to keep being fed while
+    /// this is true — that is the whole point of PiP — which makes it the one
+    /// case where work must continue after the app leaves the foreground.
     public var isPictureInPictureActive: Bool {
         pictureInPictureController?.isPictureInPictureActive ?? false
     }
@@ -438,6 +444,17 @@ extension SystemVideoPresenter: @preconcurrency AVPictureInPictureSampleBufferPl
 // MARK: - AVPictureInPictureControllerDelegate
 
 extension SystemVideoPresenter: @preconcurrency AVPictureInPictureControllerDelegate {
+
+    /// Tells PiP that the answers it caches are out of date.
+    ///
+    /// AVKit reads `isPlaybackPaused` and the playback time range when it is
+    /// told to, not when they change. Nothing told it: the PiP controls kept
+    /// whatever state they were built with, so the play button stayed a pause
+    /// button and pressing it did nothing — which is what "PiP hangs" looks
+    /// like from the outside, with the picture itself still updating.
+    public func playbackStateDidChange() {
+        pictureInPictureController?.invalidatePlaybackState()
+    }
 
     public func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
         logger.notice("[SystemVideo] PiP will start")

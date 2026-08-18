@@ -618,6 +618,7 @@ public struct TestTSPlayerScreen: View {
             isPlaying = false
             isStreaming = false
             NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
+            pipeline.notePlaybackStateChanged()
         } else {
             startCurrentPreset()
         }

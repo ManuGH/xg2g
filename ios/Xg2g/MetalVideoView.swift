@@ -713,6 +713,20 @@ public final class MetalVideoView: UIView {
 
         drainReorderedFrames()
 
+        // Backgrounded with no PiP window, this is 50 deinterlace passes a second
+        // drawn for nobody. The two paths that draw into our own layer have
+        // guarded against it all along; the path that actually runs never did.
+        //
+        // PiP is the exception and has to keep going, because the picture people
+        // are watching is the one this produces.
+        if UIApplication.shared.applicationState == .background, !presenter.isPictureInPictureActive {
+            // Dropped rather than held: by the time the app returns these fields
+            // are behind the clock, and a queue kept across a lock screen is a
+            // backlog to shed, not a head start.
+            fieldQueue.removeAll(keepingCapacity: true)
+            return
+        }
+
         let started = CACurrentMediaTime()
         while !fieldQueue.isEmpty {
             let field = fieldQueue.removeFirst()

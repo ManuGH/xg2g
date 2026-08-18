@@ -373,8 +373,26 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
+    /// Tells the PiP window that playback state changed.
+    ///
+    /// AVKit caches what the delegate told it and only re-reads when invalidated,
+    /// so without this the PiP controls keep the state they were built with.
+    public func notePlaybackStateChanged() {
+        // The presenter is captured, not `self`. This runs from `stopStreaming`,
+        // which `deinit` calls, and forming a weak reference to an object that is
+        // already deallocating is a crash rather than a nil.
+        let presenter = systemPresenter
+        guard presenter != nil else { return }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                presenter?.playbackStateDidChange()
+            }
+        }
+    }
+
     public func stopStreaming() {
         streamTask?.cancel()
+        notePlaybackStateChanged()
         streamTask = nil
         urlSession?.invalidateAndCancel()
         urlSession = nil
@@ -979,6 +997,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             if !requiresCushion || buffered >= Self.audioPreRollSeconds {
                 audioRenderer.setRate(1.0, time: anchorPTS)
                 isAudioClockStarted = true
+                // Paused until this instant, as far as PiP is concerned.
+                notePlaybackStateChanged()
                 let skippedMs = (anchorPTS.seconds - firstPTS.seconds) * 1000.0
                 let videoCushionMs = latestVideoPTS.isValid
                     ? (latestVideoPTS.seconds - anchorPTS.seconds) * 1000.0
