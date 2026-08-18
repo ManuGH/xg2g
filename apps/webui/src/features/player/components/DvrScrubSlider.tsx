@@ -110,9 +110,14 @@ export function DvrScrubSlider({
 
   const isDraggingRef = useRef(false);
 
-  const handlePointerDown = useCallback(() => {
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLInputElement>) => {
     isDraggingRef.current = true;
     setIsScrubbing(true);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   }, []);
 
   const handleChange = useCallback(
@@ -121,7 +126,7 @@ export function DvrScrubSlider({
       if (isDraggingRef.current) {
         setScrubValue(newValue);
       } else {
-        onSeek(newValue);
+        commitSeek(newValue);
       }
       const wrap = wrapRef.current;
       if (wrap && max > 0 && hover.visible) {
@@ -130,11 +135,18 @@ export function DvrScrubSlider({
         updateHoverForFraction(fraction, width);
       }
     },
-    [max, onSeek, hover.visible, updateHoverForFraction],
+    [max, commitSeek, hover.visible, updateHoverForFraction],
   );
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLInputElement>) => {
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        // ignore
+      }
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         const newValue = parseFloat(e.currentTarget.value);
@@ -142,6 +154,22 @@ export function DvrScrubSlider({
       }
     },
     [commitSeek],
+  );
+
+  const handlePointerCancel = useCallback(
+    (e: React.PointerEvent<HTMLInputElement>) => {
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        // ignore
+      }
+      isDraggingRef.current = false;
+      setIsScrubbing(false);
+      setScrubValue(null);
+    },
+    [],
   );
 
   const handleKeyUp = useCallback(
@@ -180,6 +208,7 @@ export function DvrScrubSlider({
         value={displayValue}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onChange={handleChange}
         onKeyUp={handleKeyUp}
         onFocus={handleFocus}
