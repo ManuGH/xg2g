@@ -571,9 +571,63 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         telemetry.mutate { $0.videoPID = pid }
     }
 
+    /// Names what DVB flagged the track as, for logs that have to be read by a
+    /// person deciding whether the right one was chosen.
+    static func audioTypeLabel(for audioType: UInt8) -> String {
+        switch audioType {
+        case 0x01: return ", clean effects"
+        case 0x02: return ", hearing impaired"
+        case 0x03: return ", audio description"
+        default: return ""
+        }
+    }
+
+    /// Which of a channel's audio tracks to play.
+    ///
+    /// Three rules, in this order, and the order is the whole point.
+    ///
+    /// **Decodable before anything else.** A language nobody can hear is not a
+    /// preference worth honouring. ZDF carries MPEG Layer II and AC-3 both
+    /// tagged `deu`, with Layer II first in the PMT; iOS has no Layer II
+    /// decoder, so preferring by language alone produced a stream that played
+    /// perfectly, in silence, with nothing in any log to say why.
+    ///
+    /// **Then the main programme, not an accessibility mix.** DVB flags these
+    /// in the ISO 639 descriptor and it is the only thing in the stream that
+    /// tells them apart: `0x03` is visual-impaired commentary — a narrator
+    /// talking over the programme — and `0x02` is a hearing-impaired mix. Both
+    /// are ordinary decodable AC-3 and both may carry the main track's language
+    /// code, so every rule that ignores this field is choosing between them by
+    /// accident. One measured channel offered `qae` and `qaf`, both AC-3,
+    /// neither `deu`, and the pick fell to whichever the PMT listed first.
+    ///
+    /// **Then language, then codec.** Only once the pool is down to things that
+    /// can be heard and are meant to be listened to.
+    ///
+    /// Each narrowing is skipped when it would empty the pool: a narrated
+    /// soundtrack beats silence, and an undecodable track still selected keeps
+    /// the rest of the pipeline reporting normally instead of losing the PID.
+    static func preferredAudioTrack(from tracks: [AudioTrackInfo]) -> AudioTrackInfo? {
+        guard !tracks.isEmpty else { return nil }
+
+        let decodable = tracks.filter { $0.codec.isDecodableOnDevice }
+        let pool = decodable.isEmpty ? tracks : decodable
+
+        let mainProgramme = pool.filter { $0.audioType != 0x02 && $0.audioType != 0x03 }
+        let ranked = mainProgramme.isEmpty ? pool : mainProgramme
+
+        if let deu = ranked.first(where: { $0.language == "deu" }) {
+            return deu
+        }
+        if let ac3 = ranked.first(where: { $0.codec == .ac3 || $0.codec == .eac3 }) {
+            return ac3
+        }
+        return ranked.first
+    }
+
     public func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo]) {
         self.availableAudioTracks = tracks
-        let trackListLog = tracks.map { "PID \($0.pid) [\($0.codec), \($0.language ?? "und")]" }.joined(separator: ", ")
+        let trackListLog = tracks.map { "PID \($0.pid) [\($0.codec), \($0.language ?? "und")\(Self.audioTypeLabel(for: $0.audioType))]" }.joined(separator: ", ")
         let logMsg = "[1080i50-PMT] 🎵 Discovered \(tracks.count) audio tracks: \(trackListLog)"
         print(logMsg)
         logger.notice("\(logMsg, privacy: .public)")
@@ -602,24 +656,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 TelemetryServer.shared.log(warn)
             }
 
-            // Falling back to the full list keeps the previous behaviour when a
-            // channel offers nothing playable: the PID is still selected and the
-            // rest of the pipeline reports normally, rather than losing the track.
-            let pool = playable.isEmpty ? tracks : playable
-
-            let preferred: AudioTrackInfo?
-            if let deu = pool.first(where: { $0.language == "deu" }) {
-                preferred = deu
-            } else if let ac3 = pool.first(where: { $0.codec == .ac3 || $0.codec == .eac3 }) {
-                preferred = ac3
-            } else {
-                preferred = pool.first
-            }
+            let preferred = Self.preferredAudioTrack(from: tracks)
 
             if let track = preferred {
                 self.selectedAudioPID = track.pid
                 self.selectedAudioCodec = track.codec
-                let selLog = "[1080i50-AUDIO] 🎯 Selected audio track: PID \(track.pid) (\(track.codec), lang: \(track.language ?? "und"))"
+                let selLog = "[1080i50-AUDIO] 🎯 Selected audio track: PID \(track.pid) (\(track.codec), lang: \(track.language ?? "und")\(Self.audioTypeLabel(for: track.audioType)))"
                 print(selLog)
                 logger.notice("\(selLog, privacy: .public)")
                 TelemetryServer.shared.log(selLog)
