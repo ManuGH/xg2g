@@ -5,21 +5,107 @@
 import AVKit
 import SwiftUI
 
-/// Recordings library with Netflix / Infuse / Apple TV+ inspired aesthetics.
-///
-/// Features:
-/// - "Weiterschauen / Spotlight" Hero Banner with instant resume playback
-/// - Multi-Category Filter Chips (Alle, Downloads, Spielfilme, Serien, Sport, Dokus)
-/// - Real-time Title & Synopsis Search
-/// - Offline Background Downloads with Apple-style Storage Breakdown
+// MARK: - Helper Formatting & Artwork Theme
+
 private func formatRecordingTime(_ seconds: Double) -> String {
     let mins = Int(seconds) / 60
     let secs = Int(seconds) % 60
     return String(format: "%02d:%02d", mins, secs)
 }
 
-/// - Rich Recording Detail Sheet with 1-Tap Playback & Delete Confirmation
-/// - Persistent playback progress syncing (Resume at exact timestamp)
+enum RecordingArtworkTheme {
+    struct Palette {
+        let gradient: LinearGradient
+        let accent: Color
+        let icon: String
+        let label: String
+    }
+
+    static func palette(for recording: Recording) -> Palette {
+        switch recording.genre {
+        case .movie:
+            return Palette(
+                gradient: LinearGradient(
+                    colors: [Color(red: 0.18, green: 0.05, blue: 0.10), Color(red: 0.05, green: 0.02, blue: 0.04)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                accent: Color(red: 0.95, green: 0.35, blue: 0.45),
+                icon: "film.stack",
+                label: "Spielfilm"
+            )
+        case .series:
+            return Palette(
+                gradient: LinearGradient(
+                    colors: [Color(red: 0.08, green: 0.12, blue: 0.24), Color(red: 0.02, green: 0.04, blue: 0.08)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                accent: Color(red: 0.35, green: 0.65, blue: 1.0),
+                icon: "tv",
+                label: "Serie"
+            )
+        case .sport:
+            return Palette(
+                gradient: LinearGradient(
+                    colors: [Color(red: 0.04, green: 0.16, blue: 0.12), Color(red: 0.01, green: 0.05, blue: 0.04)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                accent: Color(red: 0.25, green: 0.85, blue: 0.55),
+                icon: "sportscourt",
+                label: "Sport"
+            )
+        case .docu:
+            return Palette(
+                gradient: LinearGradient(
+                    colors: [Color(red: 0.04, green: 0.14, blue: 0.18), Color(red: 0.01, green: 0.04, blue: 0.06)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                accent: Color(red: 0.20, green: 0.80, blue: 0.90),
+                icon: "globe.europe.africa",
+                label: "Doku"
+            )
+        case .news:
+            return Palette(
+                gradient: LinearGradient(
+                    colors: [Color(red: 0.14, green: 0.10, blue: 0.04), Color(red: 0.04, green: 0.03, blue: 0.01)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                accent: Color(red: 1.0, green: 0.70, blue: 0.25),
+                icon: "newspaper",
+                label: "Nachrichten"
+            )
+        case .kids:
+            return Palette(
+                gradient: LinearGradient(
+                    colors: [Color(red: 0.16, green: 0.08, blue: 0.18), Color(red: 0.04, green: 0.02, blue: 0.05)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                accent: Color(red: 0.90, green: 0.50, blue: 0.95),
+                icon: "sparkles",
+                label: "Kinder"
+            )
+        case .all, .show:
+            return Palette(
+                gradient: LinearGradient(
+                    colors: [Color(red: 0.08, green: 0.10, blue: 0.16), Color(red: 0.02, green: 0.03, blue: 0.05)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                accent: Theme.Colors.accentAction,
+                icon: "play.rectangle.on.rectangle",
+                label: "Aufnahme"
+            )
+        }
+    }
+}
+
+// MARK: - Main Recordings View
+
 struct RecordingsView: View {
 
     let model: AppModel
@@ -131,10 +217,8 @@ struct RecordingsView: View {
 
                     // MARK: - 2. Content View
                     if selectedFilter == .offline {
-                        // Offline Downloads Tab
                         offlineContentView
                     } else {
-                        // Server Recordings Tab
                         serverRecordingsContentView
                     }
                 }
@@ -267,8 +351,8 @@ struct RecordingsView: View {
             Spacer()
         } else {
             ScrollView {
-                VStack(spacing: 20) {
-                    // 1. Spotlight / Weiterschauen Hero (if not searching)
+                VStack(spacing: 24) {
+                    // 1. Spotlight / Weiterschauen Hero (Apple TV+ / Infuse Style)
                     if searchText.isEmpty, let spotlight = spotlightRecording {
                         RecordingSpotlightHero(
                             recording: spotlight,
@@ -283,26 +367,26 @@ struct RecordingsView: View {
                     // 2. Section Header
                     HStack {
                         Text(selectedFilter == .all ? "Alle Aufnahmen" : selectedFilter.rawValue)
-                            .font(.headline.weight(.bold))
+                            .font(.title3.weight(.bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
 
                         Spacer()
 
-                        Text("\(filtered.count) Einträge")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        Text("\(filtered.count) Videos")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     .padding(.horizontal, 2)
 
-                    // 3. Multi-Column Grid of Recordings
+                    // 3. Infuse-Style 16:9 Media Cards Grid
                     LazyVGrid(
                         columns: [
-                            GridItem(.adaptive(minimum: isRegular ? 320 : 280, maximum: 460), spacing: isRegular ? 16 : 12)
+                            GridItem(.adaptive(minimum: isRegular ? 320 : 280, maximum: 480), spacing: isRegular ? 18 : 14)
                         ],
-                        spacing: isRegular ? 16 : 12
+                        spacing: isRegular ? 18 : 14
                     ) {
                         ForEach(filtered) { recording in
-                            RecordingCard(
+                            RecordingMediaCard(
                                 recording: recording,
                                 model: model,
                                 serverAddress: model.serverURLString,
@@ -331,8 +415,8 @@ struct RecordingsView: View {
                         }
                     }
                 }
-                .padding(.horizontal, isRegular ? 20 : 12)
-                .padding(.vertical, isRegular ? 16 : 12)
+                .padding(.horizontal, isRegular ? 20 : 14)
+                .padding(.vertical, isRegular ? 18 : 14)
                 .safeAreaPadding(.bottom, 80)
             }
             .refreshable { await model.loadRecordings() }
@@ -472,7 +556,7 @@ struct RecordingsView: View {
     }
 }
 
-// MARK: - Recording Spotlight Hero Banner (Netflix / Apple TV+ Style)
+// MARK: - Spotlight Hero Banner (Apple TV+ / Infuse Style)
 
 struct RecordingSpotlightHero: View {
     let recording: Recording
@@ -486,140 +570,202 @@ struct RecordingSpotlightHero: View {
         let resumePos = model.resumePosition(for: recording.id) ?? 0
         let hasResume = resumePos > 0 && recording.durationSeconds > 0
         let progress = hasResume ? min(1.0, resumePos / Double(recording.durationSeconds)) : 0.0
+        let palette = RecordingArtworkTheme.palette(for: recording)
 
-        VStack(alignment: .leading, spacing: 14) {
-            // Top Badge: "WEITERSCHAUEN" or "NEUESTE AUFNAHME"
-            HStack(spacing: 8) {
-                HStack(spacing: 5) {
-                    Image(systemName: hasResume ? "play.circle.fill" : "sparkles.tv")
-                        .font(.system(size: 11, weight: .bold))
-                    Text(hasResume ? "WEITERSCHAUEN" : "NEUESTE AUFNAHME")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                }
-                .foregroundStyle(Theme.Colors.accentAction)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(Theme.Colors.accentAction.opacity(0.18), in: Capsule())
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .bottomLeading) {
+                // 16:9 Cinematic Stage Backdrop
+                Rectangle()
+                    .fill(palette.gradient)
+                    .aspectRatio(16/9, contentMode: .fit)
+                    .overlay(
+                        // Ambient Watermark Icon
+                        Image(systemName: palette.icon)
+                            .font(.system(size: 140, weight: .ultraLight))
+                            .foregroundStyle(palette.accent.opacity(0.12))
+                            .offset(x: 80, y: -20),
+                        alignment: .trailing
+                    )
+                    .overlay(
+                        // Multi-stop Gradient Scrim for perfect contrast
+                        LinearGradient(
+                            stops: [
+                                .init(color: Color.black.opacity(0.2), location: 0),
+                                .init(color: Color.clear, location: 0.35),
+                                .init(color: Color.black.opacity(0.80), location: 0.75),
+                                .init(color: Color.black.opacity(0.96), location: 1.0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
 
-                Spacer()
-
-                Text("\(recording.formattedDate) • \(recording.formattedDuration)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Theme.Colors.textTertiary)
-            }
-
-            // Title & Synopsis
-            VStack(alignment: .leading, spacing: 4) {
-                Text(recording.title)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .lineLimit(2)
-
-                if let desc = recording.description, !desc.isEmpty {
-                    Text(desc)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .lineLimit(2)
-                }
-            }
-
-            // Resume Progress Bar (if in progress)
-            if hasResume {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        let remainingMin = max(1, Int((Double(recording.durationSeconds) - resumePos) / 60))
-                        Text("Noch \(remainingMin) Min verbleibend")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.accentAction)
+                // Top Floating Badges
+                VStack {
+                    HStack(spacing: 8) {
+                        // Badge: WEITERSCHAUEN / NEUESTE AUFNAHME
+                        HStack(spacing: 5) {
+                            Image(systemName: hasResume ? "play.circle.fill" : "sparkles.tv")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(hasResume ? "WEITERSCHAUEN" : "NEUESTE AUFNAHME")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        }
+                        .foregroundStyle(hasResume ? Theme.Colors.accentAction : palette.accent)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
 
                         Spacer()
 
-                        Text("\(Int(progress * 100))%")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    }
-
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.15))
-                                .frame(height: 5)
-
-                            Capsule()
-                                .fill(Theme.Colors.accentAction)
-                                .frame(width: max(8, geo.size.width * CGFloat(progress)), height: 5)
+                        // Tech Specs: 1080i HD • 5.1 Dolby
+                        HStack(spacing: 4) {
+                            Text("1080i")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            Text("•")
+                                .foregroundStyle(Theme.Colors.textDisabled)
+                            Text("5.1")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
                         }
-                    }
-                    .frame(height: 5)
-                }
-                .padding(.vertical, 2)
-            }
-
-            // Action Buttons
-            HStack(spacing: 10) {
-                // 1-Tap Play Button
-                Button(action: onPlay) {
-                    HStack(spacing: 6) {
-                        Image(systemName: hasResume ? "play.fill" : "play.circle.fill")
-                            .font(.system(size: 14, weight: .bold))
-                        Text(hasResume ? "Fortsetzen" : "Jetzt abspielen")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(Theme.Colors.accentAction, in: Capsule())
-                    .foregroundStyle(.white)
-                }
-                .buttonStyle(.plain)
-
-                // Info Button
-                Button(action: onShowInfo) {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 16))
-                        .padding(10)
-                        .background(Theme.Colors.surfaceElevated, in: Circle())
                         .foregroundStyle(Theme.Colors.textSecondary)
-                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                    }
+                    .padding(16)
+
+                    Spacer()
                 }
-                .buttonStyle(.plain)
 
-                Spacer()
+                // Bottom Content Inside the Stage
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(recording.title)
+                            .font(.system(size: 22, weight: .heavy))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(2)
+                            .shadow(color: .black.opacity(0.8), radius: 4, y: 2)
 
-                // Download Button
-                DownloadButton(
-                    recording: recording,
-                    serverAddress: serverAddress,
-                    model: model,
-                    status: DownloadManager.shared.status(for: recording.id)
-                )
+                        if let desc = recording.description, !desc.isEmpty {
+                            Text(desc)
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .lineLimit(2)
+                                .lineSpacing(2)
+                                .shadow(color: .black.opacity(0.8), radius: 2, y: 1)
+                        }
+
+                        HStack(spacing: 8) {
+                            Text(recording.formattedDate)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+
+                            Text("•")
+                                .foregroundStyle(Theme.Colors.textDisabled)
+
+                            Text(recording.formattedDuration)
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(palette.accent)
+
+                            if hasResume {
+                                Text("•")
+                                    .foregroundStyle(Theme.Colors.textDisabled)
+                                let remainingMin = max(1, Int((Double(recording.durationSeconds) - resumePos) / 60))
+                                Text("Noch \(remainingMin)m verbleibend")
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+
+                    // Progress Bar (if in progress)
+                    if hasResume {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.18))
+                                    .frame(height: 5)
+
+                                Capsule()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Theme.Colors.accentAction, Theme.Colors.statusSuccess],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                                    .frame(width: max(8, geo.size.width * CGFloat(progress)), height: 5)
+                                    .shadow(color: Theme.Colors.accentAction.opacity(0.6), radius: 4)
+                            }
+                        }
+                        .frame(height: 5)
+                        .padding(.vertical, 2)
+                    }
+
+                    // Action Button Row
+                    HStack(spacing: 12) {
+                        // Prominent Primary Action Button
+                        Button(action: onPlay) {
+                            HStack(spacing: 8) {
+                                Image(systemName: hasResume ? "play.fill" : "play.circle.fill")
+                                    .font(.system(size: 15, weight: .bold))
+                                Text(hasResume ? "Fortsetzen bei \(formatRecordingTime(resumePos))" : "Jetzt abspielen")
+                                    .font(.system(size: 14, weight: .bold))
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .background(Theme.Colors.accentAction, in: Capsule())
+                            .foregroundStyle(.white)
+                            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+                            .shadow(color: Theme.Colors.accentAction.opacity(0.4), radius: 8, y: 3)
+                        }
+                        .buttonStyle(.plain)
+
+                        // Info Button
+                        Button(action: onShowInfo) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Details")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer()
+
+                        // Download Action Button
+                        DownloadButton(
+                            recording: recording,
+                            serverAddress: serverAddress,
+                            model: model,
+                            status: DownloadManager.shared.status(for: recording.id)
+                        )
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(16)
             }
-            .padding(.top, 4)
         }
-        .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Theme.Colors.surfaceElevated.opacity(0.95),
-                            Color(red: 0.07, green: 0.11, blue: 0.17)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1.2)
         )
-        .shadow(color: Color.black.opacity(0.35), radius: 10, y: 4)
+        .shadow(color: Color.black.opacity(0.45), radius: 14, y: 6)
     }
 }
 
-// MARK: - Recording Card (Modern Responsive Grid Item)
+// MARK: - Infuse-Style 16:9 Media Card
 
-struct RecordingCard: View {
+struct RecordingMediaCard: View {
     let recording: Recording
     let model: AppModel
     let serverAddress: String
@@ -630,111 +776,180 @@ struct RecordingCard: View {
         let resumePos = model.resumePosition(for: recording.id) ?? 0
         let hasResume = resumePos > 0 && recording.durationSeconds > 0
         let progress = hasResume ? min(1.0, resumePos / Double(recording.durationSeconds)) : 0.0
+        let palette = RecordingArtworkTheme.palette(for: recording)
 
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                // Play Icon Container
-                Button(action: onPlay) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Theme.Colors.surfaceElevated)
-                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+        Button(action: onPlay) {
+            VStack(alignment: .leading, spacing: 0) {
+                // 16:9 Poster / Thumbnail Stage
+                ZStack(alignment: .bottomLeading) {
+                    Rectangle()
+                        .fill(palette.gradient)
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .overlay(
+                            // Watermark Genre Icon
+                            Image(systemName: palette.icon)
+                                .font(.system(size: 72, weight: .ultraLight))
+                                .foregroundStyle(palette.accent.opacity(0.15))
+                                .offset(x: 35, y: -10),
+                            alignment: .trailing
+                        )
+                        .overlay(
+                            // Multi-stop Gradient Scrim
+                            LinearGradient(
+                                stops: [
+                                    .init(color: Color.black.opacity(0.15), location: 0),
+                                    .init(color: Color.clear, location: 0.35),
+                                    .init(color: Color.black.opacity(0.75), location: 0.70),
+                                    .init(color: Color.black.opacity(0.95), location: 1.0)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
 
-                        Image(systemName: hasResume ? "play.fill" : "play.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(Theme.Colors.accentAction)
+                    // Top Floating Badges
+                    VStack {
+                        HStack(spacing: 6) {
+                            // Genre Badge
+                            Text(palette.label)
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(palette.accent)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.6))
+
+                            Spacer()
+
+                            // Format Badge
+                            Text("1080i")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.6))
+                        }
+                        .padding(10)
+
+                        Spacer()
                     }
-                    .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain)
 
-                // Title & Date
-                Button(action: onShowInfo) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    // Center Glass Play Button
+                    ZStack {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 44, height: 44)
+                            .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+                            .shadow(color: Color.black.opacity(0.35), radius: 6, y: 2)
+
+                        Image(systemName: hasResume ? "play.fill" : "play.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(hasResume ? Theme.Colors.accentAction : Color.white)
+                            .offset(x: 1.5)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    // Bottom Content Overlay
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(recording.title)
-                            .font(.system(size: 15, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
+                            .shadow(color: .black.opacity(0.9), radius: 3, y: 1)
 
                         HStack(spacing: 6) {
                             Text(recording.formattedDate)
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.textTertiary)
 
                             Text("•")
-                                .font(.caption2)
                                 .foregroundStyle(Theme.Colors.textDisabled)
 
                             Text(recording.formattedDuration)
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.accentAction)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(palette.accent)
+
+                            if hasResume {
+                                Text("•")
+                                    .foregroundStyle(Theme.Colors.textDisabled)
+                                let remainingMin = max(1, Int((Double(recording.durationSeconds) - resumePos) / 60))
+                                Text("Noch \(remainingMin)m")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                            }
                         }
+                    }
+                    .padding(10)
+
+                    // Bottom Edge Progress Bar
+                    if hasResume {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.15))
+                                    .frame(height: 3.5)
+
+                                Rectangle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Theme.Colors.accentAction, Theme.Colors.statusSuccess],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                                    .frame(width: max(6, geo.size.width * CGFloat(progress)), height: 3.5)
+                                    .shadow(color: Theme.Colors.accentAction.opacity(0.8), radius: 3)
+                            }
+                        }
+                        .frame(height: 3.5)
                     }
                 }
-                .buttonStyle(.plain)
 
-                Spacer(minLength: 4)
-
-                // Download Button (Plex/Netflix Style)
-                DownloadButton(
-                    recording: recording,
-                    serverAddress: serverAddress,
-                    model: model,
-                    status: DownloadManager.shared.status(for: recording.id)
-                )
-            }
-
-            // Synopsis
-            if let description = recording.description, !description.isEmpty {
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .lineLimit(2)
-                    .lineSpacing(2)
-            }
-
-            // Playback Progress Bar (if in progress)
-            if hasResume {
-                VStack(alignment: .leading, spacing: 3) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.12))
-                                .frame(height: 4)
-
-                            Capsule()
-                                .fill(Theme.Colors.accentAction)
-                                .frame(width: max(6, geo.size.width * CGFloat(progress)), height: 4)
-                        }
-                    }
-                    .frame(height: 4)
-
-                    HStack {
-                        let remainingMin = max(1, Int((Double(recording.durationSeconds) - resumePos) / 60))
-                        Text("Noch \(remainingMin)m")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.accentAction)
-
-                        Spacer()
-
-                        Text("\(Int(progress * 100))%")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                // Bottom Action Strip (Details & Download)
+                HStack(spacing: 8) {
+                    if let desc = recording.description, !desc.isEmpty {
+                        Text(desc)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .lineLimit(1)
+                    } else {
+                        Text("Aufnahme bereit")
+                            .font(.system(size: 11))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
+
+                    Spacer()
+
+                    // Info Button
+                    Button(action: onShowInfo) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .padding(4)
+                    }
+                    .buttonStyle(.plain)
+
+                    // Download Button
+                    DownloadButton(
+                        recording: recording,
+                        serverAddress: serverAddress,
+                        model: model,
+                        status: DownloadManager.shared.status(for: recording.id)
+                    )
                 }
-                .padding(.top, 2)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Theme.Colors.surfaceElevated.opacity(0.75))
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Theme.Gradients.cardSurface)
-        )
+        .buttonStyle(.plain)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.2), radius: 6, y: 2)
+        .shadow(color: Color.black.opacity(0.3), radius: 8, y: 3)
     }
 }
 
@@ -744,7 +959,7 @@ struct PlayingRecordingItem: Identifiable, Sendable {
     let initialPosition: Double
 }
 
-// MARK: - Recording Detail Sheet
+// MARK: - Infuse-Style Rich Recording Detail Sheet
 
 struct RecordingDetailSheet: View {
     let recording: Recording
@@ -755,30 +970,73 @@ struct RecordingDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        let resumePos = model.resumePosition(for: recording.id) ?? 0
+        let hasResume = resumePos > 0 && recording.durationSeconds > 0
+        let palette = RecordingArtworkTheme.palette(for: recording)
+
         NavigationStack {
             ZStack {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        // Header
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(recording.title)
-                                .font(.title2.weight(.bold))
-                                .foregroundStyle(Theme.Colors.textPrimary)
+                        // Hero Header with 16:9 Backdrop
+                        ZStack(alignment: .bottomLeading) {
+                            Rectangle()
+                                .fill(palette.gradient)
+                                .aspectRatio(16/9, contentMode: .fit)
+                                .overlay(
+                                    Image(systemName: palette.icon)
+                                        .font(.system(size: 120, weight: .ultraLight))
+                                        .foregroundStyle(palette.accent.opacity(0.18))
+                                        .offset(x: 60, y: -10),
+                                    alignment: .trailing
+                                )
+                                .overlay(
+                                    LinearGradient(
+                                        stops: [
+                                            .init(color: Color.clear, location: 0.3),
+                                            .init(color: Color.black.opacity(0.85), location: 0.8),
+                                            .init(color: Theme.Colors.bgBase, location: 1.0)
+                                        ],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
 
-                            HStack(spacing: 8) {
-                                Text(recording.formattedDate)
-                                    .font(.subheadline.monospaced())
-                                    .foregroundStyle(Theme.Colors.textSecondary)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(recording.title)
+                                    .font(.title2.weight(.heavy))
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                    .lineLimit(2)
+                                    .shadow(color: .black.opacity(0.8), radius: 4, y: 2)
 
-                                Text("•")
-                                    .foregroundStyle(Theme.Colors.textDisabled)
+                                HStack(spacing: 8) {
+                                    Text(recording.formattedDate)
+                                        .font(.subheadline.monospaced())
+                                        .foregroundStyle(Theme.Colors.textSecondary)
 
-                                Text(recording.formattedDuration)
-                                    .font(.subheadline.bold().monospaced())
-                                    .foregroundStyle(Theme.Colors.accentAction)
+                                    Text("•")
+                                        .foregroundStyle(Theme.Colors.textDisabled)
+
+                                    Text(recording.formattedDuration)
+                                        .font(.subheadline.bold().monospaced())
+                                        .foregroundStyle(palette.accent)
+                                }
                             }
+                            .padding(16)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1)
+                        )
+
+                        // Quick Tech Specs Grid (Infuse Style)
+                        HStack(spacing: 8) {
+                            specPill(label: "AUFLÖSUNG", value: "1080i50 HD")
+                            specPill(label: "AUDIO", value: "5.1 AC3 / Stereo")
+                            specPill(label: "CONTAINER", value: "MP4 / TS")
                         }
 
                         // Synopsis
@@ -799,9 +1057,9 @@ struct RecordingDetailSheet: View {
                             }
                         }
 
-                        // Technical Metadata
+                        // Technical Metadata Cards
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("DETAILS")
+                            Text("METADATEN")
                                 .font(.caption.weight(.bold).monospaced())
                                 .foregroundStyle(Theme.Colors.textTertiary)
 
@@ -832,16 +1090,16 @@ struct RecordingDetailSheet: View {
                                     }
                                 }
                             }
-                            .padding(12)
-                            .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 10))
+                            .padding(14)
+                            .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                         }
 
-                        Spacer(minLength: 20)
+                        Spacer(minLength: 12)
 
                         // Action Buttons
-                        VStack(spacing: 10) {
-                            let resumePos = model.resumePosition(for: recording.id) ?? 0
-                            if resumePos > 0 {
+                        VStack(spacing: 12) {
+                            if hasResume {
                                 Button {
                                     onPlay(resumePos)
                                 } label: {
@@ -855,6 +1113,7 @@ struct RecordingDetailSheet: View {
                                     .padding(.vertical, 14)
                                     .background(Theme.Colors.accentAction, in: RoundedRectangle(cornerRadius: 12))
                                     .foregroundStyle(.white)
+                                    .shadow(color: Theme.Colors.accentAction.opacity(0.35), radius: 8, y: 2)
                                 }
 
                                 Button {
@@ -876,6 +1135,7 @@ struct RecordingDetailSheet: View {
                                     .padding(.vertical, 14)
                                     .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 12))
                                     .foregroundStyle(Theme.Colors.textPrimary)
+                                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                                 }
                             } else {
                                 Button {
@@ -891,6 +1151,7 @@ struct RecordingDetailSheet: View {
                                     .padding(.vertical, 14)
                                     .background(Theme.Colors.accentAction, in: RoundedRectangle(cornerRadius: 12))
                                     .foregroundStyle(.white)
+                                    .shadow(color: Theme.Colors.accentAction.opacity(0.35), radius: 8, y: 2)
                                 }
                             }
 
@@ -924,10 +1185,19 @@ struct RecordingDetailSheet: View {
         }
     }
 
-    private func formatTime(_ seconds: Double) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        return String(format: "%02d:%02d", mins, secs)
+    private func specPill(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(Theme.Colors.textTertiary)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.Colors.textPrimary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
     }
 }
 

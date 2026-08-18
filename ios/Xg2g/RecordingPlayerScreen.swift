@@ -5,7 +5,7 @@
 import AVFoundation
 import SwiftUI
 
-/// Fullscreen player screen for remote DVR recordings with resume progress tracking.
+/// Fullscreen player screen for remote DVR recordings with cinematic loading stage and resume progress tracking.
 struct RecordingPlayerScreen: View {
 
     let recording: Recording
@@ -16,6 +16,7 @@ struct RecordingPlayerScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
     @State private var timeObserver: Any?
+    @State private var isPreparing = true
 
     var body: some View {
         ZStack {
@@ -32,29 +33,20 @@ struct RecordingPlayerScreen: View {
                         }
                     )
                     .ignoresSafeArea()
-                } else {
-                    ProgressView("Lade Aufnahme…")
-                        .tint(Theme.Colors.accentAction)
-                        .foregroundStyle(.white)
+                    .transition(.opacity)
+                }
+
+                // Cinematic Loading Backdrop (Infuse / Apple TV+ Style)
+                if player == nil || isPreparing {
+                    cinematicLoadingStage
+                        .transition(.opacity)
                 }
             } else {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 48))
-                        .foregroundStyle(Theme.Colors.statusWarning)
-
-                    Text("Keine Streaming-URL für diese Aufnahme verfügbar.")
-                        .font(.headline)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-
-                    Button("Schließen") {
-                        dismiss()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.Colors.accentAction)
-                }
+                errorStateView
             }
         }
+        .animation(.easeInOut(duration: 0.35), value: player != nil)
+        .animation(.easeInOut(duration: 0.35), value: isPreparing)
         .onAppear {
             setupPlayer()
         }
@@ -62,6 +54,131 @@ struct RecordingPlayerScreen: View {
             cleanup()
         }
     }
+
+    // MARK: - Cinematic Loading Stage
+
+    @ViewBuilder
+    private var cinematicLoadingStage: some View {
+        let palette = RecordingArtworkTheme.palette(for: recording)
+
+        ZStack {
+            Theme.Colors.bgVideoStage.ignoresSafeArea()
+
+            // Ambient background glow
+            RadialGradient(
+                colors: [palette.accent.opacity(0.22), Color.clear],
+                center: .center,
+                startRadius: 20,
+                endRadius: 360
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+            VStack(spacing: 24) {
+                // Top Dismiss Bar
+                HStack {
+                    Button {
+                        cleanup()
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .padding(12)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+
+                Spacer()
+
+                // Center Poster / Title Focus Card
+                VStack(spacing: 16) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(palette.gradient)
+                            .frame(width: 84, height: 84)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1.2)
+                            )
+                            .shadow(color: palette.accent.opacity(0.35), radius: 16, y: 6)
+
+                        Image(systemName: palette.icon)
+                            .font(.system(size: 36, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+
+                    VStack(spacing: 6) {
+                        Text(recording.title)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .padding(.horizontal, 32)
+
+                        HStack(spacing: 8) {
+                            Text(recording.formattedDate)
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+
+                            Text("•")
+                                .foregroundStyle(Theme.Colors.textDisabled)
+
+                            Text(recording.formattedDuration)
+                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(palette.accent)
+                        }
+                    }
+
+                    // Progress Indicator Pill
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(palette.accent)
+                            .scaleEffect(0.9)
+
+                        Text(initialPosition != nil && initialPosition! > 5 ? "Fortsetzen wird geladen…" : "Wiedergabe wird gestartet…")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                }
+
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Error View
+
+    @ViewBuilder
+    private var errorStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 48))
+                .foregroundStyle(Theme.Colors.statusWarning)
+
+            Text("Keine Streaming-URL für diese Aufnahme verfügbar.")
+                .font(.headline)
+                .foregroundStyle(Theme.Colors.textPrimary)
+
+            Button("Schließen") {
+                dismiss()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.Colors.accentAction)
+        }
+    }
+
+    // MARK: - Player Setup
 
     private func setupPlayer() {
         AudioSessionManager.shared.configureForPlayback()
@@ -87,12 +204,20 @@ struct RecordingPlayerScreen: View {
         if let initPos = initialPosition, initPos > 5 {
             let targetTime = CMTime(seconds: initPos, preferredTimescale: 600)
             p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p] finished in
-                if finished {
-                    p?.play()
+                Task { @MainActor in
+                    if finished {
+                        p?.play()
+                    }
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        self.isPreparing = false
+                    }
                 }
             }
         } else {
             p.play()
+            withAnimation(.easeInOut(duration: 0.3)) {
+                self.isPreparing = false
+            }
         }
 
         self.player = p
