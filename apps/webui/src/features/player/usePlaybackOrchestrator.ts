@@ -1168,9 +1168,15 @@ export function usePlaybackOrchestrator(
         setAnchorStartSec(normalizedContract.media.anchorStartSec ?? (startOffsetMs ? startOffsetMs / 1000 : 0));
 
         const nextResume = resolveResumeStateFromContract(normalizedContract, playbackDurationSeconds);
-        if (nextResume && dismissedResumeRecordingIdRef.current !== id) {
+        if (
+          startOffsetMs === undefined &&
+          nextResume &&
+          dismissedResumeRecordingIdRef.current !== id
+        ) {
           setResumeState(nextResume);
           setShowResumeOverlay(true);
+          setStatus('idle');
+          return;
         }
       } catch (e: unknown) {
         if (!isLifecycleActive(lifecycleGeneration) || isStalePlaybackEpoch(playbackEpoch) || activeRecordingRef.current !== id) return;
@@ -2540,21 +2546,23 @@ export function usePlaybackOrchestrator(
     },
     resumeFrom(positionSeconds) {
       dismissedResumeRecordingIdRef.current = activeRecordingRef.current;
+      setShowResumeOverlay(false);
       if (activeRecordingRef.current && positionSeconds > 0) {
         startRecordingPlayback(activeRecordingRef.current, undefined, Math.round(positionSeconds * 1000));
+      } else if (activeRecordingRef.current) {
+        startRecordingPlayback(activeRecordingRef.current, undefined, 0);
       } else {
         seekWhenReady(positionSeconds);
       }
-      setShowResumeOverlay(false);
     },
     startOver() {
       dismissedResumeRecordingIdRef.current = activeRecordingRef.current;
-      if (activeRecordingRef.current && anchorStartSec > 0) {
+      setShowResumeOverlay(false);
+      if (activeRecordingRef.current) {
         startRecordingPlayback(activeRecordingRef.current, undefined, 0);
       } else {
         seekWhenReady(0);
       }
-      setShowResumeOverlay(false);
     },
     changeProfile(profile: string) {
       const normalizedProfile = normalizePlaybackProfileSelection(profile);
