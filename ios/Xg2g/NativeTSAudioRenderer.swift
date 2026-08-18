@@ -84,14 +84,20 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         return audioRenderer.status
     }
 
-    public var isReadyForMoreMediaData: Bool {
-        return audioRenderer.isReadyForMoreMediaData
-    }
+    private var statusObserver: NSKeyValueObservation?
 
     public init() {
         self.audioRenderer = AVSampleBufferAudioRenderer()
         self.synchronizer = AVSampleBufferRenderSynchronizer()
         self.synchronizer.addRenderer(audioRenderer)
+        setupStatusObserver()
+    }
+
+    private func setupStatusObserver() {
+        statusObserver = audioRenderer.observe(\.status, options: [.new]) { [weak self] renderer, _ in
+            guard let self = self else { return }
+            self.delegate?.audioRendererDidChangeStatus(self, status: renderer.status)
+        }
     }
 
     /// Configures and activates the system AVAudioSession for low-latency broadcast playback.
@@ -265,6 +271,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         // returns without touching the replacement.
         audioRenderer = renderer
         synchronizer = sync
+        setupStatusObserver()
         enqueuedCount = 0
         lastDiagnosticLogTime = 0
         underrunCount = 0

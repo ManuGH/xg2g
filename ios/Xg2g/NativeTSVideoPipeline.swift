@@ -69,6 +69,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     HardwareVideoDecoderDelegate,
     AudioPESAssemblerDelegate,
     AudioSampleBufferAssemblerDelegate,
+    NativeTSAudioRendererDelegate,
     URLSessionDataDelegate {
 
     public let telemetry = StreamTelemetry()
@@ -135,6 +136,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     public weak var systemPresenter: SystemVideoPresenter?
 
     private var telemetryForegroundObserver: NSObjectProtocol?
+    private var audioInterruptionObserver: NSObjectProtocol?
+    private var audioRouteChangeObserver: NSObjectProtocol?
+    private var audioFlushedObserver: NSObjectProtocol?
+    private var isAudioInterrupted = false
 
     private var urlSession: URLSession?
     private var streamTask: URLSessionDataTask?
@@ -238,6 +243,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         ac3FrameParser.delegate = audioSampleBufferAssembler
         aacFrameParser.delegate = audioSampleBufferAssembler
         audioSampleBufferAssembler.delegate = self
+        audioRenderer.delegate = self
+
+        setupAudioNotificationObservers()
 
         TelemetryServer.shared.start()
         if telemetryForegroundObserver == nil {
@@ -261,6 +269,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     deinit {
         stopStreaming()
+        if let obs = audioInterruptionObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = audioRouteChangeObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = audioFlushedObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = telemetryForegroundObserver { NotificationCenter.default.removeObserver(obs) }
         TelemetryServer.shared.setTelemetryProvider { [:] }
         TelemetryServer.shared.setScreenshotProvider { nil }
     }
@@ -1016,6 +1028,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var audioContinuity = PTSContinuityMonitor()
 
     public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime) {
+        guard !isAudioInterrupted else { return }
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
 
         // Checked before the buffer is handed over, so the flush that follows
@@ -1243,6 +1256,179 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEncounterError reason: String) {
         telemetry.mutate { $0.decodeErrors += 1 }
+    }
+
+    // MARK: - NativeTSAudioRendererDelegate & Audio Interruption Recovery
+
+    private func setupAudioNotificationObservers() {
+        if audioInterruptionObserver == nil {
+            audioInterruptionObserver = NotificationCenter.default.addObserver(
+                forName: AVAudioSession.interruptionNotification,
+                object: nil,
+                queue: nil
+            ) { [weak self] notif in
+                self?.handleAudioInterruption(notif)
+            }
+        }
+        if audioRouteChangeObserver == nil {
+            audioRouteChangeObserver = NotificationCenter.default.addObserver(
+                forName: AVAudioSession.routeChangeNotification,
+                object: nil,
+                queue: nil
+            ) { [weak self] notif in
+                self?.handleAudioRouteChange(notif)
+            }
+        }
+        if audioFlushedObserver == nil {
+            audioFlushedObserver = NotificationCenter.default.addObserver(
+                forName: .AVSampleBufferAudioRendererWasFlushedAutomatically,
+                object: nil,
+                queue: nil
+            ) { [weak self] notif in
+                self?.handleAudioRendererWasFlushedAutomatically(notif)
+            }
+        }
+    }
+
+    private func handleAudioInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+        switch type {
+        case .began:
+            let msg = "[1080i50-AUDIO] ⏸️ Audio session interruption began (e.g. phone call / Siri)"
+            print(msg)
+            logger.notice("\(msg, privacy: .public)")
+            TelemetryServer.shared.log(msg)
+
+            ingestQueue.async { [weak self] in
+                guard let self = self else { return }
+                self.isAudioInterrupted = true
+                self.audioRenderer.stopClock()
+                self.isAudioClockStarted = false
+                self.notePlaybackStateChanged()
+            }
+
+        case .ended:
+            let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            let shouldResume = options.contains(.shouldResume)
+
+            let msg = "[1080i50-AUDIO] ▶️ Audio session interruption ended (shouldResume: \(shouldResume))"
+            print(msg)
+            logger.notice("\(msg, privacy: .public)")
+            TelemetryServer.shared.log(msg)
+
+            guard sessionState.generation > 0 else { return }
+
+            AudioSessionManager.shared.configureForPlayback()
+
+            ingestQueue.async { [weak self] in
+                guard let self = self else { return }
+                self.isAudioInterrupted = false
+
+                if self.audioRenderer.status == .failed {
+                    let recoverMsg = "[1080i50-AUDIO] 🔄 Audio renderer was in failed state after interruption — resetting"
+                    print(recoverMsg)
+                    logger.notice("\(recoverMsg, privacy: .public)")
+                    TelemetryServer.shared.log(recoverMsg)
+
+                    self.audioRenderer.reset()
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        self.renderView?.synchronizer = self.audioRenderer.synchronizer
+                        self.systemPresenter?.attach(to: self.audioRenderer.synchronizer)
+                        self.systemPresenter?.flush()
+                        self.renderView?.resetForChannelZap()
+                    }
+                } else {
+                    self.audioRenderer.flush()
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        self.systemPresenter?.flush()
+                        self.renderView?.resetForChannelZap()
+                    }
+                }
+
+                self.firstAudioPTS = nil
+                self.firstVideoFieldPTS = nil
+                self.audioBuffersPreRolledCount = 0
+                self.preRollStartTime = 0
+                self.isAudioClockStarted = false
+            }
+
+        @unknown default:
+            break
+        }
+    }
+
+    private func handleAudioRouteChange(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
+
+        let msg = "[1080i50-AUDIO] 🎧 Audio route changed: reason \(reasonValue)"
+        logger.notice("\(msg, privacy: .public)")
+
+        if reason == .categoryChange || reason == .routeConfigurationChange {
+            AudioSessionManager.shared.configureForPlayback()
+        }
+    }
+
+    private func handleAudioRendererWasFlushedAutomatically(_ notification: Notification) {
+        let msg = "[1080i50-AUDIO] ⚠️ Audio renderer was flushed automatically by system — re-anchoring"
+        print(msg)
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+
+        guard sessionState.generation > 0 else { return }
+
+        ingestQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.isAudioClockStarted = false
+            self.firstAudioPTS = nil
+            self.audioBuffersPreRolledCount = 0
+            self.preRollStartTime = 0
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.systemPresenter?.flush()
+                self.renderView?.resetForChannelZap()
+            }
+        }
+    }
+
+    public func audioRendererDidEncounterError(_ renderer: NativeTSAudioRenderer, error: Error) {
+        let msg = "[1080i50-AUDIO] ❌ Audio renderer error: \(error.localizedDescription) — resetting"
+        print(msg)
+        logger.error("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+
+        guard sessionState.generation > 0 else { return }
+
+        ingestQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.audioRenderer.reset()
+            self.isAudioClockStarted = false
+            self.firstAudioPTS = nil
+            self.audioBuffersPreRolledCount = 0
+            self.preRollStartTime = 0
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.renderView?.synchronizer = self.audioRenderer.synchronizer
+                self.systemPresenter?.attach(to: self.audioRenderer.synchronizer)
+                self.systemPresenter?.flush()
+                self.renderView?.resetForChannelZap()
+            }
+        }
+    }
+
+    public func audioRendererDidChangeStatus(_ renderer: NativeTSAudioRenderer, status: AVQueuedSampleBufferRenderingStatus) {
+        if status == .failed && sessionState.generation > 0 {
+            audioRendererDidEncounterError(renderer, error: renderer.audioRenderer.error ?? NSError(domain: "AVFoundation", code: -1, userInfo: [NSLocalizedDescriptionKey: "Audio renderer status failed"]))
+        }
     }
 
     // MARK: - PESPacketAssemblerDelegate

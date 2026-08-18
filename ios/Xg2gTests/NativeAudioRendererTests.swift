@@ -58,6 +58,72 @@ struct NativeAudioRendererTests {
         #expect(renderer.status != .failed)
     }
 
+    @Test func pipelineHandlesAudioInterruptionBeganAndEnded() async throws {
+        let pipeline = NativeTSVideoPipeline()
+        let dummyURL = URL(string: "http://127.0.0.1:8001/1:0:19:11:6:85:C00000:0:0:0:")!
+        pipeline.startStreaming(url: dummyURL)
+
+        // Simulate interruption began (e.g. phone call started)
+        NotificationCenter.default.post(
+            name: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue]
+        )
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Simulate interruption ended with shouldResume
+        NotificationCenter.default.post(
+            name: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            userInfo: [
+                AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue,
+                AVAudioSessionInterruptionOptionKey: AVAudioSession.InterruptionOptions.shouldResume.rawValue
+            ]
+        )
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(pipeline.audioRenderer.status != .failed)
+        pipeline.stopStreaming()
+    }
+
+    @Test func pipelineRecoversFromAudioRendererFatalError() async throws {
+        let pipeline = NativeTSVideoPipeline()
+        let dummyURL = URL(string: "http://127.0.0.1:8001/1:0:19:11:6:85:C00000:0:0:0:")!
+        pipeline.startStreaming(url: dummyURL)
+
+        let initialSync = pipeline.audioRenderer.synchronizer
+
+        // Trigger an audio renderer failure
+        let simulatedError = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSLocalizedDescriptionKey: "Simulated audio failure"])
+        pipeline.audioRendererDidEncounterError(pipeline.audioRenderer, error: simulatedError)
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // A new synchronizer was constructed upon reset
+        #expect(pipeline.audioRenderer.synchronizer !== initialSync)
+        #expect(pipeline.audioRenderer.status != .failed)
+        pipeline.stopStreaming()
+    }
+
+    @Test func pipelineHandlesAutomaticRendererFlushNotification() async throws {
+        let pipeline = NativeTSVideoPipeline()
+        let dummyURL = URL(string: "http://127.0.0.1:8001/1:0:19:11:6:85:C00000:0:0:0:")!
+        pipeline.startStreaming(url: dummyURL)
+
+        NotificationCenter.default.post(
+            name: .AVSampleBufferAudioRendererWasFlushedAutomatically,
+            object: pipeline.audioRenderer.audioRenderer,
+            userInfo: [AVSampleBufferAudioRendererFlushTimeKey: CMTime(value: 1000, timescale: 1000)]
+        )
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(pipeline.audioRenderer.status != .failed)
+        pipeline.stopStreaming()
+    }
+
     @Test func testSkySportF1RealStreamAudioPlayback() async throws {
         guard FileManager.default.fileExists(atPath: "/tmp/sky_f1_10s.ts") else { return }
         let tsData = try Data(contentsOf: URL(fileURLWithPath: "/tmp/sky_f1_10s.ts"))
