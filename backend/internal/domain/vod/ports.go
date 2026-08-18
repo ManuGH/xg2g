@@ -29,6 +29,9 @@ type Spec struct {
 
 	// Intent, when set, is the concrete playback build intent carrying both Target and expected Truth.
 	Intent *ports.BuildIntent
+
+	// StartOffsetMs, when > 0, specifies the timestamp offset in milliseconds where encoding begins.
+	StartOffsetMs int64
 }
 
 // Profile represents a strict configuration set for FFmpeg.

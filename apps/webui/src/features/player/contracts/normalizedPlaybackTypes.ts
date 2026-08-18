@@ -71,6 +71,7 @@ export type NormalizedPlayablePlaybackContract = {
     durationSeconds: number | null;
     startUnix: number | null;
     liveEdgeUnix: number | null;
+    anchorStartSec?: number | null;
   };
   resume: ResumeSummary | null;
   observability: NormalizedPlaybackContractObservability;

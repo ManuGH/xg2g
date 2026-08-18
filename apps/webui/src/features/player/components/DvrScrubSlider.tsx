@@ -46,6 +46,19 @@ export function DvrScrubSlider({
 }: DvrScrubSliderProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [hover, setHover] = useState<HoverState>(HIDDEN);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubValue, setScrubValue] = useState<number | null>(null);
+
+  const displayValue = isScrubbing && scrubValue !== null ? scrubValue : value;
+
+  const commitSeek = useCallback(
+    (targetVal: number) => {
+      setIsScrubbing(false);
+      setScrubValue(null);
+      onSeek(targetVal);
+    },
+    [onSeek],
+  );
 
   const updateHoverForFraction = useCallback(
     (fraction: number, targetWidth: number) => {
@@ -88,17 +101,21 @@ export function DvrScrubSlider({
   const handleFocus = useCallback(() => {
     const wrap = wrapRef.current;
     if (!wrap || max <= 0) return;
-    const fraction = value / max;
+    const fraction = displayValue / max;
     const width = wrap.getBoundingClientRect().width;
     updateHoverForFraction(fraction, width);
-  }, [max, value, updateHoverForFraction]);
+  }, [max, displayValue, updateHoverForFraction]);
 
   const handleBlur = useCallback(() => setHover(HIDDEN), []);
+
+  const handlePointerDown = useCallback(() => {
+    setIsScrubbing(true);
+  }, []);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const newValue = parseFloat(e.target.value);
-      onSeek(newValue);
+      setScrubValue(newValue);
       const wrap = wrapRef.current;
       if (wrap && max > 0 && hover.visible) {
         const fraction = newValue / max;
@@ -106,13 +123,31 @@ export function DvrScrubSlider({
         updateHoverForFraction(fraction, width);
       }
     },
-    [max, onSeek, hover.visible, updateHoverForFraction],
+    [max, hover.visible, updateHoverForFraction],
+  );
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLInputElement>) => {
+      const newValue = parseFloat(e.currentTarget.value);
+      commitSeek(newValue);
+    },
+    [commitSeek],
+  );
+
+  const handleKeyUp = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+        const newValue = parseFloat(e.currentTarget.value);
+        commitSeek(newValue);
+      }
+    },
+    [commitSeek],
   );
 
   // Filled-progress portion of the track (YouTube-style), driven purely by a CSS
   // custom property so the native <input type=range> keeps owning all seek
   // interaction — the visual fill never touches the DVR seek path.
-  const fillPct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+  const fillPct = max > 0 ? Math.min(100, Math.max(0, (displayValue / max) * 100)) : 0;
 
   return (
     <div className={styles.dvrSliderWrap} ref={wrapRef}>
@@ -132,8 +167,11 @@ export function DvrScrubSlider({
         step="0.1"
         className={sliderClassName}
         style={{ '--xg2g-dvr-fill': `${fillPct}%` } as CSSProperties}
-        value={value}
+        value={displayValue}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
         onChange={handleChange}
+        onKeyUp={handleKeyUp}
         onFocus={handleFocus}
         onBlur={handleBlur}
         onMouseMove={handleMove}

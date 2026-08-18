@@ -2779,6 +2779,12 @@ type PlaybackFeedbackRequestEvent string
 
 // PlaybackInfo defines model for PlaybackInfo.
 type PlaybackInfo struct {
+	// AnchorStartSec Timeline anchor in seconds for offset seek builds.
+	AnchorStartSec *float64 `json:"anchorStartSec,omitempty"`
+
+	// AnchorStartMs Timeline anchor in milliseconds for offset seek builds.
+	AnchorStartMs *int64 `json:"anchorStartMs,omitempty"`
+
 	// AudioCodec Truthful audio codec if known (e.g., aac, ac3, mp2).
 	AudioCodec *string `json:"audioCodec,omitempty"`
 

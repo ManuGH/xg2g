@@ -1048,6 +1048,8 @@ export type Timer = {
 };
 
 export type PlaybackInfo = {
+    anchorStartSec?: number;
+    anchorStartMs?: number;
     /**
      * Correlation ID for the request. Mandatory in P3-1.
      */
@@ -2999,7 +3001,11 @@ export type PostRecordingPlaybackInfoData = {
     path: {
         recordingId: string;
     };
-    query?: never;
+    query?: {
+        start_ms?: number;
+        start_sec?: number;
+        offset?: number;
+    };
     url: '/recordings/{recordingId}/stream-info';
 };
 

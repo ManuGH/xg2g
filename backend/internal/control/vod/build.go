@@ -85,11 +85,12 @@ func (m *Manager) StartBuild(ctx context.Context, jobID, metaID, input, workDir,
 	}
 
 	return m.startBuildWithSpec(ctx, jobID, metaID, finalPath, Spec{
-		Input:      input,
-		WorkDir:    workDir,
-		OutputTemp: outputTemp,
-		Profile:    internalProfile,
-		Intent:     intent,
+		Input:         input,
+		WorkDir:       workDir,
+		OutputTemp:    outputTemp,
+		Profile:       internalProfile,
+		Intent:        intent,
+		StartOffsetMs: intent.StartOffsetMs,
 	})
 }
 

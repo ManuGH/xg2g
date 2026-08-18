@@ -45,6 +45,16 @@ func mapProfileToArgs(spec vod.Spec) ([]string, error) {
 		args = append(args, "-init_hw_device", "vaapi=va:/dev/dri/renderD128", "-filter_hw_device", "va")
 	}
 
+	offsetMs := spec.StartOffsetMs
+	if spec.Intent != nil && spec.Intent.StartOffsetMs > 0 {
+		offsetMs = spec.Intent.StartOffsetMs
+	}
+
+	if offsetMs > 0 {
+		offsetSecStr := strconv.FormatFloat(float64(offsetMs)/1000.0, 'f', -1, 64)
+		args = append(args, "-ss", offsetSecStr)
+	}
+
 	args = append(args,
 		"-fflags", "+genpts+discardcorrupt",
 		"-avoid_negative_ts", "make_zero",

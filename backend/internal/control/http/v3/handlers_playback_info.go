@@ -142,6 +142,7 @@ func (s *Server) buildPlaybackInfoHTTPResponse(ctx context.Context, deps recordi
 		playbackInfo.RuntimeProbeSuccessStreak,
 		playbackInfo.RuntimeProbeFailureStreak,
 		plannerReceipt,
+		serviceRequest.StartOffsetMs,
 	)
 	if v3recordings.PlaybackInfoRequestContext(serviceRequest) == v3recordings.PlaybackInfoContextEpgBadge {
 		response.PlaybackDecisionToken = nil

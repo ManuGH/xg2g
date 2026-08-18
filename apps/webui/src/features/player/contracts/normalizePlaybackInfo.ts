@@ -336,6 +336,7 @@ export function normalizePlaybackInfo(
       durationSeconds: readNumber(record.durationSeconds),
       startUnix: readNumber(record.startUnix),
       liveEdgeUnix: readNumber(record.liveEdgeUnix),
+      anchorStartSec: readNumber(record.anchorStartSec) ?? (readNumber(record.anchorStartMs) ? (readNumber(record.anchorStartMs)! / 1000) : 0),
     },
     resume: extractResume(record),
     observability: {

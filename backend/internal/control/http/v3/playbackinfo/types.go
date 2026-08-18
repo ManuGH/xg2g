@@ -242,6 +242,8 @@ type PlaybackTargetProfile struct {
 
 // PlaybackInfo represents the JSON response for playback-info operations.
 type PlaybackInfo struct {
+	AnchorStartSec        *float64                    `json:"anchorStartSec,omitempty"`
+	AnchorStartMs         *int64                      `json:"anchorStartMs,omitempty"`
 	AudioCodec            *string                     `json:"audioCodec,omitempty"`
 	Container             *string                     `json:"container,omitempty"`
 	Decision              *PlaybackDecision           `json:"decision,omitempty"`

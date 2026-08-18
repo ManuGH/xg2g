@@ -40,6 +40,8 @@ interface UsePlayerChromeProps {
   durationSeconds: number | null;
   canSeek: boolean;
   startUnix: number | null;
+  anchorStartSec?: number;
+  onSeekOffset?: (targetSeconds: number) => void;
   liveSeekWindow?: LiveSeekWindowHint | null;
   setStatus: Dispatch<SetStateAction<PlayerStatus>>;
   allowNativeFullscreen: boolean;
@@ -137,6 +139,8 @@ export function usePlayerChrome({
   durationSeconds,
   canSeek,
   startUnix,
+  anchorStartSec = 0,
+  onSeekOffset,
   liveSeekWindow,
   setStatus,
   allowNativeFullscreen,
@@ -379,11 +383,27 @@ export function usePlayerChrome({
     if (!canRunSeekCommand) return;
     if (!video || !Number.isFinite(targetSeconds)) return;
 
-    let clamped = Math.max(0, targetSeconds);
-    if (seekableEnd > seekableStart) {
-      clamped = Math.min(Math.max(targetSeconds, seekableStart), seekableEnd);
+    if (playbackMode === 'VOD') {
+      const anchor = anchorStartSec ?? 0;
+      const localTarget = targetSeconds - anchor;
+      const localEnd = seekableEnd > 0 ? seekableEnd : (video.duration || 0);
+      const isWithinLocalWindow = localTarget >= seekableStart && localTarget <= localEnd;
+
+      if (isWithinLocalWindow) {
+        video.currentTime = Math.max(0, localTarget);
+      } else if (onSeekOffset) {
+        onSeekOffset(targetSeconds);
+        return;
+      } else {
+        video.currentTime = Math.max(0, localTarget);
+      }
+    } else {
+      let clamped = Math.max(0, targetSeconds);
+      if (seekableEnd > seekableStart) {
+        clamped = Math.min(Math.max(targetSeconds, seekableStart), seekableEnd);
+      }
+      video.currentTime = clamped;
     }
-    video.currentTime = clamped;
 
     // Live/DVR seeks land on un-buffered (transcoded) or evicted data; Safari
     // leaves the element PAUSED after such a seek, so the picture freezes/blacks
@@ -401,7 +421,7 @@ export function usePlayerChrome({
         video.addEventListener('loadedmetadata', resume, { once: true });
       }
     }
-  }, [canRunSeekCommand, seekableEnd, seekableStart, userPauseIntentRef, videoRef]);
+  }, [anchorStartSec, canRunSeekCommand, onSeekOffset, playbackMode, seekableEnd, seekableStart, userPauseIntentRef, videoRef]);
 
   const seekBy = useCallback((deltaSeconds: number) => {
     const video = videoRef.current;
@@ -1337,11 +1357,22 @@ export function usePlayerChrome({
     };
   }, [containerRef, idleDelayMs]);
 
-  const windowDuration = useMemo(() => Math.max(0, seekableEnd - seekableStart), [seekableEnd, seekableStart]);
-  const relativePosition = useMemo(
-    () => Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart)),
-    [currentPlaybackTime, seekableStart, windowDuration]
-  );
+  const windowDuration = useMemo(() => {
+    if (playbackMode === 'VOD' && durationSeconds && durationSeconds > 0) {
+      return durationSeconds;
+    }
+    return Math.max(0, seekableEnd - seekableStart);
+  }, [playbackMode, durationSeconds, seekableEnd, seekableStart]);
+
+  const relativePosition = useMemo(() => {
+    if (playbackMode === 'VOD') {
+      const anchor = anchorStartSec ?? 0;
+      const absolutePos = anchor + Math.max(0, currentPlaybackTime - seekableStart);
+      return windowDuration > 0 ? Math.min(windowDuration, Math.max(0, absolutePos)) : absolutePos;
+    }
+    return Math.min(windowDuration, Math.max(0, currentPlaybackTime - seekableStart));
+  }, [playbackMode, anchorStartSec, currentPlaybackTime, seekableStart, windowDuration]);
+
   const hasLiveDvrWindow = canSeekLiveWindow && windowDuration > 0;
   const seekEnabled = canRunSeekCommand;
   const hasSeekWindow = seekEnabled && windowDuration > 0;
@@ -1361,8 +1392,8 @@ export function usePlayerChrome({
       ? formatTimeOfDay(startUnix + liveWindowStartPosition)
       : formatClock(liveWindowStartPosition)
     : startUnix
-      ? formatTimeOfDay(startUnix + relativePosition)
-      : formatClock(relativePosition);
+      ? formatTimeOfDay(startUnix)
+      : formatClock(0);
 
   const endTimeDisplay = playbackMode === 'LIVE'
     ? startUnix

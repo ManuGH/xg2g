@@ -6,7 +6,9 @@ package playbackinfo
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/auth"
@@ -28,7 +30,30 @@ func BuildPlaybackInfoServiceRequest(r *http.Request, subjectID string, caps *Pl
 		ClientProfile:    string(detectClientProfile(r)),
 		Headers:          playbackRequestHeaders(r.Header),
 		Capabilities:     MapV3CapsToInternal(caps),
+		StartOffsetMs:    parseStartOffsetMs(r),
 	}
+}
+
+func parseStartOffsetMs(r *http.Request) int64 {
+	if r == nil {
+		return 0
+	}
+	if startMsStr := strings.TrimSpace(r.URL.Query().Get("start_ms")); startMsStr != "" {
+		if val, err := strconv.ParseInt(startMsStr, 10, 64); err == nil && val > 0 {
+			return val
+		}
+	}
+	if startSecStr := strings.TrimSpace(r.URL.Query().Get("start_sec")); startSecStr != "" {
+		if val, err := strconv.ParseFloat(startSecStr, 64); err == nil && val > 0 {
+			return int64(math.Round(val * 1000.0))
+		}
+	}
+	if offsetStr := strings.TrimSpace(r.URL.Query().Get("offset")); offsetStr != "" {
+		if val, err := strconv.ParseFloat(offsetStr, 64); err == nil && val > 0 {
+			return int64(math.Round(val * 1000.0))
+		}
+	}
+	return 0
 }
 
 func requestedPlaybackProfile(r *http.Request) string {

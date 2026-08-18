@@ -153,6 +153,7 @@ func (s *Service) ResolvePlaybackInfo(ctx context.Context, req PlaybackInfoReque
 		RuntimePolicyConstraints:  playbackPolicyConstraintNames(runtimeFeedbackPolicy),
 		RuntimeProbeSuccessStreak: playbackPolicyProbeSuccessStreak(runtimeFeedbackPolicy),
 		RuntimeProbeFailureStreak: playbackPolicyProbeFailureStreak(runtimeFeedbackPolicy),
+		AnchorStartMs:             req.StartOffsetMs,
 		PlannerEvaluation:         plannerEval,
 	}, nil
 }

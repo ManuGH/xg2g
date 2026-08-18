@@ -393,6 +393,55 @@ func TestMapProfileToArgs_TargetProfileSupportsAV1VAAPI(t *testing.T) {
 	}
 }
 
+func TestMapProfileToArgs_WithStartOffset(t *testing.T) {
+	spec := vod.Spec{
+		Input:         "/tmp/input.ts",
+		WorkDir:       "/tmp/work",
+		OutputTemp:    "index.live.m3u8",
+		StartOffsetMs: 1800500, // 1800.5 seconds
+		Intent: &ports.BuildIntent{
+			StartOffsetMs: 1800500,
+			Target: ports.TargetPlaybackProfile{
+				Video: ports.VideoTarget{
+					Mode:  ports.MediaModeTranscode,
+					Codec: "av1",
+				},
+				Audio: ports.AudioTarget{
+					Mode:  ports.MediaModeTranscode,
+					Codec: "aac",
+				},
+				HLS: ports.HLSTarget{
+					Enabled:          true,
+					SegmentContainer: "fmp4",
+				},
+			},
+		},
+	}
+
+	args, err := mapProfileToArgs(spec)
+	if err != nil {
+		t.Fatalf("mapProfileToArgs returned error: %v", err)
+	}
+
+	ssIndex := -1
+	iIndex := -1
+	for idx, a := range args {
+		if a == "-ss" {
+			ssIndex = idx
+		}
+		if a == "-i" {
+			iIndex = idx
+		}
+	}
+
+	if ssIndex == -1 || iIndex == -1 || ssIndex >= iIndex {
+		t.Fatalf("expected -ss before -i in args, got ssIndex=%d, iIndex=%d, args=%v", ssIndex, iIndex, args)
+	}
+	if args[ssIndex+1] != "1800.5" {
+		t.Fatalf("expected -ss 1800.5, got %s", args[ssIndex+1])
+	}
+}
+
 func containsSubstring(slice []string, val string) bool {
 	for _, s := range slice {
 		if s == val {

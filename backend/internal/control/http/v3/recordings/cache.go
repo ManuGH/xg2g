@@ -57,7 +57,7 @@ func EncodeTargetProfileQuery(intent *ports.BuildIntent, signingKey string) (str
 	intentCopy := *intent
 	intentCopy.Target = playbackprofile.CanonicalizeTarget(intentCopy.Target)
 	if intentCopy.IntentHash == "" {
-		intentCopy.IntentHash = TargetVariantHash(&intentCopy.Target)
+		intentCopy.IntentHash = intentCopy.Hash()
 	}
 	// Do NOT canonicalize the SourceProfile, we pass it exactly as probed.
 
@@ -173,7 +173,7 @@ func RecordingPlaylistURL(recordingID, profile string, intent *ports.BuildIntent
 		params = append(params, "profile="+p)
 	}
 	if intent != nil {
-		variant := TargetVariantHash(&intent.Target)
+		variant := intent.Hash()
 		if variant != "" {
 			params = append(params, "variant="+variant)
 			if encoded, err := EncodeTargetProfileQuery(intent, signingKey); err == nil && encoded != "" {

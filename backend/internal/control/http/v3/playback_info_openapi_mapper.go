@@ -12,6 +12,8 @@ import (
 
 func mapPlaybackInfoToOpenAPI(in v3playbackinfo.PlaybackInfo) PlaybackInfo {
 	out := PlaybackInfo{
+		AnchorStartSec:        in.AnchorStartSec,
+		AnchorStartMs:         in.AnchorStartMs,
 		AudioCodec:            in.AudioCodec,
 		Container:             in.Container,
 		DecisionReason:        in.DecisionReason,

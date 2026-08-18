@@ -66,9 +66,10 @@ type TruthMismatch struct {
 
 // BuildIntent is the complete, planner-issued execution order for one build.
 type BuildIntent struct {
-	IntentHash  string                `json:"intentHash,omitempty"`
-	SourceTruth SourceProfile         `json:"sourceTruth,omitempty"`
-	Target      TargetPlaybackProfile `json:"target"`
+	IntentHash    string                `json:"intentHash,omitempty"`
+	SourceTruth   SourceProfile         `json:"sourceTruth,omitempty"`
+	Target        TargetPlaybackProfile `json:"target"`
+	StartOffsetMs int64                 `json:"startOffsetMs,omitempty"`
 }
 
 // ClientPlaybackProfile describes the effective playback path on the client.

@@ -383,6 +383,7 @@ export function usePlaybackOrchestrator(
   // Resume State
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
+  const [anchorStartSec, setAnchorStartSec] = useState(0);
   const dismissedResumeRecordingIdRef = useRef<string | null>(null);
   const isDocumentVisible = useDocumentVisibility();
   const isOnline = useOnlineStatus();
@@ -764,6 +765,12 @@ export function usePlaybackOrchestrator(
     durationSeconds,
     canSeek,
     startUnix,
+    anchorStartSec,
+    onSeekOffset: (targetSec: number) => {
+      if (activeRecordingRef.current) {
+        startRecordingPlayback(activeRecordingRef.current, undefined, Math.round(targetSec * 1000));
+      }
+    },
     setStatus,
     liveSeekWindow: null,
     allowNativeFullscreen: activeHlsEngine === 'native',
@@ -975,6 +982,7 @@ export function usePlaybackOrchestrator(
   const startRecordingPlayback = useCallback(async (
     id: string,
     profileOverride?: string,
+    startOffsetMs?: number,
   ): Promise<void> => {
     const lifecycleGeneration = lifecycleGenerationRef.current;
     if (!isLifecycleActive(lifecycleGeneration)) return;
@@ -1034,6 +1042,7 @@ export function usePlaybackOrchestrator(
 
           const { data, error, response } = await postRecordingPlaybackInfo({
             path: { recordingId: id },
+            query: startOffsetMs && startOffsetMs > 0 ? { start_ms: startOffsetMs } : undefined,
             body: requestCaps,
             headers: buildPlaybackProfileHeaders(requestProfile),
           });
@@ -1155,6 +1164,7 @@ export function usePlaybackOrchestrator(
 
         setCanSeek(normalizedContract.playback.seekable);
         if (normalizedContract.media.startUnix) setStartUnix(normalizedContract.media.startUnix);
+        setAnchorStartSec(normalizedContract.media.anchorStartSec ?? (startOffsetMs ? startOffsetMs / 1000 : 0));
 
         const nextResume = resolveResumeStateFromContract(normalizedContract, playbackDurationSeconds);
         if (nextResume && dismissedResumeRecordingIdRef.current !== id) {
@@ -2529,12 +2539,20 @@ export function usePlaybackOrchestrator(
     },
     resumeFrom(positionSeconds) {
       dismissedResumeRecordingIdRef.current = activeRecordingRef.current;
-      seekWhenReady(positionSeconds);
+      if (activeRecordingRef.current && positionSeconds > 0) {
+        startRecordingPlayback(activeRecordingRef.current, undefined, Math.round(positionSeconds * 1000));
+      } else {
+        seekWhenReady(positionSeconds);
+      }
       setShowResumeOverlay(false);
     },
     startOver() {
       dismissedResumeRecordingIdRef.current = activeRecordingRef.current;
-      seekWhenReady(0);
+      if (activeRecordingRef.current && anchorStartSec > 0) {
+        startRecordingPlayback(activeRecordingRef.current, undefined, 0);
+      } else {
+        seekWhenReady(0);
+      }
       setShowResumeOverlay(false);
     },
     changeProfile(profile: string) {
