@@ -50,13 +50,18 @@ public struct TelemetryValues: Sendable {
     public var continuityErrors: Int = 0
     public var pesErrors: Int = 0
 
-    /// Packets dropped because the receiver had not descrambled them yet.
+    /// Packets dropped on the played video or audio PID because the receiver
+    /// had not descrambled them yet.
     ///
     /// Expected to be non-zero for a moment at tune-in on an encrypted service
     /// and then to stop. A count that keeps climbing means the receiver is not
-    /// descrambling at all, which is a subscription or CA problem rather than
-    /// anything this app can fix — and which used to show up only as a rising
-    /// PES error count that implicated the parser instead.
+    /// descrambling the programme being watched, which is a subscription or CA
+    /// problem rather than anything this app can fix — and which used to show
+    /// up only as a rising PES error count that implicated the parser instead.
+    ///
+    /// Restricted to those two PIDs on purpose: counting the whole transport
+    /// reached 24512 on a tune that played perfectly, because the other
+    /// services in the mux stay encrypted and are none of our business.
     public var scrambledPackets: Int = 0
 
     /// Times the stream's timeline moved under playback and everything had to be

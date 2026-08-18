@@ -37,19 +37,60 @@ import Testing
          0x21, 0x00, 0x01, 0x00, 0x01]
     }
 
-    @Test func scrambledPacketsAreSkippedAndCounted() {
+    @Test func scrambledPacketsOnAnUnknownPidAreSkippedButNotCounted() {
         let parser = TSPacketParser()
         let sink = ScrambledProbe()
         parser.delegate = sink
 
         parser.feed(data: packet(pid: 0x0100, scrambled: true, payload: videoPESHeader))
 
-        #expect(parser.scrambledPackets == 1)
-        #expect(sink.scrambledPIDs == [0x0100])
         // Nothing may reach the PES assembler, and nothing may be inferred from
         // bytes that have not been decrypted.
         #expect(sink.payloads.isEmpty)
         #expect(parser.videoPID == nil)
+        // Nor counted: until something names this PID as the programme's, there
+        // is nothing to say the packet belongs to what is being watched. In a
+        // real stream the PMT settles that within tens of milliseconds, and PSI
+        // is never scrambled.
+        #expect(parser.scrambledPackets == 0)
+        #expect(sink.scrambledPIDs.isEmpty)
+    }
+
+    @Test func scrambledPacketsOnThePlayedPidAreCounted() {
+        let parser = TSPacketParser()
+        let sink = ScrambledProbe()
+        parser.delegate = sink
+
+        parser.feed(data: packet(pid: 0x0100, scrambled: false, payload: videoPESHeader))
+        parser.feed(data: packet(pid: 0x0100, scrambled: true, payload: videoPESHeader))
+
+        #expect(parser.videoPID == 0x0100)
+        #expect(parser.scrambledPackets == 1)
+        #expect(sink.scrambledPIDs == [0x0100])
+        #expect(sink.payloads.count == 1)
+    }
+
+    /// The count has to mean "the programme is not coming through" and nothing
+    /// else, or it cannot be read at all.
+    @Test func scrambledPacketsOnOtherServicesAreSkippedButNotCounted() {
+        let parser = TSPacketParser()
+        let sink = ScrambledProbe()
+        parser.delegate = sink
+
+        parser.feed(data: packet(pid: 0x0100, scrambled: false, payload: videoPESHeader))
+        var data = Data()
+        for _ in 0..<50 {
+            data.append(packet(pid: 0x0200, scrambled: true, payload: videoPESHeader))
+        }
+        parser.feed(data: data)
+
+        // A receiver hands over the whole transport, and the services nobody
+        // asked for stay encrypted for their own reasons. Counting those
+        // reached 24512 on a measured tune whose picture and sound were
+        // flawless.
+        #expect(parser.scrambledPackets == 0)
+        #expect(sink.scrambledPIDs.isEmpty)
+        #expect(sink.payloads.count == 1)
     }
 
     @Test func clearPacketsStillFlowThrough() {
@@ -72,7 +113,10 @@ import Testing
         let sink = ScrambledProbe()
         parser.delegate = sink
 
+        // One clear packet first, standing in for the PMT that names the PID
+        // on a real service before any of this arrives.
         var data = Data()
+        data.append(packet(pid: 0x0100, scrambled: false, payload: videoPESHeader))
         for _ in 0..<20 {
             data.append(packet(pid: 0x0100, scrambled: true, payload: videoPESHeader))
         }
@@ -81,7 +125,7 @@ import Testing
 
         #expect(parser.scrambledPackets == 20)
         #expect(parser.videoPID == 0x0100)
-        #expect(sink.payloads.count == 1)
+        #expect(sink.payloads.count == 2)
     }
 
     /// Continuity is only defined over packets that carry payload we accepted;

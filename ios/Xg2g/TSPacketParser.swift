@@ -106,7 +106,14 @@ public final class TSPacketParser: @unchecked Sendable {
     public private(set) var audioPIDs = Set<UInt16>()
     private var continuityCounters: [UInt16: UInt8] = [:]
 
-    /// Packets skipped because their payload was still scrambled.
+    /// Packets skipped on the video or audio PID because their payload was
+    /// still scrambled.
+    ///
+    /// Deliberately not every scrambled packet in the stream. A receiver hands
+    /// over the whole transport, and the services this app is not playing stay
+    /// encrypted for their own reasons — counting those produced 24512 on a
+    /// measured tune whose picture and sound were flawless, which is a number
+    /// that can only mislead whoever reads it.
     public private(set) var scrambledPackets: Int = 0
 
     public weak var delegate: TSPacketParserDelegate?
@@ -196,8 +203,16 @@ public final class TSPacketParser: @unchecked Sendable {
         // the data itself was arriving intact.
         let scramblingControl = (byte3 & 0xC0) >> 6
         guard scramblingControl == 0 else {
-            scrambledPackets += 1
-            delegate?.tsParser(self, didEncounterScrambledPacketOnPID: pid)
+            // Skipped whatever the PID — a scrambled payload is not elementary
+            // stream — but only reported for the two PIDs being played, so the
+            // count means "your programme is not coming through" and nothing
+            // else. Before the PMT names them there is nothing to compare
+            // against; PSI itself is never scrambled and arrives in tens of
+            // milliseconds, so that window costs at most a handful of packets.
+            if pid == videoPID || audioPIDs.contains(pid) {
+                scrambledPackets += 1
+                delegate?.tsParser(self, didEncounterScrambledPacketOnPID: pid)
+            }
             return
         }
 
