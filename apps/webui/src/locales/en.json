@@ -323,8 +323,6 @@
   },
   "dashboard": {
     "controlSummary": "Control summary",
-    "heroStreamingMoment": "Streaming moment",
-    "heroControlDeck": "Control deck",
     "readOnlySummary": "Read-only view of receiver, session, guide, and recorder state.",
     "connectedDevices": "Connected devices",
     "liveViewerSessions": "live viewer sessions",

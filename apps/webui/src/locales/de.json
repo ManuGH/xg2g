@@ -323,8 +323,6 @@
   },
   "dashboard": {
     "controlSummary": "Kontrollübersicht",
-    "heroStreamingMoment": "Streaming aktiv",
-    "heroControlDeck": "Steuerzentrale",
     "readOnlySummary": "Reine Statusübersicht für Receiver, Sitzungen, Programmführer und Recorder.",
     "connectedDevices": "Verbundene Geräte",
     "liveViewerSessions": "Live-Zuschauer-Sitzungen",

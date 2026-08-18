@@ -8,12 +8,6 @@
   padding: 12px 0 32px;
 }
 
-.loadingState,
-.errorText {
-  padding: 32px 0;
-  color: var(--text-secondary);
-}
-
 /* 2. MAIN SECTION (Streams) */
 .mainSection {
   display: flex;
