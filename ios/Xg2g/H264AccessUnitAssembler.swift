@@ -43,17 +43,43 @@ public struct H264PictureStructure: Sendable {
     )
 }
 
-/// Thread-safe in-memory cache for SPS / PPS parameter sets per channel URL or stream key.
+/// Thread-safe persistent cache for SPS / PPS parameter sets per channel URL or stream key.
 public final class H264ParameterSetCache: @unchecked Sendable {
     public static let shared = H264ParameterSetCache()
     private var cache: [String: (sps: Data, pps: Data)] = [:]
     private let lock = NSLock()
+    private let userDefaultsKey = "io.github.manugh.xg2g.h264_sps_pps_cache"
 
-    public init() {}
+    public init() {
+        loadFromStorage()
+    }
+
+    private func loadFromStorage() {
+        guard let saved = UserDefaults.standard.dictionary(forKey: userDefaultsKey) as? [String: [String: Data]] else {
+            return
+        }
+        for (key, dict) in saved {
+            if let sps = dict["sps"], let pps = dict["pps"] {
+                cache[key] = (sps, pps)
+            }
+        }
+    }
+
+    private func persistToStorage() {
+        var toSave: [String: [String: Data]] = [:]
+        for (key, val) in cache {
+            toSave[key] = ["sps": val.sps, "pps": val.pps]
+        }
+        UserDefaults.standard.set(toSave, forKey: userDefaultsKey)
+    }
 
     public func setParameterSets(sps: Data, pps: Data, for key: String) {
         lock.lock()
+        let old = cache[key]
         cache[key] = (sps, pps)
+        if old?.sps != sps || old?.pps != pps {
+            persistToStorage()
+        }
         lock.unlock()
     }
 
@@ -66,6 +92,7 @@ public final class H264ParameterSetCache: @unchecked Sendable {
     public func clear() {
         lock.lock()
         cache.removeAll()
+        UserDefaults.standard.removeObject(forKey: userDefaultsKey)
         lock.unlock()
     }
 }

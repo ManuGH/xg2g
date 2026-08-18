@@ -419,10 +419,11 @@ struct TSPipelineUnitTests {
     }
 
     @Test func h264ParameterSetCachePrimesAndCachesCorrectly() throws {
+        H264ParameterSetCache.shared.clear()
         let cache = H264ParameterSetCache()
         let sps = Data([0x67, 0x64, 0x00, 0x28, 0xAC, 0xD9, 0x40, 0x78, 0x02, 0x27, 0xE2])
         let pps = Data([0x68, 0xEB, 0xEC, 0xB2, 0x2C])
-        let channelKey = "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:"
+        let channelKey = "test://dummy_channel_key"
 
         cache.setParameterSets(sps: sps, pps: pps, for: channelKey)
         let retrieved = cache.parameterSets(for: channelKey)
@@ -435,6 +436,8 @@ struct TSPipelineUnitTests {
         assembler.channelKey = channelKey
         assembler.primeWithParameterSets(sps: sps, pps: pps)
         #expect(assembler.decodedInfo != nil)
+        cache.clear()
+        H264ParameterSetCache.shared.clear()
     }
 
     // MARK: - 9. Hardware Video Decoder Recovery Tests

@@ -109,15 +109,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// sitting behind a queue of up to 180 fields, showed nothing at all. That
     /// asymmetry is the whole reason picture and sound behaved differently.
     ///
-    /// The cost is about 700 ms more before sound and motion begin. It is not
-    /// 700 ms of black screen — the first field carries `DisplayImmediately` and
-    /// is on screen at once — it is 700 ms longer holding that first picture.
-    private static let audioPreRollSeconds: Double = 1.2
+    /// The cost is about 400 ms more before sound and motion begin. It is not
+    /// 400 ms of black screen — the first field carries `DisplayImmediately` and
+    /// is on screen at once — it is 400 ms longer holding that first picture.
+    private static let audioPreRollSeconds: Double = 0.9
 
     /// Picture buffered before the clock may start on video alone, for the same
     /// reason the audio cushion exists: this source arrives in bursts, and a
     /// clock started level with the newest frame runs dry at the first gap.
-    private static let videoOnlyCushionSeconds: Double = 1.0
+    private static let videoOnlyCushionSeconds: Double = 0.8
 
     /// How long a channel may go without naming any audio before it is taken to
     /// have none. Long enough that a late PMT is not mistaken for a silent
@@ -322,46 +322,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             TelemetryServer.shared.log(logMsg)
         }
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.renderView?.synchronizer = self.audioRenderer.synchronizer
-            self.renderView?.resetForChannelZap()
-
-            // `audioRenderer.reset()` builds a fresh synchronizer on every zap,
-            // so the display layer has to be re-attached to the new clock — and
-            // flushed first, because what it still holds is timed against the
-            // old one.
-            if let presenter = self.systemPresenter {
-                presenter.flush()
-                presenter.attach(to: self.audioRenderer.synchronizer)
-                presenter.enablePictureInPicture()
-                // After `flush()`, which is what re-arms the immediate field.
-                presenter.onFirstFieldPresentedImmediately = { [weak self] in
-                    self?.handleFirstPictureShownImmediately()
-                }
-                presenter.onWarning = { [weak self] text in
-                    self?.reportWarning(text)
-                }
-            }
-            self.renderView?.onFirstFrameRendered = { [weak self] in
-                self?.handleFirstFrameRendered()
-            }
-            self.renderView?.onFirstFrameActuallyPresentedOnScreen = { [weak self] screenTime in
-                self?.handleFirstFrameActuallyPresented(screenTimestamp: screenTime)
-            }
-            self.renderView?.onFirstFieldSubmitted = { [weak self] pts in
-                guard let self = self else { return }
-                // Recorded before the observer is installed: this is what the
-                // clock anchors to, and on a stream whose audio pre-roll is
-                // already satisfied the very next audio buffer starts it.
-                if self.firstVideoFieldPTS == nil, pts.isValid {
-                    self.firstVideoFieldPTS = pts
-                    self.sessionState.mutate { $0.firstVideoFieldTime = CACurrentMediaTime() }
-                }
-                self.observeFirstPictureVisible(at: pts)
-            }
-        }
-
         let config = URLSessionConfiguration.ephemeral
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         config.timeoutIntervalForRequest = 5.0
@@ -401,6 +361,46 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         print(startLog)
         logger.notice("\(startLog, privacy: .public)")
         TelemetryServer.shared.log(startLog)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.renderView?.synchronizer = self.audioRenderer.synchronizer
+            self.renderView?.resetForChannelZap()
+
+            // `audioRenderer.reset()` builds a fresh synchronizer on every zap,
+            // so the display layer has to be re-attached to the new clock — and
+            // flushed first, because what it still holds is timed against the
+            // old one.
+            if let presenter = self.systemPresenter {
+                presenter.flush()
+                presenter.attach(to: self.audioRenderer.synchronizer)
+                presenter.enablePictureInPicture()
+                // After `flush()`, which is what re-arms the immediate field.
+                presenter.onFirstFieldPresentedImmediately = { [weak self] in
+                    self?.handleFirstPictureShownImmediately()
+                }
+                presenter.onWarning = { [weak self] text in
+                    self?.reportWarning(text)
+                }
+            }
+            self.renderView?.onFirstFrameRendered = { [weak self] in
+                self?.handleFirstFrameRendered()
+            }
+            self.renderView?.onFirstFrameActuallyPresentedOnScreen = { [weak self] screenTime in
+                self?.handleFirstFrameActuallyPresented(screenTimestamp: screenTime)
+            }
+            self.renderView?.onFirstFieldSubmitted = { [weak self] pts in
+                guard let self = self else { return }
+                // Recorded before the observer is installed: this is what the
+                // clock anchors to, and on a stream whose audio pre-roll is
+                // already satisfied the very next audio buffer starts it.
+                if self.firstVideoFieldPTS == nil, pts.isValid {
+                    self.firstVideoFieldPTS = pts
+                    self.sessionState.mutate { $0.firstVideoFieldTime = CACurrentMediaTime() }
+                }
+                self.observeFirstPictureVisible(at: pts)
+            }
+        }
 
         startSystemMonitoring()
     }
