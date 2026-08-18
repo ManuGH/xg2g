@@ -79,10 +79,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
   ];
 
   return (
-    <div style={{ display: 'flex', minHeight: '80vh', backgroundColor: 'var(--bg-base)', color: 'var(--text-primary)', borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+    <div style={{ display: 'flex', minHeight: '80vh', backgroundColor: 'var(--bg-base)', color: 'var(--text-primary)', borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--border-elevated)' }}>
       {/* Material 3 Sidebar Navigation */}
-      <div style={{ width: '280px', backgroundColor: 'var(--surface-panel-strong)', padding: '24px 16px', borderRight: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
-        <div style={{ paddingBottom: '16px', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+      <div style={{ width: '280px', backgroundColor: 'var(--surface-panel-strong)', padding: '24px 16px', borderRight: '1px solid var(--border-elevated)', flexShrink: 0 }}>
+        <div style={{ paddingBottom: '16px', marginBottom: '16px', borderBottom: '1px solid var(--border-elevated)' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: 'var(--accent-action)' }}>Haushalt & Administration</h2>
           <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '4px 0 0 0' }}>Material 3 Management Center</p>
         </div>
@@ -101,7 +101,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
                   padding: '10px 14px',
                   borderRadius: '12px',
                   border: 'none',
-                  backgroundColor: isActive ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                  backgroundColor: isActive ? 'var(--accent-action-subtle)' : 'transparent',
                   color: isActive ? 'var(--accent-action)' : 'var(--text-secondary)',
                   fontWeight: isActive ? 600 : 400,
                   fontSize: '14px',
@@ -143,17 +143,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ initialSection = 'acco
         {activeSection === 'devices' && <DevicesManagementSection />}
 
         {activeSection === 'account' && (
-          <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border-elevated)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>Hauptkontodaten</h3>
             <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>Verwaltung von Benutzername, Passwort und Notfall-Wiederherstellungsschlüsseln.</p>
-            <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '20px', backgroundColor: 'rgba(34,197,94,0.15)', color: 'var(--status-success)', fontSize: '12px', fontWeight: 600 }}>
+            <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '20px', backgroundColor: 'var(--status-success-subtle)', color: 'var(--status-success)', fontSize: '12px', fontWeight: 600 }}>
               Konto-Status: Aktiv (Admin)
             </div>
           </div>
         )}
 
         {activeSection === 'recordings' && (
-          <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border-elevated)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', color: 'var(--text-primary)' }}>Aufnahmen & Speicherkontingente</h3>
             <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>Verwaltung von DVR-Aufnahmepfad und automatischem Quota-Management.</p>
           </div>
