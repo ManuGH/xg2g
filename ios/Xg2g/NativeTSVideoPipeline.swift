@@ -1170,17 +1170,35 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         guard let totalMs = totalMs, let renderMs = renderMs else { return }
 
+        // Graded against what this source can do, and by which side owns the cost.
+        //
+        // The old scale called anything over 800 ms a miss. No tune on this
+        // hardware has ever reached that or can: the receiver alone takes
+        // 661–1079 ms to answer the HTTP request, measured over nine tunes,
+        // before a single byte exists to parse. A physically optimal tune was
+        // being reported as a problem, which sends tuning effort at stages with
+        // nothing left to give — and this pipeline has had plenty of that.
+        //
+        // Everything the player itself owns — PSI parse, decode, render —
+        // measured between 42 and 99 ms across those same nine tunes. The rest
+        // is the box answering and the stream reaching a random access point,
+        // which is 179 ms on one channel and 5627 ms on another and is not ours
+        // to shorten. So the grade names the dominant side rather than only the
+        // sum: a slow player is worth acting on at any total, a slow stream is
+        // worth knowing about and leaving alone.
+        let stages = telemetry.snapshot()
+        let playerBoundMs = stages.ttfpPsiMs + stages.ttfpDecodeMs + renderMs
+        let streamBoundMs = max(0, totalMs - playerBoundMs)
+
         let rating: String
-        if totalMs <= 800.0 {
-            rating = "🎯 Zielwert (≤ 800 ms)"
-        } else if totalMs <= 1200.0 {
-            rating = "🟢 Gut (≤ 1.2 s)"
+        if playerBoundMs > 300.0 {
+            rating = "🟠 Player: \(String(format: "%.0f", playerBoundMs))ms statt der üblichen 42–99 ms"
         } else if totalMs <= 1500.0 {
-            rating = "🟡 Noch gut (≤ 1.5 s)"
-        } else if totalMs <= 2000.0 {
-            rating = "🟠 Optimierungsbedarf (> 1.5 s)"
+            rating = "🎯 Am Boden dieser Quelle (≤ 1,5 s)"
+        } else if totalMs <= 3000.0 {
+            rating = "🟢 Gut für diese Quelle (≤ 3 s)"
         } else {
-            rating = "🔴 Inakzeptabel (> 2.0 s)"
+            rating = "⏳ \(String(format: "%.1f", streamBoundMs / 1000.0))s Warten auf Sender/Receiver, nicht auf den Player"
         }
 
         telemetry.mutate {
