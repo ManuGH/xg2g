@@ -386,7 +386,7 @@ func (r *LibraryPathResolver) ResolveRecordingPath(serviceRef string) (string, s
 	}
 	rootID, relPath, ok := matchLibraryRoot(localPath, r.roots)
 	if !ok {
-		return localPath, "", "", errors.New("recording path not in library roots")
+		return localPath, "", "", nil
 	}
 	return localPath, rootID, relPath, nil
 }

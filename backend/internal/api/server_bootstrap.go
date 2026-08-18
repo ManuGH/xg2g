@@ -240,8 +240,8 @@ type durationPersistorAdapter struct {
 
 func (d durationPersistorAdapter) PersistDuration(ctx context.Context, serviceRef string, duration int64) error {
 	_, rootID, relPath, err := d.pr.ResolveRecordingPath(serviceRef)
-	if err != nil {
-		return err
+	if err != nil || rootID == "" || relPath == "" {
+		return nil
 	}
 	return d.store.SetDuration(ctx, rootID, relPath, duration)
 }
