@@ -98,3 +98,26 @@ func TestProbeWithBin_ParsesFormatBitrate(t *testing.T) {
 		t.Fatalf("expected parsed audio truth, got audio=%#v", info.Audio)
 	}
 }
+
+func TestProbeWithBin_UnescapesFileURI(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "fake-ffprobe.sh")
+	script := "#!/bin/sh\n" +
+		"for arg in \"$@\"; do\n" +
+		"  if [ \"$arg\" = \"/media/recordings/20251217 1219 - ORF1 HD - Monk.ts\" ]; then\n" +
+		"    printf '{\"streams\":[{\"codec_type\":\"video\",\"codec_name\":\"h264\",\"width\":1280,\"height\":720,\"avg_frame_rate\":\"50/1\"}],\"format\":{\"duration\":\"100.0\",\"format_name\":\"mpegts\"}}'\n" +
+		"    exit 0\n" +
+		"  fi\n" +
+		"done\n" +
+		"echo \"File not found or wrong path: $@\" 1>&2\n" +
+		"exit 1\n"
+	writeExecutableScript(t, scriptPath, script)
+
+	info, err := ProbeWithBin(context.Background(), scriptPath, "file:///media/recordings/20251217%201219%20-%20ORF1%20HD%20-%20Monk.ts")
+	if err != nil {
+		t.Fatalf("expected unescaped file path to succeed, got: %v", err)
+	}
+	if info.Video.Width != 1280 || info.Video.Height != 720 {
+		t.Fatalf("unexpected probe info: %#v", info)
+	}
+}

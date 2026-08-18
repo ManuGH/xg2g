@@ -57,7 +57,15 @@ func ProbeWithBin(ctx context.Context, binaryPath string, path string) (*vod.Str
 
 func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string, opts ProbeOptions) (*vod.StreamInfo, error) {
 	headers := "Connection: close\r\n"
-	if u, err := url.Parse(path); err == nil && u.User != nil {
+	inputPath := path
+	if after, ok := strings.CutPrefix(inputPath, "file://"); ok {
+		raw := after
+		if decoded, err := url.PathUnescape(raw); err == nil {
+			inputPath = decoded
+		} else {
+			inputPath = raw
+		}
+	} else if u, err := url.Parse(inputPath); err == nil && u.User != nil {
 		pwd, _ := u.User.Password()
 		auth := u.User.Username() + ":" + pwd
 		headers += "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(auth)) + "\r\n"
@@ -65,10 +73,10 @@ func probeWithBinAndOptions(ctx context.Context, binaryPath string, path string,
 		// Authorization header, so they cannot leak via /proc/<pid>/cmdline
 		// of the ffprobe subprocess.
 		u.User = nil
-		path = u.String()
+		inputPath = u.String()
 	}
 
-	args := buildProbeArgs(path, headers, opts)
+	args := buildProbeArgs(inputPath, headers, opts)
 
 	ffprobeBin := strings.TrimSpace(binaryPath)
 	if ffprobeBin == "" {
