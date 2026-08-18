@@ -63,6 +63,33 @@ public final class SystemVideoPresenter: NSObject {
     private var pendingSamples: [CMSampleBuffer] = []
     private var isRequestingData = false
 
+    /// Set on the first field of a tune so the layer shows it at once.
+    ///
+    /// The clock cannot start at the picture — it has to stay at or behind the
+    /// audio or the sound is discarded — so on this source the first field lands
+    /// about 2.5 s ahead of where the timeline begins, and the screen stays black
+    /// for exactly that long while everything is already decoded and waiting.
+    /// Measured: pipeline ready at 6264 ms, picture at 9066 ms.
+    ///
+    /// `DisplayImmediately` is the attachment for precisely this: show this one
+    /// without regard to its timestamp. Everything after it presents from the
+    /// timeline as normal, so the picture appears frozen for an instant and then
+    /// runs — which is what a television does when you change channel.
+    private var needsImmediateDisplay = true
+
+    /// Fires when the field marked `DisplayImmediately` has actually been handed
+    /// to the renderer — which, for that one field, is the moment it goes up.
+    ///
+    /// The pipeline otherwise learns of the first picture from a boundary
+    /// observer on the master clock, and that observer is wrong by exactly the
+    /// wait this attachment removes: the clock still reaches the field's PTS
+    /// seconds later, long after the screen has shown it.
+    public var onFirstFieldPresentedImmediately: (() -> Void)?
+
+    /// Set between marking the field and the renderer taking it. The queue is
+    /// empty at a tune, so the marked field is the next one out of it.
+    private var awaitingImmediateHandoff = false
+
     /// Separates "the renderer will not take more" from "nothing is asking it".
     ///
     /// Both look identical from the drop counter, and they have opposite fixes.
@@ -215,6 +242,24 @@ public final class SystemVideoPresenter: NSObject {
             return
         }
 
+        if needsImmediateDisplay {
+            needsImmediateDisplay = false
+            awaitingImmediateHandoff = true
+            if let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true),
+               CFArrayGetCount(attachments) > 0 {
+                let dict = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+                CFDictionarySetValue(
+                    dict,
+                    Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+                    Unmanaged.passUnretained(kCFBooleanTrue).toOpaque()
+                )
+            }
+            let msg = "[SystemVideo] ⚡ First field of this tune marked DisplayImmediately at PTS \(String(format: "%.3f", pts.seconds))s"
+            print(msg)
+            logger.notice("\(msg, privacy: .public)")
+            TelemetryServer.shared.log(msg)
+        }
+
         if pendingSamples.count >= Self.maxPendingSamples {
             // Shed the newest, never the head.
             //
@@ -283,6 +328,10 @@ public final class SystemVideoPresenter: NSObject {
             readyTrue += 1
             renderer.enqueue(pendingSamples.removeFirst())
             enqueuedCount += 1
+            if awaitingImmediateHandoff {
+                awaitingImmediateHandoff = false
+                onFirstFieldPresentedImmediately?()
+            }
         }
 
         if isRequestingData {
@@ -331,6 +380,9 @@ public final class SystemVideoPresenter: NSObject {
         displayLayer.sampleBufferRenderer.flush()
         formatDescription = nil
         formatDimensions = CMVideoDimensions(width: 0, height: 0)
+        // Re-armed per tune: a zap is exactly the moment the wait is felt.
+        needsImmediateDisplay = true
+        awaitingImmediateHandoff = false
     }
 }
 

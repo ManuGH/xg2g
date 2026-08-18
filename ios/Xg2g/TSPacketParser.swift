@@ -68,10 +68,12 @@ public protocol TSPacketParserDelegate: AnyObject, Sendable {
     func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo])
     func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool)
     func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8)
+    func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16)
 }
 
 public extension TSPacketParserDelegate {
     func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo]) {}
+    func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16) {}
 }
 
 /// MPEG-TS (ISO/IEC 13818-1) transport stream packet parser.
@@ -104,6 +106,9 @@ public final class TSPacketParser: @unchecked Sendable {
     public private(set) var audioPIDs = Set<UInt16>()
     private var continuityCounters: [UInt16: UInt8] = [:]
 
+    /// Packets skipped because their payload was still scrambled.
+    public private(set) var scrambledPackets: Int = 0
+
     public weak var delegate: TSPacketParserDelegate?
 
     public init() {}
@@ -115,6 +120,7 @@ public final class TSPacketParser: @unchecked Sendable {
         audioTracks.removeAll()
         audioPIDs.removeAll()
         continuityCounters.removeAll()
+        scrambledPackets = 0
     }
 
     /// Feeds raw MPEG-TS chunk from network or file stream.
@@ -178,6 +184,22 @@ public final class TSPacketParser: @unchecked Sendable {
         let payloadUnitStart = (byte1 & 0x40) != 0
         let pid = UInt16(byte1 & 0x1F) << 8 | UInt16(byte2)
         guard pid != Self.nullPacketPID else { return }
+
+        // A scrambled payload is not elementary stream yet, and parsing it as one
+        // produces exactly what was being counted as a PES error.
+        //
+        // The receiver descrambles, but not instantly: on an encrypted service the
+        // first packets after a tune arrive before the CA module has the key, and
+        // they are marked as such. Feeding them to the PES assembler turns a
+        // normal part of tune-in into a burst of parse failures — 262 of them in
+        // one measured session, against 3 continuity errors, which is what said
+        // the data itself was arriving intact.
+        let scramblingControl = (byte3 & 0xC0) >> 6
+        guard scramblingControl == 0 else {
+            scrambledPackets += 1
+            delegate?.tsParser(self, didEncounterScrambledPacketOnPID: pid)
+            return
+        }
 
         let adaptationControl = (byte3 & 0x30) >> 4
         let continuityCounter = byte3 & 0x0F

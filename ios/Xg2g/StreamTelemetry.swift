@@ -50,6 +50,15 @@ public struct TelemetryValues: Sendable {
     public var continuityErrors: Int = 0
     public var pesErrors: Int = 0
 
+    /// Packets dropped because the receiver had not descrambled them yet.
+    ///
+    /// Expected to be non-zero for a moment at tune-in on an encrypted service
+    /// and then to stop. A count that keeps climbing means the receiver is not
+    /// descrambling at all, which is a subscription or CA problem rather than
+    /// anything this app can fix — and which used to show up only as a rising
+    /// PES error count that implicated the parser instead.
+    public var scrambledPackets: Int = 0
+
     /// Times the stream's timeline moved under playback and everything had to be
     /// re-anchored onto it.
     ///
@@ -190,6 +199,7 @@ public struct TelemetryValues: Sendable {
             "access_units_without_pts": accessUnitsWithoutPTS,
             "gated_access_units": gatedAccessUnits,
             "pts_discontinuities": ptsDiscontinuities,
+            "scrambled_packets": scrambledPackets,
             "ingest_backlog_bytes": ingestBacklogBytes,
             "thermal_state": thermalState,
             "memory_usage_mb": memoryUsageMB

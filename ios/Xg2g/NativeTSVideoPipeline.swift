@@ -257,6 +257,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 presenter.flush()
                 presenter.attach(to: self.audioRenderer.synchronizer)
                 presenter.enablePictureInPicture()
+                // After `flush()`, which is what re-arms the immediate field.
+                presenter.onFirstFieldPresentedImmediately = { [weak self] in
+                    self?.handleFirstPictureShownImmediately()
+                }
             }
             self.renderView?.onFirstFrameRendered = { [weak self] in
                 self?.handleFirstFrameRendered()
@@ -627,6 +631,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8) {
         telemetry.mutate { $0.continuityErrors += 1 }
+    }
+
+    public func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16) {
+        telemetry.mutate { $0.scrambledPackets += 1 }
     }
 
     // MARK: - AudioPESAssemblerDelegate
@@ -1210,7 +1218,18 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
-    private func recordFirstPictureVisible() {
+    /// The first field went up on its attachment instead of on the clock.
+    ///
+    /// Without this the tuning figure reports when the timeline *reached* that
+    /// field, which is now seconds after the screen showed it: the measurement
+    /// would charge the pipeline for a wait that no longer happens, and hide
+    /// the very improvement it exists to show.
+    private func handleFirstPictureShownImmediately() {
+        removeFirstPictureObserver()
+        recordFirstPictureVisible(viaImmediateDisplay: true)
+    }
+
+    private func recordFirstPictureVisible(viaImmediateDisplay: Bool = false) {
         let visibleMs = sessionState.mutate { state -> Double? in
             guard state.requestStartTime > 0 else { return nil }
             return (CACurrentMediaTime() - state.requestStartTime) * 1000.0
@@ -1233,7 +1252,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // The submit-to-visible gap is the part nothing could see before: it is
         // owned by the clock start, not by decode or render.
         let waitMs = snapshot.ttfpTotalMs > 0 ? visibleMs - snapshot.ttfpTotalMs : Double.nan
-        let msg = "[1080i50-TTFP] 👁️ Picture visible after \(String(format: "%.1f", visibleMs))ms | Pipeline ready at \(String(format: "%.1f", snapshot.ttfpTotalMs))ms | Waiting on master clock: \(String(format: "%.1f", waitMs))ms"
+        // Two different measurements share this number, and reading them as one
+        // is how a fixed startup still looks broken: on the clock path the gap
+        // is the wait for the timeline to arrive at the field, on the immediate
+        // path there is no wait and it is only the handoff to the renderer.
+        let gapLabel = viaImmediateDisplay ? "Submit to handoff" : "Waiting on master clock"
+        let via = viaImmediateDisplay ? "shown immediately" : "reached by master clock"
+        let msg = "[1080i50-TTFP] 👁️ Picture visible after \(String(format: "%.1f", visibleMs))ms (\(via)) | Pipeline ready at \(String(format: "%.1f", snapshot.ttfpTotalMs))ms | \(gapLabel): \(String(format: "%.1f", waitMs))ms"
         print(msg)
         logger.notice("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
