@@ -108,14 +108,21 @@ export function DvrScrubSlider({
 
   const handleBlur = useCallback(() => setHover(HIDDEN), []);
 
+  const isDraggingRef = useRef(false);
+
   const handlePointerDown = useCallback(() => {
+    isDraggingRef.current = true;
     setIsScrubbing(true);
   }, []);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const newValue = parseFloat(e.target.value);
-      setScrubValue(newValue);
+      if (isDraggingRef.current) {
+        setScrubValue(newValue);
+      } else {
+        onSeek(newValue);
+      }
       const wrap = wrapRef.current;
       if (wrap && max > 0 && hover.visible) {
         const fraction = newValue / max;
@@ -123,13 +130,16 @@ export function DvrScrubSlider({
         updateHoverForFraction(fraction, width);
       }
     },
-    [max, hover.visible, updateHoverForFraction],
+    [max, onSeek, hover.visible, updateHoverForFraction],
   );
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLInputElement>) => {
-      const newValue = parseFloat(e.currentTarget.value);
-      commitSeek(newValue);
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        const newValue = parseFloat(e.currentTarget.value);
+        commitSeek(newValue);
+      }
     },
     [commitSeek],
   );
