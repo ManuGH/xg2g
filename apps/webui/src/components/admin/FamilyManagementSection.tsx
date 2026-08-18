@@ -210,7 +210,7 @@ export const FamilyManagementSection: React.FC = () => {
                     value={inviteName}
                     onChange={(e) => setInviteName(e.target.value)}
                     placeholder="z. B. Oma Maria, Cousine Lisa"
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px' }}
                   />
                 </div>
 
@@ -219,7 +219,7 @@ export const FamilyManagementSection: React.FC = () => {
                   <select
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as any)}
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px' }}
                   >
                     <option value="member">Familienmitglied (Dauerhafter Zugriff)</option>
                     <option value="guest">Gast (Eingeschränkte Priorität & Zeitfenster)</option>

@@ -164,7 +164,7 @@ export const AuditNotificationsSection: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="🔍 Nach Aktion oder Akteur filtern..."
-              style={{ padding: '8px 14px', borderRadius: '8px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none', width: '220px' }}
+              style={{ padding: '8px 14px', borderRadius: '8px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '13px', width: '220px' }}
             />
             <button
               onClick={exportAuditLogsCSV}

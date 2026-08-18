@@ -162,7 +162,7 @@ export const AccessTimesSection: React.FC = () => {
                   type="time"
                   value={policy.dailyStart}
                   onChange={(e) => setPolicy({ ...policy, dailyStart: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px' }}
                 />
               </div>
               <div>
@@ -171,7 +171,7 @@ export const AccessTimesSection: React.FC = () => {
                   type="time"
                   value={policy.dailyEnd}
                   onChange={(e) => setPolicy({ ...policy, dailyEnd: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px' }}
                 />
               </div>
             </div>

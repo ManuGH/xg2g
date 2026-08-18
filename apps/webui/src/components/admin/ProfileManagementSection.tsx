@@ -264,7 +264,7 @@ export const ProfileManagementSection: React.FC = () => {
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="z. B. Kinderzimmer, Wohnzimmer TV, Max"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px' }}
                   required
                 />
               </div>
@@ -338,7 +338,7 @@ export const ProfileManagementSection: React.FC = () => {
                 <select
                   value={formUnknownPolicy}
                   onChange={(e) => setFormUnknownPolicy(e.target.value as any)}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px' }}
                 >
                   <option value="request_approval">Freigabe-Anfrage an Admin senden (Empfohlen)</option>
                   <option value="block">Strikte Sperre (Fail-Closed)</option>
@@ -355,7 +355,7 @@ export const ProfileManagementSection: React.FC = () => {
                   value={formPin}
                   onChange={(e) => setFormPin(e.target.value.replace(/\D/g, ''))}
                   placeholder="4-stelliger PIN z. B. 1234"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none', letterSpacing: '4px' }}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', letterSpacing: '4px' }}
                 />
               </div>
 
