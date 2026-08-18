@@ -23,7 +23,8 @@
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-label);
+  font-family: var(--font-label);
   text-transform: uppercase;
 }
 

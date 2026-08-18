@@ -11,10 +11,30 @@
   --ui-font-scale: calc(var(--ui-font-scale-user) * var(--ui-font-scale-surface));
   --ui-density-scale: calc(var(--ui-density-scale-user) * var(--ui-density-scale-surface));
 
-  /* Typography Stack */
-  --font-heading: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  /* Typography Stack
+     Archivo carries display and body. It is a grotesque drawn for small
+     on-screen grades, which is what this UI mostly is: 13px body, 11px
+     captions, on translucent glass. Its variable cut ships a real width
+     axis (62-125), so large titles can run condensed like a channel bar
+     without a second family entering the bundle. The system stack this
+     replaced rendered as SF Pro on macOS, Segoe on Windows and whatever
+     fontconfig picked on Linux - three different products from one token.
+     JetBrains Mono now sets both the data and the labels that name it,
+     the way a rundown sheet or an engineering monitor labels its fields. */
+  --font-display: 'Archivo Variable', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading: 'Archivo Variable', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: 'Archivo Variable', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-label: 'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
+
+  /* Width axis, expressed as font-stretch percentages Archivo supports. */
+  --width-display: 88%;
+
+  /* One tracking value for every uppercase micro-label. The mono face
+     already supplies the engineered texture, so the letterspacing does
+     not have to, and the labels stop drifting between 0.05em and 0.16em
+     depending on which screen they live on. */
+  --tracking-label: 0.08em;
 
   /* Type Scale (16px base, matching macOS SF Pro values) */
   --text-display: 1.625rem;   /* 26px - Large Title */
@@ -407,6 +427,15 @@ h6 {
   font-weight: 600;
   line-height: 1.2;
   margin: 0;
+}
+
+/* Only the two largest grades take the width axis. Below h2 the headings
+   sit inches from body copy, and a condensed cut there reads as a glitch
+   rather than a decision. */
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-stretch: var(--width-display);
 }
 
 h1 {

@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppRouter from './AppRouter';
 // Self-hosted fonts (no external Google CDN call).
 import '@fontsource-variable/jetbrains-mono';
+import '@fontsource-variable/archivo/standard.css';
 import './index.css';
 import App from './App.tsx';
 import ErrorBoundary from './components/ErrorBoundary';

@@ -411,8 +411,9 @@
 .statsLabel {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
+  font-family: var(--font-label);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-label);
 }
 
 .statsValue {
@@ -510,8 +511,9 @@
 .errorTelemetryLabel {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
+  font-family: var(--font-label);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-label);
 }
 
 .errorTelemetryValue {

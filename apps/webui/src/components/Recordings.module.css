@@ -25,7 +25,8 @@
 .infoLabel {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-label);
+  font-family: var(--font-label);
   text-transform: uppercase;
 }
 
@@ -635,7 +636,8 @@
 .watchPageLabel {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-label);
+  font-family: var(--font-label);
   text-transform: uppercase;
   font-weight: 700;
 }
@@ -825,7 +827,8 @@
 .preplayEyebrow {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-label);
+  font-family: var(--font-label);
   text-transform: uppercase;
   font-weight: 700;
 }

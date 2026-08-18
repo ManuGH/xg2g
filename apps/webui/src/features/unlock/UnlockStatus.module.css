@@ -14,7 +14,8 @@
 .kicker {
   margin: 0 0 0.35rem;
   font-size: 0.82rem;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
+  font-family: var(--font-label);
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -47,7 +48,8 @@
 .cardEyebrow {
   margin: 0;
   font-size: 0.8rem;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-label);
+  font-family: var(--font-label);
   text-transform: uppercase;
   color: var(--text-muted);
 }
