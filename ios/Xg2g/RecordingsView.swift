@@ -12,6 +12,12 @@ import SwiftUI
 /// - Multi-Category Filter Chips (Alle, Downloads, Spielfilme, Serien, Sport, Dokus)
 /// - Real-time Title & Synopsis Search
 /// - Offline Background Downloads with Apple-style Storage Breakdown
+private func formatRecordingTime(_ seconds: Double) -> String {
+    let mins = Int(seconds) / 60
+    let secs = Int(seconds) % 60
+    return String(format: "%02d:%02d", mins, secs)
+}
+
 /// - Rich Recording Detail Sheet with 1-Tap Playback & Delete Confirmation
 /// - Persistent playback progress syncing (Resume at exact timestamp)
 struct RecordingsView: View {
@@ -33,10 +39,28 @@ struct RecordingsView: View {
 
     @State private var selectedFilter: CategoryFilter = .all
     @State private var searchText = ""
-    @State private var playingRecording: Recording?
+    @State private var activePlaybackItem: PlayingRecordingItem?
+    @State private var promptResumeRecording: Recording?
     @State private var selectedDetailRecording: Recording?
     @State private var playingOffline: OfflineRecording?
     @State private var recordingToDelete: Recording?
+
+    private func play(recording: Recording, startPosition: Double) {
+        activePlaybackItem = PlayingRecordingItem(
+            id: recording.id,
+            recording: recording,
+            initialPosition: startPosition
+        )
+    }
+
+    private func handlePlayAction(for recording: Recording) {
+        let resumePos = model.resumePosition(for: recording.id) ?? 0
+        if resumePos > 5 {
+            promptResumeRecording = recording
+        } else {
+            play(recording: recording, startPosition: 0)
+        }
+    }
 
     private var downloadManager: DownloadManager {
         DownloadManager.shared
@@ -118,17 +142,17 @@ struct RecordingsView: View {
             .navigationTitle("Aufnahmen")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Aufnahmen nach Titel oder Genre suchen…")
-            .fullScreenCover(item: $playingRecording) { rec in
+            .fullScreenCover(item: $activePlaybackItem) { item in
                 RecordingPlayerScreen(
-                    recording: rec,
+                    recording: item.recording,
                     serverAddress: model.serverURLString,
-                    initialPosition: model.resumePosition(for: rec.id),
+                    initialPosition: item.initialPosition,
                     onProgressUpdate: { current, total in
                         model.updateRecordingProgress(
-                            id: rec.id,
+                            id: item.recording.id,
                             currentTime: current,
                             totalDuration: total,
-                            title: rec.title
+                            title: item.recording.title
                         )
                     }
                 )
@@ -141,15 +165,54 @@ struct RecordingsView: View {
                     recording: rec,
                     model: model,
                     serverAddress: model.serverURLString,
-                    onPlay: {
+                    onPlay: { startPos in
                         selectedDetailRecording = nil
-                        playingRecording = rec
+                        play(recording: rec, startPosition: startPos)
                     },
                     onDelete: {
                         selectedDetailRecording = nil
                         recordingToDelete = rec
                     }
                 )
+            }
+            .confirmationDialog(
+                "„\(promptResumeRecording?.title ?? "Aufnahme")“ abspielen",
+                isPresented: Binding(
+                    get: { promptResumeRecording != nil },
+                    set: { if !$0 { promptResumeRecording = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let rec = promptResumeRecording {
+                    let resumePos = model.resumePosition(for: rec.id) ?? 0
+                    Button("Fortsetzen bei \(formatRecordingTime(resumePos))") {
+                        let target = rec
+                        promptResumeRecording = nil
+                        play(recording: target, startPosition: resumePos)
+                    }
+
+                    Button("Von Beginn an abspielen") {
+                        let target = rec
+                        promptResumeRecording = nil
+                        model.updateRecordingProgress(
+                            id: target.id,
+                            currentTime: 0,
+                            totalDuration: Double(target.durationSeconds),
+                            title: target.title
+                        )
+                        play(recording: target, startPosition: 0)
+                    }
+
+                    Button("Abbrechen", role: .cancel) {
+                        promptResumeRecording = nil
+                    }
+                }
+            } message: {
+                if let rec = promptResumeRecording {
+                    let resumePos = model.resumePosition(for: rec.id) ?? 0
+                    let remainingMin = max(1, Int((Double(rec.durationSeconds) - resumePos) / 60))
+                    Text("Zuletzt gesehen bis \(formatRecordingTime(resumePos)) (noch ca. \(remainingMin) Min.).")
+                }
             }
             .confirmationDialog(
                 "Aufnahme wirklich vom Server löschen?",
@@ -211,7 +274,7 @@ struct RecordingsView: View {
                             recording: spotlight,
                             model: model,
                             serverAddress: model.serverURLString,
-                            onPlay: { playingRecording = spotlight },
+                            onPlay: { handlePlayAction(for: spotlight) },
                             onShowInfo: { selectedDetailRecording = spotlight },
                             onDelete: { recordingToDelete = spotlight }
                         )
@@ -243,12 +306,12 @@ struct RecordingsView: View {
                                 recording: recording,
                                 model: model,
                                 serverAddress: model.serverURLString,
-                                onPlay: { playingRecording = recording },
+                                onPlay: { handlePlayAction(for: recording) },
                                 onShowInfo: { selectedDetailRecording = recording }
                             )
                             .contextMenu {
                                 Button {
-                                    playingRecording = recording
+                                    handlePlayAction(for: recording)
                                 } label: {
                                     Label("Abspielen", systemImage: "play.fill")
                                 }
@@ -675,13 +738,19 @@ struct RecordingCard: View {
     }
 }
 
+struct PlayingRecordingItem: Identifiable, Sendable {
+    let id: String
+    let recording: Recording
+    let initialPosition: Double
+}
+
 // MARK: - Recording Detail Sheet
 
 struct RecordingDetailSheet: View {
     let recording: Recording
     let model: AppModel
     let serverAddress: String
-    var onPlay: () -> Void
+    var onPlay: (Double) -> Void
     var onDelete: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -774,12 +843,12 @@ struct RecordingDetailSheet: View {
                             let resumePos = model.resumePosition(for: recording.id) ?? 0
                             if resumePos > 0 {
                                 Button {
-                                    onPlay()
+                                    onPlay(resumePos)
                                 } label: {
                                     HStack {
                                         Spacer()
                                         Image(systemName: "play.fill")
-                                        Text("Fortsetzen bei \(formatTime(resumePos))")
+                                        Text("Fortsetzen bei \(formatRecordingTime(resumePos))")
                                             .font(.headline)
                                         Spacer()
                                     }
@@ -789,8 +858,13 @@ struct RecordingDetailSheet: View {
                                 }
 
                                 Button {
-                                    model.updateRecordingProgress(id: recording.id, currentTime: 0, totalDuration: Double(recording.durationSeconds))
-                                    onPlay()
+                                    model.updateRecordingProgress(
+                                        id: recording.id,
+                                        currentTime: 0,
+                                        totalDuration: Double(recording.durationSeconds),
+                                        title: recording.title
+                                    )
+                                    onPlay(0)
                                 } label: {
                                     HStack {
                                         Spacer()
@@ -805,7 +879,7 @@ struct RecordingDetailSheet: View {
                                 }
                             } else {
                                 Button {
-                                    onPlay()
+                                    onPlay(0)
                                 } label: {
                                     HStack {
                                         Spacer()

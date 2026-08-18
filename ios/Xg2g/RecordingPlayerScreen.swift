@@ -72,11 +72,6 @@ struct RecordingPlayerScreen: View {
         let item = PlayerAssetLoader.makePlayerItem(url: streamURL, baseURL: baseURL)
         let p = AVPlayer(playerItem: item)
 
-        if let initPos = initialPosition, initPos > 5 {
-            let targetTime = CMTime(seconds: initPos, preferredTimescale: 1)
-            p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
-        }
-
         // Add periodic time observer to track resume progress
         let progressCallback = self.onProgressUpdate
         timeObserver = p.addPeriodicTimeObserver(
@@ -89,7 +84,17 @@ struct RecordingPlayerScreen: View {
             }
         }
 
-        p.play()
+        if let initPos = initialPosition, initPos > 5 {
+            let targetTime = CMTime(seconds: initPos, preferredTimescale: 600)
+            p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p] finished in
+                if finished {
+                    p?.play()
+                }
+            }
+        } else {
+            p.play()
+        }
+
         self.player = p
     }
 
