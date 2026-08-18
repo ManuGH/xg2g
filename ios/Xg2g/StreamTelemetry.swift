@@ -17,7 +17,22 @@ public struct TelemetryValues: Sendable {
     public var ttfpGpuCompletedMs: Double = 0.0        // t0 -> t6_gpu: Request -> GPU Present Completed
     public var ttfpRating: String = "Pending…"
     public var isFirstPicturePresented: Bool = false
-    public var ttfpNetworkMs: Double = 0.0      // t0 -> t1: Request sent -> First TS packet
+    /// Asked to tune, to the request actually leaving.
+    ///
+    /// The previous stream's teardown and the audio session activation, both of
+    /// which used to be charged to the network stage and made the receiver look
+    /// slower than it is.
+    public var ttfpSetupMs: Double = 0.0
+
+    /// The teardown's own share of the setup: cancelling the old session and
+    /// draining the parse queue behind a barrier.
+    public var ttfpTeardownMs: Double = 0.0
+
+    /// The audio session's own share of the setup. Synchronous, and talking to
+    /// another process.
+    public var ttfpAudioSessionMs: Double = 0.0
+
+    public var ttfpNetworkMs: Double = 0.0      // t1 -> t2: Request sent -> First TS packet
     public var ttfpPsiMs: Double = 0.0          // t1 -> t2: First TS -> PAT/PMT/Video PID known
     public var ttfpParamSetsMs: Double = 0.0    // t2 -> t3: Video PID -> SPS/PPS ready
     public var ttfpIdrMs: Double = 0.0          // t3 -> t4: SPS/PPS -> First complete IDR AU
@@ -168,6 +183,9 @@ public struct TelemetryValues: Sendable {
             "ttfp_total_ms": ttfpTotalMs,
             "ttfp_gpu_completed_ms": ttfpGpuCompletedMs,
             "ttfp_motion_ms": ttfpMotionMs,
+            "ttfp_setup_ms": ttfpSetupMs,
+            "ttfp_teardown_ms": ttfpTeardownMs,
+            "ttfp_audio_session_ms": ttfpAudioSessionMs,
             "ttfp_rating": ttfpRating,
             "ttfp_network_ms": ttfpNetworkMs,
             "ttfp_psi_ms": ttfpPsiMs,

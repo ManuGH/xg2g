@@ -575,8 +575,11 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func startCurrentPreset() {
+        // Stamped here so the figure covers the wait as the viewer experiences
+        // it, including whatever this function does before handing over.
+        let requestedAt = CACurrentMediaTime()
         if let url = URL(string: streamURLString) {
-            pipeline.startStreaming(url: url)
+            pipeline.startStreaming(url: url, requestedAt: requestedAt)
             isStreaming = true
             isPlaying = true
             NowPlayingManager.shared.updatePlaybackState(isPlaying: true)

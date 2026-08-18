@@ -28,6 +28,14 @@ private final class PipelineSessionState: @unchecked Sendable {
     /// Socket delivery cadence. A live TS arrives continuously, so a gap here is
     /// the network or the server stalling — indistinguishable, from inside the
     /// app, from a decode problem unless it is measured separately.
+    /// When the HTTP request actually went out.
+    ///
+    /// Separate from `requestStartTime`, which is when the app was asked to
+    /// tune: between the two sit the previous stream's teardown and the audio
+    /// session activation, and charging those to the network made the receiver
+    /// look slower than it is.
+    var requestIssuedTime: CFTimeInterval = 0
+
     var lastDataArrival: CFTimeInterval = 0
     var stallCount: Int = 0
     var longestStallMs: Double = 0
@@ -224,8 +232,17 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         TelemetryServer.shared.setScreenshotProvider { nil }
     }
 
-    public func startStreaming(url: URL) {
+    /// - Parameter requestedAt: when the user asked for this, which is not the
+    ///   same as when this function runs. Callers that do work first — resolving
+    ///   a URL, dismissing a screen — should stamp their own start so the figure
+    ///   covers what the viewer waited through rather than what was left of it.
+    public func startStreaming(url: URL, requestedAt: CFTimeInterval = CACurrentMediaTime()) {
+        // Measured, because it is not free: the teardown runs a barrier against
+        // the previous stream's parse queue, and anchoring t0 after it hid that
+        // cost from every figure in this pipeline.
+        let teardownStart = CACurrentMediaTime()
         stopStreaming()
+        let teardownMs = (CACurrentMediaTime() - teardownStart) * 1000.0
         telemetry.reset()
 
         ingestStateLock.lock()
@@ -234,10 +251,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         pendingIngestBytes = 0
         ingestStateLock.unlock()
 
-        sessionState = PipelineSessionState(generation: currentGen)
+        sessionState = PipelineSessionState(generation: currentGen, requestStartTime: requestedAt)
         decoder.decodeGeneration = currentGen
 
+        // AVAudioSession activation is synchronous and talks to the audio
+        // daemon; it is not reliably quick, and it sat inside the network figure.
+        let audioSessionStart = CACurrentMediaTime()
         audioRenderer.activateAudioSession()
+        let audioSessionMs = (CACurrentMediaTime() - audioSessionStart) * 1000.0
 
         let targetURL = normalizeStreamURL(url)
         let channelKey = targetURL.absoluteString
@@ -313,6 +334,19 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let task = session.dataTask(with: request)
         self.streamTask = task
         task.resume()
+
+        let issuedAt = CACurrentMediaTime()
+        sessionState.mutate { $0.requestIssuedTime = issuedAt }
+        let setupMs = (issuedAt - requestedAt) * 1000.0
+        telemetry.mutate {
+            $0.ttfpSetupMs = setupMs
+            $0.ttfpTeardownMs = teardownMs
+            $0.ttfpAudioSessionMs = audioSessionMs
+        }
+        let setupLog = "[1080i50-TTFP] 🛠️ Setup \(String(format: "%.1f", setupMs))ms before the request went out (teardown \(String(format: "%.1f", teardownMs))ms, audio session \(String(format: "%.1f", audioSessionMs))ms)"
+        print(setupLog)
+        logger.notice("\(setupLog, privacy: .public)")
+        TelemetryServer.shared.log(setupLog)
 
         let startLog = "[1080i50-NET] ▶️ Requesting \(targetURL.absoluteString) | Timeout: \(config.timeoutIntervalForRequest)s | Gen: \(currentGen)"
         print(startLog)
@@ -470,7 +504,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             var firstByteMs: Double?
             if state.firstDataTime == 0 && state.requestStartTime > 0 {
                 state.firstDataTime = now
-                firstByteMs = (now - state.requestStartTime) * 1000.0
+                // From when the request left, not from when the app was asked to
+                // tune. Everything before it is ours and is reported as setup.
+                let base = state.requestIssuedTime > 0 ? state.requestIssuedTime : state.requestStartTime
+                firstByteMs = (now - base) * 1000.0
             }
 
             var gapMs: Double?
@@ -1277,7 +1314,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
 
         let snapshot = telemetry.snapshot()
-        let ttfpLog = "[1080i50-TTFP] Total: \(String(format: "%.1f", totalMs))ms | Net: \(String(format: "%.1f", snapshot.ttfpNetworkMs))ms | PSI: \(String(format: "%.1f", snapshot.ttfpPsiMs))ms | Params: \(String(format: "%.1f", snapshot.ttfpParamSetsMs))ms | FirstAU: \(String(format: "%.1f", snapshot.ttfpIdrMs))ms | Dec: \(String(format: "%.1f", snapshot.ttfpDecodeMs))ms | Render: \(String(format: "%.1f", renderMs))ms"
+        let ttfpLog = "[1080i50-TTFP] Total: \(String(format: "%.1f", totalMs))ms | Setup: \(String(format: "%.1f", snapshot.ttfpSetupMs))ms | Net: \(String(format: "%.1f", snapshot.ttfpNetworkMs))ms | PSI: \(String(format: "%.1f", snapshot.ttfpPsiMs))ms | Params: \(String(format: "%.1f", snapshot.ttfpParamSetsMs))ms | FirstAU: \(String(format: "%.1f", snapshot.ttfpIdrMs))ms | Dec: \(String(format: "%.1f", snapshot.ttfpDecodeMs))ms | Render: \(String(format: "%.1f", renderMs))ms"
         print(ttfpLog)
         logger.notice("\(ttfpLog, privacy: .public)")
         TelemetryServer.shared.log(ttfpLog)
