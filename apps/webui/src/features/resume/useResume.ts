@@ -8,6 +8,7 @@ const JUMP_THRESHOLD = 30;
 interface UseResumeProps {
   recordingId?: string;
   duration?: number | null;
+  anchorStartSec?: number | null;
   videoRef: RefObject<HTMLVideoElement | null>;
   isPlaying: boolean;
   isSeekable?: boolean;
@@ -16,7 +17,7 @@ interface UseResumeProps {
   channelName?: string;
 }
 
-export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekable = false, title, channelName }: UseResumeProps) {
+export function useResume({ recordingId, duration, anchorStartSec = 0, videoRef, isPlaying, isSeekable = false, title, channelName }: UseResumeProps) {
   const lastSavedTime = useRef<number>(0);
   const saveTimerRef = useRef<number | null>(null);
   const finishedRef = useRef(false);
@@ -34,7 +35,7 @@ export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekab
     // Prevent overwriting finished state unless forced
     if (finishedRef.current && !forceFinished) return;
 
-    const currentTime = videoElement.currentTime;
+    const currentTime = (anchorStartSec ?? 0) + videoElement.currentTime;
     const durationSec = duration && duration > 0 ? duration : 0;
 
     // Safety check: don't save 0 if we haven't started (unless forceFinished)
@@ -63,7 +64,7 @@ export function useResume({ recordingId, duration, videoRef, isPlaying, isSeekab
     } catch (err) {
       debugWarn('[useResume] Failed to save resume state', formatError(err));
     }
-  }, [recordingId, videoRef, duration, isSeekable, title, channelName]);
+  }, [recordingId, videoRef, anchorStartSec, duration, isSeekable, title, channelName]);
 
   // Periodic Save
   useEffect(() => {

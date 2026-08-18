@@ -386,8 +386,22 @@ export function usePlayerChrome({
     if (playbackMode === 'VOD') {
       const anchor = anchorStartSec ?? 0;
       const localTarget = targetSeconds - anchor;
-      const localEnd = seekableEnd > 0 ? seekableEnd : (video.duration || 0);
-      const isWithinLocalWindow = localTarget >= seekableStart && localTarget <= localEnd;
+
+      let localBufferedStart = 0;
+      let localBufferedEnd = 0;
+      try {
+        if (video.seekable && video.seekable.length > 0) {
+          localBufferedStart = video.seekable.start(0);
+          localBufferedEnd = video.seekable.end(video.seekable.length - 1);
+        }
+      } catch {
+        // ignore
+      }
+
+      // Check if the seek target is within the locally buffered/transcoded HLS window
+      const isWithinLocalWindow = localBufferedEnd > localBufferedStart &&
+        localTarget >= localBufferedStart &&
+        localTarget <= Math.max(localBufferedStart, localBufferedEnd - 0.5);
 
       if (isWithinLocalWindow) {
         video.currentTime = Math.max(0, localTarget);
@@ -426,8 +440,9 @@ export function usePlayerChrome({
   const seekBy = useCallback((deltaSeconds: number) => {
     const video = videoRef.current;
     if (!video) return;
-    seekTo(video.currentTime + deltaSeconds);
-  }, [seekTo, videoRef]);
+    const currentAbs = (anchorStartSec ?? 0) + video.currentTime;
+    seekTo(currentAbs + deltaSeconds);
+  }, [anchorStartSec, seekTo, videoRef]);
 
   // "Go LIVE": never seek to the exact edge (stalls -> black). Target a safe
   // margin behind it, clamped into the seekable window, and resume playback.

@@ -787,6 +787,7 @@ export function usePlaybackOrchestrator(
   useResume({
     recordingId: activeRecordingId || undefined,
     duration: durationSeconds,
+    anchorStartSec,
     videoRef,
     isPlaying,
     isSeekable: canSeek,
@@ -1214,7 +1215,7 @@ export function usePlaybackOrchestrator(
               setStatus('building');
               vodRetryRef.current = window.setTimeout(() => {
                 if (isLifecycleActive(lifecycleGeneration) && activeRecordingRef.current === id) {
-                  startRecordingPlayback(id, profileForAttempt);
+                  startRecordingPlayback(id, profileForAttempt, startOffsetMs);
                 }
               }, delay);
               return;
