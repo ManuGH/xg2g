@@ -311,6 +311,9 @@ public final class MetalVideoView: UIView {
     /// anything decides nobody is watching.
     private var leftForegroundAt: CFTimeInterval = 0
 
+    /// Set only by a real backgrounding, so a banner does not cost a flush.
+    private var wasBackgrounded = false
+
     /// Long enough for an automatic PiP start to announce itself, short enough
     /// that a locked phone is not left rendering for a screen nobody sees.
     private static let backgroundGraceSeconds: Double = 1.5
@@ -401,6 +404,12 @@ public final class MetalVideoView: UIView {
         let resign = NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.displayLink?.isPaused = true }
         }
+        // `willResignActive` also fires for a notification banner or the app
+        // switcher, where nothing needs discarding. Only a real backgrounding
+        // leaves a gap worth recovering from.
+        let background = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.wasBackgrounded = true }
+        }
         let becomeActive = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -416,9 +425,26 @@ public final class MetalVideoView: UIView {
                 self.lastPublishedStreamNow = .nan
                 self.resetPerSecondCounters()
                 self.displayLink?.isPaused = false
+
+                // The same reasoning as the re-anchor above, applied to the path
+                // that actually runs. Everything the display layer still holds is
+                // timed against a clock that moved on while the app was away, and
+                // under system presentation nothing was flushing it: fields
+                // arriving after a resume queued up behind as many as 180 stale
+                // ones, and the picture stayed exactly where it had been left.
+                if self.wasBackgrounded {
+                    self.wasBackgrounded = false
+                    self.fieldQueue.removeAll(keepingCapacity: true)
+                    if self.usesSystemPresentation {
+                        // Also re-arms the immediate first field, so the picture
+                        // comes back at once instead of waiting for the clock to
+                        // reach whatever arrives next.
+                        self.systemPresenter?.flush()
+                    }
+                }
             }
         }
-        observers = ObserverRegistration(tokens: [resign, becomeActive])
+        observers = ObserverRegistration(tokens: [resign, background, becomeActive])
     }
 
     public override func layoutSubviews() {

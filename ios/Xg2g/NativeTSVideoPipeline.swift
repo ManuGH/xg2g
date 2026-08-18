@@ -134,6 +134,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// video features available. See `SystemVideoPresenter`.
     public weak var systemPresenter: SystemVideoPresenter?
 
+    private var telemetryForegroundObserver: NSObjectProtocol?
+
     private var urlSession: URLSession?
     private var streamTask: URLSessionDataTask?
     
@@ -238,6 +240,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         audioSampleBufferAssembler.delegate = self
 
         TelemetryServer.shared.start()
+        if telemetryForegroundObserver == nil {
+            telemetryForegroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                TelemetryServer.shared.restartAfterForeground()
+            }
+        }
         TelemetryServer.shared.setTelemetryProvider { [weak self] in
             return self?.telemetry.toDictionary() ?? [:]
         }

@@ -101,6 +101,21 @@ public final class TelemetryServer: @unchecked Sendable {
         listener = nil
     }
 
+    /// Rebuilds the socket after a suspension.
+    ///
+    /// iOS tears the listener down when the app is suspended and nothing put it
+    /// back, so port 8099 was dead from the first time the phone was locked —
+    /// which is exactly when a diagnostic endpoint is wanted, and it took a
+    /// frozen picture after an unlock to notice, because the tool for looking at
+    /// it had gone with the same lock.
+    ///
+    /// `start()` returns early while a listener object survives, dead or not, so
+    /// the old one has to go first.
+    public func restartAfterForeground() {
+        stop()
+        start()
+    }
+
     private func handleConnection(_ connection: NWConnection) {
         connection.start(queue: queue)
         receiveRequest(connection: connection)
