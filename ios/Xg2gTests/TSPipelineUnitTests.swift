@@ -125,7 +125,7 @@ struct TSPipelineUnitTests {
         #expect(sink.discoveredVideoPID == 0x0200)
     }
 
-    @Test func tsParserEmitsPlaintextPESEvenIfScramblingFlagIsSet() throws {
+    @Test func tsParserRejectsScrambledPacketsEvenIfPayloadStartsWithPESPrefix() throws {
         let parser = TSPacketParser()
         let sink = MockTSSink()
         parser.delegate = sink
@@ -181,35 +181,47 @@ struct TSPipelineUnitTests {
         parser.feed(data: pmtPacket)
         #expect(parser.videoPID == 0x0200)
 
-        // Packet 1: Scrambled bit set (byte3 = 0x90 -> scramblingControl = 2), but payload starts with valid PES 0x000001
-        var videoPacketDescrambled = Data(repeating: 0xAA, count: 188)
-        videoPacketDescrambled[0] = 0x47
-        videoPacketDescrambled[1] = 0x42 // payloadUnitStart = true, PID = 0x0200
-        videoPacketDescrambled[2] = 0x00
-        videoPacketDescrambled[3] = 0x90 // scramblingControl = 0b10 (2), CC = 0
-        videoPacketDescrambled[4] = 0x00 // PES start code
-        videoPacketDescrambled[5] = 0x00
-        videoPacketDescrambled[6] = 0x01
-        videoPacketDescrambled[7] = 0xE0
+        // Packet 1: Scrambled bit set (byte3 = 0x90 -> scramblingControl = 2), payload starts with 0x000001
+        var videoPacketScrambledWithPESHeader = Data(repeating: 0xAA, count: 188)
+        videoPacketScrambledWithPESHeader[0] = 0x47
+        videoPacketScrambledWithPESHeader[1] = 0x42 // payloadUnitStart = true, PID = 0x0200
+        videoPacketScrambledWithPESHeader[2] = 0x00
+        videoPacketScrambledWithPESHeader[3] = 0x90 // scramblingControl = 0b10 (2), CC = 0
+        videoPacketScrambledWithPESHeader[4] = 0x00 // coincidentally starts with 0x000001
+        videoPacketScrambledWithPESHeader[5] = 0x00
+        videoPacketScrambledWithPESHeader[6] = 0x01
+        videoPacketScrambledWithPESHeader[7] = 0xE0
 
-        parser.feed(data: videoPacketDescrambled)
-        #expect(sink.emittedPayloads.count == 1)
-
-        // Packet 2: Truly scrambled ciphertext (byte3 = 0x91, payload random bytes)
-        var videoPacketEncrypted = Data(repeating: 0x7E, count: 188)
-        videoPacketEncrypted[0] = 0x47
-        videoPacketEncrypted[1] = 0x42 // payloadUnitStart = true, PID = 0x0200
-        videoPacketEncrypted[2] = 0x00
-        videoPacketEncrypted[3] = 0x91 // scramblingControl = 0b10, CC = 1
-        videoPacketEncrypted[4] = 0xDE // NOT 0x00 0x00 0x01
-        videoPacketEncrypted[5] = 0xAD
-        videoPacketEncrypted[6] = 0xBE
-        videoPacketEncrypted[7] = 0xEF
-
-        parser.feed(data: videoPacketEncrypted)
-        // Count should still be 1 because encrypted packet was rejected
-        #expect(sink.emittedPayloads.count == 1)
+        parser.feed(data: videoPacketScrambledWithPESHeader)
+        // Must be rejected - no payload emitted, counted as scrambled
+        #expect(sink.emittedPayloads.isEmpty)
         #expect(parser.scrambledPackets == 1)
+
+        // Packet 2: Scrambled continuation packet (byte3 = 0x91 -> scramblingControl = 2, CC = 1)
+        var videoPacketEncryptedContinuation = Data(repeating: 0x7E, count: 188)
+        videoPacketEncryptedContinuation[0] = 0x47
+        videoPacketEncryptedContinuation[1] = 0x02 // payloadUnitStart = false, PID = 0x0200
+        videoPacketEncryptedContinuation[2] = 0x00
+        videoPacketEncryptedContinuation[3] = 0x91 // scramblingControl = 0b10, CC = 1
+
+        parser.feed(data: videoPacketEncryptedContinuation)
+        #expect(sink.emittedPayloads.isEmpty)
+        #expect(parser.scrambledPackets == 2)
+
+        // Packet 3: Plaintext packet (byte3 = 0x12 -> scramblingControl = 0, CC = 2)
+        var videoPacketClear = Data(repeating: 0x55, count: 188)
+        videoPacketClear[0] = 0x47
+        videoPacketClear[1] = 0x42 // payloadUnitStart = true, PID = 0x0200
+        videoPacketClear[2] = 0x00
+        videoPacketClear[3] = 0x12 // scramblingControl = 0, CC = 2
+        videoPacketClear[4] = 0x00
+        videoPacketClear[5] = 0x00
+        videoPacketClear[6] = 0x01
+        videoPacketClear[7] = 0xE0
+
+        parser.feed(data: videoPacketClear)
+        #expect(sink.emittedPayloads.count == 1)
+        #expect(parser.scrambledPackets == 2)
     }
 
     // MARK: - 2. PESPacketAssembler Tests
