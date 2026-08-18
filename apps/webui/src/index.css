@@ -92,6 +92,10 @@
   --accent-action-hover: #409cff;
   --accent-action-pressed: #0060d1;
   --accent-action-subtle: rgba(10, 132, 255, 0.14);
+  /* The status colours each carry a subtle fill and a 0.3 border; the action
+     accent had only the fill, so anything framing accent content reached for
+     a literal. Same alpha as its status siblings. */
+  --accent-action-border: rgba(10, 132, 255, 0.3);
 
   /* Amber = Live/Recording */
   --accent-live: #ffb24a;

@@ -121,12 +121,12 @@ export const FamilyManagementSection: React.FC = () => {
       </div>
 
       {error && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'var(--status-error-subtle)', border: '1px solid var(--status-error-border)', color: 'var(--status-error)', fontSize: '13px' }}>
           ⚠️ {error}
         </div>
       )}
       {success && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: 'var(--status-success)', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'var(--status-success-subtle)', border: '1px solid var(--status-success-border)', color: 'var(--status-success)', fontSize: '13px' }}>
           ✓ {success}
         </div>
       )}
@@ -143,7 +143,7 @@ export const FamilyManagementSection: React.FC = () => {
                 backgroundColor: 'var(--surface-panel-strong)',
                 padding: '16px 20px',
                 borderRadius: '14px',
-                border: '1px solid rgba(255,255,255,0.08)',
+                border: '1px solid var(--border-elevated)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -170,7 +170,7 @@ export const FamilyManagementSection: React.FC = () => {
                     borderRadius: '20px',
                     fontSize: '12px',
                     fontWeight: 600,
-                    backgroundColor: m.role === 'admin' ? 'rgba(56,189,248,0.2)' : m.role === 'member' ? 'rgba(34,197,94,0.2)' : 'rgba(234,179,8,0.2)',
+                    backgroundColor: m.role === 'admin' ? 'var(--accent-action-subtle)' : m.role === 'member' ? 'var(--status-success-subtle)' : 'var(--status-warning-subtle)',
                     color: m.role === 'admin' ? 'var(--accent-action)' : m.role === 'member' ? 'var(--status-success)' : 'var(--status-warning)',
                   }}
                 >
@@ -184,7 +184,7 @@ export const FamilyManagementSection: React.FC = () => {
                       <button onClick={() => handleRemoveMember(m.id)} disabled={saving} style={{ padding: '6px 10px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--status-error)', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600 }}>Entfernen</button>
                     </div>
                   ) : (
-                    <button onClick={() => setDeletingId(m.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--status-error)', fontSize: '12px', cursor: 'pointer' }}>Entfernen</button>
+                    <button onClick={() => setDeletingId(m.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--status-error-border)', backgroundColor: 'var(--status-error-subtle)', color: 'var(--status-error)', fontSize: '12px', cursor: 'pointer' }}>Entfernen</button>
                   )
                 )}
               </div>
@@ -195,8 +195,8 @@ export const FamilyManagementSection: React.FC = () => {
 
       {/* Invite Modal */}
       {isInviteOpen && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.8)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-          <div style={{ backgroundColor: 'var(--surface-panel-strong)', borderRadius: '24px', width: '100%', maxWidth: '480px', border: '1px solid rgba(255,255,255,0.12)', padding: '28px' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-overlay)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div style={{ backgroundColor: 'var(--surface-panel-strong)', borderRadius: '24px', width: '100%', maxWidth: '480px', border: '1px solid var(--border-strong)', padding: '28px' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
               Neues Mitglied einladen
             </h3>
@@ -210,7 +210,7 @@ export const FamilyManagementSection: React.FC = () => {
                     value={inviteName}
                     onChange={(e) => setInviteName(e.target.value)}
                     placeholder="z. B. Oma Maria, Cousine Lisa"
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
                   />
                 </div>
 
@@ -219,7 +219,7 @@ export const FamilyManagementSection: React.FC = () => {
                   <select
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as any)}
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
                   >
                     <option value="member">Familienmitglied (Dauerhafter Zugriff)</option>
                     <option value="guest">Gast (Eingeschränkte Priorität & Zeitfenster)</option>
@@ -233,14 +233,14 @@ export const FamilyManagementSection: React.FC = () => {
               </form>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(56,189,248,0.3)', textAlign: 'center' }}>
+                <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--accent-action-border)', textAlign: 'center' }}>
                   <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Einladungscode (1-malig gültig)</div>
                   <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--accent-action)', letterSpacing: '3px' }}>{generatedInvite.code}</div>
                 </div>
 
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Einladungs-Link</label>
-                  <input type="text" readOnly value={generatedInvite.url} style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary)', fontSize: '12px' }} />
+                  <input type="text" readOnly value={generatedInvite.url} style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-elevated)', color: 'var(--text-secondary)', fontSize: '12px' }} />
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', marginTop: '8px' }}>

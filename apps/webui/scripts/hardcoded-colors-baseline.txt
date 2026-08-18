@@ -5,7 +5,6 @@ src/components/admin/AccessTimesSection.tsx 10
 src/components/admin/AuditNotificationsSection.tsx 10
 src/components/admin/ConcurrencySettingsSection.tsx 8
 src/components/admin/DevicesManagementSection.tsx 7
-src/components/admin/FamilyManagementSection.tsx 11
 src/components/admin/ParentalControlSection.tsx 7
 src/components/auth/PasskeyAuthFlow.tsx 5
 src/components/notifications/NotificationCenter.tsx 14
