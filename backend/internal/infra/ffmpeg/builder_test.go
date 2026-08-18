@@ -388,7 +388,7 @@ func TestMapProfileToArgs_TargetProfileSupportsAV1VAAPI(t *testing.T) {
 		joined += " " + a
 	}
 
-	if !containsSubstring(args, "-init_hw_device") || !containsSubstring(args, "av1_vaapi") || !containsSubstring(args, "format=nv12,hwupload") {
+	if !containsSubstring(args, "-init_hw_device") || !containsSubstring(args, "av1_vaapi") || !containsSubstring(args, "format=p010le,hwupload,scale_vaapi=format=p010:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709") {
 		t.Fatalf("expected VAAPI hardware args and av1_vaapi encoder in args, got %s", joined)
 	}
 }

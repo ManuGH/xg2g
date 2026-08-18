@@ -127,14 +127,28 @@ func videoTargetArgs(video ports.VideoTarget, hwaccel string) ([]string, error) 
 			return nil, err
 		}
 		args := []string{}
-		if strings.EqualFold(strings.TrimSpace(hwaccel), "vaapi") {
-			args = append(args, "-vf", "format=nv12,hwupload")
+		isVAAPI := strings.EqualFold(strings.TrimSpace(hwaccel), "vaapi")
+		isAV1 := strings.EqualFold(strings.TrimSpace(video.Codec), "av1")
+
+		if isVAAPI {
+			if isAV1 {
+				args = append(args, "-vf", "format=p010le,hwupload,scale_vaapi=format=p010:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709")
+			} else {
+				args = append(args, "-vf", "format=nv12,hwupload,scale_vaapi=format=nv12:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709")
+			}
 		}
+
 		args = append(args, "-c:v", encoder)
+		args = append(args, "-flags", "+cgop", "-sc_threshold", "0")
+
+		if isAV1 && isVAAPI {
+			args = append(args, "-level", "5.0")
+		}
+
 		if video.BitrateKbps > 0 {
 			return append(args, "-b:v", strconv.Itoa(video.BitrateKbps)+"k"), nil
 		}
-		if strings.EqualFold(strings.TrimSpace(hwaccel), "vaapi") {
+		if isVAAPI {
 			return args, nil
 		}
 		preset := strings.ToLower(strings.TrimSpace(video.Preset))
