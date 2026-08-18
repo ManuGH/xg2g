@@ -61,6 +61,16 @@ public struct TelemetryValues: Sendable {
     /// hang, because a frozen picture looks like a fault in a way a black screen
     /// does not.
     public var ttfpMotionMs: Double = 0.0
+
+    /// Faults the pipeline recognised in itself, each recorded once.
+    ///
+    /// Everything else here is a number someone has to interpret. These are the
+    /// states where the pipeline knows it is not doing its job — and it has been
+    /// able to know for a long time without saying so: a channel that froze
+    /// reported 50 fps decoded, zero continuity errors, zero PES errors, zero
+    /// decode errors and healthy memory, because every counter measured a part
+    /// and nothing watched the shape.
+    public var pipelineWarnings: [String] = []
     public var earlyStabilityIssues: Int = 0    // Drops or glitches in first 2 seconds
     public var sampleBuffersEmittedCount: Int = 0
     public var sampleBuffersDecodedCount: Int = 0
@@ -183,6 +193,7 @@ public struct TelemetryValues: Sendable {
             "ttfp_total_ms": ttfpTotalMs,
             "ttfp_gpu_completed_ms": ttfpGpuCompletedMs,
             "ttfp_motion_ms": ttfpMotionMs,
+            "pipeline_warnings": pipelineWarnings,
             "ttfp_setup_ms": ttfpSetupMs,
             "ttfp_teardown_ms": ttfpTeardownMs,
             "ttfp_audio_session_ms": ttfpAudioSessionMs,

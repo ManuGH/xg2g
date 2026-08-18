@@ -123,6 +123,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// service.
     private static let videoOnlyClockDelay: Double = 3.0
 
+    /// How long a picture may sit on screen without moving before that is said
+    /// out loud. Well past any legitimate cushion.
+    private static let motionWatchdogSeconds: Double = 5.0
+
     public weak var renderView: MetalVideoView?
 
     /// Set when the stream is presented through AVFoundation rather than through
@@ -312,6 +316,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 presenter.onFirstFieldPresentedImmediately = { [weak self] in
                     self?.handleFirstPictureShownImmediately()
                 }
+                presenter.onWarning = { [weak self] text in
+                    self?.reportWarning(text)
+                }
             }
             self.renderView?.onFirstFrameRendered = { [weak self] in
                 self?.handleFirstFrameRendered()
@@ -463,6 +470,44 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         TelemetryServer.shared.log(msg)
 
         telemetry.mutate { $0.isAudioMasterClockActive = false }
+    }
+
+    /// Records a fault the pipeline recognised in itself.
+    ///
+    /// Kept apart from the error counters, which measure parts. These name the
+    /// shape: a stream can decode at full rate with every counter at zero and
+    /// still not be playing, and until now nothing said so.
+    public func reportWarning(_ text: String) {
+        var isNew = false
+        telemetry.mutate {
+            if !$0.pipelineWarnings.contains(text) {
+                $0.pipelineWarnings.append(text)
+                isNew = true
+            }
+        }
+        guard isNew else { return }
+        let msg = "[1080i50-WATCHDOG] ⚠️ \(text)"
+        print(msg)
+        logger.error("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+    }
+
+    /// A picture on screen that never starts moving.
+    ///
+    /// What is left of the freeze once the picture can drive the clock itself: a
+    /// channel that names a decodable audio track and then never delivers it.
+    /// That case is deliberately not acted on — starting the clock on a stream
+    /// that may yet produce sound puts every later buffer in the past, where the
+    /// renderer discards it — but it is exactly what a viewer reads as a hang,
+    /// and saying so costs nothing.
+    private func warnIfMotionNeverStarted() {
+        guard !isAudioClockStarted else { return }
+        let elapsed = sessionState.mutate { state -> Double in
+            state.firstVideoFieldTime > 0 ? CACurrentMediaTime() - state.firstVideoFieldTime : 0
+        }
+        guard elapsed >= Self.motionWatchdogSeconds else { return }
+        let pid = selectedAudioPID.map(String.init) ?? "none selected"
+        reportWarning("Picture has been on screen \(String(format: "%.0f", elapsed))s without moving — the clock is still waiting for audio (PID \(pid)).")
     }
 
     /// Tells the PiP window that playback state changed.
@@ -1341,6 +1386,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         if frame.pts.isValid {
             latestVideoPTS = frame.pts
             startVideoOnlyClockIfNeeded()
+            warnIfMotionNeverStarted()
         }
 
         if let rate = rate {

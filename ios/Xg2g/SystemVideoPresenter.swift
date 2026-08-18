@@ -96,6 +96,14 @@ public final class SystemVideoPresenter: NSObject {
     /// `requestMediaDataWhenReady` delivers its block on the main queue, which is
     /// also where the per-field deinterlace pass runs — so a starved main thread
     /// and a full renderer are indistinguishable without counting the calls.
+    /// Reports a state the presenter recognises as a fault in itself, rather
+    /// than a number someone would have to interpret.
+    public var onWarning: ((String) -> Void)?
+
+    /// Each warning is raised once. A stuck renderer stays stuck, and repeating
+    /// it every two seconds buries the line that mattered.
+    private var raisedWarnings = Set<String>()
+
     private var pullInvocations = 0
     private var readyTrue = 0
     private var readyFalse = 0
@@ -309,6 +317,15 @@ public final class SystemVideoPresenter: NSObject {
             @unknown default: statusText = "other"
             }
             let diag = "[SystemVideo] 📺 Enqueued: \(enqueuedCount) | Dropped: \(droppedCount) | Queue: \(pendingSamples.count) | Pulls: \(pullInvocations) (ready \(readyTrue) / full \(readyFalse)) | Status: \(statusText) | PTS: \(String(format: "%.3f", pts.seconds))s | PiP possible: \(isPictureInPicturePossible)"
+            // The shape of the failure, not its parts. A renderer that answers
+            // every pull with "not ready" while the queue sits at its cap is not
+            // a slow renderer, it is a stopped one — measured on a channel whose
+            // clock never started: 121 pulls, ready 0, queue at 180, 1394 fields
+            // shed against 13 delivered, and every other counter healthy.
+            if pullInvocations > 0, readyTrue == 0, pendingSamples.count >= Self.maxPendingSamples {
+                raise("Display layer has not accepted a frame in \(String(format: "%.0f", now - lastDiagnosticLog + 2.0))s — \(pullInvocations) pulls, none ready, queue full at \(pendingSamples.count). Playback is stopped, not slow.")
+            }
+
             pullInvocations = 0
             readyTrue = 0
             readyFalse = 0
@@ -404,6 +421,7 @@ public final class SystemVideoPresenter: NSObject {
         formatDimensions = CMVideoDimensions(width: 0, height: 0)
         // Re-armed per tune: a zap is exactly the moment the wait is felt.
         needsImmediateDisplay = true
+        raisedWarnings.removeAll()
         awaitingImmediateHandoff = false
     }
 }
@@ -472,6 +490,15 @@ extension SystemVideoPresenter: @preconcurrency AVPictureInPictureControllerDele
         pictureInPictureController?.invalidatePlaybackState()
     }
 
+    private func raise(_ text: String) {
+        guard raisedWarnings.insert(text).inserted else { return }
+        let msg = "[SystemVideo] ⚠️ \(text)"
+        print(msg)
+        logger.error("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+        onWarning?(text)
+    }
+
     public func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
         isPictureInPictureStarting = true
         logger.notice("[SystemVideo] PiP will start")
@@ -486,10 +513,15 @@ extension SystemVideoPresenter: @preconcurrency AVPictureInPictureControllerDele
         _ controller: AVPictureInPictureController,
         failedToStartPictureInPictureWithError error: Error
     ) {
+        // Cleared here as well as at didStop: a start that failed never reaches
+        // didStop, and leaving the flag set would keep the background guard open
+        // for a window that is not coming.
+        isPictureInPictureStarting = false
         let msg = "[SystemVideo] ❌ PiP failed to start: \(error.localizedDescription)"
         print(msg)
         logger.error("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
+        raise("Picture in Picture refused to start: \(error.localizedDescription)")
     }
 }
 
