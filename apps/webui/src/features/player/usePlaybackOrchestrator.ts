@@ -383,6 +383,7 @@ export function usePlaybackOrchestrator(
   // Resume State
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const [showResumeOverlay, setShowResumeOverlay] = useState(false);
+  const dismissedResumeRecordingIdRef = useRef<string | null>(null);
   const isDocumentVisible = useDocumentVisibility();
   const isOnline = useOnlineStatus();
 
@@ -1156,7 +1157,7 @@ export function usePlaybackOrchestrator(
         if (normalizedContract.media.startUnix) setStartUnix(normalizedContract.media.startUnix);
 
         const nextResume = resolveResumeStateFromContract(normalizedContract, playbackDurationSeconds);
-        if (nextResume) {
+        if (nextResume && dismissedResumeRecordingIdRef.current !== id) {
           setResumeState(nextResume);
           setShowResumeOverlay(true);
         }
@@ -2527,10 +2528,12 @@ export function usePlaybackOrchestrator(
       setShowErrorDetails((current) => !current);
     },
     resumeFrom(positionSeconds) {
+      dismissedResumeRecordingIdRef.current = activeRecordingRef.current;
       seekWhenReady(positionSeconds);
       setShowResumeOverlay(false);
     },
     startOver() {
+      dismissedResumeRecordingIdRef.current = activeRecordingRef.current;
       seekWhenReady(0);
       setShowResumeOverlay(false);
     },
