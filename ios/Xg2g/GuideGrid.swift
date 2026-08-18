@@ -42,21 +42,30 @@ struct GuideGrid: View {
     @State private var hasCentredOnNow = false
 
     private enum Metrics {
-        /// 4 pt per minute: a 15-minute bulletin still gets 60 pt, which is the
-        /// narrowest a title can be read in. Below that every short programme
-        /// truncated to an unreadable stub.
-        static let pointsPerMinute: CGFloat = 4.0
+        /// 3 pt per minute: about 100 minutes of a phone screen, which is what
+        /// makes this read as a schedule — at 4 pt only a single hour fitted and
+        /// two ruler marks were the most that could ever be on screen at once,
+        /// so the eye had nothing to measure a block against.
+        ///
+        /// The cost is paid by the shortest programmes: a 15-minute bulletin is
+        /// 43 pt rather than 58, which is one shrunken line of title and no room
+        /// for a clock reading. `horizontalPadding` and the title's scale factor
+        /// below are sized for exactly that block.
+        static let pointsPerMinute: CGFloat = 3.0
         static let rowHeight: CGFloat = 62
         static let rowSpacing: CGFloat = 4
         static let channelColumnWidth: CGFloat = 92
         static let rulerHeight: CGFloat = 32
         static let blockSpacing: CGFloat = 2
-        /// Ruler ticks this close to the now-marker are suppressed so the two
-        /// clock readings cannot overprint each other. Sized for half a tick
-        /// label plus half the marker pill.
-        static let nowLabelClearance: CGFloat = 52
+        /// The caret that marks "now" on the ruler. A shape rather than a
+        /// second clock reading, so no fixed tick has to be suppressed to make
+        /// room for it.
+        static let nowMarkerSize: CGFloat = 9
         /// How far left of the viewport edge "now" is parked when the grid opens.
         static let nowLeadIn: CGFloat = 56
+        /// A pinned title stops sliding here so it cannot leave its own block:
+        /// enough for a two-word stub, no more.
+        static let minTitleWidth: CGFloat = 58
     }
 
     // MARK: - Geometry
@@ -81,6 +90,23 @@ struct GuideGrid: View {
         Int((totalMinutes / 30).rounded(.up))
     }
 
+    private func tickDate(_ index: Int) -> Date {
+        projection.windowStart.addingTimeInterval(Double(index) * 1800)
+    }
+
+    private func tickX(_ index: Int) -> CGFloat {
+        CGFloat(index) * 30 * Metrics.pointsPerMinute
+    }
+
+    /// Emphasis has to come from the clock, not from the tick's position in the
+    /// sequence. The window opens wherever "now" rounds down to, so with a 07:30
+    /// start every even index was a *half* hour: the grid drew its bold rules
+    /// and bold labels on :30 and left the full hours faint, and which way round
+    /// that fell depended on the minute the screen happened to be opened.
+    private func isHourTick(_ index: Int) -> Bool {
+        Calendar.current.component(.minute, from: tickDate(index)) == 0
+    }
+
     private var isNowInWindow: Bool {
         now >= projection.windowStart && now <= projection.windowEnd
     }
@@ -94,10 +120,37 @@ struct GuideGrid: View {
     }
 
     private func width(for show: NowNext.Entry) -> CGFloat {
-        let start = max(show.start, projection.windowStart)
-        let end = min(show.end, projection.windowEnd)
-        let minutes = CGFloat(end.timeIntervalSince(start) / 60)
+        let minutes = CGFloat(visibleEnd(of: show).timeIntervalSince(visibleStart(of: show)) / 60)
         return max(minutes * Metrics.pointsPerMinute - Metrics.blockSpacing, 18)
+    }
+
+    /// Where a block is *drawn* from, which is not where the programme started.
+    ///
+    /// A show already running when the window opens occupies the grid from the
+    /// window's first minute. Drawing it from its real start while sizing it to
+    /// the clipped remainder — which is what this did — shifted the block left
+    /// by the clipped part: a morning show that began at 06:00 in a window
+    /// starting 07:30 was drawn 360 pt left of the origin and 360 pt too short,
+    /// so it landed entirely off-screen and its channel row read as empty.
+    private func visibleStart(of show: NowNext.Entry) -> Date {
+        max(show.start, projection.windowStart)
+    }
+
+    private func visibleEnd(of show: NowNext.Entry) -> Date {
+        min(show.end, projection.windowEnd)
+    }
+
+    /// How far a block's text is pushed right so it survives being panned past
+    /// the viewport's left edge.
+    ///
+    /// Without it the widest blocks — exactly the ones a reader is most likely
+    /// to be looking at — become anonymous coloured slabs, because their title
+    /// sits at a leading edge that is hours off-screen. Clamped so the text
+    /// never slides out of its own block's trailing edge.
+    private func titleInset(for show: NowNext.Entry) -> CGFloat {
+        let overshoot = -horizontalOffset - xPosition(for: visibleStart(of: show))
+        guard overshoot > 0 else { return 0 }
+        return min(overshoot, max(0, width(for: show) - Metrics.minTitleWidth))
     }
 
     // MARK: - Body
@@ -113,6 +166,9 @@ struct GuideGrid: View {
                     rulerRow
                 }
             }
+            // Same clearance the two list modes give the tab bar; without it the
+            // last channel row sits underneath it.
+            .safeAreaPadding(.bottom, 80)
         }
         .background(Theme.Colors.bgBase)
         .overlay(alignment: .topLeading) {
@@ -190,9 +246,10 @@ struct GuideGrid: View {
                         channelName: schedule.channel.name,
                         isLive: show.progress(at: now) != nil,
                         width: width(for: show),
-                        height: Metrics.rowHeight
+                        height: Metrics.rowHeight,
+                        titleInset: titleInset(for: show)
                     )
-                    .offset(x: xPosition(for: show.start))
+                    .offset(x: xPosition(for: visibleStart(of: show)))
                     .onTapGesture {
                         onOpen(GuideEntry(channel: schedule.channel, show: show))
                     }
@@ -243,10 +300,11 @@ struct GuideGrid: View {
     private var halfHourRules: some View {
         ZStack(alignment: .topLeading) {
             ForEach(0..<max(halfHourCount, 1), id: \.self) { index in
+                let isHour = isHourTick(index)
                 Rectangle()
-                    .fill(Theme.Colors.borderSubtle)
-                    .frame(width: index % 2 == 0 ? 1 : 0.5)
-                    .offset(x: CGFloat(index) * 30 * Metrics.pointsPerMinute)
+                    .fill(isHour ? Theme.Colors.borderElevated : Theme.Colors.borderSubtle)
+                    .frame(width: isHour ? 1 : 0.5)
+                    .offset(x: tickX(index))
             }
         }
     }
@@ -263,26 +321,19 @@ struct GuideGrid: View {
                     .frame(width: timelineWidth, height: Metrics.rulerHeight)
 
                 ForEach(0..<max(halfHourCount, 1), id: \.self) { index in
-                    let tick = projection.windowStart.addingTimeInterval(Double(index) * 1800)
-                    let tickX = CGFloat(index) * 30 * Metrics.pointsPerMinute
-                    if !collidesWithNowMarker(tickX) {
-                        Text(Self.rulerFormatter.string(from: tick))
-                            .font(.system(size: 11, weight: index % 2 == 0 ? .bold : .medium, design: .monospaced))
-                            .foregroundStyle(index % 2 == 0 ? Theme.Colors.textSecondary : Theme.Colors.textTertiary)
-                            .monospacedDigit()
-                            .offset(x: tickX + 6, y: 9)
-                    }
+                    let isHour = isHourTick(index)
+                    Text(Self.rulerFormatter.string(from: tickDate(index)))
+                        .font(.system(size: 11, weight: isHour ? .bold : .medium, design: .monospaced))
+                        .foregroundStyle(isHour ? Theme.Colors.textSecondary : Theme.Colors.textTertiary)
+                        .monospacedDigit()
+                        .offset(x: tickX(index) + 6, y: 9)
                 }
 
                 if isNowInWindow {
-                    Text(Self.rulerFormatter.string(from: now))
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.bgBase)
-                        .monospacedDigit()
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Theme.Colors.accentLive, in: Capsule())
-                        .offset(x: xPosition(for: now) - 22, y: 6)
+                    NowCaret(size: Metrics.nowMarkerSize)
+                        .offset(x: xPosition(for: now) - Metrics.nowMarkerSize / 2,
+                                y: Metrics.rulerHeight - Metrics.nowMarkerSize)
+                        .allowsHitTesting(false)
                 }
             }
             .frame(width: timelineWidth, height: Metrics.rulerHeight, alignment: .topLeading)
@@ -297,13 +348,6 @@ struct GuideGrid: View {
                 .fill(Theme.Colors.borderElevated)
                 .frame(height: 1)
         }
-    }
-
-    /// The now-marker wins over a fixed tick: it is the reading people look for,
-    /// and two overlapping clock values are worse than one missing gridline label.
-    private func collidesWithNowMarker(_ tickX: CGFloat) -> Bool {
-        guard isNowInWindow else { return false }
-        return abs(tickX - xPosition(for: now)) < Metrics.nowLabelClearance
     }
 
     private static let rulerFormatter: DateFormatter = {
@@ -321,6 +365,19 @@ private struct GuideGridBlock: View {
     let isLive: Bool
     let width: CGFloat
     let height: CGFloat
+    /// Set by the grid while the block is panned past the viewport's left edge:
+    /// the text slides along inside the block rather than leaving with it.
+    var titleInset: CGFloat = 0
+
+    /// A 15-minute block is 43 pt wide, so 8 pt each side spends over a third of
+    /// it on air. Narrow blocks buy the title that space back.
+    private var horizontalPadding: CGFloat {
+        width < 72 ? 4 : 8
+    }
+
+    private var contentWidth: CGFloat {
+        width - titleInset - horizontalPadding * 2
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -328,18 +385,35 @@ private struct GuideGridBlock: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .lineLimit(2)
+                // Shrink before breaking: in a narrow block SwiftUI splits the
+                // one word that does not fit across both lines, and "Garfie/ld"
+                // reads as a typo rather than as a title. 0.70 is what a
+                // single-word title needs to survive the narrowest block the
+                // grid draws: "Garfield" at 12 pt is ~50 pt, the block leaves 35.
+                .minimumScaleFactor(0.70)
+                .allowsTightening(true)
+                .truncationMode(.tail)
                 .multilineTextAlignment(.leading)
 
-            if width > 90 {
-                Text(show.formattedTimeRange)
+            // Start only. The block's right edge already states the end, and a
+            // full range in every block put eleven digits into each one — twenty
+            // blocks of scattered clock readings competing with the ruler that is
+            // supposed to be doing this job.
+            //
+            // Measured against what is left after the inset, not the block: a
+            // pinned title must not push the clock reading out of view.
+            if contentWidth > 46 {
+                Text(show.formattedStartTime)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(isLive ? Theme.Colors.accentLive : Theme.Colors.textTertiary)
                     .monospacedDigit()
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
+        .padding(.leading, horizontalPadding + titleInset)
+        .padding(.trailing, horizontalPadding)
         .padding(.vertical, 7)
         .frame(width: width, height: height, alignment: .topLeading)
         .background(
@@ -356,6 +430,27 @@ private struct GuideGridBlock: View {
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(channelName), \(show.title), \(show.formattedTimeRange)")
+    }
+}
+
+/// The head of the now-line, where the ruler hands over to the rows.
+///
+/// A shape rather than a clock reading: the pill it replaces stated a time the
+/// status bar already shows, and cost the ruler a fixed label everywhere it
+/// landed — at 07:57 that was 08:00, leaving one fixed reading on the screen.
+private struct NowCaret: View {
+    let size: CGFloat
+
+    var body: some View {
+        Path { path in
+            path.move(to: CGPoint(x: 0, y: 0))
+            path.addLine(to: CGPoint(x: size, y: 0))
+            path.addLine(to: CGPoint(x: size / 2, y: size))
+            path.closeSubpath()
+        }
+        .fill(Theme.Colors.accentLive)
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 

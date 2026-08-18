@@ -2,12 +2,47 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
+import AVFoundation
 import CoreMedia
 import Foundation
 import OSLog
 import UIKit
 
 private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "telemetry")
+
+private final class PipelineSessionState: @unchecked Sendable {
+    let generation: Int
+    private let lock = NSLock()
+
+    var requestStartTime: CFTimeInterval = 0
+    var firstDataTime: CFTimeInterval = 0
+    var psiParsedTime: CFTimeInterval = 0
+    var paramsReadyTime: CFTimeInterval = 0
+    var firstIdrTime: CFTimeInterval = 0
+    var firstDecodedTime: CFTimeInterval = 0
+    var firstPictureDeliveredTime: CFTimeInterval = 0
+
+    var decodedFrameCounter: Int = 0
+    var lastDecodedRateCheck: Date = Date()
+
+    /// Socket delivery cadence. A live TS arrives continuously, so a gap here is
+    /// the network or the server stalling — indistinguishable, from inside the
+    /// app, from a decode problem unless it is measured separately.
+    var lastDataArrival: CFTimeInterval = 0
+    var stallCount: Int = 0
+    var longestStallMs: Double = 0
+
+    init(generation: Int, requestStartTime: CFTimeInterval = CACurrentMediaTime()) {
+        self.generation = generation
+        self.requestStartTime = requestStartTime
+    }
+
+    func mutate<T>(_ block: (PipelineSessionState) -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return block(self)
+    }
+}
 
 /// Coordinates the end-to-end native DVB TS $\rightarrow$ VideoToolbox $\rightarrow$ Metal Deinterlace pipeline
 /// and synchronized Audio Engine (AC-3/E-AC-3/AAC $\rightarrow$ AVSampleBufferAudioRenderer).
@@ -40,15 +75,61 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var isAudioClockStarted = false
     private var audioBuffersPreRolledCount = 0
 
+    /// Audio buffered before the master clock starts, and therefore the cushion
+    /// playback keeps for the rest of the stream: the renderer is fed at the rate
+    /// the broadcast delivers, so this depth never grows back once spent.
+    ///
+    /// 500 ms is chosen against the measured source, whose bitrate swings between
+    /// 7.6 and 12.5 Mbps. It costs about 300 ms more tuning latency than the 192 ms
+    /// it replaces, against a measured TTFP baseline of 3.46 s — still far ahead of
+    /// that, and now with a cushion that survives a stall instead of breaking up.
+    private static let audioPreRollSeconds: Double = 0.5
+
     public weak var renderView: MetalVideoView?
+
+    /// Set when the stream is presented through AVFoundation rather than through
+    /// our own drawable, which is what makes Picture in Picture and the system's
+    /// video features available. See `SystemVideoPresenter`.
+    public weak var systemPresenter: SystemVideoPresenter?
 
     private var urlSession: URLSession?
     private var streamTask: URLSessionDataTask?
-    private var decodedFrameCounter: Int = 0
-    private var lastDecodedRateCheck: Date = Date()
+    
+    /// TTFP stage timestamps and decode-rate counters for the *current* stream.
+    ///
+    /// One object per `startStreaming`, replaced wholesale on a zap: callbacks
+    /// still in flight for the previous stream then write into the retired state
+    /// instead of contaminating the new stream's measurements. The reference is
+    /// swapped from the caller's thread and read from the URLSession delegate
+    /// queue, the ingest queue and the VideoToolbox callback thread, so the swap
+    /// itself is locked too — the per-field locking inside `PipelineSessionState`
+    /// protects its contents, not the pointer to it.
+    private var _sessionState = PipelineSessionState(generation: 0)
+    private let sessionStateLock = NSLock()
+
+    private var sessionState: PipelineSessionState {
+        get {
+            sessionStateLock.lock()
+            defer { sessionStateLock.unlock() }
+            return _sessionState
+        }
+        set {
+            sessionStateLock.lock()
+            _sessionState = newValue
+            sessionStateLock.unlock()
+        }
+    }
+
     private var bytesReceived: Int = 0
     private var lastBitrateCheck: Date = Date()
     private var systemMonitoringTimer: Timer?
+
+    /// Watches the master clock for the first field's timestamp.
+    ///
+    /// The synchronizer is rebuilt on every zap, so the observer is stored with
+    /// the instance it was registered on — removing it from the replacement
+    /// would silently do nothing and leak the old one.
+    private var firstPictureObserver: (token: Any, synchronizer: AVSampleBufferRenderSynchronizer)?
 
     /// Owns the parse chain: TS → PES → access units → VideoToolbox.
     ///
@@ -64,14 +145,35 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var ingestGeneration: Int = 0
     private var pendingIngestBytes: Int = 0
 
-    // TTFP Stage Timestamps
-    private var requestStartTime: CFTimeInterval = 0
-    private var firstDataTime: CFTimeInterval = 0
-    private var psiParsedTime: CFTimeInterval = 0
-    private var paramsReadyTime: CFTimeInterval = 0
-    private var firstIdrTime: CFTimeInterval = 0
-    private var firstDecodedTime: CFTimeInterval = 0
-    private var firstPictureDeliveredTime: CFTimeInterval = 0
+    /// Opens once the stream has offered a picture the decoder can be started on.
+    ///
+    /// Tuning into the middle of a GOP is normal for broadcast; submitting what
+    /// arrives there is not. Those access units are P and B slices whose
+    /// reference pictures were never received, and VideoToolbox does not refuse
+    /// them — it returns blocky, smeared output. `allowImmediateFirst` in the
+    /// reorder buffer then puts precisely that picture on screen as the "instant"
+    /// first frame, which is what the artefacts at tune-in were.
+    ///
+    /// The parameter-set cache is what makes this load-bearing rather than
+    /// theoretical: priming SPS/PPS hands the assembler a format description at
+    /// t=0, so on a cached channel the very first access unit is submitted
+    /// wherever in the GOP it happened to fall.
+    ///
+    /// Only ever touched from `ingestQueue` — the parse chain runs there and
+    /// `stopStreaming` resets it inside the same queue's barrier.
+    private var isDecodeGateOpen = false
+    private var gatedAccessUnitCount = 0
+    private var firstAccessUnitTime: CFTimeInterval = 0
+
+    /// Ceiling on how long the gate may hold pictures back.
+    ///
+    /// A stream that never presents a sync sample — a damaged multiplex, or an
+    /// encoder whose intra pictures the slice parser does not recognise — has to
+    /// play imperfectly rather than stay black. Two seconds is longer than any
+    /// broadcast GOP this targets, so a healthy channel never reaches it.
+    private static let decodeGateTimeout: Double = 2.0
+
+
 
     public var useNativeVTDeinterlace: Bool {
         get { decoder.useNativeVTDeinterlace }
@@ -114,13 +216,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         stopStreaming()
         telemetry.reset()
 
-        requestStartTime = CACurrentMediaTime()
-        firstDataTime = 0
-        psiParsedTime = 0
-        paramsReadyTime = 0
-        firstIdrTime = 0
-        firstDecodedTime = 0
-        firstPictureDeliveredTime = 0
+        ingestStateLock.lock()
+        ingestGeneration += 1
+        let currentGen = ingestGeneration
+        pendingIngestBytes = 0
+        ingestStateLock.unlock()
+
+        sessionState = PipelineSessionState(generation: currentGen)
+        decoder.decodeGeneration = currentGen
 
         audioRenderer.activateAudioSession()
 
@@ -130,7 +233,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         if let cached = H264ParameterSetCache.shared.parameterSets(for: channelKey) {
             accessUnitAssembler.primeWithParameterSets(sps: cached.sps, pps: cached.pps)
-            paramsReadyTime = CACurrentMediaTime()
+
+            sessionState.mutate { state in
+                state.paramsReadyTime = CACurrentMediaTime()
+            }
+
             let logMsg = "[1080i50-CACHE] ⚡ Primed decoder with cached SPS/PPS for instant tuning!"
             print(logMsg)
             logger.notice("\(logMsg, privacy: .public)")
@@ -141,11 +248,31 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             guard let self = self else { return }
             self.renderView?.synchronizer = self.audioRenderer.synchronizer
             self.renderView?.resetForChannelZap()
+
+            // `audioRenderer.reset()` builds a fresh synchronizer on every zap,
+            // so the display layer has to be re-attached to the new clock — and
+            // flushed first, because what it still holds is timed against the
+            // old one.
+            if let presenter = self.systemPresenter {
+                presenter.flush()
+                presenter.attach(to: self.audioRenderer.synchronizer)
+                presenter.enablePictureInPicture()
+            }
             self.renderView?.onFirstFrameRendered = { [weak self] in
                 self?.handleFirstFrameRendered()
             }
             self.renderView?.onFirstFrameActuallyPresentedOnScreen = { [weak self] screenTime in
                 self?.handleFirstFrameActuallyPresented(screenTimestamp: screenTime)
+            }
+            self.renderView?.onFirstFieldSubmitted = { [weak self] pts in
+                guard let self = self else { return }
+                // Recorded before the observer is installed: this is what the
+                // clock anchors to, and on a stream whose audio pre-roll is
+                // already satisfied the very next audio buffer starts it.
+                if self.firstVideoFieldPTS == nil, pts.isValid {
+                    self.firstVideoFieldPTS = pts
+                }
+                self.observeFirstPictureVisible(at: pts)
             }
         }
 
@@ -170,6 +297,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let task = session.dataTask(with: request)
         self.streamTask = task
         task.resume()
+
+        let startLog = "[1080i50-NET] ▶️ Requesting \(targetURL.absoluteString) | Timeout: \(config.timeoutIntervalForRequest)s | Gen: \(currentGen)"
+        print(startLog)
+        logger.notice("\(startLog, privacy: .public)")
+        TelemetryServer.shared.log(startLog)
 
         startSystemMonitoring()
     }
@@ -198,11 +330,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         urlSession = nil
 
         stopSystemMonitoring()
+        removeFirstPictureObserver()
 
         audioRenderer.reset()
         isAudioClockStarted = false
         audioBuffersPreRolledCount = 0
         firstAudioPTS = nil
+        firstVideoFieldPTS = nil
+        latestVideoPTS = .invalid
+        preRollStartTime = 0
+        audioContinuity.reset()
         selectedAudioPID = nil
         availableAudioTracks.removeAll()
 
@@ -216,6 +353,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // The parse chain is owned by `ingestQueue`; resetting it from here while
         // a feed is in flight would corrupt the assembler state mid-packet.
         ingestQueue.sync {
+            isDecodeGateOpen = false
+            gatedAccessUnitCount = 0
+            firstAccessUnitTime = 0
             tsParser.reset()
             pesAssembler.reset()
             accessUnitAssembler.reset()
@@ -249,17 +389,97 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error as NSError?, error.code != NSURLErrorCancelled {
-            let rating = "❌ Connection Error: \(error.localizedDescription)"
-            telemetry.mutate { $0.ttfpRating = rating }
+        let received = task.countOfBytesReceived
+        let elapsed = sessionState.mutate { state -> Double in
+            state.requestStartTime > 0 ? (CACurrentMediaTime() - state.requestStartTime) : 0
+        }
+
+        if let error = error as NSError? {
+            if error.code == NSURLErrorCancelled {
+                let msg = "[1080i50-NET] Stream cancelled after \(String(format: "%.1f", elapsed))s | Received: \(received / 1024) KiB"
+                print(msg)
+                logger.notice("\(msg, privacy: .public)")
+                TelemetryServer.shared.log(msg)
+            } else {
+                let rating = "❌ Connection Error: \(error.localizedDescription)"
+                telemetry.mutate { $0.ttfpRating = rating }
+                let msg = "[1080i50-NET] ❌ Stream failed after \(String(format: "%.1f", elapsed))s | \(error.domain) \(error.code): \(error.localizedDescription) | Received: \(received / 1024) KiB"
+                print(msg)
+                logger.error("\(msg, privacy: .public)")
+                TelemetryServer.shared.log(msg)
+            }
+            return
+        }
+
+        // A live stream has no natural end. Reaching here means the server closed
+        // the socket, which the app otherwise only notices as video stopping.
+        let msg = "[1080i50-NET] ⚠️ Server closed stream after \(String(format: "%.1f", elapsed))s | Received: \(received / 1024) KiB"
+        print(msg)
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+    }
+
+    /// Breaks the connection setup cost down into its phases.
+    ///
+    /// `ttfpNetworkMs` measures request-to-first-byte as one opaque number — 769 ms
+    /// on the first measured run, well over a third of the whole TTFP budget, with
+    /// nothing to say where it went. These metrics separate DNS from TCP from the
+    /// server's own think time, which are three different problems with three
+    /// different fixes.
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        for transaction in metrics.transactionMetrics {
+            func ms(_ from: Date?, _ to: Date?) -> String {
+                guard let from = from, let to = to else { return "—" }
+                return String(format: "%.1f", to.timeIntervalSince(from) * 1000.0)
+            }
+
+            let dns = ms(transaction.domainLookupStartDate, transaction.domainLookupEndDate)
+            let tcp = ms(transaction.connectStartDate, transaction.connectEndDate)
+            let tls = ms(transaction.secureConnectionStartDate, transaction.secureConnectionEndDate)
+            let request = ms(transaction.requestStartDate, transaction.requestEndDate)
+            let serverThink = ms(transaction.requestEndDate, transaction.responseStartDate)
+            let total = ms(transaction.fetchStartDate, transaction.responseStartDate)
+
+            let netLog = "[1080i50-NET] Setup: \(total)ms total | DNS: \(dns)ms | TCP: \(tcp)ms | TLS: \(tls)ms | Request: \(request)ms | ServerThink: \(serverThink)ms | Proto: \(transaction.networkProtocolName ?? "?") | Reused: \(transaction.isReusedConnection) | Cellular: \(transaction.isCellular) | Host: \(transaction.request.url?.host ?? "?")"
+            print(netLog)
+            logger.notice("\(netLog, privacy: .public)")
+            TelemetryServer.shared.log(netLog)
         }
     }
 
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        if firstDataTime == 0 && requestStartTime > 0 {
-            firstDataTime = CACurrentMediaTime()
-            let netMs = (firstDataTime - requestStartTime) * 1000.0
+        let (netMs, stallMs) = sessionState.mutate { state -> (Double?, Double?) in
+            let now = CACurrentMediaTime()
+
+            var firstByteMs: Double?
+            if state.firstDataTime == 0 && state.requestStartTime > 0 {
+                state.firstDataTime = now
+                firstByteMs = (now - state.requestStartTime) * 1000.0
+            }
+
+            var gapMs: Double?
+            if state.lastDataArrival > 0 {
+                let gap = (now - state.lastDataArrival) * 1000.0
+                if gap >= 250.0 {
+                    state.stallCount += 1
+                    state.longestStallMs = max(state.longestStallMs, gap)
+                    gapMs = gap
+                }
+            }
+            state.lastDataArrival = now
+
+            return (firstByteMs, gapMs)
+        }
+
+        if let netMs = netMs {
             telemetry.mutate { $0.ttfpNetworkMs = netMs }
+        }
+
+        if let stallMs = stallMs {
+            let msg = "[1080i50-NET] ⚠️ Socket stall: \(String(format: "%.0f", stallMs))ms with no data"
+            print(msg)
+            logger.notice("\(msg, privacy: .public)")
+            TelemetryServer.shared.log(msg)
         }
 
         bytesReceived += data.count
@@ -280,7 +500,20 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             }
 
             let snapshot = telemetry.snapshot()
-            let qualityLog = "[1080i50-QUALITY] Bitrate: \(String(format: "%.1f", kbps)) kbps | VideoPID: \(snapshot.videoPID) | ContinuityErr: \(snapshot.continuityErrors) | PESErr: \(snapshot.pesErrors) | DecErrors: \(snapshot.decodeErrors) | Backlog: \(backlog / 1024) KiB"
+            let (stalls, longestStall) = sessionState.mutate { state -> (Int, Double) in
+                (state.stallCount, state.longestStallMs)
+            }
+
+            // The audio cushion, reported alongside the network figures that erode
+            // it — a stall and the dropout it causes belong on the same line.
+            let audio = audioRenderer.consumeFlowStats()
+            telemetry.mutate {
+                $0.audioUnderruns = audio.underruns
+                $0.audioLeadMs = audio.currentLeadMs
+                $0.audioMinLeadMs = audio.minLeadMs
+            }
+
+            let qualityLog = "[1080i50-QUALITY] Bitrate: \(String(format: "%.1f", kbps)) kbps | VideoPID: \(snapshot.videoPID) | ContinuityErr: \(snapshot.continuityErrors) | PESErr: \(snapshot.pesErrors) | DecErrors: \(snapshot.decodeErrors) | Backlog: \(backlog / 1024) KiB | Stalls: \(stalls) (worst \(String(format: "%.0f", longestStall))ms) | AudioLead: \(String(format: "%.0f", audio.currentLeadMs))ms (min \(String(format: "%.0f", audio.minLeadMs))ms) | Underruns: \(audio.underruns) | AudioQueue: \(audio.pendingBuffers)"
             print(qualityLog)
             logger.notice("\(qualityLog, privacy: .public)")
             TelemetryServer.shared.log(qualityLog)
@@ -307,10 +540,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - TSPacketParserDelegate
 
     public func tsParser(_ parser: TSPacketParser, didDiscoverVideoPID pid: UInt16) {
-        if psiParsedTime == 0 {
-            psiParsedTime = CACurrentMediaTime()
-            let base = firstDataTime > 0 ? firstDataTime : requestStartTime
-            let psiMs = (psiParsedTime - base) * 1000.0
+        let psiMs = sessionState.mutate { state -> Double? in
+            if state.psiParsedTime == 0 {
+                state.psiParsedTime = CACurrentMediaTime()
+                let base = state.firstDataTime > 0 ? state.firstDataTime : state.requestStartTime
+                return (state.psiParsedTime - base) * 1000.0
+            }
+            return nil
+        }
+        if let psiMs = psiMs {
             telemetry.mutate { $0.ttfpPsiMs = psiMs }
         }
 
@@ -325,15 +563,41 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.notice("\(logMsg, privacy: .public)")
         TelemetryServer.shared.log(logMsg)
 
-        // Policy: Prefer German audio if available, else AC-3, else first track
+        // Track selection: playable first, then language.
+        //
+        // Language used to win outright, and on a broadcaster that carries both
+        // MPEG Layer II and AC-3 in German that picked the one iOS cannot decode.
+        // ZDF is exactly that case — `0x03 PID 6120 lang=deu` sits ahead of
+        // `0x06 PID 6122 AC-3 lang=deu` in the PMT — and the result was a stream
+        // that played perfectly with no sound at all and nothing in any log to
+        // say why. A language nobody can hear is not a preference worth honouring,
+        // so the pool is narrowed to what the device can decode before language
+        // is considered.
         if selectedAudioPID == nil || !tracks.contains(where: { $0.pid == selectedAudioPID }) {
+            let playable = tracks.filter { $0.codec.isDecodableOnDevice }
+
+            if playable.isEmpty && !tracks.isEmpty {
+                // Nothing here can produce sound. Say so once, loudly: the stream
+                // will look healthy in every other metric.
+                let codecs = tracks.map { $0.codec.description }.joined(separator: ", ")
+                let warn = "[1080i50-AUDIO] ⚠️ No decodable audio track on this channel (offered: \(codecs)) — playback will be silent"
+                print(warn)
+                logger.error("\(warn, privacy: .public)")
+                TelemetryServer.shared.log(warn)
+            }
+
+            // Falling back to the full list keeps the previous behaviour when a
+            // channel offers nothing playable: the PID is still selected and the
+            // rest of the pipeline reports normally, rather than losing the track.
+            let pool = playable.isEmpty ? tracks : playable
+
             let preferred: AudioTrackInfo?
-            if let deu = tracks.first(where: { $0.language == "deu" }) {
+            if let deu = pool.first(where: { $0.language == "deu" }) {
                 preferred = deu
-            } else if let ac3 = tracks.first(where: { $0.codec == .ac3 || $0.codec == .eac3 }) {
+            } else if let ac3 = pool.first(where: { $0.codec == .ac3 || $0.codec == .eac3 }) {
                 preferred = ac3
             } else {
-                preferred = tracks.first
+                preferred = pool.first
             }
 
             if let track = preferred {
@@ -397,11 +661,105 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     private var firstAudioPTS: CMTime?
 
+    /// Presentation timestamp of the first video field the renderer produced.
+    ///
+    /// The clock is anchored here rather than on the first audio timestamp. Audio
+    /// is decodable from the first PES; video is not decodable until parameter
+    /// sets and a sync sample have arrived, which measured 1.4 s on a cold tune.
+    /// Everything in between is audio for pictures that cannot be shown, and
+    /// anchoring at the start of it made the clock begin that far behind the
+    /// first picture — measured at 2657 ms of a 5298 ms tune, spent playing sound
+    /// over a black screen.
+    ///
+    /// It does not end there. The offset never closes: the clock keeps running
+    /// that far behind the stream, so every field the renderer produces is
+    /// seconds early, `AVSampleBufferDisplayLayer` stays permanently full, and
+    /// the presenter's queue sheds what it cannot hand over — 4793 fields
+    /// dropped against 397 delivered in one measured run, which is what the
+    /// stutter was.
+    ///
+    /// Written from the main actor by the render view's callback, read on the
+    /// ingest queue by the pre-roll below.
+    private var _firstVideoFieldPTS: CMTime?
+    private let firstVideoFieldLock = NSLock()
+
+    private var firstVideoFieldPTS: CMTime? {
+        get {
+            firstVideoFieldLock.lock()
+            defer { firstVideoFieldLock.unlock() }
+            return _firstVideoFieldPTS
+        }
+        set {
+            firstVideoFieldLock.lock()
+            _firstVideoFieldPTS = newValue
+            firstVideoFieldLock.unlock()
+        }
+    }
+
+    /// Newest decoded picture timestamp, for measuring the video cushion.
+    ///
+    /// Written on the VideoToolbox callback thread, read on the ingest queue.
+    private var _latestVideoPTS: CMTime = .invalid
+    private var latestVideoPTS: CMTime {
+        get {
+            firstVideoFieldLock.lock()
+            defer { firstVideoFieldLock.unlock() }
+            return _latestVideoPTS
+        }
+        set {
+            firstVideoFieldLock.lock()
+            _latestVideoPTS = newValue
+            firstVideoFieldLock.unlock()
+        }
+    }
+
+    /// Video buffered ahead of the clock before playback starts.
+    ///
+    /// The cushion has to be measured on video, because video is what visibly
+    /// stalls. Anchoring the clock on the first picture — which is what removed
+    /// 3.2 s of black from tune-in — also removed every millisecond of lead, and
+    /// a source that pauses for up to 828 ms between writes then freezes the
+    /// picture on each pause. Measured on this box: 28 gaps over 250 ms in 15
+    /// seconds, worst 824 ms, against a median gap of 1.7 ms.
+    ///
+    /// One second covers the worst measured gap with room to spare and costs
+    /// that much tuning latency, against the 3.2 s it replaces.
+    private static let videoPreRollSeconds: Double = 1.0
+
+    /// When the pre-roll began, so the wait for a first picture can be bounded.
+    private var preRollStartTime: CFTimeInterval = 0
+
+    /// How long the clock waits for a picture on a service that advertises video
+    /// before giving up and starting on audio alone.
+    ///
+    /// Only reached when the PMT names a video PID and nothing decodable comes of
+    /// it — a codec the decoder refuses, or video that never arrives. A service
+    /// with no video PID at all does not wait at all; it has nothing to wait for.
+    /// Long enough that an ordinary tune — 1.4 s to parameter sets on the
+    /// measured source — reaches its first picture well inside it.
+    private static let videoAnchorTimeout: Double = 2.5
+
+    /// Watches the master timeline for jumps once it is running.
+    ///
+    /// Only the audio side needs to decide this. It owns the clock, so a jump
+    /// there is a jump in what everything else is scheduled against; the video
+    /// side follows whatever the clock does.
+    private var audioContinuity = PTSContinuityMonitor()
+
     public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime) {
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+
+        // Checked before the buffer is handed over, so the flush that follows
+        // cannot drop the first buffer of the new timeline along with the old
+        // ones. The monitor runs during pre-roll too — it has to, or the first
+        // timestamp after the clock starts would have nothing to compare against.
+        if let delta = audioContinuity.jump(for: pts), isAudioClockStarted {
+            handleAudioTimelineJump(to: pts, delta: delta, codec: codec)
+        }
+
         audioRenderer.enqueue(sampleBuffer: sampleBuffer)
         audioBuffersPreRolledCount += 1
 
-        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         guard pts.isValid else { return }
 
         if !isAudioClockStarted {
@@ -417,11 +775,116 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 firstAudioPTS = pts
             }
 
-            // Pre-roll 6 frames (~192ms of audio buffer) for instant tuning and jitter-free playback
-            if audioBuffersPreRolledCount >= 6, let startPTS = firstAudioPTS {
-                audioRenderer.setRate(1.0, time: startPTS)
+            guard let firstPTS = firstAudioPTS else { return }
+            if preRollStartTime == 0 { preRollStartTime = CACurrentMediaTime() }
+
+            // Where the clock starts, which is not the same question as when.
+            //
+            // The first picture, when there is one: a clock anchored before it
+            // has to play its way there before anything appears, and never
+            // catches up afterwards. Falling back to the audio timeline is for
+            // services that have no video to anchor to — and even then it anchors
+            // at the live edge rather than at the oldest buffer.
+            // Whether the cushion has to be there before the clock may start.
+            //
+            // It must not be, once there is a picture to show. Measured on the
+            // source: a tune delivers audio from PTS 1.400 and the first video
+            // keyframe only at PTS 3.840 — nearly two and a half seconds of
+            // audio-only before any video exists at all. Requiring the cushion
+            // *past* the video anchor therefore means waiting for audio to
+            // travel that gap in real time, which measured 3187 ms of a 4995 ms
+            // tune. The decode side had the picture ready at 1808 ms, ahead of
+            // both ffmpeg and VLC on the same stream; all of that was spent
+            // waiting rather than showing.
+            //
+            // The cost is that sound starts late on such a tune, because there
+            // is no audio at the anchor yet — the alternative was a black screen
+            // for the same duration, which is the worse half of the same trade.
+            var requiresCushion = true
+            var cushionSource = "audio"
+
+            let anchorPTS: CMTime
+            let anchorSource: String
+            if let videoPTS = firstVideoFieldPTS {
+                // `max` because a picture already behind the audio we hold is
+                // due now; anchoring at it would put the clock behind our own
+                // buffer for no gain.
+                // Anchored at the first picture, but never ahead of the audio.
+                //
+                // The clamp is not a refinement, it is the whole correctness
+                // condition. Both tracks advance at real time, so a clock started
+                // ahead of the audio stays ahead of it: every buffer arrives
+                // already in the past, the renderer discards it, and the stream
+                // is silent for as long as it plays. Measured exactly that way —
+                // anchoring on the picture alone put audio 944 ms behind at the
+                // start and it never recovered, 1595 underruns.
+                //
+                // So the audio decides how far forward the clock may be placed,
+                // and the picture decides where within that it lands.
+                let audioCeiling = pts.seconds - Self.audioPreRollSeconds
+                let anchorSeconds = min(videoPTS.seconds, audioCeiling)
+
+                // Anchoring before the first audio we hold would start the clock
+                // in a region no track can serve.
+                guard anchorSeconds >= firstPTS.seconds else { return }
+
+                // And enough video past the anchor to survive a source pause;
+                // this box writes in bursts with gaps up to 824 ms.
+                let videoBuffered = latestVideoPTS.isValid
+                    ? latestVideoPTS.seconds - anchorSeconds
+                    : 0
+                guard videoBuffered >= Self.videoPreRollSeconds else { return }
+
+                anchorPTS = CMTime(seconds: anchorSeconds, preferredTimescale: 90_000)
+                anchorSource = anchorSeconds >= videoPTS.seconds - 0.001
+                    ? "first picture"
+                    : "audio ceiling (picture \(String(format: "%.0f", (videoPTS.seconds - anchorSeconds) * 1000))ms ahead)"
+                requiresCushion = false
+                cushionSource = "video+audio"
+            } else if tsParser.videoPID == nil {
+                // A service with no video has no picture to wait for, and the
+                // audio it has is the audio to play. Radio is the ordinary case
+                // here, and it must not pay for a wait that cannot end well.
+                anchorPTS = firstPTS
+                anchorSource = "audio only, no video service"
+            } else if CACurrentMediaTime() - preRollStartTime >= Self.videoAnchorTimeout {
+                // There is a video PID but nothing decodable has come of it.
+                // Play the sound rather than staying silent.
+                anchorPTS = firstPTS
+                anchorSource = "no picture within \(String(format: "%.1f", Self.videoAnchorTimeout))s"
+            } else {
+                // Video is still coming. Audio keeps queuing meanwhile; whatever
+                // ends up behind the anchor is discarded by the renderer once the
+                // clock is set, so nothing has to be thrown away here.
+                return
+            }
+
+            // Start the clock once a *duration* of audio is buffered, not a frame
+            // count. The cushion is what the renderer has left to play through a
+            // network hiccup, and it is the only thing standing between a stall and
+            // an audible dropout — so it has to be expressed in the unit that
+            // matters. A count does not: an AC-3 frame is 32 ms, an AAC frame at
+            // 48 kHz is 21.3 ms, so the same "6 buffers" was 192 ms on one codec
+            // and 128 ms on another.
+            //
+            // The count-based gate went 8 → 20 → 6 frames within eight minutes,
+            // trading dropouts against tuning speed in both directions with no
+            // measurement either way. `[AudioRenderer] Lead:` now reports the
+            // cushion continuously, so this number can be tuned against evidence.
+            //
+            // Measured from the anchor, not from the first audio timestamp: what
+            // protects playback is the audio queued *ahead of where the clock
+            // starts*, and anything behind that point is discarded by the
+            // renderer rather than played.
+            let buffered = pts.seconds - anchorPTS.seconds
+            if !requiresCushion || buffered >= Self.audioPreRollSeconds {
+                audioRenderer.setRate(1.0, time: anchorPTS)
                 isAudioClockStarted = true
-                let clockLog = "[1080i50-CLOCK] ⏱️ Master Audio Clock started at PTS: \(String(format: "%.3f", startPTS.seconds))s (\(codec), prerolled: \(audioBuffersPreRolledCount) buffers)"
+                let skippedMs = (anchorPTS.seconds - firstPTS.seconds) * 1000.0
+                let videoCushionMs = latestVideoPTS.isValid
+                    ? (latestVideoPTS.seconds - anchorPTS.seconds) * 1000.0
+                    : Double.nan
+                let clockLog = "[1080i50-CLOCK] ⏱️ Master clock started at PTS: \(String(format: "%.3f", anchorPTS.seconds))s via \(anchorSource) (\(codec), gated on \(cushionSource) cushion | video ahead: \(String(format: "%.0f", videoCushionMs))ms | audio ahead: \(String(format: "%.0f", buffered * 1000))ms | skipped \(String(format: "%.0f", skippedMs))ms of pre-picture audio)"
                 print(clockLog)
                 logger.notice("\(clockLog, privacy: .public)")
                 TelemetryServer.shared.log(clockLog)
@@ -429,8 +892,56 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 telemetry.mutate {
                     $0.isAudioMasterClockActive = true
                 }
+
+                // Anchoring on the first picture means the clock *starts* at its
+                // timestamp, and a boundary observer needs a crossing to fire —
+                // so the metric it feeds stayed at zero for exactly the tunes
+                // this is meant to measure. Due at rate-change time counts as
+                // visible.
+                if let videoPTS = firstVideoFieldPTS, anchorPTS >= videoPTS {
+                    removeFirstPictureObserver()
+                    recordFirstPictureVisible()
+                }
             }
         }
+    }
+
+    /// Re-anchors everything onto the timeline that just started.
+    ///
+    /// Deliberately the same sequence a channel zap uses, because it is the same
+    /// situation: every buffer in flight, every queued field and the clock they
+    /// were all scheduled against belong to a timeline that no longer exists.
+    /// The clock is parked on the new timestamp rather than stopped outright, so
+    /// the pre-roll path below restarts it exactly as it does on a cold tune —
+    /// one way to start the clock, not two.
+    private func handleAudioTimelineJump(to pts: CMTime, delta: Double, codec: AudioStreamCodec) {
+        telemetry.mutate {
+            $0.ptsDiscontinuities += 1
+            $0.isAudioMasterClockActive = false
+        }
+
+        audioRenderer.flush()
+        audioRenderer.setRate(0.0, time: pts)
+
+        isAudioClockStarted = false
+        firstAudioPTS = pts
+        audioBuffersPreRolledCount = 0
+        // The recorded field belongs to the timeline that just ended. Clearing it
+        // makes the re-anchor wait for a picture from the new one, exactly as a
+        // cold tune does; `resetForChannelZap` below re-arms the callback.
+        firstVideoFieldPTS = nil
+        preRollStartTime = 0
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.systemPresenter?.flush()
+            self.renderView?.resetForChannelZap()
+        }
+
+        let msg = "[1080i50-CLOCK] ⚠️ PTS discontinuity: timeline jumped \(String(format: "%+.3f", delta))s to \(String(format: "%.3f", pts.seconds))s (\(codec)) — flushed and re-anchoring"
+        print(msg)
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
     }
 
     public func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEncounterError reason: String) {
@@ -450,10 +961,15 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - H264AccessUnitAssemblerDelegate
 
     public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
-        if paramsReadyTime == 0 {
-            paramsReadyTime = CACurrentMediaTime()
-            let base = psiParsedTime > 0 ? psiParsedTime : (firstDataTime > 0 ? firstDataTime : requestStartTime)
-            let paramMs = (paramsReadyTime - base) * 1000.0
+        let paramMs = sessionState.mutate { state -> Double? in
+            if state.paramsReadyTime == 0 {
+                state.paramsReadyTime = CACurrentMediaTime()
+                let base = state.psiParsedTime > 0 ? state.psiParsedTime : (state.firstDataTime > 0 ? state.firstDataTime : state.requestStartTime)
+                return (state.paramsReadyTime - base) * 1000.0
+            }
+            return nil
+        }
+        if let paramMs = paramMs {
             telemetry.mutate { $0.ttfpParamSetsMs = paramMs }
         }
 
@@ -486,11 +1002,45 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
-    public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, structure: H264PictureStructure) {
-        if firstIdrTime == 0 {
-            firstIdrTime = CACurrentMediaTime()
-            let base = paramsReadyTime > 0 ? paramsReadyTime : (psiParsedTime > 0 ? psiParsedTime : requestStartTime)
-            let idrMs = (firstIdrTime - base) * 1000.0
+    public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure) {
+        if !isDecodeGateOpen {
+            let now = CACurrentMediaTime()
+            if firstAccessUnitTime == 0 {
+                firstAccessUnitTime = now
+            }
+
+            if isSyncSample {
+                isDecodeGateOpen = true
+                let msg = "[1080i50-GATE] 🔓 Decode gate opened on a sync sample after \(gatedAccessUnitCount) discarded AU(s), \(String(format: "%.0f", (now - firstAccessUnitTime) * 1000.0))ms"
+                print(msg)
+                logger.notice("\(msg, privacy: .public)")
+                TelemetryServer.shared.log(msg)
+            } else if now - firstAccessUnitTime >= Self.decodeGateTimeout {
+                // Better a damaged first second than a channel that stays black.
+                isDecodeGateOpen = true
+                let msg = "[1080i50-GATE] ⚠️ No sync sample within \(String(format: "%.1f", Self.decodeGateTimeout))s — opening decode gate anyway after \(gatedAccessUnitCount) discarded AU(s); expect artefacts until the next intra picture"
+                print(msg)
+                logger.error("\(msg, privacy: .public)")
+                TelemetryServer.shared.log(msg)
+            } else {
+                gatedAccessUnitCount += 1
+                let discarded = gatedAccessUnitCount
+                telemetry.mutate { $0.gatedAccessUnits = discarded }
+                return
+            }
+
+            telemetry.mutate { $0.gatedAccessUnits = self.gatedAccessUnitCount }
+        }
+
+        let idrMs = sessionState.mutate { state -> Double? in
+            if state.firstIdrTime == 0 {
+                state.firstIdrTime = CACurrentMediaTime()
+                let base = state.paramsReadyTime > 0 ? state.paramsReadyTime : (state.psiParsedTime > 0 ? state.psiParsedTime : state.requestStartTime)
+                return (state.firstIdrTime - base) * 1000.0
+            }
+            return nil
+        }
+        if let idrMs = idrMs {
             telemetry.mutate { $0.ttfpIdrMs = idrMs }
         }
 
@@ -509,30 +1059,45 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - HardwareVideoDecoderDelegate
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEmitFrame frame: DecodedVideoFrame) {
-        if firstDecodedTime == 0 {
-            firstDecodedTime = CACurrentMediaTime()
-            let base = firstIdrTime > 0 ? firstIdrTime : (paramsReadyTime > 0 ? paramsReadyTime : requestStartTime)
-            let decMs = (firstDecodedTime - base) * 1000.0
+        let (decMs, rate) = sessionState.mutate { state -> (Double?, Double?) in
+            var computedDecMs: Double?
+            if state.firstDecodedTime == 0 {
+                state.firstDecodedTime = CACurrentMediaTime()
+                let base = state.firstIdrTime > 0 ? state.firstIdrTime : (state.paramsReadyTime > 0 ? state.paramsReadyTime : state.requestStartTime)
+                computedDecMs = (state.firstDecodedTime - base) * 1000.0
+            }
+
+            state.decodedFrameCounter += 1
+            let now = Date()
+            var computedRate: Double?
+
+            if now.timeIntervalSince(state.lastDecodedRateCheck) >= 1.0 {
+                let elapsed = now.timeIntervalSince(state.lastDecodedRateCheck)
+                computedRate = Double(state.decodedFrameCounter) / elapsed
+                state.decodedFrameCounter = 0
+                state.lastDecodedRateCheck = now
+            }
+
+            return (computedDecMs, computedRate)
+        }
+
+        if let decMs = decMs {
             telemetry.mutate { $0.ttfpDecodeMs = decMs }
         }
 
         telemetry.mutate { $0.sampleBuffersDecodedCount += 1 }
 
-        decodedFrameCounter += 1
-        let now = Date()
-        if now.timeIntervalSince(lastDecodedRateCheck) >= 1.0 {
-            let elapsed = now.timeIntervalSince(lastDecodedRateCheck)
-            let rate = Double(decodedFrameCounter) / elapsed
-            telemetry.mutate { $0.decodedFramesPerSec = rate }
+        if frame.pts.isValid {
+            latestVideoPTS = frame.pts
+        }
 
+        if let rate = rate {
+            telemetry.mutate { $0.decodedFramesPerSec = rate }
             let snapshot = telemetry.snapshot()
             let decLog = "[1080i50-DECODER] HW: \(snapshot.hwDecodeActive) | Decoded AU/s: \(String(format: "%.1f", rate)) | Source: \(String(format: "%.1f", snapshot.sourceFrameRate)) fps (PTS delta \(String(format: "%.1f", snapshot.ptsProgressionMs))ms) | AUs w/o PTS: \(snapshot.accessUnitsWithoutPTS)"
             print(decLog)
             logger.notice("\(decLog, privacy: .public)")
             TelemetryServer.shared.log(decLog)
-
-            decodedFrameCounter = 0
-            lastDecodedRateCheck = now
         }
 
         // `ptsProgressionMs` is measured by the render view instead: VideoToolbox
@@ -550,8 +1115,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEncounterDecodeError error: OSStatus) {
-        let isEarly = firstPictureDeliveredTime > 0
-            && CACurrentMediaTime() - firstPictureDeliveredTime <= 2.0
+        let isEarly = sessionState.mutate { state -> Bool in
+            state.firstPictureDeliveredTime > 0 && CACurrentMediaTime() - state.firstPictureDeliveredTime <= 2.0
+        }
         telemetry.mutate {
             $0.decodeErrors += 1
             if isEarly {
@@ -563,11 +1129,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - TTFP Completion Handler
 
     private func handleFirstFrameRendered() {
-        guard firstPictureDeliveredTime == 0, requestStartTime > 0 else { return }
-        firstPictureDeliveredTime = CACurrentMediaTime()
-        let totalMs = (firstPictureDeliveredTime - requestStartTime) * 1000.0
-        let renderBase = firstDecodedTime > 0 ? firstDecodedTime : (firstIdrTime > 0 ? firstIdrTime : requestStartTime)
-        let renderMs = (firstPictureDeliveredTime - renderBase) * 1000.0
+        let (totalMs, renderMs) = sessionState.mutate { state -> (Double?, Double?) in
+            guard state.firstPictureDeliveredTime == 0, state.requestStartTime > 0 else { return (nil, nil) }
+            state.firstPictureDeliveredTime = CACurrentMediaTime()
+            let tMs = (state.firstPictureDeliveredTime - state.requestStartTime) * 1000.0
+            let renderBase = state.firstDecodedTime > 0 ? state.firstDecodedTime : (state.firstIdrTime > 0 ? state.firstIdrTime : state.requestStartTime)
+            let rMs = (state.firstPictureDeliveredTime - renderBase) * 1000.0
+            return (tMs, rMs)
+        }
+
+        guard let totalMs = totalMs, let renderMs = renderMs else { return }
 
         let rating: String
         if totalMs <= 800.0 {
@@ -596,10 +1167,91 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         TelemetryServer.shared.log(ttfpLog)
     }
 
+    /// Records when the master clock reaches the first field, which is when the
+    /// display layer puts it on screen.
+    ///
+    /// Registering an observer is not enough on its own: if the clock is already
+    /// past the timestamp — which happens whenever audio pre-rolled while video
+    /// was still being decoded — a boundary observer never fires, and the metric
+    /// would stay at zero for exactly the streams that started fastest.
+    private func observeFirstPictureVisible(at pts: CMTime) {
+        removeFirstPictureObserver()
+        guard pts.isValid else { return }
+
+        let synchronizer = audioRenderer.synchronizer
+        if CMTimebaseGetRate(synchronizer.timebase) > 0 {
+            let now = CMTimebaseGetTime(synchronizer.timebase)
+            if now.isValid && now >= pts {
+                recordFirstPictureVisible()
+                return
+            }
+        }
+
+        let token = synchronizer.addBoundaryTimeObserver(
+            forTimes: [NSValue(time: pts)],
+            queue: .main
+        ) { [weak self] in
+            self?.recordFirstPictureVisible()
+            self?.removeFirstPictureObserver()
+        }
+        firstPictureObserver = (token, synchronizer)
+    }
+
+    private func removeFirstPictureObserver() {
+        let observer = firstPictureObserver
+        firstPictureObserver = nil
+        guard let observer = observer else { return }
+        if Thread.isMainThread {
+            observer.synchronizer.removeTimeObserver(observer.token)
+        } else {
+            DispatchQueue.main.async {
+                observer.synchronizer.removeTimeObserver(observer.token)
+            }
+        }
+    }
+
+    private func recordFirstPictureVisible() {
+        let visibleMs = sessionState.mutate { state -> Double? in
+            guard state.requestStartTime > 0 else { return nil }
+            return (CACurrentMediaTime() - state.requestStartTime) * 1000.0
+        }
+        guard let visibleMs = visibleMs else { return }
+
+        // Only the first one. A discontinuity re-anchors the clock and replays
+        // this path, which would otherwise overwrite the tuning figure with the
+        // time since the stream started.
+        var isFirst = false
+        telemetry.mutate {
+            if $0.ttfpVisibleMs == 0 {
+                $0.ttfpVisibleMs = visibleMs
+                isFirst = true
+            }
+        }
+        guard isFirst else { return }
+
+        let snapshot = telemetry.snapshot()
+        // The submit-to-visible gap is the part nothing could see before: it is
+        // owned by the clock start, not by decode or render.
+        let waitMs = snapshot.ttfpTotalMs > 0 ? visibleMs - snapshot.ttfpTotalMs : Double.nan
+        let msg = "[1080i50-TTFP] 👁️ Picture visible after \(String(format: "%.1f", visibleMs))ms | Pipeline ready at \(String(format: "%.1f", snapshot.ttfpTotalMs))ms | Waiting on master clock: \(String(format: "%.1f", waitMs))ms"
+        print(msg)
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+    }
+
     private func handleFirstFrameActuallyPresented(screenTimestamp: Double) {
-        guard requestStartTime > 0 else { return }
-        let gpuDoneMs = (screenTimestamp - requestStartTime) * 1000.0
-        telemetry.mutate { $0.ttfpGpuCompletedMs = gpuDoneMs }
+        let gpuDoneMs = sessionState.mutate { state -> Double? in
+            guard state.requestStartTime > 0 else { return nil }
+            return (screenTimestamp - state.requestStartTime) * 1000.0
+        }
+        if let gpuDoneMs = gpuDoneMs {
+            // Drawing into our own drawable, the GPU finishing *is* the picture
+            // appearing — there is no layer holding it back for a clock.
+            telemetry.mutate {
+                $0.ttfpGpuCompletedMs = gpuDoneMs
+                if $0.ttfpVisibleMs == 0 { $0.ttfpVisibleMs = gpuDoneMs }
+            }
+        }
     }
 
     // MARK: - System Telemetry Monitoring

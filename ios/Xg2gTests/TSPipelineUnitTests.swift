@@ -260,6 +260,93 @@ struct TSPipelineUnitTests {
         }
     }
 
+    /// The decode gate is only worth anything if this flag actually separates a
+    /// startable picture from one that needs a reference. A detector that says
+    /// "yes" to everything opens the gate on the first access unit and looks
+    /// exactly like a healthy tune in the logs.
+    @Test func h264AssemblerMarksOnlyStartablePicturesAsSyncSamples() throws {
+        let assembler = H264AccessUnitAssembler()
+        let sink = MockAccessUnitSink()
+        assembler.delegate = sink
+
+        let spsData = make1080i50SPS()
+        let ppsData = make1080i50PPS()
+
+        func slice(nalHeader: UInt8, sliceType: Int, frameNum: Int, idrPicID: Int?) -> Data {
+            var nal = Data([nalHeader])
+            var writer = BitWriter()
+            writer.writeExpGolomb(0)            // first_mb_in_slice
+            writer.writeExpGolomb(sliceType)
+            writer.writeExpGolomb(0)            // pic_parameter_set_id
+            writer.writeBits(frameNum, count: 4)
+            if let idrPicID { writer.writeExpGolomb(idrPicID) }
+            writer.writeExpGolomb(2)            // pic_order_cnt_lsb
+            writer.writeBit(1)                  // rbsp_stop_one_bit
+            nal.append(writer.finish())
+            return nal
+        }
+
+        func feed(_ nals: [Data], pts: Int64) {
+            var chunk = Data()
+            for nal in nals {
+                chunk.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+                chunk.append(nal)
+            }
+            assembler.feed(data: chunk, pts: CMTime(value: pts, timescale: 90000))
+        }
+
+        // IDR, then an intra-only non-IDR picture, then a predicted one.
+        feed([spsData, ppsData, slice(nalHeader: 0x65, sliceType: 7, frameNum: 0, idrPicID: 0)], pts: 90000)
+        feed([slice(nalHeader: 0x41, sliceType: 7, frameNum: 1, idrPicID: nil)], pts: 93600)
+        feed([slice(nalHeader: 0x41, sliceType: 5, frameNum: 2, idrPicID: nil)], pts: 97200)
+        assembler.flush()
+
+        #expect(sink.syncSampleFlags.count == 3)
+        guard sink.syncSampleFlags.count == 3 else { return }
+
+        #expect(sink.syncSampleFlags[0] == true)    // IDR
+        #expect(sink.syncSampleFlags[1] == true)    // I slices, no IDR — still startable
+        #expect(sink.syncSampleFlags[2] == false)   // P slices — needs a reference
+    }
+
+    /// One predicted slice is enough to make the whole picture unstartable, so
+    /// the check has to run per slice rather than on the first one only.
+    @Test func h264AssemblerTreatsMixedSlicePictureAsPredicted() throws {
+        let assembler = H264AccessUnitAssembler()
+        let sink = MockAccessUnitSink()
+        assembler.delegate = sink
+
+        var payload = Data()
+        payload.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+        payload.append(make1080i50SPS())
+        payload.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+        payload.append(make1080i50PPS())
+
+        func slice(firstMB: Int, sliceType: Int) -> Data {
+            var nal = Data([0x41])
+            var writer = BitWriter()
+            writer.writeExpGolomb(firstMB)
+            writer.writeExpGolomb(sliceType)
+            writer.writeExpGolomb(0)
+            writer.writeBits(3, count: 4)
+            writer.writeExpGolomb(2)
+            writer.writeBit(1)
+            nal.append(writer.finish())
+            return nal
+        }
+
+        // One picture, two slices: intra first, predicted second.
+        for nal in [slice(firstMB: 0, sliceType: 2), slice(firstMB: 120, sliceType: 0)] {
+            payload.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+            payload.append(nal)
+        }
+
+        assembler.feed(data: payload, pts: CMTime(value: 90000, timescale: 90000))
+        assembler.flush()
+
+        #expect(sink.syncSampleFlags == [false])
+    }
+
     @Test func testRealStreamFeed() throws {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: "/tmp/vu_puls24_real.ts")) else {
             return
@@ -423,7 +510,7 @@ private final class MockAccessUnitSink: H264AccessUnitAssemblerDelegate, @unchec
     var formatDescription: CMVideoFormatDescription?
     var info: H264DecodedInfo?
     var emittedSampleBuffers: [CMSampleBuffer] = []
-    var isIDRFlags: [Bool] = []
+    var syncSampleFlags: [Bool] = []
     var structures: [H264PictureStructure] = []
 
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
@@ -431,9 +518,9 @@ private final class MockAccessUnitSink: H264AccessUnitAssemblerDelegate, @unchec
         self.info = info
     }
 
-    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, structure: H264PictureStructure) {
+    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure) {
         self.emittedSampleBuffers.append(sampleBuffer)
-        self.isIDRFlags.append(isIDR)
+        self.syncSampleFlags.append(isSyncSample)
         self.structures.append(structure)
     }
 }

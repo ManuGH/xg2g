@@ -29,10 +29,20 @@ public final class PESPacketAssembler: @unchecked Sendable {
     private var currentPESBuffer = Data()
     public weak var delegate: PESPacketAssemblerDelegate?
 
+    /// Lifts the 33-bit timestamps onto a continuous timeline.
+    ///
+    /// The audio path has always done this; video did not, and the asymmetry is
+    /// the bug. At the 2^33 boundary — every 26.5 hours of stream time — audio
+    /// would carry straight on while video dropped back to zero, so the two
+    /// tracks ended up on timelines 95443 seconds apart and video could never
+    /// come due against the master clock again.
+    private var ptsNormalizer = PTS33BitNormalizer()
+
     public init() {}
 
     public func reset() {
         currentPESBuffer.removeAll(keepingCapacity: true)
+        ptsNormalizer.reset()
     }
 
     /// Ingests a video TS payload fragment.
@@ -82,12 +92,25 @@ public final class PESPacketAssembler: @unchecked Sendable {
 
         if (ptsDtsFlags == 0x02 || ptsDtsFlags == 0x03) && headerDataLength >= 5 {
             // PTS present
-            let ptsVal = decode33BitTimestamp(data: data, offset: 9)
-            pts = CMTime(value: CMTimeValue(ptsVal), timescale: 90000)
-        }
+            let rawPTS = decode33BitTimestamp(data: data, offset: 9)
+            let unwrapped = ptsNormalizer.unwrap(rawPTS: rawPTS)
+            pts = CMTime(value: CMTimeValue(unwrapped), timescale: 90000)
 
-        if ptsDtsFlags == 0x03 && headerDataLength >= 10 {
-            // DTS present
+            if ptsDtsFlags == 0x03 && headerDataLength >= 10 {
+                // DTS present. Derived from the unwrapped PTS rather than run
+                // through a second normalizer: the two share one timeline, and
+                // two independent wrap detectors would disagree about where the
+                // epoch changed for the handful of pictures around the boundary.
+                // PTS is at or ahead of DTS on that timeline, so their raw
+                // difference is the offset, taken modulo 2^33 for the one header
+                // where the wrap falls between them.
+                let rawDTS = decode33BitTimestamp(data: data, offset: 14)
+                let lead = (rawPTS &- rawDTS) & 0x1_FFFF_FFFF
+                dts = CMTime(value: CMTimeValue(Int64(unwrapped) - Int64(lead)), timescale: 90000)
+            }
+        } else if ptsDtsFlags == 0x03 && headerDataLength >= 10 {
+            // DTS without PTS is malformed, but it costs nothing to carry it
+            // through on its own rather than dropping the timing entirely.
             let dtsVal = decode33BitTimestamp(data: data, offset: 14)
             dts = CMTime(value: CMTimeValue(dtsVal), timescale: 90000)
         }

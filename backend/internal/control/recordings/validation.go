@@ -267,7 +267,7 @@ func IsAllowedVideoSegment(path string) bool {
 	name := strings.Split(path, "/")
 	base := name[len(name)-1]
 
-	if base == "init.mp4" {
+	if isAllowedInitSegment(base) {
 		return true
 	}
 	if !strings.HasPrefix(base, "seg_") {
@@ -276,4 +276,23 @@ func IsAllowedVideoSegment(path string) bool {
 
 	baseLower := strings.ToLower(base)
 	return strings.HasSuffix(baseLower, ".ts") || strings.HasSuffix(baseLower, ".m4s") || strings.HasSuffix(baseLower, ".cmfv")
+}
+
+func isAllowedInitSegment(base string) bool {
+	if base == "init.mp4" {
+		return true
+	}
+	if !strings.HasPrefix(base, "init_") || !strings.HasSuffix(base, ".mp4") {
+		return false
+	}
+	variantIndex := base[len("init_") : len(base)-len(".mp4")]
+	if len(variantIndex) == 0 {
+		return false
+	}
+	for i := 0; i < len(variantIndex); i++ {
+		if variantIndex[i] < '0' || variantIndex[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

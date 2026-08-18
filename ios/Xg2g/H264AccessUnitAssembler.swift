@@ -4,7 +4,11 @@
 
 import CoreMedia
 import Foundation
+import OSLog
+import QuartzCore
 import VideoToolbox
+
+private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "h264")
 
 public struct H264DecodedInfo: Sendable {
     public let width: Int
@@ -68,7 +72,7 @@ public final class H264ParameterSetCache: @unchecked Sendable {
 
 public protocol H264AccessUnitAssemblerDelegate: AnyObject, Sendable {
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo)
-    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isIDR: Bool, structure: H264PictureStructure)
+    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure)
 }
 
 /// Stream-level Annex-B H.264 Access Unit Assembler.
@@ -89,6 +93,9 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     private var pendingDTS: CMTime? = nil
     private var currentAUHasVCL: Bool = false
     private var currentAUHasIDR: Bool = false
+    /// Cleared by the first slice of this access unit that codes anything other
+    /// than intra macroblocks. See `parseSliceIsIntra`.
+    private var currentAUIsIntraOnly: Bool = true
     private var currentAUStructure: H264PictureStructure = .wovenTopFieldFirst
     private var lastEmittedPTS: CMTime = .invalid
 
@@ -98,20 +105,53 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     private var separateColourPlaneFlag: Bool = false
     private var frameMbsOnlyFlag: Bool = true
 
-    private var spsData: Data?
-    private var ppsData: Data?
+    /// Every distinct parameter set the stream has offered, not just the newest.
+    ///
+    /// A single `spsData`/`ppsData` pair silently assumed one of each. ZDF sends
+    /// **two** different PPS — 44 PPS NALs against 22 SPS in 15 s — and keeping
+    /// only the last one broke the channel twice over: slices referencing the
+    /// overwritten PPS became undecodable (`kVTVideoDecoderBadDataErr`, -12909),
+    /// and each swap changed the format description, which tore down and rebuilt
+    /// the VideoToolbox session. Throughput collapsed to 1.3 access units per
+    /// second on a 50 fps source.
+    ///
+    /// `CMVideoFormatDescriptionCreateFromH264ParameterSets` takes as many
+    /// parameter sets as the stream has, so all of them are handed over and the
+    /// decoder resolves each slice against the one it names.
+    private var spsVariants: [Data] = []
+    private var ppsVariants: [Data] = []
+
+    private var spsData: Data? { spsVariants.first }
+    private var ppsData: Data? { ppsVariants.first }
     private var currentFormatDescription: CMVideoFormatDescription?
     public private(set) var decodedInfo: H264DecodedInfo?
     public var channelKey: String?
 
     public weak var delegate: H264AccessUnitAssemblerDelegate?
 
+    // MARK: - Startup instrumentation
+    //
+    // `ttfpParamSetsMs` says how long the wait for SPS/PPS was, never why. The
+    // broadcast repeats parameter sets every ~1.0 s (measured on the wire), yet
+    // cold tunes have taken 742, 1962, 2796 and 6813 ms to reach them. That gap
+    // is inside this class, and nothing here reported enough to locate it: how
+    // much elementary stream was consumed, how many NALs were seen, and which
+    // types came past before the first SPS.
+    private var startupClock: CFTimeInterval = 0
+    private var bytesFedBeforeParams: Int = 0
+    private var nalsSeenBeforeParams: Int = 0
+    private var nalTypeHistogram: [UInt8: Int] = [:]
+    private var hasReportedParamArrival = false
+
     public init() {}
 
     /// Primes the assembler with pre-cached SPS and PPS parameter sets for immediate decoding.
+    ///
+    /// Only the first variant of each is cached, so a channel carrying several
+    /// still starts on this pair and picks the rest up as they arrive.
     public func primeWithParameterSets(sps: Data, pps: Data) {
-        self.spsData = sps
-        self.ppsData = pps
+        spsVariants = [sps]
+        ppsVariants = [pps]
         parseSPS(sps)
         updateFormatDescriptionIfNeeded()
     }
@@ -125,15 +165,22 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         pendingDTS = nil
         currentAUHasVCL = false
         currentAUHasIDR = false
+        currentAUIsIntraOnly = true
         currentAUStructure = .wovenTopFieldFirst
         log2MaxFrameNum = 4
         separateColourPlaneFlag = false
         frameMbsOnlyFlag = true
         lastEmittedPTS = .invalid
-        spsData = nil
-        ppsData = nil
+        spsVariants.removeAll(keepingCapacity: true)
+        ppsVariants.removeAll(keepingCapacity: true)
         currentFormatDescription = nil
         decodedInfo = nil
+
+        startupClock = 0
+        bytesFedBeforeParams = 0
+        nalsSeenBeforeParams = 0
+        nalTypeHistogram.removeAll(keepingCapacity: true)
+        hasReportedParamArrival = false
     }
 
     /// Ingests elementary stream data from a PES packet with optional PTS/DTS.
@@ -141,6 +188,13 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         if let pts = payload.pts, pts.isValid {
             pendingPTS = pts
             pendingDTS = payload.dts
+        }
+
+        if startupClock == 0 {
+            startupClock = CACurrentMediaTime()
+        }
+        if !hasReportedParamArrival {
+            bytesFedBeforeParams += payload.data.count
         }
 
         streamBuffer.append(payload.data)
@@ -236,6 +290,11 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         guard !nal.isEmpty else { return }
         let nalType = nal[0] & 0x1F
 
+        if !hasReportedParamArrival {
+            nalsSeenBeforeParams += 1
+            nalTypeHistogram[nalType, default: 0] += 1
+        }
+
         var isNewAccessUnit = false
 
         switch nalType {
@@ -278,13 +337,15 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         // Process parameter sets or slices
         switch nalType {
         case 7: // SPS
-            spsData = nal
-            parseSPS(nal)
-            updateFormatDescriptionIfNeeded()
+            if rememberParameterSet(nal, in: &spsVariants) {
+                parseSPS(nal)
+                updateFormatDescriptionIfNeeded()
+            }
 
         case 8: // PPS
-            ppsData = nal
-            updateFormatDescriptionIfNeeded()
+            if rememberParameterSet(nal, in: &ppsVariants) {
+                updateFormatDescriptionIfNeeded()
+            }
 
         case 5: // IDR Slice
             // Only the AU's first slice is parsed; later slices of the same
@@ -300,6 +361,11 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             if !currentAUHasVCL {
                 currentAUStructure = parseSliceStructure(from: nal)
             }
+            // Checked per slice, not once per picture: a single predicted slice
+            // makes the whole access unit depend on a reference frame.
+            if !parseSliceIsIntra(nal) {
+                currentAUIsIntraOnly = false
+            }
             currentAUHasVCL = true
 
         default:
@@ -307,6 +373,29 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         }
 
         currentAUNALs.append(nal)
+    }
+
+    /// True when this slice codes only intra macroblocks (`slice_type` I or SI).
+    ///
+    /// An access unit made entirely of these needs no reference picture, so it is
+    /// a legitimate place to start decoding even without an IDR — which matters
+    /// because a fair number of broadcast encoders signal random access with a
+    /// recovery-point SEI and plain I slices and never send an IDR at all.
+    /// Gating only on NAL type 5 would leave those channels black.
+    private func parseSliceIsIntra(_ nal: Data) -> Bool {
+        guard nal.count > 1 else { return false }
+        let sliceHeader = Data(nal.dropFirst(1).prefix(8))
+        let rbsp = removeEmulationPreventionBytes(from: sliceHeader)
+        var reader = BitReader(data: rbsp)
+        _ = reader.readExpGolomb()             // first_mb_in_slice
+        let sliceType = reader.readExpGolomb()
+        // A header that ran out mid-read says nothing; treat it as predicted
+        // rather than letting a truncated parse open the gate.
+        guard !reader.isExhausted else { return false }
+        // 5...9 repeat 0...4 with the added promise that every slice in the
+        // picture has that type. Either way the family is what matters here.
+        let family = sliceType % 5
+        return family == 2 || family == 4      // I or SI
     }
 
     private func parseFirstMBInSlice(_ nal: Data) -> Int {
@@ -322,12 +411,18 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             currentAUNALs.removeAll(keepingCapacity: true)
             currentAUHasVCL = false
             currentAUHasIDR = false
+            currentAUIsIntraOnly = true
             currentAUStructure = .wovenTopFieldFirst
             currentAUPTS = .invalid
             currentAUDTS = nil
         }
 
         guard !currentAUNALs.isEmpty, currentAUHasVCL, let formatDesc = currentFormatDescription else { return }
+
+        // Whether a decoder can be started on this picture. An IDR always can;
+        // so can a picture whose every slice is intra-coded, which is what
+        // reaches the gate on channels that never send one.
+        let isSyncSample = currentAUHasIDR || currentAUIsIntraOnly
 
         // Assemble AVCC buffer with 4-byte big endian length prefixes
         var avccBuffer = Data()
@@ -417,7 +512,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         // Attach sample attachments for field order / sync
         if let attachments = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true) {
             let dict = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
-            if currentAUHasIDR {
+            if isSyncSample {
                 CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque(), Unmanaged.passUnretained(kCFBooleanFalse).toOpaque())
             } else {
                 CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque(), Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
@@ -425,30 +520,97 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             CFDictionarySetValue(dict, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(), Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
         }
 
-        delegate?.accessUnitAssembler(self, didEmitSampleBuffer: sb, isIDR: currentAUHasIDR, structure: currentAUStructure)
+        delegate?.accessUnitAssembler(self, didEmitSampleBuffer: sb, isSyncSample: isSyncSample, structure: currentAUStructure)
+    }
+
+    /// Reports what it took to reach the first usable parameter set.
+    ///
+    /// The elapsed time alone cannot separate the two candidate explanations —
+    /// elementary stream arriving late, or arriving on time and being scanned
+    /// past — so the byte count and the NAL types seen on the way are reported
+    /// with it. A stream carrying SPS every second should reach this within one
+    /// interval, on the order of a hundred KiB.
+    private func reportParamArrival() {
+        guard !hasReportedParamArrival else { return }
+        hasReportedParamArrival = true
+
+        let elapsed = startupClock > 0 ? (CACurrentMediaTime() - startupClock) * 1000.0 : 0
+        let types = nalTypeHistogram
+            .sorted { $0.key < $1.key }
+            .map { "t\($0.key):\($0.value)" }
+            .joined(separator: " ")
+        let msg = "[1080i50-PARAMS] First SPS+PPS after \(String(format: "%.0f", elapsed))ms of ES | \(bytesFedBeforeParams / 1024) KiB fed | \(nalsSeenBeforeParams) NALs | types: \(types)"
+        print(msg)
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+    }
+
+    /// Records a parameter set the first time it is seen. Returns true when it is
+    /// new, so an unchanged set repeated every GOP does not rebuild anything.
+    ///
+    /// Identity is the NAL's own bytes rather than its parsed id: two sets that
+    /// differ anywhere have to be offered to the decoder separately, and a set
+    /// retransmitted verbatim must not count as a change.
+    /// Plausible size range for a parameter set NAL.
+    ///
+    /// A real SPS runs to tens of bytes and a PPS to a handful; anything near a
+    /// kilobyte is a slice whose start code was mis-split and whose first byte
+    /// happens to read as type 7 or 8. Keeping only the newest set hid that —
+    /// the next genuine SPS overwrote the garbage — but collecting every variant
+    /// makes a single bad parse permanent, and a 16 KB "parameter set" made
+    /// `CMVideoFormatDescriptionCreateFromH264ParameterSets` reject the whole
+    /// set (-12712) for the rest of the stream.
+    private static let parameterSetSizeLimit = 1024
+
+    private func rememberParameterSet(_ nal: Data, in variants: inout [Data]) -> Bool {
+        guard nal.count >= 2, nal.count <= Self.parameterSetSizeLimit else { return false }
+        guard !variants.contains(nal) else { return false }
+        // Bounded so a stream that mutates its parameter sets endlessly cannot
+        // grow this without limit; broadcast carries a handful at most.
+        if variants.count >= 8 {
+            variants.removeFirst()
+        }
+        variants.append(nal)
+        return true
     }
 
     private func updateFormatDescriptionIfNeeded() {
-        guard let sps = spsData, let pps = ppsData else { return }
+        guard !spsVariants.isEmpty, !ppsVariants.isEmpty else { return }
 
-        let spsArray = [UInt8](sps)
-        let ppsArray = [UInt8](pps)
+        // SPS first, then PPS — the order CMVideoFormatDescription expects.
+        let sets = spsVariants + ppsVariants
+        let sizes = sets.map { $0.count }
+
+        // All parameter sets are copied into one contiguous allocation, so every
+        // pointer handed to CoreMedia stays valid for the whole call.
+        // `withUnsafeBufferPointer` per set would need the scopes to nest, and a
+        // pointer collected in a loop outlives the scope that produced it —
+        // which produced no format description at all and left the channel
+        // undecodable.
+        let total = sizes.reduce(0, +)
+        guard total > 0 else { return }
+
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: total)
+        defer { buffer.deallocate() }
+
+        var pointers: [UnsafePointer<UInt8>] = []
+        pointers.reserveCapacity(sets.count)
+        var offset = 0
+        for set in sets {
+            set.copyBytes(to: buffer.advanced(by: offset), count: set.count)
+            pointers.append(UnsafePointer(buffer.advanced(by: offset)))
+            offset += set.count
+        }
 
         var formatDesc: CMVideoFormatDescription?
-        let status = spsArray.withUnsafeBufferPointer { spsPtr in
-            ppsArray.withUnsafeBufferPointer { ppsPtr in
-                let pointers = [spsPtr.baseAddress!, ppsPtr.baseAddress!]
-                let sizes = [spsArray.count, ppsArray.count]
-                return CMVideoFormatDescriptionCreateFromH264ParameterSets(
-                    allocator: kCFAllocatorDefault,
-                    parameterSetCount: 2,
-                    parameterSetPointers: pointers,
-                    parameterSetSizes: sizes,
-                    nalUnitHeaderLength: 4,
-                    formatDescriptionOut: &formatDesc
-                )
-            }
-        }
+        let status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
+            allocator: kCFAllocatorDefault,
+            parameterSetCount: pointers.count,
+            parameterSetPointers: pointers,
+            parameterSetSizes: sizes,
+            nalUnitHeaderLength: 4,
+            formatDescriptionOut: &formatDesc
+        )
 
         if status == noErr, let fd = formatDesc {
             let isDifferent: Bool
@@ -464,6 +626,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             }
 
             if isDifferent, let info = self.decodedInfo {
+                reportParamArrival()
                 delegate?.accessUnitAssembler(self, didUpdateFormat: fd, info: info)
             }
         }

@@ -20,6 +20,21 @@ public enum AudioStreamCodec: Sendable, Equatable, CustomStringConvertible {
         case .unknown(let type): return "Unknown (0x\(String(type, radix: 16, uppercase: true)))"
         }
     }
+
+    /// Whether the platform can actually decode this, measured on device rather
+    /// than assumed.
+    ///
+    /// `AVSampleBufferAudioRenderer` plays AC-3, E-AC-3 and AAC; MPEG Layer II —
+    /// stream type 0x03/0x04, still carried by most German public broadcasters —
+    /// has no decoder on iOS. Selecting it yields a silent stream with no error
+    /// anywhere: the parser runs, buffers are produced, the renderer accepts
+    /// them, and nothing is heard.
+    public var isDecodableOnDevice: Bool {
+        switch self {
+        case .ac3, .eac3, .aac: return true
+        case .mpegAudio, .unknown: return false
+        }
+    }
 }
 
 public struct AudioTrackInfo: Sendable, Equatable, Identifiable {
@@ -72,6 +87,15 @@ public final class TSPacketParser: @unchecked Sendable {
 
     private static let packetSize = 188
     private static let syncByte: UInt8 = 0x47
+
+    /// Stuffing packets, inserted to pad the multiplex to its constant rate.
+    ///
+    /// ISO/IEC 13818-1 leaves their continuity counter undefined, so checking it
+    /// reports a fault on padding: a clean F1 multiplex measured 516 "errors" on
+    /// this PID against 1 on 50.070 video packets, and the telemetry showed the
+    /// sum as if the broadcast were breaking up. They carry nothing, so they are
+    /// dropped before anything else looks at them.
+    private static let nullPacketPID: UInt16 = 0x1FFF
 
     private var buffer = Data()
     private var pmtPIDs = Set<UInt16>()
@@ -153,6 +177,8 @@ public final class TSPacketParser: @unchecked Sendable {
 
         let payloadUnitStart = (byte1 & 0x40) != 0
         let pid = UInt16(byte1 & 0x1F) << 8 | UInt16(byte2)
+        guard pid != Self.nullPacketPID else { return }
+
         let adaptationControl = (byte3 & 0x30) >> 4
         let continuityCounter = byte3 & 0x0F
 

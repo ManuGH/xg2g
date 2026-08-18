@@ -9,11 +9,19 @@ public struct TestTSPlayerScreen: View {
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var pipeline = NativeTSVideoPipeline()
+    /// Owns the AVFoundation display layer and the PiP controller. Held here
+    /// rather than inside the UIViewRepresentable so it survives SwiftUI
+    /// rebuilding that view, which would otherwise tear down PiP mid-stream.
+    @StateObject private var systemPresenter = SystemVideoPresenterBox()
     @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:"
     @State private var currentChannelName: String = "Sky Sport F1 HD"
     @State private var isStreaming: Bool = false
     @State private var isPlaying: Bool = true
     @State private var showHUD: Bool = false
+    /// Which presentation model the render view uses. Selectable rather than
+    /// implied, so the drawable path is reachable and the two can be compared
+    /// on the same stream instead of only one of them ever running.
+    @State private var presentationPath: MetalVideoView.PresentationPath = .systemLayer
     @State private var showControls: Bool = true
     @State private var autoHideControlsTask: Task<Void, Never>?
     @State private var zapToast: String?
@@ -51,7 +59,11 @@ public struct TestTSPlayerScreen: View {
                     // MARK: - Video Stage Container
                     ZStack(alignment: .topLeading) {
                         // 1. Native Metal 1080p50 Hardware Stage
-                        MetalVideoStageView(pipeline: pipeline)
+                        MetalVideoStageView(
+                            pipeline: pipeline,
+                            presenter: systemPresenter.presenter,
+                            presentationPath: presentationPath
+                        )
                             .ignoresSafeArea(edges: isLandscape ? .all : [])
 
                         // 2. On-Screen Display Controls & Buttons
@@ -203,6 +215,55 @@ public struct TestTSPlayerScreen: View {
                         .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                     }
                     .buttonStyle(.plain)
+
+                    // Presentation path selector — within the native pipeline only.
+                    //
+                    // Labelled "Layer"/"Drawable" rather than anything with AV in
+                    // it: the app also ships an entirely separate AVPlayer/HLS
+                    // player, and a badge reading "AVF" here invites reading this
+                    // as a switch between the two players. It is not. Both
+                    // settings decode the transport stream natively and differ
+                    // only in who presents the finished fields —
+                    // `AVSampleBufferDisplayLayer`, which schedules them from
+                    // their timestamps and is what Picture in Picture needs, or
+                    // our own drawable, scheduled here against the stream clock.
+                    Button {
+                        Haptics.shared.impact(.light)
+                        presentationPath = (presentationPath == .systemLayer) ? .metalDrawable : .systemLayer
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: presentationPath == .systemLayer ? "rectangle.on.rectangle" : "cpu")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(presentationPath == .systemLayer ? "Layer" : "Drawable")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+
+                    // Picture in Picture. Enabled only once the display layer has
+                    // content and the system reports it as possible, so the button
+                    // never offers something that would silently do nothing.
+                    // The drawable path has no display layer to hand PiP, so the
+                    // button goes with it.
+                    Button {
+                        Haptics.shared.impact(.light)
+                        systemPresenter.presenter.startPictureInPicture()
+                    } label: {
+                        Image(systemName: "pip.enter")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 34, height: 34)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(presentationPath != .systemLayer)
+                    .opacity(presentationPath == .systemLayer ? 1.0 : 0.4)
 
                     // AirPlay Route Picker Button
                     AirPlayButton()
@@ -612,15 +673,37 @@ public struct TestTSPlayerScreen: View {
 
 private struct MetalVideoStageView: UIViewRepresentable {
     let pipeline: NativeTSVideoPipeline
+    let presenter: SystemVideoPresenter
+    let presentationPath: MetalVideoView.PresentationPath
 
     func makeUIView(context: Context) -> MetalVideoView {
         let view = MetalVideoView(frame: .zero)
         view.telemetry = pipeline.telemetry
         pipeline.renderView = view
+
+        // Presenting through AVFoundation instead of our own drawable. The Metal
+        // view keeps doing the decode-side work — reorder, field scheduling and
+        // the deinterlace pass — and its output goes into the display layer,
+        // which is hosted on top of it.
+        view.systemPresenter = presenter
+        pipeline.systemPresenter = presenter
+        view.presentationPath = presentationPath
+        presenter.displayLayer.frame = view.bounds
+        view.layer.addSublayer(presenter.displayLayer)
+        presenter.enablePictureInPicture()
+
         return view
     }
 
     func updateUIView(_ uiView: MetalVideoView, context: Context) {
         uiView.telemetry = pipeline.telemetry
+        uiView.presentationPath = presentationPath
+        // The layer is not managed by Auto Layout, so it has to follow the view
+        // itself. Without this it keeps its size across a rotation and the
+        // picture stays letterboxed at the old aspect.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        presenter.displayLayer.frame = uiView.bounds
+        CATransaction.commit()
     }
 }

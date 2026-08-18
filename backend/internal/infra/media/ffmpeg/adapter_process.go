@@ -949,9 +949,14 @@ func (a *LocalAdapter) prepareTelemetryPipe(ctx context.Context, rawURL, session
 	tracer.MarkOnce(telemetry.MilestoneE1, "http_response_headers_received")
 	metrics.IncActiveEnigma2Connections("proxy")
 
+	// The guard owns the body from here: it decrements the gauge and logs
+	// whichever path closes first, and closes the connection by itself if the
+	// session is orphaned and `ctx` never fires. See `guardedStreamBody`.
+	guarded := newGuardedStreamBody(resp.Body, sessionID, "proxy")
+
 	go func() {
 		<-ctx.Done()
-		_ = resp.Body.Close()
+		_ = guarded.Close()
 		dc := a.GetDiagnosticContext(sessionID)
 		a.Logger.Info().
 			Str("session_id", dc.SessionID).
@@ -959,11 +964,10 @@ func (a *LocalAdapter) prepareTelemetryPipe(ctx context.Context, rawURL, session
 			Str("reason", dc.Reason).
 			Int64("elapsed_since_stop_ms", dc.ElapsedSinceStopMs).
 			Msg("http_body_closed")
-		metrics.DecActiveEnigma2Connections("proxy")
 	}()
 
 	tr := &telemetryReader{
-		source: resp.Body,
+		source: guarded,
 		tracer: tracer,
 	}
 

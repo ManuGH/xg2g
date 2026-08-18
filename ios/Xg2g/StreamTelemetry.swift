@@ -23,6 +23,16 @@ public struct TelemetryValues: Sendable {
     public var ttfpIdrMs: Double = 0.0          // t3 -> t4: SPS/PPS -> First complete IDR AU
     public var ttfpDecodeMs: Double = 0.0       // t4 -> t5: IDR AU -> VideoToolbox decoded frame
     public var ttfpRenderMs: Double = 0.0       // t5 -> t6: Decoded frame -> Metal Display Submit
+
+    /// Request to the moment the picture is actually on screen.
+    ///
+    /// The number the viewer experiences, and the one nothing was reporting.
+    /// `ttfpTotalMs` ends when the pipeline has produced its first field; under
+    /// system presentation the display layer then holds it until the master
+    /// clock reaches its timestamp, and that clock does not start until the
+    /// audio pre-roll is buffered. The gap between the two is the part of tuning
+    /// latency that pipeline tuning cannot touch.
+    public var ttfpVisibleMs: Double = 0.0
     public var earlyStabilityIssues: Int = 0    // Drops or glitches in first 2 seconds
     public var sampleBuffersEmittedCount: Int = 0
     public var sampleBuffersDecodedCount: Int = 0
@@ -40,10 +50,36 @@ public struct TelemetryValues: Sendable {
     public var continuityErrors: Int = 0
     public var pesErrors: Int = 0
 
+    /// Times the stream's timeline moved under playback and everything had to be
+    /// re-anchored onto it.
+    ///
+    /// Distinct from a socket stall, which this used to be confused with:
+    /// buffered data keeps its timestamps, so a gap in arrival is not a gap in
+    /// presentation. A rising count here means the source changed what it was
+    /// sending — an encoder restart, a splice, or the receiver being retuned
+    /// underneath the stream.
+    public var ptsDiscontinuities: Int = 0
+
+    // MARK: - AUDIO FLOW
+    //
+    // How far the audio handed to the renderer runs ahead of the playback clock.
+    // Dropouts were reported by ear and argued about from the video counters,
+    // because nothing here described the audio path's own health.
+    public var audioUnderruns: Int = 0      // Times the lead fell under 50 ms
+    public var audioLeadMs: Double = 0.0    // Current cushion
+    public var audioMinLeadMs: Double = 0.0 // Worst cushion in the last window
+
     /// Access units emitted without a PES timestamp. A healthy broadcast stream
     /// carries one PTS per coded picture, so a rising count means the assembler
     /// is splitting pictures into multiple access units.
     public var accessUnitsWithoutPTS: Int = 0
+
+    /// Access units discarded at tune-in because no sync sample had arrived yet.
+    ///
+    /// Expected to be non-zero on every cold tune — a broadcast GOP is entered
+    /// wherever the socket opens — and to stop rising the moment the gate opens.
+    /// A count that keeps climbing means no intra picture is being recognised.
+    public var gatedAccessUnits: Int = 0
 
     /// Bytes accepted from the socket but not yet parsed. Stays near zero when
     /// the parse chain keeps up; a standing backlog means decode is the
@@ -121,6 +157,9 @@ public struct TelemetryValues: Sendable {
             "audio_channels": audioChannels,
             "audio_sample_rate": audioSampleRate,
             "audio_master_clock_active": isAudioMasterClockActive,
+            "audio_underruns": audioUnderruns,
+            "audio_lead_ms": audioLeadMs,
+            "audio_min_lead_ms": audioMinLeadMs,
             "continuity_errors": continuityErrors,
             "pes_errors": pesErrors,
             "codec": codec,
@@ -147,7 +186,10 @@ public struct TelemetryValues: Sendable {
             "queued_field_count": queuedFieldCount,
             "dropped_frames": droppedFrames,
             "late_frames": lateFrames,
+            "ttfp_visible_ms": ttfpVisibleMs,
             "access_units_without_pts": accessUnitsWithoutPTS,
+            "gated_access_units": gatedAccessUnits,
+            "pts_discontinuities": ptsDiscontinuities,
             "ingest_backlog_bytes": ingestBacklogBytes,
             "thermal_state": thermalState,
             "memory_usage_mb": memoryUsageMB

@@ -43,6 +43,28 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 
     public weak var delegate: HardwareVideoDecoderDelegate?
 
+    /// Stamped onto every frame submitted for decode and checked again when it
+    /// comes back, so pictures still in the decoder when a channel is zapped are
+    /// discarded instead of being delivered into the next stream's timeline.
+    ///
+    /// Written from the caller's thread and read from the VideoToolbox callback
+    /// thread, hence the lock.
+    private var _decodeGeneration: Int = 0
+    private let generationLock = NSLock()
+
+    public var decodeGeneration: Int {
+        get {
+            generationLock.lock()
+            defer { generationLock.unlock() }
+            return _decodeGeneration
+        }
+        set {
+            generationLock.lock()
+            _decodeGeneration = newValue
+            generationLock.unlock()
+        }
+    }
+
     public init() {}
 
     deinit {
@@ -171,7 +193,7 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         }
 
         var flagsOut: VTDecodeInfoFlags = []
-        let context = FrameContext(structure: structure, pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        let context = FrameContext(structure: structure, pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer), generation: decodeGeneration)
         let contextPtr = Unmanaged.passRetained(context).toOpaque()
 
         let status = VTDecompressionSessionDecodeFrame(
@@ -192,6 +214,8 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     }
 
     fileprivate func handleDecodedFrame(status: OSStatus, imageBuffer: CVImageBuffer?, context: FrameContext) {
+        guard context.generation == decodeGeneration else { return }
+
         guard status == noErr, let buffer = imageBuffer else {
             let msg = "[1080i50-DECODE-FAIL] handleDecodedFrame async error: \(status)"
             print(msg)
@@ -212,10 +236,12 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 private final class FrameContext {
     let structure: H264PictureStructure
     let pts: CMTime
+    let generation: Int
 
-    init(structure: H264PictureStructure, pts: CMTime) {
+    init(structure: H264PictureStructure, pts: CMTime, generation: Int) {
         self.structure = structure
         self.pts = pts
+        self.generation = generation
     }
 }
 
