@@ -307,16 +307,17 @@ public final class MetalVideoView: UIView {
     private var presentationCPUMs: Double = 0
     private var lastPresentationReport: CFTimeInterval = 0
 
-    /// When the app last left the foreground, so PiP has room to start before
-    /// anything decides nobody is watching.
-    private var leftForegroundAt: CFTimeInterval = 0
-
     /// Set only by a real backgrounding, so a banner does not cost a flush.
+    ///
+    /// There was a guard here that stopped producing fields while backgrounded
+    /// without a PiP window, on the reasoning that fifty deinterlace passes a
+    /// second are wasted on a screen nobody is looking at. It was added without
+    /// measuring the saving and cost two visible faults in an hour: first it cut
+    /// the feed at the instant PiP needs it and stopped PiP from starting at all,
+    /// then, when a lock ended the PiP session, it stopped the picture while the
+    /// audio kept playing and left a frozen frame behind. Removed rather than
+    /// qualified further — a speculative saving is not worth a third attempt.
     private var wasBackgrounded = false
-
-    /// Long enough for an automatic PiP start to announce itself, short enough
-    /// that a locked phone is not left rendering for a screen nobody sees.
-    private static let backgroundGraceSeconds: Double = 1.5
 
     /// What the system path actually hands AVFoundation, per reporting window.
     ///
@@ -432,7 +433,10 @@ public final class MetalVideoView: UIView {
                 // under system presentation nothing was flushing it: fields
                 // arriving after a resume queued up behind as many as 180 stale
                 // ones, and the picture stayed exactly where it had been left.
-                if self.wasBackgrounded {
+                // Not while PiP is up: that window has been presenting the whole
+                // time and its layer is working. Flushing it would take away the
+                // picture that was never interrupted.
+                if self.wasBackgrounded, self.systemPresenter?.isPictureInPictureEngaged != true {
                     self.wasBackgrounded = false
                     self.fieldQueue.removeAll(keepingCapacity: true)
                     if self.usesSystemPresentation {
@@ -441,6 +445,8 @@ public final class MetalVideoView: UIView {
                         // reach whatever arrives next.
                         self.systemPresenter?.flush()
                     }
+                } else {
+                    self.wasBackgrounded = false
                 }
             }
         }
@@ -747,33 +753,6 @@ public final class MetalVideoView: UIView {
 
         drainReorderedFrames()
 
-        // Backgrounded with no PiP window, this is 50 deinterlace passes a second
-        // drawn for nobody. The two paths that draw into our own layer have
-        // guarded against it all along; the path that actually runs never did.
-        //
-        // PiP is the exception and has to keep going, because the picture people
-        // are watching is the one this produces — and it is why the test is not
-        // simply "are we in the background". PiP starts *as* the app leaves the
-        // foreground, so for a moment it is neither running nor absent, and a
-        // guard that cuts the feed in that moment stops it from ever starting.
-        // Hence both the engaged flag, which is set before the transition, and a
-        // grace period for the case where the auto-start has not fired yet.
-        let backgrounded = UIApplication.shared.applicationState == .background
-        if !backgrounded {
-            leftForegroundAt = 0
-        } else if leftForegroundAt == 0 {
-            leftForegroundAt = CACurrentMediaTime()
-        }
-        let settled = leftForegroundAt > 0
-            && CACurrentMediaTime() - leftForegroundAt >= Self.backgroundGraceSeconds
-
-        if backgrounded, settled, !presenter.isPictureInPictureEngaged {
-            // Dropped rather than held: by the time the app returns these fields
-            // are behind the clock, and a queue kept across a lock screen is a
-            // backlog to shed, not a head start.
-            fieldQueue.removeAll(keepingCapacity: true)
-            return
-        }
 
         let started = CACurrentMediaTime()
         while !fieldQueue.isEmpty {
