@@ -138,7 +138,7 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 		}
 	}
 	clientFam := strings.ToLower(spec.ClientFamily)
-	if strings.Contains(clientFam, "ios") || strings.Contains(clientFam, "safari") || strings.Contains(clientFam, "apple") {
+	if !spec.Profile.TranscodesAudio() && (strings.Contains(clientFam, "ios") || strings.Contains(clientFam, "safari") || strings.Contains(clientFam, "apple")) {
 		clientCaps.SupportsAC3 = true
 		clientCaps.SupportsEAC3 = true
 		clientCaps.SupportsSpatial51 = true
@@ -169,14 +169,17 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 			mapArg := fmt.Sprintf("0:%d?", matchedStream.Index)
 			maps = append(maps, mapArg)
 
-			if tp.Strategy == audiotopology.CodecStrategyPassthrough || !spec.Profile.TranscodesAudio() {
+			if tp.Strategy == audiotopology.CodecStrategyPassthrough && !spec.Profile.TranscodesAudio() {
 				audioArgs = append(audioArgs, fmt.Sprintf("-c:a:%d", i), "copy")
 			} else {
 				encoderCodec := tp.EncoderCodec
-				if encoderCodec == "" {
+				if encoderCodec == "" || encoderCodec == "copy" {
 					encoderCodec = spec.Profile.ResolvedAudioCodec()
 				}
 				bitrateKbps := tp.BitrateKbps
+				if bitrateKbps <= 0 {
+					bitrateKbps = spec.Profile.AudioBitrateK
+				}
 				if bitrateKbps <= 0 {
 					bitrateKbps = 192
 				}
@@ -264,12 +267,12 @@ func (a *LocalAdapter) planLiveAudioSelection(ctx context.Context, spec ports.St
 }
 
 func appendPlannedAudioArgs(args []string, spec ports.StreamSpec, plan audiotopology.TrackPlan) []string {
-	if plan.Strategy == audiotopology.CodecStrategyPassthrough || !spec.Profile.TranscodesAudio() {
+	if (plan.Strategy == audiotopology.CodecStrategyPassthrough || plan.Strategy == "") && !spec.Profile.TranscodesAudio() {
 		return append(args, "-c:a", "copy", "-sn")
 	}
 
 	encoderCodec := plan.EncoderCodec
-	if encoderCodec == "" {
+	if encoderCodec == "" || encoderCodec == "copy" {
 		encoderCodec = spec.Profile.ResolvedAudioCodec()
 	}
 

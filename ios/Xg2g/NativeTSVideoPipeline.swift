@@ -1307,18 +1307,33 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             }
 
             if isSyncSample {
-                isDecodeGateOpen = true
-                let msg = "[1080i50-GATE] 🔓 Decode gate opened on a sync sample after \(gatedAccessUnitCount) discarded AU(s), \(String(format: "%.0f", (now - firstAccessUnitTime) * 1000.0))ms"
-                print(msg)
-                logger.notice("\(msg, privacy: .public)")
-                TelemetryServer.shared.log(msg)
+                if !decoder.hasActiveSession {
+                    _ = decoder.ensureSession()
+                }
+
+                if decoder.hasActiveSession {
+                    isDecodeGateOpen = true
+                    let msg = "[1080i50-GATE] 🔓 Decode gate opened on a sync sample after \(gatedAccessUnitCount) discarded AU(s), \(String(format: "%.0f", (now - firstAccessUnitTime) * 1000.0))ms"
+                    print(msg)
+                    logger.notice("\(msg, privacy: .public)")
+                    TelemetryServer.shared.log(msg)
+                    telemetry.mutate { $0.vtSessionActive = true }
+                } else {
+                    gatedAccessUnitCount += 1
+                    telemetry.mutate { $0.gatedAccessUnits = self.gatedAccessUnitCount }
+                    return
+                }
             } else if now - firstAccessUnitTime >= Self.decodeGateTimeout {
                 // Better a damaged first second than a channel that stays black.
+                if !decoder.hasActiveSession {
+                    _ = decoder.ensureSession()
+                }
                 isDecodeGateOpen = true
                 let msg = "[1080i50-GATE] ⚠️ No sync sample within \(String(format: "%.1f", Self.decodeGateTimeout))s — opening decode gate anyway after \(gatedAccessUnitCount) discarded AU(s); expect artefacts until the next intra picture"
                 print(msg)
                 logger.error("\(msg, privacy: .public)")
                 TelemetryServer.shared.log(msg)
+                telemetry.mutate { $0.vtSessionActive = decoder.hasActiveSession }
             } else {
                 gatedAccessUnitCount += 1
                 let discarded = gatedAccessUnitCount
@@ -1432,6 +1447,32 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             if isEarly {
                 $0.earlyStabilityIssues += 1
             }
+        }
+    }
+
+    public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didInvalidateSessionWithFatalError error: OSStatus) {
+        let isEarly = sessionState.mutate { state -> Bool in
+            state.firstPictureDeliveredTime > 0 && CACurrentMediaTime() - state.firstPictureDeliveredTime <= 2.0
+        }
+        telemetry.mutate {
+            $0.decodeErrors += 1
+            $0.decoderRecoveries += 1
+            $0.vtSessionActive = false
+            $0.hwDecodeActive = false
+            if isEarly {
+                $0.earlyStabilityIssues += 1
+            }
+        }
+
+        ingestQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.isDecodeGateOpen = false
+            self.gatedAccessUnitCount = 0
+            self.firstAccessUnitTime = CACurrentMediaTime()
+            let msg = "[1080i50-DEC-RECOVER] 🔄 Hardware video decoder session invalidated (fatal error \(error)). Decode gate closed; waiting for next IDR to recover..."
+            print(msg)
+            logger.error("\(msg, privacy: .public)")
+            TelemetryServer.shared.log(msg)
         }
     }
 

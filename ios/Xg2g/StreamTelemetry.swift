@@ -156,6 +156,7 @@ public struct TelemetryValues: Sendable {
     public var decodedFramesPerSec: Double = 0.0
     public var ptsProgressionMs: Double = 0.0 // ~40.0 ms per coded frame in 1080i50
     public var decodeErrors: Int = 0
+    public var decoderRecoveries: Int = 0
     public var activeDecoderMode: String = "Metal Shader (Path A)" // or "VideoToolbox Native (Path B)"
 
     // MARK: - RENDER (Field Presentation Counters)
@@ -231,6 +232,7 @@ public struct TelemetryValues: Sendable {
             "decoded_fps": decodedFramesPerSec,
             "pts_delta_ms": ptsProgressionMs,
             "decode_errors": decodeErrors,
+            "decoder_recoveries": decoderRecoveries,
             "top_fields_per_sec": topFieldsPerSec,
             "bottom_fields_per_sec": bottomFieldsPerSec,
             "fields_submitted_per_sec": fieldsSubmittedPerSec,

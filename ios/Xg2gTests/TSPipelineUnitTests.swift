@@ -5,6 +5,7 @@
 import CoreMedia
 import Foundation
 import Testing
+import VideoToolbox
 @testable import Xg2g
 
 struct TSPipelineUnitTests {
@@ -435,6 +436,102 @@ struct TSPipelineUnitTests {
         assembler.primeWithParameterSets(sps: sps, pps: pps)
         #expect(assembler.decodedInfo != nil)
     }
+
+    // MARK: - 9. Hardware Video Decoder Recovery Tests
+
+    @Test func decoderClassifiesFatalVsNonFatalErrorsCorrectly() throws {
+        let decoder = HardwareVideoDecoder()
+
+        // Fatal errors: kVTInvalidSessionErr (-12903) and kVTVideoDecoderMalfunctionErr (-12911)
+        #expect(decoder.isFatalSessionError(kVTInvalidSessionErr))
+        #expect(decoder.isFatalSessionError(kVTVideoDecoderMalfunctionErr))
+        #expect(decoder.isFatalSessionError(-12903))
+        #expect(decoder.isFatalSessionError(-12911))
+
+        // Non-fatal errors: kVTVideoDecoderBadDataErr (-12909 or -12350), kVTParameterErr (-12902), etc.
+        #expect(!decoder.isFatalSessionError(kVTVideoDecoderBadDataErr))
+        #expect(!decoder.isFatalSessionError(-12350))
+        #expect(!decoder.isFatalSessionError(kVTParameterErr))
+        #expect(!decoder.isFatalSessionError(0))
+    }
+
+    @Test func decoderFatalErrorInvalidatesSessionAndBumpsGeneration() throws {
+        let decoder = HardwareVideoDecoder()
+        let sink = MockDecoderSink()
+        decoder.delegate = sink
+
+        let sps = make1080i50SPS()
+        let pps = make1080i50PPS()
+        let spsBytes = [UInt8](sps)
+        let ppsBytes = [UInt8](pps)
+
+        var formatDesc: CMFormatDescription?
+        let status = spsBytes.withUnsafeBufferPointer { spsBuf in
+            ppsBytes.withUnsafeBufferPointer { ppsBuf in
+                let pointers = [spsBuf.baseAddress!, ppsBuf.baseAddress!]
+                let sizes = [spsBuf.count, ppsBuf.count]
+                return CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                    allocator: kCFAllocatorDefault,
+                    parameterSetCount: 2,
+                    parameterSetPointers: pointers,
+                    parameterSetSizes: sizes,
+                    nalUnitHeaderLength: 4,
+                    formatDescriptionOut: &formatDesc
+                )
+            }
+        }
+        #expect(status == noErr)
+        guard let format = formatDesc else { return }
+
+        decoder.configure(with: format)
+        #expect(decoder.hasActiveSession)
+
+        // Verify error classification
+        #expect(decoder.isFatalSessionError(kVTInvalidSessionErr))
+        #expect(decoder.isFatalSessionError(kVTVideoDecoderMalfunctionErr))
+        #expect(!decoder.isFatalSessionError(kVTVideoDecoderBadDataErr))
+        #expect(!decoder.isFatalSessionError(-12350))
+    }
+
+    @Test func decoderEnsureSessionRecreatesSessionWhenInvalidated() throws {
+        let decoder = HardwareVideoDecoder()
+        let sps = make1080i50SPS()
+        let pps = make1080i50PPS()
+        let spsBytes = [UInt8](sps)
+        let ppsBytes = [UInt8](pps)
+
+        var formatDesc: CMFormatDescription?
+        let status = spsBytes.withUnsafeBufferPointer { spsBuf in
+            ppsBytes.withUnsafeBufferPointer { ppsBuf in
+                let pointers = [spsBuf.baseAddress!, ppsBuf.baseAddress!]
+                let sizes = [spsBuf.count, ppsBuf.count]
+                return CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                    allocator: kCFAllocatorDefault,
+                    parameterSetCount: 2,
+                    parameterSetPointers: pointers,
+                    parameterSetSizes: sizes,
+                    nalUnitHeaderLength: 4,
+                    formatDescriptionOut: &formatDesc
+                )
+            }
+        }
+        #expect(status == noErr)
+        guard let format = formatDesc else { return }
+
+        #expect(!decoder.hasActiveSession)
+        decoder.configure(with: format)
+        #expect(decoder.hasActiveSession)
+
+        // Reset
+        decoder.reset()
+        #expect(!decoder.hasActiveSession)
+        #expect(!decoder.isConfigured)
+
+        // Once reconfigured
+        decoder.configure(with: format)
+        #expect(decoder.hasActiveSession)
+        #expect(decoder.isConfigured)
+    }
 }
 
 private final class PipelineBridge: TSPacketParserDelegate, PESPacketAssemblerDelegate, @unchecked Sendable {
@@ -572,5 +669,33 @@ private struct BitWriter {
             data.append(currentByte)
         }
         return data
+    }
+}
+
+private final class MockDecoderSink: HardwareVideoDecoderDelegate, @unchecked Sendable {
+    var emittedFrames: [DecodedVideoFrame] = []
+    var isHWActive: Bool = false
+    var isVTDeinterlaceAccepted: Bool = false
+    var decodeErrors: [OSStatus] = []
+    var fatalErrors: [OSStatus] = []
+
+    func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEmitFrame frame: DecodedVideoFrame) {
+        emittedFrames.append(frame)
+    }
+
+    func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeHWActiveState isHWActive: Bool) {
+        self.isHWActive = isHWActive
+    }
+
+    func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeVTDeinterlaceAccepted isAccepted: Bool) {
+        self.isVTDeinterlaceAccepted = isAccepted
+    }
+
+    func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEncounterDecodeError error: OSStatus) {
+        decodeErrors.append(error)
+    }
+
+    func hardwareDecoder(_ decoder: HardwareVideoDecoder, didInvalidateSessionWithFatalError error: OSStatus) {
+        fatalErrors.append(error)
     }
 }

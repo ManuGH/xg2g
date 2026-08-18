@@ -20,6 +20,7 @@ public protocol HardwareVideoDecoderDelegate: AnyObject, Sendable {
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeHWActiveState isHWActive: Bool)
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeVTDeinterlaceAccepted isAccepted: Bool)
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEncounterDecodeError error: OSStatus)
+    func hardwareDecoder(_ decoder: HardwareVideoDecoder, didInvalidateSessionWithFatalError error: OSStatus)
 }
 
 /// Hardware-accelerated H.264 video decoder using Apple Silicon VideoToolbox.
@@ -29,6 +30,9 @@ public protocol HardwareVideoDecoderDelegate: AnyObject, Sendable {
 /// - Verifies `kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder`.
 /// - Outputs Bi-Planar NV12 `CVPixelBuffer`s.
 /// - Supports Path A (Native Metal shader deinterlace) vs Path B (`kVTDecompressionPropertyKey_DeinterlaceMode`).
+/// - Handles fatal session errors (kVTInvalidSessionErr -12903, kVTVideoDecoderMalfunctionErr -12911)
+///   by invalidating the dead session, advancing the generation to drop in-flight frames, and signaling
+///   the pipeline to re-gate on the next IDR sync sample.
 public final class HardwareVideoDecoder: @unchecked Sendable {
 
     private var decompressionSession: VTDecompressionSession?
@@ -65,6 +69,18 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         }
     }
 
+    public var hasActiveSession: Bool {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return decompressionSession != nil
+    }
+
+    public var isConfigured: Bool {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return formatDescription != nil
+    }
+
     public init() {}
 
     deinit {
@@ -72,21 +88,59 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     }
 
     public func reset() {
-        invalidateSession()
+        generationLock.lock()
+        invalidateSessionLocked()
         formatDescription = nil
+        generationLock.unlock()
+    }
+
+    public func isFatalSessionError(_ status: OSStatus) -> Bool {
+        // kVTInvalidSessionErr = -12903 (0xFFFFF319)
+        // kVTVideoDecoderMalfunctionErr = -12911 (0xFFFFF311)
+        return status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr
+    }
+
+    private func handleFatalSessionError(_ status: OSStatus) {
+        generationLock.lock()
+        guard decompressionSession != nil else {
+            generationLock.unlock()
+            return
+        }
+        invalidateSessionLocked()
+        _decodeGeneration += 1
+        let newGen = _decodeGeneration
+        generationLock.unlock()
+
+        let msg = "[1080i50-DEC-FATAL] 🛑 VTDecompressionSession invalidated due to fatal error: \(status) (advanced to gen \(newGen))"
+        print(msg)
+        TelemetryServer.shared.log(msg)
+
+        delegate?.hardwareDecoder(self, didChangeHWActiveState: false)
+        delegate?.hardwareDecoder(self, didInvalidateSessionWithFatalError: status)
     }
 
     public func configure(with formatDescription: CMVideoFormatDescription) {
-        if let current = self.formatDescription, CMFormatDescriptionEqual(current, otherFormatDescription: formatDescription), decompressionSession != nil {
+        generationLock.lock()
+        let shouldSkip = self.formatDescription != nil &&
+                         CMFormatDescriptionEqual(self.formatDescription!, otherFormatDescription: formatDescription) &&
+                         decompressionSession != nil
+        if shouldSkip {
+            generationLock.unlock()
             return
         }
         self.formatDescription = formatDescription
+        generationLock.unlock()
         recreateSession()
     }
 
-    private func recreateSession() {
-        invalidateSession()
-        guard let format = formatDescription else { return }
+    public func recreateSession() {
+        generationLock.lock()
+        invalidateSessionLocked()
+        guard let format = formatDescription else {
+            generationLock.unlock()
+            return
+        }
+        generationLock.unlock()
 
         let decoderSpecification: [CFString: Any] = [
             kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: kCFBooleanTrue as Any
@@ -172,28 +226,46 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
             isHWActive = true
         }
 
+        generationLock.lock()
         self.decompressionSession = activeSession
+        generationLock.unlock()
+
         delegate?.hardwareDecoder(self, didChangeHWActiveState: isHWActive)
         delegate?.hardwareDecoder(self, didChangeVTDeinterlaceAccepted: isVTDeinterlaceAccepted)
     }
 
-    private func invalidateSession() {
+    public func ensureSession() -> Bool {
+        if hasActiveSession { return true }
+        guard isConfigured else { return false }
+        recreateSession()
+        return hasActiveSession
+    }
+
+    private func invalidateSessionLocked() {
         if let session = decompressionSession {
             VTDecompressionSessionInvalidate(session)
             decompressionSession = nil
         }
     }
 
+    private func invalidateSession() {
+        generationLock.lock()
+        invalidateSessionLocked()
+        generationLock.unlock()
+    }
+
     public func decode(sampleBuffer: CMSampleBuffer, structure: H264PictureStructure) {
+        generationLock.lock()
         guard let session = decompressionSession else {
-            let msg = "[1080i50-DEC] ⚠️ No active decompression session"
-            print(msg)
-            TelemetryServer.shared.log(msg)
+            generationLock.unlock()
+            // In recovery state waiting for IDR session re-creation — drop silently without log flood
             return
         }
+        let currentGen = _decodeGeneration
+        generationLock.unlock()
 
         var flagsOut: VTDecodeInfoFlags = []
-        let context = FrameContext(structure: structure, pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer), generation: decodeGeneration)
+        let context = FrameContext(structure: structure, pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer), generation: currentGen)
         let contextPtr = Unmanaged.passRetained(context).toOpaque()
 
         let status = VTDecompressionSessionDecodeFrame(
@@ -206,21 +278,32 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 
         if status != noErr {
             _ = Unmanaged<FrameContext>.fromOpaque(contextPtr).takeRetainedValue()
-            let msg = "[1080i50-DECODE-FAIL] VTDecompressionSessionDecodeFrame error: \(status)"
-            print(msg)
-            TelemetryServer.shared.log(msg)
-            delegate?.hardwareDecoder(self, didEncounterDecodeError: status)
+            if isFatalSessionError(status) {
+                handleFatalSessionError(status)
+            } else {
+                let msg = "[1080i50-DECODE-FAIL] VTDecompressionSessionDecodeFrame error: \(status)"
+                print(msg)
+                TelemetryServer.shared.log(msg)
+                delegate?.hardwareDecoder(self, didEncounterDecodeError: status)
+            }
         }
     }
 
     fileprivate func handleDecodedFrame(status: OSStatus, imageBuffer: CVImageBuffer?, context: FrameContext) {
-        guard context.generation == decodeGeneration else { return }
+        guard context.generation == decodeGeneration else {
+            // Frame from a prior generation (e.g. from an invalidated dead session) is discarded
+            return
+        }
 
         guard status == noErr, let buffer = imageBuffer else {
-            let msg = "[1080i50-DECODE-FAIL] handleDecodedFrame async error: \(status)"
-            print(msg)
-            TelemetryServer.shared.log(msg)
-            delegate?.hardwareDecoder(self, didEncounterDecodeError: status)
+            if isFatalSessionError(status) {
+                handleFatalSessionError(status)
+            } else {
+                let msg = "[1080i50-DECODE-FAIL] handleDecodedFrame async error: \(status)"
+                print(msg)
+                TelemetryServer.shared.log(msg)
+                delegate?.hardwareDecoder(self, didEncounterDecodeError: status)
+            }
             return
         }
 
