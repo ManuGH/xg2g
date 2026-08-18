@@ -125,6 +125,93 @@ struct TSPipelineUnitTests {
         #expect(sink.discoveredVideoPID == 0x0200)
     }
 
+    @Test func tsParserEmitsPlaintextPESEvenIfScramblingFlagIsSet() throws {
+        let parser = TSPacketParser()
+        let sink = MockTSSink()
+        parser.delegate = sink
+
+        var patPacket = Data(repeating: 0xFF, count: 188)
+        patPacket[0] = 0x47
+        patPacket[1] = 0x40
+        patPacket[2] = 0x00
+        patPacket[3] = 0x10
+        patPacket[4] = 0x00
+        patPacket[5] = 0x00
+        patPacket[6] = 0xB0
+        patPacket[7] = 0x0D
+        patPacket[8] = 0x00
+        patPacket[9] = 0x01
+        patPacket[10] = 0xC1
+        patPacket[11] = 0x00
+        patPacket[12] = 0x00
+        patPacket[13] = 0x00
+        patPacket[14] = 0x01
+        patPacket[15] = 0xE1
+        patPacket[16] = 0x00
+        patPacket[17] = 0x00
+        patPacket[18] = 0x00
+        patPacket[19] = 0x00
+        patPacket[20] = 0x00
+
+        var pmtPacket = Data(repeating: 0xFF, count: 188)
+        pmtPacket[0] = 0x47
+        pmtPacket[1] = 0x41
+        pmtPacket[2] = 0x00
+        pmtPacket[3] = 0x10
+        pmtPacket[4] = 0x00
+        pmtPacket[5] = 0x02
+        pmtPacket[6] = 0xB0
+        pmtPacket[7] = 0x12
+        pmtPacket[8] = 0x00
+        pmtPacket[9] = 0x01
+        pmtPacket[10] = 0xC1
+        pmtPacket[11] = 0x00
+        pmtPacket[12] = 0x00
+        pmtPacket[13] = 0xE2
+        pmtPacket[14] = 0x00
+        pmtPacket[15] = 0xF0
+        pmtPacket[16] = 0x00
+        pmtPacket[17] = 0x1B
+        pmtPacket[18] = 0xE2
+        pmtPacket[19] = 0x00
+        pmtPacket[20] = 0xF0
+        pmtPacket[21] = 0x00
+
+        parser.feed(data: patPacket)
+        parser.feed(data: pmtPacket)
+        #expect(parser.videoPID == 0x0200)
+
+        // Packet 1: Scrambled bit set (byte3 = 0x90 -> scramblingControl = 2), but payload starts with valid PES 0x000001
+        var videoPacketDescrambled = Data(repeating: 0xAA, count: 188)
+        videoPacketDescrambled[0] = 0x47
+        videoPacketDescrambled[1] = 0x42 // payloadUnitStart = true, PID = 0x0200
+        videoPacketDescrambled[2] = 0x00
+        videoPacketDescrambled[3] = 0x90 // scramblingControl = 0b10 (2), CC = 0
+        videoPacketDescrambled[4] = 0x00 // PES start code
+        videoPacketDescrambled[5] = 0x00
+        videoPacketDescrambled[6] = 0x01
+        videoPacketDescrambled[7] = 0xE0
+
+        parser.feed(data: videoPacketDescrambled)
+        #expect(sink.emittedPayloads.count == 1)
+
+        // Packet 2: Truly scrambled ciphertext (byte3 = 0x91, payload random bytes)
+        var videoPacketEncrypted = Data(repeating: 0x7E, count: 188)
+        videoPacketEncrypted[0] = 0x47
+        videoPacketEncrypted[1] = 0x42 // payloadUnitStart = true, PID = 0x0200
+        videoPacketEncrypted[2] = 0x00
+        videoPacketEncrypted[3] = 0x91 // scramblingControl = 0b10, CC = 1
+        videoPacketEncrypted[4] = 0xDE // NOT 0x00 0x00 0x01
+        videoPacketEncrypted[5] = 0xAD
+        videoPacketEncrypted[6] = 0xBE
+        videoPacketEncrypted[7] = 0xEF
+
+        parser.feed(data: videoPacketEncrypted)
+        // Count should still be 1 because encrypted packet was rejected
+        #expect(sink.emittedPayloads.count == 1)
+        #expect(parser.scrambledPackets == 1)
+    }
+
     // MARK: - 2. PESPacketAssembler Tests
 
     @Test func pesAssemblerExtracts33BitPTS() throws {

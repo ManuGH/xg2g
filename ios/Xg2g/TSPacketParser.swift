@@ -105,6 +105,7 @@ public final class TSPacketParser: @unchecked Sendable {
     public private(set) var audioTracks: [AudioTrackInfo] = []
     public private(set) var audioPIDs = Set<UInt16>()
     private var continuityCounters: [UInt16: UInt8] = [:]
+    private var activelyDescrambledPIDs = Set<UInt16>()
 
     /// Partially received PMT sections, keyed by the PID carrying them.
     private var pmtSectionBuffers: [UInt16: [UInt8]] = [:]
@@ -130,6 +131,7 @@ public final class TSPacketParser: @unchecked Sendable {
         audioTracks.removeAll()
         audioPIDs.removeAll()
         continuityCounters.removeAll()
+        activelyDescrambledPIDs.removeAll()
         pmtSectionBuffers.removeAll()
         scrambledPackets = 0
     }
@@ -205,21 +207,6 @@ public final class TSPacketParser: @unchecked Sendable {
         // normal part of tune-in into a burst of parse failures — 262 of them in
         // one measured session, against 3 continuity errors, which is what said
         // the data itself was arriving intact.
-        let scramblingControl = (byte3 & 0xC0) >> 6
-        guard scramblingControl == 0 else {
-            // Skipped whatever the PID — a scrambled payload is not elementary
-            // stream — but only reported for the two PIDs being played, so the
-            // count means "your programme is not coming through" and nothing
-            // else. Before the PMT names them there is nothing to compare
-            // against; PSI itself is never scrambled and arrives in tens of
-            // milliseconds, so that window costs at most a handful of packets.
-            if pid == videoPID || audioPIDs.contains(pid) {
-                scrambledPackets += 1
-                delegate?.tsParser(self, didEncounterScrambledPacketOnPID: pid)
-            }
-            return
-        }
-
         let adaptationControl = (byte3 & 0x30) >> 4
         let continuityCounter = byte3 & 0x0F
 
@@ -248,6 +235,42 @@ public final class TSPacketParser: @unchecked Sendable {
         }
 
         let payloadLength = Self.packetSize - payloadOffset
+
+        // Scrambling check (VLC / FFmpeg style):
+        // Broadcom hardware descramblers often decrypt payloads in memory before
+        // the driver resets transport_scrambling_control to 0. If scramblingControl != 0,
+        // we check whether the payload actually starts with valid PES prefix 0x000001 (or is
+        // an active continuation of a descrambled unit). If so, we treat it as descrambled.
+        // If not, it is truly ciphertext and safely discarded.
+        let scramblingControl = (byte3 & 0xC0) >> 6
+        if scramblingControl != 0 {
+            if payloadUnitStart {
+                let isPlaintextPES = payloadLength >= 3 && bytes[payloadOffset] == 0x00 && bytes[payloadOffset + 1] == 0x00 && bytes[payloadOffset + 2] == 0x01
+                let isPlaintextPSI = (pid == 0 || pmtPIDs.contains(pid)) && payloadLength >= 1 && bytes[payloadOffset] == 0x00
+                if isPlaintextPES || isPlaintextPSI {
+                    activelyDescrambledPIDs.insert(pid)
+                } else {
+                    activelyDescrambledPIDs.remove(pid)
+                    if pid == videoPID || audioPIDs.contains(pid) {
+                        scrambledPackets += 1
+                        delegate?.tsParser(self, didEncounterScrambledPacketOnPID: pid)
+                    }
+                    return
+                }
+            } else {
+                guard activelyDescrambledPIDs.contains(pid) else {
+                    if pid == videoPID || audioPIDs.contains(pid) {
+                        scrambledPackets += 1
+                        delegate?.tsParser(self, didEncounterScrambledPacketOnPID: pid)
+                    }
+                    return
+                }
+            }
+        } else {
+            if payloadUnitStart {
+                activelyDescrambledPIDs.insert(pid)
+            }
+        }
         let payload = Data(bytes: bytes.advanced(by: payloadOffset), count: payloadLength)
 
         if pid == 0 {
