@@ -79,11 +79,23 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// playback keeps for the rest of the stream: the renderer is fed at the rate
     /// the broadcast delivers, so this depth never grows back once spent.
     ///
-    /// 500 ms is chosen against the measured source, whose bitrate swings between
-    /// 7.6 and 12.5 Mbps. It costs about 300 ms more tuning latency than the 192 ms
-    /// it replaces, against a measured TTFP baseline of 3.46 s — still far ahead of
-    /// that, and now with a cushion that survives a stall instead of breaking up.
-    private static let audioPreRollSeconds: Double = 0.5
+    /// 1.2 s is chosen against how the receiver actually delivers, measured
+    /// directly off the box with no app involved: it writes in bursts of over
+    /// 30 Mbps and is idle 92 % of the time, leaving gaps of up to 872 ms on an
+    /// otherwise completely unused box, 939 ms across every run taken. Five
+    /// measurements at zero, two and three concurrent clients put the worst gap
+    /// at 603–939 ms with no relation to the load, so this is what the hardware
+    /// does rather than a symptom of something else using it.
+    ///
+    /// Every gap longer than this cushion is an audible dropout, and 500 ms sat
+    /// below most of them: one device session logged 228 underruns while video,
+    /// sitting behind a queue of up to 180 fields, showed nothing at all. That
+    /// asymmetry is the whole reason picture and sound behaved differently.
+    ///
+    /// The cost is about 700 ms more before sound and motion begin. It is not
+    /// 700 ms of black screen — the first field carries `DisplayImmediately` and
+    /// is on screen at once — it is 700 ms longer holding that first picture.
+    private static let audioPreRollSeconds: Double = 1.2
 
     public weak var renderView: MetalVideoView?
 
