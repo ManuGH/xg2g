@@ -54,3 +54,22 @@ func TestManagerShutdownContext_DrainsBuildWorkers(t *testing.T) {
 	defer cancel()
 	require.NoError(t, mgr.ShutdownContext(shutdownCtx))
 }
+
+func TestManagerStartProberPool_RebindsCanceledContext(t *testing.T) {
+	mgr, err := NewManager(&mockRunner{}, &mockProber{}, nil)
+	require.NoError(t, err)
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	mgr.StartProberPool(ctx1)
+	require.True(t, mgr.started)
+
+	// Cancel first context (e.g. server restart/root context replaced)
+	cancel1()
+	require.Error(t, mgr.ctx.Err())
+
+	// Re-bind with fresh context
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	mgr.StartProberPool(ctx2)
+	require.NoError(t, mgr.ctx.Err())
+}

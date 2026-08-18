@@ -125,6 +125,13 @@ func (m *Manager) startBuildWithSpec(ctx context.Context, jobID, metaID, finalPa
 	// Run monitor in background
 	// Use manager context so we can cancel it on Shutdown
 	runCtx := m.ctx
+	if runCtx == nil || runCtx.Err() != nil {
+		if ctx != nil && ctx.Err() == nil {
+			runCtx = ctx
+		} else {
+			runCtx = context.Background()
+		}
+	}
 	m.buildWg.Add(1)
 	go func() {
 		defer m.buildWg.Done()

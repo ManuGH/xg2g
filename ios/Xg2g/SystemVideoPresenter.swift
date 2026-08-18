@@ -122,13 +122,10 @@ public final class SystemVideoPresenter: NSObject {
     /// fields about to be presented — which is what a picture freezing once a
     /// second looks like from the inside. 1631 dropped against 113 delivered in
     /// one measured window.
-    /// Measured, not guessed: at 120 the queue sat at 87–107 and clipped the cap
-    /// on every source burst, shedding ~5 fields/s. The lead it has to hold is
-    /// about 2 s — the audio cushion drifts up to ~1 s because the box delivers
-    /// faster than real time after each pause, and the mux adds its own second
-    /// of video-ahead-of-audio on top. 3.6 s leaves real headroom over that
-    /// instead of 20 %.
-    private static let maxPendingSamples = 180
+    /// Measured, not guessed: with up to 3.2s video lead ahead of audio on broadcast
+    /// streams plus network stall bursts from the receiver, 300 samples (~6.0s at 50 fields/s)
+    /// provides solid headroom without dropping valid upcoming fields.
+    private static let maxPendingSamples = 300
 
     public override init() {
         super.init()
