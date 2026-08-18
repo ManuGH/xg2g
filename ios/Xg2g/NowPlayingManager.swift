@@ -25,82 +25,157 @@ final class NowPlayingManager {
     var onPause: (() -> Void)?
     var onSeekRelative: ((Double) -> Void)?
 
+    /// Separate from `onPlay`, because the toggle is not a play.
+    var onTogglePlayPause: (() -> Void)?
+
     private var isConfigured = false
     private var currentArtworkTask: Task<Void, Never>?
 
     private init() {}
 
-    func setupRemoteCommands() {
+    /// Everything the command centre can invoke, handed over as one set.
+    ///
+    /// The command centre is process-wide and these handlers are a singleton's,
+    /// so two screens wiring themselves up piecemeal is a cross-connection
+    /// waiting to happen: the native player set play, pause and the two zap
+    /// commands, left stop and seek pointing at whatever the HLS player had
+    /// installed, and nothing was cleared when either went away. Taking the set
+    /// over as a whole makes that impossible to express — an omitted handler
+    /// disables its command rather than inheriting the last screen's.
+    struct Handlers {
+        var play: (() -> Void)?
+        var pause: (() -> Void)?
+        var togglePlayPause: (() -> Void)?
+        var stop: (() -> Void)?
+        var nextChannel: (() -> Void)?
+        var previousChannel: (() -> Void)?
+        var seekRelative: ((Double) -> Void)?
+
+        init(
+            play: (() -> Void)? = nil,
+            pause: (() -> Void)? = nil,
+            togglePlayPause: (() -> Void)? = nil,
+            stop: (() -> Void)? = nil,
+            nextChannel: (() -> Void)? = nil,
+            previousChannel: (() -> Void)? = nil,
+            seekRelative: ((Double) -> Void)? = nil
+        ) {
+            self.play = play
+            self.pause = pause
+            self.togglePlayPause = togglePlayPause
+            self.stop = stop
+            self.nextChannel = nextChannel
+            self.previousChannel = previousChannel
+            self.seekRelative = seekRelative
+        }
+    }
+
+    /// Claims the remote controls for one screen, replacing whatever the last
+    /// one left behind.
+    func takeOver(_ handlers: Handlers) {
+        registerCommands()
+
+        onPlay = handlers.play
+        onPause = handlers.pause
+        onTogglePlayPause = handlers.togglePlayPause
+        onStop = handlers.stop
+        onNextChannel = handlers.nextChannel
+        onPreviousChannel = handlers.previousChannel
+        onSeekRelative = handlers.seekRelative
+
+        // A command with no handler is switched off rather than left on screen
+        // doing nothing. Live has nothing to skip to, so the skip commands stay
+        // dark until something can answer them.
+        let centre = MPRemoteCommandCenter.shared()
+        centre.playCommand.isEnabled = handlers.play != nil
+        centre.pauseCommand.isEnabled = handlers.pause != nil
+        centre.togglePlayPauseCommand.isEnabled = handlers.togglePlayPause != nil || handlers.play != nil
+        centre.stopCommand.isEnabled = handlers.stop != nil
+        centre.nextTrackCommand.isEnabled = handlers.nextChannel != nil
+        centre.previousTrackCommand.isEnabled = handlers.previousChannel != nil
+        centre.skipForwardCommand.isEnabled = handlers.seekRelative != nil
+        centre.skipBackwardCommand.isEnabled = handlers.seekRelative != nil
+    }
+
+    /// Gives the controls up. Called when a screen goes away so its handlers do
+    /// not answer for the next one.
+    func resignRemoteControls() {
+        takeOver(Handlers())
+    }
+
+    private func registerCommands() {
         guard !isConfigured else { return }
         isConfigured = true
 
         let commandCenter = MPRemoteCommandCenter.shared()
 
-        commandCenter.playCommand.isEnabled = true
+        // Each target reports failure when nothing is wired, rather than
+        // reporting success and doing nothing: a control that silently swallows
+        // a press is indistinguishable from a broken player.
         commandCenter.playCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.onPlay?()
-            }
-            return .success
+            self?.invoke(\.onPlay) ?? .commandFailed
         }
-
-        commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.onPause?()
-            }
-            return .success
+            self?.invoke(\.onPause) ?? .commandFailed
         }
-
-        commandCenter.togglePlayPauseCommand.isEnabled = true
+        // Toggle is what a lock screen button and a headphone pinch actually
+        // send. It used to call `onPlay` unconditionally, which on the native
+        // player re-tuned the channel — the one thing a pause button must not do.
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.onPlay?()
-            }
-            return .success
+            guard let self = self else { return .commandFailed }
+            if self.onTogglePlayPause != nil { return self.invoke(\.onTogglePlayPause) }
+            return self.invoke(\.onPlay)
         }
-
-        commandCenter.stopCommand.isEnabled = true
         commandCenter.stopCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.onStop?()
-            }
-            return .success
+            self?.invoke(\.onStop) ?? .commandFailed
         }
-
-        commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.onNextChannel?()
-            }
-            return .success
+            self?.invoke(\.onNextChannel) ?? .commandFailed
         }
-
-        commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.onPreviousChannel?()
-            }
-            return .success
+            self?.invoke(\.onPreviousChannel) ?? .commandFailed
         }
 
-        commandCenter.skipForwardCommand.isEnabled = true
         commandCenter.skipForwardCommand.preferredIntervals = [30]
         commandCenter.skipForwardCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.onSeekRelative?(30)
-            }
-            return .success
+            self?.invokeSeek(30) ?? .commandFailed
         }
-
-        commandCenter.skipBackwardCommand.isEnabled = true
         commandCenter.skipBackwardCommand.preferredIntervals = [10]
         commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.onSeekRelative?(-10)
-            }
-            return .success
+            self?.invokeSeek(-10) ?? .commandFailed
         }
+    }
+
+    private func invoke(_ key: KeyPath<NowPlayingManager, (() -> Void)?>) -> MPRemoteCommandHandlerStatus {
+        guard let handler = self[keyPath: key] else { return .commandFailed }
+        DispatchQueue.main.async { handler() }
+        return .success
+    }
+
+    private func invokeSeek(_ seconds: Double) -> MPRemoteCommandHandlerStatus {
+        guard let handler = onSeekRelative else { return .commandFailed }
+        DispatchQueue.main.async { handler(seconds) }
+        return .success
+    }
+
+    /// Publishes the minimum a lock screen needs for a source with no `Channel`
+    /// behind it.
+    ///
+    /// Without this there is no now-playing entry at all, and `updatePlaybackState`
+    /// returns at its first line because there is nothing to update — which is why
+    /// the native player's controls did nothing while locked: not a broken
+    /// command, an empty lock screen.
+    func updateLive(title: String, subtitle: String? = nil) {
+        currentArtworkTask?.cancel()
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: title,
+            MPMediaItemPropertyArtist: subtitle ?? "xg2g Live TV",
+            MPMediaItemPropertyAlbumTitle: "xg2g Live TV",
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: 1.0,
+        ]
+        info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: Self.createFallbackArtwork(for: title))
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     func update(channel: Channel, nowEntry: NowNext.Entry?) {
@@ -162,6 +237,7 @@ final class NowPlayingManager {
     func clear() {
         currentArtworkTask?.cancel()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        resignRemoteControls()
     }
 
     private nonisolated static func makeArtwork(from image: UIImage) -> MPMediaItemArtwork {

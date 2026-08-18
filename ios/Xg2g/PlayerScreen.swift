@@ -410,29 +410,31 @@ struct PlayerScreen: View {
         UIApplication.shared.isIdleTimerDisabled = true
 
         AudioSessionManager.shared.configureForPlayback()
-        NowPlayingManager.shared.setupRemoteCommands()
-        NowPlayingManager.shared.onNextChannel = {
-            zapNext()
-        }
-        NowPlayingManager.shared.onPreviousChannel = {
-            zapPrevious()
-        }
-        NowPlayingManager.shared.onStop = {
-            closePlayer()
-        }
-        NowPlayingManager.shared.onPlay = {
-            if player?.timeControlStatus != .playing && player?.error == nil {
-                player?.play()
-                isPlaying = true
-            }
-        }
-        NowPlayingManager.shared.onPause = {
-            player?.pause()
-            isPlaying = false
-        }
-        NowPlayingManager.shared.onSeekRelative = { secs in
-            seekRelative(seconds: secs)
-        }
+        NowPlayingManager.shared.takeOver(.init(
+            play: {
+                if player?.timeControlStatus != .playing && player?.error == nil {
+                    player?.play()
+                    isPlaying = true
+                }
+            },
+            pause: {
+                player?.pause()
+                isPlaying = false
+            },
+            togglePlayPause: {
+                if player?.timeControlStatus == .playing {
+                    player?.pause()
+                    isPlaying = false
+                } else if player?.error == nil {
+                    player?.play()
+                    isPlaying = true
+                }
+            },
+            stop: { closePlayer() },
+            nextChannel: { zapNext() },
+            previousChannel: { zapPrevious() },
+            seekRelative: { secs in seekRelative(seconds: secs) }
+        ))
         NowPlayingManager.shared.update(channel: channel, nowEntry: nowNext?.now)
 
         LiveActivityManager.shared.startActivity(

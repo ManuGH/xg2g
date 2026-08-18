@@ -557,11 +557,19 @@ public struct TestTSPlayerScreen: View {
 
     private func setupPlayback() {
         AudioSessionManager.shared.configureForPlayback()
-        NowPlayingManager.shared.setupRemoteCommands()
-        NowPlayingManager.shared.onNextChannel = { zapRelative(delta: 1) }
-        NowPlayingManager.shared.onPreviousChannel = { zapRelative(delta: -1) }
-        NowPlayingManager.shared.onPlay = { startCurrentPreset() }
-        NowPlayingManager.shared.onPause = { togglePlayPause() }
+        // Taken over as a whole: play and pause each do their own thing rather
+        // than both landing on the toggle, and stop is claimed here instead of
+        // being left pointing at the HLS player. No seek handler, so the skip
+        // commands stay switched off — live has nothing to skip to until the
+        // DVR path exists.
+        NowPlayingManager.shared.takeOver(.init(
+            play: { if !isPlaying { startCurrentPreset() } },
+            pause: { if isPlaying { togglePlayPause() } },
+            togglePlayPause: { togglePlayPause() },
+            stop: { teardownPlayback() },
+            nextChannel: { zapRelative(delta: 1) },
+            previousChannel: { zapRelative(delta: -1) }
+        ))
         startCurrentPreset()
         scheduleControlsAutoHide()
     }
@@ -582,7 +590,10 @@ public struct TestTSPlayerScreen: View {
             pipeline.startStreaming(url: url, requestedAt: requestedAt)
             isStreaming = true
             isPlaying = true
-            NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
+            // Publishes the entry itself, not just its rate: `updatePlaybackState`
+            // returns at its first line when nothing has been published, which is
+            // why this player's lock screen was empty and its controls inert.
+            NowPlayingManager.shared.updateLive(title: currentChannelName)
         }
     }
 
