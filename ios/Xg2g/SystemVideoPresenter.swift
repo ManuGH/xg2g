@@ -213,8 +213,11 @@ public final class SystemVideoPresenter: NSObject {
         pictureInPictureController?.isPictureInPictureActive ?? false
     }
 
-    /// Set from `willStart` and cleared at `didStop`.
-    private var isPictureInPictureStarting = false
+    /// When a start was announced, so the window it opens can expire.
+    private var pictureInPictureStartedAt: CFTimeInterval?
+
+    /// How long `willStart` may vouch for a window that has not become active.
+    private static let pictureInPictureStartWindow: Double = 3.0
 
     /// Whether PiP is running *or on its way there*.
     ///
@@ -226,7 +229,14 @@ public final class SystemVideoPresenter: NSObject {
     /// way: a background guard written against the active flag alone stopped PiP
     /// from starting.
     public var isPictureInPictureEngaged: Bool {
-        isPictureInPictureStarting || isPictureInPictureActive
+        if isPictureInPictureActive { return true }
+        guard let announced = pictureInPictureStartedAt else { return false }
+        // Only the brief window while a start is in flight. A hard stop — a
+        // device lock ending the session — does not reliably come back through
+        // `didStop`, and a flag left standing would keep speaking for a window
+        // that is already gone: the resume recovery would step aside for it and
+        // the picture would stay frozen.
+        return CACurrentMediaTime() - announced < Self.pictureInPictureStartWindow
     }
 
     public func startPictureInPicture() {
@@ -500,12 +510,12 @@ extension SystemVideoPresenter: @preconcurrency AVPictureInPictureControllerDele
     }
 
     public func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
-        isPictureInPictureStarting = true
+        pictureInPictureStartedAt = CACurrentMediaTime()
         logger.notice("[SystemVideo] PiP will start")
     }
 
     public func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
-        isPictureInPictureStarting = false
+        pictureInPictureStartedAt = nil
         logger.notice("[SystemVideo] PiP stopped")
     }
 
@@ -516,7 +526,7 @@ extension SystemVideoPresenter: @preconcurrency AVPictureInPictureControllerDele
         // Cleared here as well as at didStop: a start that failed never reaches
         // didStop, and leaving the flag set would keep the background guard open
         // for a window that is not coming.
-        isPictureInPictureStarting = false
+        pictureInPictureStartedAt = nil
         let msg = "[SystemVideo] ❌ PiP failed to start: \(error.localizedDescription)"
         print(msg)
         logger.error("\(msg, privacy: .public)")
