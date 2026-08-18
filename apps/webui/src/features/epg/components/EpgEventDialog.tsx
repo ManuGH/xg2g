@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent, EpgChannel } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
+import { formatClockLabelFromSeconds } from '../../../utils/onAir';
 import { Button } from '../../../components/ui';
 import styles from './EpgEventDialog.module.css';
 
@@ -20,12 +21,6 @@ function formatDateTime(ts: number): string {
   if (!ts) return '';
   const d = new Date(ts * 1000);
   return d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function formatTime(ts: number): string {
-  if (!ts) return '';
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 export function EpgEventDialog({ event, onClose, onRecord, isRecorded, onPlay, channel, currentTime }: EpgEventDialogProps) {
@@ -63,7 +58,7 @@ export function EpgEventDialog({ event, onClose, onRecord, isRecorded, onPlay, c
             {event.title || t('epg.unknownTitle', { defaultValue: 'Unknown show' })}
           </h2>
           <div className={styles.time}>
-            {channel?.name ? `${channel.name} · ` : ''}{formatDateTime(event.start)} – {formatTime(event.end)}
+            {channel?.name ? `${channel.name} · ` : ''}{formatDateTime(event.start)} – {formatClockLabelFromSeconds(event.end)}
           </div>
         </div>
 

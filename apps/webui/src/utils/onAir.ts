@@ -60,6 +60,21 @@ export function formatClockLabel(ms: number): string {
 }
 
 /**
+ * The same label for EPG data, which carries Unix *seconds*.
+ *
+ * Returns an empty string for a missing or zero timestamp: an event whose
+ * start or end the receiver never reported should render no time at all,
+ * not "01:00" from the epoch. The guard names those two cases rather than
+ * testing falsiness, so the contract the tests assert is the contract the
+ * code states - a caller reading this should not have to work out which
+ * values of a `number` happen to be falsy.
+ */
+export function formatClockLabelFromSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds === 0) return '';
+  return formatClockLabel(seconds * 1000);
+}
+
+/**
  * Whole minutes, rounded up while any part of the minute remains. "0 min left"
  * on a programme that is still running would be a lie the operator can see on
  * screen; the last 59 seconds read as "1 min".

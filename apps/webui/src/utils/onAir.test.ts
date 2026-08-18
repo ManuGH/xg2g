@@ -3,7 +3,7 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import { describe, expect, it } from 'vitest';
-import { computeOnAirProgress, formatClockLabel, toWholeMinutes } from './onAir';
+import { computeOnAirProgress, formatClockLabel, formatClockLabelFromSeconds, toWholeMinutes } from './onAir';
 
 const START_SEC = 1_770_000_000;
 const START_MS = START_SEC * 1000;
@@ -63,5 +63,17 @@ describe('toWholeMinutes', () => {
 describe('formatClockLabel', () => {
   it('renders hours and minutes', () => {
     expect(formatClockLabel(START_MS)).toMatch(/\d{1,2}[:.]\d{2}/);
+  });
+});
+
+describe('formatClockLabelFromSeconds', () => {
+  it('agrees with the ms form for the same instant', () => {
+    expect(formatClockLabelFromSeconds(START_SEC)).toBe(formatClockLabel(START_MS));
+  });
+
+  // EPG events with a start or end the receiver never reported must render
+  // nothing rather than an epoch time.
+  it.each([0, Number.NaN, undefined])('renders nothing for %s', (ts) => {
+    expect(formatClockLabelFromSeconds(ts as unknown as number)).toBe('');
   });
 });

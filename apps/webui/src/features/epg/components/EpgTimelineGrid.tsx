@@ -1,6 +1,7 @@
 import { useRef, type CSSProperties } from 'react';
 import type { EpgChannel, EpgEvent } from '../types';
 import { EpgTimelineRow } from './EpgTimelineRow';
+import { formatClockLabel } from '../../../utils/onAir';
 import styles from '../EPG.module.css';
 
 export interface EpgTimelineGridProps {
@@ -38,8 +39,9 @@ export function EpgTimelineGrid({
   const ticks = [];
   for (let i = 0; i <= timeRangeHours * 2; i++) {
     const tickTimeMs = startTimestampMs + (i * 30 * 60 * 1000);
-    const d = new Date(tickTimeMs);
-    const label = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // Ticks are computed axis positions, not reported data, so this takes the
+    // unguarded ms form: a blank label would leave a hole in the axis.
+    const label = formatClockLabel(tickTimeMs);
     const leftPx = (i * 0.5) * PIXELS_PER_HOUR;
     ticks.push({ label, leftPx });
   }

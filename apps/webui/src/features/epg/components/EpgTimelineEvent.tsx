@@ -3,14 +3,8 @@ import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EpgEvent } from '../types';
 import { normalizeEpgText } from '../../../utils/text';
+import { formatClockLabelFromSeconds } from '../../../utils/onAir';
 import styles from '../EPG.module.css';
-
-// Utility: Format Unix timestamp (seconds) to HH:MM
-function formatTime(ts: number): string {
-  if (!ts) return '';
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
 
 export interface EpgTimelineEventProps {
   event: EpgEvent;
@@ -65,7 +59,7 @@ export function EpgTimelineEvent({
         </div>
         {showTime && (
           <div className={styles.timelineEventTime}>
-            {formatTime(event.start)} – {formatTime(event.end)}
+            {formatClockLabelFromSeconds(event.start)} – {formatClockLabelFromSeconds(event.end)}
           </div>
         )}
         {onRecord && !isPast && showRecord && (
