@@ -172,6 +172,12 @@
   --shadow-dashboard-shortcut: inset 0 1px 1px rgba(255, 255, 255, 0.06);
   --shadow-dashboard-health: inset 0 1px 1px rgba(255, 255, 255, 0.04);
   --shadow-card: 0 26px 64px rgba(0, 0, 0, 0.34);
+  /* A modal sits above everything, not on the page like a card. The nearest
+     existing tokens were wrong in different directions - --shadow-card by
+     name, --shadow-elevated by geometry - so the dialog level gets named
+     rather than approximated. Value unchanged from what the admin modals
+     already rendered. */
+  --shadow-dialog: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   --shadow-hover: 0 34px 76px rgba(0, 0, 0, 0.42);
   --shadow-shell: 0 34px 86px rgba(0, 0, 0, 0.38);
   --shadow-shell-safe: 0 24px 54px rgba(0, 0, 0, 0.44);

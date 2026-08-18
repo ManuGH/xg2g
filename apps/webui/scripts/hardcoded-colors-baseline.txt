@@ -7,7 +7,6 @@ src/components/admin/ConcurrencySettingsSection.tsx 8
 src/components/admin/DevicesManagementSection.tsx 7
 src/components/admin/FamilyManagementSection.tsx 11
 src/components/admin/ParentalControlSection.tsx 7
-src/components/admin/ProfileManagementSection.tsx 15
 src/components/auth/PasskeyAuthFlow.tsx 5
 src/components/notifications/NotificationCenter.tsx 14
 src/components/settings/SecuritySettingsSection.tsx 12

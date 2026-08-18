@@ -162,12 +162,12 @@ export const ProfileManagementSection: React.FC = () => {
 
       {/* Banners */}
       {error && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'var(--status-error-subtle)', border: '1px solid var(--status-error-border)', color: 'var(--status-error)', fontSize: '13px' }}>
           ⚠️ {error}
         </div>
       )}
       {success && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: 'var(--status-success)', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'var(--status-success-subtle)', border: '1px solid var(--status-success-border)', color: 'var(--status-success)', fontSize: '13px' }}>
           ✓ {success}
         </div>
       )}
@@ -184,7 +184,7 @@ export const ProfileManagementSection: React.FC = () => {
                 backgroundColor: 'var(--surface-panel-strong)',
                 borderRadius: '16px',
                 padding: '20px',
-                border: '1px solid rgba(255,255,255,0.08)',
+                border: '1px solid var(--border-elevated)',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
@@ -202,7 +202,7 @@ export const ProfileManagementSection: React.FC = () => {
                       borderRadius: '12px',
                       fontSize: '11px',
                       fontWeight: 600,
-                      backgroundColor: p.isChild ? 'rgba(234,179,8,0.15)' : 'rgba(56,189,248,0.15)',
+                      backgroundColor: p.isChild ? 'var(--status-warning-subtle)' : 'var(--accent-action-subtle)',
                       color: p.isChild ? 'var(--status-warning)' : 'var(--accent-action)',
                     }}
                   >
@@ -225,7 +225,7 @@ export const ProfileManagementSection: React.FC = () => {
               </div>
 
               {/* Actions */}
-              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--border-base)', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                 {deletingId === p.id ? (
                   <>
                     <button onClick={() => setDeletingId(null)} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer' }}>Abbrechen</button>
@@ -233,8 +233,8 @@ export const ProfileManagementSection: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <button onClick={() => openEditModal(p)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'transparent', color: 'var(--accent-action)', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Bearbeiten</button>
-                    <button onClick={() => setDeletingId(p.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--status-error)', fontSize: '12px', cursor: 'pointer' }}>Löschen</button>
+                    <button onClick={() => openEditModal(p)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border-elevated)', backgroundColor: 'transparent', color: 'var(--accent-action)', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Bearbeiten</button>
+                    <button onClick={() => setDeletingId(p.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--status-error-border)', backgroundColor: 'var(--status-error-subtle)', color: 'var(--status-error)', fontSize: '12px', cursor: 'pointer' }}>Löschen</button>
                   </>
                 )}
               </div>
@@ -242,15 +242,15 @@ export const ProfileManagementSection: React.FC = () => {
           ))}
         </div>
       ) : (
-        <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '32px', borderRadius: '16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '14px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+        <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '32px', borderRadius: '16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '14px', border: '1px dashed var(--border-elevated)' }}>
           Keine zusätzlichen Sehprofile vorhanden. Erstellen Sie ein Profil für Kinder oder Haushaltsmitglieder.
         </div>
       )}
 
       {/* Modal / Bottom Sheet Form */}
       {isModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.8)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-          <div style={{ backgroundColor: 'var(--surface-panel-strong)', borderRadius: '24px', width: '100%', maxWidth: '520px', border: '1px solid rgba(255,255,255,0.12)', padding: '28px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-overlay)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div style={{ backgroundColor: 'var(--surface-panel-strong)', borderRadius: '24px', width: '100%', maxWidth: '520px', border: '1px solid var(--border-strong)', padding: '28px', boxShadow: 'var(--shadow-dialog)' }}>
             <h3 style={{ margin: '0 0 20px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
               {editingProfile ? 'Sehprofil bearbeiten' : 'Neues Sehprofil anlegen'}
             </h3>
@@ -264,7 +264,7 @@ export const ProfileManagementSection: React.FC = () => {
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="z. B. Kinderzimmer, Wohnzimmer TV, Max"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
                   required
                 />
               </div>
@@ -283,8 +283,8 @@ export const ProfileManagementSection: React.FC = () => {
                         width: '44px',
                         height: '44px',
                         borderRadius: '10px',
-                        border: formAvatar === emoji ? '2px solid var(--accent-action)' : '1px solid rgba(255,255,255,0.1)',
-                        backgroundColor: formAvatar === emoji ? 'rgba(56,189,248,0.2)' : 'var(--bg-base)',
+                        border: formAvatar === emoji ? '2px solid var(--accent-action)' : '1px solid var(--border-elevated)',
+                        backgroundColor: formAvatar === emoji ? 'var(--accent-action-subtle)' : 'var(--bg-base)',
                         cursor: 'pointer',
                         transition: 'all 0.15s ease',
                       }}
@@ -338,7 +338,7 @@ export const ProfileManagementSection: React.FC = () => {
                 <select
                   value={formUnknownPolicy}
                   onChange={(e) => setFormUnknownPolicy(e.target.value as any)}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
                 >
                   <option value="request_approval">Freigabe-Anfrage an Admin senden (Empfohlen)</option>
                   <option value="block">Strikte Sperre (Fail-Closed)</option>
@@ -355,7 +355,7 @@ export const ProfileManagementSection: React.FC = () => {
                   value={formPin}
                   onChange={(e) => setFormPin(e.target.value.replace(/\D/g, ''))}
                   placeholder="4-stelliger PIN z. B. 1234"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none', letterSpacing: '4px' }}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none', letterSpacing: '4px' }}
                 />
               </div>
 
