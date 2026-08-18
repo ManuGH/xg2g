@@ -472,8 +472,8 @@ func TestSelectStreamURL_RetriesTransient8001Fallback(t *testing.T) {
 	if got != expectedFallback {
 		t.Fatalf("expected fallback url %q, got %q", expectedFallback, got)
 	}
-	if relayCalls != preflightMaxTries {
-		t.Fatalf("expected %d relay preflight calls, got %d", preflightMaxTries, relayCalls)
+	if relayCalls != preflightDirectWarmupTries {
+		t.Fatalf("expected %d relay preflight calls, got %d", preflightDirectWarmupTries, relayCalls)
 	}
 	if fallbackCalls != 2 {
 		t.Fatalf("expected 2 fallback preflight calls, got %d", fallbackCalls)
@@ -525,8 +525,8 @@ func TestSelectStreamURL_Extends8001WarmupAfterRepeatedShortReads(t *testing.T) 
 	if got != expectedFallback {
 		t.Fatalf("expected fallback url %q, got %q", expectedFallback, got)
 	}
-	if relayCalls != preflightMaxTries {
-		t.Fatalf("expected %d relay preflight calls, got %d", preflightMaxTries, relayCalls)
+	if relayCalls != preflightDirectWarmupTries {
+		t.Fatalf("expected %d relay preflight calls, got %d", preflightDirectWarmupTries, relayCalls)
 	}
 	if fallbackCalls != 6 {
 		t.Fatalf("expected 6 fallback preflight calls, got %d", fallbackCalls)
