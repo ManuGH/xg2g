@@ -951,8 +951,34 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 logger.notice("\(clockLog, privacy: .public)")
                 TelemetryServer.shared.log(clockLog)
 
+                // How long the viewer spent looking at a still picture. Nothing
+                // measured this: the figure that used to mean "motion" now means
+                // "the first field went up", and the distance between them is
+                // exactly what the cushion costs.
+                let motionMs = sessionState.mutate { state -> Double? in
+                    guard state.requestStartTime > 0 else { return nil }
+                    return (CACurrentMediaTime() - state.requestStartTime) * 1000.0
+                }
+
                 telemetry.mutate {
                     $0.isAudioMasterClockActive = true
+                    if let motionMs = motionMs, $0.ttfpMotionMs == 0 {
+                        $0.ttfpMotionMs = motionMs
+                    }
+                }
+
+                if let motionMs = motionMs {
+                    // The clock can be ready before the first field exists, in
+                    // which case the picture arrives already moving and there is
+                    // no still frame to account for.
+                    let visibleMs = telemetry.snapshot().ttfpVisibleMs
+                    let held = visibleMs > 0
+                        ? "picture held still for \(String(format: "%.1f", motionMs - visibleMs))ms waiting for the audio cushion"
+                        : "clock was ready before the first field, nothing held"
+                    let motionLog = "[1080i50-TTFP] ▶️ Motion starts at \(String(format: "%.1f", motionMs))ms | \(held)"
+                    print(motionLog)
+                    logger.notice("\(motionLog, privacy: .public)")
+                    TelemetryServer.shared.log(motionLog)
                 }
 
                 // Anchoring on the first picture means the clock *starts* at its

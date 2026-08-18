@@ -33,6 +33,19 @@ public struct TelemetryValues: Sendable {
     /// audio pre-roll is buffered. The gap between the two is the part of tuning
     /// latency that pipeline tuning cannot touch.
     public var ttfpVisibleMs: Double = 0.0
+
+    /// Request to the moment playback actually moves.
+    ///
+    /// The picture appears before this — the first field carries
+    /// `DisplayImmediately` and does not wait for the clock — so between the two
+    /// the viewer is looking at a still frame. That gap was invisible to every
+    /// figure here: `ttfpVisibleMs` used to mean "the clock reached the first
+    /// field", which was the same instant as motion, and once the attachment
+    /// moved the picture forward the two came apart with nothing measuring the
+    /// distance. It is the part of tuning a viewer is most likely to read as a
+    /// hang, because a frozen picture looks like a fault in a way a black screen
+    /// does not.
+    public var ttfpMotionMs: Double = 0.0
     public var earlyStabilityIssues: Int = 0    // Drops or glitches in first 2 seconds
     public var sampleBuffersEmittedCount: Int = 0
     public var sampleBuffersDecodedCount: Int = 0
@@ -154,6 +167,7 @@ public struct TelemetryValues: Sendable {
         return [
             "ttfp_total_ms": ttfpTotalMs,
             "ttfp_gpu_completed_ms": ttfpGpuCompletedMs,
+            "ttfp_motion_ms": ttfpMotionMs,
             "ttfp_rating": ttfpRating,
             "ttfp_network_ms": ttfpNetworkMs,
             "ttfp_psi_ms": ttfpPsiMs,
