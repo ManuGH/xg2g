@@ -205,6 +205,22 @@ public final class SystemVideoPresenter: NSObject {
         pictureInPictureController?.isPictureInPictureActive ?? false
     }
 
+    /// Set from `willStart` and cleared at `didStop`.
+    private var isPictureInPictureStarting = false
+
+    /// Whether PiP is running *or on its way there*.
+    ///
+    /// `isPictureInPictureActive` is the truth once the transition is over and
+    /// useless before it. PiP starts as the app leaves the foreground, so
+    /// anything that asks "is PiP up?" at that moment is told no — and if the
+    /// answer is used to decide whether to keep feeding the layer, the feed stops
+    /// exactly when AVKit needs it and PiP never comes up at all. Measured that
+    /// way: a background guard written against the active flag alone stopped PiP
+    /// from starting.
+    public var isPictureInPictureEngaged: Bool {
+        isPictureInPictureStarting || isPictureInPictureActive
+    }
+
     public func startPictureInPicture() {
         guard let controller = pictureInPictureController, controller.isPictureInPicturePossible else {
             logger.notice("[SystemVideo] Picture in Picture requested but not currently possible")
@@ -457,10 +473,12 @@ extension SystemVideoPresenter: @preconcurrency AVPictureInPictureControllerDele
     }
 
     public func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
+        isPictureInPictureStarting = true
         logger.notice("[SystemVideo] PiP will start")
     }
 
     public func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+        isPictureInPictureStarting = false
         logger.notice("[SystemVideo] PiP stopped")
     }
 

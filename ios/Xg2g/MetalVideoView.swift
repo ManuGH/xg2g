@@ -307,6 +307,14 @@ public final class MetalVideoView: UIView {
     private var presentationCPUMs: Double = 0
     private var lastPresentationReport: CFTimeInterval = 0
 
+    /// When the app last left the foreground, so PiP has room to start before
+    /// anything decides nobody is watching.
+    private var leftForegroundAt: CFTimeInterval = 0
+
+    /// Long enough for an automatic PiP start to announce itself, short enough
+    /// that a locked phone is not left rendering for a screen nobody sees.
+    private static let backgroundGraceSeconds: Double = 1.5
+
     /// What the system path actually hands AVFoundation, per reporting window.
     ///
     /// Every field-production counter lived in `publishRenderTelemetry`, which
@@ -718,8 +726,22 @@ public final class MetalVideoView: UIView {
         // guarded against it all along; the path that actually runs never did.
         //
         // PiP is the exception and has to keep going, because the picture people
-        // are watching is the one this produces.
-        if UIApplication.shared.applicationState == .background, !presenter.isPictureInPictureActive {
+        // are watching is the one this produces — and it is why the test is not
+        // simply "are we in the background". PiP starts *as* the app leaves the
+        // foreground, so for a moment it is neither running nor absent, and a
+        // guard that cuts the feed in that moment stops it from ever starting.
+        // Hence both the engaged flag, which is set before the transition, and a
+        // grace period for the case where the auto-start has not fired yet.
+        let backgrounded = UIApplication.shared.applicationState == .background
+        if !backgrounded {
+            leftForegroundAt = 0
+        } else if leftForegroundAt == 0 {
+            leftForegroundAt = CACurrentMediaTime()
+        }
+        let settled = leftForegroundAt > 0
+            && CACurrentMediaTime() - leftForegroundAt >= Self.backgroundGraceSeconds
+
+        if backgrounded, settled, !presenter.isPictureInPictureEngaged {
             // Dropped rather than held: by the time the app returns these fields
             // are behind the clock, and a queue kept across a lock screen is a
             // backlog to shed, not a head start.
