@@ -36,6 +36,14 @@ private final class PipelineSessionState: @unchecked Sendable {
     /// look slower than it is.
     var requestIssuedTime: CFTimeInterval = 0
 
+    /// What is known about this channel's audio, and when the picture started.
+    ///
+    /// Kept here rather than in a plain property because it is written from the
+    /// parse queue and read from the decoder callback.
+    var audioTracksKnown = false
+    var hasDecodableAudio = false
+    var firstVideoFieldTime: CFTimeInterval = 0
+
     var lastDataArrival: CFTimeInterval = 0
     var stallCount: Int = 0
     var longestStallMs: Double = 0
@@ -104,6 +112,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// 700 ms of black screen — the first field carries `DisplayImmediately` and
     /// is on screen at once — it is 700 ms longer holding that first picture.
     private static let audioPreRollSeconds: Double = 1.2
+
+    /// Picture buffered before the clock may start on video alone, for the same
+    /// reason the audio cushion exists: this source arrives in bursts, and a
+    /// clock started level with the newest frame runs dry at the first gap.
+    private static let videoOnlyCushionSeconds: Double = 1.0
+
+    /// How long a channel may go without naming any audio before it is taken to
+    /// have none. Long enough that a late PMT is not mistaken for a silent
+    /// service.
+    private static let videoOnlyClockDelay: Double = 3.0
 
     public weak var renderView: MetalVideoView?
 
@@ -308,6 +326,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 // already satisfied the very next audio buffer starts it.
                 if self.firstVideoFieldPTS == nil, pts.isValid {
                     self.firstVideoFieldPTS = pts
+                    self.sessionState.mutate { $0.firstVideoFieldTime = CACurrentMediaTime() }
                 }
                 self.observeFirstPictureVisible(at: pts)
             }
@@ -371,6 +390,79 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         ingestQueue.sync {
             self.tsParser.feed(data: data)
         }
+    }
+
+    /// True when this channel will not produce sound on this device.
+    ///
+    /// Either it named its audio and none of it is decodable here — MPEG Layer II
+    /// is the common case, carried by most German public broadcasters and with no
+    /// decoder on iOS — or it has named no audio at all for long enough that a
+    /// late table is no longer the explanation.
+    /// The rule itself, kept apart from the state it reads so it can be pinned
+    /// by tests rather than inferred from a decoder callback.
+    ///
+    /// - Parameters:
+    ///   - audioTracksKnown: whether a PMT has named this channel's audio yet.
+    ///   - hasDecodableAudio: whether any named track can be decoded here.
+    ///   - secondsSinceFirstField: how long there has been a picture.
+    ///   - pictureBufferedSeconds: how much picture is queued ahead of the anchor.
+    static func shouldStartClockOnPictureAlone(
+        audioTracksKnown: Bool,
+        hasDecodableAudio: Bool,
+        secondsSinceFirstField: Double,
+        pictureBufferedSeconds: Double
+    ) -> Bool {
+        guard pictureBufferedSeconds >= videoOnlyCushionSeconds else { return false }
+        // Named its audio: the answer is known now and waiting adds nothing.
+        if audioTracksKnown { return !hasDecodableAudio }
+        // Named none yet, which at tune-in is ordinary rather than final.
+        return secondsSinceFirstField >= videoOnlyClockDelay
+    }
+
+    /// Starts the clock on the picture when sound cannot come.
+    ///
+    /// The clock only ever started on audio, so a channel with nothing playable
+    /// did not play silently — it stopped. Measured on one: video decoded at
+    /// 50 fps, the display layer was never once ready for more (121 pulls, ready
+    /// 0), the field queue filled to its cap and shed 1394 fields against 13
+    /// delivered, and the screen held the single field `DisplayImmediately` had
+    /// put there. Every counter in the app read healthy. The warning that goes
+    /// with it says playback "will be silent", which was not true either.
+    ///
+    /// Deliberately narrow. It fires only where sound is impossible, never where
+    /// a decodable track has merely been slow: starting the clock on a stream
+    /// that does have audio puts every later buffer in the past, and the renderer
+    /// discards those — a permanently silent channel, which is a worse fault than
+    /// the one being fixed.
+    ///
+    /// Anchored at the first field rather than the newest, which also means any
+    /// audio that does turn up later is ahead of the clock and still plays.
+    private func startVideoOnlyClockIfNeeded() {
+        guard !isAudioClockStarted else { return }
+        guard let anchor = firstVideoFieldPTS, anchor.isValid, latestVideoPTS.isValid else { return }
+        let (known, decodable, since) = sessionState.mutate { state -> (Bool, Bool, Double) in
+            let elapsed = state.firstVideoFieldTime > 0
+                ? CACurrentMediaTime() - state.firstVideoFieldTime
+                : 0
+            return (state.audioTracksKnown, state.hasDecodableAudio, elapsed)
+        }
+        guard Self.shouldStartClockOnPictureAlone(
+            audioTracksKnown: known,
+            hasDecodableAudio: decodable,
+            secondsSinceFirstField: since,
+            pictureBufferedSeconds: latestVideoPTS.seconds - anchor.seconds
+        ) else { return }
+
+        audioRenderer.setRate(1.0, time: anchor)
+        isAudioClockStarted = true
+        notePlaybackStateChanged()
+
+        let msg = "[1080i50-CLOCK] 🔇 No audio this device can play — clock started on the picture at PTS \(String(format: "%.3f", anchor.seconds))s with \(String(format: "%.0f", (latestVideoPTS.seconds - anchor.seconds) * 1000.0))ms of picture buffered"
+        print(msg)
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+
+        telemetry.mutate { $0.isAudioMasterClockActive = false }
     }
 
     /// Tells the PiP window that playback state changed.
@@ -682,6 +774,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo]) {
         self.availableAudioTracks = tracks
+        sessionState.mutate { state in
+            state.audioTracksKnown = true
+            state.hasDecodableAudio = tracks.contains { $0.codec.isDecodableOnDevice }
+        }
         let trackListLog = tracks.map { "PID \($0.pid) [\($0.codec), \($0.language ?? "und")\(Self.audioTypeLabel(for: $0.audioType))]" }.joined(separator: ", ")
         let logMsg = "[1080i50-PMT] 🎵 Discovered \(tracks.count) audio tracks: \(trackListLog)"
         print(logMsg)
@@ -1244,6 +1340,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         if frame.pts.isValid {
             latestVideoPTS = frame.pts
+            startVideoOnlyClockIfNeeded()
         }
 
         if let rate = rate {
