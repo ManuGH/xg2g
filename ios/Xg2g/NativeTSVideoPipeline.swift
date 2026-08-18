@@ -1043,7 +1043,17 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let idrMs = sessionState.mutate { state -> Double? in
             if state.firstIdrTime == 0 {
                 state.firstIdrTime = CACurrentMediaTime()
-                let base = state.paramsReadyTime > 0 ? state.paramsReadyTime : (state.psiParsedTime > 0 ? state.psiParsedTime : state.requestStartTime)
+                // The *latest* preceding milestone, not the parameter sets alone.
+                //
+                // A cache hit stamps `paramsReadyTime` at t=0, before a single
+                // byte has arrived, and measuring from there quietly folds the
+                // whole network wait into this stage: one measured tune read
+                // FirstAU 714 ms inside a 747 ms total of which 695 ms was
+                // network. The stages then no longer sum to the total, and the
+                // one stage that looks dominant is the one that did nothing.
+                // An access unit cannot precede its PID, its parameter sets, or
+                // its data, so the honest base is whichever of those came last.
+                let base = max(state.paramsReadyTime, state.psiParsedTime, state.firstDataTime, state.requestStartTime)
                 return (state.firstIdrTime - base) * 1000.0
             }
             return nil
@@ -1251,14 +1261,24 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let snapshot = telemetry.snapshot()
         // The submit-to-visible gap is the part nothing could see before: it is
         // owned by the clock start, not by decode or render.
-        let waitMs = snapshot.ttfpTotalMs > 0 ? visibleMs - snapshot.ttfpTotalMs : Double.nan
         // Two different measurements share this number, and reading them as one
         // is how a fixed startup still looks broken: on the clock path the gap
         // is the wait for the timeline to arrive at the field, on the immediate
         // path there is no wait and it is only the handoff to the renderer.
-        let gapLabel = viaImmediateDisplay ? "Submit to handoff" : "Waiting on master clock"
         let via = viaImmediateDisplay ? "shown immediately" : "reached by master clock"
-        let msg = "[1080i50-TTFP] 👁️ Picture visible after \(String(format: "%.1f", visibleMs))ms (\(via)) | Pipeline ready at \(String(format: "%.1f", snapshot.ttfpTotalMs))ms | \(gapLabel): \(String(format: "%.1f", waitMs))ms"
+        // On the immediate path the handoff happens inside the submit that is
+        // still recording its own total — about half a millisecond before it
+        // lands. Reporting a gap against a total of zero printed `0.0ms` and a
+        // NaN; the breakdown follows on the next line anyway.
+        let tail: String
+        if snapshot.ttfpTotalMs > 0 {
+            let gapLabel = viaImmediateDisplay ? "Submit to handoff" : "Waiting on master clock"
+            let waitMs = visibleMs - snapshot.ttfpTotalMs
+            tail = " | Pipeline ready at \(String(format: "%.1f", snapshot.ttfpTotalMs))ms | \(gapLabel): \(String(format: "%.1f", waitMs))ms"
+        } else {
+            tail = " | Pipeline breakdown follows"
+        }
+        let msg = "[1080i50-TTFP] 👁️ Picture visible after \(String(format: "%.1f", visibleMs))ms (\(via))\(tail)"
         print(msg)
         logger.notice("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
