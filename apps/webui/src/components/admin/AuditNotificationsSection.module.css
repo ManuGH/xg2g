@@ -1,0 +1,276 @@
+/* Notifications and audit trail - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css)
+
+   Unlike the capacity cards next door, the status colours in this file really
+   are statuses: the push badge says granted, denied or not set up, and the
+   integrity chip says the SHA-256 chain holds. Consolidating those onto
+   --status-* tokens states what the code already meant.
+
+   The action chip and the hash column set fontFamily: 'monospace' inline,
+   which is the raw family rather than --font-mono. An inline style is
+   invisible to the typography gate, so it never had to answer for that. Here
+   it does. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subheading {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.banner {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.bannerError {
+  background-color: var(--status-error-subtle);
+  border: 1px solid var(--status-error-border);
+  color: var(--status-error);
+}
+
+.loading {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.panel {
+  background-color: var(--surface-panel-strong);
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid var(--border-elevated);
+}
+
+/* --- web push ----------------------------------------------------------- */
+
+.pushPanel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pushTitle {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pushText {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.pushControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pushBadge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pushGranted {
+  background-color: var(--status-success-subtle);
+  color: var(--status-success);
+}
+
+.pushDenied {
+  background-color: var(--status-error-subtle);
+  color: var(--status-error);
+}
+
+.pushPending {
+  background-color: var(--status-warning-subtle);
+  color: var(--status-warning);
+}
+
+/* --- buttons ------------------------------------------------------------ */
+
+.button {
+  border: none;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pushButton {
+  padding: 10px 18px;
+  border-radius: 10px;
+  background-color: var(--accent-action);
+  color: var(--bg-base);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pushButton:hover:not(:disabled) {
+  background-color: var(--accent-action-hover);
+}
+
+.exportButton {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background-color: var(--surface-highlight);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.exportButton:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+  border-color: var(--accent-action);
+}
+
+/* --- audit log ---------------------------------------------------------- */
+
+.auditHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.integrityChip {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background-color: var(--status-success-subtle);
+  color: var(--status-success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.auditControls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.searchInput {
+  padding: 8px 14px;
+  border-radius: 8px;
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-size: 13px;
+  width: 220px;
+  max-width: 100%;
+  transition: border-color var(--motion-standard) var(--ease-standard);
+}
+
+.searchInput:hover {
+  border-color: var(--accent-action);
+}
+
+.searchInput::placeholder {
+  color: var(--text-disabled);
+}
+
+/* The log is wider than a phone and scrolls on its own rather than pushing
+   the page sideways. */
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.table thead tr {
+  border-bottom: 1px solid var(--border-elevated);
+  color: var(--text-tertiary);
+}
+
+.table tbody tr {
+  border-bottom: 1px solid var(--border-base);
+  color: var(--text-secondary);
+  transition: background-color var(--motion-standard) var(--ease-standard);
+}
+
+.table tbody tr:hover {
+  background-color: var(--surface-muted);
+}
+
+.table th,
+.table td {
+  padding: 10px;
+}
+
+.cellTime {
+  font-size: 12px;
+  color: var(--text-disabled);
+  white-space: nowrap;
+}
+
+.cellActor {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.actionChip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background-color: var(--accent-action-subtle);
+  color: var(--accent-action);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.cellHash {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-disabled);
+  white-space: nowrap;
+}
+
+.emptyState {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  padding: 16px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .searchInput {
+    width: 100%;
+  }
+
+  .auditControls {
+    width: 100%;
+  }
+}
