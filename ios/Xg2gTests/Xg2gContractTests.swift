@@ -130,6 +130,56 @@ struct Xg2gContractTests {
         }
     }
 
+    @Test func theRefreshResponseDecodesDespiteItsSnakeCaseWireNames() throws {
+        // /auth/device/refresh is snake_case while the pairing exchange is
+        // camelCase — the same six concepts, two spellings. The generated type
+        // absorbs that in CodingKeys so no call site has to know.
+        let grant = try decode(Xg2gContract.DeviceGrantResponse.self, """
+        {
+          "token_type": "DPoP",
+          "access_token": "at_rotated",
+          "refresh_token": "rt_rotated",
+          "expires_in": 900,
+          "device_id": "dev_tv_100",
+          "scope": "v3:read v3:stream"
+        }
+        """)
+
+        #expect(grant.tokenType == "DPoP")
+        #expect(grant.accessToken == "at_rotated")
+        #expect(grant.refreshToken == "rt_rotated")
+        #expect(grant.expiresIn == 900)
+        #expect(grant.deviceId == "dev_tv_100")
+        #expect(grant.scope == "v3:read v3:stream")
+    }
+
+    @Test func aRefreshResponseMissingARequiredFieldIsRejected() {
+        // Every field is required, so a truncated response must fail rather than
+        // leave the device holding a grant it cannot rotate.
+        #expect(throws: DecodingError.self) {
+            _ = try decode(Xg2gContract.DeviceGrantResponse.self, """
+            {
+              "token_type": "DPoP",
+              "access_token": "at_rotated",
+              "expires_in": 900,
+              "device_id": "dev_tv_100",
+              "scope": "v3:read"
+            }
+            """)
+        }
+    }
+
+    @Test func theRefreshRequestEncodesTheWireKeyNotTheSwiftName() throws {
+        let request = Xg2gContract.DeviceRefreshRequest(refreshToken: "rt_current")
+
+        let encoded = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(request)
+        ) as? [String: Any]
+
+        #expect(encoded?["refresh_token"] as? String == "rt_current")
+        #expect(encoded?["refreshToken"] == nil)
+    }
+
     @Test func theDeviceKeyEncodesInTheShapeTheExchangeExpects() throws {
         let request = Xg2gContract.PairingSecretRequest(
             deviceJwk: Xg2gContract.ECPublicKeyJWK(crv: .p256, kty: .ec, x: "eA", y: "eQ"),
