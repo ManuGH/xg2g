@@ -1,0 +1,273 @@
+/* Parental approvals - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css)
+
+   The request row borrows its shape from the retired Settings .channelRow: a
+   grid of minmax(0, 1fr) auto that collapses to a single column below 760px.
+   The inline version was a flex row with space-between and no breakpoint, so
+   on a narrow screen three buttons and a two-line description fought over the
+   same line. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subheading {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* --- banners ------------------------------------------------------------ */
+
+.banner {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.bannerError {
+  background-color: var(--status-error-subtle);
+  border: 1px solid var(--status-error-border);
+  color: var(--status-error);
+}
+
+.bannerSuccess {
+  background-color: var(--status-success-subtle);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success);
+}
+
+/* --- panels ------------------------------------------------------------- */
+
+.panel {
+  background-color: var(--surface-panel-strong);
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid var(--border-elevated);
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loading {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+/* --- buttons ------------------------------------------------------------ */
+
+.button {
+  border: none;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard);
+}
+
+/* The buttons already carried `disabled` while an action was in flight and
+   showed nothing for it. */
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.refreshButton {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background-color: var(--surface-highlight);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.refreshButton:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.buttonDeny {
+  background-color: var(--status-error-subtle);
+  color: var(--status-error);
+}
+
+.buttonDeny:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--status-error) 24%, transparent);
+}
+
+.buttonOnce {
+  background-color: var(--surface-highlight);
+  color: var(--accent-action);
+}
+
+.buttonOnce:hover:not(:disabled) {
+  background-color: var(--accent-action-subtle);
+}
+
+.buttonAlways {
+  padding: 8px 16px;
+  background-color: var(--status-success);
+  color: var(--bg-base);
+  font-weight: 700;
+}
+
+.buttonAlways:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--status-success) 84%, var(--text-primary));
+}
+
+/* --- pending requests --------------------------------------------------- */
+
+.requestList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Shape harvested from .channelRow; the warning border is what marks the row
+   as still waiting on a person. */
+.requestRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  background-color: var(--bg-base);
+  padding: 16px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--status-warning-border);
+}
+
+.requestWho {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.requestAvatar {
+  font-size: 18px;
+}
+
+.requestName {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.ratingBadge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background-color: var(--status-error-subtle);
+  color: var(--status-error);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.requestWhat {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-top: 6px;
+  font-weight: 500;
+}
+
+.requestWhen {
+  color: var(--text-disabled);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.requestActions {
+  display: flex;
+  gap: 8px;
+}
+
+.emptyState {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  padding: 16px;
+  text-align: center;
+  background-color: var(--bg-base);
+  border-radius: 12px;
+}
+
+/* --- decision history --------------------------------------------------- */
+
+.historyTitle {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.historyRow {
+  padding: 10px 14px;
+  background-color: var(--bg-base);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.historyLabel {
+  color: var(--text-primary);
+}
+
+.historyStatus {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.historyApproved {
+  color: var(--status-success);
+}
+
+.historyDenied {
+  color: var(--status-error);
+}
+
+/* --- responsive, harvested from the retired .channelRow breakpoint ------- */
+
+@media (max-width: 760px) {
+  .requestRow {
+    grid-template-columns: 1fr;
+  }
+
+  .requestActions {
+    flex-wrap: wrap;
+  }
+
+  .requestActions .button {
+    flex: 1;
+  }
+}

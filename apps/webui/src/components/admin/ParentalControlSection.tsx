@@ -2,6 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import React, { useState, useEffect } from 'react';
+import styles from './ParentalControlSection.module.css';
 
 export interface ApprovalRequest {
   id: string;
@@ -85,88 +86,67 @@ export const ParentalControlSection: React.FC = () => {
   const pastRequests = approvals.filter((a) => a.status !== 'pending');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className={styles.section}>
       <div>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Jugendschutz & Live Freigaben</h3>
-        <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
+        <h3 className={styles.heading}>Jugendschutz &amp; Live Freigaben</h3>
+        <p className={styles.subheading}>
           Verwalten Sie ausstehende FSK-Freigabeanfragen von Kinderprofilen in Echtzeit.
         </p>
       </div>
 
-      {error && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
-        </div>
-      )}
-      {success && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: 'var(--status-success)', fontSize: '13px' }}>
-          ✓ {success}
-        </div>
-      )}
+      {error && <div className={`${styles.banner} ${styles.bannerError}`}>⚠️ {error}</div>}
+      {success && <div className={`${styles.banner} ${styles.bannerSuccess}`}>✓ {success}</div>}
 
       {/* Pending Approval Requests Section */}
-      <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h4 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className={styles.panel}>
+        <div className={styles.panelHeader}>
+          <h4 className={styles.panelTitle}>
             <span>🔔</span> Ausstehende Freigabeanfragen ({pendingRequests.length})
           </h4>
-          <button onClick={fetchApprovals} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer' }}>
+          <button onClick={fetchApprovals} className={`${styles.button} ${styles.refreshButton}`}>
             🔄 Aktualisieren
           </button>
         </div>
 
         {loading ? (
-          <div style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>Lade Freigaben...</div>
+          <div className={styles.loading}>Lade Freigaben...</div>
         ) : pendingRequests.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className={styles.requestList}>
             {pendingRequests.map((req) => (
-              <div
-                key={req.id}
-                style={{
-                  backgroundColor: 'var(--bg-base)',
-                  padding: '16px 20px',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(234,179,8,0.3)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
+              <div key={req.id} className={styles.requestRow}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '18px' }}>👦</span>
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '15px' }}>{req.profileName || req.requesterName || 'Kinderprofil'}</span>
-                    <span style={{ padding: '2px 8px', borderRadius: '8px', backgroundColor: 'rgba(239,68,68,0.2)', color: 'var(--status-error)', fontSize: '11px', fontWeight: 700 }}>
-                      FSK {req.eventRating}
-                    </span>
+                  <div className={styles.requestWho}>
+                    <span className={styles.requestAvatar}>👦</span>
+                    <span className={styles.requestName}>{req.profileName || req.requesterName || 'Kinderprofil'}</span>
+                    <span className={styles.ratingBadge}>FSK {req.eventRating}</span>
                   </div>
-                  <div style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '6px', fontWeight: 500 }}>
+                  <div className={styles.requestWhat}>
                     Möchte „{req.eventTitle}“ {req.channelName ? `auf ${req.channelName}` : ''} ansehen
                   </div>
-                  <div style={{ color: 'var(--text-disabled)', fontSize: '11px', marginTop: '4px' }}>
+                  <div className={styles.requestWhen}>
                     Angefragt am {new Date(req.createdAt).toLocaleTimeString()} Uhr
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div className={styles.requestActions}>
                   <button
                     onClick={() => handleDeny(req.id)}
                     disabled={actionLoading === req.id}
-                    style={{ padding: '8px 14px', borderRadius: '10px', border: 'none', backgroundColor: 'rgba(239,68,68,0.15)', color: 'var(--status-error)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                    className={`${styles.button} ${styles.buttonDeny}`}
                   >
                     Ablehnen
                   </button>
                   <button
                     onClick={() => handleApprove(req.id, 'once')}
                     disabled={actionLoading === req.id}
-                    style={{ padding: '8px 14px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--accent-action)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                    className={`${styles.button} ${styles.buttonOnce}`}
                   >
                     1-malig erlauben
                   </button>
                   <button
                     onClick={() => handleApprove(req.id, 'always')}
                     disabled={actionLoading === req.id}
-                    style={{ padding: '8px 16px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--status-success)', color: 'var(--bg-base)', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                    className={`${styles.button} ${styles.buttonAlways}`}
                   >
                     Immer freigeben
                   </button>
@@ -175,7 +155,7 @@ export const ParentalControlSection: React.FC = () => {
             ))}
           </div>
         ) : (
-          <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', padding: '16px', textAlign: 'center', backgroundColor: 'var(--bg-base)', borderRadius: '12px' }}>
+          <div className={styles.emptyState}>
             Keine ausstehenden Freigabeanfragen. Alle Kinderprofile halten sich an ihre FSK-Grenzen.
           </div>
         )}
@@ -183,13 +163,17 @@ export const ParentalControlSection: React.FC = () => {
 
       {/* Past Approvals History */}
       {pastRequests.length > 0 && (
-        <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', color: 'var(--text-secondary)' }}>Historie vergangener Entscheidungen</h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className={styles.panel}>
+          <h4 className={styles.historyTitle}>Historie vergangener Entscheidungen</h4>
+          <div className={styles.historyList}>
             {pastRequests.slice(0, 5).map((req) => (
-              <div key={req.id} style={{ padding: '10px 14px', backgroundColor: 'var(--bg-base)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                <span style={{ color: 'var(--text-primary)' }}>{req.profileName || 'Profil'} – „{req.eventTitle}“</span>
-                <span style={{ color: req.status === 'approved' ? 'var(--status-success)' : 'var(--status-error)', fontWeight: 600 }}>
+              <div key={req.id} className={styles.historyRow}>
+                <span className={styles.historyLabel}>{req.profileName || 'Profil'} – „{req.eventTitle}“</span>
+                <span
+                  className={`${styles.historyStatus} ${
+                    req.status === 'approved' ? styles.historyApproved : styles.historyDenied
+                  }`}
+                >
                   {req.status === 'approved' ? 'Freigegeben' : 'Abgelehnt'}
                 </span>
               </div>
