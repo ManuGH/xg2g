@@ -864,6 +864,21 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         return ranked.first
     }
 
+    public func tsParser(_ parser: TSPacketParser, didDetermineVideoCodec codec: VideoStreamCodec) {
+        let playable = codec.isDecodableOnDevice
+        telemetry.mutate {
+            $0.codec = codec.description
+            $0.unplayableVideoCodec = playable ? nil : codec.viewerDescription
+        }
+
+        let msg = playable
+            ? "[1080i50-PMT] 🎬 Video codec: \(codec)"
+            : "[1080i50-PMT] ⛔️ Video codec \(codec) cannot be assembled here — no picture will follow"
+        print(msg)
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+    }
+
     public func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo]) {
         self.availableAudioTracks = tracks
         sessionState.mutate { state in

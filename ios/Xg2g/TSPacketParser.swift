@@ -37,6 +37,65 @@ public enum AudioStreamCodec: Sendable, Equatable, CustomStringConvertible {
     }
 }
 
+/// The video codec a programme's PMT names for its video elementary stream.
+///
+/// The audio side has had this distinction from the start; the video side
+/// classified four stream types as "video" and handed all of them to the H.264
+/// access unit assembler. For anything that is not H.264 that produces no
+/// picture at all, with nothing anywhere saying why — the same silent failure
+/// `AudioStreamCodec.isDecodableOnDevice` exists to prevent.
+public enum VideoStreamCodec: Sendable, Equatable, CustomStringConvertible {
+    case h264
+    case mpeg2
+    case mpeg1
+    case hevc
+    case unknown(UInt8)
+
+    public init(streamType: UInt8) {
+        switch streamType {
+        case 0x1B: self = .h264
+        case 0x02: self = .mpeg2
+        case 0x01: self = .mpeg1
+        case 0x24: self = .hevc
+        default: self = .unknown(streamType)
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .h264: return "H.264"
+        case .mpeg2: return "MPEG-2"
+        case .mpeg1: return "MPEG-1"
+        case .hevc: return "HEVC"
+        case .unknown(let type): return "Unknown (0x\(String(type, radix: 16, uppercase: true)))"
+        }
+    }
+
+    /// Whether this pipeline can turn the stream into pictures.
+    ///
+    /// Narrower than what the hardware can decode: VideoToolbox handles HEVC on
+    /// any recent device, but the elementary stream still has to be cut into
+    /// access units first, and `H264AccessUnitAssembler` is the only assembler
+    /// here. Claiming HEVC because the chip supports it would put a black screen
+    /// in front of the viewer just the same.
+    public var isDecodableOnDevice: Bool {
+        switch self {
+        case .h264: return true
+        case .mpeg2, .mpeg1, .hevc, .unknown: return false
+        }
+    }
+
+    /// What to tell the viewer, in their terms, when this cannot be played.
+    public var viewerDescription: String {
+        switch self {
+        case .h264: return "H.264"
+        case .mpeg2, .mpeg1: return "ein älteres Format (MPEG-2)"
+        case .hevc: return "ein hochauflösendes Format (HEVC)"
+        case .unknown: return "ein unbekanntes Format"
+        }
+    }
+}
+
 public struct AudioTrackInfo: Sendable, Equatable, Identifiable {
     public var id: UInt16 { pid }
     public let pid: UInt16
@@ -65,6 +124,7 @@ public struct AudioTrackInfo: Sendable, Equatable, Identifiable {
 
 public protocol TSPacketParserDelegate: AnyObject, Sendable {
     func tsParser(_ parser: TSPacketParser, didDiscoverVideoPID pid: UInt16)
+    func tsParser(_ parser: TSPacketParser, didDetermineVideoCodec codec: VideoStreamCodec)
     func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo])
     func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool)
     func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8)
@@ -72,6 +132,7 @@ public protocol TSPacketParserDelegate: AnyObject, Sendable {
 }
 
 public extension TSPacketParserDelegate {
+    func tsParser(_ parser: TSPacketParser, didDetermineVideoCodec codec: VideoStreamCodec) {}
     func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo]) {}
     func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16) {}
 }
@@ -102,6 +163,12 @@ public final class TSPacketParser: @unchecked Sendable {
     private var buffer = Data()
     private var pmtPIDs = Set<UInt16>()
     public private(set) var videoPID: UInt16?
+
+    /// The codec the PMT names for `videoPID`, when a PMT named it.
+    ///
+    /// `nil` when the video PID came from the PES start-code fallback, which
+    /// identifies a video stream without saying what is in it.
+    public private(set) var videoCodec: VideoStreamCodec?
     public private(set) var audioTracks: [AudioTrackInfo] = []
     public private(set) var audioPIDs = Set<UInt16>()
     private var continuityCounters: [UInt16: UInt8] = [:]
@@ -127,6 +194,7 @@ public final class TSPacketParser: @unchecked Sendable {
         buffer.removeAll(keepingCapacity: true)
         pmtPIDs.removeAll()
         videoPID = nil
+        videoCodec = nil
         audioTracks.removeAll()
         audioPIDs.removeAll()
         continuityCounters.removeAll()
@@ -360,6 +428,7 @@ public final class TSPacketParser: @unchecked Sendable {
         let endOffset = offset + 3 + sectionLength - 4 // minus 4 CRC bytes
 
         var discoveredVideo: UInt16?
+        var discoveredVideoCodec: VideoStreamCodec?
         var tracks: [AudioTrackInfo] = []
 
         while streamOffset + 5 <= endOffset {
@@ -420,6 +489,7 @@ public final class TSPacketParser: @unchecked Sendable {
                 // Video stream
                 if discoveredVideo == nil {
                     discoveredVideo = elementaryPID
+                    discoveredVideoCodec = VideoStreamCodec(streamType: streamType)
                 }
             } else {
                 // Audio stream
@@ -464,7 +534,11 @@ public final class TSPacketParser: @unchecked Sendable {
 
         if let vPid = discoveredVideo, self.videoPID != vPid {
             self.videoPID = vPid
+            self.videoCodec = discoveredVideoCodec
             delegate?.tsParser(self, didDiscoverVideoPID: vPid)
+            if let codec = discoveredVideoCodec {
+                delegate?.tsParser(self, didDetermineVideoCodec: codec)
+            }
         }
 
         if !tracks.isEmpty && self.audioTracks != tracks {

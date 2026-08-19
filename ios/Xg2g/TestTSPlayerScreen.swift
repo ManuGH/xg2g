@@ -121,7 +121,17 @@ public struct TestTSPlayerScreen: View {
                         )
                             .ignoresSafeArea(edges: isLandscape ? .all : [])
 
-                        // 2. On-Screen Display Controls & Buttons
+                        // 2. A format this pipeline cannot assemble produces no
+                        //    picture at all, and a black rectangle explains
+                        //    nothing. Say what happened and name the way out.
+                        if let unplayable = pipeline.telemetry.display.unplayableVideoCodec {
+                            UnplayableFormatNotice(
+                                formatDescription: unplayable,
+                                channelName: currentChannelName
+                            )
+                        }
+
+                        // 3. On-Screen Display Controls & Buttons
                         if showControls {
                             videoOverlayControls(isLandscape: isLandscape, safeTop: geometry.safeAreaInsets.top)
                                 .transition(.opacity)
@@ -794,5 +804,48 @@ private struct MetalVideoStageView: UIViewRepresentable {
         CATransaction.setDisableActions(true)
         presenter.displayLayer.frame = uiView.bounds
         CATransaction.commit()
+    }
+}
+
+/// Shown in place of the picture when the channel's video format cannot be
+/// assembled on this path.
+///
+/// Direct playback carries the broadcast untouched, which is its whole point
+/// and also its limit: an MPEG-2 or HEVC service arrives intact and unusable,
+/// because the only assembler here reads H.264. The viewer sees a black screen
+/// and has no way to know the channel is fine and the route is wrong — so the
+/// notice names the format, and names the setting that fixes it.
+struct UnplayableFormatNotice: View {
+
+    let formatDescription: String
+    let channelName: String
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.92)
+
+            VStack(spacing: 14) {
+                Image(systemName: "tv.slash")
+                    .font(.system(size: 40, weight: .light))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+
+                Text("\(channelName) sendet in einem Format, das die Direktwiedergabe nicht darstellen kann")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+
+                Text("Der Sender überträgt \(formatDescription). Direkt vom Receiver lässt sich nur H.264 wiedergeben.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .multilineTextAlignment(.center)
+
+                Text("Stelle unter Einstellungen → Wiedergabe-Art auf „Über den Server“ um, dann läuft dieser Sender.")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.Colors.accentAction)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(28)
+        }
+        .allowsHitTesting(false)
     }
 }

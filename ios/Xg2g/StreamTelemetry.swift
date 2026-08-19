@@ -149,6 +149,14 @@ public struct TelemetryValues: Sendable {
     public var isDirect1080iVerified: Bool = false
     public var validationWarning: String?
 
+    /// Set when the PMT names a video codec this pipeline cannot turn into
+    /// pictures, carrying the viewer-facing name of that format.
+    ///
+    /// Without it the failure is a black screen and nothing else: the stream
+    /// arrives, the parser runs, and the H.264 assembler finds nothing it
+    /// recognises in an MPEG-2 elementary stream.
+    public var unplayableVideoCodec: String?
+
     // MARK: - DECODER Metrics
     public var vtSessionActive: Bool = false
     public var hwDecodeActive: Bool = false
