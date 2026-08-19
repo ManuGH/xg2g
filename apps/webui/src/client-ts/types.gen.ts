@@ -189,17 +189,37 @@ export type ApprovePairingResponse = {
     expiresAt: string;
 };
 
+/**
+ * Identity-shaped enrollment result.
+ *
+ * The rotating secret is a refresh token in an identity refresh family and
+ * the access token is DPoP-bound to the enrolled device key. The former
+ * deviceGrantId/deviceGrant/deviceGrantExpiresAt/accessSessionId quartet is
+ * gone because the underlying concepts are gone, not because it was
+ * renamed — see internal/control/http/v3/pairing/types.go.
+ *
+ */
 export type ExchangePairingResponse = {
     pairingId: string;
     deviceId: string;
-    deviceGrantId: string;
-    deviceGrant: string;
-    deviceGrantExpiresAt: string;
-    accessSessionId: string;
+    /**
+     * Always "DPoP"; the access token is sender-constrained to the enrolled device key.
+     */
+    tokenType: string;
     accessToken: string;
-    accessTokenExpiresAt: string;
+    /**
+     * Access-token lifetime in seconds, counted from the moment of this response.
+     */
+    expiresIn: number;
+    /**
+     * Rotates on every refresh. Presenting a superseded value is treated as replay and revokes the entire refresh family.
+     */
+    refreshToken: string;
+    /**
+     * Space-delimited scope string granted to the enrolled device.
+     */
+    scope: string;
     policyVersion: string;
-    scopes: Array<string>;
     endpoints: Array<PublishedEndpoint>;
 };
 
