@@ -142,8 +142,8 @@ enum class PublishedEndpointTLSMode(val wireValue: String) {
 }
 
 data class ApprovePairingRequest(
-    val approvedPolicyProfile: String?,
-    val ownerId: String?
+    val approvedPolicyProfile: String? = null,
+    val ownerId: String? = null
 ) {
     companion object {
         fun fromJson(json: JSONObject, owner: String = "ApprovePairingRequest"): ApprovePairingRequest = ApprovePairingRequest(
@@ -159,8 +159,8 @@ data class ApprovePairingRequest(
 }
 
 data class ApprovePairingResponse(
-    val approvedAt: Instant?,
-    val approvedPolicyProfile: String?,
+    val approvedAt: Instant? = null,
+    val approvedPolicyProfile: String? = null,
     val expiresAt: Instant,
     val ownerId: String,
     val pairingId: String,
@@ -307,14 +307,14 @@ data class PairingSecretRequest(
 }
 
 data class PairingStatusResponse(
-    val approvedAt: Instant?,
-    val approvedPolicyProfile: String?,
-    val consumedAt: Instant?,
+    val approvedAt: Instant? = null,
+    val approvedPolicyProfile: String? = null,
+    val consumedAt: Instant? = null,
     val deviceName: String,
     val deviceType: DeviceAuthDeviceType,
     val expiresAt: Instant,
     val pairingId: String,
-    val requestedPolicyProfile: String?,
+    val requestedPolicyProfile: String? = null,
     val status: PairingStatus,
     val userCode: String
 ) {
@@ -389,9 +389,9 @@ data class PublishedEndpoint(
 }
 
 data class StartPairingRequest(
-    val deviceName: String?,
-    val deviceType: DeviceAuthDeviceType?,
-    val requestedPolicyProfile: String?
+    val deviceName: String? = null,
+    val deviceType: DeviceAuthDeviceType? = null,
+    val requestedPolicyProfile: String? = null
 ) {
     companion object {
         fun fromJson(json: JSONObject, owner: String = "StartPairingRequest"): StartPairingRequest = StartPairingRequest(

@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 
 import io.github.manugh.xg2g.android.ServerSettingsStore
+import io.github.manugh.xg2g.android.contract.PairingStatus
 import io.github.manugh.xg2g.android.dashboard.DashboardApiClient
 import io.github.manugh.xg2g.android.dashboard.NativeHouseholdProfile
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,7 +56,10 @@ internal data class SettingsUiState(
 internal class SettingsViewModel(
     private val serverSettingsStore: ServerSettingsStore,
     private val dashboardApiClient: DashboardApiClient,
-    private val pairingApiClient: io.github.manugh.xg2g.android.pairing.PairingApiClient? = null
+    private val pairingApiClient: io.github.manugh.xg2g.android.pairing.PairingApiClient? = null,
+    // The pairing exchange binds the issued credentials to this key, so the
+    // provider is a dependency of pairing rather than of DPoP signing alone.
+    private val dpopProvider: io.github.manugh.xg2g.android.auth.DPoPProvider? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -119,9 +123,17 @@ internal class SettingsViewModel(
 
                 try {
                     val statusRes = client.getPairingStatus(pairingId, pairingSecret)
-                    if (statusRes.status == "approved") {
+                    if (statusRes.status == PairingStatus.APPROVED) {
+                        val jwk = dpopProvider?.publicJwk()
+                        if (jwk == null) {
+                            _uiState.value = _uiState.value.copy(
+                                pairingStatus = "error",
+                                pairingError = "Kein Geräteschlüssel verfügbar; Kopplung nicht möglich."
+                            )
+                            break
+                        }
                         _uiState.value = _uiState.value.copy(pairingStatus = "exchanging")
-                        val exchangeRes = client.exchangePairing(pairingId, pairingSecret)
+                        val exchangeRes = client.exchangePairing(pairingId, pairingSecret, jwk)
                         saveToken(exchangeRes.accessToken)
                         _uiState.value = _uiState.value.copy(
                             isPairingActive = false,
@@ -129,7 +141,10 @@ internal class SettingsViewModel(
                             message = "Gerät erfolgreich gekoppelt!"
                         )
                         break
-                    } else if (statusRes.status == "expired" || statusRes.status == "revoked") {
+                    } else if (statusRes.status == PairingStatus.EXPIRED ||
+                        statusRes.status == PairingStatus.CONSUMED ||
+                        statusRes.status == PairingStatus.REVOKED
+                    ) {
                         _uiState.value = _uiState.value.copy(
                             pairingStatus = "error",
                             pairingError = "Kopplungs-Anfrage ist abgelaufen oder wurde abgelehnt."
@@ -353,7 +368,8 @@ internal class SettingsViewModel(
             return SettingsViewModel(
                 serverSettingsStore = store,
                 dashboardApiClient = client,
-                pairingApiClient = pairingClient
+                pairingApiClient = pairingClient,
+                dpopProvider = dpopProvider
             ) as T
         }
     }

@@ -3,6 +3,9 @@ package io.github.manugh.xg2g.android.auth
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import io.github.manugh.xg2g.android.contract.ECPublicKeyJWK
+import io.github.manugh.xg2g.android.contract.ECPublicKeyJWKCrv
+import io.github.manugh.xg2g.android.contract.ECPublicKeyJWKKty
 import org.json.JSONObject
 import java.security.KeyFactory
 import java.security.KeyPair
@@ -18,6 +21,47 @@ interface DPoPProvider {
     fun getOrGenerateKeyPair(): KeyPair
     fun getJWKThumbprint(): String
     fun createProof(htm: String, htu: String, accessToken: String? = null): String
+
+    /**
+     * The device's public key in the shape the pairing contract declares.
+     *
+     * The pairing exchange is what binds this key to the issued credentials, so
+     * the request cannot be built without it. Returning the generated contract
+     * type rather than a hand-built JSONObject is what makes that impossible to
+     * forget: [io.github.manugh.xg2g.android.contract.PairingSecretRequest]
+     * does not compile without a key.
+     *
+     * Defaulted on the interface because the key material is already reachable
+     * through [getOrGenerateKeyPair], and every provider would otherwise repeat
+     * the same coordinate encoding.
+     */
+    fun publicJwk(): ECPublicKeyJWK {
+        val point = (getOrGenerateKeyPair().public as ECPublicKey).w
+        return ECPublicKeyJWK(
+            crv = ECPublicKeyJWKCrv.P_256,
+            kty = ECPublicKeyJWKKty.EC,
+            x = jwkCoordinate(point.affineX),
+            y = jwkCoordinate(point.affineY)
+        )
+    }
+}
+
+/**
+ * One EC coordinate as unpadded base64url over exactly 32 bytes, as
+ * ECPublicKeyJWK requires.
+ *
+ * java.util.Base64 rather than android.util.Base64: this runs in JVM unit tests
+ * too, where the framework encoder is a stub that silently returns "".
+ */
+private fun jwkCoordinate(coordinate: java.math.BigInteger): String {
+    val bytes = coordinate.toByteArray()
+    val fixed = ByteArray(32)
+    when {
+        bytes.size == 32 -> return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        bytes.size > 32 -> System.arraycopy(bytes, bytes.size - 32, fixed, 0, 32)
+        else -> System.arraycopy(bytes, 0, fixed, 32 - bytes.size, bytes.size)
+    }
+    return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(fixed)
 }
 
 class AndroidKeystoreDPoPProvider(

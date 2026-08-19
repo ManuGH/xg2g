@@ -1,7 +1,13 @@
 package io.github.manugh.xg2g.android.pairing
 
-import io.github.manugh.xg2g.android.PublishedEndpoint
 import io.github.manugh.xg2g.android.apiV3Url
+import io.github.manugh.xg2g.android.contract.DeviceAuthDeviceType
+import io.github.manugh.xg2g.android.contract.ECPublicKeyJWK
+import io.github.manugh.xg2g.android.contract.ExchangePairingResponse
+import io.github.manugh.xg2g.android.contract.PairingSecretRequest
+import io.github.manugh.xg2g.android.contract.PairingStatusResponse
+import io.github.manugh.xg2g.android.contract.StartPairingRequest
+import io.github.manugh.xg2g.android.contract.StartPairingResponse
 import io.github.manugh.xg2g.android.playback.net.withSameOriginHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,177 +17,74 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
 import org.json.JSONObject
-import java.time.Instant
-import java.time.format.DateTimeFormatter
 
-internal data class StartPairingResult(
-    val pairingId: String,
-    val pairingSecret: String,
-    val userCode: String,
-    val qrPayload: String,
-    val expiresAt: String
-)
-
-internal data class PairingStatusResult(
-    val pairingId: String,
-    val status: String,
-    val userCode: String,
-    val approvedAt: String?,
-    val expiresAt: String
-)
-
-internal data class ExchangePairingResult(
-    val pairingId: String,
-    val deviceId: String,
-    val deviceGrantId: String,
-    val deviceGrant: String,
-    val accessSessionId: String?,
-    val accessToken: String,
-    val accessTokenExpiresAtEpochMs: Long,
-    val policyVersion: String?,
-    val endpoints: List<PublishedEndpoint>
-)
-
+/**
+ * The pairing endpoints, spoken through the generated contract.
+ *
+ * This client used to carry its own hand-written result types and read them out
+ * of org.json by hand. That is how it ended up decoding deviceGrantId and
+ * deviceGrant — fields the server had already retired — while never sending the
+ * device key the exchange requires. Both mistakes are unrepresentable now: the
+ * request and response types come from backend/api/openapi.yaml, and the
+ * generated decoders throw on a missing required field instead of substituting
+ * an empty string.
+ */
 internal class PairingApiClient(
     private val baseUrl: String,
     private val okHttpClient: OkHttpClient = OkHttpClient()
 ) {
     suspend fun startPairing(
         deviceName: String = "Android TV",
-        deviceType: String = "tv"
-    ): StartPairingResult = withContext(Dispatchers.IO) {
+        deviceType: DeviceAuthDeviceType = DeviceAuthDeviceType.ANDROID_TV
+    ): StartPairingResponse = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
             throw IllegalStateException("Server-URL ist nicht konfiguriert.")
         }
-        val url = apiUrl("pairing", "start")
-        val json = JSONObject().apply {
-            put("deviceName", deviceName)
-            put("deviceType", deviceType)
-            put("requestedPolicyProfile", "native-app")
-        }
-        val request = Request.Builder()
-            .url(url)
-            .post(json.toString().toRequestBody(JSON_MEDIA_TYPE))
-            .build()
-            .withSameOriginHeaders(url)
-
-        val response = okHttpClient.newCall(request).execute()
-        val bodyStr = response.body?.string().orEmpty()
-        if (!response.isSuccessful) {
-            throw IllegalStateException("Pairing start failed (HTTP ${response.code}): $bodyStr")
-        }
-
-        val obj = JSONObject(bodyStr)
-        StartPairingResult(
-            pairingId = obj.getString("pairingId"),
-            pairingSecret = obj.getString("pairingSecret"),
-            userCode = obj.getString("userCode"),
-            qrPayload = obj.optString("qrPayload"),
-            expiresAt = obj.optString("expiresAt")
+        val body = StartPairingRequest(
+            deviceName = deviceName,
+            deviceType = deviceType,
+            requestedPolicyProfile = "native-app"
         )
+        val json = post(apiUrl("pairing", "start"), body.toJson(), "Pairing start")
+        StartPairingResponse.fromJson(json)
     }
 
     suspend fun getPairingStatus(
         pairingId: String,
         pairingSecret: String
-    ): PairingStatusResult = withContext(Dispatchers.IO) {
-        val url = apiUrl("pairing", pairingId, "status")
-        val json = JSONObject().apply {
-            put("pairingSecret", pairingSecret)
-        }
-        val request = Request.Builder()
-            .url(url)
-            .post(json.toString().toRequestBody(JSON_MEDIA_TYPE))
-            .build()
-            .withSameOriginHeaders(url)
-
-        val response = okHttpClient.newCall(request).execute()
-        val bodyStr = response.body?.string().orEmpty()
-        if (!response.isSuccessful) {
-            throw IllegalStateException("Pairing status failed (HTTP ${response.code}): $bodyStr")
-        }
-
-        val obj = JSONObject(bodyStr)
-        PairingStatusResult(
-            pairingId = obj.getString("pairingId"),
-            status = obj.getString("status"),
-            userCode = obj.optString("userCode"),
-            approvedAt = obj.optString("approvedAt").takeIf { it.isNotEmpty() },
-            expiresAt = obj.optString("expiresAt")
-        )
+    ): PairingStatusResponse = withContext(Dispatchers.IO) {
+        // The status probe carries only the secret: the device key is bound at
+        // exchange time, and the contract's PairingSecretRequest is not the
+        // right shape for a poll.
+        val body = JSONObject().put("pairingSecret", pairingSecret)
+        val json = post(apiUrl("pairing", pairingId, "status"), body, "Pairing status")
+        PairingStatusResponse.fromJson(json)
     }
 
     suspend fun exchangePairing(
         pairingId: String,
-        pairingSecret: String
-    ): ExchangePairingResult = withContext(Dispatchers.IO) {
-        val url = apiUrl("pairing", pairingId, "exchange")
-        val json = JSONObject().apply {
-            put("pairingSecret", pairingSecret)
-        }
+        pairingSecret: String,
+        deviceJwk: ECPublicKeyJWK
+    ): ExchangePairingResponse = withContext(Dispatchers.IO) {
+        val body = PairingSecretRequest(pairingSecret = pairingSecret, deviceJwk = deviceJwk)
+        val json = post(apiUrl("pairing", pairingId, "exchange"), body.toJson(), "Pairing exchange")
+        ExchangePairingResponse.fromJson(json)
+    }
+
+    private fun post(url: HttpUrl, body: JSONObject, label: String): JSONObject {
         val request = Request.Builder()
             .url(url)
-            .post(json.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
             .build()
             .withSameOriginHeaders(url)
 
         val response = okHttpClient.newCall(request).execute()
-        val bodyStr = response.body?.string().orEmpty()
+        val bodyStr = response.body.string()
         if (!response.isSuccessful) {
-            throw IllegalStateException("Pairing exchange failed (HTTP ${response.code}): $bodyStr")
+            throw IllegalStateException("$label failed (HTTP ${response.code}): $bodyStr")
         }
-
-        val obj = JSONObject(bodyStr)
-        val expiresAtStr = obj.optString("accessTokenExpiresAt")
-        val expiresAtEpochMs = parseHttpInstant(expiresAtStr) ?: (System.currentTimeMillis() + 900_000L)
-
-        ExchangePairingResult(
-            pairingId = obj.getString("pairingId"),
-            deviceId = obj.optString("deviceId"),
-            deviceGrantId = obj.getString("deviceGrantId"),
-            deviceGrant = obj.getString("deviceGrant"),
-            accessSessionId = obj.optString("accessSessionId").takeIf { it.isNotBlank() },
-            accessToken = obj.getString("accessToken"),
-            accessTokenExpiresAtEpochMs = expiresAtEpochMs,
-            policyVersion = obj.optString("policyVersion").takeIf { it.isNotBlank() },
-            endpoints = parseEndpoints(obj.optJSONArray("endpoints"))
-        )
-    }
-
-    private fun parseEndpoints(array: JSONArray?): List<PublishedEndpoint> {
-        if (array == null) return emptyList()
-        return buildList {
-            for (i in 0 until array.length()) {
-                val item = array.optJSONObject(i) ?: continue
-                add(
-                    PublishedEndpoint(
-                        url = item.optString("url"),
-                        kind = item.optString("kind"),
-                        priority = item.optInt("priority"),
-                        tlsMode = item.optString("tlsMode"),
-                        allowPairing = item.optBoolean("allowPairing"),
-                        allowStreaming = item.optBoolean("allowStreaming"),
-                        allowWeb = item.optBoolean("allowWeb"),
-                        allowNative = item.optBoolean("allowNative"),
-                        advertiseReason = item.optString("advertiseReason"),
-                        source = item.optString("source", "config")
-                    )
-                )
-            }
-        }
-    }
-
-    private fun parseHttpInstant(value: String?): Long? {
-        val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        return trimmed.toLongOrNull()?.takeIf { it > 0L }
-            ?: runCatching {
-                Instant.from(DateTimeFormatter.RFC_1123_DATE_TIME.parse(trimmed)).toEpochMilli()
-            }.getOrNull()
-            ?: runCatching {
-                Instant.parse(trimmed).toEpochMilli()
-            }.getOrNull()
+        return JSONObject(bodyStr)
     }
 
     private fun apiUrl(vararg segments: String): HttpUrl {

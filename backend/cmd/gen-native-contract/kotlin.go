@@ -129,14 +129,18 @@ func writeKotlinObject(out *bytes.Buffer, model objectModel) {
 	for i, f := range model.fields {
 		writeKotlinDoc(out, "    ", f.doc)
 		nullable := ""
+		def := ""
 		if !f.required {
+			// Defaulted so a caller constructs the type by naming only what the
+			// contract actually demands.
 			nullable = "?"
+			def = " = null"
 		}
 		comma := ","
 		if i == len(model.fields)-1 {
 			comma = ""
 		}
-		fmt.Fprintf(out, "    val %s: %s%s%s\n", kotlinIdentifier(f.wire), kotlinType(f.typ), nullable, comma)
+		fmt.Fprintf(out, "    val %s: %s%s%s%s\n", kotlinIdentifier(f.wire), kotlinType(f.typ), nullable, def, comma)
 	}
 	out.WriteString(") {\n")
 	out.WriteString("    companion object {\n")
