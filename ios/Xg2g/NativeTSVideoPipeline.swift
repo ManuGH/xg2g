@@ -60,6 +60,18 @@ private final class PipelineSessionState: @unchecked Sendable {
     }
 }
 
+public enum DecodeGateState: Sendable, Equatable {
+    case closed(reason: DecodeGateCloseReason)
+    case open
+}
+
+public enum DecodeGateCloseReason: Sendable, Equatable {
+    case startup
+    case decoderRecovery
+    case formatReconfiguration
+    case backgrounded
+}
+
 /// Coordinates the end-to-end native DVB TS $\rightarrow$ VideoToolbox $\rightarrow$ Metal Deinterlace pipeline
 /// and synchronized Audio Engine (AC-3/E-AC-3/AAC $\rightarrow$ AVSampleBufferAudioRenderer).
 public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked Sendable,
@@ -136,6 +148,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     public weak var systemPresenter: SystemVideoPresenter?
 
     private var telemetryForegroundObserver: NSObjectProtocol?
+    private var appBackgroundObserver: NSObjectProtocol?
     private var audioInterruptionObserver: NSObjectProtocol?
     private var audioRouteChangeObserver: NSObjectProtocol?
     private var audioFlushedObserver: NSObjectProtocol?
@@ -194,35 +207,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var ingestGeneration: Int = 0
     private var pendingIngestBytes: Int = 0
 
-    /// Opens once the stream has offered a picture the decoder can be started on.
-    ///
-    /// Tuning into the middle of a GOP is normal for broadcast; submitting what
-    /// arrives there is not. Those access units are P and B slices whose
-    /// reference pictures were never received, and VideoToolbox does not refuse
-    /// them — it returns blocky, smeared output. `allowImmediateFirst` in the
-    /// reorder buffer then puts precisely that picture on screen as the "instant"
-    /// first frame, which is what the artefacts at tune-in were.
-    ///
-    /// The parameter-set cache is what makes this load-bearing rather than
-    /// theoretical: priming SPS/PPS hands the assembler a format description at
-    /// t=0, so on a cached channel the very first access unit is submitted
-    /// wherever in the GOP it happened to fall.
-    ///
-    /// Only ever touched from `ingestQueue` — the parse chain runs there and
-    /// `stopStreaming` resets it inside the same queue's barrier.
-    private var isDecodeGateOpen = false
+    /// Ingest thread safety and decode gate state.
+    /// Only touched from `ingestQueue`.
+    public private(set) var decodeGateState: DecodeGateState = .closed(reason: .startup)
     private var gatedAccessUnitCount = 0
     private var firstAccessUnitTime: CFTimeInterval = 0
 
-    /// Ceiling on how long the gate may hold pictures back.
-    ///
-    /// A stream that never presents a sync sample — a damaged multiplex, or an
-    /// encoder whose intra pictures the slice parser does not recognise — has to
-    /// play imperfectly rather than stay black. Two seconds is longer than any
-    /// broadcast GOP this targets, so a healthy channel never reaches it.
+    /// Ceiling on how long the gate may hold pictures back during initial startup ONLY.
     private static let decodeGateTimeout: Double = 2.0
-
-
 
     public var useNativeVTDeinterlace: Bool {
         get { decoder.useNativeVTDeinterlace }
@@ -246,6 +238,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         audioRenderer.delegate = self
 
         setupAudioNotificationObservers()
+        setupLifecycleNotificationObservers()
 
         TelemetryServer.shared.start()
         if telemetryForegroundObserver == nil {
@@ -267,12 +260,43 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
+    private func setupLifecycleNotificationObservers() {
+        if appBackgroundObserver == nil {
+            appBackgroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification,
+                object: nil,
+                queue: nil
+            ) { [weak self] _ in
+                self?.handleAppDidEnterBackground()
+            }
+        }
+    }
+
+    private func handleAppDidEnterBackground() {
+        ingestQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.decoder.invalidateSessionForBackground()
+            self.decodeGateState = .closed(reason: .backgrounded)
+            self.gatedAccessUnitCount = 0
+            self.firstAccessUnitTime = CACurrentMediaTime()
+            self.telemetry.mutate {
+                $0.vtSessionActive = false
+                $0.hwDecodeActive = false
+            }
+            let msg = "[1080i50-LIFECYCLE] 📱 App entered background: Decoder session invalidated, gate closed (.backgrounded, strict IDR only)"
+            print(msg)
+            logger.notice("\(msg, privacy: .public)")
+            TelemetryServer.shared.log(msg)
+        }
+    }
+
     deinit {
         stopStreaming()
         if let obs = audioInterruptionObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = audioRouteChangeObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = audioFlushedObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = telemetryForegroundObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = appBackgroundObserver { NotificationCenter.default.removeObserver(obs) }
         TelemetryServer.shared.setTelemetryProvider { [:] }
         TelemetryServer.shared.setScreenshotProvider { nil }
     }
@@ -581,7 +605,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // The parse chain is owned by `ingestQueue`; resetting it from here while
         // a feed is in flight would corrupt the assembler state mid-packet.
         ingestQueue.sync {
-            isDecodeGateOpen = false
+            decodeGateState = .closed(reason: .startup)
             gatedAccessUnitCount = 0
             firstAccessUnitTime = 0
             tsParser.reset()
@@ -1371,8 +1395,19 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let msg = "[1080i50-AUDIO] 🎧 Audio route changed: reason \(reasonValue)"
         logger.notice("\(msg, privacy: .public)")
 
-        if reason == .categoryChange || reason == .routeConfigurationChange {
+        // Every one of these leaves the session pointed at hardware with a
+        // different channel count, sample rate, and output latency than the one
+        // it was configured for. `.newDeviceAvailable` is the case that matters
+        // most in practice — headphones connected mid-playback — and it used to
+        // fall through here, so the session kept the multichannel configuration
+        // of the built-in speaker while the audio was already going out over a
+        // two-channel Bluetooth link.
+        switch reason {
+        case .newDeviceAvailable, .oldDeviceUnavailable, .override,
+             .categoryChange, .routeConfigurationChange:
             AudioSessionManager.shared.configureForPlayback()
+        default:
+            AudioSessionManager.shared.logCurrentRoute()
         }
     }
 
@@ -1486,7 +1521,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure) {
-        if !isDecodeGateOpen {
+        if case .closed(let reason) = decodeGateState {
             let now = CACurrentMediaTime()
             if firstAccessUnitTime == 0 {
                 firstAccessUnitTime = now
@@ -1498,8 +1533,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 }
 
                 if decoder.hasActiveSession {
-                    isDecodeGateOpen = true
-                    let msg = "[1080i50-GATE] 🔓 Decode gate opened on a sync sample after \(gatedAccessUnitCount) discarded AU(s), \(String(format: "%.0f", (now - firstAccessUnitTime) * 1000.0))ms"
+                    decodeGateState = .open
+                    let msg = "[1080i50-GATE] 🔓 Decode gate opened on a sync sample (reason: \(reason)) after \(gatedAccessUnitCount) discarded AU(s), \(String(format: "%.0f", (now - firstAccessUnitTime) * 1000.0))ms"
                     print(msg)
                     logger.notice("\(msg, privacy: .public)")
                     TelemetryServer.shared.log(msg)
@@ -1509,21 +1544,22 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     telemetry.mutate { $0.gatedAccessUnits = self.gatedAccessUnitCount }
                     return
                 }
-            } else if now - firstAccessUnitTime >= Self.decodeGateTimeout {
-                // Better a damaged first second than a channel that stays black.
+            } else if reason == .startup && (now - firstAccessUnitTime >= Self.decodeGateTimeout) {
+                // Startup fail-open: better a damaged first second than a channel that stays black.
                 if !decoder.hasActiveSession {
                     _ = decoder.ensureSession()
                 }
-                isDecodeGateOpen = true
-                let msg = "[1080i50-GATE] ⚠️ No sync sample within \(String(format: "%.1f", Self.decodeGateTimeout))s — opening decode gate anyway after \(gatedAccessUnitCount) discarded AU(s); expect artefacts until the next intra picture"
+                decodeGateState = .open
+                let msg = "[1080i50-GATE] ⚠️ Startup timeout: No sync sample within \(String(format: "%.1f", Self.decodeGateTimeout))s — opening decode gate anyway after \(gatedAccessUnitCount) discarded AU(s); expect artefacts until the next intra picture"
                 print(msg)
                 logger.error("\(msg, privacy: .public)")
                 TelemetryServer.shared.log(msg)
                 telemetry.mutate { $0.vtSessionActive = decoder.hasActiveSession }
             } else {
+                // Under .decoderRecovery, .formatReconfiguration, or .backgrounded:
+                // STRICT IDR ONLY — NEVER timeout fail-open on non-sync frames!
                 gatedAccessUnitCount += 1
-                let discarded = gatedAccessUnitCount
-                telemetry.mutate { $0.gatedAccessUnits = discarded }
+                telemetry.mutate { $0.gatedAccessUnits = self.gatedAccessUnitCount }
                 return
             }
 
@@ -1533,16 +1569,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let idrMs = sessionState.mutate { state -> Double? in
             if state.firstIdrTime == 0 {
                 state.firstIdrTime = CACurrentMediaTime()
-                // The *latest* preceding milestone, not the parameter sets alone.
-                //
-                // A cache hit stamps `paramsReadyTime` at t=0, before a single
-                // byte has arrived, and measuring from there quietly folds the
-                // whole network wait into this stage: one measured tune read
-                // FirstAU 714 ms inside a 747 ms total of which 695 ms was
-                // network. The stages then no longer sum to the total, and the
-                // one stage that looks dominant is the one that did nothing.
-                // An access unit cannot precede its PID, its parameter sets, or
-                // its data, so the honest base is whichever of those came last.
                 let base = max(state.paramsReadyTime, state.psiParsedTime, state.firstDataTime, state.requestStartTime)
                 return (state.firstIdrTime - base) * 1000.0
             }
@@ -1552,9 +1578,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             telemetry.mutate { $0.ttfpIdrMs = idrMs }
         }
 
-        // One PTS per coded picture is what a well-formed stream carries. Access
-        // units arriving without one mean the assembler split a picture, which
-        // inflates the decode rate above the broadcast frame rate.
         let hasPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).isValid
         telemetry.mutate {
             $0.sampleBuffersEmittedCount += 1
@@ -1610,9 +1633,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             TelemetryServer.shared.log(decLog)
         }
 
-        // `ptsProgressionMs` is measured by the render view instead: VideoToolbox
-        // emits in decode order, so consecutive deltas here run backwards across
-        // every B-frame and only the reorder buffer sees the true cadence.
         renderView?.enqueueFrame(frame)
     }
 
@@ -1652,12 +1672,30 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         ingestQueue.async { [weak self] in
             guard let self = self else { return }
-            self.isDecodeGateOpen = false
+            self.decodeGateState = .closed(reason: .decoderRecovery)
             self.gatedAccessUnitCount = 0
             self.firstAccessUnitTime = CACurrentMediaTime()
-            let msg = "[1080i50-DEC-RECOVER] 🔄 Hardware video decoder session invalidated (fatal error \(error)). Decode gate closed; waiting for next IDR to recover..."
+            let msg = "[1080i50-DEC-RECOVER] 🔄 Hardware video decoder session invalidated (fatal error \(error)). Decode gate closed (.decoderRecovery, strict IDR only); waiting for next IDR..."
             print(msg)
             logger.error("\(msg, privacy: .public)")
+            TelemetryServer.shared.log(msg)
+        }
+    }
+
+    public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didRequestSessionReconfiguration error: OSStatus) {
+        telemetry.mutate {
+            $0.vtSessionActive = false
+            $0.hwDecodeActive = false
+        }
+
+        ingestQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.decodeGateState = .closed(reason: .formatReconfiguration)
+            self.gatedAccessUnitCount = 0
+            self.firstAccessUnitTime = CACurrentMediaTime()
+            let msg = "[1080i50-DEC-RECONFIG] 🔄 Video decoder reconfiguration requested (status \(error)). Decode gate closed (.formatReconfiguration); waiting for next IDR..."
+            print(msg)
+            logger.notice("\(msg, privacy: .public)")
             TelemetryServer.shared.log(msg)
         }
     }

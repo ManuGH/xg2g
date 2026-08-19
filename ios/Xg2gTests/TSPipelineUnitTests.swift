@@ -780,6 +780,7 @@ private final class MockDecoderSink: HardwareVideoDecoderDelegate, @unchecked Se
     var isVTDeinterlaceAccepted: Bool = false
     var decodeErrors: [OSStatus] = []
     var fatalErrors: [OSStatus] = []
+    var reconfigErrors: [OSStatus] = []
 
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEmitFrame frame: DecodedVideoFrame) {
         emittedFrames.append(frame)
@@ -799,5 +800,9 @@ private final class MockDecoderSink: HardwareVideoDecoderDelegate, @unchecked Se
 
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didInvalidateSessionWithFatalError error: OSStatus) {
         fatalErrors.append(error)
+    }
+
+    func hardwareDecoder(_ decoder: HardwareVideoDecoder, didRequestSessionReconfiguration error: OSStatus) {
+        reconfigErrors.append(error)
     }
 }
