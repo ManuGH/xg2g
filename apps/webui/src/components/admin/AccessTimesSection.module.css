@@ -176,10 +176,18 @@
 
 /* Position and width come from the policy and stay inline; everything the
    design system owns lives here. */
+/* Every progress-style bar in this app eases its width rather than jumping -
+   EPG and SystemInfo both do it. The retired Settings .progressBar is where
+   that convention was written with the motion tokens instead of a literal
+   duration, so this takes its form. The global reduced-motion block in
+   index.css neutralises it for anyone who asked for that. */
 .timelineFill {
   position: absolute;
   height: 100%;
   background-color: var(--accent-action);
+  transition:
+    width var(--motion-standard) var(--ease-standard),
+    left var(--motion-standard) var(--ease-standard);
 }
 
 .timelineFillRounded {
