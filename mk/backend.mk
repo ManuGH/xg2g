@@ -2,7 +2,7 @@
 # Backend Targets
 # ===================================================================================================
 
-.PHONY: backend-build backend-run generate-config verify-config generate verify-generate gen-openapi-hard ui-build generate-client build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev dev-loop android-local-smoke android-tv-smoke install doctor check-tools dev-tools
+.PHONY: backend-build backend-run generate-config verify-config generate generate-native-contract verify-generate gen-openapi-hard ui-build generate-client build build-with-ui build-offline backend-dev backend-dev-ui webui-dev dev-ui dev dev-loop android-local-smoke android-tv-smoke install doctor check-tools dev-tools
 
 ui-build: ## Build WebUI assets
 	@echo "Building WebUI assets..."
@@ -36,14 +36,21 @@ generate: ## Generate Go code from OpenAPI spec (v3 only)
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-api.yaml -o internal/api/server_gen.go api/openapi.yaml
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run -mod=vendor github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config api/oapi-codegen-v3.yaml -o internal/control/http/v3/server_gen.go api/openapi.yaml
 	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run -mod=vendor ./cmd/gen-operation-catalog
+	@$(MAKE) --no-print-directory generate-native-contract
 	@echo "✅ Code generation complete (single source: api/openapi.yaml):"
 	@echo "   - $(BACKEND_DIR)/internal/control/authz/operation_catalog_gen.go"
 	@echo "   - $(BACKEND_DIR)/internal/control/http/v3/operation_routes_gen.go"
 	@echo "   - $(BACKEND_DIR)/internal/control/http/v3/server_gen.go"
+	@echo "   - $(NATIVE_CONTRACT_SWIFT)"
+	@echo "   - $(NATIVE_CONTRACT_KOTLIN)"
+
+generate-native-contract: ## Generate the native iOS/Android contract models from the OpenAPI spec
+	@cd $(BACKEND_DIR) && $(RESOLVE_GO_BIN_SH) && GOTOOLCHAIN=local "$$GO_BIN" run -mod=vendor ./cmd/gen-native-contract
 
 verify-generate: generate ## Verify that generated code is up-to-date
 	@echo "Verifying generated code..."
 	@cd $(BACKEND_DIR) && git diff --exit-code internal/api/server_gen.go internal/control/authz/operation_catalog_gen.go internal/control/http/v3/operation_routes_gen.go internal/control/http/v3/server_gen.go || (echo "❌ Generated code is out of sync. Run 'make generate' and commit changes." && exit 1)
+	@git diff --exit-code $(NATIVE_CONTRACT_SWIFT) $(NATIVE_CONTRACT_KOTLIN) || (echo "❌ Generated native contract is out of sync. Run 'make generate' and commit changes." && exit 1)
 	@echo "✅ Generated code is up-to-date"
 
 gen-openapi-hard: ## Generate OpenAPI hard-mode artifacts (snapshot + TS client + consumption types)

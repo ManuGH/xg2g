@@ -3506,7 +3506,7 @@ export type ExchangePairingError = ExchangePairingErrors[keyof ExchangePairingEr
 
 export type ExchangePairingResponses = {
     /**
-     * Pairing exchanged for device grant and access session
+     * Pairing exchanged for a DPoP-bound access token and a rotating refresh token
      */
     200: ExchangePairingResponse;
 };

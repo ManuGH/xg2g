@@ -19,6 +19,11 @@ export GOFLAGS := -trimpath -buildvcs=false -mod=vendor
 GOTOOLCHAIN ?= go1.26.5
 export GOTOOLCHAIN
 export GOWORK := off
+
+# Generated native client contract, emitted by backend/cmd/gen-native-contract
+# from backend/api/openapi.yaml. Named here because three targets refer to them.
+NATIVE_CONTRACT_SWIFT := ios/Xg2g/Generated/Xg2gContract.swift
+NATIVE_CONTRACT_KOTLIN := android/app/src/main/java/io/github/manugh/xg2g/android/contract/Xg2gContract.kt
 GO := go
 define RESOLVE_GO_BIN_SH
 GO_BIN="$$($(GO) env GOROOT)/bin/go"; \

@@ -3232,6 +3232,25 @@ components:
 security:
   - BearerAuth: [v3:read]
 
+x-xg2g-native-contract:
+  # The subset of the contract the native iOS and Android clients decode
+  # directly. gen-native-contract emits their model layer from exactly these
+  # schemas, and verify-native-contract-fresh locks the result against drift.
+  #
+  # Listing a schema here is what makes it part of the native contract. Only
+  # roots are listed: everything a root references is pulled in transitively,
+  # so adding a $ref to a listed schema never needs a second edit here.
+  roots:
+    - ApprovePairingRequest
+    - ApprovePairingResponse
+    - ECPublicKeyJWK
+    - ExchangePairingResponse
+    - PairingSecretRequest
+    - PairingStatusResponse
+    - PublishedEndpoint
+    - StartPairingRequest
+    - StartPairingResponse
+
 x-xg2g-operation-policies:
   AddTimer:
     class: write
@@ -5403,7 +5422,7 @@ paths:
               $ref: "#/components/schemas/PairingSecretRequest"
       responses:
         "200":
-          description: Pairing exchanged for device grant and access session
+          description: Pairing exchanged for a DPoP-bound access token and a rotating refresh token
           content:
             application/json:
               schema:
