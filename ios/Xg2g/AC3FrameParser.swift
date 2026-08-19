@@ -16,6 +16,16 @@ public struct AC3FrameInfo: Sendable, Equatable {
     public let samplesPerFrame: Int
     public let duration: CMTime
 
+    /// The bitstream's `acmod` field (ATSC A/52 §5.4.2.3), which names *which*
+    /// channels are present, not just how many.
+    ///
+    /// `channelCount` alone cannot distinguish 2/1 (L, R, Cs) from 3/0 (L, C, R)
+    /// — both carry three channels but put entirely different content in them.
+    /// The downmix to a stereo route needs the distinction to place dialogue
+    /// correctly, so the value is carried through to the channel layout instead
+    /// of being discarded at the parser.
+    public let acmod: Int
+
     public init(
         isEnhanced: Bool,
         sampleRate: Int,
@@ -23,12 +33,14 @@ public struct AC3FrameInfo: Sendable, Equatable {
         isLFEOn: Bool,
         bitrateKbps: Int,
         frameSizeBytes: Int,
-        samplesPerFrame: Int
+        samplesPerFrame: Int,
+        acmod: Int = 2
     ) {
         self.isEnhanced = isEnhanced
         self.sampleRate = sampleRate
         self.channelCount = channelCount
         self.isLFEOn = isLFEOn
+        self.acmod = acmod
         self.bitrateKbps = bitrateKbps
         self.frameSizeBytes = frameSizeBytes
         self.samplesPerFrame = samplesPerFrame
@@ -246,7 +258,8 @@ public final class AC3FrameParser: @unchecked Sendable {
             isLFEOn: isLFEOn,
             bitrateKbps: bitrate,
             frameSizeBytes: frameSizeBytes,
-            samplesPerFrame: 1536 // Always 1536 for AC-3
+            samplesPerFrame: 1536, // Always 1536 for AC-3
+            acmod: acmod
         )
     }
 
@@ -320,7 +333,8 @@ public final class AC3FrameParser: @unchecked Sendable {
             isLFEOn: isLFE,
             bitrateKbps: bitrate,
             frameSizeBytes: frameSizeBytes,
-            samplesPerFrame: samplesPerFrame
+            samplesPerFrame: samplesPerFrame,
+            acmod: acmod
         )
     }
 

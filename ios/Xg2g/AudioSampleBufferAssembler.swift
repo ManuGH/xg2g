@@ -148,6 +148,37 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
 
     // MARK: - Format Description Helpers
 
+    /// The CoreAudio channel layout for a bitstream's `acmod` / `lfeon` pair.
+    ///
+    /// AC-3 delivers its channels in bitstream order — L, C, R, Ls, Rs, LFE —
+    /// which is what the `AC3_*` and `MPEG_*_C` tags describe. Without a layout
+    /// the renderer knows the channel *count* and nothing else, so a 5.1
+    /// broadcast folded down to a two-channel route (any Bluetooth headphone,
+    /// AirPods included) has no way to tell which channel carries dialogue and
+    /// which carries the LFE rumble. That fold-down is where the audible damage
+    /// happens; the built-in speaker mostly hides it.
+    ///
+    /// Returns `nil` for the three combinations CoreAudio has no tag for
+    /// (dual-mono+LFE, 2/0+LFE, 2/2+LFE), which fall back to discrete channels.
+    static func channelLayoutTag(acmod: Int, lfeOn: Bool) -> AudioChannelLayoutTag? {
+        switch (acmod, lfeOn) {
+        case (0, false): return kAudioChannelLayoutTag_Stereo        // 1+1 dual mono
+        case (1, false): return kAudioChannelLayoutTag_Mono          // 1/0 C
+        case (1, true):  return kAudioChannelLayoutTag_AC3_1_0_1     // C, LFE
+        case (2, false): return kAudioChannelLayoutTag_Stereo        // 2/0 L, R
+        case (3, false): return kAudioChannelLayoutTag_AC3_3_0       // L, C, R
+        case (3, true):  return kAudioChannelLayoutTag_AC3_3_0_1     // L, C, R, LFE
+        case (4, false): return kAudioChannelLayoutTag_ITU_2_1       // L, R, Cs
+        case (4, true):  return kAudioChannelLayoutTag_AC3_2_1_1     // L, R, Cs, LFE
+        case (5, false): return kAudioChannelLayoutTag_AC3_3_1       // L, C, R, Cs
+        case (5, true):  return kAudioChannelLayoutTag_AC3_3_1_1     // L, C, R, Cs, LFE
+        case (6, false): return kAudioChannelLayoutTag_Quadraphonic  // L, R, Ls, Rs
+        case (7, false): return kAudioChannelLayoutTag_MPEG_5_0_C    // L, C, R, Ls, Rs
+        case (7, true):  return kAudioChannelLayoutTag_MPEG_5_1_C    // L, C, R, Ls, Rs, LFE
+        default:         return nil
+        }
+    }
+
     private func createAC3FormatDescription(for info: AC3FrameInfo) -> CMAudioFormatDescription? {
         let formatID: AudioFormatID = info.isEnhanced ? kAudioFormatEnhancedAC3 : kAudioFormatAC3
 
@@ -163,12 +194,18 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
             mReserved: 0
         )
 
+        var layout = AudioChannelLayout()
+        layout.mChannelLayoutTag = Self.channelLayoutTag(acmod: info.acmod, lfeOn: info.isLFEOn)
+            ?? (kAudioChannelLayoutTag_DiscreteInOrder | UInt32(info.channelCount))
+
         var format: CMAudioFormatDescription?
+        // Tag-based layouts carry no channel descriptions, so the bare struct
+        // size is the whole layout.
         let status = CMAudioFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
             asbd: &asbd,
-            layoutSize: 0,
-            layout: nil,
+            layoutSize: MemoryLayout<AudioChannelLayout>.size,
+            layout: &layout,
             magicCookieSize: 0,
             magicCookie: nil,
             extensions: nil,
