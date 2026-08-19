@@ -12,10 +12,11 @@ import Foundation
 /// The backend mounts `/api/v3` and `/ui` as **siblings** at the deployment
 /// root (`V3BaseURL = "/api/v3"`, and `/ui` behind `http.StripPrefix("/ui", …)`).
 /// The Android client instead persists the *UI* base (`https://host/ui/`) and
-/// has to reconstruct the API from it, which its two transports do differently:
-/// `DeviceAuthRepository.apiUrl` replaces the path with `/api/v3/`, while
-/// `NativeDeviceAuthTransport.refreshSession` appends segments and so requests
-/// `https://host/ui/api/v3/auth/device/session` — the SPA handler, not the API.
+/// has to reconstruct the API from it. Its two transports once did that
+/// differently: one replaced the path with `/api/v3/`, the other appended
+/// segments and so requested `https://host/ui/api/v3/…` — the SPA handler, not
+/// the API. Both share an origin-rooted helper now; the reconstruction is what
+/// made two answers possible in the first place.
 ///
 /// Modelling the **root** removes that whole class of mistake: every endpoint
 /// is derived downward from one stored value, never reconstructed sideways out

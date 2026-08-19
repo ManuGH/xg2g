@@ -505,7 +505,7 @@ run_guide_assertions() {
     offset="$(log_offset)"
     tap_text "Watch Live TV"
 
-    wait_for_backend_regex "${offset}" '"method":"POST","path":"/api/v3/auth/device/session".*"status":200' 45
+    wait_for_backend_regex "${offset}" '"method":"POST","path":"/api/v3/auth/device/refresh".*"status":200' 45
     wait_for_backend_regex "${offset}" '"method":"POST","path":"/api/v3/auth/session".*"status":200' 45
     wait_for_backend_regex "${offset}" '"method":"GET","path":"/api/v3/services/bouquets".*"status":200' 45
     wait_for_backend_regex "${offset}" '"method":"GET","path":"/api/v3/services".*"status":200' 45

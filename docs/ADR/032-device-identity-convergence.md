@@ -275,7 +275,7 @@ it away again at the last step.
 
 ### Phase 2 — bound refresh
 
-- `/auth/device/session` requires a DPoP proof whose thumbprint matches the
+- `/auth/device/refresh` requires a DPoP proof whose thumbprint matches the
   grant's `bound_jkt`.
 - Unbound refresh continues to work until the cutoff, marked `legacy_unbound`
   and logged on every use.

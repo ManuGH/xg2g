@@ -176,7 +176,7 @@ Rules:
    - Clear the current `xg2g_session` cookie immediately.
    - Retry only through the existing refresh/bootstrap rules; do not invent a second auth path.
 
-6. HTTP 401 / 403 / 410 from `POST /api/v3/auth/device/session`
+6. HTTP 401 / 403 / 410 from `POST /api/v3/auth/device/refresh`
    - Treat the device grant as no longer usable.
    - Clear grant and cookie state.
    - Force explicit re-enrollment.

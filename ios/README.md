@@ -131,13 +131,14 @@ This client therefore persists the *root* and derives `apiBaseURL` and
 `webUIURL` downward from it. Nothing is ever reconstructed sideways out of
 another endpoint's path.
 
-Android persists the UI base (`https://host/ui/`) instead, and its two
-transports disagree about how to get back to the API from there:
-`DeviceAuthRepository.apiUrl` replaces the path with `/api/v3/`, while
-`NativeDeviceAuthTransport.refreshSession` appends segments and therefore
-requests `https://host/ui/api/v3/auth/device/session`, which reaches the SPA
-handler rather than the API router. `NativeAuthContainer` wires the latter.
-Storing the root removes the entire class of mistake.
+Android persists the UI base (`https://host/ui/`) instead and has to
+reconstruct the API from it. Its two transports once disagreed about how:
+one replaced the path with `/api/v3/`, the other appended segments and so
+requested `https://host/ui/api/v3/...`, reaching the SPA handler rather than
+the API router. Both now go through the origin-rooted `apiV3Url`, but only
+because a shared helper was introduced — the reconstruction itself is what
+made two answers possible. Storing the root removes the entire class of
+mistake instead of settling it.
 
 ### Two parsers, one boundary
 
