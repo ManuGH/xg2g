@@ -1,5 +1,9 @@
 package io.github.manugh.xg2g.android
 
+import io.github.manugh.xg2g.android.auth.AndroidKeystoreDPoPProvider
+import io.github.manugh.xg2g.android.auth.DPoPProvider
+import io.github.manugh.xg2g.android.auth.buildDeviceRefreshRequest
+import io.github.manugh.xg2g.android.auth.refreshedSessionFrom
 import android.content.Context
 import android.util.Log
 import io.github.manugh.xg2g.android.playback.net.AuthCookieSession
@@ -35,7 +39,8 @@ internal class DeviceAuthRepository(
         context: Context,
         cookieSession: AuthCookieSession = CookieBackedAuthSession(),
         stateStore: PersistedDeviceAuthStateStore = DeviceAuthStore(context.applicationContext),
-        transport: DeviceAuthTransport = OkHttpDeviceAuthTransport(cookieSession)
+        dpopProvider: DPoPProvider = AndroidKeystoreDPoPProvider(),
+        transport: DeviceAuthTransport = OkHttpDeviceAuthTransport(cookieSession, dpopProvider)
     ) : this(
         stateStore = stateStore,
         cookieSession = cookieSession,
@@ -337,25 +342,23 @@ internal class DeviceAuthRepository(
             try {
                 val refreshed = transport.refreshSession(
                     uiBaseUrl = uiBaseUrl,
-                    deviceGrantId = state.deviceGrantId,
-                    deviceGrant = state.deviceGrant
+                    refreshToken = state.deviceGrant
                 )
-                val mergedEndpoints = mergePublishedEndpoints(
-                    current = state.publishedEndpoints,
-                    refreshed = refreshed.endpoints
-                )
+                // A token rotation says nothing about published endpoints or the
+                // policy version, so the stored ones survive it. Overwriting them
+                // with the empty values a refresh response does not carry would
+                // erase the connectivity the device was paired with.
                 val nextState = state.copy(
                     serverUrl = preferredNativeServerUrl(
                         currentServerUrl = uiBaseUrl.toString(),
-                        endpoints = mergedEndpoints
+                        endpoints = state.publishedEndpoints
                     ) ?: uiBaseUrl.toString(),
-                    deviceGrantId = refreshed.rotatedDeviceGrantId ?: state.deviceGrantId,
-                    deviceGrant = refreshed.rotatedDeviceGrant ?: state.deviceGrant,
-                    accessSessionId = refreshed.accessSessionId,
+                    deviceGrantId = refreshed.deviceId,
+                    deviceGrant = refreshed.rotatedRefreshToken,
+                    accessSessionId = null,
                     accessToken = refreshed.accessToken,
-                    accessTokenExpiresAtEpochMs = refreshed.accessTokenExpiresAtEpochMs,
-                    policyVersion = refreshed.policyVersion,
-                    publishedEndpoints = mergedEndpoints
+                    accessTokenExpiresAtEpochMs = nowEpochMs() + refreshed.expiresInSeconds * 1000L,
+                    policyVersion = state.policyVersion
                 )
                 stateStore.save(nextState)
                 telemetry.record(
@@ -363,11 +366,9 @@ internal class DeviceAuthRepository(
                         name = "device_auth_access_token_ready",
                         level = DeviceAuthTelemetryLevel.INFO,
                         stage = "device_session_refresh",
-                        outcome = if (refreshed.rotatedDeviceGrantId != null) {
-                            "refreshed_and_rotated_grant"
-                        } else {
-                            "refreshed_access_token"
-                        }
+                        // The refresh token rotates on every call by contract, so
+                        // there is no longer a "not rotated" outcome to report.
+                        outcome = "refreshed_and_rotated_grant"
                     )
                 )
                 return refreshed.accessToken
@@ -531,30 +532,30 @@ internal class DeviceAuthRepository(
             candidate.port == baseUrl.port
     }
 
-    private fun mergePublishedEndpoints(
-        current: List<PublishedEndpoint>,
-        refreshed: List<PublishedEndpoint>
-    ): List<PublishedEndpoint> {
-        if (refreshed.isNotEmpty()) {
-            return normalizePublishedEndpoints(refreshed)
-        }
-        return normalizePublishedEndpoints(current)
-    }
-
     private companion object {
         const val SESSION_COOKIE_NAME = "xg2g_session"
         const val SESSION_COOKIE_PATH = "/api/v3/"
     }
 }
 
+/**
+ * One rotation of the device's credentials.
+ *
+ * Every field is present because DeviceGrantResponse declares every field
+ * required. The previous shape carried nullable rotated-grant fields, an
+ * accessSessionId and a published-endpoint list because the retired
+ * /auth/device/session response did; carrying them forward would mean writing
+ * empty strings and empty lists over state the refresh does not speak about.
+ *
+ * expiresIn is a lifetime in seconds rather than an instant, so the caller
+ * resolves it against its own clock instead of the transport's.
+ */
 internal data class RefreshedDeviceSession(
-    val rotatedDeviceGrantId: String? = null,
-    val rotatedDeviceGrant: String? = null,
-    val accessSessionId: String,
+    val deviceId: String,
     val accessToken: String,
-    val accessTokenExpiresAtEpochMs: Long,
-    val policyVersion: String? = null,
-    val endpoints: List<PublishedEndpoint> = emptyList()
+    val rotatedRefreshToken: String,
+    val expiresInSeconds: Int,
+    val scope: String
 )
 
 internal data class StartedWebBootstrap(
@@ -567,7 +568,7 @@ internal data class CompletedWebBootstrap(
 )
 
 internal interface DeviceAuthTransport {
-    suspend fun refreshSession(uiBaseUrl: HttpUrl, deviceGrantId: String, deviceGrant: String): RefreshedDeviceSession
+    suspend fun refreshSession(uiBaseUrl: HttpUrl, refreshToken: String): RefreshedDeviceSession
     suspend fun createCookieSession(uiBaseUrl: HttpUrl, bearerToken: String)
     suspend fun startWebBootstrap(uiBaseUrl: HttpUrl, accessToken: String, targetPath: String): StartedWebBootstrap
     suspend fun completeWebBootstrap(uiBaseUrl: HttpUrl, completePath: String, bootstrapToken: String): CompletedWebBootstrap
@@ -641,6 +642,7 @@ private class LogcatDeviceAuthTelemetry : DeviceAuthTelemetry {
 
 internal class OkHttpDeviceAuthTransport(
     private val cookieSession: AuthCookieSession,
+    private val dpopProvider: DPoPProvider,
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .followRedirects(false)
         .followSslRedirects(false)
@@ -649,37 +651,18 @@ internal class OkHttpDeviceAuthTransport(
 
     override suspend fun refreshSession(
         uiBaseUrl: HttpUrl,
-        deviceGrantId: String,
-        deviceGrant: String
+        refreshToken: String
     ): RefreshedDeviceSession = withContext(Dispatchers.IO) {
-        Log.i(TAG, "action=refresh_session path=/api/v3/auth/device/session")
-        val request = Request.Builder()
-            .url(apiV3Url(uiBaseUrl, "auth", "device", "session"))
-            .post(
-                JSONObject()
-                    .put("deviceGrantId", deviceGrantId)
-                    .put("deviceGrant", deviceGrant)
-                    .toString()
-                    .toRequestBody(JSON_MEDIA_TYPE)
-            )
-            .build()
+        Log.i(TAG, "action=refresh_session path=/api/v3/auth/device/refresh")
+        val request = buildDeviceRefreshRequest(uiBaseUrl, refreshToken, dpopProvider)
 
         execute(uiBaseUrl, request).use { response ->
             val body = response.body.string()
             if (!response.isSuccessful) {
                 throw response.asDeviceAuthHttpException(body)
             }
-            val json = JSONObject(body)
             Log.i(TAG, "action=refresh_session outcome=ok status=${response.code}")
-            RefreshedDeviceSession(
-                rotatedDeviceGrantId = json.optString("rotatedDeviceGrantId").takeIf { it.isNotBlank() },
-                rotatedDeviceGrant = json.optString("rotatedDeviceGrant").takeIf { it.isNotBlank() },
-                accessSessionId = json.getString("accessSessionId"),
-                accessToken = json.getString("accessToken"),
-                accessTokenExpiresAtEpochMs = parseHttpInstant(json.getString("accessTokenExpiresAt")),
-                policyVersion = json.optString("policyVersion").takeIf { it.isNotBlank() },
-                endpoints = parsePublishedEndpoints(json.optJSONArray("endpoints"))
-            )
+            refreshedSessionFrom(JSONObject(body))
         }
     }
 
@@ -766,36 +749,6 @@ internal class OkHttpDeviceAuthTransport(
         return okHttpClient.newCall(contextualRequest).execute().also { response ->
             cookieSession.storeCookies(request.url, response.headers)
         }
-    }
-
-    private fun parseHttpInstant(value: String): Long =
-        ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)
-            .toInstant()
-            .toEpochMilli()
-
-    private fun parsePublishedEndpoints(array: JSONArray?): List<PublishedEndpoint> {
-        if (array == null) {
-            return emptyList()
-        }
-        return buildList {
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                add(
-                    PublishedEndpoint(
-                        url = item.optString("url"),
-                        kind = item.optString("kind"),
-                        priority = item.optInt("priority"),
-                        tlsMode = item.optString("tlsMode"),
-                        allowPairing = item.optBoolean("allowPairing"),
-                        allowStreaming = item.optBoolean("allowStreaming"),
-                        allowWeb = item.optBoolean("allowWeb"),
-                        allowNative = item.optBoolean("allowNative"),
-                        advertiseReason = item.optString("advertiseReason"),
-                        source = item.optString("source", "config")
-                    )
-                )
-            }
-        }.let(::normalizePublishedEndpoints)
     }
 
     private fun okhttp3.Response.asDeviceAuthHttpException(body: String): DeviceAuthHttpException {

@@ -236,8 +236,7 @@ private class RecordingDeviceAuthTransport : DeviceAuthTransport {
 
     override suspend fun refreshSession(
         uiBaseUrl: HttpUrl,
-        deviceGrantId: String,
-        deviceGrant: String
+        refreshToken: String
     ): RefreshedDeviceSession {
         refreshCalls += 1
         return refreshResponse ?: error("refreshResponse not configured")

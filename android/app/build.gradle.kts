@@ -99,6 +99,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests {
+            // android.jar stubs throw "not mocked" by default, so any JVM unit test that
+            // reaches a Log call in production code fails before it can assert anything.
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {

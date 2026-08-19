@@ -21,18 +21,9 @@ class DeviceAuthRepositoryTest {
                 deviceGrantId = "dgr-old",
                 deviceGrant = "secret-old",
                 accessToken = "stale-token",
-                accessTokenExpiresAtEpochMs = 10L
-            )
-        )
-        val transport = FakeTransport().apply {
-            refreshResponse = RefreshedDeviceSession(
-                rotatedDeviceGrantId = "dgr-new",
-                rotatedDeviceGrant = "secret-new",
-                accessSessionId = "dss-1",
-                accessToken = "fresh-token",
-                accessTokenExpiresAtEpochMs = 120_000L,
+                accessTokenExpiresAtEpochMs = 10L,
                 policyVersion = "device-auth-v1",
-                endpoints = listOf(
+                publishedEndpoints = listOf(
                     PublishedEndpoint(
                         url = "https://public.example",
                         kind = "public_https",
@@ -46,6 +37,15 @@ class DeviceAuthRepositoryTest {
                         source = "config"
                     )
                 )
+            )
+        )
+        val transport = FakeTransport().apply {
+            refreshResponse = RefreshedDeviceSession(
+                deviceId = "dgr-new",
+                accessToken = "fresh-token",
+                rotatedRefreshToken = "secret-new",
+                expiresInSeconds = 900,
+                scope = "v3:read v3:stream"
             )
         }
         val cookies = FakeCookieSession()
@@ -62,10 +62,18 @@ class DeviceAuthRepositoryTest {
         }
 
         assertEquals("fresh-token", transport.createdCookieSessionBearer)
+        assertEquals("secret-old", transport.refreshedWithToken)
         assertEquals("dgr-new", store.current?.deviceGrantId)
         assertEquals("secret-new", store.current?.deviceGrant)
         assertEquals("fresh-token", store.current?.accessToken)
         assertEquals("https://public.example/ui/", store.current?.serverUrl)
+
+        // expiresIn is a lifetime, resolved against the repository's clock.
+        assertEquals(60_000L + 900_000L, store.current?.accessTokenExpiresAtEpochMs)
+
+        // A rotation replaces credentials and nothing else.
+        assertEquals("device-auth-v1", store.current?.policyVersion)
+        assertEquals(1, store.current?.publishedEndpoints?.size)
     }
 
     @Test
@@ -82,10 +90,11 @@ class DeviceAuthRepositoryTest {
         }
         val transport = FakeTransport().apply {
             refreshResponse = RefreshedDeviceSession(
-                accessSessionId = "dss-1",
+                deviceId = "dgr-1",
                 accessToken = "fresh-token",
-                accessTokenExpiresAtEpochMs = 120_000L,
-                policyVersion = "device-auth-v1"
+                rotatedRefreshToken = "secret-new",
+                expiresInSeconds = 900,
+                scope = "v3:read"
             )
         }
         val repository = DeviceAuthRepository(
@@ -129,7 +138,7 @@ class DeviceAuthRepositoryTest {
         }
 
         assertEquals("legacy-token", transport.createdCookieSessionBearer)
-        assertNull(transport.refreshedGrantId)
+        assertNull(transport.refreshedWithToken)
     }
 
     @Test
@@ -245,10 +254,11 @@ class DeviceAuthRepositoryTest {
         )
         val transport = FakeTransport().apply {
             refreshResponse = RefreshedDeviceSession(
-                accessSessionId = "dss-1",
+                deviceId = "dgr-1",
                 accessToken = "fresh-token",
-                accessTokenExpiresAtEpochMs = 120_000L,
-                policyVersion = "device-auth-v1"
+                rotatedRefreshToken = "secret-new",
+                expiresInSeconds = 900,
+                scope = "v3:read"
             )
         }
         val repository = DeviceAuthRepository(
@@ -429,21 +439,18 @@ private class FakeTransport : DeviceAuthTransport {
     var completeBootstrapResponse: CompletedWebBootstrap? = null
     var refreshCalls = 0
     var createCookieSessionCalls = 0
-    var refreshedGrantId: String? = null
-    var refreshedGrantSecret: String? = null
+    var refreshedWithToken: String? = null
     var createdCookieSessionBearer: String? = null
     var startedBootstrapTargetPath: String? = null
     var completedBootstrap = false
 
     override suspend fun refreshSession(
         uiBaseUrl: HttpUrl,
-        deviceGrantId: String,
-        deviceGrant: String
+        refreshToken: String
     ): RefreshedDeviceSession {
         refreshCalls += 1
         refreshException?.let { throw it }
-        refreshedGrantId = deviceGrantId
-        refreshedGrantSecret = deviceGrant
+        refreshedWithToken = refreshToken
         return refreshResponse
             ?: throw AssertionError("refreshSession called without configured response")
     }

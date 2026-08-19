@@ -59,19 +59,19 @@ internal class NativeDeviceAuthRepository(
         return try {
             val refreshed = transport.refreshSession(
                 uiBaseUrl = httpUrl,
-                deviceGrantId = currentStore.deviceGrantId,
-                deviceGrant = currentStore.deviceGrant
+                refreshToken = currentStore.deviceGrant
             )
 
-            val updatedState = PersistedDeviceAuthState(
+            // A rotation replaces the credentials and nothing else: the
+            // published endpoints and the policy version the device was paired
+            // with are not part of a refresh response and must survive it.
+            val updatedState = currentStore.copy(
                 serverUrl = normalizedUrl,
-                deviceGrantId = refreshed.rotatedDeviceGrantId ?: currentStore.deviceGrantId,
-                deviceGrant = refreshed.rotatedDeviceGrant ?: currentStore.deviceGrant,
-                accessSessionId = refreshed.accessSessionId,
+                deviceGrantId = refreshed.deviceId,
+                deviceGrant = refreshed.rotatedRefreshToken,
+                accessSessionId = null,
                 accessToken = refreshed.accessToken,
-                accessTokenExpiresAtEpochMs = refreshed.accessTokenExpiresAtEpochMs,
-                policyVersion = refreshed.policyVersion,
-                publishedEndpoints = refreshed.endpoints
+                accessTokenExpiresAtEpochMs = nowEpochMs() + refreshed.expiresInSeconds * 1000L
             )
             stateStore.save(updatedState)
 
@@ -79,7 +79,7 @@ internal class NativeDeviceAuthRepository(
                 deviceGrantId = updatedState.deviceGrantId,
                 accessToken = refreshed.accessToken,
                 jktThumbprint = jkt,
-                expiresAtEpochMs = refreshed.accessTokenExpiresAtEpochMs
+                expiresAtEpochMs = updatedState.accessTokenExpiresAtEpochMs ?: 0L
             )
         } catch (e: IOException) {
             // Network Error -> Stay in Refreshing with backoff! NO LOGOUT!

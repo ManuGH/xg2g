@@ -38,8 +38,7 @@ class NativeDeviceAuthRepositoryTest {
 
         override suspend fun refreshSession(
             uiBaseUrl: HttpUrl,
-            deviceGrantId: String,
-            deviceGrant: String
+            refreshToken: String
         ): RefreshedDeviceSession {
             if (shouldThrowNetworkError) {
                 throw IOException("SocketTimeoutException: network offline")
@@ -51,13 +50,11 @@ class NativeDeviceAuthRepositoryTest {
                 throw RuntimeException("HTTP 403: device revoked by admin")
             }
             return refreshedSession ?: RefreshedDeviceSession(
-                rotatedDeviceGrantId = "dgr_rotated",
-                rotatedDeviceGrant = "secret_rotated",
-                accessSessionId = "sess_100",
+                deviceId = "dgr_rotated",
                 accessToken = "at_dpop_fresh",
-                accessTokenExpiresAtEpochMs = 120_000L,
-                policyVersion = "v1",
-                endpoints = emptyList()
+                rotatedRefreshToken = "secret_rotated",
+                expiresInSeconds = 900,
+                scope = "v3:read"
             )
         }
 
