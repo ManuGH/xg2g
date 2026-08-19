@@ -1,0 +1,193 @@
+/* Registered devices - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css)
+
+   The trust badge keeps --status-success because that is what it renders
+   today. It is worth knowing that the badge is a constant: it reads no device
+   field, so every card claims thirty days of trust whether or not the record
+   supports it. That is a behaviour question, not a styling one, and is left
+   exactly as found here. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subheading {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.banner {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.bannerError {
+  background-color: var(--status-error-subtle);
+  border: 1px solid var(--status-error-border);
+  color: var(--status-error);
+}
+
+.bannerSuccess {
+  background-color: var(--status-success-subtle);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success);
+}
+
+.loading {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* --- device cards ------------------------------------------------------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background-color: var(--surface-panel-strong);
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid var(--border-elevated);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: border-color var(--motion-standard) var(--ease-standard);
+}
+
+.card:hover {
+  border-color: var(--border-strong);
+}
+
+.cardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.deviceIcon {
+  font-size: 32px;
+  background-color: var(--bg-base);
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.trustBadge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background-color: var(--status-success-subtle);
+  color: var(--status-success);
+}
+
+.deviceName {
+  margin: 12px 0 4px 0;
+  font-size: 16px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.deviceType {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+/* A key thumbprint is data to be compared character by character, so it takes
+   the data face rather than the raw monospace family it used inline. */
+.thumbprint {
+  font-size: 11px;
+  color: var(--text-disabled);
+  font-family: var(--font-mono);
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.cardActions {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-base);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.confirmGroup {
+  display: flex;
+  gap: 6px;
+}
+
+/* --- buttons ------------------------------------------------------------ */
+
+.button {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard);
+}
+
+.buttonNeutral {
+  padding: 6px 10px;
+  background-color: var(--surface-highlight);
+  color: var(--text-secondary);
+}
+
+.buttonNeutral:hover {
+  background-color: var(--bg-hover);
+}
+
+.buttonDanger {
+  border: 1px solid var(--status-error-border);
+  background-color: var(--status-error-subtle);
+  color: var(--status-error);
+}
+
+.buttonDanger:hover {
+  border-color: var(--status-error);
+}
+
+.buttonDangerSolid {
+  padding: 6px 10px;
+  background-color: var(--status-error);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.buttonDangerSolid:hover {
+  background-color: color-mix(in srgb, var(--status-error) 84%, var(--text-primary));
+}
+
+.emptyState {
+  background-color: var(--surface-panel-strong);
+  padding: 32px;
+  border-radius: 16px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  border: 1px dashed var(--border-elevated);
+}
