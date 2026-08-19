@@ -459,3 +459,29 @@
 .buttonSubmit:hover:not(:disabled) {
   background-color: var(--accent-action-hover);
 }
+
+/* --- responsive, harvested from the retired Settings rules ---------------
+   Two media queries covered this same dialog and did not survive the inline
+   rewrite, because an inline style cannot carry one. */
+
+/* .profileEditorActions took the full width here rather than huddling at the
+   right edge; with two buttons in this dialog, letting them share that width
+   is the same intent. */
+@media (max-width: 760px) {
+  .modalActions .button {
+    flex: 1;
+  }
+}
+
+/* A phone held sideways has almost no vertical room, so .profileEditor gave
+   its padding back to the content. Same values. */
+@media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
+  .modal {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .form {
+    gap: 14px;
+  }
+}

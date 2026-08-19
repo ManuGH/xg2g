@@ -447,144 +447,6 @@
   font-size: 14px;
 }
 
-.profileCards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.profileCard {
-  border: 1px solid var(--border-base);
-  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
-  border-radius: 20px;
-  padding: 18px;
-  text-align: left;
-  color: var(--text-primary);
-  transition:
-    border-color var(--motion-standard) var(--ease-standard),
-    transform var(--motion-standard) var(--ease-standard),
-    background var(--motion-standard) var(--ease-standard);
-}
-
-.profileCard:hover {
-  border-color: var(--border-elevated);
-  background: color-mix(in srgb, var(--surface-highlight) 30%, var(--surface-muted) 70%);
-  transform: translateY(-2px);
-}
-
-.profileCard:focus-visible,
-.profileInput:focus-visible,
-.inputReadonly:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 3px;
-}
-
-.profileCardActive {
-  border-color: var(--accent-action);
-  box-shadow: var(--shadow-ring-action);
-  background: color-mix(in srgb, var(--accent-action-subtle) 46%, var(--surface-muted) 54%);
-}
-
-.profileCardHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.profileCardEyebrow {
-  margin: 0 0 6px 0;
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  letter-spacing: var(--tracking-label);
-  font-family: var(--font-label);
-  text-transform: uppercase;
-}
-
-.profileCardTitle {
-  display: block;
-}
-
-.profileCardMeta {
-  margin: 10px 0 0 0;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.profileBadge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-action-subtle) 72%, transparent);
-  color: var(--text-primary);
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.profileToolbar {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-
-.profileEditor {
-  border: 1px solid var(--border-elevated);
-  border-radius: 24px;
-  background: color-mix(in srgb, var(--surface-stage-strong) 86%, transparent);
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.profileEditorHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.profileEditorTitle {
-  margin: 0;
-}
-
-.profileEditorActions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.profileGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px;
-}
-
-.profileField {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.profileField span {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.profileInput {
-  min-height: 48px;
-  width: 100%;
-  border: 1px solid var(--border-base);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--surface-stage) 84%, black 16%);
-  color: var(--text-primary);
-  padding: 0 14px;
-}
-
 .permissionGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -600,25 +462,6 @@
   padding: 12px 14px;
   background: color-mix(in srgb, var(--surface-stage) 82%, transparent);
   color: var(--text-primary);
-}
-
-.profilePanel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.profilePanelHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.profilePanelActions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .choiceGrid {
@@ -676,14 +519,6 @@
   color: var(--text-muted);
 }
 
-.profileEmptyState {
-  border: 1px dashed var(--border-base);
-  border-radius: 16px;
-  padding: 18px;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--surface-stage) 80%, transparent);
-}
-
 @media (max-width: 760px) {
   .page {
     padding: 4px 0 20px;
@@ -731,17 +566,11 @@
     width: 100%;
   }
 
-  .profileEditorHeader,
-  .profilePanelHeader,
   .channelRow {
     grid-template-columns: 1fr;
     flex-direction: column;
   }
 
-  .profileEditorActions,
-  .profilePanelActions {
-    width: 100%;
-  }
 }
 
 @media (max-width: 932px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
@@ -890,11 +719,6 @@
     margin-bottom: 18px;
   }
 
-  .profileEditor {
-    gap: 14px;
-    padding: 18px;
-    border-radius: 20px;
-  }
 }
 
 @media (max-width: 932px) and (orientation: landscape) and (max-height: 430px) and (hover: none) and (pointer: coarse) {
