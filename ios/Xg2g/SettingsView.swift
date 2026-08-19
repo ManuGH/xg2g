@@ -48,6 +48,53 @@ struct SettingsView: View {
 
                     Section {
                         HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "play.rectangle.on.rectangle", backgroundColor: Color.indigo)
+                            Picker("Wiedergabe-Art", selection: $model.playbackEngine) {
+                                ForEach(AppModel.PlaybackEngine.allCases) { engine in
+                                    Text(engine.displayName).tag(engine)
+                                }
+                            }
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+
+                        PlaybackEngineComparison(selected: model.playbackEngine)
+
+                        if model.playbackEngine == .native {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "antenna.radiowaves.left.and.right", backgroundColor: Color.orange)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Receiver-Adresse")
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                    TextField("http://192.168.1.50:8001", text: $model.receiverStreamBaseURL)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                        .keyboardType(.URL)
+                                        .font(.subheadline.monospaced())
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                }
+                            }
+
+                            if !model.isDirectPlaybackAvailable {
+                                Label(
+                                    "Ohne Receiver-Adresse läuft die Wiedergabe weiter über den Server.",
+                                    systemImage: "exclamationmark.triangle.fill"
+                                )
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.statusWarning)
+                            }
+                        }
+                    } header: {
+                        Text("Wiedergabe-Art")
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    } footer: {
+                        Text("Aufnahmen und programmierte Timer sind von dieser Einstellung nicht betroffen — sie laufen immer über den Server und funktionieren in beiden Fällen.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .listRowBackground(Theme.Colors.surfaceElevated)
+
+                    Section {
+                        HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "bolt.badge.automatic", backgroundColor: Theme.Colors.accentLive)
                             Picker("Streaming-Modus", selection: $model.qualityPreference) {
                                 ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
@@ -218,6 +265,45 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Einstellungen")
+        }
+    }
+}
+
+/// Shows what the chosen playback route gives the viewer and what it takes away.
+///
+/// The two routes are not better and worse, they are different trades, and the
+/// difference is one a viewer notices immediately — pausing live television
+/// works on one and not on the other. Stating both sides is what makes the
+/// choice possible; a settings row naming only the upside would leave someone
+/// wondering why the pause button stopped working.
+struct PlaybackEngineComparison: View {
+
+    let selected: AppModel.PlaybackEngine
+
+    var body: some View {
+        let tradeoff = selected.tradeoff
+
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(tradeoff.gains, id: \.self) { gain in
+                row(icon: "checkmark.circle.fill", tint: Theme.Colors.statusSuccess, text: gain)
+            }
+            ForEach(tradeoff.costs, id: \.self) { cost in
+                row(icon: "minus.circle.fill", tint: Theme.Colors.statusWarning, text: cost)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func row(icon: String, tint: Color, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(tint)
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
     }
 }

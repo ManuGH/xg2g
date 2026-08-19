@@ -35,7 +35,10 @@ public struct TestTSPlayerScreen: View {
     @State private var hideZapToastTask: Task<Void, Never>?
 
     private struct ChannelPreset: Identifiable, Hashable {
-        let id = UUID()
+        /// Keyed on the service, not on a fresh UUID: the list is computed from
+        /// the catalogue on demand, and an identity that changed on every read
+        /// would make SwiftUI rebuild the whole row set each time.
+        var id: String { serviceRef }
         let name: String
         let serviceRef: String
         let url: String
@@ -43,7 +46,10 @@ public struct TestTSPlayerScreen: View {
         let category: String
     }
 
-    private let presets: [ChannelPreset] = [
+    /// Hard-coded services for bench work, used only when no catalogue is
+    /// available — i.e. when the screen is opened from the developer section
+    /// rather than to watch an actual channel.
+    private static let labPresets: [ChannelPreset] = [
         ChannelPreset(name: "Sky Sport F1 HD", serviceRef: "1:0:19:11:6:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:", epgNow: "Formel 1: GP Vorberichte & Live-Session", category: "Sport"),
         ChannelPreset(name: "Sky Sport Top Event HD", serviceRef: "1:0:19:81:6:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:", epgNow: "Top-Event Highlights & Analysen", category: "Sport"),
         ChannelPreset(name: "Sky Sport Bundesliga HD", serviceRef: "1:0:19:69:C:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:69:C:85:C00000:0:0:0:", epgNow: "Bundesliga Konferenz / Live", category: "Sport"),
@@ -53,15 +59,43 @@ public struct TestTSPlayerScreen: View {
         ChannelPreset(name: "Das Erste HD", serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:283D:3FB:1:C00000:0:0:0:", epgNow: "Tagesschau / Reportage", category: "Vollprogramm")
     ]
 
-    // Internal rather than public: `AppModel` is internal, and this laboratory
-    // screen is only ever constructed from inside the app.
-    init(model: AppModel? = nil) {
+    // Internal rather than public: `AppModel` is internal, and this screen is
+    // only ever constructed from inside the app.
+    //
+    // With a `channel` it opens on that service and behaves as the live player;
+    // without one it opens on a bench preset, which is how the developer entry
+    // in Settings uses it.
+    init(model: AppModel? = nil, channel: Channel? = nil) {
         self.model = model
+        if let model, let channel, let url = model.directStreamURL(for: channel) {
+            _streamURLString = State(initialValue: url.absoluteString)
+            _currentChannelName = State(initialValue: channel.name)
+        }
     }
 
     /// The catalogue logo for a preset, matched on `serviceRef`.
     private func logoURL(for serviceRef: String) -> URL? {
         model?.channels.first { $0.serviceRef == serviceRef }?.logoURL
+    }
+
+    /// The channels this screen can tune, newest EPG title included.
+    ///
+    /// Real catalogue when there is one — this screen is a normal player now,
+    /// not only a bench — and the hard-coded services only when there is not.
+    private var presets: [ChannelPreset] {
+        guard let model else { return Self.labPresets }
+        let catalogue = model.filteredChannels.isEmpty ? model.channels : model.filteredChannels
+        let live = catalogue.compactMap { channel -> ChannelPreset? in
+            guard let url = model.directStreamURL(for: channel) else { return nil }
+            return ChannelPreset(
+                name: channel.name,
+                serviceRef: channel.serviceRef,
+                url: url.absoluteString,
+                epgNow: model.schedule[channel.serviceRef]?.now?.title ?? "",
+                category: ""
+            )
+        }
+        return live.isEmpty ? Self.labPresets : live
     }
 
     /// The preset currently streaming, for anything that needs more than its URL.

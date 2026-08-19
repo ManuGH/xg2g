@@ -183,6 +183,106 @@ final class AppModel {
         }
     }
 
+    /// Which pipeline plays live television.
+    ///
+    /// The two take fundamentally different routes to the picture, and neither
+    /// is better at everything, so this is the viewer's call rather than a
+    /// heuristic's. See `tradeoff` for what each one gives up.
+    enum PlaybackEngine: String, CaseIterable, Identifiable, Sendable {
+        /// Through the xg2g server, which segments the stream into HLS.
+        case hls
+        /// Straight from the receiver, decoded on the device.
+        case native
+
+        var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .hls: return "Über den Server (HLS)"
+            case .native: return "Direkt vom Receiver"
+            }
+        }
+
+        /// One line for the settings row.
+        var summary: String {
+            switch self {
+            case .hls: return "Pausieren und zurückspulen, funktioniert unterwegs"
+            case .native: return "Schärfer und schneller, aber ohne Pause"
+            }
+        }
+
+        /// What the viewer gains and gives up, in their terms.
+        var tradeoff: (gains: [String], costs: [String]) {
+            switch self {
+            case .hls:
+                return (
+                    gains: [
+                        "Live pausieren, zurückspulen und von vorn ansehen",
+                        "Funktioniert auch außerhalb des Heimnetzes",
+                        "Passt die Qualität an eine schwache Verbindung an",
+                        "AirPlay und Bildschirmübertragung"
+                    ],
+                    costs: [
+                        "Der Server rechnet das Bild um — das kostet Qualität",
+                        "Umschalten dauert länger",
+                        "Das Bild läuft der Live-Sendung weiter hinterher"
+                    ]
+                )
+            case .native:
+                return (
+                    gains: [
+                        "Bild und Ton exakt so, wie der Sender sie ausstrahlt",
+                        "Deutlich schnelleres Umschalten",
+                        "Näher an der Live-Sendung",
+                        "Der Server muss nichts umrechnen"
+                    ],
+                    costs: [
+                        "Kein Pausieren und kein Zurückspulen",
+                        "Nur im selben Netz wie der Receiver",
+                        "Braucht durchgehend die volle Bandbreite",
+                        "Keine Bildschirmübertragung"
+                    ]
+                )
+            }
+        }
+    }
+
+    var playbackEngine: PlaybackEngine = {
+        let raw = UserDefaults.standard.string(forKey: "xg2g.playback_engine") ?? PlaybackEngine.hls.rawValue
+        return PlaybackEngine(rawValue: raw) ?? .hls
+    }() {
+        didSet {
+            UserDefaults.standard.set(playbackEngine.rawValue, forKey: "xg2g.playback_engine")
+        }
+    }
+
+    /// Where the receiver hands out its unmodified streams, e.g. `http://10.10.55.64:8001`.
+    ///
+    /// Kept separate from the xg2g server address on purpose: direct playback
+    /// bypasses the server and talks to the receiver, and nothing tells the app
+    /// where that is — the intent response carries a session, not a receiver.
+    var receiverStreamBaseURL: String = {
+        UserDefaults.standard.string(forKey: "xg2g.receiver_stream_base_url") ?? ""
+    }() {
+        didSet {
+            UserDefaults.standard.set(receiverStreamBaseURL, forKey: "xg2g.receiver_stream_base_url")
+        }
+    }
+
+    /// The receiver URL for a service, or `nil` while no usable receiver
+    /// address has been entered. Direct playback cannot run until it has.
+    func directStreamURL(for channel: Channel) -> URL? {
+        let base = receiverStreamBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return nil }
+        let normalised = base.hasSuffix("/") ? String(base.dropLast()) : base
+        return URL(string: "\(normalised)/\(channel.serviceRef)")
+    }
+
+    /// Whether direct playback can actually run right now.
+    var isDirectPlaybackAvailable: Bool {
+        !receiverStreamBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var playerGesturesEnabled: Bool = {
         UserDefaults.standard.object(forKey: "xg2g.player_gestures_enabled") as? Bool ?? true
     }() {

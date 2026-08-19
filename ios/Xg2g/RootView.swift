@@ -26,7 +26,14 @@ struct RootView: View {
             }
         }
         .fullScreenCover(item: $model.playingChannel) { channel in
-            PlayerScreen(model: model, channel: channel)
+            // Direct playback needs a receiver address, and it is only ever set
+            // by hand. Without one the choice cannot be honoured, so the server
+            // path runs instead of presenting a player that cannot tune.
+            if model.playbackEngine == .native, model.isDirectPlaybackAvailable {
+                TestTSPlayerScreen(model: model, channel: channel)
+            } else {
+                PlayerScreen(model: model, channel: channel)
+            }
         }
         .preferredColorScheme(.dark)
         .tint(Theme.Colors.accentAction)
