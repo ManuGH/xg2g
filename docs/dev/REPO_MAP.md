@@ -37,7 +37,7 @@ development or test runs. Treat them as runtime state, not as source areas.
 | :--- | :--- | :--- |
 | Primary source | `backend/internal/`, `backend/cmd/`, `apps/webui/src/`, `android/` | Edit directly with matching tests |
 | Contracts | `backend/api/openapi.yaml`, `backend/contracts/`, `docs/decision/`, `docs/ops/*CONTRACT*` | Treat as normative; update generated artifacts when changed |
-| Generated but committed | `backend/internal/control/http/v3/server_gen.go`, `apps/webui/src/client-ts/`, `backend/internal/control/http/dist/` | Regenerate through Make/npm targets; do not hand-edit unless the generator source is broken |
+| Generated but committed | `backend/internal/control/http/v3/server_gen.go`, `apps/webui/src/client-ts/`, `ios/Xg2g/Generated/`, `android/app/src/main/java/io/github/manugh/xg2g/android/contract/`, `backend/internal/control/http/dist/` | Regenerate through Make/npm targets; do not hand-edit unless the generator source is broken |
 | Vendored dependencies | `backend/vendor/` | Updated through Go module/vendor workflow only |
 | Committed test assets | `backend/testdata/`, `backend/fixtures/`, selected Android assets | Keep intentional and small enough for repo-health gates |
 | Local-only outputs | `data/`, `logs/`, `artifacts/`, `test-results/`, `node_modules/`, `.venv/`, `bin/`, `apps/webui/dist/` | Do not commit; clean only when you know the running service does not need them |
@@ -52,6 +52,7 @@ development or test runs. Treat them as runtime state, not as source areas.
 | Embedded WebUI dist | `apps/webui/` source first | `make ui-build` and `make verify-embedded-webui-dist` |
 | Config surface | `backend/internal/config/registry.go` | `make generate-config` and `make verify-config` |
 | OpenAPI/client contract | `backend/api/openapi.yaml` | `make gen-openapi-hard` and `make verify-openapi-hard-mode` |
+| Native (iOS/Android) API models | `backend/api/openapi.yaml` under `x-xg2g-native-contract.roots` | `make generate-native-contract` and `make verify-native-contract-fresh` |
 | CI/workflow behavior | `.github/workflows/`, `.github/WORKFLOWS.md`, `docs/ops/CI_POLICY.md` | `actionlint` and `./backend/scripts/verify-action-pins.sh --local-only` |
 
 ## Gate Map
@@ -67,6 +68,7 @@ Use the smallest gate that proves the change, then run the broader gate before a
 | `npm --prefix apps/webui run lint` | WebUI lint, logging gate, design gates |
 | `npm --prefix apps/webui test` | WebUI unit/contract tests |
 | `make verify-embedded-webui-dist` | Proves committed backend WebUI assets match the frontend build |
+| `make verify-native-contract-fresh` | Proves the committed iOS/Android models match the OpenAPI contract |
 | `make workspace-clean-preview` | Shows which ignored local build/test outputs can be safely cleaned |
 
 ## Before You Commit
