@@ -29,10 +29,6 @@ type DeviceGrantFinishRequest struct {
 	Scopes     string                     `json:"scopes,omitempty"`
 }
 
-type DeviceRefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
 // DeviceGrantStart handles POST /api/v3/auth/device/grant/start
 func (s *Server) DeviceGrantStart(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()
@@ -123,22 +119,18 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeviceRefresh handles POST /api/v3/auth/device/refresh
-func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
+func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request, params DeviceRefreshParams) {
 	svc := s.getIdentityService()
 	if svc == nil {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
 		return
 	}
 
-	dpopProof := r.Header.Get("DPoP")
-	if dpopProof == "" {
-		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/dpop_required", "DPoP Header Required", problemcode.CodeInvalidInput, "DPoP proof header is required", nil)
-		return
-	}
-
+	// Presence is enforced by the generated wrapper now that the contract
+	// declares the header. What is left here is proving it.
 	validator := s.getDPoPValidator()
 	now := time.Now().UTC()
-	proofClaims, err := validator.ValidateProof(r, dpopProof, "", now)
+	proofClaims, err := validator.ValidateProof(r, params.DPoP, "", now)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("invalid DPoP proof during device refresh")
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/invalid_dpop", "Invalid DPoP Proof", problemcode.CodeInvalidInput, err.Error(), nil)
@@ -164,8 +156,15 @@ func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	// Credentials must never be cached, by a proxy or by the client.
 	w.Header().Set("Cache-Control", "no-store, no-cache, private")
 	w.Header().Set("Pragma", "no-cache")
-	_ = json.NewEncoder(w).Encode(grantRes)
+	writeJSON(w, http.StatusOK, DeviceGrantResponse{
+		TokenType:    grantRes.TokenType,
+		AccessToken:  grantRes.AccessToken,
+		RefreshToken: grantRes.RefreshToken,
+		ExpiresIn:    clampTokenLifetimeSeconds(grantRes.ExpiresIn),
+		DeviceId:     grantRes.DeviceID,
+		Scope:        grantRes.Scope,
+	})
 }

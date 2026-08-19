@@ -17,6 +17,8 @@ type MockPreparingServer struct{}
 func (m *MockPreparingServer) CreateSession(w http.ResponseWriter, r *http.Request) {}
 func (m *MockPreparingServer) DeleteSession(w http.ResponseWriter, r *http.Request, params v3.DeleteSessionParams) {
 }
+func (m *MockPreparingServer) DeviceRefresh(w http.ResponseWriter, r *http.Request, params v3.DeviceRefreshParams) {
+}
 func (m *MockPreparingServer) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {}
 func (m *MockPreparingServer) GetDvrStatus(w http.ResponseWriter, r *http.Request)       {}
 func (m *MockPreparingServer) GetEpg(w http.ResponseWriter, r *http.Request, params v3.GetEpgParams) {

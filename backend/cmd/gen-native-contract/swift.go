@@ -7,7 +7,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"strings"
 )
 
 // Swift keywords that cannot appear bare as a declaration name. Wire names are
@@ -85,6 +84,8 @@ func writeSwiftObject(out *bytes.Buffer, model objectModel) {
 		fmt.Fprintf(out, "        let %s: %s%s\n", swiftIdentifier(f.wire), swiftType(f.typ), optional)
 	}
 
+	writeSwiftCodingKeys(out, model)
+
 	// A memberwise initialiser is synthesised as `internal`, which is enough for
 	// a single-target app but not for tests that build the type explicitly, so
 	// it is emitted rather than relied upon.
@@ -126,6 +127,34 @@ func writeSwiftObject(out *bytes.Buffer, model objectModel) {
 	out.WriteString("    }\n\n")
 }
 
+// writeSwiftCodingKeys emits the wire mapping only when a property name and its
+// JSON key differ. Synthesised keys are correct for the camelCase majority, and
+// emitting them anyway would bury the handful of fields that really are spelled
+// differently on the wire.
+func writeSwiftCodingKeys(out *bytes.Buffer, model objectModel) {
+	needed := false
+	for _, f := range model.fields {
+		if swiftIdentifier(f.wire) != f.wire {
+			needed = true
+			break
+		}
+	}
+	if !needed {
+		return
+	}
+
+	out.WriteString("\n        private enum CodingKeys: String, CodingKey {\n")
+	for _, f := range model.fields {
+		name := swiftIdentifier(f.wire)
+		if name == f.wire {
+			fmt.Fprintf(out, "            case %s\n", name)
+			continue
+		}
+		fmt.Fprintf(out, "            case %s = %q\n", name, f.wire)
+	}
+	out.WriteString("        }\n")
+}
+
 func writeSwiftDoc(out *bytes.Buffer, indent, doc string) {
 	for _, line := range docLines(doc) {
 		if line == "" {
@@ -159,26 +188,24 @@ func swiftType(t fieldType) string {
 	}
 }
 
+// swiftIdentifier renders a wire name as an idiomatic Swift property name.
+// The wire spelling is not thrown away — writeSwiftObject emits CodingKeys
+// whenever the two differ, so the mapping stays explicit and checkable.
 func swiftIdentifier(wire string) string {
-	if swiftKeywords[wire] {
-		return "`" + wire + "`"
+	name := lowerCamelCase(wire)
+	if swiftKeywords[name] {
+		return "`" + name + "`"
 	}
-	return wire
+	return name
 }
 
 // swiftEnumCase turns a wire value into a lowerCamelCase case name: `local_https`
 // becomes `localHttps`, `P-256` becomes `p256`.
 func swiftEnumCase(value string) string {
-	parts := splitWireWords(value)
-	if len(parts) == 0 {
+	name := lowerCamelCase(value)
+	if name == "" {
 		return "unknown"
 	}
-	var b strings.Builder
-	b.WriteString(strings.ToLower(parts[0]))
-	for _, part := range parts[1:] {
-		b.WriteString(titleWord(part))
-	}
-	name := b.String()
 	if swiftKeywords[name] {
 		return "`" + name + "`"
 	}

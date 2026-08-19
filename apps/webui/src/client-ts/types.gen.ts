@@ -189,6 +189,40 @@ export type ApprovePairingResponse = {
     expiresAt: string;
 };
 
+export type DeviceRefreshRequest = {
+    /**
+     * The rotating refresh token most recently issued to this device, either by the pairing exchange or by a previous refresh.
+     */
+    refresh_token: string;
+};
+
+/**
+ * A freshly issued, DPoP-bound device grant.
+ *
+ * The field names are snake_case here and camelCase in
+ * ExchangePairingResponse. That is the wire as it stands, documented
+ * rather than quietly corrected: aligning the two casings is a breaking
+ * change for any device already speaking this endpoint.
+ *
+ */
+export type DeviceGrantResponse = {
+    /**
+     * Always "DPoP"; the token is sender-constrained to the device key.
+     */
+    token_type: string;
+    access_token: string;
+    /**
+     * Replaces the presented token. Presenting a superseded value is treated as replay and revokes the whole refresh family.
+     */
+    refresh_token: string;
+    /**
+     * Access-token lifetime in seconds, counted from this response.
+     */
+    expires_in: number;
+    device_id: string;
+    scope: string;
+};
+
 /**
  * Identity-shaped enrollment result.
  *
@@ -3290,6 +3324,45 @@ export type GetRecordingHlsCustomSegmentHeadResponses = {
      */
     200: unknown;
 };
+
+export type DeviceRefreshData = {
+    body: DeviceRefreshRequest;
+    headers: {
+        /**
+         * DPoP proof JWT (RFC 9449) signed by the enrolled device key.
+         */
+        DPoP: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/auth/device/refresh';
+};
+
+export type DeviceRefreshErrors = {
+    /**
+     * Missing or invalid DPoP proof, or malformed body
+     */
+    400: ProblemDetails;
+    /**
+     * Refresh token invalid, revoked, or replayed
+     */
+    401: ProblemDetails;
+    /**
+     * Identity service not configured
+     */
+    503: ProblemDetails;
+};
+
+export type DeviceRefreshError = DeviceRefreshErrors[keyof DeviceRefreshErrors];
+
+export type DeviceRefreshResponses = {
+    /**
+     * A rotated device grant
+     */
+    200: DeviceGrantResponse;
+};
+
+export type DeviceRefreshResponse = DeviceRefreshResponses[keyof DeviceRefreshResponses];
 
 export type DeleteSessionData = {
     body?: never;

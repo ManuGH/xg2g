@@ -16,6 +16,7 @@ var operationRoutes = map[string]operationRoute{
 	"DeleteStreamsId":                  {Method: "DELETE", Path: "/streams/{id}"},
 	"DeleteSystemEntitlementOverride":  {Method: "DELETE", Path: "/system/entitlements/overrides/{principalId}/{scope}"},
 	"DeleteTimer":                      {Method: "DELETE", Path: "/timers/{timerId}"},
+	"DeviceRefresh":                    {Method: "POST", Path: "/auth/device/refresh"},
 	"ExchangePairing":                  {Method: "POST", Path: "/pairing/{pairingId}/exchange"},
 	"GetDvrCapabilities":               {Method: "GET", Path: "/dvr/capabilities"},
 	"GetDvrStatus":                     {Method: "GET", Path: "/dvr/status"},
@@ -98,6 +99,7 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("DeleteStreamsId", handler.DeleteStreamsId)
 	register.add("DeleteSystemEntitlementOverride", handler.DeleteSystemEntitlementOverride)
 	register.add("DeleteTimer", handler.DeleteTimer)
+	register.add("DeviceRefresh", handler.DeviceRefresh)
 	register.add("ExchangePairing", handler.ExchangePairing)
 	register.add("GetDvrCapabilities", handler.GetDvrCapabilities)
 	register.add("GetDvrStatus", handler.GetDvrStatus)

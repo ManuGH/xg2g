@@ -80,3 +80,19 @@ func pascalCase(value string) string {
 	}
 	return b.String()
 }
+
+// lowerCamelCase renders a wire name as a lowerCamelCase identifier:
+// `access_token` becomes `accessToken`, and a name that is already camelCase —
+// `pairingId`, `startXmltv` — comes back unchanged.
+func lowerCamelCase(value string) string {
+	words := splitWireWords(value)
+	if len(words) == 0 {
+		return value
+	}
+	var b strings.Builder
+	b.WriteString(strings.ToLower(words[0]))
+	for _, word := range words[1:] {
+		b.WriteString(titleWord(word))
+	}
+	return b.String()
+}

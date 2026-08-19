@@ -271,11 +271,15 @@ func writeKotlinDoc(out *bytes.Buffer, indent, doc string) {
 	fmt.Fprintf(out, "%s */\n", indent)
 }
 
+// kotlinIdentifier renders a wire name as an idiomatic Kotlin property name.
+// The wire spelling survives in the generated fromJson/toJson bodies, which
+// address every field by its literal JSON key.
 func kotlinIdentifier(wire string) string {
-	if kotlinKeywords[wire] {
-		return "`" + wire + "`"
+	name := lowerCamelCase(wire)
+	if kotlinKeywords[name] {
+		return "`" + name + "`"
 	}
-	return wire
+	return name
 }
 
 // kotlinEnumConstant turns a wire value into an UPPER_SNAKE_CASE constant:
