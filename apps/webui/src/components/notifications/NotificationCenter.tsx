@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { debugError } from '../../utils/logging';
+import styles from './NotificationCenter.module.css';
 
 export interface NotificationItem {
   id: string;
@@ -190,253 +191,98 @@ export const NotificationCenter: React.FC = () => {
   };
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className={styles.root}>
       {/* Bell Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         title="Benachrichtigungen"
-        style={{
-          position: 'relative',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '42px',
-          height: '42px',
-          borderRadius: '12px',
-          backgroundColor: isOpen ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          color: 'var(--text-primary)',
-          cursor: 'pointer',
-          transition: 'all 0.15s ease-in-out',
-        }}
+        aria-label="Benachrichtigungen"
+        aria-expanded={isOpen}
+        className={`${styles.bell} ${isOpen ? styles.bellOpen : ''}`}
       >
-        <span style={{ fontSize: '18px' }}>🔔</span>
-        {unreadCount > 0 && (
-          <span
-            style={{
-              position: 'absolute',
-              top: '-4px',
-              right: '-4px',
-              backgroundColor: 'var(--status-error)',
-              color: 'var(--text-primary)',
-              fontSize: '11px',
-              fontWeight: 700,
-              borderRadius: '10px',
-              padding: '2px 6px',
-              lineHeight: 1,
-              boxShadow: '0 0 8px rgba(239, 68, 68, 0.6)',
-            }}
-          >
-            {unreadCount}
-          </span>
-        )}
+        <span className={styles.bellIcon}>🔔</span>
+        {unreadCount > 0 && <span className={styles.badge}>{unreadCount}</span>}
       </button>
 
       {/* Floating Popover Center */}
       {isOpen && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '52px',
-            right: 0,
-            width: '380px',
-            backgroundColor: 'var(--surface-panel-strong)',
-            borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
-            zIndex: 1000,
-            overflow: 'hidden',
-          }}
-        >
+        <div className={styles.popover}>
           {/* Header */}
-          <div
-            style={{
-              padding: '16px 20px',
-              backgroundColor: 'var(--bg-base)',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
+          <div className={styles.header}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Benachrichtigungen
-              </h3>
-              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                Facebook-style Notification Center
-              </p>
+              <h3 className={styles.headerTitle}>Benachrichtigungen</h3>
+              <p className={styles.headerSubtitle}>Facebook-style Notification Center</p>
             </div>
             {unreadCount > 0 && (
-              <button
-                onClick={handleMarkAllRead}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--accent-action)',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  fontWeight: 500,
-                }}
-              >
+              <button onClick={handleMarkAllRead} className={styles.markAllButton}>
                 Alle gelesen
               </button>
             )}
           </div>
 
           {/* WebPush Status Bar */}
-          <div
-            style={{
-              padding: '8px 20px',
-              backgroundColor: webPushEnabled ? 'rgba(34,197,94,0.1)' : 'rgba(234,179,8,0.1)',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: '12px',
-            }}
-          >
-            <span style={{ color: webPushEnabled ? 'var(--status-success)' : 'var(--status-warning)' }}>
+          <div className={`${styles.pushBar} ${webPushEnabled ? styles.pushBarActive : styles.pushBarIdle}`}>
+            <span className={webPushEnabled ? styles.pushLabelActive : styles.pushLabelIdle}>
               {webPushEnabled ? '✓ WebPush im Browser aktiv' : 'WebPush inaktiv'}
             </span>
             {!webPushEnabled && (
-              <button
-                onClick={handleToggleWebPush}
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  backgroundColor: 'var(--status-warning)',
-                  color: 'var(--bg-base)',
-                  fontWeight: 600,
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                }}
-              >
+              <button onClick={handleToggleWebPush} className={styles.pushEnableButton}>
                 Aktivieren
               </button>
             )}
           </div>
 
           {/* Filters */}
-          <div
-            style={{
-              display: 'flex',
-              padding: '8px 16px',
-              gap: '8px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-            }}
-          >
+          <div className={styles.filters}>
             <button
               onClick={() => setFilter('unread')}
-              style={{
-                padding: '4px 12px',
-                borderRadius: '8px',
-                border: 'none',
-                backgroundColor: filter === 'unread' ? 'var(--accent-action)' : 'transparent',
-                color: filter === 'unread' ? 'var(--bg-base)' : 'var(--text-tertiary)',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
+              className={`${styles.filterButton} ${filter === 'unread' ? styles.filterButtonActive : ''}`}
             >
               Ungelesen ({notifications.filter((n) => !n.readAt).length})
             </button>
             <button
               onClick={() => setFilter('all')}
-              style={{
-                padding: '4px 12px',
-                borderRadius: '8px',
-                border: 'none',
-                backgroundColor: filter === 'all' ? 'var(--accent-action)' : 'transparent',
-                color: filter === 'all' ? 'var(--bg-base)' : 'var(--text-tertiary)',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
+              className={`${styles.filterButton} ${filter === 'all' ? styles.filterButtonActive : ''}`}
             >
               Alle ({notifications.length})
             </button>
           </div>
 
           {/* Action Result Toast */}
-          {actionMessage && (
-            <div
-              style={{
-                padding: '8px 16px',
-                backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                color: 'var(--accent-action)',
-                fontSize: '12px',
-                borderBottom: '1px solid rgba(56, 189, 248, 0.3)',
-              }}
-            >
-              {actionMessage}
-            </div>
-          )}
+          {actionMessage && <div className={styles.toast}>{actionMessage}</div>}
 
           {/* Notification Items List */}
-          <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
+          <div className={styles.list}>
             {filteredNotifs.length === 0 ? (
-              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-disabled)' }}>
-                <span style={{ fontSize: '24px' }}>✨</span>
-                <p style={{ margin: '8px 0 0 0', fontSize: '13px' }}>Keine Benachrichtigungen</p>
+              <div className={styles.emptyState}>
+                <span className={styles.emptyIcon}>✨</span>
+                <p className={styles.emptyText}>Keine Benachrichtigungen</p>
               </div>
             ) : (
               filteredNotifs.map((item) => (
                 <div
                   key={item.id}
-                  style={{
-                    padding: '14px 16px',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                    backgroundColor: item.readAt ? 'transparent' : 'rgba(56, 189, 248, 0.04)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px',
-                  }}
+                  className={`${styles.item} ${item.readAt ? '' : styles.itemUnread}`}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {item.title}
-                    </span>
-                    <span style={{ fontSize: '11px', color: 'var(--text-disabled)' }}>
-                      {formatRelativeTime(item.createdAt)}
-                    </span>
+                  <div className={styles.itemHeader}>
+                    <span className={styles.itemTitle}>{item.title}</span>
+                    <span className={styles.itemTime}>{formatRelativeTime(item.createdAt)}</span>
                   </div>
 
-                  <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                    {item.body}
-                  </p>
+                  <p className={styles.itemBody}>{item.body}</p>
 
                   {/* Inline Approval Actions */}
                   {item.type === 'approval_request' && item.resourceId && !item.readAt && (
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <div className={styles.itemActions}>
                       <button
                         onClick={() => handleApproveContent(item, item.resourceId!)}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '8px',
-                          border: 'none',
-                          backgroundColor: 'var(--status-success)',
-                          color: 'var(--text-primary)',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                        }}
+                        className={`${styles.actionButton} ${styles.approveButton}`}
                       >
                         Erlauben
                       </button>
                       <button
                         onClick={() => handleDenyContent(item, item.resourceId!)}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '8px',
-                          border: 'none',
-                          backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                          color: 'var(--status-error)',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                        }}
+                        className={`${styles.actionButton} ${styles.denyButton}`}
                       >
                         Ablehnen
                       </button>

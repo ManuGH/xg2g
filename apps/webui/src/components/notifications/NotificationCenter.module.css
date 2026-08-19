@@ -1,0 +1,309 @@
+/* Notification centre - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css)
+
+   Three axes carry meaning in this file and each is treated on its own terms.
+
+   Severity: the push status bar and the approve/deny actions are real states,
+   so they take --status-* directly; their text colours were already reading
+   from those tokens while the fills came from somewhere else.
+
+   Read versus unread: an unread row was tinted at 0.04. The nearest token,
+   --accent-action-subtle, sits at 0.14 - three and a half times that - so
+   using it would have turned a whisper into a highlight. The tint is mixed
+   from the accent instead, keeping the weight the row was drawn with. Same
+   reasoning for the open state of the bell and the deny button.
+
+   Actions: none of the seven buttons had a hover state. They do now. */
+
+.root {
+  position: relative;
+}
+
+/* --- bell --------------------------------------------------------------- */
+
+.bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background-color: var(--surface-muted);
+  border: 1px solid var(--border-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard);
+}
+
+.bell:hover {
+  border-color: var(--accent-action);
+}
+
+.bellOpen {
+  background-color: color-mix(in srgb, var(--accent-action) 20%, transparent);
+  border-color: var(--accent-action);
+}
+
+.bellIcon {
+  font-size: 18px;
+}
+
+.badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background-color: var(--status-error);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 2px 6px;
+  line-height: 1;
+  box-shadow: var(--shadow-status-error);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- popover ------------------------------------------------------------ */
+
+.popover {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  background-color: var(--surface-panel-strong);
+  border-radius: 16px;
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-popover);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.header {
+  padding: 16px 20px;
+  background-color: var(--bg-base);
+  border-bottom: 1px solid var(--border-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.headerTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.headerSubtitle {
+  margin: 2px 0 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.markAllButton {
+  background: none;
+  border: none;
+  color: var(--accent-action);
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  padding: 0;
+  transition: color var(--motion-standard) var(--ease-standard);
+}
+
+.markAllButton:hover {
+  color: var(--accent-action-hover);
+}
+
+/* --- push status -------------------------------------------------------- */
+
+.pushBar {
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border-base);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.pushBarActive {
+  background-color: var(--status-success-subtle);
+}
+
+.pushBarIdle {
+  background-color: var(--status-warning-subtle);
+}
+
+.pushLabelActive {
+  color: var(--status-success);
+}
+
+.pushLabelIdle {
+  color: var(--status-warning);
+}
+
+.pushEnableButton {
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: none;
+  background-color: var(--status-warning);
+  color: var(--bg-base);
+  font-weight: 600;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color var(--motion-standard) var(--ease-standard);
+}
+
+.pushEnableButton:hover {
+  background-color: color-mix(in srgb, var(--status-warning) 84%, var(--text-primary));
+}
+
+/* --- filters ------------------------------------------------------------ */
+
+.filters {
+  display: flex;
+  padding: 8px 16px;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-base);
+}
+
+.filterButton {
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: none;
+  background-color: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard);
+}
+
+.filterButton:hover:not(.filterButtonActive) {
+  background-color: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.filterButtonActive {
+  background-color: var(--accent-action);
+  color: var(--bg-base);
+}
+
+/* --- action toast ------------------------------------------------------- */
+
+.toast {
+  padding: 8px 16px;
+  background-color: var(--accent-action-subtle);
+  color: var(--accent-action);
+  font-size: 12px;
+  border-bottom: 1px solid var(--accent-action-border);
+}
+
+/* --- list --------------------------------------------------------------- */
+
+.list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.emptyState {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-disabled);
+}
+
+.emptyIcon {
+  font-size: 24px;
+}
+
+.emptyText {
+  margin: 8px 0 0 0;
+  font-size: 13px;
+}
+
+.item {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-base);
+  background-color: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: background-color var(--motion-standard) var(--ease-standard);
+}
+
+/* Unread is a whisper, not a highlight: 4% of the accent, which is the weight
+   this row was drawn with and a fraction of --accent-action-subtle. */
+.itemUnread {
+  background-color: color-mix(in srgb, var(--accent-action) 4%, transparent);
+}
+
+.itemHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.itemTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.itemTime {
+  font-size: 11px;
+  color: var(--text-disabled);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.itemBody {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* --- inline approval ---------------------------------------------------- */
+
+.itemActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.actionButton {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--motion-standard) var(--ease-standard);
+}
+
+.approveButton {
+  background-color: var(--status-success);
+  color: var(--text-primary);
+}
+
+.approveButton:hover {
+  background-color: color-mix(in srgb, var(--status-success) 84%, var(--text-primary));
+}
+
+.denyButton {
+  background-color: color-mix(in srgb, var(--status-error) 20%, transparent);
+  color: var(--status-error);
+}
+
+.denyButton:hover {
+  background-color: color-mix(in srgb, var(--status-error) 32%, transparent);
+}
