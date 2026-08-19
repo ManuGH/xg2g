@@ -111,7 +111,7 @@ func (s *Server) StartPairing(w http.ResponseWriter, r *http.Request) {
 		PairingSecret: result.PairingSecret,
 		UserCode:      result.UserCode,
 		QRPayload:     result.QRPayload,
-		ExpiresAt:     result.ExpiresAt.UTC().Format(http.TimeFormat),
+		ExpiresAt:     formatContractTime(result.ExpiresAt),
 	})
 }
 
@@ -139,7 +139,7 @@ func (s *Server) GetPairingStatus(w http.ResponseWriter, r *http.Request, pairin
 		DeviceType:             string(result.DeviceType),
 		RequestedPolicyProfile: result.RequestedPolicyProfile,
 		ApprovedPolicyProfile:  result.ApprovedPolicyProfile,
-		ExpiresAt:              result.ExpiresAt.UTC().Format(http.TimeFormat),
+		ExpiresAt:              formatContractTime(result.ExpiresAt),
 		ApprovedAt:             formatOptionalTime(result.ApprovedAt),
 		ConsumedAt:             formatOptionalTime(result.ConsumedAt),
 	})
@@ -183,7 +183,7 @@ func (s *Server) ApprovePairing(w http.ResponseWriter, r *http.Request, pairingI
 		OwnerID:               result.OwnerID,
 		ApprovedPolicyProfile: result.ApprovedPolicyProfile,
 		ApprovedAt:            formatOptionalTime(result.ApprovedAt),
-		ExpiresAt:             result.ExpiresAt.UTC().Format(http.TimeFormat),
+		ExpiresAt:             formatContractTime(result.ExpiresAt),
 	})
 }
 
@@ -258,11 +258,22 @@ func decodePairingBody(r *http.Request, out any) error {
 	return decoder.Decode(out)
 }
 
+// formatContractTime renders a timestamp the way api/openapi.yaml declares it:
+// RFC 3339, because every pairing timestamp is `format: date-time`.
+//
+// These used to be http.TimeFormat — an HTTP *header* date, which is not a
+// valid date-time in a JSON body and which every strict client rejects. Keeping
+// the choice in a single helper is what makes the contract test meaningful:
+// there is exactly one place left that can drift.
+func formatContractTime(value time.Time) string {
+	return value.UTC().Format(time.RFC3339)
+}
+
 func formatOptionalTime(value *time.Time) *string {
 	if value == nil {
 		return nil
 	}
-	formatted := value.UTC().Format(http.TimeFormat)
+	formatted := formatContractTime(*value)
 	return &formatted
 }
 
