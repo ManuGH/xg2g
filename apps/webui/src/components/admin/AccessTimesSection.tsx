@@ -2,6 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 
 import React, { useState, useEffect } from 'react';
+import styles from './AccessTimesSection.module.css';
 
 export interface AccessPolicyData {
   accountId: string;
@@ -97,33 +98,25 @@ export const AccessTimesSection: React.FC = () => {
   const isOvernight = endHour < startHour;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className={styles.section}>
       <div>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Tägliche Zugriffszeiten & Sperrstunden</h3>
-        <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
+        <h3 className={styles.heading}>Tägliche Zugriffszeiten &amp; Sperrstunden</h3>
+        <p className={styles.subheading}>
           Legen Sie tägliche Sehfenster und erlaubte Wochentage fest. Außerhalb dieser Zeiten schlägt die Arbitrierung fail-closed fehl.
         </p>
       </div>
 
-      {error && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
-        </div>
-      )}
-      {success && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: 'var(--status-success)', fontSize: '13px' }}>
-          ✓ {success}
-        </div>
-      )}
+      {error && <div className={`${styles.banner} ${styles.bannerError}`}>⚠️ {error}</div>}
+      {success && <div className={`${styles.banner} ${styles.bannerSuccess}`}>✓ {success}</div>}
 
       {loading ? (
-        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>Zugriffszeiten werden geladen...</div>
+        <div className={styles.loading}>Zugriffszeiten werden geladen...</div>
       ) : (
-        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <form onSubmit={handleSave} className={styles.form}>
           {/* Days of Week Selector */}
-          <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', color: 'var(--text-primary)' }}>Erlaubte Wochentage</h4>
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <div className={styles.panel}>
+            <h4 className={styles.panelTitle}>Erlaubte Wochentage</h4>
+            <div className={styles.dayRow}>
               {DAYS_OF_WEEK.map((d) => {
                 const isActive = (policy.allowedDaysMask & d.bit) !== 0;
                 return (
@@ -131,18 +124,8 @@ export const AccessTimesSection: React.FC = () => {
                     key={d.bit}
                     type="button"
                     onClick={() => toggleDayBit(d.bit)}
-                    style={{
-                      width: '46px',
-                      height: '46px',
-                      borderRadius: '12px',
-                      border: isActive ? '2px solid var(--accent-action)' : '1px solid rgba(255,255,255,0.1)',
-                      backgroundColor: isActive ? 'rgba(56,189,248,0.2)' : 'var(--bg-base)',
-                      color: isActive ? 'var(--accent-action)' : 'var(--text-disabled)',
-                      fontSize: '14px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
+                    className={`${styles.dayButton} ${isActive ? styles.dayButtonActive : ''}`}
+                    aria-pressed={isActive}
                   >
                     {d.label}
                   </button>
@@ -152,54 +135,48 @@ export const AccessTimesSection: React.FC = () => {
           </div>
 
           {/* Time Window & Timeline Preview */}
-          <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', color: 'var(--text-primary)' }}>Tägliches Sehzeitfenster</h4>
+          <div className={styles.panel}>
+            <h4 className={`${styles.panelTitle} ${styles.panelTitleSpaced}`}>Tägliches Sehzeitfenster</h4>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            <div className={styles.windowGrid}>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Startzeit (ab)</label>
+                <label className={styles.label}>Startzeit (ab)</label>
                 <input
                   type="time"
                   value={policy.dailyStart}
                   onChange={(e) => setPolicy({ ...policy, dailyStart: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px' }}
+                  className={styles.input}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Endzeit (bis)</label>
+                <label className={styles.label}>Endzeit (bis)</label>
                 <input
                   type="time"
                   value={policy.dailyEnd}
                   onChange={(e) => setPolicy({ ...policy, dailyEnd: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-primary)', fontSize: '14px' }}
+                  className={styles.input}
                 />
               </div>
             </div>
 
             {/* 24h Timeline Visualizer */}
-            <div style={{ marginTop: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+            <div className={styles.timeline}>
+              <div className={styles.timelineLegend}>
                 <span>00:00 Uhr</span>
-                <span style={{ color: 'var(--accent-action)', fontWeight: 600 }}>Erlaubt: {policy.dailyStart} – {policy.dailyEnd} Uhr</span>
+                <span className={styles.timelineWindow}>Erlaubt: {policy.dailyStart} – {policy.dailyEnd} Uhr</span>
                 <span>24:00 Uhr</span>
               </div>
 
-              <div style={{ height: '16px', width: '100%', backgroundColor: 'var(--bg-base)', borderRadius: '8px', overflow: 'hidden', position: 'relative', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <div className={styles.timelineTrack}>
                 {!isOvernight ? (
                   <div
-                    style={{
-                      position: 'absolute',
-                      left: `${startPct}%`,
-                      width: `${Math.max(0, endPct - startPct)}%`,
-                      height: '100%',
-                      backgroundColor: 'var(--accent-action)',
-                      borderRadius: '4px',
-                    }}
+                    className={`${styles.timelineFill} ${styles.timelineFillRounded}`}
+                    style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
                   />
                 ) : (
                   <>
-                    <div style={{ position: 'absolute', left: 0, width: `${endPct}%`, height: '100%', backgroundColor: 'var(--accent-action)' }} />
-                    <div style={{ position: 'absolute', left: `${startPct}%`, right: 0, height: '100%', backgroundColor: 'var(--accent-action)' }} />
+                    <div className={styles.timelineFill} style={{ left: 0, width: `${endPct}%` }} />
+                    <div className={styles.timelineFill} style={{ left: `${startPct}%`, right: 0 }} />
                   </>
                 )}
               </div>
@@ -207,51 +184,38 @@ export const AccessTimesSection: React.FC = () => {
           </div>
 
           {/* Product Permissions Toggles */}
-          <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h4 style={{ margin: 0, fontSize: '15px', color: 'var(--text-primary)' }}>Produkt-Berechtigungen</h4>
+          <div className={`${styles.panel} ${styles.permissionPanel}`}>
+            <h4 className={styles.permissionTitle}>Produkt-Berechtigungen</h4>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: '12px', backgroundColor: 'var(--bg-base)' }}>
+            <div className={styles.toggleRow}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Live-TV Zugriff</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Erlaubt das Ansehen von Live-Sendern im Wochentagsfenster</div>
+                <div className={styles.toggleTitle}>Live-TV Zugriff</div>
+                <div className={styles.toggleHint}>Erlaubt das Ansehen von Live-Sendern im Wochentagsfenster</div>
               </div>
               <input
                 type="checkbox"
                 checked={policy.liveTvAllowed}
                 onChange={(e) => setPolicy({ ...policy, liveTvAllowed: e.target.checked })}
-                style={{ width: '20px', height: '20px', accentColor: 'var(--accent-action)', cursor: 'pointer' }}
+                className={styles.checkbox}
               />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: '12px', backgroundColor: 'var(--bg-base)' }}>
+            <div className={styles.toggleRow}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Aufnahmen & Bibliothek</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Erlaubt das Ansehen und Programmieren von DVR-Aufnahmen</div>
+                <div className={styles.toggleTitle}>Aufnahmen &amp; Bibliothek</div>
+                <div className={styles.toggleHint}>Erlaubt das Ansehen und Programmieren von DVR-Aufnahmen</div>
               </div>
               <input
                 type="checkbox"
                 checked={policy.recordingsAllowed}
                 onChange={(e) => setPolicy({ ...policy, recordingsAllowed: e.target.checked })}
-                style={{ width: '20px', height: '20px', accentColor: 'var(--accent-action)', cursor: 'pointer' }}
+                className={styles.checkbox}
               />
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              type="submit"
-              disabled={saving}
-              style={{
-                padding: '12px 24px',
-                borderRadius: '12px',
-                border: 'none',
-                backgroundColor: 'var(--accent-action)',
-                color: 'var(--bg-base)',
-                fontSize: '14px',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
+          <div className={styles.saveRow}>
+            <button type="submit" disabled={saving} className={styles.saveButton}>
               {saving ? 'Speichern...' : '💾 Zugriffszeiten speichern'}
             </button>
           </div>

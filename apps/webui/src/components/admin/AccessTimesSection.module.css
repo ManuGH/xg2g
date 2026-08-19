@@ -1,0 +1,265 @@
+/* Access windows - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css)
+
+   The permission panel takes its grid from the retired Settings
+   .permissionGrid: repeat(auto-fit, minmax(220px, 1fr)), which adapts without
+   a breakpoint. The inline version stacked its toggles in a fixed column at
+   every width, so a wide screen showed two short rows with a long empty gutter
+   beside them.
+
+   .permissionToggle's own surface - a border and a tinted stage colour - is
+   deliberately not adopted. The toggle rows here read as inner rows on a
+   panel, the same as the child-profile row in ProfileManagementSection, and
+   giving only these two a border would break that pairing. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subheading {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.banner {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.bannerError {
+  background-color: var(--status-error-subtle);
+  border: 1px solid var(--status-error-border);
+  color: var(--status-error);
+}
+
+.bannerSuccess {
+  background-color: var(--status-success-subtle);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success);
+}
+
+.loading {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.panel {
+  background-color: var(--surface-panel-strong);
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid var(--border-elevated);
+}
+
+.panelTitle {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.panelTitleSpaced {
+  margin-bottom: 16px;
+}
+
+/* --- weekday picker ----------------------------------------------------- */
+
+.dayRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dayButton {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  border: 1px solid var(--border-elevated);
+  background-color: var(--bg-base);
+  color: var(--text-disabled);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-standard) var(--ease-standard),
+    background-color var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard);
+}
+
+.dayButton:hover:not(.dayButtonActive) {
+  border-color: var(--accent-action);
+  color: var(--text-secondary);
+}
+
+.dayButtonActive {
+  border: 2px solid var(--accent-action);
+  background-color: var(--accent-action-subtle);
+  color: var(--accent-action);
+}
+
+/* --- daily window ------------------------------------------------------- */
+
+.windowGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: border-color var(--motion-standard) var(--ease-standard);
+}
+
+.input:hover {
+  border-color: var(--accent-action);
+}
+
+.timeline {
+  margin-top: 16px;
+}
+
+.timelineLegend {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.timelineWindow {
+  color: var(--accent-action);
+  font-weight: 600;
+}
+
+.timelineTrack {
+  height: 16px;
+  width: 100%;
+  background-color: var(--bg-base);
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--border-elevated);
+}
+
+/* Position and width come from the policy and stay inline; everything the
+   design system owns lives here. */
+.timelineFill {
+  position: absolute;
+  height: 100%;
+  background-color: var(--accent-action);
+}
+
+.timelineFillRounded {
+  border-radius: 4px;
+}
+
+/* --- product permissions ------------------------------------------------ */
+
+.permissionPanel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.permissionTitle {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.toggleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background-color: var(--bg-base);
+}
+
+.toggleTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.toggleHint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.checkbox {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent-action);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* --- save --------------------------------------------------------------- */
+
+.saveRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.saveButton {
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: none;
+  background-color: var(--accent-action);
+  color: var(--bg-base);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color var(--motion-standard) var(--ease-standard);
+}
+
+.saveButton:hover:not(:disabled) {
+  background-color: var(--accent-action-hover);
+}
+
+.saveButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .windowGrid {
+    grid-template-columns: 1fr;
+  }
+}

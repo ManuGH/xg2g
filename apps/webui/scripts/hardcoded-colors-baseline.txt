@@ -1,7 +1,6 @@
 # Files carrying hardcoded colours, with the number of colour values.
 # Regenerate with: npm run design:colors:baseline
 # Entries may only shrink. A new file here needs a reason in review.
-src/components/admin/AccessTimesSection.tsx 12
 src/components/admin/AuditNotificationsSection.tsx 13
 src/components/admin/ConcurrencySettingsSection.tsx 10
 src/components/admin/DevicesManagementSection.tsx 10

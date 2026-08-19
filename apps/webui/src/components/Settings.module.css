@@ -447,23 +447,6 @@
   font-size: 14px;
 }
 
-.permissionGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
-}
-
-.permissionToggle {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  border: 1px solid var(--border-base);
-  border-radius: 16px;
-  padding: 12px 14px;
-  background: color-mix(in srgb, var(--surface-stage) 82%, transparent);
-  color: var(--text-primary);
-}
-
 .choiceGrid {
   display: flex;
   flex-wrap: wrap;
