@@ -7,6 +7,7 @@ package v3
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"time"
 
@@ -18,105 +19,50 @@ import (
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
-type startPairingRequest struct {
-	DeviceName             string `json:"deviceName"`
-	DeviceType             string `json:"deviceType"`
-	RequestedPolicyProfile string `json:"requestedPolicyProfile"`
-}
-
-type approvePairingRequest struct {
-	OwnerID               string `json:"ownerId"`
-	ApprovedPolicyProfile string `json:"approvedPolicyProfile"`
-}
-
-type pairingSecretRequest struct {
-	PairingSecret string `json:"pairingSecret"`
-	// DeviceJWK is the device's P-256 public key. Required: without it there is
-	// no cryptographic device identity to bind the grant to, so no grant is
-	// issued. The server derives the thumbprint; a client-supplied one is never
-	// trusted.
-	DeviceJWK identity.JWKECPublicKey `json:"deviceJwk"`
-}
-
-type startPairingResponse struct {
-	PairingID     string `json:"pairingId"`
-	PairingSecret string `json:"pairingSecret"`
-	UserCode      string `json:"userCode"`
-	QRPayload     string `json:"qrPayload"`
-	ExpiresAt     string `json:"expiresAt"`
-}
-
-type pairingStatusResponse struct {
-	PairingID              string  `json:"pairingId"`
-	Status                 string  `json:"status"`
-	UserCode               string  `json:"userCode"`
-	DeviceName             string  `json:"deviceName"`
-	DeviceType             string  `json:"deviceType"`
-	RequestedPolicyProfile string  `json:"requestedPolicyProfile,omitempty"`
-	ApprovedPolicyProfile  string  `json:"approvedPolicyProfile,omitempty"`
-	ExpiresAt              string  `json:"expiresAt"`
-	ApprovedAt             *string `json:"approvedAt,omitempty"`
-	ConsumedAt             *string `json:"consumedAt,omitempty"`
-}
-
-type approvePairingResponse struct {
-	PairingID             string  `json:"pairingId"`
-	Status                string  `json:"status"`
-	OwnerID               string  `json:"ownerId"`
-	ApprovedPolicyProfile string  `json:"approvedPolicyProfile,omitempty"`
-	ApprovedAt            *string `json:"approvedAt,omitempty"`
-	ExpiresAt             string  `json:"expiresAt"`
-}
-
-// exchangePairingResponse is identity-shaped.
-//
-// The rotating secret is a refresh token in an identity refresh family, and the
-// access token is DPoP-bound to the device key — so deviceGrant*, and
-// accessSessionId have no counterpart and are gone rather than faked.
-type exchangePairingResponse struct {
-	PairingID     string                      `json:"pairingId"`
-	DeviceID      string                      `json:"deviceId"`
-	TokenType     string                      `json:"tokenType"`
-	AccessToken   string                      `json:"accessToken"`
-	ExpiresIn     int                         `json:"expiresIn"`
-	RefreshToken  string                      `json:"refreshToken"`
-	Scope         string                      `json:"scope"`
-	PolicyVersion string                      `json:"policyVersion"`
-	Endpoints     []publishedEndpointResponse `json:"endpoints"`
-}
-
 func (s *Server) StartPairing(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceConnectivityScope(w, r, connectivitydomain.FindingScopePairing) {
 		return
 	}
 
-	var req startPairingRequest
+	var req StartPairingRequest
 	if err := decodePairingBody(r, &req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "pairing/invalid_input", "Invalid Pairing Request", problemcode.CodeInvalidInput, "The request body could not be decoded as JSON", nil)
 		return
 	}
 
+	// deviceType is an enum in the contract but only a string on the wire, so
+	// an unknown value used to be stored verbatim — the Android client shipped
+	// "tv" for a while and nothing objected. Reject it at the edge instead.
+	deviceType := DeviceAuthDeviceTypeUnknown
+	if req.DeviceType != nil {
+		deviceType = *req.DeviceType
+		if !deviceType.Valid() {
+			writeRegisteredProblem(w, r, http.StatusBadRequest, "pairing/invalid_input", "Invalid Pairing Request", problemcode.CodeInvalidInput, "deviceType is not a known device type", nil)
+			return
+		}
+	}
+
 	result, err := s.pairingProcessor().Start(r.Context(), v3pairing.StartInput{
-		DeviceName:             req.DeviceName,
-		DeviceType:             v3pairingDeviceType(req.DeviceType),
-		RequestedPolicyProfile: req.RequestedPolicyProfile,
+		DeviceName:             stringValue(req.DeviceName),
+		DeviceType:             v3pairingDeviceType(string(deviceType)),
+		RequestedPolicyProfile: stringValue(req.RequestedPolicyProfile),
 	})
 	if err != nil {
 		writePairingServiceError(w, r, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, startPairingResponse{
-		PairingID:     result.PairingID,
+	writeJSON(w, http.StatusCreated, StartPairingResponse{
+		PairingId:     result.PairingID,
 		PairingSecret: result.PairingSecret,
 		UserCode:      result.UserCode,
-		QRPayload:     result.QRPayload,
-		ExpiresAt:     formatContractTime(result.ExpiresAt),
+		QrPayload:     result.QRPayload,
+		ExpiresAt:     result.ExpiresAt.UTC(),
 	})
 }
 
 func (s *Server) GetPairingStatus(w http.ResponseWriter, r *http.Request, pairingId string) {
-	var req pairingSecretRequest
+	var req PairingSecretRequest
 	if err := decodePairingBody(r, &req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "pairing/invalid_input", "Invalid Pairing Request", problemcode.CodeInvalidInput, "The request body could not be decoded as JSON", nil)
 		return
@@ -131,17 +77,17 @@ func (s *Server) GetPairingStatus(w http.ResponseWriter, r *http.Request, pairin
 		return
 	}
 
-	writeJSON(w, http.StatusOK, pairingStatusResponse{
-		PairingID:              result.PairingID,
-		Status:                 string(result.Status),
+	writeJSON(w, http.StatusOK, PairingStatusResponse{
+		PairingId:              result.PairingID,
+		Status:                 PairingStatus(result.Status),
 		UserCode:               result.UserCode,
 		DeviceName:             result.DeviceName,
-		DeviceType:             string(result.DeviceType),
-		RequestedPolicyProfile: result.RequestedPolicyProfile,
-		ApprovedPolicyProfile:  result.ApprovedPolicyProfile,
-		ExpiresAt:              formatContractTime(result.ExpiresAt),
-		ApprovedAt:             formatOptionalTime(result.ApprovedAt),
-		ConsumedAt:             formatOptionalTime(result.ConsumedAt),
+		DeviceType:             DeviceAuthDeviceType(result.DeviceType),
+		RequestedPolicyProfile: optionalString(result.RequestedPolicyProfile),
+		ApprovedPolicyProfile:  optionalString(result.ApprovedPolicyProfile),
+		ExpiresAt:              result.ExpiresAt.UTC(),
+		ApprovedAt:             utcOrNil(result.ApprovedAt),
+		ConsumedAt:             utcOrNil(result.ConsumedAt),
 	})
 }
 
@@ -150,7 +96,7 @@ func (s *Server) ApprovePairing(w http.ResponseWriter, r *http.Request, pairingI
 		return
 	}
 
-	var req approvePairingRequest
+	var req ApprovePairingRequest
 	if err := decodePairingBody(r, &req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "pairing/invalid_input", "Invalid Pairing Request", problemcode.CodeInvalidInput, "The request body could not be decoded as JSON", nil)
 		return
@@ -162,7 +108,7 @@ func (s *Server) ApprovePairing(w http.ResponseWriter, r *http.Request, pairingI
 		return
 	}
 
-	ownerID := req.OwnerID
+	ownerID := stringValue(req.OwnerId)
 	if ownerID == "" {
 		ownerID = principal.ID
 	}
@@ -170,20 +116,20 @@ func (s *Server) ApprovePairing(w http.ResponseWriter, r *http.Request, pairingI
 	result, err := s.pairingProcessor().Approve(r.Context(), v3pairing.ApproveInput{
 		PairingID:             pairingId,
 		OwnerID:               ownerID,
-		ApprovedPolicyProfile: req.ApprovedPolicyProfile,
+		ApprovedPolicyProfile: stringValue(req.ApprovedPolicyProfile),
 	})
 	if err != nil {
 		writePairingServiceError(w, r, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, approvePairingResponse{
-		PairingID:             result.PairingID,
-		Status:                string(result.Status),
-		OwnerID:               result.OwnerID,
-		ApprovedPolicyProfile: result.ApprovedPolicyProfile,
-		ApprovedAt:            formatOptionalTime(result.ApprovedAt),
-		ExpiresAt:             formatContractTime(result.ExpiresAt),
+	writeJSON(w, http.StatusOK, ApprovePairingResponse{
+		PairingId:             result.PairingID,
+		Status:                PairingStatus(result.Status),
+		OwnerId:               result.OwnerID,
+		ApprovedPolicyProfile: optionalString(result.ApprovedPolicyProfile),
+		ApprovedAt:            utcOrNil(result.ApprovedAt),
+		ExpiresAt:             result.ExpiresAt.UTC(),
 	})
 }
 
@@ -192,7 +138,7 @@ func (s *Server) ExchangePairing(w http.ResponseWriter, r *http.Request, pairing
 		return
 	}
 
-	var req pairingSecretRequest
+	var req PairingSecretRequest
 	if err := decodePairingBody(r, &req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "pairing/invalid_input", "Invalid Pairing Request", problemcode.CodeInvalidInput, "The request body could not be decoded as JSON", nil)
 		return
@@ -201,23 +147,23 @@ func (s *Server) ExchangePairing(w http.ResponseWriter, r *http.Request, pairing
 	result, err := s.pairingProcessor().Exchange(r.Context(), v3pairing.ExchangeInput{
 		PairingID:     pairingId,
 		PairingSecret: req.PairingSecret,
-		DeviceJWK:     req.DeviceJWK,
+		DeviceJWK:     domainDeviceJWK(req.DeviceJwk),
 	})
 	if err != nil {
 		writePairingServiceError(w, r, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, exchangePairingResponse{
-		PairingID:     result.PairingID,
-		DeviceID:      result.DeviceID,
+	writeJSON(w, http.StatusOK, ExchangePairingResponse{
+		PairingId:     result.PairingID,
+		DeviceId:      result.DeviceID,
 		TokenType:     result.TokenType,
 		AccessToken:   result.AccessToken,
-		ExpiresIn:     result.ExpiresIn,
+		ExpiresIn:     clampTokenLifetimeSeconds(result.ExpiresIn),
 		RefreshToken:  result.RefreshToken,
 		Scope:         result.Scope,
 		PolicyVersion: result.PolicyVersion,
-		Endpoints:     mapPublishedEndpointResponses(result.Endpoints),
+		Endpoints:     mapPublishedEndpointContracts(result.Endpoints),
 	})
 }
 
@@ -258,23 +204,66 @@ func decodePairingBody(r *http.Request, out any) error {
 	return decoder.Decode(out)
 }
 
-// formatContractTime renders a timestamp the way api/openapi.yaml declares it:
-// RFC 3339, because every pairing timestamp is `format: date-time`.
-//
-// These used to be http.TimeFormat — an HTTP *header* date, which is not a
-// valid date-time in a JSON body and which every strict client rejects. Keeping
-// the choice in a single helper is what makes the contract test meaningful:
-// there is exactly one place left that can drift.
-func formatContractTime(value time.Time) string {
-	return value.UTC().Format(time.RFC3339)
+// clampTokenLifetimeSeconds keeps the published lifetime inside the int32 the
+// contract declares. A negative lifetime is an upstream bug rather than
+// something to hand a client, so it becomes zero — already expired — instead of
+// wrapping into a very long one.
+func clampTokenLifetimeSeconds(seconds int) int32 {
+	switch {
+	case seconds < 0:
+		return 0
+	case seconds > math.MaxInt32:
+		return math.MaxInt32
+	default:
+		return int32(seconds)
+	}
 }
 
-func formatOptionalTime(value *time.Time) *string {
+// domainDeviceJWK converts the wire key into the identity domain's key.
+//
+// An explicit boundary rather than a shared struct: the contract type is
+// regenerated from api/openapi.yaml, and the domain type must not silently
+// inherit whatever the contract does next.
+func domainDeviceJWK(jwk ECPublicKeyJWK) identity.JWKECPublicKey {
+	return identity.JWKECPublicKey{
+		Kty: string(jwk.Kty),
+		Crv: string(jwk.Crv),
+		X:   jwk.X,
+		Y:   jwk.Y,
+	}
+}
+
+// stringValue reads an optional contract field. Absent and empty mean the same
+// thing to every caller here, which is why the pointer stops at this boundary.
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+// utcOrNil normalises an optional timestamp without inventing one.
+//
+// The pairing responses used to carry pre-formatted strings, which is how they
+// came to be HTTP header dates in a JSON body. The generated types carry
+// time.Time and encoding/json renders RFC 3339, so the format is no longer a
+// decision anybody can get wrong — only the zone still is.
+func utcOrNil(value *time.Time) *time.Time {
 	if value == nil {
 		return nil
 	}
-	formatted := formatContractTime(*value)
-	return &formatted
+	utc := value.UTC()
+	return &utc
+}
+
+// optionalString keeps the wire behaviour the string-plus-omitempty responses
+// had: an empty optional field is absent rather than present-and-empty. The
+// generated types can represent both, so the choice is now explicit.
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func v3pairingDeviceType(value string) deviceauthmodel.DeviceType {

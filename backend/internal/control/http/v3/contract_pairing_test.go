@@ -20,7 +20,7 @@ import (
 // The pairing endpoints are the only unauthenticated write surface in v3 and the
 // only place where a native client learns its credentials. They had route and
 // auth-boundary coverage but no response-shape coverage, so the hand-written
-// exchangePairingResponse struct could drift from the published contract
+// hand-written exchange response struct could drift from the published contract
 // unnoticed — which it did: the spec still described the retired
 // deviceGrant/accessSession quartet long after the handler had moved to
 // identity-shaped tokens, and the Android client faithfully decoded the spec
@@ -82,12 +82,12 @@ func TestV3Contract_PairingFlowResponsesMatchOpenAPI(t *testing.T) {
 	})
 	require.Equal(t, http.StatusCreated, startRR.Code, "start pairing")
 
-	var started startPairingResponse
+	var started StartPairingResponse
 	require.NoError(t, json.Unmarshal(startRR.Body.Bytes(), &started), "decode start response")
-	require.NotEmpty(t, started.PairingID)
+	require.NotEmpty(t, started.PairingId)
 	require.NotEmpty(t, started.PairingSecret)
 
-	statusRR := doPairingContractRequest(t, doc, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/status", map[string]any{
+	statusRR := doPairingContractRequest(t, doc, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/status", map[string]any{
 		"pairingSecret": started.PairingSecret,
 	})
 	require.Equal(t, http.StatusOK, statusRR.Code, "pairing status")
@@ -96,14 +96,14 @@ func TestV3Contract_PairingFlowResponsesMatchOpenAPI(t *testing.T) {
 	authedHandler, err := newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
 	require.NoError(t, err, "build authed handler")
 
-	approveRR := doPairingContractRequest(t, doc, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{})
+	approveRR := doPairingContractRequest(t, doc, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{})
 	require.Equal(t, http.StatusOK, approveRR.Code, "approve pairing")
 
 	srv.AuthMiddlewareOverride = nil
 	handler, err = newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
 	require.NoError(t, err, "rebuild handler")
 
-	exchangeRR := doPairingContractRequest(t, doc, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	exchangeRR := doPairingContractRequest(t, doc, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     jwk,
 	})
@@ -129,20 +129,20 @@ func TestV3Contract_PairingExchangeResponseIsIdentityShaped(t *testing.T) {
 	})
 	require.Equal(t, http.StatusCreated, startRR.Code)
 
-	var started startPairingResponse
+	var started StartPairingResponse
 	require.NoError(t, json.Unmarshal(startRR.Body.Bytes(), &started))
 
 	srv.AuthMiddlewareOverride = testPrincipalAuthMiddleware(t, []string{"v3:admin"})
 	authedHandler, err := newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
 	require.NoError(t, err)
-	approveRR := doPairingContractRequest(t, doc, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/approve", map[string]any{})
+	approveRR := doPairingContractRequest(t, doc, authedHandler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/approve", map[string]any{})
 	require.Equal(t, http.StatusOK, approveRR.Code)
 
 	srv.AuthMiddlewareOverride = nil
 	handler, err = newHandlerWithMiddlewares(srv, srv.GetConfig(), nil)
 	require.NoError(t, err)
 
-	exchangeRR := doPairingContractRequest(t, doc, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingID+"/exchange", map[string]any{
+	exchangeRR := doPairingContractRequest(t, doc, handler, http.MethodPost, "/api/v3/pairing/"+started.PairingId+"/exchange", map[string]any{
 		"pairingSecret": started.PairingSecret,
 		"deviceJwk":     jwk,
 	})

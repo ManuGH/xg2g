@@ -14,67 +14,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
-type connectivitySelectionResponse struct {
-	Endpoint *publishedEndpointResponse `json:"endpoint,omitempty"`
-	Reason   string                     `json:"reason,omitempty"`
-}
-
-type connectivityFindingResponse struct {
-	Code        string   `json:"code"`
-	Severity    string   `json:"severity"`
-	Scopes      []string `json:"scopes"`
-	Field       string   `json:"field,omitempty"`
-	Summary     string   `json:"summary"`
-	Detail      string   `json:"detail,omitempty"`
-	EndpointUrl string   `json:"endpointUrl,omitempty"`
-}
-
-type connectivityRequestResponse struct {
-	RemoteAddr           string   `json:"remoteAddr,omitempty"`
-	RemoteIP             string   `json:"remoteIp,omitempty"`
-	RemoteIsLoopback     bool     `json:"remoteIsLoopback"`
-	TlsDirect            bool     `json:"tlsDirect"`
-	TrustedProxyMatch    bool     `json:"trustedProxyMatch"`
-	EffectiveHTTPS       bool     `json:"effectiveHttps"`
-	SchemeSource         string   `json:"schemeSource"`
-	AcceptedProxyHeaders []string `json:"acceptedProxyHeaders"`
-	XForwardedProto      string   `json:"xForwardedProto,omitempty"`
-	XForwardedHost       string   `json:"xForwardedHost,omitempty"`
-	XForwardedFor        string   `json:"xForwardedFor,omitempty"`
-	Origin               string   `json:"origin,omitempty"`
-	OriginAllowed        *bool    `json:"originAllowed,omitempty"`
-	OriginAllowAll       bool     `json:"originAllowAll"`
-}
-
-type connectivityContractResponse struct {
-	Profile            string                         `json:"profile"`
-	Public             bool                           `json:"public"`
-	Status             string                         `json:"status"`
-	StartupFatal       bool                           `json:"startupFatal"`
-	ReadinessBlocked   bool                           `json:"readinessBlocked"`
-	PairingBlocked     bool                           `json:"pairingBlocked"`
-	WebBlocked         bool                           `json:"webBlocked"`
-	AllowLocalHTTP     bool                           `json:"allowLocalHTTP"`
-	TLSEnabled         bool                           `json:"tlsEnabled"`
-	ForceHTTPS         bool                           `json:"forceHTTPS"`
-	AllowedOrigins     []string                       `json:"allowedOrigins"`
-	TrustedProxies     []string                       `json:"trustedProxies"`
-	PublishedEndpoints []publishedEndpointResponse    `json:"publishedEndpoints"`
-	Selections         connectivitySelectionsResponse `json:"selections"`
-	Findings           []connectivityFindingResponse  `json:"findings"`
-	Request            connectivityRequestResponse    `json:"request"`
-}
-
-type connectivitySelectionsResponse struct {
-	Web           connectivitySelectionResponse `json:"web"`
-	WebPublic     connectivitySelectionResponse `json:"webPublic"`
-	Native        connectivitySelectionResponse `json:"native"`
-	NativePublic  connectivitySelectionResponse `json:"nativePublic"`
-	Pairing       connectivitySelectionResponse `json:"pairing"`
-	PairingPublic connectivitySelectionResponse `json:"pairingPublic"`
-	Streaming     connectivitySelectionResponse `json:"streaming"`
-}
-
 func (s *Server) connectivityContractReport() (connectivitydomain.ContractReport, error) {
 	return config.BuildConnectivityContract(s.GetConfig())
 }
@@ -138,29 +77,29 @@ func (s *Server) GetSystemConnectivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, connectivityContractResponse{
-		Profile:            string(report.Profile),
+	writeJSON(w, http.StatusOK, ConnectivityContract{
+		Profile:            ConnectivityDeploymentProfile(report.Profile),
 		Public:             report.Public,
-		Status:             string(report.Severity),
+		Status:             ConnectivityContractStatus(report.Severity),
 		StartupFatal:       report.StartupFatal(),
 		ReadinessBlocked:   report.ReadinessBlocked(),
 		PairingBlocked:     report.PairingBlocked(),
 		WebBlocked:         report.WebBlocked(),
 		AllowLocalHTTP:     report.AllowLocalHTTP,
-		TLSEnabled:         report.TLSEnabled,
+		TlsEnabled:         report.TLSEnabled,
 		ForceHTTPS:         report.ForceHTTPS,
 		AllowedOrigins:     append([]string(nil), report.AllowedOrigins...),
 		TrustedProxies:     append([]string(nil), report.TrustedProxies...),
-		PublishedEndpoints: mapPublishedEndpointResponses(report.PublishedEndpoints),
+		PublishedEndpoints: mapPublishedEndpointContracts(report.PublishedEndpoints),
 		Selections:         mapConnectivitySelections(report.Selections),
 		Findings:           mapConnectivityFindings(report.Findings),
 		Request:            s.connectivityRequestResponse(r),
 	})
 }
 
-func (s *Server) connectivityRequestResponse(r *http.Request) connectivityRequestResponse {
+func (s *Server) connectivityRequestResponse(r *http.Request) ConnectivityRequest {
 	if r == nil {
-		return connectivityRequestResponse{AcceptedProxyHeaders: []string{"X-Forwarded-Proto"}}
+		return ConnectivityRequest{AcceptedProxyHeaders: []string{"X-Forwarded-Proto"}}
 	}
 
 	remoteIP := requestRemoteIP(r)
@@ -185,29 +124,29 @@ func (s *Server) connectivityRequestResponse(r *http.Request) connectivityReques
 		schemeSource = "trusted_x_forwarded_proto"
 	}
 
-	response := connectivityRequestResponse{
-		RemoteAddr:           strings.TrimSpace(r.RemoteAddr),
+	response := ConnectivityRequest{
+		RemoteAddr:           optionalString(strings.TrimSpace(r.RemoteAddr)),
 		RemoteIsLoopback:     requestRemoteIsLoopback(r),
 		TlsDirect:            r.TLS != nil,
 		TrustedProxyMatch:    trustedProxyMatch,
-		EffectiveHTTPS:       s.requestIsHTTPS(r),
+		EffectiveHttps:       s.requestIsHTTPS(r),
 		SchemeSource:         schemeSource,
 		AcceptedProxyHeaders: []string{"X-Forwarded-Proto"},
-		XForwardedProto:      strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")),
-		XForwardedHost:       strings.TrimSpace(r.Header.Get("X-Forwarded-Host")),
-		XForwardedFor:        strings.TrimSpace(r.Header.Get("X-Forwarded-For")),
-		Origin:               requestOrigin,
+		XForwardedProto:      optionalString(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))),
+		XForwardedHost:       optionalString(strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))),
+		XForwardedFor:        optionalString(strings.TrimSpace(r.Header.Get("X-Forwarded-For"))),
+		Origin:               optionalString(requestOrigin),
 		OriginAllowed:        originAllowedPtr,
 		OriginAllowAll:       allowAll,
 	}
 	if remoteIP != nil {
-		response.RemoteIP = remoteIP.String()
+		response.RemoteIp = optionalString(remoteIP.String())
 	}
 	return response
 }
 
-func mapConnectivitySelections(selections connectivitydomain.ContractSelections) connectivitySelectionsResponse {
-	return connectivitySelectionsResponse{
+func mapConnectivitySelections(selections connectivitydomain.ContractSelections) ConnectivitySelections {
+	return ConnectivitySelections{
 		Web:           mapConnectivitySelection(selections.Web),
 		WebPublic:     mapConnectivitySelection(selections.WebPublic),
 		Native:        mapConnectivitySelection(selections.Native),
@@ -218,47 +157,39 @@ func mapConnectivitySelections(selections connectivitydomain.ContractSelections)
 	}
 }
 
-func mapConnectivitySelection(selection connectivitydomain.EndpointSelection) connectivitySelectionResponse {
-	resp := connectivitySelectionResponse{
-		Reason: selection.Reason,
+func mapConnectivitySelection(selection connectivitydomain.EndpointSelection) ConnectivitySelection {
+	resp := ConnectivitySelection{
+		Reason: optionalString(selection.Reason),
 	}
 	if selection.Endpoint != nil {
-		endpoint := *selection.Endpoint
-		resp.Endpoint = &publishedEndpointResponse{
-			URL:             endpoint.URL,
-			Kind:            string(endpoint.Kind),
-			Priority:        endpoint.Priority,
-			TLSMode:         string(endpoint.TLSMode),
-			AllowPairing:    endpoint.AllowPairing,
-			AllowStreaming:  endpoint.AllowStreaming,
-			AllowWeb:        endpoint.AllowWeb,
-			AllowNative:     endpoint.AllowNative,
-			AdvertiseReason: endpoint.AdvertiseReason,
-			Source:          string(endpoint.Source),
-		}
+		// Reuse the one endpoint mapper rather than a second inline copy: the
+		// duplicate that used to live here is what let priority skip the int32
+		// clamp the contract declares.
+		mapped := mapPublishedEndpointContracts([]connectivitydomain.PublishedEndpoint{*selection.Endpoint})
+		resp.Endpoint = &mapped[0]
 	}
 	return resp
 }
 
-func mapConnectivityFindings(findings []connectivitydomain.ContractFinding) []connectivityFindingResponse {
+func mapConnectivityFindings(findings []connectivitydomain.ContractFinding) []ConnectivityFinding {
 	if len(findings) == 0 {
-		return []connectivityFindingResponse{}
+		return []ConnectivityFinding{}
 	}
 
-	resp := make([]connectivityFindingResponse, 0, len(findings))
+	resp := make([]ConnectivityFinding, 0, len(findings))
 	for _, finding := range findings {
 		scopes := make([]string, 0, len(finding.Scopes))
 		for _, scope := range finding.Scopes {
 			scopes = append(scopes, string(scope))
 		}
-		resp = append(resp, connectivityFindingResponse{
+		resp = append(resp, ConnectivityFinding{
 			Code:        finding.Code,
-			Severity:    string(finding.Severity),
+			Severity:    ConnectivityFindingSeverity(finding.Severity),
 			Scopes:      scopes,
-			Field:       finding.Field,
+			Field:       optionalString(finding.Field),
 			Summary:     finding.Summary,
-			Detail:      finding.Detail,
-			EndpointUrl: finding.EndpointURL,
+			Detail:      optionalString(finding.Detail),
+			EndpointUrl: optionalString(finding.EndpointURL),
 		})
 	}
 	return resp
