@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { request } from '../../lib/api';
+import styles from './ProfileManagementSection.module.css';
 
 export interface ProfileData {
   id: string;
@@ -130,111 +131,78 @@ export const ProfileManagementSection: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className={styles.section}>
       {/* Header & Create Action */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className={styles.header}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>Verwaltete Sehprofile</h3>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-tertiary)' }}>
+          <h3 className={styles.heading}>Verwaltete Sehprofile</h3>
+          <p className={styles.subheading}>
             Erstellen Sie individuelle Bildschirmoberflächen mit Altersgrenzen und Jugendschutz-PINs.
           </p>
         </div>
-        <button
-          onClick={openCreateModal}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 16px',
-            borderRadius: '12px',
-            backgroundColor: 'var(--accent-action)',
-            color: 'var(--bg-base)',
-            border: 'none',
-            fontWeight: 600,
-            fontSize: '14px',
-            cursor: 'pointer',
-            transition: 'transform 0.1s ease',
-          }}
-        >
+        <button onClick={openCreateModal} className={`${styles.button} ${styles.createButton}`}>
           <span>✨</span> Neues Profil
         </button>
       </div>
 
       {/* Banners */}
       {error && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'var(--status-error-subtle)', border: '1px solid var(--status-error-border)', color: 'var(--status-error)', fontSize: '13px' }}>
-          ⚠️ {error}
-        </div>
+        <div className={`${styles.banner} ${styles.bannerError}`}>⚠️ {error}</div>
       )}
       {success && (
-        <div style={{ padding: '12px 16px', borderRadius: '10px', backgroundColor: 'var(--status-success-subtle)', border: '1px solid var(--status-success-border)', color: 'var(--status-success)', fontSize: '13px' }}>
-          ✓ {success}
-        </div>
+        <div className={`${styles.banner} ${styles.bannerSuccess}`}>✓ {success}</div>
       )}
 
       {/* Profiles Grid */}
       {loading ? (
-        <div style={{ color: 'var(--text-tertiary)', fontSize: '14px', padding: '24px', textAlign: 'center' }}>Sehprofile werden geladen...</div>
+        <div className={styles.loading}>Sehprofile werden geladen...</div>
       ) : profiles.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
+        <div className={styles.grid}>
           {profiles.map((p) => (
-            <div
-              key={p.id}
-              style={{
-                backgroundColor: 'var(--surface-panel-strong)',
-                borderRadius: '16px',
-                padding: '20px',
-                border: '1px solid var(--border-elevated)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                transition: 'border-color 0.2s ease',
-              }}
-            >
+            <div key={p.id} className={styles.card}>
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ fontSize: '40px', backgroundColor: 'var(--bg-base)', width: '56px', height: '56px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className={styles.cardTop}>
+                  <div className={styles.avatar}>
                     {p.avatarUrl || (p.isChild ? '👦' : '👤')}
                   </div>
-                  <span
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      backgroundColor: p.isChild ? 'var(--status-warning-subtle)' : 'var(--accent-action-subtle)',
-                      color: p.isChild ? 'var(--status-warning)' : 'var(--accent-action)',
-                    }}
-                  >
+                  <span className={`${styles.badge} ${p.isChild ? styles.badgeChild : styles.badgeMain}`}>
                     {p.isChild ? 'Kinderprofil' : 'Hauptprofil'}
                   </span>
                 </div>
 
-                <h4 style={{ margin: '14px 0 4px 0', fontSize: '16px', color: 'var(--text-primary)' }}>{p.name}</h4>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
+                <h4 className={styles.name}>{p.name}</h4>
+                <div className={styles.meta}>
                   <span>FSK max: <strong>{p.maxParentalRating ? `FSK ${p.maxParentalRating}` : 'Unbegrenzt'}</strong></span>
-                  {p.pinCode && <span style={{ color: 'var(--status-success)' }}>🔒 PIN aktiv</span>}
+                  {p.pinCode && <span className={styles.metaPin}>🔒 PIN aktiv</span>}
                 </div>
 
-                <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--text-disabled)' }}>
+                <div className={styles.policy}>
                   Ohne EPG-Rating:{' '}
-                  <span style={{ color: p.unknownRatingPolicy === 'block' ? 'var(--status-error)' : p.unknownRatingPolicy === 'request_approval' ? 'var(--status-warning)' : 'var(--status-success)', fontWeight: 600 }}>
+                  <span
+                    className={`${styles.policyValue} ${
+                      p.unknownRatingPolicy === 'block'
+                        ? styles.policyBlock
+                        : p.unknownRatingPolicy === 'request_approval'
+                          ? styles.policyApproval
+                          : styles.policyAllow
+                    }`}
+                  >
                     {p.unknownRatingPolicy === 'block' ? 'Sperren' : p.unknownRatingPolicy === 'request_approval' ? 'Freigabe erfordern' : 'Erlauben'}
                   </span>
                 </div>
               </div>
 
               {/* Actions */}
-              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--border-base)', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <div className={styles.actions}>
                 {deletingId === p.id ? (
                   <>
-                    <button onClick={() => setDeletingId(null)} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer' }}>Abbrechen</button>
-                    <button onClick={() => handleDelete(p.id)} disabled={saving} style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--status-error)', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Ja, löschen</button>
+                    <button onClick={() => setDeletingId(null)} className={`${styles.button} ${styles.buttonNeutral}`}>Abbrechen</button>
+                    <button onClick={() => handleDelete(p.id)} disabled={saving} className={`${styles.button} ${styles.buttonDangerSolid}`}>Ja, löschen</button>
                   </>
                 ) : (
                   <>
-                    <button onClick={() => openEditModal(p)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border-elevated)', backgroundColor: 'transparent', color: 'var(--accent-action)', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Bearbeiten</button>
-                    <button onClick={() => setDeletingId(p.id)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--status-error-border)', backgroundColor: 'var(--status-error-subtle)', color: 'var(--status-error)', fontSize: '12px', cursor: 'pointer' }}>Löschen</button>
+                    <button onClick={() => openEditModal(p)} className={`${styles.button} ${styles.buttonGhost}`}>Bearbeiten</button>
+                    <button onClick={() => setDeletingId(p.id)} className={`${styles.button} ${styles.buttonDanger}`}>Löschen</button>
                   </>
                 )}
               </div>
@@ -242,52 +210,43 @@ export const ProfileManagementSection: React.FC = () => {
           ))}
         </div>
       ) : (
-        <div style={{ backgroundColor: 'var(--surface-panel-strong)', padding: '32px', borderRadius: '16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '14px', border: '1px dashed var(--border-elevated)' }}>
+        <div className={styles.emptyState}>
           Keine zusätzlichen Sehprofile vorhanden. Erstellen Sie ein Profil für Kinder oder Haushaltsmitglieder.
         </div>
       )}
 
       {/* Modal / Bottom Sheet Form */}
       {isModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-overlay)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-          <div style={{ backgroundColor: 'var(--surface-panel-strong)', borderRadius: '24px', width: '100%', maxWidth: '520px', border: '1px solid var(--border-strong)', padding: '28px', boxShadow: 'var(--shadow-dialog)' }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
+        <div className={styles.scrim}>
+          <div className={styles.modal}>
+            <h3 className={styles.modalTitle}>
               {editingProfile ? 'Sehprofil bearbeiten' : 'Neues Sehprofil anlegen'}
             </h3>
 
-            <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={handleSave} className={styles.form}>
               {/* Profile Name */}
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Profilname</label>
+                <label className={styles.label}>Profilname</label>
                 <input
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="z. B. Kinderzimmer, Wohnzimmer TV, Max"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px' }}
+                  className={styles.input}
                   required
                 />
               </div>
 
               {/* Avatar Selector */}
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Avatar Symbol</label>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <label className={styles.label}>Avatar Symbol</label>
+                <div className={styles.avatarRow}>
                   {AVATAR_OPTIONS.map((emoji) => (
                     <button
                       key={emoji}
                       type="button"
                       onClick={() => setFormAvatar(emoji)}
-                      style={{
-                        fontSize: '24px',
-                        width: '44px',
-                        height: '44px',
-                        borderRadius: '10px',
-                        border: formAvatar === emoji ? '2px solid var(--accent-action)' : '1px solid var(--border-elevated)',
-                        backgroundColor: formAvatar === emoji ? 'var(--accent-action-subtle)' : 'var(--bg-base)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
+                      className={`${styles.avatarOption} ${formAvatar === emoji ? styles.avatarOptionSelected : ''}`}
                     >
                       {emoji}
                     </button>
@@ -296,24 +255,24 @@ export const ProfileManagementSection: React.FC = () => {
               </div>
 
               {/* Child Profile Toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '12px', backgroundColor: 'var(--bg-base)' }}>
+              <div className={styles.toggleRow}>
                 <div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Kinderprofil (Kinder-UI)</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Aktiviert vereinfachte Navigation und strenge FSK-Filter</div>
+                  <div className={styles.toggleTitle}>Kinderprofil (Kinder-UI)</div>
+                  <div className={styles.toggleHint}>Aktiviert vereinfachte Navigation und strenge FSK-Filter</div>
                 </div>
                 <input
                   type="checkbox"
                   checked={formIsChild}
                   onChange={(e) => setFormIsChild(e.target.checked)}
-                  style={{ width: '20px', height: '20px', accentColor: 'var(--accent-action)', cursor: 'pointer' }}
+                  className={styles.checkbox}
                 />
               </div>
 
               {/* FSK Rating Limit */}
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>Maximale FSK-Altersfreigabe</label>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-action)' }}>FSK {formMaxRating}</span>
+                <div className={styles.ratingHeader}>
+                  <label className={styles.ratingLabel}>Maximale FSK-Altersfreigabe</label>
+                  <span className={styles.ratingValue}>FSK {formMaxRating}</span>
                 </div>
                 <input
                   type="range"
@@ -322,9 +281,9 @@ export const ProfileManagementSection: React.FC = () => {
                   step="6"
                   value={formMaxRating}
                   onChange={(e) => setFormMaxRating(Number(e.target.value))}
-                  style={{ width: '100%', accentColor: 'var(--accent-action)', cursor: 'pointer' }}
+                  className={styles.slider}
                 />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-disabled)', marginTop: '4px' }}>
+                <div className={styles.ratingScale}>
                   <span>FSK 0</span>
                   <span>FSK 6</span>
                   <span>FSK 12</span>
@@ -334,11 +293,11 @@ export const ProfileManagementSection: React.FC = () => {
 
               {/* Unknown Rating Strategy */}
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Verhalten bei unbekannter EPG-Altersfreigabe (UNKNOWN = -1)</label>
+                <label className={styles.label}>Verhalten bei unbekannter EPG-Altersfreigabe (UNKNOWN = -1)</label>
                 <select
                   value={formUnknownPolicy}
-                  onChange={(e) => setFormUnknownPolicy(e.target.value as any)}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px' }}
+                  onChange={(e) => setFormUnknownPolicy(e.target.value as ProfileData['unknownRatingPolicy'])}
+                  className={styles.select}
                 >
                   <option value="request_approval">Freigabe-Anfrage an Admin senden (Empfohlen)</option>
                   <option value="block">Strikte Sperre (Fail-Closed)</option>
@@ -348,31 +307,27 @@ export const ProfileManagementSection: React.FC = () => {
 
               {/* Jugendschutz PIN */}
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>Jugendschutz-PIN (optional)</label>
+                <label className={styles.label}>Jugendschutz-PIN (optional)</label>
                 <input
                   type="password"
                   maxLength={4}
                   value={formPin}
                   onChange={(e) => setFormPin(e.target.value.replace(/\D/g, ''))}
                   placeholder="4-stelliger PIN z. B. 1234"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)', fontSize: '14px', letterSpacing: '4px' }}
+                  className={`${styles.input} ${styles.pinInput}`}
                 />
               </div>
 
               {/* Dialog Actions */}
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <div className={styles.modalActions}>
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--surface-highlight)', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}
+                  className={`${styles.button} ${styles.buttonNeutral} ${styles.buttonCancel}`}
                 >
                   Abbrechen
                 </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', backgroundColor: 'var(--accent-action)', color: 'var(--bg-base)', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
-                >
+                <button type="submit" disabled={saving} className={`${styles.button} ${styles.buttonSubmit}`}>
                   {saving ? 'Speichern...' : 'Profil speichern'}
                 </button>
               </div>

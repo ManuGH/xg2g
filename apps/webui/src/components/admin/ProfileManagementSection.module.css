@@ -1,0 +1,461 @@
+/* Viewing profiles - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css)
+
+   The values here are the ones the component already rendered inline. What is
+   new is everything an inline style cannot express: hover, focus-visible,
+   disabled and the reduced-motion path. The card carried
+   `transition: border-color` inline with no hover rule to trigger it, which is
+   what a lost state looks like from the outside; the hover and active
+   treatments below are the ones the retired Settings profile CSS defined for
+   this same surface. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subheading {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* --- buttons ------------------------------------------------------------ */
+
+.button {
+  border-radius: 10px;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px 12px;
+  transition:
+    background-color var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.createButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background-color: var(--accent-action);
+  color: var(--bg-base);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.createButton:hover:not(:disabled) {
+  background-color: var(--accent-action-hover);
+}
+
+.createButton:active:not(:disabled) {
+  background-color: var(--accent-action-pressed);
+  transform: translateY(1px);
+}
+
+.buttonNeutral {
+  background-color: var(--surface-highlight);
+  color: var(--text-secondary);
+}
+
+.buttonNeutral:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.buttonGhost {
+  border: 1px solid var(--border-elevated);
+  background-color: transparent;
+  color: var(--accent-action);
+  font-weight: 500;
+}
+
+.buttonGhost:hover:not(:disabled) {
+  border-color: var(--accent-action);
+  background-color: var(--accent-action-subtle);
+}
+
+.buttonDanger {
+  border: 1px solid var(--status-error-border);
+  background-color: var(--status-error-subtle);
+  color: var(--status-error);
+}
+
+.buttonDanger:hover:not(:disabled) {
+  border-color: var(--status-error);
+}
+
+.buttonDangerSolid {
+  background-color: var(--status-error);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* --- banners ------------------------------------------------------------ */
+
+.banner {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.bannerError {
+  background-color: var(--status-error-subtle);
+  border: 1px solid var(--status-error-border);
+  color: var(--status-error);
+}
+
+.bannerSuccess {
+  background-color: var(--status-success-subtle);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success);
+}
+
+.loading {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* --- profile cards ------------------------------------------------------ */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background-color: var(--surface-panel-strong);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid var(--border-elevated);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition:
+    border-color var(--motion-standard) var(--ease-standard),
+    transform var(--motion-standard) var(--ease-standard),
+    background-color var(--motion-standard) var(--ease-standard);
+}
+
+/* Harvested from the retired .profileCard rule: the lift is what told the
+   household these cards are reachable. */
+.card:hover {
+  border-color: var(--border-strong);
+  background-color: color-mix(in srgb, var(--surface-highlight) 30%, var(--surface-panel-strong) 70%);
+  transform: translateY(-2px);
+}
+
+.cardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.avatar {
+  font-size: 40px;
+  background-color: var(--bg-base);
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badgeChild {
+  background-color: var(--status-warning-subtle);
+  color: var(--status-warning);
+}
+
+.badgeMain {
+  background-color: var(--accent-action-subtle);
+  color: var(--accent-action);
+}
+
+.name {
+  margin: 14px 0 4px 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.meta {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.metaPin {
+  color: var(--status-success);
+}
+
+.policy {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-disabled);
+}
+
+.policyValue {
+  font-weight: 600;
+}
+
+.policyBlock {
+  color: var(--status-error);
+}
+
+.policyApproval {
+  color: var(--status-warning);
+}
+
+.policyAllow {
+  color: var(--status-success);
+}
+
+.actions {
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-base);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.emptyState {
+  background-color: var(--surface-panel-strong);
+  padding: 32px;
+  border-radius: 16px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  border: 1px dashed var(--border-elevated);
+}
+
+/* --- editor dialog ------------------------------------------------------ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background-color: var(--bg-overlay);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal {
+  background-color: var(--surface-panel-strong);
+  border-radius: 24px;
+  width: 100%;
+  max-width: 520px;
+  border: 1px solid var(--border-strong);
+  padding: 28px;
+  box-shadow: var(--shadow-dialog);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modalTitle {
+  margin: 0 0 20px 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: border-color var(--motion-standard) var(--ease-standard);
+}
+
+.input:hover,
+.select:hover {
+  border-color: var(--accent-action);
+}
+
+.input::placeholder {
+  color: var(--text-disabled);
+}
+
+/* The wide tracking is for the four digits, not for the sentence explaining
+   them - a distinction an inline style had no way to draw. */
+.pinInput {
+  letter-spacing: 4px;
+}
+
+.pinInput::placeholder {
+  letter-spacing: normal;
+}
+
+.avatarRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.avatarOption {
+  font-size: 24px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--border-elevated);
+  background-color: var(--bg-base);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-standard) var(--ease-standard),
+    background-color var(--motion-standard) var(--ease-standard);
+}
+
+.avatarOption:hover {
+  border-color: var(--accent-action);
+}
+
+/* Harvested from .profileCardActive: a selected thing states it with the
+   accent border and its tint, not with a heavier grey. */
+.avatarOptionSelected {
+  border: 2px solid var(--accent-action);
+  background-color: var(--accent-action-subtle);
+}
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background-color: var(--bg-base);
+}
+
+.toggleTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.toggleHint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.checkbox {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent-action);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ratingHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.ratingLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.ratingValue {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-action);
+}
+
+.slider {
+  width: 100%;
+  accent-color: var(--accent-action);
+  cursor: pointer;
+}
+
+.ratingScale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-disabled);
+  margin-top: 4px;
+}
+
+.modalActions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.buttonCancel {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.buttonSubmit {
+  padding: 10px 20px;
+  border-radius: 10px;
+  background-color: var(--accent-action);
+  color: var(--bg-base);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.buttonSubmit:hover:not(:disabled) {
+  background-color: var(--accent-action-hover);
+}
