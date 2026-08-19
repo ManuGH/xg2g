@@ -25,28 +25,9 @@ import (
 // Responsibility: Handles EPG data retrieval and serving.
 // Non-goals: EPG Parsing logic (see internal/epg).
 
-type nowNextRequest struct {
-	Services []string `json:"services"`
-}
-
-type epgEntry struct {
-	Title      string `json:"title,omitempty"`
-	Desc       string `json:"desc,omitempty"`  // short programme synopsis
-	Start      int64  `json:"start,omitempty"` // unix seconds
-	End        int64  `json:"end,omitempty"`   // unix seconds
-	StartXMLTV string `json:"startXmltv,omitempty"`
-	EndXMLTV   string `json:"endXmltv,omitempty"`
-}
-
-type nowNextItem struct {
-	ServiceRef string    `json:"serviceRef"`
-	Now        *epgEntry `json:"now,omitempty"`
-	Next       *epgEntry `json:"next,omitempty"`
-}
-
 // handleNowNextEPG returns now/next EPG for a list of service references.
 func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
-	var req nowNextRequest
+	var req NowNextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Services) == 0 {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "epg/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Request body must contain non-empty services list", nil)
 		return
@@ -87,30 +68,30 @@ func (s *Server) handleNowNextEPG(w http.ResponseWriter, r *http.Request) {
 	writeNowNextResponse(w, buildNowNextItems(req.Services, programs, time.Now()))
 }
 
-func writeNowNextResponse(w http.ResponseWriter, items []nowNextItem) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"items": items,
-	})
+func writeNowNextResponse(w http.ResponseWriter, items []NowNextItem) {
+	// The envelope used to be an inline map, which is the same drift risk as a
+	// hand-written struct with none of the visibility: a map cannot be checked
+	// against the contract by the compiler or by a reviewer.
+	writeJSON(w, http.StatusOK, NowNextResponse{Items: items})
 }
 
-func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []nowNextItem {
+func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.Time) []NowNextItem {
 	progMap := make(map[string][]epg.Programme)
 	for _, program := range programs {
 		canonicalRef := read.CanonicalServiceRef(program.Channel)
 		progMap[canonicalRef] = append(progMap[canonicalRef], program)
 	}
 
-	items := make([]nowNextItem, 0, len(serviceRefs))
+	items := make([]NowNextItem, 0, len(serviceRefs))
 	for _, serviceRef := range serviceRefs {
 		progs := progMap[read.CanonicalServiceRef(serviceRef)]
 		if len(progs) == 0 {
-			items = append(items, nowNextItem{ServiceRef: serviceRef})
+			items = append(items, NowNextItem{ServiceRef: serviceRef})
 			continue
 		}
 
-		var current *epgEntry
-		var next *epgEntry
+		var current *NowNextEntry
+		var next *NowNextEntry
 
 		for _, program := range progs {
 			start, serr := time.Parse(xmltvTimeFormat, program.Start)
@@ -119,27 +100,31 @@ func buildNowNextItems(serviceRefs []string, programs []epg.Programme, now time.
 				continue
 			}
 
-			entry := &epgEntry{
+			// title, start and end are required by the contract. The
+			// hand-written entry carried omitempty on all three, so a
+			// programme with an empty title published a response missing a
+			// field the schema declares — the generated type cannot.
+			entry := &NowNextEntry{
 				Title:      program.Title.Text,
-				Start:      start.Unix(),
-				End:        stop.Unix(),
-				StartXMLTV: program.Start,
-				EndXMLTV:   program.Stop,
+				Start:      int(start.Unix()),
+				End:        int(stop.Unix()),
+				StartXmltv: optionalString(program.Start),
+				EndXmltv:   optionalString(program.Stop),
 			}
 			if program.Desc != nil {
-				entry.Desc = program.Desc.Text
+				entry.Desc = optionalString(program.Desc.Text)
 			}
 
 			if now.After(start) && now.Before(stop) {
 				current = entry
 			} else if start.After(now) {
-				if next == nil || start.Before(time.Unix(next.Start, 0)) {
+				if next == nil || start.Before(time.Unix(int64(next.Start), 0)) {
 					next = entry
 				}
 			}
 		}
 
-		items = append(items, nowNextItem{
+		items = append(items, NowNextItem{
 			ServiceRef: serviceRef,
 			Now:        current,
 			Next:       next,

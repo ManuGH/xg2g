@@ -150,7 +150,7 @@ func TestPostServicesNowNext_FallsBackToEpgSourceWhenCacheMissing(t *testing.T) 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var payload struct {
-		Items []nowNextItem `json:"items"`
+		Items []NowNextItem `json:"items"`
 	}
 	err := json.NewDecoder(resp.Body).Decode(&payload)
 	assert.NoError(t, err)
@@ -208,7 +208,7 @@ func TestBuildNowNextItems_PreservesXmltvOffsets(t *testing.T) {
 
 	assert.Len(t, items, 1)
 	if assert.NotNil(t, items[0].Now) {
-		assert.Equal(t, "20260329013000 +0100", items[0].Now.StartXMLTV)
-		assert.Equal(t, "20260329033000 +0200", items[0].Now.EndXMLTV)
+		assert.Equal(t, "20260329013000 +0100", stringValue(items[0].Now.StartXmltv))
+		assert.Equal(t, "20260329033000 +0200", stringValue(items[0].Now.EndXmltv))
 	}
 }
