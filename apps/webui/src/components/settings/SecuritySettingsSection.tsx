@@ -14,6 +14,7 @@ import {
 import { createPasskeyCredential } from '../../lib/webauthn';
 import { getStoredToken, setStoredToken, clearStoredToken } from '../../utils/tokenStorage';
 import { useAppContext } from '../../context/AppContext';
+import styles from './SecuritySettingsSection.module.css';
 
 export default function SecuritySettingsSection() {
   const { auth, setToken } = useAppContext();
@@ -134,22 +135,22 @@ export default function SecuritySettingsSection() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', maxWidth: '720px' }}>
+    <div className={styles.section}>
       <div>
-        <h3 style={{ fontSize: '1.25rem', fontWeight: 600, margin: '0 0 0.25rem 0', color: 'var(--text-primary)' }}>
-          Sicherheit, Admin-Zugang & Passkeys
+        <h3 className={styles.heading}>
+          Sicherheit, Admin-Zugang &amp; Passkeys
         </h3>
-        <p style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)', margin: 0 }}>
+        <p className={styles.subheading}>
           Verwalte deine Admin-Authentifizierung, registrierte Passkeys und aktive Gerätesitzungen.
         </p>
       </div>
 
       {/* SECTION 0: ADMIN AUTHENTICATION CARD */}
-      <div style={{ backgroundColor: hasActiveToken ? 'rgba(34, 197, 94, 0.05)' : 'rgba(56, 189, 248, 0.06)', border: `1px solid ${hasActiveToken ? 'rgba(34, 197, 94, 0.25)' : 'rgba(56, 189, 248, 0.25)'}`, borderRadius: '12px', padding: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '1.2rem' }}>{hasActiveToken ? '🟢' : '🔑'}</span>
-            <strong style={{ color: 'var(--text-primary)', fontSize: '0.95rem' }}>
+      <div className={`${styles.authCard} ${hasActiveToken ? styles.authCardActive : styles.authCardIdle}`}>
+        <div className={styles.authHeader}>
+          <div className={styles.authIdentity}>
+            <span className={styles.authIcon}>{hasActiveToken ? '🟢' : '🔑'}</span>
+            <strong className={styles.authTitle}>
               {hasActiveToken ? 'Admin-Sitzung aktiv' : 'Admin-Authentifizierung'}
             </strong>
           </div>
@@ -162,17 +163,17 @@ export default function SecuritySettingsSection() {
 
         {!hasActiveToken ? (
           <div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem 0' }}>
+            <p className={styles.authCopy}>
               Gib dein Admin-Token ein (Standard: <code>test04</code>), um Passkeys und gekoppelte Geräte zu verwalten.
             </p>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div className={styles.tokenRow}>
               <input
                 type="password"
                 placeholder="Admin-Token eingeben (z.B. test04)"
                 value={tokenInput}
                 onChange={(e) => setTokenInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSaveAdminToken(); }}
-                style={{ flex: 1, minWidth: '200px', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', backgroundColor: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '0.875rem' }}
+                className={`${styles.input} ${styles.tokenInput}`}
               />
               <Button size="sm" onClick={handleSaveAdminToken} disabled={!tokenInput.trim()}>
                 Anmelden
@@ -183,30 +184,26 @@ export default function SecuritySettingsSection() {
             </div>
           </div>
         ) : (
-          <p style={{ fontSize: '0.85rem', color: 'var(--status-success)', margin: 0 }}>
+          <p className={styles.authSuccess}>
             Du bist erfolgreich als Administrator authentifiziert. Alle Admin-Funktionen sind freigeschaltet.
           </p>
         )}
       </div>
 
       {errorMsg ? (
-        <div style={{ padding: '0.75rem 1rem', borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'var(--status-error)', fontSize: '0.875rem' }}>
-          {errorMsg}
-        </div>
+        <div className={`${styles.banner} ${styles.bannerError}`}>{errorMsg}</div>
       ) : null}
 
       {successMsg ? (
-        <div style={{ padding: '0.75rem 1rem', borderRadius: '8px', backgroundColor: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', color: 'var(--status-success)', fontSize: '0.875rem' }}>
-          {successMsg}
-        </div>
+        <div className={`${styles.banner} ${styles.bannerSuccess}`}>{successMsg}</div>
       ) : null}
 
       {/* SECTION 1: PASSKEY MANAGEMENT */}
-      <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <div className={styles.panel}>
+        <div className={styles.panelHeader}>
           <div>
-            <h4 style={{ fontSize: '1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>Registrierte Passkeys</h4>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>{passkeys.length} Passkey(s) verknüpft</span>
+            <h4 className={styles.panelTitle}>Registrierte Passkeys</h4>
+            <span className={styles.panelMeta}>{passkeys.length} Passkey(s) verknüpft</span>
           </div>
           <Button
             size="sm"
@@ -220,16 +217,16 @@ export default function SecuritySettingsSection() {
 
         {/* Modal for Custom Passkey Nickname */}
         {showNicknameModal && (
-          <div style={{ padding: '1rem', backgroundColor: 'rgba(56, 189, 248, 0.1)', borderRadius: '8px', marginBottom: '1rem', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-            <h5 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: 'var(--accent-action)' }}>Passkey-Bezeichnung angeben</h5>
+          <div className={styles.nicknamePrompt}>
+            <h5 className={styles.nicknameTitle}>Passkey-Bezeichnung angeben</h5>
             <input
               type="text"
               value={passkeyNickname}
               onChange={(e) => setPasskeyNickname(e.target.value)}
               placeholder="z.B. Manuels MacBook Air (Touch ID)"
-              style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)', fontSize: '0.875rem', marginBottom: '0.75rem' }}
+              className={`${styles.input} ${styles.nicknameInput}`}
             />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div className={styles.nicknameActions}>
               <Button size="sm" onClick={() => { void handleAddPasskeyWithNickname(passkeyNickname); }} disabled={actionLoading}>
                 Jetzt registrieren
               </Button>
@@ -241,44 +238,30 @@ export default function SecuritySettingsSection() {
         )}
 
         {loading ? (
-          <div style={{ padding: '1rem', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>Lade Passkeys...</div>
+          <div className={styles.loading}>Lade Passkeys...</div>
         ) : passkeys.length === 0 ? (
-          <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-disabled)', fontSize: '0.875rem', backgroundColor: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px' }}>
+          <div className={styles.emptyState}>
             Noch keine Passkeys registriert. Füge einen Passkey für schnellen Zugang via Touch ID / Face ID hinzu.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div className={styles.passkeyList}>
             {passkeys.map((key) => (
-              <div
-                key={key.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '0.75rem 1rem',
-                  backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(255, 255, 255, 0.05)',
-                }}
-              >
+              <div key={key.id} className={styles.passkeyRow}>
                 <div>
-                  <div style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                    {key.nickname || 'Passkey'}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', marginTop: '0.125rem' }}>
+                  <div className={styles.passkeyName}>{key.nickname || 'Passkey'}</div>
+                  <div className={styles.passkeyDate}>
                     Erstellt am: {new Date(key.createdAt).toLocaleString()}
                   </div>
                 </div>
 
                 {deletingId === key.id ? (
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--status-error)' }}>Löschen?</span>
+                  <div className={styles.confirmGroup}>
+                    <span className={styles.confirmLabel}>Löschen?</span>
                     <Button
                       size="sm"
-                      variant="primary"
+                      variant="danger"
                       onClick={() => { void handleDeletePasskey(key.id); }}
                       disabled={actionLoading}
-                      style={{ backgroundColor: 'var(--status-error)' }}
                     >
                       Ja
                     </Button>
@@ -289,9 +272,8 @@ export default function SecuritySettingsSection() {
                 ) : (
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="danger-ghost"
                     onClick={() => setDeletingId(key.id)}
-                    style={{ color: 'var(--status-error)' }}
                     data-testid={`delete-passkey-${key.id}`}
                   >
                     Entfernen
@@ -304,22 +286,22 @@ export default function SecuritySettingsSection() {
       </div>
 
       {/* SECTION 2: SESSION MANAGEMENT */}
-      <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.25rem' }}>
-        <h4 style={{ fontSize: '1rem', fontWeight: 600, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Sitzungsverwaltung</h4>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', margin: '0 0 1rem 0' }}>
+      <div className={styles.panel}>
+        <h4 className={styles.sessionTitle}>Sitzungsverwaltung</h4>
+        <p className={styles.sessionCopy}>
           Beende alle anderen aktiven Web-Sitzungen auf anderen Geräten und Browsern.
         </p>
 
         {confirmRevokeOthers ? (
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.08)', padding: '0.75rem 1rem', borderRadius: '8px' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--status-error)' }}>
+          <div className={styles.revokeConfirm}>
+            <span className={styles.revokeLabel}>
               Wirklich alle anderen aktiven Sitzungen abmelden?
             </span>
             <Button
               size="sm"
+              variant="danger"
               onClick={() => { void handleRevokeOthers(); }}
               disabled={actionLoading}
-              style={{ backgroundColor: 'var(--status-error)', color: 'var(--text-primary)' }}
               data-testid="confirm-revoke-others-button"
             >
               Ja, alle abmelden

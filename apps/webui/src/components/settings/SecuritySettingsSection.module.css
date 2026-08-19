@@ -1,0 +1,294 @@
+/* Security, admin access and passkeys - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css)
+
+   Colour mapping here follows one rule. Where a token matches in meaning and
+   in value, it is used directly. Where it matches in meaning but the literal
+   carried a different weight - this file tints at 0.03, 0.05 and 0.06 where
+   the --*-subtle tokens sit at 0.12 - the value is mixed from the token
+   instead, so the hue comes from the palette and the surface keeps the
+   restraint it was drawn with. Snapping those to --*-subtle would have made
+   the admin card twice as tinted for no reason anyone chose. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 720px;
+}
+
+.heading {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+  color: var(--text-primary);
+}
+
+.subheading {
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+/* --- admin authentication ----------------------------------------------- */
+
+/* The card states whether an admin session is live, so it takes the success
+   hue when one is and the action hue when it is asking for a token. */
+.authCard {
+  border-radius: 12px;
+  padding: 1.25rem;
+  transition:
+    background-color var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard);
+}
+
+.authCardActive {
+  background-color: color-mix(in srgb, var(--status-success) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-success) 25%, transparent);
+}
+
+.authCardIdle {
+  background-color: color-mix(in srgb, var(--accent-action) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-action) 25%, transparent);
+}
+
+.authHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.authIdentity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.authIcon {
+  font-size: 1.2rem;
+}
+
+.authTitle {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.authCopy {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.75rem 0;
+}
+
+.authSuccess {
+  font-size: 0.85rem;
+  color: var(--status-success);
+  margin: 0;
+}
+
+.tokenRow {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* --- inputs ------------------------------------------------------------- */
+
+.input {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  transition: border-color var(--motion-standard) var(--ease-standard);
+}
+
+.input:hover {
+  border-color: var(--accent-action);
+}
+
+.input::placeholder {
+  color: var(--text-disabled);
+}
+
+.tokenInput {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* --- banners ------------------------------------------------------------ */
+
+.banner {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+.bannerError {
+  background-color: var(--status-error-subtle);
+  border: 1px solid var(--status-error-border);
+  color: var(--status-error);
+}
+
+.bannerSuccess {
+  background-color: var(--status-success-subtle);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success);
+}
+
+/* --- panels ------------------------------------------------------------- */
+
+.panel {
+  background-color: var(--surface-muted);
+  border: 1px solid var(--border-elevated);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.panelTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.panelMeta {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+}
+
+.sessionTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+}
+
+.sessionCopy {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  margin: 0 0 1rem 0;
+}
+
+/* --- passkey nickname prompt -------------------------------------------- */
+
+.nicknamePrompt {
+  padding: 1rem;
+  background-color: var(--accent-action-subtle);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border: 1px solid var(--accent-action-border);
+}
+
+.nicknameTitle {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: var(--accent-action);
+}
+
+.nicknameInput {
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-elevated);
+  margin-bottom: 0.75rem;
+}
+
+.nicknameActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* --- passkey list ------------------------------------------------------- */
+
+.loading {
+  padding: 1rem;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+}
+
+.emptyState {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-disabled);
+  font-size: 0.875rem;
+  background-color: color-mix(in srgb, var(--bg-video) 20%, transparent);
+  border-radius: 8px;
+}
+
+.passkeyList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.passkeyRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--bg-input);
+  border-radius: 8px;
+  border: 1px solid var(--border-base);
+  flex-wrap: wrap;
+  transition: border-color var(--motion-standard) var(--ease-standard);
+}
+
+.passkeyRow:hover {
+  border-color: var(--border-elevated);
+}
+
+.passkeyName {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.passkeyDate {
+  font-size: 0.75rem;
+  color: var(--text-disabled);
+  margin-top: 0.125rem;
+}
+
+.confirmGroup {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.confirmLabel {
+  font-size: 0.8rem;
+  color: var(--status-error);
+}
+
+/* --- revoke other sessions ---------------------------------------------- */
+
+.revokeConfirm {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  background-color: color-mix(in srgb, var(--status-error) 8%, transparent);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+}
+
+.revokeLabel {
+  font-size: 0.85rem;
+  color: var(--status-error);
+}

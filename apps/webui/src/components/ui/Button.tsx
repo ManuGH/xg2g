@@ -1,7 +1,7 @@
 import React from 'react';
 import styles from './Button.module.css';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-ghost' | 'ghost';
 export type ButtonSize = 'md' | 'sm' | 'icon';
 export type ButtonState = 'untested' | 'valid' | 'invalid';
 

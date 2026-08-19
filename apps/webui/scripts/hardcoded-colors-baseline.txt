@@ -3,6 +3,5 @@
 # Entries may only shrink. A new file here needs a reason in review.
 src/components/auth/PasskeyAuthFlow.tsx 5
 src/components/notifications/NotificationCenter.tsx 17
-src/components/settings/SecuritySettingsSection.tsx 22
 src/features/epg/EPG.module.css 1
 src/features/player/components/V3Player.module.css 6

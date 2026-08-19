@@ -78,6 +78,19 @@
   background: color-mix(in srgb, var(--status-error) 88%, var(--bg-base));
 }
 
+/* Destructive but secondary: a row-level "remove" should not carry a solid
+   red fill, but it must not read as a neutral ghost either. Consumers used to
+   reach for variant="ghost" plus an inline colour, which no class in a module
+   can override - the base rule below is more specific than a single class. */
+.button[data-variant="danger-ghost"] {
+  background: transparent;
+  color: var(--status-error);
+}
+
+.button[data-variant="danger-ghost"]:hover:not(:disabled) {
+  background: var(--status-error-subtle);
+}
+
 .button[data-variant="ghost"] {
   background: transparent;
   color: var(--text-primary);
