@@ -1,0 +1,407 @@
+/* Household members - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css)
+
+   Colour is untouched here: this section was consolidated onto the status
+   tokens in an earlier commit, so every value below is the one already
+   rendering. What changes is structure and state.
+
+   The inline version had no transition anywhere in the file, no hover on any
+   of its eight buttons, no disabled treatment on the two that carry
+   `disabled`, and no breakpoint on a member row that put an identity block and
+   an action group at opposite ends of a flex line. Two buttons had also lost
+   `cursor: pointer` while the other six kept it, which is what maintaining the
+   same declaration eight times by hand does over time. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subheading {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* --- buttons ------------------------------------------------------------ */
+
+.button {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-standard) var(--ease-standard),
+    border-color var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.inviteButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background-color: var(--accent-action);
+  color: var(--bg-base);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.inviteButton:hover:not(:disabled) {
+  background-color: var(--accent-action-hover);
+}
+
+.buttonNeutral {
+  background-color: var(--surface-highlight);
+  color: var(--text-secondary);
+}
+
+.buttonNeutral:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.buttonDanger {
+  border: 1px solid var(--status-error-border);
+  background-color: var(--status-error-subtle);
+  color: var(--status-error);
+}
+
+.buttonDanger:hover:not(:disabled) {
+  border-color: var(--status-error);
+}
+
+.buttonDangerSolid {
+  padding: 6px 10px;
+  background-color: var(--status-error);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.buttonConfirmNo {
+  padding: 6px 10px;
+}
+
+/* --- banners ------------------------------------------------------------ */
+
+.banner {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.bannerError {
+  background-color: var(--status-error-subtle);
+  border: 1px solid var(--status-error-border);
+  color: var(--status-error);
+}
+
+.bannerSuccess {
+  background-color: var(--status-success-subtle);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success);
+}
+
+.loading {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* --- member list -------------------------------------------------------- */
+
+.memberList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Same shape the approval rows took: identity on a flexible track, actions on
+   an intrinsic one, collapsing to a single column below 760px. */
+.memberRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  background-color: var(--surface-panel-strong);
+  padding: 16px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--border-elevated);
+  transition: border-color var(--motion-standard) var(--ease-standard);
+}
+
+.memberRow:hover {
+  border-color: var(--border-strong);
+}
+
+.memberIdentity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-inline-size: 0;
+}
+
+.memberAvatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background-color: var(--bg-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.memberName {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.memberUsername {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.memberMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.roleBadge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.roleAdmin {
+  background-color: var(--accent-action-subtle);
+  color: var(--accent-action);
+}
+
+.roleMember {
+  background-color: var(--status-success-subtle);
+  color: var(--status-success);
+}
+
+.roleGuest {
+  background-color: var(--status-warning-subtle);
+  color: var(--status-warning);
+}
+
+.confirmGroup {
+  display: flex;
+  gap: 6px;
+}
+
+/* --- invite dialog ------------------------------------------------------ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background-color: var(--bg-overlay);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal {
+  background-color: var(--surface-panel-strong);
+  border-radius: 24px;
+  width: 100%;
+  max-width: 480px;
+  border: 1px solid var(--border-strong);
+  padding: 28px;
+  box-shadow: var(--shadow-dialog);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modalTitle {
+  margin: 0 0 16px 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.form,
+.inviteResult {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: border-color var(--motion-standard) var(--ease-standard);
+}
+
+.input:hover,
+.select:hover {
+  border-color: var(--accent-action);
+}
+
+.input::placeholder {
+  color: var(--text-disabled);
+}
+
+.modalActions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.buttonCancel {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.buttonSubmit {
+  padding: 10px 20px;
+  border-radius: 10px;
+  background-color: var(--accent-action);
+  color: var(--bg-base);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.buttonSubmit:hover:not(:disabled) {
+  background-color: var(--accent-action-hover);
+}
+
+/* --- generated invite --------------------------------------------------- */
+
+.inviteCodeBox {
+  padding: 16px;
+  border-radius: 12px;
+  background-color: var(--bg-base);
+  border: 1px solid var(--accent-action-border);
+  text-align: center;
+}
+
+.inviteCodeLabel {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.inviteCode {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent-action);
+  letter-spacing: 3px;
+}
+
+.inviteLinkLabel {
+  display: block;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.inviteLinkInput {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.inviteActions {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+/* The copy button swaps its fill to confirm; without a transition that read as
+   a flicker rather than an acknowledgement. */
+.copyButton {
+  flex: 1;
+  padding: 10px;
+  border-radius: 10px;
+  background-color: var(--surface-highlight);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.copyButton:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.copyButtonDone {
+  background-color: var(--status-success);
+  color: var(--bg-base);
+}
+
+.doneButton {
+  padding: 10px 18px;
+  border-radius: 10px;
+  background-color: var(--accent-action);
+  color: var(--bg-base);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.doneButton:hover:not(:disabled) {
+  background-color: var(--accent-action-hover);
+}
+
+@media (max-width: 760px) {
+  .memberRow {
+    grid-template-columns: 1fr;
+  }
+}
