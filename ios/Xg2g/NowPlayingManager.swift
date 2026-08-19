@@ -15,8 +15,16 @@ final class NowPlayingManager {
     static let shared = NowPlayingManager()
 
     /// Lock screen artwork is drawn much larger than an in-app logo, so it gets
-    /// the top `LogoImageCache` bucket.
-    private static let artworkBucket = 256
+    /// its own rendition rather than borrowing a list-sized one.
+    ///
+    /// It has to match `artworkCanvas`: the logo is drawn into a 512-point
+    /// canvas, so a 256-pixel source was being scaled up by more than half
+    /// again and arrived on the lock screen visibly soft.
+    private static let artworkBucket = 512
+
+    /// Edge length of the rendered Now Playing artwork. `nonisolated` because
+    /// the rendering helpers run off the main actor.
+    private nonisolated static let artworkCanvas: CGFloat = 512
 
     var onNextChannel: (() -> Void)?
     var onPreviousChannel: (() -> Void)?
@@ -30,6 +38,14 @@ final class NowPlayingManager {
 
     private var isConfigured = false
     private var currentArtworkTask: Task<Void, Never>?
+
+    /// Whether playback is currently running.
+    ///
+    /// Held here because every republish has to restate it. Both publish paths
+    /// used to hard-code a rate of 1.0, and the main player republishes on every
+    /// EPG refresh — so pausing from the watch was undone about half a minute
+    /// later by a metadata update that claimed playback had resumed.
+    private var isPlayingNow = true
 
     private init() {}
 
@@ -165,17 +181,15 @@ final class NowPlayingManager {
     /// returns at its first line because there is nothing to update — which is why
     /// the native player's controls did nothing while locked: not a broken
     /// command, an empty lock screen.
-    func updateLive(title: String, subtitle: String? = nil) {
+    func updateLive(title: String, subtitle: String? = nil, logoURL: URL? = nil) {
         currentArtworkTask?.cancel()
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: subtitle ?? "xg2g Live TV",
             MPMediaItemPropertyAlbumTitle: "xg2g Live TV",
             MPNowPlayingInfoPropertyIsLiveStream: true,
-            MPNowPlayingInfoPropertyPlaybackRate: 1.0,
         ]
-        info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: Self.createFallbackArtwork(for: title))
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        publish(info, logoURL: logoURL, fallbackText: title)
     }
 
     func update(channel: Channel, nowEntry: NowNext.Entry?) {
@@ -186,62 +200,99 @@ final class NowPlayingManager {
             MPMediaItemPropertyArtist: channel.name,
             MPMediaItemPropertyAlbumTitle: "xg2g Live TV",
             MPNowPlayingInfoPropertyIsLiveStream: true,
-            MPNowPlayingInfoPropertyPlaybackRate: 1.0,
         ]
 
         if let desc = nowEntry?.description {
             info[MPMediaItemPropertyComments] = desc
         }
 
-        // 1. If logo is already cached in memory, attach immediately
-        if let logoURL = channel.logoURL, let cached = LogoImageCache.shared.anyImage(for: logoURL) {
-            info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: cached)
+        publish(info, logoURL: channel.logoURL, fallbackText: channel.name)
+    }
+
+    /// Publishes a now-playing entry and gets the sharpest available logo onto
+    /// it — immediately if something is cached, and in lock screen resolution
+    /// as soon as it can be fetched.
+    ///
+    /// Both callers go through here. `updateLive` used to skip the logo path
+    /// entirely and publish the name-on-a-gradient placeholder unconditionally,
+    /// which is why the native player showed no channel logos on a locked
+    /// screen while the main player did.
+    ///
+    /// The cached rendition is a starting point, not the destination: the list
+    /// draws logos at 128 points, and taking that as final — as the previous
+    /// early return did — pinned a thumbnail onto a canvas four times its size.
+    private func publish(_ info: [String: Any], logoURL: URL?, fallbackText: String) {
+        var info = info
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlayingNow ? 1.0 : 0.0
+        applyPlaybackState()
+
+        guard let logoURL else {
+            info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: Self.createFallbackArtwork(for: fallbackText))
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
             return
         }
 
-        // 2. Set default badge artwork immediately
-        let fallback = Self.createFallbackArtwork(for: channel.name)
-        info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: fallback)
+        if let sharp = LogoImageCache.shared.image(for: logoURL, bucket: Self.artworkBucket) {
+            info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: sharp)
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            return
+        }
+
+        // Something on screen right away — any cached size beats the placeholder,
+        // and beats an empty lock screen while the fetch is in flight.
+        let placeholder = LogoImageCache.shared.anyImage(for: logoURL)
+            ?? Self.createFallbackArtwork(for: fallbackText)
+        info[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: placeholder)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
 
-        // 3. Asynchronously fetch the channel logo and update Lock Screen artwork
-        if let logoURL = channel.logoURL {
-            currentArtworkTask = Task {
-                guard let (data, _) = try? await URLSession.shared.data(from: logoURL) else { return }
+        let published = info
+        currentArtworkTask = Task {
+            guard let (data, _) = try? await URLSession.shared.data(from: logoURL) else { return }
 
-                // Lock screen artwork is the largest rendition the app asks for,
-                // and decoding it here keeps a full-resolution bitmap out of both
-                // the cache and the main thread.
-                let bucket = Self.artworkBucket
-                let image = await Task.detached(priority: .utility) {
-                    LogoImageCache.downsampledImage(from: data, bucket: bucket)
-                }.value
+            // Decoding off the main thread keeps a full-resolution bitmap out of
+            // both the cache and the UI.
+            let bucket = Self.artworkBucket
+            let image = await Task.detached(priority: .utility) {
+                LogoImageCache.downsampledImage(from: data, bucket: bucket)
+            }.value
 
-                guard let image, !Task.isCancelled else { return }
-                LogoImageCache.shared.store(image, for: logoURL, bucket: bucket)
+            guard let image, !Task.isCancelled else { return }
+            LogoImageCache.shared.store(image, for: logoURL, bucket: bucket)
 
-                var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
-                updated[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: image)
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
-            }
+            var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? published
+            updated[MPMediaItemPropertyArtwork] = Self.makeArtwork(from: image)
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
         }
     }
 
     func updatePlaybackState(isPlaying: Bool) {
+        isPlayingNow = isPlaying
+        applyPlaybackState()
         guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
+    /// States the transport state outright instead of leaving it to be inferred.
+    ///
+    /// With the app in the background the inference from audio session and rate
+    /// is unambiguous, which is why the watch behaved while the phone was
+    /// locked and drifted out of step once the app was open in front of the
+    /// user — a foreground app is expected to declare this.
+    private func applyPlaybackState() {
+        MPNowPlayingInfoCenter.default().playbackState = isPlayingNow ? .playing : .paused
+    }
+
     func clear() {
         currentArtworkTask?.cancel()
+        isPlayingNow = true
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         resignRemoteControls()
     }
 
     private nonisolated static func makeArtwork(from image: UIImage) -> MPMediaItemArtwork {
-        let targetSize = CGSize(width: 512, height: 512)
+        let targetSize = CGSize(width: artworkCanvas, height: artworkCanvas)
         let rendered = UIGraphicsImageRenderer(size: targetSize).image { ctx in
             // Studio Dark Gradient Background
             let rect = CGRect(origin: .zero, size: targetSize)

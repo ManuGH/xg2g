@@ -3,11 +3,18 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import SwiftUI
+import UIKit
 
 /// SwiftUI screen to test and benchmark the Phase 1 1080i50 $\rightarrow$ 1080p50 VideoToolbox + Metal Vertical Slice.
 public struct TestTSPlayerScreen: View {
 
     @Environment(\.dismiss) private var dismiss
+    /// The catalogue, when the caller has one.
+    ///
+    /// The presets carry a `serviceRef` but no logo — the logos live on the
+    /// catalogue's `Channel`. Without this the lock screen had nothing but the
+    /// channel name to draw. Optional so the screen stays usable standalone.
+    private let model: AppModel?
     @StateObject private var pipeline = NativeTSVideoPipeline()
     /// Owns the AVFoundation display layer and the PiP controller. Held here
     /// rather than inside the UIViewRepresentable so it survives SwiftUI
@@ -46,7 +53,21 @@ public struct TestTSPlayerScreen: View {
         ChannelPreset(name: "Das Erste HD", serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:283D:3FB:1:C00000:0:0:0:", epgNow: "Tagesschau / Reportage", category: "Vollprogramm")
     ]
 
-    public init() {}
+    // Internal rather than public: `AppModel` is internal, and this laboratory
+    // screen is only ever constructed from inside the app.
+    init(model: AppModel? = nil) {
+        self.model = model
+    }
+
+    /// The catalogue logo for a preset, matched on `serviceRef`.
+    private func logoURL(for serviceRef: String) -> URL? {
+        model?.channels.first { $0.serviceRef == serviceRef }?.logoURL
+    }
+
+    /// The preset currently streaming, for anything that needs more than its URL.
+    private var currentPreset: ChannelPreset? {
+        presets.first { $0.url == streamURLString }
+    }
 
     public var body: some View {
         GeometryReader { geometry in
@@ -126,6 +147,13 @@ public struct TestTSPlayerScreen: View {
                     }
                 }
             }
+            // Real fullscreen, not merely an edge-to-edge video frame. Ignoring
+            // the safe area stretches the picture under the status bar and the
+            // home indicator, but both keep drawing on top of it — a bright
+            // clock over the image and a bar across the bottom. Landscape here
+            // means "watching", so the system chrome leaves with the controls.
+            .statusBarHidden(isLandscape)
+            .persistentSystemOverlays(isLandscape ? .hidden : .automatic)
         }
         .onAppear {
             setupPlayback()
@@ -557,6 +585,9 @@ public struct TestTSPlayerScreen: View {
 
     private func setupPlayback() {
         AudioSessionManager.shared.configureForPlayback()
+        // Watching a live stream involves no touches, so the idle timer would
+        // dim and lock the screen in the middle of a programme.
+        UIApplication.shared.isIdleTimerDisabled = true
         // Taken over as a whole: play and pause each do their own thing rather
         // than both landing on the toggle, and stop is claimed here instead of
         // being left pointing at the HLS player. No seek handler, so the skip
@@ -577,6 +608,7 @@ public struct TestTSPlayerScreen: View {
     private func teardownPlayback() {
         pipeline.stopStreaming()
         isStreaming = false
+        UIApplication.shared.isIdleTimerDisabled = false
         autoHideControlsTask?.cancel()
         hideZapToastTask?.cancel()
         NowPlayingManager.shared.clear()
@@ -593,7 +625,15 @@ public struct TestTSPlayerScreen: View {
             // Publishes the entry itself, not just its rate: `updatePlaybackState`
             // returns at its first line when nothing has been published, which is
             // why this player's lock screen was empty and its controls inert.
-            NowPlayingManager.shared.updateLive(title: currentChannelName)
+            NowPlayingManager.shared.updateLive(
+                title: currentChannelName,
+                subtitle: currentPreset?.epgNow,
+                logoURL: currentPreset.flatMap { logoURL(for: $0.serviceRef) }
+            )
+            // Resuming goes through here, and the manager remembers the paused
+            // state from before — without this the lock screen and the watch
+            // would keep showing a pause button over running playback.
+            NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
         }
     }
 

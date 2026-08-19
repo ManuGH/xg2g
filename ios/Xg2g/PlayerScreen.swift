@@ -320,6 +320,11 @@ struct PlayerScreen: View {
                     .allowsHitTesting(false)
                 }
             }
+            // Same fullscreen contract as the native player: in landscape the
+            // status bar and home indicator go away instead of sitting on top
+            // of a picture that has already been stretched underneath them.
+            .statusBarHidden(isLandscape)
+            .persistentSystemOverlays(isLandscape ? .hidden : .automatic)
         }
         .task(id: currentChannel.id) {
             await startStreaming(channel: currentChannel)
@@ -361,6 +366,13 @@ struct PlayerScreen: View {
                     self.failure = "Wiedergabefehler: \(err.localizedDescription)"
                 }
             }
+        }
+        // Every route into play/pause lands on this flag — the on-screen button,
+        // a remote command, an interruption — so reporting it here covers all of
+        // them at once. Nothing reported it before, which left the lock screen
+        // and the watch showing a transport state the player had already left.
+        .onChange(of: isPlaying) { _, playing in
+            NowPlayingManager.shared.updatePlaybackState(isPlaying: playing)
         }
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notif in
             guard let userInfo = notif.userInfo,

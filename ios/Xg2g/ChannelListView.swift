@@ -1363,7 +1363,7 @@ final class LogoImageCache: @unchecked Sendable {
     /// Every bucket `bucket(forPointSize:scale:)` can currently produce, ascending.
     /// Used only to look up "whatever we already have" — a miss just means no
     /// artwork yet, which is what an uncached logo produced before as well.
-    private static let knownBuckets = [128, 192, 256]
+    private static let knownBuckets = [128, 192, 256, 512]
 
     func image(for url: URL, bucket: Int) -> UIImage? {
         cache.object(forKey: Self.key(url, bucket))

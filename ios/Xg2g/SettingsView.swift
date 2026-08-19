@@ -156,7 +156,7 @@ struct SettingsView: View {
 #if DEBUG
                     Section {
                         NavigationLink {
-                            TestTSPlayerScreen()
+                            TestTSPlayerScreen(model: model)
                         } label: {
                             HStack(spacing: 12) {
                                 SettingsIconBadge(systemName: "sparkles.tv", backgroundColor: Color.orange)
