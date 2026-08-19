@@ -51,6 +51,7 @@ func (l *Loader) mergeEnvConfigGenerated(cfg *AppConfig) {
 	cfg.EPGDays = l.envInt("XG2G_EPG_DAYS", cfg.EPGDays)
 	cfg.EPGEnabled = l.envBool("XG2G_EPG_ENABLED", cfg.EPGEnabled)
 	cfg.EPGMaxConcurrency = l.envInt("XG2G_EPG_MAX_CONCURRENCY", cfg.EPGMaxConcurrency)
+	cfg.EPGRefreshInterval = l.envDuration("XG2G_EPG_REFRESH_INTERVAL", cfg.EPGRefreshInterval)
 	cfg.EPGRetries = l.envInt("XG2G_EPG_RETRIES", cfg.EPGRetries)
 	cfg.EPGSource = l.envString("XG2G_EPG_SOURCE", cfg.EPGSource)
 	cfg.EPGTimeoutMS = l.envInt("XG2G_EPG_TIMEOUT_MS", cfg.EPGTimeoutMS)

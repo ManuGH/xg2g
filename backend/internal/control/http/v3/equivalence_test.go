@@ -614,6 +614,7 @@ func getEpg_Legacy(s *Server, w http.ResponseWriter, r *http.Request, params Get
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
 	_ = json.NewEncoder(w).Encode(items)
 }
 

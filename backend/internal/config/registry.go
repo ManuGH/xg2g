@@ -189,7 +189,12 @@ func buildRegistry() (*Registry, error) {
 		{Path: "epg.source", Env: "XG2G_EPG_SOURCE", FieldPath: "EPGSource", Profile: ProfileAdvanced, Status: StatusActive, Default: "per-service"},
 		{Path: "epg.xmltvPath", Env: "XG2G_XMLTV", FieldPath: "XMLTVPath", Profile: ProfileAdvanced, Status: StatusActive, Default: "xmltv.xml"},
 		{Path: "epg.fuzzyMax", Env: "XG2G_FUZZY_MAX", FieldPath: "FuzzyMax", Profile: ProfileAdvanced, Status: StatusActive, Default: 2, Min: floatPtr(0), Max: floatPtr(10)},
-		{FieldPath: "EPGRefreshInterval", Profile: ProfileInternal, Status: StatusInternal, Default: 6 * time.Hour},
+		// Now/next is what the apps show, and a programme turns over every half
+		// hour or so — a six-hour cycle meant the guide could be most of an
+		// evening behind. Exposed as well as shortened: the right interval
+		// depends on how much load the receiver tolerates, which only the
+		// operator knows.
+		{Path: "epg.refreshInterval", Env: "XG2G_EPG_REFRESH_INTERVAL", FieldPath: "EPGRefreshInterval", Profile: ProfileSimple, Status: StatusActive, Default: 1 * time.Hour},
 
 		// --- ENGINE ---
 		{Path: "engine.enabled", Env: "XG2G_ENGINE_ENABLED", FieldPath: "Engine.Enabled", Profile: ProfileAdvanced, Status: StatusActive, Default: true}, // Fix A: Secure by default

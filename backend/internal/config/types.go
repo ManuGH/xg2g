@@ -141,14 +141,15 @@ type Enigma2Config struct {
 // EPGConfig holds EPG configuration
 // Uses pointers for optional fields to distinguish between "not set" and "explicitly set to zero/false"
 type EPGConfig struct {
-	Enabled        *bool  `yaml:"enabled,omitempty"`
-	Days           *int   `yaml:"days,omitempty"`
-	MaxConcurrency *int   `yaml:"maxConcurrency,omitempty"`
-	TimeoutMS      *int   `yaml:"timeoutMs,omitempty"`
-	Retries        *int   `yaml:"retries,omitempty"`
-	FuzzyMax       *int   `yaml:"fuzzyMax,omitempty"`
-	XMLTVPath      string `yaml:"xmltvPath,omitempty"`
-	Source         string `yaml:"source,omitempty"` // "per-service" (default) or "bouquet" (disabled)
+	Enabled         *bool  `yaml:"enabled,omitempty"`
+	Days            *int   `yaml:"days,omitempty"`
+	MaxConcurrency  *int   `yaml:"maxConcurrency,omitempty"`
+	TimeoutMS       *int   `yaml:"timeoutMs,omitempty"`
+	Retries         *int   `yaml:"retries,omitempty"`
+	FuzzyMax        *int   `yaml:"fuzzyMax,omitempty"`
+	XMLTVPath       string `yaml:"xmltvPath,omitempty"`
+	Source          string `yaml:"source,omitempty"` // "per-service" (default) or "bouquet" (disabled)
+	RefreshInterval string `yaml:"refreshInterval,omitempty"`
 }
 
 type RecordingPlaybackConfig struct {

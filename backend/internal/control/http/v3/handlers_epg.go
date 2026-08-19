@@ -324,6 +324,13 @@ func (w *epgAdapter) GetBouquetServiceRefs(ctx context.Context, bouquet string) 
 
 // GetEpg implements ServerInterface
 func (s *Server) GetEpg(w http.ResponseWriter, r *http.Request, params GetEpgParams) {
+	// A guide answer is only correct for as long as the programme it names is
+	// still running. Sent without a directive, the response falls to the
+	// client's heuristic freshness rule — URLSession keeps a fraction of the
+	// document's age — so a client could keep serving an entry that has already
+	// ended. Revalidation is cheap next to showing the wrong programme.
+	w.Header().Set("Cache-Control", "no-cache")
+
 	s.mu.RLock()
 	src := s.epgSource
 	s.mu.RUnlock()

@@ -4,6 +4,10 @@
 
 package config
 
+import (
+	"time"
+)
+
 // mergeFileConfigGenerated applies registry-defined file configuration settings from FileConfig to AppConfig.
 func (l *Loader) mergeFileConfigGenerated(dst *AppConfig, src *FileConfig) {
 	// Core & Governance
@@ -50,6 +54,11 @@ func (l *Loader) mergeFileConfigGenerated(dst *AppConfig, src *FileConfig) {
 	}
 	if src.EPG.Source != "" {
 		dst.EPGSource = src.EPG.Source
+	}
+	if src.EPG.RefreshInterval != "" {
+		if d, err := time.ParseDuration(src.EPG.RefreshInterval); err == nil {
+			dst.EPGRefreshInterval = d
+		}
 	}
 
 	// Recordings

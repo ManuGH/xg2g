@@ -505,6 +505,10 @@
           "minimum": 1,
           "type": "integer"
         },
+        "refreshInterval": {
+          "default": "1h",
+          "type": "string"
+        },
         "retries": {
           "default": 2,
           "description": "Number of retry attempts for failed EPG requests (0-5)",
