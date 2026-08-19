@@ -9,7 +9,10 @@ cd "$ROOT_DIR"
 # Two ways it erodes, both caught here:
 #   1. A rule sets a literal font stack instead of var(--font-*). One such
 #      line and part of the UI silently falls back to the system font again,
-#      which is exactly the state this replaced.
+#      which is exactly the state this replaced. This covers inline styles in
+#      .ts/.tsx too: they were invisible to the first version of this gate,
+#      and an audit table quietly rendered its hashes in the platform's raw
+#      monospace for exactly that reason.
 #   2. A rule adopts var(--font-label) but keeps its own letterspacing. The
 #      mono labels were tracked at five different values before they were
 #      unified; splitting them again is how a design language decays back
@@ -24,8 +27,14 @@ LITERAL="$(grep -rn 'font-family:' src --include='*.css' \
   | grep -v 'var(--font' \
   | grep -v '^src/index.css:[0-9]*: *--font-' || true)"
 
-if [ -n "$LITERAL" ]; then
-  echo "$LITERAL"
+# Inline styles name the property in camelCase and never legitimately carry a
+# literal family: an element that wants the data face asks for the token.
+LITERAL_INLINE="$(grep -rn 'fontFamily:' src --include='*.ts' --include='*.tsx' \
+  | grep -v 'var(--font' || true)"
+
+if [ -n "$LITERAL$LITERAL_INLINE" ]; then
+  [ -n "$LITERAL" ] && echo "$LITERAL"
+  [ -n "$LITERAL_INLINE" ] && echo "$LITERAL_INLINE"
   echo "❌ Literal font stack outside the token definitions."
   echo "   Use var(--font-display|heading|body|label|mono) instead."
   FAILED=1

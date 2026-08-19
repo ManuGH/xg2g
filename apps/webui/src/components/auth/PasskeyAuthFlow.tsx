@@ -296,7 +296,7 @@ export default function PasskeyAuthFlow({
               backgroundColor: 'rgba(255,255,255,0.05)',
               padding: '1rem',
               borderRadius: '8px',
-              fontFamily: 'monospace',
+              fontFamily: 'var(--font-mono)',
               fontSize: '0.9rem',
               textAlign: 'center',
             }}
