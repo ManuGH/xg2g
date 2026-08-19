@@ -1,0 +1,267 @@
+/* Capacity limits and preemption - Broadcast Console 2026
+   CTO Contract: token-only, motion via transition (keyframes stay in index.css)
+
+   The four capacity cards each carry their own tint. That tint is a category
+   marker, not a status: --status-warning on "Max Parallele Aufnahmen" does not
+   mean anything is wrong with recordings, it distinguishes that card from the
+   three beside it. Those four values were already tokens before this migration
+   and are carried over unchanged rather than reinterpreted - see the commit
+   message for why that choice is worth revisiting separately.
+
+   Each card sets --capacity-accent once and its label and slider read it, so
+   the pairing cannot drift the way eight separate inline declarations can. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subheading {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.banner {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.bannerError {
+  background-color: var(--status-error-subtle);
+  border: 1px solid var(--status-error-border);
+  color: var(--status-error);
+}
+
+.bannerSuccess {
+  background-color: var(--status-success-subtle);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success);
+}
+
+.loading {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* --- capacity cards ----------------------------------------------------- */
+
+.capacityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.capacityCard {
+  --capacity-accent: var(--accent-action);
+  background-color: var(--surface-panel-strong);
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid var(--border-elevated);
+}
+
+.capacityViewers {
+  --capacity-accent: var(--status-success);
+}
+
+.capacityRecordings {
+  --capacity-accent: var(--status-warning);
+}
+
+.capacityTranscodes {
+  --capacity-accent: var(--status-info);
+}
+
+.capacityLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--capacity-accent);
+}
+
+.capacityValue {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 8px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.capacitySlider {
+  width: 100%;
+  accent-color: var(--capacity-accent);
+  cursor: pointer;
+}
+
+.capacityHint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 6px;
+}
+
+/* --- preemption --------------------------------------------------------- */
+
+.panel {
+  background-color: var(--surface-panel-strong);
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid var(--border-elevated);
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.panelCopy {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.checkbox {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent-action);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.rankList {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rankListTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-disabled);
+  text-transform: uppercase;
+  font-family: var(--font-label);
+  letter-spacing: var(--tracking-label);
+}
+
+.rankRow {
+  padding: 12px 16px;
+  background-color: var(--bg-base);
+  border-radius: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border-base);
+}
+
+.rankIdentity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+}
+
+.rankNumber {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--accent-action);
+  width: 20px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.rankName {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.rankActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.rankButton {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: none;
+  background-color: var(--surface-highlight);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-standard) var(--ease-standard),
+    color var(--motion-standard) var(--ease-standard);
+}
+
+.rankButton:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* The arrows already refused to act at the ends of the list and said so only
+   through the cursor. */
+.rankButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --- save --------------------------------------------------------------- */
+
+.saveRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.saveButton {
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: none;
+  background-color: var(--accent-action);
+  color: var(--bg-base);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color var(--motion-standard) var(--ease-standard);
+}
+
+.saveButton:hover:not(:disabled) {
+  background-color: var(--accent-action-hover);
+}
+
+.saveButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .panelHeader {
+    align-items: flex-start;
+  }
+}

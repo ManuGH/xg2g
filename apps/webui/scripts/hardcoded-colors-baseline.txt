@@ -2,7 +2,6 @@
 # Regenerate with: npm run design:colors:baseline
 # Entries may only shrink. A new file here needs a reason in review.
 src/components/admin/AuditNotificationsSection.tsx 13
-src/components/admin/ConcurrencySettingsSection.tsx 10
 src/components/admin/DevicesManagementSection.tsx 10
 src/components/auth/PasskeyAuthFlow.tsx 5
 src/components/notifications/NotificationCenter.tsx 17
