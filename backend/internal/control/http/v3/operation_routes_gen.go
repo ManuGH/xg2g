@@ -5,6 +5,7 @@ package v3
 var operationRoutes = map[string]operationRoute{
 	"AddTimer":                         {Method: "POST", Path: "/timers"},
 	"ApprovePairing":                   {Method: "POST", Path: "/pairing/{pairingId}/approve"},
+	"AuthStatus":                       {Method: "GET", Path: "/auth/status"},
 	"CreateIntent":                     {Method: "POST", Path: "/intents"},
 	"CreateSeriesRule":                 {Method: "POST", Path: "/series-rules"},
 	"CreateSession":                    {Method: "POST", Path: "/auth/session"},
@@ -56,6 +57,11 @@ var operationRoutes = map[string]operationRoute{
 	"GetTimer":                         {Method: "GET", Path: "/timers/{timerId}"},
 	"GetTimers":                        {Method: "GET", Path: "/timers"},
 	"ListSessions":                     {Method: "GET", Path: "/sessions"},
+	"PasskeyLoginFinish":               {Method: "POST", Path: "/auth/passkey/login/finish"},
+	"PasskeyLoginStart":                {Method: "POST", Path: "/auth/passkey/login/start"},
+	"PasskeyRegisterFinish":            {Method: "POST", Path: "/auth/passkey/register/finish"},
+	"PasskeyRegisterStart":             {Method: "POST", Path: "/auth/passkey/register/start"},
+	"PasswordLogin":                    {Method: "POST", Path: "/auth/login/password"},
 	"PostHouseholdProfiles":            {Method: "POST", Path: "/household/profiles"},
 	"PostHouseholdUnlock":              {Method: "POST", Path: "/household/unlock"},
 	"PostLivePlaybackInfo":             {Method: "POST", Path: "/live/stream-info"},
@@ -73,6 +79,7 @@ var operationRoutes = map[string]operationRoute{
 	"ProbeRecordingMp4":                {Method: "HEAD", Path: "/recordings/{recordingId}/stream.mp4"},
 	"PutHouseholdProfile":              {Method: "PUT", Path: "/household/profiles/{profileId}"},
 	"PutSystemConfig":                  {Method: "PUT", Path: "/system/config"},
+	"RecoveryLogin":                    {Method: "POST", Path: "/auth/recovery"},
 	"ReportPlaybackFeedback":           {Method: "POST", Path: "/sessions/{sessionId}/feedback"},
 	"RunAllSeriesRules":                {Method: "POST", Path: "/series-rules/run"},
 	"RunSeriesRule":                    {Method: "POST", Path: "/series-rules/{id}/run"},
@@ -90,6 +97,7 @@ var operationRoutes = map[string]operationRoute{
 func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWrapper) {
 	register.add("AddTimer", handler.AddTimer)
 	register.add("ApprovePairing", handler.ApprovePairing)
+	register.add("AuthStatus", handler.AuthStatus)
 	register.add("CreateIntent", handler.CreateIntent)
 	register.add("CreateSeriesRule", handler.CreateSeriesRule)
 	register.add("CreateSession", handler.CreateSession)
@@ -141,6 +149,11 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("GetTimer", handler.GetTimer)
 	register.add("GetTimers", handler.GetTimers)
 	register.add("ListSessions", handler.ListSessions)
+	register.add("PasskeyLoginFinish", handler.PasskeyLoginFinish)
+	register.add("PasskeyLoginStart", handler.PasskeyLoginStart)
+	register.add("PasskeyRegisterFinish", handler.PasskeyRegisterFinish)
+	register.add("PasskeyRegisterStart", handler.PasskeyRegisterStart)
+	register.add("PasswordLogin", handler.PasswordLogin)
 	register.add("PostHouseholdProfiles", handler.PostHouseholdProfiles)
 	register.add("PostHouseholdUnlock", handler.PostHouseholdUnlock)
 	register.add("PostLivePlaybackInfo", handler.PostLivePlaybackInfo)
@@ -158,6 +171,7 @@ func registerGeneratedRoutes(register routeRegistrar, handler *ServerInterfaceWr
 	register.add("ProbeRecordingMp4", handler.ProbeRecordingMp4)
 	register.add("PutHouseholdProfile", handler.PutHouseholdProfile)
 	register.add("PutSystemConfig", handler.PutSystemConfig)
+	register.add("RecoveryLogin", handler.RecoveryLogin)
 	register.add("ReportPlaybackFeedback", handler.ReportPlaybackFeedback)
 	register.add("RunAllSeriesRules", handler.RunAllSeriesRules)
 	register.add("RunSeriesRule", handler.RunSeriesRule)

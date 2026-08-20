@@ -32,6 +32,15 @@ const (
 	ExposureAuthPairingSecret  ExposureAuthKind = "pairing_secret"
 	ExposureAuthDeviceGrant    ExposureAuthKind = "device_grant"
 	ExposureAuthBootstrapToken ExposureAuthKind = "bootstrap_token"
+	// ExposureAuthCredential is an operation the caller authenticates by
+	// presenting a credential inside the request itself — a passkey assertion,
+	// a password, a recovery code — rather than by carrying a token.
+	//
+	// It exists because the model had no way to describe a login endpoint. Every
+	// other unauthenticated kind is not_browser, so sign-in stayed outside the
+	// contract entirely, where it had no policy, no audit class and no rate
+	// limit class at all. That is strictly worse than describing it.
+	ExposureAuthCredential ExposureAuthKind = "credential"
 )
 
 type ExposureRateLimitClass string
@@ -158,11 +167,19 @@ func ValidateExposurePolicy(operationID, method string, scopes []string, p Expos
 	if p.Class == ExposureClassDevice && p.RateLimitClass == ExposureRateLimitGlobal {
 		return fmt.Errorf("%s: device exposure must not use global rate limit", operationID)
 	}
-	if method == "GET" && p.AuthKind == ExposureAuthNone {
+	// The concern is cacheability, not the verb. RequiresNoStore is true for
+	// every non-bearer exposure and the exposure middleware sets no-store from
+	// it, so the shape the rule forbade cannot actually be cached. Tying the
+	// check to that guarantee keeps a public probe from being pushed out of the
+	// contract for a risk the policy already removes.
+	if method == "GET" && p.AuthKind == ExposureAuthNone && !p.RequiresNoStore() {
 		return fmt.Errorf("%s: unauthenticated exposure must not be GET-cacheable", operationID)
 	}
-	if p.BrowserTrust == ExposureBrowserTrustSameOrigin && p.AuthKind == ExposureAuthNone {
-		return fmt.Errorf("%s: browser-reachable unauthenticated exposure is not allowed", operationID)
+	// An unauthenticated endpoint a browser can reach is either a deliberately
+	// public probe or a mistake. Health is the class that says "deliberate";
+	// anything else has to name the credential it takes.
+	if p.BrowserTrust == ExposureBrowserTrustSameOrigin && p.AuthKind == ExposureAuthNone && p.Class != ExposureClassHealth {
+		return fmt.Errorf("%s: browser-reachable unauthenticated exposure must be class health", operationID)
 	}
 	return nil
 }

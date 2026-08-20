@@ -189,6 +189,167 @@ export type ApprovePairingResponse = {
     expiresAt: string;
 };
 
+export type IdentityUser = {
+    id: string;
+    username: string;
+    displayName: string;
+    role: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+/**
+ * The authenticated session, as every login path reports it.
+ *
+ * The session token itself is not here. It travels only in the HttpOnly
+ * cookie the response sets; returning it in the body as well would hand
+ * it to page scripts and undo the reason the cookie is HttpOnly.
+ *
+ */
+export type AuthSessionResponse = {
+    user: IdentityUser;
+    expiresAt: string;
+};
+
+/**
+ * Whether this server has an identity configured and how far bootstrap
+ * has progressed. Answered without authentication because a client has to
+ * know which sign-in to offer before it can sign in.
+ *
+ * Only the first three fields are always present: a server with no
+ * identity service answers those and nothing else.
+ *
+ */
+export type AuthStatusResponse = {
+    configured: boolean;
+    identityReady: boolean;
+    publicReady: boolean;
+    bootstrapState?: string;
+    setupRequired?: boolean;
+    recoveryAcknowledged?: boolean;
+    rpId?: string;
+};
+
+export type WebAuthnRelyingParty = {
+    id: string;
+    name: string;
+};
+
+export type WebAuthnUserEntity = {
+    id: string;
+    name: string;
+    displayName: string;
+};
+
+export type WebAuthnPubKeyCredParam = {
+    type: string;
+    alg: number;
+};
+
+export type WebAuthnAuthenticatorSelection = {
+    residentKey: string;
+    userVerification: string;
+};
+
+/**
+ * Registration options for a passkey ceremony. Like
+ * WebAuthnRequestOptions, a projection of what this server issues rather
+ * than the whole WebAuthn specification.
+ *
+ */
+export type WebAuthnCreationOptions = {
+    rp: WebAuthnRelyingParty;
+    user: WebAuthnUserEntity;
+    /**
+     * Base64url challenge the authenticator must sign.
+     */
+    challenge: string;
+    pubKeyCredParams: Array<WebAuthnPubKeyCredParam>;
+    /**
+     * Ceremony lifetime in milliseconds.
+     */
+    timeout: number;
+    authenticatorSelection: WebAuthnAuthenticatorSelection;
+    attestation: string;
+};
+
+export type WebAuthnAttestationResponse = {
+    /**
+     * Base64url.
+     */
+    clientDataJSON: string;
+    /**
+     * Base64url.
+     */
+    attestationObject: string;
+    transports?: Array<string>;
+};
+
+export type PasskeyCredentialSummary = {
+    id: string;
+    nickname: string;
+    backupEligible: boolean;
+    backupState: boolean;
+    createdAt: string;
+};
+
+export type PasskeyRegisterFinishRequest = {
+    response: WebAuthnAttestationResponse;
+    /**
+     * Human label for the credential.
+     */
+    nickname?: string;
+};
+
+/**
+ * One schema with a discriminating status rather than two, because that is
+ * how the endpoint behaves and how every client already reads it.
+ *
+ * `registered` carries the credential's fields inline. `bootstrap_completed`
+ * additionally opened the very first session, so it nests the credential
+ * and adds the user, the one-time recovery codes and the session expiry.
+ *
+ */
+export type PasskeyRegistrationResult = {
+    status: 'registered' | 'bootstrap_completed';
+    id?: string;
+    nickname?: string;
+    backupEligible?: boolean;
+    backupState?: boolean;
+    createdAt?: string;
+    user?: IdentityUser;
+    credential?: PasskeyCredentialSummary;
+    /**
+     * Shown exactly once, at bootstrap.
+     */
+    recoveryCodes?: Array<string>;
+    expiresAt?: string;
+};
+
+export type PasskeyLoginStartRequest = {
+    /**
+     * Optional. Narrows the ceremony to one user's credentials; omitted for a discoverable-credential login.
+     */
+    username?: string;
+};
+
+export type PasskeyLoginFinishRequest = {
+    response: WebAuthnAssertionResponse;
+};
+
+export type RecoveryLoginRequest = {
+    username: string;
+    /**
+     * A recovery code, consumed on use.
+     */
+    code: string;
+};
+
+export type PasswordLoginRequest = {
+    username: string;
+    password: string;
+};
+
 export type WebAuthnCredentialDescriptor = {
     type: string;
     /**
@@ -3453,6 +3614,222 @@ export type GetRecordingHlsCustomSegmentHeadResponses = {
      */
     200: unknown;
 };
+
+export type AuthStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/status';
+};
+
+export type AuthStatusResponses = {
+    /**
+     * Identity and bootstrap state
+     */
+    200: AuthStatusResponse;
+};
+
+export type AuthStatusResponse2 = AuthStatusResponses[keyof AuthStatusResponses];
+
+export type PasskeyRegisterStartData = {
+    body?: never;
+    headers?: {
+        /**
+         * One-time bootstrap token; consumed on use.
+         */
+        'X-Setup-Token'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/auth/passkey/register/start';
+};
+
+export type PasskeyRegisterStartErrors = {
+    /**
+     * The ceremony could not be started
+     */
+    400: ProblemDetails;
+    /**
+     * Bootstrap requires a valid setup token or operator authorization
+     */
+    401: ProblemDetails;
+    /**
+     * Existing users could not be determined
+     */
+    500: ProblemDetails;
+    /**
+     * Identity service not configured
+     */
+    503: ProblemDetails;
+};
+
+export type PasskeyRegisterStartError = PasskeyRegisterStartErrors[keyof PasskeyRegisterStartErrors];
+
+export type PasskeyRegisterStartResponses = {
+    /**
+     * Creation options for the ceremony
+     */
+    200: WebAuthnCreationOptions;
+};
+
+export type PasskeyRegisterStartResponse = PasskeyRegisterStartResponses[keyof PasskeyRegisterStartResponses];
+
+export type PasskeyRegisterFinishData = {
+    body: PasskeyRegisterFinishRequest;
+    path?: never;
+    query?: never;
+    url: '/auth/passkey/register/finish';
+};
+
+export type PasskeyRegisterFinishErrors = {
+    /**
+     * Malformed body or failed ceremony
+     */
+    400: ProblemDetails;
+    /**
+     * Identity service not configured
+     */
+    503: ProblemDetails;
+};
+
+export type PasskeyRegisterFinishError = PasskeyRegisterFinishErrors[keyof PasskeyRegisterFinishErrors];
+
+export type PasskeyRegisterFinishResponses = {
+    /**
+     * The credential was registered
+     */
+    200: PasskeyRegistrationResult;
+};
+
+export type PasskeyRegisterFinishResponse = PasskeyRegisterFinishResponses[keyof PasskeyRegisterFinishResponses];
+
+export type PasskeyLoginStartData = {
+    body?: PasskeyLoginStartRequest;
+    path?: never;
+    query?: never;
+    url: '/auth/passkey/login/start';
+};
+
+export type PasskeyLoginStartErrors = {
+    /**
+     * The ceremony could not be started
+     */
+    400: ProblemDetails;
+    /**
+     * Identity service not configured
+     */
+    503: ProblemDetails;
+};
+
+export type PasskeyLoginStartError = PasskeyLoginStartErrors[keyof PasskeyLoginStartErrors];
+
+export type PasskeyLoginStartResponses = {
+    /**
+     * Assertion options for the ceremony
+     */
+    200: WebAuthnRequestOptions;
+};
+
+export type PasskeyLoginStartResponse = PasskeyLoginStartResponses[keyof PasskeyLoginStartResponses];
+
+export type PasskeyLoginFinishData = {
+    body: PasskeyLoginFinishRequest;
+    path?: never;
+    query?: never;
+    url: '/auth/passkey/login/finish';
+};
+
+export type PasskeyLoginFinishErrors = {
+    /**
+     * Malformed body
+     */
+    400: ProblemDetails;
+    /**
+     * The assertion did not verify
+     */
+    401: ProblemDetails;
+    /**
+     * Identity service not configured
+     */
+    503: ProblemDetails;
+};
+
+export type PasskeyLoginFinishError = PasskeyLoginFinishErrors[keyof PasskeyLoginFinishErrors];
+
+export type PasskeyLoginFinishResponses = {
+    /**
+     * The session was opened
+     */
+    200: AuthSessionResponse;
+};
+
+export type PasskeyLoginFinishResponse = PasskeyLoginFinishResponses[keyof PasskeyLoginFinishResponses];
+
+export type RecoveryLoginData = {
+    body: RecoveryLoginRequest;
+    path?: never;
+    query?: never;
+    url: '/auth/recovery';
+};
+
+export type RecoveryLoginErrors = {
+    /**
+     * Malformed body
+     */
+    400: ProblemDetails;
+    /**
+     * The recovery code is invalid or already consumed
+     */
+    401: ProblemDetails;
+    /**
+     * Identity service not configured
+     */
+    503: ProblemDetails;
+};
+
+export type RecoveryLoginError = RecoveryLoginErrors[keyof RecoveryLoginErrors];
+
+export type RecoveryLoginResponses = {
+    /**
+     * The session was opened
+     */
+    200: AuthSessionResponse;
+};
+
+export type RecoveryLoginResponse = RecoveryLoginResponses[keyof RecoveryLoginResponses];
+
+export type PasswordLoginData = {
+    body: PasswordLoginRequest;
+    path?: never;
+    query?: never;
+    url: '/auth/login/password';
+};
+
+export type PasswordLoginErrors = {
+    /**
+     * Malformed body
+     */
+    400: ProblemDetails;
+    /**
+     * Invalid username or password
+     */
+    401: ProblemDetails;
+    /**
+     * Identity service not configured
+     */
+    503: ProblemDetails;
+};
+
+export type PasswordLoginError = PasswordLoginErrors[keyof PasswordLoginErrors];
+
+export type PasswordLoginResponses = {
+    /**
+     * The session was opened
+     */
+    200: AuthSessionResponse;
+};
+
+export type PasswordLoginResponse = PasswordLoginResponses[keyof PasswordLoginResponses];
 
 export type DeviceGrantStartData = {
     body?: DeviceGrantStartRequest;

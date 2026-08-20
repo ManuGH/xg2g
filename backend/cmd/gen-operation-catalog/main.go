@@ -180,7 +180,7 @@ func validatePolicy(id string, scopes []string, policy operationPolicy) error {
 	if !contains([]string{"read", "write", "admin", "device", "pairing", "session", "health", "system"}, policy.Class) {
 		return fmt.Errorf("%s: invalid exposure class %q", id, policy.Class)
 	}
-	if !contains([]string{"bearer_scope", "none", "pairing_secret", "device_grant", "bootstrap_token"}, policy.Auth) {
+	if !contains([]string{"bearer_scope", "none", "pairing_secret", "device_grant", "bootstrap_token", "credential"}, policy.Auth) {
 		return fmt.Errorf("%s: invalid auth kind %q", id, policy.Auth)
 	}
 	if !contains([]string{"same_origin_or_allowed_origin", "not_browser", "none"}, policy.BrowserTrust) {

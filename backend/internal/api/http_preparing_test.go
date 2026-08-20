@@ -12,139 +12,38 @@ import (
 )
 
 // MockPreparingServer handles v3 API calls for the preparing test.
-type MockPreparingServer struct{}
+// MockPreparingServer answers the two recording routes this contract test
+// exercises and inherits the rest.
+//
+// It used to spell out all eighty-five ServerInterface methods, so every
+// endpoint added to api/openapi.yaml broke this file until somebody pasted
+// another empty method in. Embedding the generated Unimplemented makes that
+// maintenance disappear, and a route the test does not mean to exercise now
+// answers 501 instead of a silent 200.
+type MockPreparingServer struct {
+	v3.Unimplemented
+}
 
-func (m *MockPreparingServer) CreateSession(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) DeleteSession(w http.ResponseWriter, r *http.Request, params v3.DeleteSessionParams) {
-}
-func (m *MockPreparingServer) DeviceGrantFinish(w http.ResponseWriter, r *http.Request, params v3.DeviceGrantFinishParams) {
-}
-func (m *MockPreparingServer) DeviceGrantStart(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) DeviceRefresh(w http.ResponseWriter, r *http.Request, params v3.DeviceRefreshParams) {
-}
-func (m *MockPreparingServer) GetDvrCapabilities(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) GetDvrStatus(w http.ResponseWriter, r *http.Request)       {}
-func (m *MockPreparingServer) GetEpg(w http.ResponseWriter, r *http.Request, params v3.GetEpgParams) {
-}
-func (m *MockPreparingServer) GetHouseholdUnlock(w http.ResponseWriter, r *http.Request, params v3.GetHouseholdUnlockParams) {
-}
-func (m *MockPreparingServer) GetHouseholdProfiles(w http.ResponseWriter, r *http.Request, params v3.GetHouseholdProfilesParams) {
-}
-func (m *MockPreparingServer) PostHouseholdUnlock(w http.ResponseWriter, r *http.Request, params v3.PostHouseholdUnlockParams) {
-}
-func (m *MockPreparingServer) PostHouseholdProfiles(w http.ResponseWriter, r *http.Request, params v3.PostHouseholdProfilesParams) {
-}
-func (m *MockPreparingServer) DeleteHouseholdUnlock(w http.ResponseWriter, r *http.Request, params v3.DeleteHouseholdUnlockParams) {
-}
-func (m *MockPreparingServer) DeleteHouseholdProfile(w http.ResponseWriter, r *http.Request, profileId string, params v3.DeleteHouseholdProfileParams) {
-}
-func (m *MockPreparingServer) PutHouseholdProfile(w http.ResponseWriter, r *http.Request, profileId string, params v3.PutHouseholdProfileParams) {
-}
-func (m *MockPreparingServer) CreateIntent(w http.ResponseWriter, r *http.Request)         {}
-func (m *MockPreparingServer) PostLivePlaybackInfo(w http.ResponseWriter, r *http.Request) {}
-
-func (m *MockPreparingServer) PostLivePlaybackSummary(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) GetLogs(w http.ResponseWriter, r *http.Request, params v3.GetLogsParams) {
-}
-func (m *MockPreparingServer) GetReceiverCurrent(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) GetRecordings(w http.ResponseWriter, r *http.Request, params v3.GetRecordingsParams) {
-}
-func (m *MockPreparingServer) DeleteRecording(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) PostRecordingDelete(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) PostRecordingRename(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) GetRecordingThumbnail(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) GetRecordingsRecordingIdStatus(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) GetRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) StartPairing(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) GetPairingStatus(w http.ResponseWriter, r *http.Request, pairingId string) {
-}
-func (m *MockPreparingServer) ApprovePairing(w http.ResponseWriter, r *http.Request, pairingId string) {
-}
-func (m *MockPreparingServer) ExchangePairing(w http.ResponseWriter, r *http.Request, pairingId string) {
-}
-func (m *MockPreparingServer) CreateDeviceSession(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) GetRecordingHLSTimeshift(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) GetRecordingHLSTimeshiftHead(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) GetRecordingHLSCustomSegment(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
-}
-func (m *MockPreparingServer) GetRecordingHLSCustomSegmentHead(w http.ResponseWriter, r *http.Request, recordingId string, segment string) {
-}
-func (m *MockPreparingServer) GetSeriesRules(w http.ResponseWriter, r *http.Request)   {}
-func (m *MockPreparingServer) CreateSeriesRule(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) RunAllSeriesRules(w http.ResponseWriter, r *http.Request, params v3.RunAllSeriesRulesParams) {
-}
-func (m *MockPreparingServer) DeleteSeriesRule(w http.ResponseWriter, r *http.Request, id string) {}
-func (m *MockPreparingServer) UpdateSeriesRule(w http.ResponseWriter, r *http.Request, id string) {}
-func (m *MockPreparingServer) RunSeriesRule(w http.ResponseWriter, r *http.Request, id string, params v3.RunSeriesRuleParams) {
-}
-func (m *MockPreparingServer) GetServices(w http.ResponseWriter, r *http.Request, params v3.GetServicesParams) {
-}
-func (m *MockPreparingServer) GetServicesBouquets(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) PostServicesNowNext(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) PostServicesIdToggle(w http.ResponseWriter, r *http.Request, id string) {
-}
-func (m *MockPreparingServer) ListSessions(w http.ResponseWriter, r *http.Request, params v3.ListSessionsParams) {
-}
-func (m *MockPreparingServer) GetSessionState(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
-}
-func (m *MockPreparingServer) GetSessionEvents(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
-}
-func (m *MockPreparingServer) PostSessionHeartbeat(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID) {
-}
-func (m *MockPreparingServer) ServeHLS(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string) {
-}
-func (m *MockPreparingServer) ServeHLSHead(w http.ResponseWriter, r *http.Request, sessionID openapi_types.UUID, filename string) {
-}
-func (m *MockPreparingServer) ReportPlaybackFeedback(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID) {
-}
+func (m *MockPreparingServer) GetDvrStatus(w http.ResponseWriter, r *http.Request)   {}
+func (m *MockPreparingServer) CreateIntent(w http.ResponseWriter, r *http.Request)   {}
+func (m *MockPreparingServer) GetSeriesRules(w http.ResponseWriter, r *http.Request) {}
 
 // New methods identified from server_gen.go
-func (m *MockPreparingServer) GetStreams(w http.ResponseWriter, r *http.Request)                 {}
-func (m *MockPreparingServer) DeleteStreamsId(w http.ResponseWriter, r *http.Request, id string) {}
-func (m *MockPreparingServer) GetErrors(w http.ResponseWriter, r *http.Request)                  {}
-func (m *MockPreparingServer) GetSystemConfig(w http.ResponseWriter, r *http.Request)            {}
-func (m *MockPreparingServer) GetSystemConnectivity(w http.ResponseWriter, r *http.Request)      {}
-func (m *MockPreparingServer) PutSystemConfig(w http.ResponseWriter, r *http.Request)            {}
-func (m *MockPreparingServer) GetSystemEntitlements(w http.ResponseWriter, r *http.Request, params v3.GetSystemEntitlementsParams) {
-}
-func (m *MockPreparingServer) PostSystemEntitlementReceipt(w http.ResponseWriter, r *http.Request) {
-}
-func (m *MockPreparingServer) PostSystemEntitlementOverride(w http.ResponseWriter, r *http.Request) {
-}
-func (m *MockPreparingServer) DeleteSystemEntitlementOverride(w http.ResponseWriter, r *http.Request, principalId string, scope string) {
-}
-func (m *MockPreparingServer) GetSystemHealth(w http.ResponseWriter, r *http.Request)     {}
-func (m *MockPreparingServer) GetSystemHealthz(w http.ResponseWriter, r *http.Request)    {}
-func (m *MockPreparingServer) GetSystemInfo(w http.ResponseWriter, r *http.Request)       {}
-func (m *MockPreparingServer) PostSystemRefresh(w http.ResponseWriter, r *http.Request)   {}
-func (m *MockPreparingServer) GetSystemScanStatus(w http.ResponseWriter, r *http.Request) {}
-func (m *MockPreparingServer) TriggerSystemScan(w http.ResponseWriter, r *http.Request)   {}
-func (m *MockPreparingServer) GetTimers(w http.ResponseWriter, r *http.Request, params v3.GetTimersParams) {
-}
-func (m *MockPreparingServer) AddTimer(w http.ResponseWriter, r *http.Request)                    {}
-func (m *MockPreparingServer) PreviewConflicts(w http.ResponseWriter, r *http.Request)            {}
-func (m *MockPreparingServer) DeleteTimer(w http.ResponseWriter, r *http.Request, timerId string) {}
-func (m *MockPreparingServer) GetTimer(w http.ResponseWriter, r *http.Request, timerId string)    {}
-func (m *MockPreparingServer) UpdateTimer(w http.ResponseWriter, r *http.Request, timerId string) {}
-func (m *MockPreparingServer) PostRecordingPlaybackInfo(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
+func (m *MockPreparingServer) GetStreams(w http.ResponseWriter, r *http.Request)               {}
+func (m *MockPreparingServer) GetErrors(w http.ResponseWriter, r *http.Request)                {}
+func (m *MockPreparingServer) GetSystemConfig(w http.ResponseWriter, r *http.Request)          {}
+func (m *MockPreparingServer) GetSystemConnectivity(w http.ResponseWriter, r *http.Request)    {}
+func (m *MockPreparingServer) PutSystemConfig(w http.ResponseWriter, r *http.Request)          {}
+func (m *MockPreparingServer) GetSystemHealth(w http.ResponseWriter, r *http.Request)          {}
+func (m *MockPreparingServer) GetSystemHealthz(w http.ResponseWriter, r *http.Request)         {}
+func (m *MockPreparingServer) GetSystemInfo(w http.ResponseWriter, r *http.Request)            {}
+func (m *MockPreparingServer) PostSystemRefresh(w http.ResponseWriter, r *http.Request)        {}
+func (m *MockPreparingServer) TriggerSystemScan(w http.ResponseWriter, r *http.Request)        {}
+func (m *MockPreparingServer) AddTimer(w http.ResponseWriter, r *http.Request)                 {}
+func (m *MockPreparingServer) PreviewConflicts(w http.ResponseWriter, r *http.Request)         {}
+func (m *MockPreparingServer) GetTimer(w http.ResponseWriter, r *http.Request, timerId string) {}
 
 // Optional Extensions (if needed by router)
-func (m *MockPreparingServer) HandleRecordingResume(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) HandleRecordingResumeOptions(w http.ResponseWriter, r *http.Request, recordingId string) {
-}
-func (m *MockPreparingServer) GetRecordingScrubFrame(w http.ResponseWriter, r *http.Request, recordingId string, params v3.GetRecordingScrubFrameParams) {
-}
-
 func (m *MockPreparingServer) StreamRecordingDirect(w http.ResponseWriter, r *http.Request, recordingId string) {
 	w.Header().Set("Retry-After", "5")
 	w.Header().Set("Content-Type", "application/problem+json")

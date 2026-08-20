@@ -109,6 +109,15 @@ func TestHouseholdFullE2ESuite_MultiUserRolesInvitesAndEffectivePermissions(t *t
 	require.Equal(t, http.StatusOK, wRedeem.Code)
 	guestCookie := wRedeem.Result().Cookies()[0]
 
+	// Zero JavaScript Exposure Invariant, as the passkey login already asserts
+	// it: the session token lives in the HttpOnly cookie and must not also be
+	// in the body. This path used to return identity.AuthSessionResponse
+	// straight out, and that type carries SessionID.
+	assert.NotContains(t, wRedeem.Body.String(), guestCookie.Value,
+		"redeem response body must never leak the session cookie token")
+	assert.NotContains(t, wRedeem.Body.String(), "sessionId",
+		"redeem response body must not carry a sessionId field")
+
 	// 4. Atomic verification: repeat redeem must fail
 	wRedeemRepeat := httptest.NewRecorder()
 	reqRedeemRepeat := httptest.NewRequest(http.MethodPost, "/api/v3/auth/invitations/redeem", bytes.NewReader(redeemJSON))
@@ -129,6 +138,13 @@ func TestHouseholdFullE2ESuite_MultiUserRolesInvitesAndEffectivePermissions(t *t
 	handler.ServeHTTP(wPwdLogin, reqPwdLogin)
 
 	require.Equal(t, http.StatusOK, wPwdLogin.Code)
+
+	pwdCookie := wPwdLogin.Result().Cookies()[0]
+	assert.True(t, pwdCookie.HttpOnly)
+	assert.NotContains(t, wPwdLogin.Body.String(), pwdCookie.Value,
+		"password login body must never leak the session cookie token")
+	assert.NotContains(t, wPwdLogin.Body.String(), "sessionId",
+		"password login body must not carry a sessionId field")
 
 	// 6. Admin creates Child Profile "Max 👦"
 	profPayload := map[string]any{

@@ -157,13 +157,15 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 	}
 	clientDataRegJSON, _ := json.Marshal(clientDataReg)
 
-	regPayload := v3.FinishRegistrationRequest{
-		Response: webauthn.AttestationResponse{
+	transports := []string{"internal"}
+	nickname := "Safari TouchID"
+	regPayload := v3.PasskeyRegisterFinishRequest{
+		Response: v3.WebAuthnAttestationResponse{
 			ClientDataJSON:    base64.RawURLEncoding.EncodeToString(clientDataRegJSON),
 			AttestationObject: base64.RawURLEncoding.EncodeToString(attObjBytes),
-			Transports:        []string{"internal"},
+			Transports:        &transports,
 		},
-		Nickname: "Safari TouchID",
+		Nickname: &nickname,
 	}
 	regPayloadBytes, _ := json.Marshal(regPayload)
 
@@ -268,9 +270,9 @@ func TestPasskeyAndWebSession_E2EWorkflow(t *testing.T) {
 		R, S *big.Int
 	}{rBig, sBig})
 
-	loginPayload := v3.LoginFinishRequest{
-		Response: webauthn.AssertionResponse{
-			CredentialID:      base64.RawURLEncoding.EncodeToString(credID),
+	loginPayload := v3.PasskeyLoginFinishRequest{
+		Response: v3.WebAuthnAssertionResponse{
+			Id:                base64.RawURLEncoding.EncodeToString(credID),
 			ClientDataJSON:    base64.RawURLEncoding.EncodeToString(clientDataLoginJSON),
 			AuthenticatorData: base64.RawURLEncoding.EncodeToString(authDataLogin),
 			Signature:         base64.RawURLEncoding.EncodeToString(sigDER),

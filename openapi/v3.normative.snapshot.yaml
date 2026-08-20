@@ -402,6 +402,213 @@ components:
           type: string
           format: date-time
 
+    IdentityUser:
+      type: object
+      additionalProperties: false
+      required: [id, username, displayName, role, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        username: { type: string }
+        displayName: { type: string }
+        role: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    AuthSessionResponse:
+      type: object
+      description: |
+        The authenticated session, as every login path reports it.
+
+        The session token itself is not here. It travels only in the HttpOnly
+        cookie the response sets; returning it in the body as well would hand
+        it to page scripts and undo the reason the cookie is HttpOnly.
+      additionalProperties: false
+      required: [user, expiresAt]
+      properties:
+        user:
+          $ref: "#/components/schemas/IdentityUser"
+        expiresAt: { type: string, format: date-time }
+
+    AuthStatusResponse:
+      type: object
+      description: |
+        Whether this server has an identity configured and how far bootstrap
+        has progressed. Answered without authentication because a client has to
+        know which sign-in to offer before it can sign in.
+
+        Only the first three fields are always present: a server with no
+        identity service answers those and nothing else.
+      additionalProperties: false
+      required: [configured, identityReady, publicReady]
+      properties:
+        configured: { type: boolean }
+        identityReady: { type: boolean }
+        publicReady: { type: boolean }
+        bootstrapState: { type: string }
+        setupRequired: { type: boolean }
+        recoveryAcknowledged: { type: boolean }
+        rpId: { type: string }
+
+    WebAuthnRelyingParty:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    WebAuthnUserEntity:
+      type: object
+      additionalProperties: false
+      required: [id, name, displayName]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        displayName: { type: string }
+
+    WebAuthnPubKeyCredParam:
+      type: object
+      additionalProperties: false
+      required: [type, alg]
+      properties:
+        type: { type: string, example: public-key }
+        alg: { type: integer, format: int64, example: -7 }
+
+    WebAuthnAuthenticatorSelection:
+      type: object
+      additionalProperties: false
+      required: [residentKey, userVerification]
+      properties:
+        residentKey: { type: string, example: required }
+        userVerification: { type: string, example: preferred }
+
+    WebAuthnCreationOptions:
+      type: object
+      description: |
+        Registration options for a passkey ceremony. Like
+        WebAuthnRequestOptions, a projection of what this server issues rather
+        than the whole WebAuthn specification.
+      additionalProperties: false
+      required: [rp, user, challenge, pubKeyCredParams, timeout, authenticatorSelection, attestation]
+      properties:
+        rp:
+          $ref: "#/components/schemas/WebAuthnRelyingParty"
+        user:
+          $ref: "#/components/schemas/WebAuthnUserEntity"
+        challenge:
+          type: string
+          description: Base64url challenge the authenticator must sign.
+        pubKeyCredParams:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebAuthnPubKeyCredParam"
+        timeout:
+          type: integer
+          format: int64
+          description: Ceremony lifetime in milliseconds.
+        authenticatorSelection:
+          $ref: "#/components/schemas/WebAuthnAuthenticatorSelection"
+        attestation: { type: string, example: none }
+
+    WebAuthnAttestationResponse:
+      type: object
+      additionalProperties: false
+      required: [clientDataJSON, attestationObject]
+      properties:
+        clientDataJSON: { type: string, description: Base64url. }
+        attestationObject: { type: string, description: Base64url. }
+        transports:
+          type: array
+          items: { type: string }
+
+    PasskeyCredentialSummary:
+      type: object
+      additionalProperties: false
+      required: [id, nickname, backupEligible, backupState, createdAt]
+      properties:
+        id: { type: string }
+        nickname: { type: string }
+        backupEligible: { type: boolean }
+        backupState: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    PasskeyRegisterFinishRequest:
+      type: object
+      additionalProperties: false
+      required: [response]
+      properties:
+        response:
+          $ref: "#/components/schemas/WebAuthnAttestationResponse"
+        nickname:
+          type: string
+          description: Human label for the credential.
+
+    PasskeyRegistrationResult:
+      type: object
+      description: |
+        One schema with a discriminating status rather than two, because that is
+        how the endpoint behaves and how every client already reads it.
+
+        `registered` carries the credential's fields inline. `bootstrap_completed`
+        additionally opened the very first session, so it nests the credential
+        and adds the user, the one-time recovery codes and the session expiry.
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [registered, bootstrap_completed]
+        id: { type: string }
+        nickname: { type: string }
+        backupEligible: { type: boolean }
+        backupState: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        user:
+          $ref: "#/components/schemas/IdentityUser"
+        credential:
+          $ref: "#/components/schemas/PasskeyCredentialSummary"
+        recoveryCodes:
+          type: array
+          description: Shown exactly once, at bootstrap.
+          items: { type: string }
+        expiresAt: { type: string, format: date-time }
+
+    PasskeyLoginStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        username:
+          type: string
+          description: >-
+            Optional. Narrows the ceremony to one user's credentials; omitted
+            for a discoverable-credential login.
+
+    PasskeyLoginFinishRequest:
+      type: object
+      additionalProperties: false
+      required: [response]
+      properties:
+        response:
+          $ref: "#/components/schemas/WebAuthnAssertionResponse"
+
+    RecoveryLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, code]
+      properties:
+        username: { type: string }
+        code:
+          type: string
+          description: A recovery code, consumed on use.
+
+    PasswordLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+
     WebAuthnCredentialDescriptor:
       type: object
       additionalProperties: false
@@ -3543,6 +3750,55 @@ x-xg2g-operation-policies:
     rateLimit: global
     audit: true
     redactErrors: false
+  AuthStatus:
+    class: health
+    auth: none
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: true
+  PasskeyRegisterStart:
+    class: session
+    auth: credential
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: true
+  PasskeyRegisterFinish:
+    class: session
+    auth: credential
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: true
+  PasskeyLoginStart:
+    class: session
+    auth: credential
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: true
+  PasskeyLoginFinish:
+    class: session
+    auth: credential
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: true
+  RecoveryLogin:
+    class: session
+    auth: credential
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: true
+  PasswordLogin:
+    class: session
+    auth: credential
+    browserTrust: same_origin_or_allowed_origin
+    rateLimit: auth
+    audit: true
+    redactErrors: true
   DeviceGrantFinish:
     class: device
     auth: none
@@ -5436,6 +5692,238 @@ paths:
                 type: integer
         "404":
           description: Segment not found
+
+  /auth/status:
+    get:
+      summary: Report identity and bootstrap state
+      description: >
+        Answered without authentication: a client has to know which sign-in to
+        offer before it can sign in.
+      operationId: AuthStatus
+      tags: [auth]
+      security: []
+      responses:
+        "200":
+          description: Identity and bootstrap state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatusResponse"
+
+  /auth/passkey/register/start:
+    post:
+      summary: Begin passkey registration
+      description: |
+        Issues WebAuthn creation options.
+
+        While no user exists the server is in bootstrap: the caller must present
+        either a setup token or operator authorization, which is why the header
+        is declared but not required — an authorized operator does not send one.
+      operationId: PasskeyRegisterStart
+      tags: [auth]
+      security: []
+      parameters:
+        - name: X-Setup-Token
+          in: header
+          required: false
+          description: One-time bootstrap token; consumed on use.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Creation options for the ceremony
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnCreationOptions"
+        "400":
+          description: The ceremony could not be started
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401":
+          description: Bootstrap requires a valid setup token or operator authorization
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "500":
+          description: Existing users could not be determined
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Identity service not configured
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /auth/passkey/register/finish:
+    post:
+      summary: Complete passkey registration
+      operationId: PasskeyRegisterFinish
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyRegisterFinishRequest"
+      responses:
+        "200":
+          description: The credential was registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyRegistrationResult"
+        "400":
+          description: Malformed body or failed ceremony
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Identity service not configured
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /auth/passkey/login/start:
+    post:
+      summary: Begin passkey login
+      operationId: PasskeyLoginStart
+      tags: [auth]
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginStartRequest"
+      responses:
+        "200":
+          description: Assertion options for the ceremony
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnRequestOptions"
+        "400":
+          description: The ceremony could not be started
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Identity service not configured
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /auth/passkey/login/finish:
+    post:
+      summary: Complete passkey login
+      description: Sets the HttpOnly session cookie on success.
+      operationId: PasskeyLoginFinish
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginFinishRequest"
+      responses:
+        "200":
+          description: The session was opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "400":
+          description: Malformed body
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401":
+          description: The assertion did not verify
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Identity service not configured
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /auth/recovery:
+    post:
+      summary: Sign in with a recovery code
+      description: Consumes the code and sets the HttpOnly session cookie.
+      operationId: RecoveryLogin
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoveryLoginRequest"
+      responses:
+        "200":
+          description: The session was opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "400":
+          description: Malformed body
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401":
+          description: The recovery code is invalid or already consumed
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Identity service not configured
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+
+  /auth/login/password:
+    post:
+      summary: Sign in with a password
+      description: Sets the HttpOnly session cookie on success.
+      operationId: PasswordLogin
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordLoginRequest"
+      responses:
+        "200":
+          description: The session was opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "400":
+          description: Malformed body
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401":
+          description: Invalid username or password
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Identity service not configured
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
 
   /auth/device/grant/start:
     post:

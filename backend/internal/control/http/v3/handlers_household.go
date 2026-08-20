@@ -17,11 +17,6 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-type PasswordLoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
 type CreateInvitationRequest struct {
 	Role        string `json:"role"`
 	DisplayName string `json:"displayName,omitempty"`
@@ -75,8 +70,15 @@ func (s *Server) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 
 	s.setSessionCookieDirect(w, r, res.SessionID, res.ExpiresAt)
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(res)
+	// The session token goes in the HttpOnly cookie and nowhere else. Both this
+	// path and RedeemInvitation used to encode identity.AuthSessionResponse
+	// straight out, and that type carries SessionID — so the two login paths
+	// that returned the domain type handed page scripts the very token the
+	// cookie exists to keep from them. The passkey and recovery paths never did.
+	writeJSON(w, http.StatusOK, AuthSessionResponse{
+		User:      identityUser(res.User),
+		ExpiresAt: res.ExpiresAt.UTC(),
+	})
 }
 
 // CreateInvitation handles POST /api/v3/auth/invitations
@@ -147,8 +149,12 @@ func (s *Server) RedeemInvitation(w http.ResponseWriter, r *http.Request) {
 
 	s.setSessionCookieDirect(w, r, res.SessionID, res.ExpiresAt)
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(res)
+	// Same reasoning as PasswordLogin: the cookie carries the token, the body
+	// does not.
+	writeJSON(w, http.StatusOK, AuthSessionResponse{
+		User:      identityUser(res.User),
+		ExpiresAt: res.ExpiresAt.UTC(),
+	})
 }
 
 // CreateProfile handles POST /api/v3/profiles

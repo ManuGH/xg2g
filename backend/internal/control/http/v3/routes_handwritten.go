@@ -36,14 +36,8 @@ type handwrittenRoute struct {
 // anywhere else; TestHandwrittenRouteParity enforces that the two paths stay identical.
 func handwrittenRoutes(svc *Server) []handwrittenRoute {
 	return []handwrittenRoute{
-		// Identity and passkey
-		{http.MethodGet, "/auth/status", svc.AuthStatus, false},
-		{http.MethodPost, "/auth/passkey/login/start", svc.PasskeyLoginStart, false},
-		{http.MethodPost, "/auth/passkey/login/finish", svc.PasskeyLoginFinish, false},
-		{http.MethodPost, "/auth/passkey/register/start", svc.PasskeyRegisterStart, false},
-		{http.MethodPost, "/auth/passkey/register/finish", svc.PasskeyRegisterFinish, false},
-		{http.MethodPost, "/auth/recovery", svc.RecoveryLogin, false},
-		{http.MethodPost, "/auth/login/password", svc.PasswordLogin, false},
+		// Identity and passkey: declared in api/openapi.yaml and registered from
+		// the generated route catalog, so nothing is listed here.
 
 		// Android / native device grant (RFC 9449 sender-constrained enrollment)
 		// The whole /auth/device surface is declared in api/openapi.yaml and

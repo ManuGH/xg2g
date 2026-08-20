@@ -44,7 +44,7 @@ func (s *Server) SetIdentityService(svc *identity.Service) {
 }
 
 // PasskeyRegisterStart handles POST /api/v3/auth/passkey/register/start
-func (s *Server) PasskeyRegisterStart(w http.ResponseWriter, r *http.Request) {
+func (s *Server) PasskeyRegisterStart(w http.ResponseWriter, r *http.Request, params PasskeyRegisterStartParams) {
 	svc := s.getIdentityService()
 	if svc == nil {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
@@ -80,7 +80,7 @@ func (s *Server) PasskeyRegisterStart(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Bootstrap mode (0 users exist): require valid setup token or operator authorization
-		setupToken := r.Header.Get("X-Setup-Token")
+		setupToken := stringValue(params.XSetupToken)
 		isOperator := principalHasScope(p, "*")
 
 		if !isOperator && setupToken == "" {
@@ -104,13 +104,7 @@ func (s *Server) PasskeyRegisterStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(opts)
-}
-
-type FinishRegistrationRequest struct {
-	Response webauthn.AttestationResponse `json:"response"`
-	Nickname string                       `json:"nickname"`
+	writeJSON(w, http.StatusOK, webAuthnCreationOptions(opts))
 }
 
 // PasskeyRegisterFinish handles POST /api/v3/auth/passkey/register/finish
@@ -121,7 +115,7 @@ func (s *Server) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req FinishRegistrationRequest
+	var req PasskeyRegisterFinishRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Invalid JSON payload", nil)
 		return
@@ -134,7 +128,7 @@ func (s *Server) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		ipStr = remoteIP.String()
 	}
 
-	cred, bootstrapRes, err := svc.FinishPasskeyRegistration(r.Context(), req.Response, req.Nickname, userAgent, ipStr)
+	cred, bootstrapRes, err := svc.FinishPasskeyRegistration(r.Context(), domainAttestation(req.Response), stringValue(req.Nickname), userAgent, ipStr)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("passkey registration verification failed")
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/registration_failed", "Registration Verification Failed", problemcode.CodeInvalidInput, err.Error(), nil)
@@ -153,35 +147,29 @@ func (s *Server) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		s.setSessionCookieDirect(w, r, bootstrapRes.SessionID, bootstrapRes.ExpiresAt)
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status": "bootstrap_completed",
-			"user":   bootstrapRes.User,
-			"credential": map[string]any{
-				"id":             cred.ID,
-				"nickname":       cred.Nickname,
-				"backupEligible": cred.BackupEligible,
-				"backupState":    cred.BackupState,
-				"createdAt":      cred.CreatedAt,
-			},
-			"recoveryCodes": bootstrapRes.RecoveryCodes,
-			"expiresAt":     bootstrapRes.ExpiresAt,
+		credential := passkeyCredentialSummary(cred)
+		recoveryCodes := append([]string(nil), bootstrapRes.RecoveryCodes...)
+		user := identityUser(bootstrapRes.User)
+		expiresAt := bootstrapRes.ExpiresAt.UTC()
+		writeJSON(w, http.StatusOK, PasskeyRegistrationResult{
+			Status:        BootstrapCompleted,
+			User:          &user,
+			Credential:    &credential,
+			RecoveryCodes: &recoveryCodes,
+			ExpiresAt:     &expiresAt,
 		})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":         "registered",
-		"id":             cred.ID,
-		"nickname":       cred.Nickname,
-		"backupEligible": cred.BackupEligible,
-		"backupState":    cred.BackupState,
-		"createdAt":      cred.CreatedAt,
+	summary := passkeyCredentialSummary(cred)
+	writeJSON(w, http.StatusOK, PasskeyRegistrationResult{
+		Status:         Registered,
+		Id:             &summary.Id,
+		Nickname:       &summary.Nickname,
+		BackupEligible: &summary.BackupEligible,
+		BackupState:    &summary.BackupState,
+		CreatedAt:      &summary.CreatedAt,
 	})
-}
-
-type LoginStartRequest struct {
-	Username string `json:"username,omitempty"`
 }
 
 // PasskeyLoginStart handles POST /api/v3/auth/passkey/login/start
@@ -192,29 +180,19 @@ func (s *Server) PasskeyLoginStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req LoginStartRequest
+	var req PasskeyLoginStartRequest
 	if r.Body != nil && r.ContentLength > 0 {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	opts, err := svc.BeginPasskeyLogin(r.Context(), req.Username)
+	opts, err := svc.BeginPasskeyLogin(r.Context(), stringValue(req.Username))
 	if err != nil {
 		log.FromContext(r.Context()).Error().Err(err).Msg("failed to begin passkey login")
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/login_failed", "Login Failed", problemcode.CodeInvalidInput, err.Error(), nil)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(opts)
-}
-
-type LoginFinishRequest struct {
-	Response webauthn.AssertionResponse `json:"response"`
-}
-
-type AuthSessionResponse struct {
-	User      identity.User `json:"user"`
-	ExpiresAt time.Time     `json:"expiresAt"`
+	writeJSON(w, http.StatusOK, webAuthnRequestOptions(opts))
 }
 
 // PasskeyLoginFinish handles POST /api/v3/auth/passkey/login/finish
@@ -225,7 +203,7 @@ func (s *Server) PasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req LoginFinishRequest
+	var req PasskeyLoginFinishRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Invalid JSON payload", nil)
 		return
@@ -238,7 +216,7 @@ func (s *Server) PasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		ipStr = remoteIP.String()
 	}
 
-	webSess, user, err := svc.FinishPasskeyLogin(r.Context(), req.Response, userAgent, ipStr)
+	webSess, user, err := svc.FinishPasskeyLogin(r.Context(), domainAssertion(req.Response), userAgent, ipStr)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("passkey assertion failed")
 		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/login_failed", "Authentication Failed", problemcode.CodeUnauthorized, err.Error(), nil)
@@ -253,16 +231,76 @@ func (s *Server) PasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		Str("session_id", webSess.SessionID).
 		Msg("passkey login successful")
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(AuthSessionResponse{
-		User:      *user,
-		ExpiresAt: webSess.ExpiresAt,
+	writeJSON(w, http.StatusOK, AuthSessionResponse{
+		User:      identityUser(*user),
+		ExpiresAt: webSess.ExpiresAt.UTC(),
 	})
 }
 
-type RecoveryRequest struct {
-	Username string `json:"username"`
-	Code     string `json:"code"`
+// domainAttestation converts the wire attestation into the ceremony's own type.
+func domainAttestation(response WebAuthnAttestationResponse) webauthn.AttestationResponse {
+	out := webauthn.AttestationResponse{
+		ClientDataJSON:    response.ClientDataJSON,
+		AttestationObject: response.AttestationObject,
+	}
+	if response.Transports != nil {
+		out.Transports = append([]string(nil), *response.Transports...)
+	}
+	return out
+}
+
+// passkeyCredentialSummary renders the subset of a credential the API publishes.
+// The domain type also carries the public key, the AAGUID and the signature
+// counter, none of which a client has any use for.
+func passkeyCredentialSummary(cred *identity.PasskeyCredential) PasskeyCredentialSummary {
+	return PasskeyCredentialSummary{
+		Id:             cred.ID,
+		Nickname:       cred.Nickname,
+		BackupEligible: cred.BackupEligible,
+		BackupState:    cred.BackupState,
+		CreatedAt:      cred.CreatedAt.UTC(),
+	}
+}
+
+// identityUser renders a domain user in the shape the contract declares. An
+// explicit boundary: identity.User is free to grow fields the API has not
+// published, and this type is returned by every login path.
+func identityUser(user identity.User) IdentityUser {
+	return IdentityUser{
+		Id:          user.ID,
+		Username:    user.Username,
+		DisplayName: user.DisplayName,
+		Role:        string(user.Role),
+		CreatedAt:   user.CreatedAt.UTC(),
+		UpdatedAt:   user.UpdatedAt.UTC(),
+	}
+}
+
+// webAuthnCreationOptions renders registration options in the published shape.
+func webAuthnCreationOptions(opts *webauthn.CreationOptions) WebAuthnCreationOptions {
+	params := make([]WebAuthnPubKeyCredParam, 0, len(opts.PubKeyCredParams))
+	for _, param := range opts.PubKeyCredParams {
+		params = append(params, WebAuthnPubKeyCredParam{Type: param.Type, Alg: param.Alg})
+	}
+	return WebAuthnCreationOptions{
+		Rp: WebAuthnRelyingParty{
+			Id:   opts.RP.ID,
+			Name: opts.RP.Name,
+		},
+		User: WebAuthnUserEntity{
+			Id:          opts.User.ID,
+			Name:        opts.User.Name,
+			DisplayName: opts.User.DisplayName,
+		},
+		Challenge:        opts.Challenge,
+		PubKeyCredParams: params,
+		Timeout:          opts.Timeout,
+		AuthenticatorSelection: WebAuthnAuthenticatorSelection{
+			ResidentKey:      opts.AuthenticatorSelection.ResidentKey,
+			UserVerification: opts.AuthenticatorSelection.UserVerification,
+		},
+		Attestation: opts.Attestation,
+	}
 }
 
 // RecoveryLogin handles POST /api/v3/auth/recovery
@@ -273,7 +311,7 @@ func (s *Server) RecoveryLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req RecoveryRequest
+	var req RecoveryLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "system/invalid_input", "Invalid Request", problemcode.CodeInvalidInput, "Invalid JSON payload", nil)
 		return
@@ -306,10 +344,9 @@ func (s *Server) RecoveryLogin(w http.ResponseWriter, r *http.Request) {
 		Str("session_id", webSess.SessionID).
 		Msg("recovery code authenticated and consumed")
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(AuthSessionResponse{
-		User:      *user,
-		ExpiresAt: webSess.ExpiresAt,
+	writeJSON(w, http.StatusOK, AuthSessionResponse{
+		User:      identityUser(*user),
+		ExpiresAt: webSess.ExpiresAt.UTC(),
 	})
 }
 
