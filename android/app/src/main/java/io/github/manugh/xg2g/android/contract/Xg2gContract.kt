@@ -190,10 +190,17 @@ data class ApprovePairingResponse(
 /**
  * A freshly issued, DPoP-bound device grant.
  *
- * The field names are snake_case here and camelCase in
- * ExchangePairingResponse. That is the wire as it stands, documented
- * rather than quietly corrected: aligning the two casings is a breaking
- * change for any device already speaking this endpoint.
+ * The field names are snake_case because this is an OAuth 2.0 token
+ * response: access_token, token_type, expires_in, refresh_token and scope
+ * are RFC 6749 section 5.1 verbatim, and token_type "DPoP" is RFC 9449.
+ * device_id is the one xg2g addition and follows the same casing rather
+ * than mixing conventions inside a single body.
+ *
+ * So the difference from ExchangePairingResponse, which spells the same
+ * concepts in camelCase, is not an oversight in this schema. The pairing
+ * exchange is the one that departs from the OAuth spelling; it keeps it
+ * because it is a pairing result that happens to carry tokens, and
+ * because every client already decodes it that way.
  */
 data class DeviceGrantResponse(
     val accessToken: String,
@@ -294,6 +301,12 @@ data class ECPublicKeyJWK(
  * deviceGrantId/deviceGrant/deviceGrantExpiresAt/accessSessionId quartet is
  * gone because the underlying concepts are gone, not because it was
  * renamed — see internal/control/http/v3/pairing/types.go.
+ *
+ * The token fields are camelCase here and snake_case in
+ * DeviceGrantResponse, which spells them the RFC 6749 way. This is the
+ * deviating side of that boundary, kept deliberately: it is a pairing
+ * result that happens to carry tokens rather than an OAuth token endpoint,
+ * and every client already decodes it in this spelling.
  */
 data class ExchangePairingResponse(
     val accessToken: String,
