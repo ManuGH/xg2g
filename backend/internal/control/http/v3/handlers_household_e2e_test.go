@@ -194,4 +194,41 @@ func TestHouseholdFullE2ESuite_MultiUserRolesInvitesAndEffectivePermissions(t *t
 	assert.False(t, effGuest["isAdmin"].(bool))
 	assert.True(t, effGuest["isGuest"].(bool))
 	assert.False(t, effGuest["canDvr"].(bool), "Guest account role MUST NOT have DVR permissions")
+
+	// 8. A guest must not be able to sign anyone else out.
+	//
+	// The route is marked authenticated, but authMiddleware only establishes a
+	// principal — it checks no role and no scope — and the handler checked
+	// nothing either. Any signed-in account could revoke any other account's
+	// sessions by posting its id, the admin's included.
+	adminUserID := effAdmin["userId"].(string)
+	revokeOther, _ := json.Marshal(map[string]any{"userId": adminUserID})
+
+	reqRevokeOther := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/revoke-user-sessions", bytes.NewReader(revokeOther))
+	reqRevokeOther.Header.Set("Content-Type", "application/json")
+	reqRevokeOther.AddCookie(guestCookie)
+	wRevokeOther := httptest.NewRecorder()
+	handler.ServeHTTP(wRevokeOther, reqRevokeOther)
+
+	require.Equal(t, http.StatusForbidden, wRevokeOther.Code,
+		"a guest must not revoke another account's sessions")
+
+	// The admin's session still works afterwards.
+	reqStillAdmin := httptest.NewRequest(http.MethodGet, "/api/v3/auth/effective-permissions", nil)
+	reqStillAdmin.AddCookie(adminCookie)
+	wStillAdmin := httptest.NewRecorder()
+	handler.ServeHTTP(wStillAdmin, reqStillAdmin)
+	require.Equal(t, http.StatusOK, wStillAdmin.Code, "the admin session must have survived")
+
+	// Revoking one's own sessions stays allowed.
+	guestUserID := effGuest["userId"].(string)
+	revokeSelf, _ := json.Marshal(map[string]any{"userId": guestUserID})
+
+	reqRevokeSelf := httptest.NewRequest(http.MethodPost, "/api/v3/sessions/revoke-user-sessions", bytes.NewReader(revokeSelf))
+	reqRevokeSelf.Header.Set("Content-Type", "application/json")
+	reqRevokeSelf.AddCookie(guestCookie)
+	wRevokeSelf := httptest.NewRecorder()
+	handler.ServeHTTP(wRevokeSelf, reqRevokeSelf)
+
+	require.Equal(t, http.StatusNoContent, wRevokeSelf.Code, "revoking one's own sessions must stay allowed")
 }

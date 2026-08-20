@@ -568,12 +568,36 @@ func (s *Server) RevokeUserSessions(w http.ResponseWriter, r *http.Request) {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/disabled", "Identity Service Unavailable", problemcode.CodeServiceUnavailable, "Identity service is not configured", nil)
 		return
 	}
+	// Revoking another account's sessions is an administrative act, and this
+	// handler performed no authorization at all: the route is marked
+	// authenticated, but authMiddleware only establishes *a* principal — it
+	// checks no role and no scope. Any signed-in user, guest included, could
+	// post any userId and sign that user out, the admin included.
+	//
+	// The check mirrors DeletePasskey, which is the established idiom for "this
+	// touches someone else's credentials".
+	p := s.resolveRequestPrincipal(r)
+	if p == nil || p.User == "" {
+		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/unauthorized", "Unauthorized", problemcode.CodeUnauthorized, "Authentication required", nil)
+		return
+	}
+	actor, err := svc.Store().GetUserByUsername(r.Context(), p.User)
+	if err != nil {
+		writeRegisteredProblem(w, r, http.StatusNotFound, "auth/user_not_found", "User Not Found", problemcode.CodeNotFound, "User not found", nil)
+		return
+	}
+
 	type RevokeReq struct {
 		UserID string `json:"userId"`
 	}
 	var req RevokeReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UserID == "" {
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "request/invalid", "Invalid Request", problemcode.CodeInvalidInput, "Invalid userId", nil)
+		return
+	}
+
+	if req.UserID != actor.ID && actor.Role != identity.RoleAdmin {
+		writeRegisteredProblem(w, r, http.StatusForbidden, "auth/forbidden", "Forbidden", problemcode.CodeForbidden, "Cannot revoke sessions of another user", nil)
 		return
 	}
 	if err := svc.RevokeAllUserSessions(r.Context(), req.UserID); err != nil {
