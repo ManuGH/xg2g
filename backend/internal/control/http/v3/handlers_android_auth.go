@@ -112,10 +112,9 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 		Msg("issued DPoP-bound device grant for android")
 
 	// Set mandatory RFC 9449 / OAuth2 token headers
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store, no-cache, private")
 	w.Header().Set("Pragma", "no-cache")
-	_ = json.NewEncoder(w).Encode(grantRes)
+	writeJSON(w, http.StatusOK, deviceGrantResponse(grantRes))
 }
 
 // DeviceRefresh handles POST /api/v3/auth/device/refresh
@@ -159,12 +158,25 @@ func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request, params De
 	// Credentials must never be cached, by a proxy or by the client.
 	w.Header().Set("Cache-Control", "no-store, no-cache, private")
 	w.Header().Set("Pragma", "no-cache")
-	writeJSON(w, http.StatusOK, DeviceGrantResponse{
-		TokenType:    grantRes.TokenType,
-		AccessToken:  grantRes.AccessToken,
-		RefreshToken: grantRes.RefreshToken,
-		ExpiresIn:    clampTokenLifetimeSeconds(grantRes.ExpiresIn),
-		DeviceId:     grantRes.DeviceID,
-		Scope:        grantRes.Scope,
-	})
+	writeJSON(w, http.StatusOK, deviceGrantResponse(grantRes))
+}
+
+// deviceGrantResponse renders an issued grant in the shape DeviceGrantResponse
+// declares.
+//
+// Both issuance paths hand out the same thing — passkey enrollment at
+// /auth/device/grant/finish and rotation at /auth/device/refresh — but only the
+// second is declared in api/openapi.yaml. Sharing the mapping is what keeps the
+// undeclared one from drifting away from the shape its sibling is held to; it
+// also means bringing the grant endpoints into the contract later changes the
+// routing, not the bytes.
+func deviceGrantResponse(grant *identity.DeviceGrantResult) DeviceGrantResponse {
+	return DeviceGrantResponse{
+		TokenType:    grant.TokenType,
+		AccessToken:  grant.AccessToken,
+		RefreshToken: grant.RefreshToken,
+		ExpiresIn:    clampTokenLifetimeSeconds(grant.ExpiresIn),
+		DeviceId:     grant.DeviceID,
+		Scope:        grant.Scope,
+	}
 }
