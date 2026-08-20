@@ -2,6 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
+import CoreMedia
 import Foundation
 
 public enum AudioStreamCodec: Sendable, Equatable, CustomStringConvertible {
@@ -71,18 +72,32 @@ public enum VideoStreamCodec: Sendable, Equatable, CustomStringConvertible {
         }
     }
 
+    /// The VideoToolbox codec type, for the formats that have one here.
+    ///
+    /// MPEG-1 is excluded rather than assumed: its syntax is close enough to
+    /// MPEG-2 that the same assembler would likely carry it, but no broadcast
+    /// here sends it, so claiming support would be claiming something untested.
+    public var videoToolboxCodecType: CMVideoCodecType? {
+        switch self {
+        case .h264: return kCMVideoCodecType_H264
+        case .mpeg2: return kCMVideoCodecType_MPEG2Video
+        case .hevc: return kCMVideoCodecType_HEVC
+        case .mpeg1, .unknown: return nil
+        }
+    }
+
     /// Whether this pipeline can turn the stream into pictures.
     ///
-    /// Narrower than what the hardware can decode: VideoToolbox handles HEVC on
-    /// any recent device, but the elementary stream still has to be cut into
-    /// access units first, and `H264AccessUnitAssembler` is the only assembler
-    /// here. Claiming HEVC because the chip supports it would put a black screen
-    /// in front of the viewer just the same.
+    /// Two conditions, and both have to hold. There has to be an assembler here
+    /// that cuts the elementary stream into access units — that part is our
+    /// code, and it exists for H.264, MPEG-2 and HEVC. And VideoToolbox has to
+    /// have a decoder to hand them to, which is asked at runtime rather than
+    /// tabulated: iOS has never shipped an MPEG-2 decoder despite defining the
+    /// constant, and HEVC is present on every device since the A9 but absent
+    /// from the Simulator. Any fixed table is wrong on one of those.
     public var isDecodableOnDevice: Bool {
-        switch self {
-        case .h264: return true
-        case .mpeg2, .mpeg1, .hevc, .unknown: return false
-        }
+        guard let codecType = videoToolboxCodecType else { return false }
+        return VideoDecoderAvailability.canDecode(codecType)
     }
 
     /// What to tell the viewer, in their terms, when this cannot be played.

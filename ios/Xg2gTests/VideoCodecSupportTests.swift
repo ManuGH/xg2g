@@ -2,6 +2,7 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
+import CoreMedia
 import Foundation
 import Testing
 @testable import Xg2g
@@ -31,15 +32,53 @@ struct VideoCodecSupportTests {
         #expect(VideoStreamCodec(streamType: 0x42).isDecodableOnDevice == false)
     }
 
-    /// H.264 alone, because `H264AccessUnitAssembler` is the only assembler on
-    /// this path. HEVC is the trap: the hardware decodes it, so a check written
-    /// against device capability would wave it through and still show nothing.
-    @Test("Only H.264 is playable on the direct path")
-    func onlyH264IsPlayable() {
+    /// The parser reports what the PMT named even when nothing can play it, so
+    /// the viewer-facing message can name the format instead of shrugging.
+    @Test("An unplayable codec still reaches the delegate")
+    func unplayableCodecStillReported() {
+        let recorder = CodecRecorder()
+        let parser = TSPacketParser()
+        parser.delegate = recorder
+
+        parser.feed(data: Self.transportStream(videoStreamType: 0x01, videoPID: 0x0100))
+
+        #expect(recorder.codec == .mpeg1)
+        #expect(recorder.codec?.isDecodableOnDevice == false)
+    }
+
+    /// The codecs an assembler exists for map to a VideoToolbox type; the rest
+    /// map to nothing, which is what makes them unplayable regardless of what
+    /// the platform could decode.
+    @Test("Only the assembled codecs have a VideoToolbox type")
+    func codecTypeMapping() {
+        #expect(VideoStreamCodec.h264.videoToolboxCodecType == kCMVideoCodecType_H264)
+        #expect(VideoStreamCodec.mpeg2.videoToolboxCodecType == kCMVideoCodecType_MPEG2Video)
+        #expect(VideoStreamCodec.hevc.videoToolboxCodecType == kCMVideoCodecType_HEVC)
+        #expect(VideoStreamCodec.mpeg1.videoToolboxCodecType == nil)
+        #expect(VideoStreamCodec.unknown(0x42).videoToolboxCodecType == nil)
+    }
+
+    /// Playability is measured, not tabulated, so only the invariants can be
+    /// asserted here. H.264 must work — the native path is built on it. MPEG-1
+    /// and unknown types must not, because no assembler cuts them.
+    ///
+    /// MPEG-2 and HEVC are deliberately left unasserted: both depend on what
+    /// the running platform offers, and the Simulator answers differently from
+    /// a device. `VideoDecoderAvailabilityTests` records what this platform
+    /// actually said.
+    @Test("Playability holds for the cases that cannot vary")
+    func playabilityInvariants() {
         #expect(VideoStreamCodec.h264.isDecodableOnDevice)
-        #expect(VideoStreamCodec.mpeg2.isDecodableOnDevice == false)
         #expect(VideoStreamCodec.mpeg1.isDecodableOnDevice == false)
-        #expect(VideoStreamCodec.hevc.isDecodableOnDevice == false)
+        #expect(VideoStreamCodec.unknown(0x42).isDecodableOnDevice == false)
+    }
+
+    /// The answer has to be stable within a run: it decides whether a channel
+    /// shows a picture or an explanation, and a value that flickered would show
+    /// both on the same stream.
+    @Test("Repeated queries agree", arguments: [VideoStreamCodec.h264, .mpeg2, .hevc])
+    func answerIsStable(codec: VideoStreamCodec) {
+        #expect(codec.isDecodableOnDevice == codec.isDecodableOnDevice)
     }
 
     /// The viewer is told which format, so the message is not a generic
@@ -63,7 +102,6 @@ struct VideoCodecSupportTests {
         parser.feed(data: Self.transportStream(videoStreamType: 0x02, videoPID: 0x0100))
 
         #expect(recorder.codec == .mpeg2)
-        #expect(recorder.codec?.isDecodableOnDevice == false)
         #expect(parser.videoCodec == .mpeg2)
     }
 

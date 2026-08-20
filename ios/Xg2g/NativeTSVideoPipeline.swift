@@ -78,6 +78,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     TSPacketParserDelegate,
     PESPacketAssemblerDelegate,
     H264AccessUnitAssemblerDelegate,
+    VideoAccessUnitAssemblerDelegate,
     HardwareVideoDecoderDelegate,
     AudioPESAssemblerDelegate,
     AudioSampleBufferAssemblerDelegate,
@@ -89,6 +90,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private let tsParser = TSPacketParser()
     private let pesAssembler = PESPacketAssembler()
     private let accessUnitAssembler = H264AccessUnitAssembler()
+
+    /// Assembler for a stream that is not H.264, chosen when the PMT names its
+    /// codec. `nil` on an H.264 channel, which is the overwhelming majority and
+    /// keeps its dedicated path untouched.
+    private var alternateAssembler: (any VideoAccessUnitAssembling)?
     private let decoder = HardwareVideoDecoder()
 
     // Audio Engine Subsystems
@@ -611,6 +617,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             tsParser.reset()
             pesAssembler.reset()
             accessUnitAssembler.reset()
+            alternateAssembler?.reset()
+            alternateAssembler = nil
             decoder.reset()
             audioPesAssembler.reset()
             ac3FrameParser.reset()
@@ -869,6 +877,22 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         telemetry.mutate {
             $0.codec = codec.description
             $0.unplayableVideoCodec = playable ? nil : codec.viewerDescription
+        }
+
+        // The codec decides which assembler cuts pictures out of the stream.
+        // H.264 keeps its own path; the others get theirs and route through the
+        // shared delegate.
+        switch codec {
+        case .h264, .mpeg1, .unknown:
+            alternateAssembler = nil
+        case .mpeg2:
+            let assembler = MPEG2AccessUnitAssembler()
+            assembler.assemblerDelegate = self
+            alternateAssembler = assembler
+        case .hevc:
+            let assembler = HEVCAccessUnitAssembler()
+            assembler.assemblerDelegate = self
+            alternateAssembler = assembler
         }
 
         let msg = playable
@@ -1484,7 +1508,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - PESPacketAssemblerDelegate
 
     public func pesAssembler(_ assembler: PESPacketAssembler, didEmitVideoPayload payload: PESVideoData) {
-        accessUnitAssembler.feed(payload: payload)
+        if let alternate = alternateAssembler {
+            alternate.feed(payload: payload)
+        } else {
+            accessUnitAssembler.feed(payload: payload)
+        }
     }
 
     public func pesAssembler(_ assembler: PESPacketAssembler, didEncounterPESError reason: String) {
@@ -1494,6 +1522,23 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - H264AccessUnitAssemblerDelegate
 
     public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
+        handleVideoFormat(formatDescription, info: info)
+    }
+
+    // MARK: - VideoAccessUnitAssemblerDelegate
+
+    public func videoAssembler(didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
+        handleVideoFormat(formatDescription, info: info)
+    }
+
+    public func videoAssembler(didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure) {
+        handleVideoSampleBuffer(sampleBuffer, isSyncSample: isSyncSample, structure: structure)
+    }
+
+    /// Everything that happens when a format arrives, whichever assembler
+    /// produced it. The codec decides how a picture is cut out of the stream
+    /// and nothing after that.
+    private func handleVideoFormat(_ formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
         let paramMs = sessionState.mutate { state -> Double? in
             if state.paramsReadyTime == 0 {
                 state.paramsReadyTime = CACurrentMediaTime()
@@ -1536,6 +1581,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure) {
+        handleVideoSampleBuffer(sampleBuffer, isSyncSample: isSyncSample, structure: structure)
+    }
+
+    private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure) {
         if case .closed(let reason) = decodeGateState {
             let now = CACurrentMediaTime()
             if firstAccessUnitTime == 0 {

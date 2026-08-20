@@ -834,7 +834,7 @@ struct UnplayableFormatNotice: View {
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
 
-                Text("Der Sender überträgt \(formatDescription). Direkt vom Receiver lässt sich nur H.264 wiedergeben.")
+                Text("Der Sender überträgt \(formatDescription). Dieses Gerät kann das bei Direktwiedergabe nicht dekodieren.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .multilineTextAlignment(.center)
