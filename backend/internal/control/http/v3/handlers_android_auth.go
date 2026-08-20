@@ -10,24 +10,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ManuGH/xg2g/internal/control/http/v3/dpop"
 	"github.com/ManuGH/xg2g/internal/domain/identity"
 	"github.com/ManuGH/xg2g/internal/domain/identity/webauthn"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
-
-type DeviceGrantStartRequest struct {
-	Username string `json:"username,omitempty"`
-}
-
-type DeviceGrantFinishRequest struct {
-	Assertion  webauthn.AssertionResponse `json:"assertion"`
-	DeviceName string                     `json:"deviceName"`
-	Platform   string                     `json:"platform"`
-	DeviceJWK  dpop.JWKECPublicKey        `json:"deviceJwk"`
-	Scopes     string                     `json:"scopes,omitempty"`
-}
 
 // DeviceGrantStart handles POST /api/v3/auth/device/grant/start
 func (s *Server) DeviceGrantStart(w http.ResponseWriter, r *http.Request) {
@@ -42,34 +29,30 @@ func (s *Server) DeviceGrantStart(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	opts, err := svc.BeginPasskeyLogin(r.Context(), req.Username)
+	opts, err := svc.BeginPasskeyLogin(r.Context(), stringValue(req.Username))
 	if err != nil {
 		log.FromContext(r.Context()).Error().Err(err).Msg("failed to begin device passkey assertion")
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/login_failed", "Assertion Failed", problemcode.CodeInvalidInput, "Failed to begin passkey assertion", nil)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(opts)
+	writeJSON(w, http.StatusOK, webAuthnRequestOptions(opts))
 }
 
 // DeviceGrantFinish handles POST /api/v3/auth/device/grant/finish
-func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
+func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request, params DeviceGrantFinishParams) {
 	svc := s.getIdentityService()
 	if svc == nil {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
 		return
 	}
 
-	dpopProof := r.Header.Get("DPoP")
-	if dpopProof == "" {
-		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/dpop_required", "DPoP Header Required", problemcode.CodeInvalidInput, "DPoP proof header is required", nil)
-		return
-	}
-
+	// Presence is enforced by the generated wrapper now that the contract
+	// declares the header. What is left here is proving it — and its key is the
+	// one the grant binds to, which is why the body carries no key of its own.
 	validator := s.getDPoPValidator()
 	now := time.Now().UTC()
-	proofClaims, err := validator.ValidateProof(r, dpopProof, "", now)
+	proofClaims, err := validator.ValidateProof(r, params.DPoP, "", now)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("invalid DPoP proof during device grant finish")
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/invalid_dpop", "Invalid DPoP Proof", problemcode.CodeInvalidInput, err.Error(), nil)
@@ -83,22 +66,24 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Verify User Identity via Passkey WITHOUT setting browser cookies
-	user, _, err := svc.VerifyPasskeyAssertion(r.Context(), req.Assertion)
+	user, _, err := svc.VerifyPasskeyAssertion(r.Context(), domainAssertion(req.Assertion))
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("passkey assertion failed during android device grant")
 		writeRegisteredProblem(w, r, http.StatusUnauthorized, "auth/login_failed", "Authentication Failed", problemcode.CodeUnauthorized, "Invalid passkey assertion", nil)
 		return
 	}
 
-	if req.DeviceName == "" {
-		req.DeviceName = "Android Device"
+	deviceName := stringValue(req.DeviceName)
+	if deviceName == "" {
+		deviceName = "Android Device"
 	}
-	if req.Platform == "" {
-		req.Platform = "android"
+	platform := stringValue(req.Platform)
+	if platform == "" {
+		platform = "android"
 	}
 
 	// 2. Issue DPoP-bound Device Grant & Access Token
-	grantRes, err := svc.IssueDeviceGrant(r.Context(), user.ID, req.DeviceName, req.Platform, proofClaims.Header.JWK, req.Scopes, identity.GrantTypePasskeyEnrollment)
+	grantRes, err := svc.IssueDeviceGrant(r.Context(), user.ID, deviceName, platform, proofClaims.Header.JWK, stringValue(req.Scopes), identity.GrantTypePasskeyEnrollment)
 	if err != nil {
 		log.FromContext(r.Context()).Error().Err(err).Msg("failed to issue device grant")
 		writeRegisteredProblem(w, r, http.StatusInternalServerError, "auth/grant_failed", "Grant Failed", problemcode.CodeInternalServerError, "Failed to issue device grant", nil)
@@ -159,6 +144,45 @@ func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request, params De
 	w.Header().Set("Cache-Control", "no-store, no-cache, private")
 	w.Header().Set("Pragma", "no-cache")
 	writeJSON(w, http.StatusOK, deviceGrantResponse(grantRes))
+}
+
+// webAuthnRequestOptions renders the ceremony options in the shape the contract
+// declares. An explicit boundary rather than encoding the webauthn package's
+// type directly: that type is free to grow fields the contract has not
+// published, and this is the endpoint where a client learns what to sign.
+func webAuthnRequestOptions(opts *webauthn.RequestOptions) WebAuthnRequestOptions {
+	out := WebAuthnRequestOptions{
+		Challenge:        opts.Challenge,
+		Timeout:          opts.Timeout,
+		RpId:             opts.RPID,
+		UserVerification: opts.UserVerification,
+	}
+	if len(opts.AllowCredentials) == 0 {
+		return out
+	}
+
+	allowed := make([]WebAuthnCredentialDescriptor, 0, len(opts.AllowCredentials))
+	for _, credential := range opts.AllowCredentials {
+		descriptor := WebAuthnCredentialDescriptor{Type: credential.Type, Id: credential.ID}
+		if len(credential.Transports) > 0 {
+			transports := append([]string(nil), credential.Transports...)
+			descriptor.Transports = &transports
+		}
+		allowed = append(allowed, descriptor)
+	}
+	out.AllowCredentials = &allowed
+	return out
+}
+
+// domainAssertion converts the wire assertion into the ceremony's own type.
+func domainAssertion(assertion WebAuthnAssertionResponse) webauthn.AssertionResponse {
+	return webauthn.AssertionResponse{
+		CredentialID:      assertion.Id,
+		ClientDataJSON:    assertion.ClientDataJSON,
+		AuthenticatorData: assertion.AuthenticatorData,
+		Signature:         assertion.Signature,
+		UserHandle:        stringValue(assertion.UserHandle),
+	}
 }
 
 // deviceGrantResponse renders an issued grant in the shape DeviceGrantResponse

@@ -189,6 +189,92 @@ export type ApprovePairingResponse = {
     expiresAt: string;
 };
 
+export type WebAuthnCredentialDescriptor = {
+    type: string;
+    /**
+     * Base64url credential id.
+     */
+    id: string;
+    transports?: Array<string>;
+};
+
+/**
+ * Assertion options for a passkey ceremony.
+ *
+ * A deliberate projection of the WebAuthn request options, not the whole
+ * specification: these are the fields the server issues and the client
+ * needs, and widening it later is additive.
+ *
+ */
+export type WebAuthnRequestOptions = {
+    /**
+     * Base64url challenge the authenticator must sign.
+     */
+    challenge: string;
+    /**
+     * Ceremony lifetime in milliseconds.
+     */
+    timeout: number;
+    rpId: string;
+    userVerification: string;
+    allowCredentials?: Array<WebAuthnCredentialDescriptor>;
+};
+
+export type WebAuthnAssertionResponse = {
+    /**
+     * Base64url credential id.
+     */
+    id: string;
+    /**
+     * Base64url.
+     */
+    clientDataJSON: string;
+    /**
+     * Base64url.
+     */
+    authenticatorData: string;
+    /**
+     * Base64url.
+     */
+    signature: string;
+    /**
+     * Base64url; absent for a non-resident credential.
+     */
+    userHandle?: string;
+};
+
+export type DeviceGrantStartRequest = {
+    /**
+     * Optional. Narrows the ceremony to one user's credentials; omitted for a discoverable-credential login.
+     */
+    username?: string;
+};
+
+/**
+ * Completes passkey enrollment for a device.
+ *
+ * There is no device key in this body on purpose. The grant is bound to
+ * the key in the DPoP proof header, which the client must possess to sign
+ * the request; a key supplied in the body would be a claim rather than a
+ * proof, and the server ignored it.
+ *
+ */
+export type DeviceGrantFinishRequest = {
+    assertion: WebAuthnAssertionResponse;
+    /**
+     * Defaults to "Android Device" when omitted.
+     */
+    deviceName?: string;
+    /**
+     * Defaults to "android" when omitted.
+     */
+    platform?: string;
+    /**
+     * Space-delimited scopes requested for the grant.
+     */
+    scopes?: string;
+};
+
 export type DeviceRefreshRequest = {
     /**
      * The rotating refresh token most recently issued to this device, either by the pairing exchange or by a previous refresh.
@@ -3367,6 +3453,78 @@ export type GetRecordingHlsCustomSegmentHeadResponses = {
      */
     200: unknown;
 };
+
+export type DeviceGrantStartData = {
+    body?: DeviceGrantStartRequest;
+    path?: never;
+    query?: never;
+    url: '/auth/device/grant/start';
+};
+
+export type DeviceGrantStartErrors = {
+    /**
+     * The ceremony could not be started
+     */
+    400: ProblemDetails;
+    /**
+     * Identity service not configured
+     */
+    503: ProblemDetails;
+};
+
+export type DeviceGrantStartError = DeviceGrantStartErrors[keyof DeviceGrantStartErrors];
+
+export type DeviceGrantStartResponses = {
+    /**
+     * Assertion options for the ceremony
+     */
+    200: WebAuthnRequestOptions;
+};
+
+export type DeviceGrantStartResponse = DeviceGrantStartResponses[keyof DeviceGrantStartResponses];
+
+export type DeviceGrantFinishData = {
+    body: DeviceGrantFinishRequest;
+    headers: {
+        /**
+         * DPoP proof JWT (RFC 9449). Its key is the one the grant binds to.
+         */
+        DPoP: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/auth/device/grant/finish';
+};
+
+export type DeviceGrantFinishErrors = {
+    /**
+     * Missing or invalid DPoP proof, or malformed body
+     */
+    400: ProblemDetails;
+    /**
+     * The passkey assertion did not verify
+     */
+    401: ProblemDetails;
+    /**
+     * The grant could not be issued
+     */
+    500: ProblemDetails;
+    /**
+     * Identity service not configured
+     */
+    503: ProblemDetails;
+};
+
+export type DeviceGrantFinishError = DeviceGrantFinishErrors[keyof DeviceGrantFinishErrors];
+
+export type DeviceGrantFinishResponses = {
+    /**
+     * A newly issued device grant
+     */
+    200: DeviceGrantResponse;
+};
+
+export type DeviceGrantFinishResponse = DeviceGrantFinishResponses[keyof DeviceGrantFinishResponses];
 
 export type DeviceRefreshData = {
     body: DeviceRefreshRequest;

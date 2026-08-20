@@ -402,6 +402,105 @@ components:
           type: string
           format: date-time
 
+    WebAuthnCredentialDescriptor:
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          example: public-key
+        id:
+          type: string
+          description: Base64url credential id.
+        transports:
+          type: array
+          items:
+            type: string
+
+    WebAuthnRequestOptions:
+      type: object
+      description: |
+        Assertion options for a passkey ceremony.
+
+        A deliberate projection of the WebAuthn request options, not the whole
+        specification: these are the fields the server issues and the client
+        needs, and widening it later is additive.
+      additionalProperties: false
+      required: [challenge, timeout, rpId, userVerification]
+      properties:
+        challenge:
+          type: string
+          description: Base64url challenge the authenticator must sign.
+        timeout:
+          type: integer
+          format: int64
+          description: Ceremony lifetime in milliseconds.
+        rpId:
+          type: string
+        userVerification:
+          type: string
+          example: preferred
+        allowCredentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebAuthnCredentialDescriptor"
+
+    WebAuthnAssertionResponse:
+      type: object
+      additionalProperties: false
+      required: [id, clientDataJSON, authenticatorData, signature]
+      properties:
+        id:
+          type: string
+          description: Base64url credential id.
+        clientDataJSON:
+          type: string
+          description: Base64url.
+        authenticatorData:
+          type: string
+          description: Base64url.
+        signature:
+          type: string
+          description: Base64url.
+        userHandle:
+          type: string
+          description: Base64url; absent for a non-resident credential.
+
+    DeviceGrantStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        username:
+          type: string
+          description: >-
+            Optional. Narrows the ceremony to one user's credentials; omitted
+            for a discoverable-credential login.
+
+    DeviceGrantFinishRequest:
+      type: object
+      description: |
+        Completes passkey enrollment for a device.
+
+        There is no device key in this body on purpose. The grant is bound to
+        the key in the DPoP proof header, which the client must possess to sign
+        the request; a key supplied in the body would be a claim rather than a
+        proof, and the server ignored it.
+      additionalProperties: false
+      required: [assertion]
+      properties:
+        assertion:
+          $ref: "#/components/schemas/WebAuthnAssertionResponse"
+        deviceName:
+          type: string
+          description: Defaults to "Android Device" when omitted.
+        platform:
+          type: string
+          description: Defaults to "android" when omitted.
+        scopes:
+          type: string
+          description: Space-delimited scopes requested for the grant.
+
     DeviceRefreshRequest:
       type: object
       additionalProperties: false
@@ -3444,6 +3543,20 @@ x-xg2g-operation-policies:
     rateLimit: global
     audit: true
     redactErrors: false
+  DeviceGrantFinish:
+    class: device
+    auth: none
+    browserTrust: not_browser
+    rateLimit: auth
+    audit: true
+    redactErrors: true
+  DeviceGrantStart:
+    class: device
+    auth: none
+    browserTrust: not_browser
+    rateLimit: auth
+    audit: true
+    redactErrors: true
   DeviceRefresh:
     class: device
     auth: device_grant
@@ -5323,6 +5436,99 @@ paths:
                 type: integer
         "404":
           description: Segment not found
+
+  /auth/device/grant/start:
+    post:
+      summary: Begin passkey enrollment for a device
+      description: |
+        Issues the WebAuthn assertion options a device signs to prove which user
+        it belongs to. Unauthenticated by definition: the ceremony is what
+        establishes the identity.
+      operationId: DeviceGrantStart
+      tags:
+        - auth
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceGrantStartRequest"
+      responses:
+        "200":
+          description: Assertion options for the ceremony
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnRequestOptions"
+        "400":
+          description: The ceremony could not be started
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Identity service not configured
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /auth/device/grant/finish:
+    post:
+      summary: Complete passkey enrollment and issue a device grant
+      description: |
+        Verifies the passkey assertion and issues a DPoP-bound grant for the
+        device key in the proof header. Returns the same shape as
+        /auth/device/refresh, because both hand out the same thing.
+      operationId: DeviceGrantFinish
+      tags:
+        - auth
+      security: []
+      parameters:
+        - name: DPoP
+          in: header
+          required: true
+          description: DPoP proof JWT (RFC 9449). Its key is the one the grant binds to.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceGrantFinishRequest"
+      responses:
+        "200":
+          description: A newly issued device grant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceGrantResponse"
+        "400":
+          description: Missing or invalid DPoP proof, or malformed body
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: The passkey assertion did not verify
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "500":
+          description: The grant could not be issued
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
+          description: Identity service not configured
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /auth/device/refresh:
     post:

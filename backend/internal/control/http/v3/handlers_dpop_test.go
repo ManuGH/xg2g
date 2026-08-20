@@ -110,12 +110,23 @@ func TestAndroidDualKey_DPoPAndDeviceGrantE2E(t *testing.T) {
 
 	userAssertion := createTestAssertionResponse(loginOpts.Challenge, testRPID, testOrigin, bootstrapRes.Credential.ID, userPrivKey)
 
+	deviceName := "Pixel 8 Pro"
+	platform := "android"
+	scopes := "api playback"
+	// No deviceJWK: the grant binds to the key in the DPoP proof, and the
+	// contract no longer accepts one in the body precisely so that a client
+	// cannot believe it chose the binding.
 	finishPayload := v3.DeviceGrantFinishRequest{
-		Assertion:  userAssertion,
-		DeviceName: "Pixel 8 Pro",
-		Platform:   "android",
-		DeviceJWK:  deviceJWK,
-		Scopes:     "api playback",
+		Assertion: v3.WebAuthnAssertionResponse{
+			Id:                userAssertion.CredentialID,
+			ClientDataJSON:    userAssertion.ClientDataJSON,
+			AuthenticatorData: userAssertion.AuthenticatorData,
+			Signature:         userAssertion.Signature,
+			UserHandle:        &userAssertion.UserHandle,
+		},
+		DeviceName: &deviceName,
+		Platform:   &platform,
+		Scopes:     &scopes,
 	}
 	finishJSON, _ := json.Marshal(finishPayload)
 
@@ -129,6 +140,10 @@ func TestAndroidDualKey_DPoPAndDeviceGrantE2E(t *testing.T) {
 	handler.ServeHTTP(wGrantFinish, reqGrantFinish)
 
 	require.Equal(t, http.StatusOK, wGrantFinish.Code)
+
+	// Enrollment is declared now too, so the shape it hands a brand-new device
+	// is checked against the schema that device generated its decoder from.
+	assertMatchesOpenAPIResponse(t, reqGrantFinish, wGrantFinish)
 
 	// INVARIANT CHECK: Cache-Control MUST BE no-store, no-cache, private
 	assert.Contains(t, wGrantFinish.Header().Get("Cache-Control"), "no-store")

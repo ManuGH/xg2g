@@ -46,10 +46,8 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		{http.MethodPost, "/auth/login/password", svc.PasswordLogin, false},
 
 		// Android / native device grant (RFC 9449 sender-constrained enrollment)
-		{http.MethodPost, "/auth/device/grant/start", svc.DeviceGrantStart, false},
-		{http.MethodPost, "/auth/device/grant/finish", svc.DeviceGrantFinish, false},
-		// /auth/device/refresh is not listed here: it is declared in
-		// api/openapi.yaml and registered from the generated route catalog.
+		// The whole /auth/device surface is declared in api/openapi.yaml and
+		// registered from the generated route catalog, so nothing is listed here.
 
 		// Invitations
 		{http.MethodPost, "/auth/invitations/redeem", svc.RedeemInvitation, false},
