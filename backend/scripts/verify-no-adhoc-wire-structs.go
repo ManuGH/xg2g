@@ -55,18 +55,6 @@ import (
 
 const generatedSuffix = "_gen.go"
 
-// allowed lists hand-written types that knowingly mirror a generated one, with
-// the reason and the condition for removing the entry. An entry here is a debt
-// record, not an opinion that the duplication is fine.
-var allowed = map[string]bool{
-	// SystemInfoData declares its seven sections as inline anonymous objects in
-	// api/openapi.yaml, so the generated Go type nests anonymous structs that
-	// are painful to construct and impossible to name. Promote those sections
-	// to named component schemas, then delete this entry and use the generated
-	// type. Until then SystemInfo is the readable shape of the same contract.
-	"SystemInfo": true,
-}
-
 type structDecl struct {
 	name string
 	file string
@@ -107,7 +95,7 @@ func main() {
 
 	var violations []string
 	for _, decl := range handWritten {
-		if len(decl.tags) == 0 || allowed[decl.name] {
+		if len(decl.tags) == 0 {
 			continue
 		}
 		for _, twin := range index[strings.Join(decl.tags, ",")] {

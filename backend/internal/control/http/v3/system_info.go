@@ -2,7 +2,6 @@ package v3
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -19,66 +18,6 @@ import (
 	"github.com/ManuGH/xg2g/internal/problemcode"
 )
 
-// SystemInfo represents the full system information response
-type SystemInfo struct {
-	Hardware HardwareInfo `json:"hardware"`
-	Software SoftwareInfo `json:"software"`
-	Tuners   []TunerInfo  `json:"tuners"`
-	Network  NetworkInfo  `json:"network"`
-	Storage  StorageInfo  `json:"storage"`
-	Runtime  RuntimeInfo  `json:"runtime"`
-	Resource ResourceInfo `json:"resource"`
-}
-
-// HardwareInfo represents hardware information
-type HardwareInfo struct {
-	Brand              string `json:"brand,omitempty"`
-	Model              string `json:"model,omitempty"`
-	Boxtype            string `json:"boxtype,omitempty"`
-	Chipset            string `json:"chipset,omitempty"`
-	ChipsetDescription string `json:"chipsetDescription,omitempty"`
-}
-
-// SoftwareInfo represents software versions
-type SoftwareInfo struct {
-	OEVersion     string `json:"oeVersion,omitempty"`
-	ImageDistro   string `json:"imageDistro,omitempty"`
-	ImageVersion  string `json:"imageVersion,omitempty"`
-	EnigmaVersion string `json:"enigmaVersion,omitempty"`
-	KernelVersion string `json:"kernelVersion,omitempty"`
-	DriverDate    string `json:"driverDate,omitempty"`
-	WebIFVersion  string `json:"webifVersion,omitempty"`
-}
-
-// TunerInfo represents a single tuner
-type TunerInfo struct {
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
-}
-
-// NetworkInfo represents network configuration
-type NetworkInfo struct {
-	Interfaces []NetworkInterfaceInfo `json:"interfaces"`
-}
-
-// NetworkInterfaceInfo represents a network interface
-type NetworkInterfaceInfo struct {
-	Name  string `json:"name"`
-	Type  string `json:"type"`
-	Speed string `json:"speed"`
-	MAC   string `json:"mac"`
-	IP    string `json:"ip"`
-	IPv6  string `json:"ipv6"`
-	DHCP  bool   `json:"dhcp"`
-}
-
-// StorageInfo represents storage devices and shares
-type StorageInfo struct {
-	Devices   *[]StorageItem `json:"devices,omitempty"`
-	Locations *[]StorageItem `json:"locations,omitempty"`
-}
-
 type storageOriginHint string
 
 const (
@@ -92,18 +31,6 @@ type storageDescriptor struct {
 	Capacity string
 	Origin   storageOriginHint
 	TypeHint string
-}
-
-// RuntimeInfo represents runtime information
-type RuntimeInfo struct {
-	Uptime string `json:"uptime"`
-}
-
-// ResourceInfo represents CPU and memory usage
-type ResourceInfo struct {
-	MemoryTotal     string `json:"memoryTotal"`
-	MemoryAvailable string `json:"memoryAvailable"`
-	MemoryUsed      string `json:"memoryUsed"`
 }
 
 // GetSystemInfo implements the system info endpoint
@@ -216,24 +143,25 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	locationItems := s.collectStorageLocationItems(locations)
 
-	// Convert to API response
-	// Note: We use empty strings instead of "N/A" to allow omitempty to work.
-	resp := SystemInfo{
+	// Convert to API response. Optional strings go through optionalString so an
+	// unknown value is absent rather than present-and-empty — the behaviour the
+	// hand-written response got from `omitempty` on a value field.
+	resp := SystemInfoData{
 		Hardware: HardwareInfo{
-			Brand:              info.Info.Brand,
-			Model:              info.Info.Model,
-			Boxtype:            info.Info.Boxtype,
-			Chipset:            info.Info.Chipset,
-			ChipsetDescription: info.Info.FriendlyChipsetText,
+			Brand:              optionalString(info.Info.Brand),
+			Model:              optionalString(info.Info.Model),
+			Boxtype:            optionalString(info.Info.Boxtype),
+			Chipset:            optionalString(info.Info.Chipset),
+			ChipsetDescription: optionalString(info.Info.FriendlyChipsetText),
 		},
 		Software: SoftwareInfo{
-			OEVersion:     info.Info.OEVer,
-			ImageDistro:   orElse(info.Info.FriendlyImageDistro, info.Info.ImageDistro),
-			ImageVersion:  info.Info.ImageVer,
-			EnigmaVersion: info.Info.EnigmaVer,
-			KernelVersion: info.Info.KernelVer,
-			DriverDate:    info.Info.DriverDate,
-			WebIFVersion:  info.Info.WebIFVer,
+			OeVersion:     optionalString(info.Info.OEVer),
+			ImageDistro:   optionalString(orElse(info.Info.FriendlyImageDistro, info.Info.ImageDistro)),
+			ImageVersion:  optionalString(info.Info.ImageVer),
+			EnigmaVersion: optionalString(info.Info.EnigmaVer),
+			KernelVersion: optionalString(info.Info.KernelVer),
+			DriverDate:    optionalString(info.Info.DriverDate),
+			WebifVersion:  optionalString(info.Info.WebIFVer),
 		},
 		Tuners:  convertTuners(info.Info.Tuners, info.Info.Streams, statusInfo),
 		Network: convertNetwork(info.Info.IFaces),
@@ -244,8 +172,7 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		Resource: calculateMemory(info.Info.Mem1, info.Info.Mem2),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) getStoragePaths(ctx context.Context) []string {
@@ -546,10 +473,10 @@ func convertNetwork(ifaces []openwebif.NetworkInterface) NetworkInfo {
 			Name:  iface.Name,
 			Type:  iface.FriendlyNIC,
 			Speed: iface.LinkSpeed,
-			MAC:   iface.MAC,
-			IP:    iface.IP,
-			IPv6:  iface.IPv6,
-			DHCP:  iface.DHCP,
+			Mac:   iface.MAC,
+			Ip:    iface.IP,
+			Ipv6:  iface.IPv6,
+			Dhcp:  iface.DHCP,
 		}
 	}
 	return NetworkInfo{Interfaces: interfaces}

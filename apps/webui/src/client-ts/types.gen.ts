@@ -523,51 +523,81 @@ export type SystemHealth = {
     uptimeSeconds?: number;
 };
 
+/**
+ * Receiver and host facts for the system view.
+ *
+ * The seven sections are named schemas rather than inline objects: an
+ * inline object generates an anonymous nested struct that no handler can
+ * name or reasonably construct, which is why this response used to be
+ * served from a hand-written copy instead of the generated type.
+ *
+ * Required-ness mirrors what the server actually sends. A field the
+ * handler omits when empty is optional here; one it always writes is
+ * required — which is every section, so a client never has to guard a
+ * whole block away.
+ *
+ */
 export type SystemInfoData = {
-    hardware?: {
-        brand?: string;
-        model?: string;
-        boxtype?: string;
-        chipset?: string;
-        chipsetDescription?: string;
-    };
-    software?: {
-        oeVersion?: string;
-        imageDistro?: string;
-        imageVersion?: string;
-        enigmaVersion?: string;
-        kernelVersion?: string;
-        driverDate?: string;
-        webifVersion?: string;
-    };
-    tuners?: Array<{
-        name?: string;
-        type?: string;
-        status?: string;
-    }>;
-    network?: {
-        interfaces?: Array<{
-            name?: string;
-            type?: string;
-            speed?: string;
-            mac?: string;
-            ip?: string;
-            ipv6?: string;
-            dhcp?: boolean;
-        }>;
-    };
-    storage?: {
-        devices?: Array<StorageItem>;
-        locations?: Array<StorageItem>;
-    };
-    runtime?: {
-        uptime?: string;
-    };
-    resource?: {
-        memoryTotal?: string;
-        memoryAvailable?: string;
-        memoryUsed?: string;
-    };
+    hardware: HardwareInfo;
+    software: SoftwareInfo;
+    tuners: Array<TunerInfo>;
+    network: NetworkInfo;
+    storage: StorageInfo;
+    runtime: RuntimeInfo;
+    resource: ResourceInfo;
+};
+
+export type HardwareInfo = {
+    brand?: string;
+    model?: string;
+    boxtype?: string;
+    chipset?: string;
+    chipsetDescription?: string;
+};
+
+export type SoftwareInfo = {
+    oeVersion?: string;
+    imageDistro?: string;
+    imageVersion?: string;
+    enigmaVersion?: string;
+    kernelVersion?: string;
+    driverDate?: string;
+    webifVersion?: string;
+};
+
+export type TunerInfo = {
+    name: string;
+    type: string;
+    status: string;
+};
+
+export type NetworkInfo = {
+    interfaces: Array<NetworkInterfaceInfo>;
+};
+
+export type NetworkInterfaceInfo = {
+    name: string;
+    type: string;
+    speed: string;
+    mac: string;
+    ip: string;
+    ipv6: string;
+    dhcp: boolean;
+};
+
+export type StorageInfo = {
+    devices?: Array<StorageItem>;
+    locations?: Array<StorageItem>;
+};
+
+export type RuntimeInfo = {
+    uptime: string;
+};
+
+export type ResourceInfo = {
+    memoryTotal: string;
+    memoryAvailable: string;
+    memoryUsed: string;
 };
 
 export type StorageItem = {

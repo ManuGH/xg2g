@@ -903,69 +903,111 @@ components:
 
     SystemInfoData:
       type: object
+      description: |
+        Receiver and host facts for the system view.
+
+        The seven sections are named schemas rather than inline objects: an
+        inline object generates an anonymous nested struct that no handler can
+        name or reasonably construct, which is why this response used to be
+        served from a hand-written copy instead of the generated type.
+
+        Required-ness mirrors what the server actually sends. A field the
+        handler omits when empty is optional here; one it always writes is
+        required — which is every section, so a client never has to guard a
+        whole block away.
+      required: [hardware, software, tuners, network, storage, runtime, resource]
       properties:
         hardware:
-          type: object
-          properties:
-            brand: { type: string }
-            model: { type: string }
-            boxtype: { type: string }
-            chipset: { type: string }
-            chipsetDescription: { type: string }
+          $ref: "#/components/schemas/HardwareInfo"
         software:
-          type: object
-          properties:
-            oeVersion: { type: string }
-            imageDistro: { type: string }
-            imageVersion: { type: string }
-            enigmaVersion: { type: string }
-            kernelVersion: { type: string }
-            driverDate: { type: string }
-            webifVersion: { type: string }
+          $ref: "#/components/schemas/SoftwareInfo"
         tuners:
           type: array
           items:
-            type: object
-            properties:
-              name: { type: string }
-              type: { type: string }
-              status: { type: string }
+            $ref: "#/components/schemas/TunerInfo"
         network:
-          type: object
-          properties:
-            interfaces:
-              type: array
-              items:
-                type: object
-                properties:
-                  name: { type: string }
-                  type: { type: string }
-                  speed: { type: string }
-                  mac: { type: string }
-                  ip: { type: string }
-                  ipv6: { type: string }
-                  dhcp: { type: boolean }
+          $ref: "#/components/schemas/NetworkInfo"
         storage:
-          type: object
-          properties:
-            devices:
-              type: array
-              items:
-                $ref: "#/components/schemas/StorageItem"
-            locations:
-              type: array
-              items:
-                $ref: "#/components/schemas/StorageItem"
+          $ref: "#/components/schemas/StorageInfo"
         runtime:
-          type: object
-          properties:
-            uptime: { type: string }
+          $ref: "#/components/schemas/RuntimeInfo"
         resource:
-          type: object
-          properties:
-            memoryTotal: { type: string }
-            memoryAvailable: { type: string }
-            memoryUsed: { type: string }
+          $ref: "#/components/schemas/ResourceInfo"
+
+    HardwareInfo:
+      type: object
+      properties:
+        brand: { type: string }
+        model: { type: string }
+        boxtype: { type: string }
+        chipset: { type: string }
+        chipsetDescription: { type: string }
+
+    SoftwareInfo:
+      type: object
+      properties:
+        oeVersion: { type: string }
+        imageDistro: { type: string }
+        imageVersion: { type: string }
+        enigmaVersion: { type: string }
+        kernelVersion: { type: string }
+        driverDate: { type: string }
+        webifVersion: { type: string }
+
+    TunerInfo:
+      type: object
+      required: [name, type, status]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        status: { type: string }
+
+    NetworkInfo:
+      type: object
+      required: [interfaces]
+      properties:
+        interfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkInterfaceInfo"
+
+    NetworkInterfaceInfo:
+      type: object
+      required: [name, type, speed, mac, ip, ipv6, dhcp]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        speed: { type: string }
+        mac: { type: string }
+        ip: { type: string }
+        ipv6: { type: string }
+        dhcp: { type: boolean }
+
+    StorageInfo:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageItem"
+        locations:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageItem"
+
+    RuntimeInfo:
+      type: object
+      required: [uptime]
+      properties:
+        uptime: { type: string }
+
+    ResourceInfo:
+      type: object
+      required: [memoryTotal, memoryAvailable, memoryUsed]
+      properties:
+        memoryTotal: { type: string }
+        memoryAvailable: { type: string }
+        memoryUsed: { type: string }
 
     StorageItem:
       type: object
