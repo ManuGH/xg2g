@@ -132,7 +132,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// is on screen at once — it is 400 ms longer holding that first picture.
     /// When true, enables the two-phase early motion experiment with explicit audio buffer
     /// pruning and milestone recovery telemetry.
-    public nonisolated(unsafe) static var enableEarlyMotionExperiment: Bool = true
+    public nonisolated(unsafe) static var enableEarlyMotionExperiment: Bool = false
 
     private static let audioPreRollSeconds: Double = 0.9
     private static let videoOnlyCushionSeconds: Double = 0.8
