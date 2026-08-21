@@ -24,15 +24,17 @@ var (
 // SessionPipeline represents the unified live ingest engine for an active channel stream.
 // It pumps raw upstream reads through the 20ms StreamNormalizer into the multi-reader MasterRing.
 type SessionPipeline struct {
-	norm       *normalizer.StreamNormalizer
-	ring       *ring.MasterRing
-	cancelFunc context.CancelFunc
-	runErr     error
-	runErrMu   sync.Mutex
-	doneCh     chan struct{}
-	onDone     func(err error)
-	onDoneMu   sync.Mutex
-	closed     atomic.Bool
+	norm          *normalizer.StreamNormalizer
+	ring          *ring.MasterRing
+	cancelFunc    context.CancelFunc
+	runErr        error
+	runErrMu      sync.Mutex
+	doneCh        chan struct{}
+	onDone        func(err error)
+	onDoneMu      sync.Mutex
+	completed     bool
+	completionErr error
+	closed        atomic.Bool
 }
 
 // NewSessionPipeline creates a new live ingest pipeline.
@@ -77,6 +79,8 @@ func (p *SessionPipeline) Start(ctx context.Context, upstream io.ReadCloser) {
 		p.runErrMu.Unlock()
 
 		p.onDoneMu.Lock()
+		p.completed = true
+		p.completionErr = err
 		cb := p.onDone
 		p.onDoneMu.Unlock()
 		if cb != nil {
@@ -86,8 +90,19 @@ func (p *SessionPipeline) Start(ctx context.Context, upstream io.ReadCloser) {
 }
 
 // OnDone registers a lifecycle completion callback executed when the upstream finishes.
+// It is late-subscriber safe: if the pipeline has already finished, the callback is invoked immediately.
 func (p *SessionPipeline) OnDone(callback func(err error)) {
+	if callback == nil {
+		return
+	}
+
 	p.onDoneMu.Lock()
+	if p.completed {
+		err := p.completionErr
+		p.onDoneMu.Unlock()
+		callback(err)
+		return
+	}
 	p.onDone = callback
 	p.onDoneMu.Unlock()
 }

@@ -240,7 +240,90 @@ func TestPipeline_UpstreamDies_ReacquireRedialsHealthyPipeline(t *testing.T) {
 	}
 }
 
-// 3. Atomic Primed Attach: Preamble + Generation + KeyframeOffset + Reader created atomically under MasterRing lock
+// 3. Immediate upstream EOF (before OnDone callback registration in Session.SetStarted)
+// must be late-subscriber safe and evict the dead session immediately so subsequent Acquire redials.
+func TestPipeline_ImmediateUpstreamEOF_BeforeWatcherRegistration_EvictsSession(t *testing.T) {
+	for iteration := 0; iteration < 10; iteration++ {
+		var dialCount int32
+
+		samplePkt := make([]byte, ring.TSPacketSize)
+		samplePkt[0] = ring.SyncByte
+
+		connectorCfg := DefaultConnectorConfig("", 8001)
+		connectorCfg.NormConfig.StartupReservoirMs = 0.0
+		connectorCfg.NormConfig.PacerIntervalMs = 5.0
+
+		// Dial 1 returns an immediate EOF reader (Pipeline completes before/during SetStarted)
+		// Dial 2 returns a healthy infinite stream
+		connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+			currentDial := atomic.AddInt32(&dialCount, 1)
+			if currentDial == 1 {
+				return io.NopCloser(bytes.NewReader(nil)), nil
+			}
+
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				ticker := time.NewTicker(10 * time.Millisecond)
+				defer ticker.Stop()
+				for range ticker.C {
+					chunk := make([]byte, 20*ring.TSPacketSize)
+					for i := 0; i < len(chunk); i += ring.TSPacketSize {
+						copy(chunk[i:], samplePkt)
+					}
+					if _, err := pw.Write(chunk); err != nil {
+						return
+					}
+				}
+			}()
+			return pr, nil
+		}
+
+		mgrCfg := session.ManagerConfig{
+			WarmHoldDuration: 5 * time.Second, // Long warm-hold
+			ConnectTimeout:   2 * time.Second,
+		}
+		mgr := session.NewManager(mgrCfg, NewLivePipelineConnector(connectorCfg))
+
+		key := session.NewSessionKey("127.0.0.1", 8001, fmt.Sprintf("1:0:19:IMMEDIATE_%d:0:0:0:0:0:0:", iteration))
+		ctx := context.Background()
+
+		// 1. Client 1 acquires -> hits immediate EOF
+		lease1, err := mgr.Acquire(ctx, key)
+		if err == nil {
+			p1 := lease1.Session().Payload().(*SessionPipeline)
+			<-p1.Done()
+			lease1.Release()
+		}
+
+		// Wait briefly for teardown eviction to process
+		time.Sleep(30 * time.Millisecond)
+
+		// 2. Client 2 acquires -> MUST trigger Dial #2 (not reuse dead session)
+		lease2, err := mgr.Acquire(ctx, key)
+		if err != nil {
+			mgr.Close()
+			t.Fatalf("iteration %d: second acquire failed: %v", iteration, err)
+		}
+		p2 := lease2.Session().Payload().(*SessionPipeline)
+		r2, err := p2.LiveAttach()
+		if err != nil {
+			lease2.Release()
+			mgr.Close()
+			t.Fatalf("iteration %d: live attach failed: %v", iteration, err)
+		}
+		r2.Close()
+		lease2.Release()
+		mgr.Close()
+
+		dials := atomic.LoadInt32(&dialCount)
+		if dials < 2 {
+			t.Fatalf("iteration %d: expected redial after immediate EOF, got %d dials", iteration, dials)
+		}
+	}
+}
+
+// 4. Atomic Primed Attach: Preamble + Generation + KeyframeOffset + Reader created atomically under MasterRing lock
 func TestPipeline_PrimedAttachSnapshotAndReaderAreAtomic(t *testing.T) {
 	root := findProjectRoot(t)
 	capturePath := filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts")
