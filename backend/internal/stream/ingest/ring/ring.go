@@ -31,6 +31,31 @@ const (
 	CodecMPEG2   VideoCodec = "mpeg2"
 )
 
+var mpeg2CRCTable [256]uint32
+
+func init() {
+	for i := 0; i < 256; i++ {
+		crc := uint32(i) << 24
+		for j := 0; j < 8; j++ {
+			if (crc & 0x80000000) != 0 {
+				crc = (crc << 1) ^ 0x04C11DB7
+			} else {
+				crc <<= 1
+			}
+		}
+		mpeg2CRCTable[i] = crc
+	}
+}
+
+// CalculateMPEG2CRC32 calculates the standard ISO/IEC 13818-1 32-bit CRC.
+func CalculateMPEG2CRC32(data []byte) uint32 {
+	crc := uint32(0xFFFFFFFF)
+	for _, b := range data {
+		crc = (crc << 8) ^ mpeg2CRCTable[byte(crc>>24)^b]
+	}
+	return crc
+}
+
 type sectionAssembler struct {
 	buf        []byte
 	sectionLen int
@@ -57,16 +82,17 @@ type MasterRing struct {
 	tail     int64 // oldest valid byte offset in buffer
 	isClosed bool
 
-	// PSI Table Assembly
-	patAssembler  sectionAssembler
-	pmtAssembler  sectionAssembler
-	rawPATPackets [][]byte
-	rawPMTPackets [][]byte
-	patVersion    uint8
-	pmtVersion    uint8
-	pmtPID        uint16
-	videoPID      uint16
-	videoCodec    VideoCodec
+	// PSI Table Assembly & Selection
+	targetProgramNumber uint16
+	patAssembler        sectionAssembler
+	pmtAssembler        sectionAssembler
+	rawPATPackets       [][]byte
+	rawPMTPackets       [][]byte
+	patVersion          uint8
+	pmtVersion          uint8
+	pmtPID              uint16
+	videoPID            uint16
+	videoCodec          VideoCodec
 
 	// Stateful Video Parsing & Keyframe Indexing
 	currentPESOffset int64
@@ -79,20 +105,34 @@ type MasterRing struct {
 
 // NewMasterRing creates a new MasterRing with the specified capacity (aligned to 188 bytes).
 func NewMasterRing(capacityBytes int) *MasterRing {
+	return NewMasterRingWithProgram(capacityBytes, 0)
+}
+
+// NewMasterRingWithProgram creates a new MasterRing targeting a specific program number in multi-program PATs.
+func NewMasterRingWithProgram(capacityBytes int, targetProgram uint16) *MasterRing {
 	capacityBytes = (capacityBytes / TSPacketSize) * TSPacketSize
 	if capacityBytes < TSPacketSize*5 {
 		capacityBytes = TSPacketSize * 5 // min 5 packets (~940 bytes)
 	}
 
 	r := &MasterRing{
-		buf:          make([]byte, capacityBytes),
-		capacity:     capacityBytes,
-		videoCodec:   CodecUnknown,
-		maxKeyframes: 64,
-		annexBState:  0xFFFFFFFF,
+		buf:                 make([]byte, capacityBytes),
+		capacity:            capacityBytes,
+		targetProgramNumber: targetProgram,
+		videoCodec:          CodecUnknown,
+		currentPESOffset:    -1,
+		maxKeyframes:        64,
+		annexBState:         0xFFFFFFFF,
 	}
 	r.notEmpty = sync.NewCond(&r.mu)
 	return r
+}
+
+// SetTargetProgram configures the desired program number for PMT resolution.
+func (r *MasterRing) SetTargetProgram(progNum uint16) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.targetProgramNumber = progNum
 }
 
 // Push writes a chunk of TS packets into the ring buffer and indexes PAT/PMT/IDR boundaries.
@@ -233,28 +273,45 @@ func (r *MasterRing) assemblePATSectionLocked(pkt []byte, pusi bool, payload []b
 	}
 
 	if r.patAssembler.sectionLen > 0 && len(r.patAssembler.buf) >= r.patAssembler.sectionLen {
-		// PAT complete: verify current_next and parse PMT PID
 		table := r.patAssembler.buf
 		if len(table) >= 12 {
+			// Validate MPEG-2 CRC32 across full assembled section
+			if CalculateMPEG2CRC32(table[:r.patAssembler.sectionLen]) != 0 {
+				r.patAssembler.reset()
+				return
+			}
+
 			currentNext := table[5] & 0x01
 			if currentNext == 1 { // Only process active table
 				version := (table[5] >> 1) & 0x1F
 				r.patVersion = version
 
 				programs := table[8 : r.patAssembler.sectionLen-4] // exclude CRC32
+				matchedPID := uint16(0)
+
 				for i := 0; i+4 <= len(programs); i += 4 {
 					progNum := (uint16(programs[i]) << 8) | uint16(programs[i+1])
 					progPID := ((uint16(programs[i+2]) & 0x1F) << 8) | uint16(programs[i+3])
-					if progNum > 0 {
-						if r.pmtPID != progPID {
-							r.pmtPID = progPID
-							r.pmtAssembler.reset()
-							r.videoPID = 0
-							r.videoCodec = CodecUnknown
-							r.rawPMTPackets = nil
+					if progNum == 0 {
+						continue // Skip network PID
+					}
+
+					if r.targetProgramNumber > 0 {
+						if progNum == r.targetProgramNumber {
+							matchedPID = progPID
+							break
 						}
+					} else {
+						// Default: first non-zero program
+						matchedPID = progPID
 						break
 					}
+				}
+
+				if matchedPID > 0 && r.pmtPID != matchedPID {
+					r.pmtPID = matchedPID
+					r.pmtAssembler.reset()
+					r.invalidateVideoStateLocked()
 				}
 				r.rawPATPackets = cloneSliceList(r.patAssembler.rawPackets)
 			}
@@ -304,13 +361,21 @@ func (r *MasterRing) assemblePMTSectionLocked(pkt []byte, pusi bool, payload []b
 	}
 
 	if r.pmtAssembler.sectionLen > 0 && len(r.pmtAssembler.buf) >= r.pmtAssembler.sectionLen {
-		// PMT complete: verify current_next and parse video stream type and elementary PID
 		table := r.pmtAssembler.buf
 		if len(table) >= 12 {
+			// Validate MPEG-2 CRC32 across full assembled section
+			if CalculateMPEG2CRC32(table[:r.pmtAssembler.sectionLen]) != 0 {
+				r.pmtAssembler.reset()
+				return
+			}
+
 			currentNext := table[5] & 0x01
 			if currentNext == 1 { // Only process active table
 				version := (table[5] >> 1) & 0x1F
 				r.pmtVersion = version
+
+				// Invalidate previous video state immediately upon new active PMT
+				r.invalidateVideoStateLocked()
 
 				progInfoLen := int((uint16(table[10]&0x0F) << 8) | uint16(table[11]))
 				esStart := 12 + progInfoLen
@@ -342,6 +407,17 @@ func (r *MasterRing) assemblePMTSectionLocked(pkt []byte, pusi bool, payload []b
 			}
 		}
 	}
+}
+
+func (r *MasterRing) invalidateVideoStateLocked() {
+	r.videoPID = 0
+	r.videoCodec = CodecUnknown
+	r.currentPESOffset = -1
+	r.pesHasKeyframe = false
+	r.annexBState = 0xFFFFFFFF
+	r.expectingNALByte = false
+	r.keyframeOffsets = r.keyframeOffsets[:0]
+	r.rawPMTPackets = nil
 }
 
 func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, payload []byte) {

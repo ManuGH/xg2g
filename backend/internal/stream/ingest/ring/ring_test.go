@@ -6,6 +6,7 @@ package ring
 
 import (
 	"bytes"
+	"encoding/binary"
 	"sync"
 	"testing"
 	"time"
@@ -57,29 +58,31 @@ func createVideoPESPacket(pid uint16, pusi bool, cc uint8, esPayload []byte) []b
 	return pkt
 }
 
-func createMultiPacketPAT(pmtPID uint16) [][]byte {
+func createMultiPacketPATWithVersion(pmtPID uint16, version uint8, currentNext uint8) [][]byte {
 	// Build a PAT section spanning across 2 TS packets
 	// Section length: 13 bytes (total section size = 16 bytes)
 	patSection := []byte{
-		0x00,       // table_id = 0 (PAT)
-		0xB0, 0x0D, // section_syntax + length = 13
-		0x00, 0x01, // transport_stream_id = 1
-		0xC1,       // version 0, current_next_indicator = 1
-		0x00,       // section_number = 0
-		0x00,       // last_section_number = 0
-		0x00, 0x01, // program_number = 1
-		0xE0 | byte((pmtPID>>8)&0x1F), byte(pmtPID & 0xFF), // PMT PID
-		0x12, 0x34, 0x56, 0x78, // mock CRC32
+		0x00,       // table_id = 0 (PAT) [0]
+		0xB0, 0x0D, // section_syntax + length = 13 [1, 2]
+		0x00, 0x01, // transport_stream_id = 1 [3, 4]
+		0xC0 | ((version & 0x1F) << 1) | (currentNext & 0x01), // version + current_next [5]
+		0x00,       // section_number = 0 [6]
+		0x00,       // last_section_number = 0 [7]
+		0x00, 0x01, // program_number = 1 [8, 9]
+		0xE0 | byte((pmtPID>>8)&0x1F), byte(pmtPID & 0xFF), // PMT PID [10, 11]
+		0x00, 0x00, 0x00, 0x00, // CRC32 placeholder [12..15]
 	}
 
+	// Calculate and write exact MPEG-2 CRC32
+	crc := CalculateMPEG2CRC32(patSection[:12])
+	binary.BigEndian.PutUint32(patSection[12:16], crc)
+
 	// Packet 1: PUSI=true, pointer_field=0, contains first 10 bytes of section + AF
-	// Total payload needed = 1 (pointer) + 10 (data) = 11 bytes.
-	// AF length = 188 - 5 - 11 = 172.
 	pkt1 := make([]byte, TSPacketSize)
 	pkt1[0] = SyncByte
 	pkt1[1] = 0x40 // PUSI=1, PID=0
 	pkt1[2] = 0x00
-	pkt1[3] = 0x30   // AFC=0x03 (AF + payload)
+	pkt1[3] = 0x30   // AFC=0x03 (AF + payload), CC=0
 	pkt1[4] = 172    // Adaptation field length = 172
 	pkt1[5] = 0x00   // AF flags
 	pkt1[177] = 0x00 // pointer_field = 0
@@ -96,49 +99,101 @@ func createMultiPacketPAT(pmtPID uint16) [][]byte {
 	return [][]byte{pkt1, pkt2}
 }
 
-func createMultiPacketPMT(pmtPID uint16, videoPID uint16, isHEVC bool) [][]byte {
+func createMultiPacketPAT(pmtPID uint16) [][]byte {
+	return createMultiPacketPATWithVersion(pmtPID, 0, 1)
+}
+
+func createMultiProgramPAT(prog1, pmt1, prog2, pmt2 uint16) []byte {
+	patSection := []byte{
+		0x00,       // table_id = 0 (PAT)
+		0xB0, 0x11, // section length = 17 (total 20 bytes)
+		0x00, 0x01, // TS ID
+		0xC1,       // version 0, current_next 1
+		0x00, 0x00, // section 0 / last 0
+		byte(prog1 >> 8), byte(prog1 & 0xFF),
+		0xE0 | byte((pmt1>>8)&0x1F), byte(pmt1 & 0xFF),
+		byte(prog2 >> 8), byte(prog2 & 0xFF),
+		0xE0 | byte((pmt2>>8)&0x1F), byte(pmt2 & 0xFF),
+		0x00, 0x00, 0x00, 0x00, // CRC placeholder
+	}
+
+	crc := CalculateMPEG2CRC32(patSection[:16])
+	binary.BigEndian.PutUint32(patSection[16:20], crc)
+
+	pkt := make([]byte, TSPacketSize)
+	pkt[0] = SyncByte
+	pkt[1] = 0x40 // PUSI=1, PID=0
+	pkt[2] = 0x00
+	pkt[3] = 0x10 // AFC=0x01
+	pkt[4] = 0x00 // pointer field = 0
+	copy(pkt[5:], patSection)
+	return pkt
+}
+
+func createMultiPacketPMTWithVersion(pmtPID uint16, videoPID uint16, isHEVC bool, hasVideo bool, version uint8, currentNext uint8) [][]byte {
 	streamType := byte(0x1B) // H.264
 	if isHEVC {
 		streamType = 0x24 // H.265
 	}
 
-	// Section length: 23 bytes (total section size = 26 bytes)
-	pmtSection := []byte{
-		0x02,       // table_id = 2 (PMT)
-		0xB0, 0x17, // section_syntax + length = 23 (3+23=26 bytes total)
-		0x00, 0x01, // program_number = 1
-		0xC1,       // version 0
-		0x00, 0x00, // section 0 / last 0
-		0xE0 | byte((videoPID>>8)&0x1F), byte(videoPID & 0xFF), // PCR PID = videoPID
-		0xF0, 0x00, // program_info_length = 0
+	var pmtSection []byte
+	if hasVideo {
+		pmtSection = []byte{
+			0x02,       // table_id = 2 (PMT)
+			0xB0, 0x17, // section_syntax + length = 23 (3+23=26 bytes total)
+			0x00, 0x01, // program_number = 1
+			0xC0 | ((version & 0x1F) << 1) | (currentNext & 0x01), // version + current_next
+			0x00, 0x00, // section 0 / last 0
+			0xE0 | byte((videoPID>>8)&0x1F), byte(videoPID & 0xFF), // PCR PID = videoPID
+			0xF0, 0x00, // program_info_length = 0
 
-		// ES 1: Video
-		streamType,
-		0xE0 | byte((videoPID>>8)&0x1F), byte(videoPID & 0xFF),
-		0xF0, 0x00, // ES info len = 0
+			// ES 1: Video
+			streamType,
+			0xE0 | byte((videoPID>>8)&0x1F), byte(videoPID & 0xFF),
+			0xF0, 0x00, // ES info len = 0
 
-		// ES 2: Audio (AC3 = 0x06 or 0x0F)
-		0x06,
-		0xE0, 0x55, // Audio PID 85
-		0xF0, 0x00,
+			// ES 2: Audio (AC3 = 0x06)
+			0x06,
+			0xE0, 0x55, // Audio PID 85
+			0xF0, 0x00,
 
-		0xAA, 0xBB, 0xCC, 0xDD, // CRC32
+			0x00, 0x00, 0x00, 0x00, // CRC32 placeholder
+		}
+	} else {
+		// Audio-only PMT (no video stream)
+		pmtSection = []byte{
+			0x02,       // table_id = 2 (PMT)
+			0xB0, 0x12, // section length = 18 (total 21 bytes)
+			0x00, 0x01, // program_number = 1
+			0xC0 | ((version & 0x1F) << 1) | (currentNext & 0x01),
+			0x00, 0x00,
+			0xE0, 0x55, // PCR PID = 85
+			0xF0, 0x00,
+
+			// ES 1: Audio only
+			0x06,
+			0xE0, 0x55,
+			0xF0, 0x00,
+
+			0x00, 0x00, 0x00, 0x00, // CRC32 placeholder
+		}
 	}
 
+	crc := CalculateMPEG2CRC32(pmtSection[:len(pmtSection)-4])
+	binary.BigEndian.PutUint32(pmtSection[len(pmtSection)-4:], crc)
+
 	// Packet 1: PUSI=true, pointer_field=0, contains first 15 bytes
-	// Total payload needed = 1 (pointer) + 15 (data) = 16 bytes.
-	// AF length = 188 - 5 - 16 = 167.
 	pkt1 := make([]byte, TSPacketSize)
 	pkt1[0] = SyncByte
 	pkt1[1] = 0x40 | byte((pmtPID>>8)&0x1F)
 	pkt1[2] = byte(pmtPID & 0xFF)
-	pkt1[3] = 0x30 // AFC=0x03, CC=0
-	pkt1[4] = 167  // AF length
-	pkt1[5] = 0x00
+	pkt1[3] = 0x30   // AFC=0x03, CC=0
+	pkt1[4] = 167    // AF length
+	pkt1[5] = 0x00   // AF flags
 	pkt1[172] = 0x00 // pointer_field = 0
 	copy(pkt1[173:], pmtSection[:15])
 
-	// Packet 2: PUSI=false, contains remaining 11 bytes (CC=1)
+	// Packet 2: PUSI=false, contains remaining bytes (CC=1)
 	pkt2 := make([]byte, TSPacketSize)
 	pkt2[0] = SyncByte
 	pkt2[1] = byte((pmtPID >> 8) & 0x1F)
@@ -147,6 +202,10 @@ func createMultiPacketPMT(pmtPID uint16, videoPID uint16, isHEVC bool) [][]byte 
 	copy(pkt2[4:], pmtSection[15:])
 
 	return [][]byte{pkt1, pkt2}
+}
+
+func createMultiPacketPMT(pmtPID uint16, videoPID uint16, isHEVC bool) [][]byte {
+	return createMultiPacketPMTWithVersion(pmtPID, videoPID, isHEVC, true, 0, 1)
 }
 
 func TestMasterRing_MultiPacketPATPMT_Assembly(t *testing.T) {
@@ -621,31 +680,27 @@ func TestMasterRing_CurrentNextIndicator_InactiveTableIgnored(t *testing.T) {
 	defer r.Close()
 
 	const pmtPID = 100
-	patPackets := createMultiPacketPAT(pmtPID)
-
-	// Modify table byte 5 so current_next_indicator = 0 (next/inactive table)
-	pkt1 := make([]byte, TSPacketSize)
-	copy(pkt1, patPackets[0])
-	// In pkt1, table starts at 178. table[5] is at index 178+5 = 183
-	pkt1[183] = 0xC0 // current_next = 0
-
-	_, _ = r.Push(pkt1)
-	_, _ = r.Push(patPackets[1])
+	// Create PAT with current_next_indicator = 0
+	patPacketsInactive := createMultiPacketPATWithVersion(pmtPID, 0, 0)
+	for _, pkt := range patPacketsInactive {
+		_, _ = r.Push(pkt)
+	}
 
 	if r.pmtPID != 0 {
 		t.Fatalf("inactive PAT table (current_next=0) was incorrectly accepted")
 	}
 
 	// Send active table (current_next = 1)
-	_, _ = r.Push(patPackets[0])
-	_, _ = r.Push(patPackets[1])
+	for _, pkt := range createMultiPacketPATWithVersion(pmtPID, 0, 1) {
+		_, _ = r.Push(pkt)
+	}
 
 	if r.pmtPID != pmtPID {
 		t.Fatalf("active PAT table was not accepted: got %d", r.pmtPID)
 	}
 }
 
-func TestMasterRing_DynamicPMTVersionChange_UpdatesVideoPID(t *testing.T) {
+func TestMasterRing_PMTVersionChange_PurgesStaleKeyframes(t *testing.T) {
 	r := NewMasterRing(100 * TSPacketSize)
 	defer r.Close()
 
@@ -654,8 +709,8 @@ func TestMasterRing_DynamicPMTVersionChange_UpdatesVideoPID(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	// 1. Initial PMT: Video PID 256 (H.264), Version 0
-	for _, pkt := range createMultiPacketPMT(pmtPID, 256, false) {
+	// 1. Initial PMT v1: Video PID 256 (H.264), Version 0
+	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, 256, false, true, 0, 1) {
 		_, _ = r.Push(pkt)
 	}
 
@@ -664,11 +719,16 @@ func TestMasterRing_DynamicPMTVersionChange_UpdatesVideoPID(t *testing.T) {
 		t.Fatalf("expected initial vPID=256 H.264, got %d %v", vPID1, vCodec1)
 	}
 
-	// 2. Updated PMT v2: Video PID 512 (H.265), Version 1
-	pmtV2 := createMultiPacketPMT(pmtPID, 512, true)
-	// In pkt1, table starts at index 173. table[5] is at 173+5 = 178
-	pmtV2[0][178] = 0xC3 // version 1, current_next 1
+	// Push Keyframe on PID 256
+	es1 := []byte{0x00, 0x00, 0x01, 0x05}
+	_, _ = r.Push(createVideoPESPacket(256, true, 0, es1))
 
+	if _, ok := r.LatestKeyframeOffset(); !ok {
+		t.Fatalf("expected keyframe on PID 256 indexed")
+	}
+
+	// 2. Updated PMT v2 on same PMT PID: Video PID 512 (H.265), Version 1
+	pmtV2 := createMultiPacketPMTWithVersion(pmtPID, 512, true, true, 1, 1)
 	for _, pkt := range pmtV2 {
 		_, _ = r.Push(pkt)
 	}
@@ -676,5 +736,100 @@ func TestMasterRing_DynamicPMTVersionChange_UpdatesVideoPID(t *testing.T) {
 	vPID2, vCodec2 := r.VideoDetails()
 	if vPID2 != 512 || vCodec2 != CodecH265 {
 		t.Fatalf("expected dynamically updated vPID=512 H.265, got %d %v", vPID2, vCodec2)
+	}
+
+	// CRITICAL PROOF: Before first IDR on PID 512 arrives, stale keyframe from PID 256 MUST be purged!
+	if _, ok := r.LatestKeyframeOffset(); ok {
+		t.Fatalf("stale keyframe from PID 256 was not purged after PMT version update!")
+	}
+
+	// 3. Push Keyframe on PID 512
+	frameStart := r.Head()
+	es2 := []byte{0x00, 0x00, 0x00, 0x01, 0x26, 0x01} // HEVC IDR (NAL 19)
+	_, _ = r.Push(createVideoPESPacket(512, true, 0, es2))
+
+	newOffset, ok := r.LatestKeyframeOffset()
+	if !ok || newOffset != frameStart {
+		t.Fatalf("expected new keyframe indexed on PID 512 at %d, got %d (ok=%v)", frameStart, newOffset, ok)
+	}
+}
+
+func TestMasterRing_PMTVersionChange_NoVideoStream_LeavesPIDZero(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	const pmtPID = 100
+	for _, pkt := range createMultiPacketPAT(pmtPID) {
+		_, _ = r.Push(pkt)
+	}
+
+	// 1. Initial PMT v1: Video PID 256
+	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, 256, false, true, 0, 1) {
+		_, _ = r.Push(pkt)
+	}
+
+	if vPID, _ := r.VideoDetails(); vPID != 256 {
+		t.Fatalf("expected initial vPID=256, got %d", vPID)
+	}
+
+	// 2. Updated PMT v2: Audio only (hasVideo = false), Version 1
+	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, 0, false, false, 1, 1) {
+		_, _ = r.Push(pkt)
+	}
+
+	vPID, vCodec := r.VideoDetails()
+	if vPID != 0 || vCodec != CodecUnknown {
+		t.Fatalf("expected vPID=0 and CodecUnknown after audio-only PMT update, got %d %v", vPID, vCodec)
+	}
+}
+
+func TestMasterRing_CRC32_CorruptedSectionRejected(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	const pmtPID = 100
+	patPackets := createMultiPacketPAT(pmtPID)
+
+	// Corrupt CRC32 in the second packet (last 4 bytes of section)
+	pkt2Corrupt := make([]byte, TSPacketSize)
+	copy(pkt2Corrupt, patPackets[1])
+	pkt2Corrupt[6] ^= 0xFF // Flip bits in CRC
+
+	_, _ = r.Push(patPackets[0])
+	_, _ = r.Push(pkt2Corrupt)
+
+	if r.pmtPID != 0 {
+		t.Fatalf("PAT section with corrupted CRC32 was incorrectly accepted")
+	}
+
+	// Send valid PAT with correct CRC32
+	_, _ = r.Push(patPackets[0])
+	_, _ = r.Push(patPackets[1])
+
+	if r.pmtPID != pmtPID {
+		t.Fatalf("valid PAT section was not accepted: got %d", r.pmtPID)
+	}
+}
+
+func TestMasterRing_TargetProgramNumber_Selection(t *testing.T) {
+	// Program 1 -> PMT 100, Program 2 -> PMT 200
+	multiPAT := createMultiProgramPAT(1, 100, 2, 200)
+
+	// Ring 1 targeting default / program 1
+	r1 := NewMasterRing(100 * TSPacketSize)
+	defer r1.Close()
+	_, _ = r1.Push(multiPAT)
+
+	if r1.pmtPID != 100 {
+		t.Fatalf("expected default r1 to select PMT 100, got %d", r1.pmtPID)
+	}
+
+	// Ring 2 targeting program 2
+	r2 := NewMasterRingWithProgram(100*TSPacketSize, 2)
+	defer r2.Close()
+	_, _ = r2.Push(multiPAT)
+
+	if r2.pmtPID != 200 {
+		t.Fatalf("expected r2 to select PMT 200 for program 2, got %d", r2.pmtPID)
 	}
 }
