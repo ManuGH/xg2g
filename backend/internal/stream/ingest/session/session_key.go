@@ -20,11 +20,29 @@ var (
 // SessionKey identifies an upstream broadcast session uniquely.
 // It is a comparable Go struct suitable directly as a map key.
 type SessionKey struct {
-	ReceiverHost string // Canonical normalized IP or lowercase hostname
-	StreamPort   int    // Upstream stream port (default 8001)
-	ServiceRef   string // Enigma2 1:0:... service reference
-	Profile      string // Stream profile (e.g. "native", "direct", "smooth")
-	SourceType   string // Source type (e.g. "enigma2", "satip", "tsfile")
+	ReceiverHost  string // Canonical normalized IP or lowercase hostname
+	StreamPort    int    // Upstream stream port (default 8001)
+	ServiceRef    string // Enigma2 1:0:... service reference
+	Profile       string // Stream profile (e.g. "native", "direct", "smooth")
+	SourceType    string // Source type (e.g. "enigma2", "satip", "tsfile")
+	TargetProgram uint16 // Optional target DVB program number (0 for auto/first)
+}
+
+// NewSessionKey creates a basic SessionKey from host, port, and serviceRef.
+func NewSessionKey(receiverHost string, streamPort int, serviceRef string) SessionKey {
+	if receiverHost == "" {
+		receiverHost = "127.0.0.1"
+	}
+	if streamPort <= 0 {
+		streamPort = 8001
+	}
+	return SessionKey{
+		ReceiverHost: receiverHost,
+		StreamPort:   streamPort,
+		ServiceRef:   serviceRef,
+		Profile:      "native",
+		SourceType:   "enigma2",
+	}
 }
 
 // Canonicalize returns a normalized copy of the SessionKey without modifying missing required fields.
@@ -58,11 +76,12 @@ func (k SessionKey) Canonicalize() SessionKey {
 	}
 
 	return SessionKey{
-		ReceiverHost: host,
-		StreamPort:   port,
-		ServiceRef:   sref,
-		Profile:      profile,
-		SourceType:   sourceType,
+		ReceiverHost:  host,
+		StreamPort:    port,
+		ServiceRef:    sref,
+		Profile:       profile,
+		SourceType:    sourceType,
+		TargetProgram: k.TargetProgram,
 	}
 }
 

@@ -30,6 +30,11 @@ const (
 	StateFailed   State = "failed"
 )
 
+// PipelineHolder is an optional interface implemented by upstream readers to expose pipeline payloads.
+type PipelineHolder interface {
+	Pipeline() any
+}
+
 // Session manages a single shared upstream broadcast stream.
 // Note: Session owns the upstream io.ReadCloser exclusively.
 type Session struct {
@@ -46,6 +51,7 @@ type Session struct {
 	readyOnce    sync.Once
 
 	upstream   io.ReadCloser
+	payload    any
 	cancelFunc context.CancelFunc
 	holdTimer  *time.Timer
 }
@@ -102,10 +108,27 @@ func (s *Session) SetStarted(upstream io.ReadCloser, cancelFunc context.CancelFu
 	}
 
 	s.upstream = upstream
+	if ph, ok := upstream.(PipelineHolder); ok {
+		s.payload = ph.Pipeline()
+	}
 	s.cancelFunc = cancelFunc
 	s.state = StateActive
 	s.closeReadyChanLocked()
 	s.mu.Unlock()
+}
+
+// Payload returns the associated pipeline payload if any.
+func (s *Session) Payload() any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.payload
+}
+
+// SetPayload stores an arbitrary pipeline payload onto the session.
+func (s *Session) SetPayload(p any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.payload = p
 }
 
 // SetFailed marks session startup as failed and propagates the error.
@@ -260,6 +283,9 @@ func (s *Session) closeUpstreamLocked() {
 		_ = s.upstream.Close()
 		s.upstream = nil
 	}
+	if closer, ok := s.payload.(io.Closer); ok {
+		_ = closer.Close()
+	}
 }
 
 // Stop forcefully closes the session and tears down upstream, immediately waking any waiters.
@@ -295,6 +321,11 @@ func newLease(s *Session) *Lease {
 // Key returns the session key.
 func (l *Lease) Key() SessionKey {
 	return l.session.Key()
+}
+
+// Session returns the underlying Session.
+func (l *Lease) Session() *Session {
+	return l.session
 }
 
 // State returns the current session state.

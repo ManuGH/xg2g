@@ -18,6 +18,8 @@ import (
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/pipeline"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
 	"github.com/ManuGH/xg2g/internal/stream/smoother"
 	"github.com/go-chi/chi/v5"
 )
@@ -162,6 +164,14 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	smootherHandler := smoother.NewHandler(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort, smoother.DefaultConfig())
 	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/smooth/*", smootherHandler); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register smooth stream route: %w", err)
+	}
+
+	// Universal Live Ingest Pipeline (/api/v3/stream/live/*)
+	liveConnector := pipeline.NewLivePipelineConnector(pipeline.DefaultConnectorConfig(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort))
+	liveSessionMgr := session.NewManager(session.DefaultManagerConfig(), liveConnector)
+	liveStreamHandler := pipeline.NewHandlerWithReceiver(liveSessionMgr, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
+	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/live/*", liveStreamHandler); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register live stream route: %w", err)
 	}
 
 	return r, registry.Snapshot(), nil

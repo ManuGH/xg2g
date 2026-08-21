@@ -150,6 +150,7 @@ type MasterRing struct {
 	expectingNALByte bool
 	keyframeOffsets  []int64
 	maxKeyframes     int
+	generation       uint64
 }
 
 // NewMasterRing creates a new MasterRing with the specified capacity (aligned to 188 bytes).
@@ -631,6 +632,7 @@ func (r *MasterRing) invalidateVideoStateLocked() {
 	r.expectingNALByte = false
 	r.keyframeOffsets = r.keyframeOffsets[:0]
 	r.rawPMTPackets = nil
+	r.generation++
 }
 
 func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, payload []byte) {
@@ -730,6 +732,46 @@ func (r *MasterRing) pruneKeyframesLocked() {
 		r.keyframeOffsets = r.keyframeOffsets[:0]
 	} else if validIdx > 0 {
 		r.keyframeOffsets = r.keyframeOffsets[validIdx:]
+	}
+}
+
+// PrimedAttachPoint represents an atomic, generation-locked stream entry point.
+type PrimedAttachPoint struct {
+	Preamble       []byte
+	KeyframeOffset int64
+	Generation     uint64
+	HasKeyframe    bool
+}
+
+// PrimedAttachPoint captures an atomic snapshot of the active PAT/PMT preamble,
+// the latest valid keyframe offset, and the active stream generation under a single lock.
+func (r *MasterRing) PrimedAttachPoint() PrimedAttachPoint {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var preamble []byte
+	for _, pkt := range r.rawPATPackets {
+		preamble = append(preamble, pkt...)
+	}
+	for _, pkt := range r.rawPMTPackets {
+		preamble = append(preamble, pkt...)
+	}
+
+	var kfOffset int64
+	var hasKf bool
+	if len(r.keyframeOffsets) > 0 {
+		latest := r.keyframeOffsets[len(r.keyframeOffsets)-1]
+		if latest >= r.tail {
+			kfOffset = latest
+			hasKf = true
+		}
+	}
+
+	return PrimedAttachPoint{
+		Preamble:       preamble,
+		KeyframeOffset: kfOffset,
+		Generation:     r.generation,
+		HasKeyframe:    hasKf,
 	}
 }
 

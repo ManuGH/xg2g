@@ -115,15 +115,23 @@ func (m *Manager) Acquire(ctx context.Context, key SessionKey) (*Lease, error) {
 	}
 }
 
-func (m *Manager) startUpstream(ctx context.Context, cancel context.CancelFunc, s *Session) {
-	reader, err := m.connector.Connect(ctx, s.Key())
+func (m *Manager) startUpstream(connectCtx context.Context, cancelConnect context.CancelFunc, s *Session) {
+	defer cancelConnect()
+
+	sessionCtx, sessionCancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	s.cancelFunc = sessionCancel
+	s.mu.Unlock()
+
+	reader, err := m.connector.Connect(connectCtx, s.Key())
 	if err != nil {
-		cancel()
+		sessionCancel()
 		s.SetFailed(err)
 		return
 	}
 
-	s.SetStarted(reader, cancel)
+	s.SetStarted(reader, sessionCancel)
+	_ = sessionCtx // sessionCancel is held by session
 }
 
 func (m *Manager) removeSession(s *Session) {

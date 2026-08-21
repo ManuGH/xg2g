@@ -1,0 +1,451 @@
+// Copyright (c) 2026 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package pipeline
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
+)
+
+func findProjectRoot(t *testing.T) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	dir := cwd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return filepath.Dir(dir)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return filepath.Clean(filepath.Join(cwd, "../../../.."))
+}
+
+func countDecodedVideoFrames(t *testing.T, data []byte) int {
+	cmd := exec.Command("ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+		"-show_entries", "stream=nb_read_frames", "-of", "default=nokey=1:noprint_wrappers=1", "pipe:0")
+	cmd.Stdin = bytes.NewReader(data)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("ffprobe frame counting failed: %v (stderr: %s)", err, stderr.String())
+	}
+
+	fields := strings.Fields(stdout.String())
+	if len(fields) == 0 {
+		t.Fatalf("empty ffprobe frame counting output")
+	}
+	count, err := strconv.Atoi(fields[0])
+	if err != nil {
+		t.Fatalf("failed to parse decoded frame count from ffprobe output %q: %v", stdout.String(), err)
+	}
+	return count
+}
+
+// 1. Single Upstream Dial for 20 Concurrent Acquires
+func TestPipeline_CoalescedDial_20ConcurrentAcquires(t *testing.T) {
+	var dialCount int32
+
+	samplePkt := make([]byte, ring.TSPacketSize)
+	samplePkt[0] = ring.SyncByte
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		atomic.AddInt32(&dialCount, 1)
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			ticker := time.NewTicker(20 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					chunk := make([]byte, 50*ring.TSPacketSize)
+					for i := 0; i < len(chunk); i += ring.TSPacketSize {
+						copy(chunk[i:], samplePkt)
+					}
+					if _, err := pw.Write(chunk); err != nil {
+						return
+					}
+				}
+			}
+		}()
+		return pr, nil
+	}
+
+	connector := NewLivePipelineConnector(connectorCfg)
+	mgrCfg := session.DefaultManagerConfig()
+	mgr := session.NewManager(mgrCfg, connector)
+	defer mgr.Close()
+
+	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+
+	var wg sync.WaitGroup
+	const concurrentClients = 20
+	leases := make([]*session.Lease, concurrentClients)
+	errs := make([]error, concurrentClients)
+
+	for i := 0; i < concurrentClients; i++ {
+		idx := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			leases[idx], errs[idx] = mgr.Acquire(ctx, key)
+		}()
+	}
+	wg.Wait()
+
+	for i := 0; i < concurrentClients; i++ {
+		if errs[i] != nil {
+			t.Fatalf("client %d acquire failed: %v", i, errs[i])
+		}
+		if leases[i] == nil {
+			t.Fatalf("client %d received nil lease", i)
+		}
+		defer leases[i].Release()
+	}
+
+	dials := atomic.LoadInt32(&dialCount)
+	if dials != 1 {
+		t.Fatalf("expected exactly 1 upstream dial for %d concurrent clients, got %d", concurrentClients, dials)
+	}
+}
+
+// 2. Atomic PrimedAttachPoint Snapshot: Preamble & Keyframe always share identical generation
+func TestPipeline_AtomicPrimedAttach_PMTVersionRace(t *testing.T) {
+	normCfg := normalizer.DefaultConfig()
+	normCfg.StartupReservoirMs = 0.0
+
+	pipe, err := NewSessionPipeline(normCfg, 10000*ring.TSPacketSize, 0)
+	if err != nil {
+		t.Fatalf("create pipeline failed: %v", err)
+	}
+	defer pipe.Close()
+
+	// Initial attach before any data
+	attach, reader, err := pipe.PrimedAttach()
+	if err != nil {
+		t.Fatalf("primed attach failed: %v", err)
+	}
+	reader.Close()
+
+	if attach.Generation != 0 {
+		t.Fatalf("expected initial generation 0, got %d", attach.Generation)
+	}
+
+	// Trigger PMT invalidation in MasterRing
+	pipe.MasterRing().SetTargetProgram(100)
+
+	attach2, reader2, err := pipe.PrimedAttach()
+	if err != nil {
+		t.Fatalf("second primed attach failed: %v", err)
+	}
+	reader2.Close()
+
+	if attach2.Generation <= attach.Generation {
+		t.Fatalf("expected generation to increment on PMT reconfiguration, was %d -> %d",
+			attach.Generation, attach2.Generation)
+	}
+}
+
+// 3. Slow Subscriber Isolation: Overrun subscriber drops packets without affecting fast subscribers
+func TestPipeline_SlowSubscriberIsolation_NoInterference(t *testing.T) {
+	const smallRingCapacity = 50 * ring.TSPacketSize // 50 packets capacity
+
+	samplePkt := make([]byte, ring.TSPacketSize)
+	samplePkt[0] = ring.SyncByte
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.RingCapacity = smallRingCapacity
+	connectorCfg.NormConfig.StartupReservoirMs = 0.0
+	connectorCfg.NormConfig.PacerIntervalMs = 5.0
+
+	pr, pw := io.Pipe()
+	defer pw.Close()
+
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		return pr, nil
+	}
+
+	connector := NewLivePipelineConnector(connectorCfg)
+	mgr := session.NewManager(session.DefaultManagerConfig(), connector)
+	defer mgr.Close()
+
+	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:1:TEST:0:0:0:0:0:0:")
+	ctx := context.Background()
+
+	// 4 Fast Clients
+	const fastCount = 4
+	fastReaders := make([]*ring.SubscriberReader, fastCount)
+	for i := 0; i < fastCount; i++ {
+		lease, err := mgr.Acquire(ctx, key)
+		if err != nil {
+			t.Fatalf("fast acquire %d failed: %v", i, err)
+		}
+		defer lease.Release()
+		p := lease.Session().Payload().(*SessionPipeline)
+		_, reader, _ := p.PrimedAttach()
+		fastReaders[i] = reader
+		defer reader.Close()
+	}
+
+	// 1 Slow Client
+	slowLease, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("slow acquire failed: %v", err)
+	}
+	defer slowLease.Release()
+	slowPipe := slowLease.Session().Payload().(*SessionPipeline)
+	_, slowReader, _ := slowPipe.PrimedAttach()
+	defer slowReader.Close()
+
+	// Launch concurrent fast clients reading actively
+	var fastWg sync.WaitGroup
+	fastErrs := make([]error, fastCount)
+	for i := 0; i < fastCount; i++ {
+		idx := i
+		fastWg.Add(1)
+		go func() {
+			defer fastWg.Done()
+			buf := make([]byte, 200*ring.TSPacketSize)
+			readTotal := 0
+			for readTotal < 180*ring.TSPacketSize {
+				n, err := fastReaders[idx].Read(buf)
+				if err != nil {
+					fastErrs[idx] = err
+					return
+				}
+				readTotal += n
+			}
+		}()
+	}
+
+	// Feed 200 packets (> 4x ring capacity) in paced slices so fast readers keep up with head
+	for i := 0; i < 20; i++ {
+		slice := make([]byte, 10*ring.TSPacketSize)
+		for j := 0; j < len(slice); j += ring.TSPacketSize {
+			copy(slice[j:], samplePkt)
+		}
+		if _, err := pw.Write(slice); err != nil {
+			t.Fatalf("pipe write failed: %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	fastWg.Wait()
+
+	for i := 0; i < fastCount; i++ {
+		if fastErrs[i] != nil {
+			t.Fatalf("fast reader %d failed: %v", i, fastErrs[i])
+		}
+		if fastReaders[i].DroppedBytes() != 0 {
+			t.Fatalf("fast reader %d suffered dropped bytes: %d", i, fastReaders[i].DroppedBytes())
+		}
+	}
+
+	// Now slow reader attempts to read (must report dropped bytes due to overrun)
+	buf := make([]byte, 200*ring.TSPacketSize)
+	n, err := slowReader.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatalf("slow reader error: %v", err)
+	}
+	if n == 0 {
+		t.Fatalf("slow reader got 0 bytes")
+	}
+
+	dropped := slowReader.DroppedBytes()
+	if dropped <= 0 {
+		t.Fatalf("expected slow reader to register dropped bytes on ring overrun, got %d", dropped)
+	}
+}
+
+// 4. Warm-Hold Reattach: Last subscriber disconnects -> reattach reuses same stream
+func TestPipeline_WarmHoldReattach_PreservesStream(t *testing.T) {
+	var dialCount int32
+	samplePkt := make([]byte, ring.TSPacketSize)
+	samplePkt[0] = ring.SyncByte
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.NormConfig.StartupReservoirMs = 0.0
+
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		atomic.AddInt32(&dialCount, 1)
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					chunk := make([]byte, 20*ring.TSPacketSize)
+					for i := 0; i < len(chunk); i += ring.TSPacketSize {
+						copy(chunk[i:], samplePkt)
+					}
+					_, _ = pw.Write(chunk)
+				}
+			}
+		}()
+		return pr, nil
+	}
+
+	mgrCfg := session.ManagerConfig{
+		WarmHoldDuration: 500 * time.Millisecond,
+		ConnectTimeout:   2 * time.Second,
+	}
+	mgr := session.NewManager(mgrCfg, NewLivePipelineConnector(connectorCfg))
+	defer mgr.Close()
+
+	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:WARM:0:0:0:0:0:0:")
+	ctx := context.Background()
+
+	// 1. First Client attaches
+	lease1, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("first acquire failed: %v", err)
+	}
+	p1 := lease1.Session().Payload().(*SessionPipeline)
+	attach1, r1, _ := p1.PrimedAttach()
+	r1.Close()
+
+	// 2. First Client disconnects -> Session enters StateHolding
+	lease1.Release()
+	time.Sleep(50 * time.Millisecond)
+
+	// 3. Second Client attaches within 500ms warm-hold window
+	lease2, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("second acquire failed: %v", err)
+	}
+	defer lease2.Release()
+
+	p2 := lease2.Session().Payload().(*SessionPipeline)
+	attach2, r2, _ := p2.PrimedAttach()
+	r2.Close()
+
+	dials := atomic.LoadInt32(&dialCount)
+	if dials != 1 {
+		t.Fatalf("expected stream to be preserved across warm-hold (1 dial), got %d dials", dials)
+	}
+
+	if attach2.Generation != attach1.Generation {
+		t.Fatalf("generation mismatch across warm-hold reattach")
+	}
+}
+
+// 5. End-to-End HTTP Real Broadcast Streaming with FFmpeg Proof across 3 Concurrent Clients
+func TestPipeline_RealBroadcast_EndToEndDecoding(t *testing.T) {
+	root := findProjectRoot(t)
+	capturePath := filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts")
+
+	data, err := os.ReadFile(capturePath)
+	if err != nil {
+		t.Fatalf("read capture failed: %v", err)
+	}
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.NormConfig.StartupReservoirMs = 50.0
+	connectorCfg.NormConfig.PacerIntervalMs = 5.0
+	connectorCfg.NormConfig.InitialBitrateKbps = 20000.0
+
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+
+	mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(connectorCfg))
+	defer mgr.Close()
+
+	handler := NewHandler(mgr)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	const clientCount = 3
+	var wg sync.WaitGroup
+	clientStreams := make([][]byte, clientCount)
+	clientErrs := make([]error, clientCount)
+
+	for i := 0; i < clientCount; i++ {
+		idx := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			reqURL := fmt.Sprintf("%s/api/v3/stream/live/1:0:19:283D:3FB:1:C00000:0:0:0:", server.URL)
+			resp, err := http.Get(reqURL)
+			if err != nil {
+				clientErrs[idx] = err
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				clientErrs[idx] = fmt.Errorf("unexpected status %d", resp.StatusCode)
+				return
+			}
+
+			// Read up to 500 KB from stream
+			bodyBuf := make([]byte, 500*1024)
+			n, _ := io.ReadFull(resp.Body, bodyBuf)
+			if n > 0 {
+				clientStreams[idx] = bodyBuf[:n]
+			}
+		}()
+	}
+	wg.Wait()
+
+	for i := 0; i < clientCount; i++ {
+		if clientErrs[i] != nil {
+			t.Fatalf("client %d HTTP stream error: %v", i, clientErrs[i])
+		}
+		if len(clientStreams[i]) == 0 {
+			t.Fatalf("client %d received 0 bytes", i)
+		}
+
+		// Strict FFmpeg decoding check on every concurrent client's primed stream
+		cmd := exec.Command("ffmpeg", "-v", "error", "-f", "mpegts", "-i", "pipe:0", "-map", "0:v:0", "-f", "null", "-")
+		cmd.Stdin = bytes.NewReader(clientStreams[i])
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("client %d strict FFmpeg decode failed: %v (stderr: %s)", i, err, stderr.String())
+		}
+
+		frames := countDecodedVideoFrames(t, clientStreams[i])
+		if frames <= 0 {
+			t.Fatalf("client %d decoded 0 frames", i)
+		}
+		t.Logf("✅ Client %d Decoded %d video frames from primed HTTP live stream", i, frames)
+	}
+}
