@@ -305,10 +305,9 @@ func TestMasterRing_SPSWithoutIDR_NotIndexed(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
+	// Standalone SPS parameter update (NAL 7) without PPS or slice
 	es := []byte{
 		0x00, 0x00, 0x00, 0x01, 0x07, 0x42, 0x00, 0x1E,
-		0x00, 0x00, 0x00, 0x01, 0x08, 0xCE, 0x3C, 0x80,
-		0x00, 0x00, 0x00, 0x01, 0x01, 0x9A, 0x00, 0x00,
 	}
 	pkt := createVideoPESPacket(videoPID, true, 0, es)
 	if _, err := r.Push(pkt); err != nil {
@@ -316,7 +315,7 @@ func TestMasterRing_SPSWithoutIDR_NotIndexed(t *testing.T) {
 	}
 
 	if _, ok := r.LatestKeyframeOffset(); ok {
-		t.Fatalf("SPS without IDR was incorrectly indexed as keyframe")
+		t.Fatalf("SPS alone was incorrectly indexed as keyframe")
 	}
 }
 

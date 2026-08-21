@@ -143,6 +143,9 @@ type MasterRing struct {
 	// Stateful Video Parsing & Keyframe Indexing
 	currentPESOffset int64
 	pesHasKeyframe   bool
+	pesHasSPS        bool
+	pesHasPPS        bool
+	pesHasVPS        bool
 	annexBState      uint32 // 4-byte shift register for startcode scanning
 	expectingNALByte bool
 	keyframeOffsets  []int64
@@ -621,6 +624,9 @@ func (r *MasterRing) invalidateVideoStateLocked() {
 	r.videoCodec = CodecUnknown
 	r.currentPESOffset = -1
 	r.pesHasKeyframe = false
+	r.pesHasSPS = false
+	r.pesHasPPS = false
+	r.pesHasVPS = false
 	r.annexBState = 0xFFFFFFFF
 	r.expectingNALByte = false
 	r.keyframeOffsets = r.keyframeOffsets[:0]
@@ -635,6 +641,9 @@ func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool,
 		if len(payload) >= 9 && payload[0] == 0x00 && payload[1] == 0x00 && payload[2] == 0x01 && (payload[3] >= 0xE0 && payload[3] <= 0xEF) {
 			r.currentPESOffset = offset
 			r.pesHasKeyframe = false
+			r.pesHasSPS = false
+			r.pesHasPPS = false
+			r.pesHasVPS = false
 			r.annexBState = 0xFFFFFFFF
 			r.expectingNALByte = false
 
@@ -658,21 +667,42 @@ func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool,
 
 		if r.expectingNALByte {
 			r.expectingNALByte = false
-			isIDR := false
+			isKeyframe := false
 
 			if r.videoCodec == CodecH264 {
 				nalType := b & 0x1F
-				if nalType == 5 { // IDR Slice
-					isIDR = true
+				switch nalType {
+				case 5: // IDR Slice
+					isKeyframe = true
+				case 7: // SPS
+					r.pesHasSPS = true
+				case 8: // PPS
+					r.pesHasPPS = true
+				case 1, 2: // VCL Slice
+					if r.pesHasSPS && r.pesHasPPS {
+						// Complete DVB Recovery / Open-GOP Random Access Point with SPS+PPS
+						isKeyframe = true
+					}
 				}
 			} else if r.videoCodec == CodecH265 {
 				nalType := (b >> 1) & 0x3F
-				if nalType == 19 || nalType == 20 || nalType == 21 { // IDR_W_RADL, IDR_N_LP, CRA_NUT
-					isIDR = true
+				switch {
+				case nalType == 19 || nalType == 20 || nalType == 21: // IDR_W_RADL, IDR_N_LP, CRA_NUT
+					isKeyframe = true
+				case nalType == 32: // VPS
+					r.pesHasVPS = true
+				case nalType == 33: // SPS
+					r.pesHasSPS = true
+				case nalType == 34: // PPS
+					r.pesHasPPS = true
+				case nalType == 1: // Trailing / non-IDR slice
+					if r.pesHasVPS && r.pesHasSPS && r.pesHasPPS {
+						isKeyframe = true
+					}
 				}
 			}
 
-			if isIDR && !r.pesHasKeyframe && r.currentPESOffset >= 0 {
+			if isKeyframe && !r.pesHasKeyframe && r.currentPESOffset >= 0 {
 				r.pesHasKeyframe = true
 				r.keyframeOffsets = append(r.keyframeOffsets, r.currentPESOffset)
 				if len(r.keyframeOffsets) > r.maxKeyframes {
