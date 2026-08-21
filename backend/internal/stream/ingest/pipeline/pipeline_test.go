@@ -162,19 +162,13 @@ func TestPipeline_UpstreamDies_ReacquireRedialsHealthyPipeline(t *testing.T) {
 		go func() {
 			ticker := time.NewTicker(10 * time.Millisecond)
 			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					pw.Close()
+			for range ticker.C {
+				chunk := make([]byte, 20*ring.TSPacketSize)
+				for i := 0; i < len(chunk); i += ring.TSPacketSize {
+					copy(chunk[i:], samplePkt)
+				}
+				if _, err := pw.Write(chunk); err != nil {
 					return
-				case <-ticker.C:
-					chunk := make([]byte, 20*ring.TSPacketSize)
-					for i := 0; i < len(chunk); i += ring.TSPacketSize {
-						copy(chunk[i:], samplePkt)
-					}
-					if _, err := pw.Write(chunk); err != nil {
-						return
-					}
 				}
 			}
 		}()

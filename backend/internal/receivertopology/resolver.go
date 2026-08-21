@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/openwebif"
 )
@@ -103,7 +104,9 @@ func (r *TransponderRegistry) ResolveTransponder(ctx context.Context, serviceRef
 
 	// Step 3: Authoritative Live Receiver Query (OpenWebIF)
 	if discoverer != nil {
-		info, dErr := discoverer.GetChannelInfo(ctx, serviceRef)
+		discCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		info, dErr := discoverer.GetChannelInfo(discCtx, serviceRef)
+		cancel()
 		if dErr == nil && info != nil && info.Result && info.Service.Transponder.FrequencyHz > 0 {
 			tp := info.Service.Transponder
 			freqHz := tp.FrequencyHz

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 )
 
@@ -103,7 +104,7 @@ type ChannelInfoResponse struct {
 
 // GetChannelInfo fetches authoritative physical tuning facts for a specific service from OpenWebIF.
 func (c *Client) GetChannelInfo(ctx context.Context, serviceRef string) (*ChannelInfoResponse, error) {
-	path := fmt.Sprintf("/api/channelinfo?sRef=%s", serviceRef)
+	path := fmt.Sprintf("/api/channelinfo?sRef=%s", url.QueryEscape(serviceRef))
 	body, err := c.get(ctx, path, "channel.info", nil)
 	if err != nil {
 		return nil, err
