@@ -102,7 +102,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Capture atomic PrimedAttachPoint and dedicated subscriber reader (waits for first keyframe if stream just started)
-	attach, reader, err := pipe.PrimedAttachWithTimeout(r.Context(), 3*time.Second)
+	attach, reader, err := pipe.PrimedAttachWithTimeout(r.Context(), 8*time.Second)
 	if err != nil {
 		runErr := pipe.Err()
 		logger.Warn().Err(err).AnErr("runErr", runErr).Msg("failed to perform primed attach to stream")
