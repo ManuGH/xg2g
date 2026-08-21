@@ -88,8 +88,11 @@ type MasterRing struct {
 	pmtAssembler        sectionAssembler
 	rawPATPackets       [][]byte
 	rawPMTPackets       [][]byte
+	hasPATVersion       bool
 	patVersion          uint8
+	hasPMTVersion       bool
 	pmtVersion          uint8
+	pmtProgramNumber    uint16
 	pmtPID              uint16
 	videoPID            uint16
 	videoCodec          VideoCodec
@@ -128,11 +131,22 @@ func NewMasterRingWithProgram(capacityBytes int, targetProgram uint16) *MasterRi
 	return r
 }
 
-// SetTargetProgram configures the desired program number for PMT resolution.
+// SetTargetProgram configures the desired program number for PMT resolution,
+// immediately invalidating existing PSI and decoder states if the target changed.
 func (r *MasterRing) SetTargetProgram(progNum uint16) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.targetProgramNumber = progNum
+
+	if r.targetProgramNumber != progNum {
+		r.targetProgramNumber = progNum
+		r.hasPATVersion = false
+		r.hasPMTVersion = false
+		r.pmtPID = 0
+		r.patAssembler.reset()
+		r.pmtAssembler.reset()
+		r.rawPATPackets = nil
+		r.invalidateVideoStateLocked()
+	}
 }
 
 // Push writes a chunk of TS packets into the ring buffer and indexes PAT/PMT/IDR boundaries.
@@ -284,6 +298,7 @@ func (r *MasterRing) assemblePATSectionLocked(pkt []byte, pusi bool, payload []b
 			currentNext := table[5] & 0x01
 			if currentNext == 1 { // Only process active table
 				version := (table[5] >> 1) & 0x1F
+				r.hasPATVersion = true
 				r.patVersion = version
 
 				programs := table[8 : r.patAssembler.sectionLen-4] // exclude CRC32
@@ -308,9 +323,10 @@ func (r *MasterRing) assemblePATSectionLocked(pkt []byte, pusi bool, payload []b
 					}
 				}
 
-				if matchedPID > 0 && r.pmtPID != matchedPID {
+				if matchedPID > 0 && (!r.hasPMTVersion || r.pmtPID != matchedPID) {
 					r.pmtPID = matchedPID
 					r.pmtAssembler.reset()
+					r.hasPMTVersion = false
 					r.invalidateVideoStateLocked()
 				}
 				r.rawPATPackets = cloneSliceList(r.patAssembler.rawPackets)
@@ -372,37 +388,46 @@ func (r *MasterRing) assemblePMTSectionLocked(pkt []byte, pusi bool, payload []b
 			currentNext := table[5] & 0x01
 			if currentNext == 1 { // Only process active table
 				version := (table[5] >> 1) & 0x1F
-				r.pmtVersion = version
+				progNum := (uint16(table[3]) << 8) | uint16(table[4])
+				isChanged := !r.hasPMTVersion || version != r.pmtVersion || progNum != r.pmtProgramNumber
 
-				// Invalidate previous video state immediately upon new active PMT
-				r.invalidateVideoStateLocked()
+				if isChanged {
+					r.hasPMTVersion = true
+					r.pmtVersion = version
+					r.pmtProgramNumber = progNum
 
-				progInfoLen := int((uint16(table[10]&0x0F) << 8) | uint16(table[11]))
-				esStart := 12 + progInfoLen
-				esEnd := r.pmtAssembler.sectionLen - 4 // exclude CRC32
+					// Invalidate previous video state ONLY upon a genuine PMT version / program change!
+					r.invalidateVideoStateLocked()
 
-				for i := esStart; i+5 <= esEnd && i < len(table); {
-					st := table[i]
-					elemPID := ((uint16(table[i+1]) & 0x1F) << 8) | uint16(table[i+2])
-					esInfoLen := int((uint16(table[i+3]&0x0F) << 8) | uint16(table[i+4]))
+					progInfoLen := int((uint16(table[10]&0x0F) << 8) | uint16(table[11]))
+					esStart := 12 + progInfoLen
+					esEnd := r.pmtAssembler.sectionLen - 4 // exclude CRC32
 
-					switch st {
-					case 0x1B: // H.264 / AVC
-						r.videoPID = elemPID
-						r.videoCodec = CodecH264
-					case 0x24: // H.265 / HEVC
-						r.videoPID = elemPID
-						r.videoCodec = CodecH265
-					case 0x02, 0x01: // MPEG-2 / MPEG-1 Video
-						r.videoPID = elemPID
-						r.videoCodec = CodecMPEG2
+					for i := esStart; i+5 <= esEnd && i < len(table); {
+						st := table[i]
+						elemPID := ((uint16(table[i+1]) & 0x1F) << 8) | uint16(table[i+2])
+						esInfoLen := int((uint16(table[i+3]&0x0F) << 8) | uint16(table[i+4]))
+
+						switch st {
+						case 0x1B: // H.264 / AVC
+							r.videoPID = elemPID
+							r.videoCodec = CodecH264
+						case 0x24: // H.265 / HEVC
+							r.videoPID = elemPID
+							r.videoCodec = CodecH265
+						case 0x02, 0x01: // MPEG-2 / MPEG-1 Video
+							r.videoPID = elemPID
+							r.videoCodec = CodecMPEG2
+						}
+
+						if r.videoPID > 0 {
+							break
+						}
+						i += 5 + esInfoLen
 					}
-
-					if r.videoPID > 0 {
-						break
-					}
-					i += 5 + esInfoLen
 				}
+
+				// Always refresh latest raw PMT packets for preamble
 				r.rawPMTPackets = cloneSliceList(r.pmtAssembler.rawPackets)
 			}
 		}

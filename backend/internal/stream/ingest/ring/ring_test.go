@@ -833,3 +833,95 @@ func TestMasterRing_TargetProgramNumber_Selection(t *testing.T) {
 		t.Fatalf("expected r2 to select PMT 200 for program 2, got %d", r2.pmtPID)
 	}
 }
+
+func TestMasterRing_RepeatedSamePMT_DoesNotPurgeKeyframes(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	const pmtPID = 100
+	const videoPID = 256
+
+	// 1. Initial PAT + PMT v0
+	for _, pkt := range createMultiPacketPAT(pmtPID) {
+		_, _ = r.Push(pkt)
+	}
+	pmtV0 := createMultiPacketPMTWithVersion(pmtPID, videoPID, false, true, 0, 1)
+	for _, pkt := range pmtV0 {
+		_, _ = r.Push(pkt)
+	}
+
+	// 2. Push IDR Keyframe on video PID 256
+	frameStart := r.Head()
+	es := []byte{0x00, 0x00, 0x01, 0x05}
+	_, _ = r.Push(createVideoPESPacket(videoPID, true, 0, es))
+
+	offset1, ok := r.LatestKeyframeOffset()
+	if !ok || offset1 != frameStart {
+		t.Fatalf("expected keyframe indexed at %d, got %d (ok=%v)", frameStart, offset1, ok)
+	}
+
+	// 3. Periodic DVB re-transmission: push IDENTICAL PMT v0 again!
+	for _, pkt := range pmtV0 {
+		_, _ = r.Push(pkt)
+	}
+
+	// CRITICAL PROOF: Identical PMT re-transmission MUST NOT purge keyframes!
+	offset2, ok := r.LatestKeyframeOffset()
+	if !ok {
+		t.Fatalf("keyframe was incorrectly purged by identical PMT re-transmission!")
+	}
+	if offset2 != offset1 {
+		t.Fatalf("keyframe offset changed: expected %d, got %d", offset1, offset2)
+	}
+}
+
+func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
+	// Program 1 -> PMT 100 (Video 256), Program 2 -> PMT 200 (Video 512)
+	multiPAT := createMultiProgramPAT(1, 100, 2, 200)
+
+	r := NewMasterRingWithProgram(100*TSPacketSize, 1)
+	defer r.Close()
+
+	_, _ = r.Push(multiPAT)
+	if r.pmtPID != 100 {
+		t.Fatalf("expected pmtPID=100 for program 1, got %d", r.pmtPID)
+	}
+
+	// Push PMT for program 1
+	for _, pkt := range createMultiPacketPMTWithVersion(100, 256, false, true, 0, 1) {
+		_, _ = r.Push(pkt)
+	}
+
+	// Push Keyframe on PID 256
+	_, _ = r.Push(createVideoPESPacket(256, true, 0, []byte{0x00, 0x00, 0x01, 0x05}))
+	if _, ok := r.LatestKeyframeOffset(); !ok {
+		t.Fatalf("expected initial keyframe indexed")
+	}
+
+	// Change target program to program 2
+	r.SetTargetProgram(2)
+
+	// Old program and video state MUST be invalidated immediately
+	if vPID, _ := r.VideoDetails(); vPID != 0 {
+		t.Fatalf("expected vPID=0 immediately after SetTargetProgram, got %d", vPID)
+	}
+	if _, ok := r.LatestKeyframeOffset(); ok {
+		t.Fatalf("expected keyframe purged immediately after SetTargetProgram")
+	}
+
+	// Next PAT push resolves PMT 200 for program 2
+	_, _ = r.Push(multiPAT)
+	if r.pmtPID != 200 {
+		t.Fatalf("expected pmtPID=200 after resolving program 2, got %d", r.pmtPID)
+	}
+
+	// Push PMT for program 2
+	for _, pkt := range createMultiPacketPMTWithVersion(200, 512, true, true, 0, 1) {
+		_, _ = r.Push(pkt)
+	}
+
+	vPID2, vCodec2 := r.VideoDetails()
+	if vPID2 != 512 || vCodec2 != CodecH265 {
+		t.Fatalf("expected vPID=512 HEVC for program 2, got %d %v", vPID2, vCodec2)
+	}
+}
