@@ -106,7 +106,7 @@ func TestNormalizer_FractionalAccumulator_LongTermStability(t *testing.T) {
 	cfg.StagingBufferCapacity = 10000 * TSPacketSize
 
 	var emittedPackets int64
-	sink := func(chunk []byte) error {
+	sink := func(ctx context.Context, chunk []byte) error {
 		atomic.AddInt64(&emittedPackets, int64(len(chunk)/TSPacketSize))
 		return nil
 	}
@@ -133,6 +133,7 @@ func TestNormalizer_FractionalAccumulator_LongTermStability(t *testing.T) {
 	_, _ = norm.staging.Write(replenishChunk)
 
 	drainBuf := make([]byte, 1000*TSPacketSize)
+	ctx := context.Background()
 
 	// Simulate 180,000 ticks of 20ms (= 3,600 seconds = 60 minutes of streaming)
 	const totalTicks = 180000
@@ -143,7 +144,7 @@ func TestNormalizer_FractionalAccumulator_LongTermStability(t *testing.T) {
 			_, _ = norm.staging.Write(replenishChunk)
 		}
 
-		if err := norm.tickEgress(dt, drainBuf); err != nil {
+		if err := norm.tickEgress(ctx, dt, drainBuf); err != nil {
 			t.Fatalf("tickEgress failed at tick %d: %v", tick, err)
 		}
 	}
@@ -182,6 +183,7 @@ func TestNormalizer_ClosedLoopWatermark_TrimConvergence(t *testing.T) {
 	drainBuf := make([]byte, 1000*TSPacketSize)
 	samplePkt := make([]byte, TSPacketSize)
 	samplePkt[0] = SyncByte
+	ctx := context.Background()
 
 	setWatermarkPackets := func(packets int) {
 		norm.staging.Reset()
@@ -195,7 +197,7 @@ func TestNormalizer_ClosedLoopWatermark_TrimConvergence(t *testing.T) {
 	// 1. Non-saturated point: 750ms (+100ms error, excess = 25ms)
 	// trim = (25 / 650) * 0.04 = 0.00153846 -> 1.001538
 	setWatermarkPackets(2250) // 2250 pkts / 3 = 750ms
-	_ = norm.tickEgress(0.020, drainBuf)
+	_ = norm.tickEgress(ctx, 0.020, drainBuf)
 	m := norm.Metrics()
 	expectedTrim750 := 1.0 + (25.0/650.0)*0.04
 	if math.Abs(m.CorrectionFactor-expectedTrim750) > 0.0001 {
@@ -205,7 +207,7 @@ func TestNormalizer_ClosedLoopWatermark_TrimConvergence(t *testing.T) {
 	// 2. Non-saturated point: 800ms (+150ms error, excess = 75ms)
 	// trim = (75 / 650) * 0.04 = 0.00461538 -> 1.004615
 	setWatermarkPackets(2400) // 2400 pkts / 3 = 800ms
-	_ = norm.tickEgress(0.020, drainBuf)
+	_ = norm.tickEgress(ctx, 0.020, drainBuf)
 	m = norm.Metrics()
 	expectedTrim800 := 1.0 + (75.0/650.0)*0.04
 	if math.Abs(m.CorrectionFactor-expectedTrim800) > 0.0001 {
@@ -214,7 +216,7 @@ func TestNormalizer_ClosedLoopWatermark_TrimConvergence(t *testing.T) {
 
 	// 3. Deadband point: 680ms (within 650 ± 75ms)
 	setWatermarkPackets(2040) // 2040 pkts / 3 = 680ms
-	_ = norm.tickEgress(0.020, drainBuf)
+	_ = norm.tickEgress(ctx, 0.020, drainBuf)
 	m = norm.Metrics()
 	if m.CorrectionFactor != 1.0000 {
 		t.Fatalf("expected factor 1.0000 inside deadband, got %.6f", m.CorrectionFactor)
@@ -223,7 +225,7 @@ func TestNormalizer_ClosedLoopWatermark_TrimConvergence(t *testing.T) {
 	// 4. Non-saturated deficit point: 550ms (-100ms error, deficit = 25ms)
 	// trim = -(25 / 650) * 0.04 = -0.00153846 -> 0.998462
 	setWatermarkPackets(1650) // 1650 pkts / 3 = 550ms
-	_ = norm.tickEgress(0.020, drainBuf)
+	_ = norm.tickEgress(ctx, 0.020, drainBuf)
 	m = norm.Metrics()
 	expectedTrim550 := 1.0 - (25.0/650.0)*0.04
 	if math.Abs(m.CorrectionFactor-expectedTrim550) > 0.0001 {
@@ -233,7 +235,7 @@ func TestNormalizer_ClosedLoopWatermark_TrimConvergence(t *testing.T) {
 	// 5. Clamped saturation point: 1200ms (+550ms error, excess = 475ms)
 	// (475 / 650) * 0.04 = 0.0292 > 0.02 -> clamp to 1.0200
 	setWatermarkPackets(3600) // 3600 pkts / 3 = 1200ms
-	_ = norm.tickEgress(0.020, drainBuf)
+	_ = norm.tickEgress(ctx, 0.020, drainBuf)
 	m = norm.Metrics()
 	if m.CorrectionFactor != 1.0200 {
 		t.Fatalf("expected clamped factor 1.0200 at 1200ms, got %.6f", m.CorrectionFactor)
@@ -242,7 +244,7 @@ func TestNormalizer_ClosedLoopWatermark_TrimConvergence(t *testing.T) {
 	// 6. Clamped deficit saturation point: 100ms (-550ms error, deficit = 475ms)
 	// clamp to 0.9800
 	setWatermarkPackets(300) // 300 pkts / 3 = 100ms
-	_ = norm.tickEgress(0.020, drainBuf)
+	_ = norm.tickEgress(ctx, 0.020, drainBuf)
 	m = norm.Metrics()
 	if m.CorrectionFactor != 0.9800 {
 		t.Fatalf("expected clamped factor 0.9800 at 100ms, got %.6f", m.CorrectionFactor)
@@ -255,7 +257,7 @@ func TestNormalizer_StartupReservoir_HoldsAndReleases(t *testing.T) {
 	cfg.StartupReservoirMs = 650.0
 
 	var emittedCount int64
-	sink := func(chunk []byte) error {
+	sink := func(ctx context.Context, chunk []byte) error {
 		atomic.AddInt64(&emittedCount, int64(len(chunk)/TSPacketSize))
 		return nil
 	}
@@ -282,7 +284,8 @@ func TestNormalizer_StartupReservoir_HoldsAndReleases(t *testing.T) {
 	}
 
 	drainBuf := make([]byte, 1000*TSPacketSize)
-	_ = norm.tickEgress(0.020, drainBuf)
+	ctx := context.Background()
+	_ = norm.tickEgress(ctx, 0.020, drainBuf)
 
 	if atomic.LoadInt64(&emittedCount) != 0 {
 		t.Fatalf("expected 0 packets emitted during startup reservoir, got %d", atomic.LoadInt64(&emittedCount))
@@ -297,7 +300,7 @@ func TestNormalizer_StartupReservoir_HoldsAndReleases(t *testing.T) {
 		t.Fatalf("feed failed: %v", err)
 	}
 
-	_ = norm.tickEgress(0.020, drainBuf)
+	_ = norm.tickEgress(ctx, 0.020, drainBuf)
 
 	if atomic.LoadInt64(&emittedCount) == 0 {
 		t.Fatalf("expected packets to be released after startup reservoir satisfied, got 0")
@@ -396,7 +399,7 @@ func TestNormalizer_DecoupledIngress_SocketStallDoesNotFreezePacer(t *testing.T)
 	cfg.StartupReservoirMs = 0.0 // Instant release
 
 	var egressDispatched int64
-	sink := func(chunk []byte) error {
+	sink := func(ctx context.Context, chunk []byte) error {
 		atomic.AddInt64(&egressDispatched, int64(len(chunk)/TSPacketSize))
 		return nil
 	}
@@ -470,7 +473,51 @@ func TestNormalizer_BlockingSourceRead_ContextCancellation(t *testing.T) {
 	}
 }
 
-// 9. Concurrent Feed() Thread-Safety
+// 9. Blocking Sink with Context Cancellation terminates Run() without deadlock
+func TestNormalizer_BlockingSink_ContextCancellationTerminates(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.StartupReservoirMs = 0.0 // Instant release
+
+	// Sink blocks on context cancellation
+	sink := func(ctx context.Context, chunk []byte) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	norm, err := NewStreamNormalizer(cfg, sink)
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	defer norm.Close()
+
+	pipeReader, pipeWriter := io.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- norm.Run(ctx, pipeReader)
+	}()
+
+	// Feed initial packets so egress pacer enters sink()
+	samplePkt := make([]byte, TSPacketSize)
+	samplePkt[0] = SyncByte
+	_, _ = pipeWriter.Write(samplePkt)
+
+	time.Sleep(50 * time.Millisecond) // Pacer enters blocking sink
+	cancel()                          // Cancel context
+
+	select {
+	case err := <-runErrCh:
+		if err != nil && err != context.Canceled && !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatalf("unexpected exit error on cancelled blocking sink: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Run() hung on blocking sink after context cancellation (deadlock on wg.Wait)")
+	}
+	_ = pipeWriter.Close()
+}
+
+// 10. Concurrent Feed() Thread-Safety
 func TestNormalizer_ConcurrentFeed_ThreadSafety(t *testing.T) {
 	norm, err := NewStreamNormalizer(DefaultConfig(), nil)
 	if err != nil {
@@ -500,7 +547,7 @@ func TestNormalizer_ConcurrentFeed_ThreadSafety(t *testing.T) {
 	}
 }
 
-// 10. Real Broadcast Stream End-to-End: Normalizer -> MasterRing -> FFmpeg Decoding Proof
+// 11. Real Broadcast Stream End-to-End: Normalizer -> MasterRing -> FFmpeg Decoding Proof
 func TestNormalizer_RealBroadcast_EndToEnd(t *testing.T) {
 	root := findProjectRoot(t)
 	capturePath := filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts")
@@ -520,7 +567,10 @@ func TestNormalizer_RealBroadcast_EndToEnd(t *testing.T) {
 	cfg.PacerIntervalMs = 5.0     // Fast 5ms ticks for accelerated test delivery
 	cfg.InitialBitrateKbps = 20000.0
 
-	norm, err := NewStreamNormalizer(cfg, func(chunk []byte) error {
+	norm, err := NewStreamNormalizer(cfg, func(ctx context.Context, chunk []byte) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		_, pushErr := master.Push(chunk)
 		return pushErr
 	})

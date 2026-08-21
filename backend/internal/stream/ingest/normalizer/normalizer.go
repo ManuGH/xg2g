@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// SinkFunc is the consumer callback that receives time-regulated TS packets.
-type SinkFunc func(chunk []byte) error
+// SinkFunc is the consumer callback that receives time-regulated TS packets with context cancellation.
+type SinkFunc func(ctx context.Context, chunk []byte) error
 
 // Metrics captures diagnostic metrics of the normalizer session.
 type Metrics struct {
@@ -69,7 +69,7 @@ func NewStreamNormalizer(cfg Config, sink SinkFunc) (*StreamNormalizer, error) {
 		return nil, err
 	}
 	if sink == nil {
-		sink = func(chunk []byte) error { return nil }
+		sink = func(ctx context.Context, chunk []byte) error { return nil }
 	}
 
 	sn := &StreamNormalizer{
@@ -265,7 +265,7 @@ func (sn *StreamNormalizer) startPacerLoop(ctx context.Context) error {
 				dt = sn.cfg.PacerIntervalMs / 1000.0
 			}
 
-			if err := sn.tickEgress(dt, drainBuf); err != nil {
+			if err := sn.tickEgress(ctx, dt, drainBuf); err != nil {
 				return err
 			}
 		}
@@ -273,7 +273,11 @@ func (sn *StreamNormalizer) startPacerLoop(ctx context.Context) error {
 }
 
 // tickEgress performs one regulation slice of egress pacing.
-func (sn *StreamNormalizer) tickEgress(dt float64, drainBuf []byte) error {
+func (sn *StreamNormalizer) tickEgress(ctx context.Context, dt float64, drainBuf []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	bufferedBytes := sn.staging.BufferedBytes()
 	pps := sn.pcr.PacketsPerSecond()
 	bitrateBps := pps * float64(TSPacketSize) * 8.0
@@ -362,7 +366,7 @@ func (sn *StreamNormalizer) tickEgress(dt float64, drainBuf []byte) error {
 	if n > 0 {
 		atomic.AddInt64(&sn.bytesOut, int64(n))
 		atomic.AddInt64(&sn.packetsOut, int64(n/TSPacketSize))
-		if err := sn.sink(drainBuf[:n]); err != nil {
+		if err := sn.sink(ctx, drainBuf[:n]); err != nil {
 			return err
 		}
 	}
