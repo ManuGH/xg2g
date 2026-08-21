@@ -38,6 +38,10 @@ func TestOrchestrator_TopologyService_StreamLifecycleAndMultiplexReuse(t *testin
 	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
 
+	registry := receivertopology.NewTransponderRegistry()
+	receivertopology.PopulateStandardTransponderTables(registry)
+	topoSvc.SetResolver(registry)
+
 	evaluator := receiverusage.NewEvaluatorWithTopology(topoSvc)
 	pipe := NewThreadSafeFakeMediaPipeline()
 
@@ -160,6 +164,10 @@ func TestOrchestrator_TopologyService_HeartbeatLoss_EnforceMode(t *testing.T) {
 
 	topoSvc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+
+	registry := receivertopology.NewTransponderRegistry()
+	receivertopology.PopulateStandardTransponderTables(registry)
+	topoSvc.SetResolver(registry)
 
 	evaluator := receiverusage.NewEvaluatorWithTopology(topoSvc)
 	pipe := NewThreadSafeFakeMediaPipeline()

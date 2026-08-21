@@ -258,9 +258,19 @@ func (s *Service) CanStartStream(serviceRef, sessionID string) (AllocationDecisi
 // CanStartStreamWithPriority evaluates whether a stream at a given priority can be allocated,
 // taking upcoming recording reservations into account.
 func (s *Service) CanStartStreamWithPriority(serviceRef, sessionID string, priority Priority) (AllocationDecision, error) {
-	mux, err := ParseServiceRef(serviceRef)
+	s.mu.RLock()
+	resolver := s.resolver
+	s.mu.RUnlock()
+
+	var mux MultiplexID
+	var err error
+	if resolver != nil {
+		mux, err = resolver.ResolveTransponder(context.Background(), serviceRef)
+	} else {
+		mux, err = ParseServiceRef(serviceRef)
+	}
 	if err != nil {
-		return AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+		return AllocationDecision{}, fmt.Errorf("cannot parse/resolve service ref %q: %w", serviceRef, err)
 	}
 
 	s.mu.RLock()
@@ -338,9 +348,19 @@ func (s *Service) RegisterStream(serviceRef, sessionID string) (AllocationDecisi
 
 // ReserveStreamLease performs an atomic, time-bounded hardware reservation lease for a service.
 func (s *Service) ReserveStreamLease(serviceRef string, sessionID string, priority Priority, ttl time.Duration) (*Lease, AllocationDecision, error) {
-	mux, err := ParseServiceRef(serviceRef)
+	s.mu.RLock()
+	resolver := s.resolver
+	s.mu.RUnlock()
+
+	var mux MultiplexID
+	var err error
+	if resolver != nil {
+		mux, err = resolver.ResolveTransponder(context.Background(), serviceRef)
+	} else {
+		mux, err = ParseServiceRef(serviceRef)
+	}
 	if err != nil {
-		return nil, AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+		return nil, AllocationDecision{}, fmt.Errorf("cannot parse/resolve service ref %q: %w", serviceRef, err)
 	}
 
 	if ttl <= 0 {
@@ -494,9 +514,19 @@ func (s *Service) AcquireClaimSetAtomic(
 	priority Priority,
 	ttl time.Duration,
 ) (model.ClaimSetResult, AllocationDecision, error) {
-	mux, err := ParseServiceRef(serviceRef)
+	s.mu.RLock()
+	resolver := s.resolver
+	s.mu.RUnlock()
+
+	var mux MultiplexID
+	var err error
+	if resolver != nil {
+		mux, err = resolver.ResolveTransponder(ctx, serviceRef)
+	} else {
+		mux, err = ParseServiceRef(serviceRef)
+	}
 	if err != nil {
-		return model.ClaimSetResult{}, AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+		return model.ClaimSetResult{}, AllocationDecision{}, fmt.Errorf("cannot parse/resolve service ref %q: %w", serviceRef, err)
 	}
 
 	if ttl <= 0 {

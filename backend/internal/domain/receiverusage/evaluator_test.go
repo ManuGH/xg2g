@@ -493,6 +493,9 @@ func TestReceiverUsage_TopologyAwareRejection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create topo service: %v", err)
 	}
+	registry := receivertopology.NewTransponderRegistry()
+	receivertopology.PopulateStandardTransponderTables(registry)
+	topoSvc.SetResolver(registry)
 
 	// Occupy the only demodulator with stream 1 on High-H
 	sRef1 := "1:0:19:283D:3FB:1:C00000:0:0:0:"

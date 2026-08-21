@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -98,6 +99,8 @@ type DialFunc func(ctx context.Context, key session.SessionKey) (io.ReadCloser, 
 type ConnectorConfig struct {
 	ReceiverBaseURL string
 	StreamPort      int
+	Username        string
+	Password        string
 	NormConfig      normalizer.Config
 	RingCapacity    int
 	TopologyService TopologyService // Optional (if nil, topology admission is skipped unless RequireTopology is true)
@@ -198,28 +201,35 @@ func (c *LivePipelineConnector) Connect(ctx context.Context, key session.Session
 }
 
 func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
-	targetURL := fmt.Sprintf("http://10.10.55.64:%d/%s", c.cfg.StreamPort, key.ServiceRef)
+	host := "10.10.55.64"
+	port := c.cfg.StreamPort
+	if port <= 0 {
+		port = 8001
+	}
+	scheme := "http"
 	if c.cfg.ReceiverBaseURL != "" {
-		if u, err := url.Parse(c.cfg.ReceiverBaseURL); err == nil && u.Host != "" {
-			if u.Port() != "" {
-				scheme := u.Scheme
-				if scheme == "" {
-					scheme = "http"
+		if u, err := url.Parse(c.cfg.ReceiverBaseURL); err == nil && u.Hostname() != "" {
+			host = u.Hostname()
+			if u.Scheme != "" {
+				scheme = u.Scheme
+			}
+			if u.Port() != "" && u.Port() != "80" && u.Port() != "443" && (c.cfg.StreamPort <= 0 || c.cfg.StreamPort == 8001) {
+				if parsedPort, err := strconv.Atoi(u.Port()); err == nil {
+					port = parsedPort
 				}
-				targetURL = fmt.Sprintf("%s://%s/%s", scheme, u.Host, key.ServiceRef)
-			} else {
-				scheme := u.Scheme
-				if scheme == "" {
-					scheme = "http"
-				}
-				targetURL = fmt.Sprintf("%s://%s:%d/%s", scheme, u.Hostname(), c.cfg.StreamPort, key.ServiceRef)
 			}
 		}
 	}
 
+	targetURL := fmt.Sprintf("%s://%s:%d/%s", scheme, host, port, key.ServiceRef)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upstream request: %w", err)
+	}
+
+	if c.cfg.Username != "" || c.cfg.Password != "" {
+		req.SetBasicAuth(c.cfg.Username, c.cfg.Password)
 	}
 
 	resp, err := c.httpClient.Do(req)

@@ -63,7 +63,8 @@ func recordTrace(url, tracePath string, duration time.Duration) {
 		os.Exit(1)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 0}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to connect: %v\n", err)
 		os.Exit(1)
@@ -250,7 +251,8 @@ func runLive(url string, duration time.Duration, reservoirMs, pacerMs float64) {
 		os.Exit(1)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 0}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to connect: %v\n", err)
 		os.Exit(1)
