@@ -260,8 +260,8 @@ public final class SystemVideoPresenter: NSObject {
     /// layer schedules it against the synchronizer exactly as the audio renderer
     /// schedules its buffers — no separate presentation logic and no second
     /// clock to keep aligned.
-    public func enqueue(pixelBuffer: CVPixelBuffer, pts: CMTime, duration: CMTime, generation: Int = 0) {
-        guard generation == 0 || generation == currentGeneration else {
+    public func enqueue(pixelBuffer: CVPixelBuffer, pts: CMTime, duration: CMTime, generation: Int) {
+        guard generation == currentGeneration else {
             // Stale field from a prior zap generation -> discard immediately
             return
         }
@@ -430,10 +430,8 @@ public final class SystemVideoPresenter: NSObject {
 
     /// Drops everything queued. Used on a channel zap, where the buffered fields
     /// belong to the previous stream's timeline.
-    public func flush(generation: Int = 0) {
-        if generation > 0 {
-            currentGeneration = generation
-        }
+    public func flush(generation: Int) {
+        currentGeneration = generation
         pendingSamples.removeAll(keepingCapacity: true)
         _atomicPendingCount.withLock { $0 = 0 }
         if isRequestingData {

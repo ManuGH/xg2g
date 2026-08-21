@@ -143,8 +143,8 @@ public final class MetalVideoView: UIView {
             // What is queued belongs to the path that queued it: the display
             // layer holds sample buffers timed against the synchronizer, and the
             // field queue holds an anchor the other path never set.
-            systemPresenter?.flush()
-            resetForChannelZap()
+            systemPresenter?.flush(generation: currentGeneration)
+            resetForChannelZap(generation: currentGeneration)
             needsRedraw = true
             applyPresentationPath()
         }
@@ -354,10 +354,8 @@ public final class MetalVideoView: UIView {
 
     public var currentGeneration: Int = 0
 
-    public func resetForChannelZap(generation: Int = 0) {
-        if generation > 0 {
-            currentGeneration = generation
-        }
+    public func resetForChannelZap(generation: Int) {
+        currentGeneration = generation
         reorderBuffer.clear()
         fieldQueue.removeAll(keepingCapacity: true)
         hasReportedFirstFrame = false
@@ -451,7 +449,7 @@ public final class MetalVideoView: UIView {
                         // Also re-arms the immediate first field, so the picture
                         // comes back at once instead of waiting for the clock to
                         // reach whatever arrives next.
-                        self.systemPresenter?.flush()
+                        self.systemPresenter?.flush(generation: self.currentGeneration)
                     }
                 } else {
                     self.wasBackgrounded = false
@@ -1071,7 +1069,7 @@ public final class MetalVideoView: UIView {
     /// correction moved the timeline ahead, every later field then read as "too
     /// early", and scheduling silently became a fixed metronome that ignored the
     /// stream. Both guards below exist to keep that from recurring.
-    private func appendField(_ pixelBuffer: CVPixelBuffer, parity: UInt32, pts: Double, generation: Int = 0) {
+    private func appendField(_ pixelBuffer: CVPixelBuffer, parity: UInt32, pts: Double, generation: Int) {
         let frameDuration = estimatedFrameDuration
         var placed = pts
 

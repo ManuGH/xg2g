@@ -18,7 +18,7 @@ public final class DecodedVideoFrame: @unchecked Sendable {
     public let structure: H264PictureStructure
     public let generation: Int
 
-    public init(pixelBuffer: CVPixelBuffer, pts: CMTime, structure: H264PictureStructure, generation: Int = 0) {
+    public init(pixelBuffer: CVPixelBuffer, pts: CMTime, structure: H264PictureStructure, generation: Int) {
         self.pixelBuffer = pixelBuffer
         self.pts = pts
         self.structure = structure
@@ -144,11 +144,9 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         invalidateSession()
     }
 
-    public func reset(generation: Int = 0) {
+    public func reset(generation: Int) {
         generationLock.lock()
-        if generation > 0 {
-            _decodeGeneration = generation
-        }
+        _decodeGeneration = generation
         _inFlightFrames = 0
         generationLock.unlock()
 

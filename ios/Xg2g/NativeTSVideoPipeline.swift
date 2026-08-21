@@ -1329,8 +1329,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.systemPresenter?.flush()
-            self.renderView?.resetForChannelZap()
+            let zapId = self.currentZapId
+            self.systemPresenter?.flush(generation: zapId)
+            self.renderView?.resetForChannelZap(generation: zapId)
         }
 
         let msg = "[1080i50-CLOCK] ⚠️ PTS discontinuity: timeline jumped \(String(format: "%+.3f", delta))s to \(String(format: "%.3f", pts.seconds))s (\(codec)) — flushed and re-anchoring"
@@ -1422,17 +1423,19 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     self.audioRenderer.reset()
                     DispatchQueue.main.async { [weak self] in
                         guard let self = self else { return }
+                        let zapId = self.currentZapId
                         self.renderView?.synchronizer = self.audioRenderer.synchronizer
                         self.systemPresenter?.attach(to: self.audioRenderer.synchronizer)
-                        self.systemPresenter?.flush()
-                        self.renderView?.resetForChannelZap()
+                        self.systemPresenter?.flush(generation: zapId)
+                        self.renderView?.resetForChannelZap(generation: zapId)
                     }
                 } else {
                     self.audioRenderer.flush()
                     DispatchQueue.main.async { [weak self] in
                         guard let self = self else { return }
-                        self.systemPresenter?.flush()
-                        self.renderView?.resetForChannelZap()
+                        let zapId = self.currentZapId
+                        self.systemPresenter?.flush(generation: zapId)
+                        self.renderView?.resetForChannelZap(generation: zapId)
                     }
                 }
 
@@ -1489,8 +1492,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                self.systemPresenter?.flush()
-                self.renderView?.resetForChannelZap()
+                let zapId = self.currentZapId
+                self.systemPresenter?.flush(generation: zapId)
+                self.renderView?.resetForChannelZap(generation: zapId)
             }
         }
     }
@@ -1513,10 +1517,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
+                let zapId = self.currentZapId
                 self.renderView?.synchronizer = self.audioRenderer.synchronizer
                 self.systemPresenter?.attach(to: self.audioRenderer.synchronizer)
-                self.systemPresenter?.flush()
-                self.renderView?.resetForChannelZap()
+                self.systemPresenter?.flush(generation: zapId)
+                self.renderView?.resetForChannelZap(generation: zapId)
             }
         }
     }
