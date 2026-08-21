@@ -130,12 +130,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// The cost is about 400 ms more before sound and motion begin. It is not
     /// 400 ms of black screen — the first field carries `DisplayImmediately` and
     /// is on screen at once — it is 400 ms longer holding that first picture.
-    private static let audioPreRollSeconds: Double = 0.65
+    private static let audioPreRollSeconds: Double = 0.9
 
     /// Picture buffered before the clock may start on video alone, for the same
     /// reason the audio cushion exists: this source arrives in bursts, and a
     /// clock started level with the newest frame runs dry at the first gap.
-    private static let videoOnlyCushionSeconds: Double = 0.6
+    private static let videoOnlyCushionSeconds: Double = 0.8
 
     /// How long a channel may go without naming any audio before it is taken to
     /// have none. Long enough that a late PMT is not mistaken for a silent
@@ -1087,7 +1087,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     ///
     /// One second covers the worst measured gap with room to spare and costs
     /// that much tuning latency, against the 3.2 s it replaces.
-    private static let videoPreRollSeconds: Double = 0.75
+    private static let videoPreRollSeconds: Double = 1.0
 
     /// When the pre-roll began, so the wait for a first picture can be bounded.
     private var preRollStartTime: CFTimeInterval = 0
