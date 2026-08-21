@@ -195,14 +195,25 @@ func (c *LivePipelineConnector) Connect(ctx context.Context, key session.Session
 }
 
 func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
-	host := "10.10.55.64"
+	targetURL := fmt.Sprintf("http://10.10.55.64:%d/%s", c.cfg.StreamPort, key.ServiceRef)
 	if c.cfg.ReceiverBaseURL != "" {
-		if u, err := url.Parse(c.cfg.ReceiverBaseURL); err == nil && u.Hostname() != "" {
-			host = u.Hostname()
+		if u, err := url.Parse(c.cfg.ReceiverBaseURL); err == nil && u.Host != "" {
+			if u.Port() != "" {
+				scheme := u.Scheme
+				if scheme == "" {
+					scheme = "http"
+				}
+				targetURL = fmt.Sprintf("%s://%s/%s", scheme, u.Host, key.ServiceRef)
+			} else {
+				scheme := u.Scheme
+				if scheme == "" {
+					scheme = "http"
+				}
+				targetURL = fmt.Sprintf("%s://%s:%d/%s", scheme, u.Hostname(), c.cfg.StreamPort, key.ServiceRef)
+			}
 		}
 	}
 
-	targetURL := fmt.Sprintf("http://%s:%d/%s", host, c.cfg.StreamPort, key.ServiceRef)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upstream request: %w", err)

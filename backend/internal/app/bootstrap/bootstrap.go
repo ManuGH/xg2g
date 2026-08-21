@@ -362,6 +362,10 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 		}
 	}
 
+	if topoSvc != nil {
+		s.SetTopologyService(topoSvc)
+	}
+
 	if topoSvc != nil && v3Store != nil {
 		// Mandatory startup reconciliation for receiver topology hardware claims
 		sessions, err := v3Store.ListSessions(ctx)

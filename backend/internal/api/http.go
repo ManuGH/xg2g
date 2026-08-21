@@ -23,6 +23,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/jobs"
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/recordings"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/pipeline"
 	"github.com/ManuGH/xg2g/internal/verification"
 
 	"github.com/ManuGH/xg2g/internal/resilience"
@@ -73,10 +74,11 @@ type Server struct {
 	preflightProvider v3.PreflightProvider
 
 	// P9: Safety & Shutdown
-	rootCtx    context.Context
-	rootCancel context.CancelFunc
-	shutdownFn func(context.Context) error
-	started    atomic.Bool // P10: Lifecycle Invariant (Deliverable #4)
+	rootCtx         context.Context
+	rootCancel      context.CancelFunc
+	shutdownFn      func(context.Context) error
+	started         atomic.Bool // P10: Lifecycle Invariant (Deliverable #4)
+	topologyService pipeline.TopologyService
 
 	// Dependency Injection (Internal)
 	v3Factory func(config.AppConfig, *config.Manager, context.CancelFunc) *v3.Server
@@ -102,6 +104,27 @@ func WithV3ServerFactory(f func(config.AppConfig, *config.Manager, context.Cance
 	return func(s *Server) {
 		s.v3Factory = f
 	}
+}
+
+// WithTopologyService injects the physical receiver topology service for hardware tuner admission.
+func WithTopologyService(topoSvc pipeline.TopologyService) ServerOption {
+	return func(s *Server) {
+		s.topologyService = topoSvc
+	}
+}
+
+// SetTopologyService configures the active receiver topology service.
+func (s *Server) SetTopologyService(topoSvc pipeline.TopologyService) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.topologyService = topoSvc
+}
+
+// TopologyService returns the configured topology service.
+func (s *Server) TopologyService() pipeline.TopologyService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.topologyService
 }
 
 // WithRootContext sets the server root context before subsystem wiring.

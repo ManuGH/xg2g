@@ -337,17 +337,13 @@ func (s *Service) ReserveStreamLease(serviceRef string, sessionID string, priori
 
 // ReserveStreamLeaseAtomic performs an atomic check + allocate + lease commit inside a single lock.
 // Completely eliminates race conditions when multiple stream requests arrive simultaneously.
-func (s *Service) ReserveStreamLeaseAtomic(
-	serviceRef string,
+// ReserveMultiplexLeaseAtomic performs an atomic check + allocate + lease commit inside a single lock for an authoritative MultiplexID.
+func (s *Service) ReserveMultiplexLeaseAtomic(
+	mux MultiplexID,
 	sessionID string,
 	priority Priority,
 	ttl time.Duration,
 ) (*Lease, AllocationDecision, error) {
-	mux, err := ParseServiceRef(serviceRef)
-	if err != nil {
-		return nil, AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
-	}
-
 	if ttl <= 0 {
 		ttl = 30 * time.Second // Default fallback heartbeat lease
 	}
@@ -369,7 +365,7 @@ func (s *Service) ReserveStreamLeaseAtomic(
 	}
 
 	// Commit runtime allocation
-	_, err = s.allocator.Allocate(s.runtime, mux, sessionID, AllocationOwnerXG2G)
+	_, err := s.allocator.Allocate(s.runtime, mux, sessionID, AllocationOwnerXG2G)
 	if err != nil {
 		return nil, decision, fmt.Errorf("runtime allocation failed: %w", err)
 	}
@@ -389,6 +385,19 @@ func (s *Service) ReserveStreamLeaseAtomic(
 	s.leases.Put(lease)
 
 	return lease, decision, nil
+}
+
+func (s *Service) ReserveStreamLeaseAtomic(
+	serviceRef string,
+	sessionID string,
+	priority Priority,
+	ttl time.Duration,
+) (*Lease, AllocationDecision, error) {
+	mux, err := ParseServiceRef(serviceRef)
+	if err != nil {
+		return nil, AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+	}
+	return s.ReserveMultiplexLeaseAtomic(mux, sessionID, priority, ttl)
 }
 
 // AcquireClaimSetAtomic evaluates topology constraints and commits a multi-resource ClaimSet

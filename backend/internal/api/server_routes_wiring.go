@@ -167,7 +167,9 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	}
 
 	// Universal Live Ingest Pipeline (/api/v3/stream/live/*)
-	liveConnector := pipeline.NewLivePipelineConnector(pipeline.DefaultConnectorConfig(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort))
+	liveConnectorCfg := pipeline.DefaultConnectorConfig(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
+	liveConnectorCfg.TopologyService = s.topologyService
+	liveConnector := pipeline.NewLivePipelineConnector(liveConnectorCfg)
 	liveSessionMgr := session.NewManager(session.DefaultManagerConfig(), liveConnector)
 	liveStreamHandler := pipeline.NewHandlerWithReceiver(liveSessionMgr, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
 	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/live/*", liveStreamHandler); err != nil {

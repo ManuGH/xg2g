@@ -267,3 +267,190 @@ func TestReconciliation_EvidenceUnknownPreservesClaims(t *testing.T) {
 		t.Fatalf("expected 0 sessions to reap, got %v", plan.SessionsToReap)
 	}
 }
+
+func TestTransponderKey_IdenticalRF_SharesDemod(t *testing.T) {
+	topo := buildVuPlusUno4K_FBC_SingleCable()
+	svc, err := NewService(topo, EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("unexpected NewService error: %v", err)
+	}
+
+	tpKey := TransponderKey{
+		DeliverySystem:  DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493000000,
+		Polarization:    PolarizationHorizontal,
+		StreamID:        1,
+		PLSMode:         PLSModeGold,
+		PLSCode:         12345,
+	}
+
+	mux1 := BuildMultiplexWithTransponder(DVBTypeSat, 0x00C00000, 0x03EF, 0x0001, tpKey)
+	mux2 := BuildMultiplexWithTransponder(DVBTypeSat, 0x00C00000, 0x03EF, 0x0001, tpKey)
+
+	// 1. First stream reserves lease
+	lease1, dec1, err := svc.ReserveMultiplexLeaseAtomic(mux1, "sess-1", PriorityLive, time.Minute)
+	if err != nil || !dec1.Allowed {
+		t.Fatalf("first stream reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-1")
+
+	// 2. Second stream with identical RF identity MUST share the demod
+	lease2, dec2, err := svc.ReserveMultiplexLeaseAtomic(mux2, "sess-2", PriorityLive, time.Minute)
+	if err != nil || !dec2.Allowed {
+		t.Fatalf("second stream reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-2")
+
+	if !dec2.ReusedDemod {
+		t.Fatalf("expected second stream to reuse demod for identical RF transponder")
+	}
+	if lease1.DemodID != lease2.DemodID {
+		t.Fatalf("expected same demod ID %s, got %s", lease1.DemodID, lease2.DemodID)
+	}
+}
+
+func TestTransponderKey_Multistream_DifferentStreamID_NoSharing(t *testing.T) {
+	topo := buildVuPlusUno4K_FBC_SingleCable()
+	svc, err := NewService(topo, EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("unexpected NewService error: %v", err)
+	}
+
+	tpKey1 := TransponderKey{
+		DeliverySystem:  DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493000000,
+		Polarization:    PolarizationHorizontal,
+		StreamID:        1, // Stream 1 (MIS)
+	}
+	tpKey2 := TransponderKey{
+		DeliverySystem:  DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493000000,
+		Polarization:    PolarizationHorizontal,
+		StreamID:        2, // Stream 2 (MIS)
+	}
+
+	mux1 := BuildMultiplexWithTransponder(DVBTypeSat, 0x00C00000, 0x03EF, 0x0001, tpKey1)
+	mux2 := BuildMultiplexWithTransponder(DVBTypeSat, 0x00C00000, 0x03EF, 0x0001, tpKey2)
+
+	// Stream 1
+	lease1, dec1, err := svc.ReserveMultiplexLeaseAtomic(mux1, "sess-mis-1", PriorityLive, time.Minute)
+	if err != nil || !dec1.Allowed {
+		t.Fatalf("stream 1 reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-mis-1")
+
+	// Stream 2 on different stream ID MUST allocate a separate demod (or not reuse)
+	lease2, dec2, err := svc.ReserveMultiplexLeaseAtomic(mux2, "sess-mis-2", PriorityLive, time.Minute)
+	if err != nil || !dec2.Allowed {
+		t.Fatalf("stream 2 reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-mis-2")
+
+	if dec2.ReusedDemod {
+		t.Fatalf("expected NO false demod sharing across different Multistream StreamIDs (MIS)")
+	}
+	if lease1.DemodID == lease2.DemodID {
+		t.Fatalf("expected different demod IDs for distinct Multistream StreamIDs")
+	}
+}
+
+func TestTransponderKey_PLS_DifferentCode_NoSharing(t *testing.T) {
+	topo := buildVuPlusUno4K_FBC_SingleCable()
+	svc, err := NewService(topo, EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("unexpected NewService error: %v", err)
+	}
+
+	tpKey1 := TransponderKey{
+		DeliverySystem:  DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493000000,
+		Polarization:    PolarizationHorizontal,
+		PLSMode:         PLSModeGold,
+		PLSCode:         11111,
+	}
+	tpKey2 := TransponderKey{
+		DeliverySystem:  DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493000000,
+		Polarization:    PolarizationHorizontal,
+		PLSMode:         PLSModeGold,
+		PLSCode:         99999,
+	}
+
+	mux1 := BuildMultiplexWithTransponder(DVBTypeSat, 0x00C00000, 0x03EF, 0x0001, tpKey1)
+	mux2 := BuildMultiplexWithTransponder(DVBTypeSat, 0x00C00000, 0x03EF, 0x0001, tpKey2)
+
+	lease1, dec1, err := svc.ReserveMultiplexLeaseAtomic(mux1, "sess-pls-1", PriorityLive, time.Minute)
+	if err != nil || !dec1.Allowed {
+		t.Fatalf("stream 1 reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-pls-1")
+
+	lease2, dec2, err := svc.ReserveMultiplexLeaseAtomic(mux2, "sess-pls-2", PriorityLive, time.Minute)
+	if err != nil || !dec2.Allowed {
+		t.Fatalf("stream 2 reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-pls-2")
+
+	if dec2.ReusedDemod {
+		t.Fatalf("expected NO false demod sharing across different PLS codes")
+	}
+	if lease1.DemodID == lease2.DemodID {
+		t.Fatalf("expected different demod IDs for distinct PLS codes")
+	}
+}
+
+func TestTransponderKey_DVBT2_DifferentPLP_CorrectDecision(t *testing.T) {
+	dvbtTopo := ReceiverTopology{
+		Model:      "DVB-T2 Receiver",
+		Confidence: ConfidenceVerified,
+		Inputs: []PhysicalInput{
+			{ID: "in_t2", DeliveryType: DeliveryTerrestrial},
+		},
+		Demodulators: []Demodulator{
+			{ID: "demod_t0", InputID: "in_t2", DVBTypes: []DVBType{DVBTypeTerrestrial}},
+			{ID: "demod_t1", InputID: "in_t2", DVBTypes: []DVBType{DVBTypeTerrestrial}},
+		},
+	}
+	svc, err := NewService(dvbtTopo, EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("unexpected NewService error: %v", err)
+	}
+
+	tpKey1 := TransponderKey{
+		DeliverySystem: DeliverySystemDVBT2,
+		FrequencyHz:    506000000,
+		StreamID:       0, // PLP 0
+	}
+	tpKey2 := TransponderKey{
+		DeliverySystem: DeliverySystemDVBT2,
+		FrequencyHz:    506000000,
+		StreamID:       1, // PLP 1
+	}
+
+	mux1 := BuildMultiplexWithTransponder(DVBTypeTerrestrial, 0xEEEE0000, 0x1111, 0x2222, tpKey1)
+	mux2 := BuildMultiplexWithTransponder(DVBTypeTerrestrial, 0xEEEE0000, 0x1111, 0x2222, tpKey2)
+
+	lease1, dec1, err := svc.ReserveMultiplexLeaseAtomic(mux1, "sess-plp-0", PriorityLive, time.Minute)
+	if err != nil || !dec1.Allowed {
+		t.Fatalf("stream 1 reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-plp-0")
+
+	lease2, dec2, err := svc.ReserveMultiplexLeaseAtomic(mux2, "sess-plp-1", PriorityLive, time.Minute)
+	if err != nil || !dec2.Allowed {
+		t.Fatalf("stream 2 reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-plp-1")
+
+	if dec2.ReusedDemod {
+		t.Fatalf("expected NO false demod sharing across different DVB-T2 PLPs")
+	}
+	if lease1.DemodID == lease2.DemodID {
+		t.Fatalf("expected different demod IDs for distinct DVB-T2 PLPs")
+	}
+}
