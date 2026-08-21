@@ -215,6 +215,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// corrupting the assembler state of the next one.
     private var ingestGeneration: Int = 0
     private var pendingIngestBytes: Int = 0
+    private var currentChannelKey: String = ""
+    private var isRebuffering: Bool = false
+    private var rebufferPausePTS: CMTime = .invalid
+    private var rebufferStartTime: CFTimeInterval = 0
 
     /// Ingest thread safety and decode gate state.
     /// Only touched from `ingestQueue`.
@@ -355,7 +359,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         let targetURL = normalizeStreamURL(url)
         let channelKey = targetURL.absoluteString
+        currentChannelKey = channelKey
         accessUnitAssembler.channelKey = channelKey
+        ChannelJitterProfiler.shared.noteZap(for: channelKey)
 
         if let cached = H264ParameterSetCache.shared.parameterSets(for: channelKey) {
             accessUnitAssembler.primeWithParameterSets(sps: cached.sps, pps: cached.pps)
@@ -623,6 +629,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         firstVideoFieldPTS = nil
         latestVideoPTS = .invalid
         preRollStartTime = 0
+        isRebuffering = false
+        rebufferPausePTS = .invalid
+        rebufferStartTime = 0
         audioContinuity.reset()
         selectedAudioPID = nil
         availableAudioTracks.removeAll()
@@ -767,6 +776,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
 
         if let stallMs = stallMs {
+            ChannelJitterProfiler.shared.recordStall(for: currentChannelKey, stallMs: stallMs)
             let msg = "[1080i50-NET] ⚠️ Socket stall: \(String(format: "%.0f", stallMs))ms with no data"
             print(msg)
             logger.notice("\(msg, privacy: .public)")
@@ -1121,6 +1131,47 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             handleAudioTimelineJump(to: pts, delta: delta, codec: codec)
         }
 
+        if isAudioClockStarted {
+            let clockTime = CMTimebaseGetTime(audioRenderer.synchronizer.timebase)
+            if clockTime.isValid && Self.enableEarlyMotionExperiment {
+                let currentLeadMs = (pts.seconds - clockTime.seconds) * 1000.0
+                if !isRebuffering {
+                    // Enter rebuffer if lead drops critically low:
+                    if currentLeadMs < 150.0 && currentLeadMs > -500.0 {
+                        isRebuffering = true
+                        rebufferPausePTS = clockTime
+                        rebufferStartTime = CACurrentMediaTime()
+                        audioRenderer.setRate(0.0, time: clockTime)
+
+                        let (stalls, worst) = sessionState.mutate { ($0.stallCount, $0.longestStallMs) }
+                        ChannelJitterProfiler.shared.recordStall(for: currentChannelKey, stallMs: max(worst, 800.0))
+
+                        let pauseLog = "[REBUFFER-GUARD] ⏸️ Rebuffer entered at PTS \(String(format: "%.3f", clockTime.seconds))s | AudioLead was \(String(format: "%.0f", currentLeadMs))ms"
+                        print(pauseLog)
+                        logger.notice("\(pauseLog, privacy: .public)")
+                        TelemetryServer.shared.log(pauseLog)
+                    }
+                } else if rebufferPausePTS.isValid {
+                    // In rebuffer state: check if buffer has replenished to >= 650ms audio & >= 500ms video
+                    let audioLead = (pts.seconds - rebufferPausePTS.seconds) * 1000.0
+                    let videoLead = latestVideoPTS.isValid ? (latestVideoPTS.seconds - rebufferPausePTS.seconds) * 1000.0 : 0
+
+                    if audioLead >= 650.0 && videoLead >= 500.0 {
+                        isRebuffering = false
+                        let elapsed = (CACurrentMediaTime() - rebufferStartTime) * 1000.0
+                        audioRenderer.setRate(1.0, time: rebufferPausePTS)
+
+                        let resumeLog = "[REBUFFER-GUARD] ▶️ Rebuffer resumed at PTS \(String(format: "%.3f", rebufferPausePTS.seconds))s after \(String(format: "%.0f", elapsed))ms | AudioLead=\(String(format: "%.0f", audioLead))ms | VideoLead=\(String(format: "%.0f", videoLead))ms"
+                        print(resumeLog)
+                        logger.notice("\(resumeLog, privacy: .public)")
+                        TelemetryServer.shared.log(resumeLog)
+                    }
+                }
+            }
+            audioRenderer.enqueue(sampleBuffer: sampleBuffer)
+            return
+        }
+
         audioRenderer.enqueue(sampleBuffer: sampleBuffer)
         audioBuffersPreRolledCount += 1
 
@@ -1147,62 +1198,24 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             guard let firstPTS = firstAudioPTS else { return }
             if preRollStartTime == 0 { preRollStartTime = CACurrentMediaTime() }
 
-            // Where the clock starts, which is not the same question as when.
-            //
-            // The first picture, when there is one: a clock anchored before it
-            // has to play its way there before anything appears, and never
-            // catches up afterwards. Falling back to the audio timeline is for
-            // services that have no video to anchor to — and even then it anchors
-            // at the live edge rather than at the oldest buffer.
-            // Whether the cushion has to be there before the clock may start.
-            //
-            // It must not be, once there is a picture to show. Measured on the
-            // source: a tune delivers audio from PTS 1.400 and the first video
-            // keyframe only at PTS 3.840 — nearly two and a half seconds of
-            // audio-only before any video exists at all. Requiring the cushion
-            // *past* the video anchor therefore means waiting for audio to
-            // travel that gap in real time, which measured 3187 ms of a 4995 ms
-            // tune. The decode side had the picture ready at 1808 ms, ahead of
-            // both ffmpeg and VLC on the same stream; all of that was spent
-            // waiting rather than showing.
-            //
-            // The cost is that sound starts late on such a tune, because there
-            // is no audio at the anchor yet — the alternative was a black screen
-            // for the same duration, which is the worse half of the same trade.
             var requiresCushion = true
             var cushionSource = "audio"
 
             let anchorPTS: CMTime
             let anchorSource: String
             if let videoPTS = firstVideoFieldPTS {
-                // `max` because a picture already behind the audio we hold is
-                // due now; anchoring at it would put the clock behind our own
-                // buffer for no gain.
-                // Anchored at the first picture, but never ahead of the audio.
-                //
-                // The clamp is not a refinement, it is the whole correctness
-                // condition. Both tracks advance at real time, so a clock started
-                // ahead of the audio stays ahead of it: every buffer arrives
-                // already in the past, the renderer discards it, and the stream
-                // is silent for as long as it plays. Measured exactly that way —
-                // anchoring on the picture alone put audio 944 ms behind at the
-                // start and it never recovered, 1595 underruns.
-                //
-                // So the audio decides how far forward the clock may be placed,
-                // and the picture decides where within that it lands.
                 let effectiveVideoPreRoll = Self.enableEarlyMotionExperiment ? 0.20 : Self.videoPreRollSeconds
 
                 let effectiveAudioPreRoll: Double
                 if Self.enableEarlyMotionExperiment {
+                    let (profilePreRoll, reason) = ChannelJitterProfiler.shared.recommendedAudioPreRoll(for: currentChannelKey)
                     let longestStallMs = sessionState.mutate { $0.longestStallMs }
-                    if longestStallMs > 0 {
-                        let stallBasedCushion = (longestStallMs / 1000.0) + 0.15 // 150ms safety margin over worst observed stall
-                        effectiveAudioPreRoll = min(Self.audioPreRollSeconds, max(0.35, stallBasedCushion))
-                    } else {
-                        effectiveAudioPreRoll = 0.35
-                    }
+                    let observedStallCushion = longestStallMs > 0 ? (longestStallMs / 1000.0) + 0.15 : 0.35
+                    effectiveAudioPreRoll = max(profilePreRoll, observedStallCushion)
+                    cushionSource = "adaptive-learned(\(String(format: "%.0f", effectiveAudioPreRoll * 1000))ms | \(reason))"
                 } else {
                     effectiveAudioPreRoll = Self.audioPreRollSeconds
+                    cushionSource = "video+audio"
                 }
 
                 let audioCeiling = pts.seconds - effectiveAudioPreRoll
@@ -1224,41 +1237,22 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     ? "first picture"
                     : "audio ceiling (picture \(String(format: "%.0f", (videoPTS.seconds - anchorSeconds) * 1000))ms ahead)"
                 requiresCushion = false
-                cushionSource = Self.enableEarlyMotionExperiment ? "adaptive-early(\(String(format: "%.0f", effectiveAudioPreRoll * 1000))ms)" : "video+audio"
             } else if tsParser.videoPID == nil {
-                // A service with no video has no picture to wait for, and the
-                // audio it has is the audio to play. Radio is the ordinary case
-                // here, and it must not pay for a wait that cannot end well.
                 anchorPTS = firstPTS
                 anchorSource = "audio only, no video service"
             } else if CACurrentMediaTime() - preRollStartTime >= Self.videoAnchorTimeout {
-                // There is a video PID but nothing decodable has come of it.
-                // Play the sound rather than staying silent.
                 anchorPTS = firstPTS
                 anchorSource = "no picture within \(String(format: "%.1f", Self.videoAnchorTimeout))s"
             } else {
-                // Video is still coming. Audio keeps queuing meanwhile; whatever
-                // ends up behind the anchor is discarded by the renderer once the
-                // clock is set, so nothing has to be thrown away here.
                 return
             }
 
-            // Start the clock once a *duration* of audio is buffered, not a frame
-            // count. The cushion is what the renderer has left to play through a
-            // network hiccup, and it is the only thing standing between a stall and
-            // an audible dropout — so it has to be expressed in the unit that
-            // matters. A count does not: an AC-3 frame is 32 ms, an AAC frame at
-            // 48 kHz is 21.3 ms, so the same "6 buffers" was 192 ms on one codec
-            // and 128 ms on another.
             let effectiveAudioPreRoll: Double
             if Self.enableEarlyMotionExperiment {
+                let (profilePreRoll, _) = ChannelJitterProfiler.shared.recommendedAudioPreRoll(for: currentChannelKey)
                 let longestStallMs = sessionState.mutate { $0.longestStallMs }
-                if longestStallMs > 0 {
-                    let stallBasedCushion = (longestStallMs / 1000.0) + 0.15
-                    effectiveAudioPreRoll = min(Self.audioPreRollSeconds, max(0.35, stallBasedCushion))
-                } else {
-                    effectiveAudioPreRoll = 0.35
-                }
+                let observedStallCushion = longestStallMs > 0 ? (longestStallMs / 1000.0) + 0.15 : 0.35
+                effectiveAudioPreRoll = max(profilePreRoll, observedStallCushion)
             } else {
                 effectiveAudioPreRoll = Self.audioPreRollSeconds
             }
