@@ -100,7 +100,8 @@ type ConnectorConfig struct {
 	StreamPort      int
 	NormConfig      normalizer.Config
 	RingCapacity    int
-	TopologyService TopologyService // Optional (if nil, topology admission is skipped / pass-through)
+	TopologyService TopologyService // Optional (if nil, topology admission is skipped unless RequireTopology is true)
+	RequireTopology bool            // If true, missing TopologyService fails-closed immediately with ErrAdmissionDenied
 	DialFn          DialFunc        // Optional custom dialer (for testing or proxying)
 }
 
@@ -159,6 +160,8 @@ func (c *LivePipelineConnector) Connect(ctx context.Context, key session.Session
 			sessionID: sessionID,
 			decision:  decision,
 		}
+	} else if c.cfg.RequireTopology {
+		return nil, fmt.Errorf("%w: topology service is required for production live stream but is not configured", ErrAdmissionDenied)
 	}
 
 	// 2. Dial upstream

@@ -454,3 +454,118 @@ func TestTransponderKey_DVBT2_DifferentPLP_CorrectDecision(t *testing.T) {
 		t.Fatalf("expected different demod IDs for distinct DVB-T2 PLPs")
 	}
 }
+
+func TestTransponderRegistry_ResolvesAuthoritativeRFFromRawServiceRef(t *testing.T) {
+	topo := buildVuPlusUno4K_FBC_SingleCable()
+	svc, err := NewService(topo, EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("unexpected NewService error: %v", err)
+	}
+
+	// 1. Create authoritative registry
+	registry := NewTransponderRegistry()
+
+	// Register ORF 1 HD transponder (Astra 19.2E, 11273 MHz, Horizontal, Low Band, TSID 0x03EF, ONID 0x0001, DVB-S2)
+	registry.RegisterTransponder(0x03EF, 0x0001, 0x00C00000, TransponderKey{
+		DeliverySystem:  DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11273000000,
+		Polarization:    PolarizationHorizontal,
+	})
+
+	svc.SetResolver(registry)
+
+	// 2. Call ReserveStreamLeaseAtomic with RAW Enigma2 Service Reference (no query params!)
+	rawServiceRef1 := "1:0:19:132F:3EF:1:C00000:0:0:0:" // ORF 1 HD
+	lease1, dec1, err := svc.ReserveStreamLeaseAtomic(rawServiceRef1, "sess-raw-orf1", PriorityLive, time.Minute)
+	if err != nil || !dec1.Allowed {
+		t.Fatalf("raw serviceRef1 reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-raw-orf1")
+
+	// Verify authoritative RF plane was applied: Low Band, Horizontal, 11273 MHz
+	allocs := svc.RuntimeSnapshot().ActiveMultiplexes
+	if len(allocs) != 1 {
+		t.Fatalf("expected 1 active multiplex, got %d", len(allocs))
+	}
+	var activeMux MultiplexID
+	for _, alloc := range allocs {
+		activeMux = alloc.MultiplexID
+	}
+	if activeMux.RFPlane == nil || activeMux.RFPlane.Band != BandLow || activeMux.RFPlane.Polarization != PolarizationHorizontal {
+		t.Fatalf("expected authoritative RF plane Low/Horizontal, got %+v", activeMux.RFPlane)
+	}
+	if activeMux.TransponderKey == nil || activeMux.TransponderKey.FrequencyHz != 11273000000 {
+		t.Fatalf("expected authoritative FrequencyHz 11273000000, got %+v", activeMux.TransponderKey)
+	}
+
+	// 3. Second channel on same raw TSID 0x03EF (ORF 2 HD) MUST reuse the demod
+	rawServiceRef2 := "1:0:19:1330:3EF:1:C00000:0:0:0:" // ORF 2 HD
+	lease2, dec2, err := svc.ReserveStreamLeaseAtomic(rawServiceRef2, "sess-raw-orf2", PriorityLive, time.Minute)
+	if err != nil || !dec2.Allowed {
+		t.Fatalf("raw serviceRef2 reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-raw-orf2")
+
+	if !dec2.ReusedDemod {
+		t.Fatalf("expected ORF 2 HD to reuse demod on same authoritative transponder")
+	}
+	if lease1.DemodID != lease2.DemodID {
+		t.Fatalf("expected same demod ID %s, got %s", lease1.DemodID, lease2.DemodID)
+	}
+}
+
+func TestTransponderRegistry_PlaneConflict_DetectedViaAuthoritativeRF(t *testing.T) {
+	// Single legacy cable: can only tune 1 RF plane at a time
+	singleCableTopo := ReceiverTopology{
+		Model:      "Single Cable Legacy LNB Receiver",
+		Confidence: ConfidenceVerified,
+		Inputs: []PhysicalInput{
+			{ID: "in_a", DeliveryType: DeliveryLegacyUniversal, Satellites: []SatellitePosition{192}},
+		},
+		Demodulators: []Demodulator{
+			{ID: "demod_0", InputID: "in_a", DVBTypes: []DVBType{DVBTypeSat}},
+			{ID: "demod_1", InputID: "in_a", DVBTypes: []DVBType{DVBTypeSat}},
+		},
+	}
+	svc, err := NewService(singleCableTopo, EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("unexpected NewService error: %v", err)
+	}
+
+	registry := NewTransponderRegistry()
+	// Channel 1: High Band Horizontal (12544 MHz H)
+	registry.RegisterTransponder(0x0400, 0x0001, 0x00C00000, TransponderKey{
+		DeliverySystem:  DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     12544000000,
+		Polarization:    PolarizationHorizontal,
+	})
+	// Channel 2: Low Band Vertical (11494 MHz V)
+	registry.RegisterTransponder(0x0401, 0x0001, 0x00C00000, TransponderKey{
+		DeliverySystem:  DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11494000000,
+		Polarization:    PolarizationVertical,
+	})
+
+	svc.SetResolver(registry)
+
+	// Stream 1 on raw serviceRef (High Band Horizontal)
+	rawRef1 := "1:0:19:1000:400:1:C00000:0:0:0:"
+	_, dec1, err := svc.ReserveStreamLeaseAtomic(rawRef1, "sess-plane-h", PriorityLive, time.Minute)
+	if err != nil || !dec1.Allowed {
+		t.Fatalf("stream 1 reservation failed: %v", err)
+	}
+	defer svc.ReleaseStream("sess-plane-h")
+
+	// Stream 2 on raw serviceRef (Low Band Vertical) -> Single cable MUST detect plane conflict and reject!
+	rawRef2 := "1:0:19:2000:401:1:C00000:0:0:0:"
+	_, dec2, err := svc.ReserveStreamLeaseAtomic(rawRef2, "sess-plane-v", PriorityLive, time.Minute)
+	if err == nil && dec2.Allowed {
+		t.Fatalf("expected plane conflict rejection for conflicting authoritative RF planes on single cable")
+	}
+	if dec2.ProblemCode != ProblemCodePlaneConflict {
+		t.Fatalf("expected ProblemCodePlaneConflict, got %s", dec2.ProblemCode)
+	}
+}

@@ -800,3 +800,36 @@ func TestProductionLiveRoute_Lifecycle_AcquireDialEOF_ReleasesLease(t *testing.T
 		return true
 	}, 2*time.Second, 20*time.Millisecond, "topology lease must be released after upstream EOF")
 }
+
+// TestProductionLiveRoute_FailClosed_WhenTopologyMissing proves that if the production live route
+// is invoked without an initialized topology service (nil), it fails-closed immediately with HTTP 502/503
+// and makes ZERO dials to the receiver.
+func TestProductionLiveRoute_FailClosed_WhenTopologyMissing(t *testing.T) {
+	var dials int32
+	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&dials, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockReceiver.Close()
+
+	cfg := config.AppConfig{
+		DataDir: t.TempDir(),
+		Enigma2: config.Enigma2Settings{
+			BaseURL:    mockReceiver.URL,
+			StreamPort: 8001,
+		},
+	}
+
+	// Server constructed WITHOUT WithTopologyService (topologyService is nil)
+	server := mustNewServer(t, cfg, config.NewManager(""))
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/1:0:19:132F:3EF:1:C00000:0:0:0:", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Must fail closed with 502 Bad Gateway
+	assert.Equal(t, http.StatusBadGateway, rr.Code)
+	// Must make strictly ZERO dials
+	assert.Equal(t, int32(0), atomic.LoadInt32(&dials), "fail-closed live stream must make strictly 0 dials when topology service is missing")
+}

@@ -169,6 +169,7 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	// Universal Live Ingest Pipeline (/api/v3/stream/live/*)
 	liveConnectorCfg := pipeline.DefaultConnectorConfig(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
 	liveConnectorCfg.TopologyService = s.topologyService
+	liveConnectorCfg.RequireTopology = true // Production live route is strictly FAIL-CLOSED
 	liveConnector := pipeline.NewLivePipelineConnector(liveConnectorCfg)
 	liveSessionMgr := session.NewManager(session.DefaultManagerConfig(), liveConnector)
 	liveStreamHandler := pipeline.NewHandlerWithReceiver(liveSessionMgr, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)

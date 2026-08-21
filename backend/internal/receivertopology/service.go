@@ -34,6 +34,7 @@ type Service struct {
 	leases       *LeaseStore
 	planner      *ReservationPlanner
 	poller       SyncPoller
+	resolver     TransponderResolver
 	lastSnapshot ReceiverRuntimeSnapshot
 }
 
@@ -95,6 +96,20 @@ func (s *Service) SetPoller(poller SyncPoller) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.poller = poller
+}
+
+// SetResolver configures the authoritative transponder RF parameter resolver.
+func (s *Service) SetResolver(resolver TransponderResolver) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resolver = resolver
+}
+
+// Resolver returns the configured authoritative transponder resolver.
+func (s *Service) Resolver() TransponderResolver {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.resolver
 }
 
 // EffectiveTunerCapacity returns the maximum physically independent concurrent tuner capacity of the active topology.
@@ -259,7 +274,17 @@ func (s *Service) CanStartStreamWithPriority(serviceRef, sessionID string, prior
 
 // CanStartService evaluates whether starting the requested service is permissible under current capacity.
 func (s *Service) CanStartService(serviceRef string, sessionID string, priority Priority) (AllocationDecision, error) {
-	mux, err := ParseServiceRef(serviceRef)
+	s.mu.RLock()
+	resolver := s.resolver
+	s.mu.RUnlock()
+
+	var mux MultiplexID
+	var err error
+	if resolver != nil {
+		mux, err = resolver.ResolveTransponder(context.Background(), serviceRef)
+	} else {
+		mux, err = ParseServiceRef(serviceRef)
+	}
 	if err != nil {
 		return AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
 	}
@@ -393,7 +418,17 @@ func (s *Service) ReserveStreamLeaseAtomic(
 	priority Priority,
 	ttl time.Duration,
 ) (*Lease, AllocationDecision, error) {
-	mux, err := ParseServiceRef(serviceRef)
+	s.mu.RLock()
+	resolver := s.resolver
+	s.mu.RUnlock()
+
+	var mux MultiplexID
+	var err error
+	if resolver != nil {
+		mux, err = resolver.ResolveTransponder(context.Background(), serviceRef)
+	} else {
+		mux, err = ParseServiceRef(serviceRef)
+	}
 	if err != nil {
 		return nil, AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
 	}
