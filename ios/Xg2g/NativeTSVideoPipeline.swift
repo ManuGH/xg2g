@@ -132,7 +132,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// is on screen at once — it is 400 ms longer holding that first picture.
     /// When true, enables the two-phase early motion experiment with explicit audio buffer
     /// pruning and milestone recovery telemetry.
-    public nonisolated(unsafe) static var enableEarlyMotionExperiment: Bool = false
+    public nonisolated(unsafe) static var enableEarlyMotionExperiment: Bool = true
 
     private static let audioPreRollSeconds: Double = 0.9
     private static let videoOnlyCushionSeconds: Double = 0.8
@@ -1190,8 +1190,20 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 //
                 // So the audio decides how far forward the clock may be placed,
                 // and the picture decides where within that it lands.
-                let effectiveAudioPreRoll = Self.enableEarlyMotionExperiment ? 0.35 : Self.audioPreRollSeconds
                 let effectiveVideoPreRoll = Self.enableEarlyMotionExperiment ? 0.20 : Self.videoPreRollSeconds
+
+                let effectiveAudioPreRoll: Double
+                if Self.enableEarlyMotionExperiment {
+                    let longestStallMs = sessionState.mutate { $0.longestStallMs }
+                    if longestStallMs > 0 {
+                        let stallBasedCushion = (longestStallMs / 1000.0) + 0.15 // 150ms safety margin over worst observed stall
+                        effectiveAudioPreRoll = min(Self.audioPreRollSeconds, max(0.35, stallBasedCushion))
+                    } else {
+                        effectiveAudioPreRoll = 0.35
+                    }
+                } else {
+                    effectiveAudioPreRoll = Self.audioPreRollSeconds
+                }
 
                 let audioCeiling = pts.seconds - effectiveAudioPreRoll
                 let anchorSeconds = min(videoPTS.seconds, audioCeiling)
@@ -1212,7 +1224,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     ? "first picture"
                     : "audio ceiling (picture \(String(format: "%.0f", (videoPTS.seconds - anchorSeconds) * 1000))ms ahead)"
                 requiresCushion = false
-                cushionSource = Self.enableEarlyMotionExperiment ? "early-motion(350ms)" : "video+audio"
+                cushionSource = Self.enableEarlyMotionExperiment ? "adaptive-early(\(String(format: "%.0f", effectiveAudioPreRoll * 1000))ms)" : "video+audio"
             } else if tsParser.videoPID == nil {
                 // A service with no video has no picture to wait for, and the
                 // audio it has is the audio to play. Radio is the ordinary case
@@ -1238,7 +1250,18 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             // matters. A count does not: an AC-3 frame is 32 ms, an AAC frame at
             // 48 kHz is 21.3 ms, so the same "6 buffers" was 192 ms on one codec
             // and 128 ms on another.
-            let effectiveAudioPreRoll = Self.enableEarlyMotionExperiment ? 0.35 : Self.audioPreRollSeconds
+            let effectiveAudioPreRoll: Double
+            if Self.enableEarlyMotionExperiment {
+                let longestStallMs = sessionState.mutate { $0.longestStallMs }
+                if longestStallMs > 0 {
+                    let stallBasedCushion = (longestStallMs / 1000.0) + 0.15
+                    effectiveAudioPreRoll = min(Self.audioPreRollSeconds, max(0.35, stallBasedCushion))
+                } else {
+                    effectiveAudioPreRoll = 0.35
+                }
+            } else {
+                effectiveAudioPreRoll = Self.audioPreRollSeconds
+            }
             let buffered = pts.seconds - anchorPTS.seconds
             if !requiresCushion || buffered >= effectiveAudioPreRoll {
                 let zapId = currentZapId
