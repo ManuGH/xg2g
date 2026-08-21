@@ -365,6 +365,9 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 	if topoSvc != nil {
 		tpRegistry := receivertopology.NewTransponderRegistry()
 		receivertopology.PopulateStandardTransponderTables(tpRegistry)
+		if owiClient != nil {
+			tpRegistry.SetDiscoverer(owiClient)
+		}
 		topoSvc.SetResolver(tpRegistry)
 		s.SetTopologyService(topoSvc)
 	}

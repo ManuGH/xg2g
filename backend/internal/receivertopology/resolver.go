@@ -7,7 +7,10 @@ package receivertopology
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
+
+	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
 // TransponderResolver resolves an authoritative MultiplexID with complete physical RF tuning parameters for a service reference.
@@ -15,11 +18,17 @@ type TransponderResolver interface {
 	ResolveTransponder(ctx context.Context, serviceRef string) (MultiplexID, error)
 }
 
+// ChannelInfoDiscoverer fetches live physical tuning details from an external receiver.
+type ChannelInfoDiscoverer interface {
+	GetChannelInfo(ctx context.Context, serviceRef string) (*openwebif.ChannelInfoResponse, error)
+}
+
 // TransponderRegistry maintains an in-memory database of authoritative physical RF tuning identities.
 type TransponderRegistry struct {
 	mu           sync.RWMutex
 	transponders map[string]TransponderKey // Keyed by canonical TSID:ONID:Namespace
 	services     map[string]MultiplexID    // Keyed by canonical service reference
+	discoverer   ChannelInfoDiscoverer     // Optional live OpenWebIF discovery client
 }
 
 // NewTransponderRegistry creates a new in-memory transponder registry.
@@ -28,6 +37,13 @@ func NewTransponderRegistry() *TransponderRegistry {
 		transponders: make(map[string]TransponderKey),
 		services:     make(map[string]MultiplexID),
 	}
+}
+
+// SetDiscoverer configures an OpenWebIF discovery client to query live RF tuning facts.
+func (r *TransponderRegistry) SetDiscoverer(d ChannelInfoDiscoverer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.discoverer = d
 }
 
 // RegisterTransponder stores the authoritative RF tuning parameters for a physical transport stream / multiplex.
@@ -62,6 +78,7 @@ func (r *TransponderRegistry) ResolveTransponder(ctx context.Context, serviceRef
 	r.mu.RLock()
 	lookupKey := fmt.Sprintf("%04X:%04X:%08X", baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace)
 	tpKey, hasTP := r.transponders[lookupKey]
+	discoverer := r.discoverer
 	r.mu.RUnlock()
 
 	if hasTP {
@@ -82,6 +99,60 @@ func (r *TransponderRegistry) ResolveTransponder(ctx context.Context, serviceRef
 			}
 		}
 		return baseMux, nil
+	}
+
+	// Dynamic live discovery from OpenWebIF if configured
+	if discoverer != nil {
+		info, dErr := discoverer.GetChannelInfo(ctx, serviceRef)
+		if dErr == nil && info != nil && info.Result && info.Service.Transponder.FrequencyHz > 0 {
+			tp := info.Service.Transponder
+			freqHz := tp.FrequencyHz
+			if freqHz < 100000000 { // If returned in kHz (e.g. 11273000 -> 11273000000)
+				freqHz = freqHz * 1000
+			}
+			pol := PolarizationHorizontal
+			if strings.EqualFold(tp.Polarization, "V") || strings.EqualFold(tp.Polarization, "1") {
+				pol = PolarizationVertical
+			}
+			sys := DeliverySystemDVBS2
+			if strings.Contains(strings.ToUpper(tp.System), "DVB-S2") {
+				sys = DeliverySystemDVBS2
+			} else if strings.Contains(strings.ToUpper(tp.System), "DVB-S") {
+				sys = DeliverySystemDVBS
+			} else if strings.Contains(strings.ToUpper(tp.System), "DVB-C") {
+				sys = DeliverySystemDVBC
+			} else if strings.Contains(strings.ToUpper(tp.System), "DVB-T2") {
+				sys = DeliverySystemDVBT2
+			} else if strings.Contains(strings.ToUpper(tp.System), "DVB-T") {
+				sys = DeliverySystemDVBT
+			}
+
+			discoveredKey := TransponderKey{
+				DeliverySystem:  sys,
+				OrbitalPosition: tp.OrbitalPosition,
+				FrequencyHz:     freqHz,
+				Polarization:    pol,
+				StreamID:        tp.StreamID,
+				PLSMode:         PLSMode(tp.PLSMode),
+				PLSCode:         tp.PLSCode,
+			}
+
+			r.RegisterTransponder(baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace, discoveredKey)
+
+			baseMux.TransponderKey = &discoveredKey
+			if baseMux.DVBType == DVBTypeSat {
+				band := BandHigh
+				if freqHz < 11700000000 {
+					band = BandLow
+				}
+				baseMux.RFPlane = &RFPlane{
+					SatPosition:  SatellitePosition(tp.OrbitalPosition),
+					Band:         band,
+					Polarization: pol,
+				}
+			}
+			return baseMux, nil
+		}
 	}
 
 	return MultiplexID{}, fmt.Errorf("%w: missing RF parameters for TSID 0x%04X ONID 0x%04X Namespace 0x%08X", ErrAuthoritativeTransponderUnavailable, baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace)

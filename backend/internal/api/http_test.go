@@ -25,6 +25,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/config"
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/jobs"
+	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/receivertopology"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
@@ -883,12 +884,33 @@ func TestProductionLiveRoute_EnforceMode_MissingResolver_RejectsWithZeroDials(t 
 }
 
 // TestProductionBootstrap_OpenWebIF_RFDiscovery_PopulatesResolver proves that the real production
-// bootstrap pipeline populates the TransponderRegistry with authoritative RF parameters, enabling
-// raw Enigma2 service references to be served with exact RF tuning facts.
+// bootstrap pipeline queries OpenWebIF's /api/channelinfo for live dynamic RF facts, populating
+// the TransponderRegistry on-the-fly for unknown channels and serving them with exact RF tuning facts.
 func TestProductionBootstrap_OpenWebIF_RFDiscovery_PopulatesResolver(t *testing.T) {
-	var dials int32
+	var streamDials, channelInfoQueries int32
 	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&dials, 1)
+		if strings.Contains(r.URL.Path, "channelinfo") {
+			atomic.AddInt32(&channelInfoQueries, 1)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"result": true,
+				"service": {
+					"servicereference": "1:0:19:9999:888:1:C00000:0:0:0:",
+					"servicename": "Dynamic Discovery Channel HD",
+					"transponder": {
+						"frequency": 11914000,
+						"symbol_rate": 27500000,
+						"polarization": "V",
+						"system": "DVB-S2",
+						"orbital_position": 192
+					}
+				}
+			}`))
+			return
+		}
+
+		atomic.AddInt32(&streamDials, 1)
 		w.Header().Set("Content-Type", "video/mp2t")
 		w.WriteHeader(http.StatusOK)
 		samplePkt := make([]byte, ring.TSPacketSize)
@@ -913,9 +935,10 @@ func TestProductionBootstrap_OpenWebIF_RFDiscovery_PopulatesResolver(t *testing.
 	topoSvc, err := receivertopology.NewService(singleTopo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
 
-	// 2. Authoritative TransponderRegistry is populated from discovery & standard tables
+	// 2. TransponderRegistry is configured with live OpenWebIF client
 	registry := receivertopology.NewTransponderRegistry()
-	receivertopology.PopulateStandardTransponderTables(registry)
+	owiClient := openwebif.New(mockReceiver.URL)
+	registry.SetDiscoverer(owiClient)
 	topoSvc.SetResolver(registry)
 
 	cfg := config.AppConfig{
@@ -929,25 +952,26 @@ func TestProductionBootstrap_OpenWebIF_RFDiscovery_PopulatesResolver(t *testing.
 	server := mustNewServer(t, cfg, config.NewManager(""), WithTopologyService(topoSvc))
 	handler := server.Handler()
 
-	// 3. Request raw ORF 1 HD service ref (no query parameters!)
-	rawORF1Ref := "1:0:19:132F:3EF:1:C00000:0:0:0:"
-	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+rawORF1Ref, nil)
+	// 3. Request dynamic custom channel (NOT in static tables!)
+	dynamicServiceRef := "1:0:19:9999:888:1:C00000:0:0:0:"
+	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+dynamicServiceRef, nil)
 	rr := httptest.NewRecorder()
 
 	go handler.ServeHTTP(rr, req)
 
-	// 4. Verify that topology lease was successfully acquired with exact RF parameters
+	// 4. Verify that topology lease was successfully acquired with exact RF facts discovered from OpenWebIF
 	require.Eventually(t, func() bool {
 		runtime := topoSvc.CloneRuntime()
 		for _, alloc := range runtime.ActiveMultiplexes {
 			mux := alloc.MultiplexID
-			if mux.TransponderKey != nil && mux.TransponderKey.FrequencyHz == 11273000000 && mux.RFPlane != nil && mux.RFPlane.Band == receivertopology.BandLow {
+			if mux.TransponderKey != nil && mux.TransponderKey.FrequencyHz == 11914000000 && mux.RFPlane != nil && mux.RFPlane.Polarization == receivertopology.PolarizationVertical {
 				return true
 			}
 		}
 		return false
-	}, 2*time.Second, 20*time.Millisecond, "must resolve exact authoritative 11273 MHz Low-Band RF parameters from raw ORF serviceRef")
+	}, 2*time.Second, 20*time.Millisecond, "must resolve exact authoritative 11914 MHz Vertical RF parameters via live OpenWebIF discovery")
 
-	// 5. Verify that Enigma2 was dialed once
-	assert.Equal(t, int32(1), atomic.LoadInt32(&dials))
+	// 5. Verify that OpenWebIF /api/channelinfo was queried and Enigma2 was dialed
+	assert.Equal(t, int32(1), atomic.LoadInt32(&channelInfoQueries), "OpenWebIF /api/channelinfo should be queried for live RF discovery")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&streamDials), "Enigma2 stream endpoint should be dialed once")
 }
