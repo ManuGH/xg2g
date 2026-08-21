@@ -14,10 +14,9 @@ import (
 )
 
 var (
-	ErrSessionClosed   = errors.New("ingest session closed")
-	ErrSessionFailed   = errors.New("ingest session startup failed")
-	ErrManagerClosed   = errors.New("ingest session manager closed")
-	ErrAllWaitersAbort = errors.New("all waiters aborted during session startup")
+	ErrSessionClosed = errors.New("ingest session closed")
+	ErrSessionFailed = errors.New("ingest session startup failed")
+	ErrManagerClosed = errors.New("ingest session manager closed")
 )
 
 // State represents the lifecycle state of a shared ingest session.
@@ -44,6 +43,7 @@ type Session struct {
 	waitersCount int
 	startErr     error
 	readyChan    chan struct{}
+	readyOnce    sync.Once
 
 	upstream   io.ReadCloser
 	cancelFunc context.CancelFunc
@@ -80,7 +80,14 @@ func (s *Session) RefCount() int {
 	return s.refCount
 }
 
+func (s *Session) closeReadyChanLocked() {
+	s.readyOnce.Do(func() {
+		close(s.readyChan)
+	})
+}
+
 // SetStarted activates the session with its connected upstream.
+// If the session was cancelled/abandoned in the meantime, the upstream is immediately closed.
 func (s *Session) SetStarted(upstream io.ReadCloser, cancelFunc context.CancelFunc) {
 	s.mu.Lock()
 	if s.state != StateStarting {
@@ -97,7 +104,7 @@ func (s *Session) SetStarted(upstream io.ReadCloser, cancelFunc context.CancelFu
 	s.upstream = upstream
 	s.cancelFunc = cancelFunc
 	s.state = StateActive
-	close(s.readyChan)
+	s.closeReadyChanLocked()
 	s.mu.Unlock()
 }
 
@@ -111,7 +118,7 @@ func (s *Session) SetFailed(err error) {
 
 	s.startErr = err
 	s.state = StateFailed
-	close(s.readyChan)
+	s.closeReadyChanLocked()
 	s.mu.Unlock()
 
 	if s.onTeardown != nil {
@@ -149,8 +156,15 @@ func (s *Session) AwaitStart(ctx context.Context) (*Lease, error) {
 		s.mu.Lock()
 		s.waitersCount--
 		allAborted := s.waitersCount == 0 && s.state == StateStarting && s.refCount == 0
-		if allAborted && s.cancelFunc != nil {
-			s.cancelFunc()
+		if allAborted {
+			s.state = StateStopped
+			s.closeUpstreamLocked()
+			s.closeReadyChanLocked()
+			s.mu.Unlock()
+			if s.onTeardown != nil {
+				s.onTeardown(s)
+			}
+			return nil, ctx.Err()
 		}
 		s.mu.Unlock()
 		return nil, ctx.Err()
@@ -163,6 +177,9 @@ func (s *Session) AwaitStart(ctx context.Context) (*Lease, error) {
 		if s.state == StateActive {
 			s.refCount++
 			return newLease(s), nil
+		}
+		if s.state == StateStopped {
+			return nil, ErrSessionClosed
 		}
 		if s.startErr != nil {
 			return nil, s.startErr
@@ -245,15 +262,19 @@ func (s *Session) closeUpstreamLocked() {
 	}
 }
 
-// Stop forcefully closes the session and tears down upstream.
+// Stop forcefully closes the session and tears down upstream, immediately waking any waiters.
 func (s *Session) Stop() {
 	s.mu.Lock()
 	if s.holdTimer != nil {
 		s.holdTimer.Stop()
 		s.holdTimer = nil
 	}
+	wasStarting := s.state == StateStarting
 	s.state = StateStopped
 	s.closeUpstreamLocked()
+	if wasStarting {
+		s.closeReadyChanLocked()
+	}
 	s.mu.Unlock()
 
 	if s.onTeardown != nil {

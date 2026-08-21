@@ -5,10 +5,16 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
+)
+
+var (
+	ErrInvalidReceiverHost = errors.New("receiver host cannot be empty")
+	ErrInvalidServiceRef   = errors.New("service reference cannot be empty")
 )
 
 // SessionKey identifies an upstream broadcast session uniquely.
@@ -21,27 +27,24 @@ type SessionKey struct {
 	SourceType   string // Source type (e.g. "enigma2", "satip", "tsfile")
 }
 
-// Canonicalize returns a normalized, canonical copy of the SessionKey.
+// Canonicalize returns a normalized copy of the SessionKey without modifying missing required fields.
 func (k SessionKey) Canonicalize() SessionKey {
 	host := strings.TrimSpace(strings.ToLower(k.ReceiverHost))
-	// If host contains port, strip it
+	port := k.StreamPort
+
+	// If host contains port, split it
 	if h, p, err := net.SplitHostPort(host); err == nil {
 		host = h
-		if portNum, pErr := strconv.Atoi(p); pErr == nil && portNum > 0 && k.StreamPort <= 0 {
-			k.StreamPort = portNum
+		if portNum, pErr := strconv.Atoi(p); pErr == nil && portNum > 0 && port <= 0 {
+			port = portNum
 		}
 	}
-	if host == "" {
-		host = "127.0.0.1"
-	}
 
-	port := k.StreamPort
 	if port <= 0 {
 		port = 8001
 	}
 
 	sref := strings.TrimSpace(k.ServiceRef)
-	// Normalize trailing colons if any
 	sref = strings.TrimRight(sref, ":")
 
 	profile := strings.TrimSpace(strings.ToLower(k.Profile))
@@ -61,6 +64,18 @@ func (k SessionKey) Canonicalize() SessionKey {
 		Profile:      profile,
 		SourceType:   sourceType,
 	}
+}
+
+// Validate checks whether the key contains all required fields.
+func (k SessionKey) Validate() error {
+	c := k.Canonicalize()
+	if c.ReceiverHost == "" {
+		return ErrInvalidReceiverHost
+	}
+	if c.ServiceRef == "" {
+		return ErrInvalidServiceRef
+	}
+	return nil
 }
 
 // String renders a human-readable identifier for the session key.

@@ -534,3 +534,155 @@ func TestManager_UserEndToEndLifecycleScenario(t *testing.T) {
 		t.Fatalf("step 3: expected exactly 1 active session in map, got %d", mgr.ActiveCount())
 	}
 }
+
+func TestSessionKey_Validate(t *testing.T) {
+	// Empty receiver host
+	k1 := SessionKey{ServiceRef: "1:0:19:ORF1"}
+	if err := k1.Validate(); !errors.Is(err, ErrInvalidReceiverHost) {
+		t.Fatalf("expected ErrInvalidReceiverHost, got %v", err)
+	}
+
+	// Empty service reference
+	k2 := SessionKey{ReceiverHost: "10.10.55.64"}
+	if err := k2.Validate(); !errors.Is(err, ErrInvalidServiceRef) {
+		t.Fatalf("expected ErrInvalidServiceRef, got %v", err)
+	}
+
+	// Valid key
+	k3 := SessionKey{ReceiverHost: "10.10.55.64", ServiceRef: "1:0:19:ORF1"}
+	if err := k3.Validate(); err != nil {
+		t.Fatalf("expected valid key, got %v", err)
+	}
+}
+
+func TestManager_CloseWhileStartingWakesAllWaiters(t *testing.T) {
+	// Connector has 3-second delay simulating slow network
+	connector := &mockConnector{dialDelay: 3 * time.Second}
+	mgr := NewManager(ManagerConfig{
+		WarmHoldDuration: 100 * time.Millisecond,
+		ConnectTimeout:   5 * time.Second,
+	}, connector)
+
+	key := SessionKey{ReceiverHost: "10.10.55.64", ServiceRef: "1:0:19:SLOW"}
+
+	const numWaiters = 10
+	var wg sync.WaitGroup
+	errs := make([]error, numWaiters)
+
+	for i := 0; i < numWaiters; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			_, err := mgr.Acquire(ctx, key)
+			errs[idx] = err
+		}(i)
+	}
+
+	// Wait 50ms so all waiters are blocked in AwaitStart
+	time.Sleep(50 * time.Millisecond)
+
+	startClose := time.Now()
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+
+	// All waiters must wake up immediately (<200ms) rather than waiting 3 seconds!
+	wg.Wait()
+	closeDuration := time.Since(startClose)
+	if closeDuration > 500*time.Millisecond {
+		t.Fatalf("expected immediate wake-up upon Close(), but took %v", closeDuration)
+	}
+
+	for i := 0; i < numWaiters; i++ {
+		if !errors.Is(errs[i], ErrSessionClosed) && !errors.Is(errs[i], ErrManagerClosed) {
+			t.Fatalf("waiter %d expected closed error, got %v", i, errs[i])
+		}
+	}
+}
+
+// uncooperativeConnector simulates a connector that ignores context cancellation
+// and still produces an open upstream stream after a delay.
+type uncooperativeConnector struct {
+	mu           sync.Mutex
+	connectCount int
+	stream       *mockUpstream
+}
+
+func (c *uncooperativeConnector) Connect(ctx context.Context, key SessionKey) (io.ReadCloser, error) {
+	c.mu.Lock()
+	c.connectCount++
+	c.mu.Unlock()
+
+	// Intentionally ignore ctx.Done() and sleep
+	time.Sleep(100 * time.Millisecond)
+
+	st := newMockUpstream()
+	c.mu.Lock()
+	c.stream = st
+	c.mu.Unlock()
+	return st, nil
+}
+
+func TestManager_AllWaitersCancel_ConnectorIgnoresContext_NoZombie(t *testing.T) {
+	connector := &uncooperativeConnector{}
+	mgr := NewManager(ManagerConfig{
+		WarmHoldDuration: 100 * time.Millisecond,
+		ConnectTimeout:   1 * time.Second,
+	}, connector)
+	defer mgr.Close()
+
+	key := SessionKey{ReceiverHost: "10.10.55.64", ServiceRef: "1:0:19:UNCOOP"}
+
+	const total = 5
+	var wg sync.WaitGroup
+
+	for i := 0; i < total; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			defer cancel()
+
+			_, _ = mgr.Acquire(ctx, key)
+		}()
+	}
+
+	wg.Wait()
+
+	// Wait past the uncooperative connector's 100ms delay so SetStarted() is called
+	time.Sleep(150 * time.Millisecond)
+
+	// 1. Upstream stream returned by uncooperative connector must have been closed immediately!
+	connector.mu.Lock()
+	st := connector.stream
+	connector.mu.Unlock()
+
+	if st == nil {
+		t.Fatalf("expected stream to have been created")
+	}
+	if !st.isClosed.Load() {
+		t.Fatalf("expected orphaned upstream stream to be closed by SetStarted(), but was not closed")
+	}
+
+	// 2. Active count in registry must be strictly 0 (NO ZOMBIE)
+	if mgr.ActiveCount() != 0 {
+		t.Fatalf("expected 0 active sessions (no zombie), got %d", mgr.ActiveCount())
+	}
+
+	// 3. Subsequent acquire must succeed cleanly and start a fresh session
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	lease, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("subsequent acquire failed: %v", err)
+	}
+	defer lease.Release()
+
+	if lease.State() != StateActive {
+		t.Fatalf("expected StateActive, got %v", lease.State())
+	}
+}

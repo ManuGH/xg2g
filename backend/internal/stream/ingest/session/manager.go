@@ -54,6 +54,9 @@ func NewManager(cfg ManagerConfig, connector UpstreamConnector) *Manager {
 // Acquire requests a lease for a live session matching the given SessionKey.
 // Multiple simultaneous Acquire calls for the same key are coalesced to a single upstream connection.
 func (m *Manager) Acquire(ctx context.Context, key SessionKey) (*Lease, error) {
+	if err := key.Validate(); err != nil {
+		return nil, err
+	}
 	key = key.Canonicalize()
 
 	for {
