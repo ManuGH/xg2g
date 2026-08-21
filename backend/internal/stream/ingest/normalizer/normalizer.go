@@ -38,6 +38,7 @@ type StreamNormalizer struct {
 	sink      SinkFunc
 	pcr       *PCREstimator
 	staging   *StagingBuffer
+	ingressMu sync.Mutex
 	syncAlign []byte
 
 	// State (guarded by stateMu)
@@ -89,7 +90,7 @@ func (sn *StreamNormalizer) SetPCRPID(pid uint16) {
 }
 
 // Feed ingests a slice of raw TS data into the normalizer.
-// It inspects PCR headers, maintains packet alignment, and buffers into the staging FIFO.
+// It is fully thread-safe, inspects PCR headers, maintains packet alignment, and buffers into the staging FIFO.
 func (sn *StreamNormalizer) Feed(data []byte) error {
 	if sn.closed.Load() {
 		return ErrNormalizerClosed
@@ -98,8 +99,10 @@ func (sn *StreamNormalizer) Feed(data []byte) error {
 		return nil
 	}
 
+	sn.ingressMu.Lock()
+	defer sn.ingressMu.Unlock()
+
 	// 1. Packet alignment handling
-	var aligned []byte
 	if len(sn.syncAlign) > 0 {
 		combined := append(sn.syncAlign, data...)
 		sn.syncAlign = nil
@@ -126,7 +129,7 @@ func (sn *StreamNormalizer) Feed(data []byte) error {
 
 	data = data[syncIdx:]
 	fullPacketsLen := (len(data) / TSPacketSize) * TSPacketSize
-	aligned = data[:fullPacketsLen]
+	aligned := data[:fullPacketsLen]
 	remainder := data[fullPacketsLen:]
 
 	if len(remainder) > 0 {
@@ -155,11 +158,20 @@ func (sn *StreamNormalizer) Feed(data []byte) error {
 }
 
 // Run starts the decoupled normalizer engine:
+// - If source implements io.Closer, it is watched and closed on context cancellation to unblock hanging reads immediately
 // - A background egress pacer loop runs at the configured tick slice (20ms)
 // - The main goroutine continuously pumps from source into Feed()
 func (sn *StreamNormalizer) Run(ctx context.Context, source io.Reader) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	// Ensure blocking socket reads unblock immediately upon context cancellation
+	if closer, ok := source.(io.Closer); ok {
+		go func() {
+			<-ctx.Done()
+			_ = closer.Close()
+		}()
+	}
 
 	errCh := make(chan error, 2)
 
@@ -286,20 +298,24 @@ func (sn *StreamNormalizer) tickEgress(dt float64, drainBuf []byte) error {
 	}
 
 	// 2. Closed-Loop Watermark Error & Trim Calculation
-	watermarkErr := currentWatermarkMs - sn.cfg.TargetWatermarkMs
+	// Proven normalized proportional formula: trim = clamp(Kp * (excess/targetMs), maxTrim)
+	targetMs := sn.cfg.TargetWatermarkMs
+	if targetMs <= 0 {
+		targetMs = 650.0
+	}
+	deadband := sn.cfg.DeadbandMs
+	maxTrim := sn.cfg.MaxCorrectionTrim
+	kp := sn.cfg.Kp
+
+	errorMs := currentWatermarkMs - targetMs
 	var trim float64
-	if math.Abs(watermarkErr) > sn.cfg.DeadbandMs {
-		if watermarkErr > 0 {
-			trim = sn.cfg.Kp * (watermarkErr - sn.cfg.DeadbandMs)
-		} else {
-			trim = sn.cfg.Kp * (watermarkErr + sn.cfg.DeadbandMs)
-		}
-		// Clamp trim within [-MaxCorrectionTrim, +MaxCorrectionTrim]
-		if trim > sn.cfg.MaxCorrectionTrim {
-			trim = sn.cfg.MaxCorrectionTrim
-		} else if trim < -sn.cfg.MaxCorrectionTrim {
-			trim = -sn.cfg.MaxCorrectionTrim
-		}
+
+	if errorMs > deadband {
+		excess := errorMs - deadband
+		trim = math.Min(maxTrim, (excess/targetMs)*kp)
+	} else if errorMs < -deadband {
+		deficit := (-errorMs) - deadband
+		trim = -math.Min(maxTrim, (deficit/targetMs)*kp)
 	}
 
 	correctionFactor := 1.0 + trim

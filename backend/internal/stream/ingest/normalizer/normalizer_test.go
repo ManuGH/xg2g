@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -138,7 +139,6 @@ func TestNormalizer_FractionalAccumulator_LongTermStability(t *testing.T) {
 	const dt = 0.020 // 20ms
 
 	for tick := 0; tick < totalTicks; tick++ {
-		// Keep staging buffer replenished
 		if norm.staging.BufferedBytes() < 2000*TSPacketSize {
 			_, _ = norm.staging.Write(replenishChunk)
 		}
@@ -151,7 +151,6 @@ func TestNormalizer_FractionalAccumulator_LongTermStability(t *testing.T) {
 	expectedPackets := targetPPS * (float64(totalTicks) * dt)
 	actualPackets := atomic.LoadInt64(&emittedPackets)
 
-	// Max allowable drift over 60 minutes must be < 1 packet due to fractional remainder!
 	diff := math.Abs(float64(actualPackets) - expectedPackets)
 	if diff > 1.0 {
 		t.Fatalf("quantization drift over 60min: expected %.2f packets, got %d (diff=%.4f packets)",
@@ -161,7 +160,7 @@ func TestNormalizer_FractionalAccumulator_LongTermStability(t *testing.T) {
 		expectedPackets, actualPackets, diff)
 }
 
-// 2. Closed-Loop Watermark Regulation: accelerates on high buffer depth, decelerates on low depth
+// 2. Closed-Loop Watermark Regulation: exact non-saturated proportional trim & clamp points
 func TestNormalizer_ClosedLoopWatermark_TrimConvergence(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.StartupReservoirMs = 0.0
@@ -184,51 +183,73 @@ func TestNormalizer_ClosedLoopWatermark_TrimConvergence(t *testing.T) {
 	samplePkt := make([]byte, TSPacketSize)
 	samplePkt[0] = SyncByte
 
-	// Case A: High buffer depth (1000ms > 650ms + 75ms deadband = 725ms)
-	// Watermark err = 1000 - 650 = 350ms. (350 - 75) * 0.04 = 11.0 > 0.02 -> clamp to +2%
-	highBuf := make([]byte, 3000*TSPacketSize) // 3000 packets = 1000ms
-	for i := 0; i < len(highBuf); i += TSPacketSize {
-		copy(highBuf[i:], samplePkt)
+	setWatermarkPackets := func(packets int) {
+		norm.staging.Reset()
+		buf := make([]byte, packets*TSPacketSize)
+		for i := 0; i < len(buf); i += TSPacketSize {
+			copy(buf[i:], samplePkt)
+		}
+		_, _ = norm.staging.Write(buf)
 	}
-	_, _ = norm.staging.Write(highBuf)
 
+	// 1. Non-saturated point: 750ms (+100ms error, excess = 25ms)
+	// trim = (25 / 650) * 0.04 = 0.00153846 -> 1.001538
+	setWatermarkPackets(2250) // 2250 pkts / 3 = 750ms
 	_ = norm.tickEgress(0.020, drainBuf)
 	m := norm.Metrics()
-	if m.CorrectionFactor != 1.02 {
-		t.Fatalf("expected correction factor +2%% (1.02) on high watermark, got %.4f", m.CorrectionFactor)
+	expectedTrim750 := 1.0 + (25.0/650.0)*0.04
+	if math.Abs(m.CorrectionFactor-expectedTrim750) > 0.0001 {
+		t.Fatalf("expected non-saturated factor %.6f at 750ms, got %.6f", expectedTrim750, m.CorrectionFactor)
 	}
 
-	// Case B: In Deadband (680ms)
-	norm.staging.Reset()
-	deadbandBuf := make([]byte, 2040*TSPacketSize) // 2040 packets = 680ms
-	for i := 0; i < len(deadbandBuf); i += TSPacketSize {
-		copy(deadbandBuf[i:], samplePkt)
-	}
-	_, _ = norm.staging.Write(deadbandBuf)
-
+	// 2. Non-saturated point: 800ms (+150ms error, excess = 75ms)
+	// trim = (75 / 650) * 0.04 = 0.00461538 -> 1.004615
+	setWatermarkPackets(2400) // 2400 pkts / 3 = 800ms
 	_ = norm.tickEgress(0.020, drainBuf)
 	m = norm.Metrics()
-	if m.CorrectionFactor != 1.00 {
-		t.Fatalf("expected correction factor 1.00 within deadband, got %.4f", m.CorrectionFactor)
+	expectedTrim800 := 1.0 + (75.0/650.0)*0.04
+	if math.Abs(m.CorrectionFactor-expectedTrim800) > 0.0001 {
+		t.Fatalf("expected non-saturated factor %.6f at 800ms, got %.6f", expectedTrim800, m.CorrectionFactor)
 	}
 
-	// Case C: Low buffer depth (300ms < 650ms - 75ms = 575ms)
-	// Watermark err = 300 - 650 = -350ms -> clamp to -2% (0.98)
-	norm.staging.Reset()
-	lowBuf := make([]byte, 900*TSPacketSize) // 900 packets = 300ms
-	for i := 0; i < len(lowBuf); i += TSPacketSize {
-		copy(lowBuf[i:], samplePkt)
-	}
-	_, _ = norm.staging.Write(lowBuf)
-
+	// 3. Deadband point: 680ms (within 650 ± 75ms)
+	setWatermarkPackets(2040) // 2040 pkts / 3 = 680ms
 	_ = norm.tickEgress(0.020, drainBuf)
 	m = norm.Metrics()
-	if m.CorrectionFactor != 0.98 {
-		t.Fatalf("expected correction factor -2%% (0.98) on low watermark, got %.4f", m.CorrectionFactor)
+	if m.CorrectionFactor != 1.0000 {
+		t.Fatalf("expected factor 1.0000 inside deadband, got %.6f", m.CorrectionFactor)
+	}
+
+	// 4. Non-saturated deficit point: 550ms (-100ms error, deficit = 25ms)
+	// trim = -(25 / 650) * 0.04 = -0.00153846 -> 0.998462
+	setWatermarkPackets(1650) // 1650 pkts / 3 = 550ms
+	_ = norm.tickEgress(0.020, drainBuf)
+	m = norm.Metrics()
+	expectedTrim550 := 1.0 - (25.0/650.0)*0.04
+	if math.Abs(m.CorrectionFactor-expectedTrim550) > 0.0001 {
+		t.Fatalf("expected non-saturated factor %.6f at 550ms, got %.6f", expectedTrim550, m.CorrectionFactor)
+	}
+
+	// 5. Clamped saturation point: 1200ms (+550ms error, excess = 475ms)
+	// (475 / 650) * 0.04 = 0.0292 > 0.02 -> clamp to 1.0200
+	setWatermarkPackets(3600) // 3600 pkts / 3 = 1200ms
+	_ = norm.tickEgress(0.020, drainBuf)
+	m = norm.Metrics()
+	if m.CorrectionFactor != 1.0200 {
+		t.Fatalf("expected clamped factor 1.0200 at 1200ms, got %.6f", m.CorrectionFactor)
+	}
+
+	// 6. Clamped deficit saturation point: 100ms (-550ms error, deficit = 475ms)
+	// clamp to 0.9800
+	setWatermarkPackets(300) // 300 pkts / 3 = 100ms
+	_ = norm.tickEgress(0.020, drainBuf)
+	m = norm.Metrics()
+	if m.CorrectionFactor != 0.9800 {
+		t.Fatalf("expected clamped factor 0.9800 at 100ms, got %.6f", m.CorrectionFactor)
 	}
 }
 
-// 2. Startup Reservoir: holds egress until 650ms buffered, then begins release
+// 3. Startup Reservoir: holds egress until 650ms buffered, then begins release
 func TestNormalizer_StartupReservoir_HoldsAndReleases(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.StartupReservoirMs = 650.0
@@ -276,7 +297,6 @@ func TestNormalizer_StartupReservoir_HoldsAndReleases(t *testing.T) {
 		t.Fatalf("feed failed: %v", err)
 	}
 
-	// Tick egress -> must release and emit packets
 	_ = norm.tickEgress(0.020, drainBuf)
 
 	if atomic.LoadInt64(&emittedCount) == 0 {
@@ -284,7 +304,7 @@ func TestNormalizer_StartupReservoir_HoldsAndReleases(t *testing.T) {
 	}
 }
 
-// 3. PCR Discontinuity: preserves last verified rate estimate without jumping to default
+// 4. PCR Discontinuity: preserves last verified rate estimate without jumping to default
 func TestNormalizer_PCRDiscontinuity_PreservesBitrate(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.InitialBitrateKbps = 4500.0
@@ -325,7 +345,7 @@ func TestNormalizer_PCRDiscontinuity_PreservesBitrate(t *testing.T) {
 	}
 }
 
-// 4. Program-Specific PCR PID Filtering
+// 5. Program-Specific PCR PID Filtering
 func TestNormalizer_TargetPCRPID_Filtering(t *testing.T) {
 	norm, _ := NewStreamNormalizer(DefaultConfig(), nil)
 	defer norm.Close()
@@ -349,7 +369,7 @@ func TestNormalizer_TargetPCRPID_Filtering(t *testing.T) {
 	}
 }
 
-// 5. Staging Buffer Overflow on Stalled Sink: fails closed safely
+// 6. Staging Buffer Overflow on Stalled Sink: fails closed safely
 func TestNormalizer_SinkStall_ErrStagingBufferOverflow(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.StagingBufferCapacity = 500 * TSPacketSize // Small 500-packet buffer
@@ -370,7 +390,7 @@ func TestNormalizer_SinkStall_ErrStagingBufferOverflow(t *testing.T) {
 	}
 }
 
-// 6. Decoupled Ingress & Egress: Socket stall does NOT freeze egress pacer
+// 7. Decoupled Ingress & Egress: Socket stall does NOT freeze egress pacer
 func TestNormalizer_DecoupledIngress_SocketStallDoesNotFreezePacer(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.StartupReservoirMs = 0.0 // Instant release
@@ -420,7 +440,67 @@ func TestNormalizer_DecoupledIngress_SocketStallDoesNotFreezePacer(t *testing.T)
 	<-runErrCh
 }
 
-// 7. Real Broadcast Stream End-to-End: Normalizer -> MasterRing -> FFmpeg Decoding Proof
+// 8. Blocking source.Read() terminates immediately when context is cancelled
+func TestNormalizer_BlockingSourceRead_ContextCancellation(t *testing.T) {
+	norm, err := NewStreamNormalizer(DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	defer norm.Close()
+
+	pipeReader, _ := io.Pipe() // Never written to
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- norm.Run(ctx, pipeReader)
+	}()
+
+	time.Sleep(50 * time.Millisecond) // Let Run() enter blocking pipeReader.Read()
+	cancel()                          // Cancel context
+
+	select {
+	case err := <-runErrCh:
+		if err != nil && err != context.Canceled && !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatalf("unexpected exit error: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Run() hung on blocking source.Read after context cancellation")
+	}
+}
+
+// 9. Concurrent Feed() Thread-Safety
+func TestNormalizer_ConcurrentFeed_ThreadSafety(t *testing.T) {
+	norm, err := NewStreamNormalizer(DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	defer norm.Close()
+
+	samplePkt := make([]byte, TSPacketSize)
+	samplePkt[0] = SyncByte
+
+	var wg sync.WaitGroup
+	const writers = 10
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				_ = norm.Feed(samplePkt)
+			}
+		}()
+	}
+	wg.Wait()
+
+	m := norm.Metrics()
+	if m.PacketsIn != writers*50 {
+		t.Fatalf("expected %d packets in, got %d", writers*50, m.PacketsIn)
+	}
+}
+
+// 10. Real Broadcast Stream End-to-End: Normalizer -> MasterRing -> FFmpeg Decoding Proof
 func TestNormalizer_RealBroadcast_EndToEnd(t *testing.T) {
 	root := findProjectRoot(t)
 	capturePath := filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts")
