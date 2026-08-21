@@ -10,6 +10,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
@@ -29,6 +30,8 @@ type SessionPipeline struct {
 	runErr     error
 	runErrMu   sync.Mutex
 	doneCh     chan struct{}
+	onDone     func(err error)
+	onDoneMu   sync.Mutex
 	closed     atomic.Bool
 }
 
@@ -72,24 +75,68 @@ func (p *SessionPipeline) Start(ctx context.Context, upstream io.ReadCloser) {
 		p.runErrMu.Lock()
 		p.runErr = err
 		p.runErrMu.Unlock()
+
+		p.onDoneMu.Lock()
+		cb := p.onDone
+		p.onDoneMu.Unlock()
+		if cb != nil {
+			cb(err)
+		}
 	}()
+}
+
+// OnDone registers a lifecycle completion callback executed when the upstream finishes.
+func (p *SessionPipeline) OnDone(callback func(err error)) {
+	p.onDoneMu.Lock()
+	p.onDone = callback
+	p.onDoneMu.Unlock()
 }
 
 // PrimedAttach captures an atomic snapshot of the active PAT/PMT preamble and latest keyframe,
 // attaching a subscriber reader positioned at that exact keyframe boundary.
+// It returns ErrNoAttachAvailable if no valid keyframe is present in the buffer.
 func (p *SessionPipeline) PrimedAttach() (ring.PrimedAttachPoint, *ring.SubscriberReader, error) {
 	if p.closed.Load() {
 		return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
 	}
 
-	attach := p.ring.PrimedAttachPoint()
-	startOffset := attach.KeyframeOffset
-	if !attach.HasKeyframe {
-		startOffset = p.ring.Tail()
+	attach, reader, err := p.ring.NewPrimedSubscriber()
+	if err != nil {
+		if errors.Is(err, ring.ErrNoKeyframeAvailable) {
+			return ring.PrimedAttachPoint{}, nil, ErrNoAttachAvailable
+		}
+		return ring.PrimedAttachPoint{}, nil, err
 	}
-
-	reader := p.ring.NewSubscriberReader(startOffset)
 	return attach, reader, nil
+}
+
+// PrimedAttachWithTimeout waits up to timeout for the first valid keyframe to arrive in the ring buffer.
+func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout time.Duration) (ring.PrimedAttachPoint, *ring.SubscriberReader, error) {
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		attach, reader, err := p.PrimedAttach()
+		if err == nil {
+			return attach, reader, nil
+		}
+		if !errors.Is(err, ErrNoAttachAvailable) {
+			return ring.PrimedAttachPoint{}, nil, err
+		}
+
+		if time.Now().After(deadline) {
+			return ring.PrimedAttachPoint{}, nil, ErrNoAttachAvailable
+		}
+
+		select {
+		case <-ctx.Done():
+			return ring.PrimedAttachPoint{}, nil, ctx.Err()
+		case <-p.doneCh:
+			return ring.PrimedAttachPoint{}, nil, ErrPipelineClosed
+		case <-ticker.C:
+		}
+	}
 }
 
 // LiveAttach attaches a subscriber reader starting at the current live head.

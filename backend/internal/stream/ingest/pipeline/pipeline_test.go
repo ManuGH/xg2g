@@ -7,6 +7,7 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,18 +84,13 @@ func TestPipeline_CoalescedDial_20ConcurrentAcquires(t *testing.T) {
 			defer pw.Close()
 			ticker := time.NewTicker(20 * time.Millisecond)
 			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
+			for range ticker.C {
+				chunk := make([]byte, 50*ring.TSPacketSize)
+				for i := 0; i < len(chunk); i += ring.TSPacketSize {
+					copy(chunk[i:], samplePkt)
+				}
+				if _, err := pw.Write(chunk); err != nil {
 					return
-				case <-ticker.C:
-					chunk := make([]byte, 50*ring.TSPacketSize)
-					for i := 0; i < len(chunk); i += ring.TSPacketSize {
-						copy(chunk[i:], samplePkt)
-					}
-					if _, err := pw.Write(chunk); err != nil {
-						return
-					}
 				}
 			}
 		}()
@@ -141,8 +137,145 @@ func TestPipeline_CoalescedDial_20ConcurrentAcquires(t *testing.T) {
 	}
 }
 
-// 2. Atomic PrimedAttachPoint Snapshot: Preamble & Keyframe always share identical generation
-func TestPipeline_AtomicPrimedAttach_PMTVersionRace(t *testing.T) {
+// 2. Dead-pipeline eviction: Upstream dies -> session evicted -> re-acquire redials healthy pipeline
+func TestPipeline_UpstreamDies_ReacquireRedialsHealthyPipeline(t *testing.T) {
+	var dialCount int32
+
+	samplePkt := make([]byte, ring.TSPacketSize)
+	samplePkt[0] = ring.SyncByte
+
+	var pipeWriterMu sync.Mutex
+	var activePipeWriter io.Closer
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.NormConfig.StartupReservoirMs = 0.0
+	connectorCfg.NormConfig.PacerIntervalMs = 5.0
+
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		atomic.AddInt32(&dialCount, 1)
+		pr, pw := io.Pipe()
+		pipeWriterMu.Lock()
+		activePipeWriter = pw
+		pipeWriterMu.Unlock()
+
+		go func() {
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					pw.Close()
+					return
+				case <-ticker.C:
+					chunk := make([]byte, 20*ring.TSPacketSize)
+					for i := 0; i < len(chunk); i += ring.TSPacketSize {
+						copy(chunk[i:], samplePkt)
+					}
+					if _, err := pw.Write(chunk); err != nil {
+						return
+					}
+				}
+			}
+		}()
+		return pr, nil
+	}
+
+	mgrCfg := session.ManagerConfig{
+		WarmHoldDuration: 5 * time.Second, // Long warm-hold
+		ConnectTimeout:   2 * time.Second,
+	}
+	mgr := session.NewManager(mgrCfg, NewLivePipelineConnector(connectorCfg))
+	defer mgr.Close()
+
+	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:DEAD:0:0:0:0:0:0:")
+	ctx := context.Background()
+
+	// 1. Client 1 acquires and joins
+	lease1, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("first acquire failed: %v", err)
+	}
+	p1 := lease1.Session().Payload().(*SessionPipeline)
+
+	// Verify 1 dial
+	if atomic.LoadInt32(&dialCount) != 1 {
+		t.Fatalf("expected 1 dial initially")
+	}
+
+	// 2. Upstream dies (Enigma2 closes connection)
+	pipeWriterMu.Lock()
+	if activePipeWriter != nil {
+		activePipeWriter.Close()
+	}
+	pipeWriterMu.Unlock()
+
+	// Wait for pipeline to finish and trigger OnDone
+	select {
+	case <-p1.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatalf("pipeline did not terminate after upstream death")
+	}
+
+	// Release client 1 lease
+	lease1.Release()
+
+	// Brief pause for teardown transition
+	time.Sleep(50 * time.Millisecond)
+
+	// 3. Client 2 acquires after upstream death -> MUST REDIAL (not reuse dead warm-hold session!)
+	lease2, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("second acquire failed: %v", err)
+	}
+	defer lease2.Release()
+
+	dials := atomic.LoadInt32(&dialCount)
+	if dials != 2 {
+		t.Fatalf("expected dead pipeline eviction to trigger second dial on reacquire, got %d dials", dials)
+	}
+
+	p2 := lease2.Session().Payload().(*SessionPipeline)
+	if p2 == p1 {
+		t.Fatalf("expected fresh SessionPipeline instance, got reused dead pipeline")
+	}
+}
+
+// 3. Atomic Primed Attach: Preamble + Generation + KeyframeOffset + Reader created atomically under MasterRing lock
+func TestPipeline_PrimedAttachSnapshotAndReaderAreAtomic(t *testing.T) {
+	root := findProjectRoot(t)
+	capturePath := filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts")
+	data, err := os.ReadFile(capturePath)
+	if err != nil {
+		t.Fatalf("read capture failed: %v", err)
+	}
+
+	const smallRingCapacity = 200 * ring.TSPacketSize
+	master := ring.NewMasterRing(smallRingCapacity)
+	defer master.Close()
+
+	// Push first slice with PAT/PMT/IDR
+	_, err = master.Push(data[:150*ring.TSPacketSize])
+	if err != nil {
+		t.Fatalf("push failed: %v", err)
+	}
+
+	// Capture primed attach atomically
+	attach, reader, err := master.NewPrimedSubscriber()
+	if err != nil {
+		t.Fatalf("NewPrimedSubscriber failed: %v", err)
+	}
+	defer reader.Close()
+
+	if !attach.HasKeyframe {
+		t.Fatalf("expected attach to have keyframe")
+	}
+	if len(attach.Preamble) == 0 {
+		t.Fatalf("expected attach to contain PAT/PMT preamble")
+	}
+}
+
+// 4. Deterministic Failure when No Keyframe is available (Never fall back to Tail)
+func TestPipeline_PrimedAttachWithoutKeyframeFailsDeterministically(t *testing.T) {
 	normCfg := normalizer.DefaultConfig()
 	normCfg.StartupReservoirMs = 0.0
 
@@ -152,33 +285,18 @@ func TestPipeline_AtomicPrimedAttach_PMTVersionRace(t *testing.T) {
 	}
 	defer pipe.Close()
 
-	// Initial attach before any data
+	// PrimedAttach without any pushed keyframes must return ErrNoAttachAvailable immediately
 	attach, reader, err := pipe.PrimedAttach()
-	if err != nil {
-		t.Fatalf("primed attach failed: %v", err)
+	if err == nil {
+		reader.Close()
+		t.Fatalf("expected ErrNoAttachAvailable when no keyframe present, got nil error (attach: %+v)", attach)
 	}
-	reader.Close()
-
-	if attach.Generation != 0 {
-		t.Fatalf("expected initial generation 0, got %d", attach.Generation)
-	}
-
-	// Trigger PMT invalidation in MasterRing
-	pipe.MasterRing().SetTargetProgram(100)
-
-	attach2, reader2, err := pipe.PrimedAttach()
-	if err != nil {
-		t.Fatalf("second primed attach failed: %v", err)
-	}
-	reader2.Close()
-
-	if attach2.Generation <= attach.Generation {
-		t.Fatalf("expected generation to increment on PMT reconfiguration, was %d -> %d",
-			attach.Generation, attach2.Generation)
+	if !errors.Is(err, ErrNoAttachAvailable) {
+		t.Fatalf("expected ErrNoAttachAvailable, got %v", err)
 	}
 }
 
-// 3. Slow Subscriber Isolation: Overrun subscriber drops packets without affecting fast subscribers
+// 5. Slow Subscriber Isolation: Overrun subscriber drops packets without affecting fast subscribers
 func TestPipeline_SlowSubscriberIsolation_NoInterference(t *testing.T) {
 	const smallRingCapacity = 50 * ring.TSPacketSize // 50 packets capacity
 
@@ -214,7 +332,7 @@ func TestPipeline_SlowSubscriberIsolation_NoInterference(t *testing.T) {
 		}
 		defer lease.Release()
 		p := lease.Session().Payload().(*SessionPipeline)
-		_, reader, _ := p.PrimedAttach()
+		reader, _ := p.LiveAttach()
 		fastReaders[i] = reader
 		defer reader.Close()
 	}
@@ -226,7 +344,7 @@ func TestPipeline_SlowSubscriberIsolation_NoInterference(t *testing.T) {
 	}
 	defer slowLease.Release()
 	slowPipe := slowLease.Session().Payload().(*SessionPipeline)
-	_, slowReader, _ := slowPipe.PrimedAttach()
+	slowReader, _ := slowPipe.LiveAttach()
 	defer slowReader.Close()
 
 	// Launch concurrent fast clients reading actively
@@ -289,7 +407,7 @@ func TestPipeline_SlowSubscriberIsolation_NoInterference(t *testing.T) {
 	}
 }
 
-// 4. Warm-Hold Reattach: Last subscriber disconnects -> reattach reuses same stream
+// 6. Warm-Hold Reattach: Last subscriber disconnects -> reattach reuses same stream
 func TestPipeline_WarmHoldReattach_PreservesStream(t *testing.T) {
 	var dialCount int32
 	samplePkt := make([]byte, ring.TSPacketSize)
@@ -305,16 +423,13 @@ func TestPipeline_WarmHoldReattach_PreservesStream(t *testing.T) {
 			defer pw.Close()
 			ticker := time.NewTicker(10 * time.Millisecond)
 			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
+			for range ticker.C {
+				chunk := make([]byte, 20*ring.TSPacketSize)
+				for i := 0; i < len(chunk); i += ring.TSPacketSize {
+					copy(chunk[i:], samplePkt)
+				}
+				if _, err := pw.Write(chunk); err != nil {
 					return
-				case <-ticker.C:
-					chunk := make([]byte, 20*ring.TSPacketSize)
-					for i := 0; i < len(chunk); i += ring.TSPacketSize {
-						copy(chunk[i:], samplePkt)
-					}
-					_, _ = pw.Write(chunk)
 				}
 			}
 		}()
@@ -337,7 +452,7 @@ func TestPipeline_WarmHoldReattach_PreservesStream(t *testing.T) {
 		t.Fatalf("first acquire failed: %v", err)
 	}
 	p1 := lease1.Session().Payload().(*SessionPipeline)
-	attach1, r1, _ := p1.PrimedAttach()
+	r1, _ := p1.LiveAttach()
 	r1.Close()
 
 	// 2. First Client disconnects -> Session enters StateHolding
@@ -352,7 +467,7 @@ func TestPipeline_WarmHoldReattach_PreservesStream(t *testing.T) {
 	defer lease2.Release()
 
 	p2 := lease2.Session().Payload().(*SessionPipeline)
-	attach2, r2, _ := p2.PrimedAttach()
+	r2, _ := p2.LiveAttach()
 	r2.Close()
 
 	dials := atomic.LoadInt32(&dialCount)
@@ -360,12 +475,12 @@ func TestPipeline_WarmHoldReattach_PreservesStream(t *testing.T) {
 		t.Fatalf("expected stream to be preserved across warm-hold (1 dial), got %d dials", dials)
 	}
 
-	if attach2.Generation != attach1.Generation {
-		t.Fatalf("generation mismatch across warm-hold reattach")
+	if p2 != p1 {
+		t.Fatalf("expected identical session pipeline instance across warm-hold reattach")
 	}
 }
 
-// 5. End-to-End HTTP Real Broadcast Streaming with FFmpeg Proof across 3 Concurrent Clients
+// 7. End-to-End HTTP Real Broadcast Streaming with FFmpeg Proof across 3 Concurrent Clients
 func TestPipeline_RealBroadcast_EndToEndDecoding(t *testing.T) {
 	root := findProjectRoot(t)
 	capturePath := filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts")

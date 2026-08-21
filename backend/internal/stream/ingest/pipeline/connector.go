@@ -36,6 +36,10 @@ func (w *PipelineStreamWrapper) Pipeline() any {
 	return w.pipeline
 }
 
+func (w *PipelineStreamWrapper) OnDone(callback func(err error)) {
+	w.pipeline.OnDone(callback)
+}
+
 // DialFunc connects to an upstream source for the specified session key.
 type DialFunc func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error)
 

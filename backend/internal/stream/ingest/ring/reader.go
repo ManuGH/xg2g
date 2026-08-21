@@ -5,6 +5,7 @@
 package ring
 
 import (
+	"errors"
 	"io"
 )
 
@@ -17,12 +18,17 @@ type SubscriberReader struct {
 	isClosed     bool
 }
 
+var ErrNoKeyframeAvailable = errors.New("no valid keyframe available in ring")
+
 // NewSubscriberReader creates a new subscriber reader at the specified absolute offset.
 // If startOffset is negative or before ring.tail, it defaults to ring.tail.
 func (r *MasterRing) NewSubscriberReader(startOffset int64) *SubscriberReader {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.newSubscriberReaderLocked(startOffset)
+}
 
+func (r *MasterRing) newSubscriberReaderLocked(startOffset int64) *SubscriberReader {
 	if startOffset < r.tail {
 		startOffset = r.tail
 	}
@@ -34,6 +40,44 @@ func (r *MasterRing) NewSubscriberReader(startOffset int64) *SubscriberReader {
 		ring:       r,
 		readOffset: startOffset,
 	}
+}
+
+// NewPrimedSubscriber atomically captures the active PAT/PMT preamble and initializes
+// a SubscriberReader positioned at the latest valid keyframe offset under a single lock.
+func (r *MasterRing) NewPrimedSubscriber() (PrimedAttachPoint, *SubscriberReader, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.isClosed {
+		return PrimedAttachPoint{}, nil, ErrRingClosed
+	}
+
+	if len(r.keyframeOffsets) == 0 {
+		return PrimedAttachPoint{}, nil, ErrNoKeyframeAvailable
+	}
+
+	latestKf := r.keyframeOffsets[len(r.keyframeOffsets)-1]
+	if latestKf < r.tail {
+		return PrimedAttachPoint{}, nil, ErrNoKeyframeAvailable
+	}
+
+	var preamble []byte
+	for _, pkt := range r.rawPATPackets {
+		preamble = append(preamble, pkt...)
+	}
+	for _, pkt := range r.rawPMTPackets {
+		preamble = append(preamble, pkt...)
+	}
+
+	attach := PrimedAttachPoint{
+		Preamble:       preamble,
+		KeyframeOffset: latestKf,
+		Generation:     r.generation,
+		HasKeyframe:    true,
+	}
+
+	reader := r.newSubscriberReaderLocked(latestKf)
+	return attach, reader, nil
 }
 
 // Read reads up to len(p) bytes from the master ring buffer.

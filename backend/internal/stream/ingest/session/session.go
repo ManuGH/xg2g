@@ -35,6 +35,11 @@ type PipelineHolder interface {
 	Pipeline() any
 }
 
+// StreamLifecycleWatcher is an optional interface implemented by upstream readers to notify when the upstream ends.
+type StreamLifecycleWatcher interface {
+	OnDone(callback func(err error))
+}
+
 // Session manages a single shared upstream broadcast stream.
 // Note: Session owns the upstream io.ReadCloser exclusively.
 type Session struct {
@@ -115,6 +120,12 @@ func (s *Session) SetStarted(upstream io.ReadCloser, cancelFunc context.CancelFu
 	s.state = StateActive
 	s.closeReadyChanLocked()
 	s.mu.Unlock()
+
+	if watcher, ok := upstream.(StreamLifecycleWatcher); ok {
+		watcher.OnDone(func(err error) {
+			s.Stop()
+		})
+	}
 }
 
 // Payload returns the associated pipeline payload if any.

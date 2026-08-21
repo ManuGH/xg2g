@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
@@ -100,8 +101,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Capture atomic PrimedAttachPoint and dedicated subscriber reader
-	attach, reader, err := pipe.PrimedAttach()
+	// Capture atomic PrimedAttachPoint and dedicated subscriber reader (waits for first keyframe if stream just started)
+	attach, reader, err := pipe.PrimedAttachWithTimeout(r.Context(), 3*time.Second)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to perform primed attach to stream")
 		http.Error(w, fmt.Sprintf("failed to attach to live stream: %v", err), http.StatusBadGateway)
