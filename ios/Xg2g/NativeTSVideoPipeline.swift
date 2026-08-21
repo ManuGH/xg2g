@@ -313,9 +313,19 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     ///   a URL, dismissing a screen — should stamp their own start so the figure
     ///   covers what the viewer waited through rather than what was left of it.
     public func startStreaming(url: URL, requestedAt: CFTimeInterval = CACurrentMediaTime()) {
-        // Measured, because it is not free: the teardown runs a barrier against
-        // the previous stream's parse queue, and anchoring t0 after it hid that
-        // cost from every figure in this pipeline.
+        let preMem = Self.currentMemoryStats()
+        let prePresenterQ = systemPresenter?.pendingSamplesCount ?? 0
+        let preVTInFlight = decoder.inFlightFrames
+        ingestStateLock.lock()
+        let preBacklogKiB = pendingIngestBytes / 1024
+        let nextGen = ingestGeneration + 1
+        ingestStateLock.unlock()
+
+        let preZapLog = "[ZAP-#\(nextGen)-PRE] 🎬 Zap initiated -> \(url.lastPathComponent) | Pre-State: PresenterQ=\(prePresenterQ), VTInFlight=\(preVTInFlight), IngestBacklog=\(preBacklogKiB)KiB, Resident=\(String(format: "%.1f", preMem.residentMB))MB, Footprint=\(String(format: "%.1f", preMem.footprintMB))MB"
+        print(preZapLog)
+        logger.notice("\(preZapLog, privacy: .public)")
+        TelemetryServer.shared.log(preZapLog)
+
         let teardownStart = CACurrentMediaTime()
         stopStreaming()
         let teardownMs = (CACurrentMediaTime() - teardownStart) * 1000.0
@@ -327,11 +337,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         pendingIngestBytes = 0
         ingestStateLock.unlock()
 
+        let teardownLog = "[ZAP-#\(currentGen)-TEARDOWN] ⏹️ Old session cancelled & flushed in \(String(format: "%.1f", teardownMs))ms | PresenterQ=0, AudioQ=0, DecoderGen=\(currentGen)"
+        print(teardownLog)
+        logger.notice("\(teardownLog, privacy: .public)")
+        TelemetryServer.shared.log(teardownLog)
+
         sessionState = PipelineSessionState(generation: currentGen, requestStartTime: requestedAt)
         decoder.decodeGeneration = currentGen
 
-        // AVAudioSession activation is synchronous and talks to the audio
-        // daemon; it is not reliably quick, and it sat inside the network figure.
         let audioSessionStart = CACurrentMediaTime()
         audioRenderer.activateAudioSession()
         let audioSessionMs = (CACurrentMediaTime() - audioSessionStart) * 1000.0
@@ -347,7 +360,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 state.paramsReadyTime = CACurrentMediaTime()
             }
 
-            let logMsg = "[1080i50-CACHE] ⚡ Primed decoder with cached SPS/PPS for instant tuning!"
+            let logMsg = "[ZAP-#\(currentGen)-PARAMS] ⚡ Primed decoder with cached SPS/PPS for instant tuning!"
             print(logMsg)
             logger.notice("\(logMsg, privacy: .public)")
             TelemetryServer.shared.log(logMsg)
@@ -383,12 +396,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             $0.ttfpTeardownMs = teardownMs
             $0.ttfpAudioSessionMs = audioSessionMs
         }
-        let setupLog = "[1080i50-TTFP] 🛠️ Setup \(String(format: "%.1f", setupMs))ms before the request went out (teardown \(String(format: "%.1f", teardownMs))ms, audio session \(String(format: "%.1f", audioSessionMs))ms)"
+        let setupLog = "[ZAP-#\(currentGen)-SETUP] 🛠️ Setup \(String(format: "%.1f", setupMs))ms before request (teardown \(String(format: "%.1f", teardownMs))ms, audio \(String(format: "%.1f", audioSessionMs))ms)"
         print(setupLog)
         logger.notice("\(setupLog, privacy: .public)")
         TelemetryServer.shared.log(setupLog)
 
-        let startLog = "[1080i50-NET] ▶️ Requesting \(targetURL.absoluteString) | Timeout: \(config.timeoutIntervalForRequest)s | Gen: \(currentGen)"
+        let startLog = "[ZAP-#\(currentGen)-NET] ▶️ Requesting \(targetURL.absoluteString) | Timeout: \(config.timeoutIntervalForRequest)s | Gen: \(currentGen)"
         print(startLog)
         logger.notice("\(startLog, privacy: .public)")
         TelemetryServer.shared.log(startLog)
@@ -898,9 +911,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             alternateAssembler = assembler
         }
 
+        let gen = ingestGeneration
         let msg = playable
-            ? "[1080i50-PMT] 🎬 Video codec: \(codec)"
-            : "[1080i50-PMT] ⛔️ Video codec \(codec) cannot be assembled here — no picture will follow"
+            ? "[ZAP-#\(gen)-PMT] 🎬 Video codec: \(codec) (PID: \(parser.videoPID ?? 0))"
+            : "[ZAP-#\(gen)-PMT] ⛔️ Video codec \(codec) cannot be assembled here — no picture will follow"
         print(msg)
         logger.notice("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
@@ -912,30 +926,20 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             state.audioTracksKnown = true
             state.hasDecodableAudio = tracks.contains { $0.codec.isDecodableOnDevice }
         }
+        let gen = ingestGeneration
         let trackListLog = tracks.map { "PID \($0.pid) [\($0.codec), \($0.language ?? "und")\(Self.audioTypeLabel(for: $0.audioType))]" }.joined(separator: ", ")
-        let logMsg = "[1080i50-PMT] 🎵 Discovered \(tracks.count) audio tracks: \(trackListLog)"
+        let logMsg = "[ZAP-#\(gen)-PMT] 🎵 Discovered \(tracks.count) audio tracks: \(trackListLog)"
         print(logMsg)
         logger.notice("\(logMsg, privacy: .public)")
         TelemetryServer.shared.log(logMsg)
 
         // Track selection: playable first, then language.
-        //
-        // Language used to win outright, and on a broadcaster that carries both
-        // MPEG Layer II and AC-3 in German that picked the one iOS cannot decode.
-        // ZDF is exactly that case — `0x03 PID 6120 lang=deu` sits ahead of
-        // `0x06 PID 6122 AC-3 lang=deu` in the PMT — and the result was a stream
-        // that played perfectly with no sound at all and nothing in any log to
-        // say why. A language nobody can hear is not a preference worth honouring,
-        // so the pool is narrowed to what the device can decode before language
-        // is considered.
         if selectedAudioPID == nil || !tracks.contains(where: { $0.pid == selectedAudioPID }) {
             let playable = tracks.filter { $0.codec.isDecodableOnDevice }
 
             if playable.isEmpty && !tracks.isEmpty {
-                // Nothing here can produce sound. Say so once, loudly: the stream
-                // will look healthy in every other metric.
                 let codecs = tracks.map { $0.codec.description }.joined(separator: ", ")
-                let warn = "[1080i50-AUDIO] ⚠️ No decodable audio track on this channel (offered: \(codecs)) — playback will be silent"
+                let warn = "[ZAP-#\(gen)-AUDIO] ⚠️ No decodable audio track on this channel (offered: \(codecs)) — playback will be silent"
                 print(warn)
                 logger.error("\(warn, privacy: .public)")
                 TelemetryServer.shared.log(warn)
@@ -946,7 +950,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             if let track = preferred {
                 self.selectedAudioPID = track.pid
                 self.selectedAudioCodec = track.codec
-                let selLog = "[1080i50-AUDIO] 🎯 Selected audio track: PID \(track.pid) (\(track.codec), lang: \(track.language ?? "und")\(Self.audioTypeLabel(for: track.audioType)))"
+                let selLog = "[ZAP-#\(gen)-AUDIO] 🎯 Selected audio track: PID \(track.pid) (\(track.codec), lang: \(track.language ?? "und")\(Self.audioTypeLabel(for: track.audioType)))"
                 print(selLog)
                 logger.notice("\(selLog, privacy: .public)")
                 TelemetryServer.shared.log(selLog)
@@ -1121,6 +1125,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 }
             } else {
                 firstAudioPTS = pts
+                let gen = ingestGeneration
+                let audioLog = "[ZAP-#\(gen)-AUDIO] 🎵 First audio sample enqueued at PTS \(String(format: "%.3f", pts.seconds))s (\(selectedAudioCodec.description))"
+                print(audioLog)
+                logger.notice("\(audioLog, privacy: .public)")
+                TelemetryServer.shared.log(audioLog)
             }
 
             guard let firstPTS = firstAudioPTS else { return }
@@ -1234,7 +1243,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 let videoCushionMs = latestVideoPTS.isValid
                     ? (latestVideoPTS.seconds - anchorPTS.seconds) * 1000.0
                     : Double.nan
-                let clockLog = "[1080i50-CLOCK] ⏱️ Master clock started at PTS: \(String(format: "%.3f", anchorPTS.seconds))s via \(anchorSource) (\(codec), gated on \(cushionSource) cushion | video ahead: \(String(format: "%.0f", videoCushionMs))ms | audio ahead: \(String(format: "%.0f", buffered * 1000))ms | skipped \(String(format: "%.0f", skippedMs))ms of pre-picture audio)"
+                let gen = ingestGeneration
+                let clockLog = "[ZAP-#\(gen)-LOCK] ⏱️ Master clock started at PTS: \(String(format: "%.3f", anchorPTS.seconds))s via \(anchorSource) (\(codec), gated on \(cushionSource) cushion | video ahead: \(String(format: "%.0f", videoCushionMs))ms | audio ahead: \(String(format: "%.0f", buffered * 1000))ms | skipped \(String(format: "%.0f", skippedMs))ms of pre-picture audio)"
                 print(clockLog)
                 logger.notice("\(clockLog, privacy: .public)")
                 TelemetryServer.shared.log(clockLog)
@@ -1596,7 +1606,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
                 if decoder.hasActiveSession {
                     decodeGateState = .open
-                    let msg = "[1080i50-GATE] 🔓 Decode gate opened on a sync sample (reason: \(reason)) after \(gatedAccessUnitCount) discarded AU(s), \(String(format: "%.0f", (now - firstAccessUnitTime) * 1000.0))ms"
+                    let gen = ingestGeneration
+                    let msg = "[ZAP-#\(gen)-SYNC] 🔓 Decode gate opened on a sync sample (reason: \(reason)) after \(gatedAccessUnitCount) discarded AU(s), \(String(format: "%.0f", (now - firstAccessUnitTime) * 1000.0))ms"
                     print(msg)
                     logger.notice("\(msg, privacy: .public)")
                     TelemetryServer.shared.log(msg)
@@ -1915,7 +1926,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         } else {
             tail = " | Pipeline breakdown follows"
         }
-        let msg = "[1080i50-TTFP] 👁️ Picture visible after \(String(format: "%.1f", visibleMs))ms (\(via))\(tail)"
+        let gen = ingestGeneration
+        let msg = "[ZAP-#\(gen)-FIRST-PIC] 👁️ Picture visible after \(String(format: "%.1f", visibleMs))ms (\(via))\(tail)"
         print(msg)
         logger.notice("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
@@ -2070,5 +2082,18 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 }
             }
         }
+    }
+
+    static func currentMemoryStats() -> (footprintMB: Double, residentMB: Double) {
+        var vmInfo = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kerr: kern_return_t = withUnsafeMutablePointer(to: &vmInfo) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        let footprintMB = (kerr == KERN_SUCCESS) ? Double(vmInfo.phys_footprint) / (1024.0 * 1024.0) : 0.0
+        let residentMB = (kerr == KERN_SUCCESS) ? Double(vmInfo.resident_size) / (1024.0 * 1024.0) : 0.0
+        return (footprintMB, residentMB)
     }
 }
