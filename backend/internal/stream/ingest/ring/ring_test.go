@@ -36,17 +36,17 @@ func createVideoPESPacket(pid uint16, pusi bool, cc uint8, esPayload []byte) []b
 
 	payloadOffset := 4
 	if pusi {
-		// PES Header: 00 00 01 E0, len=0 (unbounded), flags=0x80 (PTS present), headerDataLen=5, PTS
+		// PES Header: 00 00 01 E0, len=0, flags=0x80, headerDataLen=5, PTS
 		pkt[4] = 0x00
 		pkt[5] = 0x00
 		pkt[6] = 0x01
-		pkt[7] = 0xE0 // Video stream ID
+		pkt[7] = 0xE0
 		pkt[8] = 0x00
 		pkt[9] = 0x00
 		pkt[10] = 0x80
 		pkt[11] = 0x80
-		pkt[12] = 0x05 // PES header data len = 5 (PTS)
-		pkt[13] = 0x21 // PTS byte 1
+		pkt[12] = 0x05
+		pkt[13] = 0x21
 		pkt[14] = 0x00
 		pkt[15] = 0x01
 		pkt[16] = 0x00
@@ -58,32 +58,34 @@ func createVideoPESPacket(pid uint16, pusi bool, cc uint8, esPayload []byte) []b
 	return pkt
 }
 
-func createMultiPacketPATWithVersion(pmtPID uint16, version uint8, currentNext uint8) [][]byte {
-	// Build a PAT section spanning across 2 TS packets
-	// Section length: 13 bytes (total section size = 16 bytes)
+func createPATSectionBytes(progNum uint16, pmtPID uint16, version uint8, currentNext uint8, sectionNum uint8, lastSectionNum uint8) []byte {
 	patSection := []byte{
 		0x00,       // table_id = 0 (PAT) [0]
 		0xB0, 0x0D, // section_syntax + length = 13 [1, 2]
 		0x00, 0x01, // transport_stream_id = 1 [3, 4]
 		0xC0 | ((version & 0x1F) << 1) | (currentNext & 0x01), // version + current_next [5]
-		0x00,       // section_number = 0 [6]
-		0x00,       // last_section_number = 0 [7]
-		0x00, 0x01, // program_number = 1 [8, 9]
+		sectionNum,                               // section_number [6]
+		lastSectionNum,                           // last_section_number [7]
+		byte(progNum >> 8), byte(progNum & 0xFF), // program_number [8, 9]
 		0xE0 | byte((pmtPID>>8)&0x1F), byte(pmtPID & 0xFF), // PMT PID [10, 11]
 		0x00, 0x00, 0x00, 0x00, // CRC32 placeholder [12..15]
 	}
 
-	// Calculate and write exact MPEG-2 CRC32
 	crc := CalculateMPEG2CRC32(patSection[:12])
 	binary.BigEndian.PutUint32(patSection[12:16], crc)
+	return patSection
+}
+
+func createMultiPacketPATWithVersion(pmtPID uint16, version uint8, currentNext uint8) [][]byte {
+	patSection := createPATSectionBytes(1, pmtPID, version, currentNext, 0, 0)
 
 	// Packet 1: PUSI=true, pointer_field=0, contains first 10 bytes of section + AF
 	pkt1 := make([]byte, TSPacketSize)
 	pkt1[0] = SyncByte
 	pkt1[1] = 0x40 // PUSI=1, PID=0
 	pkt1[2] = 0x00
-	pkt1[3] = 0x30   // AFC=0x03 (AF + payload), CC=0
-	pkt1[4] = 172    // Adaptation field length = 172
+	pkt1[3] = 0x30   // AFC=0x03, CC=0
+	pkt1[4] = 172    // AF length
 	pkt1[5] = 0x00   // AF flags
 	pkt1[177] = 0x00 // pointer_field = 0
 	copy(pkt1[178:], patSection[:10])
@@ -229,13 +231,11 @@ func TestMasterRing_MultiPacketPATPMT_Assembly(t *testing.T) {
 		}
 	}
 
-	// Verify authoritative video PID and Codec parsed from PMT
 	vPID, vCodec := r.VideoDetails()
 	if vPID != videoPID || vCodec != CodecH264 {
 		t.Fatalf("unexpected video details: vPID=%d, vCodec=%v", vPID, vCodec)
 	}
 
-	// Verify PATPMTPreamble contains all 4 raw TS packets (2 PAT + 2 PMT = 752 bytes)
 	preamble := r.PATPMTPreamble()
 	if len(preamble) != 4*TSPacketSize {
 		t.Fatalf("expected preamble length %d, got %d", 4*TSPacketSize, len(preamble))
@@ -255,7 +255,6 @@ func TestMasterRing_StatefulAnnexBSplitAcrossTSPackets(t *testing.T) {
 	const pmtPID = 100
 	const videoPID = 256
 
-	// Setup PAT & PMT
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
 		_, _ = r.Push(pkt)
 	}
@@ -263,19 +262,16 @@ func TestMasterRing_StatefulAnnexBSplitAcrossTSPackets(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	// Head offset before video frame
 	frameStartOffset := r.Head()
 
-	// Packet 1: Video PES start (PUSI=1). ES payload ends with 00 00 at the very end of TS packet!
 	es1 := make([]byte, TSPacketSize-18)
 	es1[len(es1)-2] = 0x00
 	es1[len(es1)-1] = 0x00
 	pkt1 := createVideoPESPacket(videoPID, true, 0, es1)
 
-	// Packet 2: Continuation (PUSI=0). Starts with 01 05 (startcode suffix + NAL type 5 IDR slice)!
 	es2 := make([]byte, 100)
 	es2[0] = 0x01
-	es2[1] = 0x05 // IDR slice NAL unit
+	es2[1] = 0x05
 	pkt2 := createBasicPacket(videoPID, false, 1)
 	copy(pkt2[4:], es2)
 
@@ -286,7 +282,6 @@ func TestMasterRing_StatefulAnnexBSplitAcrossTSPackets(t *testing.T) {
 		t.Fatalf("push pkt2 failed: %v", err)
 	}
 
-	// Must have indexed the keyframe at the exact PES PUSI start offset!
 	offset, ok := r.LatestKeyframeOffset()
 	if !ok {
 		t.Fatalf("expected keyframe to be indexed across split packet boundary")
@@ -310,18 +305,16 @@ func TestMasterRing_SPSWithoutIDR_NotIndexed(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	// Video PES with SPS (NAL 7) and non-IDR slice (NAL 1), but NO IDR (NAL 5)
 	es := []byte{
-		0x00, 0x00, 0x00, 0x01, 0x07, 0x42, 0x00, 0x1E, // SPS
-		0x00, 0x00, 0x00, 0x01, 0x08, 0xCE, 0x3C, 0x80, // PPS
-		0x00, 0x00, 0x00, 0x01, 0x01, 0x9A, 0x00, 0x00, // Non-IDR Slice (NAL 1)
+		0x00, 0x00, 0x00, 0x01, 0x07, 0x42, 0x00, 0x1E,
+		0x00, 0x00, 0x00, 0x01, 0x08, 0xCE, 0x3C, 0x80,
+		0x00, 0x00, 0x00, 0x01, 0x01, 0x9A, 0x00, 0x00,
 	}
 	pkt := createVideoPESPacket(videoPID, true, 0, es)
 	if _, err := r.Push(pkt); err != nil {
 		t.Fatalf("push failed: %v", err)
 	}
 
-	// SPS without IDR must NOT be indexed as keyframe!
 	if _, ok := r.LatestKeyframeOffset(); ok {
 		t.Fatalf("SPS without IDR was incorrectly indexed as keyframe")
 	}
@@ -342,14 +335,13 @@ func TestMasterRing_NonVideoPID_RandomAccessIndicatorIgnored(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	// Audio packet on PID 85 with random_access_indicator = 1
 	audioPkt := make([]byte, TSPacketSize)
 	audioPkt[0] = SyncByte
 	audioPkt[1] = byte((audioPID >> 8) & 0x1F)
 	audioPkt[2] = byte(audioPID & 0xFF)
-	audioPkt[3] = 0x30 // AF + payload
+	audioPkt[3] = 0x30
 	audioPkt[4] = 5
-	audioPkt[5] = 0x40 // random_access_indicator = 1
+	audioPkt[5] = 0x40
 
 	if _, err := r.Push(audioPkt); err != nil {
 		t.Fatalf("push failed: %v", err)
@@ -370,7 +362,7 @@ func TestMasterRing_HEVC_KeyframeDetection(t *testing.T) {
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
 		_, _ = r.Push(pkt)
 	}
-	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, true) { // HEVC PMT
+	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, true) {
 		_, _ = r.Push(pkt)
 	}
 
@@ -381,12 +373,11 @@ func TestMasterRing_HEVC_KeyframeDetection(t *testing.T) {
 
 	frameStartOffset := r.Head()
 
-	// HEVC PES packet with VPS (32), SPS (33), PPS (34), and IDR_W_RADL (19 -> byte = (19<<1) = 0x26)
 	es := []byte{
-		0x00, 0x00, 0x00, 0x01, 0x40, 0x01, // VPS (32)
-		0x00, 0x00, 0x00, 0x01, 0x42, 0x01, // SPS (33)
-		0x00, 0x00, 0x00, 0x01, 0x44, 0x01, // PPS (34)
-		0x00, 0x00, 0x00, 0x01, 0x26, 0x01, // IDR_W_RADL (19)
+		0x00, 0x00, 0x00, 0x01, 0x40, 0x01,
+		0x00, 0x00, 0x00, 0x01, 0x42, 0x01,
+		0x00, 0x00, 0x00, 0x01, 0x44, 0x01,
+		0x00, 0x00, 0x00, 0x01, 0x26, 0x01,
 	}
 	pkt := createVideoPESPacket(videoPID, true, 0, es)
 	if _, err := r.Push(pkt); err != nil {
@@ -400,11 +391,9 @@ func TestMasterRing_HEVC_KeyframeDetection(t *testing.T) {
 }
 
 func TestMasterRing_PushLargerThanRingCapacity(t *testing.T) {
-	// Small ring: 10 packets = 1880 bytes
 	r := NewMasterRing(10 * TSPacketSize)
 	defer r.Close()
 
-	// Push 50 packets (9,400 bytes, 5x ring capacity) in a single Push call
 	largeData := make([]byte, 50*TSPacketSize)
 	for i := 0; i < 50; i++ {
 		pkt := createBasicPacket(100, false, uint8(i%16))
@@ -428,7 +417,6 @@ func TestMasterRing_PushLargerThanRingCapacity(t *testing.T) {
 }
 
 func TestMasterRing_KeyframePruneAllOlderThanTail(t *testing.T) {
-	// Ring capacity: 10 packets
 	r := NewMasterRing(10 * TSPacketSize)
 	defer r.Close()
 
@@ -442,7 +430,6 @@ func TestMasterRing_KeyframePruneAllOlderThanTail(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	// Push IDR frame at offset X
 	es := []byte{0x00, 0x00, 0x01, 0x05}
 	_, _ = r.Push(createVideoPESPacket(videoPID, true, 0, es))
 
@@ -450,12 +437,10 @@ func TestMasterRing_KeyframePruneAllOlderThanTail(t *testing.T) {
 		t.Fatalf("expected initial keyframe indexed")
 	}
 
-	// Overwrite ring completely by pushing 30 non-keyframe packets
 	for i := 0; i < 30; i++ {
 		_, _ = r.Push(createBasicPacket(videoPID, false, uint8(i%16)))
 	}
 
-	// Keyframe is now older than tail: must be pruned and return false
 	if _, ok := r.LatestKeyframeOffset(); ok {
 		t.Fatalf("expected keyframe older than tail to be pruned, but was still reported")
 	}
@@ -474,7 +459,6 @@ func TestSubscriberReader_ConcurrentReadSeekClose_NoDeadlock(t *testing.T) {
 	var wg sync.WaitGroup
 	stopChan := make(chan struct{})
 
-	// Start continuous writer
 	go func() {
 		cc := uint8(0)
 		for {
@@ -490,7 +474,6 @@ func TestSubscriberReader_ConcurrentReadSeekClose_NoDeadlock(t *testing.T) {
 		}
 	}()
 
-	// 20 concurrent goroutines racing Read, Seek, Offset, DroppedBytes, Close
 	for i := 0; i < numReaders; i++ {
 		wg.Add(1)
 		go func(idx int) {
@@ -560,7 +543,6 @@ func TestMasterRing_MultiReaderConcurrency(t *testing.T) {
 		}(i)
 	}
 
-	// Push in chunks
 	go func() {
 		chunkSize := TSPacketSize * 10
 		for i := 0; i < len(allData); i += chunkSize {
@@ -593,7 +575,6 @@ func TestMasterRing_SlowSubscriberOverrunIsolation(t *testing.T) {
 	reader := r.NewSubscriberReader(0)
 	defer reader.Close()
 
-	// Push 30 packets (overflowing ring)
 	for i := 0; i < 30; i++ {
 		_, _ = r.Push(createBasicPacket(256, false, uint8(i%16)))
 	}
@@ -647,13 +628,12 @@ func TestMasterRing_CCDiscontinuity_AbortsCorruptedSection(t *testing.T) {
 	pkt1[3] = (pkt1[3] & 0xF0) | 0x00
 	_, _ = r.Push(pkt1)
 
-	// 2. Send corrupted second packet with CC=5 (gap instead of CC=1!)
+	// 2. Send corrupted second packet with CC=5 (gap!)
 	pkt2Corrupted := make([]byte, TSPacketSize)
 	copy(pkt2Corrupted, patPackets[1])
 	pkt2Corrupted[3] = (pkt2Corrupted[3] & 0xF0) | 0x05
 	_, _ = r.Push(pkt2Corrupted)
 
-	// PMT PID must NOT be resolved because section assembly aborted due to CC gap
 	if r.pmtPID != 0 {
 		t.Fatalf("corrupted PAT section with CC gap was incorrectly accepted")
 	}
@@ -669,7 +649,6 @@ func TestMasterRing_CCDiscontinuity_AbortsCorruptedSection(t *testing.T) {
 	pkt2Valid[3] = (pkt2Valid[3] & 0xF0) | 0x07
 	_, _ = r.Push(pkt2Valid)
 
-	// Now it must be successfully resolved
 	if r.pmtPID != pmtPID {
 		t.Fatalf("expected pmtPID=%d after clean retransmission, got %d", pmtPID, r.pmtPID)
 	}
@@ -680,7 +659,6 @@ func TestMasterRing_CurrentNextIndicator_InactiveTableIgnored(t *testing.T) {
 	defer r.Close()
 
 	const pmtPID = 100
-	// Create PAT with current_next_indicator = 0
 	patPacketsInactive := createMultiPacketPATWithVersion(pmtPID, 0, 0)
 	for _, pkt := range patPacketsInactive {
 		_, _ = r.Push(pkt)
@@ -690,7 +668,6 @@ func TestMasterRing_CurrentNextIndicator_InactiveTableIgnored(t *testing.T) {
 		t.Fatalf("inactive PAT table (current_next=0) was incorrectly accepted")
 	}
 
-	// Send active table (current_next = 1)
 	for _, pkt := range createMultiPacketPATWithVersion(pmtPID, 0, 1) {
 		_, _ = r.Push(pkt)
 	}
@@ -709,7 +686,6 @@ func TestMasterRing_PMTVersionChange_PurgesStaleKeyframes(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	// 1. Initial PMT v1: Video PID 256 (H.264), Version 0
 	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, 256, false, true, 0, 1) {
 		_, _ = r.Push(pkt)
 	}
@@ -719,7 +695,6 @@ func TestMasterRing_PMTVersionChange_PurgesStaleKeyframes(t *testing.T) {
 		t.Fatalf("expected initial vPID=256 H.264, got %d %v", vPID1, vCodec1)
 	}
 
-	// Push Keyframe on PID 256
 	es1 := []byte{0x00, 0x00, 0x01, 0x05}
 	_, _ = r.Push(createVideoPESPacket(256, true, 0, es1))
 
@@ -727,7 +702,6 @@ func TestMasterRing_PMTVersionChange_PurgesStaleKeyframes(t *testing.T) {
 		t.Fatalf("expected keyframe on PID 256 indexed")
 	}
 
-	// 2. Updated PMT v2 on same PMT PID: Video PID 512 (H.265), Version 1
 	pmtV2 := createMultiPacketPMTWithVersion(pmtPID, 512, true, true, 1, 1)
 	for _, pkt := range pmtV2 {
 		_, _ = r.Push(pkt)
@@ -738,14 +712,12 @@ func TestMasterRing_PMTVersionChange_PurgesStaleKeyframes(t *testing.T) {
 		t.Fatalf("expected dynamically updated vPID=512 H.265, got %d %v", vPID2, vCodec2)
 	}
 
-	// CRITICAL PROOF: Before first IDR on PID 512 arrives, stale keyframe from PID 256 MUST be purged!
 	if _, ok := r.LatestKeyframeOffset(); ok {
 		t.Fatalf("stale keyframe from PID 256 was not purged after PMT version update!")
 	}
 
-	// 3. Push Keyframe on PID 512
 	frameStart := r.Head()
-	es2 := []byte{0x00, 0x00, 0x00, 0x01, 0x26, 0x01} // HEVC IDR (NAL 19)
+	es2 := []byte{0x00, 0x00, 0x00, 0x01, 0x26, 0x01}
 	_, _ = r.Push(createVideoPESPacket(512, true, 0, es2))
 
 	newOffset, ok := r.LatestKeyframeOffset()
@@ -763,7 +735,6 @@ func TestMasterRing_PMTVersionChange_NoVideoStream_LeavesPIDZero(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	// 1. Initial PMT v1: Video PID 256
 	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, 256, false, true, 0, 1) {
 		_, _ = r.Push(pkt)
 	}
@@ -772,7 +743,6 @@ func TestMasterRing_PMTVersionChange_NoVideoStream_LeavesPIDZero(t *testing.T) {
 		t.Fatalf("expected initial vPID=256, got %d", vPID)
 	}
 
-	// 2. Updated PMT v2: Audio only (hasVideo = false), Version 1
 	for _, pkt := range createMultiPacketPMTWithVersion(pmtPID, 0, false, false, 1, 1) {
 		_, _ = r.Push(pkt)
 	}
@@ -790,10 +760,9 @@ func TestMasterRing_CRC32_CorruptedSectionRejected(t *testing.T) {
 	const pmtPID = 100
 	patPackets := createMultiPacketPAT(pmtPID)
 
-	// Corrupt CRC32 in the second packet (last 4 bytes of section)
 	pkt2Corrupt := make([]byte, TSPacketSize)
 	copy(pkt2Corrupt, patPackets[1])
-	pkt2Corrupt[6] ^= 0xFF // Flip bits in CRC
+	pkt2Corrupt[6] ^= 0xFF
 
 	_, _ = r.Push(patPackets[0])
 	_, _ = r.Push(pkt2Corrupt)
@@ -802,7 +771,6 @@ func TestMasterRing_CRC32_CorruptedSectionRejected(t *testing.T) {
 		t.Fatalf("PAT section with corrupted CRC32 was incorrectly accepted")
 	}
 
-	// Send valid PAT with correct CRC32
 	_, _ = r.Push(patPackets[0])
 	_, _ = r.Push(patPackets[1])
 
@@ -812,10 +780,8 @@ func TestMasterRing_CRC32_CorruptedSectionRejected(t *testing.T) {
 }
 
 func TestMasterRing_TargetProgramNumber_Selection(t *testing.T) {
-	// Program 1 -> PMT 100, Program 2 -> PMT 200
 	multiPAT := createMultiProgramPAT(1, 100, 2, 200)
 
-	// Ring 1 targeting default / program 1
 	r1 := NewMasterRing(100 * TSPacketSize)
 	defer r1.Close()
 	_, _ = r1.Push(multiPAT)
@@ -824,7 +790,6 @@ func TestMasterRing_TargetProgramNumber_Selection(t *testing.T) {
 		t.Fatalf("expected default r1 to select PMT 100, got %d", r1.pmtPID)
 	}
 
-	// Ring 2 targeting program 2
 	r2 := NewMasterRingWithProgram(100*TSPacketSize, 2)
 	defer r2.Close()
 	_, _ = r2.Push(multiPAT)
@@ -841,7 +806,6 @@ func TestMasterRing_RepeatedSamePMT_DoesNotPurgeKeyframes(t *testing.T) {
 	const pmtPID = 100
 	const videoPID = 256
 
-	// 1. Initial PAT + PMT v0
 	for _, pkt := range createMultiPacketPAT(pmtPID) {
 		_, _ = r.Push(pkt)
 	}
@@ -850,7 +814,6 @@ func TestMasterRing_RepeatedSamePMT_DoesNotPurgeKeyframes(t *testing.T) {
 		_, _ = r.Push(pkt)
 	}
 
-	// 2. Push IDR Keyframe on video PID 256
 	frameStart := r.Head()
 	es := []byte{0x00, 0x00, 0x01, 0x05}
 	_, _ = r.Push(createVideoPESPacket(videoPID, true, 0, es))
@@ -860,12 +823,10 @@ func TestMasterRing_RepeatedSamePMT_DoesNotPurgeKeyframes(t *testing.T) {
 		t.Fatalf("expected keyframe indexed at %d, got %d (ok=%v)", frameStart, offset1, ok)
 	}
 
-	// 3. Periodic DVB re-transmission: push IDENTICAL PMT v0 again!
 	for _, pkt := range pmtV0 {
 		_, _ = r.Push(pkt)
 	}
 
-	// CRITICAL PROOF: Identical PMT re-transmission MUST NOT purge keyframes!
 	offset2, ok := r.LatestKeyframeOffset()
 	if !ok {
 		t.Fatalf("keyframe was incorrectly purged by identical PMT re-transmission!")
@@ -876,7 +837,6 @@ func TestMasterRing_RepeatedSamePMT_DoesNotPurgeKeyframes(t *testing.T) {
 }
 
 func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
-	// Program 1 -> PMT 100 (Video 256), Program 2 -> PMT 200 (Video 512)
 	multiPAT := createMultiProgramPAT(1, 100, 2, 200)
 
 	r := NewMasterRingWithProgram(100*TSPacketSize, 1)
@@ -887,21 +847,17 @@ func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
 		t.Fatalf("expected pmtPID=100 for program 1, got %d", r.pmtPID)
 	}
 
-	// Push PMT for program 1
 	for _, pkt := range createMultiPacketPMTWithVersion(100, 256, false, true, 0, 1) {
 		_, _ = r.Push(pkt)
 	}
 
-	// Push Keyframe on PID 256
 	_, _ = r.Push(createVideoPESPacket(256, true, 0, []byte{0x00, 0x00, 0x01, 0x05}))
 	if _, ok := r.LatestKeyframeOffset(); !ok {
 		t.Fatalf("expected initial keyframe indexed")
 	}
 
-	// Change target program to program 2
 	r.SetTargetProgram(2)
 
-	// Old program and video state MUST be invalidated immediately
 	if vPID, _ := r.VideoDetails(); vPID != 0 {
 		t.Fatalf("expected vPID=0 immediately after SetTargetProgram, got %d", vPID)
 	}
@@ -909,13 +865,11 @@ func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
 		t.Fatalf("expected keyframe purged immediately after SetTargetProgram")
 	}
 
-	// Next PAT push resolves PMT 200 for program 2
 	_, _ = r.Push(multiPAT)
 	if r.pmtPID != 200 {
 		t.Fatalf("expected pmtPID=200 after resolving program 2, got %d", r.pmtPID)
 	}
 
-	// Push PMT for program 2
 	for _, pkt := range createMultiPacketPMTWithVersion(200, 512, true, true, 0, 1) {
 		_, _ = r.Push(pkt)
 	}
@@ -923,5 +877,257 @@ func TestMasterRing_SetTargetProgram_InvalidatesOldProgramState(t *testing.T) {
 	vPID2, vCodec2 := r.VideoDetails()
 	if vPID2 != 512 || vCodec2 != CodecH265 {
 		t.Fatalf("expected vPID=512 HEVC for program 2, got %d %v", vPID2, vCodec2)
+	}
+}
+
+// --- NEW BROADCAST RE-AUDIT SCENARIOS ---
+
+// 1. Pointer field > 0 completes previous section and starts new section in the same TS packet
+func TestMasterRing_PointerField_CompletesPreviousSectionAndStartsNew(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	// Section 1: Program 1 -> PMT 100 (16 bytes total)
+	sec1 := createPATSectionBytes(1, 100, 0, 1, 0, 0)
+	// Section 2: Program 2 -> PMT 200 (16 bytes total)
+	sec2 := createPATSectionBytes(2, 200, 1, 1, 0, 0)
+
+	// Packet 1 (PUSI=1, CC=0): starts Section 1 with first 10 bytes (6 bytes remaining)
+	pkt1 := make([]byte, TSPacketSize)
+	pkt1[0] = SyncByte
+	pkt1[1] = 0x40
+	pkt1[2] = 0x00
+	pkt1[3] = 0x30 // AF + payload, CC=0
+	pkt1[4] = 172  // AF len
+	pkt1[5] = 0x00
+	pkt1[177] = 0x00 // pointer_field = 0
+	copy(pkt1[178:], sec1[:10])
+
+	_, _ = r.Push(pkt1)
+	if r.pmtPID != 0 {
+		t.Fatalf("section 1 should be incomplete")
+	}
+
+	// Packet 2 (PUSI=1, CC=1): pointer_field = 6!
+	// Bytes 5..10: remaining 6 bytes of Section 1
+	// Bytes 11..26: full Section 2!
+	pkt2 := make([]byte, TSPacketSize)
+	pkt2[0] = SyncByte
+	pkt2[1] = 0x40 // PUSI=1
+	pkt2[2] = 0x00
+	pkt2[3] = 0x11            // payload only, CC=1
+	pkt2[4] = 6               // pointer_field = 6
+	copy(pkt2[5:], sec1[10:]) // 6 bytes completing Section 1
+	copy(pkt2[11:], sec2)     // 16 bytes containing Section 2
+	for i := 27; i < TSPacketSize; i++ {
+		pkt2[i] = 0xFF // Stuffing
+	}
+
+	_, _ = r.Push(pkt2)
+
+	// Section 2 was also parsed in the same packet and updated PMT PID to 200!
+	if r.pmtPID != 200 {
+		t.Fatalf("expected pmtPID=200 from Section 2 parsed in same packet, got %d", r.pmtPID)
+	}
+}
+
+// 2. Multiple complete sections packed into a single TS payload
+func TestMasterRing_MultipleCompleteSectionsInSinglePacket(t *testing.T) {
+	r := NewMasterRingWithProgram(100*TSPacketSize, 20)
+	defer r.Close()
+
+	// Section 0: Program 10 -> PMT 100 (16 bytes)
+	sec0 := createPATSectionBytes(10, 100, 3, 1, 0, 1)
+	// Section 1: Program 20 -> PMT 200 (16 bytes)
+	sec1 := createPATSectionBytes(20, 200, 3, 1, 1, 1)
+
+	pkt := make([]byte, TSPacketSize)
+	pkt[0] = SyncByte
+	pkt[1] = 0x40 // PUSI=1, PID=0
+	pkt[2] = 0x00
+	pkt[3] = 0x10 // AFC=0x01
+	pkt[4] = 0x00 // pointer_field = 0
+	copy(pkt[5:], sec0)
+	copy(pkt[21:], sec1)
+	for i := 37; i < TSPacketSize; i++ {
+		pkt[i] = 0xFF // Stuffing
+	}
+
+	_, _ = r.Push(pkt)
+
+	if r.pmtPID != 200 {
+		t.Fatalf("expected pmtPID=200 for target program 20 from multi-section packet, got %d", r.pmtPID)
+	}
+}
+
+// 3. Multi-section PAT (Section 0/1 + Section 1/1) where target is only in Section 1
+func TestMasterRing_MultiSectionPAT_TargetOnlyInSection1(t *testing.T) {
+	r := NewMasterRingWithProgram(100*TSPacketSize, 30)
+	defer r.Close()
+
+	sec0 := createPATSectionBytes(10, 100, 3, 1, 0, 1)
+	sec1 := createPATSectionBytes(30, 300, 3, 1, 1, 1)
+
+	pkt0 := make([]byte, TSPacketSize)
+	pkt0[0] = SyncByte
+	pkt0[1] = 0x40
+	pkt0[2] = 0x00
+	pkt0[3] = 0x10 // CC=0
+	pkt0[4] = 0x00
+	copy(pkt0[5:], sec0)
+
+	pkt1 := make([]byte, TSPacketSize)
+	pkt1[0] = SyncByte
+	pkt1[1] = 0x40
+	pkt1[2] = 0x00
+	pkt1[3] = 0x11 // CC=1
+	pkt1[4] = 0x00
+	copy(pkt1[5:], sec1)
+
+	// Push Section 0 (target 30 not in Section 0)
+	_, _ = r.Push(pkt0)
+	if r.pmtPID != 0 {
+		t.Fatalf("table should not be activated before section 1 arrives")
+	}
+
+	// Push Section 1
+	_, _ = r.Push(pkt1)
+	if r.pmtPID != 300 {
+		t.Fatalf("expected pmtPID=300 from Section 1, got %d", r.pmtPID)
+	}
+
+	// Verify PAT preamble contains both Section 0 and Section 1 TS packets
+	preamble := r.PATPMTPreamble()
+	if len(preamble) < 2*TSPacketSize {
+		t.Fatalf("preamble must contain at least 2 PAT packets, got %d", len(preamble))
+	}
+	if !bytes.Equal(preamble[:TSPacketSize], pkt0) || !bytes.Equal(preamble[TSPacketSize:2*TSPacketSize], pkt1) {
+		t.Fatalf("preamble must contain both Section 0 and Section 1 packets")
+	}
+}
+
+// 4. Repeated carousel arrival of Section 0 does not destroy multi-section preamble or target resolution
+func TestMasterRing_CarouselRepeatedSection0_PreservesMultiSectionPreamble(t *testing.T) {
+	r := NewMasterRingWithProgram(100*TSPacketSize, 30)
+	defer r.Close()
+
+	sec0 := createPATSectionBytes(10, 100, 3, 1, 0, 1)
+	sec1 := createPATSectionBytes(30, 300, 3, 1, 1, 1)
+
+	pkt0 := make([]byte, TSPacketSize)
+	pkt0[0] = SyncByte
+	pkt0[1] = 0x40
+	pkt0[2] = 0x00
+	pkt0[3] = 0x10 // CC=0
+	pkt0[4] = 0x00
+	copy(pkt0[5:], sec0)
+
+	pkt1 := make([]byte, TSPacketSize)
+	pkt1[0] = SyncByte
+	pkt1[1] = 0x40
+	pkt1[2] = 0x00
+	pkt1[3] = 0x11 // CC=1
+	pkt1[4] = 0x00
+	copy(pkt1[5:], sec1)
+
+	_, _ = r.Push(pkt0)
+	_, _ = r.Push(pkt1)
+
+	if r.pmtPID != 300 {
+		t.Fatalf("expected pmtPID=300, got %d", r.pmtPID)
+	}
+
+	// Periodic DVB Carousel: Section 0 arrives again!
+	pkt0Next := make([]byte, TSPacketSize)
+	copy(pkt0Next, pkt0)
+	pkt0Next[3] = 0x12 // CC=2
+	_, _ = r.Push(pkt0Next)
+
+	// Target resolution must NOT be destroyed
+	if r.pmtPID != 300 {
+		t.Fatalf("expected pmtPID=300 preserved after carousel section 0, got %d", r.pmtPID)
+	}
+
+	// Preamble must STILL contain both sections
+	preamble := r.PATPMTPreamble()
+	if len(preamble) != 2*TSPacketSize {
+		t.Fatalf("preamble must preserve both sections (length %d), got %d", 2*TSPacketSize, len(preamble))
+	}
+}
+
+// 5. Missing section prevents table activation on new version
+func TestMasterRing_MissingSection_PreventsTableActivation(t *testing.T) {
+	r := NewMasterRingWithProgram(100*TSPacketSize, 30)
+	defer r.Close()
+
+	// Initial table v0 (single section) -> pmtPID = 100
+	secInit := createPATSectionBytes(30, 100, 0, 1, 0, 0)
+	pktInit := make([]byte, TSPacketSize)
+	pktInit[0] = SyncByte
+	pktInit[1] = 0x40
+	pktInit[2] = 0x00
+	pktInit[3] = 0x10
+	pktInit[4] = 0x00
+	copy(pktInit[5:], secInit)
+	_, _ = r.Push(pktInit)
+
+	if r.pmtPID != 100 {
+		t.Fatalf("expected initial pmtPID=100, got %d", r.pmtPID)
+	}
+
+	// New version v1 announces last_section_number = 1 (2 sections required)
+	// Push only Section 0 of v1 (which does NOT have program 30)
+	secV1_0 := createPATSectionBytes(10, 500, 1, 1, 0, 1)
+	pktV1_0 := make([]byte, TSPacketSize)
+	pktV1_0[0] = SyncByte
+	pktV1_0[1] = 0x40
+	pktV1_0[2] = 0x00
+	pktV1_0[3] = 0x11
+	pktV1_0[4] = 0x00
+	copy(pktV1_0[5:], secV1_0)
+	_, _ = r.Push(pktV1_0)
+
+	// Because Section 1 of v1 is missing, table v1 is INCOMPLETE and must not activate!
+	if r.pmtPID != 100 {
+		t.Fatalf("incomplete table version must not activate: expected pmtPID=100, got %d", r.pmtPID)
+	}
+
+	// Push Section 1 of v1 (with program 30 -> PMT 300)
+	secV1_1 := createPATSectionBytes(30, 300, 1, 1, 1, 1)
+	pktV1_1 := make([]byte, TSPacketSize)
+	pktV1_1[0] = SyncByte
+	pktV1_1[1] = 0x40
+	pktV1_1[2] = 0x00
+	pktV1_1[3] = 0x12
+	pktV1_1[4] = 0x00
+	copy(pktV1_1[5:], secV1_1)
+	_, _ = r.Push(pktV1_1)
+
+	// Now table v1 is complete and activates!
+	if r.pmtPID != 300 {
+		t.Fatalf("expected pmtPID=300 after complete v1 assembly, got %d", r.pmtPID)
+	}
+}
+
+// 6. Duplicate CC packet is ignored silently without discontinuity reset
+func TestMasterRing_DuplicateCC_IgnoredWithoutDiscontinuity(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	const pmtPID = 100
+	patPackets := createMultiPacketPAT(pmtPID)
+
+	// 1. Push Packet 1 with CC=0
+	_, _ = r.Push(patPackets[0])
+
+	// 2. Push exact duplicate of Packet 1 with same CC=0 (DVB retransmission)
+	_, _ = r.Push(patPackets[0])
+
+	// 3. Push Packet 2 with CC=1
+	_, _ = r.Push(patPackets[1])
+
+	// Assembly must have succeeded seamlessly
+	if r.pmtPID != pmtPID {
+		t.Fatalf("duplicate CC packet caused incorrect discontinuity reset: got pmtPID=%d", r.pmtPID)
 	}
 }
