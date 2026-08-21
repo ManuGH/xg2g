@@ -137,7 +137,8 @@ func NewLivePipelineConnector(cfg ConnectorConfig) *LivePipelineConnector {
 		httpClient: &http.Client{
 			Timeout: 0, // Continuous streaming
 			Transport: &http.Transport{
-				ResponseHeaderTimeout: 10 * time.Second,
+				DisableKeepAlives:     true,
+				ResponseHeaderTimeout: 15 * time.Second,
 				IdleConnTimeout:       30 * time.Second,
 			},
 		},
@@ -227,6 +228,10 @@ func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.Sessio
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upstream request: %w", err)
 	}
+
+	req.Close = true
+	req.Header.Set("User-Agent", "curl/8.10.1")
+	req.Header.Set("Accept", "*/*")
 
 	if c.cfg.Username != "" || c.cfg.Password != "" {
 		req.SetBasicAuth(c.cfg.Username, c.cfg.Password)
