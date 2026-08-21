@@ -77,8 +77,13 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     /// comes back, so pictures still in the decoder when a channel is zapped are
     /// discarded instead of being delivered into the next stream's timeline.
     ///
-    /// Synchronized under `sessionLock`.
+    /// Synchronized under `generationLock`.
     private var _decodeGeneration: Int = 0
+    /// Tracks the incarnation of the underlying `VTDecompressionSession`.
+    /// Advanced whenever a session is invalidated (e.g. fatal error, backgrounding,
+    /// reconfiguration) to isolate and discard in-flight asynchronous decode callbacks
+    /// without desynchronizing `_decodeGeneration` (which tracks the channel zap generation).
+    private var _sessionGeneration: Int = 0
     private var _inFlightFrames: Int = 0
     private var _lastDecodeLatencyMs: Double = 0.0
     private var _meanDecodeLatencyMs: Double = 0.0
@@ -89,7 +94,7 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     /// across the VideoToolbox calls that act on them.
     private let sessionLock = NSLock()
 
-    /// Guards `_decodeGeneration`, `_inFlightFrames`, and latency statistics.
+    /// Guards `_decodeGeneration`, `_sessionGeneration`, `_inFlightFrames`, and latency statistics.
     private let generationLock = NSLock()
 
     /// Number of frames currently in-flight in VideoToolbox asynchronous decode.
@@ -126,6 +131,13 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         }
     }
 
+    /// Incarnation generation of the active VideoToolbox session.
+    public var sessionGeneration: Int {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return _sessionGeneration
+    }
+
     public var hasActiveSession: Bool {
         sessionLock.lock()
         defer { sessionLock.unlock() }
@@ -144,9 +156,10 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         invalidateSession()
     }
 
-    public func reset(generation: Int) {
+    public func reset(generation: Int = 0) {
         generationLock.lock()
         _decodeGeneration = generation
+        _sessionGeneration += 1
         _inFlightFrames = 0
         generationLock.unlock()
 
@@ -198,7 +211,7 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         return classifyError(status) == .bitstream
     }
 
-    /// Detaches the session and advances the generation, handing the old
+    /// Detaches the session and advances the session generation, handing the old
     /// session back for the caller to invalidate *after* dropping the lock.
     ///
     /// `VTDecompressionSessionInvalidate` completes frames still in flight
@@ -207,19 +220,19 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     /// already owned — `NSLock` is not recursive, so the thread never woke up.
     /// Detaching under the lock keeps the state change atomic; the teardown
     /// itself needs no lock, because nothing else can still reach the session.
-    private func detachAndAdvanceGenerationLocked() -> (stale: VTDecompressionSession?, generation: Int) {
+    private func detachAndAdvanceGenerationLocked() -> (stale: VTDecompressionSession?, sessionGeneration: Int) {
         let stale = decompressionSession
         decompressionSession = nil
         generationLock.lock()
-        _decodeGeneration += 1
+        _sessionGeneration += 1
         _inFlightFrames = 0
         _lastDecodeLatencyMs = 0.0
         _meanDecodeLatencyMs = 0.0
         _maxDecodeLatencyMs = 0.0
         _latencySampleCount = 0
-        let generation = _decodeGeneration
+        let sessionGeneration = _sessionGeneration
         generationLock.unlock()
-        return (stale, generation)
+        return (stale, sessionGeneration)
     }
 
     /// Detaches the session without touching the generation.
@@ -240,11 +253,11 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 
     public func forceSessionRecovery(reason: String) {
         sessionLock.lock()
-        let (stale, newGen) = detachAndAdvanceGenerationLocked()
+        let (stale, sessionGen) = detachAndAdvanceGenerationLocked()
         sessionLock.unlock()
         invalidateDetached(stale)
 
-        let msg = "[1080i50-DEC-FORCE] 🛑 Forced session recovery (\(reason)) -> advanced to gen \(newGen)"
+        let msg = "[1080i50-DEC-FORCE] 🛑 Forced session recovery (\(reason)) -> session gen \(sessionGen)"
         print(msg)
         TelemetryServer.shared.log(msg)
 
@@ -358,7 +371,7 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         probeProperty("MaximizePowerEfficiency: True", key: kVTDecompressionPropertyKey_MaximizePowerEfficiency, value: kCFBooleanTrue)
         probeProperty("RealTime: True", key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue)
 
-        var isVTDeinterlaceAccepted = false
+        let isVTDeinterlaceAccepted = false
 
         // Verify if Hardware Acceleration is active
         var isHWActive: Bool = false
@@ -418,12 +431,18 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         }
 
         generationLock.lock()
-        let currentGen = _decodeGeneration
+        let currentZapGen = _decodeGeneration
+        let currentSessionGen = _sessionGeneration
         _inFlightFrames += 1
         generationLock.unlock()
 
         var flagsOut: VTDecodeInfoFlags = []
-        let context = FrameContext(structure: structure, pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer), generation: currentGen)
+        let context = FrameContext(
+            structure: structure,
+            pts: CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
+            zapGeneration: currentZapGen,
+            sessionGeneration: currentSessionGen
+        )
         let contextPtr = Unmanaged.passRetained(context).toOpaque()
 
         let status = VTDecompressionSessionDecodeFrame(
@@ -449,10 +468,10 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         // The state change happens under the lock; the teardown, the logging and
         // the delegate calls happen after it, where they cannot block a decode.
         var stale: VTDecompressionSession?
-        var newGen = currentGen
+        var sessionGen = currentSessionGen
         switch category {
         case .sessionDead, .reconfigureOrResource:
-            (stale, newGen) = detachAndAdvanceGenerationLocked()
+            (stale, sessionGen) = detachAndAdvanceGenerationLocked()
         case .bitstream, .ok:
             break
         }
@@ -461,13 +480,13 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 
         switch category {
         case .sessionDead:
-            let msg = "[1080i50-DEC-FATAL] 🛑 VTDecompressionSession invalidated due to fatal error: \(status) (advanced to gen \(newGen))"
+            let msg = "[1080i50-DEC-FATAL] 🛑 VTDecompressionSession invalidated due to fatal error: \(status) (session gen \(sessionGen))"
             print(msg)
             TelemetryServer.shared.log(msg)
             delegate?.hardwareDecoder(self, didChangeHWActiveState: false)
             delegate?.hardwareDecoder(self, didInvalidateSessionWithFatalError: status)
         case .reconfigureOrResource:
-            let msg = "[1080i50-DEC-RECONFIG] 🔄 VTDecompressionSession invalidated for reconfiguration/resource: \(status) (advanced to gen \(newGen))"
+            let msg = "[1080i50-DEC-RECONFIG] 🔄 VTDecompressionSession invalidated for reconfiguration/resource: \(status) (session gen \(sessionGen))"
             print(msg)
             TelemetryServer.shared.log(msg)
             delegate?.hardwareDecoder(self, didChangeHWActiveState: false)
@@ -483,7 +502,8 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     fileprivate func handleDecodedFrame(status: OSStatus, imageBuffer: CVImageBuffer?, context: FrameContext) {
         let latencyMs = (CACurrentMediaTime() - context.submitTime) * 1000.0
         generationLock.lock()
-        let currentGen = _decodeGeneration
+        let currentZapGen = _decodeGeneration
+        let currentSessionGen = _sessionGeneration
         _inFlightFrames = max(0, _inFlightFrames - 1)
         _lastDecodeLatencyMs = latencyMs
         _maxDecodeLatencyMs = max(_maxDecodeLatencyMs, latencyMs)
@@ -491,8 +511,8 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         _meanDecodeLatencyMs += (latencyMs - _meanDecodeLatencyMs) / Double(_latencySampleCount)
         generationLock.unlock()
 
-        guard context.generation == currentGen else {
-            // Frame from a prior generation (e.g. from an invalidated dead session) is discarded
+        guard context.sessionGeneration == currentSessionGen, context.zapGeneration == currentZapGen else {
+            // Frame from a prior session or zap generation (e.g. from an invalidated dead session) is discarded
             return
         }
 
@@ -507,10 +527,10 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
                 recoveryQueue.async { [weak self] in
                     guard let self else { return }
                     self.sessionLock.lock()
-                    let (stale, newGen) = self.detachAndAdvanceGenerationLocked()
+                    let (stale, sessionGen) = self.detachAndAdvanceGenerationLocked()
                     self.sessionLock.unlock()
                     self.invalidateDetached(stale)
-                    let msg = "[1080i50-DEC-FATAL] 🛑 VTDecompressionSession async fatal error: \(status) (advanced to gen \(newGen))"
+                    let msg = "[1080i50-DEC-FATAL] 🛑 VTDecompressionSession async fatal error: \(status) (session gen \(sessionGen))"
                     print(msg)
                     TelemetryServer.shared.log(msg)
                     self.delegate?.hardwareDecoder(self, didChangeHWActiveState: false)
@@ -520,10 +540,10 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
                 recoveryQueue.async { [weak self] in
                     guard let self else { return }
                     self.sessionLock.lock()
-                    let (stale, newGen) = self.detachAndAdvanceGenerationLocked()
+                    let (stale, sessionGen) = self.detachAndAdvanceGenerationLocked()
                     self.sessionLock.unlock()
                     self.invalidateDetached(stale)
-                    let msg = "[1080i50-DEC-RECONFIG] 🔄 VTDecompressionSession async reconfig error: \(status) (advanced to gen \(newGen))"
+                    let msg = "[1080i50-DEC-RECONFIG] 🔄 VTDecompressionSession async reconfig error: \(status) (session gen \(sessionGen))"
                     print(msg)
                     TelemetryServer.shared.log(msg)
                     self.delegate?.hardwareDecoder(self, didChangeHWActiveState: false)
@@ -555,7 +575,7 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
             pixelBuffer: buffer,
             pts: context.pts,
             structure: context.structure,
-            generation: context.generation
+            generation: context.zapGeneration
         )
         delegate?.hardwareDecoder(self, didEmitFrame: frame)
     }
@@ -564,13 +584,15 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 private final class FrameContext {
     let structure: H264PictureStructure
     let pts: CMTime
-    let generation: Int
+    let zapGeneration: Int
+    let sessionGeneration: Int
     let submitTime: CFTimeInterval
 
-    init(structure: H264PictureStructure, pts: CMTime, generation: Int, submitTime: CFTimeInterval = CACurrentMediaTime()) {
+    init(structure: H264PictureStructure, pts: CMTime, zapGeneration: Int, sessionGeneration: Int, submitTime: CFTimeInterval = CACurrentMediaTime()) {
         self.structure = structure
         self.pts = pts
-        self.generation = generation
+        self.zapGeneration = zapGeneration
+        self.sessionGeneration = sessionGeneration
         self.submitTime = submitTime
     }
 }

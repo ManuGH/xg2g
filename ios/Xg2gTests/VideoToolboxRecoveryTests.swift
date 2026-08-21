@@ -74,13 +74,15 @@ struct VideoToolboxRecoveryTests {
 
         decoder.configure(with: format)
         #expect(decoder.hasActiveSession)
-        let initialGen = decoder.decodeGeneration
+        let initialSessionGen = decoder.sessionGeneration
+        let zapGen = decoder.decodeGeneration
 
         // Trigger fatal session recovery
         decoder.forceSessionRecovery(reason: "Unit Test Fatal Invalidation")
 
         #expect(!decoder.hasActiveSession)
-        #expect(decoder.decodeGeneration == initialGen + 1)
+        #expect(decoder.sessionGeneration == initialSessionGen + 1)
+        #expect(decoder.decodeGeneration == zapGen)
         #expect(sink.fatalErrors.count == 1)
         #expect(sink.fatalErrors.first == kVTInvalidSessionErr)
         #expect(sink.reconfigErrors.isEmpty)
@@ -132,9 +134,9 @@ struct VideoToolboxRecoveryTests {
         // Submitting frame on Gen 0
         decoder.decode(sampleBuffer: sampleBuffer, structure: .wovenTopFieldFirst)
 
-        // Invalidate session (advances generation to 1)
+        // Invalidate session (advances session generation)
         decoder.forceSessionRecovery(reason: "Test Generational Dropping")
-        #expect(decoder.decodeGeneration > 0)
+        #expect(decoder.sessionGeneration > 0)
 
         // Verify that any late callback from Gen 0 cannot emit to sink
         #expect(sink.emittedFrames.isEmpty)
