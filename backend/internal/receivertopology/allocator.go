@@ -18,7 +18,12 @@ const (
 	ProblemCodeRecordingReservationConflict = "ADMISSION_RECORDING_RESERVATION_CONFLICT"
 	ProblemCodeDemuxExhausted               = "ADMISSION_DEMUX_EXHAUSTED"
 	ProblemCodeStaleSnapshot                = "ADMISSION_STALE_SNAPSHOT"
+	ProblemCodeTransponderUnavailable       = "ADMISSION_TRANSPONDER_UNAVAILABLE"
 )
+
+// ErrAuthoritativeTransponderUnavailable indicates that authoritative physical RF tuning parameters
+// for a requested broadcast service are missing and cannot be guessed in ENFORCE mode.
+var ErrAuthoritativeTransponderUnavailable = fmt.Errorf("authoritative transponder RF data unavailable for service")
 
 // AllocationOwner denotes whether an allocation belongs to an xg2g session or an external receiver activity.
 type AllocationOwner string

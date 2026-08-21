@@ -62,11 +62,15 @@ func NewService(topology ReceiverTopology, mode EvaluationMode) (*Service, error
 	}
 
 	allocator := NewAllocator(topology, mode)
+	registry := NewTransponderRegistry()
+	PopulateStandardTransponderTables(registry)
+
 	return &Service{
 		allocator: allocator,
 		runtime:   NewRuntimeAllocation(),
 		leases:    NewLeaseStore(),
 		planner:   NewReservationPlanner(DefaultReservationWindow),
+		resolver:  registry,
 	}, nil
 }
 
@@ -276,17 +280,39 @@ func (s *Service) CanStartStreamWithPriority(serviceRef, sessionID string, prior
 func (s *Service) CanStartService(serviceRef string, sessionID string, priority Priority) (AllocationDecision, error) {
 	s.mu.RLock()
 	resolver := s.resolver
+	mode := s.allocator.Mode()
 	s.mu.RUnlock()
 
 	var mux MultiplexID
 	var err error
 	if resolver != nil {
 		mux, err = resolver.ResolveTransponder(context.Background(), serviceRef)
+		if err != nil && mode == EvaluationModeEnforce {
+			return AllocationDecision{
+				Allowed:     false,
+				Reason:      fmt.Sprintf("authoritative transponder data unavailable: %v", err),
+				ProblemCode: ProblemCodeTransponderUnavailable,
+			}, fmt.Errorf("%w: %v", ErrAuthoritativeTransponderUnavailable, err)
+		}
+	} else if mode == EvaluationModeEnforce {
+		return AllocationDecision{
+			Allowed:     false,
+			Reason:      "authoritative transponder resolver is required in ENFORCE mode",
+			ProblemCode: ProblemCodeTransponderUnavailable,
+		}, ErrAuthoritativeTransponderUnavailable
 	} else {
 		mux, err = ParseServiceRef(serviceRef)
+		if err != nil {
+			return AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+		}
 	}
-	if err != nil {
-		return AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+
+	if mode == EvaluationModeEnforce && (mux.TransponderKey == nil || mux.TransponderKey.FrequencyHz == 0) {
+		return AllocationDecision{
+			Allowed:     false,
+			Reason:      fmt.Sprintf("authoritative RF parameters missing for service %q", serviceRef),
+			ProblemCode: ProblemCodeTransponderUnavailable,
+		}, ErrAuthoritativeTransponderUnavailable
 	}
 
 	s.mu.RLock()
@@ -420,18 +446,41 @@ func (s *Service) ReserveStreamLeaseAtomic(
 ) (*Lease, AllocationDecision, error) {
 	s.mu.RLock()
 	resolver := s.resolver
+	mode := s.allocator.Mode()
 	s.mu.RUnlock()
 
 	var mux MultiplexID
 	var err error
 	if resolver != nil {
 		mux, err = resolver.ResolveTransponder(context.Background(), serviceRef)
+		if err != nil && mode == EvaluationModeEnforce {
+			return nil, AllocationDecision{
+				Allowed:     false,
+				Reason:      fmt.Sprintf("authoritative transponder data unavailable: %v", err),
+				ProblemCode: ProblemCodeTransponderUnavailable,
+			}, fmt.Errorf("%w: %v", ErrAuthoritativeTransponderUnavailable, err)
+		}
+	} else if mode == EvaluationModeEnforce {
+		return nil, AllocationDecision{
+			Allowed:     false,
+			Reason:      "authoritative transponder resolver is required in ENFORCE mode",
+			ProblemCode: ProblemCodeTransponderUnavailable,
+		}, ErrAuthoritativeTransponderUnavailable
 	} else {
 		mux, err = ParseServiceRef(serviceRef)
+		if err != nil {
+			return nil, AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+		}
 	}
-	if err != nil {
-		return nil, AllocationDecision{}, fmt.Errorf("cannot parse service ref %q: %w", serviceRef, err)
+
+	if mode == EvaluationModeEnforce && (mux.TransponderKey == nil || mux.TransponderKey.FrequencyHz == 0) {
+		return nil, AllocationDecision{
+			Allowed:     false,
+			Reason:      fmt.Sprintf("authoritative RF parameters missing for service %q", serviceRef),
+			ProblemCode: ProblemCodeTransponderUnavailable,
+		}, ErrAuthoritativeTransponderUnavailable
 	}
+
 	return s.ReserveMultiplexLeaseAtomic(mux, sessionID, priority, ttl)
 }
 

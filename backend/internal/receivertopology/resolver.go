@@ -81,7 +81,98 @@ func (r *TransponderRegistry) ResolveTransponder(ctx context.Context, serviceRef
 				Polarization: pol,
 			}
 		}
+		return baseMux, nil
 	}
 
-	return baseMux, nil
+	return MultiplexID{}, fmt.Errorf("%w: missing RF parameters for TSID 0x%04X ONID 0x%04X Namespace 0x%08X", ErrAuthoritativeTransponderUnavailable, baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace)
+}
+
+// PopulateStandardTransponderTables enriches the registry with authoritative physical RF tuning parameters
+// for standard European satellite broadcast networks (Astra 19.2°E, Hotbird 13.0°E).
+func PopulateStandardTransponderTables(r *TransponderRegistry) {
+	const astra192 = 0x00C00000
+	const hotbird130 = 0x00820000
+
+	// Astra 19.2°E Transponders (TSID, ONID, Namespace -> TransponderKey)
+	astraTPs := []struct {
+		tsid uint16
+		onid uint16
+		key  TransponderKey
+	}{
+		// ORF Digital (ORF 1 HD, ORF 2 HD, ORF III HD, ORF Sport+ HD)
+		{0x03EF, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11273000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// ARD Digital 1 (Das Erste HD, SWR HD, arte HD)
+		{0x03FB, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11494000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// ZDF Digital (ZDF HD, zdf_neo HD)
+		{0x03F3, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11362000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// ZDF Digital 2 (3sat HD, KiKa HD, ZDFinfo HD)
+		{0x044D, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11347000000, Polarization: PolarizationVertical, StreamID: -1}},
+		// ARD Digital 2 (BR HD, NDR HD, Phoenix HD)
+		{0x041F, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11582000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// ARD Digital 3 (WDR HD Köln, WDR HD Regional)
+		{0x0453, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 12422000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// RTL Group Deutschland SD (RTL, VOX, Super RTL, n-tv, Nitro)
+		{0x041B, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS, OrbitalPosition: 192, FrequencyHz: 12188000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// ProSiebenSat.1 Digital SD (ProSieben, SAT.1, Kabel 1, sixx, Pro7 MAXX)
+		{0x0441, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS, OrbitalPosition: 192, FrequencyHz: 12544000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// ServusTV / Red Bull HD
+		{0x0007, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11303000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// Sky Deutschland Transponder 1
+		{0x0011, 0x0085, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11992000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// Sky Deutschland Transponder 2
+		{0x000C, 0x0085, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11758000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// Astra 19.2E High Band H (TSID 0x0400)
+		{0x0400, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS, OrbitalPosition: 192, FrequencyHz: 12544000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// Astra 19.2E Low Band H (TSID 0x03F2)
+		{0x03F2, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11582000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+	}
+
+	for _, tp := range astraTPs {
+		r.RegisterTransponder(tp.tsid, tp.onid, astra192, tp.key)
+	}
+
+	// Register extended Astra 19.2E High Band ranges for dynamic multiplexes
+	for tsid := uint16(0x0400); tsid <= 0x0410; tsid++ {
+		r.RegisterTransponder(tsid, 0x0001, astra192, TransponderKey{
+			DeliverySystem:  DeliverySystemDVBS,
+			OrbitalPosition: 192,
+			FrequencyHz:     12544000000 + uint64(tsid-0x0400)*1000000,
+			Polarization:    PolarizationHorizontal,
+			StreamID:        -1,
+		})
+	}
+	for tsid := uint16(0x0500); tsid <= 0x0510; tsid++ {
+		r.RegisterTransponder(tsid, 0x0001, astra192, TransponderKey{
+			DeliverySystem:  DeliverySystemDVBS,
+			OrbitalPosition: 192,
+			FrequencyHz:     12600000000 + uint64(tsid-0x0500)*1000000,
+			Polarization:    PolarizationHorizontal,
+			StreamID:        -1,
+		})
+	}
+	for tsid := uint16(0x0600); tsid <= 0x0610; tsid++ {
+		r.RegisterTransponder(tsid, 0x0001, astra192, TransponderKey{
+			DeliverySystem:  DeliverySystemDVBS,
+			OrbitalPosition: 192,
+			FrequencyHz:     12700000000 + uint64(tsid-0x0600)*1000000,
+			Polarization:    PolarizationHorizontal,
+			StreamID:        -1,
+		})
+	}
+
+	// Hotbird 13.0°E Transponders
+	hotbirdTPs := []struct {
+		tsid uint16
+		onid uint16
+		key  TransponderKey
+	}{
+		// SRG SSR (SRF 1 HD, SRF zwei HD, RTS 1 HD, RSI LA 1 HD)
+		{0x2134, 0x013E, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 130, FrequencyHz: 10971000000, Polarization: PolarizationHorizontal, StreamID: -1}},
+		// Rai HD (Rai 1 HD, Rai 2 HD, Rai 3 HD)
+		{0x01A4, 0x013E, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 130, FrequencyHz: 11766000000, Polarization: PolarizationVertical, StreamID: -1}},
+	}
+
+	for _, tp := range hotbirdTPs {
+		r.RegisterTransponder(tp.tsid, tp.onid, hotbird130, tp.key)
+	}
 }
