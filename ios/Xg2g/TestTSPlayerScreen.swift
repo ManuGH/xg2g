@@ -22,6 +22,11 @@ public struct TestTSPlayerScreen: View {
     @StateObject private var systemPresenter = SystemVideoPresenterBox()
     @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:"
     @State private var currentChannelName: String = "Sky Sport F1 HD"
+    private enum StreamRouteMode: String, CaseIterable {
+        case direct = "DIRECT (Vu+:8001)"
+        case smoother = "SMOOTHER (xg2g)"
+    }
+    @State private var streamRouteMode: StreamRouteMode = .direct
     @State private var isStreaming: Bool = false
     @State private var isPlaying: Bool = true
     @State private var showHUD: Bool = false
@@ -51,6 +56,7 @@ public struct TestTSPlayerScreen: View {
     /// available — i.e. when the screen is opened from the developer section
     /// rather than to watch an actual channel.
     private static let labPresets: [ChannelPreset] = [
+        ChannelPreset(name: "ORF 1 HD", serviceRef: "1:0:19:132F:3EF:1:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:132F:3EF:1:C00000:0:0:0:", epgNow: "ORF 1 HD Live Feed", category: "Vollprogramm"),
         ChannelPreset(name: "Sky Sport F1 HD", serviceRef: "1:0:19:11:6:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:", epgNow: "Formel 1: GP Vorberichte & Live-Session", category: "Sport"),
         ChannelPreset(name: "Sky Sport Top Event HD", serviceRef: "1:0:19:81:6:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:", epgNow: "Top-Event Highlights & Analysen", category: "Sport"),
         ChannelPreset(name: "Sky Sport Bundesliga HD", serviceRef: "1:0:19:69:C:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:69:C:85:C00000:0:0:0:", epgNow: "Bundesliga Konferenz / Live", category: "Sport"),
@@ -570,6 +576,24 @@ public struct TestTSPlayerScreen: View {
                         badgeItem(icon: "thermometer.medium", label: pipeline.telemetry.display.thermalState, color: .orange)
                     }
                 }
+                // Stream Routing Mode (A/B Test)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("STREAM-ROUTING (A/B TEST)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+
+                    Picker("Route Mode", selection: $streamRouteMode) {
+                        ForEach(StreamRouteMode.allCases, id: \.self) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: streamRouteMode) { _, _ in
+                        if isStreaming {
+                            startCurrentPreset()
+                        }
+                    }
+                }
                 .padding(14)
                 .background(.ultraThinMaterial)
                 .cornerRadius(14)
@@ -761,11 +785,21 @@ public struct TestTSPlayerScreen: View {
         NowPlayingManager.shared.clear()
     }
 
+    private func effectiveStreamURL(for rawURLString: String) -> URL? {
+        guard let url = URL(string: rawURLString) else { return nil }
+        if streamRouteMode == .smoother {
+            let sref = url.lastPathComponent
+            let smootherURLString = "http://10.10.55.14:8089/api/v3/stream/smooth/\(sref)"
+            return URL(string: smootherURLString)
+        }
+        return url
+    }
+
     private func startCurrentPreset() {
         // Stamped here so the figure covers the wait as the viewer experiences
         // it, including whatever this function does before handing over.
         let requestedAt = CACurrentMediaTime()
-        if let url = URL(string: streamURLString) {
+        if let url = effectiveStreamURL(for: streamURLString) {
             pipeline.startStreaming(url: url, requestedAt: requestedAt)
             isStreaming = true
             isPlaying = true

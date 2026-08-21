@@ -18,6 +18,7 @@ import (
 	v3 "github.com/ManuGH/xg2g/internal/control/http/v3"
 	"github.com/ManuGH/xg2g/internal/control/middleware"
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/stream/smoother"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -155,6 +156,12 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 		s.v3Handler.PostItemsPlaybackInfo(w, r, chi.URLParam(r, "itemId"))
 	})); err != nil {
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register playback-info compatibility route: %w", err)
+	}
+
+	// Experimental TS Burst-Smoothing Proxy route for lab & client A/B testing
+	smootherHandler := smoother.NewHandler(s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort, smoother.DefaultConfig())
+	if err := rootAdapter.Register(http.MethodGet, "/api/v3/stream/smooth/*", smootherHandler); err != nil {
+		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register smooth stream route: %w", err)
 	}
 
 	return r, registry.Snapshot(), nil
