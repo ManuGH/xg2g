@@ -13,25 +13,31 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ManuGH/xg2g/internal/log"
 )
 
 // Config configures the TS Burst Smoother.
 type Config struct {
-	StartupReservoirMs float64 // Milliseconds of media data required before egress release
+	StartupReservoirMs float64 // Milliseconds of media data required before egress release (e.g. 650.0 ms)
+	TargetWatermarkMs  float64 // Closed-loop target equilibrium buffer depth (e.g. 650.0 ms)
+	DeadbandMs         float64 // Deadband around target where correction factor is 1.0 (e.g. 75.0 ms)
+	MaxCorrectionTrim  float64 // Maximum proportional correction trim (e.g. 0.02 = ±2%)
+	Kp                 float64 // Proportional gain for watermark error correction (e.g. 0.04)
 	PacerIntervalMs    float64 // Nominal egress pacing slice (e.g. 20.0 ms)
 	RingBufferCapacity int     // Ring buffer byte size (e.g. 4 * 1024 * 1024)
-	LowWatermarkMs     float64 // Low buffer watermark threshold (e.g. 150.0 ms)
-	HighWatermarkMs    float64 // High buffer watermark threshold (e.g. 1500.0 ms)
 }
 
 // DefaultConfig returns optimal baseline smoother configuration.
 func DefaultConfig() Config {
 	return Config{
 		StartupReservoirMs: 650.0,
+		TargetWatermarkMs:  650.0,
+		DeadbandMs:         75.0,
+		MaxCorrectionTrim:  0.02, // ±2% max trim
+		Kp:                 0.04,
 		PacerIntervalMs:    20.0,
 		RingBufferCapacity: 4 * 1024 * 1024, // 4 MiB (~6.5s of 4.8 Mbps)
-		LowWatermarkMs:     150.0,
-		HighWatermarkMs:    1500.0,
 	}
 }
 
@@ -181,6 +187,7 @@ func SmoothStream(ctx context.Context, in io.Reader, out io.Writer, cfg Config) 
 
 		lastInputArrival  time.Time
 		lastOutputArrival time.Time
+		lastTelemetryLog  time.Time
 
 		reservoirReleased atomic.Bool
 	)
@@ -291,18 +298,59 @@ func SmoothStream(ctx context.Context, in io.Reader, out io.Writer, cfg Config) 
 					}
 				}
 
-				sliceFraction := cfg.PacerIntervalMs / 1000.0
-				targetBytes := int((currentBitrate * sliceFraction) / 8.0)
-
-				// Dynamic watermark micro-regulation (±2%)
-				if bufferedMs < cfg.LowWatermarkMs {
-					targetBytes = int(float64(targetBytes) * 0.98)
-				} else if bufferedMs > cfg.HighWatermarkMs {
-					targetBytes = int(float64(targetBytes) * 1.02)
+				// Closed-Loop Watermark Regulation:
+				// Proportional correction anchored around TargetWatermarkMs with DeadbandMs.
+				targetMs := cfg.TargetWatermarkMs
+				if targetMs <= 0 {
+					targetMs = cfg.StartupReservoirMs
 				}
+				if targetMs <= 0 {
+					targetMs = 650.0
+				}
+				deadband := cfg.DeadbandMs
+				if deadband <= 0 {
+					deadband = 75.0
+				}
+				maxTrim := cfg.MaxCorrectionTrim
+				if maxTrim <= 0 {
+					maxTrim = 0.02 // ±2% max trim
+				}
+				kp := cfg.Kp
+				if kp <= 0 {
+					kp = 0.04
+				}
+
+				errorMs := bufferedMs - targetMs
+				correctionFactor := 1.0
+
+				if errorMs > deadband {
+					excess := errorMs - deadband
+					trim := math.Min(maxTrim, (excess/targetMs)*kp)
+					correctionFactor = 1.0 + trim
+				} else if errorMs < -deadband {
+					deficit := (-errorMs) - deadband
+					trim := math.Min(maxTrim, (deficit/targetMs)*kp)
+					correctionFactor = 1.0 - trim
+				}
+
+				sliceFraction := cfg.PacerIntervalMs / 1000.0
+				targetBytes := int((currentBitrate * sliceFraction * correctionFactor) / 8.0)
 
 				if targetBytes < TSPacketSize {
 					targetBytes = TSPacketSize
+				}
+
+				if time.Since(lastTelemetryLog) >= 5*time.Second {
+					lastTelemetryLog = now
+					underruns, _ := rb.Stats()
+					log.L().Info().
+						Float64("bufferedMediaMs", math.Round(bufferedMs*10)/10).
+						Float64("targetWatermarkMs", targetMs).
+						Float64("estimatedBitrateKbps", math.Round((currentBitrate/1000.0)*10)/10).
+						Float64("correctionFactor", math.Round(correctionFactor*10000)/10000).
+						Int64("packetsOut", atomic.LoadInt64(&outputPackets)).
+						Int64("underruns", underruns).
+						Msg("smoother watermark telemetry")
 				}
 
 				chunk, ok := rb.Pop(targetBytes)
