@@ -637,6 +637,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             decodeGateState = .closed(reason: .startup)
             gatedAccessUnitCount = 0
             firstAccessUnitTime = 0
+            lastSyncPTS = .invalid
+            syncCount = 0
+            framesSinceLastSync = 0
             tsParser.reset()
             pesAssembler.reset()
             accessUnitAssembler.reset()
@@ -1606,7 +1609,31 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         handleVideoSampleBuffer(sampleBuffer, isSyncSample: isSyncSample, structure: structure)
     }
 
+    private var lastSyncPTS: CMTime = .invalid
+    private var syncCount: Int = 0
+    private var framesSinceLastSync: Int = 0
+
     private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure) {
+        framesSinceLastSync += 1
+
+        if isSyncSample, sampleBuffer.presentationTimeStamp.isValid {
+            if lastSyncPTS.isValid {
+                let gopSec = sampleBuffer.presentationTimeStamp.seconds - lastSyncPTS.seconds
+                let msg = "[1080i50-GOP] 🔑 Sync/Keyframe AU #\(syncCount + 1) @ PTS \(String(format: "%.3f", sampleBuffer.presentationTimeStamp.seconds))s | GOP: \(String(format: "%.2f", gopSec))s (\(framesSinceLastSync) frames)"
+                print(msg)
+                logger.notice("\(msg, privacy: .public)")
+                TelemetryServer.shared.log(msg)
+            } else {
+                let msg = "[1080i50-GOP] 🔑 First Sync/Keyframe AU @ PTS \(String(format: "%.3f", sampleBuffer.presentationTimeStamp.seconds))s"
+                print(msg)
+                logger.notice("\(msg, privacy: .public)")
+                TelemetryServer.shared.log(msg)
+            }
+            lastSyncPTS = sampleBuffer.presentationTimeStamp
+            framesSinceLastSync = 0
+            syncCount += 1
+        }
+
         if case .closed(let reason) = decodeGateState {
             let now = CACurrentMediaTime()
             if firstAccessUnitTime == 0 {
@@ -1646,6 +1673,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 // Under .decoderRecovery, .formatReconfiguration, or .backgrounded:
                 // STRICT IDR ONLY — NEVER timeout fail-open on non-sync frames!
                 gatedAccessUnitCount += 1
+                let ptsSec = sampleBuffer.presentationTimeStamp.isValid ? String(format: "%.3f", sampleBuffer.presentationTimeStamp.seconds) : "invalid"
+                let elapsedMs = String(format: "%.0f", (now - firstAccessUnitTime) * 1000.0)
+                let discardLog = "[1080i50-GATE-DISCARD] 🚫 AU #\(gatedAccessUnitCount) discarded (reason: \(reason), isSync: \(isSyncSample)) @ PTS: \(ptsSec)s (elapsed: \(elapsedMs)ms)"
+                print(discardLog)
+                TelemetryServer.shared.log(discardLog)
                 telemetry.mutate { $0.gatedAccessUnits = self.gatedAccessUnitCount }
                 return
             }
