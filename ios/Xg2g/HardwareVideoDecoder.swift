@@ -16,11 +16,13 @@ public final class DecodedVideoFrame: @unchecked Sendable {
     /// header so the renderer knows how many presentations it owes and which
     /// parity each one is.
     public let structure: H264PictureStructure
+    public let generation: Int
 
-    public init(pixelBuffer: CVPixelBuffer, pts: CMTime, structure: H264PictureStructure) {
+    public init(pixelBuffer: CVPixelBuffer, pts: CMTime, structure: H264PictureStructure, generation: Int = 0) {
         self.pixelBuffer = pixelBuffer
         self.pts = pts
         self.structure = structure
+        self.generation = generation
         DecodedVideoFrame.liveCount.withLock { $0 += 1 }
     }
 
@@ -142,7 +144,14 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         invalidateSession()
     }
 
-    public func reset() {
+    public func reset(generation: Int = 0) {
+        generationLock.lock()
+        if generation > 0 {
+            _decodeGeneration = generation
+        }
+        _inFlightFrames = 0
+        generationLock.unlock()
+
         sessionLock.lock()
         let stale = detachSessionLocked()
         formatDescription = nil
@@ -547,7 +556,8 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         let frame = DecodedVideoFrame(
             pixelBuffer: buffer,
             pts: context.pts,
-            structure: context.structure
+            structure: context.structure,
+            generation: context.generation
         )
         delegate?.hardwareDecoder(self, didEmitFrame: frame)
     }

@@ -385,42 +385,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let session = URLSession(configuration: config, delegate: self, delegateQueue: opQueue)
         self.urlSession = session
 
-        var request = URLRequest(url: targetURL)
-        request.setValue("xg2g-ios-native-poc/1.0", forHTTPHeaderField: "User-Agent")
-
-        let task = session.dataTask(with: request)
-        self.streamTask = task
-        task.resume()
-
-        let issuedAt = CACurrentMediaTime()
-        sessionState.mutate { $0.requestIssuedTime = issuedAt }
-        let setupMs = (issuedAt - requestedAt) * 1000.0
-        telemetry.mutate {
-            $0.ttfpSetupMs = setupMs
-            $0.ttfpTeardownMs = teardownMs
-            $0.ttfpAudioSessionMs = audioSessionMs
-        }
-        let setupLog = "[ZAP-#\(zapId)-SETUP] 🛠️ Setup \(String(format: "%.1f", setupMs))ms before request (teardown \(String(format: "%.1f", teardownMs))ms, audio \(String(format: "%.1f", audioSessionMs))ms)"
-        print(setupLog)
-        logger.notice("\(setupLog, privacy: .public)")
-        TelemetryServer.shared.log(setupLog)
-
-        let startLog = "[ZAP-#\(zapId)-NET] ▶️ Requesting \(targetURL.absoluteString) | Timeout: \(config.timeoutIntervalForRequest)s | ZapID: \(zapId)"
-        print(startLog)
-        logger.notice("\(startLog, privacy: .public)")
-        TelemetryServer.shared.log(startLog)
-
-        DispatchQueue.main.async { [weak self] in
+        let preparePresenterAndRenderView: @MainActor () -> Void = { [weak self] in
             guard let self = self else { return }
             self.renderView?.synchronizer = self.audioRenderer.synchronizer
-            self.renderView?.resetForChannelZap()
+            self.renderView?.resetForChannelZap(generation: zapId)
 
-            // `audioRenderer.reset()` builds a fresh synchronizer on every zap,
-            // so the display layer has to be re-attached to the new clock — and
-            // flushed first, because what it still holds is timed against the
-            // old one.
             if let presenter = self.systemPresenter {
-                presenter.flush()
+                presenter.flush(generation: zapId)
                 presenter.attach(to: self.audioRenderer.synchronizer)
                 presenter.enablePictureInPicture()
                 // After `flush()`, which is what re-arms the immediate field.
@@ -449,6 +420,43 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 self.observeFirstPictureVisible(at: pts)
             }
         }
+
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                preparePresenterAndRenderView()
+            }
+        } else {
+            DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    preparePresenterAndRenderView()
+                }
+            }
+        }
+
+        var request = URLRequest(url: targetURL)
+        request.setValue("xg2g-ios-native-poc/1.0", forHTTPHeaderField: "User-Agent")
+
+        let task = session.dataTask(with: request)
+        self.streamTask = task
+        task.resume()
+
+        let issuedAt = CACurrentMediaTime()
+        sessionState.mutate { $0.requestIssuedTime = issuedAt }
+        let setupMs = (issuedAt - requestedAt) * 1000.0
+        telemetry.mutate {
+            $0.ttfpSetupMs = setupMs
+            $0.ttfpTeardownMs = teardownMs
+            $0.ttfpAudioSessionMs = audioSessionMs
+        }
+        let setupLog = "[ZAP-#\(zapId)-SETUP] 🛠️ Setup \(String(format: "%.1f", setupMs))ms before request (teardown \(String(format: "%.1f", teardownMs))ms, audio \(String(format: "%.1f", audioSessionMs))ms)"
+        print(setupLog)
+        logger.notice("\(setupLog, privacy: .public)")
+        TelemetryServer.shared.log(setupLog)
+
+        let startLog = "[ZAP-#\(zapId)-NET] ▶️ Requesting \(targetURL.absoluteString) | Timeout: \(config.timeoutIntervalForRequest)s | ZapID: \(zapId)"
+        print(startLog)
+        logger.notice("\(startLog, privacy: .public)")
+        TelemetryServer.shared.log(startLog)
 
         startSystemMonitoring()
     }
@@ -619,12 +627,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         selectedAudioPID = nil
         availableAudioTracks.removeAll()
 
-        // Retire any feeds still queued for this stream first, so the barrier
-        // below returns promptly instead of waiting out the whole backlog.
-        ingestStateLock.lock()
-        ingestGeneration += 1
-        pendingIngestBytes = 0
-        ingestStateLock.unlock()
+        zapLock.lock()
+        let currentZap = currentZapId
+        zapLock.unlock()
 
         // The parse chain is owned by `ingestQueue`; resetting it from here while
         // a feed is in flight would corrupt the assembler state mid-packet.
@@ -637,7 +642,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             accessUnitAssembler.reset()
             alternateAssembler?.reset()
             alternateAssembler = nil
-            decoder.reset()
+            decoder.reset(generation: currentZap)
             audioPesAssembler.reset()
             ac3FrameParser.reset()
             aacFrameParser.reset()
@@ -1667,6 +1672,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - HardwareVideoDecoderDelegate
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEmitFrame frame: DecodedVideoFrame) {
+        guard frame.generation == currentZapId else {
+            // Stale frame from a prior zap generation -> discard immediately
+            return
+        }
+
         let (decMs, rate) = sessionState.mutate { state -> (Double?, Double?) in
             var computedDecMs: Double?
             if state.firstDecodedTime == 0 {

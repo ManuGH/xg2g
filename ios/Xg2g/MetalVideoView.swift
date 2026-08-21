@@ -30,6 +30,7 @@ private struct PendingField {
     let pixelBuffer: CVPixelBuffer
     let parity: UInt32
     let ptsSeconds: Double
+    let generation: Int
 }
 
 /// A surface the GPU has finished with, on its way to AVFoundation.
@@ -42,6 +43,7 @@ private struct FinishedField: @unchecked Sendable {
     let pixelBuffer: CVPixelBuffer
     let pts: CMTime
     let duration: CMTime
+    let generation: Int
 }
 
 /// Luma and chroma views onto one decoded picture, together with the cache
@@ -350,7 +352,12 @@ public final class MetalVideoView: UIView {
     private var fieldIntervalSamples: Int = 0
     private var jitterAccumulator: Double = 0
 
-    public func resetForChannelZap() {
+    public var currentGeneration: Int = 0
+
+    public func resetForChannelZap(generation: Int = 0) {
+        if generation > 0 {
+            currentGeneration = generation
+        }
         reorderBuffer.clear()
         fieldQueue.removeAll(keepingCapacity: true)
         hasReportedFirstFrame = false
@@ -733,6 +740,7 @@ public final class MetalVideoView: UIView {
     }
 
     nonisolated public func enqueueFrame(_ frame: DecodedVideoFrame) {
+        let frameGen = frame.generation
         let dropped = reorderBuffer.push(frame)
         if dropped {
             telemetry?.mutate { $0.droppedFrames += 1 }
@@ -743,7 +751,8 @@ public final class MetalVideoView: UIView {
         // precisely when Picture in Picture is on screen.
         if usesSystemPresentation {
             DispatchQueue.main.async { [weak self] in
-                self?.pumpSystemPresentation()
+                guard let self = self, frameGen == self.currentGeneration else { return }
+                self.pumpSystemPresentation()
             }
         }
     }
@@ -762,6 +771,7 @@ public final class MetalVideoView: UIView {
         let started = CACurrentMediaTime()
         while !fieldQueue.isEmpty {
             let field = fieldQueue.removeFirst()
+            guard field.generation == currentGeneration else { continue }
             currentField = field
             presentThroughSystemLayer(field, presenter: presenter)
         }
@@ -969,6 +979,8 @@ public final class MetalVideoView: UIView {
     private func drainReorderedFrames() {
         for released in reorderBuffer.drainSettled(allowImmediateFirst: !hasReportedFirstFrame) {
             let frame = released.frame
+            guard frame.generation == currentGeneration else { continue }
+
             let pts: Double
             if frame.pts.isValid {
                 pts = frame.pts.seconds
@@ -1010,7 +1022,7 @@ public final class MetalVideoView: UIView {
             }
 
             guard sourceIsInterlaced else {
-                fieldQueue.append(PendingField(pixelBuffer: frame.pixelBuffer, parity: 0, ptsSeconds: pts))
+                fieldQueue.append(PendingField(pixelBuffer: frame.pixelBuffer, parity: 0, ptsSeconds: pts, generation: frame.generation))
                 wovenFrameCount += 1
                 continue
             }
@@ -1022,7 +1034,7 @@ public final class MetalVideoView: UIView {
             // from PTS spacing, which wobbles enough to misclassify.
             if frame.structure.isFieldPicture {
                 let parity: UInt32 = frame.structure.isBottomField ? 1 : 0
-                appendField(frame.pixelBuffer, parity: parity, pts: pts)
+                appendField(frame.pixelBuffer, parity: parity, pts: pts, generation: frame.generation)
                 discreteFieldCount += 1
             } else {
                 let firstParity: UInt32 = frame.structure.isTopFieldFirst ? 0 : 1
@@ -1039,8 +1051,8 @@ public final class MetalVideoView: UIView {
                 let frameDuration = estimatedFrameDuration
                 let spansFullFrame = gap.isFinite && gap >= frameDuration * 0.75
                 let half = (spansFullFrame ? gap : frameDuration) * 0.5
-                appendField(frame.pixelBuffer, parity: firstParity, pts: pts)
-                appendField(frame.pixelBuffer, parity: secondParity, pts: pts + half)
+                appendField(frame.pixelBuffer, parity: firstParity, pts: pts, generation: frame.generation)
+                appendField(frame.pixelBuffer, parity: secondParity, pts: pts + half, generation: frame.generation)
                 wovenFrameCount += 1
             }
         }
@@ -1059,7 +1071,7 @@ public final class MetalVideoView: UIView {
     /// correction moved the timeline ahead, every later field then read as "too
     /// early", and scheduling silently became a fixed metronome that ignored the
     /// stream. Both guards below exist to keep that from recurring.
-    private func appendField(_ pixelBuffer: CVPixelBuffer, parity: UInt32, pts: Double) {
+    private func appendField(_ pixelBuffer: CVPixelBuffer, parity: UInt32, pts: Double, generation: Int = 0) {
         let frameDuration = estimatedFrameDuration
         var placed = pts
 
@@ -1105,7 +1117,7 @@ public final class MetalVideoView: UIView {
             placed = max(placed, lastQueuedFieldPTS + Self.minFieldSeparation)
         }
         lastQueuedFieldPTS = placed
-        fieldQueue.append(PendingField(pixelBuffer: pixelBuffer, parity: parity, ptsSeconds: placed))
+        fieldQueue.append(PendingField(pixelBuffer: pixelBuffer, parity: parity, ptsSeconds: placed, generation: generation))
     }
 
     private func publishRenderTelemetry(now: CFTimeInterval, streamNow: Double, tick: CFTimeInterval) {
@@ -1460,7 +1472,8 @@ public final class MetalVideoView: UIView {
             presenter.enqueue(
                 pixelBuffer: field.pixelBuffer,
                 pts: pts,
-                duration: duration
+                duration: duration,
+                generation: field.generation
             )
             if isFirstField {
                 self.onFirstFrameRendered?()
@@ -1492,14 +1505,16 @@ public final class MetalVideoView: UIView {
             return
         }
 
-        let finished = FinishedField(pixelBuffer: destination, pts: pts, duration: duration)
+        let finished = FinishedField(pixelBuffer: destination, pts: pts, duration: duration, generation: field.generation)
 
-        commandBuffer.addCompletedHandler { _ in
+        commandBuffer.addCompletedHandler { [weak self] _ in
             DispatchQueue.main.async {
+                guard let self = self, finished.generation == self.currentGeneration else { return }
                 presenter.enqueue(
                     pixelBuffer: finished.pixelBuffer,
                     pts: finished.pts,
-                    duration: finished.duration
+                    duration: finished.duration,
+                    generation: finished.generation
                 )
                 if isFirstField {
                     self.onFirstFrameRendered?()

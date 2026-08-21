@@ -252,7 +252,7 @@ public final class SystemVideoPresenter: NSObject {
         pictureInPictureController?.stopPictureInPicture()
     }
 
-    // MARK: - Feeding
+    public var currentGeneration: Int = 0
 
     /// Wraps one deinterlaced field and hands it to AVFoundation.
     ///
@@ -260,7 +260,12 @@ public final class SystemVideoPresenter: NSObject {
     /// layer schedules it against the synchronizer exactly as the audio renderer
     /// schedules its buffers — no separate presentation logic and no second
     /// clock to keep aligned.
-    public func enqueue(pixelBuffer: CVPixelBuffer, pts: CMTime, duration: CMTime) {
+    public func enqueue(pixelBuffer: CVPixelBuffer, pts: CMTime, duration: CMTime, generation: Int = 0) {
+        guard generation == 0 || generation == currentGeneration else {
+            // Stale field from a prior zap generation -> discard immediately
+            return
+        }
+
         guard let format = formatDescription(for: pixelBuffer) else { return }
 
         var timing = CMSampleTimingInfo(
@@ -295,7 +300,7 @@ public final class SystemVideoPresenter: NSObject {
                     Unmanaged.passUnretained(kCFBooleanTrue).toOpaque()
                 )
             }
-            let msg = "[SystemVideo] ⚡ First field of this tune marked DisplayImmediately at PTS \(String(format: "%.3f", pts.seconds))s"
+            let msg = "[SystemVideo] ⚡ First field of this tune (gen \(currentGeneration)) marked DisplayImmediately at PTS \(String(format: "%.3f", pts.seconds))s"
             print(msg)
             logger.notice("\(msg, privacy: .public)")
             TelemetryServer.shared.log(msg)
@@ -425,7 +430,10 @@ public final class SystemVideoPresenter: NSObject {
 
     /// Drops everything queued. Used on a channel zap, where the buffered fields
     /// belong to the previous stream's timeline.
-    public func flush() {
+    public func flush(generation: Int = 0) {
+        if generation > 0 {
+            currentGeneration = generation
+        }
         pendingSamples.removeAll(keepingCapacity: true)
         _atomicPendingCount.withLock { $0 = 0 }
         if isRequestingData {
