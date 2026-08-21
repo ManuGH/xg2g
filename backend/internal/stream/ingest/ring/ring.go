@@ -5,6 +5,7 @@
 package ring
 
 import (
+	"bytes"
 	"errors"
 	"sync"
 )
@@ -61,6 +62,7 @@ type psiStreamAssembler struct {
 	sectionLen int
 	lastCC     uint8
 	hasCC      bool
+	lastPacket []byte
 	rawPackets [][]byte
 }
 
@@ -68,6 +70,7 @@ func (s *psiStreamAssembler) reset() {
 	s.buf = s.buf[:0]
 	s.sectionLen = 0
 	s.hasCC = false
+	s.lastPacket = nil
 	s.rawPackets = s.rawPackets[:0]
 }
 
@@ -289,6 +292,57 @@ func (r *MasterRing) indexPacketLocked(pkt []byte, offset int64) {
 	}
 }
 
+func (r *MasterRing) feedBytesToAssemblerLocked(isPAT bool, assembler *psiStreamAssembler, chunk []byte, pkt []byte) int {
+	if len(chunk) == 0 {
+		return 0
+	}
+
+	consumed := 0
+
+	// Phase 1: Complete 3-byte header if incomplete
+	if len(assembler.buf) < 3 {
+		needHeader := 3 - len(assembler.buf)
+		toTake := len(chunk)
+		if toTake > needHeader {
+			toTake = needHeader
+		}
+		assembler.buf = append(assembler.buf, chunk[:toTake]...)
+		assembler.rawPackets = append(assembler.rawPackets, cloneSlice(pkt))
+		chunk = chunk[toTake:]
+		consumed += toTake
+
+		if len(assembler.buf) >= 3 {
+			secLen := int((uint16(assembler.buf[1]&0x0F) << 8) | uint16(assembler.buf[2]))
+			assembler.sectionLen = secLen + 3
+		} else {
+			return consumed
+		}
+	}
+
+	// Phase 2: Complete body up to sectionLen
+	if assembler.sectionLen > 0 && len(assembler.buf) < assembler.sectionLen {
+		needed := assembler.sectionLen - len(assembler.buf)
+		toTake := len(chunk)
+		if toTake > needed {
+			toTake = needed
+		}
+		assembler.buf = append(assembler.buf, chunk[:toTake]...)
+		if consumed == 0 { // Not added in Phase 1 for this packet
+			assembler.rawPackets = append(assembler.rawPackets, cloneSlice(pkt))
+		}
+		consumed += toTake
+
+		if len(assembler.buf) >= assembler.sectionLen {
+			r.processCompletePSISectionLocked(isPAT, assembler.buf[:assembler.sectionLen], assembler.rawPackets)
+			assembler.buf = assembler.buf[:0]
+			assembler.sectionLen = 0
+			assembler.rawPackets = assembler.rawPackets[:0]
+		}
+	}
+
+	return consumed
+}
+
 func (r *MasterRing) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payload []byte) {
 	var assembler *psiStreamAssembler
 	if isPAT {
@@ -300,10 +354,16 @@ func (r *MasterRing) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payl
 	cc := pkt[3] & 0x0F
 	if assembler.hasCC {
 		if cc == assembler.lastCC {
-			// Exact duplicate TS packet: silently ignore per MPEG-TS specification
-			return
-		}
-		if cc != (assembler.lastCC+1)&0x0F {
+			if bytes.Equal(pkt, assembler.lastPacket) {
+				// Exact byte-for-byte duplicate TS packet: silently ignore
+				return
+			}
+			// Same CC but different content: glitch / discontinuity!
+			assembler.reset()
+			if !pusi {
+				return
+			}
+		} else if cc != (assembler.lastCC+1)&0x0F {
 			// Continuity gap detected: abort corrupted in-flight assembly
 			assembler.reset()
 			if !pusi {
@@ -313,6 +373,7 @@ func (r *MasterRing) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payl
 	}
 	assembler.lastCC = cc
 	assembler.hasCC = true
+	assembler.lastPacket = cloneSlice(pkt)
 
 	offset := 0
 
@@ -324,22 +385,16 @@ func (r *MasterRing) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payl
 		offset = 1
 
 		if pointerField > 0 {
-			// Case A: Bytes before pointer complete the previous in-flight section
-			if assembler.sectionLen > 0 && len(assembler.buf) < assembler.sectionLen {
-				needed := assembler.sectionLen - len(assembler.buf)
+			// Case A: Bytes before pointer complete previous in-flight section
+			if len(assembler.buf) > 0 {
 				toTake := pointerField
 				if 1+toTake > len(payload) {
 					assembler.reset()
 					return
 				}
-				if toTake > needed {
-					toTake = needed
-				}
-				assembler.buf = append(assembler.buf, payload[1:1+toTake]...)
-				assembler.rawPackets = append(assembler.rawPackets, cloneSlice(pkt))
-
-				if len(assembler.buf) >= assembler.sectionLen {
-					r.processCompletePSISectionLocked(isPAT, assembler.buf[:assembler.sectionLen], assembler.rawPackets)
+				r.feedBytesToAssemblerLocked(isPAT, assembler, payload[1:1+toTake], pkt)
+				if len(assembler.buf) > 0 {
+					// Still incomplete after pointer field: missing data, discard
 					assembler.buf = assembler.buf[:0]
 					assembler.sectionLen = 0
 					assembler.rawPackets = assembler.rawPackets[:0]
@@ -355,22 +410,9 @@ func (r *MasterRing) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payl
 		}
 	} else {
 		// pusi == false: continue in-flight section
-		if assembler.sectionLen > 0 && len(assembler.buf) < assembler.sectionLen {
-			needed := assembler.sectionLen - len(assembler.buf)
-			toTake := len(payload)
-			if toTake > needed {
-				toTake = needed
-			}
-			assembler.buf = append(assembler.buf, payload[:toTake]...)
-			assembler.rawPackets = append(assembler.rawPackets, cloneSlice(pkt))
-			offset = toTake
-
-			if len(assembler.buf) >= assembler.sectionLen {
-				r.processCompletePSISectionLocked(isPAT, assembler.buf[:assembler.sectionLen], assembler.rawPackets)
-				assembler.buf = assembler.buf[:0]
-				assembler.sectionLen = 0
-				assembler.rawPackets = assembler.rawPackets[:0]
-			}
+		if len(assembler.buf) > 0 {
+			consumed := r.feedBytesToAssemblerLocked(isPAT, assembler, payload, pkt)
+			offset = consumed
 		} else {
 			return
 		}
@@ -385,7 +427,7 @@ func (r *MasterRing) feedPSIPacketLocked(isPAT bool, pkt []byte, pusi bool, payl
 
 		avail := len(payload) - offset
 		if avail < 3 {
-			// Incomplete section header spanning to next packet
+			// Fragmented section header (1-2 bytes) spanning into next packet!
 			assembler.buf = append(assembler.buf, payload[offset:]...)
 			assembler.sectionLen = 0
 			assembler.rawPackets = append(assembler.rawPackets, cloneSlice(pkt))
@@ -488,12 +530,16 @@ func (r *MasterRing) processCompletePSISectionLocked(isPAT bool, table []byte, r
 			r.hasPATVersion = true
 			r.patVersion = version
 
-			// Build coherent rawPATPackets from all sections 0..lastSectionNum
+			// Build deduplicated rawPATPackets from all sections 0..lastSectionNum
 			var allPATPackets [][]byte
 			for sIdx := uint8(0); sIdx <= lastSectionNum; sIdx++ {
-				allPATPackets = append(allPATPackets, r.patTracker.rawPackets[sIdx]...)
+				for _, pkt := range r.patTracker.rawPackets[sIdx] {
+					if !containsPacket(allPATPackets, pkt) {
+						allPATPackets = append(allPATPackets, cloneSlice(pkt))
+					}
+				}
 			}
-			r.rawPATPackets = cloneSliceList(allPATPackets)
+			r.rawPATPackets = allPATPackets
 		}
 	} else {
 		progNum := (uint16(table[3]) << 8) | uint16(table[4])
@@ -548,13 +594,26 @@ func (r *MasterRing) processCompletePSISectionLocked(isPAT bool, table []byte, r
 			}
 		}
 
-		// Build coherent rawPMTPackets from all sections 0..lastSectionNum
+		// Build deduplicated rawPMTPackets from all sections 0..lastSectionNum
 		var allPMTPackets [][]byte
 		for sIdx := uint8(0); sIdx <= lastSectionNum; sIdx++ {
-			allPMTPackets = append(allPMTPackets, r.pmtTracker.rawPackets[sIdx]...)
+			for _, pkt := range r.pmtTracker.rawPackets[sIdx] {
+				if !containsPacket(allPMTPackets, pkt) {
+					allPMTPackets = append(allPMTPackets, cloneSlice(pkt))
+				}
+			}
 		}
-		r.rawPMTPackets = cloneSliceList(allPMTPackets)
+		r.rawPMTPackets = allPMTPackets
 	}
+}
+
+func containsPacket(list [][]byte, pkt []byte) bool {
+	for _, existing := range list {
+		if bytes.Equal(existing, pkt) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *MasterRing) invalidateVideoStateLocked() {

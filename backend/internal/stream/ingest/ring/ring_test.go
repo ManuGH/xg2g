@@ -1131,3 +1131,107 @@ func TestMasterRing_DuplicateCC_IgnoredWithoutDiscontinuity(t *testing.T) {
 		t.Fatalf("duplicate CC packet caused incorrect discontinuity reset: got pmtPID=%d", r.pmtPID)
 	}
 }
+
+// 7. Fragmented 1-2 byte PSI section header split across TS packets
+func TestMasterRing_PSIHeaderSplitAcrossPackets(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	const pmtPID = 100
+	sec := createPATSectionBytes(1, pmtPID, 0, 1, 0, 0) // 16 bytes total
+
+	// Packet 1: ends with only 2 bytes of the section header!
+	// AF length = 188 - 4 - 1 (pointer) - 2 (header bytes) = 181
+	pkt1 := make([]byte, TSPacketSize)
+	pkt1[0] = SyncByte
+	pkt1[1] = 0x40 // PUSI=1
+	pkt1[2] = 0x00
+	pkt1[3] = 0x30   // AF + payload, CC=0
+	pkt1[4] = 180    // AF length
+	pkt1[5] = 0x00   // AF flags
+	pkt1[185] = 0x00 // pointer_field = 0
+	pkt1[186] = sec[0]
+	pkt1[187] = sec[1]
+
+	// Packet 2: PUSI=0, starts with remaining header byte sec[2] and the rest of the body (sec[3..15])
+	pkt2 := make([]byte, TSPacketSize)
+	pkt2[0] = SyncByte
+	pkt2[1] = 0x00 // PUSI=0
+	pkt2[2] = 0x00
+	pkt2[3] = 0x11 // CC=1
+	copy(pkt2[4:], sec[2:])
+
+	_, _ = r.Push(pkt1)
+	if r.pmtPID != 0 {
+		t.Fatalf("table should not be resolved after 2 header bytes")
+	}
+
+	_, _ = r.Push(pkt2)
+	if r.pmtPID != pmtPID {
+		t.Fatalf("expected pmtPID=%d from section with split header across packets, got %d", pmtPID, r.pmtPID)
+	}
+}
+
+// 8. Same CC with different payload triggers discontinuity reset
+func TestMasterRing_SameCCDifferentPayload_ResetsAssembly(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	const pmtPID = 100
+	patPackets := createMultiPacketPAT(pmtPID)
+
+	// 1. Push Packet 1 (PUSI=1, CC=0)
+	_, _ = r.Push(patPackets[0])
+
+	// 2. Push glitch continuation packet with SAME CC=0 but PUSI=0 and different payload
+	corruptedPkt := make([]byte, TSPacketSize)
+	corruptedPkt[0] = SyncByte
+	corruptedPkt[1] = 0x00 // PUSI=0
+	corruptedPkt[2] = 0x00
+	corruptedPkt[3] = 0x10 // CC=0 (same CC as pkt 1, but completely different packet!)
+	_, _ = r.Push(corruptedPkt)
+
+	// 3. Push Packet 2 (PUSI=0, CC=1)
+	_, _ = r.Push(patPackets[1])
+
+	// Assembly must have been aborted by the glitch packet
+	if r.pmtPID != 0 {
+		t.Fatalf("same CC with different payload failed to abort corrupted assembly")
+	}
+}
+
+// 9. Multiple complete sections in same packet: preamble does not duplicate raw packet
+func TestMasterRing_MultipleSectionsSamePacket_PreambleDoesNotDuplicatePacket(t *testing.T) {
+	r := NewMasterRingWithProgram(100*TSPacketSize, 20)
+	defer r.Close()
+
+	sec0 := createPATSectionBytes(10, 100, 3, 1, 0, 1)
+	sec1 := createPATSectionBytes(20, 200, 3, 1, 1, 1)
+
+	pkt := make([]byte, TSPacketSize)
+	pkt[0] = SyncByte
+	pkt[1] = 0x40 // PUSI=1, PID=0
+	pkt[2] = 0x00
+	pkt[3] = 0x10 // AFC=0x01
+	pkt[4] = 0x00 // pointer_field = 0
+	copy(pkt[5:], sec0)
+	copy(pkt[21:], sec1)
+	for i := 37; i < TSPacketSize; i++ {
+		pkt[i] = 0xFF // Stuffing
+	}
+
+	_, _ = r.Push(pkt)
+
+	if r.pmtPID != 200 {
+		t.Fatalf("expected pmtPID=200, got %d", r.pmtPID)
+	}
+
+	// Preamble must contain the packet EXACTLY ONCE (188 bytes), not duplicated (376 bytes)
+	preamble := r.PATPMTPreamble()
+	if len(preamble) != TSPacketSize {
+		t.Fatalf("expected deduplicated preamble length %d, got %d", TSPacketSize, len(preamble))
+	}
+	if !bytes.Equal(preamble, pkt) {
+		t.Fatalf("preamble content mismatch")
+	}
+}
