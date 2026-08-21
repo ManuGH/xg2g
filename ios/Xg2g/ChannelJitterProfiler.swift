@@ -98,6 +98,10 @@ public final class ChannelJitterProfiler: @unchecked Sendable {
 
     /// Recommends the optimal initial audio pre-roll for this channel.
     public func recommendedAudioPreRoll(for channelKey: String) -> (preRollSeconds: Double, reason: String) {
+        if channelKey.contains("/stream/smooth") {
+            return (Self.minPreRollSeconds, "smoothed backend stream (350ms quick-zap cushion)")
+        }
+
         lock.lock()
         defer { lock.unlock() }
 

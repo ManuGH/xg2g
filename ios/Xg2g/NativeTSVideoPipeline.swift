@@ -1169,7 +1169,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     let (profilePreRoll, reason) = ChannelJitterProfiler.shared.recommendedAudioPreRoll(for: currentChannelKey)
                     let longestStallMs = sessionState.mutate { $0.longestStallMs }
                     let observedStallCushion = longestStallMs > 0 ? (longestStallMs / 1000.0) + 0.15 : 0.35
-                    effectiveAudioPreRoll = max(profilePreRoll, observedStallCushion)
+                    let isSmoothed = currentChannelKey.contains("/stream/smooth")
+                    effectiveAudioPreRoll = isSmoothed ? profilePreRoll : max(profilePreRoll, observedStallCushion)
                     cushionSource = "adaptive-learned(\(String(format: "%.0f", effectiveAudioPreRoll * 1000))ms | \(reason))"
                 } else {
                     effectiveAudioPreRoll = Self.audioPreRollSeconds
@@ -1210,7 +1211,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 let (profilePreRoll, _) = ChannelJitterProfiler.shared.recommendedAudioPreRoll(for: currentChannelKey)
                 let longestStallMs = sessionState.mutate { $0.longestStallMs }
                 let observedStallCushion = longestStallMs > 0 ? (longestStallMs / 1000.0) + 0.15 : 0.35
-                effectiveAudioPreRoll = max(profilePreRoll, observedStallCushion)
+                let isSmoothed = currentChannelKey.contains("/stream/smooth")
+                effectiveAudioPreRoll = isSmoothed ? profilePreRoll : max(profilePreRoll, observedStallCushion)
             } else {
                 effectiveAudioPreRoll = Self.audioPreRollSeconds
             }
