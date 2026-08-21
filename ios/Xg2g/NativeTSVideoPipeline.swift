@@ -216,9 +216,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var ingestGeneration: Int = 0
     private var pendingIngestBytes: Int = 0
     private var currentChannelKey: String = ""
-    private var isRebuffering: Bool = false
-    private var rebufferPausePTS: CMTime = .invalid
-    private var rebufferStartTime: CFTimeInterval = 0
 
     /// Ingest thread safety and decode gate state.
     /// Only touched from `ingestQueue`.
@@ -629,9 +626,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         firstVideoFieldPTS = nil
         latestVideoPTS = .invalid
         preRollStartTime = 0
-        isRebuffering = false
-        rebufferPausePTS = .invalid
-        rebufferStartTime = 0
         audioContinuity.reset()
         selectedAudioPID = nil
         availableAudioTracks.removeAll()
@@ -1132,42 +1126,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
 
         if isAudioClockStarted {
-            let clockTime = CMTimebaseGetTime(audioRenderer.synchronizer.timebase)
-            if clockTime.isValid && Self.enableEarlyMotionExperiment {
-                let currentLeadMs = (pts.seconds - clockTime.seconds) * 1000.0
-                if !isRebuffering {
-                    // Enter rebuffer if lead drops critically low:
-                    if currentLeadMs < 150.0 && currentLeadMs > -500.0 {
-                        isRebuffering = true
-                        rebufferPausePTS = clockTime
-                        rebufferStartTime = CACurrentMediaTime()
-                        audioRenderer.setRate(0.0, time: clockTime)
-
-                        let (stalls, worst) = sessionState.mutate { ($0.stallCount, $0.longestStallMs) }
-                        ChannelJitterProfiler.shared.recordStall(for: currentChannelKey, stallMs: max(worst, 800.0))
-
-                        let pauseLog = "[REBUFFER-GUARD] ⏸️ Rebuffer entered at PTS \(String(format: "%.3f", clockTime.seconds))s | AudioLead was \(String(format: "%.0f", currentLeadMs))ms"
-                        print(pauseLog)
-                        logger.notice("\(pauseLog, privacy: .public)")
-                        TelemetryServer.shared.log(pauseLog)
-                    }
-                } else if rebufferPausePTS.isValid {
-                    // In rebuffer state: check if buffer has replenished to >= 650ms audio & >= 500ms video
-                    let audioLead = (pts.seconds - rebufferPausePTS.seconds) * 1000.0
-                    let videoLead = latestVideoPTS.isValid ? (latestVideoPTS.seconds - rebufferPausePTS.seconds) * 1000.0 : 0
-
-                    if audioLead >= 650.0 && videoLead >= 500.0 {
-                        isRebuffering = false
-                        let elapsed = (CACurrentMediaTime() - rebufferStartTime) * 1000.0
-                        audioRenderer.setRate(1.0, time: rebufferPausePTS)
-
-                        let resumeLog = "[REBUFFER-GUARD] ▶️ Rebuffer resumed at PTS \(String(format: "%.3f", rebufferPausePTS.seconds))s after \(String(format: "%.0f", elapsed))ms | AudioLead=\(String(format: "%.0f", audioLead))ms | VideoLead=\(String(format: "%.0f", videoLead))ms"
-                        print(resumeLog)
-                        logger.notice("\(resumeLog, privacy: .public)")
-                        TelemetryServer.shared.log(resumeLog)
-                    }
-                }
-            }
             audioRenderer.enqueue(sampleBuffer: sampleBuffer)
             return
         }
