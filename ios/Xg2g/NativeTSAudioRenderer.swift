@@ -111,6 +111,54 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         print("[AudioRenderer] ✅ AVAudioSession activated via AudioSessionManager")
     }
 
+    public struct PruneResult: Sendable {
+        public let prunedCount: Int
+        public let firstKeptPTS: CMTime?
+        public let lastPrunedPTS: CMTime?
+        public let remainingLeadMs: Double
+    }
+
+    /// Explicitly prunes audio buffers in pendingBuffers that end strictly before `anchor`.
+    /// Buffers that overlap `anchor` (i.e. pts + duration > anchor) are KEPT intact.
+    public func pruneBuffersBefore(time anchor: CMTime) -> PruneResult {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+
+        var pruned = 0
+        var lastPruned: CMTime? = nil
+
+        while let first = pendingBuffers.first {
+            let pts = CMSampleBufferGetPresentationTimeStamp(first)
+            let duration = CMSampleBufferGetDuration(first)
+            let endTime = (pts.isValid && duration.isValid) ? CMTimeAdd(pts, duration) : pts
+            if endTime.isValid && CMTimeCompare(endTime, anchor) <= 0 {
+                // Strictly before anchor -> prune
+                lastPruned = pts
+                pendingBuffers.removeFirst()
+                pruned += 1
+            } else {
+                // Overlaps anchor or is ahead -> keep
+                break
+            }
+        }
+
+        let firstKept = pendingBuffers.first.map { CMSampleBufferGetPresentationTimeStamp($0) }
+        let lastBuffer = pendingBuffers.last.map { CMSampleBufferGetPresentationTimeStamp($0) }
+        let remainingLeadMs: Double
+        if let last = lastBuffer, last.isValid, anchor.isValid {
+            remainingLeadMs = max(0, (last.seconds - anchor.seconds) * 1000.0)
+        } else {
+            remainingLeadMs = 0
+        }
+
+        return PruneResult(
+            prunedCount: pruned,
+            firstKeptPTS: firstKept,
+            lastPrunedPTS: lastPruned,
+            remainingLeadMs: remainingLeadMs
+        )
+    }
+
     /// Enqueues a parsed `CMSampleBuffer` (AC-3, E-AC-3, or AAC) for playback.
     ///
     /// The source is a live broadcast: data arrives on the stream's schedule, so

@@ -130,11 +130,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// The cost is about 400 ms more before sound and motion begin. It is not
     /// 400 ms of black screen — the first field carries `DisplayImmediately` and
     /// is on screen at once — it is 400 ms longer holding that first picture.
-    private static let audioPreRollSeconds: Double = 0.9
+    /// When true, enables the two-phase early motion experiment with explicit audio buffer
+    /// pruning and milestone recovery telemetry.
+    public nonisolated(unsafe) static var enableEarlyMotionExperiment: Bool = true
 
-    /// Picture buffered before the clock may start on video alone, for the same
-    /// reason the audio cushion exists: this source arrives in bursts, and a
-    /// clock started level with the newest frame runs dry at the first gap.
+    private static let audioPreRollSeconds: Double = 0.9
     private static let videoOnlyCushionSeconds: Double = 0.8
 
     /// How long a channel may go without naming any audio before it is taken to
@@ -1190,7 +1190,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 //
                 // So the audio decides how far forward the clock may be placed,
                 // and the picture decides where within that it lands.
-                let audioCeiling = pts.seconds - Self.audioPreRollSeconds
+                let effectiveAudioPreRoll = Self.enableEarlyMotionExperiment ? 0.35 : Self.audioPreRollSeconds
+                let effectiveVideoPreRoll = Self.enableEarlyMotionExperiment ? 0.20 : Self.videoPreRollSeconds
+
+                let audioCeiling = pts.seconds - effectiveAudioPreRoll
                 let anchorSeconds = min(videoPTS.seconds, audioCeiling)
 
                 // Anchoring before the first audio we hold would start the clock
@@ -1202,14 +1205,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 let videoBuffered = latestVideoPTS.isValid
                     ? latestVideoPTS.seconds - anchorSeconds
                     : 0
-                guard videoBuffered >= Self.videoPreRollSeconds else { return }
+                guard videoBuffered >= effectiveVideoPreRoll else { return }
 
                 anchorPTS = CMTime(seconds: anchorSeconds, preferredTimescale: 90_000)
                 anchorSource = anchorSeconds >= videoPTS.seconds - 0.001
                     ? "first picture"
                     : "audio ceiling (picture \(String(format: "%.0f", (videoPTS.seconds - anchorSeconds) * 1000))ms ahead)"
                 requiresCushion = false
-                cushionSource = "video+audio"
+                cushionSource = Self.enableEarlyMotionExperiment ? "early-motion(350ms)" : "video+audio"
             } else if tsParser.videoPID == nil {
                 // A service with no video has no picture to wait for, and the
                 // audio it has is the audio to play. Radio is the ordinary case
@@ -1235,18 +1238,22 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             // matters. A count does not: an AC-3 frame is 32 ms, an AAC frame at
             // 48 kHz is 21.3 ms, so the same "6 buffers" was 192 ms on one codec
             // and 128 ms on another.
-            //
-            // The count-based gate went 8 → 20 → 6 frames within eight minutes,
-            // trading dropouts against tuning speed in both directions with no
-            // measurement either way. `[AudioRenderer] Lead:` now reports the
-            // cushion continuously, so this number can be tuned against evidence.
-            //
-            // Measured from the anchor, not from the first audio timestamp: what
-            // protects playback is the audio queued *ahead of where the clock
-            // starts*, and anything behind that point is discarded by the
-            // renderer rather than played.
+            let effectiveAudioPreRoll = Self.enableEarlyMotionExperiment ? 0.35 : Self.audioPreRollSeconds
             let buffered = pts.seconds - anchorPTS.seconds
-            if !requiresCushion || buffered >= Self.audioPreRollSeconds {
+            if !requiresCushion || buffered >= effectiveAudioPreRoll {
+                let zapId = currentZapId
+                if Self.enableEarlyMotionExperiment {
+                    let pruneResult = self.audioRenderer.pruneBuffersBefore(time: anchorPTS)
+                    let lastPrunedStr = pruneResult.lastPrunedPTS.map { String(format: "%.3f", $0.seconds) } ?? "none"
+                    let firstKeptStr = pruneResult.firstKeptPTS.map { String(format: "%.3f", $0.seconds) } ?? "none"
+                    let pruneLog = "[EARLY-EXP] ✂️ Zap #\(zapId) Anchor: \(String(format: "%.3f", anchorPTS.seconds))s | Pruned: \(pruneResult.prunedCount) buffers (last pruned: \(lastPrunedStr)s) | First kept: \(firstKeptStr)s | Remaining audio lead: \(String(format: "%.0f", pruneResult.remainingLeadMs))ms"
+                    print(pruneLog)
+                    logger.notice("\(pruneLog, privacy: .public)")
+                    TelemetryServer.shared.log(pruneLog)
+
+                    self.scheduleEarlyMotionMilestones(zapId: zapId, anchorPTS: anchorPTS)
+                }
+
                 audioRenderer.setRate(1.0, time: anchorPTS)
                 isAudioClockStarted = true
                 // Paused until this instant, as far as PiP is concerned.
@@ -1255,7 +1262,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 let videoCushionMs = latestVideoPTS.isValid
                     ? (latestVideoPTS.seconds - anchorPTS.seconds) * 1000.0
                     : Double.nan
-                let zapId = currentZapId
                 let clockLog = "[ZAP-#\(zapId)-LOCK] ⏱️ Master clock started at PTS: \(String(format: "%.3f", anchorPTS.seconds))s via \(anchorSource) (\(codec), gated on \(cushionSource) cushion | video ahead: \(String(format: "%.0f", videoCushionMs))ms | audio ahead: \(String(format: "%.0f", buffered * 1000))ms | skipped \(String(format: "%.0f", skippedMs))ms of pre-picture audio)"
                 print(clockLog)
                 logger.notice("\(clockLog, privacy: .public)")
@@ -1300,6 +1306,28 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     removeFirstPictureObserver()
                     recordFirstPictureVisible()
                 }
+            }
+        }
+    }
+
+    private func scheduleEarlyMotionMilestones(zapId: Int, anchorPTS: CMTime) {
+        let milestones: [Double] = [0.5, 1.0, 3.0, 5.0]
+        for delay in milestones {
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self, self.currentZapId == zapId, self.isAudioClockStarted else { return }
+                let stats = self.audioRenderer.consumeFlowStats()
+                let presenterQ = self.systemPresenter?.pendingSamplesCount ?? 0
+                let status = self.audioRenderer.status
+                let statusStr = status == .rendering ? "rendering" : (status == .failed ? "FAILED" : "other")
+                let lead = stats.currentLeadMs
+                let minLead = stats.minLeadMs
+                let underruns = stats.underruns
+
+                let isFailure = (minLead < 150.0 && minLead > 0) || underruns > 0 || presenterQ > 130 || status == .failed
+                let tag = isFailure ? "❌ EXPERIMENT ALERT" : "📈 Milestone"
+                let log = "[EARLY-EXP] \(tag) +\(String(format: "%.1f", delay))s: AudioLead=\(String(format: "%.0f", lead))ms (min=\(String(format: "%.0f", minLead))ms), Underruns=\(underruns), PresenterQ=\(presenterQ), Status=\(statusStr)"
+                print(log)
+                TelemetryServer.shared.log(log)
             }
         }
     }
