@@ -85,12 +85,12 @@ func createMultiPacketPAT(pmtPID uint16) [][]byte {
 	pkt1[177] = 0x00 // pointer_field = 0
 	copy(pkt1[178:], patSection[:10])
 
-	// Packet 2: PUSI=false, contains remaining 6 bytes of section
+	// Packet 2: PUSI=false, contains remaining 6 bytes of section (CC=1)
 	pkt2 := make([]byte, TSPacketSize)
 	pkt2[0] = SyncByte
 	pkt2[1] = 0x00 // PUSI=0, PID=0
 	pkt2[2] = 0x00
-	pkt2[3] = 0x10 // AFC=0x01
+	pkt2[3] = 0x11 // AFC=0x01, CC=1
 	copy(pkt2[4:], patSection[10:])
 
 	return [][]byte{pkt1, pkt2}
@@ -132,18 +132,18 @@ func createMultiPacketPMT(pmtPID uint16, videoPID uint16, isHEVC bool) [][]byte 
 	pkt1[0] = SyncByte
 	pkt1[1] = 0x40 | byte((pmtPID>>8)&0x1F)
 	pkt1[2] = byte(pmtPID & 0xFF)
-	pkt1[3] = 0x30 // AFC=0x03
+	pkt1[3] = 0x30 // AFC=0x03, CC=0
 	pkt1[4] = 167  // AF length
 	pkt1[5] = 0x00
 	pkt1[172] = 0x00 // pointer_field = 0
 	copy(pkt1[173:], pmtSection[:15])
 
-	// Packet 2: PUSI=false, contains remaining 11 bytes
+	// Packet 2: PUSI=false, contains remaining 11 bytes (CC=1)
 	pkt2 := make([]byte, TSPacketSize)
 	pkt2[0] = SyncByte
 	pkt2[1] = byte((pmtPID >> 8) & 0x1F)
 	pkt2[2] = byte(pmtPID & 0xFF)
-	pkt2[3] = 0x10
+	pkt2[3] = 0x11 // AFC=0x01, CC=1
 	copy(pkt2[4:], pmtSection[15:])
 
 	return [][]byte{pkt1, pkt2}
@@ -573,4 +573,108 @@ func TestMasterRing_CloseWakesAllReaders(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	r.Close()
 	wg.Wait()
+}
+
+func TestMasterRing_CCDiscontinuity_AbortsCorruptedSection(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	const pmtPID = 100
+	patPackets := createMultiPacketPAT(pmtPID)
+
+	// 1. Send first packet with CC=0
+	pkt1 := make([]byte, TSPacketSize)
+	copy(pkt1, patPackets[0])
+	pkt1[3] = (pkt1[3] & 0xF0) | 0x00
+	_, _ = r.Push(pkt1)
+
+	// 2. Send corrupted second packet with CC=5 (gap instead of CC=1!)
+	pkt2Corrupted := make([]byte, TSPacketSize)
+	copy(pkt2Corrupted, patPackets[1])
+	pkt2Corrupted[3] = (pkt2Corrupted[3] & 0xF0) | 0x05
+	_, _ = r.Push(pkt2Corrupted)
+
+	// PMT PID must NOT be resolved because section assembly aborted due to CC gap
+	if r.pmtPID != 0 {
+		t.Fatalf("corrupted PAT section with CC gap was incorrectly accepted")
+	}
+
+	// 3. Send clean PAT packets (CC=6, CC=7)
+	pkt1Valid := make([]byte, TSPacketSize)
+	copy(pkt1Valid, patPackets[0])
+	pkt1Valid[3] = (pkt1Valid[3] & 0xF0) | 0x06
+	_, _ = r.Push(pkt1Valid)
+
+	pkt2Valid := make([]byte, TSPacketSize)
+	copy(pkt2Valid, patPackets[1])
+	pkt2Valid[3] = (pkt2Valid[3] & 0xF0) | 0x07
+	_, _ = r.Push(pkt2Valid)
+
+	// Now it must be successfully resolved
+	if r.pmtPID != pmtPID {
+		t.Fatalf("expected pmtPID=%d after clean retransmission, got %d", pmtPID, r.pmtPID)
+	}
+}
+
+func TestMasterRing_CurrentNextIndicator_InactiveTableIgnored(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	const pmtPID = 100
+	patPackets := createMultiPacketPAT(pmtPID)
+
+	// Modify table byte 5 so current_next_indicator = 0 (next/inactive table)
+	pkt1 := make([]byte, TSPacketSize)
+	copy(pkt1, patPackets[0])
+	// In pkt1, table starts at 178. table[5] is at index 178+5 = 183
+	pkt1[183] = 0xC0 // current_next = 0
+
+	_, _ = r.Push(pkt1)
+	_, _ = r.Push(patPackets[1])
+
+	if r.pmtPID != 0 {
+		t.Fatalf("inactive PAT table (current_next=0) was incorrectly accepted")
+	}
+
+	// Send active table (current_next = 1)
+	_, _ = r.Push(patPackets[0])
+	_, _ = r.Push(patPackets[1])
+
+	if r.pmtPID != pmtPID {
+		t.Fatalf("active PAT table was not accepted: got %d", r.pmtPID)
+	}
+}
+
+func TestMasterRing_DynamicPMTVersionChange_UpdatesVideoPID(t *testing.T) {
+	r := NewMasterRing(100 * TSPacketSize)
+	defer r.Close()
+
+	const pmtPID = 100
+	for _, pkt := range createMultiPacketPAT(pmtPID) {
+		_, _ = r.Push(pkt)
+	}
+
+	// 1. Initial PMT: Video PID 256 (H.264), Version 0
+	for _, pkt := range createMultiPacketPMT(pmtPID, 256, false) {
+		_, _ = r.Push(pkt)
+	}
+
+	vPID1, vCodec1 := r.VideoDetails()
+	if vPID1 != 256 || vCodec1 != CodecH264 {
+		t.Fatalf("expected initial vPID=256 H.264, got %d %v", vPID1, vCodec1)
+	}
+
+	// 2. Updated PMT v2: Video PID 512 (H.265), Version 1
+	pmtV2 := createMultiPacketPMT(pmtPID, 512, true)
+	// In pkt1, table starts at index 173. table[5] is at 173+5 = 178
+	pmtV2[0][178] = 0xC3 // version 1, current_next 1
+
+	for _, pkt := range pmtV2 {
+		_, _ = r.Push(pkt)
+	}
+
+	vPID2, vCodec2 := r.VideoDetails()
+	if vPID2 != 512 || vCodec2 != CodecH265 {
+		t.Fatalf("expected dynamically updated vPID=512 H.265, got %d %v", vPID2, vCodec2)
+	}
 }

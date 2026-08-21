@@ -34,12 +34,15 @@ const (
 type sectionAssembler struct {
 	buf        []byte
 	sectionLen int
+	lastCC     uint8
+	hasCC      bool
 	rawPackets [][]byte
 }
 
 func (s *sectionAssembler) reset() {
 	s.buf = s.buf[:0]
 	s.sectionLen = 0
+	s.hasCC = false
 	s.rawPackets = s.rawPackets[:0]
 }
 
@@ -59,6 +62,8 @@ type MasterRing struct {
 	pmtAssembler  sectionAssembler
 	rawPATPackets [][]byte
 	rawPMTPackets [][]byte
+	patVersion    uint8
+	pmtVersion    uint8
 	pmtPID        uint16
 	videoPID      uint16
 	videoCodec    VideoCodec
@@ -187,8 +192,11 @@ func (r *MasterRing) indexPacketLocked(pkt []byte, offset int64) {
 }
 
 func (r *MasterRing) assemblePATSectionLocked(pkt []byte, pusi bool, payload []byte) {
+	cc := pkt[3] & 0x0F
 	if pusi {
 		r.patAssembler.reset()
+		r.patAssembler.lastCC = cc
+		r.patAssembler.hasCC = true
 		if len(payload) < 1 {
 			return
 		}
@@ -209,6 +217,12 @@ func (r *MasterRing) assemblePATSectionLocked(pkt []byte, pusi bool, payload []b
 		r.patAssembler.buf = append(r.patAssembler.buf, table[:toAppend]...)
 		r.patAssembler.rawPackets = append(r.patAssembler.rawPackets, cloneSlice(pkt))
 	} else if r.patAssembler.sectionLen > 0 && len(r.patAssembler.buf) < r.patAssembler.sectionLen {
+		if r.patAssembler.hasCC && cc != (r.patAssembler.lastCC+1)&0x0F {
+			// CC discontinuity detected: abort corrupted in-flight assembly
+			r.patAssembler.reset()
+			return
+		}
+		r.patAssembler.lastCC = cc
 		needed := r.patAssembler.sectionLen - len(r.patAssembler.buf)
 		toAppend := len(payload)
 		if toAppend > needed {
@@ -219,26 +233,41 @@ func (r *MasterRing) assemblePATSectionLocked(pkt []byte, pusi bool, payload []b
 	}
 
 	if r.patAssembler.sectionLen > 0 && len(r.patAssembler.buf) >= r.patAssembler.sectionLen {
-		// PAT complete: parse PMT PID
+		// PAT complete: verify current_next and parse PMT PID
 		table := r.patAssembler.buf
 		if len(table) >= 12 {
-			programs := table[8 : r.patAssembler.sectionLen-4] // exclude CRC32
-			for i := 0; i+4 <= len(programs); i += 4 {
-				progNum := (uint16(programs[i]) << 8) | uint16(programs[i+1])
-				progPID := ((uint16(programs[i+2]) & 0x1F) << 8) | uint16(programs[i+3])
-				if progNum > 0 {
-					r.pmtPID = progPID
-					break
+			currentNext := table[5] & 0x01
+			if currentNext == 1 { // Only process active table
+				version := (table[5] >> 1) & 0x1F
+				r.patVersion = version
+
+				programs := table[8 : r.patAssembler.sectionLen-4] // exclude CRC32
+				for i := 0; i+4 <= len(programs); i += 4 {
+					progNum := (uint16(programs[i]) << 8) | uint16(programs[i+1])
+					progPID := ((uint16(programs[i+2]) & 0x1F) << 8) | uint16(programs[i+3])
+					if progNum > 0 {
+						if r.pmtPID != progPID {
+							r.pmtPID = progPID
+							r.pmtAssembler.reset()
+							r.videoPID = 0
+							r.videoCodec = CodecUnknown
+							r.rawPMTPackets = nil
+						}
+						break
+					}
 				}
+				r.rawPATPackets = cloneSliceList(r.patAssembler.rawPackets)
 			}
-			r.rawPATPackets = cloneSliceList(r.patAssembler.rawPackets)
 		}
 	}
 }
 
 func (r *MasterRing) assemblePMTSectionLocked(pkt []byte, pusi bool, payload []byte) {
+	cc := pkt[3] & 0x0F
 	if pusi {
 		r.pmtAssembler.reset()
+		r.pmtAssembler.lastCC = cc
+		r.pmtAssembler.hasCC = true
 		if len(payload) < 1 {
 			return
 		}
@@ -259,6 +288,12 @@ func (r *MasterRing) assemblePMTSectionLocked(pkt []byte, pusi bool, payload []b
 		r.pmtAssembler.buf = append(r.pmtAssembler.buf, table[:toAppend]...)
 		r.pmtAssembler.rawPackets = append(r.pmtAssembler.rawPackets, cloneSlice(pkt))
 	} else if r.pmtAssembler.sectionLen > 0 && len(r.pmtAssembler.buf) < r.pmtAssembler.sectionLen {
+		if r.pmtAssembler.hasCC && cc != (r.pmtAssembler.lastCC+1)&0x0F {
+			// CC discontinuity detected: abort corrupted in-flight assembly
+			r.pmtAssembler.reset()
+			return
+		}
+		r.pmtAssembler.lastCC = cc
 		needed := r.pmtAssembler.sectionLen - len(r.pmtAssembler.buf)
 		toAppend := len(payload)
 		if toAppend > needed {
@@ -269,36 +304,42 @@ func (r *MasterRing) assemblePMTSectionLocked(pkt []byte, pusi bool, payload []b
 	}
 
 	if r.pmtAssembler.sectionLen > 0 && len(r.pmtAssembler.buf) >= r.pmtAssembler.sectionLen {
-		// PMT complete: parse video stream type and elementary PID
+		// PMT complete: verify current_next and parse video stream type and elementary PID
 		table := r.pmtAssembler.buf
 		if len(table) >= 12 {
-			progInfoLen := int((uint16(table[10]&0x0F) << 8) | uint16(table[11]))
-			esStart := 12 + progInfoLen
-			esEnd := r.pmtAssembler.sectionLen - 4 // exclude CRC32
+			currentNext := table[5] & 0x01
+			if currentNext == 1 { // Only process active table
+				version := (table[5] >> 1) & 0x1F
+				r.pmtVersion = version
 
-			for i := esStart; i+5 <= esEnd && i < len(table); {
-				st := table[i]
-				elemPID := ((uint16(table[i+1]) & 0x1F) << 8) | uint16(table[i+2])
-				esInfoLen := int((uint16(table[i+3]&0x0F) << 8) | uint16(table[i+4]))
+				progInfoLen := int((uint16(table[10]&0x0F) << 8) | uint16(table[11]))
+				esStart := 12 + progInfoLen
+				esEnd := r.pmtAssembler.sectionLen - 4 // exclude CRC32
 
-				switch st {
-				case 0x1B: // H.264 / AVC
-					r.videoPID = elemPID
-					r.videoCodec = CodecH264
-				case 0x24: // H.265 / HEVC
-					r.videoPID = elemPID
-					r.videoCodec = CodecH265
-				case 0x02: // MPEG-2 Video
-					r.videoPID = elemPID
-					r.videoCodec = CodecMPEG2
+				for i := esStart; i+5 <= esEnd && i < len(table); {
+					st := table[i]
+					elemPID := ((uint16(table[i+1]) & 0x1F) << 8) | uint16(table[i+2])
+					esInfoLen := int((uint16(table[i+3]&0x0F) << 8) | uint16(table[i+4]))
+
+					switch st {
+					case 0x1B: // H.264 / AVC
+						r.videoPID = elemPID
+						r.videoCodec = CodecH264
+					case 0x24: // H.265 / HEVC
+						r.videoPID = elemPID
+						r.videoCodec = CodecH265
+					case 0x02, 0x01: // MPEG-2 / MPEG-1 Video
+						r.videoPID = elemPID
+						r.videoCodec = CodecMPEG2
+					}
+
+					if r.videoPID > 0 {
+						break
+					}
+					i += 5 + esInfoLen
 				}
-
-				if r.videoPID > 0 {
-					break
-				}
-				i += 5 + esInfoLen
+				r.rawPMTPackets = cloneSliceList(r.pmtAssembler.rawPackets)
 			}
-			r.rawPMTPackets = cloneSliceList(r.pmtAssembler.rawPackets)
 		}
 	}
 }
