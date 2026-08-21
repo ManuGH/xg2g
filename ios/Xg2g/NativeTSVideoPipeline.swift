@@ -346,8 +346,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.notice("\(teardownLog, privacy: .public)")
         TelemetryServer.shared.log(teardownLog)
 
-        sessionState = PipelineSessionState(generation: currentGen, requestStartTime: requestedAt)
-        decoder.decodeGeneration = currentGen
+        sessionState = PipelineSessionState(generation: zapId, requestStartTime: requestedAt)
+        decoder.decodeGeneration = zapId
 
         let audioSessionStart = CACurrentMediaTime()
         audioRenderer.activateAudioSession()
