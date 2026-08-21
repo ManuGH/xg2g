@@ -6,12 +6,11 @@ package ring
 
 import (
 	"io"
-	"sync"
 )
 
 // SubscriberReader provides an independent read cursor over a MasterRing buffer.
+// Synchronization is governed exclusively by the MasterRing mutex, completely eliminating deadlocks.
 type SubscriberReader struct {
-	mu           sync.Mutex
 	ring         *MasterRing
 	readOffset   int64
 	droppedBytes int64
@@ -44,7 +43,6 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 		return 0, nil
 	}
 
-	// Read in 188-byte packet multiples if possible
 	maxRead := len(p)
 	if maxRead >= TSPacketSize {
 		maxRead = (maxRead / TSPacketSize) * TSPacketSize
@@ -54,12 +52,9 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 	defer s.ring.mu.Unlock()
 
 	for {
-		s.mu.Lock()
 		if s.isClosed {
-			s.mu.Unlock()
 			return 0, io.EOF
 		}
-		s.mu.Unlock()
 
 		if s.ring.isClosed && s.readOffset >= s.ring.head {
 			return 0, io.EOF
@@ -67,10 +62,8 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 
 		// Check if slow subscriber was overtaken by ring write head
 		if s.readOffset < s.ring.tail {
-			s.mu.Lock()
 			s.droppedBytes += (s.ring.tail - s.readOffset)
 			s.readOffset = s.ring.tail
-			s.mu.Unlock()
 		}
 
 		available := int(s.ring.head - s.readOffset)
@@ -100,45 +93,45 @@ func (s *SubscriberReader) Read(p []byte) (int, error) {
 
 // SeekToLatestKeyframe moves the subscriber read cursor to the latest decodable keyframe.
 func (s *SubscriberReader) SeekToLatestKeyframe() (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
 
 	if s.isClosed {
 		return 0, io.EOF
 	}
 
-	offset, ok := s.ring.LatestKeyframeOffset()
-	if !ok {
+	if len(s.ring.keyframeOffsets) == 0 {
+		return 0, ErrNoKeyframeFound
+	}
+	latest := s.ring.keyframeOffsets[len(s.ring.keyframeOffsets)-1]
+	if latest < s.ring.tail {
 		return 0, ErrNoKeyframeFound
 	}
 
-	s.readOffset = offset
-	return offset, nil
+	s.readOffset = latest
+	return latest, nil
 }
 
 // DroppedBytes returns the number of bytes dropped due to ring buffer overrun.
 func (s *SubscriberReader) DroppedBytes() int64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
 	return s.droppedBytes
 }
 
 // Offset returns the current absolute read position.
 func (s *SubscriberReader) Offset() int64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
 	return s.readOffset
 }
 
-// Close closes the subscriber reader.
+// Close closes the subscriber reader and wakes any waiting operations.
 func (s *SubscriberReader) Close() error {
-	s.mu.Lock()
-	s.isClosed = true
-	s.mu.Unlock()
-
-	// Signal ring to wake in case of waiting
 	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
+
+	s.isClosed = true
 	s.ring.notEmpty.Broadcast()
-	s.ring.mu.Unlock()
 	return nil
 }
