@@ -98,6 +98,62 @@ const (
 	DeliveryTerrestrial DeliveryType = "TERRESTRIAL"
 )
 
+// DeliverySystem represents the specific transmission modulation standard.
+type DeliverySystem string
+
+const (
+	DeliverySystemDVBS  DeliverySystem = "DVB-S"
+	DeliverySystemDVBS2 DeliverySystem = "DVB-S2"
+	DeliverySystemDVBC  DeliverySystem = "DVB-C"
+	DeliverySystemDVBC2 DeliverySystem = "DVB-C2"
+	DeliverySystemDVBT  DeliverySystem = "DVB-T"
+	DeliverySystemDVBT2 DeliverySystem = "DVB-T2"
+)
+
+// PLSMode represents Physical Layer Scrambling mode for DVB-S2 multistream transponders.
+type PLSMode string
+
+const (
+	PLSModeRoot  PLSMode = "ROOT"
+	PLSModeGold  PLSMode = "GOLD"
+	PLSModeCombo PLSMode = "COMBO"
+)
+
+// TransponderKey represents the complete, strongly typed physical RF tuning identity of a transponder.
+type TransponderKey struct {
+	DeliverySystem  DeliverySystem `json:"deliverySystem"`
+	OrbitalPosition int            `json:"orbitalPosition"` // In tenths of a degree (e.g. 192 for Astra 19.2E)
+	FrequencyHz     uint64         `json:"frequencyHz"`
+	Polarization    Polarization   `json:"polarization"`
+	StreamID        int            `json:"streamId,omitempty"` // DVB-S2 MIS / DVB-T2 PLP ID (-1 if unused)
+	PLSMode         PLSMode        `json:"plsMode,omitempty"`
+	PLSCode         uint32         `json:"plsCode,omitempty"`
+}
+
+// Canonical returns the deterministic, delivery-system specific canonical string representation.
+func (k TransponderKey) Canonical() string {
+	switch k.DeliverySystem {
+	case DeliverySystemDVBS, DeliverySystemDVBS2:
+		base := fmt.Sprintf("%s:%d:%d:%s", k.DeliverySystem, k.OrbitalPosition, k.FrequencyHz, k.Polarization)
+		if k.StreamID >= 0 {
+			base += fmt.Sprintf(":stream=%d", k.StreamID)
+		}
+		if k.PLSMode != "" || k.PLSCode > 0 {
+			base += fmt.Sprintf(":pls=%s:%d", k.PLSMode, k.PLSCode)
+		}
+		return base
+	case DeliverySystemDVBC, DeliverySystemDVBC2:
+		return fmt.Sprintf("%s:%d", k.DeliverySystem, k.FrequencyHz)
+	case DeliverySystemDVBT, DeliverySystemDVBT2:
+		if k.StreamID >= 0 {
+			return fmt.Sprintf("%s:%d:plp=%d", k.DeliverySystem, k.FrequencyHz, k.StreamID)
+		}
+		return fmt.Sprintf("%s:%d", k.DeliverySystem, k.FrequencyHz)
+	default:
+		return fmt.Sprintf("%s:%d:%d:%s", k.DeliverySystem, k.OrbitalPosition, k.FrequencyHz, k.Polarization)
+	}
+}
+
 // InputID uniquely identifies a physical coaxial / RF connector on the receiver backplane.
 type InputID string
 

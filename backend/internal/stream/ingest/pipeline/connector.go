@@ -6,20 +6,62 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
 )
 
+var (
+	// ErrAdmissionDenied indicates that the physical tuner topology rejected stream admission.
+	ErrAdmissionDenied = errors.New("tuner topology admission denied")
+)
+
+// TopologyLease represents a physical tuner / demodulator reservation lease.
+type TopologyLease interface {
+	Release()
+	Decision() receivertopology.AllocationDecision
+}
+
+// TopologyService defines the interface for hardware tuner admission and transponder multiplex allocation.
+type TopologyService interface {
+	ReserveStreamLeaseAtomic(serviceRef string, sessionID string, priority receivertopology.Priority, ttl time.Duration) (*receivertopology.Lease, receivertopology.AllocationDecision, error)
+	ReleaseStream(sessionID string) bool
+}
+
+type topologyLeaseWrapper struct {
+	service   TopologyService
+	sessionID string
+	decision  receivertopology.AllocationDecision
+	released  atomic.Bool
+}
+
+func (l *topologyLeaseWrapper) Release() {
+	if l.released.CompareAndSwap(false, true) {
+		if l.service != nil {
+			l.service.ReleaseStream(l.sessionID)
+		}
+	}
+}
+
+func (l *topologyLeaseWrapper) Decision() receivertopology.AllocationDecision {
+	return l.decision
+}
+
 // PipelineStreamWrapper wraps the active SessionPipeline as an io.ReadCloser and session.PipelineHolder.
 type PipelineStreamWrapper struct {
-	pipeline *SessionPipeline
+	pipeline  *SessionPipeline
+	topLease  TopologyLease
+	closeOnce sync.Once
 }
 
 func (w *PipelineStreamWrapper) Read(p []byte) (int, error) {
@@ -28,7 +70,12 @@ func (w *PipelineStreamWrapper) Read(p []byte) (int, error) {
 }
 
 func (w *PipelineStreamWrapper) Close() error {
-	w.pipeline.Close()
+	w.closeOnce.Do(func() {
+		w.pipeline.Close()
+		if w.topLease != nil {
+			w.topLease.Release()
+		}
+	})
 	return nil
 }
 
@@ -40,6 +87,10 @@ func (w *PipelineStreamWrapper) OnDone(callback func(err error)) {
 	w.pipeline.OnDone(callback)
 }
 
+func (w *PipelineStreamWrapper) TopologyLease() TopologyLease {
+	return w.topLease
+}
+
 // DialFunc connects to an upstream source for the specified session key.
 type DialFunc func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error)
 
@@ -49,7 +100,8 @@ type ConnectorConfig struct {
 	StreamPort      int
 	NormConfig      normalizer.Config
 	RingCapacity    int
-	DialFn          DialFunc // Optional custom dialer (for testing or proxying)
+	TopologyService TopologyService // Optional (if nil, topology admission is skipped / pass-through)
+	DialFn          DialFunc        // Optional custom dialer (for testing or proxying)
 }
 
 // DefaultConnectorConfig returns production defaults for pipeline connector.
@@ -89,31 +141,57 @@ func NewLivePipelineConnector(cfg ConnectorConfig) *LivePipelineConnector {
 }
 
 // Connect dials the upstream tuner and initializes the SessionPipeline.
+// It executes the strict sequence: Topology Admission -> Upstream Dial -> SessionPipeline Start.
 func (c *LivePipelineConnector) Connect(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
-	var upstream io.ReadCloser
-	var err error
-
-	if c.cfg.DialFn != nil {
-		upstream, err = c.cfg.DialFn(ctx, key)
-		if err != nil {
-			return nil, err
+	// 1. Check & reserve topology lease BEFORE dialing upstream
+	var topLease TopologyLease
+	if c.cfg.TopologyService != nil {
+		sessionID := fmt.Sprintf("live-ingest:%s", key.String())
+		_, decision, err := c.cfg.TopologyService.ReserveStreamLeaseAtomic(key.ServiceRef, sessionID, receivertopology.PriorityLive, 0)
+		if err != nil || !decision.Allowed {
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", ErrAdmissionDenied, err)
+			}
+			return nil, fmt.Errorf("%w: %s", ErrAdmissionDenied, decision.Reason)
 		}
-	} else {
-		upstream, err = c.dialHTTP(ctx, key)
-		if err != nil {
-			return nil, err
+		topLease = &topologyLeaseWrapper{
+			service:   c.cfg.TopologyService,
+			sessionID: sessionID,
+			decision:  decision,
 		}
 	}
 
+	// 2. Dial upstream
+	var upstream io.ReadCloser
+	var err error
+	if c.cfg.DialFn != nil {
+		upstream, err = c.cfg.DialFn(ctx, key)
+	} else {
+		upstream, err = c.dialHTTP(ctx, key)
+	}
+	if err != nil {
+		if topLease != nil {
+			topLease.Release() // Release lease immediately if dial fails
+		}
+		return nil, err
+	}
+
+	// 3. Create and start SessionPipeline
 	pipeline, err := NewSessionPipeline(c.cfg.NormConfig, c.cfg.RingCapacity, key.TargetProgram)
 	if err != nil {
 		_ = upstream.Close()
+		if topLease != nil {
+			topLease.Release()
+		}
 		return nil, err
 	}
 
 	pipeline.Start(context.Background(), upstream)
 
-	return &PipelineStreamWrapper{pipeline: pipeline}, nil
+	return &PipelineStreamWrapper{
+		pipeline: pipeline,
+		topLease: topLease,
+	}, nil
 }
 
 func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {

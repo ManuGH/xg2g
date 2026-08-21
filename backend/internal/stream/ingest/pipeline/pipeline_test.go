@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuGH/xg2g/internal/receivertopology"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
@@ -646,4 +647,563 @@ func TestPipeline_RealBroadcast_EndToEndDecoding(t *testing.T) {
 		}
 		t.Logf("✅ Client %d Decoded %d video frames from primed HTTP live stream", i, frames)
 	}
+}
+
+// =========================================================================
+// Phase 5 Gate 1 & Gate 2: Topology Admission & Transponder Sharing Tests
+// =========================================================================
+
+func newSingleTunerTopology() receivertopology.ReceiverTopology {
+	return receivertopology.ReceiverTopology{
+		Model:      "Single Tuner Test",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{
+				ID:           "input_a",
+				DeliveryType: receivertopology.DeliveryLegacyUniversal,
+				Satellites:   []receivertopology.SatellitePosition{192},
+			},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+}
+
+func newDualTunerTopology() receivertopology.ReceiverTopology {
+	return receivertopology.ReceiverTopology{
+		Model:      "Dual Tuner Test",
+		Confidence: receivertopology.ConfidenceVerified,
+		Inputs: []receivertopology.PhysicalInput{
+			{
+				ID:           "input_a",
+				DeliveryType: receivertopology.DeliveryLegacyUniversal,
+				Satellites:   []receivertopology.SatellitePosition{192},
+			},
+			{
+				ID:           "input_b",
+				DeliveryType: receivertopology.DeliveryLegacyUniversal,
+				Satellites:   []receivertopology.SatellitePosition{192},
+			},
+		},
+		Demodulators: []receivertopology.Demodulator{
+			{ID: "demod_0", InputID: "input_a", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+			{ID: "demod_1", InputID: "input_b", DVBTypes: []receivertopology.DVBType{receivertopology.DVBTypeSat}},
+		},
+	}
+}
+
+// Gate 1: Admission Fails -> Exactly Zero Upstream Dials
+func TestPipeline_TopologyAdmissionFailed_ZeroDials(t *testing.T) {
+	topSvc, err := receivertopology.NewService(newSingleTunerTopology(), receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topology service: %v", err)
+	}
+
+	var dialCountCh1, dialCountCh2 int32
+	samplePkt := make([]byte, ring.TSPacketSize)
+	samplePkt[0] = ring.SyncByte
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.NormConfig.StartupReservoirMs = 0.0
+	connectorCfg.NormConfig.PacerIntervalMs = 5.0
+	connectorCfg.TopologyService = topSvc
+
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		if strings.Contains(key.ServiceRef, "132F") {
+			atomic.AddInt32(&dialCountCh1, 1)
+		} else {
+			atomic.AddInt32(&dialCountCh2, 1)
+		}
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for range ticker.C {
+				if _, err := pw.Write(samplePkt); err != nil {
+					return
+				}
+			}
+		}()
+		return pr, nil
+	}
+
+	mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(connectorCfg))
+	defer mgr.Close()
+
+	ctx := context.Background()
+	key1 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:") // ORF 1 (Astra High H)
+	key2 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:283D:3FB:1:C00000:0:0:0:") // ZDF (Astra High H - different TSID)
+
+	// 1. Channel 1 acquires the only tuner
+	lease1, err := mgr.Acquire(ctx, key1)
+	if err != nil {
+		t.Fatalf("channel 1 acquire failed: %v", err)
+	}
+	defer lease1.Release()
+
+	if atomic.LoadInt32(&dialCountCh1) != 1 {
+		t.Fatalf("expected 1 dial for channel 1")
+	}
+
+	// 2. Channel 2 attempts to acquire -> must fail admission (single demod exhausted)
+	_, err = mgr.Acquire(ctx, key2)
+	if err == nil {
+		t.Fatalf("expected admission error for channel 2 on single tuner topology")
+	}
+	if !errors.Is(err, ErrAdmissionDenied) {
+		t.Fatalf("expected ErrAdmissionDenied, got %v", err)
+	}
+
+	// 3. Proves strictly ZERO dials were made for Channel 2
+	dials2 := atomic.LoadInt32(&dialCountCh2)
+	if dials2 != 0 {
+		t.Fatalf("expected strictly 0 dials for rejected channel 2, got %d", dials2)
+	}
+}
+
+// Gate 1: Admission Succeeds -> Dial Fails -> Releases Topology Lease Immediately
+func TestPipeline_TopologyAdmissionSucceeds_DialFails_ReleasesLease(t *testing.T) {
+	topSvc, err := receivertopology.NewService(newSingleTunerTopology(), receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topology service: %v", err)
+	}
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.TopologyService = topSvc
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		return nil, errors.New("simulated network connection refused")
+	}
+
+	mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(connectorCfg))
+	defer mgr.Close()
+
+	ctx := context.Background()
+	key1 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:")
+
+	// 1. Acquire fails because dial fails
+	_, err = mgr.Acquire(ctx, key1)
+	if err == nil {
+		t.Fatalf("expected acquire to fail on dial error")
+	}
+
+	// 2. Proves topology lease was immediately released (demod pool has 0 active sessions)
+	runtime := topSvc.CloneRuntime()
+	for _, alloc := range runtime.ActiveMultiplexes {
+		if len(alloc.SessionIDs) > 0 {
+			t.Fatalf("expected 0 active sessions in topology runtime, found %v", alloc.SessionIDs)
+		}
+	}
+}
+
+// Gate 1: 20 Subscribers on Same Shared Session -> 1 Topology Lease + 1 Dial
+func TestPipeline_TopologyCoalescedLease_20SubscribersOneLease(t *testing.T) {
+	topSvc, err := receivertopology.NewService(newSingleTunerTopology(), receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topology service: %v", err)
+	}
+
+	var dialCount int32
+	samplePkt := make([]byte, ring.TSPacketSize)
+	samplePkt[0] = ring.SyncByte
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.TopologyService = topSvc
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		atomic.AddInt32(&dialCount, 1)
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for range ticker.C {
+				if _, err := pw.Write(samplePkt); err != nil {
+					return
+				}
+			}
+		}()
+		return pr, nil
+	}
+
+	mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(connectorCfg))
+	defer mgr.Close()
+
+	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:")
+	const subscriberCount = 20
+	leases := make([]*session.Lease, subscriberCount)
+
+	for i := 0; i < subscriberCount; i++ {
+		l, err := mgr.Acquire(context.Background(), key)
+		if err != nil {
+			t.Fatalf("subscriber %d acquire failed: %v", i, err)
+		}
+		leases[i] = l
+		defer l.Release()
+	}
+
+	if atomic.LoadInt32(&dialCount) != 1 {
+		t.Fatalf("expected 1 dial for 20 subscribers, got %d", atomic.LoadInt32(&dialCount))
+	}
+
+	runtime := topSvc.CloneRuntime()
+	activeMuxCount := len(runtime.ActiveMultiplexes)
+	if activeMuxCount != 1 {
+		t.Fatalf("expected exactly 1 active multiplex in topology, got %d", activeMuxCount)
+	}
+}
+
+// Gate 1: Warm-Hold Preserves Topology Lease
+func TestPipeline_TopologyWarmHold_PreservesLease(t *testing.T) {
+	topSvc, err := receivertopology.NewService(newSingleTunerTopology(), receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topology service: %v", err)
+	}
+
+	var dialCount int32
+	samplePkt := make([]byte, ring.TSPacketSize)
+	samplePkt[0] = ring.SyncByte
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.TopologyService = topSvc
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		atomic.AddInt32(&dialCount, 1)
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for range ticker.C {
+				if _, err := pw.Write(samplePkt); err != nil {
+					return
+				}
+			}
+		}()
+		return pr, nil
+	}
+
+	mgrCfg := session.ManagerConfig{
+		WarmHoldDuration: 500 * time.Millisecond,
+		ConnectTimeout:   2 * time.Second,
+	}
+	mgr := session.NewManager(mgrCfg, NewLivePipelineConnector(connectorCfg))
+	defer mgr.Close()
+
+	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:")
+	ctx := context.Background()
+
+	// 1. Client 1 acquires
+	l1, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+
+	// 2. Client 1 disconnects -> enters Warm-Hold
+	l1.Release()
+	time.Sleep(50 * time.Millisecond)
+
+	// Lease must STILL be held in topology
+	runtime := topSvc.CloneRuntime()
+	if len(runtime.ActiveMultiplexes) != 1 {
+		t.Fatalf("expected topology lease to be preserved during warm-hold")
+	}
+
+	// 3. Client 2 re-attaches
+	l2, err := mgr.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("reacquire failed: %v", err)
+	}
+	defer l2.Release()
+
+	if atomic.LoadInt32(&dialCount) != 1 {
+		t.Fatalf("expected stream to be preserved across warm-hold (1 dial), got %d", atomic.LoadInt32(&dialCount))
+	}
+}
+
+// Gate 1: Upstream EOF Releases Topology Lease Immediately
+func TestPipeline_TopologyUpstreamEOF_ReleasesLeaseImmediately(t *testing.T) {
+	topSvc, err := receivertopology.NewService(newSingleTunerTopology(), receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topology service: %v", err)
+	}
+
+	var activePipeWriter io.Closer
+	var pwMu sync.Mutex
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.TopologyService = topSvc
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		pr, pw := io.Pipe()
+		pwMu.Lock()
+		activePipeWriter = pw
+		pwMu.Unlock()
+		return pr, nil
+	}
+
+	mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(connectorCfg))
+	defer mgr.Close()
+
+	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:")
+	lease, err := mgr.Acquire(context.Background(), key)
+	if err != nil {
+		t.Fatalf("acquire failed: %v", err)
+	}
+	p := lease.Session().Payload().(*SessionPipeline)
+
+	// Upstream dies
+	pwMu.Lock()
+	if activePipeWriter != nil {
+		activePipeWriter.Close()
+	}
+	pwMu.Unlock()
+
+	// Wait for pipeline to finish
+	select {
+	case <-p.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatalf("pipeline did not finish")
+	}
+
+	lease.Release()
+	time.Sleep(50 * time.Millisecond)
+
+	// Lease must be freed in topology
+	runtime := topSvc.CloneRuntime()
+	for _, alloc := range runtime.ActiveMultiplexes {
+		if len(alloc.SessionIDs) > 0 {
+			t.Fatalf("expected topology lease to be released after upstream EOF, found active: %v", alloc.SessionIDs)
+		}
+	}
+}
+
+// Gate 1: Concurrent Teardown Releases Topology Lease Exactly Once
+func TestPipeline_TopologyLease_ConcurrentTeardownReleasesExactlyOnce(t *testing.T) {
+	topSvc, err := receivertopology.NewService(newSingleTunerTopology(), receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topology service: %v", err)
+	}
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.TopologyService = topSvc
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			time.Sleep(100 * time.Millisecond)
+		}()
+		return pr, nil
+	}
+
+	connector := NewLivePipelineConnector(connectorCfg)
+	key := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:")
+	wrapper, err := connector.Connect(context.Background(), key)
+	if err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	const concurrentClosers = 10
+	for i := 0; i < concurrentClosers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = wrapper.Close()
+		}()
+	}
+	wg.Wait()
+
+	runtime := topSvc.CloneRuntime()
+	for _, alloc := range runtime.ActiveMultiplexes {
+		if len(alloc.SessionIDs) > 0 {
+			t.Fatalf("expected 0 active sessions after concurrent teardown, found: %v", alloc.SessionIDs)
+		}
+	}
+}
+
+// Gate 2: Transponder Sharing across Different Services on the Same RF Transponder Multiplex
+func TestPipeline_TransponderSharing_SameRFMultiplexSharesDemod(t *testing.T) {
+	topSvc, err := receivertopology.NewService(newSingleTunerTopology(), receivertopology.EvaluationModeEnforce)
+	if err != nil {
+		t.Fatalf("failed to create topology service: %v", err)
+	}
+
+	var dialCount int32
+	samplePkt := make([]byte, ring.TSPacketSize)
+	samplePkt[0] = ring.SyncByte
+
+	connectorCfg := DefaultConnectorConfig("", 8001)
+	connectorCfg.TopologyService = topSvc
+	connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+		atomic.AddInt32(&dialCount, 1)
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for range ticker.C {
+				if _, err := pw.Write(samplePkt); err != nil {
+					return
+				}
+			}
+		}()
+		return pr, nil
+	}
+
+	mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(connectorCfg))
+	defer mgr.Close()
+
+	ctx := context.Background()
+	// ORF 1 HD and ORF 2 HD on Astra 19.2E sharing identical Multiplex (TSID 0x3EF, ONID 0x0001, Namespace 0x00C00000)
+	keyORF1 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:")
+	keyORF2 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:1330:3EF:1:C00000:0:0:0:")
+
+	// 1. Acquire ORF 1
+	leaseORF1, err := mgr.Acquire(ctx, keyORF1)
+	if err != nil {
+		t.Fatalf("ORF 1 acquire failed: %v", err)
+	}
+	defer leaseORF1.Release()
+
+	// 2. Acquire ORF 2 on same transponder -> MUST SUCCEED on single tuner topology via Demod Sharing!
+	leaseORF2, err := mgr.Acquire(ctx, keyORF2)
+	if err != nil {
+		t.Fatalf("ORF 2 acquire failed on shared transponder: %v", err)
+	}
+	defer leaseORF2.Release()
+
+	// Both distinct services dialed upstream independently (2 dials)
+	if atomic.LoadInt32(&dialCount) != 2 {
+		t.Fatalf("expected 2 distinct dials for 2 separate channels on shared transponder, got %d", atomic.LoadInt32(&dialCount))
+	}
+
+	// But both share the single physical demodulator in topology runtime!
+	runtime := topSvc.CloneRuntime()
+	if len(runtime.ActiveMultiplexes) != 1 {
+		t.Fatalf("expected exactly 1 active multiplex allocation in topology, got %d", len(runtime.ActiveMultiplexes))
+	}
+	for _, alloc := range runtime.ActiveMultiplexes {
+		if len(alloc.SessionIDs) != 2 {
+			t.Fatalf("expected 2 sessions sharing the same demod allocation, got %d", len(alloc.SessionIDs))
+		}
+	}
+}
+
+// Gate 2: Different RF Plane uses authoritative topology decision (Capacity vs Plane Conflict vs Ambiguous)
+func TestPipeline_TransponderSharing_DifferentRFPlane_UsesTopologyDecision(t *testing.T) {
+	t.Run("CompatibleAndCapacityAvailable", func(t *testing.T) {
+		topSvc, err := receivertopology.NewService(newDualTunerTopology(), receivertopology.EvaluationModeEnforce)
+		if err != nil {
+			t.Fatalf("create dual topology failed: %v", err)
+		}
+
+		connectorCfg := DefaultConnectorConfig("", 8001)
+		connectorCfg.TopologyService = topSvc
+		connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				time.Sleep(50 * time.Millisecond)
+			}()
+			return pr, nil
+		}
+
+		mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(connectorCfg))
+		defer mgr.Close()
+
+		ctx := context.Background()
+		key1 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:") // ORF 1 (TSID 0x3EF)
+		key2 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:283D:3FB:1:C00000:0:0:0:") // ZDF (TSID 0x3FB)
+
+		l1, err := mgr.Acquire(ctx, key1)
+		if err != nil {
+			t.Fatalf("channel 1 acquire failed: %v", err)
+		}
+		defer l1.Release()
+
+		l2, err := mgr.Acquire(ctx, key2)
+		if err != nil {
+			t.Fatalf("channel 2 acquire failed on dual tuner topology: %v", err)
+		}
+		defer l2.Release()
+
+		runtime := topSvc.CloneRuntime()
+		if len(runtime.ActiveMultiplexes) != 2 {
+			t.Fatalf("expected 2 distinct active multiplex allocations across dual tuners, got %d", len(runtime.ActiveMultiplexes))
+		}
+	})
+
+	t.Run("PlaneConflict", func(t *testing.T) {
+		topSvc, err := receivertopology.NewService(newSingleTunerTopology(), receivertopology.EvaluationModeEnforce)
+		if err != nil {
+			t.Fatalf("create single topology failed: %v", err)
+		}
+
+		connectorCfg := DefaultConnectorConfig("", 8001)
+		connectorCfg.TopologyService = topSvc
+		connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				time.Sleep(50 * time.Millisecond)
+			}()
+			return pr, nil
+		}
+
+		mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(connectorCfg))
+		defer mgr.Close()
+
+		ctx := context.Background()
+		key1 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:")
+		key2 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:283D:3FB:1:C00000:0:0:0:")
+
+		l1, err := mgr.Acquire(ctx, key1)
+		if err != nil {
+			t.Fatalf("channel 1 acquire failed: %v", err)
+		}
+		defer l1.Release()
+
+		// Channel 2 on different TSID on single demod fails admission
+		_, err = mgr.Acquire(ctx, key2)
+		if err == nil {
+			t.Fatalf("expected admission failure for conflicting plane on single tuner")
+		}
+		if !errors.Is(err, ErrAdmissionDenied) {
+			t.Fatalf("expected ErrAdmissionDenied, got %v", err)
+		}
+	})
+
+	t.Run("UnverifiedAmbiguous_FailSafe", func(t *testing.T) {
+		ambiguousTopology := receivertopology.ReceiverTopology{
+			Model:      "Unverified Generic Receiver",
+			Confidence: receivertopology.ConfidenceDefault, // Unverified default
+		}
+		topSvc, err := receivertopology.NewService(ambiguousTopology, receivertopology.EvaluationModeAuditOnly)
+		if err != nil {
+			t.Fatalf("create audit-only topology service failed: %v", err)
+		}
+
+		connectorCfg := DefaultConnectorConfig("", 8001)
+		connectorCfg.TopologyService = topSvc
+		connectorCfg.DialFn = func(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				time.Sleep(20 * time.Millisecond)
+			}()
+			return pr, nil
+		}
+
+		mgr := session.NewManager(session.DefaultManagerConfig(), NewLivePipelineConnector(connectorCfg))
+		defer mgr.Close()
+
+		ctx := context.Background()
+		key1 := session.NewSessionKey("127.0.0.1", 8001, "1:0:19:132F:3EF:1:C00000:0:0:0:")
+
+		// Under AuditOnly/Default confidence, stream acquisition succeeds safely without crashing
+		l1, err := mgr.Acquire(ctx, key1)
+		if err != nil {
+			t.Fatalf("acquire under audit-only mode failed: %v", err)
+		}
+		defer l1.Release()
+	})
 }
