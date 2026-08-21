@@ -223,7 +223,7 @@ func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.Sessio
 
 	targetURL := fmt.Sprintf("%s://%s:%d/%s", scheme, host, port, key.ServiceRef)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, targetURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upstream request: %w", err)
 	}
