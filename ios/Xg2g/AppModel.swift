@@ -278,6 +278,24 @@ final class AppModel {
         return URL(string: "\(normalised)/\(channel.serviceRef)")
     }
 
+    /// The v3 Ingest Live Stream URL for a service reference.
+    func liveStreamURL(for serviceRef: String) -> URL? {
+        if let base = address?.apiBaseURL {
+            let normalised = base.absoluteString.hasSuffix("/") ? base.absoluteString : base.absoluteString + "/"
+            return URL(string: "\(normalised)stream/live/\(serviceRef)")
+        }
+        return URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)")
+    }
+
+    /// The legacy burst smoother URL for a service reference.
+    func legacySmoothStreamURL(for serviceRef: String) -> URL? {
+        if let base = address?.apiBaseURL {
+            let normalised = base.absoluteString.hasSuffix("/") ? base.absoluteString : base.absoluteString + "/"
+            return URL(string: "\(normalised)stream/smooth/\(serviceRef)")
+        }
+        return URL(string: "http://10.10.55.14:8089/api/v3/stream/smooth/\(serviceRef)")
+    }
+
     /// Whether direct playback can actually run right now.
     var isDirectPlaybackAvailable: Bool {
         !receiverStreamBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

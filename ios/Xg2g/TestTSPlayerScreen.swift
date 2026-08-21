@@ -23,10 +23,11 @@ public struct TestTSPlayerScreen: View {
     @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:"
     @State private var currentChannelName: String = "Sky Sport F1 HD"
     private enum StreamRouteMode: String, CaseIterable {
+        case livePipeline = "LIVE (v3 Ingest)"
         case direct = "DIRECT (Vu+:8001)"
-        case smoother = "SMOOTHER (xg2g)"
+        case legacySmoother = "SMOOTHER (legacy)"
     }
-    @State private var streamRouteMode: StreamRouteMode = .direct
+    @State private var streamRouteMode: StreamRouteMode = .livePipeline
     @State private var isStreaming: Bool = false
     @State private var isPlaying: Bool = true
     @State private var showHUD: Bool = false
@@ -787,12 +788,22 @@ public struct TestTSPlayerScreen: View {
 
     private func effectiveStreamURL(for rawURLString: String) -> URL? {
         guard let url = URL(string: rawURLString) else { return nil }
-        if streamRouteMode == .smoother {
-            let sref = url.lastPathComponent
-            let smootherURLString = "http://10.10.55.14:8089/api/v3/stream/smooth/\(sref)"
-            return URL(string: smootherURLString)
+        let sref = url.lastPathComponent
+
+        switch streamRouteMode {
+        case .livePipeline:
+            if let model, let liveURL = model.liveStreamURL(for: sref) {
+                return liveURL
+            }
+            return URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(sref)")
+        case .legacySmoother:
+            if let model, let smoothURL = model.legacySmoothStreamURL(for: sref) {
+                return smoothURL
+            }
+            return URL(string: "http://10.10.55.14:8089/api/v3/stream/smooth/\(sref)")
+        case .direct:
+            return url
         }
-        return url
     }
 
     private func startCurrentPreset() {
