@@ -25,17 +25,19 @@ type ChannelInfoDiscoverer interface {
 
 // TransponderRegistry maintains an in-memory database of authoritative physical RF tuning identities.
 type TransponderRegistry struct {
-	mu           sync.RWMutex
-	transponders map[string]TransponderKey // Keyed by canonical TSID:ONID:Namespace
-	services     map[string]MultiplexID    // Keyed by canonical service reference
-	discoverer   ChannelInfoDiscoverer     // Optional live OpenWebIF discovery client
+	mu                         sync.RWMutex
+	discoveredTransponders     map[string]TransponderKey // Keyed by TSID:ONID:Namespace (populated by live receiver discovery)
+	discoveredServices         map[string]MultiplexID    // Keyed by canonical serviceRef (populated by live receiver discovery)
+	staticFallbackTransponders map[string]TransponderKey // Keyed by TSID:ONID:Namespace (verified static fallback)
+	discoverer                 ChannelInfoDiscoverer     // Live OpenWebIF discovery client
 }
 
 // NewTransponderRegistry creates a new in-memory transponder registry.
 func NewTransponderRegistry() *TransponderRegistry {
 	return &TransponderRegistry{
-		transponders: make(map[string]TransponderKey),
-		services:     make(map[string]MultiplexID),
+		discoveredTransponders:     make(map[string]TransponderKey),
+		discoveredServices:         make(map[string]MultiplexID),
+		staticFallbackTransponders: make(map[string]TransponderKey),
 	}
 }
 
@@ -46,25 +48,37 @@ func (r *TransponderRegistry) SetDiscoverer(d ChannelInfoDiscoverer) {
 	r.discoverer = d
 }
 
-// RegisterTransponder stores the authoritative RF tuning parameters for a physical transport stream / multiplex.
+// RegisterTransponder stores the authoritative RF tuning parameters in the live discovered transponder cache.
 func (r *TransponderRegistry) RegisterTransponder(tsid uint16, onid uint16, namespace uint32, tpKey TransponderKey) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := fmt.Sprintf("%04X:%04X:%08X", tsid, onid, namespace)
-	r.transponders[key] = tpKey
+	r.discoveredTransponders[key] = tpKey
+}
+
+// RegisterStaticFallback stores verified static fallback parameters for a physical transport stream / multiplex.
+func (r *TransponderRegistry) RegisterStaticFallback(tsid uint16, onid uint16, namespace uint32, tpKey TransponderKey) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := fmt.Sprintf("%04X:%04X:%08X", tsid, onid, namespace)
+	r.staticFallbackTransponders[key] = tpKey
 }
 
 // RegisterService stores an authoritative MultiplexID directly for a service reference.
 func (r *TransponderRegistry) RegisterService(serviceRef string, mux MultiplexID) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.services[serviceRef] = mux
+	r.discoveredServices[serviceRef] = mux
 }
 
-// ResolveTransponder extracts the base multiplex from serviceRef and enriches it with authoritative RF tuning parameters.
+// ResolveTransponder resolves authoritative physical RF tuning parameters using the strict hierarchy:
+// 1. Live Discovered In-Memory Cache
+// 2. Authoritative Live Receiver Query (OpenWebIF /api/channelinfo)
+// 3. Verified Static Fallback (if live receiver is unreachable or undiscoverer configured)
 func (r *TransponderRegistry) ResolveTransponder(ctx context.Context, serviceRef string) (MultiplexID, error) {
+	// Step 1: Check Live Discovered Service Cache
 	r.mu.RLock()
-	if mux, ok := r.services[serviceRef]; ok {
+	if mux, ok := r.discoveredServices[serviceRef]; ok {
 		r.mu.RUnlock()
 		return mux, nil
 	}
@@ -75,33 +89,19 @@ func (r *TransponderRegistry) ResolveTransponder(ctx context.Context, serviceRef
 		return MultiplexID{}, err
 	}
 
-	r.mu.RLock()
 	lookupKey := fmt.Sprintf("%04X:%04X:%08X", baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace)
-	tpKey, hasTP := r.transponders[lookupKey]
+
+	// Step 2: Check Live Discovered Transponder Cache
+	r.mu.RLock()
+	tpKey, hasDiscovered := r.discoveredTransponders[lookupKey]
 	discoverer := r.discoverer
 	r.mu.RUnlock()
 
-	if hasTP {
-		baseMux.TransponderKey = &tpKey
-		if baseMux.DVBType == DVBTypeSat {
-			band := BandHigh
-			if tpKey.FrequencyHz > 0 && tpKey.FrequencyHz < 11700000000 {
-				band = BandLow
-			}
-			pol := tpKey.Polarization
-			if pol == "" {
-				pol = PolarizationHorizontal
-			}
-			baseMux.RFPlane = &RFPlane{
-				SatPosition:  SatellitePosition(tpKey.OrbitalPosition),
-				Band:         band,
-				Polarization: pol,
-			}
-		}
-		return baseMux, nil
+	if hasDiscovered {
+		return r.enrichMultiplex(baseMux, tpKey), nil
 	}
 
-	// Dynamic live discovery from OpenWebIF if configured
+	// Step 3: Authoritative Live Receiver Query (OpenWebIF)
 	if discoverer != nil {
 		info, dErr := discoverer.GetChannelInfo(ctx, serviceRef)
 		if dErr == nil && info != nil && info.Result && info.Service.Transponder.FrequencyHz > 0 {
@@ -138,33 +138,49 @@ func (r *TransponderRegistry) ResolveTransponder(ctx context.Context, serviceRef
 			}
 
 			r.RegisterTransponder(baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace, discoveredKey)
-
-			baseMux.TransponderKey = &discoveredKey
-			if baseMux.DVBType == DVBTypeSat {
-				band := BandHigh
-				if freqHz < 11700000000 {
-					band = BandLow
-				}
-				baseMux.RFPlane = &RFPlane{
-					SatPosition:  SatellitePosition(tp.OrbitalPosition),
-					Band:         band,
-					Polarization: pol,
-				}
-			}
-			return baseMux, nil
+			return r.enrichMultiplex(baseMux, discoveredKey), nil
 		}
+	}
+
+	// Step 4: Verified Static Fallback (Only explicit, verified standard transponders)
+	r.mu.RLock()
+	fallbackKey, hasFallback := r.staticFallbackTransponders[lookupKey]
+	r.mu.RUnlock()
+
+	if hasFallback {
+		return r.enrichMultiplex(baseMux, fallbackKey), nil
 	}
 
 	return MultiplexID{}, fmt.Errorf("%w: missing RF parameters for TSID 0x%04X ONID 0x%04X Namespace 0x%08X", ErrAuthoritativeTransponderUnavailable, baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace)
 }
 
-// PopulateStandardTransponderTables enriches the registry with authoritative physical RF tuning parameters
+func (r *TransponderRegistry) enrichMultiplex(baseMux MultiplexID, tpKey TransponderKey) MultiplexID {
+	baseMux.TransponderKey = &tpKey
+	if baseMux.DVBType == DVBTypeSat {
+		band := BandHigh
+		if tpKey.FrequencyHz > 0 && tpKey.FrequencyHz < 11700000000 {
+			band = BandLow
+		}
+		pol := tpKey.Polarization
+		if pol == "" {
+			pol = PolarizationHorizontal
+		}
+		baseMux.RFPlane = &RFPlane{
+			SatPosition:  SatellitePosition(tpKey.OrbitalPosition),
+			Band:         band,
+			Polarization: pol,
+		}
+	}
+	return baseMux
+}
+
+// PopulateStandardTransponderTables enriches the registry with verified static fallback RF tuning parameters
 // for standard European satellite broadcast networks (Astra 19.2°E, Hotbird 13.0°E).
 func PopulateStandardTransponderTables(r *TransponderRegistry) {
 	const astra192 = 0x00C00000
 	const hotbird130 = 0x00820000
 
-	// Astra 19.2°E Transponders (TSID, ONID, Namespace -> TransponderKey)
+	// Verified Astra 19.2°E Transponders (TSID, ONID, Namespace -> TransponderKey)
 	astraTPs := []struct {
 		tsid uint16
 		onid uint16
@@ -192,46 +208,13 @@ func PopulateStandardTransponderTables(r *TransponderRegistry) {
 		{0x0011, 0x0085, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11992000000, Polarization: PolarizationHorizontal, StreamID: -1}},
 		// Sky Deutschland Transponder 2
 		{0x000C, 0x0085, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11758000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// Astra 19.2E High Band H (TSID 0x0400)
-		{0x0400, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS, OrbitalPosition: 192, FrequencyHz: 12544000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// Astra 19.2E Low Band H (TSID 0x03F2)
-		{0x03F2, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11582000000, Polarization: PolarizationHorizontal, StreamID: -1}},
 	}
 
 	for _, tp := range astraTPs {
-		r.RegisterTransponder(tp.tsid, tp.onid, astra192, tp.key)
+		r.RegisterStaticFallback(tp.tsid, tp.onid, astra192, tp.key)
 	}
 
-	// Register extended Astra 19.2E High Band ranges for dynamic multiplexes
-	for tsid := uint16(0x0400); tsid <= 0x0410; tsid++ {
-		r.RegisterTransponder(tsid, 0x0001, astra192, TransponderKey{
-			DeliverySystem:  DeliverySystemDVBS,
-			OrbitalPosition: 192,
-			FrequencyHz:     12544000000 + uint64(tsid-0x0400)*1000000,
-			Polarization:    PolarizationHorizontal,
-			StreamID:        -1,
-		})
-	}
-	for tsid := uint16(0x0500); tsid <= 0x0510; tsid++ {
-		r.RegisterTransponder(tsid, 0x0001, astra192, TransponderKey{
-			DeliverySystem:  DeliverySystemDVBS,
-			OrbitalPosition: 192,
-			FrequencyHz:     12600000000 + uint64(tsid-0x0500)*1000000,
-			Polarization:    PolarizationHorizontal,
-			StreamID:        -1,
-		})
-	}
-	for tsid := uint16(0x0600); tsid <= 0x0610; tsid++ {
-		r.RegisterTransponder(tsid, 0x0001, astra192, TransponderKey{
-			DeliverySystem:  DeliverySystemDVBS,
-			OrbitalPosition: 192,
-			FrequencyHz:     12700000000 + uint64(tsid-0x0600)*1000000,
-			Polarization:    PolarizationHorizontal,
-			StreamID:        -1,
-		})
-	}
-
-	// Hotbird 13.0°E Transponders
+	// Verified Hotbird 13.0°E Transponders
 	hotbirdTPs := []struct {
 		tsid uint16
 		onid uint16
@@ -244,6 +227,6 @@ func PopulateStandardTransponderTables(r *TransponderRegistry) {
 	}
 
 	for _, tp := range hotbirdTPs {
-		r.RegisterTransponder(tp.tsid, tp.onid, hotbird130, tp.key)
+		r.RegisterStaticFallback(tp.tsid, tp.onid, hotbird130, tp.key)
 	}
 }

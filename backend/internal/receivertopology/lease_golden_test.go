@@ -22,6 +22,17 @@ func TestGolden_Concurrency_AtomicReservationRaceCondition(t *testing.T) {
 		t.Fatalf("failed to create service: %v", err)
 	}
 
+	reg := svc.Resolver().(*TransponderRegistry)
+	for i := 0; i < 20; i++ {
+		reg.RegisterTransponder(uint16(0x0400+i), 0x0001, 0x00C00000, TransponderKey{
+			DeliverySystem:  DeliverySystemDVBS2,
+			OrbitalPosition: 192,
+			FrequencyHz:     12544000000 + uint64(i)*1000000,
+			Polarization:    PolarizationHorizontal,
+			StreamID:        -1,
+		})
+	}
+
 	// First occupy 7 of the 8 demods with distinct transponders on the same plane
 	for i := 0; i < 7; i++ {
 		sRef := fmt.Sprintf("1:0:19:%04X:%04X:1:C00000:0:0:0:", 0x0100+i, 0x0400+i)

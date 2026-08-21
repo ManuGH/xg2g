@@ -92,10 +92,10 @@ func TestGolden_LegacyFBC_SamePlaneAllocation(t *testing.T) {
 	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
 
-	// Channel 1: High-H (ZDF HD)
+	// Channel 1: Low-H (ZDF HD, TSID: 0x3F3)
 	service1 := "1:0:19:2B90:3F3:1:C00000:0:0:0:"
-	// Channel 2: High-H (Das Erste HD, TSID: 0x3F2 -> same High-H plane)
-	service2 := "1:0:19:283D:3F2:1:C00000:0:0:0:"
+	// Channel 2: Low-H (Das Erste HD, TSID: 0x3FB -> same Low-H plane)
+	service2 := "1:0:19:283D:3FB:1:C00000:0:0:0:"
 
 	dec1, err := svc.RegisterStream(service1, "session-1")
 	require.NoError(t, err)
