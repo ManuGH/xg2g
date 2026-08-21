@@ -186,10 +186,10 @@ func ClassifyRoute(routerID string, variant ConfigVariant, method string, patter
 				MayUpgradePerRequest: false,
 			}
 		}
-		if strings.HasSuffix(pattern, "/stream.mp4") {
+		if strings.HasSuffix(pattern, "/stream.mp4") || strings.Contains(pattern, "/stream/smooth") {
 			return RoutePolicy{
 				Class:                RouteDeadlineStreaming,
-				RequiresFlush:        false,
+				RequiresFlush:        true,
 				MayUpgradePerRequest: false,
 			}
 		}
