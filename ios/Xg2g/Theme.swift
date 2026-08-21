@@ -123,28 +123,16 @@ enum Theme {
     }
 }
 
-/// A softly pulsing broadcast amber dot for live status indicators.
+/// An amber dot with ambient glow for live status indicators (CPU/GPU-friendly).
 struct PulsingLiveDot: View {
 
-    @State private var isPulsing = false
     var size: CGFloat = 8
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(Theme.Colors.accentLive.opacity(0.4))
-                .scaleEffect(isPulsing ? 1.8 : 1.0)
-                .opacity(isPulsing ? 0 : 0.8)
-
-            Circle()
-                .fill(Theme.Colors.accentLive)
-        }
-        .frame(width: size, height: size)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: false)) {
-                isPulsing = true
-            }
-        }
+        Circle()
+            .fill(Theme.Colors.accentLive)
+            .frame(width: size, height: size)
+            .shadow(color: Theme.Colors.accentLive.opacity(0.8), radius: size * 0.5)
     }
 }
 

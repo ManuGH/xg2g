@@ -191,6 +191,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var bytesReceived: Int = 0
     private var lastBitrateCheck: Date = Date()
     private var systemMonitoringTimer: Timer?
+    private var thermalObserver: NSObjectProtocol?
 
     /// Watches the master clock for the first field's timestamp.
     ///
@@ -726,7 +727,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 if gap >= 250.0 {
                     state.stallCount += 1
                     state.longestStallMs = max(state.longestStallMs, gap)
-                    gapMs = gap
+                    if gap >= 600.0 {
+                        gapMs = gap
+                    }
                 }
             }
             state.lastDataArrival = now
@@ -791,7 +794,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             guard let self = self else { return }
 
             self.ingestStateLock.lock()
-            self.pendingIngestBytes -= data.count
+            self.pendingIngestBytes = max(0, self.pendingIngestBytes - data.count)
             let isStale = generation != self.ingestGeneration
             self.ingestStateLock.unlock()
 
@@ -1570,13 +1573,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             $0.fieldOrder = info.isInterlaced ? (info.isTopFieldFirst ? "TFF" : "BFF") : "Progressive"
             $0.vtSessionActive = true
 
-            if info.isInterlaced {
-                $0.isDirect1080iVerified = true
-                $0.validationWarning = nil
-            } else {
-                $0.isDirect1080iVerified = false
-                $0.validationWarning = "⚠️ WARNUNG: Stream ist PROGRESSIV (\(info.width)x\(info.height)p) – Server-Transcode aktiv!"
-            }
+            $0.isDirect1080iVerified = info.isInterlaced
+            $0.validationWarning = nil
         }
     }
 
@@ -1691,7 +1689,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         if let rate = rate {
             telemetry.mutate { $0.decodedFramesPerSec = rate }
             let snapshot = telemetry.snapshot()
-            let decLog = "[1080i50-DECODER] HW: \(snapshot.hwDecodeActive) | Decoded AU/s: \(String(format: "%.1f", rate)) | Source: \(String(format: "%.1f", snapshot.sourceFrameRate)) fps (PTS delta \(String(format: "%.1f", snapshot.ptsProgressionMs))ms) | AUs w/o PTS: \(snapshot.accessUnitsWithoutPTS)"
+            let lat = decoder.decodeLatencyStats
+            let decLog = "[1080i50-DECODER] HW: \(snapshot.hwDecodeActive) | Latency: \(String(format: "%.1f", lat.lastMs))ms (mean \(String(format: "%.1f", lat.meanMs))ms, max \(String(format: "%.1f", lat.maxMs))ms) | Decoded AU/s: \(String(format: "%.1f", rate)) | Source: \(String(format: "%.1f", snapshot.sourceFrameRate)) fps (PTS delta \(String(format: "%.1f", snapshot.ptsProgressionMs))ms) | AUs w/o PTS: \(snapshot.accessUnitsWithoutPTS)"
             print(decLog)
             logger.notice("\(decLog, privacy: .public)")
             TelemetryServer.shared.log(decLog)
@@ -1947,7 +1946,31 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             self.systemMonitoringTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
                 self?.updateSystemMetrics()
             }
+            self.thermalObserver = NotificationCenter.default.addObserver(
+                forName: ProcessInfo.thermalStateDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.handleThermalStateChanged()
+            }
         }
+    }
+
+    private func handleThermalStateChanged() {
+        let state = ProcessInfo.processInfo.thermalState
+        let thermalString: String
+        switch state {
+        case .nominal: thermalString = "Nominal 🟢"
+        case .fair: thermalString = "Fair 🟡"
+        case .serious: thermalString = "Serious 🟠"
+        case .critical: thermalString = "Critical 🔴"
+        @unknown default: thermalString = "Unknown"
+        }
+        let msg = "[1080i50-THERMAL-CHANGE] 🌡️ ProcessInfo thermal state changed to: \(thermalString)"
+        print(msg)
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+        updateSystemMetrics()
     }
 
     private func updateSystemMetrics() {
@@ -1961,24 +1984,69 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         @unknown default: thermalString = "Unknown"
         }
 
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-        let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+        var vmInfo = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kerr: kern_return_t = withUnsafeMutablePointer(to: &vmInfo) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
             }
         }
-        let memMB = (kerr == KERN_SUCCESS) ? Double(info.resident_size) / (1024.0 * 1024.0) : 0.0
+        let footprintMB = (kerr == KERN_SUCCESS) ? Double(vmInfo.phys_footprint) / (1024.0 * 1024.0) : 0.0
+        let residentMB = (kerr == KERN_SUCCESS) ? Double(vmInfo.resident_size) / (1024.0 * 1024.0) : 0.0
 
-        telemetry.mutate {
-            $0.thermalState = thermalString
-            $0.memoryUsageMB = memMB
+        // Compute Total Process CPU across all active Mach threads
+        var threadList: thread_act_array_t?
+        var threadCount: mach_msg_type_number_t = 0
+        let threadErr = task_threads(mach_task_self_, &threadList, &threadCount)
+        var totalCpuUsage: Double = 0.0
+        if threadErr == KERN_SUCCESS, let threadList = threadList {
+            for i in 0..<Int(threadCount) {
+                var threadInfo = thread_basic_info()
+                var threadInfoCount = mach_msg_type_number_t(THREAD_INFO_MAX)
+                let infoResult = withUnsafeMutablePointer(to: &threadInfo) {
+                    $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                        thread_info(threadList[i], thread_flavor_t(THREAD_BASIC_INFO), $0, &threadInfoCount)
+                    }
+                }
+                if infoResult == KERN_SUCCESS {
+                    if (threadInfo.flags & TH_FLAGS_IDLE) == 0 {
+                        totalCpuUsage += Double(threadInfo.cpu_usage) / Double(TH_USAGE_SCALE) * 100.0
+                    }
+                }
+                // Release the send right created by task_threads to prevent Mach port leaks
+                mach_port_deallocate(mach_task_self_, threadList[i])
+            }
+            vm_deallocate(mach_task_self_, vm_address_t(UInt(bitPattern: threadList)), vm_size_t(threadCount * UInt32(MemoryLayout<thread_t>.size)))
         }
+
+        let inFlight = decoder.inFlightFrames
+        let liveFrames = DecodedVideoFrame.liveCount.withLock { $0 }
+        let presenterQ = systemPresenter?.pendingSamplesCount ?? 0
+        // 1920x1080 NV12 BiPlanar frame is ~3.11 MB
+        let approxFrameMB = Double(liveFrames) * 3.11
+        let approxPresenterMB = Double(presenterQ) * 3.11
+        let audioQ = audioRenderer.consumeFlowStats().pendingBuffers
+
+        ingestStateLock.lock()
+        let backlogKiB = pendingIngestBytes / 1024
+        ingestStateLock.unlock()
+
+        let currentFootprint = footprintMB > 0 ? footprintMB : residentMB
+        let peakMB = telemetry.mutate { values -> Double in
+            values.thermalState = thermalString
+            values.memoryUsageMB = currentFootprint
+            values.peakMemoryFootprintMB = max(values.peakMemoryFootprintMB, currentFootprint)
+            values.processCpuUsagePercent = totalCpuUsage
+            values.vtInFlightFrames = inFlight
+            return values.peakMemoryFootprintMB
+        }
+
         // Low Power Mode caps ProMotion at 60 Hz regardless of the display link's
         // preferred range, so it has to be visible before a 60 Hz reading gets
         // blamed on the Info.plist key or the frame-rate request.
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let sysLog = "[1080i50-SYSTEM] Thermal: \(thermalString) | RAM: \(String(format: "%.1f", memMB)) MB | LowPower: \(lowPower)"
+
+        let sysLog = "[1080i50-SYSTEM] Thermal: \(thermalString) | Footprint: \(String(format: "%.1f", footprintMB)) MB (Peak: \(String(format: "%.1f", peakMB)) MB, Resident: \(String(format: "%.1f", residentMB)) MB) | Process CPU: \(String(format: "%.1f", totalCpuUsage))% | LiveFrames: \(liveFrames) (~\(String(format: "%.0f", approxFrameMB))MB) | PresenterQ: \(presenterQ) (~\(String(format: "%.0f", approxPresenterMB))MB) | AudioQ: \(audioQ) | VT InFlight: \(inFlight) | Ingest: \(backlogKiB) KiB | LowPower: \(lowPower)"
         print(sysLog)
         logger.notice("\(sysLog, privacy: .public)")
         TelemetryServer.shared.log(sysLog)
@@ -1987,11 +2055,19 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private func stopSystemMonitoring() {
         let timer = systemMonitoringTimer
         systemMonitoringTimer = nil
+        let observer = thermalObserver
+        thermalObserver = nil
         if Thread.isMainThread {
             timer?.invalidate()
+            if let obs = observer {
+                NotificationCenter.default.removeObserver(obs)
+            }
         } else {
             DispatchQueue.main.async {
                 timer?.invalidate()
+                if let obs = observer {
+                    NotificationCenter.default.removeObserver(obs)
+                }
             }
         }
     }

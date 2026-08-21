@@ -113,7 +113,9 @@ public final class TelemetryServer: @unchecked Sendable {
     /// the old one has to go first.
     public func restartAfterForeground() {
         stop()
-        start()
+        queue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.start()
+        }
     }
 
     private func handleConnection(_ connection: NWConnection) {

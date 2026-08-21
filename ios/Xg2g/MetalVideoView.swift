@@ -154,6 +154,7 @@ public final class MetalVideoView: UIView {
     private func applyPresentationPath() {
         let useSystem = (presentationPath == .systemLayer) && (systemPresenter != nil)
         usesSystemPresentation = useSystem
+        displayLink?.isPaused = useSystem
         if let layer = systemPresenter?.displayLayer {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -457,6 +458,15 @@ public final class MetalVideoView: UIView {
         super.layoutSubviews()
         needsRedraw = true
 
+        let scale = window?.screen.scale ?? UIScreen.main.scale
+        if metalLayer.contentsScale != scale {
+            metalLayer.contentsScale = scale
+        }
+        let targetDrawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        if targetDrawableSize.width > 0 && targetDrawableSize.height > 0 && metalLayer.drawableSize != targetDrawableSize {
+            metalLayer.drawableSize = targetDrawableSize
+        }
+
         // The display layer is a sublayer, so Auto Layout never touches it and it
         // keeps whatever frame it was given. Set in `makeUIView` that frame is
         // `.zero` — the view has no bounds yet — which left a layer that received
@@ -717,6 +727,7 @@ public final class MetalVideoView: UIView {
             link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 100)
         }
         link.add(to: .main, forMode: .common)
+        link.isPaused = usesSystemPresentation
         self.displayLink = link
         self.lastTelemetryUpdate = CACurrentMediaTime()
     }
@@ -729,14 +740,9 @@ public final class MetalVideoView: UIView {
 
         // Under system presentation the display link cannot drive production:
         // `CADisplayLink` stops firing once the app is backgrounded, and that is
-        // precisely when Picture in Picture is on screen. The picture froze while
-        // audio — which runs on its own path — kept playing.
-        //
-        // Decode arrival drives it instead, which is also the more honest
-        // trigger: AVFoundation schedules presentation from each field's PTS, so
-        // there is nothing left for a screen-refresh tick to decide.
+        // precisely when Picture in Picture is on screen.
         if usesSystemPresentation {
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.pumpSystemPresentation()
             }
         }
@@ -753,7 +759,6 @@ public final class MetalVideoView: UIView {
 
         drainReorderedFrames()
 
-
         let started = CACurrentMediaTime()
         while !fieldQueue.isEmpty {
             let field = fieldQueue.removeFirst()
@@ -761,7 +766,6 @@ public final class MetalVideoView: UIView {
             presentThroughSystemLayer(field, presenter: presenter)
         }
 
-        flushTextureCache()
         presentationCPUMs += (CACurrentMediaTime() - started) * 1000.0
 
         let now = CACurrentMediaTime()
@@ -900,17 +904,11 @@ public final class MetalVideoView: UIView {
             presentedNewField = true
         }
 
-        // Bound the queue so pixel buffers cannot balloon, but only *after* the
-        // presenter has taken what is due.
-        //
-        // This ran before the presentation loop, sharing its `ptsSeconds <=
-        // streamNow` condition — so it consumed each field in the very tick it
-        // became due and the presenter never saw one. The picture froze on a
-        // single frame while 100+ fields sat waiting, reported as `Fields: 0.0/s`
-        // against `Repeats: 60.0/s`. Order is the whole fix: what is due belongs
-        // to the presenter, and only a genuine backlog behind it is dropped.
-        if fieldQueue.count > 25 {
-            while fieldQueue.count > 20, let first = fieldQueue.first, first.ptsSeconds <= streamNow {
+        // Bound the queue so pixel buffers cannot balloon, but allow sufficient
+        // depth (~5.0s at 50 fields/s) to accommodate the natural broadcast
+        // video lead ahead of audio master clock without stalling VideoToolbox.
+        if fieldQueue.count > 250 {
+            while fieldQueue.count > 200 {
                 _ = fieldQueue.removeFirst()
                 lateFieldDropCount += 1
             }
@@ -954,9 +952,8 @@ public final class MetalVideoView: UIView {
             }
         }
 
-        flushTextureCache()
-
         if targetHost - lastTelemetryUpdate >= 1.0 {
+            flushTextureCache()
             publishRenderTelemetry(now: targetHost, streamNow: streamNow, tick: link.duration)
         }
     }
@@ -1436,6 +1433,42 @@ public final class MetalVideoView: UIView {
     /// targeted an arbitrary texture for `captureCurrentFrameJPEG`, so only the
     /// destination differs.
     private func presentThroughSystemLayer(_ field: PendingField, presenter: SystemVideoPresenter) {
+        let pts = CMTime(seconds: field.ptsSeconds, preferredTimescale: 90_000)
+        let duration = CMTime(
+            seconds: sourceIsInterlaced ? estimatedFrameDuration * 0.5 : estimatedFrameDuration,
+            preferredTimescale: 90_000
+        )
+
+        // Spacing is measured on what is handed over, not on what was queued:
+        // the correction in `appendField` sits between the two.
+        if lastPresentedFieldPTS.isFinite {
+            let gap = field.ptsSeconds - lastPresentedFieldPTS
+            presentedSpacingSum += gap
+            presentedSpacingMin = min(presentedSpacingMin, gap)
+            presentedSpacingMax = max(presentedSpacingMax, gap)
+        }
+        lastPresentedFieldPTS = field.ptsSeconds
+        presentedFieldCount += 1
+        lastAttachedDurationMs = duration.seconds * 1000.0
+
+        let isFirstField = !hasReportedFirstFrame
+        if isFirstField { hasReportedFirstFrame = true }
+
+        // For progressive content (720p50, 1080p50), bypass Metal entirely:
+        // VideoToolbox has already output the decoded progressive frame.
+        guard sourceIsInterlaced else {
+            presenter.enqueue(
+                pixelBuffer: field.pixelBuffer,
+                pts: pts,
+                duration: duration
+            )
+            if isFirstField {
+                self.onFirstFrameRendered?()
+                self.onFirstFieldSubmitted?(pts)
+            }
+            return
+        }
+
         let width = CVPixelBufferGetWidth(field.pixelBuffer)
         let height = CVPixelBufferGetHeight(field.pixelBuffer)
         guard width > 0, height > 0,
@@ -1459,35 +1492,7 @@ public final class MetalVideoView: UIView {
             return
         }
 
-        // The surface must be finished before AVFoundation reads it, but waiting
-        // here would block the display link. Enqueue from the completion handler
-        // instead, which runs off the main thread.
-        let pts = CMTime(seconds: field.ptsSeconds, preferredTimescale: 90_000)
-        let duration = CMTime(
-            seconds: sourceIsInterlaced ? estimatedFrameDuration * 0.5 : estimatedFrameDuration,
-            preferredTimescale: 90_000
-        )
-        // Spacing is measured on what is handed over, not on what was queued:
-        // the correction in `appendField` sits between the two.
-        if lastPresentedFieldPTS.isFinite {
-            let gap = field.ptsSeconds - lastPresentedFieldPTS
-            presentedSpacingSum += gap
-            presentedSpacingMin = min(presentedSpacingMin, gap)
-            presentedSpacingMax = max(presentedSpacingMax, gap)
-        }
-        lastPresentedFieldPTS = field.ptsSeconds
-        presentedFieldCount += 1
-        lastAttachedDurationMs = duration.seconds * 1000.0
-
         let finished = FinishedField(pixelBuffer: destination, pts: pts, duration: duration)
-
-        // Reported from the completion handler rather than from here. Committing
-        // a command buffer says the work is queued, not done, and the surface is
-        // not AVFoundation's until the GPU has written it — announcing the first
-        // frame at commit time credited the pipeline with work it had not
-        // finished.
-        let isFirstField = !hasReportedFirstFrame
-        if isFirstField { hasReportedFirstFrame = true }
 
         commandBuffer.addCompletedHandler { _ in
             DispatchQueue.main.async {
@@ -1676,7 +1681,7 @@ private final class FrameReorderBuffer: @unchecked Sendable {
     /// releasing frames before a lower-PTS sibling had arrived — measured as
     /// field spacing of -80 ms, two frames of disorder. `capacity` 20 bounds the
     /// pixel buffers held away from VideoToolbox's pool.
-    init(capacity: Int = 20, reorderDepth: Int = 6) {
+    init(capacity: Int = 40, reorderDepth: Int = 6) {
         self.capacity = capacity
         self.reorderDepth = reorderDepth
     }

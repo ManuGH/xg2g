@@ -30,6 +30,7 @@ public struct TestTSPlayerScreen: View {
     /// on the same stream instead of only one of them ever running.
     @State private var presentationPath: MetalVideoView.PresentationPath = .systemLayer
     @State private var showControls: Bool = true
+    @State private var showLandscapeZapBar: Bool = false
     @State private var autoHideControlsTask: Task<Void, Never>?
     @State private var zapToast: String?
     @State private var hideZapToastTask: Task<Void, Never>?
@@ -73,9 +74,55 @@ public struct TestTSPlayerScreen: View {
         }
     }
 
-    /// The catalogue logo for a preset, matched on `serviceRef`.
+    /// The catalogue logo for a preset, matched on `serviceRef` or `name`.
     private func logoURL(for serviceRef: String) -> URL? {
         model?.channels.first { $0.serviceRef == serviceRef }?.logoURL
+    }
+
+    private func logoURL(forPreset preset: ChannelPreset) -> URL? {
+        if let match = model?.channels.first(where: { $0.serviceRef == preset.serviceRef || $0.name == preset.name }) {
+            return match.logoURL
+        }
+        return nil
+    }
+
+    private var currentLogoURL: URL? {
+        if let preset = currentPreset, let url = logoURL(forPreset: preset) {
+            return url
+        }
+        if let match = model?.channels.first(where: { $0.name == currentChannelName }) {
+            return match.logoURL
+        }
+        return nil
+    }
+
+    private var currentChannel: Channel {
+        if let model, let match = model.channels.first(where: { $0.name == currentChannelName || $0.serviceRef == currentPreset?.serviceRef }) {
+            return match
+        }
+        return Channel(
+            id: currentPreset?.serviceRef ?? "native_lab",
+            name: currentChannelName,
+            number: nil,
+            serviceRef: currentPreset?.serviceRef ?? "",
+            logoURL: currentLogoURL
+        )
+    }
+
+    private func switchToChannel(_ channel: Channel) {
+        guard let model, let url = model.directStreamURL(for: channel) else { return }
+        streamURLString = url.absoluteString
+        currentChannelName = channel.name
+        displayZapToast("Kanal: \(channel.name)")
+        startCurrentPreset()
+    }
+
+    private func closePlayer() {
+        teardownPlayback()
+        if let model {
+            model.playingChannel = nil
+        }
+        dismiss()
     }
 
     /// The channels this screen can tune, newest EPG title included.
@@ -119,11 +166,9 @@ public struct TestTSPlayerScreen: View {
                             presenter: systemPresenter.presenter,
                             presentationPath: presentationPath
                         )
-                            .ignoresSafeArea(edges: isLandscape ? .all : [])
+                        .ignoresSafeArea(edges: isLandscape ? .all : [])
 
-                        // 2. A format this pipeline cannot assemble produces no
-                        //    picture at all, and a black rectangle explains
-                        //    nothing. Say what happened and name the way out.
+                        // 2. Format Notice
                         if let unplayable = pipeline.telemetry.display.unplayableVideoCodec {
                             UnplayableFormatNotice(
                                 formatDescription: unplayable,
@@ -132,17 +177,45 @@ public struct TestTSPlayerScreen: View {
                         }
 
                         // 3. On-Screen Display Controls & Buttons
-                        if showControls {
-                            videoOverlayControls(isLandscape: isLandscape, safeTop: geometry.safeAreaInsets.top)
+                        if showControls && !showLandscapeZapBar {
+                            videoOverlayControls(isLandscape: isLandscape, safeInsets: geometry.safeAreaInsets)
                                 .transition(.opacity)
                         }
 
-                        // 3. Floating Telemetry Inspector Modal
+                        // 4. Floating Telemetry Inspector Modal
                         if showHUD {
                             telemetryHUDView
                                 .padding(.top, isLandscape ? 48 : max(geometry.safeAreaInsets.top, 8) + 40)
-                                .padding(.leading, 12)
+                                .padding(.leading, max(geometry.safeAreaInsets.leading, 12))
                                 .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        }
+
+                        // 5. Landscape Quick-Zap Channel Carousel
+                        if isLandscape && showLandscapeZapBar {
+                            VStack {
+                                Spacer()
+                                LandscapeQuickZapBar(
+                                    channels: model?.filteredChannels.isEmpty == false ? (model?.filteredChannels ?? []) : (model?.channels ?? []),
+                                    currentChannel: currentChannel,
+                                    schedule: model?.schedule ?? [:],
+                                    onSelect: { ch in
+                                        switchToChannel(ch)
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            showLandscapeZapBar = false
+                                        }
+                                        scheduleControlsAutoHide()
+                                    },
+                                    onClose: {
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            showLandscapeZapBar = false
+                                        }
+                                        scheduleControlsAutoHide()
+                                    }
+                                )
+                                .padding(.horizontal, max(geometry.safeAreaInsets.leading, geometry.safeAreaInsets.trailing, 16))
+                                .padding(.bottom, max(12, geometry.safeAreaInsets.bottom))
+                            }
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
                     .frame(
@@ -152,11 +225,18 @@ public struct TestTSPlayerScreen: View {
                     .background(Color.black)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showControls.toggle()
-                        }
-                        if showControls {
+                        if showLandscapeZapBar {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showLandscapeZapBar = false
+                            }
                             scheduleControlsAutoHide()
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showControls.toggle()
+                            }
+                            if showControls {
+                                scheduleControlsAutoHide()
+                            }
                         }
                     }
                     .gesture(
@@ -191,11 +271,7 @@ public struct TestTSPlayerScreen: View {
                     }
                 }
             }
-            // Real fullscreen, not merely an edge-to-edge video frame. Ignoring
-            // the safe area stretches the picture under the status bar and the
-            // home indicator, but both keep drawing on top of it — a bright
-            // clock over the image and a bar across the bottom. Landscape here
-            // means "watching", so the system chrome leaves with the controls.
+            // Real fullscreen, not merely an edge-to-edge video frame.
             .statusBarHidden(isLandscape)
             .persistentSystemOverlays(isLandscape ? .hidden : .automatic)
         }
@@ -210,7 +286,9 @@ public struct TestTSPlayerScreen: View {
     // MARK: - Video Overlay Controls (Portrait & Landscape)
 
     @ViewBuilder
-    private func videoOverlayControls(isLandscape: Bool, safeTop: CGFloat) -> some View {
+    private func videoOverlayControls(isLandscape: Bool, safeInsets: EdgeInsets) -> some View {
+        let sideInset = isLandscape ? max(safeInsets.leading, safeInsets.trailing, 16) : 12
+
         ZStack {
             // Vignette Gradient
             LinearGradient(
@@ -230,7 +308,7 @@ public struct TestTSPlayerScreen: View {
                 // Top Action Bar
                 HStack(spacing: 12) {
                     Button {
-                        dismiss()
+                        closePlayer()
                     } label: {
                         Image(systemName: isLandscape ? "xmark.circle.fill" : "chevron.down")
                             .font(.system(size: isLandscape ? 22 : 13, weight: .bold))
@@ -241,8 +319,19 @@ public struct TestTSPlayerScreen: View {
                     }
                     .buttonStyle(.plain)
 
+                    ChannelLogo(url: currentLogoURL, name: currentChannelName, size: isLandscape ? 34 : 30)
+
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
+                            if let num = currentChannel.number {
+                                Text(num)
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.accentAction)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Theme.Colors.accentAction.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                            }
+
                             Text(currentChannelName)
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(.white)
@@ -255,10 +344,10 @@ public struct TestTSPlayerScreen: View {
                                 .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
                         }
 
-                        if let preset = presets.first(where: { $0.url == streamURLString }) {
+                        if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
                             Text(preset.epgNow)
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.8))
+                                .foregroundStyle(.white.opacity(0.85))
                                 .lineLimit(1)
                         }
                     }
@@ -289,16 +378,6 @@ public struct TestTSPlayerScreen: View {
                     .buttonStyle(.plain)
 
                     // Presentation path selector — within the native pipeline only.
-                    //
-                    // Labelled "Layer"/"Drawable" rather than anything with AV in
-                    // it: the app also ships an entirely separate AVPlayer/HLS
-                    // player, and a badge reading "AVF" here invites reading this
-                    // as a switch between the two players. It is not. Both
-                    // settings decode the transport stream natively and differ
-                    // only in who presents the finished fields —
-                    // `AVSampleBufferDisplayLayer`, which schedules them from
-                    // their timestamps and is what Picture in Picture needs, or
-                    // our own drawable, scheduled here against the stream clock.
                     Button {
                         Haptics.shared.impact(.light)
                         presentationPath = (presentationPath == .systemLayer) ? .metalDrawable : .systemLayer
@@ -317,11 +396,7 @@ public struct TestTSPlayerScreen: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Picture in Picture. Enabled only once the display layer has
-                    // content and the system reports it as possible, so the button
-                    // never offers something that would silently do nothing.
-                    // The drawable path has no display layer to hand PiP, so the
-                    // button goes with it.
+                    // Picture in Picture.
                     Button {
                         Haptics.shared.impact(.light)
                         systemPresenter.presenter.startPictureInPicture()
@@ -344,21 +419,21 @@ public struct TestTSPlayerScreen: View {
                         .background(.ultraThinMaterial, in: Circle())
                         .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, isLandscape ? 12 : max(safeTop, 8))
+                .padding(.horizontal, sideInset)
+                .padding(.top, isLandscape ? 14 : max(safeInsets.top, 8))
 
                 Spacer()
 
                 // Center Transport Controls
-                HStack(spacing: 32) {
+                HStack(spacing: 36) {
                     // Previous Channel
                     Button {
                         zapRelative(delta: -1)
                     } label: {
                         Image(systemName: "backward.end.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(.white)
-                            .padding(12)
+                            .padding(13)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
@@ -368,9 +443,9 @@ public struct TestTSPlayerScreen: View {
                         togglePlayPause()
                     } label: {
                         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 28, weight: .bold))
+                            .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(.white)
-                            .padding(16)
+                            .padding(18)
                             .background(Theme.Colors.accentAction.opacity(0.9), in: Circle())
                             .shadow(color: Theme.Colors.accentAction.opacity(0.5), radius: 10)
                     }
@@ -381,9 +456,9 @@ public struct TestTSPlayerScreen: View {
                         zapRelative(delta: 1)
                     } label: {
                         Image(systemName: "forward.end.fill")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(.white)
-                            .padding(12)
+                            .padding(13)
                             .background(.ultraThinMaterial, in: Circle())
                     }
                     .buttonStyle(.plain)
@@ -410,7 +485,7 @@ public struct TestTSPlayerScreen: View {
                             Image(systemName: "tv")
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(Theme.Colors.accentLive)
-                            Text("1920x1080i50 Metal Bob")
+                            Text("1080i50 Hardware Direct")
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.9))
                         }
@@ -418,14 +493,34 @@ public struct TestTSPlayerScreen: View {
                         .padding(.vertical, 4)
                         .background(.ultraThinMaterial, in: Capsule())
 
-                        Spacer()
-
-                        Text(String(format: "Bitrate: %.1f kbps", pipeline.telemetry.display.tsBitrateKbps))
+                        Text(String(format: "%.1f Mbps", pipeline.telemetry.display.tsBitrateKbps / 1000.0))
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.7))
+
+                        Spacer()
+
+                        // Quick Zap Channel Drawer Button
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showLandscapeZapBar.toggle()
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "list.bullet")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text("Sender")
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Theme.Colors.accentAction.opacity(0.85), in: Capsule())
+                            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
+                    .padding(.horizontal, sideInset)
+                    .padding(.bottom, max(safeInsets.bottom, 12))
                 }
             }
         }
@@ -438,7 +533,9 @@ public struct TestTSPlayerScreen: View {
             VStack(alignment: .leading, spacing: 14) {
                 // Channel Info Card
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
+                    HStack(spacing: 12) {
+                        ChannelLogo(url: currentLogoURL, name: currentChannelName, size: 44)
+
                         VStack(alignment: .leading, spacing: 2) {
                             Text(currentChannelName)
                                 .font(.title3.weight(.bold))
@@ -489,9 +586,7 @@ public struct TestTSPlayerScreen: View {
                             switchTo(preset: preset)
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: streamURLString == preset.url ? "play.circle.fill" : "tv")
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(streamURLString == preset.url ? Theme.Colors.accentLive : Theme.Colors.textSecondary)
+                                ChannelLogo(url: logoURL(forPreset: preset), name: preset.name, size: 36)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(preset.name)
@@ -515,7 +610,7 @@ public struct TestTSPlayerScreen: View {
                                         .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
                                 }
                             }
-                            .padding(.vertical, 10)
+                            .padding(.vertical, 8)
                             .padding(.horizontal, 12)
                             .background(streamURLString == preset.url ? Color.white.opacity(0.08) : Color.clear)
                             .cornerRadius(10)
@@ -598,7 +693,13 @@ public struct TestTSPlayerScreen: View {
                     }
 
                     hudSection(title: "VIDEO & RENDER") {
-                        hudRow("Format", "\(pipeline.telemetry.display.videoWidth)x\(pipeline.telemetry.display.videoHeight) 1080i50")
+                        let isInterlaced = pipeline.telemetry.display.isInterlaced
+                        let h = pipeline.telemetry.display.videoHeight
+                        let w = pipeline.telemetry.display.videoWidth
+                        let srcFps = pipeline.telemetry.display.sourceFrameRate
+                        let fps = Int(round(srcFps > 0 ? (isInterlaced ? srcFps * 2 : srcFps) : 50))
+                        let formatStr = (w > 0 && h > 0) ? "\(w)x\(h) \(h)\(isInterlaced ? "i" : "p")\(fps)" : "Detecting…"
+                        hudRow("Format", formatStr)
                         hudRow("HW Decode", pipeline.telemetry.display.hwDecodeActive ? "Active 🚀" : "Pending…", highlight: pipeline.telemetry.display.hwDecodeActive)
                         hudRow("Fields Displayed", String(format: "%.1f fields/s", pipeline.telemetry.display.fieldsSubmittedPerSec), highlight: abs(pipeline.telemetry.display.fieldsSubmittedPerSec - 50.0) < 3.0)
                         hudRow("Bitrate", String(format: "%.1f kbps", pipeline.telemetry.display.tsBitrateKbps))
@@ -610,15 +711,17 @@ public struct TestTSPlayerScreen: View {
                         hudRow("Master Clock", pipeline.telemetry.display.isAudioMasterClockActive ? "Synchronized 🟢" : "Pre-roll ⚪️", highlight: pipeline.telemetry.display.isAudioMasterClockActive)
                     }
 
-                    hudSection(title: "SYSTEM THERMAL") {
+                    hudSection(title: "SYSTEM & PERFORMANCE") {
                         hudRow("Thermal State", pipeline.telemetry.display.thermalState, highlight: pipeline.telemetry.display.thermalState.contains("Nominal"))
-                        hudRow("RAM Usage", String(format: "%.1f MB", pipeline.telemetry.display.memoryUsageMB))
+                        hudRow("Footprint (Peak)", String(format: "%.1f MB (%.1f MB)", pipeline.telemetry.display.memoryUsageMB, pipeline.telemetry.display.peakMemoryFootprintMB))
+                        hudRow("Process CPU", String(format: "%.1f %%", pipeline.telemetry.display.processCpuUsagePercent), highlight: pipeline.telemetry.display.processCpuUsagePercent < 25.0)
+                        hudRow("VT In-Flight", "\(pipeline.telemetry.display.vtInFlightFrames)", highlight: pipeline.telemetry.display.vtInFlightFrames <= 3)
                     }
                 }
             }
             .padding(10)
         }
-        .frame(maxWidth: 300, maxHeight: 320)
+        .frame(maxWidth: 320, maxHeight: 350)
         .background(.ultraThinMaterial)
         .cornerRadius(12)
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
@@ -723,6 +826,7 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func scheduleControlsAutoHide() {
+        guard !showLandscapeZapBar && !showHUD else { return }
         autoHideControlsTask?.cancel()
         autoHideControlsTask = Task {
             try? await Task.sleep(for: .seconds(4))
@@ -734,8 +838,13 @@ public struct TestTSPlayerScreen: View {
     }
 
     private var hudHeader: some View {
-        HStack {
-            Text("⚡️ Native 1080p50 Video Telemetry")
+        let isInterlaced = pipeline.telemetry.display.isInterlaced
+        let h = pipeline.telemetry.display.videoHeight
+        let srcFps = pipeline.telemetry.display.sourceFrameRate
+        let fps = Int(round(srcFps > 0 ? (isInterlaced ? srcFps * 2 : srcFps) : 50))
+        let title = (h > 0) ? "⚡️ Native \(h)\(isInterlaced ? "i" : "p")\(fps) Video Telemetry" : "⚡️ Native Video Telemetry"
+        return HStack {
+            Text(title)
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(.white)
             Spacer()

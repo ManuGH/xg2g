@@ -883,12 +883,28 @@ final class AppModel {
         }
     }
 
+    @ObservationIgnored private var bouquetChannelsCache: [String: [Channel]] = [:]
+
     func selectBouquet(_ bouquet: Bouquet?) async {
         selectedBouquet = bouquet
-        await loadChannels(bouquet: bouquet?.name)
+        guard let bouquet, bouquet.id != Self.favoritesBouquetID else {
+            // "Alle Sender" (nil) or "Favoriten" filter locally in memory in 0ms
+            if bouquet == nil, let all = bouquetChannelsCache["all"], channels.count != all.count {
+                channels = all
+            }
+            return
+        }
+
+        // Instant switch if this bouquet was already loaded
+        if let cached = bouquetChannelsCache[bouquet.id] {
+            channels = cached
+            return
+        }
+
+        await loadChannels(bouquet: bouquet.name, bouquetID: bouquet.id)
     }
 
-    func loadChannels(bouquet: String? = nil) async {
+    func loadChannels(bouquet: String? = nil, bouquetID: String? = nil) async {
         guard let channelRepository, !isLoadingChannels else { return }
         isLoadingChannels = true
         defer { isLoadingChannels = false }
@@ -897,10 +913,20 @@ final class AppModel {
             _ = try? await session?.validSession()
 
             let loaded = try await channelRepository.channels(bouquet: bouquet)
+            if let bouquetID {
+                bouquetChannelsCache[bouquetID] = loaded
+            } else if bouquet == nil {
+                bouquetChannelsCache["all"] = loaded
+            }
             channels = loaded
             lastError = nil
-            schedule = (try? await channelRepository.nowNext(for: loaded.map(\.serviceRef))) ?? [:]
-            fullEpg = (try? await channelRepository.epgSchedule(bouquet: bouquet)) ?? [:]
+
+            async let nowNextTask = (try? await channelRepository.nowNext(for: loaded.map(\.serviceRef))) ?? [:]
+            async let epgTask = (try? await channelRepository.epgSchedule(bouquet: bouquet)) ?? [:]
+
+            let (newSchedule, newEpg) = await (nowNextTask, epgTask)
+            schedule = newSchedule
+            fullEpg = newEpg
             lastDataRefreshTime = Date()
         } catch {
             handle(error)

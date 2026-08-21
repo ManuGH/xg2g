@@ -183,7 +183,7 @@ final class NowPlayingManager {
     /// command, an empty lock screen.
     func updateLive(title: String, subtitle: String? = nil, logoURL: URL? = nil) {
         currentArtworkTask?.cancel()
-        var info: [String: Any] = [
+        let info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: subtitle ?? "xg2g Live TV",
             MPMediaItemPropertyAlbumTitle: "xg2g Live TV",

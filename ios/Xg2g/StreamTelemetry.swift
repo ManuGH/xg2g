@@ -194,6 +194,9 @@ public struct TelemetryValues: Sendable {
     // left in place; add them back with an actual sampler behind them.
     public var thermalState: String = "Nominal"
     public var memoryUsageMB: Double = 0.0
+    public var peakMemoryFootprintMB: Double = 0.0
+    public var processCpuUsagePercent: Double = 0.0
+    public var vtInFlightFrames: Int = 0
 
     public init() {}
 
@@ -260,7 +263,10 @@ public struct TelemetryValues: Sendable {
             "scrambled_packets": scrambledPackets,
             "ingest_backlog_bytes": ingestBacklogBytes,
             "thermal_state": thermalState,
-            "memory_usage_mb": memoryUsageMB
+            "memory_usage_mb": memoryUsageMB,
+            "peak_memory_footprint_mb": peakMemoryFootprintMB,
+            "process_cpu_usage_percent": processCpuUsagePercent,
+            "vt_in_flight_frames": vtInFlightFrames
         ]
     }
 }
@@ -285,9 +291,10 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
     public init() {}
 
     /// Apply a mutation under the lock. Safe from any thread.
-    public func mutate(_ body: (inout TelemetryValues) -> Void) {
+    @discardableResult
+    public func mutate<T>(_ body: (inout TelemetryValues) -> T) -> T {
         lock.lock()
-        body(&values)
+        let result = body(&values)
         let needsSchedule = !publishScheduled
         publishScheduled = true
         lock.unlock()
@@ -297,6 +304,7 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
                 self?.publishNow()
             }
         }
+        return result
     }
 
     /// Current values, consistent as of this call. Safe from any thread.
@@ -318,6 +326,8 @@ public final class StreamTelemetry: ObservableObject, @unchecked Sendable {
         fresh.activeDecoderMode = values.activeDecoderMode
         fresh.thermalState = values.thermalState
         fresh.memoryUsageMB = values.memoryUsageMB
+        fresh.peakMemoryFootprintMB = values.memoryUsageMB
+        fresh.processCpuUsagePercent = values.processCpuUsagePercent
         fresh.sampleBuffersEmittedCount = values.sampleBuffersEmittedCount
         fresh.sampleBuffersDecodedCount = values.sampleBuffersDecodedCount
         values = fresh

@@ -4,15 +4,29 @@
 
 import CoreMedia
 import Foundation
+import QuartzCore
 import VideoToolbox
+import os
 
-public struct DecodedVideoFrame: @unchecked Sendable {
+public final class DecodedVideoFrame: @unchecked Sendable {
+    public static let liveCount = OSAllocatedUnfairLock(initialState: 0)
     public let pixelBuffer: CVPixelBuffer
     public let pts: CMTime
     /// How the coded picture maps onto fields, carried through from the slice
     /// header so the renderer knows how many presentations it owes and which
     /// parity each one is.
     public let structure: H264PictureStructure
+
+    public init(pixelBuffer: CVPixelBuffer, pts: CMTime, structure: H264PictureStructure) {
+        self.pixelBuffer = pixelBuffer
+        self.pts = pts
+        self.structure = structure
+        DecodedVideoFrame.liveCount.withLock { $0 += 1 }
+    }
+
+    deinit {
+        DecodedVideoFrame.liveCount.withLock { $0 = max(0, $0 - 1) }
+    }
 }
 
 public enum VTErrorCategory: Sendable, Equatable {
@@ -63,26 +77,32 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     ///
     /// Synchronized under `sessionLock`.
     private var _decodeGeneration: Int = 0
+    private var _inFlightFrames: Int = 0
+    private var _lastDecodeLatencyMs: Double = 0.0
+    private var _meanDecodeLatencyMs: Double = 0.0
+    private var _maxDecodeLatencyMs: Double = 0.0
+    private var _latencySampleCount: Int = 0
 
     /// Guards `decompressionSession` and `formatDescription`, and is held
     /// across the VideoToolbox calls that act on them.
     private let sessionLock = NSLock()
 
-    /// Guards `_decodeGeneration` alone.
-    ///
-    /// Deliberately separate from `sessionLock`. The output callback needs the
-    /// generation to decide whether a frame is stale, and VideoToolbox may run
-    /// that callback synchronously on the thread that submitted the frame — the
-    /// thread already holding `sessionLock`. Sharing one lock therefore forced a
-    /// choice between two failures: hold it across the submission and the
-    /// callback deadlocks against it, or release it and a concurrent
-    /// invalidation frees the session mid-submission. With the generation on its
-    /// own lock the callback never reaches for `sessionLock`, so the submission
-    /// can stay protected and neither failure is possible.
-    ///
-    /// Lock ordering, where both are needed: `sessionLock` first, never the
-    /// reverse.
+    /// Guards `_decodeGeneration`, `_inFlightFrames`, and latency statistics.
     private let generationLock = NSLock()
+
+    /// Number of frames currently in-flight in VideoToolbox asynchronous decode.
+    public var inFlightFrames: Int {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return _inFlightFrames
+    }
+
+    /// Latency statistics (in milliseconds) from submission to callback return.
+    public var decodeLatencyStats: (lastMs: Double, meanMs: Double, maxMs: Double) {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return (_lastDecodeLatencyMs, _meanDecodeLatencyMs, _maxDecodeLatencyMs)
+    }
 
     /// Serialises session teardown requested from the output callback.
     ///
@@ -185,6 +205,11 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         decompressionSession = nil
         generationLock.lock()
         _decodeGeneration += 1
+        _inFlightFrames = 0
+        _lastDecodeLatencyMs = 0.0
+        _meanDecodeLatencyMs = 0.0
+        _maxDecodeLatencyMs = 0.0
+        _latencySampleCount = 0
         let generation = _decodeGeneration
         generationLock.unlock()
         return (stale, generation)
@@ -194,6 +219,9 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     private func detachSessionLocked() -> VTDecompressionSession? {
         let stale = decompressionSession
         decompressionSession = nil
+        generationLock.lock()
+        _inFlightFrames = 0
+        generationLock.unlock()
         return stale
     }
 
@@ -286,25 +314,44 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
         print(successMsg)
         TelemetryServer.shared.log(successMsg)
 
-        // Path B probes for a native VideoToolbox deinterlace property.
-        var isVTDeinterlaceAccepted = false
-        if useNativeVTDeinterlace {
-            let deinterlacePropKey = "DeinterlaceMode" as CFString
-            let deinterlacePropVal = "Temporal" as CFString
-            let deintStatus = VTSessionSetProperty(activeSession, key: deinterlacePropKey, value: deinterlacePropVal)
-            if deintStatus == noErr {
-                var readVal: Unmanaged<CFPropertyList>?
-                let copyStatus = VTSessionCopyProperty(activeSession, key: deinterlacePropKey, allocator: kCFAllocatorDefault, valueOut: &readVal)
-                if copyStatus == noErr, let unmanaged = readVal {
-                    let val = unmanaged.takeRetainedValue()
-                    if let str = val as? String {
-                        if str == "Temporal" || str == "VerticalFilter" {
-                            isVTDeinterlaceAccepted = true
-                        }
-                    }
-                }
-            }
+        // Discover ALL supported properties of the hardware decoder session:
+        var supportedProps: CFDictionary?
+        let copyDictStatus = VTSessionCopySupportedPropertyDictionary(activeSession, supportedPropertyDictionaryOut: &supportedProps)
+        if copyDictStatus == noErr, let dict = supportedProps as? [String: Any] {
+            let keys = dict.keys.sorted()
+            let logMsg = "[1080i50-VT-CAPS] 📋 Supported Properties (\(keys.count)): \(keys.joined(separator: ", "))"
+            print(logMsg)
+            TelemetryServer.shared.log(logMsg)
+        } else {
+            let logMsg = "[1080i50-VT-CAPS] ⚠️ VTSessionCopySupportedPropertyDictionary returned: \(copyDictStatus)"
+            print(logMsg)
+            TelemetryServer.shared.log(logMsg)
         }
+
+        func probeProperty(_ name: String, key: CFString, value: CFTypeRef) {
+            let setStatus = VTSessionSetProperty(activeSession, key: key, value: value)
+            var copyVal: Unmanaged<CFPropertyList>?
+            let copyStatus = VTSessionCopyProperty(activeSession, key: key, allocator: kCFAllocatorDefault, valueOut: &copyVal)
+            let readValueStr: String
+            if copyStatus == noErr, let unmanaged = copyVal {
+                let v = unmanaged.takeRetainedValue()
+                readValueStr = "\(v)"
+            } else {
+                readValueStr = "error \(copyStatus)"
+            }
+            let probeMsg = "[1080i50-VT-PROBE] Property '\(name)': Set -> OSStatus \(setStatus) | Read -> \(readValueStr)"
+            print(probeMsg)
+            TelemetryServer.shared.log(probeMsg)
+        }
+
+        probeProperty("FieldMode: DeinterlaceFields", key: kVTDecompressionPropertyKey_FieldMode, value: kVTDecompressionProperty_FieldMode_DeinterlaceFields)
+        probeProperty("FieldMode: BothFields", key: kVTDecompressionPropertyKey_FieldMode, value: kVTDecompressionProperty_FieldMode_BothFields)
+        probeProperty("DeinterlaceMode: VerticalFilter", key: kVTDecompressionPropertyKey_DeinterlaceMode, value: kVTDecompressionProperty_DeinterlaceMode_VerticalFilter)
+        probeProperty("DeinterlaceMode: Temporal", key: kVTDecompressionPropertyKey_DeinterlaceMode, value: kVTDecompressionProperty_DeinterlaceMode_Temporal)
+        probeProperty("MaximizePowerEfficiency: True", key: kVTDecompressionPropertyKey_MaximizePowerEfficiency, value: kCFBooleanTrue)
+        probeProperty("RealTime: True", key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue)
+
+        var isVTDeinterlaceAccepted = false
 
         // Verify if Hardware Acceleration is active
         var isHWActive: Bool = false
@@ -365,6 +412,7 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
 
         generationLock.lock()
         let currentGen = _decodeGeneration
+        _inFlightFrames += 1
         generationLock.unlock()
 
         var flagsOut: VTDecodeInfoFlags = []
@@ -383,6 +431,10 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
             sessionLock.unlock()
             return
         }
+
+        generationLock.lock()
+        _inFlightFrames = max(0, _inFlightFrames - 1)
+        generationLock.unlock()
 
         _ = Unmanaged<FrameContext>.fromOpaque(contextPtr).takeRetainedValue()
         let category = classifyError(status)
@@ -422,8 +474,14 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
     }
 
     fileprivate func handleDecodedFrame(status: OSStatus, imageBuffer: CVImageBuffer?, context: FrameContext) {
+        let latencyMs = (CACurrentMediaTime() - context.submitTime) * 1000.0
         generationLock.lock()
         let currentGen = _decodeGeneration
+        _inFlightFrames = max(0, _inFlightFrames - 1)
+        _lastDecodeLatencyMs = latencyMs
+        _maxDecodeLatencyMs = max(_maxDecodeLatencyMs, latencyMs)
+        _latencySampleCount += 1
+        _meanDecodeLatencyMs += (latencyMs - _meanDecodeLatencyMs) / Double(_latencySampleCount)
         generationLock.unlock()
 
         guard context.generation == currentGen else {
@@ -473,6 +531,19 @@ public final class HardwareVideoDecoder: @unchecked Sendable {
             return
         }
 
+        if _latencySampleCount <= 5 {
+            let pixelFormat = CVPixelBufferGetPixelFormatType(buffer)
+            let width = CVPixelBufferGetWidth(buffer)
+            let height = CVPixelBufferGetHeight(buffer)
+            let isPlanar = CVPixelBufferIsPlanar(buffer)
+            if let attachments = CMCopyDictionaryOfAttachments(allocator: kCFAllocatorDefault, target: buffer, attachmentMode: kCMAttachmentMode_ShouldPropagate) as? [String: Any] {
+                let keys = attachments.keys.sorted().joined(separator: ", ")
+                let diag = "[1080i50-VT-OUT] Frame #\(_latencySampleCount) -> \(width)x\(height) format: \(pixelFormat) planar: \(isPlanar) attachments: [\(keys)]"
+                print(diag)
+                TelemetryServer.shared.log(diag)
+            }
+        }
+
         let frame = DecodedVideoFrame(
             pixelBuffer: buffer,
             pts: context.pts,
@@ -486,11 +557,13 @@ private final class FrameContext {
     let structure: H264PictureStructure
     let pts: CMTime
     let generation: Int
+    let submitTime: CFTimeInterval
 
-    init(structure: H264PictureStructure, pts: CMTime, generation: Int) {
+    init(structure: H264PictureStructure, pts: CMTime, generation: Int, submitTime: CFTimeInterval = CACurrentMediaTime()) {
         self.structure = structure
         self.pts = pts
         self.generation = generation
+        self.submitTime = submitTime
     }
 }
 
