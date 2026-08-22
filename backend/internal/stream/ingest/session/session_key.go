@@ -62,6 +62,27 @@ func (k SessionKey) Canonicalize() SessionKey {
 		port = 8001
 	}
 
+	// Service reference canonical form.
+	//
+	// THIS FUNCTION IS THE ONLY AUTHORITY ON IT. A service reference exists in two
+	// shapes in this system and they must not be confused:
+	//
+	//   wire form       1:0:19:132F:3EF:1:C00000:0:0:0:   (trailing colon)
+	//     what OpenWebIF returns, what a bouquet lists, what a client sends. Never
+	//     alter it: it is the receiver's own spelling and belongs in APIs and logs.
+	//
+	//   canonical form  1:0:19:132F:3EF:1:C00000:0:0:0    (no trailing colon)
+	//     what a SessionKey holds after canonicalisation, and therefore what
+	//     identifies an upstream. Anything that decides "is this the same stream"
+	//     - session sharing, tuner leases, and any future playback-decision cache -
+	//     must compare this form and nothing else.
+	//
+	// Both forms are accepted by the receiver; this was measured against it. The
+	// hazard is not the receiver, it is us: two code paths canonicalising
+	// differently would key the same channel twice, dial the receiver twice, and
+	// take two tuners for one programme - undoing the session sharing this pipeline
+	// exists for. Every caller reaches this through Manager.Acquire, which
+	// canonicalises before it looks anything up.
 	sref := strings.TrimSpace(k.ServiceRef)
 	sref = strings.TrimRight(sref, ":")
 

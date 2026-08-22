@@ -511,3 +511,40 @@ func waitFor(t *testing.T, within time.Duration, cond func() bool) {
 		}
 	}
 }
+
+// The canonical-form rule, proven where it actually matters: two spellings of one
+// service reference must reach the receiver as one dial and one tuner.
+//
+// This is the failure mode the rule exists to prevent — a client sending the wire
+// form and an internal path using the canonical one would otherwise open two
+// upstreams for one programme, which no amount of session sharing downstream can
+// undo.
+func TestPrepare_BothServiceRefSpellingsShareOneUpstream(t *testing.T) {
+	recv := newFakeReceiver(t)
+	recv.serve(refB, presentableBroadcast(t))
+	pm, mgr := newPrepManager(t, recv, DefaultPreparationConfig())
+
+	withColon := refB                        // wire form, as a bouquet lists it
+	without := strings.TrimSuffix(refB, ":") // canonical form
+
+	watcher, err := mgr.Acquire(context.Background(), keyFor(withColon))
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	defer watcher.Release()
+	waitAttachable(t, watcher.Session().Payload().(*SessionPipeline), 5*time.Second)
+	dialsAfterWatcher := recv.dialCount()
+
+	prep, _ := pm.Prepare(PrepareRequest{ClientID: "sterling-2", ZapID: "z-spelling", Key: keyFor(without)})
+	st := awaitTerminalOrReady(t, prep, 5*time.Second)
+
+	if st.State != PreparationReady {
+		t.Fatalf("expected ready, got %q (%s)", st.State, st.Detail)
+	}
+	if got := recv.dialCount(); got != dialsAfterWatcher {
+		t.Fatalf("the two spellings dialled the receiver twice: %d -> %d", dialsAfterWatcher, got)
+	}
+	if mgr.ActiveCount() != 1 {
+		t.Fatalf("one channel must occupy one session, got %d", mgr.ActiveCount())
+	}
+}
