@@ -7,6 +7,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -380,4 +381,136 @@ func logReadiness(logger zerolog.Logger, snap Snapshot, event, message string) {
 		}
 	}
 	evt.Msg(message)
+}
+
+// Awaiting transport readiness.
+//
+// The observer above answers "is this stream presentable yet" continuously and
+// decides nothing. A zap transaction needs the same question answered once, with a
+// deadline, and needs the answer to name a cause when it is no - because the failure
+// this whole architecture exists to remove is the silent one: an upstream that
+// answers HTTP 200, delivers a clean EOF two seconds later, and leaves the previous
+// picture frozen on screen with nothing anywhere saying why.
+//
+// Nothing in the serving path calls this yet. It is the primitive Prepare is built
+// on, and it changes no behaviour on its own.
+
+// TransportReadyOutcome names why an await ended without the stream becoming
+// presentable. The strings are stable: they appear in logs and in the reason a
+// client is given for a failed channel change.
+type TransportReadyOutcome string
+
+const (
+	// OutcomeReady means every transport criterion was satisfied.
+	OutcomeReady TransportReadyOutcome = "ready"
+	// OutcomeTimeout means the deadline passed with criteria still unmet.
+	OutcomeTimeout TransportReadyOutcome = "timeout"
+	// OutcomeIngestEnded means the upstream stopped before the stream was
+	// presentable - the clean-EOF case, which is not success however clean it was.
+	OutcomeIngestEnded TransportReadyOutcome = "ingest_ended"
+	// OutcomeCancelled means the caller abandoned the attempt, which a newer zap
+	// on the same client does deliberately.
+	OutcomeCancelled TransportReadyOutcome = "cancelled"
+)
+
+// TransportNotReadyError reports an await that did not reach readiness.
+//
+// It carries the observation rather than a message, so a caller can log which
+// criteria were outstanding and why without re-deriving them.
+type TransportNotReadyError struct {
+	Outcome  TransportReadyOutcome
+	Snapshot Snapshot
+	Elapsed  time.Duration
+	// Cause is the pipeline's own error where one exists. A clean EOF leaves this
+	// nil, which is itself worth reporting: it distinguishes "the upstream broke"
+	// from "the upstream simply stopped".
+	Cause error
+}
+
+func (e *TransportNotReadyError) Error() string {
+	pending := e.Snapshot.PendingCriteria()
+	parts := make([]string, 0, len(pending))
+	for _, c := range pending {
+		parts = append(parts, fmt.Sprintf("%s (%s)", c, e.Snapshot.Pending[c]))
+	}
+	msg := fmt.Sprintf("transport not ready after %s: %s", e.Elapsed.Round(time.Millisecond), e.Outcome)
+	if len(parts) > 0 {
+		msg += "; outstanding: " + strings.Join(parts, ", ")
+	}
+	if e.Cause != nil {
+		msg += "; cause: " + e.Cause.Error()
+	}
+	return msg
+}
+
+func (e *TransportNotReadyError) Unwrap() error { return e.Cause }
+
+// PendingCriteria lists the unsatisfied criteria in evaluation order, so a log
+// line reads in the order the conditions are expected to become true.
+func (s Snapshot) PendingCriteria() []ReadinessCriterion {
+	out := make([]ReadinessCriterion, 0, len(s.Pending))
+	for _, c := range AllReadinessCriteria {
+		if _, unmet := s.Pending[c]; unmet {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// AwaitTransportReady samples the pipeline until every transport criterion holds,
+// the deadline passes, the ingest ends, or the caller cancels.
+//
+// Transport readiness is client-agnostic on purpose: it asks whether the receiver is
+// delivering this service completely and in the clear, not whether any particular
+// client can present it. Whether the bytes are of use to the client asking for them
+// is a separate question, answered against that client's effective capabilities.
+func AwaitTransportReady(ctx context.Context, pipe *SessionPipeline, logger zerolog.Logger, timeout time.Duration) (Snapshot, error) {
+	if pipe == nil {
+		return Snapshot{}, &TransportNotReadyError{Outcome: OutcomeCancelled}
+	}
+	master := pipe.MasterRing()
+	if master == nil {
+		return Snapshot{}, &TransportNotReadyError{Outcome: OutcomeCancelled}
+	}
+
+	start := time.Now()
+	observer := NewReadinessObserver(start, logger)
+	ticker := time.NewTicker(readinessSampleInterval)
+	defer ticker.Stop()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+
+	fail := func(outcome TransportReadyOutcome, cause error) (Snapshot, error) {
+		snap := observer.Snapshot()
+		return snap, &TransportNotReadyError{
+			Outcome:  outcome,
+			Snapshot: snap,
+			Elapsed:  time.Since(start),
+			Cause:    cause,
+		}
+	}
+
+	for {
+		observer.Observe(master.ReadinessFacts(), time.Now())
+		if snap := observer.Snapshot(); snap.Ready {
+			return snap, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fail(OutcomeCancelled, ctx.Err())
+		case <-pipe.Done():
+			// One last look: the ingest may have ended in the same interval that
+			// completed the picture, and discarding that would report a failure for
+			// a stream that did become presentable.
+			observer.Observe(master.ReadinessFacts(), time.Now())
+			if snap := observer.Snapshot(); snap.Ready {
+				return snap, nil
+			}
+			return fail(OutcomeIngestEnded, pipe.Err())
+		case <-deadline.C:
+			return fail(OutcomeTimeout, pipe.Err())
+		case <-ticker.C:
+		}
+	}
 }
