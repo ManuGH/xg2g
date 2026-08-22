@@ -5,6 +5,7 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +26,43 @@ import (
 // session attaches in 0.025s. 5s leaves margin for tuner contention without turning a
 // permanently unattachable stream into a long stall - terminal conditions return early.
 const primedAttachTimeout = 5 * time.Second
+
+// zapIDHeader carries the client's identifier for one channel change.
+const zapIDHeader = "X-Xg2g-Zap-Id"
+
+// readinessObservationBudget bounds how long one ingest is watched. Comfortably past
+// the slowest tune measured against the reference receiver (2.3 s to PAT, 3.0 s to a
+// usable entry point) so a slow but successful channel is still recorded as ready.
+const readinessObservationBudget = 20 * time.Second
+
+// maxZapIDLength caps what is accepted from the client. The identifier only has to
+// be unique within a client session; anything longer is not one.
+const maxZapIDLength = 64
+
+// sanitizeZapID keeps the client's identifier to characters that are safe to put in
+// a log field, and substitutes a marker when the client sent none. Untrusted input
+// never reaches a metric label, so cardinality is not at stake - legibility is.
+func sanitizeZapID(raw string) string {
+	if raw == "" {
+		return "unset"
+	}
+	if len(raw) > maxZapIDLength {
+		raw = raw[:maxZapIDLength]
+	}
+	cleaned := make([]rune, 0, len(raw))
+	for _, c := range raw {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+			cleaned = append(cleaned, c)
+		case c == '-', c == '_', c == '.', c == ':':
+			cleaned = append(cleaned, c)
+		}
+	}
+	if len(cleaned) == 0 {
+		return "invalid"
+	}
+	return string(cleaned)
+}
 
 // Handler serves live, paced MPEG-TS streams via HTTP using the unified Live Ingest Pipeline.
 type Handler struct {
@@ -89,19 +127,38 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The client stamps each channel change with an identifier so one zap can be
+	// followed across both sides of the wire. It is a log field only, never a metric
+	// label: one series per zap would blow up cardinality for no gain.
+	zapID := sanitizeZapID(r.Header.Get(zapIDHeader))
+
 	logger := log.L().With().
 		Str("serviceRef", key.ServiceRef).
 		Uint16("targetProgram", key.TargetProgram).
+		Str("zap_id", zapID).
 		Logger()
+
+	requestedAt := time.Now()
+	logger.Info().Str("event", "zap.request").Msg("live stream requested")
 
 	// Acquire or coalesce live session lease
 	lease, err := h.manager.Acquire(r.Context(), key)
 	if err != nil {
-		logger.Warn().Err(err).Msg("failed to acquire live ingest lease")
+		logger.Warn().Err(err).
+			Dur("after", time.Since(requestedAt)).
+			Str("event", "zap.failed").
+			Str("stage", "acquire").
+			Msg("failed to acquire live ingest lease")
 		http.Error(w, fmt.Sprintf("upstream stream unavailable: %v", err), http.StatusBadGateway)
 		return
 	}
 	defer lease.Release()
+
+	logger.Info().
+		Dur("after", time.Since(requestedAt)).
+		Str("event", "zap.session").
+		Str("state", string(lease.State())).
+		Msg("live ingest session acquired")
 
 	pipelinePayload := lease.Session().Payload()
 	if pipelinePayload == nil {
@@ -117,6 +174,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Observation only: this watches the same ingest the request is being served
+	// from and records when each readiness criterion becomes true. Nothing below
+	// waits on it, and the stream is served on exactly the schedule it was before.
+	pipe.ObserveOnce(func() {
+		observerLogger := logger
+		go ObserveReadiness(context.WithoutCancel(r.Context()), pipe, observerLogger, readinessObservationBudget)
+	})
+
 	// Capture atomic PrimedAttachPoint and dedicated subscriber reader (waits for first keyframe if stream just started)
 	attach, reader, err := pipe.PrimedAttachWithTimeout(r.Context(), primedAttachTimeout)
 	if err != nil {
@@ -130,7 +195,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "upstream stream is scrambled: the receiver is not descrambling this service", http.StatusBadGateway)
 			return
 		}
-		logger.Warn().Err(err).AnErr("runErr", runErr).Msg("failed to perform primed attach to stream")
+		logger.Warn().Err(err).AnErr("runErr", runErr).
+			Dur("after", time.Since(requestedAt)).
+			Str("event", "zap.failed").
+			Str("stage", "attach").
+			Msg("failed to perform primed attach to stream")
 		http.Error(w, fmt.Sprintf("failed to attach to live stream: %v (runErr: %v)", err, runErr), http.StatusBadGateway)
 		return
 	}
@@ -144,6 +213,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
+
+	logger.Info().
+		Dur("after", time.Since(requestedAt)).
+		Uint64("generation", attach.Generation).
+		Int("preamble_bytes", len(attach.Preamble)).
+		Str("event", "zap.attached").
+		Msg("attached to live stream and answered")
 
 	// 1. Deliver authoritative PAT/PMT preamble first
 	if len(attach.Preamble) > 0 {

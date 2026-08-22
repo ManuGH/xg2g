@@ -311,6 +311,23 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         TelemetryServer.shared.setScreenshotProvider { nil }
     }
 
+    /// Identifier sent with a channel change so the backend timeline and this one
+    /// can be lined up. Prefixed by install so two devices zapping at once do not
+    /// produce colliding identifiers in the same server log.
+    static func zapIdentifier(_ zapId: Int) -> String {
+        "ios-\(installIdentifier)-\(zapId)"
+    }
+
+    /// Stable for the lifetime of the install, and not derived from anything that
+    /// identifies the device or its owner.
+    private static let installIdentifier: String = {
+        let key = "io.github.manugh.xg2g.zapInstallIdentifier"
+        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        let generated = String(UUID().uuidString.prefix(8)).lowercased()
+        UserDefaults.standard.set(generated, forKey: key)
+        return generated
+    }()
+
     /// - Parameter requestedAt: when the user asked for this, which is not the
     ///   same as when this function runs. Callers that do work first — resolving
     ///   a URL, dismissing a screen — should stamp their own start so the figure
@@ -438,6 +455,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         var request = URLRequest(url: targetURL)
         request.setValue("xg2g-ios-native-poc/1.0", forHTTPHeaderField: "User-Agent")
+        // Stamps this channel change so one zap can be followed across both sides of
+        // the wire. The backend logs it as a field and never as a metric label, so it
+        // only has to be unique within this app run - not globally.
+        request.setValue(Self.zapIdentifier(zapId), forHTTPHeaderField: "X-Xg2g-Zap-Id")
 
         let task = session.dataTask(with: request)
         self.streamTask = task
@@ -456,7 +477,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.notice("\(setupLog, privacy: .public)")
         TelemetryServer.shared.log(setupLog)
 
-        let startLog = "[ZAP-#\(zapId)-NET] ▶️ Requesting \(targetURL.absoluteString) | Timeout: \(config.timeoutIntervalForRequest)s | ZapID: \(zapId)"
+        let startLog = "[ZAP-#\(zapId)-NET] ▶️ Requesting \(targetURL.absoluteString) | Timeout: \(config.timeoutIntervalForRequest)s | ZapID: \(Self.zapIdentifier(zapId))"
         print(startLog)
         logger.notice("\(startLog, privacy: .public)")
         TelemetryServer.shared.log(startLog)
@@ -808,7 +829,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 $0.audioMinLeadMs = audio.minLeadMs
             }
 
-            let qualityLog = "[1080i50-QUALITY] Bitrate: \(String(format: "%.1f", kbps)) kbps | VideoPID: \(snapshot.videoPID) | ContinuityErr: \(snapshot.continuityErrors) | PESErr: \(snapshot.pesErrors) | Scrambled: \(snapshot.scrambledPackets) | DecErrors: \(snapshot.decodeErrors) | Backlog: \(backlog / 1024) KiB | Stalls: \(stalls) (worst \(String(format: "%.0f", longestStall))ms) | AudioLead: \(String(format: "%.0f", audio.currentLeadMs))ms (min \(String(format: "%.0f", audio.minLeadMs))ms) | Underruns: \(audio.underruns) | AudioQueue: \(audio.pendingBuffers)"
+            let qualityLog = "[1080i50-QUALITY] Bitrate: \(String(format: "%.1f", kbps)) kbps | VideoPID: \(snapshot.videoPID) | ContinuityErr: \(snapshot.continuityErrors) | PESErr: \(snapshot.pesErrors) | Scrambled: \(snapshot.scrambledPackets) (V \(snapshot.scrambledVideoPackets) / A \(snapshot.scrambledAudioPackets), clear run \(snapshot.videoClearRun)) | DecErrors: \(snapshot.decodeErrors) | Backlog: \(backlog / 1024) KiB | Stalls: \(stalls) (worst \(String(format: "%.0f", longestStall))ms) | AudioLead: \(String(format: "%.0f", audio.currentLeadMs))ms (min \(String(format: "%.0f", audio.minLeadMs))ms) | Underruns: \(audio.underruns) | AudioQueue: \(audio.pendingBuffers)"
             print(qualityLog)
             logger.notice("\(qualityLog, privacy: .public)")
             TelemetryServer.shared.log(qualityLog)
@@ -982,6 +1003,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool) {
         if let vPid = tsParser.videoPID, pid == vPid {
+            // Reaching here means the packet was clear: the parser drops scrambled
+            // payload before delivery. The run is what says the stream is clear now,
+            // as opposed to having been clear at some point.
+            telemetry.mutate { $0.videoClearRun += 1 }
             pesAssembler.feed(payload: data, unitStart: unitStart)
         } else if let aPid = selectedAudioPID, pid == aPid {
             audioPesAssembler.feed(payload: data, pid: pid, unitStart: unitStart)
@@ -993,7 +1018,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16) {
-        telemetry.mutate { $0.scrambledPackets += 1 }
+        let isVideo = pid == parser.videoPID
+        telemetry.mutate {
+            $0.scrambledPackets += 1
+            if isVideo {
+                $0.scrambledVideoPackets += 1
+                $0.videoClearRun = 0
+            } else {
+                $0.scrambledAudioPackets += 1
+            }
+        }
     }
 
     // MARK: - AudioPESAssemblerDelegate

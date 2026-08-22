@@ -161,9 +161,40 @@ type MasterRing struct {
 	maxKeyframes     int
 	generation       uint64
 
-	// Scrambling observation on the selected video PID. Counted per TS packet carrying payload.
+	// Random access classification for the access unit currently being assembled.
+	// Held per access unit because joinability is a property of all of its slices,
+	// which is only known once the next access unit begins.
+	auHasIRAP       bool
+	auHasRecoveryPt bool
+	auVCLCount      int
+	auIntraVCLCount int
+	// auScrambledPackets counts scrambled packets inside the access unit being
+	// assembled. An entry point whose own access unit was partly encrypted is not
+	// one a decoder can be started on.
+	auScrambledPackets int
+	cleanRAPCount      uint64
+	nalBuf             []byte
+	nalKind            nalCaptureKind
+	nalLeft            int
+	raObs              RandomAccessObservation
+
+	// Scrambling observation, kept per elementary stream rather than as one total.
+	// A service whose video descrambles while its audio does not is a different
+	// fault from one where neither does, and a single counter cannot tell them apart.
 	scrambledVideoPackets uint64
 	clearVideoPackets     uint64
+	scrambledAudioPackets uint64
+	clearAudioPackets     uint64
+	// videoClearRun counts consecutive clear video packets, reset by any scrambled
+	// one. Descrambling on this receiver was measured coming up intermittently -
+	// 733 scrambled packets interleaved with clear ones on one tune - so "a clear
+	// packet was seen" is not evidence that the stream is clear.
+	videoClearRun uint64
+	// audioClearRun is the same measure on the audio streams, kept separately so a
+	// service whose video is through but whose audio is not can be told apart.
+	audioClearRun uint64
+	// audioPIDs holds the elementary audio streams named by the active PMT.
+	audioPIDs []uint16
 }
 
 // NewMasterRing creates a new MasterRing with the specified capacity (aligned to 188 bytes).
@@ -306,6 +337,23 @@ func (r *MasterRing) indexPacketLocked(pkt []byte, offset int64) {
 	// 3. Video Elementary Stream Keyframe / IDR Indexing
 	if r.videoPID > 0 && pid == r.videoPID {
 		r.parseVideoPacketLocked(pkt, offset, pusi, payload)
+		return
+	}
+
+	// 4. Audio elementary streams, observed for descrambling only. Their payload is
+	//    never parsed here - the client selects and decodes the track - but whether
+	//    it arrives clear decides whether a channel is presentable.
+	for _, apid := range r.audioPIDs {
+		if pid == apid {
+			if (pkt[3]>>6)&0x03 != 0 {
+				r.scrambledAudioPackets++
+				r.audioClearRun = 0
+			} else {
+				r.clearAudioPackets++
+				r.audioClearRun++
+			}
+			return
+		}
 	}
 }
 
@@ -590,23 +638,35 @@ func (r *MasterRing) processCompletePSISectionLocked(isPAT bool, table []byte, r
 
 					switch st {
 					case 0x1B: // H.264 / AVC
-						r.videoPID = elemPID
-						r.videoCodec = CodecH264
-					case 0x24: // H.265 / HEVC
-						r.videoPID = elemPID
-						r.videoCodec = CodecH265
+						if r.videoPID == 0 {
+							r.videoPID = elemPID
+							r.videoCodec = CodecH264
+						}
+					case 0x24, 0x27: // H.265 / HEVC
+						if r.videoPID == 0 {
+							r.videoPID = elemPID
+							r.videoCodec = CodecH265
+						}
 					case 0x02, 0x01: // MPEG-2 / MPEG-1 Video
-						r.videoPID = elemPID
-						r.videoCodec = CodecMPEG2
+						if r.videoPID == 0 {
+							r.videoPID = elemPID
+							r.videoCodec = CodecMPEG2
+						}
+					default:
+						// The elementary stream loop is now walked to its end rather
+						// than stopped at the video entry: the audio streams that
+						// follow it are needed to tell "video descrambled, audio did
+						// not" apart from "nothing descrambled".
+						descriptors := []byte(nil)
+						if dStart := i + 5; dStart+esInfoLen <= len(sData) {
+							descriptors = sData[dStart : dStart+esInfoLen]
+						}
+						if isAudioStreamType(st, descriptors) {
+							r.audioPIDs = appendPID(r.audioPIDs, elemPID)
+						}
 					}
 
-					if r.videoPID > 0 {
-						break
-					}
 					i += 5 + esInfoLen
-				}
-				if r.videoPID > 0 {
-					break
 				}
 			}
 		}
@@ -647,6 +707,14 @@ func (r *MasterRing) invalidateVideoStateLocked() {
 	r.rawPMTPackets = nil
 	r.scrambledVideoPackets = 0
 	r.clearVideoPackets = 0
+	r.scrambledAudioPackets = 0
+	r.clearAudioPackets = 0
+	r.videoClearRun = 0
+	r.audioClearRun = 0
+	r.audioPIDs = nil
+	r.raObs = RandomAccessObservation{}
+	r.cleanRAPCount = 0
+	r.resetAccessUnitStateLocked()
 	r.generation++
 }
 
@@ -656,15 +724,22 @@ func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool,
 	// observation is recorded instead, allowing attach to fail fast with ErrScrambledStream.
 	if (pkt[3]>>6)&0x03 != 0 {
 		r.scrambledVideoPackets++
+		r.auScrambledPackets++
+		r.videoClearRun = 0
 		return
 	}
 	r.clearVideoPackets++
+	r.videoClearRun++
 
 	esData := payload
 
 	if pusi {
 		// Video PES packet start: verify PES startcode prefix (00 00 01 E0..EF)
 		if len(payload) >= 9 && payload[0] == 0x00 && payload[1] == 0x00 && payload[2] == 0x01 && (payload[3] >= 0xE0 && payload[3] <= 0xEF) {
+			// Whether an access unit is joinable depends on every slice in it, which
+			// is only known once it ends - and it ends where the next one begins.
+			r.finalizeAccessUnitLocked()
+
 			r.currentPESOffset = offset
 			r.pesHasKeyframe = false
 			r.pesHasSPS = false
@@ -672,6 +747,7 @@ func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool,
 			r.pesHasVPS = false
 			r.annexBState = 0xFFFFFFFF
 			r.expectingNALByte = false
+			r.resetAccessUnitStateLocked()
 
 			pesHeaderDataLen := int(payload[8])
 			esStart := 9 + pesHeaderDataLen
@@ -687,53 +763,35 @@ func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool,
 		return
 	}
 
-	// Stateful Annex-B NAL unit parser across packet boundaries
+	// Stateful Annex-B NAL unit parser across packet boundaries.
 	for _, b := range esData {
 		r.annexBState = (r.annexBState << 8) | uint32(b)
 
+		// Bytes immediately following a NAL header, held for slice-header and SEI
+		// parsing. Collected here because a NAL unit routinely spans TS packets and
+		// the fields that matter sit in its first bytes.
+		if r.nalLeft > 0 {
+			r.nalBuf = append(r.nalBuf, b)
+			r.nalLeft--
+			if r.nalLeft == 0 {
+				r.consumeNALCaptureLocked()
+			}
+		}
+
 		if r.expectingNALByte {
 			r.expectingNALByte = false
-			isKeyframe := false
+			// A start code inside a captured NAL means the capture budget outran the
+			// unit; read what was collected before moving on.
+			r.consumeNALCaptureLocked()
 
-			if r.videoCodec == CodecH264 {
-				nalType := b & 0x1F
-				switch nalType {
-				case 5: // IDR Slice
-					isKeyframe = true
-				case 7: // SPS
-					r.pesHasSPS = true
-				case 8: // PPS
-					r.pesHasPPS = true
-				case 1, 2: // VCL Slice
-					if r.pesHasSPS && r.pesHasPPS {
-						// Complete DVB Recovery / Open-GOP Random Access Point with SPS+PPS
-						isKeyframe = true
-					}
-				}
-			} else if r.videoCodec == CodecH265 {
-				nalType := (b >> 1) & 0x3F
-				switch {
-				case nalType == 19 || nalType == 20 || nalType == 21: // IDR_W_RADL, IDR_N_LP, CRA_NUT
-					isKeyframe = true
-				case nalType == 32: // VPS
-					r.pesHasVPS = true
-				case nalType == 33: // SPS
-					r.pesHasSPS = true
-				case nalType == 34: // PPS
-					r.pesHasPPS = true
-				case nalType == 1: // Trailing / non-IDR slice
-					if r.pesHasVPS && r.pesHasSPS && r.pesHasPPS {
-						isKeyframe = true
-					}
-				}
-			}
-
-			if isKeyframe && !r.pesHasKeyframe && r.currentPESOffset >= 0 {
-				r.pesHasKeyframe = true
-				r.keyframeOffsets = append(r.keyframeOffsets, r.currentPESOffset)
-				if len(r.keyframeOffsets) > r.maxKeyframes {
-					r.keyframeOffsets = r.keyframeOffsets[1:]
-				}
+			switch r.videoCodec {
+			case CodecH264:
+				r.classifyH264NALLocked(b & 0x1F)
+			case CodecH265:
+				r.classifyHEVCNALLocked((b >> 1) & 0x3F)
+			case CodecMPEG2, CodecUnknown:
+				// MPEG-2 carries no Annex-B NAL units; its random access points are
+				// sequence headers, indexed by the MPEG-2 path elsewhere.
 			}
 		}
 
@@ -742,6 +800,176 @@ func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool,
 			r.expectingNALByte = true
 		}
 	}
+}
+
+// classifyH264NALLocked records what one H.264 NAL unit contributes to the access
+// unit being assembled, and starts a capture where the following bytes are needed.
+func (r *MasterRing) classifyH264NALLocked(nalType uint8) {
+	switch nalType {
+	case h264NALSliceIDR:
+		r.auHasIRAP = true
+		r.auVCLCount++
+		r.auIntraVCLCount++
+		// An IDR needs nothing else to be joinable, so it is indexed without waiting
+		// for the access unit to end. This keeps streams that do emit IDRs attaching
+		// exactly as fast as before.
+		r.indexRandomAccessPointLocked(true)
+	case h264NALSliceNonIDR, h264NALSlicePartA:
+		r.auVCLCount++
+		r.beginNALCaptureLocked(captureH264SliceHeader, sliceHeaderCaptureBytes)
+	case h264NALSPS:
+		r.pesHasSPS = true
+	case h264NALPPS:
+		r.pesHasPPS = true
+	case h264NALSEI:
+		r.beginNALCaptureLocked(captureSEI, seiCaptureBytes)
+	}
+}
+
+// classifyHEVCNALLocked mirrors classifyH264NALLocked for HEVC.
+//
+// The whole IRAP range qualifies, not only IDR: a CRA or BLA picture is equally a
+// point a decoder can be started on. HEVC slice headers are not parsed for intra
+// coding - the fields needed sit behind the active parameter sets - so a stream that
+// never emits an IRAP is admitted on its recovery_point SEI instead, which is the
+// stream's own declaration of a random access point.
+func (r *MasterRing) classifyHEVCNALLocked(nalType uint8) {
+	switch {
+	case nalType >= hevcNALIRAPFirst && nalType <= hevcNALIRAPLast:
+		r.auHasIRAP = true
+		r.auVCLCount++
+		r.auIntraVCLCount++
+		r.indexRandomAccessPointLocked(true)
+	case nalType <= 9:
+		r.auVCLCount++
+	case nalType == hevcNALVPS:
+		r.pesHasVPS = true
+	case nalType == hevcNALSPS:
+		r.pesHasSPS = true
+	case nalType == hevcNALPPS:
+		r.pesHasPPS = true
+	case nalType == hevcNALPrefixSEI:
+		r.beginNALCaptureLocked(captureSEI, seiCaptureBytes)
+	}
+}
+
+func (r *MasterRing) beginNALCaptureLocked(kind nalCaptureKind, budget int) {
+	r.nalKind = kind
+	r.nalLeft = budget
+	r.nalBuf = r.nalBuf[:0]
+}
+
+// consumeNALCaptureLocked reads whatever was captured and clears the capture.
+func (r *MasterRing) consumeNALCaptureLocked() {
+	if r.nalKind == captureNone || len(r.nalBuf) == 0 {
+		r.nalKind = captureNone
+		r.nalLeft = 0
+		return
+	}
+
+	switch r.nalKind {
+	case captureH264SliceHeader:
+		isIntra, ok := h264SliceIsIntra(r.nalBuf)
+		switch {
+		case !ok:
+			r.raObs.UnreadableSlices++
+		case isIntra:
+			r.auIntraVCLCount++
+		}
+	case captureSEI:
+		if seiHasRecoveryPoint(r.nalBuf) {
+			r.auHasRecoveryPt = true
+		}
+	}
+
+	r.nalKind = captureNone
+	r.nalLeft = 0
+	r.nalBuf = r.nalBuf[:0]
+}
+
+// finalizeAccessUnitLocked decides whether the access unit that just ended was a
+// random access point, now that all of its slices have been seen.
+func (r *MasterRing) finalizeAccessUnitLocked() {
+	r.consumeNALCaptureLocked()
+
+	if r.currentPESOffset < 0 || r.pesHasKeyframe || r.auVCLCount == 0 {
+		return
+	}
+
+	// An access unit with no parameter sets cannot configure a decoder that is
+	// starting cold, whatever its slices contain.
+	hasParameterSets := r.pesHasSPS && r.pesHasPPS
+	if r.videoCodec == CodecH265 {
+		hasParameterSets = hasParameterSets && r.pesHasVPS
+	}
+	if !hasParameterSets {
+		return
+	}
+
+	joinable := false
+	switch r.videoCodec {
+	case CodecH264:
+		// Every coded slice intra means the picture stands alone. One predicted
+		// slice is enough to disqualify it: the decoder would be missing exactly
+		// the references that slice names.
+		joinable = r.auIntraVCLCount == r.auVCLCount
+	case CodecH265:
+		joinable = r.auHasRecoveryPt
+	}
+
+	if !joinable {
+		if r.auHasRecoveryPt || r.auVCLCount > r.auIntraVCLCount {
+			r.raObs.PredictedRejected++
+		}
+		return
+	}
+
+	r.indexRandomAccessPointLocked(false)
+}
+
+// indexRandomAccessPointLocked records the current access unit as an attach point.
+func (r *MasterRing) indexRandomAccessPointLocked(irap bool) {
+	if r.pesHasKeyframe || r.currentPESOffset < 0 {
+		return
+	}
+	r.pesHasKeyframe = true
+
+	if irap {
+		r.raObs.IRAPPoints++
+	} else {
+		r.raObs.IntraPoints++
+	}
+	if r.auHasRecoveryPt {
+		r.raObs.RecoveryPointSEIs++
+	}
+	// An entry point whose own access unit carried scrambled packets is not one a
+	// decoder can be started on, however well it classified.
+	if r.auScrambledPackets == 0 {
+		r.cleanRAPCount++
+	}
+
+	r.keyframeOffsets = append(r.keyframeOffsets, r.currentPESOffset)
+	if len(r.keyframeOffsets) > r.maxKeyframes {
+		r.keyframeOffsets = r.keyframeOffsets[1:]
+	}
+}
+
+func (r *MasterRing) resetAccessUnitStateLocked() {
+	r.auHasIRAP = false
+	r.auHasRecoveryPt = false
+	r.auVCLCount = 0
+	r.auIntraVCLCount = 0
+	r.auScrambledPackets = 0
+	r.nalKind = captureNone
+	r.nalLeft = 0
+	r.nalBuf = r.nalBuf[:0]
+}
+
+// RandomAccess returns how access units have been classified on this stream.
+func (r *MasterRing) RandomAccess() RandomAccessObservation {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.raObs
 }
 
 func (r *MasterRing) pruneKeyframesLocked() {
@@ -874,6 +1102,43 @@ func (r *MasterRing) ScramblingObservation() (scrambled uint64, clear uint64) {
 	return r.scrambledVideoPackets, r.clearVideoPackets
 }
 
+// StreamScrambling reports descrambling per elementary stream.
+//
+// Separate counters because the two faults they distinguish need different answers:
+// video clear with audio scrambled is a service the receiver is only half
+// descrambling, while neither clear is a service it is not descrambling at all.
+type StreamScrambling struct {
+	VideoScrambled uint64
+	VideoClear     uint64
+	AudioScrambled uint64
+	AudioClear     uint64
+	// VideoClearRun is the number of clear video packets since the last scrambled
+	// one. Descrambling was measured coming up intermittently on this receiver, so
+	// the run length - not the total - is what says the stream is clear now.
+	VideoClearRun uint64
+	// AudioClearRun is the same measure across the audio streams.
+	AudioClearRun uint64
+	// AudioPIDs are the audio elementary streams named by the active PMT.
+	AudioPIDs []uint16
+}
+
+// Scrambling returns the per-stream descrambling observation.
+func (r *MasterRing) Scrambling() StreamScrambling {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pids := make([]uint16, len(r.audioPIDs))
+	copy(pids, r.audioPIDs)
+	return StreamScrambling{
+		VideoScrambled: r.scrambledVideoPackets,
+		VideoClear:     r.clearVideoPackets,
+		AudioScrambled: r.scrambledAudioPackets,
+		AudioClear:     r.clearAudioPackets,
+		VideoClearRun:  r.videoClearRun,
+		AudioClearRun:  r.audioClearRun,
+		AudioPIDs:      pids,
+	}
+}
+
 // scrambledVideoConfirmedLocked reports whether the video stream is conclusively scrambled.
 // It requires a minimum sample so that a handful of packets observed mid key-change cannot
 // trip the verdict, and demands that not one clear payload packet has been seen: a receiver
@@ -894,4 +1159,93 @@ func cloneSliceList(in [][]byte) [][]byte {
 		out[i] = cloneSlice(s)
 	}
 	return out
+}
+
+// KeyframeOffsets returns the currently indexed random access offsets.
+func (r *MasterRing) KeyframeOffsets() []int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]int64, len(r.keyframeOffsets))
+	copy(out, r.keyframeOffsets)
+	return out
+}
+
+// ReadinessFacts is everything the ring knows that bears on whether a channel is
+// presentable. It is a snapshot, taken without blocking the ingest.
+//
+// Deliberately facts rather than a verdict: what counts as presentable is a policy
+// question that belongs one layer up, and keeping it there means the policy can be
+// measured against reality before it is enforced.
+type ReadinessFacts struct {
+	// Generation increments whenever the PSI describing this stream changes, which
+	// is what a PMT version bump or a codec change looks like from here. A consumer
+	// that carries timestamps across a generation change is describing two different
+	// streams as if they were one.
+	Generation uint64
+
+	HasPAT        bool
+	HasPMT        bool
+	PMTVersion    uint8
+	ProgramNumber uint16
+
+	VideoPID   uint16
+	VideoCodec VideoCodec
+	AudioPIDs  []uint16
+
+	// ParameterSetsSeen reports whether the decoder configuration for the current
+	// codec has been observed: SPS and PPS, plus VPS for HEVC.
+	ParameterSetsSeen bool
+
+	RandomAccess RandomAccessObservation
+	Scrambling   StreamScrambling
+
+	// CleanEntryPoints counts entry points whose own access unit contained no
+	// scrambled packet. An entry point is only usable if this is non-zero.
+	CleanEntryPoints uint64
+
+	// AttachAvailable reports whether an entry point is currently within the buffer.
+	AttachAvailable bool
+}
+
+// ReadinessFacts captures what the ring currently knows about this stream.
+func (r *MasterRing) ReadinessFacts() ReadinessFacts {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	pids := make([]uint16, len(r.audioPIDs))
+	copy(pids, r.audioPIDs)
+
+	parameterSets := r.pesHasSPS && r.pesHasPPS
+	if r.videoCodec == CodecH265 {
+		parameterSets = parameterSets && r.pesHasVPS
+	}
+
+	attach := false
+	if len(r.keyframeOffsets) > 0 {
+		attach = r.keyframeOffsets[len(r.keyframeOffsets)-1] >= r.tail
+	}
+
+	return ReadinessFacts{
+		Generation:        r.generation,
+		HasPAT:            r.hasPATVersion,
+		HasPMT:            r.hasPMTVersion,
+		PMTVersion:        r.pmtVersion,
+		ProgramNumber:     r.pmtProgramNumber,
+		VideoPID:          r.videoPID,
+		VideoCodec:        r.videoCodec,
+		AudioPIDs:         pids,
+		ParameterSetsSeen: parameterSets,
+		RandomAccess:      r.raObs,
+		Scrambling: StreamScrambling{
+			VideoScrambled: r.scrambledVideoPackets,
+			VideoClear:     r.clearVideoPackets,
+			AudioScrambled: r.scrambledAudioPackets,
+			AudioClear:     r.clearAudioPackets,
+			VideoClearRun:  r.videoClearRun,
+			AudioClearRun:  r.audioClearRun,
+			AudioPIDs:      pids,
+		},
+		CleanEntryPoints: r.cleanRAPCount,
+		AttachAvailable:  attach,
+	}
 }

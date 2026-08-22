@@ -102,6 +102,23 @@ public struct TelemetryValues: Sendable {
     /// services in the mux stay encrypted and are none of our business.
     public var scrambledPackets: Int = 0
 
+    /// The same observation split by elementary stream.
+    ///
+    /// The aggregate cannot tell "video is through, audio is not" apart from
+    /// "nothing is through", and those are different faults: the first plays a
+    /// silent picture, the second plays nothing. Readiness is decided per stream,
+    /// so it has to be measured per stream.
+    public var scrambledVideoPackets: Int = 0
+    public var scrambledAudioPackets: Int = 0
+
+    /// Clear packets seen since the last scrambled one on the played video PID.
+    ///
+    /// Descrambling was measured coming up intermittently on the reference
+    /// receiver - 733 scrambled packets interleaved with clear ones on one tune -
+    /// so a single clear packet is not evidence that the stream is clear. The run
+    /// length is.
+    public var videoClearRun: Int = 0
+
     /// Times the stream's timeline moved under playback and everything had to be
     /// re-anchored onto it.
     ///
@@ -261,6 +278,9 @@ public struct TelemetryValues: Sendable {
             "gated_access_units": gatedAccessUnits,
             "pts_discontinuities": ptsDiscontinuities,
             "scrambled_packets": scrambledPackets,
+            "scrambled_video_packets": scrambledVideoPackets,
+            "scrambled_audio_packets": scrambledAudioPackets,
+            "video_clear_run": videoClearRun,
             "ingest_backlog_bytes": ingestBacklogBytes,
             "thermal_state": thermalState,
             "memory_usage_mb": memoryUsageMB,

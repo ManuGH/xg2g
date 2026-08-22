@@ -328,12 +328,16 @@ func TestPipeline_PrimedAttachSnapshotAndReaderAreAtomic(t *testing.T) {
 		t.Fatalf("read capture failed: %v", err)
 	}
 
-	const smallRingCapacity = 200 * ring.TSPacketSize
+	// The ring has to hold a whole access unit: an attach point is only offered once
+	// the access unit it names has ended, because whether every slice in it is intra
+	// cannot be known before that. In this capture the first video PES spans packets
+	// 36..731, so a 150-packet window would end mid-picture with nothing to attach to.
+	const smallRingCapacity = 1000 * ring.TSPacketSize
 	master := ring.NewMasterRing(smallRingCapacity)
 	defer master.Close()
 
-	// Push first slice with PAT/PMT/IDR
-	_, err = master.Push(data[:150*ring.TSPacketSize])
+	// Push far enough to close the first access unit and open the next
+	_, err = master.Push(data[:800*ring.TSPacketSize])
 	if err != nil {
 		t.Fatalf("push failed: %v", err)
 	}

@@ -35,6 +35,15 @@ type SessionPipeline struct {
 	completed     bool
 	completionErr error
 	closed        atomic.Bool
+	// observeOnce keeps the readiness observation to one per ingest. Subscribers
+	// coalesce onto a shared pipeline, and a second observer would time a stream
+	// that had already been running from the moment its second viewer arrived.
+	observeOnce sync.Once
+}
+
+// ObserveOnce runs fn at most once for this pipeline.
+func (p *SessionPipeline) ObserveOnce(fn func()) {
+	p.observeOnce.Do(fn)
 }
 
 // NewSessionPipeline creates a new live ingest pipeline.

@@ -1,0 +1,392 @@
+// Copyright (c) 2026 ManuGH
+// Licensed under the PolyForm Noncommercial License 1.0.0
+// Since v2.0.0, this software is restricted to non-commercial use only.
+
+package ring
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// H.264 NAL header bytes used by these fixtures. The low five bits are the type.
+const (
+	nalHdrNonIDR = 0x41 // nal_ref_idc=2, type=1
+	nalHdrIDR    = 0x65 // nal_ref_idc=3, type=5
+	nalHdrSEI    = 0x06
+	nalHdrSPS    = 0x67
+	nalHdrPPS    = 0x68
+)
+
+// Slice headers, bit-packed. first_mb_in_slice is ue(0) = "1" in both.
+//
+//	sliceI: "1" + ue(7)="0001000"  -> 0b10001000, slice_type 7 (I, all slices)
+//	sliceP: "1" + ue(0)="1"        -> 0b11000000, slice_type 0 (P)
+const (
+	sliceHeaderI = 0x88
+	sliceHeaderP = 0xC0
+)
+
+// seiRecoveryPoint is one SEI NAL payload carrying recovery_point: payload type 6,
+// size 1, body 0x84 (recovery_frame_cnt=0, exact_match_flag=0), then trailing bits.
+// This is the exact payload measured on the reference receiver.
+var seiRecoveryPoint = []byte{0x06, 0x01, 0x84, 0x80}
+
+func startCode() []byte { return []byte{0x00, 0x00, 0x00, 0x01} }
+
+// nal builds one Annex-B NAL unit: start code, header byte, then body.
+func nal(header byte, body ...byte) []byte {
+	out := append(startCode(), header)
+	return append(out, body...)
+}
+
+// h264Ring returns a ring with PAT and PMT already pushed, announcing H.264.
+func h264Ring(t *testing.T, videoPID uint16) (*MasterRing, uint16) {
+	t.Helper()
+	const pmtPID = 100
+	r := NewMasterRing(400 * TSPacketSize)
+	t.Cleanup(r.Close)
+
+	for _, pkt := range createMultiPacketPAT(pmtPID) {
+		if _, err := r.Push(pkt); err != nil {
+			t.Fatalf("push PAT: %v", err)
+		}
+	}
+	for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, false) {
+		if _, err := r.Push(pkt); err != nil {
+			t.Fatalf("push PMT: %v", err)
+		}
+	}
+	if pid, codec := r.VideoDetails(); pid != videoPID || codec != CodecH264 {
+		t.Fatalf("expected H.264 on PID %d, got %d / %v", videoPID, pid, codec)
+	}
+	return r, videoPID
+}
+
+// pushAU pushes one access unit as a single PUSI packet and returns its offset.
+func pushAU(t *testing.T, r *MasterRing, videoPID uint16, cc uint8, es []byte) int64 {
+	t.Helper()
+	offset := r.Head()
+	if _, err := r.Push(createVideoPESPacket(videoPID, true, cc, es)); err != nil {
+		t.Fatalf("push access unit: %v", err)
+	}
+	return offset
+}
+
+// The counter-case this classification exists for: an encoder that repeats its
+// parameter sets ahead of a predicted picture. The previous rule offered exactly
+// this as an attach point, and a decoder started there is missing the references
+// the P slice names.
+func TestRandomAccess_ParameterSetsBeforePredictedSlice_IsNotAnEntryPoint(t *testing.T) {
+	r, vpid := h264Ring(t, 256)
+
+	es := append(nal(nalHdrSPS, 0x42, 0x00, 0x1E), nal(nalHdrPPS, 0xCE, 0x3C)...)
+	es = append(es, nal(nalHdrNonIDR, sliceHeaderP)...)
+	pushAU(t, r, vpid, 0, es)
+
+	// A following access unit closes the first one, which is when it is classified.
+	pushAU(t, r, vpid, 1, nal(nalHdrNonIDR, sliceHeaderP))
+
+	if offset, ok := r.LatestKeyframeOffset(); ok {
+		t.Fatalf("SPS+PPS ahead of a P slice must not be an entry point, got offset %d", offset)
+	}
+
+	obs := r.RandomAccess()
+	if obs.PredictedRejected == 0 {
+		t.Fatal("expected the rejection to be counted")
+	}
+	if obs.IRAPPoints != 0 || obs.IntraPoints != 0 {
+		t.Fatalf("no entry point may be recorded: %+v", obs)
+	}
+}
+
+// The case every measured channel actually presents: no IDR anywhere, random access
+// signalled by an all-intra picture carrying parameter sets and a recovery_point SEI.
+func TestRandomAccess_IntraAccessUnitWithParameterSets_IsAnEntryPoint(t *testing.T) {
+	r, vpid := h264Ring(t, 256)
+
+	es := append(nal(nalHdrSPS, 0x42, 0x00, 0x1E), nal(nalHdrPPS, 0xCE, 0x3C)...)
+	es = append(es, nal(nalHdrSEI, seiRecoveryPoint...)...)
+	es = append(es, nal(nalHdrNonIDR, sliceHeaderI)...)
+	want := pushAU(t, r, vpid, 0, es)
+
+	pushAU(t, r, vpid, 1, nal(nalHdrNonIDR, sliceHeaderP))
+
+	offset, ok := r.LatestKeyframeOffset()
+	if !ok {
+		t.Fatal("an all-intra access unit with parameter sets must be an entry point")
+	}
+	if offset != want {
+		t.Fatalf("entry point must name the access unit start: want %d, got %d", want, offset)
+	}
+
+	obs := r.RandomAccess()
+	if obs.IntraPoints != 1 {
+		t.Fatalf("expected one intra entry point, got %+v", obs)
+	}
+	if obs.RecoveryPointSEIs != 1 {
+		t.Fatalf("recovery_point SEI must be recorded as corroboration, got %+v", obs)
+	}
+	if obs.IRAPPoints != 0 {
+		t.Fatalf("no IDR was sent, so none may be counted: %+v", obs)
+	}
+}
+
+// One predicted slice is enough to disqualify a picture: the decoder would be
+// missing exactly the references that slice names.
+func TestRandomAccess_MixedSliceTypes_IsNotAnEntryPoint(t *testing.T) {
+	r, vpid := h264Ring(t, 256)
+
+	es := append(nal(nalHdrSPS, 0x42, 0x00, 0x1E), nal(nalHdrPPS, 0xCE, 0x3C)...)
+	es = append(es, nal(nalHdrNonIDR, sliceHeaderI)...)
+	es = append(es, nal(nalHdrNonIDR, sliceHeaderP)...)
+	pushAU(t, r, vpid, 0, es)
+	pushAU(t, r, vpid, 1, nal(nalHdrNonIDR, sliceHeaderP))
+
+	if _, ok := r.LatestKeyframeOffset(); ok {
+		t.Fatal("an access unit with a predicted slice must not be an entry point")
+	}
+}
+
+// An IDR is joinable on its own and is indexed without waiting for the access unit
+// to end, so streams that do emit them attach exactly as promptly as before.
+func TestRandomAccess_IDR_IsIndexedWithoutWaitingForTheNextAccessUnit(t *testing.T) {
+	r, vpid := h264Ring(t, 256)
+
+	es := append(nal(nalHdrSPS, 0x42, 0x00, 0x1E), nal(nalHdrPPS, 0xCE, 0x3C)...)
+	es = append(es, nal(nalHdrIDR, 0x88)...)
+	want := pushAU(t, r, vpid, 0, es)
+
+	offset, ok := r.LatestKeyframeOffset()
+	if !ok || offset != want {
+		t.Fatalf("IDR must be indexed immediately at %d, got %d (ok=%v)", want, offset, ok)
+	}
+	if obs := r.RandomAccess(); obs.IRAPPoints != 1 {
+		t.Fatalf("expected one IRAP entry point, got %+v", obs)
+	}
+}
+
+// Parameter sets are what a cold decoder configures itself from; an intra picture
+// without them cannot start one.
+func TestRandomAccess_IntraWithoutParameterSets_IsNotAnEntryPoint(t *testing.T) {
+	r, vpid := h264Ring(t, 256)
+
+	pushAU(t, r, vpid, 0, nal(nalHdrNonIDR, sliceHeaderI))
+	pushAU(t, r, vpid, 1, nal(nalHdrNonIDR, sliceHeaderP))
+
+	if _, ok := r.LatestKeyframeOffset(); ok {
+		t.Fatal("an intra picture without SPS/PPS must not be an entry point")
+	}
+}
+
+// A NAL unit routinely spans TS packets, and the slice header sits in its first
+// bytes. Splitting mid-header must not change the classification.
+func TestRandomAccess_SliceHeaderSplitAcrossTSPackets(t *testing.T) {
+	r, vpid := h264Ring(t, 256)
+
+	// A PUSI packet carries 170 payload bytes. The NAL header is placed on the very
+	// last of them, so the slice header genuinely arrives in the following packet -
+	// the builder zero-fills any remaining space, and that filler would otherwise be
+	// captured instead of the header.
+	head := append(nal(nalHdrSPS, 0x42, 0x00, 0x1E), nal(nalHdrPPS, 0xCE, 0x3C)...)
+	const pusiPayloadBytes = TSPacketSize - 18
+	fillerBody := pusiPayloadBytes - len(head) - 5 /* filler start code + header */ - 5 /* slice start code + header */
+	head = append(head, nal(0x0C, bytes.Repeat([]byte{0xFF}, fillerBody)...)...)
+	head = append(head, startCode()...)
+	head = append(head, nalHdrNonIDR) // header byte here, slice header in the next packet
+	if len(head) != pusiPayloadBytes {
+		t.Fatalf("fixture must fill the packet exactly: %d of %d", len(head), pusiPayloadBytes)
+	}
+
+	want := r.Head()
+	if _, err := r.Push(createVideoPESPacket(vpid, true, 0, head)); err != nil {
+		t.Fatalf("push head: %v", err)
+	}
+	if _, err := r.Push(createVideoPESPacket(vpid, false, 1, []byte{sliceHeaderI, 0x00, 0x00})); err != nil {
+		t.Fatalf("push tail: %v", err)
+	}
+	pushAU(t, r, vpid, 2, nal(nalHdrNonIDR, sliceHeaderP))
+
+	offset, ok := r.LatestKeyframeOffset()
+	if !ok || offset != want {
+		t.Fatalf("split slice header must still classify: want %d, got %d (ok=%v)", want, offset, ok)
+	}
+}
+
+// Emulation prevention bytes shift every field that follows them. A slice header
+// that reads as intra only after they are removed proves the removal happens.
+func TestRandomAccess_EmulationPreventionInSliceHeader(t *testing.T) {
+	// Raw bytes 00 00 03 88: with the 0x03 removed the header is 00 00 88.
+	// first_mb_in_slice then reads as a long Exp-Golomb value rather than 0, so this
+	// asserts the parse is attempted over the unescaped bytes and rejected cleanly
+	// rather than silently admitting the picture.
+	if _, ok := h264SliceIsIntra([]byte{0x00, 0x00, 0x03, 0x88}); ok {
+		t.Fatal("a header of leading zero bits must be reported unreadable, not intra")
+	}
+	if intra, ok := h264SliceIsIntra([]byte{sliceHeaderI}); !ok || !intra {
+		t.Fatal("slice_type 7 must read as intra")
+	}
+	if intra, ok := h264SliceIsIntra([]byte{sliceHeaderP}); !ok || intra {
+		t.Fatal("slice_type 0 must read as predicted")
+	}
+}
+
+func TestRandomAccess_RecoveryPointSEIParsing(t *testing.T) {
+	cases := map[string]struct {
+		payload []byte
+		want    bool
+	}{
+		"recovery_point alone":        {[]byte{0x06, 0x01, 0x84, 0x80}, true},
+		"pic_timing then recovery":    {[]byte{0x01, 0x02, 0x00, 0x00, 0x06, 0x01, 0x84, 0x80}, true},
+		"pic_timing only":             {[]byte{0x01, 0x02, 0x00, 0x00, 0x80}, false},
+		"user data only":              {[]byte{0x05, 0x03, 0xAA, 0xBB, 0xCC, 0x80}, false},
+		"payload runs past capture":   {[]byte{0x05, 0x40, 0xAA, 0xBB}, false},
+		"extended type past recovery": {[]byte{0xFF, 0x01, 0x02, 0x00, 0x00, 0x80}, false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := seiHasRecoveryPoint(tc.payload); got != tc.want {
+				t.Fatalf("want %v, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+// HEVC keeps IRAP detection and gains the rest of the IRAP range; the old
+// "trailing picture plus parameter sets" heuristic is gone.
+func TestRandomAccess_HEVC_IRAPRangeAndTrailingRejection(t *testing.T) {
+	const pmtPID = 100
+	const videoPID = 256
+
+	hevcRing := func(t *testing.T) *MasterRing {
+		t.Helper()
+		r := NewMasterRing(400 * TSPacketSize)
+		t.Cleanup(r.Close)
+		for _, pkt := range createMultiPacketPAT(pmtPID) {
+			_, _ = r.Push(pkt)
+		}
+		for _, pkt := range createMultiPacketPMT(pmtPID, videoPID, true) {
+			_, _ = r.Push(pkt)
+		}
+		return r
+	}
+
+	// nalType is carried in bits 6..1 of the first header byte.
+	hevcHeader := func(nalType byte) byte { return nalType << 1 }
+
+	for _, nalType := range []byte{16, 17, 18, 19, 20, 21} {
+		t.Run("IRAP type", func(t *testing.T) {
+			r := hevcRing(t)
+			es := append(nal(hevcHeader(32), 0x01), nal(hevcHeader(33), 0x01)...)
+			es = append(es, nal(hevcHeader(34), 0x01)...)
+			es = append(es, nal(hevcHeader(nalType), 0x01)...)
+			want := pushAU(t, r, videoPID, 0, es)
+			offset, ok := r.LatestKeyframeOffset()
+			if !ok || offset != want {
+				t.Fatalf("HEVC NAL type %d must be an entry point", nalType)
+			}
+		})
+	}
+
+	t.Run("trailing picture with parameter sets", func(t *testing.T) {
+		r := hevcRing(t)
+		es := append(nal(hevcHeader(32), 0x01), nal(hevcHeader(33), 0x01)...)
+		es = append(es, nal(hevcHeader(34), 0x01)...)
+		es = append(es, nal(hevcHeader(1), 0x01)...) // TRAIL_R
+		pushAU(t, r, videoPID, 0, es)
+		pushAU(t, r, videoPID, 1, nal(hevcHeader(1), 0x01))
+
+		if _, ok := r.LatestKeyframeOffset(); ok {
+			t.Fatal("a HEVC trailing picture must not be an entry point on parameter sets alone")
+		}
+	})
+
+	// A stream that never emits an IRAP is still admitted where it declares a
+	// recovery point itself, which is the only signal such a stream gives.
+	t.Run("recovery point without IRAP", func(t *testing.T) {
+		r := hevcRing(t)
+		es := append(nal(hevcHeader(32), 0x01), nal(hevcHeader(33), 0x01)...)
+		es = append(es, nal(hevcHeader(34), 0x01)...)
+		es = append(es, nal(hevcHeader(39), seiRecoveryPoint...)...)
+		es = append(es, nal(hevcHeader(1), 0x01)...)
+		want := pushAU(t, r, videoPID, 0, es)
+		pushAU(t, r, videoPID, 1, nal(hevcHeader(1), 0x01))
+
+		offset, ok := r.LatestKeyframeOffset()
+		if !ok || offset != want {
+			t.Fatalf("HEVC recovery point must be an entry point: want %d, got %d (ok=%v)", want, offset, ok)
+		}
+	})
+}
+
+// Descrambling was measured coming up intermittently, so the run of consecutive
+// clear packets is tracked rather than only the totals.
+func TestScrambling_PerStreamCountersAndClearRun(t *testing.T) {
+	r, vpid := h264Ring(t, 256)
+
+	clear := createVideoPESPacket(vpid, true, 0, nal(nalHdrNonIDR, sliceHeaderP))
+	scrambled := createVideoPESPacket(vpid, true, 1, nal(nalHdrNonIDR, sliceHeaderP))
+	scrambled[3] |= 0xC0 // transport_scrambling_control = odd key
+
+	for i := 0; i < 3; i++ {
+		if _, err := r.Push(clear); err != nil {
+			t.Fatalf("push clear: %v", err)
+		}
+	}
+	if got := r.Scrambling(); got.VideoClearRun != 3 || got.VideoClear != 3 || got.VideoScrambled != 0 {
+		t.Fatalf("after three clear packets: %+v", got)
+	}
+
+	if _, err := r.Push(scrambled); err != nil {
+		t.Fatalf("push scrambled: %v", err)
+	}
+	got := r.Scrambling()
+	if got.VideoClearRun != 0 {
+		t.Fatalf("a scrambled packet must reset the clear run: %+v", got)
+	}
+	if got.VideoScrambled != 1 || got.VideoClear != 3 {
+		t.Fatalf("totals must keep accumulating: %+v", got)
+	}
+}
+
+// Golden regression against a real broadcast capture. The point is not the exact
+// numbers but that they stop changing: any future edit to the classification has to
+// justify itself against a stream that was actually on the air.
+func TestRandomAccess_RealCapture_ClassificationIsStable(t *testing.T) {
+	root := findProjectRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts"))
+	if err != nil {
+		t.Fatalf("read capture: %v", err)
+	}
+
+	r := NewMasterRing(len(data) + TSPacketSize)
+	defer r.Close()
+	if _, err := r.Push(data); err != nil {
+		t.Fatalf("push capture: %v", err)
+	}
+
+	obs := r.RandomAccess()
+	entries := obs.IRAPPoints + obs.IntraPoints
+	if entries == 0 {
+		t.Fatalf("a real capture must yield entry points: %+v", obs)
+	}
+	if obs.UnreadableSlices > 0 {
+		t.Fatalf("every slice header in a real capture must parse: %+v", obs)
+	}
+
+	// Every offer must name a real access unit boundary, never a byte inside one.
+	offsets := r.KeyframeOffsets()
+	if len(offsets) == 0 {
+		t.Fatal("entry points were counted but none are indexed")
+	}
+	for _, off := range offsets {
+		if off%TSPacketSize != 0 {
+			t.Fatalf("entry point %d is not on a packet boundary", off)
+		}
+	}
+
+	t.Logf("real capture: %d IRAP, %d intra, %d with recovery_point SEI, %d predicted rejected",
+		obs.IRAPPoints, obs.IntraPoints, obs.RecoveryPointSEIs, obs.PredictedRejected)
+}
