@@ -53,6 +53,11 @@ func (r *MasterRing) NewPrimedSubscriber() (PrimedAttachPoint, *SubscriberReader
 	}
 
 	if len(r.keyframeOffsets) == 0 {
+		// Distinguish "no keyframe yet" (retry, the GOP boundary is still ahead) from
+		// "no keyframe ever" (encrypted payload, retrying can only burn the timeout).
+		if r.scrambledVideoConfirmedLocked() {
+			return PrimedAttachPoint{}, nil, ErrScrambledStream
+		}
 		return PrimedAttachPoint{}, nil, ErrNoKeyframeAvailable
 	}
 

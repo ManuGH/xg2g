@@ -594,7 +594,7 @@ func TestPipeline_RealBroadcast_EndToEndDecoding(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			reqURL := fmt.Sprintf("%s/api/v3/stream/live/1:0:19:283D:3FB:1:C00000:0:0:0:", server.URL)
+			reqURL := fmt.Sprintf("%s/api/v3/stream/live/1:0:19:1:3FB:1:C00000:0:0:0:", server.URL)
 			resp, err := http.Get(reqURL)
 			if err != nil {
 				clientErrs[idx] = err

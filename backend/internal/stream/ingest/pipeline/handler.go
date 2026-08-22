@@ -5,16 +5,26 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/log"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
 )
+
+// primedAttachTimeout bounds the wait for the first indexable keyframe after a cold session
+// start. Measured against the production receiver (VU+ Uno4K, Astra 19.2E, ORF1 HD): 2.23s
+// time-to-first-byte cold, of which roughly 1.05s is the OSCam ECM round-trip; a warm shared
+// session attaches in 0.025s. 5s leaves margin for tuner contention without turning a
+// permanently unattachable stream into a long stall - terminal conditions return early.
+const primedAttachTimeout = 5 * time.Second
 
 // Handler serves live, paced MPEG-TS streams via HTTP using the unified Live Ingest Pipeline.
 type Handler struct {
@@ -62,6 +72,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := session.NewSessionKey(h.receiverHost, h.streamPort, serviceRef)
+	parts := strings.Split(serviceRef, ":")
+	if len(parts) >= 4 {
+		if val, err := strconv.ParseUint(parts[3], 16, 16); err == nil && val > 0 {
+			key.TargetProgram = uint16(val)
+		}
+	}
 	if err := key.Validate(); err != nil {
 		http.Error(w, fmt.Sprintf("invalid serviceRef: %v", err), http.StatusBadRequest)
 		return
@@ -102,9 +118,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Capture atomic PrimedAttachPoint and dedicated subscriber reader (waits for first keyframe if stream just started)
-	attach, reader, err := pipe.PrimedAttachWithTimeout(r.Context(), 8*time.Second)
+	attach, reader, err := pipe.PrimedAttachWithTimeout(r.Context(), primedAttachTimeout)
 	if err != nil {
 		runErr := pipe.Err()
+		if errors.Is(err, ring.ErrScrambledStream) {
+			scrambled, clear := pipe.MasterRing().ScramblingObservation()
+			logger.Error().
+				Uint64("scrambledPackets", scrambled).
+				Uint64("clearPackets", clear).
+				Msg("upstream video is scrambled: receiver is not descrambling this service (check softcam/CI on the receiver)")
+			http.Error(w, "upstream stream is scrambled: the receiver is not descrambling this service", http.StatusBadGateway)
+			return
+		}
 		logger.Warn().Err(err).AnErr("runErr", runErr).Msg("failed to perform primed attach to stream")
 		http.Error(w, fmt.Sprintf("failed to attach to live stream: %v (runErr: %v)", err, runErr), http.StatusBadGateway)
 		return

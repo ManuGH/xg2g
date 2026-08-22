@@ -120,6 +120,8 @@ func (p *SessionPipeline) PrimedAttach() (ring.PrimedAttachPoint, *ring.Subscrib
 		if errors.Is(err, ring.ErrNoKeyframeAvailable) {
 			return ring.PrimedAttachPoint{}, nil, ErrNoAttachAvailable
 		}
+		// ring.ErrScrambledStream is deliberately NOT folded into ErrNoAttachAvailable:
+		// it is terminal, and PrimedAttachWithTimeout must surface it without retrying.
 		return ring.PrimedAttachPoint{}, nil, err
 	}
 	return attach, reader, nil
@@ -136,6 +138,8 @@ func (p *SessionPipeline) PrimedAttachWithTimeout(ctx context.Context, timeout t
 		if err == nil {
 			return attach, reader, nil
 		}
+		// Only "not yet" is retried. Terminal conditions (closed ring, scrambled upstream)
+		// return straight away rather than consuming the full timeout budget.
 		if !errors.Is(err, ErrNoAttachAvailable) {
 			return ring.PrimedAttachPoint{}, nil, err
 		}

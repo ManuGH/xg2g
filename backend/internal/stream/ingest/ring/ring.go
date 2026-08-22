@@ -13,6 +13,11 @@ import (
 const (
 	TSPacketSize = 188
 	SyncByte     = 0x47
+
+	// scrambledVerdictMinPackets is the number of scrambled video packets that must be observed,
+	// with zero clear ones, before the stream is declared scrambled. At broadcast video rates this
+	// threshold is crossed within a few tens of milliseconds.
+	scrambledVerdictMinPackets = 100
 )
 
 var (
@@ -20,6 +25,10 @@ var (
 	ErrInvalidPacketSize = errors.New("data slice is not 188-byte packet aligned")
 	ErrNoKeyframeFound   = errors.New("no keyframe index found in buffer")
 	ErrSubscriberOverrun = errors.New("subscriber was overtaken by master ring write head")
+	// ErrScrambledStream reports that the upstream video elementary stream carries a non-zero
+	// transport_scrambling_control field. Encrypted payload can never yield a valid Annex-B
+	// keyframe, so waiting for one is futile: the receiver is not descrambling this service.
+	ErrScrambledStream = errors.New("upstream video elementary stream is scrambled; receiver descrambling unavailable")
 )
 
 // VideoCodec identifies the elementary video stream codec parsed from PMT.
@@ -151,6 +160,10 @@ type MasterRing struct {
 	keyframeOffsets  []int64
 	maxKeyframes     int
 	generation       uint64
+
+	// Scrambling observation on the selected video PID. Counted per TS packet carrying payload.
+	scrambledVideoPackets uint64
+	clearVideoPackets     uint64
 }
 
 // NewMasterRing creates a new MasterRing with the specified capacity (aligned to 188 bytes).
@@ -632,10 +645,21 @@ func (r *MasterRing) invalidateVideoStateLocked() {
 	r.expectingNALByte = false
 	r.keyframeOffsets = r.keyframeOffsets[:0]
 	r.rawPMTPackets = nil
+	r.scrambledVideoPackets = 0
+	r.clearVideoPackets = 0
 	r.generation++
 }
 
 func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool, payload []byte) {
+	// transport_scrambling_control != 0 means the payload is encrypted. Feeding it to the
+	// Annex-B scanner would index random bytes as NAL units, so it is never parsed. The
+	// observation is recorded instead, allowing attach to fail fast with ErrScrambledStream.
+	if (pkt[3]>>6)&0x03 != 0 {
+		r.scrambledVideoPackets++
+		return
+	}
+	r.clearVideoPackets++
+
 	esData := payload
 
 	if pusi {
@@ -840,6 +864,22 @@ func (r *MasterRing) Close() {
 
 	r.isClosed = true
 	r.notEmpty.Broadcast()
+}
+
+// ScramblingObservation reports how many payload-carrying TS packets on the selected video PID
+// were seen scrambled versus clear. Intended for diagnostics and telemetry.
+func (r *MasterRing) ScramblingObservation() (scrambled uint64, clear uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.scrambledVideoPackets, r.clearVideoPackets
+}
+
+// scrambledVideoConfirmedLocked reports whether the video stream is conclusively scrambled.
+// It requires a minimum sample so that a handful of packets observed mid key-change cannot
+// trip the verdict, and demands that not one clear payload packet has been seen: a receiver
+// that descrambles clears transport_scrambling_control on every packet it emits.
+func (r *MasterRing) scrambledVideoConfirmedLocked() bool {
+	return r.clearVideoPackets == 0 && r.scrambledVideoPackets >= scrambledVerdictMinPackets
 }
 
 func cloneSlice(in []byte) []byte {
