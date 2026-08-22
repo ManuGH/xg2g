@@ -412,6 +412,21 @@ func (m *PreparationManager) Status(id string) (PreparationStatus, error) {
 	return p.Status(), nil
 }
 
+// Owner returns which client started a preparation.
+//
+// Answered from the recorded owner rather than from the client's current
+// preparation, so a superseded one can still be inspected and cancelled by the
+// client that started it.
+func (m *PreparationManager) Owner(id string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.byID[id]
+	if !ok {
+		return "", false
+	}
+	return p.clientID, true
+}
+
 // ActiveForClient returns the client's in-flight preparation, if any.
 func (m *PreparationManager) ActiveForClient(clientID string) (*Preparation, bool) {
 	m.mu.Lock()

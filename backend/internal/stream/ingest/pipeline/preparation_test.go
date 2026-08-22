@@ -146,10 +146,21 @@ func awaitTerminalOrReady(t *testing.T, p *Preparation, within time.Duration) Pr
 	}
 }
 
+// Three distinct services that all carry programme 1.
+//
+// The service id - the fourth field - is what selects a programme out of a
+// multi-programme transport, and the capture these tests broadcast announces
+// programme 1 in its PAT. A reference naming any other service id describes a
+// programme that is not in the stream, so the ring waits for a PMT that will never
+// arrive and the preparation sits pending until it times out. That reads exactly
+// like a receiver delivering nothing, which is the wrong diagnosis entirely.
+//
+// The three are told apart by their transport stream id instead, which is also how
+// the real network does it: the same service id recurs across transponders.
 const (
-	refA = "1:0:19:AAAA:0:0:0:0:0:0:"
-	refB = "1:0:19:BBBB:0:0:0:0:0:0:"
-	refC = "1:0:19:CCCC:0:0:0:0:0:0:"
+	refA = "1:0:19:1:AAAA:0:0:0:0:0:"
+	refB = "1:0:19:1:BBBB:0:0:0:0:0:"
+	refC = "1:0:19:1:CCCC:0:0:0:0:0:"
 )
 
 // Proof 1: A is playing, preparing B fails, and A is untouched.

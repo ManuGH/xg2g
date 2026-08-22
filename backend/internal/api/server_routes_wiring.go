@@ -179,6 +179,26 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 		return nil, PolicyBindingSnapshot{}, fmt.Errorf("register live stream route: %w", err)
 	}
 
+	// Zap preparation (/api/v3/stream/prepare*), sharing the live route's session
+	// manager. That sharing is the point: a preparation warms exactly the ingest the
+	// live route will serve, so committing to one costs no second dial and no second
+	// tuner - the client simply starts reading a stream that is already running.
+	preparations := pipeline.NewPreparationManager(liveSessionMgr, pipeline.DefaultPreparationConfig(), *log.L())
+	prepareHandler := pipeline.NewPrepareHandler(preparations, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
+	for _, route := range []struct {
+		method  string
+		pattern string
+	}{
+		{http.MethodPost, "/api/v3/stream/prepare"},
+		{http.MethodGet, "/api/v3/stream/prepare/*"},
+		{http.MethodPost, "/api/v3/stream/prepare/*"},
+		{http.MethodDelete, "/api/v3/stream/prepare/*"},
+	} {
+		if err := rootAdapter.Register(route.method, route.pattern, prepareHandler); err != nil {
+			return nil, PolicyBindingSnapshot{}, fmt.Errorf("register zap preparation route %s %s: %w", route.method, route.pattern, err)
+		}
+	}
+
 	return r, registry.Snapshot(), nil
 }
 
