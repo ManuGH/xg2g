@@ -273,15 +273,22 @@ func TestRandomAccess_HEVC_IRAPRangeAndTrailingRejection(t *testing.T) {
 		return r
 	}
 
-	// nalType is carried in bits 6..1 of the first header byte.
-	hevcHeader := func(nalType byte) byte { return nalType << 1 }
+	// A HEVC NAL header is two bytes, not one: forbidden_zero_bit, six bits of
+	// nal_unit_type, then nuh_layer_id and nuh_temporal_id_plus1. Building these
+	// fixtures with a single byte, as they were, hid a parser that started reading
+	// SEI payloads one byte early - the fixture and the parser were wrong in the
+	// same direction, so the test passed on a stream shape that does not exist.
+	hevcNAL := func(nalType byte, body ...byte) []byte {
+		out := append(startCode(), nalType<<1, 0x01)
+		return append(out, body...)
+	}
 
 	for _, nalType := range []byte{16, 17, 18, 19, 20, 21} {
 		t.Run("IRAP type", func(t *testing.T) {
 			r := hevcRing(t)
-			es := append(nal(hevcHeader(32), 0x01), nal(hevcHeader(33), 0x01)...)
-			es = append(es, nal(hevcHeader(34), 0x01)...)
-			es = append(es, nal(hevcHeader(nalType), 0x01)...)
+			es := append(hevcNAL(32, 0x01), hevcNAL(33, 0x01)...)
+			es = append(es, hevcNAL(34, 0x01)...)
+			es = append(es, hevcNAL(nalType, 0x01)...)
 			want := pushAU(t, r, videoPID, 0, es)
 			offset, ok := r.LatestKeyframeOffset()
 			if !ok || offset != want {
@@ -292,11 +299,11 @@ func TestRandomAccess_HEVC_IRAPRangeAndTrailingRejection(t *testing.T) {
 
 	t.Run("trailing picture with parameter sets", func(t *testing.T) {
 		r := hevcRing(t)
-		es := append(nal(hevcHeader(32), 0x01), nal(hevcHeader(33), 0x01)...)
-		es = append(es, nal(hevcHeader(34), 0x01)...)
-		es = append(es, nal(hevcHeader(1), 0x01)...) // TRAIL_R
+		es := append(hevcNAL(32, 0x01), hevcNAL(33, 0x01)...)
+		es = append(es, hevcNAL(34, 0x01)...)
+		es = append(es, hevcNAL(1, 0x01)...) // TRAIL_R
 		pushAU(t, r, videoPID, 0, es)
-		pushAU(t, r, videoPID, 1, nal(hevcHeader(1), 0x01))
+		pushAU(t, r, videoPID, 1, hevcNAL(1, 0x01))
 
 		if _, ok := r.LatestKeyframeOffset(); ok {
 			t.Fatal("a HEVC trailing picture must not be an entry point on parameter sets alone")
@@ -307,12 +314,12 @@ func TestRandomAccess_HEVC_IRAPRangeAndTrailingRejection(t *testing.T) {
 	// recovery point itself, which is the only signal such a stream gives.
 	t.Run("recovery point without IRAP", func(t *testing.T) {
 		r := hevcRing(t)
-		es := append(nal(hevcHeader(32), 0x01), nal(hevcHeader(33), 0x01)...)
-		es = append(es, nal(hevcHeader(34), 0x01)...)
-		es = append(es, nal(hevcHeader(39), seiRecoveryPoint...)...)
-		es = append(es, nal(hevcHeader(1), 0x01)...)
+		es := append(hevcNAL(32, 0x01), hevcNAL(33, 0x01)...)
+		es = append(es, hevcNAL(34, 0x01)...)
+		es = append(es, hevcNAL(39, seiRecoveryPoint...)...)
+		es = append(es, hevcNAL(1, 0x01)...)
 		want := pushAU(t, r, videoPID, 0, es)
-		pushAU(t, r, videoPID, 1, nal(hevcHeader(1), 0x01))
+		pushAU(t, r, videoPID, 1, hevcNAL(1, 0x01))
 
 		offset, ok := r.LatestKeyframeOffset()
 		if !ok || offset != want {

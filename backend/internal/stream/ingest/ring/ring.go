@@ -177,7 +177,12 @@ type MasterRing struct {
 	nalBuf             []byte
 	nalKind            nalCaptureKind
 	nalLeft            int
-	raObs              RandomAccessObservation
+	// nalSkip is the number of bytes of the NAL header still to pass over before
+	// the capture starts. H.264 has a one byte header, which is already consumed by
+	// the classification step; HEVC has two, and capturing from the first of the
+	// remaining bytes would read nuh_layer_id as if it were an SEI payload type.
+	nalSkip int
+	raObs   RandomAccessObservation
 
 	// Scrambling observation, kept per elementary stream rather than as one total.
 	// A service whose video descrambles while its audio does not is a different
@@ -773,10 +778,14 @@ func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool,
 		// parsing. Collected here because a NAL unit routinely spans TS packets and
 		// the fields that matter sit in its first bytes.
 		if r.nalLeft > 0 {
-			r.nalBuf = append(r.nalBuf, b)
-			r.nalLeft--
-			if r.nalLeft == 0 {
-				r.consumeNALCaptureLocked()
+			if r.nalSkip > 0 {
+				r.nalSkip--
+			} else {
+				r.nalBuf = append(r.nalBuf, b)
+				r.nalLeft--
+				if r.nalLeft == 0 {
+					r.consumeNALCaptureLocked()
+				}
 			}
 		}
 
@@ -818,13 +827,15 @@ func (r *MasterRing) classifyH264NALLocked(nalType uint8) {
 		r.indexRandomAccessPointLocked(true)
 	case h264NALSliceNonIDR, h264NALSlicePartA:
 		r.auVCLCount++
-		r.beginNALCaptureLocked(captureH264SliceHeader, sliceHeaderCaptureBytes)
+		r.beginNALCaptureLocked(captureH264SliceHeader, sliceHeaderCaptureBytes, 0)
 	case h264NALSPS:
 		r.pesHasSPS = true
 	case h264NALPPS:
 		r.pesHasPPS = true
 	case h264NALSEI:
-		r.beginNALCaptureLocked(captureSEI, seiCaptureBytes)
+		// The one byte H.264 NAL header has already been consumed, so the SEI
+		// payload starts with the very next byte.
+		r.beginNALCaptureLocked(captureSEI, seiCaptureBytes, 0)
 	}
 }
 
@@ -851,13 +862,18 @@ func (r *MasterRing) classifyHEVCNALLocked(nalType uint8) {
 	case nalType == hevcNALPPS:
 		r.pesHasPPS = true
 	case nalType == hevcNALPrefixSEI:
-		r.beginNALCaptureLocked(captureSEI, seiCaptureBytes)
+		// The HEVC NAL header is two bytes. Only the first has been consumed by the
+		// classification above, so the second is passed over: reading it as the SEI
+		// payload type shifts every field that follows and hides the recovery point,
+		// which on a stream that emits no IRAP is the only signal there is.
+		r.beginNALCaptureLocked(captureSEI, seiCaptureBytes, 1)
 	}
 }
 
-func (r *MasterRing) beginNALCaptureLocked(kind nalCaptureKind, budget int) {
+func (r *MasterRing) beginNALCaptureLocked(kind nalCaptureKind, budget, skipHeaderBytes int) {
 	r.nalKind = kind
 	r.nalLeft = budget
+	r.nalSkip = skipHeaderBytes
 	r.nalBuf = r.nalBuf[:0]
 }
 
@@ -866,6 +882,7 @@ func (r *MasterRing) consumeNALCaptureLocked() {
 	if r.nalKind == captureNone || len(r.nalBuf) == 0 {
 		r.nalKind = captureNone
 		r.nalLeft = 0
+		r.nalSkip = 0
 		return
 	}
 
@@ -886,6 +903,7 @@ func (r *MasterRing) consumeNALCaptureLocked() {
 
 	r.nalKind = captureNone
 	r.nalLeft = 0
+	r.nalSkip = 0
 	r.nalBuf = r.nalBuf[:0]
 }
 
@@ -978,6 +996,7 @@ func (r *MasterRing) resetAccessUnitStateLocked() {
 	r.auScrambledPackets = 0
 	r.nalKind = captureNone
 	r.nalLeft = 0
+	r.nalSkip = 0
 	r.nalBuf = r.nalBuf[:0]
 }
 
