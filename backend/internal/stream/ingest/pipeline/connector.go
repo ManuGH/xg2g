@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -26,6 +27,10 @@ var (
 	// ErrAdmissionDenied indicates that the physical tuner topology rejected stream admission.
 	ErrAdmissionDenied = errors.New("tuner topology admission denied")
 )
+
+// defaultConnectTimeout bounds how long the upstream may take to accept the connection and
+// return response headers before the dial is abandoned.
+const defaultConnectTimeout = 5 * time.Second
 
 // TopologyLease represents a physical tuner / demodulator reservation lease.
 type TopologyLease interface {
@@ -60,9 +65,13 @@ func (l *topologyLeaseWrapper) Decision() receivertopology.AllocationDecision {
 
 // PipelineStreamWrapper wraps the active SessionPipeline as an io.ReadCloser and session.PipelineHolder.
 type PipelineStreamWrapper struct {
-	pipeline  *SessionPipeline
-	topLease  TopologyLease
-	closeOnce sync.Once
+	pipeline *SessionPipeline
+	topLease TopologyLease
+	// upstreamCancel tears down the upstream HTTP request. The request must outlive the
+	// subscriber that triggered the dial and the connect deadline, but it stays owned by
+	// this wrapper so session teardown, warm-hold expiry and manager shutdown all reach it.
+	upstreamCancel context.CancelFunc
+	closeOnce      sync.Once
 }
 
 func (w *PipelineStreamWrapper) Read(p []byte) (int, error) {
@@ -73,6 +82,9 @@ func (w *PipelineStreamWrapper) Read(p []byte) (int, error) {
 func (w *PipelineStreamWrapper) Close() error {
 	w.closeOnce.Do(func() {
 		w.pipeline.Close()
+		if w.upstreamCancel != nil {
+			w.upstreamCancel()
+		}
 		if w.topLease != nil {
 			w.topLease.Release()
 		}
@@ -106,6 +118,10 @@ type ConnectorConfig struct {
 	TopologyService TopologyService // Optional (if nil, topology admission is skipped unless RequireTopology is true)
 	RequireTopology bool            // If true, missing TopologyService fails-closed immediately with ErrAdmissionDenied
 	DialFn          DialFunc        // Optional custom dialer (for testing or proxying)
+	// ConnectTimeout bounds the upstream connect and response-header phase. It cannot be
+	// expressed through the caller's context, because that context dies with the connect
+	// attempt while the body must keep streaming, so it is enforced on the transport.
+	ConnectTimeout time.Duration
 }
 
 // DefaultConnectorConfig returns production defaults for pipeline connector.
@@ -118,6 +134,7 @@ func DefaultConnectorConfig(receiverBaseURL string, streamPort int) ConnectorCon
 		StreamPort:      streamPort,
 		NormConfig:      normalizer.DefaultConfig(),
 		RingCapacity:    20000 * ring.TSPacketSize, // ~3.76 MB (approx 6-8 seconds buffer)
+		ConnectTimeout:  defaultConnectTimeout,
 	}
 }
 
@@ -132,13 +149,20 @@ func NewLivePipelineConnector(cfg ConnectorConfig) *LivePipelineConnector {
 	if cfg.RingCapacity < 5*ring.TSPacketSize {
 		cfg.RingCapacity = 20000 * ring.TSPacketSize
 	}
+	if cfg.ConnectTimeout <= 0 {
+		cfg.ConnectTimeout = defaultConnectTimeout
+	}
 	return &LivePipelineConnector{
 		cfg: cfg,
 		httpClient: &http.Client{
-			Timeout: 0, // Continuous streaming
+			Timeout: 0, // Continuous streaming: no ceiling on the body
 			Transport: &http.Transport{
-				DisableKeepAlives:     true,
-				ResponseHeaderTimeout: 15 * time.Second,
+				DisableKeepAlives: true,
+				DialContext: (&net.Dialer{
+					Timeout:   cfg.ConnectTimeout,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				ResponseHeaderTimeout: cfg.ConnectTimeout,
 				IdleConnTimeout:       30 * time.Second,
 			},
 		},
@@ -170,11 +194,12 @@ func (c *LivePipelineConnector) Connect(ctx context.Context, key session.Session
 
 	// 2. Dial upstream
 	var upstream io.ReadCloser
+	var upstreamCancel context.CancelFunc
 	var err error
 	if c.cfg.DialFn != nil {
 		upstream, err = c.cfg.DialFn(ctx, key)
 	} else {
-		upstream, err = c.dialHTTP(ctx, key)
+		upstream, upstreamCancel, err = c.dialHTTP(ctx, key)
 	}
 	if err != nil {
 		if topLease != nil {
@@ -187,21 +212,27 @@ func (c *LivePipelineConnector) Connect(ctx context.Context, key session.Session
 	pipeline, err := NewSessionPipeline(c.cfg.NormConfig, c.cfg.RingCapacity, key.TargetProgram)
 	if err != nil {
 		_ = upstream.Close()
+		if upstreamCancel != nil {
+			upstreamCancel()
+		}
 		if topLease != nil {
 			topLease.Release()
 		}
 		return nil, err
 	}
 
-	pipeline.Start(context.Background(), upstream)
+	// The pipeline derives its own cancellable context; the parent is deliberately detached from
+	// the connect context so ingest survives the connect deadline.
+	pipeline.Start(context.WithoutCancel(ctx), upstream)
 
 	return &PipelineStreamWrapper{
-		pipeline: pipeline,
-		topLease: topLease,
+		pipeline:       pipeline,
+		topLease:       topLease,
+		upstreamCancel: upstreamCancel,
 	}, nil
 }
 
-func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.SessionKey) (io.ReadCloser, error) {
+func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.SessionKey) (io.ReadCloser, context.CancelFunc, error) {
 	host := "10.10.55.64"
 	port := c.cfg.StreamPort
 	if port <= 0 {
@@ -224,9 +255,15 @@ func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.Sessio
 
 	targetURL := fmt.Sprintf("%s://%s:%d/%s", scheme, host, port, key.ServiceRef)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, targetURL, nil)
+	// The shared ingest must not hang off the subscriber request that happened to trigger it,
+	// nor off the connect deadline: both die long before the broadcast does. It gets its own
+	// context, whose cancel is handed to the wrapper that owns the session's lifetime.
+	streamCtx, streamCancel := context.WithCancel(context.WithoutCancel(ctx))
+
+	req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, targetURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create upstream request: %w", err)
+		streamCancel()
+		return nil, nil, fmt.Errorf("failed to create upstream request: %w", err)
 	}
 
 	req.Close = true
@@ -239,13 +276,15 @@ func (c *LivePipelineConnector) dialHTTP(ctx context.Context, key session.Sessio
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to upstream receiver %s: %w", targetURL, err)
+		streamCancel()
+		return nil, nil, fmt.Errorf("failed to connect to upstream receiver %s: %w", targetURL, err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("upstream receiver returned HTTP %d for %s", resp.StatusCode, targetURL)
+		streamCancel()
+		return nil, nil, fmt.Errorf("upstream receiver returned HTTP %d for %s", resp.StatusCode, targetURL)
 	}
 
-	return resp.Body, nil
+	return resp.Body, streamCancel, nil
 }
