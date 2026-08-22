@@ -172,15 +172,25 @@ public struct UnclassifiedStreamInfo: Sendable, Equatable {
     ]
 
     /// Stream types that carry no elementary audio and need no explanation.
+    ///
+    /// `0x86` is SCTE-35 splice information, carried by 24 of the 144 services in
+    /// the measured bouquet. It is signalling, not sound, and reporting it would
+    /// have buried the one case this exists for under two dozen false positives on
+    /// every channel change.
     static let nonAudioStreamTypes: Set<UInt8> = [
         0x05, // private sections
         0x0B, // DSM-CC sections
-        0x0C  // DSM-CC descriptors
+        0x0C, // DSM-CC descriptors
+        0x86  // SCTE-35 splice information
     ]
 
-    static func isAudioCandidate(streamType: UInt8, descriptorTags: [UInt8]) -> Bool {
+    /// Registration descriptor format identifiers that name a non-audio stream.
+    static let nonAudioRegistrations: Set<String> = ["CUEI", "SCTE"]
+
+    static func isAudioCandidate(streamType: UInt8, descriptorTags: [UInt8], registration: String? = nil) -> Bool {
         if nonAudioStreamTypes.contains(streamType) { return false }
         if descriptorTags.contains(where: { nonAudioDescriptorTags.contains($0) }) { return false }
+        if let registration, nonAudioRegistrations.contains(registration) { return false }
         return true
     }
 }
@@ -515,6 +525,7 @@ public final class TSPacketParser: @unchecked Sendable {
             var audioType: UInt8 = 0
             var isAC3Descriptor = false
             var isEAC3Descriptor = false
+            var registrationID: String?
 
             while descOffset + 2 <= descEnd {
                 let tag = payload[descOffset]
@@ -543,6 +554,7 @@ public final class TSPacketParser: @unchecked Sendable {
                     // Registration descriptor
                     let regBytes = [payload[tagDataStart], payload[tagDataStart + 1], payload[tagDataStart + 2], payload[tagDataStart + 3]]
                     if let regStr = String(bytes: regBytes, encoding: .ascii) {
+                        registrationID = regStr
                         if regStr == "AC-3" {
                             isAC3Descriptor = true
                         } else if regStr == "EAC3" {
@@ -596,7 +608,7 @@ public final class TSPacketParser: @unchecked Sendable {
                         descriptorTags: descriptorTags
                     )
                     tracks.append(track)
-                } else if UnclassifiedStreamInfo.isAudioCandidate(streamType: streamType, descriptorTags: descriptorTags) {
+                } else if UnclassifiedStreamInfo.isAudioCandidate(streamType: streamType, descriptorTags: descriptorTags, registration: registrationID) {
                     // Not a track - selecting it would be guessing - but it must not
                     // vanish. This is the only record that the PMT named something
                     // here at all.

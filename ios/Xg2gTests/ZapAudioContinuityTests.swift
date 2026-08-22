@@ -355,3 +355,25 @@ struct ZapAudioTrackChangeTests {
         #expect(pipeline.selectedAudioPID == 258, "the German track must keep playing")
     }
 }
+
+/// SCTE-35 splice signalling appears on 24 of the 144 services in the measured
+/// bouquet. Reporting it as an unidentified audio candidate would put two dozen
+/// false lines in the log on every channel change and bury the one case the
+/// report exists for.
+struct ZapUnclassifiedFilterTests {
+
+    @Test func scte35SpliceStreamsAreNotAudioCandidates() {
+        #expect(UnclassifiedStreamInfo.isAudioCandidate(streamType: 0x86, descriptorTags: [0x05]) == false)
+        #expect(UnclassifiedStreamInfo.isAudioCandidate(streamType: 0x86, descriptorTags: [0x52, 0x8A]) == false)
+    }
+
+    @Test func aCUEIRegistrationIsNotAnAudioCandidate() {
+        #expect(UnclassifiedStreamInfo.isAudioCandidate(
+            streamType: 0x06, descriptorTags: [0x05], registration: "CUEI") == false)
+    }
+
+    @Test func anUnexplainedPrivateStreamRemainsACandidate() {
+        #expect(UnclassifiedStreamInfo.isAudioCandidate(streamType: 0x06, descriptorTags: [0x7C]) == true)
+        #expect(UnclassifiedStreamInfo.isAudioCandidate(streamType: 0x06, descriptorTags: [0x7F]) == true)
+    }
+}
