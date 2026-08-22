@@ -330,13 +330,18 @@ func TestPipeline_PrimedAttachSnapshotAndReaderAreAtomic(t *testing.T) {
 
 	// The ring has to hold a whole access unit: an attach point is only offered once
 	// the access unit it names has ended, because whether every slice in it is intra
-	// cannot be known before that. In this capture the first video PES spans packets
-	// 36..731, so a 150-packet window would end mid-picture with nothing to attach to.
+	// cannot be known before that. Measured on this capture, video is PID 256 and its
+	// first two PES packets start at packet 36 and packet 732, so the first access
+	// unit is packets 36..731 and the attach point appears on exactly the push that
+	// includes packet 732 - at 733 packets, not at 732. It then points at packet 36
+	// and is classified intra with a recovery_point SEI and no IRAP, which is what
+	// every channel measured against the receiver looks like. The 150-packet window
+	// this test used before ended mid-picture, with nothing to attach to.
 	const smallRingCapacity = 1000 * ring.TSPacketSize
 	master := ring.NewMasterRing(smallRingCapacity)
 	defer master.Close()
 
-	// Push far enough to close the first access unit and open the next
+	// Past the 733-packet threshold, with room to spare rather than on the edge of it
 	_, err = master.Push(data[:800*ring.TSPacketSize])
 	if err != nil {
 		t.Fatalf("push failed: %v", err)

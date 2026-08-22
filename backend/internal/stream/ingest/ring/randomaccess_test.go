@@ -358,42 +358,67 @@ func TestScrambling_PerStreamCountersAndClearRun(t *testing.T) {
 	}
 }
 
-// Golden regression against a real broadcast capture. The point is not the exact
-// numbers but that they stop changing: any future edit to the classification has to
-// justify itself against a stream that was actually on the air.
+// Golden regression against the real broadcast captures in the tree, H.264 and
+// HEVC alike. The point is not the exact numbers but that they stop changing: any
+// future edit to the classification has to justify itself against streams that were
+// actually on the air. Measured here, the H.264 captures emit no IDR at all and are
+// admitted entirely on all-intra access units carrying a recovery_point SEI, which
+// is what every channel measured against the reference receiver looks like; the
+// HEVC capture is admitted on IRAP pictures instead.
 func TestRandomAccess_RealCapture_ClassificationIsStable(t *testing.T) {
 	root := findProjectRoot(t)
-	data, err := os.ReadFile(filepath.Join(root, "backend", "testdata", "segments", "verify_final_v3.ts"))
-	if err != nil {
-		t.Fatalf("read capture: %v", err)
-	}
 
-	r := NewMasterRing(len(data) + TSPacketSize)
-	defer r.Close()
-	if _, err := r.Push(data); err != nil {
-		t.Fatalf("push capture: %v", err)
-	}
+	for _, tc := range []struct {
+		file      string
+		codec     VideoCodec
+		wantIRAP  uint64
+		wantIntra uint64
+		wantSEI   uint64
+	}{
+		{"verify_final_v3.ts", CodecH264, 0, 4, 4},
+		{"verify_seg.ts", CodecH264, 0, 2, 2},
+		{"verify_aac.ts", CodecH264, 0, 3, 3},
+		{"downloaded_seg.ts", CodecH264, 0, 3, 3},
+		{"test_hevc_stream.ts", CodecH265, 13, 0, 0},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(root, "backend", "testdata", "segments", tc.file))
+			if err != nil {
+				t.Skipf("capture unavailable: %v", err)
+			}
 
-	obs := r.RandomAccess()
-	entries := obs.IRAPPoints + obs.IntraPoints
-	if entries == 0 {
-		t.Fatalf("a real capture must yield entry points: %+v", obs)
-	}
-	if obs.UnreadableSlices > 0 {
-		t.Fatalf("every slice header in a real capture must parse: %+v", obs)
-	}
+			r := NewMasterRing(len(data) + TSPacketSize)
+			defer r.Close()
+			if _, err := r.Push(data); err != nil {
+				t.Fatalf("push capture: %v", err)
+			}
 
-	// Every offer must name a real access unit boundary, never a byte inside one.
-	offsets := r.KeyframeOffsets()
-	if len(offsets) == 0 {
-		t.Fatal("entry points were counted but none are indexed")
-	}
-	for _, off := range offsets {
-		if off%TSPacketSize != 0 {
-			t.Fatalf("entry point %d is not on a packet boundary", off)
-		}
-	}
+			if _, codec := r.VideoDetails(); codec != tc.codec {
+				t.Fatalf("codec: want %v, got %v", tc.codec, codec)
+			}
 
-	t.Logf("real capture: %d IRAP, %d intra, %d with recovery_point SEI, %d predicted rejected",
-		obs.IRAPPoints, obs.IntraPoints, obs.RecoveryPointSEIs, obs.PredictedRejected)
+			obs := r.RandomAccess()
+			if obs.IRAPPoints != tc.wantIRAP || obs.IntraPoints != tc.wantIntra {
+				t.Errorf("entry points: want %d IRAP / %d intra, got %d / %d",
+					tc.wantIRAP, tc.wantIntra, obs.IRAPPoints, obs.IntraPoints)
+			}
+			if obs.RecoveryPointSEIs != tc.wantSEI {
+				t.Errorf("recovery_point SEIs: want %d, got %d", tc.wantSEI, obs.RecoveryPointSEIs)
+			}
+			if obs.UnreadableSlices > 0 {
+				t.Errorf("every slice header in a real capture must parse: %+v", obs)
+			}
+
+			// Every offer must name a real access unit boundary, never a byte inside one.
+			offsets := r.KeyframeOffsets()
+			if len(offsets) == 0 {
+				t.Fatal("entry points were counted but none are indexed")
+			}
+			for _, off := range offsets {
+				if off%TSPacketSize != 0 {
+					t.Fatalf("entry point %d is not on a packet boundary", off)
+				}
+			}
+		})
+	}
 }
