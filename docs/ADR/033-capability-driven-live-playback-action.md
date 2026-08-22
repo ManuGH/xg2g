@@ -131,27 +131,126 @@ The variant needs its own random access index: video frames are copied unchanged
 rewriting the PMT and replacing audio PES shifts every byte offset. It re-uses the
 existing classifier; nothing new is introduced there.
 
-### The session key must carry the variant
+### Upstream sharing is never fragmented by a variant
 
-Live sessions are keyed by `{ServiceRef, TargetProgram}` and shared by every viewer of
-that service. With variants that key is no longer sufficient: a client that decodes
-Layer II would be handed a converted stream, or the reverse.
+There are two keys, and conflating them would undo the session-sharing work:
 
-The key gains a variant discriminator derived from the *effective capabilities that
-the decision actually depends on* — not from a client or device identity. Two iPhones
-resolve to the same discriminator and share one ring; an iPhone and a Layer-II-capable
-client resolve to two, sharing the upstream but not the variant.
+```
+UpstreamSessionKey = ServiceRef + TargetProgram      ← one dial, one lease, one tuner
+    └── one normalizer, one master ring (the receiver's original bytes)
+            ├── DIRECT subscribers            read the master ring
+            └── VariantKey = capability class ← one shared variant pipeline
+                    └── variant subscribers   read the variant ring
+```
 
-### A cache keyed on PMT version is not a channel list
+The upstream key never mentions a variant. Adding one there would let two output
+formats of the same programme open two dials on the receiver, which is precisely what
+the session sharing exists to prevent and what the tuner budget cannot absorb.
 
-The action for a given service is stable while its PMT version is, so it may be
-cached on `{service, PMT version, variant}` and reused on the next zap to the same
-channel. That cache invalidates itself: a broadcaster changing the audio layout bumps
-the PMT version, which is already how the ring detects re-identification.
+`VariantKey` is derived from the *capability class the decision depends on* — the
+resolved action plus its target codecs — never from a client, device or session
+identity. Two Sterling clients resolve to one key and share a single conversion. A
+client whose effective set contains the source codec resolves to `DIRECT` and reads
+the master ring directly, at the same time, from the same upstream.
 
-This is a cache, not configuration. It holds no channel names, is never edited, and is
-empty on start. A user with a different 300-channel bouquet gets correct decisions with
-no list to maintain.
+One receiver stream and one tuner, whatever mix of clients is watching.
+
+### Decision identity is a fingerprint, not a version number
+
+The PMT `version_number` is five bits. It wraps after 32 changes, so a cache keyed on
+it alone can eventually serve a stale decision for a genuinely different stream — the
+worst failure this design can have, because the mismatch is silent.
+
+The cache key is a fingerprint over the normalised facts the decision actually reads:
+video PID and codec, and for every audio stream the PID, stream type, resolved codec
+and language. `version_number` stays as a cheap change hint, not as identity: a bump
+prompts re-evaluation, and the fingerprint decides whether anything really changed. A
+change in the fingerprint must invalidate the decision unconditionally.
+
+The same fingerprint belongs in the readiness observer's `streamIdentity`, which today
+holds only programme number, PMT version, video PID and video codec. Presentability
+can change without video changing at all.
+
+### The time base for an audio conversion
+
+Measured on the wire rather than assumed. ATV HD carries MPEG-1 Layer II, 160 kbps,
+**48 kHz**, joint stereo, four frames per PES, with PES timestamps a constant 8640
+ticks apart.
+
+At 48 kHz both frame sizes are exact in the 90 kHz timestamp clock:
+
+| | samples/frame | 90 kHz ticks | exact |
+|---|---|---|---|
+| MPEG-1 Layer II | 1152 | 2160 | yes |
+| AAC-LC | 1024 | 1920 | yes |
+
+Drift is therefore not inherent to the conversion. It can only be introduced by
+implementing it wrongly, which makes the rules below non-negotiable rather than
+best-effort.
+
+**Timestamps are computed from a sample count, never accumulated.** For output frame
+`n` after an anchor:
+
+```
+PTS(n) = anchor + (totalSamplesOut(n) * 90000) / sampleRate      // int64, exact at 48 kHz
+```
+
+Incremental addition of a per-frame delta is forbidden even where the delta is exact,
+because it makes a single rounding error permanent. For a rate where the division is
+not exact (44.1 kHz is the only realistic one), the remainder is carried so the error
+stays bounded below one tick instead of accumulating.
+
+**The anchor preserves the relationship to video and PCR.** Video packets and PCR are
+copied untouched, so the offset between the first audio presentation time and the
+video timeline is the only thing that can move. The anchor is the PTS of the source
+frame whose samples begin the first emitted output frame, corrected for encoder
+priming — an AAC encoder emits lead-in samples that carry no source audio, and
+ignoring them shifts the whole programme by roughly 21 ms per priming frame. Either
+the priming output is dropped and the anchor advanced, or the anchor is moved back by
+the priming duration; the acceptance test is the same either way: first-audio-PTS
+minus first-video-PTS is unchanged from the source within one frame.
+
+Frame boundaries do not align between the two codecs — 1152 and 1024 share only a
+factor of 128, so nine source frames span 10.125 output frames and no periodic
+realignment exists. This is why the encoder buffers, and why the sample count, not the
+frame count, is the unit of the timestamp arithmetic.
+
+**Discontinuity, PMT change and zap all re-anchor.** A discontinuity indicator, or a
+source PTS jump beyond a threshold, flushes the encoder, resets the sample counter and
+sets a new anchor; carrying a counter across a discontinuity would place the audio at
+a time the video no longer occupies. A PMT change whose fingerprint alters the audio
+configuration retires the variant and builds a new one rather than adapting in place.
+A zap is a new upstream generation and therefore a new variant instance.
+
+**The variant rewrites the PMT and carries its own preamble.** Stream type becomes
+0x0F, the language descriptor is preserved, codec-specific descriptors of the source
+format are dropped, and the CRC is recomputed. The audio PID is kept so the structure
+stays comparable with the source. PCR PID and video PID are untouched. The variant
+serves its own PAT/PMT preamble on attach, exactly as the master ring does, since a
+client joining it must configure a decoder for the converted stream.
+
+**The variant indexes its own random access points.** Video access units are copied
+bit for bit, so the entry points fall on the same pictures — but rewriting the PMT and
+replacing audio PES moves every byte offset, so the offsets cannot be inherited. The
+existing classifier runs over the variant ring unchanged; no second classification
+rule is introduced.
+
+**Lifecycle.** The variant is itself a subscriber of the master ring and holds a
+reference to it, so the upstream cannot be closed while a variant is alive. Variant
+subscribers are reference-counted like session leases. When the last one leaves, the
+variant is retired after the same warm-hold the sessions use, and its encoder is
+released; the master ring and the upstream survive as long as any DIRECT subscriber
+remains. A channel nobody needs converted never starts an encoder at all.
+
+**Where the encoder runs is an open question, not a detail.** `backend/internal/stream/`
+spawns no processes today — the live ingest is pure Go. An audio conversion therefore
+introduces either a subprocess per variant (isolated failure domain, no cgo, but a
+process boundary in a path that currently has none) or an in-process decoder and
+encoder (no boundary, but a cgo dependency, since no maintained pure-Go AAC encoder
+exists). The recommendation is the subprocess, on the grounds that it fails
+independently of the ingest and can be killed and restarted without touching the
+master ring — but it must be chosen deliberately, because it is the first process the
+live path would own.
 
 ## Effect on readiness
 
@@ -195,16 +294,42 @@ decision alike.
 - Any rule naming a codec pair, a channel, a service reference, or a provider.
 - A decision in the per-packet path.
 
-## Acceptance criteria
+## Mandatory evidence before AUDIO_TRANSCODE is enabled by default
 
-- The 31 measured Layer-II services resolve to `AUDIO_TRANSCODE` for the native iOS
-  client and to `DIRECT` for a client whose effective set contains `mp2`, with no
-  channel-specific input.
-- The remaining 89 resolve to `DIRECT`, and their served bytes are identical to today.
+Decision correctness:
+
+- The measured MPEG-Layer-II-only services resolve to `AUDIO_TRANSCODE` for the native
+  iOS client and to `DIRECT` for a client whose effective set contains that codec, with
+  no channel-specific input anywhere.
+- The remaining services resolve to `DIRECT`, and the bytes served to them are
+  identical to today's — compared, not assumed.
 - A service with no classifiable audio resolves to `UNPRESENTABLE` before the tuner is
-  held for longer than PMT completion.
-- Live, DVR and recordings reach the same decision for the same evidence, through
-  `playbackcompat` and `playbackplanner` rather than parallel copies.
+  held longer than PMT completion.
+- Live, DVR and recordings reach the same decision from the same evidence.
+
+Conversion correctness:
+
+- On a converted channel, video is bit-identical to the source and the audio is
+  audible.
+- Thirty minutes of continuous conversion with no measurable audio/video drift.
+- Audio lead stable, zero underruns, zero PES errors over the same run.
+- First-audio-PTS relative to first-video-PTS unchanged from the source, within one
+  frame, across a re-anchor.
+
+Transition correctness:
+
+- Zaps across `AC-3 DIRECT → Layer II AUDIO_TRANSCODE → AC-3 DIRECT` leave no state of
+  the previous action behind.
+- A PMT bump that adds a decodable track to a previously undecodable service moves the
+  decision back to `DIRECT` when that is the better path for the client.
+- A discontinuity mid-programme re-anchors without a step in the audio timeline.
+
+Sharing correctness:
+
+- Two Sterling clients on one programme share a single variant pipeline.
+- A Sterling client and a client that decodes the source codec share one upstream and
+  one tuner while reading different outputs.
+- **No playback variant, in any combination, causes a second dial to the receiver.**
 
 ## Open question for the decision, not for implementation
 
