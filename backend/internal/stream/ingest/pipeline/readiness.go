@@ -219,7 +219,12 @@ func evaluateCriterion(c ReadinessCriterion, f ring.ReadinessFacts) (bool, strin
 		// intermittently, with clear and scrambled packets interleaved for most of
 		// a second, so any threshold of "N clear packets" can be met in the middle
 		// of that. A whole access unit with no scrambled packet in it cannot.
-		if f.CleanEntryPoints == 0 {
+		//
+		// Any complete picture counts, not only one a decoder could start on. Keying
+		// this on entry points made it true at the same millisecond as the random
+		// access criterion in every measured zap, which is a criterion that adds
+		// nothing.
+		if f.CleanAccessUnits == 0 {
 			if f.Scrambling.VideoScrambled > 0 && f.Scrambling.VideoClear == 0 {
 				return false, "video is scrambled; receiver is not descrambling this service"
 			}

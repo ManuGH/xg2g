@@ -35,6 +35,7 @@ func presentableFacts() ring.ReadinessFacts {
 			AudioPIDs: []uint16{0x781},
 		},
 		CleanEntryPoints: 1,
+		CleanAccessUnits: 3,
 		AttachAvailable:  true,
 	}
 }
@@ -72,6 +73,7 @@ func TestReadiness_EachCriterionFailsForItsOwnReason(t *testing.T) {
 		{"no audio stream", func(f *ring.ReadinessFacts) { f.AudioPIDs = nil; f.Scrambling.AudioPIDs = nil }, CriterionProgram, "PMT names no audio stream"},
 		{"nothing descrambled", func(f *ring.ReadinessFacts) {
 			f.CleanEntryPoints = 0
+			f.CleanAccessUnits = 0
 			f.Scrambling.VideoClear = 0
 			f.Scrambling.VideoScrambled = 4000
 		}, CriterionDescrambled, "video is scrambled; receiver is not descrambling this service"},
@@ -251,5 +253,30 @@ func TestSanitizeZapID(t *testing.T) {
 	}
 	if got := sanitizeZapID(string(long)); len(got) != maxZapIDLength {
 		t.Fatalf("expected the identifier to be capped at %d, got %d", maxZapIDLength, len(got))
+	}
+}
+
+// Measured against the receiver, descrambling and random access became true at the
+// same millisecond in every zap, because both were keyed on an entry point. They are
+// different questions and have to be able to answer at different times: a clear
+// predicted picture proves the receiver is descrambling a GOP before the next clear
+// entry point arrives.
+func TestReadiness_DescramblingIsIndependentOfRandomAccess(t *testing.T) {
+	facts := presentableFacts()
+	facts.CleanAccessUnits = 2 // clear pictures have arrived
+	facts.CleanEntryPoints = 0 // but none of them was joinable
+	facts.RandomAccess = ring.RandomAccessObservation{}
+	facts.AttachAvailable = false
+
+	start := time.Unix(0, 0)
+	o := NewReadinessObserver(start, quietLogger())
+	o.Observe(facts, start.Add(700*time.Millisecond))
+
+	snap := o.Snapshot()
+	if _, met := snap.Met[CriterionDescrambled]; !met {
+		t.Fatalf("descrambling must be provable without an entry point: %v", snap.Pending)
+	}
+	if _, met := snap.Met[CriterionRandomAccess]; met {
+		t.Fatal("random access must not be inferred from descrambling")
 	}
 }

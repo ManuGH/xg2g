@@ -173,6 +173,7 @@ type MasterRing struct {
 	// one a decoder can be started on.
 	auScrambledPackets int
 	cleanRAPCount      uint64
+	cleanAccessUnits   uint64
 	nalBuf             []byte
 	nalKind            nalCaptureKind
 	nalLeft            int
@@ -714,6 +715,7 @@ func (r *MasterRing) invalidateVideoStateLocked() {
 	r.audioPIDs = nil
 	r.raObs = RandomAccessObservation{}
 	r.cleanRAPCount = 0
+	r.cleanAccessUnits = 0
 	r.resetAccessUnitStateLocked()
 	r.generation++
 }
@@ -892,7 +894,21 @@ func (r *MasterRing) consumeNALCaptureLocked() {
 func (r *MasterRing) finalizeAccessUnitLocked() {
 	r.consumeNALCaptureLocked()
 
-	if r.currentPESOffset < 0 || r.pesHasKeyframe || r.auVCLCount == 0 {
+	if r.currentPESOffset < 0 || r.auVCLCount == 0 {
+		return
+	}
+
+	// Descrambling is proven by any complete picture that arrived without an
+	// encrypted packet in it, not only by one a decoder could start on. Measured
+	// against the receiver, tying the two together made them true at the same
+	// millisecond in every zap, so the descrambling observation carried no
+	// information of its own. A clear predicted picture arrives up to a GOP before
+	// the next clear entry point does.
+	if r.auScrambledPackets == 0 {
+		r.cleanAccessUnits++
+	}
+
+	if r.pesHasKeyframe {
 		return
 	}
 
@@ -1203,6 +1219,12 @@ type ReadinessFacts struct {
 	// scrambled packet. An entry point is only usable if this is non-zero.
 	CleanEntryPoints uint64
 
+	// CleanAccessUnits counts every complete picture that arrived without an
+	// encrypted packet in it, joinable or not. This is what proves the receiver is
+	// descrambling, and it becomes true up to a GOP before the next clean entry
+	// point does.
+	CleanAccessUnits uint64
+
 	// AttachAvailable reports whether an entry point is currently within the buffer.
 	AttachAvailable bool
 }
@@ -1246,6 +1268,7 @@ func (r *MasterRing) ReadinessFacts() ReadinessFacts {
 			AudioPIDs:      pids,
 		},
 		CleanEntryPoints: r.cleanRAPCount,
+		CleanAccessUnits: r.cleanAccessUnits,
 		AttachAvailable:  attach,
 	}
 }
