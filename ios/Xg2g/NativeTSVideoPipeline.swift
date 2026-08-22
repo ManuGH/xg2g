@@ -971,7 +971,20 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         TelemetryServer.shared.log(logMsg)
 
         // Track selection: playable first, then language.
-        if selectedAudioPID == nil || !tracks.contains(where: { $0.pid == selectedAudioPID }) {
+        //
+        // Re-selected when the current choice is gone, and also when it is one that
+        // cannot be decoded and something that can has since appeared. Audio layouts
+        // are not fixed for the life of a channel: broadcasters signal a change with
+        // a PMT version bump, and several services here carry MPEG Layer II during
+        // the day and add a Dolby track only for a film or a match. Holding the
+        // undecodable track because its PID is still listed kept such a channel
+        // silent for the whole programme while the sound it needed was on the wire.
+        let currentTrack = tracks.first(where: { $0.pid == selectedAudioPID })
+        let heldTrackCannotBeDecoded = currentTrack.map { !$0.codec.isDecodableOnDevice } ?? false
+        let somethingDecodableExists = tracks.contains { $0.codec.isDecodableOnDevice }
+
+        if selectedAudioPID == nil || currentTrack == nil
+            || (heldTrackCannotBeDecoded && somethingDecodableExists) {
             let playable = tracks.filter { $0.codec.isDecodableOnDevice }
 
             if playable.isEmpty && !tracks.isEmpty {

@@ -301,3 +301,57 @@ private final class ZapFormatSink: AudioSampleBufferAssemblerDelegate, @unchecke
         errors.append(reason)
     }
 }
+
+/// Audio layouts are not a fixed property of a channel. DVB signals a change with
+/// a PMT version bump, and broadcasters use it: several German and Austrian
+/// services carry MPEG Layer II during the day and add a Dolby track only for a
+/// film or a match. A channel measured once is a measurement of that moment.
+struct ZapAudioTrackChangeTests {
+
+    /// The case that matters: nothing decodable was on offer, so the pipeline
+    /// selected an undecodable track rather than lose the PID. When a decodable
+    /// track later appears, it must switch to it - otherwise the channel stays
+    /// silent for the whole film despite carrying Dolby the entire time.
+    @Test func aDecodableTrackAppearingLaterIsSelected() {
+        let pipeline = NativeTSVideoPipeline()
+        let parser = TSPacketParser()
+
+        let mp2Only = [
+            AudioTrackInfo(pid: 257, streamType: 0x04, codec: .mpegAudio,
+                           language: "deu", audioType: 0, descriptorTags: [0x0A])
+        ]
+        pipeline.tsParser(parser, didDiscoverAudioTracks: mp2Only)
+        #expect(pipeline.selectedAudioPID == 257, "with nothing decodable, the PID is still kept")
+
+        // The film starts: the broadcaster adds an AC-3 track. The MPEG track stays.
+        let withAC3 = mp2Only + [
+            AudioTrackInfo(pid: 258, streamType: 0x06, codec: .ac3,
+                           language: "deu", audioType: 0, descriptorTags: [0x6A, 0x0A])
+        ]
+        pipeline.tsParser(parser, didDiscoverAudioTracks: withAC3)
+
+        #expect(pipeline.selectedAudioPID == 258,
+                "a decodable track that appears later must win over the undecodable one held so far")
+    }
+
+    /// The converse must not happen: a stable, decodable selection must not be
+    /// disturbed because the broadcaster added another track.
+    @Test func aWorkingSelectionSurvivesAnUnrelatedTrackAppearing() {
+        let pipeline = NativeTSVideoPipeline()
+        let parser = TSPacketParser()
+
+        let initial = [
+            AudioTrackInfo(pid: 258, streamType: 0x06, codec: .ac3,
+                           language: "deu", audioType: 0, descriptorTags: [0x6A, 0x0A])
+        ]
+        pipeline.tsParser(parser, didDiscoverAudioTracks: initial)
+        #expect(pipeline.selectedAudioPID == 258)
+
+        let plusOriginal = initial + [
+            AudioTrackInfo(pid: 259, streamType: 0x06, codec: .ac3,
+                           language: "eng", audioType: 0, descriptorTags: [0x6A, 0x0A])
+        ]
+        pipeline.tsParser(parser, didDiscoverAudioTracks: plusOriginal)
+        #expect(pipeline.selectedAudioPID == 258, "the German track must keep playing")
+    }
+}
