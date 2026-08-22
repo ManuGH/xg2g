@@ -81,6 +81,12 @@ public struct TelemetryValues: Sendable {
     public var audioPID: UInt16 = 0
     public var audioCodec: String = "Searching…"
     public var audioLanguage: String = "und"
+
+    /// Streams the PMT named that this build could not classify as audio.
+    ///
+    /// Non-zero with `audioPID == 0` is the silent-channel case: the service
+    /// announces sound this build cannot identify, so no track was ever selected.
+    public var unclassifiedAudioStreams: Int = 0
     public var audioChannels: Int = 0
     public var audioSampleRate: Int = 0
     public var audioBitrateKbps: Int = 0

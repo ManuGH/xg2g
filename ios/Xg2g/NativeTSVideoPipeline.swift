@@ -1001,6 +1001,33 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
+    /// A channel can be silent because nothing in its PMT could be classified. That
+    /// case produces no track and therefore no selection, so without this it left no
+    /// trace at all - the failure looked identical to a channel that simply has no
+    /// sound. Logged, never selected: choosing a stream whose codec is unknown would
+    /// be guessing.
+    public func tsParser(_ parser: TSPacketParser, didObserveUnclassifiedStreams streams: [UnclassifiedStreamInfo]) {
+        let zapId = currentZapId
+        let detail = streams.map {
+            let tags = $0.descriptorTags.map { String(format: "0x%02X", $0) }.joined(separator: "+")
+            return "PID \($0.pid) type 0x\(String(format: "%02X", $0.streamType)) [\(tags.isEmpty ? "no descriptors" : tags), \($0.language ?? "und")]"
+        }.joined(separator: ", ")
+
+        let hasTrack = !availableAudioTracks.isEmpty
+        let msg = hasTrack
+            ? "[ZAP-#\(zapId)-PMT] ℹ️ \(streams.count) unclassified stream(s) alongside the selected audio: \(detail)"
+            : "[ZAP-#\(zapId)-AUDIO] ⚠️ No audio track could be classified — the PMT names \(streams.count) stream(s) this build cannot identify: \(detail) — playback will be silent"
+        print(msg)
+        if hasTrack {
+            logger.notice("\(msg, privacy: .public)")
+        } else {
+            logger.error("\(msg, privacy: .public)")
+        }
+        TelemetryServer.shared.log(msg)
+
+        telemetry.mutate { $0.unclassifiedAudioStreams = streams.count }
+    }
+
     public func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool) {
         if let vPid = tsParser.videoPID, pid == vPid {
             // Reaching here means the packet was clear: the parser drops scrambled

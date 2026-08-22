@@ -137,6 +137,54 @@ public struct AudioTrackInfo: Sendable, Equatable, Identifiable {
     }
 }
 
+/// An elementary stream the PMT named that could be audio, but that the parser
+/// could not classify.
+///
+/// A channel whose only sound arrives this way plays silent, and until this
+/// existed it did so without a single line anywhere: `parsePMT` only notifies the
+/// delegate when it has produced at least one track, so "no track" and "no audio
+/// on this service" were the same event. Streams a descriptor positively explains
+/// as something other than audio - teletext, subtitles, application signalling,
+/// data carousels - are not reported, because naming those would bury the case
+/// that matters in noise.
+public struct UnclassifiedStreamInfo: Sendable, Equatable {
+    public let pid: UInt16
+    public let streamType: UInt8
+    public let descriptorTags: [UInt8]
+    public let language: String?
+
+    public init(pid: UInt16, streamType: UInt8, descriptorTags: [UInt8], language: String?) {
+        self.pid = pid
+        self.streamType = streamType
+        self.descriptorTags = descriptorTags
+        self.language = language
+    }
+
+    /// Descriptor tags that positively identify a non-audio elementary stream.
+    ///
+    /// `0x7F` is deliberately absent: the DVB extension descriptor is how AC-4 is
+    /// signalled, so a stream carrying it is a candidate rather than an exclusion.
+    static let nonAudioDescriptorTags: Set<UInt8> = [
+        0x13, // carousel_identifier
+        0x56, // teletext
+        0x59, // subtitling
+        0x6F  // application_signalling (HbbTV/AIT)
+    ]
+
+    /// Stream types that carry no elementary audio and need no explanation.
+    static let nonAudioStreamTypes: Set<UInt8> = [
+        0x05, // private sections
+        0x0B, // DSM-CC sections
+        0x0C  // DSM-CC descriptors
+    ]
+
+    static func isAudioCandidate(streamType: UInt8, descriptorTags: [UInt8]) -> Bool {
+        if nonAudioStreamTypes.contains(streamType) { return false }
+        if descriptorTags.contains(where: { nonAudioDescriptorTags.contains($0) }) { return false }
+        return true
+    }
+}
+
 public protocol TSPacketParserDelegate: AnyObject, Sendable {
     func tsParser(_ parser: TSPacketParser, didDiscoverVideoPID pid: UInt16)
     func tsParser(_ parser: TSPacketParser, didDetermineVideoCodec codec: VideoStreamCodec)
@@ -144,12 +192,14 @@ public protocol TSPacketParserDelegate: AnyObject, Sendable {
     func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool)
     func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8)
     func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16)
+    func tsParser(_ parser: TSPacketParser, didObserveUnclassifiedStreams streams: [UnclassifiedStreamInfo])
 }
 
 public extension TSPacketParserDelegate {
     func tsParser(_ parser: TSPacketParser, didDetermineVideoCodec codec: VideoStreamCodec) {}
     func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo]) {}
     func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16) {}
+    func tsParser(_ parser: TSPacketParser, didObserveUnclassifiedStreams streams: [UnclassifiedStreamInfo]) {}
 }
 
 /// MPEG-TS (ISO/IEC 13818-1) transport stream packet parser.
@@ -186,6 +236,9 @@ public final class TSPacketParser: @unchecked Sendable {
     public private(set) var videoCodec: VideoStreamCodec?
     public private(set) var audioTracks: [AudioTrackInfo] = []
     public private(set) var audioPIDs = Set<UInt16>()
+
+    /// Streams the PMT named that could be audio but could not be classified.
+    public private(set) var unclassifiedStreams: [UnclassifiedStreamInfo] = []
     private var continuityCounters: [UInt16: UInt8] = [:]
 
     /// Partially received PMT sections, keyed by the PID carrying them.
@@ -212,6 +265,7 @@ public final class TSPacketParser: @unchecked Sendable {
         videoCodec = nil
         audioTracks.removeAll()
         audioPIDs.removeAll()
+        unclassifiedStreams.removeAll()
         continuityCounters.removeAll()
         pmtSectionBuffers.removeAll()
         scrambledPackets = 0
@@ -445,6 +499,7 @@ public final class TSPacketParser: @unchecked Sendable {
         var discoveredVideo: UInt16?
         var discoveredVideoCodec: VideoStreamCodec?
         var tracks: [AudioTrackInfo] = []
+        var unclassified: [UnclassifiedStreamInfo] = []
 
         while streamOffset + 5 <= endOffset {
             let streamType = payload[streamOffset]
@@ -541,6 +596,16 @@ public final class TSPacketParser: @unchecked Sendable {
                         descriptorTags: descriptorTags
                     )
                     tracks.append(track)
+                } else if UnclassifiedStreamInfo.isAudioCandidate(streamType: streamType, descriptorTags: descriptorTags) {
+                    // Not a track - selecting it would be guessing - but it must not
+                    // vanish. This is the only record that the PMT named something
+                    // here at all.
+                    unclassified.append(UnclassifiedStreamInfo(
+                        pid: elementaryPID,
+                        streamType: streamType,
+                        descriptorTags: descriptorTags,
+                        language: language
+                    ))
                 }
             }
 
@@ -560,6 +625,15 @@ public final class TSPacketParser: @unchecked Sendable {
             self.audioTracks = tracks
             self.audioPIDs = Set(tracks.map(\.pid))
             delegate?.tsParser(self, didDiscoverAudioTracks: tracks)
+        }
+
+        // Reported independently of the track list, and precisely when that list is
+        // empty: a service whose every audio stream is unclassifiable produces no
+        // track, so the delegate call above never happens and nothing else would
+        // ever say why the channel is silent.
+        if !unclassified.isEmpty && self.unclassifiedStreams != unclassified {
+            self.unclassifiedStreams = unclassified
+            delegate?.tsParser(self, didObserveUnclassifiedStreams: unclassified)
         }
     }
 }
