@@ -78,10 +78,26 @@ type criterionState struct {
 // ReadinessObserver evaluates the criteria against ring facts over time.
 //
 // Not safe for concurrent use; one observer belongs to one ingest.
+// streamIdentity is what makes this stream the stream it is. A change here is a
+// different programme, not the same one further along.
+type streamIdentity struct {
+	programNumber uint16
+	pmtVersion    uint8
+	videoPID      uint16
+	videoCodec    ring.VideoCodec
+}
+
 type ReadinessObserver struct {
-	mu         sync.Mutex
+	mu sync.Mutex
+	// ingestStart never moves. Readiness measured from here is comparable with the
+	// client's time-to-first-picture, which is also measured from one fixed instant.
+	ingestStart time.Time
+	// start moves to the last re-identification, so per-generation timings describe
+	// the stream that is actually playing.
 	start      time.Time
 	generation uint64
+	identity   streamIdentity
+	identified bool
 	states     map[ReadinessCriterion]*criterionState
 	// resets counts how often the stream's PSI changed identity underneath the
 	// observation. A PMT version bump or a codec change makes every timestamp
@@ -92,7 +108,7 @@ type ReadinessObserver struct {
 
 // NewReadinessObserver starts an observation at the given instant.
 func NewReadinessObserver(start time.Time, logger zerolog.Logger) *ReadinessObserver {
-	o := &ReadinessObserver{start: start, logger: logger}
+	o := &ReadinessObserver{ingestStart: start, start: start, logger: logger}
 	o.resetStatesLocked()
 	return o
 }
@@ -116,28 +132,43 @@ func (o *ReadinessObserver) Observe(facts ring.ReadinessFacts, now time.Time) {
 	if facts.Generation < o.generation {
 		return
 	}
+	o.generation = facts.Generation
 
-	// A generation change means the PSI now describes a different stream: a new PMT
-	// version, a different program, or a codec change. Timestamps from before it
-	// belong to the stream that was replaced, and carrying them forward would report
-	// a readiness that was never reached for what is playing now.
-	//
-	// The very first snapshot is not such a change. The observer starts at generation
-	// zero meaning "nothing seen yet", and the ingest it is timing began when the
-	// observer was created, not when its first PSI happened to arrive.
-	if facts.Generation != o.generation {
-		if o.generation != 0 {
+	// Re-identification is judged on the programme, not on the ring's generation
+	// counter. That counter increments twice during an ordinary tune - once for the
+	// first PAT, once for the first PMT - and treating those as identity changes
+	// restarted the clock mid-tune and reported every timing relative to a moment
+	// that meant nothing. What matters is the programme, its PMT version, and the
+	// codec: when one of those changes after being established, the stream that was
+	// being timed is gone.
+	if facts.HasPMT && facts.VideoPID != 0 {
+		current := streamIdentity{
+			programNumber: facts.ProgramNumber,
+			pmtVersion:    facts.PMTVersion,
+			videoPID:      facts.VideoPID,
+			videoCodec:    facts.VideoCodec,
+		}
+		switch {
+		case !o.identified:
+			o.identity = current
+			o.identified = true
+		case current != o.identity:
 			o.resets++
 			o.logger.Info().
-				Uint64("previous_generation", o.generation).
-				Uint64("generation", facts.Generation).
+				Uint16("previous_program", o.identity.programNumber).
+				Uint8("previous_pmt_version", o.identity.pmtVersion).
+				Uint16("previous_video_pid", o.identity.videoPID).
+				Uint16("program", current.programNumber).
+				Uint8("pmt_version", current.pmtVersion).
+				Uint16("video_pid", current.videoPID).
+				Str("codec", string(current.videoCodec)).
 				Int("resets", o.resets).
 				Str("event", "zap.readiness.reset").
 				Msg("stream identity changed; readiness observation restarted")
+			o.identity = current
 			o.start = now
 			o.resetStatesLocked()
 		}
-		o.generation = facts.Generation
 	}
 
 	elapsed := now.Sub(o.start)
@@ -233,10 +264,14 @@ func evaluateCriterion(c ReadinessCriterion, f ring.ReadinessFacts) (bool, strin
 type Snapshot struct {
 	Generation uint64
 	Ready      bool
+	// ReadyAfter is measured from the last re-identification.
 	ReadyAfter time.Duration
-	Met        map[ReadinessCriterion]time.Duration
-	Pending    map[ReadinessCriterion]string
-	Resets     int
+	// ReadyAfterIngest is measured from the start of the ingest and never restarts,
+	// which is what makes it comparable with a client-side time-to-first-picture.
+	ReadyAfterIngest time.Duration
+	Met              map[ReadinessCriterion]time.Duration
+	Pending          map[ReadinessCriterion]string
+	Resets           int
 }
 
 // Snapshot returns the current observation.
@@ -265,7 +300,9 @@ func (o *ReadinessObserver) Snapshot() Snapshot {
 	}
 	if !s.Ready {
 		s.ReadyAfter = 0
+		return s
 	}
+	s.ReadyAfterIngest = s.ReadyAfter + o.start.Sub(o.ingestStart)
 	return s
 }
 
@@ -325,7 +362,8 @@ func logReadiness(logger zerolog.Logger, snap Snapshot, event, message string) {
 		Int("psi_resets", snap.Resets)
 
 	if snap.Ready {
-		evt = evt.Dur("ready_after", snap.ReadyAfter)
+		evt = evt.Dur("ready_after", snap.ReadyAfter).
+			Dur("ready_after_ingest", snap.ReadyAfterIngest)
 	}
 	for _, c := range AllReadinessCriteria {
 		if d, ok := snap.Met[c]; ok {

@@ -127,35 +127,80 @@ func TestReadiness_SatisfiedCriteriaAreNotRevoked(t *testing.T) {
 
 // A PMT version bump or a codec change makes every timestamp collected so far
 // describe a stream that is no longer playing.
-func TestReadiness_GenerationChangeDiscardsEarlierObservation(t *testing.T) {
+func TestReadiness_ReIdentificationDiscardsEarlierObservation(t *testing.T) {
 	start := time.Unix(0, 0)
 	o := NewReadinessObserver(start, quietLogger())
 	o.Observe(presentableFacts(), start.Add(400*time.Millisecond))
 	if !o.Snapshot().Ready {
-		t.Fatal("precondition: first generation should be ready")
+		t.Fatal("precondition: first identity should be ready")
 	}
 
-	// The stream re-identifies: new PMT version, nothing observed on it yet.
-	changed := ring.ReadinessFacts{Generation: 2, HasPAT: true}
+	// The programme re-identifies: same transport, new PMT version, and the ring has
+	// dropped everything it knew about the elementary streams.
+	changed := ring.ReadinessFacts{
+		Generation:    2,
+		HasPAT:        true,
+		HasPMT:        true,
+		PMTVersion:    4,
+		ProgramNumber: 0x132F,
+		VideoPID:      0x780,
+		VideoCodec:    ring.CodecH264,
+	}
 	o.Observe(changed, start.Add(500*time.Millisecond))
 
 	snap := o.Snapshot()
 	if snap.Ready {
 		t.Fatal("a re-identified stream must not inherit the previous readiness")
 	}
-	if snap.Generation != 2 {
-		t.Fatalf("expected generation 2, got %d", snap.Generation)
-	}
 	if snap.Resets != 1 {
 		t.Fatalf("expected the reset to be counted, got %d", snap.Resets)
 	}
 
-	// Timing restarts with the new generation rather than counting from the old start.
+	// Per-generation timing restarts; the ingest-relative timing does not, so the two
+	// stay comparable with a client that measures from one fixed instant.
 	full := presentableFacts()
 	full.Generation = 2
+	full.PMTVersion = 4
 	o.Observe(full, start.Add(1500*time.Millisecond))
-	if got := o.Snapshot().ReadyAfter; got != time.Second {
-		t.Fatalf("readiness must be timed from the new generation: got %v, want 1s", got)
+
+	snap = o.Snapshot()
+	if snap.ReadyAfter != time.Second {
+		t.Fatalf("readiness must be timed from the new identity: got %v, want 1s", snap.ReadyAfter)
+	}
+	if snap.ReadyAfterIngest != 1500*time.Millisecond {
+		t.Fatalf("ingest-relative readiness must survive the reset: got %v, want 1.5s", snap.ReadyAfterIngest)
+	}
+}
+
+// The ring increments its generation twice during an ordinary tune - once for the
+// first PAT, once for the first PMT. Neither is a change of programme, and treating
+// them as one restarted the clock mid-tune and made every reported timing relative
+// to a moment that meant nothing. This is what the first live measurement showed.
+func TestReadiness_InitialPSILatchIsNotAReIdentification(t *testing.T) {
+	start := time.Unix(0, 0)
+	o := NewReadinessObserver(start, quietLogger())
+
+	// Nothing known yet.
+	o.Observe(ring.ReadinessFacts{Generation: 0}, start)
+	// First PAT: the ring invalidates and the generation moves to 1.
+	o.Observe(ring.ReadinessFacts{Generation: 1, HasPAT: true}, start.Add(1400*time.Millisecond))
+	// First PMT: it invalidates again and the generation moves to 2.
+	facts := presentableFacts()
+	facts.Generation = 2
+	o.Observe(facts, start.Add(1900*time.Millisecond))
+
+	snap := o.Snapshot()
+	if snap.Resets != 0 {
+		t.Fatalf("the initial PSI latch must not count as a re-identification, got %d resets", snap.Resets)
+	}
+	if !snap.Ready {
+		t.Fatalf("expected ready, pending: %v", snap.Pending)
+	}
+	if snap.ReadyAfter != 1900*time.Millisecond {
+		t.Fatalf("readiness must be timed from the ingest, got %v", snap.ReadyAfter)
+	}
+	if snap.ReadyAfterIngest != snap.ReadyAfter {
+		t.Fatalf("with no reset the two timings must agree: %v vs %v", snap.ReadyAfterIngest, snap.ReadyAfter)
 	}
 }
 
@@ -170,6 +215,7 @@ func TestReadiness_StaleGenerationSnapshotDoesNotDisturbTheCurrentOne(t *testing
 
 	second := presentableFacts()
 	second.Generation = 2
+	second.PMTVersion = 9
 	o.Observe(second, start.Add(400*time.Millisecond))
 	readyAfter := o.Snapshot().ReadyAfter
 
