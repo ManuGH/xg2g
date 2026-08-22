@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"time"
 )
 
@@ -78,41 +77,4 @@ func (c *Client) GetSignal(ctx context.Context) (*SignalInfo, error) {
 		return nil, fmt.Errorf("failed to decode signal info: %w", err)
 	}
 	return &info, nil
-}
-
-// ChannelTransponderInfo models the physical tuning details returned by OpenWebIF.
-type ChannelTransponderInfo struct {
-	FrequencyHz     uint64 `json:"frequency"`
-	SymbolRateSps   uint32 `json:"symbol_rate"`
-	Polarization    string `json:"polarization"`
-	System          string `json:"system"`
-	OrbitalPosition int    `json:"orbital_position"`
-	StreamID        int    `json:"is_id,omitempty"`
-	PLSMode         string `json:"pls_mode,omitempty"`
-	PLSCode         uint32 `json:"pls_code,omitempty"`
-}
-
-// ChannelInfoResponse models the response from /api/channelinfo.
-type ChannelInfoResponse struct {
-	Result  bool `json:"result"`
-	Service struct {
-		ServiceReference string                 `json:"servicereference"`
-		ServiceName      string                 `json:"servicename"`
-		Transponder      ChannelTransponderInfo `json:"transponder"`
-	} `json:"service"`
-}
-
-// GetChannelInfo fetches authoritative physical tuning facts for a specific service from OpenWebIF.
-func (c *Client) GetChannelInfo(ctx context.Context, serviceRef string) (*ChannelInfoResponse, error) {
-	path := fmt.Sprintf("/api/channelinfo?sRef=%s", url.QueryEscape(serviceRef))
-	body, err := c.get(ctx, path, "channel.info", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var resp ChannelInfoResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("failed to decode channel info: %w", err)
-	}
-	return &resp, nil
 }

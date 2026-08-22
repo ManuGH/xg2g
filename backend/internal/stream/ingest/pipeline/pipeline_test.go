@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/ManuGH/xg2g/internal/receivertopology"
+	"github.com/ManuGH/xg2g/internal/receivertopology/topologytest"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
@@ -693,6 +694,7 @@ func TestPipeline_TopologyAdmissionFailed_ZeroDials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create topology service: %v", err)
 	}
+	topologytest.SeedService(t, topSvc)
 
 	var dialCountCh1, dialCountCh2 int32
 	samplePkt := make([]byte, ring.TSPacketSize)
@@ -763,6 +765,7 @@ func TestPipeline_TopologyAdmissionSucceeds_DialFails_ReleasesLease(t *testing.T
 	if err != nil {
 		t.Fatalf("failed to create topology service: %v", err)
 	}
+	topologytest.SeedService(t, topSvc)
 
 	connectorCfg := DefaultConnectorConfig("", 8001)
 	connectorCfg.TopologyService = topSvc
@@ -797,6 +800,7 @@ func TestPipeline_TopologyCoalescedLease_20SubscribersOneLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create topology service: %v", err)
 	}
+	topologytest.SeedService(t, topSvc)
 
 	var dialCount int32
 	samplePkt := make([]byte, ring.TSPacketSize)
@@ -853,6 +857,7 @@ func TestPipeline_TopologyWarmHold_PreservesLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create topology service: %v", err)
 	}
+	topologytest.SeedService(t, topSvc)
 
 	var dialCount int32
 	samplePkt := make([]byte, ring.TSPacketSize)
@@ -920,6 +925,7 @@ func TestPipeline_TopologyUpstreamEOF_ReleasesLeaseImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create topology service: %v", err)
 	}
+	topologytest.SeedService(t, topSvc)
 
 	var activePipeWriter io.Closer
 	var pwMu sync.Mutex
@@ -976,6 +982,7 @@ func TestPipeline_TopologyLease_ConcurrentTeardownReleasesExactlyOnce(t *testing
 	if err != nil {
 		t.Fatalf("failed to create topology service: %v", err)
 	}
+	topologytest.SeedService(t, topSvc)
 
 	connectorCfg := DefaultConnectorConfig("", 8001)
 	connectorCfg.TopologyService = topSvc
@@ -1020,6 +1027,7 @@ func TestPipeline_TransponderSharing_SameRFMultiplexSharesDemod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create topology service: %v", err)
 	}
+	topologytest.SeedService(t, topSvc)
 
 	var dialCount int32
 	samplePkt := make([]byte, ring.TSPacketSize)
@@ -1089,6 +1097,7 @@ func TestPipeline_TransponderSharing_DifferentRFPlane_UsesTopologyDecision(t *te
 		if err != nil {
 			t.Fatalf("create dual topology failed: %v", err)
 		}
+		topologytest.SeedService(t, topSvc)
 
 		connectorCfg := DefaultConnectorConfig("", 8001)
 		connectorCfg.TopologyService = topSvc
@@ -1131,6 +1140,7 @@ func TestPipeline_TransponderSharing_DifferentRFPlane_UsesTopologyDecision(t *te
 		if err != nil {
 			t.Fatalf("create single topology failed: %v", err)
 		}
+		topologytest.SeedService(t, topSvc)
 
 		connectorCfg := DefaultConnectorConfig("", 8001)
 		connectorCfg.TopologyService = topSvc

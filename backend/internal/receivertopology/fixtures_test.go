@@ -1,5 +1,11 @@
 package receivertopology
 
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
 func BuildVuPlusUno4K_FBC_SingleCable() ReceiverTopology {
 	return ReceiverTopology{
 		Model:      "Vu+ Uno 4K SE (FBC Legacy)",
@@ -59,4 +65,31 @@ func buildVuPlusUno4K_FBC_SingleCable() ReceiverTopology {
 
 func buildVuPlusUno4K_FBC_DualCable() ReceiverTopology {
 	return BuildVuPlusUno4K_FBC_DualCable()
+}
+
+// seedReceiverTransponders gives a service the transponder facts of the real
+// Vu+ Uno 4K this project is developed against, read from a capture of that
+// receiver's own service database.
+//
+// Tests that assert on RF planes need carriers that actually exist: a service
+// created with no facts resolves nothing, and one seeded from invented frequencies
+// only proves the test agrees with the fiction rather than with the hardware.
+func seedReceiverTransponders(t *testing.T, svc *Service) {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join("topologytest", "lamedb_v4_vuuno4k.txt"))
+	if err != nil {
+		t.Fatalf("read captured service database: %v", err)
+	}
+
+	registry := NewTransponderRegistry()
+	snap, err := registry.LoadLamedbBytes(data)
+	if err != nil {
+		t.Fatalf("load captured service database: %v", err)
+	}
+	if len(snap.Transponders) == 0 {
+		t.Fatal("captured service database yielded no transponders")
+	}
+
+	svc.SetResolver(registry)
 }

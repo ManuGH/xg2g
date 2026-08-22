@@ -9,6 +9,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/store"
 	"github.com/ManuGH/xg2g/internal/receivertopology"
+	"github.com/ManuGH/xg2g/internal/receivertopology/topologytest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,6 +66,7 @@ func TestGolden_MultiplexReuse(t *testing.T) {
 	topo := newFBCSingleCableLegacyTopology()
 	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+	topologytest.SeedService(t, svc)
 
 	// ZDF HD: 1:0:19:2B90:3F3:1:C00000:0:0:0: (TSID: 0x3F3, ONID: 0x1, Namespace: 0xC00000 -> 192:HIGH:H)
 	service1 := "1:0:19:2B90:3F3:1:C00000:0:0:0:"
@@ -91,6 +93,7 @@ func TestGolden_LegacyFBC_SamePlaneAllocation(t *testing.T) {
 	topo := newFBCSingleCableLegacyTopology()
 	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+	topologytest.SeedService(t, svc)
 
 	// Channel 1: Low-H (ZDF HD, TSID: 0x3F3)
 	service1 := "1:0:19:2B90:3F3:1:C00000:0:0:0:"
@@ -114,6 +117,7 @@ func TestGolden_LegacyFBC_PlaneConflict(t *testing.T) {
 	topo := newFBCSingleCableLegacyTopology()
 	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+	topologytest.SeedService(t, svc)
 
 	// Channel 1: High-H (ZDF HD)
 	service1 := "1:0:19:2B90:3F3:1:C00000:0:0:0:"
@@ -250,6 +254,7 @@ func TestGolden_StoreLevelAtomicClaimSet(t *testing.T) {
 	topo := newFBCSingleCableLegacyTopology()
 	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+	topologytest.SeedService(t, svc)
 
 	dbPath := filepath.Join(t.TempDir(), "golden_claim.db")
 	sqlStore, err := store.NewSqliteStore(dbPath)
@@ -297,6 +302,7 @@ func TestGolden_Phase4_DemuxSaturationAndSecondaryDemod(t *testing.T) {
 	topo := newFBCSingleCableLegacyTopology()
 	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+	topologytest.SeedService(t, svc)
 
 	// Set demux capacity limit to 2 for this test
 	svc.Allocator().SetMaxMuxMembers(2)
@@ -353,6 +359,7 @@ func TestGolden_Phase4_OutOfLockStaleSnapshotRefresh(t *testing.T) {
 	topo := newFBCSingleCableLegacyTopology()
 	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+	topologytest.SeedService(t, svc)
 
 	poller := &mockPoller{}
 	svc.SetPoller(poller)
@@ -398,6 +405,7 @@ func TestGolden_Phase4_SaturatedDemux_NoSecondRFPath_Rejects(t *testing.T) {
 	}
 	svc, err := receivertopology.NewService(topo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+	topologytest.SeedService(t, svc)
 
 	// Set demux capacity limit to 1
 	svc.Allocator().SetMaxMuxMembers(1)

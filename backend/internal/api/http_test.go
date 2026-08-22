@@ -28,6 +28,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/openwebif"
 	"github.com/ManuGH/xg2g/internal/pipeline/scan"
 	"github.com/ManuGH/xg2g/internal/receivertopology"
+	"github.com/ManuGH/xg2g/internal/receivertopology/topologytest"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 )
 
@@ -690,6 +691,7 @@ func TestProductionLiveRoute_UsesTopologyAdmissionBeforeDial(t *testing.T) {
 	}
 	topoSvc, err := receivertopology.NewService(singleTopo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+	topologytest.SeedService(t, topoSvc)
 
 	cfg := config.AppConfig{
 		DataDir: t.TempDir(),
@@ -758,6 +760,7 @@ func TestProductionLiveRoute_Lifecycle_AcquireDialEOF_ReleasesLease(t *testing.T
 	}
 	topoSvc, err := receivertopology.NewService(singleTopo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
+	topologytest.SeedService(t, topoSvc)
 
 	cfg := config.AppConfig{
 		DataDir: t.TempDir(),
@@ -883,30 +886,26 @@ func TestProductionLiveRoute_EnforceMode_MissingResolver_RejectsWithZeroDials(t 
 	assert.Equal(t, int32(0), atomic.LoadInt32(&dials), "must make strictly 0 dials when authoritative resolver is missing in ENFORCE mode")
 }
 
-// TestProductionBootstrap_OpenWebIF_RFDiscovery_PopulatesResolver proves that the real production
-// bootstrap pipeline queries OpenWebIF's /api/channelinfo for live dynamic RF facts, populating
-// the TransponderRegistry on-the-fly for unknown channels and serving them with exact RF tuning facts.
-func TestProductionBootstrap_OpenWebIF_RFDiscovery_PopulatesResolver(t *testing.T) {
-	var streamDials, channelInfoQueries int32
+// TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver proves that the real
+// production bootstrap pipeline reads the receiver's own service database for physical
+// RF facts, resolving a channel it has never seen before to exact tuning parameters.
+//
+// This replaced discovery via /api/channelinfo, which does not exist on OpenWebIF 2.4.0
+// and answers 404 there, so that path could never have populated anything in production.
+func TestProductionBootstrap_LamedbRFDiscovery_PopulatesResolver(t *testing.T) {
+	var streamDials, lamedbQueries int32
+
+	// The carrier the mock receiver claims to know: 11914 MHz vertical on Astra 19.2E,
+	// carrying transport stream 0x0888 - which is the TSID in the requested service ref.
+	const lamedb = "eDVB services /5/\n" +
+		"t:00c00000:0888:0001,s:11914000:27500000:1:2:192:2:0:1:2:0:2\n"
+
 	mockReceiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "channelinfo") {
-			atomic.AddInt32(&channelInfoQueries, 1)
-			w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/file" && strings.Contains(r.URL.Query().Get("file"), "lamedb") {
+			atomic.AddInt32(&lamedbQueries, 1)
+			w.Header().Set("Content-Type", "text/plain")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{
-				"result": true,
-				"service": {
-					"servicereference": "1:0:19:9999:888:1:C00000:0:0:0:",
-					"servicename": "Dynamic Discovery Channel HD",
-					"transponder": {
-						"frequency": 11914000,
-						"symbol_rate": 27500000,
-						"polarization": "V",
-						"system": "DVB-S2",
-						"orbital_position": 192
-					}
-				}
-			}`))
+			_, _ = w.Write([]byte(lamedb))
 			return
 		}
 
@@ -935,10 +934,11 @@ func TestProductionBootstrap_OpenWebIF_RFDiscovery_PopulatesResolver(t *testing.
 	topoSvc, err := receivertopology.NewService(singleTopo, receivertopology.EvaluationModeEnforce)
 	require.NoError(t, err)
 
-	// 2. TransponderRegistry is configured with live OpenWebIF client
+	// 2. The registry is given the receiver as its service database source, and nothing
+	//    else: it starts with no RF facts at all.
 	registry := receivertopology.NewTransponderRegistry()
 	owiClient := openwebif.New(mockReceiver.URL)
-	registry.SetDiscoverer(owiClient)
+	registry.SetLamedbSource(owiClient)
 	topoSvc.SetResolver(registry)
 
 	cfg := config.AppConfig{
@@ -952,14 +952,14 @@ func TestProductionBootstrap_OpenWebIF_RFDiscovery_PopulatesResolver(t *testing.
 	server := mustNewServer(t, cfg, config.NewManager(""), WithTopologyService(topoSvc))
 	handler := server.Handler()
 
-	// 3. Request dynamic custom channel (NOT in static tables!)
+	// 3. Request a channel the registry has never seen
 	dynamicServiceRef := "1:0:19:9999:888:1:C00000:0:0:0:"
 	req := httptest.NewRequest(http.MethodGet, "/api/v3/stream/live/"+dynamicServiceRef, nil)
 	rr := httptest.NewRecorder()
 
 	go handler.ServeHTTP(rr, req)
 
-	// 4. Verify that topology lease was successfully acquired with exact RF facts discovered from OpenWebIF
+	// 4. The topology lease must carry the exact RF facts the service database stated
 	require.Eventually(t, func() bool {
 		runtime := topoSvc.CloneRuntime()
 		for _, alloc := range runtime.ActiveMultiplexes {
@@ -969,9 +969,9 @@ func TestProductionBootstrap_OpenWebIF_RFDiscovery_PopulatesResolver(t *testing.
 			}
 		}
 		return false
-	}, 2*time.Second, 20*time.Millisecond, "must resolve exact authoritative 11914 MHz Vertical RF parameters via live OpenWebIF discovery")
+	}, 2*time.Second, 20*time.Millisecond, "must resolve exact authoritative 11914 MHz Vertical RF parameters from the receiver service database")
 
-	// 5. Verify that OpenWebIF /api/channelinfo was queried and Enigma2 was dialed
-	assert.Equal(t, int32(1), atomic.LoadInt32(&channelInfoQueries), "OpenWebIF /api/channelinfo should be queried for live RF discovery")
+	// 5. The service database was read, and Enigma2 was dialed once
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&lamedbQueries), int32(1), "receiver service database should be read for RF discovery")
 	assert.Equal(t, int32(1), atomic.LoadInt32(&streamDials), "Enigma2 stream endpoint should be dialed once")
 }

@@ -15,6 +15,7 @@ func TestService_StreamLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create service: %v", err)
 	}
+	seedReceiverTransponders(t, svc)
 
 	serviceRef1 := "1:0:19:283D:3FB:1:C00000:0:0:0:" // Das Erste HD (TSID 0x03FB, ONID 0x0001, Astra 19.2E)
 	session1 := "sess-abc-1"
@@ -61,6 +62,7 @@ func TestService_StreamLifecycle(t *testing.T) {
 func TestService_ReconcileActiveSessions(t *testing.T) {
 	topology := buildVuPlusUno4K_FBC_SingleCable()
 	svc, _ := NewService(topology, EvaluationModeEnforce)
+	seedReceiverTransponders(t, svc)
 
 	serviceRef := "1:0:19:283D:3FB:1:C00000:0:0:0:"
 	_, _ = svc.RegisterStream(serviceRef, "active-1")
@@ -246,6 +248,7 @@ func TestReconciliation_EvidenceUnknownPreservesClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected NewService error: %v", err)
 	}
+	seedReceiverTransponders(t, svc)
 
 	// 1. Snapshot with EvidenceUnknown / missing OpenWebIF data
 	svc.UpdateEvidentiarySnapshot(ReceiverRuntimeSnapshot{

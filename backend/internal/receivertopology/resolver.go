@@ -6,12 +6,10 @@ package receivertopology
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/ManuGH/xg2g/internal/openwebif"
 )
 
 // TransponderResolver resolves an authoritative MultiplexID with complete physical RF tuning parameters for a service reference.
@@ -19,50 +17,65 @@ type TransponderResolver interface {
 	ResolveTransponder(ctx context.Context, serviceRef string) (MultiplexID, error)
 }
 
-// ChannelInfoDiscoverer fetches live physical tuning details from an external receiver.
-type ChannelInfoDiscoverer interface {
-	GetChannelInfo(ctx context.Context, serviceRef string) (*openwebif.ChannelInfoResponse, error)
+// LamedbSource provides the receiver's own service database, which is the
+// authoritative record of which physical carrier each transport stream lives on.
+type LamedbSource interface {
+	GetLamedb(ctx context.Context) ([]byte, error)
 }
 
+// ErrLamedbUnavailable indicates the receiver's service database could not be
+// fetched or understood, so no authoritative RF facts are available.
+var ErrLamedbUnavailable = errors.New("receiver service database unavailable")
+
+// defaultLamedbCooldown bounds how often a resolution miss may re-fetch the service
+// database. A miss means the receiver has tuned a carrier this process has not seen,
+// which happens after a channel scan - worth re-reading for, but not once per request.
+const defaultLamedbCooldown = 60 * time.Second
+
 // TransponderRegistry maintains an in-memory database of authoritative physical RF tuning identities.
+//
+// Every fact in it originates from the receiver: either registered directly from an
+// observed tune, or read from the receiver's service database. There is deliberately
+// no table of hand-maintained broadcast frequencies - one existed here previously and
+// every entry in it was wrong, which is worse than having none, because a confidently
+// wrong RF plane makes the allocator believe two services share a tuner when they do not.
 type TransponderRegistry struct {
-	mu                         sync.RWMutex
-	discoveredTransponders     map[string]TransponderKey // Keyed by TSID:ONID:Namespace (populated by live receiver discovery)
-	discoveredServices         map[string]MultiplexID    // Keyed by canonical serviceRef (populated by live receiver discovery)
-	staticFallbackTransponders map[string]TransponderKey // Keyed by TSID:ONID:Namespace (verified static fallback)
-	discoverer                 ChannelInfoDiscoverer     // Live OpenWebIF discovery client
+	mu                     sync.RWMutex
+	discoveredTransponders map[string]TransponderKey // Keyed by TSID:ONID:Namespace
+	discoveredServices     map[string]MultiplexID    // Keyed by canonical serviceRef
+	lamedb                 LamedbSource
+	lastLoad               time.Time
+	cooldown               time.Duration
+	now                    func() time.Time
+
+	// loadMu serializes service database fetches so a burst of misses produces one
+	// request rather than one per caller, and is never held together with mu across I/O.
+	loadMu sync.Mutex
 }
 
 // NewTransponderRegistry creates a new in-memory transponder registry.
 func NewTransponderRegistry() *TransponderRegistry {
 	return &TransponderRegistry{
-		discoveredTransponders:     make(map[string]TransponderKey),
-		discoveredServices:         make(map[string]MultiplexID),
-		staticFallbackTransponders: make(map[string]TransponderKey),
+		discoveredTransponders: make(map[string]TransponderKey),
+		discoveredServices:     make(map[string]MultiplexID),
+		cooldown:               defaultLamedbCooldown,
+		now:                    time.Now,
 	}
 }
 
-// SetDiscoverer configures an OpenWebIF discovery client to query live RF tuning facts.
-func (r *TransponderRegistry) SetDiscoverer(d ChannelInfoDiscoverer) {
+// SetLamedbSource configures the receiver client used to read the authoritative
+// service database.
+func (r *TransponderRegistry) SetLamedbSource(src LamedbSource) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.discoverer = d
+	r.lamedb = src
 }
 
-// RegisterTransponder stores the authoritative RF tuning parameters in the live discovered transponder cache.
+// RegisterTransponder stores authoritative RF tuning parameters for a physical transport stream.
 func (r *TransponderRegistry) RegisterTransponder(tsid uint16, onid uint16, namespace uint32, tpKey TransponderKey) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	key := fmt.Sprintf("%04X:%04X:%08X", tsid, onid, namespace)
-	r.discoveredTransponders[key] = tpKey
-}
-
-// RegisterStaticFallback stores verified static fallback parameters for a physical transport stream / multiplex.
-func (r *TransponderRegistry) RegisterStaticFallback(tsid uint16, onid uint16, namespace uint32, tpKey TransponderKey) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	key := fmt.Sprintf("%04X:%04X:%08X", tsid, onid, namespace)
-	r.staticFallbackTransponders[key] = tpKey
+	r.discoveredTransponders[transponderLookupKey(tsid, onid, namespace)] = tpKey
 }
 
 // RegisterService stores an authoritative MultiplexID directly for a service reference.
@@ -72,12 +85,58 @@ func (r *TransponderRegistry) RegisterService(serviceRef string, mux MultiplexID
 	r.discoveredServices[serviceRef] = mux
 }
 
+// LoadLamedb reads the receiver's service database and registers every transponder in it.
+//
+// It returns the parsed snapshot so a caller can log what the receiver actually
+// knows: a database that parses but yields nothing usable is a configuration
+// problem worth reporting, not a silent success.
+func (r *TransponderRegistry) LoadLamedb(ctx context.Context) (LamedbSnapshot, error) {
+	r.mu.RLock()
+	src := r.lamedb
+	r.mu.RUnlock()
+	if src == nil {
+		return LamedbSnapshot{}, fmt.Errorf("%w: no source configured", ErrLamedbUnavailable)
+	}
+
+	r.loadMu.Lock()
+	defer r.loadMu.Unlock()
+
+	data, err := src.GetLamedb(ctx)
+	if err != nil {
+		return LamedbSnapshot{}, fmt.Errorf("%w: %v", ErrLamedbUnavailable, err)
+	}
+
+	return r.LoadLamedbBytes(data)
+}
+
+// LoadLamedbBytes registers every transponder in an already-fetched service database.
+//
+// Separate from LoadLamedb so the same facts can be supplied from a file an operator
+// copied off the receiver, and so the parse step is exercisable without a receiver.
+func (r *TransponderRegistry) LoadLamedbBytes(data []byte) (LamedbSnapshot, error) {
+	snap, err := ParseLamedb(data)
+	if err != nil {
+		return LamedbSnapshot{}, fmt.Errorf("%w: %v", ErrLamedbUnavailable, err)
+	}
+
+	// Stamp the attempt regardless of yield: a database that parsed to nothing must
+	// not be retried on every subsequent miss.
+	r.mu.Lock()
+	r.lastLoad = r.now()
+	for _, tp := range snap.Transponders {
+		r.discoveredTransponders[transponderLookupKey(tp.TSID, tp.ONID, tp.DVBNamespace)] = tp.Key
+	}
+	r.mu.Unlock()
+
+	return snap, nil
+}
+
 // ResolveTransponder resolves authoritative physical RF tuning parameters using the strict hierarchy:
-// 1. Live Discovered In-Memory Cache
-// 2. Authoritative Live Receiver Query (OpenWebIF /api/channelinfo)
-// 3. Verified Static Fallback (if live receiver is unreachable or undiscoverer configured)
+//  1. Live discovered service cache (an observed tune, the strongest evidence there is)
+//  2. Live discovered transponder cache (populated by observed tunes and the service database)
+//  3. A cooldown-bounded re-read of the receiver's service database, for carriers
+//     added since this process last looked
 func (r *TransponderRegistry) ResolveTransponder(ctx context.Context, serviceRef string) (MultiplexID, error) {
-	// Step 1: Check Live Discovered Service Cache
 	r.mu.RLock()
 	if mux, ok := r.discoveredServices[serviceRef]; ok {
 		r.mu.RUnlock()
@@ -90,71 +149,45 @@ func (r *TransponderRegistry) ResolveTransponder(ctx context.Context, serviceRef
 		return MultiplexID{}, err
 	}
 
-	lookupKey := fmt.Sprintf("%04X:%04X:%08X", baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace)
+	lookupKey := transponderLookupKey(baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace)
 
-	// Step 2: Check Live Discovered Transponder Cache
 	r.mu.RLock()
 	tpKey, hasDiscovered := r.discoveredTransponders[lookupKey]
-	discoverer := r.discoverer
 	r.mu.RUnlock()
 
 	if hasDiscovered {
 		return r.enrichMultiplex(baseMux, tpKey), nil
 	}
 
-	// Step 3: Authoritative Live Receiver Query (OpenWebIF)
-	if discoverer != nil {
-		discCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-		info, dErr := discoverer.GetChannelInfo(discCtx, serviceRef)
-		cancel()
-		if dErr == nil && info != nil && info.Result && info.Service.Transponder.FrequencyHz > 0 {
-			tp := info.Service.Transponder
-			freqHz := tp.FrequencyHz
-			if freqHz < 100000000 { // If returned in kHz (e.g. 11273000 -> 11273000000)
-				freqHz = freqHz * 1000
+	// A miss for a service reference the receiver produced means our copy of the
+	// service database predates it, so re-read once and try again.
+	if r.refreshDue() {
+		if _, lErr := r.LoadLamedb(ctx); lErr == nil {
+			r.mu.RLock()
+			tpKey, hasDiscovered = r.discoveredTransponders[lookupKey]
+			r.mu.RUnlock()
+			if hasDiscovered {
+				return r.enrichMultiplex(baseMux, tpKey), nil
 			}
-			pol := PolarizationHorizontal
-			if strings.EqualFold(tp.Polarization, "V") || strings.EqualFold(tp.Polarization, "1") {
-				pol = PolarizationVertical
-			}
-			sys := DeliverySystemDVBS2
-			if strings.Contains(strings.ToUpper(tp.System), "DVB-S2") {
-				sys = DeliverySystemDVBS2
-			} else if strings.Contains(strings.ToUpper(tp.System), "DVB-S") {
-				sys = DeliverySystemDVBS
-			} else if strings.Contains(strings.ToUpper(tp.System), "DVB-C") {
-				sys = DeliverySystemDVBC
-			} else if strings.Contains(strings.ToUpper(tp.System), "DVB-T2") {
-				sys = DeliverySystemDVBT2
-			} else if strings.Contains(strings.ToUpper(tp.System), "DVB-T") {
-				sys = DeliverySystemDVBT
-			}
-
-			discoveredKey := TransponderKey{
-				DeliverySystem:  sys,
-				OrbitalPosition: tp.OrbitalPosition,
-				FrequencyHz:     freqHz,
-				Polarization:    pol,
-				StreamID:        tp.StreamID,
-				PLSMode:         PLSMode(tp.PLSMode),
-				PLSCode:         tp.PLSCode,
-			}
-
-			r.RegisterTransponder(baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace, discoveredKey)
-			return r.enrichMultiplex(baseMux, discoveredKey), nil
 		}
 	}
 
-	// Step 4: Verified Static Fallback (Only explicit, verified standard transponders)
+	return MultiplexID{}, fmt.Errorf("%w: missing RF parameters for TSID 0x%04X ONID 0x%04X Namespace 0x%08X",
+		ErrAuthoritativeTransponderUnavailable, baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace)
+}
+
+// refreshDue reports whether a service database re-read is permitted right now.
+func (r *TransponderRegistry) refreshDue() bool {
 	r.mu.RLock()
-	fallbackKey, hasFallback := r.staticFallbackTransponders[lookupKey]
-	r.mu.RUnlock()
-
-	if hasFallback {
-		return r.enrichMultiplex(baseMux, fallbackKey), nil
+	defer r.mu.RUnlock()
+	if r.lamedb == nil {
+		return false
 	}
+	return r.lastLoad.IsZero() || r.now().Sub(r.lastLoad) >= r.cooldown
+}
 
-	return MultiplexID{}, fmt.Errorf("%w: missing RF parameters for TSID 0x%04X ONID 0x%04X Namespace 0x%08X", ErrAuthoritativeTransponderUnavailable, baseMux.TSID, baseMux.ONID, baseMux.DVBNamespace)
+func transponderLookupKey(tsid uint16, onid uint16, namespace uint32) string {
+	return fmt.Sprintf("%04X:%04X:%08X", tsid, onid, namespace)
 }
 
 func (r *TransponderRegistry) enrichMultiplex(baseMux MultiplexID, tpKey TransponderKey) MultiplexID {
@@ -175,61 +208,4 @@ func (r *TransponderRegistry) enrichMultiplex(baseMux MultiplexID, tpKey Transpo
 		}
 	}
 	return baseMux
-}
-
-// PopulateStandardTransponderTables enriches the registry with verified static fallback RF tuning parameters
-// for standard European satellite broadcast networks (Astra 19.2°E, Hotbird 13.0°E).
-func PopulateStandardTransponderTables(r *TransponderRegistry) {
-	const astra192 = 0x00C00000
-	const hotbird130 = 0x00820000
-
-	// Verified Astra 19.2°E Transponders (TSID, ONID, Namespace -> TransponderKey)
-	astraTPs := []struct {
-		tsid uint16
-		onid uint16
-		key  TransponderKey
-	}{
-		// ORF Digital (ORF 1 HD, ORF 2 HD, ORF III HD, ORF Sport+ HD)
-		{0x03EF, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11273000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// ARD Digital 1 (Das Erste HD, SWR HD, arte HD)
-		{0x03FB, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11494000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// ZDF Digital (ZDF HD, zdf_neo HD)
-		{0x03F3, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11362000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// ZDF Digital 2 (3sat HD, KiKa HD, ZDFinfo HD)
-		{0x044D, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11347000000, Polarization: PolarizationVertical, StreamID: -1}},
-		// ARD Digital 2 (BR HD, NDR HD, Phoenix HD)
-		{0x041F, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11582000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// ARD Digital 3 (WDR HD Köln, WDR HD Regional)
-		{0x0453, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 12422000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// RTL Group Deutschland SD (RTL, VOX, Super RTL, n-tv, Nitro)
-		{0x041B, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS, OrbitalPosition: 192, FrequencyHz: 12188000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// ProSiebenSat.1 Digital SD (ProSieben, SAT.1, Kabel 1, sixx, Pro7 MAXX)
-		{0x0441, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS, OrbitalPosition: 192, FrequencyHz: 12544000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// ServusTV / Red Bull HD
-		{0x0007, 0x0001, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11303000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// Sky Deutschland Transponder 1
-		{0x0011, 0x0085, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11992000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// Sky Deutschland Transponder 2
-		{0x000C, 0x0085, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 192, FrequencyHz: 11758000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-	}
-
-	for _, tp := range astraTPs {
-		r.RegisterStaticFallback(tp.tsid, tp.onid, astra192, tp.key)
-	}
-
-	// Verified Hotbird 13.0°E Transponders
-	hotbirdTPs := []struct {
-		tsid uint16
-		onid uint16
-		key  TransponderKey
-	}{
-		// SRG SSR (SRF 1 HD, SRF zwei HD, RTS 1 HD, RSI LA 1 HD)
-		{0x2134, 0x013E, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 130, FrequencyHz: 10971000000, Polarization: PolarizationHorizontal, StreamID: -1}},
-		// Rai HD (Rai 1 HD, Rai 2 HD, Rai 3 HD)
-		{0x01A4, 0x013E, TransponderKey{DeliverySystem: DeliverySystemDVBS2, OrbitalPosition: 130, FrequencyHz: 11766000000, Polarization: PolarizationVertical, StreamID: -1}},
-	}
-
-	for _, tp := range hotbirdTPs {
-		r.RegisterStaticFallback(tp.tsid, tp.onid, hotbird130, tp.key)
-	}
 }

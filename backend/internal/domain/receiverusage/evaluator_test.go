@@ -494,7 +494,15 @@ func TestReceiverUsage_TopologyAwareRejection(t *testing.T) {
 		t.Fatalf("failed to create topo service: %v", err)
 	}
 	registry := receivertopology.NewTransponderRegistry()
-	receivertopology.PopulateStandardTransponderTables(registry)
+	// The ARD Digital 1 carrier as the receiver itself records it
+	// (/etc/enigma2/lamedb: 00c00000:03fb:0001 -> 11493750 kHz horizontal, DVB-S2).
+	registry.RegisterTransponder(0x03FB, 0x0001, 0x00C00000, receivertopology.TransponderKey{
+		DeliverySystem:  receivertopology.DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493750000,
+		Polarization:    receivertopology.PolarizationHorizontal,
+		StreamID:        -1,
+	})
 	topoSvc.SetResolver(registry)
 
 	// Occupy the only demodulator with stream 1 on High-H

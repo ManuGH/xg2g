@@ -39,7 +39,15 @@ func TestOrchestrator_TopologyService_StreamLifecycleAndMultiplexReuse(t *testin
 	require.NoError(t, err)
 
 	registry := receivertopology.NewTransponderRegistry()
-	receivertopology.PopulateStandardTransponderTables(registry)
+	// The ARD Digital 1 carrier as the receiver itself records it
+	// (/etc/enigma2/lamedb: 00c00000:03fb:0001 -> 11493750 kHz horizontal, DVB-S2).
+	registry.RegisterTransponder(0x03FB, 0x0001, 0x00C00000, receivertopology.TransponderKey{
+		DeliverySystem:  receivertopology.DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493750000,
+		Polarization:    receivertopology.PolarizationHorizontal,
+		StreamID:        -1,
+	})
 	topoSvc.SetResolver(registry)
 
 	evaluator := receiverusage.NewEvaluatorWithTopology(topoSvc)
@@ -166,7 +174,15 @@ func TestOrchestrator_TopologyService_HeartbeatLoss_EnforceMode(t *testing.T) {
 	require.NoError(t, err)
 
 	registry := receivertopology.NewTransponderRegistry()
-	receivertopology.PopulateStandardTransponderTables(registry)
+	// The ARD Digital 1 carrier as the receiver itself records it
+	// (/etc/enigma2/lamedb: 00c00000:03fb:0001 -> 11493750 kHz horizontal, DVB-S2).
+	registry.RegisterTransponder(0x03FB, 0x0001, 0x00C00000, receivertopology.TransponderKey{
+		DeliverySystem:  receivertopology.DeliverySystemDVBS2,
+		OrbitalPosition: 192,
+		FrequencyHz:     11493750000,
+		Polarization:    receivertopology.PolarizationHorizontal,
+		StreamID:        -1,
+	})
 	topoSvc.SetResolver(registry)
 
 	evaluator := receiverusage.NewEvaluatorWithTopology(topoSvc)

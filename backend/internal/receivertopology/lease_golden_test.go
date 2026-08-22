@@ -144,6 +144,7 @@ func TestGolden_UpcomingRecording_BlocksConflictingLiveStream(t *testing.T) {
 func TestGolden_Lease_HeartbeatAndSweep(t *testing.T) {
 	topology := buildVuPlusUno4K_FBC_SingleCable()
 	svc, _ := NewService(topology, EvaluationModeEnforce)
+	seedReceiverTransponders(t, svc)
 
 	sRef := "1:0:19:283D:3FB:1:C00000:0:0:0:"
 	sessionID := "sess-heartbeat-test"

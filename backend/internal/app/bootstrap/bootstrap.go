@@ -364,9 +364,23 @@ func WireServices(ctx context.Context, version, commit, buildDate, explicitConfi
 
 	if topoSvc != nil {
 		tpRegistry := receivertopology.NewTransponderRegistry()
-		receivertopology.PopulateStandardTransponderTables(tpRegistry)
 		if owiClient != nil {
-			tpRegistry.SetDiscoverer(owiClient)
+			// The receiver's own service database is the only authoritative source of
+			// physical RF facts. Load it eagerly so the first stream does not pay for
+			// the fetch, and log the yield: topology decisions made without it are
+			// guesses, so an operator has to be able to see whether it arrived.
+			tpRegistry.SetLamedbSource(owiClient)
+			if snap, lErr := tpRegistry.LoadLamedb(ctx); lErr != nil {
+				logger.Warn().Err(lErr).
+					Msg("receiver service database unavailable; transponder resolution will fail until the receiver answers")
+			} else {
+				logger.Info().
+					Int("lamedb_version", snap.Version).
+					Int("transponders", len(snap.Transponders)).
+					Int("skipped", snap.Skipped).
+					Int("malformed", snap.Malformed).
+					Msg("loaded authoritative transponder facts from receiver service database")
+			}
 		}
 		topoSvc.SetResolver(tpRegistry)
 		s.SetTopologyService(topoSvc)
