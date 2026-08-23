@@ -1969,18 +1969,31 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         let msg = "[1080i50-AUDIO] 🎧 Audio route changed: reason \(reasonValue)"
         logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
 
-        // Every one of these leaves the session pointed at hardware with a
-        // different channel count, sample rate, and output latency than the one
-        // it was configured for. `.newDeviceAvailable` is the case that matters
-        // most in practice — headphones connected mid-playback — and it used to
-        // fall through here, so the session kept the multichannel configuration
-        // of the built-in speaker while the audio was already going out over a
-        // two-channel Bluetooth link.
         switch reason {
         case .newDeviceAvailable, .oldDeviceUnavailable, .override,
              .categoryChange, .routeConfigurationChange:
             AudioSessionManager.shared.configureForPlayback()
+
+            // When headphones disconnect or connect during live TV, clear interruption
+            // and seamlessly re-anchor audio on the newly activated output route.
+            ingestQueue.async { [weak self] in
+                guard let self = self, self.sessionState.generation > 0 else { return }
+                self.isAudioInterrupted = false
+                self.audioRenderer.flush()
+                self.isAudioClockStarted = false
+                self.firstAudioPTS = nil
+                self.firstDecodedPicturePTS = nil
+                self.firstVideoFieldPTS = nil
+                self.commitAnchor = nil
+                self.audioBuffersPreRolledCount = 0
+                self.preRollStartTime = 0
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.presentationContext?.requestReset(from: self)
+                }
+            }
         default:
             AudioSessionManager.shared.logCurrentRoute()
         }
