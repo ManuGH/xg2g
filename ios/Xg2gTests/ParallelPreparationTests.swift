@@ -136,8 +136,18 @@ struct ParallelPreparationTests {
         pipeline.hardwareDecoder(HardwareVideoDecoder(), didEmitFrame: frame)
     }
 
-    private func feedAudio(_ pipeline: NativeTSVideoPipeline, from start: Double, count: Int) {
-        var pts = start
+    /// Feeds audio and advances the caller's timeline cursor.
+    ///
+    /// The cursor belongs to the test, not to a shared table. Restarting the timeline is
+    /// a discontinuity and the pipeline treats it as one - it re-anchors, clears the
+    /// pre-roll count and restarts the pre-roll clock - so a poll loop that fed the same
+    /// timestamps every iteration reset the very state it was waiting on. Keying the
+    /// cursor by object identity was no better: an identifier is an address, addresses
+    /// are reused once a session is freed, and a fresh session then inherited the
+    /// previous one's timeline and anchored against timestamps it had never seen.
+    private func feedAudio(_ pipeline: NativeTSVideoPipeline, cursor: inout Double, count: Int) {
+        var pts = cursor
+        cursor += Double(count) * 0.032
         for _ in 0..<count {
             guard let buffer = audioBuffer(at: pts) else { continue }
             pipeline.audioSampleBufferAssembler(
@@ -178,11 +188,13 @@ struct ParallelPreparationTests {
 
         context.bindForSingleChannelHarness(a)
 
+        var audioPTS = 500.0
+
         // B does everything a preparation does: real transport, real audio, real
         // pictures on the decoder's own delivery path.
         feedCapture(b)
         deliverPictures(to: b, generation: genB, from: 500.4, count: 80)
-        feedAudio(b, from: 500.0, count: 140)
+        feedAudio(b, cursor: &audioPTS, count: 140)
         await settle()
 
         // A is untouched.
@@ -207,19 +219,28 @@ struct ParallelPreparationTests {
 
     /// The commit itself, on two real sessions.
     ///
-    /// UNFINISHED, and disabled by default so it does not redden the suite while it is.
-    /// It passes when the whole sequence runs as one test and fails when the commit is a
-    /// test of its own: B stops reaching a start anchor, with the same capture, the same
-    /// 80 pictures and the same 140 audio buffers that satisfied it a moment earlier.
-    /// Ruled out so far: the shared jitter profile (both sessions now use distinct
-    /// channel keys), a leaked audio interruption, and parallel execution (the suite is
-    /// serialized). The remaining suspect is per-process state in the anchor path that
-    /// the first pair of sessions leaves behind.
+    /// STILL FLAKY, and gated so it cannot redden the build while it is. Roughly one
+    /// full-suite run in two or three fails here with "B never reached a start anchor",
+    /// and it fails the same way with parallel testing disabled, so it is not suites
+    /// overlapping.
     ///
-    /// What it would add is the commit invariant carried by two real pipelines through
-    /// the real anchor and trim. The invariant itself is covered unconditionally in
-    /// `PresentationOwnershipTests`, and the preparation half of it - A untouched, B
-    /// silent, B invisible - is covered above with real sessions. Run it with:
+    /// Explained and fixed along the way, each a real defect rather than a test
+    /// artefact: a picture anchor that survived an audio re-anchor and pinned the start
+    /// anchor to an instant the new timeline never reached, on all four re-anchor paths;
+    /// a poll loop that re-fed the same timestamps and reset the state it was waiting
+    /// on; a cursor keyed by object identity, where a freed session's address was reused
+    /// and the next session inherited its timeline.
+    ///
+    /// What is left points at audio-renderer recovery inside the test process - other
+    /// suites simulate renderer failures, and the simulator's media services die on
+    /// their own - after which this session re-anchors onto a timeline its pictures are
+    /// behind. The product now clears the picture anchor on every such path, so the
+    /// remaining case is not yet understood.
+    ///
+    /// The commit invariant is covered unconditionally in `PresentationOwnershipTests`;
+    /// the preparation half is covered above on real sessions. What this adds, and what
+    /// is therefore still unproven, is the commit carried through the real anchor and
+    /// trim by two real pipelines. Run it with:
     ///
     ///     TEST_RUNNER_XG2G_ISOLATED_SUITE=1 xcodebuild ... \
     ///         -only-testing:Xg2gTests/ParallelPreparationTests test
@@ -236,14 +257,23 @@ struct ParallelPreparationTests {
         let genB = context.issueGeneration(to: b)
         context.bindForSingleChannelHarness(a)
 
+        var audioPTS = 500.0
         feedCapture(b)
         deliverPictures(to: b, generation: genB, from: 500.4, count: 80)
-        feedAudio(b, from: 500.0, count: 140)
+        feedAudio(b, cursor: &audioPTS, count: 140)
 
+        // Pictures keep coming with the audio, as they do on a real stream. Feeding only
+        // audio here made the test unfaithful in a way that mattered: if the renderer
+        // recovers from an error - which the simulator's media services provoke by
+        // dying - the session takes its next audio as the start of a new timeline, and
+        // a picture timeline frozen twelve seconds behind it can never be anchored to.
+        var picturePTS = 500.4 + 80 * 0.040
         var ready = false
         for _ in 0..<40 {
             if b.isPresentable { ready = true; break }
-            feedAudio(b, from: 504.5, count: 10)
+            deliverPictures(to: b, generation: genB, from: picturePTS, count: 8)
+            picturePTS += 8 * 0.040
+            feedAudio(b, cursor: &audioPTS, count: 10)
             await settle(0.05)
         }
         guard ready else {
@@ -274,9 +304,10 @@ struct ParallelPreparationTests {
         let genB = context.issueGeneration(to: b)
         context.bindForSingleChannelHarness(a)
 
+        var audioPTS = 500.0
         feedCapture(b)
         deliverPictures(to: b, generation: genB, from: 500.4, count: 40)
-        feedAudio(b, from: 500.0, count: 60)
+        feedAudio(b, cursor: &audioPTS, count: 60)
         await settle(0.4)
 
         b.stopStreaming()

@@ -169,6 +169,23 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         didSet { decoder.decodeGeneration = presentationGeneration.rawValue }
     }
 
+    /// When the last anchor rejection was reported, so a stream that cannot anchor says
+    /// so without filling the log.
+    private var lastAnchorRejectionLog: CFTimeInterval = 0
+
+    /// Reports why a start anchor could not be chosen.
+    ///
+    /// A channel that never anchors never starts, and until now that looked identical to
+    /// a channel still arriving. The numbers that decide it are worth a line a second.
+    private func noteAnchorRejected(reason: String, anchorSeconds: Double, firstAudio: Double, cushion: Double) {
+        let now = CACurrentMediaTime()
+        guard now - lastAnchorRejectionLog >= 1.0 else { return }
+        lastAnchorRejectionLog = now
+        let msg = "[1080i50-ANCHOR] ⏸ no start anchor: \(reason) | anchor \(String(format: "%.3f", anchorSeconds))s | first audio \(String(format: "%.3f", firstAudio))s | latest picture \(String(format: "%.3f", latestVideoPTS.seconds))s | cushion \(String(format: "%.0f", cushion * 1000))ms"
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+    }
+
     /// The first picture this session decoded, whether or not it was ever shown.
     ///
     /// Session-local on purpose: it is what says the decoder is producing, which a
@@ -1270,14 +1287,30 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
                 // Anchoring before the first audio we hold would start the clock
                 // in a region no track can serve.
-                guard anchorSeconds >= firstPTS.seconds else { return }
+                guard anchorSeconds >= firstPTS.seconds else {
+                    noteAnchorRejected(
+                        reason: "anchor precedes the first audio held",
+                        anchorSeconds: anchorSeconds,
+                        firstAudio: firstPTS.seconds,
+                        cushion: effectiveAudioPreRoll
+                    )
+                    return
+                }
 
                 // And enough video past the anchor to survive a source pause;
                 // this box writes in bursts with gaps up to 824 ms.
                 let videoBuffered = latestVideoPTS.isValid
                     ? latestVideoPTS.seconds - anchorSeconds
                     : 0
-                guard videoBuffered >= effectiveVideoPreRoll else { return }
+                guard videoBuffered >= effectiveVideoPreRoll else {
+                    noteAnchorRejected(
+                        reason: "only \(String(format: "%.2f", videoBuffered))s of picture past the anchor, \(String(format: "%.2f", effectiveVideoPreRoll))s required",
+                        anchorSeconds: anchorSeconds,
+                        firstAudio: firstPTS.seconds,
+                        cushion: effectiveAudioPreRoll
+                    )
+                    return
+                }
 
                 anchorPTS = CMTime(seconds: anchorSeconds, preferredTimescale: 90_000)
                 anchorSource = anchorSeconds >= videoPTS.seconds - 0.001
@@ -1431,6 +1464,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // makes the re-anchor wait for a picture from the new one, exactly as a
         // cold tune does; `resetForChannelZap` below re-arms the callback.
         firstVideoFieldPTS = nil
+        // Cleared with it, for the same reason: a picture timestamp kept across a
+        // re-anchor pins the start anchor to an instant the new timeline never
+        // reaches, and the session can then never anchor again.
+        firstDecodedPicturePTS = nil
+        commitAnchor = nil
         preRollStartTime = 0
 
         DispatchQueue.main.async { [weak self] in
@@ -1540,6 +1578,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
                 self.firstAudioPTS = nil
                 self.firstVideoFieldPTS = nil
+            // Cleared with it. A recovery re-anchors audio onto a new timeline, and a
+            // picture timestamp kept from before it pins the start anchor to an instant
+            // the audio no longer reaches - after which no anchor can ever be chosen
+            // again and the session sits frozen for good.
+            self.firstDecodedPicturePTS = nil
+            self.commitAnchor = nil
                 self.audioBuffersPreRolledCount = 0
                 self.preRollStartTime = 0
                 self.isAudioClockStarted = false
@@ -1586,6 +1630,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             guard let self = self else { return }
             self.isAudioClockStarted = false
             self.firstAudioPTS = nil
+            // The picture anchor goes with it. Re-anchoring audio while keeping a
+            // picture timestamp from the old timeline pins the start anchor where the
+            // new audio never reaches, and nothing can be anchored again.
+            self.firstDecodedPicturePTS = nil
+            self.firstVideoFieldPTS = nil
+            self.commitAnchor = nil
             self.audioBuffersPreRolledCount = 0
             self.preRollStartTime = 0
 
@@ -1609,6 +1659,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             self.audioRenderer.reset()
             self.isAudioClockStarted = false
             self.firstAudioPTS = nil
+            // The picture anchor goes with it. Re-anchoring audio while keeping a
+            // picture timestamp from the old timeline pins the start anchor where the
+            // new audio never reaches, and nothing can be anchored again.
+            self.firstDecodedPicturePTS = nil
+            self.firstVideoFieldPTS = nil
+            self.commitAnchor = nil
             self.audioBuffersPreRolledCount = 0
             self.preRollStartTime = 0
 
