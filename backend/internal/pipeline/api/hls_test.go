@@ -907,8 +907,10 @@ stream_0.m3u8
 	assert.Contains(t, outStr, `stream_0.m3u8?ticket=t123`)
 	assert.Contains(t, outStr, `NAME="Deutsch (Dolby Digital 5.1)"`)
 	assert.Contains(t, outStr, `NAME="Originalton (Englisch) (Stereo)"`)
+	assert.Contains(t, outStr, `DEFAULT=YES,AUTOSELECT=YES`)
+	assert.NotContains(t, outStr, "#EXT-X-START:") // Master playlists do not have EXT-X-START
 
-	// Now check that an audio rendition playlist (init_2.mp4) does NOT have EXT-X-START injected
+	// Now check that an audio rendition playlist (init_2.mp4) HAS EXT-X-START injected identically to video
 	audioPlContent := `#EXTM3U
 #EXT-X-VERSION:7
 #EXT-X-TARGETDURATION:2
@@ -940,7 +942,7 @@ seg_2_000004.m4s
 	require.NoError(t, errAudio)
 	require.True(t, validAudio)
 	outAudio, _ := io.ReadAll(rdrAudio)
-	assert.NotContains(t, string(outAudio), "#EXT-X-START:")
+	assert.Contains(t, string(outAudio), "#EXT-X-START:")
 	assert.Contains(t, string(outAudio), `URI="init_2.mp4?ticket=t123"`)
 	assert.Contains(t, string(outAudio), "seg_2_000000.m4s?ticket=t123")
 }

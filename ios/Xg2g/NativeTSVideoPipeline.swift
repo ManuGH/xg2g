@@ -115,6 +115,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     public private(set) var availableSubtitleTracks: [SubtitleTrackInfo] = []
     public private(set) var selectedSubtitleTrack: SubtitleTrackInfo?
     public let dvbSubtitleAssembler = DVBSubtitlePESAssembler()
+    public let dvbSubtitleSegmentParser = DVBSubtitleSegmentParser()
+    public private(set) var dvbSubtitlePageContext: DVBSubtitlePageContext?
+    public let dvbSubtitleRenderer = DVBSubtitleImageRenderer()
+    public private(set) var currentSubtitleFrame: DVBSubtitleRenderedFrame?
+    public var onSubtitleFrameEmitted: (@Sendable (DVBSubtitleRenderedFrame?) -> Void)?
     private var isAudioClockStarted = false
     private var audioBuffersPreRolledCount = 0
 
@@ -382,6 +387,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         aacFrameParser.delegate = audioSampleBufferAssembler
         audioSampleBufferAssembler.delegate = self
         audioRenderer.delegate = self
+        dvbSubtitleAssembler.delegate = self
 
         setupAudioNotificationObservers()
         setupLifecycleNotificationObservers()
@@ -787,6 +793,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             aacFrameParser.reset()
             audioSampleBufferAssembler.reset()
             dvbSubtitleAssembler.reset()
+            dvbSubtitlePageContext?.reset()
+            dvbSubtitlePageContext = nil
+            currentSubtitleFrame = nil
+            onSubtitleFrameEmitted?(nil)
         }
     }
 
@@ -1192,6 +1202,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             guard let self = self else { return }
             self.selectedSubtitleTrack = track
             self.dvbSubtitleAssembler.reset()
+            self.dvbSubtitlePageContext?.reset()
+            self.dvbSubtitlePageContext = nil
+            self.currentSubtitleFrame = nil
+            self.onSubtitleFrameEmitted?(nil)
             let zapId = self.currentZapId
             let label = track?.displayName ?? "Aus"
             let logMsg = "[ZAP-#\(zapId)-SUB] 💬 Selected subtitle track: \(label)"
@@ -2590,3 +2604,41 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
 
     public func surfaceDidWarn(_ text: String) { reportWarning(text) }
 }
+
+// MARK: - DVBSubtitlePESAssemblerDelegate
+
+extension NativeTSVideoPipeline: DVBSubtitlePESAssemblerDelegate {
+    public func dvbSubtitleAssembler(_ assembler: DVBSubtitlePESAssembler, didAssemblePacket packet: DVBSubtitlePESPacket) {
+        guard let selectedSub = selectedSubtitleTrack, case .dvb(let compID, let ancID) = selectedSub.format else { return }
+
+        let segments = dvbSubtitleSegmentParser.parse(data: packet.payload)
+        let displaySet = DVBSubtitleDisplaySet(
+            pesPacket: packet,
+            segments: segments,
+            compositionPageID: compID,
+            ancillaryPageID: ancID
+        )
+
+        if dvbSubtitlePageContext == nil {
+            dvbSubtitlePageContext = DVBSubtitlePageContext(
+                compositionPageID: compID,
+                ancillaryPageID: ancID
+            )
+        }
+
+        if let snapshot = dvbSubtitlePageContext?.process(displaySet: displaySet) {
+            let renderedFrame = dvbSubtitleRenderer.render(snapshot: snapshot)
+            self.currentSubtitleFrame = renderedFrame
+            self.onSubtitleFrameEmitted?(renderedFrame)
+        }
+    }
+
+    public func dvbSubtitleAssembler(_ assembler: DVBSubtitlePESAssembler, didEncounterWarning warning: String) {
+        let zapId = self.currentZapId
+        let logMsg = "[ZAP-#\(zapId)-SUB] ⚠️ DVB Subtitle warning: \(warning)"
+        print(logMsg)
+        logger.warning("\(logMsg, privacy: .public)")
+        TelemetryServer.shared.log(logMsg)
+    }
+}
+

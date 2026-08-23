@@ -928,7 +928,11 @@ export function usePlaybackEngine({
       hls.on(Hls.Events.LEVEL_SWITCHED, () => updateStats(hls));
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, data: ManifestParsedData) => {
         onPlaybackMilestone?.('manifest');
-        debugLog('[V3Player] HLS Manifest Parsed', { levels: data.levels.length });
+        debugLog('[V3Player] HLS Manifest Parsed', {
+          levels: data.levels.length,
+          audioTracks: data.audioTracks?.map((t) => ({ id: t.id, name: t.name, lang: t.lang, default: t.default, url: t.url })),
+          currentAudioTrack: hls.audioTrack,
+        });
 
         if (hls.currentLevel === -1 && data.levels.length > 0) {
           hls.startLevel = -1;
@@ -959,6 +963,10 @@ export function usePlaybackEngine({
         }
       });
 
+      hls.on(Hls.Events.BUFFER_CODECS, (_event, data) => {
+        debugLog('[V3Player] HLS Buffer Codecs', { tracks: data.tracks });
+      });
+
       hls.on(Hls.Events.LEVEL_LOADED, (_event, data: LevelLoadedData) => {
         if (data.details.live === false) {
           revealHoldRef.current = false;
@@ -979,8 +987,18 @@ export function usePlaybackEngine({
         });
       });
 
+      hls.on(Hls.Events.FRAG_LOADING, (_event, data) => {
+        if (data.frag.type === 'audio') {
+          debugLog('[V3Player] HLS Audio Frag Loading', { sn: data.frag.sn, url: data.frag.url });
+        }
+      });
+
       hls.on(Hls.Events.FRAG_LOADED, (_event, data: FragLoadedData) => {
-        debugLog('[V3Player] HLS Frag Loaded', { sn: data.frag.sn });
+        if (data.frag.type === 'audio') {
+          debugLog('[V3Player] HLS Audio Frag Loaded', { sn: data.frag.sn, elementaryStreams: data.frag.elementaryStreams });
+        } else {
+          debugLog('[V3Player] HLS Frag Loaded', { sn: data.frag.sn });
+        }
         if (hls.currentLevel >= 0) {
           updateStats(hls);
         }
@@ -991,15 +1009,24 @@ export function usePlaybackEngine({
       });
 
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
+        debugLog('[V3Player] HLS Audio Tracks Updated', {
+          currentTrack: hls.audioTrack,
+          tracks: data.audioTracks?.map((t) => ({ id: t.id, name: t.name, lang: t.lang, default: t.default, url: t.url })),
+        });
         const initialTrackId = selectInitialHlsAudioTrack(hls.audioTrack, data.audioTracks ?? []);
         if (initialTrackId !== null) {
+          debugLog('[V3Player] Setting initial HLS audio track', { trackId: initialTrackId });
           hls.audioTrack = initialTrackId;
         }
         if (data.audioTracks && onAudioTracksUpdated) {
           onAudioTracksUpdated(data.audioTracks.map(t => ({ id: t.id, name: t.name, language: t.lang, key: 'hls-' + t.id, engineIndex: t.id })));
         }
       });
+      hls.on(Hls.Events.AUDIO_TRACK_SWITCHING, (_event, data) => {
+        debugLog('[V3Player] HLS Audio Track Switching', { id: data.id });
+      });
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
+        debugLog('[V3Player] HLS Audio Track Switched', { id: data.id });
         if (onAudioTrackSwitched) {
           onAudioTrackSwitched(data.id);
         }

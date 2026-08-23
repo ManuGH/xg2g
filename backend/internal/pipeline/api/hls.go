@@ -492,13 +492,15 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 			raw = filteredRaw
 		}
 	}
-	isAudioMediaPlaylist := !isMaster && bytes.Contains(raw, []byte("#EXT-X-MAP:URI=\"init_")) && !bytes.Contains(raw, []byte("#EXT-X-MAP:URI=\"init_0.mp4\""))
-	if isLive && !isAudioMediaPlaylist {
+	if isLive && !isMaster {
 		// Start clients with explicit headroom behind the live edge instead of at
 		// the very head (EXT-X-START is valid for live playlists too). The reserve
 		// absorbs playlist-poll/segment-timing jitter that otherwise shows up as
 		// immediate rebuffering after a seemingly clean start on fragile/native
 		// HLS clients.
+		// All media playlists (video & audio renditions) must receive the identical
+		// start tag to maintain strict A/V timeline synchronization. Master playlists
+		// are omitted so they do not introduce conflicting timeline offsets.
 		policy := deriveHLSStartupPolicy(rec, raw)
 		startupPolicy = &policy
 		if startupPolicy.StartupHeadroomSec > 0 {
@@ -566,6 +568,9 @@ func rewritePlaylist(source io.Reader, rec *model.SessionRecord, sessionDir stri
 						line = line[:idx+5] + newURI + line[idx+5+endIdx:]
 					}
 				}
+			}
+			if strings.Contains(line, "DEFAULT=YES") && !strings.Contains(line, "AUTOSELECT=") {
+				line = strings.Replace(line, "DEFAULT=YES", "DEFAULT=YES,AUTOSELECT=YES", 1)
 			}
 			if strings.Contains(line, "NAME=\"audio_") {
 				line = humanizeHLSMediaTrackName(line)

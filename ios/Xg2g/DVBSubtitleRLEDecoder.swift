@@ -138,20 +138,27 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
         var lines: [[UInt8]] = []
         var offset = 0
 
-        while offset < data.count {
-            let dataType = data[offset]
+        var mapTable2to4: [UInt8]? = nil
+        var mapTable2to8: [UInt8]? = nil
+        var mapTable4to8: [UInt8]? = nil
+
+        let bytes = [UInt8](data)
+
+        while offset < bytes.count {
+            let dataType = bytes[offset]
             offset += 1
 
             switch dataType {
             case 0x10: // 2-bit/pixel pixel-code string (Table 9)
                 let remainingData = data.dropFirst(offset)
-                let (decodedLines, consumedBytes) = decode2BitLines(data: remainingData, width: width)
+                let map = mapTable2to8 ?? mapTable2to4
+                let (decodedLines, consumedBytes) = decode2BitLines(data: remainingData, width: width, mapTable: map)
                 lines.append(contentsOf: decodedLines)
                 offset += max(consumedBytes, 1)
 
             case 0x11: // 4-bit/pixel pixel-code string (Table 10)
                 let remainingData = data.dropFirst(offset)
-                let (decodedLines, consumedBytes) = decode4BitLines(data: remainingData, width: width)
+                let (decodedLines, consumedBytes) = decode4BitLines(data: remainingData, width: width, mapTable: mapTable4to8)
                 lines.append(contentsOf: decodedLines)
                 offset += max(consumedBytes, 1)
 
@@ -161,11 +168,31 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
                 lines.append(contentsOf: decodedLines)
                 offset += max(consumedBytes, 1)
 
-            case 0x20: // 2-to-4-bit map-table
+            case 0x20: // 2-to-4-bit map-table (2 bytes)
+                guard offset + 2 <= bytes.count else { break }
+                let b0 = bytes[offset]
+                let b1 = bytes[offset + 1]
+                mapTable2to4 = [
+                    (b0 >> 4) & 0x0F,
+                    b0 & 0x0F,
+                    (b1 >> 4) & 0x0F,
+                    b1 & 0x0F
+                ]
+                offset += 2
+
+            case 0x21: // 2-to-8-bit map-table (4 bytes)
+                guard offset + 4 <= bytes.count else { break }
+                mapTable2to8 = [
+                    bytes[offset],
+                    bytes[offset + 1],
+                    bytes[offset + 2],
+                    bytes[offset + 3]
+                ]
                 offset += 4
-            case 0x21: // 2-to-8-bit map-table
-                offset += 8
-            case 0x22: // 4-to-8-bit map-table
+
+            case 0x22: // 4-to-8-bit map-table (16 bytes)
+                guard offset + 16 <= bytes.count else { break }
+                mapTable4to8 = Array(bytes[offset..<(offset + 16)])
                 offset += 16
 
             case 0xF0: // End of object line code
@@ -181,17 +208,25 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
 
     // MARK: - 2-Bit/Pixel RLE Decoder (ETSI EN 300 743 Table 9)
 
-    private func decode2BitLines(data: Data, width: Int) -> ([[UInt8]], Int) {
+    private func decode2BitLines(data: Data, width: Int, mapTable: [UInt8]? = nil) -> ([[UInt8]], Int) {
         var reader = DVBBitReader(data: data)
         var lines: [[UInt8]] = []
         var currentLine: [UInt8] = []
+
+        @inline(__always)
+        func mapColor(_ c: UInt8) -> UInt8 {
+            if let map = mapTable, Int(c) < map.count {
+                return map[Int(c)]
+            }
+            return c
+        }
 
         while !reader.isEOF {
             guard let code = reader.readBits(2) else { break }
 
             if code != 0x00 {
                 // Non-zero 2-bit pixel
-                currentLine.append(UInt8(code))
+                currentLine.append(mapColor(UInt8(code)))
             } else {
                 // Escape code starting with '00'
                 guard let flag1 = reader.readBits(1) else { break }
@@ -199,7 +234,8 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
                 if flag1 == 1 {
                     // '00 1': 3-bit run of color 0
                     guard let run = reader.readBits(3) else { break }
-                    currentLine.append(contentsOf: repeatElement(0, count: Int(run)))
+                    let color0 = mapColor(0)
+                    currentLine.append(contentsOf: repeatElement(color0, count: Int(run)))
                 } else {
                     // '00 0':
                     guard let flag2 = reader.readBits(1) else { break }
@@ -209,7 +245,7 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
                         guard let runBits = reader.readBits(2),
                               let color = reader.readBits(2) else { break }
                         let run = Int(runBits) + 3
-                        currentLine.append(contentsOf: repeatElement(UInt8(color), count: run))
+                        currentLine.append(contentsOf: repeatElement(mapColor(UInt8(color)), count: run))
                     } else {
                         // '00 0 0':
                         guard let subCode = reader.readBits(2) else { break }
@@ -225,21 +261,22 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
 
                         case 0x01:
                             // '00 0 0 01': 2 pixels of color 0
-                            currentLine.append(contentsOf: [0, 0])
+                            let color0 = mapColor(0)
+                            currentLine.append(contentsOf: [color0, color0])
 
                         case 0x02:
                             // '00 0 0 10': 4-bit run length (12..27), 2-bit color
                             guard let runBits = reader.readBits(4),
                                   let color = reader.readBits(2) else { break }
                             let run = Int(runBits) + 12
-                            currentLine.append(contentsOf: repeatElement(UInt8(color), count: run))
+                            currentLine.append(contentsOf: repeatElement(mapColor(UInt8(color)), count: run))
 
                         case 0x03:
                             // '00 0 0 11': 8-bit run length (29..284), 2-bit color
                             guard let runBits = reader.readBits(8),
                                   let color = reader.readBits(2) else { break }
                             let run = Int(runBits) + 29
-                            currentLine.append(contentsOf: repeatElement(UInt8(color), count: run))
+                            currentLine.append(contentsOf: repeatElement(mapColor(UInt8(color)), count: run))
 
                         default:
                             break
@@ -264,17 +301,25 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
 
     // MARK: - 4-Bit/Pixel RLE Decoder (ETSI EN 300 743 Table 10)
 
-    private func decode4BitLines(data: Data, width: Int) -> ([[UInt8]], Int) {
+    private func decode4BitLines(data: Data, width: Int, mapTable: [UInt8]? = nil) -> ([[UInt8]], Int) {
         var reader = DVBBitReader(data: data)
         var lines: [[UInt8]] = []
         var currentLine: [UInt8] = []
+
+        @inline(__always)
+        func mapColor(_ c: UInt8) -> UInt8 {
+            if let map = mapTable, Int(c) < map.count {
+                return map[Int(c)]
+            }
+            return c
+        }
 
         while !reader.isEOF {
             guard let code = reader.readBits(4) else { break }
 
             if code != 0x00 {
                 // Non-zero 4-bit pixel
-                currentLine.append(UInt8(code))
+                currentLine.append(mapColor(UInt8(code)))
             } else {
                 // Escape code starting with '0000'
                 guard let flag1 = reader.readBits(1) else { break }
@@ -284,7 +329,8 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
                     guard let runBits = reader.readBits(3) else { break }
                     if runBits != 0 {
                         // 1..7 pixels of color 0
-                        currentLine.append(contentsOf: repeatElement(0, count: Int(runBits)))
+                        let color0 = mapColor(0)
+                        currentLine.append(contentsOf: repeatElement(color0, count: Int(runBits)))
                     } else {
                         // '0000 0 000': End of line
                         if !currentLine.isEmpty {
@@ -302,7 +348,7 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
                         guard let runBits = reader.readBits(2),
                               let color = reader.readBits(4) else { break }
                         let run = Int(runBits) + 4
-                        currentLine.append(contentsOf: repeatElement(UInt8(color), count: run))
+                        currentLine.append(contentsOf: repeatElement(mapColor(UInt8(color)), count: run))
                     } else {
                         // '0000 1 1':
                         guard let flag3 = reader.readBits(1) else { break }
@@ -312,20 +358,21 @@ public final class DVBSubtitleRLEDecoder: @unchecked Sendable {
                             guard let runBits = reader.readBits(4),
                                   let color = reader.readBits(4) else { break }
                             let run = Int(runBits) + 9
-                            currentLine.append(contentsOf: repeatElement(UInt8(color), count: run))
+                            currentLine.append(contentsOf: repeatElement(mapColor(UInt8(color)), count: run))
                         } else {
                             // '0000 1 1 1':
                             guard let flag4 = reader.readBits(1) else { break }
 
                             if flag4 == 0 {
                                 // '0000 1 1 1 0': 2 pixels of color 0
-                                currentLine.append(contentsOf: [0, 0])
+                                let color0 = mapColor(0)
+                                currentLine.append(contentsOf: [color0, color0])
                             } else {
                                 // '0000 1 1 1 1': 8-bit run length (25..280), 4-bit color
                                 guard let runBits = reader.readBits(8),
                                       let color = reader.readBits(4) else { break }
                                 let run = Int(runBits) + 25
-                                currentLine.append(contentsOf: repeatElement(UInt8(color), count: run))
+                                currentLine.append(contentsOf: repeatElement(mapColor(UInt8(color)), count: run))
                             }
                         }
                     }
