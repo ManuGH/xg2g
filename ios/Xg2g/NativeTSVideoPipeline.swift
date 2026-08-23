@@ -1121,6 +1121,31 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
+    /// Selects an audio track by PID dynamically during live playback without interrupting the video stream.
+    public func selectAudioTrack(pid: UInt16) {
+        guard let track = availableAudioTracks.first(where: { $0.pid == pid }) else { return }
+        guard selectedAudioPID != pid else { return }
+
+        self.selectedAudioPID = track.pid
+        self.selectedAudioCodec = track.codec
+        audioPesAssembler.reset()
+        aacFrameParser.reset()
+        ac3FrameParser.reset()
+        audioSampleBufferAssembler.reset()
+
+        telemetry.mutate {
+            $0.audioPID = track.pid
+            $0.audioCodec = track.codec.description
+            $0.audioLanguage = track.language ?? "und"
+        }
+
+        let zapId = currentZapId
+        let logMsg = "[ZAP-#\(zapId)-AUDIO] 🔀 User switched audio track to: PID \(track.pid) (\(track.displayName))"
+        print(logMsg)
+        logger.notice("\(logMsg, privacy: .public)")
+        TelemetryServer.shared.log(logMsg)
+    }
+
     /// A channel can be silent because nothing in its PMT could be classified. That
     /// case produces no track and therefore no selection, so without this it left no
     /// trace at all - the failure looked identical to a channel that simply has no

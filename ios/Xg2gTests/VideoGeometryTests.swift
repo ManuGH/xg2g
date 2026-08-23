@@ -567,4 +567,41 @@ struct VideoGeometryTests {
         let smpteInfo = VideoGeometry.inspectColorimetry(from: pb)
         #expect(smpteInfo.primaries == "SMPTE-C")
     }
+
+    @Test("AFD: Active Format Description code definitions and descriptions")
+    func testActiveFormatDescriptionCodes() {
+        // Unsignaled / None
+        let afdNone = VideoGeometry.ActiveFormatDescription(code: nil)
+        #expect(!afdNone.isSignaled)
+        #expect(afdNone.description == "—")
+
+        let afdZero = VideoGeometry.ActiveFormatDescription(code: 0)
+        #expect(!afdZero.isSignaled)
+        #expect(afdZero.description == "—")
+
+        // 16:9 Letterbox in 4:3 frame (code 0b0010 = 2)
+        let afd2 = VideoGeometry.ActiveFormatDescription(code: 0b0010)
+        #expect(afd2.isSignaled)
+        #expect(afd2.description == "16:9 (Letterbox im 4:3-Frame)")
+
+        // 14:9 Letterbox in 4:3 frame (code 0b0011 = 3)
+        let afd3 = VideoGeometry.ActiveFormatDescription(code: 0b0011)
+        #expect(afd3.isSignaled)
+        #expect(afd3.description == "14:9 (Letterbox im 4:3-Frame)")
+
+        // Full Frame / Same AR (code 0b1000 = 8)
+        let afd8 = VideoGeometry.ActiveFormatDescription(code: 0b1000)
+        #expect(afd8.isSignaled)
+        #expect(afd8.description == "Vollbild (Full Frame / Same AR)")
+
+        // 4:3 Pillarbox in 16:9 frame (code 0b1001 = 9)
+        let afd9 = VideoGeometry.ActiveFormatDescription(code: 0b1001)
+        #expect(afd9.isSignaled)
+        #expect(afd9.description == "4:3 (Pillarbox im 16:9-Frame)")
+
+        // 16:9 Full Frame in 16:9 frame (code 0b1010 = 10)
+        let afd10 = VideoGeometry.ActiveFormatDescription(code: 0b1010)
+        #expect(afd10.isSignaled)
+        #expect(afd10.description == "16:9 (Vollbild im 16:9-Frame)")
+    }
 }

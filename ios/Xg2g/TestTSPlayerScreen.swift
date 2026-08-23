@@ -449,6 +449,27 @@ public struct TestTSPlayerScreen: View {
                             .disabled(presentationPath != .systemLayer)
                         }
 
+                        // Audio-Spuren (Mehrsprachigkeit, Dolby Digital, Audiodeskription)
+                        if let playing = coordinator.playing, !playing.availableAudioTracks.isEmpty {
+                            Menu {
+                                ForEach(playing.availableAudioTracks) { track in
+                                    Button {
+                                        Haptics.shared.impact(.light)
+                                        playing.selectAudioTrack(pid: track.pid)
+                                    } label: {
+                                        HStack {
+                                            Text(track.displayName)
+                                            if playing.selectedAudioPID == track.pid {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label("Tonspuren (\(playing.availableAudioTracks.count))", systemImage: "waveform")
+                            }
+                        }
+
                         // Stream-Info & Telemetrie Toggle
                         Button {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -795,6 +816,7 @@ public struct TestTSPlayerScreen: View {
                         let sarStr = tele.sarSignaled ? "\(tele.sarNumerator):\(tele.sarDenominator) (signalisiert)" : "Nicht signalisiert (1:1)"
                         hudRow("SAR", sarStr, highlight: tele.sarSignaled)
                         hudRow("Quell-DAR", tele.sourceDARDescription)
+                        hudRow("AFD (Active Area)", tele.afdDescription, highlight: tele.afdDescription != "—")
                     }
 
                     // 4. DARSTELLUNG & AUSGABE

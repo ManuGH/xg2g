@@ -206,6 +206,39 @@ public enum VideoGeometry {
         return String(format: "%.2f:1", ratio)
     }
 
+    /// Active Format Description (AFD) as specified in ETSI TS 101 154 / SMPTE 2016-1.
+    public struct ActiveFormatDescription: Sendable, Equatable, CustomStringConvertible {
+        public let code: UInt8
+        public let isSignaled: Bool
+
+        public init(code: UInt8? = nil) {
+            if let c = code, (c & 0x0F) != 0 {
+                self.code = c & 0x0F
+                self.isSignaled = true
+            } else {
+                self.code = 0
+                self.isSignaled = false
+            }
+        }
+
+        public var description: String {
+            guard isSignaled else { return "—" }
+            switch code {
+            case 0b0010: return "16:9 (Letterbox im 4:3-Frame)"
+            case 0b0011: return "14:9 (Letterbox im 4:3-Frame)"
+            case 0b0100: return "> 16:9 (Letterbox)"
+            case 0b1000: return "Vollbild (Full Frame / Same AR)"
+            case 0b1001: return "4:3 (Pillarbox im 16:9-Frame)"
+            case 0b1010: return "16:9 (Vollbild im 16:9-Frame)"
+            case 0b1011: return "14:9 (Pillarbox im 16:9-Frame)"
+            case 0b1101: return "4:3 (mit 14:9 Center)"
+            case 0b1110: return "16:9 (mit 14:9 Center)"
+            case 0b1111: return "16:9 (mit 4:3 Center)"
+            default: return "AFD 0x\(String(format: "%X", code))"
+            }
+        }
+    }
+
     /// Colorimetry, Dynamic Range, Matrix, and Scan Cadence extracted from CVPixelBuffer attachments.
     public struct ColorimetryInfo: Sendable, Equatable {
         public let primaries: String

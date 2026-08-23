@@ -90,4 +90,18 @@ import Testing
     @Test func noTracksSelectsNothing() {
         #expect(NativeTSVideoPipeline.preferredAudioTrack(from: []) == nil)
     }
+
+    @Test func audioTrackDisplayNameFormatting() {
+        let t1 = track(1001, .ac3, lang: "deu")
+        #expect(t1.displayName == "Deutsch – AC-3")
+
+        let t2 = track(1002, .ac3, lang: "eng")
+        #expect(t2.displayName == "Englisch – AC-3")
+
+        let t3 = track(1003, .aac, lang: "deu", audioType: 0x03)
+        #expect(t3.displayName == "Deutsch – AAC (Audiodeskription)")
+
+        let t4 = track(1004, .eac3, lang: "qaa")
+        #expect(t4.displayName == "Originalton – E-AC-3")
+    }
 }

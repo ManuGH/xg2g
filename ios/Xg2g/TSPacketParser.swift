@@ -135,6 +135,30 @@ public struct AudioTrackInfo: Sendable, Equatable, Identifiable {
         self.audioType = audioType
         self.descriptorTags = descriptorTags
     }
+
+    public var displayName: String {
+        let langName: String
+        switch (language ?? "").lowercased() {
+        case "deu", "ger": langName = "Deutsch"
+        case "eng": langName = "Englisch"
+        case "fra", "fre": langName = "Französisch"
+        case "ita": langName = "Italienisch"
+        case "spa": langName = "Spanisch"
+        case "qaa", "mis", "mul": langName = "Originalton"
+        default:
+            langName = language?.uppercased() ?? "Tonspur"
+        }
+
+        let typeSuffix: String
+        switch audioType {
+        case 1: typeSuffix = " (Clean Audio)"
+        case 2: typeSuffix = " (Hörgeschädigte)"
+        case 3: typeSuffix = " (Audiodeskription)"
+        default: typeSuffix = ""
+        }
+
+        return "\(langName) – \(codec.description)\(typeSuffix)"
+    }
 }
 
 /// An elementary stream the PMT named that could be audio, but that the parser
