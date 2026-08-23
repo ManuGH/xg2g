@@ -750,44 +750,54 @@ public struct TestTSPlayerScreen: View {
                 }
 
                 Group {
-                    hudSection(title: "STARTUP GATES (TTFP)") {
-                        hudRow("TTFP (GPU Done)", tele.ttfpGpuCompletedMs > 0 ? String(format: "%.1f ms", tele.ttfpGpuCompletedMs) : (tele.ttfpTotalMs > 0 ? String(format: "%.1f ms", tele.ttfpTotalMs) : "Instant 🚀"), highlight: true)
-                        hudRow("Performance", tele.ttfpRating, highlight: true)
-                        hudRow("t0→t1: Network", String(format: "%.1f ms", tele.ttfpNetworkMs))
-                        hudRow("t1→t2: PSI Demux", String(format: "%.1f ms", tele.ttfpPsiMs))
-                        hudRow("t4→t5: HW Decode", String(format: "%.1f ms", tele.ttfpDecodeMs))
-                    }
-
-                    hudSection(title: "VIDEO & RENDER") {
-                        let isInterlaced = tele.isInterlaced
-                        let h = tele.videoHeight
+                    // 1. VIDEO (SOURCE & BITSTREAM)
+                    hudSection(title: "VIDEO (QUELL-STREAM)") {
                         let w = tele.videoWidth
-                        let srcFps = tele.sourceFrameRate
-                        let fps = Int(round(srcFps > 0 ? (isInterlaced ? srcFps * 2 : srcFps) : 50))
-                        let formatStr = (w > 0 && h > 0) ? "\(w)x\(h) \(h)\(isInterlaced ? "i" : "p")\(fps)" : "Detecting…"
-                        hudRow("Format", formatStr)
-                        hudRow("HW Decode", tele.hwDecodeActive ? "Active 🚀" : "Pending…", highlight: tele.hwDecodeActive)
-                        hudRow("Fields Displayed", String(format: "%.1f fields/s", tele.fieldsSubmittedPerSec), highlight: abs(tele.fieldsSubmittedPerSec - 50.0) < 3.0)
-                        hudRow("Bitrate", String(format: "%.1f kbps", tele.tsBitrateKbps))
+                        let h = tele.videoHeight
+                        let resStr = (w > 0 && h > 0) ? "\(w) × \(h)" : "Erkenne…"
+                        hudRow("Auflösung", resStr)
+                        hudRow("Signal", tele.videoScanSummary)
+                        hudRow("Codec", tele.codec)
+                        hudRow("Bitrate", tele.tsBitrateKbps > 0 ? String(format: "%.1f Mbps", tele.tsBitrateKbps / 1000.0) : "—")
+                        hudRow("HW Decode", tele.hwDecodeActive ? "VideoToolbox 🚀" : "Software", highlight: tele.hwDecodeActive)
                     }
 
-                    hudSection(title: "AUDIO (AVFoundation)") {
-                        hudRow("Codec", tele.audioCodec)
-                        hudRow("Channels", "\(tele.audioChannels) ch")
+                    // 2. BILDFORMAT & GEOMETRIE
+                    hudSection(title: "BILDFORMAT & GEOMETRIE") {
+                        let sarStr = tele.sarSignaled ? "\(tele.sarNumerator):\(tele.sarDenominator) (Signaled)" : "Nicht signalisiert (1:1)"
+                        let darStr = tele.sarSignaled ? tele.darDescription : (tele.videoWidth > 0 && tele.videoHeight > 0 ? "\(tele.darDescription) (aus Pixelmaßen)" : "16:9")
+                        hudRow("SAR (Pixel-Aspect)", sarStr, highlight: tele.sarSignaled)
+                        hudRow("DAR (Display-Aspect)", darStr)
+                        hudRow("Modus", viewPreset.rawValue, highlight: viewPreset != .standard)
+                    }
+
+                    // 3. AUSGABE & RENDERER
+                    hudSection(title: "AUSGABE & RENDERPFAD") {
+                        hudRow("Renderpfad", presentationPath == .systemLayer ? "System Layer (AVSampleBuffer)" : "Metal Direct (CAMetalLayer)")
+                        hudRow("Skalierung", viewPreset.scalingMode == .fill ? "Aspect Fill (Crop)" : "Aspect Fit (Letterbox)")
+                        hudRow("Fields Rate", String(format: "%.1f fields/s", tele.fieldsSubmittedPerSec), highlight: abs(tele.fieldsSubmittedPerSec - 50.0) < 3.0)
+                    }
+
+                    // 4. AUDIO & SYNC
+                    hudSection(title: "AUDIO & STREAM-HEALTH") {
+                        let langStr = tele.audioLanguage.isEmpty || tele.audioLanguage == "und" ? "" : " [\(tele.audioLanguage.uppercased())]"
+                        hudRow("Audio Format", "\(tele.audioCodec)\(langStr) \(tele.audioChannels)ch")
                         hudRow("Master Clock", tele.isAudioMasterClockActive ? "Synchronized 🟢" : "Pre-roll ⚪️", highlight: tele.isAudioMasterClockActive)
+                        hudRow("Audio Lead", String(format: "%.0f ms", tele.audioLeadMs))
+                        hudRow("Drops / Errors", "\(tele.droppedFrames) drops / \(tele.decodeErrors) dec", alert: tele.droppedFrames > 0 || tele.decodeErrors > 0)
                     }
 
-                    hudSection(title: "SYSTEM & PERFORMANCE") {
-                        hudRow("Thermal State", tele.thermalState, highlight: tele.thermalState.contains("Nominal"))
-                        hudRow("Footprint (Peak)", String(format: "%.1f MB (%.1f MB)", tele.memoryUsageMB, tele.peakMemoryFootprintMB))
+                    // 5. STARTUP & PERFORMANCE
+                    hudSection(title: "PERFORMANCE & TTFP") {
+                        hudRow("TTFP (Erstes Bild)", tele.ttfpTotalMs > 0 ? String(format: "%.1f ms", tele.ttfpTotalMs) : "Instant 🚀", highlight: true)
                         hudRow("Process CPU", String(format: "%.1f %%", tele.processCpuUsagePercent), highlight: tele.processCpuUsagePercent < 25.0)
-                        hudRow("VT In-Flight", "\(tele.vtInFlightFrames)", highlight: tele.vtInFlightFrames <= 3)
+                        hudRow("Footprint (Peak)", String(format: "%.1f MB (%.1f MB)", tele.memoryUsageMB, tele.peakMemoryFootprintMB))
                     }
                 }
             }
             .padding(10)
         }
-        .frame(maxWidth: 320, maxHeight: 350)
+        .frame(maxWidth: 340, maxHeight: 420)
         .background(.ultraThinMaterial)
         .cornerRadius(12)
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))

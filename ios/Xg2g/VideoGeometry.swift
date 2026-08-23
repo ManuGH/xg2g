@@ -150,26 +150,45 @@ public enum VideoGeometry {
         return (bestNum, bestDen)
     }
 
-    /// Extracts Sample Aspect Ratio (SAR) from CVPixelBuffer attachments if present.
-    public static func extractSAR(from pixelBuffer: CVPixelBuffer) -> (numerator: Int, denominator: Int) {
+    /// Inspects Sample Aspect Ratio (SAR) from CVPixelBuffer attachments and reports if it was explicitly signaled.
+    public static func inspectSAR(from pixelBuffer: CVPixelBuffer) -> (numerator: Int, denominator: Int, isSignaled: Bool) {
         if #available(iOS 15.0, *) {
             if let dict = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferPixelAspectRatioKey, nil) as? [CFString: Any] {
                 let hSpacing = (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey] as? Int ?? 1)
                 let vSpacing = (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey] as? Int ?? 1)
-                return (max(1, hSpacing), max(1, vSpacing))
+                return (max(1, hSpacing), max(1, vSpacing), true)
             }
             if let dict = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferPixelAspectRatioKey, nil) as? [String: Any] {
                 let hSpacing = (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey as String] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey as String] as? Int ?? 1)
                 let vSpacing = (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey as String] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey as String] as? Int ?? 1)
-                return (max(1, hSpacing), max(1, vSpacing))
+                return (max(1, hSpacing), max(1, vSpacing), true)
             }
         }
         if let dict = CVBufferGetAttachment(pixelBuffer, kCVImageBufferPixelAspectRatioKey, nil)?.takeUnretainedValue() as? NSDictionary {
             let h = (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey as String] as? NSNumber)?.intValue ?? 1
             let v = (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey as String] as? NSNumber)?.intValue ?? 1
-            return (max(1, h), max(1, v))
+            return (max(1, h), max(1, v), true)
         }
-        return (1, 1)
+        return (1, 1, false)
+    }
+
+    /// Extracts Sample Aspect Ratio (SAR) from CVPixelBuffer attachments if present.
+    public static func extractSAR(from pixelBuffer: CVPixelBuffer) -> (numerator: Int, denominator: Int) {
+        let inspected = inspectSAR(from: pixelBuffer)
+        return (inspected.numerator, inspected.denominator)
+    }
+
+    /// Returns a user-friendly DAR description (e.g. "16:9", "4:3", "2.35:1").
+    public static func describeDAR(_ ratio: Double) -> String {
+        guard ratio > 0, ratio.isFinite else { return "16:9" }
+        if abs(ratio - (16.0 / 9.0)) < 0.015 { return "16:9" }
+        if abs(ratio - (4.0 / 3.0)) < 0.015 { return "4:3" }
+        if abs(ratio - (5.0 / 4.0)) < 0.015 { return "5:4" }
+        if abs(ratio - (16.0 / 10.0)) < 0.015 { return "16:10" }
+        if abs(ratio - 2.21) < 0.02 { return "2.21:1" }
+        if abs(ratio - 2.35) < 0.02 { return "2.35:1" }
+        if abs(ratio - 2.39) < 0.02 { return "2.39:1" }
+        return String(format: "%.2f:1", ratio)
     }
 
     /// Applies or updates Sample Aspect Ratio (SAR) attachment on a CVPixelBuffer based on an aspect ratio override.

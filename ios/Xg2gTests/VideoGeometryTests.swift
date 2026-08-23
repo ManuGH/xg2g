@@ -69,16 +69,34 @@ struct VideoGeometryTests {
 
         // 3. 720x576 SD Anamorphic 16:9 with SAR 64:45
         let pb576_16_9 = createTestPixelBuffer(width: 720, height: 576, sarNum: 64, sarDen: 45)
-        let sar576_16_9 = VideoGeometry.extractSAR(from: pb576_16_9)
-        #expect(sar576_16_9.numerator == 64)
-        #expect(sar576_16_9.denominator == 45)
+        let inspected = VideoGeometry.inspectSAR(from: pb576_16_9)
+        #expect(inspected.isSignaled == true)
+        #expect(inspected.numerator == 64)
+        #expect(inspected.denominator == 45)
         let dar576_16_9 = VideoGeometry.effectiveDAR(
             width: CVPixelBufferGetWidth(pb576_16_9),
             height: CVPixelBufferGetHeight(pb576_16_9),
-            sarNumerator: sar576_16_9.numerator,
-            sarDenominator: sar576_16_9.denominator
+            sarNumerator: inspected.numerator,
+            sarDenominator: inspected.denominator
         )
         #expect(abs(dar576_16_9 - (16.0 / 9.0)) < 0.0001)
+
+        // 4. Unsignaled buffer fallback (no SAR attachment)
+        let pbUnsignaled = createTestPixelBuffer(width: 720, height: 576)
+        let unsignaled = VideoGeometry.inspectSAR(from: pbUnsignaled)
+        #expect(unsignaled.isSignaled == false)
+        #expect(unsignaled.numerator == 1)
+        #expect(unsignaled.denominator == 1)
+    }
+
+    @Test("DAR Description Formatter")
+    func testDescribeDAR() {
+        #expect(VideoGeometry.describeDAR(16.0 / 9.0) == "16:9")
+        #expect(VideoGeometry.describeDAR(4.0 / 3.0) == "4:3")
+        #expect(VideoGeometry.describeDAR(5.0 / 4.0) == "5:4")
+        #expect(VideoGeometry.describeDAR(16.0 / 10.0) == "16:10")
+        #expect(VideoGeometry.describeDAR(2.35) == "2.35:1")
+        #expect(VideoGeometry.describeDAR(2.39) == "2.39:1")
     }
 
     @Test("CVPixelBuffer: Application of DAR Override attaches correct SAR for AVFoundation")

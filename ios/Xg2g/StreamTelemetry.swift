@@ -172,6 +172,15 @@ public struct TelemetryValues: Sendable {
     public var isDirect1080iVerified: Bool = false
     public var validationWarning: String?
 
+    // MARK: - ASPECT RATIO & GEOMETRY Metrics
+    public var sarNumerator: Int = 1
+    public var sarDenominator: Int = 1
+    public var sarSignaled: Bool = false
+    public var effectiveDAR: Double = 16.0 / 9.0
+    public var darDescription: String = "16:9"
+    public var videoScanSummary: String = "1080i50"
+    public var presentationModeName: String = "Standard"
+
     /// Set when the PMT names a video codec this pipeline cannot turn into
     /// pictures, carrying the viewer-facing name of that format.
     ///
@@ -258,6 +267,12 @@ public struct TelemetryValues: Sendable {
             "resolution": "\(videoWidth)x\(videoHeight)",
             "is_interlaced": isInterlaced,
             "field_order": fieldOrder,
+            "sar": "\(sarNumerator):\(sarDenominator)",
+            "sar_signaled": sarSignaled,
+            "effective_dar": effectiveDAR,
+            "dar_description": darDescription,
+            "video_scan_summary": videoScanSummary,
+            "presentation_mode": presentationModeName,
             "source_frame_rate": sourceFrameRate,
             "source_field_rate": sourceFieldRate,
             "hw_decode_active": hwDecodeActive,

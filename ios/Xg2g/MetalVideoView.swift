@@ -1473,12 +1473,45 @@ public final class MetalVideoView: UIView {
         return true
     }
 
+    private func updateGeometryTelemetry(pixelBuffer: CVPixelBuffer) {
+        guard let telemetry = telemetry else { return }
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let sar = VideoGeometry.inspectSAR(from: pixelBuffer)
+        let targetDAR = VideoGeometry.effectiveDAR(
+            width: width,
+            height: height,
+            sarNumerator: sar.numerator,
+            sarDenominator: sar.denominator,
+            override: aspectRatioOverride
+        )
+        let darDesc = VideoGeometry.describeDAR(targetDAR)
+        let scanHz = Int(round(sourceIsInterlaced ? (estimatedFrameDuration > 0 ? (1.0 / estimatedFrameDuration) * 2.0 : 50) : (estimatedFrameDuration > 0 ? (1.0 / estimatedFrameDuration) : 50)))
+        let scanDesc = "\(height)\(sourceIsInterlaced ? "i" : "p")\(scanHz)"
+        let modeName = scalingMode == .fill ? "Bildschirm füllen" : (aspectRatioOverride == .auto ? "Standard" : "\(darDesc) Override")
+
+        telemetry.mutate {
+            $0.videoWidth = width
+            $0.videoHeight = height
+            $0.isInterlaced = self.sourceIsInterlaced
+            $0.sarNumerator = sar.numerator
+            $0.sarDenominator = sar.denominator
+            $0.sarSignaled = sar.isSignaled
+            $0.effectiveDAR = targetDAR
+            $0.darDescription = darDesc
+            $0.videoScanSummary = scanDesc
+            $0.presentationModeName = modeName
+        }
+    }
+
     /// Renders one field into a pooled surface and hands it to AVFoundation.
     ///
     /// The deinterlace pass is the same one the drawable path uses — it already
     /// targeted an arbitrary texture for `captureCurrentFrameJPEG`, so only the
     /// destination differs.
     private func presentThroughSystemLayer(_ field: PendingField, presenter: SystemVideoPresenter) {
+        updateGeometryTelemetry(pixelBuffer: field.pixelBuffer)
+
         let pts = CMTime(seconds: field.ptsSeconds, preferredTimescale: 90_000)
         let duration = CMTime(
             seconds: sourceIsInterlaced ? estimatedFrameDuration * 0.5 : estimatedFrameDuration,
@@ -1566,6 +1599,8 @@ public final class MetalVideoView: UIView {
     /// entry point in that case, and having both paths able to deinterlace the
     /// same field is how a picture ends up rendered twice.
     private func renderField(_ field: PendingField, isFirstFrame: Bool) {
+        updateGeometryTelemetry(pixelBuffer: field.pixelBuffer)
+
         guard UIApplication.shared.applicationState == .active,
               let deinterlacePipeline = deinterlacePipeline,
               let source = makeTextures(from: field.pixelBuffer),
