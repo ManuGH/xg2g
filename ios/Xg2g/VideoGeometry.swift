@@ -60,6 +60,21 @@ public enum VideoViewPreset: String, CaseIterable, Identifiable, Sendable {
         .r2_39
     ]
 
+    /// Compact UI label for high-density navigation bars (Standard, Füllen, 16:9, 4:3, etc.).
+    public var shortLabel: String {
+        switch self {
+        case .standard:   return "Standard"
+        case .fillScreen: return "Füllen"
+        case .r16_9:      return "16:9"
+        case .r4_3:       return "4:3"
+        case .r5_4:       return "5:4"
+        case .r16_10:     return "16:10"
+        case .r2_21:      return "2.21:1"
+        case .r2_35:      return "2.35:1"
+        case .r2_39:      return "2.39:1"
+        }
+    }
+
     public var scalingMode: VideoScalingMode {
         switch self {
         case .fillScreen:

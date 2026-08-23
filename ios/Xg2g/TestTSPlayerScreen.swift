@@ -350,6 +350,7 @@ public struct TestTSPlayerScreen: View {
                     }
                     .buttonStyle(.plain)
                     .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
 
                     // 2. Channel Info (Compact & Non-overflowing)
                     ChannelLogo(url: currentLogoURL, name: currentChannelName, size: isLandscape ? 32 : 28)
@@ -396,44 +397,58 @@ public struct TestTSPlayerScreen: View {
                         HStack(spacing: 4) {
                             Image(systemName: viewPreset.scalingMode == .fill ? "arrow.up.left.and.arrow.down.right" : "aspectratio")
                                 .font(.system(size: 11, weight: .bold))
-                            Text(viewPreset.rawValue)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            Text(viewPreset.shortLabel)
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
                         }
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 6)
                         .background(.ultraThinMaterial, in: Capsule())
                         .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                     }
                     .buttonStyle(.plain)
                     .frame(minHeight: 44)
+                    .contentShape(Rectangle())
 
-                    // 4. Picture in Picture Button (44x44 hitbox)
-                    Button {
-                        Haptics.shared.impact(.light)
-                        coordinator.surface.startPictureInPicture()
-                    } label: {
-                        Image(systemName: "pip.enter")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
+                    if isLandscape {
+                        // 4. Picture in Picture Button (Landscape direct access, 44x44 hitbox)
+                        Button {
+                            Haptics.shared.impact(.light)
+                            coordinator.surface.startPictureInPicture()
+                        } label: {
+                            Image(systemName: "pip.enter")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 36, height: 36)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                        .disabled(presentationPath != .systemLayer)
+                        .opacity(presentationPath == .systemLayer ? 1.0 : 0.4)
+
+                        // 5. AirPlay Route Picker Button (Landscape direct access, 44x44 hitbox)
+                        AirPlayButton()
+                            .frame(width: 44, height: 44)
                             .background(.ultraThinMaterial, in: Circle())
                             .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: 44, height: 44)
-                    .disabled(presentationPath != .systemLayer)
-                    .opacity(presentationPath == .systemLayer ? 1.0 : 0.4)
-
-                    // 5. AirPlay Route Picker Button (44x44 hitbox)
-                    AirPlayButton()
-                        .frame(width: 36, height: 36)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
-                        .frame(width: 44, height: 44)
 
                     // 6. Overflow / Diagnose Menu ("..." 44x44 hitbox)
                     Menu {
+                        if !isLandscape {
+                            // Picture-in-Picture in Portrait
+                            Button {
+                                Haptics.shared.impact(.light)
+                                coordinator.surface.startPictureInPicture()
+                            } label: {
+                                Label("Bild-in-Bild starten", systemImage: "pip.enter")
+                            }
+                            .disabled(presentationPath != .systemLayer)
+                        }
+
                         // Stream-Info & Telemetrie Toggle
                         Button {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -482,6 +497,7 @@ public struct TestTSPlayerScreen: View {
                             .overlay(Circle().strokeBorder(showHUD ? Theme.Gradients.liveAuraBorder : Theme.Gradients.specularBorder, lineWidth: 0.8))
                     }
                     .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                 }
                 .padding(.horizontal, sideInset)
                 .padding(.top, isLandscape ? 12 : max(safeInsets.top, 8))

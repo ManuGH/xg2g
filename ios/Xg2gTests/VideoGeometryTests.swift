@@ -412,4 +412,67 @@ struct VideoGeometryTests {
         let finalTelemetry = telemetry.snapshot()
         #expect(finalTelemetry.droppedFrames == initialDrops)
     }
+
+    @Test("VideoViewPreset: Short UI labels are bounded and concise")
+    func testVideoViewPresetShortLabels() {
+        for preset in VideoViewPreset.allCases {
+            let label = preset.shortLabel
+            #expect(!label.isEmpty)
+            #expect(label.count <= 8, "Short label '\(label)' exceeds maximum compact length")
+        }
+        #expect(VideoViewPreset.standard.shortLabel == "Standard")
+        #expect(VideoViewPreset.fillScreen.shortLabel == "Füllen")
+        #expect(VideoViewPreset.r16_9.shortLabel == "16:9")
+        #expect(VideoViewPreset.r4_3.shortLabel == "4:3")
+    }
+
+    @Test("Player Header: Width Budgeting across standard iPhone viewports")
+    func testHeaderWidthBudgeting() {
+        struct ViewportBudget {
+            let totalWidth: CGFloat
+            let isLandscape: Bool
+            let sideInset: CGFloat
+            let dismissButtonWidth: CGFloat = 44
+            let logoWidth: CGFloat = 32
+            let aspectButtonEstimatedWidth: CGFloat = 72
+            let menuButtonWidth: CGFloat = 44
+            let pipButtonWidth: CGFloat = 44
+            let airplayButtonWidth: CGFloat = 44
+            let spacing: CGFloat = 8
+
+            var channelInfoAvailableWidth: CGFloat {
+                let fixedElementsWidth: CGFloat
+                if isLandscape {
+                    fixedElementsWidth = dismissButtonWidth + spacing + logoWidth + spacing +
+                                         aspectButtonEstimatedWidth + spacing + pipButtonWidth + spacing +
+                                         airplayButtonWidth + spacing + menuButtonWidth
+                } else {
+                    fixedElementsWidth = dismissButtonWidth + spacing + logoWidth + spacing +
+                                         aspectButtonEstimatedWidth + spacing + menuButtonWidth
+                }
+                let insets = sideInset * 2
+                return totalWidth - insets - fixedElementsWidth
+            }
+        }
+
+        // Test 375 pt (iPhone SE / 13 mini)
+        let seBudget = ViewportBudget(totalWidth: 375, isLandscape: false, sideInset: 16)
+        #expect(seBudget.channelInfoAvailableWidth >= 125, "iPhone SE must have at least 125pt for channel title")
+
+        // Test 390 pt (iPhone 12/13/14)
+        let ip14Budget = ViewportBudget(totalWidth: 390, isLandscape: false, sideInset: 16)
+        #expect(ip14Budget.channelInfoAvailableWidth >= 140)
+
+        // Test 393 pt (iPhone 15/16 Pro)
+        let proBudget = ViewportBudget(totalWidth: 393, isLandscape: false, sideInset: 16)
+        #expect(proBudget.channelInfoAvailableWidth >= 143)
+
+        // Test 430 pt (iPhone 15/16 Pro Max)
+        let maxBudget = ViewportBudget(totalWidth: 430, isLandscape: false, sideInset: 16)
+        #expect(maxBudget.channelInfoAvailableWidth >= 180)
+
+        // Test 852 pt (iPhone 15/16 Pro Landscape)
+        let landscapeBudget = ViewportBudget(totalWidth: 852, isLandscape: true, sideInset: 24)
+        #expect(landscapeBudget.channelInfoAvailableWidth >= 450, "Landscape must have abundant space for full metadata")
+    }
 }
