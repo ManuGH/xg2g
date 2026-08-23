@@ -160,7 +160,7 @@ final class ZapCoordinator: ObservableObject {
             preparation = try await preparations.start(serviceRef: serviceRef, zapID: zapID)
         } catch {
             guard isCurrent(zapID) else { return }
-            return fail(zapID, serviceRef, "the receiver could not be asked to prepare: \(error.localizedDescription)")
+            return await failOrStartOutright(zapID, serviceRef, "the receiver could not be asked to prepare: \(describe(error))")
         }
         guard isCurrent(zapID) else {
             await preparations.cancel(preparation.preparationId, zapID: zapID)
@@ -182,14 +182,14 @@ final class ZapCoordinator: ObservableObject {
         } catch {
             guard isCurrent(zapID) else { return }
             await abandonInFlight(reason: "lost track of the preparation")
-            return fail(zapID, serviceRef, "lost track of the preparation: \(error.localizedDescription)")
+            return await failOrStartOutright(zapID, serviceRef, "lost track of the preparation: \(describe(error))")
         }
         guard isCurrent(zapID) else { return }
 
         guard settled.parsedState == .ready, let backendGeneration = settled.generation else {
             await abandonInFlight(reason: "preparation did not become ready")
             guard isCurrent(zapID) else { return }
-            return fail(zapID, serviceRef, settled.failureSummary)
+            return await failOrStartOutright(zapID, serviceRef, settled.failureSummary)
         }
         note(zapID, "transport.ready", serviceRef, extra: "after \(settled.readyAfterMs ?? -1)ms")
 
@@ -255,7 +255,7 @@ final class ZapCoordinator: ObservableObject {
         do {
             _ = try await preparations.commit(settled.preparationId, generation: backendGeneration, zapID: zapID)
         } catch {
-            note(zapID, "commit.unacknowledged", serviceRef, extra: error.localizedDescription)
+            note(zapID, "commit.unacknowledged", serviceRef, extra: describe(error))
         }
     }
 
@@ -273,6 +273,11 @@ final class ZapCoordinator: ObservableObject {
         await abandonInFlight(reason: "superseded by \(zapID)")
         guard isCurrent(zapID) else { return }
 
+        await startOutright(url: url, zapID: zapID, requestedAt: requestedAt)
+    }
+
+    /// Starts a channel without a preparation behind it, under an existing zap.
+    private func startOutright(url: URL, zapID: String, requestedAt: CFTimeInterval) async {
         note(zapID, "direct.start", url.lastPathComponent)
 
         let session = makeSession()
@@ -344,6 +349,31 @@ final class ZapCoordinator: ObservableObject {
         flight.session?.stopStreaming()
         await preparations?.cancel(flight.preparationID, zapID: flight.zapID)
         note(flight.zapID, "prepare.abandoned", flight.serviceRef, extra: reason)
+    }
+
+    /// Renders an error so the log names the cause rather than an enum case number.
+    private func describe(_ error: Error) -> String {
+        (error as? APIError)?.diagnosticDescription ?? error.localizedDescription
+    }
+
+    /// Reports a failed channel change, and starts the channel anyway when there is
+    /// nothing on screen to protect.
+    ///
+    /// Make-before-break exists to keep a viewer's picture through a failed tune. With
+    /// no picture yet there is none to keep, and refusing to play because the
+    /// preparation could not be made would trade a diagnosable failure for a black
+    /// screen — which is the failure this whole rebuild set out to remove. The reason
+    /// is logged either way, so a backend that cannot be asked to prepare is visible
+    /// rather than silently worked around.
+    private func failOrStartOutright(_ zapID: String, _ serviceRef: String, _ reason: String) async {
+        note(zapID, "zap.failed", serviceRef, extra: reason)
+
+        guard playing == nil, let url = streamURL(serviceRef), isCurrent(zapID) else {
+            phase = .failed(serviceRef: serviceRef, reason: reason)
+            return
+        }
+        note(zapID, "zap.fallback", serviceRef, extra: "nothing playing to protect; starting outright")
+        await startOutright(url: url, zapID: zapID, requestedAt: CACurrentMediaTime())
     }
 
     private func fail(_ zapID: String, _ serviceRef: String, _ reason: String) {

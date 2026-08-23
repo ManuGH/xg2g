@@ -110,3 +110,38 @@ extension TransportFailure {
         }
     }
 }
+
+extension APIError {
+    /// What actually went wrong, in one line fit for a log.
+    ///
+    /// `localizedDescription` on a plain Swift error renders as "The operation
+    /// couldn't be completed. (Xg2g.APIError error 1.)", which names neither the
+    /// status, the reason, nor the request id the server logged it under. A channel
+    /// change that fails has to say why — a failure nobody can read is the thing this
+    /// player was rebuilt to stop producing.
+    var diagnosticDescription: String {
+        switch self {
+        case .transport(let failure):
+            switch failure {
+            case .offline: return "no network"
+            case .timedOut: return "request timed out"
+            case .cannotConnect: return "cannot reach the server"
+            case .tls: return "TLS failed"
+            case .cancelled: return "cancelled"
+            case .other(let code): return "network error \(code)"
+            }
+        case .problem(let p):
+            var line = "HTTP \(p.status)"
+            if let code = p.code, !code.isEmpty { line += " \(code)" }
+            if let detail = p.detail, !detail.isEmpty { line += ": \(detail)" }
+            if !p.requestId.isEmpty { line += " [request \(p.requestId)]" }
+            return line
+        case .http(let status, let contentType, let bodyPreview):
+            return "HTTP \(status) (\(contentType ?? "no content type")): \(bodyPreview.prefix(120))"
+        case .unexpectedPayload(let payload):
+            return "HTTP \(payload.status) from \(payload.url.path) was not \(payload.expected): \(payload.bodyPreview.prefix(120))"
+        case .invalidEndpoint(let path):
+            return "invalid endpoint \(path)"
+        }
+    }
+}
