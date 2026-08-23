@@ -1307,9 +1307,14 @@ func (r *MasterRing) ReadinessFacts() ReadinessFacts {
 	tracks := make([]AudioTrackInfo, len(r.audioTracks))
 	copy(tracks, r.audioTracks)
 
-	parameterSets := r.pesHasSPS && r.pesHasPPS
-	if r.videoCodec == CodecH265 {
-		parameterSets = parameterSets && r.pesHasVPS
+	parameterSets := false
+	switch r.videoCodec {
+	case CodecMPEG2:
+		parameterSets = r.pesHasSPS // MPEG-2 Sequence Header (0xB3)
+	case CodecH265:
+		parameterSets = r.pesHasSPS && r.pesHasPPS && r.pesHasVPS
+	default:
+		parameterSets = r.pesHasSPS && r.pesHasPPS
 	}
 
 	attach := false
