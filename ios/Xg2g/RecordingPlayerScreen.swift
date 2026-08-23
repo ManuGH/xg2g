@@ -37,6 +37,8 @@ struct RecordingPlayerScreen: View {
     @State private var autoHideTask: Task<Void, Never>?
     @State private var skipFeedback: (text: String, isForward: Bool)? = nil
     @State private var hideSkipFeedbackTask: Task<Void, Never>?
+    @State private var dragOffsetY: CGFloat = 0
+    @State private var isDraggingToDismiss = false
 
     private var totalDuration: Double {
         let recDur = Double(recording.durationSeconds)
@@ -52,7 +54,10 @@ struct RecordingPlayerScreen: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // Background Dimming Backdrop that fades as you drag down
+            Color.black
+                .opacity(1.0 - Double(max(0, dragOffsetY) / 600.0))
+                .ignoresSafeArea()
 
             let base = serverAddress.starts(with: "http") ? serverAddress : "https://\(serverAddress)"
             if errorMessage == nil && URL(string: base) != nil {
@@ -94,6 +99,39 @@ struct RecordingPlayerScreen: View {
                 errorStateView
             }
         }
+        .offset(y: max(0, dragOffsetY))
+        .scaleEffect(dragOffsetY > 0 ? max(0.82, 1.0 - (dragOffsetY / 1100.0)) : 1.0)
+        .clipShape(RoundedRectangle(cornerRadius: dragOffsetY > 0 ? 28 : 0, style: .continuous))
+        .shadow(color: Color.black.opacity(dragOffsetY > 0 ? 0.6 : 0), radius: 24, y: 12)
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { value in
+                    if value.translation.height > 0 && abs(value.translation.height) > abs(value.translation.width) && !isScrubbing {
+                        isDraggingToDismiss = true
+                        dragOffsetY = value.translation.height
+                    }
+                }
+                .onEnded { value in
+                    if isDraggingToDismiss {
+                        if value.translation.height > 120 || value.predictedEndTranslation.height > 250 {
+                            triggerHaptic(.light)
+                            withAnimation(.easeOut(duration: 0.22)) {
+                                dragOffsetY = 900
+                            }
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 180_000_000)
+                                cleanup()
+                                dismiss()
+                            }
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                dragOffsetY = 0
+                            }
+                        }
+                        isDraggingToDismiss = false
+                    }
+                }
+        )
         .animation(.easeInOut(duration: 0.25), value: showControls)
         .animation(.easeInOut(duration: 0.35), value: player != nil)
         .animation(.easeInOut(duration: 0.35), value: isPreparing)
@@ -190,59 +228,72 @@ struct RecordingPlayerScreen: View {
 
     @ViewBuilder
     private func topHeaderBar(palette: RecordingArtworkTheme.Palette) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            // Dismiss Button
-            Button {
-                triggerHaptic(.light)
-                cleanup()
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .frame(width: 42, height: 42)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
+        VStack(spacing: 12) {
+            // Visual Grabber Pill for Swipe-Down
+            Capsule()
+                .fill(Color.white.opacity(0.35))
+                .frame(width: 38, height: 5)
 
-            // Title & Channel Subtitle Stack
-            VStack(alignment: .leading, spacing: 3) {
-                Text(recording.title)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    Text(recording.formattedDate)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.textTertiary)
-
-                    Text("•")
-                        .foregroundStyle(Theme.Colors.textDisabled)
-
-                    Text(recording.formattedDuration)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(palette.accent)
+            HStack(alignment: .center, spacing: 14) {
+                // Dismiss Button
+                Button {
+                    triggerHaptic(.light)
+                    withAnimation(.easeOut(duration: 0.22)) {
+                        dragOffsetY = 900
+                    }
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 180_000_000)
+                        cleanup()
+                        dismiss()
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .frame(width: 42, height: 42)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
                 }
+                .buttonStyle(.plain)
+
+                // Title & Channel Subtitle Stack
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(recording.title)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+
+                    HStack(spacing: 6) {
+                        Text(recording.formattedDate)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+
+                        Text("•")
+                            .foregroundStyle(Theme.Colors.textDisabled)
+
+                        Text(recording.formattedDuration)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(palette.accent)
+                    }
+                }
+
+                Spacer()
+
+                // DVR / VOD Badge
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(palette.accent)
+                        .frame(width: 6, height: 6)
+
+                    Text("DVR")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
             }
-
-            Spacer()
-
-            // DVR / VOD Badge
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(palette.accent)
-                    .frame(width: 6, height: 6)
-
-                Text("DVR")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(Theme.Colors.textPrimary)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
         }
     }
 
