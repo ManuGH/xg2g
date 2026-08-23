@@ -1078,9 +1078,10 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         }
         if controller.videoGravity != videoGravity {
             controller.videoGravity = videoGravity
-        }
-        if player.timeControlStatus != .playing && player.error == nil {
-            player.play()
+            UIView.animate(withDuration: 0.25) {
+                controller.view.setNeedsLayout()
+                controller.view.layoutIfNeeded()
+            }
         }
     }
 
