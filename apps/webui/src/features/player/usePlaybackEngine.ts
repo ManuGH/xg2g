@@ -934,6 +934,14 @@ export function usePlaybackEngine({
           currentAudioTrack: hls.audioTrack,
         });
 
+        if (data.audioTracks && data.audioTracks.length > 0) {
+          const initialTrackId = selectInitialHlsAudioTrack(hls.audioTrack, data.audioTracks);
+          if (initialTrackId !== null) {
+            debugLog('[V3Player] Setting initial HLS audio track from MANIFEST_PARSED', { trackId: initialTrackId });
+            hls.audioTrack = initialTrackId;
+          }
+        }
+
         if (hls.currentLevel === -1 && data.levels.length > 0) {
           hls.startLevel = -1;
         }
