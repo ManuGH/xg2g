@@ -15,28 +15,38 @@ struct RootView: View {
     @State private var model = AppModel()
 
     var body: some View {
-        Group {
-            switch model.state {
-            case .needsServer:
-                ServerSetupView(model: model)
-            case .needsPairing, .needsRePairing:
-                PairingView(model: model)
-            case .ready:
-                AdaptiveAppNavigation(model: model)
+        ZStack {
+            // 1. App Navigation
+            Group {
+                switch model.state {
+                case .needsServer:
+                    ServerSetupView(model: model)
+                case .needsPairing, .needsRePairing:
+                    PairingView(model: model)
+                case .ready:
+                    AdaptiveAppNavigation(model: model)
+                }
+            }
+
+            // 2. Mini-Player Floating Bar (above TabBar)
+            if model.playbackManager.presentationMode == .miniplayer {
+                VStack {
+                    Spacer()
+                    MiniPlayerBar(playbackManager: model.playbackManager, model: model)
+                        .padding(.bottom, UIDevice.current.userInterfaceIdiom == .pad ? 16 : 56)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                .zIndex(10)
+            }
+
+            // 3. Fullscreen Player Screen (when presentationMode == .fullscreen)
+            if model.playbackManager.presentationMode == .fullscreen, let channel = model.playbackManager.currentChannel {
+                TestTSPlayerScreen(model: model, playbackManager: model.playbackManager, channel: channel)
+                    .transition(.opacity)
+                    .zIndex(20)
             }
         }
-        .fullScreenCover(item: $model.playingChannel) { channel in
-            // ARCHITECTURE TRANSITION NOTE:
-            // - .native routes to the direct VideoToolbox/Metal pipeline when a receiver address is configured.
-            // - .auto and .hls delegate to PlayerScreen, which queries the xg2g backend planner
-            //   (via /stream-info & playbackDecisionToken) to determine the optimal delivery mode.
-            // In the target architecture, the central planner will drive the unified player stage directly.
-            if model.playbackEngine == .native, model.isDirectPlaybackAvailable {
-                TestTSPlayerScreen(model: model, channel: channel)
-            } else {
-                PlayerScreen(model: model, channel: channel)
-            }
-        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.playbackManager.presentationMode)
         .preferredColorScheme(.dark)
         .tint(Theme.Colors.accentAction)
         .task { await model.start() }

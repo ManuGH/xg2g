@@ -291,6 +291,23 @@ final class AppModel {
         }
     }
 
+    @ObservationIgnored private var _playbackManager: PlaybackManager?
+
+    var playbackManager: PlaybackManager {
+        if let existing = _playbackManager {
+            return existing
+        }
+        let pm = PlaybackManager(
+            preparations: self.makeZapPreparationClient(),
+            streamURL: { [weak self] serviceRef in
+                self?.liveStreamURL(for: serviceRef)
+                    ?? URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)")
+            }
+        )
+        _playbackManager = pm
+        return pm
+    }
+
     /// Human-readable active playback plan description for settings & diagnostics.
     ///
     /// NOTE: Currently provides the baseline intent-derived description.
@@ -585,9 +602,13 @@ final class AppModel {
     var selectedGenre: EpgGenre = .all
     var epgViewMode: EpgViewMode = .list
     var playingChannel: Channel? {
-        didSet {
-            if let playingChannel {
-                recordChannelPlayback(playingChannel)
+        get { playbackManager.currentChannel }
+        set {
+            if let newValue {
+                recordChannelPlayback(newValue)
+                playbackManager.play(channel: newValue, mode: .fullscreen)
+            } else {
+                playbackManager.stop()
             }
         }
     }

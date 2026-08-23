@@ -10,24 +10,11 @@ public struct TestTSPlayerScreen: View {
 
     @Environment(\.dismiss) private var dismiss
     /// The catalogue, when the caller has one.
-    ///
-    /// The presets carry a `serviceRef` but no logo — the logos live on the
-    /// catalogue's `Channel`. Without this the lock screen had nothing but the
-    /// channel name to draw. Optional so the screen stays usable standalone.
     private let model: AppModel?
-    /// Owns the visible surface and whichever session is on it.
-    ///
-    /// Held here rather than inside the UIViewRepresentable so it survives SwiftUI
-    /// rebuilding that view, which would otherwise tear down PiP mid-stream — and
-    /// held as one object rather than as a pipeline plus a presenter, because with
-    /// channels prepared beside one another there is no longer a single pipeline for
-    /// the screen to own.
-    @StateObject private var coordinator: ZapCoordinator
+    @ObservedObject private var playbackManager: PlaybackManager
+    private var coordinator: ZapCoordinator { playbackManager.coordinator }
 
     /// The readouts of the channel actually on screen.
-    ///
-    /// Empty values while nothing is playing, so the HUD reads as "nothing yet"
-    /// rather than as the last channel's figures.
     private var tele: TelemetryValues { coordinator.playing?.telemetry.display ?? TelemetryValues() }
     @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:"
     @State private var currentChannelName: String = "Sky Sport F1 HD"
@@ -40,9 +27,6 @@ public struct TestTSPlayerScreen: View {
     @State private var isStreaming: Bool = false
     @State private var isPlaying: Bool = true
     @State private var showHUD: Bool = false
-    /// Which presentation model the render view uses. Selectable rather than
-    /// implied, so the drawable path is reachable and the two can be compared
-    /// on the same stream instead of only one of them ever running.
     @State private var presentationPath: MetalVideoView.PresentationPath = .systemLayer
     @State private var viewPreset: VideoViewPreset = .standard
     @State private var showControls: Bool = true
@@ -53,9 +37,6 @@ public struct TestTSPlayerScreen: View {
     @State private var currentSubtitleImage: CGImage?
 
     private struct ChannelPreset: Identifiable, Hashable {
-        /// Keyed on the service, not on a fresh UUID: the list is computed from
-        /// the catalogue on demand, and an identity that changed on every read
-        /// would make SwiftUI rebuild the whole row set each time.
         var id: String { serviceRef }
         let name: String
         let serviceRef: String
@@ -64,9 +45,6 @@ public struct TestTSPlayerScreen: View {
         let category: String
     }
 
-    /// Hard-coded services for bench work, used only when no catalogue is
-    /// available — i.e. when the screen is opened from the developer section
-    /// rather than to watch an actual channel.
     private static let labPresets: [ChannelPreset] = [
         ChannelPreset(name: "ORF 1 HD", serviceRef: "1:0:19:132F:3EF:1:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:132F:3EF:1:C00000:0:0:0:", epgNow: "ORF 1 HD Live Feed", category: "Vollprogramm"),
         ChannelPreset(name: "Sky Sport F1 HD", serviceRef: "1:0:19:11:6:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:", epgNow: "Formel 1: GP Vorberichte & Live-Session", category: "Sport"),
@@ -78,14 +56,16 @@ public struct TestTSPlayerScreen: View {
         ChannelPreset(name: "Das Erste HD", serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:283D:3FB:1:C00000:0:0:0:", epgNow: "Tagesschau / Reportage", category: "Vollprogramm")
     ]
 
-    // Internal rather than public: `AppModel` is internal, and this screen is
-    // only ever constructed from inside the app.
-    //
-    // With a `channel` it opens on that service and behaves as the live player;
-    // without one it opens on a bench preset, which is how the developer entry
-    // in Settings uses it.
-    init(model: AppModel? = nil, channel: Channel? = nil) {
+    init(model: AppModel? = nil, playbackManager: PlaybackManager? = nil, channel: Channel? = nil) {
         self.model = model
+        let pm = playbackManager ?? model?.playbackManager ?? PlaybackManager(
+            preparations: model?.makeZapPreparationClient(),
+            streamURL: { [weak model] serviceRef in
+                model?.liveStreamURL(for: serviceRef)
+                    ?? URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)")
+            }
+        )
+        self.playbackManager = pm
         let initialURL = channel.flatMap {
             model?.directStreamURL(for: $0)?.absoluteString
                 ?? model?.liveStreamURL(for: $0.serviceRef)?.absoluteString
@@ -94,16 +74,6 @@ public struct TestTSPlayerScreen: View {
             _streamURLString = State(initialValue: initialURL)
             _currentChannelName = State(initialValue: channel.name)
         }
-        // Built once with the screen and outliving every session on it. Without a
-        // configured backend it has nothing to prepare against and says so, rather
-        // than pretending a channel change is a transaction when it is not.
-        _coordinator = StateObject(wrappedValue: ZapCoordinator(
-            preparations: model?.makeZapPreparationClient(),
-            streamURL: { [weak model] serviceRef in
-                model?.liveStreamURL(for: serviceRef)
-                    ?? URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)")
-            }
-        ))
     }
 
     /// The catalogue logo for a preset, matched on `serviceRef` or `name`.
@@ -181,10 +151,7 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func closePlayer() {
-        teardownPlayback()
-        if let model {
-            model.playingChannel = nil
-        }
+        playbackManager.minimize()
         dismiss()
     }
 
@@ -396,7 +363,9 @@ public struct TestTSPlayerScreen: View {
             setupPlayback()
         }
         .onDisappear {
-            teardownPlayback()
+            if playbackManager.presentationMode == .hidden {
+                teardownPlayback()
+            }
         }
         .onChange(of: coordinator.playing) { _, newPipeline in
             currentSubtitleImage = nil
@@ -1044,7 +1013,7 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func teardownPlayback() {
-        Task { await coordinator.stop() }
+        playbackManager.stop()
         isStreaming = false
         UIApplication.shared.isIdleTimerDisabled = false
         autoHideControlsTask?.cancel()
@@ -1073,16 +1042,18 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func startCurrentPreset() {
-        // Stamped here so the figure covers the wait as the viewer experiences
-        // it, including whatever this function does before handing over.
+        // If the coordinator is already playing this session (e.g. expanding from miniplayer),
+        // attach to the existing stream without re-tuning or interrupting audio.
+        if coordinator.playing != nil {
+            isStreaming = true
+            isPlaying = true
+            announceNowPlaying()
+            return
+        }
+
         let requestedAt = CACurrentMediaTime()
         let serviceRef = URL(string: streamURLString)?.lastPathComponent
 
-        // The live route is the only one with a backend to warm a channel on, so it is
-        // the only one that can make before it breaks: the channel playing keeps
-        // playing while the next is prepared, and the surface changes hands once. The
-        // direct and legacy routes go straight at the receiver, have nothing to prove
-        // against, and start outright — which is what every route used to do.
         if streamRouteMode == .livePipeline, coordinator.canPrepare, let serviceRef {
             Task { await coordinator.zap(to: serviceRef) }
             isStreaming = true
@@ -1095,9 +1066,6 @@ public struct TestTSPlayerScreen: View {
             Task { await coordinator.play(unprepared: url, requestedAt: requestedAt) }
             isStreaming = true
             isPlaying = true
-            // Publishes the entry itself, not just its rate: `updatePlaybackState`
-            // returns at its first line when nothing has been published, which is
-            // why this player's lock screen was empty and its controls inert.
             announceNowPlaying()
         }
     }
