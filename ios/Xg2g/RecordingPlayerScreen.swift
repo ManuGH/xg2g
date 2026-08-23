@@ -549,7 +549,7 @@ struct RecordingPlayerScreen: View {
     }
 
     private func skip(seconds: Double) {
-        guard let player else { return }
+        guard player != nil else { return }
         triggerHaptic(.light)
         let target = max(0, min(currentTime + seconds, totalDuration))
         seek(to: target)
@@ -573,10 +573,13 @@ struct RecordingPlayerScreen: View {
 
     private func seek(to seconds: Double) {
         guard let player else { return }
+        let shouldResume = isPlaying
         let targetTime = CMTime(seconds: seconds, preferredTimescale: 600)
-        player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
-            if finished && isPlaying {
-                player.play()
+        player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak player] finished in
+            Task { @MainActor in
+                if finished && shouldResume {
+                    player?.play()
+                }
             }
         }
         currentTime = seconds
@@ -702,20 +705,22 @@ struct RecordingPlayerScreen: View {
                     forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
                     queue: .main
                 ) { [weak p] time in
-                    guard let p else { return }
-                    let sec = time.seconds
-                    if sec.isFinite && !sec.isNaN {
-                        self.currentTime = max(0, sec)
-                    }
-                    if let itemDur = p.currentItem?.duration.seconds, itemDur.isFinite && itemDur > 0 {
-                        self.durationOverride = itemDur
-                    }
+                    Task { @MainActor [weak p] in
+                        guard let p else { return }
+                        let sec = time.seconds
+                        if sec.isFinite && !sec.isNaN {
+                            self.currentTime = max(0, sec)
+                        }
+                        if let itemDur = p.currentItem?.duration.seconds, itemDur.isFinite && itemDur > 0 {
+                            self.durationOverride = itemDur
+                        }
 
-                    // Periodic 5s resume progress update to server
-                    if let itemDur = p.currentItem?.duration.seconds, itemDur > 0 {
-                        progressCallback(sec, itemDur)
-                    } else if self.recording.durationSeconds > 0 {
-                        progressCallback(sec, Double(self.recording.durationSeconds))
+                        // Periodic 5s resume progress update to server
+                        if let itemDur = p.currentItem?.duration.seconds, itemDur > 0 {
+                            progressCallback(sec, itemDur)
+                        } else if self.recording.durationSeconds > 0 {
+                            progressCallback(sec, Double(self.recording.durationSeconds))
+                        }
                     }
                 }
 
@@ -727,9 +732,11 @@ struct RecordingPlayerScreen: View {
                             if let pos = startPos, pos > 5 {
                                 let targetTime = CMTime(seconds: pos, preferredTimescale: 600)
                                 p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p] finished in
-                                    if finished {
-                                        p?.play()
-                                        self.isPlaying = true
+                                    Task { @MainActor [weak p] in
+                                        if finished {
+                                            p?.play()
+                                            self.isPlaying = true
+                                        }
                                     }
                                 }
                             } else {
