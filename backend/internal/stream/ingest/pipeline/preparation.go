@@ -291,6 +291,12 @@ func (m *PreparationManager) run(ctx context.Context, p *Preparation, req Prepar
 		m.release(p)
 		return
 	}
+	master := pipe.MasterRing()
+	if master == nil {
+		m.finish(p, PreparationFailed, OutcomeUnpresentable, 0, 0, nil, "pipeline holds no ring")
+		m.release(p)
+		return
+	}
 
 	snap, err := AwaitTransportReady(ctx, pipe, logger, m.cfg.ReadyTimeout)
 	if err != nil {
@@ -305,11 +311,28 @@ func (m *PreparationManager) run(ctx context.Context, p *Preparation, req Prepar
 			state = PreparationCancelled
 		}
 		m.finish(p, state, outcome, 0, 0, snap.Pending, detail)
+
+		// What the upstream did is the difference between a receiver that broke and
+		// one that answered 200 and simply stopped - both measured on this hardware,
+		// and only one of them worth a second attempt. Recorded before the lease is
+		// released, while the facts are still readable.
+		runErr := pipe.Err()
+		facts := master.ReadinessFacts()
+		scrambledVideo, clearVideo := master.ScramblingObservation()
+
 		m.release(p)
 		logger.Info().
 			Str("event", "zap.prepare.failed").
 			Str("outcome", string(outcome)).
 			Dur("after", snap.ReadyAfterIngest).
+			Str("detail", detail).
+			AnErr("runErr", runErr).
+			Bool("cleanEOF", outcome == OutcomeIngestEnded && runErr == nil).
+			Bool("sawPAT", facts.HasPAT).
+			Bool("sawPMT", facts.HasPMT).
+			Uint16("videoPID", facts.VideoPID).
+			Uint64("clearVideoPackets", clearVideo).
+			Uint64("scrambledVideoPackets", scrambledVideo).
 			Msg("preparation did not become presentable")
 		return
 	}
