@@ -87,11 +87,13 @@ final class ZapCoordinator: ObservableObject {
     /// receiver route and the legacy smoother are. Those cannot make before they
     /// break and do not pretend to.
     private let preparations: ZapPreparationClient?
-    private let streamURL: @Sendable (String) -> URL?
+    /// Main-actor isolated, not `@Sendable`: the addresses come from the app model,
+    /// which is main-actor bound, and every call site here is too.
+    private let streamURL: @MainActor (String) -> URL?
     private let makeSession: @MainActor () -> NativeTSVideoPipeline
 
     init(preparations: ZapPreparationClient?,
-         streamURL: @escaping @Sendable (String) -> URL?,
+         streamURL: @escaping @MainActor (String) -> URL?,
          makeSession: @escaping @MainActor () -> NativeTSVideoPipeline = { NativeTSVideoPipeline() }) {
         let surface = SystemVideoPresenter()
         self.surface = surface

@@ -1566,7 +1566,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            let zapId = self.currentZapId
             self.presentationContext?.requestReset(from: self)
         }
 
