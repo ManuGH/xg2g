@@ -170,6 +170,40 @@ struct ZapAudioContinuityTests {
         #expect(assembler.currentAC3FrameInfo == nil)
         #expect(assembler.currentAACFrameInfo == nil)
     }
+
+    /// Complete Audio Assembler chain cutover: AC-3 frame -> reset -> AAC ADTS frame.
+    /// Proves that the format description is rebuilt, media subtype transitions from
+    /// AC-3 to AAC, the emitted sample buffer carries the new AAC description, and
+    /// no stale AC-3 description is reused.
+    @Test func dynamicCodecCutoverRebuildsFormatDescriptionAndUpdatesMediaSubtype() {
+        let assembler = AudioSampleBufferAssembler()
+        let sink = ZapFormatSink()
+        assembler.delegate = sink
+
+        let ac3Parser = AC3FrameParser()
+        let aacParser = AACADTSFrameParser()
+
+        // 1. Initial AC-3 stream
+        assembler.ac3FrameParser(ac3Parser, didEmitFrame: makeAC3Frame())
+        let ac3Format = assembler.currentFormatDescription
+        #expect(ac3Format != nil)
+        #expect(CMFormatDescriptionGetMediaSubType(ac3Format!) == kAudioFormatAC3)
+        #expect(sink.buffers == 1)
+
+        // 2. Track switch event: reset assembler
+        assembler.reset()
+        #expect(assembler.currentFormatDescription == nil)
+
+        // 3. New AAC stream arrives
+        assembler.aacFrameParser(aacParser, didEmitFrame: makeAACFrame())
+        let aacFormat = assembler.currentFormatDescription
+        #expect(aacFormat != nil)
+        #expect(aacFormat !== ac3Format, "New AAC format description must not reuse the old AC-3 format description")
+        #expect(CMFormatDescriptionGetMediaSubType(aacFormat!) == kAudioFormatMPEG4AAC, "Media subtype must be kAudioFormatMPEG4AAC")
+        #expect(sink.buffers == 2)
+        #expect(sink.formats.count == 2)
+        #expect(sink.formats.last?.1 == .aac)
+    }
 }
 
 // MARK: - Fixtures
