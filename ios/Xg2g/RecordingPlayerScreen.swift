@@ -3,9 +3,13 @@
 // Since v2.0.0, this software is restricted to non-commercial use only.
 
 import AVFoundation
+import AVKit
 import SwiftUI
+import UIKit
 
-/// Fullscreen player screen for remote DVR recordings with cinematic loading stage and resume progress tracking.
+/// Fullscreen Plex/Infuse-style VOD player for remote DVR recordings with
+/// dedicated start & end timeline, interactive scrubber, quick-skip controls,
+/// cinematic loading stage, and automatic resume tracking.
 struct RecordingPlayerScreen: View {
 
     let recording: Recording
@@ -21,15 +25,41 @@ struct RecordingPlayerScreen: View {
     @State private var isPreparing = true
     @State private var errorMessage: String? = nil
 
+    // Playback & HUD State
+    @State private var isPlaying = true
+    @State private var currentTime: Double = 0
+    @State private var durationOverride: Double = 0
+    @State private var isScrubbing = false
+    @State private var scrubTime: Double = 0
+    @State private var showControls = true
+    @State private var showRemainingTime = true
+    @State private var autoHideTask: Task<Void, Never>?
+    @State private var skipFeedback: (text: String, isForward: Bool)? = nil
+    @State private var hideSkipFeedbackTask: Task<Void, Never>?
+
+    private var totalDuration: Double {
+        let recDur = Double(recording.durationSeconds)
+        if durationOverride > 0 {
+            return max(recDur, durationOverride)
+        }
+        return max(recDur, 1)
+    }
+
+    private var displayCurrentTime: Double {
+        isScrubbing ? scrubTime : currentTime
+    }
+
     var body: some View {
         ZStack {
-            Theme.Colors.bgVideoStage.ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
             let base = serverAddress.starts(with: "http") ? serverAddress : "https://\(serverAddress)"
             if errorMessage == nil && URL(string: base) != nil {
                 if let player {
+                    // Video Layer (Native AVPlayer without system controls)
                     NativeVideoPlayerView(
                         player: player,
+                        showsPlaybackControls: false,
                         onDismiss: {
                             cleanup()
                             dismiss()
@@ -37,6 +67,21 @@ struct RecordingPlayerScreen: View {
                     )
                     .ignoresSafeArea()
                     .transition(.opacity)
+
+                    // Touch Surface for Gestures & Controls Toggle
+                    gestureSurface
+
+                    // Plex/Infuse-Style VOD HUD Overlay
+                    if showControls && !isPreparing {
+                        vodHUDOverlay
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    }
+
+                    // Double-Tap Skip Feedback Ripple
+                    if let feedback = skipFeedback {
+                        skipFeedbackBadge(feedback.text, isForward: feedback.isForward)
+                            .transition(.scale.combined(with: .opacity))
+                    }
                 }
 
                 // Cinematic Loading Backdrop (Infuse / Apple TV+ Style)
@@ -48,6 +93,7 @@ struct RecordingPlayerScreen: View {
                 errorStateView
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: showControls)
         .animation(.easeInOut(duration: 0.35), value: player != nil)
         .animation(.easeInOut(duration: 0.35), value: isPreparing)
         .onAppear {
@@ -56,6 +102,310 @@ struct RecordingPlayerScreen: View {
         .onDisappear {
             cleanup()
         }
+    }
+
+    // MARK: - Gesture Surface
+
+    @ViewBuilder
+    private var gestureSurface: some View {
+        GeometryReader { geo in
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    triggerHaptic(.light)
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showControls.toggle()
+                    }
+                    if showControls {
+                        resetAutoHideTimer()
+                    }
+                }
+                .simultaneousGesture(
+                    SpatialTapGesture(count: 2)
+                        .onEnded { location in
+                            let isRight = location.location.x > (geo.size.width / 2)
+                            if isRight {
+                                skip(seconds: 30)
+                            } else {
+                                skip(seconds: -15)
+                            }
+                        }
+                )
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Plex/Infuse Style VOD HUD Overlay
+
+    @ViewBuilder
+    private var vodHUDOverlay: some View {
+        let palette = RecordingArtworkTheme.palette(for: recording)
+
+        ZStack {
+            // Subtle top and bottom vignette gradients for high contrast readability
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [Color.black.opacity(0.85), Color.black.opacity(0.4), Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 140)
+                .allowsHitTesting(false)
+
+                Spacer()
+
+                LinearGradient(
+                    colors: [Color.clear, Color.black.opacity(0.5), Color.black.opacity(0.92)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 180)
+                .allowsHitTesting(false)
+            }
+            .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Top Header Bar
+                topHeaderBar(palette: palette)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+
+                Spacer()
+
+                // Center Quick Playback Controls
+                centerPlaybackControls(palette: palette)
+
+                Spacer()
+
+                // Bottom VOD Scrubber & Timeline Bar
+                bottomTimelineBar(palette: palette)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 28)
+            }
+        }
+    }
+
+    // MARK: - Top Header Bar
+
+    @ViewBuilder
+    private func topHeaderBar(palette: RecordingArtworkTheme.Palette) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            // Dismiss Button
+            Button {
+                triggerHaptic(.light)
+                cleanup()
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .frame(width: 42, height: 42)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+
+            // Title & Channel Subtitle Stack
+            VStack(alignment: .leading, spacing: 3) {
+                Text(recording.title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    Text(recording.formattedDate)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+
+                    Text("•")
+                        .foregroundStyle(Theme.Colors.textDisabled)
+
+                    Text(recording.formattedDuration)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(palette.accent)
+                }
+            }
+
+            Spacer()
+
+            // DVR / VOD Badge
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(palette.accent)
+                    .frame(width: 6, height: 6)
+
+                Text("DVR")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+        }
+    }
+
+    // MARK: - Center Playback Controls
+
+    @ViewBuilder
+    private func centerPlaybackControls(palette: RecordingArtworkTheme.Palette) -> some View {
+        HStack(spacing: 44) {
+            // Skip Back -15s
+            Button {
+                skip(seconds: -15)
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 54, height: 54)
+                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+
+                    VStack(spacing: 1) {
+                        Image(systemName: "gobackward.15")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Play / Pause Toggle Orb
+            Button {
+                togglePlayPause()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(palette.gradient)
+                        .frame(width: 74, height: 74)
+                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1.5))
+                        .shadow(color: palette.accent.opacity(0.4), radius: 18, y: 6)
+
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(.white)
+                        .offset(x: isPlaying ? 0 : 2)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Skip Forward +30s
+            Button {
+                skip(seconds: 30)
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 54, height: 54)
+                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+
+                    VStack(spacing: 1) {
+                        Image(systemName: "goforward.30")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Bottom VOD Timeline & Transport Bar (Plex Style)
+
+    @ViewBuilder
+    private func bottomTimelineBar(palette: RecordingArtworkTheme.Palette) -> some View {
+        VStack(spacing: 10) {
+            // Interactive Scrubber Track
+            GeometryReader { geo in
+                let width = geo.size.width
+                let progress = totalDuration > 0 ? min(max(displayCurrentTime / totalDuration, 0), 1) : 0
+
+                ZStack(alignment: .leading) {
+                    // Track Rail Background
+                    Capsule()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(height: isScrubbing ? 8 : 5)
+
+                    // Active Progress Fill
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [palette.accent, palette.accent.opacity(0.85)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(0, width * CGFloat(progress)), height: isScrubbing ? 8 : 5)
+
+                    // Scrubber Knob Thumb
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: isScrubbing ? 20 : 14, height: isScrubbing ? 20 : 14)
+                        .shadow(color: Color.black.opacity(0.5), radius: 4, y: 2)
+                        .offset(x: max(0, min(width * CGFloat(progress) - (isScrubbing ? 10 : 7), width - (isScrubbing ? 20 : 14))))
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if !isScrubbing {
+                                triggerHaptic(.light)
+                                isScrubbing = true
+                            }
+                            let fraction = min(max(0, Double(value.location.x / width)), 1.0)
+                            scrubTime = fraction * totalDuration
+                            resetAutoHideTimer()
+                        }
+                        .onEnded { value in
+                            let fraction = min(max(0, Double(value.location.x / width)), 1.0)
+                            let targetSec = fraction * totalDuration
+                            seek(to: targetSec)
+                            isScrubbing = false
+                            resetAutoHideTimer()
+                        }
+                )
+            }
+            .frame(height: 22)
+
+            // Start & End Timestamps (Left: Elapsed, Right: Total / Remaining)
+            HStack {
+                // Elapsed Time (Start)
+                Text(formatDuration(displayCurrentTime))
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                Spacer()
+
+                // End Time / Remaining Duration (Tap to Toggle like Plex & Apple TV+)
+                Button {
+                    triggerSelectionHaptic()
+                    showRemainingTime.toggle()
+                    resetAutoHideTimer()
+                } label: {
+                    Text(showRemainingTime ? "-\(formatDuration(max(0, totalDuration - displayCurrentTime)))" : formatDuration(totalDuration))
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Double-Tap Skip Feedback Badge
+
+    @ViewBuilder
+    private func skipFeedbackBadge(_ text: String, isForward: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: isForward ? "goforward.30" : "gobackward.15")
+                .font(.system(size: 24, weight: .bold))
+            Text(text)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1.2))
+        .shadow(color: Color.black.opacity(0.4), radius: 16, y: 4)
     }
 
     // MARK: - Cinematic Loading Stage
@@ -67,7 +417,6 @@ struct RecordingPlayerScreen: View {
         ZStack {
             Theme.Colors.bgVideoStage.ignoresSafeArea()
 
-            // Ambient background glow
             RadialGradient(
                 colors: [palette.accent.opacity(0.22), Color.clear],
                 center: .center,
@@ -100,7 +449,7 @@ struct RecordingPlayerScreen: View {
 
                 Spacer()
 
-                // Center Poster / Title Focus Card
+                // Center Focus Card
                 VStack(spacing: 16) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -184,6 +533,89 @@ struct RecordingPlayerScreen: View {
         }
     }
 
+    // MARK: - Player Actions & Lifecycle
+
+    private func togglePlayPause() {
+        guard let player else { return }
+        triggerHaptic(.medium)
+        if isPlaying {
+            player.pause()
+            isPlaying = false
+        } else {
+            player.play()
+            isPlaying = true
+        }
+        resetAutoHideTimer()
+    }
+
+    private func skip(seconds: Double) {
+        guard let player else { return }
+        triggerHaptic(.light)
+        let target = max(0, min(currentTime + seconds, totalDuration))
+        seek(to: target)
+
+        // Show Visual Feedback
+        hideSkipFeedbackTask?.cancel()
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            skipFeedback = (seconds > 0 ? "+\(Int(seconds))s" : "\(Int(seconds))s", seconds > 0)
+        }
+        hideSkipFeedbackTask = Task {
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            if !Task.isCancelled {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    skipFeedback = nil
+                }
+            }
+        }
+
+        resetAutoHideTimer()
+    }
+
+    private func seek(to seconds: Double) {
+        guard let player else { return }
+        let targetTime = CMTime(seconds: seconds, preferredTimescale: 600)
+        player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+            if finished && isPlaying {
+                player.play()
+            }
+        }
+        currentTime = seconds
+    }
+
+    private func resetAutoHideTimer() {
+        autoHideTask?.cancel()
+        guard isPlaying else { return }
+        autoHideTask = Task {
+            try? await Task.sleep(nanoseconds: 4_500_000_000)
+            if !Task.isCancelled {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showControls = false
+                }
+            }
+        }
+    }
+
+    private func triggerHaptic(_ type: UIImpactFeedbackGenerator.FeedbackStyle) {
+        UIImpactFeedbackGenerator(style: type).impactOccurred()
+    }
+
+    private func triggerSelectionHaptic() {
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        guard seconds.isFinite && !seconds.isNaN && seconds >= 0 else { return "00:00" }
+        let total = Int(seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        } else {
+            return String(format: "%02d:%02d", minutes, secs)
+        }
+    }
+
     // MARK: - Player Setup
 
     private func setupPlayer() {
@@ -243,7 +675,7 @@ struct RecordingPlayerScreen: View {
                 extraHeaders["Cookie"] = "xg2g_session=\(cookieValue)"
             }
 
-            // Ensure HLS playlist is ready on backend before handing to AVPlayer (prevents -1008 on first prepare)
+            // Ensure HLS playlist is ready on backend before handing to AVPlayer
             if streamURL.path.hasSuffix(".m3u8") {
                 for _ in 0..<10 {
                     var req = URLRequest(url: streamURL)
@@ -263,15 +695,27 @@ struct RecordingPlayerScreen: View {
             let p = AVPlayer(playerItem: item)
 
             await MainActor.run {
-                // Add periodic time observer to track resume progress
                 let progressCallback = self.onProgressUpdate
+
+                // High-resolution time observer (every 250ms) for smooth VOD scrubber & time updates
                 self.timeObserver = p.addPeriodicTimeObserver(
-                    forInterval: CMTime(seconds: 5, preferredTimescale: 1),
+                    forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
                     queue: .main
                 ) { [weak p] time in
-                    guard let p, let duration = p.currentItem?.duration.seconds, duration > 0 else { return }
-                    Task { @MainActor in
-                        progressCallback(time.seconds, duration)
+                    guard let p else { return }
+                    let sec = time.seconds
+                    if sec.isFinite && !sec.isNaN {
+                        self.currentTime = max(0, sec)
+                    }
+                    if let itemDur = p.currentItem?.duration.seconds, itemDur.isFinite && itemDur > 0 {
+                        self.durationOverride = itemDur
+                    }
+
+                    // Periodic 5s resume progress update to server
+                    if let itemDur = p.currentItem?.duration.seconds, itemDur > 0 {
+                        progressCallback(sec, itemDur)
+                    } else if self.recording.durationSeconds > 0 {
+                        progressCallback(sec, Double(self.recording.durationSeconds))
                     }
                 }
 
@@ -279,19 +723,24 @@ struct RecordingPlayerScreen: View {
                     Task { @MainActor [weak p] in
                         guard let p else { return }
                         if observedItem.status == .readyToPlay {
-                            if let initPos = self.initialPosition, initPos > 5 {
-                                let targetTime = CMTime(seconds: initPos, preferredTimescale: 600)
+                            let startPos = self.initialPosition ?? self.recording.serverResumePos
+                            if let pos = startPos, pos > 5 {
+                                let targetTime = CMTime(seconds: pos, preferredTimescale: 600)
                                 p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p] finished in
                                     if finished {
                                         p?.play()
+                                        self.isPlaying = true
                                     }
                                 }
                             } else {
                                 p.play()
+                                self.isPlaying = true
                             }
+
                             withAnimation(.easeInOut(duration: 0.35)) {
                                 self.isPreparing = false
                             }
+                            self.resetAutoHideTimer()
                         } else if observedItem.status == .failed {
                             print("[RecordingPlayer] ❌ AVPlayerItem failed: \(String(describing: observedItem.error))")
                             withAnimation(.easeInOut(duration: 0.35)) {
@@ -308,6 +757,11 @@ struct RecordingPlayerScreen: View {
     }
 
     private func cleanup() {
+        autoHideTask?.cancel()
+        autoHideTask = nil
+        hideSkipFeedbackTask?.cancel()
+        hideSkipFeedbackTask = nil
+
         if let player, let observer = timeObserver {
             player.removeTimeObserver(observer)
             timeObserver = nil
