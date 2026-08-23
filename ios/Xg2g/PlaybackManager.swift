@@ -37,9 +37,11 @@ final class PlaybackManager: ObservableObject {
     @Published private(set) var isStreaming: Bool = false
 
     let coordinator: ZapCoordinator
+    private let streamURLProvider: @MainActor (String) -> URL?
     private var cancellables = Set<AnyCancellable>()
 
     init(preparations: ZapPreparationClient?, streamURL: @escaping @MainActor (String) -> URL?) {
+        self.streamURLProvider = streamURL
         self.coordinator = ZapCoordinator(preparations: preparations, streamURL: streamURL)
 
         self.coordinator.objectWillChange
@@ -71,7 +73,7 @@ final class PlaybackManager: ObservableObject {
             Task { @MainActor in
                 await coordinator.zap(to: serviceRef)
             }
-        } else if let url = URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)") {
+        } else if let url = streamURLProvider(serviceRef) {
             Task { @MainActor in
                 await coordinator.play(unprepared: url, requestedAt: CACurrentMediaTime())
             }

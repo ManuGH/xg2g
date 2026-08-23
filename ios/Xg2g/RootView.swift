@@ -15,35 +15,74 @@ struct RootView: View {
     @State private var model = AppModel()
 
     var body: some View {
-        ZStack {
-            // 1. App Navigation
-            Group {
-                switch model.state {
-                case .needsServer:
-                    ServerSetupView(model: model)
-                case .needsPairing, .needsRePairing:
-                    PairingView(model: model)
-                case .ready:
-                    AdaptiveAppNavigation(model: model)
-                }
-            }
+        GeometryReader { rootGeo in
+            let isLandscape = rootGeo.size.width > rootGeo.size.height
 
-            // 2. Mini-Player Floating Bar (above TabBar)
-            if model.playbackManager.presentationMode == .miniplayer {
-                VStack {
-                    Spacer()
-                    MiniPlayerBar(playbackManager: model.playbackManager, model: model)
-                        .padding(.bottom, UIDevice.current.userInterfaceIdiom == .pad ? 16 : 56)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+            ZStack(alignment: .topLeading) {
+                // 1. App Navigation
+                Group {
+                    switch model.state {
+                    case .needsServer:
+                        ServerSetupView(model: model)
+                    case .needsPairing, .needsRePairing:
+                        PairingView(model: model)
+                    case .ready:
+                        AdaptiveAppNavigation(model: model)
+                    }
                 }
-                .zIndex(10)
-            }
 
-            // 3. Fullscreen Player Screen (when presentationMode == .fullscreen)
-            if model.playbackManager.presentationMode == .fullscreen, let channel = model.playbackManager.currentChannel {
-                TestTSPlayerScreen(model: model, playbackManager: model.playbackManager, channel: channel)
-                    .transition(.opacity)
+                // 2. Persistent Single Video Surface Host (Root Level)
+                // Remains mounted across Minimize <-> Fullscreen transitions to prevent layer teardown.
+                if model.playbackManager.isPlaying {
+                    let isMini = model.playbackManager.presentationMode == .miniplayer
+                    let isFull = model.playbackManager.presentationMode == .fullscreen
+
+                    let miniHeight: CGFloat = 36
+                    let miniWidth: CGFloat = miniHeight * 16.0 / 9.0
+                    let miniBottomPad: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 16 + 10 : 56 + 10
+                    let miniLeftPad: CGFloat = 26
+
+                    let fullHeight: CGFloat = isLandscape ? rootGeo.size.height : (rootGeo.size.width * 9.0 / 16.0)
+                    let fullWidth: CGFloat = rootGeo.size.width
+
+                    let targetWidth = isMini ? miniWidth : fullWidth
+                    let targetHeight = isMini ? miniHeight : fullHeight
+                    let targetX = isMini ? miniLeftPad : 0
+                    let targetY = isMini ? (rootGeo.size.height - miniBottomPad - miniHeight) : 0
+
+                    MetalVideoStageView(
+                        telemetry: model.playbackManager.coordinator.playing?.telemetry,
+                        presenter: model.playbackManager.coordinator.surface,
+                        presentationContext: model.playbackManager.coordinator.context,
+                        presentationPath: .systemLayer,
+                        scalingMode: .fit,
+                        aspectRatioOverride: .auto
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: isMini ? 8 : 0, style: .continuous))
+                    .frame(width: targetWidth, height: targetHeight)
+                    .offset(x: targetX, y: targetY)
+                    .opacity(isFull || isMini ? 1.0 : 0.0)
+                    .allowsHitTesting(false)
+                    .zIndex(15)
+                }
+
+                // 3. Mini-Player Floating Bar (above TabBar)
+                if model.playbackManager.presentationMode == .miniplayer {
+                    VStack {
+                        Spacer()
+                        MiniPlayerBar(playbackManager: model.playbackManager, model: model)
+                            .padding(.bottom, UIDevice.current.userInterfaceIdiom == .pad ? 16 : 56)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                     .zIndex(20)
+                }
+
+                // 4. Fullscreen Player Screen (when presentationMode == .fullscreen)
+                if model.playbackManager.presentationMode == .fullscreen, let channel = model.playbackManager.currentChannel {
+                    TestTSPlayerScreen(model: model, playbackManager: model.playbackManager, channel: channel)
+                        .transition(.opacity)
+                        .zIndex(25)
+                }
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.playbackManager.presentationMode)
