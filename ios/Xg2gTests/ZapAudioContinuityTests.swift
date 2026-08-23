@@ -203,6 +203,11 @@ struct ZapAudioContinuityTests {
         #expect(sink.buffers == 2)
         #expect(sink.formats.count == 2)
         #expect(sink.formats.last?.1 == .aac)
+
+        let emittedAACFormat = CMSampleBufferGetFormatDescription(sink.lastSampleBuffer!)
+        #expect(emittedAACFormat != nil)
+        #expect(emittedAACFormat == aacFormat)
+        #expect(CMFormatDescriptionGetMediaSubType(emittedAACFormat!) == kAudioFormatMPEG4AAC)
     }
 }
 
@@ -322,6 +327,7 @@ private final class ZapFormatSink: AudioSampleBufferAssemblerDelegate, @unchecke
     var formats: [(CMAudioFormatDescription, AudioStreamCodec)] = []
     var errors: [String] = []
     var buffers = 0
+    var lastSampleBuffer: CMSampleBuffer?
 
     func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didUpdateFormat formatDescription: CMAudioFormatDescription, codec: AudioStreamCodec, sampleRate: Int, channels: Int, bitrateKbps: Int) {
         formats.append((formatDescription, codec))
@@ -329,6 +335,7 @@ private final class ZapFormatSink: AudioSampleBufferAssemblerDelegate, @unchecke
 
     func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, codec: AudioStreamCodec, duration: CMTime) {
         buffers += 1
+        lastSampleBuffer = sampleBuffer
     }
 
     func audioSampleBufferAssembler(_ assembler: AudioSampleBufferAssembler, didEncounterError reason: String) {
