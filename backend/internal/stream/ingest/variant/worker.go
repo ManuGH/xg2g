@@ -44,7 +44,7 @@ func NewAudioVariantWorker(key AudioVariantKey, masterRing *ring.MasterRing, rin
 	if ringCapacity <= 0 {
 		ringCapacity = 8 * 1024 * 1024 // 8 MB default ring buffer
 	}
-	variantRing := ring.NewMasterRingWithProgram(ringCapacity, key.ProgramNumber)
+	variantRing := ring.NewMasterRing(ringCapacity)
 
 	return &AudioVariantWorker{
 		key:         key,
@@ -137,10 +137,6 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 
 	logger.Info().Msg("starting audio variant transcode worker (video copy, audio transcode)")
 
-	// Build FFmpeg command:
-	// -c:v copy preserves the exact video elementary stream without re-encoding
-	// -map 0:i:0xPID binds explicitly to the exact source audio PID
-	// -muxdelay 0 -muxpreload 0 ensures minimal container latency
 	sampleRate := w.key.SampleRate
 	if sampleRate <= 0 {
 		sampleRate = 48000
@@ -167,10 +163,20 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		"-b:a", fmt.Sprintf("%dk", bitrate),
 		"-ar", fmt.Sprintf("%d", sampleRate),
 		"-ac", fmt.Sprintf("%d", channels),
+	}
+
+	if w.key.Language != "" && w.key.Language != "und" {
+		args = append(args, "-metadata:s:a:0", fmt.Sprintf("language=%s", w.key.Language))
+	}
+	if w.key.ProgramNumber > 0 {
+		args = append(args, "-mpegts_service_id", fmt.Sprintf("%d", w.key.ProgramNumber))
+	}
+
+	args = append(args,
 		"-flush_packets", "1",
 		"-muxdelay", "0", "-muxpreload", "0",
 		"-f", "mpegts", "pipe:1",
-	}
+	)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
