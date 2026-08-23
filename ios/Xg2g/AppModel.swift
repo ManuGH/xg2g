@@ -298,10 +298,11 @@ final class AppModel {
             return existing
         }
         let pm = PlaybackManager(
-            preparations: self.makeZapPreparationClient(),
+            preparationsProvider: { [weak self] in
+                self?.makeZapPreparationClient()
+            },
             streamURL: { [weak self] serviceRef in
                 self?.liveStreamURL(for: serviceRef)
-                    ?? URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)")
             }
         )
         _playbackManager = pm

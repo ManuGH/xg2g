@@ -59,10 +59,11 @@ public struct TestTSPlayerScreen: View {
     init(model: AppModel? = nil, playbackManager: PlaybackManager? = nil, channel: Channel? = nil) {
         self.model = model
         let pm = playbackManager ?? model?.playbackManager ?? PlaybackManager(
-            preparations: model?.makeZapPreparationClient(),
+            preparationsProvider: { [weak model] in
+                model?.makeZapPreparationClient()
+            },
             streamURL: { [weak model] serviceRef in
                 model?.liveStreamURL(for: serviceRef)
-                    ?? URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)")
             }
         )
         self.playbackManager = pm

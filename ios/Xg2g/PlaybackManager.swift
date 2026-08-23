@@ -40,9 +40,15 @@ final class PlaybackManager: ObservableObject {
     private let streamURLProvider: @MainActor (String) -> URL?
     private var cancellables = Set<AnyCancellable>()
 
-    init(preparations: ZapPreparationClient?, streamURL: @escaping @MainActor (String) -> URL?) {
+    init(preparations: ZapPreparationClient? = nil,
+         preparationsProvider: (@MainActor () -> ZapPreparationClient?)? = nil,
+         streamURL: @escaping @MainActor (String) -> URL?) {
         self.streamURLProvider = streamURL
-        self.coordinator = ZapCoordinator(preparations: preparations, streamURL: streamURL)
+        self.coordinator = ZapCoordinator(
+            preparations: preparations,
+            preparationsProvider: preparationsProvider,
+            streamURL: streamURL
+        )
 
         self.coordinator.objectWillChange
             .sink { [weak self] _ in

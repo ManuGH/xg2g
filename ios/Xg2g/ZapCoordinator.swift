@@ -98,19 +98,28 @@ final class ZapCoordinator: ObservableObject {
     /// `nil` when there is no backend to prepare against, which is what the direct
     /// receiver route and the legacy smoother are. Those cannot make before they
     /// break and do not pretend to.
-    private let preparations: ZapPreparationClient?
+    private let preparationsProvider: (@MainActor () -> ZapPreparationClient?)?
+    var preparations: ZapPreparationClient? { preparationsProvider?() }
+
     /// Main-actor isolated, not `@Sendable`: the addresses come from the app model,
     /// which is main-actor bound, and every call site here is too.
     private let streamURL: @MainActor (String) -> URL?
     private let makeSession: @MainActor () -> NativeTSVideoPipeline
 
-    init(preparations: ZapPreparationClient?,
+    init(preparations: ZapPreparationClient? = nil,
+         preparationsProvider: (@MainActor () -> ZapPreparationClient?)? = nil,
          streamURL: @escaping @MainActor (String) -> URL?,
          makeSession: @escaping @MainActor () -> NativeTSVideoPipeline = { NativeTSVideoPipeline() }) {
         let surface = SystemVideoPresenter()
         self.surface = surface
         self.context = PresentationContext(presenter: surface, renderView: nil)
-        self.preparations = preparations
+        if let preparationsProvider {
+            self.preparationsProvider = preparationsProvider
+        } else if let preparations {
+            self.preparationsProvider = { preparations }
+        } else {
+            self.preparationsProvider = nil
+        }
         self.streamURL = streamURL
         self.makeSession = makeSession
 
