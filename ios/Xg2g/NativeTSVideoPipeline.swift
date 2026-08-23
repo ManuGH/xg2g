@@ -160,7 +160,20 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var surfaceOutlet: PresentationContext.SurfaceOutlet?
 
     /// Stamps everything this session emits. Issued by the presentation context.
-    public var presentationGeneration: PresentationGeneration = .none
+    ///
+    /// The decoder is restamped with it, so it does not matter whether the generation
+    /// arrives before or after the stream is started. It arrived after in the first
+    /// two-session test, and every decoded picture was silently discarded as belonging
+    /// to a generation the session no longer had.
+    public var presentationGeneration: PresentationGeneration = .none {
+        didSet { decoder.decodeGeneration = presentationGeneration.rawValue }
+    }
+
+    /// The first picture this session decoded, whether or not it was ever shown.
+    ///
+    /// Session-local on purpose: it is what says the decoder is producing, which a
+    /// preparing session has to be able to establish without the screen.
+    private var firstDecodedPicturePTS: CMTime?
 
     /// The timestamp the clock will start on when this session is committed.
     ///
@@ -547,6 +560,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             pictureBufferedSeconds: latestVideoPTS.seconds - anchor.seconds
         ) else { return }
 
+        commitAnchor = anchor
+
+        // Same rule as the ordinary clock start: only the session that owns the surface
+        // runs a clock. A prepared session with no playable audio records its anchor
+        // and waits for the commit like any other.
+        guard surfaceOutlet?.owns(presentationGeneration) == true else { return }
+
         audioRenderer.setRate(1.0, time: anchor)
         isAudioClockStarted = true
         notePlaybackStateChanged()
@@ -632,6 +652,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         audioBuffersPreRolledCount = 0
         firstAudioPTS = nil
         firstVideoFieldPTS = nil
+        firstDecodedPicturePTS = nil
+        commitAnchor = nil
         latestVideoPTS = .invalid
         preRollStartTime = 0
         audioContinuity.reset()
@@ -1222,7 +1244,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
             let anchorPTS: CMTime
             let anchorSource: String
-            if let videoPTS = firstVideoFieldPTS {
+            // The surface's report of a submitted field when there is one, and this
+            // session's own first decoded picture otherwise. They name the same picture;
+            // only the first requires owning the screen, and a session being prepared
+            // never gets it - so anchoring on it alone meant a preparation could not
+            // choose a start anchor at all and was never committable.
+            if let videoPTS = firstVideoFieldPTS ?? firstDecodedPicturePTS {
                 let effectiveVideoPreRoll = Self.enableEarlyMotionExperiment ? 0.20 : Self.videoPreRollSeconds
 
                 let effectiveAudioPreRoll: Double
@@ -1773,8 +1800,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     // MARK: - HardwareVideoDecoderDelegate
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didEmitFrame frame: DecodedVideoFrame) {
-        guard frame.generation == currentZapId else {
-            // Stale frame from a prior zap generation -> discard immediately
+        // Compared against the presentation generation, which is what the decoder was
+        // stamped with and what the surface admits by. Comparing against this session's
+        // local zap counter worked only while there was one session and the two numbers
+        // coincided; a second session counts its own first zap as one while carrying a
+        // different presentation generation, and every one of its pictures was
+        // discarded here - a prepared channel that would have committed to black.
+        guard frame.generation == presentationGeneration.rawValue else {
+            // Stale frame from a retired generation -> discard immediately
             return
         }
 
@@ -1807,6 +1840,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         telemetry.mutate { $0.sampleBuffersDecodedCount += 1 }
 
         if frame.pts.isValid {
+            // Recorded on the session's own decode path, not on the surface's report of
+            // a submitted field. A session being prepared never receives that report -
+            // it does not own the surface - and readiness that depended on it could
+            // only ever be reached after a commit, which is the wrong way round.
+            if firstDecodedPicturePTS == nil {
+                firstDecodedPicturePTS = frame.pts
+            }
             latestVideoPTS = frame.pts
             startVideoOnlyClockIfNeeded()
             warnIfMotionNeverStarted()
@@ -2234,7 +2274,7 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
     ///     orphan audio can be trimmed once rather than resynchronised forever.
     public var isPresentable: Bool {
         guard let anchor = commitAnchor, anchor.isValid else { return false }
-        guard firstVideoFieldPTS != nil else { return false }
+        guard firstDecodedPicturePTS != nil else { return false }
         return audioRenderer.hasBuffersCovering(anchor)
     }
 

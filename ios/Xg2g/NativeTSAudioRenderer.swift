@@ -30,6 +30,9 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
 
     private var pendingBuffers: [CMSampleBuffer] = []
     private var enqueuedCount = 0
+    /// The span of audio already handed to the system renderer.
+    private var enqueuedStartPTS: CMTime?
+    private var enqueuedEndPTS: CMTime?
     private var lastDiagnosticLogTime: CFTimeInterval = 0
     private let bufferLock = NSLock()
 
@@ -54,6 +57,12 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     private static let underrunThresholdMs: Double = 50.0
 
     public struct AudioFlowStats: Sendable {
+        /// How many buffers have been handed to the system renderer.
+        ///
+        /// The queue length says what is waiting; this says what already went through,
+        /// which is what proves a prepared session's audio really reached the renderer
+        /// that would play it rather than stopping somewhere earlier.
+        public let enqueued: Int
         public let underruns: Int
         public let minLeadMs: Double
         public let currentLeadMs: Double
@@ -65,6 +74,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         bufferLock.lock()
         defer { bufferLock.unlock() }
         let stats = AudioFlowStats(
+            enqueued: enqueuedCount,
             underruns: underrunCount,
             minLeadMs: minLeadMs == .greatestFiniteMagnitude ? 0 : minLeadMs,
             currentLeadMs: lastLeadMs,
@@ -115,9 +125,18 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     /// is player-lifetime policy, and a playback session that owned it would reconfigure
     /// the whole process every time a channel was prepared.
     public func setAudible(_ audible: Bool) {
+        isAudible = audible
         audioRenderer.isMuted = !audible
         audioRenderer.volume = audible ? 1.0 : 0.0
     }
+
+    /// Whether this renderer has been granted audibility.
+    ///
+    /// Remembered rather than read back from the renderer, because `reset` replaces the
+    /// renderer with a fresh one - and a fresh `AVSampleBufferAudioRenderer` is audible
+    /// by default. A prepared session that hit a recovery reset would have unmuted
+    /// itself without anyone asking.
+    private var isAudible = false
 
     public struct PruneResult: Sendable {
         public let prunedCount: Int
@@ -143,6 +162,14 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
 
         var covers = false
         var endsAfter = false
+
+        // Audio already handed to the renderer counts: it is still audio this session
+        // holds at that instant, and it is what will play from the anchor.
+        if let start = enqueuedStartPTS, let end = enqueuedEndPTS, start.isValid, end.isValid {
+            if CMTimeCompare(start, anchor) <= 0, CMTimeCompare(end, anchor) > 0 { covers = true }
+            if CMTimeCompare(end, anchor) > 0 { endsAfter = true }
+        }
+
         for buffer in pendingBuffers {
             let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
             guard pts.isValid else { continue }
@@ -260,6 +287,16 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
             let renderer = audioRenderer
             let buffer = pendingBuffers.removeFirst()
             enqueuedCount += 1
+            // Remembered because readiness is asked about the timeline, not about the
+            // queue. A buffer handed to the renderer has left `pendingBuffers` but is
+            // still audio the session holds at that instant, and a readiness check that
+            // only looked at what was still waiting reported a gap that did not exist.
+            let handedPTS = CMSampleBufferGetPresentationTimeStamp(buffer)
+            let handedDuration = CMSampleBufferGetDuration(buffer)
+            if handedPTS.isValid {
+                if enqueuedStartPTS == nil { enqueuedStartPTS = handedPTS }
+                enqueuedEndPTS = handedDuration.isValid ? CMTimeAdd(handedPTS, handedDuration) : handedPTS
+            }
             let currentCount = enqueuedCount
 
             // Only meaningful once the clock actually runs; before that the
@@ -338,6 +375,8 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
 
     /// Complete reset of the renderer and synchronizer state.
     public func reset() {
+        enqueuedStartPTS = nil
+        enqueuedEndPTS = nil
         flush()
         stopClock()
 
@@ -347,10 +386,11 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         let sync = AVSampleBufferRenderSynchronizer()
         sync.addRenderer(renderer)
 
-        if isAudioSessionActive {
-            renderer.isMuted = false
-            renderer.volume = 1.0
-        }
+        // Carried across the replacement. A new renderer is audible by default, and a
+        // session that has not been granted audibility must not become audible by
+        // recovering from an error.
+        renderer.isMuted = !isAudible
+        renderer.volume = isAudible ? 1.0 : 0.0
 
         bufferLock.lock()
         // `flush()` above emptied the queue and tore down any armed request, so a
