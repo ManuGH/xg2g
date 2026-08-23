@@ -172,9 +172,9 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
         case (4, true):  return kAudioChannelLayoutTag_AC3_2_1_1     // L, R, Cs, LFE
         case (5, false): return kAudioChannelLayoutTag_AC3_3_1       // L, C, R, Cs
         case (5, true):  return kAudioChannelLayoutTag_AC3_3_1_1     // L, C, R, Cs, LFE
-        case (6, false): return kAudioChannelLayoutTag_Quadraphonic  // L, R, Ls, Rs
-        case (7, false): return kAudioChannelLayoutTag_MPEG_5_0_C    // L, C, R, Ls, Rs
-        case (7, true):  return kAudioChannelLayoutTag_MPEG_5_1_C    // L, C, R, Ls, Rs, LFE
+        case (6, false): return kAudioChannelLayoutTag_AudioUnit_4   // L, R, Ls, Rs
+        case (7, false): return kAudioChannelLayoutTag_AudioUnit_5_0 // L, R, C, Ls, Rs
+        case (7, true):  return kAudioChannelLayoutTag_AudioUnit_5_1 // L, R, C, LFE, Ls, Rs
         default:         return nil
         }
     }
@@ -194,9 +194,10 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
             mReserved: 0
         )
 
-        var layout = AudioChannelLayout()
-        layout.mChannelLayoutTag = Self.channelLayoutTag(acmod: info.acmod, lfeOn: info.isLFEOn)
+        let layoutTag = Self.channelLayoutTag(acmod: info.acmod, lfeOn: info.isLFEOn)
             ?? (kAudioChannelLayoutTag_DiscreteInOrder | UInt32(info.channelCount))
+        var layout = AudioChannelLayout()
+        layout.mChannelLayoutTag = layoutTag
 
         var format: CMAudioFormatDescription?
         // Tag-based layouts carry no channel descriptions, so the bare struct
@@ -211,6 +212,10 @@ public final class AudioSampleBufferAssembler: @unchecked Sendable, AC3FramePars
             extensions: nil,
             formatDescriptionOut: &format
         )
+
+        let diagLog = "[AC3-DIAG] 🔊 Created format desc: \(info.isEnhanced ? "E-AC-3" : "AC-3") | acmod: \(info.acmod) | lfe: \(info.isLFEOn) | ch: \(info.channelCount) | rate: \(info.sampleRate)Hz | bitrate: \(info.bitrateKbps)kbps | frameSize: \(info.frameSizeBytes)B | layoutTag: 0x\(String(layoutTag, radix: 16)) | status: \(status)"
+        print(diagLog)
+        TelemetryServer.shared.log(diagLog)
 
         return status == noErr ? format : nil
     }

@@ -75,9 +75,11 @@ final class AudioSessionManager: @unchecked Sendable {
         let outputs = session.currentRoute.outputs
             .map { "\($0.portType.rawValue)/\($0.portName) ch=\($0.channels?.count ?? 0)" }
             .joined(separator: ", ")
-        let msg = "[AudioSessionManager] 🎧 Route: [\(outputs)] | session \(Int(session.sampleRate))Hz \(session.outputNumberOfChannels)ch | outputLatency \(String(format: "%.1f", session.outputLatency * 1000))ms | ioBuffer \(String(format: "%.1f", session.ioBufferDuration * 1000))ms"
+        let maxCh = session.maximumOutputNumberOfChannels
+        let msg = "[AudioSessionManager] 🎧 Route: [\(outputs)] | session \(Int(session.sampleRate))Hz \(session.outputNumberOfChannels)ch (max: \(maxCh)ch) | outputLatency \(String(format: "%.1f", session.outputLatency * 1000))ms | ioBuffer \(String(format: "%.1f", session.ioBufferDuration * 1000))ms"
         logger.notice("\(msg, privacy: .public)")
         print(msg)
+        TelemetryServer.shared.log(msg)
     }
 
     func deactivate() {

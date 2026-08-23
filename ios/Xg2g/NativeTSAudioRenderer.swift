@@ -326,6 +326,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
 
             if shouldLog {
                 let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
+                let dur = CMSampleBufferGetDuration(buffer)
                 let statusStr: String
                 switch renderer.status {
                 case .unknown: statusStr = "unknown"
@@ -333,9 +334,11 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
                 case .failed: statusStr = "failed (\(renderer.error?.localizedDescription ?? "unknown"))"
                 @unknown default: statusStr = "other"
                 }
-                let diag = "[AudioRenderer] 📊 Enqueued: \(currentCount) | Status: \(statusStr) | PTS: \(String(format: "%.3f", pts.seconds))s | Rate: \(CMTimebaseGetRate(self.synchronizer.timebase)) | Time: \(String(format: "%.3f", CMTimebaseGetTime(self.synchronizer.timebase).seconds))s | Lead: \(String(format: "%.0f", leadMs))ms | Ready: \(renderer.isReadyForMoreMediaData)"
+                let session = AVAudioSession.sharedInstance()
+                let diag = "[AudioRenderer] 📊 Enqueued: \(currentCount) | Status: \(statusStr) | PTS: \(String(format: "%.3f", pts.seconds))s | Dur: \(String(format: "%.1f", dur.seconds * 1000))ms | Rate: \(CMTimebaseGetRate(self.synchronizer.timebase)) | Time: \(String(format: "%.3f", CMTimebaseGetTime(self.synchronizer.timebase).seconds))s | Lead: \(String(format: "%.0f", leadMs))ms | Ready: \(renderer.isReadyForMoreMediaData) | Route: \(session.outputNumberOfChannels)/\(session.maximumOutputNumberOfChannels)ch"
                 print(diag)
                 logger.notice("\(diag, privacy: .public)")
+                TelemetryServer.shared.log(diag)
             }
 
             if renderer.status == .failed, let error = renderer.error {
