@@ -114,6 +114,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     public private(set) var availableAudioTracks: [AudioTrackInfo] = []
     public private(set) var availableSubtitleTracks: [SubtitleTrackInfo] = []
     public private(set) var selectedSubtitleTrack: SubtitleTrackInfo?
+    public let dvbSubtitleAssembler = DVBSubtitlePESAssembler()
     private var isAudioClockStarted = false
     private var audioBuffersPreRolledCount = 0
 
@@ -785,6 +786,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             ac3FrameParser.reset()
             aacFrameParser.reset()
             audioSampleBufferAssembler.reset()
+            dvbSubtitleAssembler.reset()
         }
     }
 
@@ -1189,6 +1191,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         ingestQueue.async { [weak self] in
             guard let self = self else { return }
             self.selectedSubtitleTrack = track
+            self.dvbSubtitleAssembler.reset()
             let zapId = self.currentZapId
             let label = track?.displayName ?? "Aus"
             let logMsg = "[ZAP-#\(zapId)-SUB] 💬 Selected subtitle track: \(label)"
@@ -1234,11 +1237,21 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             pesAssembler.feed(payload: data, unitStart: unitStart)
         } else if let aPid = selectedAudioPID, pid == aPid {
             audioPesAssembler.feed(payload: data, pid: pid, unitStart: unitStart)
+        } else if let sub = selectedSubtitleTrack, pid == sub.pid {
+            switch sub.format {
+            case .dvb:
+                dvbSubtitleAssembler.feed(payload: data, unitStart: unitStart)
+            case .teletext:
+                break
+            }
         }
     }
 
     public func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8) {
         telemetry.mutate { $0.continuityErrors += 1 }
+        if let sub = selectedSubtitleTrack, pid == sub.pid {
+            dvbSubtitleAssembler.handleContinuityError()
+        }
     }
 
     public func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16) {

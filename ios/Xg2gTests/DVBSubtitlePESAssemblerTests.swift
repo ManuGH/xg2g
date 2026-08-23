@@ -77,6 +77,96 @@ struct DVBSubtitlePESAssemblerTests {
         #expect(sink.packets[0].payload == segmentData)
     }
 
+    @Test("DVB Subtitle PES Validation: Rejects PES_packet_length == 0 for private_stream_1 (0xBD)")
+    func dvbSubtitleRejectsZeroPacketLength() {
+        let assembler = DVBSubtitlePESAssembler()
+        let sink = MockDVBSubtitlePESSink()
+        assembler.delegate = sink
+
+        var pesData = makeDVBSubtitlePES(pts90k: 90000, segments: Data([0x0F, 0x80]), includeEndMarker: true)
+        pesData[4] = 0x00
+        pesData[5] = 0x00 // Force PES_packet_length = 0
+
+        assembler.feed(payload: pesData, unitStart: true)
+        #expect(sink.packets.isEmpty)
+        #expect(sink.errors.contains(where: { $0.contains("Invalid PES_packet_length 0") }))
+    }
+
+    @Test("DVB Subtitle PES Validation: Rejects missing or invalid 0xFF end marker")
+    func dvbSubtitleRejectsMissingEndMarker() {
+        let assembler = DVBSubtitlePESAssembler()
+        let sink = MockDVBSubtitlePESSink()
+        assembler.delegate = sink
+
+        // 1. Missing end marker
+        let pesWithoutEndMarker = makeDVBSubtitlePES(pts90k: 90000, segments: Data([0x0F, 0x80]), includeEndMarker: false)
+        assembler.feed(payload: pesWithoutEndMarker, unitStart: true)
+        #expect(sink.packets.isEmpty)
+        #expect(sink.errors.contains(where: { $0.contains("Missing or invalid DVB end_of_PES_data_field_marker 0xFF") }))
+
+        sink.errors.removeAll()
+
+        // 2. Corrupt end marker (0xFE instead of 0xFF)
+        var pesCorruptEndMarker = makeDVBSubtitlePES(pts90k: 90000, segments: Data([0x0F, 0x80]), includeEndMarker: true)
+        pesCorruptEndMarker[pesCorruptEndMarker.count - 1] = 0xFE
+        assembler.feed(payload: pesCorruptEndMarker, unitStart: true)
+        #expect(sink.packets.isEmpty)
+        #expect(sink.errors.contains(where: { $0.contains("Missing or invalid DVB end_of_PES_data_field_marker 0xFF") }))
+    }
+
+    @Test("DVB Subtitle PES Validation: Rejects forbidden PTS_DTS_flags == 01 ('01')")
+    func dvbSubtitleRejectsForbiddenPTSDTSFlag() {
+        let assembler = DVBSubtitlePESAssembler()
+        let sink = MockDVBSubtitlePESSink()
+        assembler.delegate = sink
+
+        var pesData = makeDVBSubtitlePES(pts90k: 90000, segments: Data([0x0F, 0x80]), includeEndMarker: true)
+        // flags2 is at byte 7: set top 2 bits to '01' (0x40)
+        pesData[7] = 0x40
+
+        assembler.feed(payload: pesData, unitStart: true)
+        #expect(sink.packets.isEmpty)
+        #expect(sink.errors.contains(where: { $0.contains("Forbidden PTS_DTS_flags") }))
+    }
+
+    @Test("DVB Subtitle PES Validation: Rejects PTS flag with truncated header data length")
+    func dvbSubtitleRejectsTruncatedHeaderData() {
+        let assembler = DVBSubtitlePESAssembler()
+        let sink = MockDVBSubtitlePESSink()
+        assembler.delegate = sink
+
+        var pesData = makeDVBSubtitlePES(pts90k: 90000, segments: Data([0x0F, 0x80]), includeEndMarker: true)
+        // headerDataLength is at byte 8: set to 4 (< 5 required for PTS)
+        pesData[8] = 0x04
+
+        assembler.feed(payload: pesData, unitStart: true)
+        #expect(sink.packets.isEmpty)
+        #expect(sink.errors.contains(where: { $0.contains("headerDataLength") }))
+    }
+
+    @Test("DVB Subtitle PES Validation: Rejects malformed PTS marker bits or prefix")
+    func dvbSubtitleRejectsMalformedPTSMarkerBits() {
+        let assembler = DVBSubtitlePESAssembler()
+        let sink = MockDVBSubtitlePESSink()
+        assembler.delegate = sink
+
+        // 1. Corrupt marker bit at byte 9 (first PTS byte)
+        var pesCorruptMarker = makeDVBSubtitlePES(pts90k: 90000, segments: Data([0x0F, 0x80]), includeEndMarker: true)
+        pesCorruptMarker[9] &= ~0x01 // clear marker bit 0
+        assembler.feed(payload: pesCorruptMarker, unitStart: true)
+        #expect(sink.packets.isEmpty)
+        #expect(sink.errors.contains(where: { $0.contains("Malformed PTS timestamp") }))
+
+        sink.errors.removeAll()
+
+        // 2. Corrupt PTS prefix (0x10 instead of 0x20)
+        var pesCorruptPrefix = makeDVBSubtitlePES(pts90k: 90000, segments: Data([0x0F, 0x80]), includeEndMarker: true)
+        pesCorruptPrefix[9] = (pesCorruptPrefix[9] & 0x0F) | 0x10
+        assembler.feed(payload: pesCorruptPrefix, unitStart: true)
+        #expect(sink.packets.isEmpty)
+        #expect(sink.errors.contains(where: { $0.contains("Malformed PTS timestamp") }))
+    }
+
     @Test("DVB Subtitle PES Validation: Rejects invalid start code prefix and wrong stream ID")
     func dvbSubtitleInvalidStartCodeAndStreamID() {
         let assembler = DVBSubtitlePESAssembler()
@@ -115,20 +205,6 @@ struct DVBSubtitlePESAssemblerTests {
         #expect(sink.packets.isEmpty)
         #expect(sink.errors.count == 1)
         #expect(sink.errors[0].contains("data_identifier"))
-    }
-
-    @Test("DVB Subtitle PES Validation: Truncated header data is discarded")
-    func dvbSubtitleTruncatedHeader() {
-        let assembler = DVBSubtitlePESAssembler()
-        let sink = MockDVBSubtitlePESSink()
-        assembler.delegate = sink
-
-        // Feed only 5 bytes (incomplete start code & length)
-        let truncatedBytes = Data([0x00, 0x00, 0x01, 0xBD, 0x00])
-        assembler.feed(payload: truncatedBytes, unitStart: true)
-        assembler.flush()
-
-        #expect(sink.packets.isEmpty)
     }
 
     @Test("DVB Subtitle PES: Continuity error drops in-flight buffer until next PUSI")
@@ -203,6 +279,57 @@ struct DVBSubtitlePESAssemblerTests {
         #expect(sink.packets.isEmpty)
         #expect(sink.errors.isEmpty)
     }
+
+    @Test("Pipeline Wiring: Selective routing of DVB subtitle PID, continuity isolation, and zap reset")
+    func pipelineDVBSubtitleRoutingAndIsolation() async {
+        let pipeline = NativeTSVideoPipeline()
+        let sink = MockDVBSubtitlePESSink()
+        pipeline.dvbSubtitleAssembler.delegate = sink
+
+        let dvbTrack = SubtitleTrackInfo(pid: 258, format: .dvb(compositionPageID: 1, ancillaryPageID: 1), language: "deu", isHearingImpaired: true)
+        let ttxTrack = SubtitleTrackInfo(pid: 259, format: .teletext(page: 777), language: "deu", isHearingImpaired: true)
+
+        let parser = TSPacketParser()
+        parser.delegate = pipeline
+
+        // 1. Select DVB Subtitle Track (PID 258)
+        pipeline.selectSubtitleTrack(dvbTrack)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(pipeline.selectedSubtitleTrack == dvbTrack)
+
+        let segmentData = Data([0x0F, 0x10, 0x00, 0x01, 0x00, 0x02, 0xAA, 0xBB])
+        let pesData = makeDVBSubtitlePES(pts90k: 90000, segments: segmentData, includeEndMarker: true)
+
+        // 2. Feed on Video PID 256 and Teletext PID 259 -> Must NOT reach DVB subtitle assembler
+        pipeline.tsParser(parser, didEmitPayload: pesData, pid: 256, unitStart: true)
+        pipeline.tsParser(parser, didEmitPayload: pesData, pid: 259, unitStart: true)
+        #expect(sink.packets.isEmpty, "Unrelated PIDs must not feed DVB subtitle assembler")
+
+        // 3. Continuity error on Video PID 256 -> Must NOT trigger subtitle continuity error
+        pipeline.tsParser(parser, didEncounterContinuityErrorOnPID: 256, expected: 1, actual: 3)
+        #expect(sink.errors.isEmpty, "Video continuity error must not affect subtitle assembler")
+
+        // 4. Feed on selected DVB PID 258 -> Emits packet cleanly
+        pipeline.tsParser(parser, didEmitPayload: pesData, pid: 258, unitStart: true)
+        #expect(sink.packets.count == 1)
+        #expect(sink.packets[0].pts90k == 90000)
+        #expect(sink.packets[0].payload == segmentData)
+
+        // 5. Continuity error on selected DVB PID 258 -> Triggers subtitle continuity error
+        pipeline.tsParser(parser, didEncounterContinuityErrorOnPID: 258, expected: 4, actual: 6)
+        #expect(sink.errors.count == 1)
+        #expect(sink.errors[0].contains("Continuity error on subtitle PID"))
+
+        // 6. Track Switch to Teletext or Nil -> Resets DVB Subtitle Assembler
+        pipeline.selectSubtitleTrack(ttxTrack)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(pipeline.selectedSubtitleTrack == ttxTrack)
+
+        // Feeding PID 258 after switch is ignored
+        sink.packets.removeAll()
+        pipeline.tsParser(parser, didEmitPayload: pesData, pid: 258, unitStart: true)
+        #expect(sink.packets.isEmpty)
+    }
 }
 
 // MARK: - Test Helpers
@@ -231,17 +358,17 @@ private func makeDVBSubtitlePES(
     let headerDataLength: UInt8
 
     if let pts = pts90k {
-        flags2 = 0x80 // PTS present
+        flags2 = 0x80 // PTS present ('10')
         headerDataLength = 5
         let pts32_30 = UInt8((pts >> 30) & 0x07)
         let pts29_15 = UInt16((pts >> 15) & 0x7FFF)
         let pts14_0  = UInt16(pts & 0x7FFF)
 
-        let b0 = 0x20 | (pts32_30 << 1) | 0x01
+        let b0 = 0x20 | (pts32_30 << 1) | 0x01 // Prefix '0010' (0x20), 3 bits PTS, marker bit 1
         let b1 = UInt8((pts29_15 >> 7) & 0xFF)
-        let b2 = UInt8((pts29_15 << 1) & 0xFE) | 0x01
+        let b2 = UInt8((pts29_15 << 1) & 0xFE) | 0x01 // 8 bits PTS, marker bit 1
         let b3 = UInt8((pts14_0 >> 7) & 0xFF)
-        let b4 = UInt8((pts14_0 << 1) & 0xFE) | 0x01
+        let b4 = UInt8((pts14_0 << 1) & 0xFE) | 0x01 // 8 bits PTS, marker bit 1
 
         headerData.append(contentsOf: [b0, b1, b2, b3, b4])
     } else {

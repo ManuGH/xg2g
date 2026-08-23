@@ -8,7 +8,7 @@ import Foundation
 /// A complete DVB Subtitling PES packet extracted from MPEG-TS elementary stream.
 ///
 /// Contains the extracted 33-bit / 90 kHz presentation timestamp (PTS), the stream ID,
-/// and the bounded DVB subtitle segment payload (stripped of PES and DVB data field headers).
+/// and the bounded DVB subtitle segment payload (stripped of PES, DVB data field headers, and 0xFF end marker).
 public struct DVBSubtitlePESPacket: Sendable, Equatable {
     public let pts90k: UInt64?
     public let pts: CMTime?
@@ -39,9 +39,10 @@ public protocol DVBSubtitlePESAssemblerDelegate: AnyObject, Sendable {
 /// Features & Invariants:
 /// - Reassembles fragmented payloads across multiple TS packets.
 /// - Validates PES start code prefix (0x000001) and stream ID (0xBD private_stream_1).
-/// - Bounds-safe optional PES header parsing and 33-bit 90 kHz PTS timestamp unwrapping.
+/// - Enforces non-zero PES_packet_length as mandated by ISO/IEC 13818-1 for private_stream_1.
+/// - Bounds-safe optional PES header parsing and strict 33-bit 90 kHz PTS timestamp validation (rejecting forbidden '01' flags and invalid marker bits).
 /// - Validates DVB subtitling data_identifier (0x20) and extracts subtitle_stream_id.
-/// - Bounds DVB segment payload up to the 0xFF end-of-PES data field marker.
+/// - Enforces and validates the 0xFF end_of_PES_data_field_marker (ETSI EN 300 743 Clause 5.1).
 /// - Handles PUSI restarts, packet drops, continuity loss, and clean resets upon track switching.
 public final class DVBSubtitlePESAssembler: @unchecked Sendable {
 
@@ -95,7 +96,7 @@ public final class DVBSubtitlePESAssembler: @unchecked Sendable {
     private func checkAndParseIfComplete() {
         guard buffer.count >= 6 else { return }
         let pesPacketLength = Int(buffer[4]) << 8 | Int(buffer[5])
-        if pesPacketLength > 0 && buffer.count >= 6 + pesPacketLength {
+        if pesPacketLength == 0 || buffer.count >= 6 + pesPacketLength {
             parseAndEmitCurrentBuffer(incomplete: false)
         }
     }
@@ -125,17 +126,20 @@ public final class DVBSubtitlePESAssembler: @unchecked Sendable {
         }
 
         let pesPacketLength = Int(buffer[4]) << 8 | Int(buffer[5])
-        var validData = buffer
-        if pesPacketLength > 0 {
-            let totalLength = 6 + pesPacketLength
-            if buffer.count < totalLength && incomplete {
-                delegate?.dvbSubtitleAssembler(self, didEncounterError: "Incomplete PES packet truncated by next PUSI (expected \(totalLength) bytes, got \(buffer.count))")
-                return
-            }
-            if buffer.count >= totalLength {
-                validData = buffer.prefix(totalLength)
-            }
+
+        // ISO/IEC 13818-1 Clause 2.4.3.7: PES_packet_length = 0 is ONLY allowed in video PES packets.
+        guard pesPacketLength > 0 else {
+            delegate?.dvbSubtitleAssembler(self, didEncounterError: "Invalid PES_packet_length 0 for private_stream_1 (0xBD)")
+            return
         }
+
+        let totalLength = 6 + pesPacketLength
+        if buffer.count < totalLength && incomplete {
+            delegate?.dvbSubtitleAssembler(self, didEncounterError: "Incomplete PES packet truncated by next PUSI (expected \(totalLength) bytes, got \(buffer.count))")
+            return
+        }
+        guard buffer.count >= totalLength else { return }
+        let validData = buffer.prefix(totalLength)
 
         // 3. Optional PES Header (starts at byte 6)
         guard validData.count >= 9 else {
@@ -153,6 +157,12 @@ public final class DVBSubtitlePESAssembler: @unchecked Sendable {
         let ptsDtsFlags = (flags2 & 0xC0) >> 6
         let headerDataLength = Int(validData[8])
 
+        // ISO/IEC 13818-1 Clause 2.4.3.7 Table 2-17: '01' is forbidden
+        guard ptsDtsFlags != 0x01 else {
+            delegate?.dvbSubtitleAssembler(self, didEncounterError: "Forbidden PTS_DTS_flags value 0x01 ('01')")
+            return
+        }
+
         let headerEnd = 9 + headerDataLength
         guard validData.count >= headerEnd else {
             delegate?.dvbSubtitleAssembler(self, didEncounterError: "PES packet truncated within header data (headerEnd: \(headerEnd), size: \(validData.count))")
@@ -162,8 +172,18 @@ public final class DVBSubtitlePESAssembler: @unchecked Sendable {
         var pts90k: UInt64? = nil
         var pts: CMTime? = nil
 
-        if (ptsDtsFlags == 0x02 || ptsDtsFlags == 0x03) && headerDataLength >= 5 {
-            let rawPTS = decode33BitTimestamp(data: validData, offset: 9)
+        if ptsDtsFlags == 0x02 || ptsDtsFlags == 0x03 {
+            let requiredHeaderLen = (ptsDtsFlags == 0x03) ? 10 : 5
+            guard headerDataLength >= requiredHeaderLen else {
+                delegate?.dvbSubtitleAssembler(self, didEncounterError: "PTS flag set but headerDataLength \(headerDataLength) < \(requiredHeaderLen)")
+                return
+            }
+
+            let expectedPrefix: UInt8 = (ptsDtsFlags == 0x02) ? 0x02 : 0x03
+            guard let rawPTS = decodeAndValidatePTS(data: validData, offset: 9, expectedPrefix: expectedPrefix) else {
+                delegate?.dvbSubtitleAssembler(self, didEncounterError: "Malformed PTS timestamp marker bits or prefix")
+                return
+            }
             let unwrappedPTS = normalizer.unwrap(rawPTS: rawPTS)
             pts90k = unwrappedPTS
             pts = CMTime(value: CMTimeValue(unwrappedPTS), timescale: 90000)
@@ -171,8 +191,8 @@ public final class DVBSubtitlePESAssembler: @unchecked Sendable {
 
         // 4. DVB Subtitle Data Field (starts at headerEnd)
         let dataField = validData.dropFirst(headerEnd)
-        guard dataField.count >= 2 else {
-            delegate?.dvbSubtitleAssembler(self, didEncounterError: "PES packet carries no DVB data field")
+        guard dataField.count >= 3 else {
+            delegate?.dvbSubtitleAssembler(self, didEncounterError: "PES packet carries insufficient DVB data field bytes (< 3 bytes)")
             return
         }
 
@@ -184,12 +204,13 @@ public final class DVBSubtitlePESAssembler: @unchecked Sendable {
 
         let subtitleStreamID = dataField[dataField.startIndex + 1]
 
-        // 5. Extract Subtitle Segments up to End Marker 0xFF
-        var segmentBytes = dataField.dropFirst(2)
-        if let lastByte = segmentBytes.last, lastByte == 0xFF {
-            segmentBytes = segmentBytes.dropLast(1)
+        // 5. Enforce and validate End Marker 0xFF (ETSI EN 300 743 Clause 5.1 / Table 1)
+        guard let endMarker = dataField.last, endMarker == 0xFF else {
+            delegate?.dvbSubtitleAssembler(self, didEncounterError: "Missing or invalid DVB end_of_PES_data_field_marker 0xFF")
+            return
         }
 
+        let segmentBytes = dataField.dropFirst(2).dropLast(1)
         guard !segmentBytes.isEmpty else {
             delegate?.dvbSubtitleAssembler(self, didEncounterError: "DVB subtitle payload has empty segment data")
             return
@@ -204,18 +225,24 @@ public final class DVBSubtitlePESAssembler: @unchecked Sendable {
         delegate?.dvbSubtitleAssembler(self, didEmitPacket: packet)
     }
 
-    private func decode33BitTimestamp(data: Data, offset: Int) -> UInt64 {
+    private func decodeAndValidatePTS(data: Data, offset: Int, expectedPrefix: UInt8) -> UInt64? {
         let bytes = [UInt8](data.dropFirst(offset).prefix(5))
-        guard bytes.count == 5 else { return 0 }
-        let b0 = UInt64(bytes[0])
-        let b1 = UInt64(bytes[1])
-        let b2 = UInt64(bytes[2])
-        let b3 = UInt64(bytes[3])
-        let b4 = UInt64(bytes[4])
+        guard bytes.count == 5 else { return nil }
+        let b0 = bytes[0]
+        let b1 = bytes[1]
+        let b2 = bytes[2]
+        let b3 = bytes[3]
+        let b4 = bytes[4]
 
-        let pts32_30 = (b0 & 0x0E) >> 1
-        let pts29_15 = ((b1 & 0xFF) << 7) | ((b2 & 0xFE) >> 1)
-        let pts14_0  = ((b3 & 0xFF) << 7) | ((b4 & 0xFE) >> 1)
+        // 1. Verify 4-bit prefix: '0010' (0x02) for PTS only, '0011' (0x03) for PTS with DTS
+        guard (b0 >> 4) == expectedPrefix else { return nil }
+
+        // 2. Verify marker bits (bit 0 of b0, b2, b4 must be 1)
+        guard (b0 & 0x01) == 1, (b2 & 0x01) == 1, (b4 & 0x01) == 1 else { return nil }
+
+        let pts32_30 = UInt64((b0 & 0x0E) >> 1)
+        let pts29_15 = UInt64(((UInt16(b1) << 7) | (UInt16(b2) >> 1)) & 0x7FFF)
+        let pts14_0  = UInt64(((UInt16(b3) << 7) | (UInt16(b4) >> 1)) & 0x7FFF)
 
         return (pts32_30 << 30) | (pts29_15 << 15) | pts14_0
     }

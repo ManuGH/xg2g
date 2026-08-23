@@ -338,6 +338,7 @@ public final class TSPacketParser: @unchecked Sendable {
     public private(set) var audioTracks: [AudioTrackInfo] = []
     public private(set) var audioPIDs = Set<UInt16>()
     public private(set) var subtitleTracks: [SubtitleTrackInfo] = []
+    public private(set) var subtitlePIDs = Set<UInt16>()
 
     /// Streams the PMT named that could be audio but could not be classified.
     public private(set) var unclassifiedStreams: [UnclassifiedStreamInfo] = []
@@ -368,6 +369,7 @@ public final class TSPacketParser: @unchecked Sendable {
         audioTracks.removeAll()
         audioPIDs.removeAll()
         subtitleTracks.removeAll()
+        subtitlePIDs.removeAll()
         unclassifiedStreams.removeAll()
         continuityCounters.removeAll()
         pmtSectionBuffers.removeAll()
@@ -501,6 +503,9 @@ public final class TSPacketParser: @unchecked Sendable {
             delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
         } else if audioPIDs.contains(pid) {
             // Audio Elementary Stream
+            delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
+        } else if subtitlePIDs.contains(pid) {
+            // Subtitle Elementary Stream
             delegate?.tsParser(self, didEmitPayload: payload, pid: pid, unitStart: payloadUnitStart)
         } else if videoPID == nil && payloadUnitStart && payloadLength >= 4 {
             // Fast-track auto-detection of video PID from PES video start code (0x000001E0 - 0x000001EF)
@@ -795,6 +800,7 @@ public final class TSPacketParser: @unchecked Sendable {
 
         if self.subtitleTracks != subtitleTracks {
             self.subtitleTracks = subtitleTracks
+            self.subtitlePIDs = Set(subtitleTracks.map(\.pid))
             delegate?.tsParser(self, didDiscoverSubtitleTracks: subtitleTracks)
         }
 
