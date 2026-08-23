@@ -233,7 +233,11 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 			}
 		}
 
-		reader := w.masterRing.NewSubscriberReader(-1)
+		startOffset := int64(-1)
+		if kfOffset, ok := w.masterRing.LatestKeyframeOffset(); ok {
+			startOffset = kfOffset
+		}
+		reader := w.masterRing.NewSubscriberReader(startOffset)
 		defer reader.Close()
 
 		go func() {

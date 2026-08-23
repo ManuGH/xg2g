@@ -548,7 +548,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         let config = URLSessionConfiguration.ephemeral
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        config.timeoutIntervalForRequest = 5.0
+        config.timeoutIntervalForRequest = 10.0
         config.waitsForConnectivity = false
         config.allowsCellularAccess = true
         config.allowsExpensiveNetworkAccess = true
