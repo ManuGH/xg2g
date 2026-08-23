@@ -436,6 +436,9 @@ struct PresentationSynchronizerIdentityTests {
         #expect(pipeline.telemetry.display.audioPID == 102)
         #expect(pipeline.telemetry.display.audioLanguage == "eng")
 
+        // Feed old PID 101 payload -> demuxer must drop it
+        pipeline.tsParser(parser, didEmitPayload: Data([0x00, 0x01]), pid: 101, unitStart: true)
+
         // Switch dynamically to PID 103 (AAC Audio Description)
         pipeline.selectAudioTrack(pid: 103)
         try? await Task.sleep(nanoseconds: 50_000_000)
@@ -444,5 +447,8 @@ struct PresentationSynchronizerIdentityTests {
         #expect(pipeline.selectedAudioCodec == .aac)
         #expect(pipeline.telemetry.display.audioPID == 103)
         #expect(pipeline.telemetry.display.audioCodec == "AAC")
+
+        // Feed new PID 103 payload -> demuxer accepts it
+        pipeline.tsParser(parser, didEmitPayload: Data([0x00, 0x02]), pid: 103, unitStart: true)
     }
 }

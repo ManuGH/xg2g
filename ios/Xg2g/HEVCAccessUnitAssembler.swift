@@ -19,6 +19,11 @@ private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "h
 public protocol VideoAccessUnitAssemblerDelegate: AnyObject, Sendable {
     func videoAssembler(didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo)
     func videoAssembler(didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure)
+    func videoAssembler(didDiscoverAFD afd: VideoGeometry.ActiveFormatDescription)
+}
+
+public extension VideoAccessUnitAssemblerDelegate {
+    func videoAssembler(didDiscoverAFD afd: VideoGeometry.ActiveFormatDescription) {}
 }
 
 /// An assembler that turns an elementary stream into decodable access units.
@@ -53,6 +58,8 @@ public final class HEVCAccessUnitAssembler: @unchecked Sendable, VideoAccessUnit
         static let eosNut: UInt8 = 36
         static let eobNut: UInt8 = 37
         static let fdNut: UInt8 = 38
+        static let prefixSeiNut: UInt8 = 39
+        static let suffixSeiNut: UInt8 = 40
 
         /// Video coding layer — the units that carry actual picture data.
         static func isVCL(_ type: UInt8) -> Bool { type <= 31 }
@@ -223,6 +230,8 @@ public final class HEVCAccessUnitAssembler: @unchecked Sendable, VideoAccessUnit
         case NALType.ppsNut:
             ppsData = nal
             rebuildFormatDescription()
+        case NALType.prefixSeiNut, NALType.suffixSeiNut:
+            parseSEINAL(nal)
         default:
             break
         }
@@ -244,6 +253,15 @@ public final class HEVCAccessUnitAssembler: @unchecked Sendable, VideoAccessUnit
         }
 
         currentAUNALs.append(nal)
+    }
+
+    /// Inspects HEVC SEI NAL units for broadcast metadata like Active Format Description (AFD).
+    private func parseSEINAL(_ nal: Data) {
+        guard nal.count > 2 else { return }
+        let rbsp = VideoGeometry.removeEmulationPreventionBytes(from: Data(nal.dropFirst(2)))
+        if let afd = VideoGeometry.parseActiveFormatDescription(fromSEIPayload: rbsp) {
+            assemblerDelegate?.videoAssembler(didDiscoverAFD: afd)
+        }
     }
 
     /// Whether this VCL unit opens a picture.

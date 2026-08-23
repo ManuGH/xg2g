@@ -1135,16 +1135,22 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             self.selectedAudioPID = track.pid
             self.selectedAudioCodec = track.codec
 
-            // 1. Reset all audio assemblers & parsers to discard partial old track frames
+            // 1. Reset all audio assemblers, continuity tracking & parsers
             self.audioPesAssembler.reset()
             self.aacFrameParser.reset()
             self.ac3FrameParser.reset()
             self.audioSampleBufferAssembler.reset()
+            self.audioContinuity.reset()
 
             // 2. Flush stale samples of previous track from audio renderer
             self.audioRenderer.flush()
 
-            // 3. Update telemetry with new track parameters
+            // 3. Reset track-specific audio anchor state for clean arrival of the new stream
+            self.firstAudioPTS = nil
+            self.audioBuffersPreRolledCount = 0
+            self.preRollStartTime = 0
+
+            // 4. Update telemetry with new track parameters
             self.telemetry.mutate {
                 $0.audioPID = track.pid
                 $0.audioCodec = track.codec.description
@@ -1845,6 +1851,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func videoAssembler(didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
         handleVideoFormat(formatDescription, info: info)
+    }
+
+    public func videoAssembler(didDiscoverAFD afd: VideoGeometry.ActiveFormatDescription) {
+        telemetry.mutate {
+            $0.afdDescription = afd.description
+        }
     }
 
     public func videoAssembler(didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure) {

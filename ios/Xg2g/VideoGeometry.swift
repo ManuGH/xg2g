@@ -326,6 +326,25 @@ public enum VideoGeometry {
         return nil
     }
 
+    /// Strips Annex-B H.264/HEVC emulation prevention 3-bytes (`00 00 03` -> `00 00`).
+    public static func removeEmulationPreventionBytes(from data: Data) -> Data {
+        var rbsp = Data()
+        var zeroCount = 0
+        for byte in data {
+            if zeroCount >= 2 && byte == 0x03 {
+                zeroCount = 0
+                continue
+            }
+            rbsp.append(byte)
+            if byte == 0x00 {
+                zeroCount += 1
+            } else {
+                zeroCount = 0
+            }
+        }
+        return rbsp
+    }
+
     /// Colorimetry, Dynamic Range, Matrix, and Scan Cadence extracted from CVPixelBuffer attachments.
     public struct ColorimetryInfo: Sendable, Equatable {
         public let primaries: String
