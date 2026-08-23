@@ -412,4 +412,37 @@ struct PresentationSynchronizerIdentityTests {
         let current = pipeline.presentationSynchronizer
         #expect(pipeline.presentationSynchronizer === current)
     }
+
+    @Test func dynamicAudioTrackSwitchingPreservesSessionAndUpdatesTelemetry() async {
+        let pipeline = NativeTSVideoPipeline()
+        let parser = TSPacketParser()
+
+        let tracks = [
+            AudioTrackInfo(pid: 101, streamType: 0x06, codec: .ac3, language: "deu", audioType: 0, descriptorTags: [0x6A]),
+            AudioTrackInfo(pid: 102, streamType: 0x06, codec: .ac3, language: "eng", audioType: 0, descriptorTags: [0x6A]),
+            AudioTrackInfo(pid: 103, streamType: 0x11, codec: .aac, language: "deu", audioType: 3, descriptorTags: [0x7F])
+        ]
+        pipeline.tsParser(parser, didDiscoverAudioTracks: tracks)
+        #expect(pipeline.selectedAudioPID == 101)
+
+        // Switch dynamically to PID 102 (English AC-3)
+        pipeline.selectAudioTrack(pid: 102)
+
+        // Allow async dispatch on ingestQueue to complete
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(pipeline.selectedAudioPID == 102)
+        #expect(pipeline.selectedAudioCodec == .ac3)
+        #expect(pipeline.telemetry.display.audioPID == 102)
+        #expect(pipeline.telemetry.display.audioLanguage == "eng")
+
+        // Switch dynamically to PID 103 (AAC Audio Description)
+        pipeline.selectAudioTrack(pid: 103)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(pipeline.selectedAudioPID == 103)
+        #expect(pipeline.selectedAudioCodec == .aac)
+        #expect(pipeline.telemetry.display.audioPID == 103)
+        #expect(pipeline.telemetry.display.audioCodec == "AAC")
+    }
 }

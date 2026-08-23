@@ -604,4 +604,43 @@ struct VideoGeometryTests {
         #expect(afd10.isSignaled)
         #expect(afd10.description == "16:9 (Vollbild im 16:9-Frame)")
     }
+
+    @Test("AFD: Parsing real SEI user_data_registered_itu_t_t35 payloads (ATSC/GA94 & DVB/DTG1)")
+    func testActiveFormatDescriptionSEIParsing() {
+        // 1. Valid ATSC GA94 SEI Message (payload_type = 4, length = 9)
+        // Header: Type 0x04, Size 0x09
+        // Body: 0xB5 (US), 0x00, 0x31 (SMPTE), 'G','A','9','4' (0x47, 0x41, 0x39, 0x34), 0x41 (AFD data type), 0x49 (0x40 active flag | 0x09 Pillarbox 4:3)
+        var atscSEI = Data([0x04, 0x09, 0xB5, 0x00, 0x31, 0x47, 0x41, 0x39, 0x34, 0x41, 0x49])
+        let afdAtsc = VideoGeometry.parseActiveFormatDescription(fromSEIPayload: atscSEI)
+        #expect(afdAtsc != nil)
+        #expect(afdAtsc?.isSignaled == true)
+        #expect(afdAtsc?.code == 9)
+        #expect(afdAtsc?.description == "4:3 (Pillarbox im 16:9-Frame)")
+
+        // 2. Valid DVB DTG1 SEI Message
+        // Header: Type 0x04, Size 0x07
+        // Body: 0x00 (DVB), 'D','T','G','1' (0x44, 0x44, 0x47, 0x31), 0x01 (AFD type), 0x4A (0x40 active flag | 0x0A 16:9 Full Frame)
+        var dvbSEI = Data([0x04, 0x07, 0x00, 0x44, 0x54, 0x47, 0x31, 0x01, 0x4A])
+        let afdDvb = VideoGeometry.parseActiveFormatDescription(fromSEIPayload: dvbSEI)
+        #expect(afdDvb != nil)
+        #expect(afdDvb?.isSignaled == true)
+        #expect(afdDvb?.code == 10)
+        #expect(afdDvb?.description == "16:9 (Vollbild im 16:9-Frame)")
+
+        // 3. SEI with active_format_flag = 0 (Flag not set -> must return nil / unsignaled)
+        var unflaggedSEI = Data([0x04, 0x09, 0xB5, 0x00, 0x31, 0x47, 0x41, 0x39, 0x34, 0x41, 0x09]) // 0x09 has bit 6 == 0
+        let afdUnflagged = VideoGeometry.parseActiveFormatDescription(fromSEIPayload: unflaggedSEI)
+        #expect(afdUnflagged == nil)
+
+        // 4. SEI with non-matching identifier (e.g. Closed Captions 'CC01' -> must return nil, not guess)
+        var ccSEI = Data([0x04, 0x09, 0xB5, 0x00, 0x31, 0x43, 0x43, 0x30, 0x31, 0x41, 0x49])
+        let afdCC = VideoGeometry.parseActiveFormatDescription(fromSEIPayload: ccSEI)
+        #expect(afdCC == nil)
+
+        // 5. Empty / Truncated SEI -> must return nil safely
+        let emptySEI = Data()
+        #expect(VideoGeometry.parseActiveFormatDescription(fromSEIPayload: emptySEI) == nil)
+        let truncatedSEI = Data([0x04, 0x09, 0xB5, 0x00])
+        #expect(VideoGeometry.parseActiveFormatDescription(fromSEIPayload: truncatedSEI) == nil)
+    }
 }

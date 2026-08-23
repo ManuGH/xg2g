@@ -1122,28 +1122,41 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     /// Selects an audio track by PID dynamically during live playback without interrupting the video stream.
+    ///
+    /// Thread-safe: dispatches to `ingestQueue` to ensure parser and demux state are mutated atomically
+    /// without racing against incoming network packets. Flushes queued buffers of the old track from the renderer.
     public func selectAudioTrack(pid: UInt16) {
         guard let track = availableAudioTracks.first(where: { $0.pid == pid }) else { return }
-        guard selectedAudioPID != pid else { return }
 
-        self.selectedAudioPID = track.pid
-        self.selectedAudioCodec = track.codec
-        audioPesAssembler.reset()
-        aacFrameParser.reset()
-        ac3FrameParser.reset()
-        audioSampleBufferAssembler.reset()
+        ingestQueue.async { [weak self] in
+            guard let self = self else { return }
+            guard self.selectedAudioPID != pid else { return }
 
-        telemetry.mutate {
-            $0.audioPID = track.pid
-            $0.audioCodec = track.codec.description
-            $0.audioLanguage = track.language ?? "und"
+            self.selectedAudioPID = track.pid
+            self.selectedAudioCodec = track.codec
+
+            // 1. Reset all audio assemblers & parsers to discard partial old track frames
+            self.audioPesAssembler.reset()
+            self.aacFrameParser.reset()
+            self.ac3FrameParser.reset()
+            self.audioSampleBufferAssembler.reset()
+
+            // 2. Flush stale samples of previous track from audio renderer
+            self.audioRenderer.flush()
+
+            // 3. Update telemetry with new track parameters
+            self.telemetry.mutate {
+                $0.audioPID = track.pid
+                $0.audioCodec = track.codec.description
+                $0.audioLanguage = track.language ?? "und"
+            }
+
+            let zapId = self.currentZapId
+            let logMsg = "[ZAP-#\(zapId)-AUDIO] 🔀 User switched audio track to: PID \(track.pid) (\(track.displayName))"
+            print(logMsg)
+            logger.notice("\(logMsg, privacy: .public)")
+            TelemetryServer.shared.log(logMsg)
         }
-
-        let zapId = currentZapId
-        let logMsg = "[ZAP-#\(zapId)-AUDIO] 🔀 User switched audio track to: PID \(track.pid) (\(track.displayName))"
-        print(logMsg)
-        logger.notice("\(logMsg, privacy: .public)")
-        TelemetryServer.shared.log(logMsg)
     }
 
     /// A channel can be silent because nothing in its PMT could be classified. That
@@ -1820,6 +1833,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo) {
         handleVideoFormat(formatDescription, info: info)
+    }
+
+    public func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didDiscoverAFD afd: VideoGeometry.ActiveFormatDescription) {
+        telemetry.mutate {
+            $0.afdDescription = afd.description
+        }
     }
 
     // MARK: - VideoAccessUnitAssemblerDelegate

@@ -239,6 +239,93 @@ public enum VideoGeometry {
         }
     }
 
+    /// Parses Active Format Description (AFD) from raw H.264/HEVC SEI RBSP payload bytes.
+    ///
+    /// Inspects SEI messages for payload type 4 (user_data_registered_itu_t_t35) according to
+    /// ETSI TS 101 154, SMPTE 2016-1, and ATSC A/53.
+    public static func parseActiveFormatDescription(fromSEIPayload payload: Data) -> ActiveFormatDescription? {
+        var offset = 0
+        let count = payload.count
+
+        while offset < count {
+            // 1. Read payload_type (handling 0xFF extension bytes)
+            var payloadType = 0
+            while offset < count && payload[offset] == 0xFF {
+                payloadType += 255
+                offset += 1
+            }
+            guard offset < count else { break }
+            payloadType += Int(payload[offset])
+            offset += 1
+
+            // 2. Read payload_size (handling 0xFF extension bytes)
+            var payloadSize = 0
+            while offset < count && payload[offset] == 0xFF {
+                payloadSize += 255
+                offset += 1
+            }
+            guard offset < count else { break }
+            payloadSize += Int(payload[offset])
+            offset += 1
+
+            guard offset + payloadSize <= count else { break }
+            let msgData = payload.subdata(in: offset..<(offset + payloadSize))
+            offset += payloadSize
+
+            // 3. Inspect payload_type 4 (user_data_registered_itu_t_t35)
+            if payloadType == 4, let afd = parseAFDFromUserDataRegistered(msgData) {
+                return afd
+            }
+        }
+        return nil
+    }
+
+    /// Parses AFD from ITU-T T.35 registered user data bytes.
+    public static func parseAFDFromUserDataRegistered(_ data: Data) -> ActiveFormatDescription? {
+        guard data.count >= 4 else { return nil }
+        let countryCode = data[0]
+
+        if countryCode == 0xB5 {
+            // North America / ATSC / SMPTE (0xB5)
+            guard data.count >= 7 else { return nil }
+            let providerCode = (UInt16(data[1]) << 8) | UInt16(data[2])
+            let userIdentifier = (UInt32(data[3]) << 24) | (UInt32(data[4]) << 16) | (UInt32(data[5]) << 8) | UInt32(data[6])
+
+            if userIdentifier == 0x47413934 || userIdentifier == 0x44544731 || userIdentifier == 0x41464431 { // "GA94", "DTG1", "AFD1"
+                guard data.count >= 8 else { return nil }
+                let userDataType = data[7]
+                if userDataType == 0x41 || userDataType == 0x01 { // AFD / Bar Data
+                    guard data.count >= 9 else { return nil }
+                    let afdByte = data[8]
+                    if (afdByte & 0x40) != 0 { // active_format_flag is set
+                        return ActiveFormatDescription(code: afdByte & 0x0F)
+                    }
+                }
+            } else if providerCode == 0x0031 { // Direct SMPTE 2016-1 format without GA94 wrapper
+                let userDataType = data[3]
+                if userDataType == 0x41, data.count >= 5 {
+                    let afdByte = data[4]
+                    if (afdByte & 0x40) != 0 {
+                        return ActiveFormatDescription(code: afdByte & 0x0F)
+                    }
+                }
+            }
+        } else if countryCode == 0x00 { // DVB User Data format
+            guard data.count >= 6 else { return nil }
+            let userIdentifier = (UInt32(data[1]) << 24) | (UInt32(data[2]) << 16) | (UInt32(data[3]) << 8) | UInt32(data[4])
+            if userIdentifier == 0x44544731 { // "DTG1"
+                let userDataType = data[5]
+                if userDataType == 0x01, data.count >= 7 {
+                    let afdByte = data[6]
+                    if (afdByte & 0x40) != 0 {
+                        return ActiveFormatDescription(code: afdByte & 0x0F)
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
     /// Colorimetry, Dynamic Range, Matrix, and Scan Cadence extracted from CVPixelBuffer attachments.
     public struct ColorimetryInfo: Sendable, Equatable {
         public let primaries: String

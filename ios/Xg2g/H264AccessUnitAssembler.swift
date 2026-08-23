@@ -100,6 +100,11 @@ public final class H264ParameterSetCache: @unchecked Sendable {
 public protocol H264AccessUnitAssemblerDelegate: AnyObject, Sendable {
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didUpdateFormat formatDescription: CMVideoFormatDescription, info: H264DecodedInfo)
     func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didEmitSampleBuffer sampleBuffer: CMSampleBuffer, isSyncSample: Bool, structure: H264PictureStructure)
+    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didDiscoverAFD afd: VideoGeometry.ActiveFormatDescription)
+}
+
+public extension H264AccessUnitAssemblerDelegate {
+    func accessUnitAssembler(_ assembler: H264AccessUnitAssembler, didDiscoverAFD afd: VideoGeometry.ActiveFormatDescription) {}
 }
 
 /// Stream-level Annex-B H.264 Access Unit Assembler.
@@ -395,11 +400,23 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             }
             currentAUHasVCL = true
 
+        case 6: // SEI (Supplemental Enhancement Information)
+            parseSEINal(nal)
+
         default:
             break
         }
 
         currentAUNALs.append(nal)
+    }
+
+    /// Inspects SEI NAL units for broadcast metadata like Active Format Description (AFD).
+    private func parseSEINal(_ nal: Data) {
+        guard nal.count > 1 else { return }
+        let rbsp = removeEmulationPreventionBytes(from: Data(nal.dropFirst(1)))
+        if let afd = VideoGeometry.parseActiveFormatDescription(fromSEIPayload: rbsp) {
+            delegate?.accessUnitAssembler(self, didDiscoverAFD: afd)
+        }
     }
 
     /// True when this slice codes only intra macroblocks (`slice_type` I or SI).
