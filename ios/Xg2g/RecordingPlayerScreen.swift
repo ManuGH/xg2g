@@ -45,6 +45,12 @@ struct RecordingPlayerScreen: View {
     @State private var playbackRate: Float = 1.0
     @State private var showStatsOverlay = false
 
+    // Live Telemetry & Measured Metrics (AVPlayer & Hardware Engine)
+    @State private var measuredResolution: String = "1920 × 1080"
+    @State private var measuredBitrate: String = "—"
+    @State private var droppedFramesCount: Int = 0
+    @State private var transferredBytes: String = "—"
+
     private var totalDuration: Double {
         let recDur = Double(recording.durationSeconds)
         if durationOverride > 0 {
@@ -713,12 +719,14 @@ struct RecordingPlayerScreen: View {
 
             Divider().background(Color.white.opacity(0.2))
 
+            statsRow(label: "Auflösung (Live)", value: measuredResolution, icon: "tv")
+            statsRow(label: "Bandbreite", value: measuredBitrate, icon: "network")
+            statsRow(label: "Dropped Frames", value: "\(droppedFramesCount)", icon: "square.stack.3d.up.slash")
+            statsRow(label: "Geladen", value: transferredBytes, icon: "arrow.down.circle")
             statsRow(label: "Farbraum", value: "BT.709 (Rec. 709 / SDR)", icon: "circle.grid.2x1.left.filled")
             statsRow(label: "Video Codec", value: "H.264 / AVC (fMP4)", icon: "video.fill")
-            statsRow(label: "Audio Codec", value: "AAC Stereo • 320 kbps • 48 kHz", icon: "waveform")
-            statsRow(label: "Packaging", value: "Apple HLS (MPEG-4 Part 12 / fMP4)", icon: "film")
-            statsRow(label: "Hardware", value: "Intel VAAPI (Hardware Offload)", icon: "cpu")
-            statsRow(label: "Server", value: "LXC 110 (Staging :8089)", icon: "server.rack")
+            statsRow(label: "Audio Codec", value: "AAC Stereo • 320 kbps", icon: "waveform")
+            statsRow(label: "Server", value: serverAddress.replacingOccurrences(of: "http://", with: "").replacingOccurrences(of: "https://", with: ""), icon: "server.rack")
         }
         .padding(14)
         .frame(maxWidth: 320)
@@ -923,6 +931,30 @@ struct RecordingPlayerScreen: View {
         }
     }
 
+    private func updateLiveMetrics(player: AVPlayer?) {
+        guard let item = player?.currentItem else { return }
+        let size = item.presentationSize
+        if size.width > 0 && size.height > 0 {
+            measuredResolution = "\(Int(size.width)) × \(Int(size.height))"
+        }
+        if let lastEvent = item.accessLog()?.events.last {
+            if lastEvent.observedBitrate > 0 {
+                let mbps = lastEvent.observedBitrate / 1_000_000.0
+                measuredBitrate = String(format: "%.1f Mbps", mbps)
+            } else if lastEvent.indicatedBitrate > 0 {
+                let mbps = lastEvent.indicatedBitrate / 1_000_000.0
+                measuredBitrate = String(format: "%.1f Mbps", mbps)
+            }
+            if lastEvent.numberOfDroppedVideoFrames >= 0 {
+                droppedFramesCount = lastEvent.numberOfDroppedVideoFrames
+            }
+            if lastEvent.numberOfBytesTransferred > 0 {
+                let mb = Double(lastEvent.numberOfBytesTransferred) / (1024.0 * 1024.0)
+                transferredBytes = String(format: "%.1f MB", mb)
+            }
+        }
+    }
+
     // MARK: - Player Setup
 
     private func setupPlayer() {
@@ -1027,7 +1059,9 @@ struct RecordingPlayerScreen: View {
                             self.durationOverride = itemDur
                         }
 
-                        // Periodic 5s resume progress update to server
+                        self.updateLiveMetrics(player: p)
+
+                        // Periodic resume progress update to server
                         if let itemDur = p.currentItem?.duration.seconds, itemDur > 0 {
                             progressCallback(sec, itemDur)
                         } else if self.recording.durationSeconds > 0 {
