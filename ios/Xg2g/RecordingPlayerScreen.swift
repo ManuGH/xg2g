@@ -117,6 +117,8 @@ struct RecordingPlayerScreen: View {
                 errorStateView
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(.all)
         .offset(y: max(0, dragOffsetY))
         .scaleEffect(dragOffsetY > 0 ? max(0.82, 1.0 - (dragOffsetY / 1100.0)) : 1.0)
         .clipShape(RoundedRectangle(cornerRadius: dragOffsetY > 0 ? 28 : 0, style: .continuous))

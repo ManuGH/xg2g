@@ -241,6 +241,7 @@ struct RecordingsView: View {
                         )
                     }
                 )
+                .ignoresSafeArea(.all)
             }
             .fullScreenCover(item: $playingOffline) { offline in
                 OfflinePlayerScreen(offlineRecording: offline)

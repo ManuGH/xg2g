@@ -1065,6 +1065,9 @@ struct NativeVideoPlayerView: UIViewControllerRepresentable {
         controller.updatesNowPlayingInfoCenter = false
         controller.allowsVideoFrameAnalysis = false
         controller.exitsFullScreenWhenPlaybackEnds = false
+        controller.view.insetsLayoutMarginsFromSafeArea = false
+        controller.additionalSafeAreaInsets = .zero
+        controller.view.backgroundColor = .black
         controller.delegate = context.coordinator
         return controller
     }
