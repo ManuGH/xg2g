@@ -476,8 +476,9 @@ struct VideoGeometryTests {
         #expect(landscapeBudget.channelInfoAvailableWidth >= 450, "Landscape must have abundant space for full metadata")
     }
 
-    @Test("CVPixelBuffer: Colorimetry, Range, and Field Detail Extraction")
+    @Test("CVPixelBuffer: Colorimetry, Range, and Field Detail Extraction (Positive & Negative)")
     func testColorimetryExtraction() {
+        // 1. Positive Test: Explicit BT.709, Limited Range, TFF
         var pixelBuffer: CVPixelBuffer?
         let status = CVPixelBufferCreate(
             kCFAllocatorDefault,
@@ -492,18 +493,78 @@ struct VideoGeometryTests {
             return
         }
 
-        // Attach BT.709 colorimetry and TFF
         CVBufferSetAttachment(pb, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
         CVBufferSetAttachment(pb, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
         CVBufferSetAttachment(pb, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
         CVBufferSetAttachment(pb, kCVImageBufferFieldDetailKey, kCVImageBufferFieldDetailTemporalTopFirst, .shouldPropagate)
 
         let info = VideoGeometry.inspectColorimetry(from: pb)
-        #expect(info.primaries == "BT.709 (HD)")
+        #expect(info.primaries == "ITU-R BT.709")
         #expect(info.transferFunction == "SDR (BT.709)")
         #expect(info.matrix == "ITU-R BT.709")
         #expect(info.range == "Video Range (16–235)")
         #expect(info.fieldDetail == "Top Field First (TFF)")
         #expect(!info.isHDR)
+
+        // 2. Negative Test: Empty PixelBuffer (No attachments)
+        var emptyBuffer: CVPixelBuffer?
+        let status2 = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            1280,
+            720,
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            nil,
+            &emptyBuffer
+        )
+        guard status2 == kCVReturnSuccess, let emptyPb = emptyBuffer else {
+            Issue.record("Failed to create empty CVPixelBuffer")
+            return
+        }
+
+        let emptyInfo = VideoGeometry.inspectColorimetry(from: emptyPb)
+        #expect(emptyInfo.primaries == "—", "Missing primaries must report em-dash")
+        #expect(emptyInfo.transferFunction == "—", "Missing transfer function must report em-dash, not fake SDR")
+        #expect(emptyInfo.matrix == "—", "Missing matrix must report em-dash")
+        #expect(emptyInfo.range == "Full Range (0–255)")
+        #expect(emptyInfo.fieldDetail == "—", "Missing field detail must report em-dash, not fake progressive")
+        #expect(!emptyInfo.isHDR)
+
+        // 3. Negative Test: Unrecognized PixelFormatType (e.g. 32BGRA)
+        var bgraBuffer: CVPixelBuffer?
+        let status3 = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            640,
+            480,
+            kCVPixelFormatType_32BGRA,
+            nil,
+            &bgraBuffer
+        )
+        guard status3 == kCVReturnSuccess, let bgraPb = bgraBuffer else {
+            Issue.record("Failed to create BGRA CVPixelBuffer")
+            return
+        }
+        let bgraInfo = VideoGeometry.inspectColorimetry(from: bgraPb)
+        #expect(bgraInfo.range == "—", "Unrecognized pixel format must report em-dash")
+
+        // 4. HDR ST 2084 (PQ) Test: Must report 'PQ (ST 2084)' without unfounded HDR10 naming
+        CVBufferSetAttachment(pb, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ, .shouldPropagate)
+        let pqInfo = VideoGeometry.inspectColorimetry(from: pb)
+        #expect(pqInfo.transferFunction == "PQ (ST 2084)")
+        #expect(pqInfo.isHDR == true)
+
+        // 5. HLG Test: Must report 'HLG (BT.2100)'
+        CVBufferSetAttachment(pb, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_2100_HLG, .shouldPropagate)
+        let hlgInfo = VideoGeometry.inspectColorimetry(from: pb)
+        #expect(hlgInfo.transferFunction == "HLG (BT.2100)")
+        #expect(hlgInfo.isHDR == true)
+
+        // 6. SD Primaries Distinction: EBU Tech 3213 & SMPTE-C
+        CVBufferSetAttachment(pb, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_EBU_3213, .shouldPropagate)
+        let ebuInfo = VideoGeometry.inspectColorimetry(from: pb)
+        #expect(ebuInfo.primaries == "EBU Tech 3213")
+
+        CVBufferSetAttachment(pb, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_SMPTE_C, .shouldPropagate)
+        let smpteInfo = VideoGeometry.inspectColorimetry(from: pb)
+        #expect(smpteInfo.primaries == "SMPTE-C")
     }
 }

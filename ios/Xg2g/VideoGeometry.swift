@@ -235,18 +235,20 @@ public enum VideoGeometry {
     /// Inspects color primaries, transfer function, YCbCr matrix, range and field order from CVPixelBuffer attachments.
     public static func inspectColorimetry(from pixelBuffer: CVPixelBuffer) -> ColorimetryInfo {
         var primariesStr = "—"
-        var transferStr = "SDR (BT.709)"
+        var transferStr = "—"
         var matrixStr = "—"
         var isHDR = false
 
         // 1. Color Primaries
         if let primaries = CVBufferGetAttachment(pixelBuffer, kCVImageBufferColorPrimariesKey, nil)?.takeUnretainedValue() as? String {
             if primaries == (kCVImageBufferColorPrimaries_ITU_R_709_2 as String) {
-                primariesStr = "BT.709 (HD)"
-            } else if primaries == (kCVImageBufferColorPrimaries_EBU_3213 as String) || primaries == (kCVImageBufferColorPrimaries_SMPTE_C as String) {
-                primariesStr = "BT.601 (SD)"
+                primariesStr = "ITU-R BT.709"
+            } else if primaries == (kCVImageBufferColorPrimaries_EBU_3213 as String) {
+                primariesStr = "EBU Tech 3213"
+            } else if primaries == (kCVImageBufferColorPrimaries_SMPTE_C as String) {
+                primariesStr = "SMPTE-C"
             } else if primaries == (kCVImageBufferColorPrimaries_ITU_R_2020 as String) {
-                primariesStr = "BT.2020 (UHD)"
+                primariesStr = "ITU-R BT.2020"
             } else if primaries == (kCVImageBufferColorPrimaries_P3_D65 as String) {
                 primariesStr = "Display P3"
             } else {
@@ -259,10 +261,10 @@ public enum VideoGeometry {
             if transfer == (kCVImageBufferTransferFunction_ITU_R_709_2 as String) {
                 transferStr = "SDR (BT.709)"
             } else if transfer == (kCVImageBufferTransferFunction_ITU_R_2100_HLG as String) {
-                transferStr = "HLG (BT.2100 HDR)"
+                transferStr = "HLG (BT.2100)"
                 isHDR = true
             } else if transfer == (kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String) {
-                transferStr = "HDR10 (PQ)"
+                transferStr = "PQ (ST 2084)"
                 isHDR = true
             } else if transfer == (kCVImageBufferTransferFunction_sRGB as String) {
                 transferStr = "sRGB"
@@ -296,12 +298,16 @@ public enum VideoGeometry {
             rangeStr = "10-bit Video Range"
         case kCVPixelFormatType_420YpCbCr10BiPlanarFullRange:
             rangeStr = "10-bit Full Range"
+        case kCVPixelFormatType_420YpCbCr8Planar:
+            rangeStr = "8-bit Planar Video Range"
+        case kCVPixelFormatType_420YpCbCr8PlanarFullRange:
+            rangeStr = "8-bit Planar Full Range"
         default:
-            rangeStr = "Video Range (16–235)"
+            rangeStr = "—"
         }
 
         // 5. Field Detail
-        var fieldDetailStr = "Progressiv"
+        var fieldDetailStr = "—"
         if let fieldDetail = CVBufferGetAttachment(pixelBuffer, kCVImageBufferFieldDetailKey, nil)?.takeUnretainedValue() as? String {
             if fieldDetail == (kCVImageBufferFieldDetailTemporalTopFirst as String) || fieldDetail == (kCVImageBufferFieldDetailSpatialFirstLineEarly as String) {
                 fieldDetailStr = "Top Field First (TFF)"
