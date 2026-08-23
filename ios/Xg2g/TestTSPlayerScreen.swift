@@ -366,7 +366,8 @@ public struct TestTSPlayerScreen: View {
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(.white)
 
-                            Text("LIVE 1080i50")
+                            let liveTag = tele.videoScanSummary != "—" ? "LIVE \(tele.videoScanSummary)" : "LIVE"
+                            Text(liveTag)
                                 .font(.system(size: 9, weight: .black, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
                                 .padding(.horizontal, 5)
@@ -533,7 +534,8 @@ public struct TestTSPlayerScreen: View {
                             Image(systemName: "tv")
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(Theme.Colors.accentLive)
-                            let scanText = tele.videoScanSummary != "—" ? "\(tele.videoScanSummary) HW Direct" : "Video HW Direct"
+                            let renderMode = tele.isInterlaced ? "HW Bob" : "HW Direct"
+                            let scanText = tele.videoScanSummary != "—" ? "\(tele.videoScanSummary) \(renderMode)" : "Video \(renderMode)"
                             Text(scanText)
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.9))
