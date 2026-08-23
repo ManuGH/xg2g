@@ -665,7 +665,13 @@ public final class TSPacketParser: @unchecked Sendable {
                         let compPage = UInt16(payload[entryOffset + 4]) << 8 | UInt16(payload[entryOffset + 5])
                         let ancPage = UInt16(payload[entryOffset + 6]) << 8 | UInt16(payload[entryOffset + 7])
 
+                        let isNormal = (0x10...0x15).contains(subType)
                         let isHardOfHearing = (0x20...0x25).contains(subType)
+                        guard isNormal || isHardOfHearing else {
+                            entryOffset += 8
+                            continue
+                        }
+
                         let subTrack = SubtitleTrackInfo(
                             pid: elementaryPID,
                             format: .dvb(compositionPageID: compPage, ancillaryPageID: ancPage),
@@ -688,9 +694,14 @@ public final class TSPacketParser: @unchecked Sendable {
 
                         // Subtitle pages are type 0x02 (normal) or 0x05 (hearing impaired)
                         if ttxType == 0x02 || ttxType == 0x05 {
-                            let magNumber = (mag == 0) ? 8 : mag
                             let tens = Int((pageBCD >> 4) & 0x0F)
                             let units = Int(pageBCD & 0x0F)
+                            guard tens <= 9 && units <= 9 else {
+                                entryOffset += 5
+                                continue
+                            }
+
+                            let magNumber = (mag == 0) ? 8 : mag
                             let pageNumber = magNumber * 100 + tens * 10 + units
 
                             let isHardOfHearing = (ttxType == 0x05)
@@ -782,7 +793,7 @@ public final class TSPacketParser: @unchecked Sendable {
             delegate?.tsParser(self, didDiscoverAudioTracks: tracks)
         }
 
-        if !subtitleTracks.isEmpty && self.subtitleTracks != subtitleTracks {
+        if self.subtitleTracks != subtitleTracks {
             self.subtitleTracks = subtitleTracks
             delegate?.tsParser(self, didDiscoverSubtitleTracks: subtitleTracks)
         }

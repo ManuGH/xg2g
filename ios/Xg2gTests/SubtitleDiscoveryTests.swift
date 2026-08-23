@@ -140,6 +140,144 @@ struct SubtitleDiscoveryTests {
         #expect(parser.subtitleTracks.isEmpty)
     }
 
+    @Test("PMT Validation: Invalid Teletext BCD nibbles are strictly discarded")
+    func invalidBCDTeletextPagesAreDiscarded() {
+        let parser = TSPacketParser()
+        parser.feed(data: makePAT(programNumber: 1, pmtPID: 100))
+
+        // Teletext Descriptor with invalid BCD nibbles: 0xFA, 0x1F, 0xAF
+        var streams = Data()
+        streams.append(contentsOf: [0x1B, 0xE1, 0x00, 0xF0, 0x00]) // Video
+        streams.append(contentsOf: [
+            0x06, 0xE1, 0x03, 0xF0, 0x11,
+            0x56, 0x0F,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), (0x02 << 3) | 0x01, 0xFA,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), (0x05 << 3) | 0x07, 0x1F,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), (0x02 << 3) | 0x02, 0xAF
+        ])
+
+        let pmt = makePMT(pmtPID: 100, programNumber: 1, pcrPID: 256, streamData: streams)
+        parser.feed(data: pmt)
+
+        #expect(parser.subtitleTracks.isEmpty, "Invalid BCD nibbles must not produce subtitle tracks")
+    }
+
+    @Test("PMT Validation: Reserved DVB subtitling types are discarded")
+    func reservedDVBSubtitlingTypesAreDiscarded() {
+        let parser = TSPacketParser()
+        parser.feed(data: makePAT(programNumber: 1, pmtPID: 100))
+
+        // DVB Subtitling Descriptor with reserved/unknown types: 0x00, 0x05, 0x18, 0x30, 0xFF
+        var streams = Data()
+        streams.append(contentsOf: [0x1B, 0xE1, 0x00, 0xF0, 0x00]) // Video
+        streams.append(contentsOf: [
+            0x06, 0xE1, 0x02, 0xF0, 0x1A,
+            0x59, 0x18,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), 0x00, 0x00, 0x01, 0x00, 0x01,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), 0x18, 0x00, 0x02, 0x00, 0x02,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), 0x30, 0x00, 0x03, 0x00, 0x03
+        ])
+
+        let pmt = makePMT(pmtPID: 100, programNumber: 1, pcrPID: 256, streamData: streams)
+        parser.feed(data: pmt)
+
+        #expect(parser.subtitleTracks.isEmpty, "Reserved DVB subtitling types must not produce subtitle tracks")
+    }
+
+    @Test("Dynamic PMT Update: Broadcaster removing subtitle streams updates parser and pipeline")
+    func dynamicPMTUpdateClearsAndUpdatesSubtitleTracks() async {
+        let parser = TSPacketParser()
+        let pipeline = NativeTSVideoPipeline()
+        let sink = MockSubtitleSink()
+        parser.delegate = sink
+
+        parser.feed(data: makePAT(programNumber: 1, pmtPID: 100))
+
+        // 1. PMT Version 1 with Subtitles
+        var streamsV1 = Data()
+        streamsV1.append(contentsOf: [0x1B, 0xE1, 0x00, 0xF0, 0x00]) // Video
+        streamsV1.append(contentsOf: [
+            0x06, 0xE1, 0x02, 0xF0, 0x0A,
+            0x59, 0x08,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), 0x20, 0x00, 0x01, 0x00, 0x01
+        ])
+        streamsV1.append(contentsOf: [
+            0x06, 0xE1, 0x03, 0xF0, 0x07,
+            0x56, 0x05,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), (0x05 << 3) | 0x07, 0x77
+        ])
+
+        parser.feed(data: makePMT(pmtPID: 100, programNumber: 1, pcrPID: 256, version: 1, streamData: streamsV1))
+        #expect(parser.subtitleTracks.count == 2)
+        #expect(sink.discoveredSubtitleTracks.count == 2)
+
+        pipeline.tsParser(parser, didDiscoverSubtitleTracks: parser.subtitleTracks)
+        #expect(pipeline.availableSubtitleTracks.count == 2)
+
+        let ttxTrack = pipeline.availableSubtitleTracks.first(where: { $0.format == .teletext(page: 777) })!
+        pipeline.selectSubtitleTrack(ttxTrack)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(pipeline.selectedSubtitleTrack == ttxTrack)
+
+        // 2. PMT Version 2: Channel removes all subtitle streams
+        var streamsV2 = Data()
+        streamsV2.append(contentsOf: [0x1B, 0xE1, 0x00, 0xF0, 0x00]) // Video only
+
+        parser.feed(data: makePMT(pmtPID: 100, programNumber: 1, pcrPID: 256, version: 2, streamData: streamsV2))
+        #expect(parser.subtitleTracks.isEmpty)
+        #expect(sink.discoveredSubtitleTracks.isEmpty)
+
+        pipeline.tsParser(parser, didDiscoverSubtitleTracks: parser.subtitleTracks)
+        #expect(pipeline.availableSubtitleTracks.isEmpty)
+        #expect(pipeline.selectedSubtitleTrack == nil, "Removed subtitle track must be deselected")
+    }
+
+    @Test("Dynamic PMT Update: Removing Teletext retains remaining DVB subtitle track")
+    func dynamicPMTUpdateRemovesTeletextLeavesDVB() async {
+        let parser = TSPacketParser()
+        let pipeline = NativeTSVideoPipeline()
+
+        parser.feed(data: makePAT(programNumber: 1, pmtPID: 100))
+
+        // PMT Version 1: DVB + Teletext
+        var streamsV1 = Data()
+        streamsV1.append(contentsOf: [0x1B, 0xE1, 0x00, 0xF0, 0x00]) // Video
+        streamsV1.append(contentsOf: [
+            0x06, 0xE1, 0x02, 0xF0, 0x0A,
+            0x59, 0x08,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), 0x20, 0x00, 0x01, 0x00, 0x01
+        ])
+        streamsV1.append(contentsOf: [
+            0x06, 0xE1, 0x03, 0xF0, 0x07,
+            0x56, 0x05,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), (0x05 << 3) | 0x07, 0x77
+        ])
+
+        parser.feed(data: makePMT(pmtPID: 100, programNumber: 1, pcrPID: 256, version: 1, streamData: streamsV1))
+        pipeline.tsParser(parser, didDiscoverSubtitleTracks: parser.subtitleTracks)
+
+        let dvbTrack = pipeline.availableSubtitleTracks.first(where: { $0.format == .dvb(compositionPageID: 1, ancillaryPageID: 1) })!
+        pipeline.selectSubtitleTrack(dvbTrack)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(pipeline.selectedSubtitleTrack == dvbTrack)
+
+        // PMT Version 2: Only DVB retained
+        var streamsV2 = Data()
+        streamsV2.append(contentsOf: [0x1B, 0xE1, 0x00, 0xF0, 0x00]) // Video
+        streamsV2.append(contentsOf: [
+            0x06, 0xE1, 0x02, 0xF0, 0x0A,
+            0x59, 0x08,
+            UInt8(ascii: "d"), UInt8(ascii: "e"), UInt8(ascii: "u"), 0x20, 0x00, 0x01, 0x00, 0x01
+        ])
+
+        parser.feed(data: makePMT(pmtPID: 100, programNumber: 1, pcrPID: 256, version: 2, streamData: streamsV2))
+        pipeline.tsParser(parser, didDiscoverSubtitleTracks: parser.subtitleTracks)
+
+        #expect(pipeline.availableSubtitleTracks.count == 1)
+        #expect(pipeline.availableSubtitleTracks[0].format == .dvb(compositionPageID: 1, ancillaryPageID: 1))
+        #expect(pipeline.selectedSubtitleTrack == dvbTrack, "Retained DVB track must remain selected")
+    }
+
     @Test("Pipeline: Subtitle Track selection and Zap teardown")
     func pipelineSubtitleTrackSelection() async {
         let pipeline = NativeTSVideoPipeline()
@@ -214,7 +352,7 @@ private func makePAT(programNumber: UInt16, pmtPID: UInt16) -> Data {
     return pat
 }
 
-private func makePMT(pmtPID: UInt16, programNumber: UInt16, pcrPID: UInt16, streamData: Data) -> Data {
+private func makePMT(pmtPID: UInt16, programNumber: UInt16, pcrPID: UInt16, version: UInt8 = 0, streamData: Data) -> Data {
     var pmt = Data(repeating: 0xFF, count: 188)
     pmt[0] = 0x47
     pmt[1] = 0x40 | UInt8((pmtPID >> 8) & 0x1F)
@@ -229,7 +367,7 @@ private func makePMT(pmtPID: UInt16, programNumber: UInt16, pcrPID: UInt16, stre
     pmt[7] = UInt8(sectionLength & 0xFF)
     pmt[8] = UInt8((programNumber >> 8) & 0xFF)
     pmt[9] = UInt8(programNumber & 0xFF)
-    pmt[10] = 0xC1
+    pmt[10] = 0xC1 | ((version & 0x1F) << 1)
     pmt[11] = 0x00
     pmt[12] = 0x00
     pmt[13] = 0xE0 | UInt8((pcrPID >> 8) & 0x1F)

@@ -1173,6 +1173,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func tsParser(_ parser: TSPacketParser, didDiscoverSubtitleTracks tracks: [SubtitleTrackInfo]) {
         self.availableSubtitleTracks = tracks
+        if let current = selectedSubtitleTrack, !tracks.contains(where: { $0.id == current.id }) {
+            self.selectedSubtitleTrack = nil
+        }
         let zapId = self.currentZapId
         let logMsg = "[ZAP-#\(zapId)-PMT] 💬 Discovered \(tracks.count) subtitle track(s): " +
             tracks.map { "PID \($0.pid) [\($0.displayName)]" }.joined(separator: ", ")
