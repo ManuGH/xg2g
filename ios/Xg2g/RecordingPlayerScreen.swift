@@ -311,21 +311,14 @@ struct RecordingPlayerScreen: View {
                             videoGravity = .resizeAspect
                             triggerHaptic(.light)
                         } label: {
-                            Label("Einpassen (16:9)", systemImage: videoGravity == .resizeAspect ? "checkmark" : "")
+                            Label("Standard", systemImage: videoGravity == .resizeAspect ? "checkmark" : "")
                         }
 
                         Button {
                             videoGravity = .resizeAspectFill
                             triggerHaptic(.light)
                         } label: {
-                            Label("Vollbild / Zoom", systemImage: videoGravity == .resizeAspectFill ? "checkmark" : "")
-                        }
-
-                        Button {
-                            videoGravity = .resize
-                            triggerHaptic(.light)
-                        } label: {
-                            Label("Strecken", systemImage: videoGravity == .resize ? "checkmark" : "")
+                            Label("Ans iPhone anpassen", systemImage: videoGravity == .resizeAspectFill ? "checkmark" : "")
                         }
                     }
 
