@@ -447,6 +447,7 @@ struct PresentationSynchronizerIdentityTests {
         #expect(pipeline.selectedAudioCodec == .aac)
         #expect(pipeline.telemetry.display.audioPID == 103)
         #expect(pipeline.telemetry.display.audioCodec == "AAC")
+        #expect(!pipeline.telemetry.display.isAudioMasterClockActive, "Clock must be marked inactive right after cutover until new stream locks")
 
         // Feed new PID 103 payload -> demuxer accepts it
         pipeline.tsParser(parser, didEmitPayload: Data([0x00, 0x02]), pid: 103, unitStart: true)

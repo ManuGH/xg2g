@@ -1145,16 +1145,18 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             // 2. Flush stale samples of previous track from audio renderer
             self.audioRenderer.flush()
 
-            // 3. Reset track-specific audio anchor state for clean arrival of the new stream
+            // 3. Reset audio clock and anchor state so new track's first PTS triggers a controlled re-anchor
+            self.isAudioClockStarted = false
             self.firstAudioPTS = nil
             self.audioBuffersPreRolledCount = 0
             self.preRollStartTime = 0
 
-            // 4. Update telemetry with new track parameters
+            // 4. Update telemetry with new track parameters & mark clock inactive until new track locks
             self.telemetry.mutate {
                 $0.audioPID = track.pid
                 $0.audioCodec = track.codec.description
                 $0.audioLanguage = track.language ?? "und"
+                $0.isAudioMasterClockActive = false
             }
 
             let zapId = self.currentZapId
