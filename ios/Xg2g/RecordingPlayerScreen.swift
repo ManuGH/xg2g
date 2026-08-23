@@ -197,11 +197,17 @@ struct RecordingPlayerScreen: View {
 
         Task {
             var sessionCookie: String? = nil
+            var negotiatedPath: String? = nil
             if let model {
                 do {
                     sessionCookie = try await model.mediaSessionCookie()
                 } catch {
                     print("[RecordingPlayer] ⚠️ Could not acquire media session cookie: \(error)")
+                }
+                do {
+                    negotiatedPath = try await model.recordingPlaybackUrl(for: recording.id)
+                } catch {
+                    print("[RecordingPlayer] ⚠️ Could not negotiate stream-info: \(error)")
                 }
             }
 
@@ -219,10 +225,38 @@ struct RecordingPlayerScreen: View {
                 }
             }
 
-            let streamURL = baseURL.appendingPathComponent("api/v3/recordings/\(recording.id)/stream.mp4")
+            let streamURL: URL
+            if let path = negotiatedPath, !path.isEmpty {
+                if let directURL = URL(string: path), directURL.scheme != nil {
+                    streamURL = directURL
+                } else {
+                    let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+                    let rawBase = base.hasSuffix("/") ? base : base + "/"
+                    streamURL = URL(string: rawBase + cleanPath) ?? baseURL.appendingPathComponent(cleanPath)
+                }
+            } else {
+                streamURL = baseURL.appendingPathComponent("api/v3/recordings/\(recording.id)/playlist.m3u8")
+            }
+
             var extraHeaders: [String: String] = [:]
             if let cookieValue = sessionCookie {
                 extraHeaders["Cookie"] = "xg2g_session=\(cookieValue)"
+            }
+
+            // Ensure HLS playlist is ready on backend before handing to AVPlayer (prevents -1008 on first prepare)
+            if streamURL.path.hasSuffix(".m3u8") {
+                for _ in 0..<10 {
+                    var req = URLRequest(url: streamURL)
+                    req.httpMethod = "HEAD"
+                    if let cookieValue = sessionCookie {
+                        req.setValue("xg2g_session=\(cookieValue)", forHTTPHeaderField: "Cookie")
+                    }
+                    if let (_, response) = try? await URLSession.shared.data(for: req),
+                       let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                        break
+                    }
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                }
             }
 
             let item = PlayerAssetLoader.makePlayerItem(url: streamURL, baseURL: baseURL, extraHeaders: extraHeaders)
@@ -242,17 +276,18 @@ struct RecordingPlayerScreen: View {
                 }
 
                 self.statusObserver = item.observe(\.status, options: [.new]) { [weak p] observedItem, _ in
-                    Task { @MainActor in
+                    Task { @MainActor [weak p] in
+                        guard let p else { return }
                         if observedItem.status == .readyToPlay {
                             if let initPos = self.initialPosition, initPos > 5 {
                                 let targetTime = CMTime(seconds: initPos, preferredTimescale: 600)
-                                p?.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+                                p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p] finished in
                                     if finished {
                                         p?.play()
                                     }
                                 }
                             } else {
-                                p?.play()
+                                p.play()
                             }
                             withAnimation(.easeInOut(duration: 0.35)) {
                                 self.isPreparing = false

@@ -1287,6 +1287,11 @@ final class AppModel {
         }
     }
 
+    func recordingPlaybackUrl(for recordingId: String) async throws -> String? {
+        guard let recordingsRepository else { return nil }
+        return try await recordingsRepository.playbackUrl(for: recordingId)
+    }
+
     // MARK: - Playback
 
     func play(_ channel: Channel) async {

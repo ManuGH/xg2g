@@ -88,6 +88,59 @@ actor RecordingsRepository {
             APIRequest(method: .put, path: "recordings/\(id)/resume", body: body, contentType: "application/json")
         )
     }
+
+    func playbackUrl(for id: String) async throws -> String {
+        struct CapabilitiesPayload: Encodable, Sendable {
+            let capabilitiesVersion: Int
+            let supportsHls: Bool
+            let allowTranscode: Bool
+            let container: [String]
+            let videoCodecs: [String]
+            let audioCodecs: [String]
+        }
+
+        struct PlaybackInfoResponse: Decodable, Sendable {
+            let url: String?
+            let mode: String?
+            let durationSeconds: Double?
+            let decision: PlaybackDecision?
+
+            struct PlaybackDecision: Decodable, Sendable {
+                let selectedOutputUrl: String?
+                let mode: String?
+            }
+        }
+
+        let payload = CapabilitiesPayload(
+            capabilitiesVersion: 1,
+            supportsHls: true,
+            allowTranscode: true,
+            container: ["m3u8", "ts", "mp4"],
+            videoCodecs: ["h264", "hevc"],
+            audioCodecs: ["aac", "ac3", "eac3"]
+        )
+        let body = try JSONEncoder().encode(payload)
+
+        for attempt in 0..<3 {
+            do {
+                let response: PlaybackInfoResponse = try await api.send(
+                    APIRequest(method: .post, path: "recordings/\(id)/stream-info", body: body, contentType: "application/json")
+                )
+                if let directUrl = response.url ?? response.decision?.selectedOutputUrl, !directUrl.isEmpty {
+                    return directUrl
+                }
+                break
+            } catch {
+                if attempt < 2 {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    continue
+                }
+                throw error
+            }
+        }
+
+        return "api/v3/recordings/\(id)/playlist.m3u8"
+    }
 }
 
 // MARK: - Wire
