@@ -19,9 +19,16 @@ enum PlayerAssetLoader {
             headers["User-Agent"] = "xg2g-ios/3.0"
         }
 
-        if let cookies = HTTPCookieStorage.shared.cookies(for: cookieTarget), !cookies.isEmpty {
-            options[AVURLAssetHTTPCookiesKey] = cookies
-            let cookieHeader = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+        var allCookies = HTTPCookieStorage.shared.cookies(for: cookieTarget) ?? []
+        if let streamCookies = HTTPCookieStorage.shared.cookies(for: url), !streamCookies.isEmpty {
+            for c in streamCookies where !allCookies.contains(where: { $0.name == c.name }) {
+                allCookies.append(c)
+            }
+        }
+
+        if !allCookies.isEmpty {
+            options[AVURLAssetHTTPCookiesKey] = allCookies
+            let cookieHeader = allCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             headers["Cookie"] = cookieHeader
         }
 

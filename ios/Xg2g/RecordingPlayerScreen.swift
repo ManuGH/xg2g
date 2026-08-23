@@ -646,24 +646,12 @@ struct RecordingPlayerScreen: View {
                 }
             }
 
-            if let cookieValue = sessionCookie, let host = baseURL.host {
-                let cookie = HTTPCookie(properties: [
-                    .name: "xg2g_session",
-                    .value: cookieValue,
-                    .domain: host,
-                    .path: "/",
-                    .secure: baseURL.scheme?.lowercased() == "https" ? "TRUE" : "FALSE",
-                    .expires: Date().addingTimeInterval(86400)
-                ])
-                if let cookie {
-                    HTTPCookieStorage.shared.setCookie(cookie)
-                }
-            }
-
             let streamURL: URL
             if let path = negotiatedPath, !path.isEmpty {
                 if let directURL = URL(string: path), directURL.scheme != nil {
                     streamURL = directURL
+                } else if let relURL = URL(string: path, relativeTo: baseURL)?.absoluteURL {
+                    streamURL = relURL
                 } else {
                     let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
                     let rawBase = base.hasSuffix("/") ? base : base + "/"
@@ -671,6 +659,24 @@ struct RecordingPlayerScreen: View {
                 }
             } else {
                 streamURL = baseURL.appendingPathComponent("api/v3/recordings/\(recording.id)/playlist.m3u8")
+            }
+
+            if let cookieValue = sessionCookie, let host = baseURL.host {
+                var props: [HTTPCookiePropertyKey: Any] = [
+                    .name: "xg2g_session",
+                    .value: cookieValue,
+                    .domain: host,
+                    .path: "/",
+                    .expires: Date().addingTimeInterval(86400)
+                ]
+                if baseURL.scheme?.lowercased() == "https" {
+                    props[.secure] = "TRUE"
+                }
+                if let cookie = HTTPCookie(properties: props) {
+                    HTTPCookieStorage.shared.setCookie(cookie)
+                    HTTPCookieStorage.shared.setCookies([cookie], for: baseURL, mainDocumentURL: nil)
+                    HTTPCookieStorage.shared.setCookies([cookie], for: streamURL, mainDocumentURL: nil)
+                }
             }
 
             var extraHeaders: [String: String] = [:]
