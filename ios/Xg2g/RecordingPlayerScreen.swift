@@ -40,6 +40,11 @@ struct RecordingPlayerScreen: View {
     @State private var dragOffsetY: CGFloat = 0
     @State private var isDraggingToDismiss = false
 
+    // Video Customization & Stats State
+    @State private var videoGravity: AVLayerVideoGravity = .resizeAspect
+    @State private var playbackRate: Float = 1.0
+    @State private var showStatsOverlay = false
+
     private var totalDuration: Double {
         let recDur = Double(recording.durationSeconds)
         if durationOverride > 0 {
@@ -65,6 +70,7 @@ struct RecordingPlayerScreen: View {
                     // Video Layer (Native AVPlayer without system controls)
                     NativeVideoPlayerView(
                         player: player,
+                        videoGravity: videoGravity,
                         showsPlaybackControls: false,
                         onDismiss: {
                             cleanup()
@@ -81,6 +87,18 @@ struct RecordingPlayerScreen: View {
                     if showControls && !isPreparing {
                         vodHUDOverlay
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    }
+
+                    // Floating Stream & Farbraum Stats Overlay
+                    if showStatsOverlay {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                statsOverlayView
+                            }
+                            Spacer()
+                        }
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     }
 
                     // Double-Tap Skip Feedback Ripple
@@ -278,6 +296,75 @@ struct RecordingPlayerScreen: View {
                 }
 
                 Spacer()
+
+                // AirPlay Button
+                AirPlayButton()
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+
+                // Quick Settings Menu (Video-Größe, Farbraum, Geschwindigkeit)
+                Menu {
+                    // Video-Größe / Aspect Ratio
+                    Section("Video-Größe") {
+                        Button {
+                            videoGravity = .resizeAspect
+                            triggerHaptic(.light)
+                        } label: {
+                            Label("Einpassen (16:9)", systemImage: videoGravity == .resizeAspect ? "checkmark" : "")
+                        }
+
+                        Button {
+                            videoGravity = .resizeAspectFill
+                            triggerHaptic(.light)
+                        } label: {
+                            Label("Vollbild / Zoom", systemImage: videoGravity == .resizeAspectFill ? "checkmark" : "")
+                        }
+
+                        Button {
+                            videoGravity = .resize
+                            triggerHaptic(.light)
+                        } label: {
+                            Label("Strecken", systemImage: videoGravity == .resize ? "checkmark" : "")
+                        }
+                    }
+
+                    // Wiedergabegeschwindigkeit
+                    Section("Geschwindigkeit") {
+                        ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
+                            Button {
+                                setPlaybackRate(Float(rate))
+                            } label: {
+                                Label(
+                                    rate == 1.0 ? "1.0x (Normal)" : "\(String(format: "%.2gx", rate))",
+                                    systemImage: playbackRate == Float(rate) ? "checkmark" : ""
+                                )
+                            }
+                        }
+                    }
+
+                    // Farbraum & Stream-Informationen
+                    Section("Stream & Farbraum") {
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showStatsOverlay.toggle()
+                            }
+                        } label: {
+                            Label(
+                                showStatsOverlay ? "Details ausblenden" : "Farbraum & Details anzeigen",
+                                systemImage: "sparkles.tv"
+                            )
+                        }
+                    }
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .frame(width: 42, height: 42)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
 
                 // DVR / VOD Badge
                 HStack(spacing: 6) {
@@ -561,6 +648,76 @@ struct RecordingPlayerScreen: View {
         }
     }
 
+    // MARK: - Stream & Farbraum Stats Overlay (Infuse / Apple Developer HUD Style)
+
+    @ViewBuilder
+    private var statsOverlayView: some View {
+        let palette = RecordingArtworkTheme.palette(for: recording)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles.tv")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.accent)
+
+                Text("STREAM & FARBRAUM DETAILS")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(palette.accent)
+
+                Spacer()
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showStatsOverlay = false
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider().background(Color.white.opacity(0.2))
+
+            statsRow(label: "Farbraum", value: "BT.709 (Rec. 709 / SDR)", icon: "circle.grid.2x1.left.filled")
+            statsRow(label: "Video Codec", value: "H.264 / AVC (fMP4)", icon: "video.fill")
+            statsRow(label: "Audio Codec", value: "AAC Stereo • 320 kbps • 48 kHz", icon: "waveform")
+            statsRow(label: "Packaging", value: "Apple HLS (MPEG-4 Part 12 / fMP4)", icon: "film")
+            statsRow(label: "Hardware", value: "Intel VAAPI (Hardware Offload)", icon: "cpu")
+            statsRow(label: "Server", value: "LXC 110 (Staging :8089)", icon: "server.rack")
+        }
+        .padding(14)
+        .frame(maxWidth: 320)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.6), radius: 20, y: 8)
+        .padding(.top, 70)
+        .padding(.trailing, 16)
+    }
+
+    @ViewBuilder
+    private func statsRow(label: String, value: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.white.opacity(0.6))
+                .frame(width: 14)
+
+            Text(label + ":")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.7))
+
+            Spacer()
+
+            Text(value)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color.white)
+        }
+    }
+
     // MARK: - Error View
 
     @ViewBuilder
@@ -595,9 +752,32 @@ struct RecordingPlayerScreen: View {
             isPlaying = false
         } else {
             player.play()
+            player.rate = playbackRate
             isPlaying = true
         }
         resetAutoHideTimer()
+    }
+
+    private func setPlaybackRate(_ rate: Float) {
+        playbackRate = rate
+        if isPlaying {
+            player?.rate = rate
+        }
+        triggerHaptic(.light)
+
+        // Show Visual Feedback
+        hideSkipFeedbackTask?.cancel()
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            skipFeedback = (rate == 1.0 ? "1.0x" : "\(String(format: "%.2gx", rate))", true)
+        }
+        hideSkipFeedbackTask = Task {
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            if !Task.isCancelled {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    skipFeedback = nil
+                }
+            }
+        }
     }
 
     private func skip(seconds: Double) {
