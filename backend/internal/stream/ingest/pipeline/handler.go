@@ -339,6 +339,38 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Close()
 
+	// Runtime Plan Transparency Headers
+	videoMode := "direct"
+	effectiveVideoCodec := srcVideoCodec
+	if needsVideoTranscode {
+		videoMode = "transcode"
+		effectiveVideoCodec = targetVideoCodec
+	}
+	if effectiveVideoCodec == "" {
+		effectiveVideoCodec = "unknown"
+	}
+
+	audioMode := "direct"
+	effectiveAudioCodec := selectedTrack.Codec
+	if needsAudioTranscode {
+		audioMode = "transcode"
+		effectiveAudioCodec = targetAudioCodec
+	}
+	if effectiveAudioCodec == "" {
+		effectiveAudioCodec = "unknown"
+	}
+
+	w.Header().Set("X-Xg2g-Video-Mode", videoMode)
+	w.Header().Set("X-Xg2g-Video-Source", srcVideoCodec)
+	w.Header().Set("X-Xg2g-Video-Effective", effectiveVideoCodec)
+	w.Header().Set("X-Xg2g-Scan-Policy", scanPolicy)
+	w.Header().Set("X-Xg2g-Audio-Mode", audioMode)
+	w.Header().Set("X-Xg2g-Audio-Source", selectedTrack.Codec)
+	w.Header().Set("X-Xg2g-Audio-Effective", effectiveAudioCodec)
+	if selectedTrack.Language != "" {
+		w.Header().Set("X-Xg2g-Audio-Language", selectedTrack.Language)
+	}
+
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
