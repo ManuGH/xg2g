@@ -176,9 +176,11 @@ public struct TelemetryValues: Sendable {
     public var sarNumerator: Int = 1
     public var sarDenominator: Int = 1
     public var sarSignaled: Bool = false
-    public var effectiveDAR: Double = 16.0 / 9.0
-    public var darDescription: String = "16:9"
-    public var videoScanSummary: String = "1080i50"
+    public var sourceDAR: Double = 0.0
+    public var sourceDARDescription: String = "—"
+    public var outputDAR: Double = 0.0
+    public var outputDARDescription: String = "—"
+    public var videoScanSummary: String = "—"
     public var presentationModeName: String = "Standard"
 
     /// Set when the PMT names a video codec this pipeline cannot turn into
@@ -267,10 +269,12 @@ public struct TelemetryValues: Sendable {
             "resolution": "\(videoWidth)x\(videoHeight)",
             "is_interlaced": isInterlaced,
             "field_order": fieldOrder,
-            "sar": "\(sarNumerator):\(sarDenominator)",
+            "sar": sarSignaled ? "\(sarNumerator):\(sarDenominator)" : "1:1 (unsignaled)",
             "sar_signaled": sarSignaled,
-            "effective_dar": effectiveDAR,
-            "dar_description": darDescription,
+            "source_dar": sourceDAR,
+            "source_dar_description": sourceDARDescription,
+            "output_dar": outputDAR,
+            "output_dar_description": outputDARDescription,
             "video_scan_summary": videoScanSummary,
             "presentation_mode": presentationModeName,
             "source_frame_rate": sourceFrameRate,

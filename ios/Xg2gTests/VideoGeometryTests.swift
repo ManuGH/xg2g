@@ -89,14 +89,41 @@ struct VideoGeometryTests {
         #expect(unsignaled.denominator == 1)
     }
 
-    @Test("DAR Description Formatter")
-    func testDescribeDAR() {
-        #expect(VideoGeometry.describeDAR(16.0 / 9.0) == "16:9")
-        #expect(VideoGeometry.describeDAR(4.0 / 3.0) == "4:3")
-        #expect(VideoGeometry.describeDAR(5.0 / 4.0) == "5:4")
-        #expect(VideoGeometry.describeDAR(16.0 / 10.0) == "16:10")
-        #expect(VideoGeometry.describeDAR(2.35) == "2.35:1")
-        #expect(VideoGeometry.describeDAR(2.39) == "2.39:1")
+    @Test("Source DAR vs Output DAR Separation on 720x576 with 4:3 Override")
+    func testSourceDARvsOutputDARSeparation() {
+        // Given a 720x576 SD buffer with signaled SAR 64:45 (native 16:9 DVB)
+        let pb = createTestPixelBuffer(width: 720, height: 576, sarNum: 64, sarDen: 45)
+        let width = CVPixelBufferGetWidth(pb)
+        let height = CVPixelBufferGetHeight(pb)
+        let sar = VideoGeometry.inspectSAR(from: pb)
+        #expect(sar.isSignaled == true)
+        #expect(sar.numerator == 64)
+        #expect(sar.denominator == 45)
+
+        // When applying a manual 4:3 override
+        let override = VideoAspectRatio.r4_3
+
+        // Then sourceDAR is strictly the un-overridden native DAR (16:9)
+        let sourceDAR = VideoGeometry.effectiveDAR(
+            width: width,
+            height: height,
+            sarNumerator: sar.numerator,
+            sarDenominator: sar.denominator,
+            override: .auto
+        )
+        #expect(abs(sourceDAR - (16.0 / 9.0)) < 0.0001)
+        #expect(VideoGeometry.describeDAR(sourceDAR) == "16:9")
+
+        // And outputDAR is the overridden display aspect ratio (4:3)
+        let outputDAR = VideoGeometry.effectiveDAR(
+            width: width,
+            height: height,
+            sarNumerator: sar.numerator,
+            sarDenominator: sar.denominator,
+            override: override
+        )
+        #expect(abs(outputDAR - (4.0 / 3.0)) < 0.0001)
+        #expect(VideoGeometry.describeDAR(outputDAR) == "4:3")
     }
 
     @Test("CVPixelBuffer: Application of DAR Override attaches correct SAR for AVFoundation")

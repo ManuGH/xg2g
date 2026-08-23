@@ -1478,17 +1478,48 @@ public final class MetalVideoView: UIView {
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         let sar = VideoGeometry.inspectSAR(from: pixelBuffer)
-        let targetDAR = VideoGeometry.effectiveDAR(
+
+        // 1. Quell-DAR (Pure native DAR from pixel dimensions and signaled SAR, NO override)
+        let srcDAR = VideoGeometry.effectiveDAR(
+            width: width,
+            height: height,
+            sarNumerator: sar.numerator,
+            sarDenominator: sar.denominator,
+            override: .auto
+        )
+        let srcDARDesc = (width > 0 && height > 0) ? VideoGeometry.describeDAR(srcDAR) : "—"
+
+        // 2. Ausgabe-DAR (Effective display aspect ratio after manual override)
+        let outDAR = VideoGeometry.effectiveDAR(
             width: width,
             height: height,
             sarNumerator: sar.numerator,
             sarDenominator: sar.denominator,
             override: aspectRatioOverride
         )
-        let darDesc = VideoGeometry.describeDAR(targetDAR)
-        let scanHz = Int(round(sourceIsInterlaced ? (estimatedFrameDuration > 0 ? (1.0 / estimatedFrameDuration) * 2.0 : 50) : (estimatedFrameDuration > 0 ? (1.0 / estimatedFrameDuration) : 50)))
-        let scanDesc = "\(height)\(sourceIsInterlaced ? "i" : "p")\(scanHz)"
-        let modeName = scalingMode == .fill ? "Bildschirm füllen" : (aspectRatioOverride == .auto ? "Standard" : "\(darDesc) Override")
+        let outDARDesc = (width > 0 && height > 0) ? VideoGeometry.describeDAR(outDAR) : "—"
+
+        // 3. Scan & Hz (Only report measured Hz, no invented 50Hz defaults)
+        let scanDesc: String
+        if height > 0 {
+            if estimatedFrameDuration > 0 {
+                let scanHz = Int(round(sourceIsInterlaced ? (1.0 / estimatedFrameDuration) * 2.0 : (1.0 / estimatedFrameDuration)))
+                scanDesc = "\(height)\(sourceIsInterlaced ? "i" : "p")\(scanHz)"
+            } else {
+                scanDesc = "\(height)\(sourceIsInterlaced ? "i" : "p") (Hz unbekannt)"
+            }
+        } else {
+            scanDesc = "—"
+        }
+
+        let modeName: String
+        if scalingMode == .fill {
+            modeName = "Bildschirm füllen"
+        } else if case .override = aspectRatioOverride {
+            modeName = "\(outDARDesc) Override"
+        } else {
+            modeName = "Standard"
+        }
 
         telemetry.mutate {
             $0.videoWidth = width
@@ -1497,8 +1528,10 @@ public final class MetalVideoView: UIView {
             $0.sarNumerator = sar.numerator
             $0.sarDenominator = sar.denominator
             $0.sarSignaled = sar.isSignaled
-            $0.effectiveDAR = targetDAR
-            $0.darDescription = darDesc
+            $0.sourceDAR = srcDAR
+            $0.sourceDARDescription = srcDARDesc
+            $0.outputDAR = outDAR
+            $0.outputDARDescription = outDARDesc
             $0.videoScanSummary = scanDesc
             $0.presentationModeName = modeName
         }

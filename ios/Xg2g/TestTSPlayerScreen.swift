@@ -758,24 +758,25 @@ public struct TestTSPlayerScreen: View {
                         hudRow("Auflösung", resStr)
                         hudRow("Signal", tele.videoScanSummary)
                         hudRow("Codec", tele.codec)
-                        hudRow("Bitrate", tele.tsBitrateKbps > 0 ? String(format: "%.1f Mbps", tele.tsBitrateKbps / 1000.0) : "—")
-                        hudRow("HW Decode", tele.hwDecodeActive ? "VideoToolbox 🚀" : "Software", highlight: tele.hwDecodeActive)
+                        hudRow("TS-Bitrate", tele.tsBitrateKbps > 0 ? String(format: "%.1f Mbps", tele.tsBitrateKbps / 1000.0) : "—")
+                        let hwStatus = tele.hwDecodeActive ? "VideoToolbox 🚀" : (tele.vtSessionActive ? "Init…" : "Noch nicht bestätigt")
+                        hudRow("HW Decode", hwStatus, highlight: tele.hwDecodeActive)
                     }
 
-                    // 2. BILDFORMAT & GEOMETRIE
-                    hudSection(title: "BILDFORMAT & GEOMETRIE") {
-                        let sarStr = tele.sarSignaled ? "\(tele.sarNumerator):\(tele.sarDenominator) (Signaled)" : "Nicht signalisiert (1:1)"
-                        let darStr = tele.sarSignaled ? tele.darDescription : (tele.videoWidth > 0 && tele.videoHeight > 0 ? "\(tele.darDescription) (aus Pixelmaßen)" : "16:9")
-                        hudRow("SAR (Pixel-Aspect)", sarStr, highlight: tele.sarSignaled)
-                        hudRow("DAR (Display-Aspect)", darStr)
+                    // 2. BILDFORMAT & GEOMETRIE (QUELLE)
+                    hudSection(title: "QUELL-GEOMETRIE (BITSTREAM)") {
+                        let sarStr = tele.sarSignaled ? "\(tele.sarNumerator):\(tele.sarDenominator) (signalisiert)" : "Nicht signalisiert (1:1)"
+                        hudRow("SAR", sarStr, highlight: tele.sarSignaled)
+                        hudRow("Quell-DAR", tele.sourceDARDescription)
+                    }
+
+                    // 3. DARSTELLUNG & AUSGABE
+                    hudSection(title: "DARSTELLUNG & AUSGABE") {
                         hudRow("Modus", viewPreset.rawValue, highlight: viewPreset != .standard)
-                    }
-
-                    // 3. AUSGABE & RENDERER
-                    hudSection(title: "AUSGABE & RENDERPFAD") {
+                        hudRow("Ausgabe-DAR", tele.outputDARDescription)
+                        hudRow("Skalierung", viewPreset.scalingMode == .fill ? "Aspect Fill (Center Crop)" : "Aspect Fit (Letterbox)")
                         hudRow("Renderpfad", presentationPath == .systemLayer ? "System Layer (AVSampleBuffer)" : "Metal Direct (CAMetalLayer)")
-                        hudRow("Skalierung", viewPreset.scalingMode == .fill ? "Aspect Fill (Crop)" : "Aspect Fit (Letterbox)")
-                        hudRow("Fields Rate", String(format: "%.1f fields/s", tele.fieldsSubmittedPerSec), highlight: abs(tele.fieldsSubmittedPerSec - 50.0) < 3.0)
+                        hudRow("Fields Rate", tele.fieldsSubmittedPerSec > 0 ? String(format: "%.1f fields/s", tele.fieldsSubmittedPerSec) : "—", highlight: abs(tele.fieldsSubmittedPerSec - 50.0) < 3.0)
                     }
 
                     // 4. AUDIO & SYNC
@@ -783,7 +784,7 @@ public struct TestTSPlayerScreen: View {
                         let langStr = tele.audioLanguage.isEmpty || tele.audioLanguage == "und" ? "" : " [\(tele.audioLanguage.uppercased())]"
                         hudRow("Audio Format", "\(tele.audioCodec)\(langStr) \(tele.audioChannels)ch")
                         hudRow("Master Clock", tele.isAudioMasterClockActive ? "Synchronized 🟢" : "Pre-roll ⚪️", highlight: tele.isAudioMasterClockActive)
-                        hudRow("Audio Lead", String(format: "%.0f ms", tele.audioLeadMs))
+                        hudRow("Audio Lead", tele.audioLeadMs > 0 ? String(format: "%.0f ms", tele.audioLeadMs) : "—")
                         hudRow("Drops / Errors", "\(tele.droppedFrames) drops / \(tele.decodeErrors) dec", alert: tele.droppedFrames > 0 || tele.decodeErrors > 0)
                     }
 
