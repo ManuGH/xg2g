@@ -819,6 +819,7 @@ final class AppModel {
     /// Must run before anything reads a credential: on a fresh install this is
     /// what purges Keychain material left by a previous installation.
     func start() async {
+        TelemetryServer.shared.start()
         do {
             try await credentials.prepareForLaunch()
         } catch {
@@ -973,6 +974,7 @@ final class AppModel {
 
     /// Called when the app returns from background/suspended state.
     func handleAppBecameActive() async {
+        TelemetryServer.shared.restartAfterForeground()
         guard state == .ready else { return }
 
         let now = Date()

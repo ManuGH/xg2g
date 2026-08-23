@@ -700,6 +700,8 @@ struct RecordingPlayerScreen: View {
                 }
             }
 
+            TelemetryServer.shared.log("[RecordingPlayer] ▶️ Loading '\(recording.title)' (\(recording.id)) URL: \(streamURL.absoluteString)")
+
             let item = PlayerAssetLoader.makePlayerItem(url: streamURL, baseURL: baseURL, extraHeaders: extraHeaders)
             let p = AVPlayer(playerItem: item)
 
@@ -734,6 +736,7 @@ struct RecordingPlayerScreen: View {
                     Task { @MainActor [weak p] in
                         guard let p else { return }
                         if observedItem.status == .readyToPlay {
+                            TelemetryServer.shared.log("[RecordingPlayer] ✅ readyToPlay '\(self.recording.title)' (dur=\(self.totalDuration)s)")
                             let startPos = self.initialPosition ?? self.recording.serverResumePos
                             if let pos = startPos, pos > 5 {
                                 let targetTime = CMTime(seconds: pos, preferredTimescale: 600)
@@ -755,9 +758,11 @@ struct RecordingPlayerScreen: View {
                             }
                             self.resetAutoHideTimer()
                         } else if observedItem.status == .failed {
+                            let errStr = observedItem.error?.localizedDescription ?? "Wiedergabefehler"
+                            TelemetryServer.shared.log("[RecordingPlayer] ❌ AVPlayerItem failed: \(errStr)")
                             print("[RecordingPlayer] ❌ AVPlayerItem failed: \(String(describing: observedItem.error))")
                             withAnimation(.easeInOut(duration: 0.35)) {
-                                self.errorMessage = observedItem.error?.localizedDescription ?? "Wiedergabefehler"
+                                self.errorMessage = errStr
                                 self.isPreparing = false
                             }
                         }
