@@ -93,6 +93,8 @@ struct LiveIngestPipelineTests {
         let url = try #require(LiveIngest.streamURL)
 
         let pipeline = NativeTSVideoPipeline()
+        let surface = await giveOwnSurface(to: pipeline)
+        defer { _ = surface }
         pipeline.startStreaming(url: url)
         defer { pipeline.stopStreaming() }
 

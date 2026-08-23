@@ -289,8 +289,13 @@ struct AudioTimelineJumpWiringTests {
 
     /// Pre-rolls past `audioPreRollSeconds` so the master clock is running,
     /// which is the state in which a jump used to be ignored entirely.
+    @MainActor
     private func startedPipeline() -> NativeTSVideoPipeline? {
         let pipeline = NativeTSVideoPipeline()
+        // The clock only starts for the session that owns the visible surface, so a
+        // harness that expects a running clock has to say who owns it.
+        let surface = giveOwnSurface(to: pipeline)
+        defer { _ = surface }
         var pts = 1_000.0
         for _ in 0..<40 {                     // 40 x 32 ms = 1.28 s, past the 500 ms pre-roll
             feed(pipeline, at: pts)

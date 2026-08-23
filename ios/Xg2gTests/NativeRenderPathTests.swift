@@ -57,8 +57,12 @@ struct NativeRenderPathTests {
 
         view.telemetry = pipeline.telemetry
         view.systemPresenter = presenter
-        pipeline.renderView = view
-        pipeline.systemPresenter = presenter
+
+        // The session reaches the surface only through the context, and only once the
+        // context has handed it over. Binding here is what a commit does; this harness
+        // stands in for a screen with a single channel that is committed immediately.
+        let context = giveOwnSurface(to: pipeline, presenter: presenter, renderView: view)
+        defer { _ = context }
 
         pipeline.startStreaming(url: Self.streamURL)
 

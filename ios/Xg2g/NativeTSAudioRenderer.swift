@@ -90,6 +90,10 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         self.audioRenderer = AVSampleBufferAudioRenderer()
         self.synchronizer = AVSampleBufferRenderSynchronizer()
         self.synchronizer.addRenderer(audioRenderer)
+        // Silent until granted audibility. A session is built to be prepared, and
+        // preparing one must never be heard.
+        audioRenderer.isMuted = true
+        audioRenderer.volume = 0.0
         setupStatusObserver()
     }
 
@@ -100,15 +104,19 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
         }
     }
 
-    /// Configures and activates the system AVAudioSession for low-latency broadcast playback.
-    public func activateAudioSession() {
-        guard !isAudioSessionActive else { return }
-        AudioSessionManager.shared.configureForPlayback()
-        isAudioSessionActive = true
-        audioRenderer.isMuted = false
-        audioRenderer.volume = 1.0
-        logger.notice("[AudioRenderer] ✅ AVAudioSession activated via AudioSessionManager")
-        print("[AudioRenderer] ✅ AVAudioSession activated via AudioSessionManager")
+    /// Whether this renderer contributes sound.
+    ///
+    /// Muted until the session it belongs to owns the visible surface, and muted again
+    /// when it loses it. A parked clock is the primary guarantee that a session being
+    /// prepared beside a playing one is silent; this is the second, and it does not
+    /// depend on anyone remembering not to start a rate.
+    ///
+    /// Configuring the process-wide AVAudioSession is deliberately not done here. That
+    /// is player-lifetime policy, and a playback session that owned it would reconfigure
+    /// the whole process every time a channel was prepared.
+    public func setAudible(_ audible: Bool) {
+        audioRenderer.isMuted = !audible
+        audioRenderer.volume = audible ? 1.0 : 0.0
     }
 
     public struct PruneResult: Sendable {
@@ -120,6 +128,37 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
 
     /// Explicitly prunes audio buffers in pendingBuffers that end strictly before `anchor`.
     /// Buffers that overlap `anchor` (i.e. pts + duration > anchor) are KEPT intact.
+    /// Whether audio is available from a given instant onwards.
+    ///
+    /// Asked before a prepared session is committed. "Enough bytes buffered" is not
+    /// the question: what matters is that a buffer actually covers the anchor the
+    /// clock will start on, and that there is some audio beyond it. A session with a
+    /// picture and no audio at that instant would be committed and then hold the
+    /// picture still while audio caught up, which is the frozen start this rebuild
+    /// exists to remove.
+    public func hasBuffersCovering(_ anchor: CMTime) -> Bool {
+        guard anchor.isValid else { return false }
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+
+        var covers = false
+        var endsAfter = false
+        for buffer in pendingBuffers {
+            let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
+            guard pts.isValid else { continue }
+            let duration = CMSampleBufferGetDuration(buffer)
+            let end = duration.isValid ? CMTimeAdd(pts, duration) : pts
+            // Covers the anchor: starts at or before it and ends after it.
+            if CMTimeCompare(pts, anchor) <= 0, CMTimeCompare(end, anchor) > 0 {
+                covers = true
+            }
+            if CMTimeCompare(end, anchor) > 0 {
+                endsAfter = true
+            }
+        }
+        return covers && endsAfter
+    }
+
     public func pruneBuffersBefore(time anchor: CMTime) -> PruneResult {
         bufferLock.lock()
         defer { bufferLock.unlock() }

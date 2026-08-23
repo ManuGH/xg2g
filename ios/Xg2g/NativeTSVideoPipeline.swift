@@ -146,12 +146,31 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// out loud. Well past any legitimate cushion.
     private static let motionWatchdogSeconds: Double = 5.0
 
-    public weak var renderView: MetalVideoView?
+    /// The only route to the visible surface.
+    ///
+    /// A session holds no reference to the render view or the presenter. It cannot
+    /// attach a synchronizer, flush a queue or reset a generation, which is what makes
+    /// preparing one beside a playing one safe.
+    public weak var presentationContext: PresentationContext? {
+        didSet { surfaceOutlet = presentationContext?.outlet }
+    }
+
+    /// Where decoded pictures go. Held directly because they are produced on the
+    /// decoder's queue and the context is main-actor.
+    private var surfaceOutlet: PresentationContext.SurfaceOutlet?
+
+    /// Stamps everything this session emits. Issued by the presentation context.
+    public var presentationGeneration: PresentationGeneration = .none
+
+    /// The timestamp the clock will start on when this session is committed.
+    ///
+    /// Chosen while preparing, from the picture the surface will show first, so the
+    /// commit itself has nothing left to decide.
+    private var commitAnchor: CMTime?
 
     /// Set when the stream is presented through AVFoundation rather than through
     /// our own drawable, which is what makes Picture in Picture and the system's
     /// video features available. See `SystemVideoPresenter`.
-    public weak var systemPresenter: SystemVideoPresenter?
 
     private var telemetryForegroundObserver: NSObjectProtocol?
     private var appBackgroundObserver: NSObjectProtocol?
@@ -266,7 +285,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // The server owns the main-thread hop and its timeout; this closure only
         // has to promise it runs there.
         TelemetryServer.shared.setScreenshotProvider { [weak self] in
-            self?.renderView?.captureCurrentFrameJPEG()
+            self?.presentationContext?.captureVisibleFrameJPEG()
         }
     }
 
@@ -339,7 +358,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         zapLock.unlock()
 
         let preMem = Self.currentMemoryStats()
-        let prePresenterQ = systemPresenter?.pendingSamplesCount ?? 0
+        let prePresenterQ = 0 // presenter queue depth is main-actor state; the presenter logs its own
         let preVTInFlight = decoder.inFlightFrames
         ingestStateLock.lock()
         let preBacklogKiB = pendingIngestBytes / 1024
@@ -364,12 +383,20 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.notice("\(teardownLog, privacy: .public)")
         TelemetryServer.shared.log(teardownLog)
 
+        // Two different generations, deliberately.
+        //
+        // The session's own counter says "this session has started a stream", which is
+        // what the recovery paths test before they act. The presentation generation
+        // says which stream the surface belongs to, and is what every decoded picture
+        // is stamped with, because that is the number the surface compares. Folding
+        // them into one made an unbound session look like it had never started.
         sessionState = PipelineSessionState(generation: zapId, requestStartTime: requestedAt)
-        decoder.decodeGeneration = zapId
+        decoder.decodeGeneration = presentationGeneration.rawValue
 
-        let audioSessionStart = CACurrentMediaTime()
-        audioRenderer.activateAudioSession()
-        let audioSessionMs = (CACurrentMediaTime() - audioSessionStart) * 1000.0
+        // AVAudioSession is process-global policy and is activated once for the player,
+        // not once per channel change. A playback session that owned it would configure
+        // the whole process every time it was prepared.
+        let audioSessionMs = 0.0
 
         let targetURL = normalizeStreamURL(url)
         let channelKey = targetURL.absoluteString
@@ -405,53 +432,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let session = URLSession(configuration: config, delegate: self, delegateQueue: opQueue)
         self.urlSession = session
 
-        let preparePresenterAndRenderView: @MainActor () -> Void = { [weak self] in
-            guard let self = self else { return }
-            self.renderView?.synchronizer = self.audioRenderer.synchronizer
-            self.renderView?.resetForChannelZap(generation: zapId)
-
-            if let presenter = self.systemPresenter {
-                presenter.flush(generation: zapId)
-                presenter.attach(to: self.audioRenderer.synchronizer)
-                presenter.enablePictureInPicture()
-                // After `flush()`, which is what re-arms the immediate field.
-                presenter.onFirstFieldPresentedImmediately = { [weak self] in
-                    self?.handleFirstPictureShownImmediately()
-                }
-                presenter.onWarning = { [weak self] text in
-                    self?.reportWarning(text)
-                }
-            }
-            self.renderView?.onFirstFrameRendered = { [weak self] in
-                self?.handleFirstFrameRendered()
-            }
-            self.renderView?.onFirstFrameActuallyPresentedOnScreen = { [weak self] screenTime in
-                self?.handleFirstFrameActuallyPresented(screenTimestamp: screenTime)
-            }
-            self.renderView?.onFirstFieldSubmitted = { [weak self] pts in
-                guard let self = self else { return }
-                // Recorded before the observer is installed: this is what the
-                // clock anchors to, and on a stream whose audio pre-roll is
-                // already satisfied the very next audio buffer starts it.
-                if self.firstVideoFieldPTS == nil, pts.isValid {
-                    self.firstVideoFieldPTS = pts
-                    self.sessionState.mutate { $0.firstVideoFieldTime = CACurrentMediaTime() }
-                }
-                self.observeFirstPictureVisible(at: pts)
-            }
-        }
-
-        if Thread.isMainThread {
-            MainActor.assumeIsolated {
-                preparePresenterAndRenderView()
-            }
-        } else {
-            DispatchQueue.main.sync {
-                MainActor.assumeIsolated {
-                    preparePresenterAndRenderView()
-                }
-            }
-        }
+        // Nothing here touches the presenter, the render view or the global telemetry
+        // provider. Binding the visible surface is the presentation context's job and
+        // happens at commit; a session that reached in here would black out whatever
+        // channel is currently playing, which is exactly what a preparation must not do.
 
         var request = URLRequest(url: targetURL)
         request.setValue("xg2g-ios-native-poc/1.0", forHTTPHeaderField: "User-Agent")
@@ -618,14 +602,17 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// AVKit caches what the delegate told it and only re-reads when invalidated,
     /// so without this the PiP controls keep the state they were built with.
     public func notePlaybackStateChanged() {
-        // The presenter is captured, not `self`. This runs from `stopStreaming`,
-        // which `deinit` calls, and forming a weak reference to an object that is
-        // already deallocating is a crash rather than a nil.
-        let presenter = systemPresenter
-        guard presenter != nil else { return }
+        // The context is captured, not `self`. This runs from `stopStreaming`, which
+        // `deinit` calls, and forming a weak reference to an object that is already
+        // deallocating is a crash rather than a nil. The context still needs to know
+        // which session is asking, so it is handed an unowned-unsafe reference that is
+        // only ever compared for identity, never dereferenced.
+        let context = presentationContext
+        guard let context else { return }
+        let asking = unsafeBitCast(self, to: UInt.self)
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                presenter?.playbackStateDidChange()
+                context.notePlaybackStateChanged(fromSessionIdentity: asking)
             }
         }
     }
@@ -1290,6 +1277,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             } else {
                 effectiveAudioPreRoll = Self.audioPreRollSeconds
             }
+            // Recorded as soon as the anchor is final, whether or not the clock starts
+            // here. It is what a commit needs: the instant picture and audio share, so
+            // the commit itself has nothing left to decide.
+            commitAnchor = anchorPTS
+
             let buffered = pts.seconds - anchorPTS.seconds
             if !requiresCushion || buffered >= effectiveAudioPreRoll {
                 let zapId = currentZapId
@@ -1305,6 +1297,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     self.scheduleEarlyMotionMilestones(zapId: zapId, anchorPTS: anchorPTS)
                 }
 
+                // Only the session that owns the surface starts a clock. A prepared one
+                // records its anchor here and is started by the commit instead, which is
+                // what keeps it silent and invisible until then.
+                guard surfaceOutlet?.owns(presentationGeneration) == true else { return }
+                audioRenderer.setAudible(true)
                 audioRenderer.setRate(1.0, time: anchorPTS)
                 isAudioClockStarted = true
                 // Paused until this instant, as far as PiP is concerned.
@@ -1367,7 +1364,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self = self, self.currentZapId == zapId, self.isAudioClockStarted else { return }
                 let stats = self.audioRenderer.consumeFlowStats()
-                let presenterQ = self.systemPresenter?.pendingSamplesCount ?? 0
+                let presenterQ = 0 // see above
                 let status = self.audioRenderer.status
                 let statusStr = status == .rendering ? "rendering" : (status == .failed ? "FAILED" : "other")
                 let lead = stats.currentLeadMs
@@ -1412,8 +1409,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             let zapId = self.currentZapId
-            self.systemPresenter?.flush(generation: zapId)
-            self.renderView?.resetForChannelZap(generation: zapId)
+            self.presentationContext?.requestReset(from: self)
         }
 
         let msg = "[1080i50-CLOCK] ⚠️ PTS discontinuity: timeline jumped \(String(format: "%+.3f", delta))s to \(String(format: "%.3f", pts.seconds))s (\(codec)) — flushed and re-anchoring"
@@ -1505,19 +1501,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     self.audioRenderer.reset()
                     DispatchQueue.main.async { [weak self] in
                         guard let self = self else { return }
-                        let zapId = self.currentZapId
-                        self.renderView?.synchronizer = self.audioRenderer.synchronizer
-                        self.systemPresenter?.attach(to: self.audioRenderer.synchronizer)
-                        self.systemPresenter?.flush(generation: zapId)
-                        self.renderView?.resetForChannelZap(generation: zapId)
+                        self.presentationContext?.requestReattach(from: self)
                     }
                 } else {
                     self.audioRenderer.flush()
                     DispatchQueue.main.async { [weak self] in
                         guard let self = self else { return }
-                        let zapId = self.currentZapId
-                        self.systemPresenter?.flush(generation: zapId)
-                        self.renderView?.resetForChannelZap(generation: zapId)
+                        self.presentationContext?.requestReset(from: self)
                     }
                 }
 
@@ -1574,9 +1564,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                let zapId = self.currentZapId
-                self.systemPresenter?.flush(generation: zapId)
-                self.renderView?.resetForChannelZap(generation: zapId)
+                self.presentationContext?.requestReset(from: self)
             }
         }
     }
@@ -1599,11 +1587,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                let zapId = self.currentZapId
-                self.renderView?.synchronizer = self.audioRenderer.synchronizer
-                self.systemPresenter?.attach(to: self.audioRenderer.synchronizer)
-                self.systemPresenter?.flush(generation: zapId)
-                self.renderView?.resetForChannelZap(generation: zapId)
+                self.presentationContext?.requestReattach(from: self)
             }
         }
     }
@@ -1665,7 +1649,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // Drives whether the render view bob-deinterlaces or passes through.
         let interlaced = info.isInterlaced
         DispatchQueue.main.async { [weak self] in
-            self?.renderView?.sourceIsInterlaced = interlaced
+            guard let self else { return }
+            self.presentationContext?.setSourceInterlaced(interlaced, from: self)
         }
 
         let logMsg = "[1080i50-CODEC] Format: \(info.width)x\(info.height) | Interlaced: \(info.isInterlaced) | TFF: \(info.isTopFieldFirst)"
@@ -1837,7 +1822,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             TelemetryServer.shared.log(decLog)
         }
 
-        renderView?.enqueueFrame(frame)
+        surfaceOutlet?.enqueue(frame)
     }
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeHWActiveState isHWActive: Bool) {
@@ -2163,7 +2148,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         let inFlight = decoder.inFlightFrames
         let liveFrames = DecodedVideoFrame.liveCount.withLock { $0 }
-        let presenterQ = systemPresenter?.pendingSamplesCount ?? 0
+        let presenterQ = 0 // see above
         // 1920x1080 NV12 BiPlanar frame is ~3.11 MB
         let approxFrameMB = Double(liveFrames) * 3.11
         let approxPresenterMB = Double(presenterQ) * 3.11
@@ -2226,4 +2211,82 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         let residentMB = (kerr == KERN_SUCCESS) ? Double(vmInfo.resident_size) / (1024.0 * 1024.0) : 0.0
         return (footprintMB, residentMB)
     }
+}
+
+// MARK: - PresentablePlaybackSession
+
+extension NativeTSVideoPipeline: PresentablePlaybackSession {
+    public var presentationSynchronizer: AVSampleBufferRenderSynchronizer {
+        audioRenderer.synchronizer
+    }
+
+    /// Whether this session could be put on screen right now.
+    ///
+    /// Deliberately not "a frame was decoded". A session that has a picture but no
+    /// usable audio at the same instant would be committed and then hold that picture
+    /// still while audio caught up - which is the 0.6 to 1 second of frozen picture
+    /// this whole rebuild exists to remove, moved behind the commit rather than
+    /// removed. So all three have to hold together:
+    ///
+    ///   - a decoded picture exists, and the anchor the clock will start on is known,
+    ///   - audio frames exist that are decodable from that same anchor,
+    ///   - their timestamps are coherent with it, which is what says the leading
+    ///     orphan audio can be trimmed once rather than resynchronised forever.
+    public var isPresentable: Bool {
+        guard let anchor = commitAnchor, anchor.isValid else { return false }
+        guard firstVideoFieldPTS != nil else { return false }
+        return audioRenderer.hasBuffersCovering(anchor)
+    }
+
+    /// Starts this session's clock at the anchor its picture and audio share.
+    ///
+    /// The leading audio - everything that precedes the picture the surface will show
+    /// first - is dropped here, once. Nothing resynchronises afterwards: the clock is
+    /// anchored to a timestamp both streams already carry.
+    public func becomeAudible(_ grant: AudibleGrant) {
+        guard grant.presentationGeneration == presentationGeneration else {
+            reportWarning("audible grant named \(grant.presentationGeneration), session is \(presentationGeneration)")
+            return
+        }
+        guard let anchor = commitAnchor, anchor.isValid else {
+            reportWarning("made audible with no start anchor")
+            return
+        }
+        guard !isAudioClockStarted else { return }
+
+        let pruned = audioRenderer.pruneBuffersBefore(time: anchor)
+        audioRenderer.setAudible(true)
+        audioRenderer.setRate(1.0, time: anchor)
+        isAudioClockStarted = true
+
+        let msg = "[COMMIT-\(presentationGeneration)] ⏱️ clock started at \(String(format: "%.3f", anchor.seconds))s | trimmed \(pruned.prunedCount) leading audio buffer(s) | remaining lead \(String(format: "%.0f", pruned.remainingLeadMs))ms"
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+    }
+
+    public func silence() {
+        audioRenderer.setAudible(false)
+        guard isAudioClockStarted else { return }
+        audioRenderer.setRate(0.0, time: .invalid)
+        isAudioClockStarted = false
+        logger.notice("[Presentation] \(self.presentationGeneration.description, privacy: .public) silenced")
+    }
+
+    public func surfaceDidSubmitFirstField(pts: CMTime) {
+        if firstVideoFieldPTS == nil, pts.isValid {
+            firstVideoFieldPTS = pts
+            sessionState.mutate { $0.firstVideoFieldTime = CACurrentMediaTime() }
+        }
+        observeFirstPictureVisible(at: pts)
+    }
+
+    public func surfaceDidRenderFirstFrame() { handleFirstFrameRendered() }
+
+    public func surfaceDidPresentFirstFrame(atScreenTime screenTime: CFTimeInterval) {
+        handleFirstFrameActuallyPresented(screenTimestamp: screenTime)
+    }
+
+    public func surfaceDidPresentFirstFieldImmediately() { handleFirstPictureShownImmediately() }
+
+    public func surfaceDidWarn(_ text: String) { reportWarning(text) }
 }

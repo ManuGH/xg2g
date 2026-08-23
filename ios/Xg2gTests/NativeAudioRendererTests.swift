@@ -17,7 +17,7 @@ struct NativeAudioRendererTests {
 
     @Test func audioRendererEnqueuesAC3SampleBuffersWithoutFailing() throws {
         let renderer = NativeTSAudioRenderer()
-        renderer.activateAudioSession()
+        renderer.setAudible(true)
 
         let frameParser = AC3FrameParser()
         let sbAssembler = AudioSampleBufferAssembler()
@@ -40,7 +40,7 @@ struct NativeAudioRendererTests {
 
     @Test func audioRendererFlushesCleanlyOnDiscontinuity() throws {
         let renderer = NativeTSAudioRenderer()
-        renderer.activateAudioSession()
+        renderer.setAudible(true)
 
         let frameParser = AC3FrameParser()
         let sbAssembler = AudioSampleBufferAssembler()
@@ -128,7 +128,7 @@ struct NativeAudioRendererTests {
         guard FileManager.default.fileExists(atPath: "/tmp/sky_f1_10s.ts") else { return }
         let tsData = try Data(contentsOf: URL(fileURLWithPath: "/tmp/sky_f1_10s.ts"))
         let pipeline = NativeTSVideoPipeline()
-        pipeline.audioRenderer.activateAudioSession()
+        pipeline.audioRenderer.setAudible(true)
         
         let chunkSize = 32768
         var offset = 0

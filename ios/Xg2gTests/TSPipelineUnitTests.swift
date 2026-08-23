@@ -474,6 +474,8 @@ struct TSPipelineUnitTests {
 
     @Test func testLiveDirectStreamPipeline() async throws {
         let pipeline = NativeTSVideoPipeline()
+        let surface = await giveOwnSurface(to: pipeline)
+        defer { _ = surface }
         let testURL = URL(string: "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:")!
         
         await MainActor.run {

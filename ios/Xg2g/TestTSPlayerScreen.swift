@@ -19,7 +19,7 @@ public struct TestTSPlayerScreen: View {
     /// Owns the AVFoundation display layer and the PiP controller. Held here
     /// rather than inside the UIViewRepresentable so it survives SwiftUI
     /// rebuilding that view, which would otherwise tear down PiP mid-stream.
-    @StateObject private var systemPresenter = SystemVideoPresenterBox()
+    @StateObject private var systemPresenter = PresentationContextBox()
     @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:"
     @State private var currentChannelName: String = "Sky Sport F1 HD"
     private enum StreamRouteMode: String, CaseIterable {
@@ -171,6 +171,7 @@ public struct TestTSPlayerScreen: View {
                         MetalVideoStageView(
                             pipeline: pipeline,
                             presenter: systemPresenter.presenter,
+                            presentationContext: systemPresenter.context,
                             presentationPath: presentationPath
                         )
                         .ignoresSafeArea(edges: isLandscape ? .all : [])
@@ -927,19 +928,23 @@ public struct TestTSPlayerScreen: View {
 private struct MetalVideoStageView: UIViewRepresentable {
     let pipeline: NativeTSVideoPipeline
     let presenter: SystemVideoPresenter
+    let presentationContext: PresentationContext
     let presentationPath: MetalVideoView.PresentationPath
 
     func makeUIView(context: Context) -> MetalVideoView {
         let view = MetalVideoView(frame: .zero)
         view.telemetry = pipeline.telemetry
-        pipeline.renderView = view
+
+        // The session is given the context, never the view. Which session the surface
+        // belongs to is the context's decision alone.
+        presentationContext.setRenderView(view)
+        pipeline.presentationContext = presentationContext
 
         // Presenting through AVFoundation instead of our own drawable. The Metal
         // view keeps doing the decode-side work — reorder, field scheduling and
         // the deinterlace pass — and its output goes into the display layer,
         // which is hosted on top of it.
         view.systemPresenter = presenter
-        pipeline.systemPresenter = presenter
         view.presentationPath = presentationPath
         presenter.displayLayer.frame = view.bounds
         view.layer.addSublayer(presenter.displayLayer)

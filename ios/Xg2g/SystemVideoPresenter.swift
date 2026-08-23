@@ -152,17 +152,51 @@ public final class SystemVideoPresenter: NSObject {
     /// the live one.
     private weak var attachedSynchronizer: AVSampleBufferRenderSynchronizer?
 
+    /// Which synchronizer the layer is on its way to, when a move is in flight.
+    ///
+    /// A move cannot be done in one step. `removeRenderer` is asynchronous, and adding
+    /// the layer to the next synchronizer before the removal has completed throws:
+    ///
+    ///   The DisplayLayer cannot be added to a Synchronizer when it has already been
+    ///   added to a Synchronizer.
+    ///
+    /// That never surfaced while a channel change built a fresh synchronizer and took
+    /// seconds to get there. A commit that hands the surface straight from one prepared
+    /// session to another does it in one step, and the app terminated on the exception.
+    private var pendingSynchronizer: AVSampleBufferRenderSynchronizer?
+
     public func attach(to synchronizer: AVSampleBufferRenderSynchronizer) {
         guard attachedSynchronizer !== synchronizer else { return }
-        if let previous = attachedSynchronizer {
-            previous.removeRenderer(displayLayer.sampleBufferRenderer, at: .invalid) { _ in }
+
+        // The newest target wins. Commits can arrive faster than a removal completes,
+        // and the layer must end up on the synchronizer of the session that owns the
+        // surface now, not on whichever move happened to finish last.
+        pendingSynchronizer = synchronizer
+
+        guard let previous = attachedSynchronizer else {
+            completeAttach(to: synchronizer)
+            return
         }
+
+        attachedSynchronizer = nil
+        previous.removeRenderer(displayLayer.sampleBufferRenderer, at: .invalid) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let target = self.pendingSynchronizer else { return }
+                self.completeAttach(to: target)
+            }
+        }
+    }
+
+    private func completeAttach(to synchronizer: AVSampleBufferRenderSynchronizer) {
+        guard attachedSynchronizer !== synchronizer else { return }
         synchronizer.addRenderer(displayLayer.sampleBufferRenderer)
         attachedSynchronizer = synchronizer
+        pendingSynchronizer = nil
         logger.notice("[SystemVideo] display layer attached to render synchronizer")
     }
 
     public func detach(from synchronizer: AVSampleBufferRenderSynchronizer) {
+        if pendingSynchronizer === synchronizer { pendingSynchronizer = nil }
         synchronizer.removeRenderer(displayLayer.sampleBufferRenderer, at: .invalid) { _ in }
         if attachedSynchronizer === synchronizer {
             attachedSynchronizer = nil

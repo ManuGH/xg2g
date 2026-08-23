@@ -192,6 +192,8 @@ struct VideoToolboxRecoveryTests {
 
     @Test func strictIDROnlyRecoveryNeverFailsOpenOnTimeout() async throws {
         let pipeline = NativeTSVideoPipeline()
+        let surface = await giveOwnSurface(to: pipeline)
+        defer { _ = surface }
         defer { pipeline.stopStreaming() }
         guard let format = makeTestH264FormatDescription() else {
             Issue.record("Failed to create test format description")
@@ -229,6 +231,8 @@ struct VideoToolboxRecoveryTests {
 
     @Test func fullRecoveryCycleOnNextIDRSyncSample() async throws {
         let pipeline = NativeTSVideoPipeline()
+        let surface = await giveOwnSurface(to: pipeline)
+        defer { _ = surface }
         defer { pipeline.stopStreaming() }
         guard let format = makeTestH264FormatDescription() else {
             Issue.record("Failed to create test format description")
@@ -276,6 +280,8 @@ struct VideoToolboxRecoveryTests {
 
     @Test func lifecycleBackgroundInvalidatesAndForegroundRecoversOnIDR() async throws {
         let pipeline = NativeTSVideoPipeline()
+        let surface = await giveOwnSurface(to: pipeline)
+        defer { _ = surface }
         defer { pipeline.stopStreaming() }
         guard let format = makeTestH264FormatDescription() else {
             Issue.record("Failed to create test format description")
