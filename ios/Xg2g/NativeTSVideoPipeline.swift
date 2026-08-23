@@ -1249,7 +1249,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     public func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8) {
         telemetry.mutate { $0.continuityErrors += 1 }
-        if let sub = selectedSubtitleTrack, pid == sub.pid {
+        if let sub = selectedSubtitleTrack,
+           pid == sub.pid,
+           case .dvb = sub.format {
             dvbSubtitleAssembler.handleContinuityError()
         }
     }

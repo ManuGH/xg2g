@@ -184,6 +184,14 @@ public final class DVBSubtitlePESAssembler: @unchecked Sendable {
                 delegate?.dvbSubtitleAssembler(self, didEncounterError: "Malformed PTS timestamp marker bits or prefix")
                 return
             }
+
+            if ptsDtsFlags == 0x03 {
+                guard decodeAndValidatePTS(data: validData, offset: 14, expectedPrefix: 0x01) != nil else {
+                    delegate?.dvbSubtitleAssembler(self, didEncounterError: "Malformed DTS timestamp marker bits or prefix")
+                    return
+                }
+            }
+
             let unwrappedPTS = normalizer.unwrap(rawPTS: rawPTS)
             pts90k = unwrappedPTS
             pts = CMTime(value: CMTimeValue(unwrappedPTS), timescale: 90000)
