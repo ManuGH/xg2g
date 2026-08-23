@@ -131,6 +131,20 @@ public final class SystemVideoPresenter: NSObject {
         _atomicPendingCount.withLock { $0 }
     }
 
+    public var scalingMode: VideoScalingMode = .fit {
+        didSet {
+            guard oldValue != scalingMode else { return }
+            applyScalingMode()
+        }
+    }
+
+    private func applyScalingMode() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        displayLayer.videoGravity = (scalingMode == .fill) ? .resizeAspectFill : .resizeAspect
+        CATransaction.commit()
+    }
+
     public override init() {
         super.init()
         displayLayer.videoGravity = .resizeAspect

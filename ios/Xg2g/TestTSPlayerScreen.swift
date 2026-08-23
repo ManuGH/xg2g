@@ -44,6 +44,7 @@ public struct TestTSPlayerScreen: View {
     /// implied, so the drawable path is reachable and the two can be compared
     /// on the same stream instead of only one of them ever running.
     @State private var presentationPath: MetalVideoView.PresentationPath = .systemLayer
+    @State private var viewPreset: VideoViewPreset = .standard
     @State private var showControls: Bool = true
     @State private var showLandscapeZapBar: Bool = false
     @State private var autoHideControlsTask: Task<Void, Never>?
@@ -191,7 +192,9 @@ public struct TestTSPlayerScreen: View {
                             telemetry: coordinator.playing?.telemetry,
                             presenter: coordinator.surface,
                             presentationContext: coordinator.context,
-                            presentationPath: presentationPath
+                            presentationPath: presentationPath,
+                            scalingMode: viewPreset.scalingMode,
+                            aspectRatioOverride: viewPreset.aspectRatio
                         )
                         .ignoresSafeArea(edges: isLandscape ? .all : [])
 
@@ -413,6 +416,24 @@ public struct TestTSPlayerScreen: View {
                             Image(systemName: presentationPath == .systemLayer ? "rectangle.on.rectangle" : "cpu")
                                 .font(.system(size: 11, weight: .bold))
                             Text(presentationPath == .systemLayer ? "Layer" : "Drawable")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+
+                    // Video aspect ratio & scaling preset selector (VLC style)
+                    Button {
+                        cycleViewPreset()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: viewPreset.scalingMode == .fill ? "arrow.up.left.and.arrow.down.right" : "aspectratio")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(viewPreset.rawValue)
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                         }
                         .foregroundStyle(.white)
@@ -871,6 +892,7 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func switchTo(preset: ChannelPreset) {
+        viewPreset = .standard
         streamURLString = preset.url
         currentChannelName = preset.name
         displayZapToast("Kanal: \(preset.name)")
@@ -896,6 +918,12 @@ public struct TestTSPlayerScreen: View {
         } else {
             startCurrentPreset()
         }
+    }
+
+    private func cycleViewPreset() {
+        Haptics.shared.impact(.light)
+        viewPreset = viewPreset.next(includeAdvanced: model?.enableAdvancedAspectRatios ?? false)
+        displayZapToast("Bildformat: \(viewPreset.rawValue)")
     }
 
     private func displayZapToast(_ message: String) {
@@ -975,10 +1003,14 @@ private struct MetalVideoStageView: UIViewRepresentable {
     let presenter: SystemVideoPresenter
     let presentationContext: PresentationContext
     let presentationPath: MetalVideoView.PresentationPath
+    let scalingMode: VideoScalingMode
+    let aspectRatioOverride: VideoAspectRatio
 
     func makeUIView(context: Context) -> MetalVideoView {
         let view = MetalVideoView(frame: .zero)
         view.telemetry = telemetry
+        view.scalingMode = scalingMode
+        view.aspectRatioOverride = aspectRatioOverride
 
         // The context is given the view, and hands it to whichever session owns the
         // surface. Sessions are never wired to it here: with a channel prepared beside
@@ -991,6 +1023,7 @@ private struct MetalVideoStageView: UIViewRepresentable {
         // which is hosted on top of it.
         view.systemPresenter = presenter
         view.presentationPath = presentationPath
+        presenter.scalingMode = scalingMode
         presenter.displayLayer.frame = view.bounds
         view.layer.addSublayer(presenter.displayLayer)
         presenter.enablePictureInPicture()
@@ -1001,6 +1034,9 @@ private struct MetalVideoStageView: UIViewRepresentable {
     func updateUIView(_ uiView: MetalVideoView, context: Context) {
         uiView.telemetry = telemetry
         uiView.presentationPath = presentationPath
+        uiView.scalingMode = scalingMode
+        uiView.aspectRatioOverride = aspectRatioOverride
+        presenter.scalingMode = scalingMode
         // The layer is not managed by Auto Layout, so it has to follow the view
         // itself. Without this it keeps its size across a rotation and the
         // picture stays letterboxed at the old aspect.

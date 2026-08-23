@@ -115,8 +115,26 @@ public final class MetalVideoView: UIView {
     /// bypassed while it is active. The system route costs a full render target
     /// per field, which is exactly the intermediate surface removed earlier for
     /// thermal reasons — which is why both paths are worth being able to compare.
+    public var scalingMode: VideoScalingMode = .fit {
+        didSet {
+            guard oldValue != scalingMode else { return }
+            systemPresenter?.scalingMode = scalingMode
+            needsRedraw = true
+        }
+    }
+
+    public var aspectRatioOverride: VideoAspectRatio = .auto {
+        didSet {
+            guard oldValue != aspectRatioOverride else { return }
+            needsRedraw = true
+        }
+    }
+
     public weak var systemPresenter: SystemVideoPresenter? {
-        didSet { applyPresentationPath() }
+        didSet {
+            systemPresenter?.scalingMode = scalingMode
+            applyPresentationPath()
+        }
     }
 
     /// Which of the two presentation models is live.
@@ -520,7 +538,16 @@ public final class MetalVideoView: UIView {
             float chromaHeight;
         };
 
-        vertex VertexOutput fullscreenVertex(uint vertexID [[vertex_id]]) {
+        struct GeometryParams {
+            float2 positionScale;
+            float2 uvScale;
+            float2 uvOffset;
+        };
+
+        vertex VertexOutput fullscreenVertex(
+            uint vertexID [[vertex_id]],
+            constant GeometryParams *geom [[buffer(0)]]
+        ) {
             const float2 positions[4] = {
                 float2(-1.0, -1.0),
                 float2( 1.0, -1.0),
@@ -534,8 +561,13 @@ public final class MetalVideoView: UIView {
                 float2(1.0, 0.0)
             };
             VertexOutput out;
-            out.position = float4(positions[vertexID], 0.0, 1.0);
-            out.texCoords = texCoords[vertexID];
+            if (geom != nullptr) {
+                out.position = float4(positions[vertexID] * geom->positionScale, 0.0, 1.0);
+                out.texCoords = geom->uvOffset + texCoords[vertexID] * geom->uvScale;
+            } else {
+                out.position = float4(positions[vertexID], 0.0, 1.0);
+                out.texCoords = texCoords[vertexID];
+            }
             return out;
         }
 
@@ -1302,7 +1334,9 @@ public final class MetalVideoView: UIView {
             chromaHeight: Float(height / 2)
         )
 
+        var geom = MetalGeometryUniforms.identity
         encoder.setRenderPipelineState(pipeline)
+        encoder.setVertexBytes(&geom, length: MemoryLayout<MetalGeometryUniforms>.stride, index: 0)
         encoder.setFragmentTexture(source.luma, index: 0)
         encoder.setFragmentTexture(source.chroma, index: 1)
         encoder.setFragmentBytes(&params, length: MemoryLayout<DeinterlaceShaderParams>.stride, index: 0)
@@ -1416,7 +1450,9 @@ public final class MetalVideoView: UIView {
             guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
                 return false
             }
+            var geom = MetalGeometryUniforms.identity
             encoder.setRenderPipelineState(pipeline)
+            encoder.setVertexBytes(&geom, length: MemoryLayout<MetalGeometryUniforms>.stride, index: 0)
             encoder.setFragmentTexture(texture, index: 0)
             encoder.setFragmentBytes(&params, length: MemoryLayout<DeinterlaceShaderParams>.stride, index: 0)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
@@ -1467,6 +1503,7 @@ public final class MetalVideoView: UIView {
         // For progressive content (720p50, 1080p50), bypass Metal entirely:
         // VideoToolbox has already output the decoded progressive frame.
         guard sourceIsInterlaced else {
+            VideoGeometry.applyPixelAspectRatio(to: field.pixelBuffer, aspectRatioOverride: aspectRatioOverride)
             presenter.enqueue(
                 pixelBuffer: field.pixelBuffer,
                 pts: pts,
@@ -1496,6 +1533,7 @@ public final class MetalVideoView: UIView {
         // function, chroma siting — onto the surface the layer will present, so
         // AVFoundation converts using what the stream actually declared.
         CVBufferPropagateAttachments(field.pixelBuffer, destination)
+        VideoGeometry.applyPixelAspectRatio(to: destination, aspectRatioOverride: aspectRatioOverride)
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               encodeDeinterlaceToNV12(field, into: destination, commandBuffer: commandBuffer) else {
@@ -1546,7 +1584,8 @@ public final class MetalVideoView: UIView {
 
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = drawable.texture
-        descriptor.colorAttachments[0].loadAction = .dontCare
+        descriptor.colorAttachments[0].loadAction = .clear
+        descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0)
         descriptor.colorAttachments[0].storeAction = .store
 
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
@@ -1554,7 +1593,19 @@ public final class MetalVideoView: UIView {
             return
         }
 
+        let width = CVPixelBufferGetWidth(field.pixelBuffer)
         let height = CVPixelBufferGetHeight(field.pixelBuffer)
+        let sar = VideoGeometry.extractSAR(from: field.pixelBuffer)
+        var geom = VideoGeometry.calculateMetalGeometry(
+            viewportSize: bounds.size,
+            sourceWidth: width,
+            sourceHeight: height,
+            sarNumerator: sar.numerator,
+            sarDenominator: sar.denominator,
+            aspectRatioOverride: aspectRatioOverride,
+            scalingMode: scalingMode
+        )
+
         var params = DeinterlaceShaderParams(
             fieldParity: field.parity,
             isInterlaced: sourceIsInterlaced ? 1 : 0,
@@ -1563,6 +1614,7 @@ public final class MetalVideoView: UIView {
         )
 
         encoder.setRenderPipelineState(deinterlacePipeline)
+        encoder.setVertexBytes(&geom, length: MemoryLayout<MetalGeometryUniforms>.stride, index: 0)
         encoder.setFragmentTexture(source.luma, index: 0)
         encoder.setFragmentTexture(source.chroma, index: 1)
         encoder.setFragmentBytes(&params, length: MemoryLayout<DeinterlaceShaderParams>.stride, index: 0)

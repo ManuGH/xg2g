@@ -83,6 +83,20 @@ struct SettingsView: View {
                                 .foregroundStyle(Theme.Colors.statusWarning)
                             }
                         }
+
+                        Toggle(isOn: $model.enableAdvancedAspectRatios) {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "aspectratio", backgroundColor: Color.purple)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Erweiterte Seitenverhältnisse")
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                    Text("Aktiviert manuelle Format-Overrides (16:9, 4:3, Cinemascope) im Player.")
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                }
+                            }
+                        }
+                        .tint(Theme.Colors.accentAction)
                     } header: {
                         Text("Wiedergabe-Art")
                             .foregroundStyle(Theme.Colors.textTertiary)

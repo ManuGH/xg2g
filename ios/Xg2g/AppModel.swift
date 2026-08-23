@@ -256,6 +256,16 @@ final class AppModel {
         }
     }
 
+    /// Whether the player aspect ratio toggle exposes advanced/legacy formats (16:9, 4:3, Cinemascope)
+    /// in addition to Standard and Bildschirm füllen.
+    var enableAdvancedAspectRatios: Bool = {
+        UserDefaults.standard.bool(forKey: "xg2g.enable_advanced_aspect_ratios")
+    }() {
+        didSet {
+            UserDefaults.standard.set(enableAdvancedAspectRatios, forKey: "xg2g.enable_advanced_aspect_ratios")
+        }
+    }
+
     /// Where the receiver hands out its unmodified streams, e.g. `http://10.10.55.64:8001`.
     ///
     /// Kept separate from the xg2g server address on purpose: direct playback
