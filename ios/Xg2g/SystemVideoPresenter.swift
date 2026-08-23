@@ -45,6 +45,7 @@ public final class SystemVideoPresenter: NSObject {
 
     private var formatDescription: CMVideoFormatDescription?
     private var formatDimensions: CMVideoDimensions = CMVideoDimensions(width: 0, height: 0)
+    private var formatSAR: (numerator: Int, denominator: Int) = (1, 1)
 
     /// Fields handed to the renderer since the last flush. Readable so the
     /// render path can be asserted on end to end rather than inferred from
@@ -451,12 +452,16 @@ public final class SystemVideoPresenter: NSObject {
     ///
     /// Creating one per field would be wasteful at 50 fields per second, and a
     /// changing format description makes the layer re-negotiate its pipeline.
-    private func formatDescription(for pixelBuffer: CVPixelBuffer) -> CMVideoFormatDescription? {
+    func formatDescription(for pixelBuffer: CVPixelBuffer) -> CMVideoFormatDescription? {
         let width = Int32(CVPixelBufferGetWidth(pixelBuffer))
         let height = Int32(CVPixelBufferGetHeight(pixelBuffer))
+        let sar = VideoGeometry.extractSAR(from: pixelBuffer)
 
         if let existing = formatDescription,
-           formatDimensions.width == width, formatDimensions.height == height {
+           formatDimensions.width == width,
+           formatDimensions.height == height,
+           formatSAR.numerator == sar.numerator,
+           formatSAR.denominator == sar.denominator {
             return existing
         }
 
@@ -473,6 +478,7 @@ public final class SystemVideoPresenter: NSObject {
 
         formatDescription = format
         formatDimensions = CMVideoDimensions(width: width, height: height)
+        formatSAR = sar
         return format
     }
 
@@ -489,6 +495,7 @@ public final class SystemVideoPresenter: NSObject {
         displayLayer.sampleBufferRenderer.flush()
         formatDescription = nil
         formatDimensions = CMVideoDimensions(width: 0, height: 0)
+        formatSAR = (1, 1)
         // Re-armed per tune: a zap is exactly the moment the wait is felt.
         needsImmediateDisplay = true
         raisedWarnings.removeAll()

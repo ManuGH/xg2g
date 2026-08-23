@@ -114,6 +114,55 @@ struct VideoGeometryTests {
         #expect(abs(effectiveSD - (16.0 / 9.0)) < 0.0001)
     }
 
+    @MainActor
+    @Test("CMFormatDescription: FormatDescription recreates with correct PixelAspectRatio extension on DAR override")
+    func testFormatDescriptionExtensionsOnDAROverride() {
+        let presenter = SystemVideoPresenter()
+        let pb = createTestPixelBuffer(width: 1920, height: 1080, sarNum: 1, sarDen: 1)
+
+        // 1. Initial 1920x1080 Auto (1:1 SAR)
+        guard let format1 = presenter.formatDescription(for: pb) else {
+            #expect(Bool(false), "formatDescription must not be nil")
+            return
+        }
+        let ext1 = CMFormatDescriptionGetExtensions(format1) as? [CFString: Any]
+        if let parDict1 = ext1?[kCMFormatDescriptionExtension_PixelAspectRatio] as? [CFString: Any] {
+            let h = (parDict1[kCVImageBufferPixelAspectRatioHorizontalSpacingKey] as? NSNumber)?.intValue ?? 1
+            let v = (parDict1[kCVImageBufferPixelAspectRatioVerticalSpacingKey] as? NSNumber)?.intValue ?? 1
+            #expect(h == 1 && v == 1)
+        }
+
+        // 2. Override to 4:3 (PAR becomes 3:4) on same 1920x1080 dimensions
+        VideoGeometry.applyPixelAspectRatio(to: pb, aspectRatioOverride: .r4_3)
+        guard let format2 = presenter.formatDescription(for: pb) else {
+            #expect(Bool(false), "formatDescription must not be nil")
+            return
+        }
+        // Format description MUST be regenerated (not equal to previous cached instance)
+        #expect(format1 !== format2)
+
+        let ext2 = CMFormatDescriptionGetExtensions(format2) as? [CFString: Any]
+        let parDict2 = ext2?[kCMFormatDescriptionExtension_PixelAspectRatio] as? [CFString: Any]
+        #expect(parDict2 != nil)
+        let h2 = (parDict2?[kCVImageBufferPixelAspectRatioHorizontalSpacingKey] as? NSNumber)?.intValue
+        let v2 = (parDict2?[kCVImageBufferPixelAspectRatioVerticalSpacingKey] as? NSNumber)?.intValue
+        #expect(h2 == 3)
+        #expect(v2 == 4)
+
+        // 3. Override to 16:9 on 1920x1080 (PAR becomes 1:1)
+        VideoGeometry.applyPixelAspectRatio(to: pb, aspectRatioOverride: .r16_9)
+        guard let format3 = presenter.formatDescription(for: pb) else {
+            #expect(Bool(false), "formatDescription must not be nil")
+            return
+        }
+        #expect(format2 !== format3)
+        let ext3 = CMFormatDescriptionGetExtensions(format3) as? [CFString: Any]
+        let parDict3 = ext3?[kCMFormatDescriptionExtension_PixelAspectRatio] as? [CFString: Any]
+        let h3 = (parDict3?[kCVImageBufferPixelAspectRatioHorizontalSpacingKey] as? NSNumber)?.intValue ?? 1
+        let v3 = (parDict3?[kCVImageBufferPixelAspectRatioVerticalSpacingKey] as? NSNumber)?.intValue ?? 1
+        #expect(h3 == 1 && v3 == 1)
+    }
+
     @Test("Rational Fraction Approximation")
     func testRationalFraction() {
         let f1 = VideoGeometry.rationalFraction(from: 16.0 / 9.0)
@@ -261,16 +310,26 @@ struct VideoGeometryTests {
     }
 
     @MainActor
-    @Test("MetalVideoView: Switching Presets during live playback causes 0 drops and no resets")
-    func testLivePlaybackGeometrySwitching() {
+    @Test("MetalVideoView: Switching Presets during live playback preserves generation, increments enqueued count, and causes 0 drops")
+    func testLivePlaybackGeometrySwitchingWithMetrics() async throws {
         let view = MetalVideoView(frame: CGRect(x: 0, y: 0, width: 852, height: 393))
         let presenter = SystemVideoPresenter()
         view.systemPresenter = presenter
+        view.presentationPath = .systemLayer
+
+        let telemetry = StreamTelemetry()
+        view.telemetry = telemetry
+
+        let generation = 1
+        view.resetForChannelZap(generation: generation)
+        presenter.flush(generation: generation)
 
         let pb = createTestPixelBuffer(width: 1920, height: 1080, sarNum: 1, sarDen: 1)
-        let generation = 1
 
-        // Switch modes repeatedly: Standard -> Fill -> 16:9 -> 4:3 -> Standard
+        let initialEnqueued = presenter.enqueuedCount
+        let initialDrops = telemetry.snapshot().droppedFrames
+
+        // Sequence of mode transitions: Standard -> Fill -> 16:9 -> 4:3 -> Standard
         let modes: [(VideoScalingMode, VideoAspectRatio)] = [
             (.fit, .auto),
             (.fill, .auto),
@@ -279,21 +338,33 @@ struct VideoGeometryTests {
             (.fit, .auto)
         ]
 
+        var frameIndex = 0
         for (scaling, aspect) in modes {
             view.scalingMode = scaling
             view.aspectRatioOverride = aspect
 
-            // Verify presenter gravity updates instantaneously
+            // Assert immediate presentation layer gravity update
             #expect(presenter.displayLayer.videoGravity == (scaling == .fill ? .resizeAspectFill : .resizeAspect))
 
-            // Verify enqueueFrame / present continues smoothly
+            frameIndex += 1
             let frame = DecodedVideoFrame(
                 pixelBuffer: pb,
-                pts: CMTime(seconds: 100.0, preferredTimescale: 90_000),
+                pts: CMTime(seconds: Double(frameIndex) * 0.04, preferredTimescale: 90_000),
                 structure: .wovenTopFieldFirst,
                 generation: generation
             )
             view.enqueueFrame(frame)
         }
+
+        // Wait for async presentation pump to process fields
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Verify presenter received all fields and generation was preserved
+        #expect(presenter.enqueuedCount > initialEnqueued)
+        #expect(view.currentGeneration == generation)
+
+        // Verify telemetry recorded ZERO dropped frames
+        let finalTelemetry = telemetry.snapshot()
+        #expect(finalTelemetry.droppedFrames == initialDrops)
     }
 }
