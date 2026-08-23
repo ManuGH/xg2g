@@ -161,6 +161,70 @@ public struct AudioTrackInfo: Sendable, Equatable, Identifiable {
     }
 }
 
+/// The format and page identification of a DVB or Teletext subtitle track.
+public enum SubtitleFormat: Sendable, Equatable, CustomStringConvertible {
+    case dvb(compositionPageID: UInt16, ancillaryPageID: UInt16)
+    case teletext(page: Int)
+
+    public var description: String {
+        switch self {
+        case .dvb(let comp, let anc):
+            return "DVB(comp: \(comp), anc: \(anc))"
+        case .teletext(let page):
+            return "Teletext(\(page))"
+        }
+    }
+}
+
+/// A subtitle track discovered in a programme's PMT (DVB Subtitles or Teletext Subtitles).
+public struct SubtitleTrackInfo: Sendable, Equatable, Identifiable {
+    public var id: String { "\(pid)_\(format.description)_\(language ?? "und")" }
+    public let pid: UInt16
+    public let format: SubtitleFormat
+    public let language: String?
+    public let isHearingImpaired: Bool
+
+    public init(
+        pid: UInt16,
+        format: SubtitleFormat,
+        language: String? = nil,
+        isHearingImpaired: Bool = false
+    ) {
+        self.pid = pid
+        self.format = format
+        self.language = language
+        self.isHearingImpaired = isHearingImpaired
+    }
+
+    public var displayName: String {
+        let langName: String
+        switch (language ?? "").lowercased() {
+        case "deu", "ger": langName = "Deutsch"
+        case "eng": langName = "Englisch"
+        case "fra", "fre": langName = "Französisch"
+        case "ita": langName = "Italienisch"
+        case "spa": langName = "Spanisch"
+        case "qaa", "mis", "mul": langName = "Originalton"
+        default:
+            langName = language?.uppercased() ?? "Untertitel"
+        }
+
+        var details: [String] = []
+        switch format {
+        case .dvb:
+            details.append("DVB")
+        case .teletext(let page):
+            details.append("Teletext \(page)")
+        }
+
+        if isHearingImpaired {
+            details.append("Hörgeschädigte")
+        }
+
+        return "\(langName) (\(details.joined(separator: ", ")))"
+    }
+}
+
 /// An elementary stream the PMT named that could be audio, but that the parser
 /// could not classify.
 ///
@@ -223,6 +287,7 @@ public protocol TSPacketParserDelegate: AnyObject, Sendable {
     func tsParser(_ parser: TSPacketParser, didDiscoverVideoPID pid: UInt16)
     func tsParser(_ parser: TSPacketParser, didDetermineVideoCodec codec: VideoStreamCodec)
     func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo])
+    func tsParser(_ parser: TSPacketParser, didDiscoverSubtitleTracks tracks: [SubtitleTrackInfo])
     func tsParser(_ parser: TSPacketParser, didEmitPayload data: Data, pid: UInt16, unitStart: Bool)
     func tsParser(_ parser: TSPacketParser, didEncounterContinuityErrorOnPID pid: UInt16, expected: UInt8, actual: UInt8)
     func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16)
@@ -232,6 +297,7 @@ public protocol TSPacketParserDelegate: AnyObject, Sendable {
 public extension TSPacketParserDelegate {
     func tsParser(_ parser: TSPacketParser, didDetermineVideoCodec codec: VideoStreamCodec) {}
     func tsParser(_ parser: TSPacketParser, didDiscoverAudioTracks tracks: [AudioTrackInfo]) {}
+    func tsParser(_ parser: TSPacketParser, didDiscoverSubtitleTracks tracks: [SubtitleTrackInfo]) {}
     func tsParser(_ parser: TSPacketParser, didEncounterScrambledPacketOnPID pid: UInt16) {}
     func tsParser(_ parser: TSPacketParser, didObserveUnclassifiedStreams streams: [UnclassifiedStreamInfo]) {}
 }
@@ -243,6 +309,7 @@ public extension TSPacketParserDelegate {
 /// - PAT (Program Association Table) demuxing.
 /// - PMT (Program Map Table) parsing to discover Video and Audio PIDs with DVB descriptors.
 /// - Multi-track audio discovery (AC-3, E-AC-3, AAC, MPEG-Audio) and ISO 639 language tagging.
+/// - Subtitle discovery (DVB bitmap subtitles & Teletext subtitles).
 /// - Continuity counter tracking per PID.
 /// - Adaptation field skipping and payload extraction.
 public final class TSPacketParser: @unchecked Sendable {
@@ -270,6 +337,7 @@ public final class TSPacketParser: @unchecked Sendable {
     public private(set) var videoCodec: VideoStreamCodec?
     public private(set) var audioTracks: [AudioTrackInfo] = []
     public private(set) var audioPIDs = Set<UInt16>()
+    public private(set) var subtitleTracks: [SubtitleTrackInfo] = []
 
     /// Streams the PMT named that could be audio but could not be classified.
     public private(set) var unclassifiedStreams: [UnclassifiedStreamInfo] = []
@@ -299,6 +367,7 @@ public final class TSPacketParser: @unchecked Sendable {
         videoCodec = nil
         audioTracks.removeAll()
         audioPIDs.removeAll()
+        subtitleTracks.removeAll()
         unclassifiedStreams.removeAll()
         continuityCounters.removeAll()
         pmtSectionBuffers.removeAll()
@@ -533,6 +602,7 @@ public final class TSPacketParser: @unchecked Sendable {
         var discoveredVideo: UInt16?
         var discoveredVideoCodec: VideoStreamCodec?
         var tracks: [AudioTrackInfo] = []
+        var subtitleTracks: [SubtitleTrackInfo] = []
         var unclassified: [UnclassifiedStreamInfo] = []
 
         while streamOffset + 5 <= endOffset {
@@ -584,6 +654,55 @@ public final class TSPacketParser: @unchecked Sendable {
                         } else if regStr == "EAC3" {
                             isEAC3Descriptor = true
                         }
+                    }
+                } else if tag == 0x59 {
+                    // DVB Subtitling Descriptor (ETSI EN 300 468 Clause 6.2.41)
+                    var entryOffset = tagDataStart
+                    while entryOffset + 8 <= tagDataEnd {
+                        let langBytes = [payload[entryOffset], payload[entryOffset + 1], payload[entryOffset + 2]]
+                        let langStr = String(bytes: langBytes, encoding: .ascii)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        let subType = payload[entryOffset + 3]
+                        let compPage = UInt16(payload[entryOffset + 4]) << 8 | UInt16(payload[entryOffset + 5])
+                        let ancPage = UInt16(payload[entryOffset + 6]) << 8 | UInt16(payload[entryOffset + 7])
+
+                        let isHardOfHearing = (0x20...0x25).contains(subType)
+                        let subTrack = SubtitleTrackInfo(
+                            pid: elementaryPID,
+                            format: .dvb(compositionPageID: compPage, ancillaryPageID: ancPage),
+                            language: (langStr?.isEmpty == false) ? langStr : nil,
+                            isHearingImpaired: isHardOfHearing
+                        )
+                        subtitleTracks.append(subTrack)
+                        entryOffset += 8
+                    }
+                } else if tag == 0x56 {
+                    // Teletext Descriptor (ETSI EN 300 468 Clause 6.2.43 / ETSI EN 300 706)
+                    var entryOffset = tagDataStart
+                    while entryOffset + 5 <= tagDataEnd {
+                        let langBytes = [payload[entryOffset], payload[entryOffset + 1], payload[entryOffset + 2]]
+                        let langStr = String(bytes: langBytes, encoding: .ascii)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        let typeAndMag = payload[entryOffset + 3]
+                        let ttxType = (typeAndMag >> 3) & 0x1F
+                        let mag = Int(typeAndMag & 0x07)
+                        let pageBCD = payload[entryOffset + 4]
+
+                        // Subtitle pages are type 0x02 (normal) or 0x05 (hearing impaired)
+                        if ttxType == 0x02 || ttxType == 0x05 {
+                            let magNumber = (mag == 0) ? 8 : mag
+                            let tens = Int((pageBCD >> 4) & 0x0F)
+                            let units = Int(pageBCD & 0x0F)
+                            let pageNumber = magNumber * 100 + tens * 10 + units
+
+                            let isHardOfHearing = (ttxType == 0x05)
+                            let subTrack = SubtitleTrackInfo(
+                                pid: elementaryPID,
+                                format: .teletext(page: pageNumber),
+                                language: (langStr?.isEmpty == false) ? langStr : nil,
+                                isHearingImpaired: isHardOfHearing
+                            )
+                            subtitleTracks.append(subTrack)
+                        }
+                        entryOffset += 5
                     }
                 }
 
@@ -661,6 +780,11 @@ public final class TSPacketParser: @unchecked Sendable {
             self.audioTracks = tracks
             self.audioPIDs = Set(tracks.map(\.pid))
             delegate?.tsParser(self, didDiscoverAudioTracks: tracks)
+        }
+
+        if !subtitleTracks.isEmpty && self.subtitleTracks != subtitleTracks {
+            self.subtitleTracks = subtitleTracks
+            delegate?.tsParser(self, didDiscoverSubtitleTracks: subtitleTracks)
         }
 
         // Reported independently of the track list, and precisely when that list is

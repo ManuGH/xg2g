@@ -112,6 +112,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     public private(set) var selectedAudioPID: UInt16?
     public private(set) var selectedAudioCodec: AudioStreamCodec = .ac3
     public private(set) var availableAudioTracks: [AudioTrackInfo] = []
+    public private(set) var availableSubtitleTracks: [SubtitleTrackInfo] = []
+    public private(set) var selectedSubtitleTrack: SubtitleTrackInfo?
     private var isAudioClockStarted = false
     private var audioBuffersPreRolledCount = 0
 
@@ -757,6 +759,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         audioContinuity.reset()
         selectedAudioPID = nil
         availableAudioTracks.removeAll()
+        availableSubtitleTracks.removeAll()
+        selectedSubtitleTrack = nil
 
         zapLock.lock()
         let currentZap = currentZapId
@@ -1161,6 +1165,30 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
             let zapId = self.currentZapId
             let logMsg = "[ZAP-#\(zapId)-AUDIO] 🔀 User switched audio track to: PID \(track.pid) (\(track.displayName))"
+            print(logMsg)
+            logger.notice("\(logMsg, privacy: .public)")
+            TelemetryServer.shared.log(logMsg)
+        }
+    }
+
+    public func tsParser(_ parser: TSPacketParser, didDiscoverSubtitleTracks tracks: [SubtitleTrackInfo]) {
+        self.availableSubtitleTracks = tracks
+        let zapId = self.currentZapId
+        let logMsg = "[ZAP-#\(zapId)-PMT] 💬 Discovered \(tracks.count) subtitle track(s): " +
+            tracks.map { "PID \($0.pid) [\($0.displayName)]" }.joined(separator: ", ")
+        print(logMsg)
+        logger.notice("\(logMsg, privacy: .public)")
+        TelemetryServer.shared.log(logMsg)
+    }
+
+    /// Selects a subtitle track by instance or turns subtitles off when passing `nil`.
+    public func selectSubtitleTrack(_ track: SubtitleTrackInfo?) {
+        ingestQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.selectedSubtitleTrack = track
+            let zapId = self.currentZapId
+            let label = track?.displayName ?? "Aus"
+            let logMsg = "[ZAP-#\(zapId)-SUB] 💬 Selected subtitle track: \(label)"
             print(logMsg)
             logger.notice("\(logMsg, privacy: .public)")
             TelemetryServer.shared.log(logMsg)

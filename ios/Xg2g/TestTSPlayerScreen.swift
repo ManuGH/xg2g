@@ -470,6 +470,36 @@ public struct TestTSPlayerScreen: View {
                             }
                         }
 
+                        // Untertitel Auswahl (DVB & Teletext)
+                        if let playing = coordinator.playing, !playing.availableSubtitleTracks.isEmpty {
+                            Menu {
+                                Button {
+                                    playing.selectSubtitleTrack(nil)
+                                } label: {
+                                    HStack {
+                                        Text("Aus")
+                                        if playing.selectedSubtitleTrack == nil {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                ForEach(playing.availableSubtitleTracks) { track in
+                                    Button {
+                                        playing.selectSubtitleTrack(track)
+                                    } label: {
+                                        HStack {
+                                            Text(track.displayName)
+                                            if playing.selectedSubtitleTrack?.id == track.id {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label("Untertitel (\(playing.availableSubtitleTracks.count))", systemImage: "captions.bubble")
+                            }
+                        }
+
                         // Stream-Info & Telemetrie Toggle
                         Button {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
