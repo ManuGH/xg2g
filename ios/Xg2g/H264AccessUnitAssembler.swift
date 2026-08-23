@@ -471,10 +471,9 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
 
         guard !currentAUNALs.isEmpty, currentAUHasVCL, let formatDesc = currentFormatDescription else { return }
 
-        // Whether a decoder can be started on this picture. An IDR always can;
-        // so can a picture whose every slice is intra-coded, which is what
-        // reaches the gate on channels that never send one.
-        let isSyncSample = currentAUHasIDR || currentAUIsIntraOnly
+        // An IDR picture (NAL type 5) guarantees a clean instantaneous decoder refresh where
+        // the DPB is completely reset and no prior reference frames are referenced.
+        let isSyncSample = currentAUHasIDR
 
         // Assemble AVCC buffer with 4-byte big endian length prefixes
         var avccBuffer = Data()

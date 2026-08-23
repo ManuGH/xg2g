@@ -1042,19 +1042,19 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func startCurrentPreset() {
-        // If the coordinator is already playing this session (e.g. expanding from miniplayer),
-        // attach to the existing stream without re-tuning or interrupting audio.
-        if coordinator.playing != nil {
+        let requestedAt = CACurrentMediaTime()
+        let serviceRef = URL(string: streamURLString)?.lastPathComponent ?? streamURLString
+
+        // If the coordinator is already playing THIS EXACT channel (e.g. re-attaching from miniplayer),
+        // we attach to the existing stream without re-tuning or interrupting audio.
+        if coordinator.displayedServiceRef == serviceRef || coordinator.presentedServiceRef == serviceRef {
             isStreaming = true
             isPlaying = true
             announceNowPlaying()
             return
         }
 
-        let requestedAt = CACurrentMediaTime()
-        let serviceRef = URL(string: streamURLString)?.lastPathComponent
-
-        if streamRouteMode == .livePipeline, coordinator.canPrepare, let serviceRef {
+        if streamRouteMode == .livePipeline, coordinator.canPrepare {
             Task { await coordinator.zap(to: serviceRef) }
             isStreaming = true
             isPlaying = true
@@ -1087,7 +1087,24 @@ public struct TestTSPlayerScreen: View {
     private func switchTo(preset: ChannelPreset) {
         viewPreset = .standard
         streamURLString = preset.url
-        startCurrentPreset()
+        currentChannelName = preset.name
+        let requestedAt = CACurrentMediaTime()
+        let serviceRef = preset.serviceRef
+
+        if streamRouteMode == .livePipeline, coordinator.canPrepare {
+            Task { await coordinator.zap(to: serviceRef) }
+            isStreaming = true
+            isPlaying = true
+            announceNowPlaying()
+            return
+        }
+
+        if let url = effectiveStreamURL(for: preset.url) {
+            Task { await coordinator.play(unprepared: url, requestedAt: requestedAt) }
+            isStreaming = true
+            isPlaying = true
+            announceNowPlaying()
+        }
     }
 
     private func zapRelative(delta: Int) {
