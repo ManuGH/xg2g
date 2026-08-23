@@ -136,7 +136,7 @@ public final class NativeTSAudioRenderer: @unchecked Sendable {
     /// renderer with a fresh one - and a fresh `AVSampleBufferAudioRenderer` is audible
     /// by default. A prepared session that hit a recovery reset would have unmuted
     /// itself without anyone asking.
-    private var isAudible = false
+    public private(set) var isAudible = false
 
     public struct PruneResult: Sendable {
         public let prunedCount: Int

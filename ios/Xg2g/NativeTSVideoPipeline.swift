@@ -102,7 +102,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private let ac3FrameParser = AC3FrameParser()
     private let aacFrameParser = AACADTSFrameParser()
     private let audioSampleBufferAssembler = AudioSampleBufferAssembler()
-    public let audioRenderer = NativeTSAudioRenderer()
+    /// The audio side of this session.
+    ///
+    /// Typed as the protocol so a test can substitute a controllable implementation.
+    /// Production always gets `NativeTSAudioRenderer`, and therefore the real renderer,
+    /// synchronizer and audio session.
+    public let audioRenderer: PlaybackAudioOutput
 
     public private(set) var selectedAudioPID: UInt16?
     public private(set) var selectedAudioCodec: AudioStreamCodec = .ac3
@@ -284,8 +289,21 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
-    public override init() {
+    /// - Parameter audioOutput: substituted only by tests. Everything that decides a
+    ///   start anchor, a re-anchor or a commit is this class's own; the renderer behind
+    ///   this is Apple's, and proving the two together is what made the commit proof
+    ///   depend on whether the simulator's media services happened to survive the run.
+    public convenience override init() {
+        self.init(audioOutput: NativeTSAudioRenderer())
+    }
+
+    public init(audioOutput: PlaybackAudioOutput) {
+        self.audioRenderer = audioOutput
         super.init()
+        self.finishInit()
+    }
+
+    private func finishInit() {
         tsParser.delegate = self
         pesAssembler.delegate = self
         accessUnitAssembler.delegate = self
@@ -1221,7 +1239,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // cannot drop the first buffer of the new timeline along with the old
         // ones. The monitor runs during pre-roll too — it has to, or the first
         // timestamp after the clock starts would have nothing to compare against.
-        if let delta = audioContinuity.jump(for: pts), isAudioClockStarted {
+        // Handled whether or not the clock is running. It used to be conditional on a
+        // started clock, which meant a session being prepared ignored the jump entirely
+        // and kept the first timestamp of a timeline that no longer exists - so its
+        // start anchor was computed against audio it would never receive again, and it
+        // could never become presentable. A preparing session is exactly the one that
+        // must survive its source retuning underneath it.
+        if let delta = audioContinuity.jump(for: pts) {
             handleAudioTimelineJump(to: pts, delta: delta, codec: codec)
         }
 
