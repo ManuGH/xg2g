@@ -25,6 +25,6 @@ func giveOwnSurface(to pipeline: NativeTSVideoPipeline,
     let context = PresentationContext(presenter: presenter, renderView: renderView)
     pipeline.presentationContext = context
     _ = context.issueGeneration(to: pipeline)
-    context.bindForSingleChannelHarness(pipeline)
+    context.bindWithoutPreparation(pipeline)
     return context
 }

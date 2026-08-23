@@ -64,7 +64,10 @@ struct ZapPreparationClient: Sendable {
         self.clientID = clientID
     }
 
-    private static let basePath = "api/v3/stream/prepare"
+    // Relative to the deployment's API base, which already carries /api/v3/.
+    // Spelling it out here produced /api/v3/api/v3/stream/prepare and a 404 that
+    // read, from the client, exactly like an endpoint that did not exist.
+    private static let basePath = "stream/prepare"
 
     /// Asks the backend to warm a channel beside the one playing.
     func start(serviceRef: String, zapID: String) async throws -> ZapPreparation {

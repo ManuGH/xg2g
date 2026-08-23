@@ -197,7 +197,7 @@ struct ParallelPreparationTests {
         let genB = context.issueGeneration(to: b)
         #expect(genA != genB, "two sessions must never share a presentation generation")
 
-        context.bindForSingleChannelHarness(a)
+        context.bindWithoutPreparation(a)
 
         var audioPTS = 500.0
 
@@ -271,7 +271,7 @@ struct ParallelPreparationTests {
         let context = PresentationContext(presenter: presenter, renderView: nil)
         let genA = context.issueGeneration(to: a)
         let genB = context.issueGeneration(to: b)
-        context.bindForSingleChannelHarness(a)
+        context.bindWithoutPreparation(a)
 
         var audioPTS = 500.0
         feedCapture(b)
@@ -318,7 +318,7 @@ struct ParallelPreparationTests {
         let context = PresentationContext(presenter: presenter, renderView: nil)
         let genA = context.issueGeneration(to: a)
         let genB = context.issueGeneration(to: b)
-        context.bindForSingleChannelHarness(a)
+        context.bindWithoutPreparation(a)
 
         var audioPTS = 500.0
         feedCapture(b)

@@ -391,17 +391,39 @@ public final class PresentationContext {
     /// presentable, which is the guarantee a channel change depends on. A screen that
     /// only ever shows one channel has nothing to protect and has to be able to hand
     /// the surface over before the first picture exists.
-    public func bindForSingleChannelHarness(_ session: any PresentablePlaybackSession) {
+    /// Gives the surface to a session with no preparation behind it.
+    ///
+    /// The direct and legacy routes go straight at the receiver, so there is nothing to
+    /// have proven and no readiness to check — the session starts its own clock once it
+    /// owns the surface. That is the only difference from a commit. Everything else has
+    /// to happen exactly as it does there, and one of those things is not optional:
+    /// flushing the presenter re-arms the display layer's request for media data. Left
+    /// out, the layer never asks again, the presenter's queue fills, every frame after
+    /// the first few is dropped, and the picture freezes with the sound still playing —
+    /// measured on device, and indistinguishable from a decoder fault until you count
+    /// the pulls that came back not-ready.
+    public func bindWithoutPreparation(_ session: any PresentablePlaybackSession) {
         let incoming = session.presentationGeneration
         guard incoming != .none else { return }
+
+        let outgoing = boundSession
         visibleGeneration = incoming
         boundSession = session
         outlet.update(visibleGeneration: incoming.rawValue)
+
         presenter.currentGeneration = incoming.rawValue
         presenter.attach(to: session.presentationSynchronizer)
+        presenter.flush(generation: incoming.rawValue)
+
         renderView?.synchronizer = session.presentationSynchronizer
         renderView?.resetForChannelZap(generation: incoming.rawValue)
+
         installSurfaceCallbacks(for: session)
+        session.becomeAudible(AudibleGrant(generation: incoming))
+
+        if let outgoing, outgoing !== session {
+            outgoing.silence()
+        }
     }
 
     /// Releases the surface without giving it to anything.

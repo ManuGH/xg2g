@@ -283,7 +283,7 @@ final class ZapCoordinator: ObservableObject {
         let session = makeSession()
         session.presentationContext = context
         _ = context.issueGeneration(to: session)
-        context.bindForSingleChannelHarness(session)
+        context.bindWithoutPreparation(session)
 
         let retiring = playing
         playing = session
