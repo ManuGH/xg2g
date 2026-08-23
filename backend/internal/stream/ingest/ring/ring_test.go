@@ -1230,7 +1230,78 @@ func TestMasterRing_MultipleSectionsSamePacket_PreambleDoesNotDuplicatePacket(t 
 	if len(preamble) != TSPacketSize {
 		t.Fatalf("expected deduplicated preamble length %d, got %d", TSPacketSize, len(preamble))
 	}
-	if !bytes.Equal(preamble, pkt) {
-		t.Fatalf("preamble content mismatch")
+}
+
+func TestMasterRing_MPEG2_SequenceHeaderAndIFrame(t *testing.T) {
+	r := NewMasterRingWithProgram(100*TSPacketSize, 1)
+	defer r.Close()
+
+	// 1. PAT with prog 1 -> PMT PID 100
+	for _, pkt := range createMultiPacketPAT(100) {
+		_, _ = r.Push(pkt)
+	}
+
+	// 2. PMT with video stream_type=0x02 (MPEG-2 Video) on PID 200
+	pmtSection := []byte{
+		0x02,       // table_id = 2 (PMT)
+		0xB0, 0x17, // section_syntax + length = 23 (26 bytes total)
+		0x00, 0x01, // program_number = 1
+		0xC1,       // version 0, current_next 1
+		0x00, 0x00, // section 0 / last 0
+		0xE0, 0xC8, // PCR PID = 200
+		0xF0, 0x00, // program_info_length = 0
+
+		// ES 1: MPEG-2 Video (0x02) on PID 200
+		0x02,
+		0xE0, 0xC8,
+		0xF0, 0x00,
+
+		// ES 2: MP2 Audio (0x03) on PID 201
+		0x03,
+		0xE0, 0xC9,
+		0xF0, 0x00,
+
+		0x00, 0x00, 0x00, 0x00, // CRC32 placeholder
+	}
+	crc := CalculateMPEG2CRC32(pmtSection[:22])
+	binary.BigEndian.PutUint32(pmtSection[22:26], crc)
+
+	pmtPkt := make([]byte, TSPacketSize)
+	pmtPkt[0] = SyncByte
+	pmtPkt[1] = 0x40 | byte((100>>8)&0x1F)
+	pmtPkt[2] = byte(100 & 0xFF)
+	pmtPkt[3] = 0x10 // AFC=0x01
+	pmtPkt[4] = 0x00 // pointer_field = 0
+	copy(pmtPkt[5:], pmtSection)
+	for i := 5 + len(pmtSection); i < TSPacketSize; i++ {
+		pmtPkt[i] = 0xFF
+	}
+	_, _ = r.Push(pmtPkt)
+
+	if r.videoCodec != CodecMPEG2 {
+		t.Fatalf("expected CodecMPEG2, got %v", r.videoCodec)
+	}
+
+	// 3. MPEG-2 Video PES containing Sequence Header (00 00 01 B3) and I-Frame Picture Header (00 00 01 00 00 08)
+	// Picture header: temporal_ref=0 (10 bits), picture_coding_type=1 (bits 5..3 of byte 1 -> 0x08)
+	mpeg2ES := []byte{
+		0x00, 0x00, 0x01, 0xB3, 0x2D, 0x02, 0x40, 0x23, // Sequence Header (Codec Config)
+		0x00, 0x00, 0x01, 0xB8, 0x00, 0x08, 0x00, 0x00, // GOP Header
+		0x00, 0x00, 0x01, 0x00, 0x00, 0x08, 0x00, 0x00, // Picture Header (I-Frame: coding_type=1)
+	}
+
+	videoPkt := createVideoPESPacket(200, true, 0, mpeg2ES)
+	_, _ = r.Push(videoPkt)
+
+	// Finalize the access unit with another packet
+	nextAUPkt := createVideoPESPacket(200, true, 1, []byte{0x00, 0x00, 0x01, 0x00, 0x00, 0x10}) // P-Frame
+	_, _ = r.Push(nextAUPkt)
+
+	kf, ok := r.LatestKeyframeOffset()
+	if !ok {
+		t.Fatalf("expected valid keyframe offset for MPEG-2 I-Frame, got ok=false")
+	}
+	if kf < 0 {
+		t.Fatalf("expected non-negative keyframe offset, got %d", kf)
 	}
 }

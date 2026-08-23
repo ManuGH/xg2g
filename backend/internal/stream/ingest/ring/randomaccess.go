@@ -61,15 +61,33 @@ const (
 	captureNone nalCaptureKind = iota
 	captureH264SliceHeader
 	captureSEI
+	captureMPEG2PictureHeader
 )
 
 // Capture budgets. A slice header needs only first_mb_in_slice and slice_type, both
 // Exp-Golomb coded at the very start. An SEI needs enough to walk past payloads that
 // precede a recovery_point; broadcast SEI NALs put pic_timing first and stay small.
 const (
-	sliceHeaderCaptureBytes = 12
-	seiCaptureBytes         = 48
+	sliceHeaderCaptureBytes        = 12
+	seiCaptureBytes                = 48
+	mpeg2PictureHeaderCaptureBytes = 3
 )
+
+// mpeg2PictureIsIntra inspects the first 2-3 bytes after an MPEG-2 picture_start_code (0x00).
+// In ISO/IEC 13818-2 Section 6.2.2.6:
+// - temporal_reference: 10 bits (byte 0 and top 2 bits of byte 1)
+// - picture_coding_type: 3 bits (bits 5..3 of byte 1, i.e. (byte[1] >> 3) & 0x07)
+// Values: 1 = I-Frame (Intra), 2 = P-Frame (Predictive), 3 = B-Frame (Bidirectional).
+func mpeg2PictureIsIntra(data []byte) (isIntra bool, ok bool) {
+	if len(data) < 2 {
+		return false, false
+	}
+	codingType := (data[1] >> 3) & 0x07
+	if codingType < 1 || codingType > 3 {
+		return false, false
+	}
+	return codingType == 1, true
+}
 
 // bitReader reads Exp-Golomb and fixed-width fields from an RBSP byte slice.
 type bitReader struct {

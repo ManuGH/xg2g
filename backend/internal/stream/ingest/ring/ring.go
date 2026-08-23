@@ -820,9 +820,8 @@ func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool,
 				r.classifyH264NALLocked(b & 0x1F)
 			case CodecH265:
 				r.classifyHEVCNALLocked((b >> 1) & 0x3F)
-			case CodecMPEG2, CodecUnknown:
-				// MPEG-2 carries no Annex-B NAL units; its random access points are
-				// sequence headers, indexed by the MPEG-2 path elsewhere.
+			case CodecMPEG2:
+				r.classifyMPEG2StartCodeLocked(b)
 			}
 		}
 
@@ -830,6 +829,24 @@ func (r *MasterRing) parseVideoPacketLocked(pkt []byte, offset int64, pusi bool,
 		if (r.annexBState & 0x00FFFFFF) == 0x00000001 {
 			r.expectingNALByte = true
 		}
+	}
+}
+
+// classifyMPEG2StartCodeLocked records what an MPEG-2 Video Elementary Stream start code
+// contributes to the current access unit and stream configuration.
+// ISO/IEC 13818-2:
+// - 0xB3: sequence_header_code (SPS equivalent / Codec Config)
+// - 0xB8: group_start_code (GOP Header / Entry Point)
+// - 0x00: picture_start_code (Picture Header -> contains picture_coding_type I/P/B)
+func (r *MasterRing) classifyMPEG2StartCodeLocked(startCode uint8) {
+	switch startCode {
+	case 0xB3: // Sequence Header
+		r.pesHasSPS = true
+	case 0xB8: // Group of Pictures Header
+		r.pesHasVPS = true
+	case 0x00: // Picture Header
+		r.auVCLCount++
+		r.beginNALCaptureLocked(captureMPEG2PictureHeader, mpeg2PictureHeaderCaptureBytes, 0)
 	}
 }
 
@@ -918,6 +935,16 @@ func (r *MasterRing) consumeNALCaptureLocked() {
 	case captureSEI:
 		if seiHasRecoveryPoint(r.nalBuf) {
 			r.auHasRecoveryPt = true
+		}
+	case captureMPEG2PictureHeader:
+		isIntra, ok := mpeg2PictureIsIntra(r.nalBuf)
+		switch {
+		case !ok:
+			r.raObs.UnreadableSlices++
+		case isIntra:
+			r.auHasIRAP = true
+			r.auIntraVCLCount++
+			r.indexRandomAccessPointLocked(true)
 		}
 	}
 
