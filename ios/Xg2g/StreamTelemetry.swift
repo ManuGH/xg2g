@@ -181,7 +181,7 @@ public struct TelemetryValues: Sendable {
     public var outputDAR: Double = 0.0
     public var outputDARDescription: String = "—"
     public var videoScanSummary: String = "—"
-    public var presentationModeName: String = "Standard"
+    public var presentationModeName: String = "—"
 
     /// Set when the PMT names a video codec this pipeline cannot turn into
     /// pictures, carrying the viewer-facing name of that format.
