@@ -336,98 +336,60 @@ public struct TestTSPlayerScreen: View {
 
             VStack(spacing: 0) {
                 // Top Action Bar
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    // 1. Dismiss Button (44x44 pt hit target)
                     Button {
                         closePlayer()
                     } label: {
                         Image(systemName: isLandscape ? "xmark.circle.fill" : "chevron.down")
-                            .font(.system(size: isLandscape ? 22 : 13, weight: .bold))
+                            .font(.system(size: isLandscape ? 20 : 14, weight: .bold))
                             .foregroundStyle(.white)
-                            .padding(isLandscape ? 6 : 9)
+                            .frame(width: 36, height: 36)
                             .background(.ultraThinMaterial, in: Circle())
                             .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                     }
                     .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
 
-                    ChannelLogo(url: currentLogoURL, name: currentChannelName, size: isLandscape ? 34 : 30)
+                    // 2. Channel Info (Compact & Non-overflowing)
+                    ChannelLogo(url: currentLogoURL, name: currentChannelName, size: isLandscape ? 32 : 28)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 5) {
                             if let num = currentChannel.number {
                                 Text(num)
                                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                                     .foregroundStyle(Theme.Colors.accentAction)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1.5)
-                                    .background(Theme.Colors.accentAction.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Theme.Colors.accentAction.opacity(0.2), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
                             }
 
                             Text(currentChannelName)
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(.white)
+                                .lineLimit(1)
 
                             let liveTag = tele.videoScanSummary != "—" ? "LIVE \(tele.videoScanSummary)" : "LIVE"
                             Text(liveTag)
                                 .font(.system(size: 9, weight: .black, design: .monospaced))
                                 .foregroundStyle(Theme.Colors.accentLive)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1.5)
+                                .background(Theme.Colors.accentLive.opacity(0.2), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
                         }
 
                         if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
                             Text(preset.epgNow)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.85))
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.8))
                                 .lineLimit(1)
                         }
                     }
 
-                    Spacer()
+                    Spacer(minLength: 4)
 
-                    // Telemetry HUD Toggle Badge
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            showHUD.toggle()
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Circle()
-                                .fill(tele.isAudioMasterClockActive ? Color.green : Color.yellow)
-                                .frame(width: 7, height: 7)
-                            Image(systemName: showHUD ? "chart.bar.fill" : "chart.bar")
-                                .font(.system(size: 12, weight: .bold))
-                            Text(String(format: "%.0f fps", tele.fieldsSubmittedPerSec))
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
-                    }
-                    .buttonStyle(.plain)
-
-                    // Presentation path selector — within the native pipeline only.
-                    Button {
-                        Haptics.shared.impact(.light)
-                        presentationPath = (presentationPath == .systemLayer) ? .metalDrawable : .systemLayer
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: presentationPath == .systemLayer ? "rectangle.on.rectangle" : "cpu")
-                                .font(.system(size: 11, weight: .bold))
-                            Text(presentationPath == .systemLayer ? "Layer" : "Drawable")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
-                    }
-                    .buttonStyle(.plain)
-
-                    // Video aspect ratio & scaling preset selector (VLC style)
+                    // 3. Aspect Ratio Preset Button (Primary Control, 44pt hit target)
                     Button {
                         cycleViewPreset()
                     } label: {
@@ -439,37 +401,90 @@ public struct TestTSPlayerScreen: View {
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
+                        .padding(.vertical, 6)
                         .background(.ultraThinMaterial, in: Capsule())
                         .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                     }
                     .buttonStyle(.plain)
+                    .frame(minHeight: 44)
 
-                    // Picture in Picture.
+                    // 4. Picture in Picture Button (44x44 hitbox)
                     Button {
                         Haptics.shared.impact(.light)
                         coordinator.surface.startPictureInPicture()
                     } label: {
                         Image(systemName: "pip.enter")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.white)
-                            .frame(width: 34, height: 34)
+                            .frame(width: 36, height: 36)
                             .background(.ultraThinMaterial, in: Circle())
                             .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
                     }
                     .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
                     .disabled(presentationPath != .systemLayer)
                     .opacity(presentationPath == .systemLayer ? 1.0 : 0.4)
 
-                    // AirPlay Route Picker Button
+                    // 5. AirPlay Route Picker Button (44x44 hitbox)
                     AirPlayButton()
-                        .frame(width: 34, height: 34)
-                        .padding(2)
+                        .frame(width: 36, height: 36)
                         .background(.ultraThinMaterial, in: Circle())
                         .overlay(Circle().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                        .frame(width: 44, height: 44)
+
+                    // 6. Overflow / Diagnose Menu ("..." 44x44 hitbox)
+                    Menu {
+                        // Stream-Info & Telemetrie Toggle
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showHUD.toggle()
+                            }
+                        } label: {
+                            Label(
+                                showHUD ? "Stream-Info ausblenden" : "Stream-Info (Inspector)",
+                                systemImage: showHUD ? "chart.bar.fill" : "chart.bar"
+                            )
+                        }
+
+                        // Presentation Path Toggle (Layer vs Metal)
+                        Button {
+                            Haptics.shared.impact(.light)
+                            presentationPath = (presentationPath == .systemLayer) ? .metalDrawable : .systemLayer
+                        } label: {
+                            Label(
+                                presentationPath == .systemLayer ? "Renderpfad: System Layer" : "Renderpfad: Metal Direct",
+                                systemImage: presentationPath == .systemLayer ? "rectangle.on.rectangle" : "cpu"
+                            )
+                        }
+
+                        // Stream-Routing (Labor / Bench A/B Test)
+                        Menu("Stream-Routing (Labor)") {
+                            ForEach(StreamRouteMode.allCases, id: \.self) { mode in
+                                Button {
+                                    streamRouteMode = mode
+                                    if isStreaming { startCurrentPreset() }
+                                } label: {
+                                    HStack {
+                                        Text(mode.rawValue)
+                                        if streamRouteMode == mode {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: showHUD ? "ellipsis.circle.fill" : "ellipsis.circle")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(showHUD ? Theme.Colors.accentLive : Color.white)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(showHUD ? Theme.Gradients.liveAuraBorder : Theme.Gradients.specularBorder, lineWidth: 0.8))
+                    }
+                    .frame(width: 44, height: 44)
                 }
                 .padding(.horizontal, sideInset)
-                .padding(.top, isLandscape ? 14 : max(safeInsets.top, 8))
+                .padding(.top, isLandscape ? 12 : max(safeInsets.top, 8))
 
                 Spacer()
 
@@ -623,24 +638,6 @@ public struct TestTSPlayerScreen: View {
                         badgeItem(icon: "thermometer.medium", label: tele.thermalState, color: .orange)
                     }
                 }
-                // Stream Routing Mode (A/B Test)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("STREAM-ROUTING (A/B TEST)")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Theme.Colors.textSecondary)
-
-                    Picker("Route Mode", selection: $streamRouteMode) {
-                        ForEach(StreamRouteMode.allCases, id: \.self) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: streamRouteMode) { _, _ in
-                        if isStreaming {
-                            startCurrentPreset()
-                        }
-                    }
-                }
                 .padding(14)
                 .background(.ultraThinMaterial)
                 .cornerRadius(14)
@@ -648,7 +645,7 @@ public struct TestTSPlayerScreen: View {
 
                 // Quick Zap Channel Presets
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("SCHNELL-UMSCHALTEN (TEST-KANÄLE)")
+                    Text("SENDER")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textSecondary)
 
