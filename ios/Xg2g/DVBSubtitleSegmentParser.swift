@@ -14,7 +14,10 @@ public protocol DVBSubtitleSegmentParserDelegate: AnyObject, Sendable {
 /// Features & Invariants:
 /// - Validates sync byte 0x0F for every segment.
 /// - Bounds-checks segment length and payload structures without crashing on truncated or malformed inputs.
-/// - Skips unknown / future segment types gracefully.
+/// - Clearly distinguishes between malformed known segments (.malformed) and truly unknown segment types (.unknown).
+/// - Skips unknown / future segment types gracefully without falling back to arbitrary defaults.
+/// - Strictly models object coding methods (.pixels, .string, .reserved) without unsafe fallbacks.
+/// - Implements ETSI EN 300 743 transparency semantics (T=0 opaque, T=255 transparent, Y=0 special full transparency).
 /// - Decodes all standard DVB segments (DDS 0x14, PCS 0x10, RCS 0x11, CLUT 0x12, ODS 0x13, EoDS 0x80).
 /// - Operates purely on binary segment structures without bitmap RLE decompression or rasterization.
 public final class DVBSubtitleSegmentParser: @unchecked Sendable {
@@ -36,7 +39,8 @@ public final class DVBSubtitleSegmentParser: @unchecked Sendable {
             // 1. Sync byte must be 0x0F
             let syncByte = data[offset]
             guard syncByte == 0x0F else {
-                delegate?.dvbSegmentParser(self, didEncounterWarning: "Invalid sync_byte 0x\(String(format: "%02X", syncByte)) at offset \(offset) (expected 0x0F)")
+                let warn = "Invalid sync_byte 0x\(String(format: "%02X", syncByte)) at offset \(offset) (expected 0x0F)"
+                delegate?.dvbSegmentParser(self, didEncounterWarning: warn)
                 break
             }
 
@@ -48,7 +52,8 @@ public final class DVBSubtitleSegmentParser: @unchecked Sendable {
             let payloadEnd = payloadStart + Int(segmentLength)
 
             guard payloadEnd <= data.count else {
-                delegate?.dvbSegmentParser(self, didEncounterWarning: "Truncated segment 0x\(String(format: "%02X", segmentType)) at offset \(offset): expected \(segmentLength) bytes, available \(data.count - payloadStart)")
+                let warn = "Truncated segment 0x\(String(format: "%02X", segmentType)) at offset \(offset): expected \(segmentLength) bytes, available \(data.count - payloadStart)"
+                delegate?.dvbSegmentParser(self, didEncounterWarning: warn)
                 break
             }
 
@@ -70,35 +75,73 @@ public final class DVBSubtitleSegmentParser: @unchecked Sendable {
         return segments
     }
 
+    /// Filters a list of parsed segments for the target subtitle track's composition and ancillary page IDs.
+    public func filter(
+        segments: [DVBSubtitleSegment],
+        compositionPageID: UInt16,
+        ancillaryPageID: UInt16? = nil
+    ) -> [DVBSubtitleSegment] {
+        segments.filter { seg in
+            seg.pageID == compositionPageID || (ancillaryPageID != nil && seg.pageID == ancillaryPageID!)
+        }
+    }
+
     private func parseSegmentPayload(type: UInt8, data: Data) -> DVBSegmentPayload {
         switch type {
         case DVBSegmentType.displayDefinition.rawValue:
             if let dds = parseDisplayDefinition(data: data) {
                 return .displayDefinition(dds)
+            } else {
+                let reason = "Truncated or malformed DDS payload (length: \(data.count))"
+                delegate?.dvbSegmentParser(self, didEncounterWarning: reason)
+                return .malformed(type: type, reason: reason, data: data)
             }
+
         case DVBSegmentType.pageComposition.rawValue:
             if let pcs = parsePageComposition(data: data) {
                 return .pageComposition(pcs)
+            } else {
+                let reason = "Truncated or malformed PCS payload (length: \(data.count))"
+                delegate?.dvbSegmentParser(self, didEncounterWarning: reason)
+                return .malformed(type: type, reason: reason, data: data)
             }
+
         case DVBSegmentType.regionComposition.rawValue:
             if let rcs = parseRegionComposition(data: data) {
                 return .regionComposition(rcs)
+            } else {
+                let reason = "Truncated or malformed RCS payload (length: \(data.count))"
+                delegate?.dvbSegmentParser(self, didEncounterWarning: reason)
+                return .malformed(type: type, reason: reason, data: data)
             }
+
         case DVBSegmentType.clutDefinition.rawValue:
             if let clut = parseCLUTDefinition(data: data) {
                 return .clutDefinition(clut)
+            } else {
+                let reason = "Truncated or malformed CLUT payload (length: \(data.count))"
+                delegate?.dvbSegmentParser(self, didEncounterWarning: reason)
+                return .malformed(type: type, reason: reason, data: data)
             }
+
         case DVBSegmentType.objectData.rawValue:
             if let ods = parseObjectData(data: data) {
                 return .objectData(ods)
+            } else {
+                let reason = "Truncated or malformed ODS payload (length: \(data.count))"
+                delegate?.dvbSegmentParser(self, didEncounterWarning: reason)
+                return .malformed(type: type, reason: reason, data: data)
             }
+
         case DVBSegmentType.endOfDisplaySet.rawValue:
             return .endOfDisplaySet
-        default:
-            break
-        }
 
-        return .unknown(type: type, data: data)
+        case DVBSegmentType.stuffing.rawValue:
+            return .unknown(type: type, data: data)
+
+        default:
+            return .unknown(type: type, data: data)
+        }
     }
 
     // MARK: - Segment-Specific Parsers
@@ -110,15 +153,16 @@ public final class DVBSubtitleSegmentParser: @unchecked Sendable {
         let displayWindowFlag = (data[0] & 0x08) != 0
 
         // Display width & height specify max pixel coordinates (0-indexed max, so +1 gives dimension)
-        let displayWidth = (Int(data[1]) << 8) | Int(data[2]) + 1
-        let displayHeight = (Int(data[3]) << 8) | Int(data[4]) + 1
+        let displayWidth = ((Int(data[1]) << 8) | Int(data[2])) + 1
+        let displayHeight = ((Int(data[3]) << 8) | Int(data[4])) + 1
 
         var minX: Int? = nil
         var maxX: Int? = nil
         var minY: Int? = nil
         var maxY: Int? = nil
 
-        if displayWindowFlag && data.count >= 13 {
+        if displayWindowFlag {
+            guard data.count >= 13 else { return nil }
             minX = (Int(data[5]) << 8) | Int(data[6])
             maxX = (Int(data[7]) << 8) | Int(data[8])
             minY = (Int(data[9]) << 8) | Int(data[10])
@@ -199,7 +243,8 @@ public final class DVBSubtitleSegmentParser: @unchecked Sendable {
             var fgCode: UInt8? = nil
             var bgCode: UInt8? = nil
 
-            if (objectType == 0x01 || objectType == 0x02) && pos + 2 <= data.count {
+            if (objectType == 0x01 || objectType == 0x02) {
+                guard pos + 2 <= data.count else { return nil }
                 fgCode = data[pos]
                 bgCode = data[pos + 1]
                 pos += 2
@@ -256,14 +301,14 @@ public final class DVBSubtitleSegmentParser: @unchecked Sendable {
             let t: UInt8
 
             if fullRange {
-                guard pos + 6 <= data.count else { break }
+                guard pos + 6 <= data.count else { return nil }
                 y = data[pos + 2]
                 cr = data[pos + 3]
                 cb = data[pos + 4]
                 t = data[pos + 5]
                 pos += 6
             } else {
-                guard pos + 4 <= data.count else { break }
+                guard pos + 4 <= data.count else { return nil }
                 let rawY = (data[pos + 2] >> 2) & 0x3F
                 let rawCr = ((data[pos + 2] & 0x03) << 2) | ((data[pos + 3] >> 6) & 0x03)
                 let rawCb = (data[pos + 3] >> 2) & 0x0F
@@ -273,6 +318,7 @@ public final class DVBSubtitleSegmentParser: @unchecked Sendable {
                 y = (rawY << 2) | (rawY >> 4)
                 cr = (rawCr << 4) | rawCr
                 cb = (rawCb << 4) | rawCb
+                // ETSI EN 300 743 Clause 5.2.4: T=0 is opaque, T=3 (scaled to 255) is fully transparent
                 t = rawT == 0 ? 0 : (rawT == 3 ? 255 : rawT * 85)
                 pos += 4
             }
@@ -302,14 +348,24 @@ public final class DVBSubtitleSegmentParser: @unchecked Sendable {
         let objectID = (UInt16(data[0]) << 8) | UInt16(data[1])
         let version = (data[2] >> 4) & 0x0F
         let codingMethodRaw = (data[2] >> 2) & 0x03
-        let codingMethod = DVBObjectCodingMethod(rawValue: codingMethodRaw) ?? .pixels
         let nonModifying = (data[2] & 0x02) != 0
+
+        let codingMethod: DVBObjectCodingMethod
+        switch codingMethodRaw {
+        case 0x00:
+            codingMethod = .pixels
+        case 0x01:
+            codingMethod = .string
+        default:
+            codingMethod = .reserved(codingMethodRaw)
+        }
 
         var topData = Data()
         var bottomData: Data? = nil
         var characterCodes: Data? = nil
 
-        if codingMethod == .pixels {
+        switch codingMethod {
+        case .pixels:
             guard data.count >= 7 else { return nil }
             let topLen = (Int(data[3]) << 8) | Int(data[4])
             let bottomLen = (Int(data[5]) << 8) | Int(data[6])
@@ -320,11 +376,16 @@ public final class DVBSubtitleSegmentParser: @unchecked Sendable {
             if bottomLen > 0 {
                 bottomData = data.subdata(in: (7 + topLen)..<(7 + topLen + bottomLen))
             }
-        } else if codingMethod == .string {
+
+        case .string:
             guard data.count >= 4 else { return nil }
             let count = Int(data[3])
             guard 4 + count <= data.count else { return nil }
             characterCodes = data.subdata(in: 4..<(4 + count))
+
+        case .reserved:
+            // Reserved coding method: payload cannot be decoded as bitmap or characters
+            break
         }
 
         return DVBObjectDataSegment(

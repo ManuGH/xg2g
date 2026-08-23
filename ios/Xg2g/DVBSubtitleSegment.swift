@@ -179,7 +179,11 @@ public struct DVBRegionCompositionSegment: Sendable, Equatable {
     }
 }
 
-/// Color entry in a CLUT Definition Segment (Y, Cr, Cb, T/Alpha).
+/// Color entry in a CLUT Definition Segment (Y, Cr, Cb, T transparency).
+///
+/// In DVB Subtitling (ETSI EN 300 743 Clause 5.2.4 Table 6):
+/// - `t` is the transparency value: `0` = fully opaque (no transparency), `255` = fully transparent.
+/// - Special case: `y == 0` corresponds to full transparency (100% transparent, `t = 255`).
 public struct DVBCLUTEntry: Sendable, Equatable {
     public let entryID: UInt8
     public let entry2BitCLUTFlag: Bool
@@ -188,7 +192,12 @@ public struct DVBCLUTEntry: Sendable, Equatable {
     public let y: UInt8
     public let cr: UInt8
     public let cb: UInt8
-    public let t: UInt8 // Transparency (0 = fully transparent, 255 = fully opaque)
+    public let t: UInt8 // Transparency: 0 = fully opaque (no transparency), 255 = fully transparent
+
+    /// Indicates whether this entry represents 100% transparent pixels (Y == 0 or T == 255).
+    public var isFullyTransparent: Bool {
+        y == 0 || t == 255
+    }
 
     public init(
         entryID: UInt8,
@@ -207,7 +216,12 @@ public struct DVBCLUTEntry: Sendable, Equatable {
         self.y = y
         self.cr = cr
         self.cb = cb
-        self.t = t
+        // ETSI EN 300 743 Clause 5.2.4: Y=0 corresponds to full transparency (T=255)
+        if y == 0 {
+            self.t = 255
+        } else {
+            self.t = t
+        }
     }
 }
 
@@ -225,16 +239,16 @@ public struct DVBCLUTDefinitionSegment: Sendable, Equatable {
 }
 
 /// Object Coding Method in Object Data Segment (ETSI EN 300 743 Table 7).
-public enum DVBObjectCodingMethod: UInt8, Sendable, CustomStringConvertible {
-    case pixels = 0x00 // Bitmap RLE bitstreams
-    case string = 0x01 // Character string
-    case reserved = 0x02
+public enum DVBObjectCodingMethod: Sendable, Equatable, CustomStringConvertible {
+    case pixels            // 0x00: Bitmap RLE bitstreams
+    case string            // 0x01: Character string
+    case reserved(UInt8)   // 0x02, 0x03: Reserved / unknown coding methods
 
     public var description: String {
         switch self {
-        case .pixels: return "Pixels (Bitmap RLE)"
-        case .string: return "String"
-        case .reserved: return "Reserved"
+        case .pixels: return "Pixels (Bitmap RLE 0x00)"
+        case .string: return "String (0x01)"
+        case .reserved(let val): return "Reserved (0x\(String(format: "%02X", val)))"
         }
     }
 }
@@ -276,6 +290,7 @@ public enum DVBSegmentPayload: Sendable, Equatable {
     case clutDefinition(DVBCLUTDefinitionSegment)
     case objectData(DVBObjectDataSegment)
     case endOfDisplaySet
+    case malformed(type: UInt8, reason: String, data: Data)
     case unknown(type: UInt8, data: Data)
 }
 
