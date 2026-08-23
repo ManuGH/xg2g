@@ -533,7 +533,8 @@ public struct TestTSPlayerScreen: View {
                             Image(systemName: "tv")
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(Theme.Colors.accentLive)
-                            Text("1080i50 Hardware Direct")
+                            let scanText = tele.videoScanSummary != "—" ? "\(tele.videoScanSummary) HW Direct" : "Video HW Direct"
+                            Text(scanText)
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.9))
                         }
@@ -613,8 +614,10 @@ public struct TestTSPlayerScreen: View {
 
                     // Format Status Badges
                     HStack(spacing: 8) {
-                        badgeItem(icon: "sparkles.tv", label: "1080i50 HW Bob", color: .green)
-                        badgeItem(icon: "speaker.wave.3.fill", label: "\(tele.audioCodec) 5.1", color: .blue)
+                        let scanBadge = tele.videoScanSummary != "—" ? "\(tele.videoScanSummary) \(tele.isInterlaced ? "HW Bob" : "HW Direct")" : "Video HW"
+                        badgeItem(icon: "sparkles.tv", label: scanBadge, color: .green)
+                        let audioBadge = tele.audioChannels > 0 ? "\(tele.audioCodec) \(tele.audioChannels == 6 ? "5.1" : "\(tele.audioChannels)ch")" : tele.audioCodec
+                        badgeItem(icon: "speaker.wave.3.fill", label: audioBadge, color: .blue)
                         badgeItem(icon: "thermometer.medium", label: tele.thermalState, color: .orange)
                     }
                 }
