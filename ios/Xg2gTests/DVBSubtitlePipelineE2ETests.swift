@@ -13,14 +13,16 @@ struct DVBSubtitlePipelineE2ETests {
     @Test("E2E DVB Pipeline: Ingesting raw TS packets decodes and composites subtitle CGImage frame")
     func e2eDVBSubtitlePipelineRendersBitmapFromPES() async {
         let pipeline = NativeTSVideoPipeline()
+        let parser = TSPacketParser()
 
         let track = SubtitleTrackInfo(
             pid: 200,
-            language: "deu",
             format: .dvb(compositionPageID: 1, ancillaryPageID: 1),
+            language: "deu",
             isHearingImpaired: true
         )
         pipeline.selectSubtitleTrack(track)
+        try? await Task.sleep(nanoseconds: 50_000_000) // 50ms to ensure ingestQueue sets selectedSubtitleTrack
 
         // Build a complete DVB PES payload with DDS, PCS, RCS, CLUT, ODS, EoDS
         var segmentStream = Data()
@@ -75,11 +77,8 @@ struct DVBSubtitlePipelineE2ETests {
         let pts90k: UInt64 = 1350000
         let pesData = makeDVBSubtitlePES(pts90k: pts90k, segmentData: segmentStream)
 
-        // Packetize into 188-byte MPEG-TS packets on PID 200 and feed to pipeline.tsParser
-        let tsPackets = makeTSPackets(pid: 200, payload: pesData)
-        for tsPacket in tsPackets {
-            pipeline.tsParser.feed(data: tsPacket)
-        }
+        // Feed to pipeline
+        pipeline.tsParser(parser, didEmitPayload: pesData, pid: 200, unitStart: true)
 
         // Wait briefly for ingestQueue processing
         try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
@@ -100,8 +99,8 @@ struct DVBSubtitlePipelineE2ETests {
 
         let track = SubtitleTrackInfo(
             pid: 200,
-            language: "deu",
             format: .dvb(compositionPageID: 1, ancillaryPageID: 1),
+            language: "deu",
             isHearingImpaired: true
         )
         pipeline.selectSubtitleTrack(track)
@@ -187,53 +186,4 @@ private func makeDVBSubtitlePES(pts90k: UInt64, segmentData: Data) -> Data {
     pes.append(dvbPayload)
 
     return pes
-}
-
-private func makeTSPackets(pid: UInt16, payload: Data) -> [Data] {
-    var packets: [Data] = []
-    var offset = 0
-    var cc: UInt8 = 0
-
-    while offset < payload.count {
-        var packet = Data()
-        packet.append(0x47) // Sync byte
-
-        let isStart = (offset == 0)
-        let pidHigh = UInt8((pid >> 8) & 0x1F) | (isStart ? 0x40 : 0x00) // PUSI flag
-        let pidLow = UInt8(pid & 0xFF)
-        packet.append(pidHigh)
-        packet.append(pidLow)
-
-        let remaining = payload.count - offset
-        let maxPayloadPerTS = 184
-
-        if remaining >= maxPayloadPerTS {
-            // Adaptation field = 01 (payload only)
-            packet.append(0x10 | (cc & 0x0F))
-            packet.append(payload.subdata(in: offset..<(offset + maxPayloadPerTS)))
-            offset += maxPayloadPerTS
-        } else {
-            // Adaptation field with stuffing
-            let stuffingLen = maxPayloadPerTS - remaining
-            if stuffingLen == 1 {
-                packet.append(0x30 | (cc & 0x0F)) // Adaptation + payload
-                packet.append(0x00) // AF length = 0
-            } else {
-                packet.append(0x30 | (cc & 0x0F)) // Adaptation + payload
-                let afLen = UInt8(stuffingLen - 1)
-                packet.append(afLen)
-                packet.append(0x00) // Flags
-                if afLen > 1 {
-                    packet.append(Data(repeating: 0xFF, count: Int(afLen - 1)))
-                }
-            }
-            packet.append(payload.subdata(in: offset..<payload.count))
-            offset = payload.count
-        }
-
-        cc = (cc + 1) & 0x0F
-        packets.append(packet)
-    }
-
-    return packets
 }

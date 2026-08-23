@@ -50,6 +50,7 @@ public struct TestTSPlayerScreen: View {
     @State private var autoHideControlsTask: Task<Void, Never>?
     @State private var zapToast: String?
     @State private var hideZapToastTask: Task<Void, Never>?
+    @State private var currentSubtitleImage: CGImage?
 
     private struct ChannelPreset: Identifiable, Hashable {
         /// Keyed on the service, not on a fresh UUID: the list is computed from
@@ -198,6 +199,15 @@ public struct TestTSPlayerScreen: View {
                         )
                         .ignoresSafeArea(edges: isLandscape ? .all : [])
 
+                        // 1b. Synchronized Native DVB Subtitle Overlay
+                        if let subImage = currentSubtitleImage {
+                            Image(decorative: subImage, scale: 1.0)
+                                .resizable()
+                                .aspectRatio(16/9, contentMode: .fit)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .allowsHitTesting(false)
+                        }
+
                         // 2. Format Notice
                         if let unplayable = tele.unplayableVideoCodec {
                             UnplayableFormatNotice(
@@ -310,6 +320,14 @@ public struct TestTSPlayerScreen: View {
         }
         .onDisappear {
             teardownPlayback()
+        }
+        .onChange(of: coordinator.playing) { _, newPipeline in
+            currentSubtitleImage = nil
+            newPipeline?.onSubtitleFrameEmitted = { [self] frame in
+                Task { @MainActor in
+                    self.currentSubtitleImage = frame?.image
+                }
+            }
         }
     }
 
