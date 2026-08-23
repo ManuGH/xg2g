@@ -147,6 +147,36 @@ struct APIClientTests {
         #expect(StubURLProtocol.lastRequest?.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
 
+    /// Request-specific headers reach the wire, and do not displace the ones every
+    /// request carries.
+    ///
+    /// `Origin` is the one that matters. The backend refuses every unsafe method
+    /// without it — CSRF_FORBIDDEN, measured against staging — and the preparation
+    /// endpoints are POST and DELETE throughout. A per-request header that shadowed it
+    /// would make channel changes fail on the device while every test passed here.
+    @Test func perRequestHeadersDoNotDisplaceTheStandardOnes() async throws {
+        let client = try makeClient()
+        respond(status: 202, contentType: "application/json", body: "{}")
+
+        _ = try await client.send(
+            APIRequest<EmptyResponse>(
+                method: .post,
+                path: "stream/prepare",
+                query: [URLQueryItem(name: "sref", value: "1:0:19:132F:3EF:1:C00000:0:0:0:")],
+                headers: [
+                    "X-Xg2g-Client-Id": "sterling-abc",
+                    "X-Xg2g-Zap-Id": "z-7",
+                ]
+            )
+        )
+
+        let sent = StubURLProtocol.lastRequest
+        #expect(sent?.value(forHTTPHeaderField: "X-Xg2g-Client-Id") == "sterling-abc")
+        #expect(sent?.value(forHTTPHeaderField: "X-Xg2g-Zap-Id") == "z-7")
+        #expect(sent?.value(forHTTPHeaderField: "Origin")?.isEmpty == false,
+                "an unsafe method without Origin is refused by the backend")
+    }
+
     /// A path is relative to the API base by contract; an absolute one would
     /// escape the deployment root.
     @Test func absolutePathsAreRefused() async throws {
