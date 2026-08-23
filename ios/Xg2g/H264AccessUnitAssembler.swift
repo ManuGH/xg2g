@@ -133,6 +133,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     private var pendingDTS: CMTime? = nil
     private var currentAUHasVCL: Bool = false
     private var currentAUHasIDR: Bool = false
+    private var currentAUHasRecoveryPoint: Bool = false
     /// Cleared by the first slice of this access unit that codes anything other
     /// than intra macroblocks. See `parseSliceIsIntra`.
     private var currentAUIsIntraOnly: Bool = true
@@ -205,6 +206,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         pendingDTS = nil
         currentAUHasVCL = false
         currentAUHasIDR = false
+        currentAUHasRecoveryPoint = false
         currentAUIsIntraOnly = true
         currentAUStructure = .wovenTopFieldFirst
         log2MaxFrameNum = 4
@@ -418,13 +420,49 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         currentAUNALs.append(nal)
     }
 
-    /// Inspects SEI NAL units for broadcast metadata like Active Format Description (AFD).
+    /// Inspects SEI NAL units for broadcast metadata like Active Format Description (AFD) and Recovery Point SEI.
     private func parseSEINal(_ nal: Data) {
         guard nal.count > 1 else { return }
         let rbsp = removeEmulationPreventionBytes(from: Data(nal.dropFirst(1)))
         if let afd = VideoGeometry.parseActiveFormatDescription(fromSEIPayload: rbsp) {
             delegate?.accessUnitAssembler(self, didDiscoverAFD: afd)
         }
+        if hasRecoveryPointSEI(rbsp) {
+            currentAUHasRecoveryPoint = true
+        }
+    }
+
+    /// Checks whether an SEI message contains a `recovery_point` SEI (payloadType == 6).
+    /// In DVB broadcast H.264 (e.g. ORF 1 HD open-GOPs), random access points are signalled
+    /// via recovery_point SEI rather than IDR slices.
+    private func hasRecoveryPointSEI(_ rbsp: Data) -> Bool {
+        var offset = 0
+        let count = rbsp.count
+        while offset < count {
+            var payloadType = 0
+            while offset < count && rbsp[offset] == 0xFF {
+                payloadType += 255
+                offset += 1
+            }
+            guard offset < count else { break }
+            payloadType += Int(rbsp[offset])
+            offset += 1
+
+            var payloadSize = 0
+            while offset < count && rbsp[offset] == 0xFF {
+                payloadSize += 255
+                offset += 1
+            }
+            guard offset < count else { break }
+            payloadSize += Int(rbsp[offset])
+            offset += 1
+
+            if payloadType == 6 {
+                return true
+            }
+            offset += payloadSize
+        }
+        return false
     }
 
     /// True when this slice codes only intra macroblocks (`slice_type` I or SI).
@@ -433,10 +471,9 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     /// a legitimate place to start decoding even without an IDR — which matters
     /// because a fair number of broadcast encoders signal random access with a
     /// recovery-point SEI and plain I slices and never send an IDR at all.
-    /// Gating only on NAL type 5 would leave those channels black.
     private func parseSliceIsIntra(_ nal: Data) -> Bool {
         guard nal.count > 1 else { return false }
-        let sliceHeader = Data(nal.dropFirst(1).prefix(8))
+        let sliceHeader = Data(nal.dropFirst(1).prefix(64))
         let rbsp = removeEmulationPreventionBytes(from: sliceHeader)
         var reader = BitReader(data: rbsp)
         _ = reader.readExpGolomb()             // first_mb_in_slice
@@ -452,7 +489,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
 
     private func parseFirstMBInSlice(_ nal: Data) -> Int {
         guard nal.count > 1 else { return 0 }
-        let sliceHeader = Data(nal.dropFirst(1).prefix(5))
+        let sliceHeader = Data(nal.dropFirst(1).prefix(32))
         let rbsp = removeEmulationPreventionBytes(from: sliceHeader)
         var reader = BitReader(data: rbsp)
         return reader.readExpGolomb()
@@ -463,6 +500,7 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
             currentAUNALs.removeAll(keepingCapacity: true)
             currentAUHasVCL = false
             currentAUHasIDR = false
+            currentAUHasRecoveryPoint = false
             currentAUIsIntraOnly = true
             currentAUStructure = .wovenTopFieldFirst
             currentAUPTS = .invalid
@@ -471,9 +509,11 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
 
         guard !currentAUNALs.isEmpty, currentAUHasVCL, let formatDesc = currentFormatDescription else { return }
 
-        // An IDR picture (NAL type 5) guarantees a clean instantaneous decoder refresh where
-        // the DPB is completely reset and no prior reference frames are referenced.
-        let isSyncSample = currentAUHasIDR
+        // An Access Unit can start decoding without prior references if:
+        // 1. It contains an IDR slice (NAL type 5), OR
+        // 2. It contains a Recovery Point SEI (DVB Clean Random Access), OR
+        // 3. Every slice in the picture is Intra-coded (I or SI).
+        let isSyncSample = currentAUHasIDR || currentAUHasRecoveryPoint || currentAUIsIntraOnly
 
         // Assemble AVCC buffer with 4-byte big endian length prefixes
         var avccBuffer = Data()
