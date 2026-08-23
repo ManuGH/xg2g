@@ -200,16 +200,21 @@ public struct TestTSPlayerScreen: View {
             let isLandscape = geometry.size.width > geometry.size.height
 
             ZStack(alignment: .top) {
-                if !isLandscape {
-                    Color.black.ignoresSafeArea()
-                }
+                Color.black.ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     // MARK: - Video Stage Container
                     ZStack(alignment: .topLeading) {
-                        // 1. Transparent stage placeholder where persistent root VideoSurfaceHost shines through
-                        Color.clear
-                            .ignoresSafeArea(edges: isLandscape ? .all : [])
+                        // 1. Native Metal 1080p50 Hardware Stage
+                        MetalVideoStageView(
+                            telemetry: coordinator.playing?.telemetry,
+                            presenter: coordinator.surface,
+                            presentationContext: coordinator.context,
+                            presentationPath: presentationPath,
+                            scalingMode: viewPreset.scalingMode,
+                            aspectRatioOverride: viewPreset.aspectRatio
+                        )
+                        .ignoresSafeArea(edges: isLandscape ? .all : [])
 
                         // 1b. Synchronized Native DVB Subtitle Overlay
                         if let subImage = currentSubtitleImage {

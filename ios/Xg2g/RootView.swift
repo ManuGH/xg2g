@@ -15,109 +15,81 @@ struct RootView: View {
     @State private var model = AppModel()
 
     var body: some View {
-        GeometryReader { rootGeo in
-            let isLandscape = rootGeo.size.width > rootGeo.size.height
-
-            ZStack(alignment: .topLeading) {
-                // 1. App Navigation
-                Group {
-                    switch model.state {
-                    case .needsServer:
-                        ServerSetupView(model: model)
-                    case .needsPairing, .needsRePairing:
-                        PairingView(model: model)
-                    case .ready:
-                        AdaptiveAppNavigation(model: model)
-                    }
-                }
-
-                // 2. Persistent Single Video Surface Host (Root Level)
-                // Remains mounted across Minimize <-> Fullscreen transitions to prevent layer teardown.
-                if model.playbackManager.isPlaying {
-                    let isMini = model.playbackManager.presentationMode == .miniplayer
-                    let isFull = model.playbackManager.presentationMode == .fullscreen
-
-                    let miniHeight: CGFloat = 36
-                    let miniWidth: CGFloat = miniHeight * 16.0 / 9.0
-                    let miniBottomPad: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 16 + 10 : 56 + 10
-                    let miniLeftPad: CGFloat = 26
-
-                    let fullHeight: CGFloat = isLandscape ? rootGeo.size.height : (rootGeo.size.width * 9.0 / 16.0)
-                    let fullWidth: CGFloat = rootGeo.size.width
-
-                    let targetWidth = isMini ? miniWidth : fullWidth
-                    let targetHeight = isMini ? miniHeight : fullHeight
-                    let targetX = isMini ? miniLeftPad : 0
-                    let targetY = isMini ? (rootGeo.size.height - miniBottomPad - miniHeight) : 0
-
-                    MetalVideoStageView(
-                        telemetry: model.playbackManager.coordinator.playing?.telemetry,
-                        presenter: model.playbackManager.coordinator.surface,
-                        presentationContext: model.playbackManager.coordinator.context,
-                        presentationPath: .systemLayer,
-                        scalingMode: .fit,
-                        aspectRatioOverride: .auto
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: isMini ? 8 : 0, style: .continuous))
-                    .frame(width: targetWidth, height: targetHeight)
-                    .offset(x: targetX, y: targetY)
-                    .opacity(isFull || isMini ? 1.0 : 0.0)
-                    .allowsHitTesting(false)
-                    .zIndex(15)
-                }
-
-                // 3. Mini-Player Floating Bar (above TabBar)
-                if model.playbackManager.presentationMode == .miniplayer {
-                    VStack {
-                        Spacer()
-                        MiniPlayerBar(playbackManager: model.playbackManager, model: model)
-                            .padding(.bottom, UIDevice.current.userInterfaceIdiom == .pad ? 16 : 56)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                    .zIndex(20)
-                }
-
-                // 4. Fullscreen Player Screen (when presentationMode == .fullscreen)
-                if model.playbackManager.presentationMode == .fullscreen, let channel = model.playbackManager.currentChannel {
-                    TestTSPlayerScreen(model: model, playbackManager: model.playbackManager, channel: channel)
-                        .transition(.opacity)
-                        .zIndex(25)
+        RootContentView(model: model, playbackManager: model.playbackManager)
+            .preferredColorScheme(.dark)
+            .tint(Theme.Colors.accentAction)
+            .task { await model.start() }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    Task { await model.handleAppBecameActive() }
                 }
             }
-        }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.playbackManager.presentationMode)
-        .preferredColorScheme(.dark)
-        .tint(Theme.Colors.accentAction)
-        .task { await model.start() }
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active {
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                // Periodic background heartbeat / EPG refresh while app is active in foreground
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(60))
+                    if scenePhase == .active && model.state == .ready {
+                        await model.refreshSchedule()
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 Task { await model.handleAppBecameActive() }
             }
-        }
-        .task(id: scenePhase) {
-            guard scenePhase == .active else { return }
-            // Periodic background heartbeat / EPG refresh while app is active in foreground
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
-                if scenePhase == .active && model.state == .ready {
-                    await model.refreshSchedule()
+            .onContinueUserActivity(HandoffCoordinator.activityType) { userActivity in
+                guard let serviceRef = HandoffCoordinator.extractServiceRef(from: userActivity) else { return }
+                Task { @MainActor in
+                    if model.channels.isEmpty {
+                        await model.loadChannels()
+                    }
+                    if let target = model.channels.first(where: { $0.id == serviceRef || $0.serviceRef == serviceRef }) {
+                        model.playingChannel = target
+                    }
                 }
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            Task { await model.handleAppBecameActive() }
-        }
-        .onContinueUserActivity(HandoffCoordinator.activityType) { userActivity in
-            guard let serviceRef = HandoffCoordinator.extractServiceRef(from: userActivity) else { return }
-            Task { @MainActor in
-                if model.channels.isEmpty {
-                    await model.loadChannels()
-                }
-                if let target = model.channels.first(where: { $0.id == serviceRef || $0.serviceRef == serviceRef }) {
-                    model.playingChannel = target
+    }
+}
+
+struct RootContentView: View {
+    @Bindable var model: AppModel
+    @ObservedObject var playbackManager: PlaybackManager
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            // 1. App Navigation
+            Group {
+                switch model.state {
+                case .needsServer:
+                    ServerSetupView(model: model)
+                case .needsPairing, .needsRePairing:
+                    PairingView(model: model)
+                case .ready:
+                    AdaptiveAppNavigation(model: model)
                 }
             }
+
+            // 2. Mini-Player Floating Bar (above TabBar)
+            if playbackManager.presentationMode == .miniplayer {
+                MiniPlayerBar(playbackManager: playbackManager, model: model)
+                    .padding(.bottom, UIDevice.current.userInterfaceIdiom == .pad ? 16 : 56)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(10)
+            }
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { playbackManager.presentationMode == .fullscreen && playbackManager.currentChannel != nil },
+            set: { isPresented in
+                if !isPresented && playbackManager.presentationMode == .fullscreen {
+                    playbackManager.minimize()
+                }
+            }
+        )) {
+            if let channel = playbackManager.currentChannel {
+                TestTSPlayerScreen(model: model, playbackManager: playbackManager, channel: channel)
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: playbackManager.presentationMode)
     }
 }
 
