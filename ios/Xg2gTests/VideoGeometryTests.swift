@@ -475,4 +475,35 @@ struct VideoGeometryTests {
         let landscapeBudget = ViewportBudget(totalWidth: 852, isLandscape: true, sideInset: 24)
         #expect(landscapeBudget.channelInfoAvailableWidth >= 450, "Landscape must have abundant space for full metadata")
     }
+
+    @Test("CVPixelBuffer: Colorimetry, Range, and Field Detail Extraction")
+    func testColorimetryExtraction() {
+        var pixelBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            1920,
+            1080,
+            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            nil,
+            &pixelBuffer
+        )
+        guard status == kCVReturnSuccess, let pb = pixelBuffer else {
+            Issue.record("Failed to create CVPixelBuffer")
+            return
+        }
+
+        // Attach BT.709 colorimetry and TFF
+        CVBufferSetAttachment(pb, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
+        CVBufferSetAttachment(pb, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
+        CVBufferSetAttachment(pb, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
+        CVBufferSetAttachment(pb, kCVImageBufferFieldDetailKey, kCVImageBufferFieldDetailTemporalTopFirst, .shouldPropagate)
+
+        let info = VideoGeometry.inspectColorimetry(from: pb)
+        #expect(info.primaries == "BT.709 (HD)")
+        #expect(info.transferFunction == "SDR (BT.709)")
+        #expect(info.matrix == "ITU-R BT.709")
+        #expect(info.range == "Video Range (16–235)")
+        #expect(info.fieldDetail == "Top Field First (TFF)")
+        #expect(!info.isHDR)
+    }
 }

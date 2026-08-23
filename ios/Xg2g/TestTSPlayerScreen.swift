@@ -775,38 +775,48 @@ public struct TestTSPlayerScreen: View {
                         let resStr = (w > 0 && h > 0) ? "\(w) × \(h)" : "Erkenne…"
                         hudRow("Auflösung", resStr)
                         hudRow("Signal", tele.videoScanSummary)
+                        hudRow("Halbbild-Ordnung", tele.fieldOrder)
                         hudRow("Codec", tele.codec)
                         hudRow("TS-Bitrate", tele.tsBitrateKbps > 0 ? String(format: "%.1f Mbps", tele.tsBitrateKbps / 1000.0) : "—")
                         let hwStatus = tele.hwDecodeActive ? "VideoToolbox 🚀" : (tele.vtSessionActive ? "Init…" : "Noch nicht bestätigt")
                         hudRow("HW Decode", hwStatus, highlight: tele.hwDecodeActive)
                     }
 
-                    // 2. BILDFORMAT & GEOMETRIE (QUELLE)
+                    // 2. FARBRAUM & SIGNAL (COLORIMETRY)
+                    hudSection(title: "FARBRAUM & DYNAMIK (SIGNAL)") {
+                        hudRow("Farbraum", tele.colorPrimaries, highlight: tele.colorPrimaries != "—")
+                        hudRow("Dynamikumfang", tele.transferFunction, highlight: tele.isHDR)
+                        hudRow("YCbCr Matrix", tele.colorMatrix)
+                        hudRow("Wertebereich", tele.colorRange)
+                    }
+
+                    // 3. BILDFORMAT & GEOMETRIE (QUELLE)
                     hudSection(title: "QUELL-GEOMETRIE (BITSTREAM)") {
                         let sarStr = tele.sarSignaled ? "\(tele.sarNumerator):\(tele.sarDenominator) (signalisiert)" : "Nicht signalisiert (1:1)"
                         hudRow("SAR", sarStr, highlight: tele.sarSignaled)
                         hudRow("Quell-DAR", tele.sourceDARDescription)
                     }
 
-                    // 3. DARSTELLUNG & AUSGABE
+                    // 4. DARSTELLUNG & AUSGABE
                     hudSection(title: "DARSTELLUNG & AUSGABE") {
                         hudRow("Modus", viewPreset.rawValue, highlight: viewPreset != .standard)
                         hudRow("Ausgabe-DAR", tele.outputDARDescription)
                         hudRow("Skalierung", viewPreset.scalingMode == .fill ? "Aspect Fill (Center Crop)" : "Aspect Fit (Letterbox)")
                         hudRow("Renderpfad", presentationPath == .systemLayer ? "System Layer (AVSampleBuffer)" : "Metal Direct (CAMetalLayer)")
-                        hudRow("Fields Rate", tele.fieldsSubmittedPerSec > 0 ? String(format: "%.1f fields/s", tele.fieldsSubmittedPerSec) : "—", highlight: abs(tele.fieldsSubmittedPerSec - 50.0) < 3.0)
+                        hudRow("Display Pacing", tele.fieldsSubmittedPerSec > 0 ? String(format: "%.1f fields/s", tele.fieldsSubmittedPerSec) : "—", highlight: abs(tele.fieldsSubmittedPerSec - 50.0) < 3.0)
                     }
 
-                    // 4. AUDIO & SYNC
+                    // 5. AUDIO & STREAM-HEALTH
                     hudSection(title: "AUDIO & STREAM-HEALTH") {
                         let langStr = tele.audioLanguage.isEmpty || tele.audioLanguage == "und" ? "" : " [\(tele.audioLanguage.uppercased())]"
                         hudRow("Audio Format", "\(tele.audioCodec)\(langStr) \(tele.audioChannels)ch")
                         hudRow("Master Clock", tele.isAudioMasterClockActive ? "Synchronized 🟢" : "Pre-roll ⚪️", highlight: tele.isAudioMasterClockActive)
                         hudRow("Audio Lead", tele.audioLeadMs > 0 ? String(format: "%.0f ms", tele.audioLeadMs) : "—")
+                        hudRow("Discontinuities", "\(tele.ptsDiscontinuities) PTS / \(tele.continuityErrors) CC", alert: tele.ptsDiscontinuities > 0 || tele.continuityErrors > 0)
                         hudRow("Drops / Errors", "\(tele.droppedFrames) drops / \(tele.decodeErrors) dec", alert: tele.droppedFrames > 0 || tele.decodeErrors > 0)
                     }
 
-                    // 5. STARTUP & PERFORMANCE
+                    // 6. STARTUP & PERFORMANCE
                     hudSection(title: "PERFORMANCE & TTFP") {
                         hudRow("TTFP (Erstes Bild)", tele.ttfpTotalMs > 0 ? String(format: "%.1f ms", tele.ttfpTotalMs) : "Instant 🚀", highlight: true)
                         hudRow("Process CPU", String(format: "%.1f %%", tele.processCpuUsagePercent), highlight: tele.processCpuUsagePercent < 25.0)

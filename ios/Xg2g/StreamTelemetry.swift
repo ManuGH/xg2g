@@ -166,7 +166,7 @@ public struct TelemetryValues: Sendable {
     public var videoWidth: Int = 0
     public var videoHeight: Int = 0
     public var isInterlaced: Bool = false
-    public var fieldOrder: String = "Unknown" // "TFF", "BFF", "Progressive"
+    public var fieldOrder: String = "—"
     public var sourceFrameRate: Double = 0.0  // ~25 fps
     public var sourceFieldRate: Double = 0.0  // ~50 fields/s
     public var isDirect1080iVerified: Bool = false
@@ -182,6 +182,14 @@ public struct TelemetryValues: Sendable {
     public var outputDARDescription: String = "—"
     public var videoScanSummary: String = "—"
     public var presentationModeName: String = "—"
+
+    // MARK: - COLORIMETRY, RANGE & BROADCAST SIGNAL
+    public var colorPrimaries: String = "—"
+    public var transferFunction: String = "—"
+    public var colorMatrix: String = "—"
+    public var colorRange: String = "—"
+    public var isHDR: Bool = false
+    public var afdDescription: String = "—"
 
     /// Set when the PMT names a video codec this pipeline cannot turn into
     /// pictures, carrying the viewer-facing name of that format.

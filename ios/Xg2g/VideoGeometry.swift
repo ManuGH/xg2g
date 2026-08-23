@@ -206,6 +206,122 @@ public enum VideoGeometry {
         return String(format: "%.2f:1", ratio)
     }
 
+    /// Colorimetry, Dynamic Range, Matrix, and Scan Cadence extracted from CVPixelBuffer attachments.
+    public struct ColorimetryInfo: Sendable, Equatable {
+        public let primaries: String
+        public let transferFunction: String
+        public let matrix: String
+        public let range: String
+        public let fieldDetail: String
+        public let isHDR: Bool
+
+        public init(
+            primaries: String,
+            transferFunction: String,
+            matrix: String,
+            range: String,
+            fieldDetail: String,
+            isHDR: Bool
+        ) {
+            self.primaries = primaries
+            self.transferFunction = transferFunction
+            self.matrix = matrix
+            self.range = range
+            self.fieldDetail = fieldDetail
+            self.isHDR = isHDR
+        }
+    }
+
+    /// Inspects color primaries, transfer function, YCbCr matrix, range and field order from CVPixelBuffer attachments.
+    public static func inspectColorimetry(from pixelBuffer: CVPixelBuffer) -> ColorimetryInfo {
+        var primariesStr = "—"
+        var transferStr = "SDR (BT.709)"
+        var matrixStr = "—"
+        var isHDR = false
+
+        // 1. Color Primaries
+        if let primaries = CVBufferGetAttachment(pixelBuffer, kCVImageBufferColorPrimariesKey, nil)?.takeUnretainedValue() as? String {
+            if primaries == (kCVImageBufferColorPrimaries_ITU_R_709_2 as String) {
+                primariesStr = "BT.709 (HD)"
+            } else if primaries == (kCVImageBufferColorPrimaries_EBU_3213 as String) || primaries == (kCVImageBufferColorPrimaries_SMPTE_C as String) {
+                primariesStr = "BT.601 (SD)"
+            } else if primaries == (kCVImageBufferColorPrimaries_ITU_R_2020 as String) {
+                primariesStr = "BT.2020 (UHD)"
+            } else if primaries == (kCVImageBufferColorPrimaries_P3_D65 as String) {
+                primariesStr = "Display P3"
+            } else {
+                primariesStr = primaries
+            }
+        }
+
+        // 2. Transfer Function
+        if let transfer = CVBufferGetAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey, nil)?.takeUnretainedValue() as? String {
+            if transfer == (kCVImageBufferTransferFunction_ITU_R_709_2 as String) {
+                transferStr = "SDR (BT.709)"
+            } else if transfer == (kCVImageBufferTransferFunction_ITU_R_2100_HLG as String) {
+                transferStr = "HLG (BT.2100 HDR)"
+                isHDR = true
+            } else if transfer == (kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String) {
+                transferStr = "HDR10 (PQ)"
+                isHDR = true
+            } else if transfer == (kCVImageBufferTransferFunction_sRGB as String) {
+                transferStr = "sRGB"
+            } else {
+                transferStr = transfer
+            }
+        }
+
+        // 3. YCbCr Matrix
+        if let matrix = CVBufferGetAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, nil)?.takeUnretainedValue() as? String {
+            if matrix == (kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String) {
+                matrixStr = "ITU-R BT.709"
+            } else if matrix == (kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String) {
+                matrixStr = "ITU-R BT.601"
+            } else if matrix == (kCVImageBufferYCbCrMatrix_ITU_R_2020 as String) {
+                matrixStr = "ITU-R BT.2020"
+            } else {
+                matrixStr = matrix
+            }
+        }
+
+        // 4. Color Range
+        let formatType = CVPixelBufferGetPixelFormatType(pixelBuffer)
+        let rangeStr: String
+        switch formatType {
+        case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
+            rangeStr = "Video Range (16–235)"
+        case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
+            rangeStr = "Full Range (0–255)"
+        case kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange:
+            rangeStr = "10-bit Video Range"
+        case kCVPixelFormatType_420YpCbCr10BiPlanarFullRange:
+            rangeStr = "10-bit Full Range"
+        default:
+            rangeStr = "Video Range (16–235)"
+        }
+
+        // 5. Field Detail
+        var fieldDetailStr = "Progressiv"
+        if let fieldDetail = CVBufferGetAttachment(pixelBuffer, kCVImageBufferFieldDetailKey, nil)?.takeUnretainedValue() as? String {
+            if fieldDetail == (kCVImageBufferFieldDetailTemporalTopFirst as String) || fieldDetail == (kCVImageBufferFieldDetailSpatialFirstLineEarly as String) {
+                fieldDetailStr = "Top Field First (TFF)"
+            } else if fieldDetail == (kCVImageBufferFieldDetailTemporalBottomFirst as String) || fieldDetail == (kCVImageBufferFieldDetailSpatialFirstLineLate as String) {
+                fieldDetailStr = "Bottom Field First (BFF)"
+            } else {
+                fieldDetailStr = fieldDetail
+            }
+        }
+
+        return ColorimetryInfo(
+            primaries: primariesStr,
+            transferFunction: transferStr,
+            matrix: matrixStr,
+            range: rangeStr,
+            fieldDetail: fieldDetailStr,
+            isHDR: isHDR
+        )
+    }
+
     /// Applies or updates Sample Aspect Ratio (SAR) attachment on a CVPixelBuffer based on an aspect ratio override.
     public static func applyPixelAspectRatio(
         to pixelBuffer: CVPixelBuffer,

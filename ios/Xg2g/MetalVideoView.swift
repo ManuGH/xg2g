@@ -1521,6 +1521,8 @@ public final class MetalVideoView: UIView {
             modeName = "Standard"
         }
 
+        let colorimetry = VideoGeometry.inspectColorimetry(from: pixelBuffer)
+
         telemetry.mutate {
             $0.videoWidth = width
             $0.videoHeight = height
@@ -1534,6 +1536,12 @@ public final class MetalVideoView: UIView {
             $0.outputDARDescription = outDARDesc
             $0.videoScanSummary = scanDesc
             $0.presentationModeName = modeName
+            $0.colorPrimaries = colorimetry.primaries
+            $0.transferFunction = colorimetry.transferFunction
+            $0.colorMatrix = colorimetry.matrix
+            $0.colorRange = colorimetry.range
+            $0.fieldOrder = self.sourceIsInterlaced ? colorimetry.fieldDetail : "Progressiv"
+            $0.isHDR = colorimetry.isHDR
         }
     }
 
