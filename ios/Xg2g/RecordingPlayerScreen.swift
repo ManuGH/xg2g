@@ -188,6 +188,20 @@ struct RecordingPlayerScreen: View {
                             }
                         }
                 )
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onEnded { scale in
+                            if scale > 1.15 && videoGravity != .resizeAspectFill {
+                                triggerHaptic(.medium)
+                                videoGravity = .resizeAspectFill
+                                showZoomFeedback("Ans iPhone angepasst")
+                            } else if scale < 0.85 && videoGravity != .resizeAspect {
+                                triggerHaptic(.medium)
+                                videoGravity = .resizeAspect
+                                showZoomFeedback("Standard (16:9)")
+                            }
+                        }
+                )
         }
         .ignoresSafeArea()
     }
@@ -765,6 +779,21 @@ struct RecordingPlayerScreen: View {
         }
         hideSkipFeedbackTask = Task {
             try? await Task.sleep(nanoseconds: 800_000_000)
+            if !Task.isCancelled {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    skipFeedback = nil
+                }
+            }
+        }
+    }
+
+    private func showZoomFeedback(_ text: String) {
+        hideSkipFeedbackTask?.cancel()
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            skipFeedback = (text, true)
+        }
+        hideSkipFeedbackTask = Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             if !Task.isCancelled {
                 withAnimation(.easeOut(duration: 0.2)) {
                     skipFeedback = nil
