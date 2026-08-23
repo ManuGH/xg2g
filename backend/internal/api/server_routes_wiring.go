@@ -185,16 +185,26 @@ func (s *Server) buildRouterWithBindings(variant ConfigVariant) (chi.Router, Pol
 	// tuner - the client simply starts reading a stream that is already running.
 	preparations := pipeline.NewPreparationManager(liveSessionMgr, pipeline.DefaultPreparationConfig(), *log.L())
 	prepareHandler := pipeline.NewPrepareHandler(preparations, s.cfg.Enigma2.BaseURL, s.cfg.Enigma2.StreamPort)
+	// Authenticated and scoped, unlike the media routes above.
+	//
+	// A preparation is not media delivery: it occupies a tuner, it can supersede
+	// another client's channel change, and it can release one. That is control
+	// plane, so it carries the control plane's policy - reading a preparation
+	// needs v3:read, starting, committing or abandoning one needs v3:write.
+	// Registered on the root router the media routes use, but through the scoped
+	// chains, so the paths stay where a client expects them while the
+	// authorisation is the one the operation deserves.
 	for _, route := range []struct {
-		method  string
-		pattern string
+		method   string
+		pattern  string
+		registry *policyRegistrarAdapter
 	}{
-		{http.MethodPost, "/api/v3/stream/prepare"},
-		{http.MethodGet, "/api/v3/stream/prepare/*"},
-		{http.MethodPost, "/api/v3/stream/prepare/*"},
-		{http.MethodDelete, "/api/v3/stream/prepare/*"},
+		{http.MethodPost, "/api/v3/stream/prepare", writeAdapter},
+		{http.MethodGet, "/api/v3/stream/prepare/*", readAdapter},
+		{http.MethodPost, "/api/v3/stream/prepare/*", writeAdapter},
+		{http.MethodDelete, "/api/v3/stream/prepare/*", writeAdapter},
 	} {
-		if err := rootAdapter.Register(route.method, route.pattern, prepareHandler); err != nil {
+		if err := route.registry.Register(route.method, route.pattern, prepareHandler); err != nil {
 			return nil, PolicyBindingSnapshot{}, fmt.Errorf("register zap preparation route %s %s: %w", route.method, route.pattern, err)
 		}
 	}
