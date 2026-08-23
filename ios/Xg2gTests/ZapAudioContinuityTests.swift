@@ -433,8 +433,8 @@ struct PresentationSynchronizerIdentityTests {
 
         #expect(pipeline.selectedAudioPID == 102)
         #expect(pipeline.selectedAudioCodec == .ac3)
-        #expect(pipeline.telemetry.display.audioPID == 102)
-        #expect(pipeline.telemetry.display.audioLanguage == "eng")
+        #expect(pipeline.telemetry.snapshot().audioPID == 102)
+        #expect(pipeline.telemetry.snapshot().audioLanguage == "eng")
 
         // Feed old PID 101 payload -> demuxer must drop it
         pipeline.tsParser(parser, didEmitPayload: Data([0x00, 0x01]), pid: 101, unitStart: true)
@@ -445,11 +445,94 @@ struct PresentationSynchronizerIdentityTests {
 
         #expect(pipeline.selectedAudioPID == 103)
         #expect(pipeline.selectedAudioCodec == .aac)
-        #expect(pipeline.telemetry.display.audioPID == 103)
-        #expect(pipeline.telemetry.display.audioCodec == "AAC")
-        #expect(!pipeline.telemetry.display.isAudioMasterClockActive, "Clock must be marked inactive right after cutover until new stream locks")
+        #expect(pipeline.telemetry.snapshot().audioPID == 103)
+        #expect(pipeline.telemetry.snapshot().audioCodec == "AAC")
+        #expect(!pipeline.telemetry.snapshot().isAudioMasterClockActive, "Clock must be marked inactive right after cutover until new stream locks")
 
         // Feed new PID 103 payload -> demuxer accepts it
         pipeline.tsParser(parser, didEmitPayload: Data([0x00, 0x02]), pid: 103, unitStart: true)
+    }
+
+    @Test func dynamicAudioTrackSwitchingReAnchorsNewAudioTrackCleanly() async {
+        let pipeline = NativeTSVideoPipeline()
+        let parser = TSPacketParser()
+        let assembler = AudioSampleBufferAssembler()
+
+        let tracks = [
+            AudioTrackInfo(pid: 101, streamType: 0x06, codec: .ac3, language: "deu", audioType: 0, descriptorTags: [0x6A]),
+            AudioTrackInfo(pid: 102, streamType: 0x11, codec: .aac, language: "eng", audioType: 0, descriptorTags: [0x7F])
+        ]
+        pipeline.tsParser(parser, didDiscoverAudioTracks: tracks)
+        #expect(pipeline.selectedAudioPID == 101)
+
+        // 1. Initial track (AC-3): feed pre-roll audio buffers at PTS 10.0s ... 10.5s
+        var t = 10.0
+        for _ in 0..<20 {
+            if let sb = makeAudioSampleBuffer(ptsSeconds: t) {
+                pipeline.audioSampleBufferAssembler(assembler, didEmitSampleBuffer: sb, codec: .ac3, duration: CMTime(seconds: 0.032, preferredTimescale: 90_000))
+            }
+            t += 0.032
+        }
+
+        // 2. Perform dynamic switch to PID 102 (AAC)
+        pipeline.selectAudioTrack(pid: 102)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(pipeline.selectedAudioPID == 102)
+        #expect(pipeline.selectedAudioCodec == .aac)
+        #expect(!pipeline.telemetry.snapshot().isAudioMasterClockActive, "Audio clock must be un-anchored and inactive immediately after cutover")
+
+        // 3. Feed new audio track (AAC) starting at a completely different baseline PTS 100.0s
+        var newT = 100.0
+        for _ in 0..<20 {
+            if let sb = makeAudioSampleBuffer(ptsSeconds: newT) {
+                pipeline.audioSampleBufferAssembler(assembler, didEmitSampleBuffer: sb, codec: .aac, duration: CMTime(seconds: 0.032, preferredTimescale: 90_000))
+            }
+            newT += 0.032
+        }
+
+        // 4. Verify that new track establishes its own clean baseline without throwing timeline jumps against old 10s timeline
+        #expect(pipeline.telemetry.snapshot().audioPID == 102)
+        #expect(pipeline.telemetry.snapshot().audioCodec == "AAC")
+        #expect(pipeline.telemetry.snapshot().audioLanguage == "eng")
+    }
+
+    private func makeAudioSampleBuffer(ptsSeconds: Double) -> CMSampleBuffer? {
+        var asbd = AudioStreamBasicDescription(
+            mSampleRate: 48000,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
+            mBytesPerPacket: 4,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 4,
+            mChannelsPerFrame: 2,
+            mBitsPerChannel: 16,
+            mReserved: 0
+        )
+        var format: CMAudioFormatDescription?
+        guard CMAudioFormatDescriptionCreate(allocator: kCFAllocatorDefault, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format) == noErr,
+              let format else { return nil }
+
+        var block: CMBlockBuffer?
+        guard CMBlockBufferCreateWithMemoryBlock(
+            allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: 1536,
+            blockAllocator: kCFAllocatorDefault, customBlockSource: nil,
+            offsetToData: 0, dataLength: 1536,
+            flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block
+        ) == kCMBlockBufferNoErr, let block else { return nil }
+        CMBlockBufferFillDataBytes(with: 0, blockBuffer: block, offsetIntoDestination: 0, dataLength: 1536)
+
+        var timing = CMSampleTimingInfo(
+            duration: CMTime(seconds: 0.032, preferredTimescale: 90_000),
+            presentationTimeStamp: CMTime(seconds: ptsSeconds, preferredTimescale: 90_000),
+            decodeTimeStamp: .invalid
+        )
+        var buffer: CMSampleBuffer?
+        guard CMSampleBufferCreateReady(
+            allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format,
+            sampleCount: 1536, sampleTimingEntryCount: 1, sampleTimingArray: &timing,
+            sampleSizeEntryCount: 0, sampleSizeArray: nil, sampleBufferOut: &buffer
+        ) == noErr else { return nil }
+        return buffer
     }
 }
