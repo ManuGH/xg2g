@@ -2608,7 +2608,7 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
 // MARK: - DVBSubtitlePESAssemblerDelegate
 
 extension NativeTSVideoPipeline: DVBSubtitlePESAssemblerDelegate {
-    public func dvbSubtitleAssembler(_ assembler: DVBSubtitlePESAssembler, didAssemblePacket packet: DVBSubtitlePESPacket) {
+    public func dvbSubtitleAssembler(_ assembler: DVBSubtitlePESAssembler, didEmitPacket packet: DVBSubtitlePESPacket) {
         guard let selectedSub = selectedSubtitleTrack, case .dvb(let compID, let ancID) = selectedSub.format else { return }
 
         let segments = dvbSubtitleSegmentParser.parse(data: packet.payload)
@@ -2633,9 +2633,9 @@ extension NativeTSVideoPipeline: DVBSubtitlePESAssemblerDelegate {
         }
     }
 
-    public func dvbSubtitleAssembler(_ assembler: DVBSubtitlePESAssembler, didEncounterWarning warning: String) {
+    public func dvbSubtitleAssembler(_ assembler: DVBSubtitlePESAssembler, didEncounterError reason: String) {
         let zapId = self.currentZapId
-        let logMsg = "[ZAP-#\(zapId)-SUB] ⚠️ DVB Subtitle warning: \(warning)"
+        let logMsg = "[ZAP-#\(zapId)-SUB] ⚠️ DVB Subtitle error: \(reason)"
         print(logMsg)
         logger.warning("\(logMsg, privacy: .public)")
         TelemetryServer.shared.log(logMsg)
