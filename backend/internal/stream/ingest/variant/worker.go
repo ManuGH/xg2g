@@ -158,12 +158,16 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 
 	args := []string{
 		"-y", "-nostdin", "-hide_banner", "-loglevel", "warning",
+		"-fflags", "+nobuffer+flush_packets+genpts",
+		"-analyzeduration", "1000000",
+		"-probesize", "1000000",
 		"-f", "mpegts", "-i", "pipe:0",
 		"-map", "0:v:0?", "-c:v", "copy",
 		"-map", audioPIDSpec, "-c:a", w.key.TargetCodec,
 		"-b:a", fmt.Sprintf("%dk", bitrate),
 		"-ar", fmt.Sprintf("%d", sampleRate),
 		"-ac", fmt.Sprintf("%d", channels),
+		"-flush_packets", "1",
 		"-muxdelay", "0", "-muxpreload", "0",
 		"-f", "mpegts", "pipe:1",
 	}
@@ -182,11 +186,33 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 	}
 	defer stdout.Close()
 
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("stderr pipe: %w", err)
+	}
+	defer stderr.Close()
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start ffmpeg: %w", err)
 	}
 
 	var wg sync.WaitGroup
+
+	// Log stderr from FFmpeg in the background
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		errBuf := make([]byte, 4096)
+		for {
+			n, rerr := stderr.Read(errBuf)
+			if n > 0 {
+				logger.Warn().Str("ffmpeg_stderr", string(errBuf[:n])).Msg("ffmpeg audio variant worker log")
+			}
+			if rerr != nil {
+				return
+			}
+		}
+	}()
 
 	// Feed upstream MasterRing into FFmpeg stdin
 	wg.Add(1)
@@ -194,8 +220,30 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		defer wg.Done()
 		defer stdin.Close()
 
-		// Read from master ring
-		reader := w.masterRing.NewSubscriberReader(-1)
+		// Wait for primed attach from master ring to get PAT/PMT preamble
+		var attach ring.PrimedAttachPoint
+		var reader *ring.SubscriberReader
+		var aerr error
+
+		for attempts := 0; attempts < 50; attempts++ {
+			if ctx.Err() != nil {
+				return
+			}
+			attach, reader, aerr = w.masterRing.NewPrimedSubscriber()
+			if aerr == nil {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+
+		if aerr != nil {
+			reader = w.masterRing.NewSubscriberReader(-1)
+		} else if len(attach.Preamble) > 0 {
+			if _, werr := stdin.Write(attach.Preamble); werr != nil {
+				reader.Close()
+				return
+			}
+		}
 		defer reader.Close()
 
 		buf := make([]byte, 32*1024)
@@ -203,13 +251,13 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return
 			}
-			n, err := reader.Read(buf)
+			n, rerr := reader.Read(buf)
 			if n > 0 {
 				if _, werr := stdin.Write(buf[:n]); werr != nil {
 					return
 				}
 			}
-			if err != nil {
+			if rerr != nil {
 				return
 			}
 		}
@@ -221,11 +269,11 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		defer wg.Done()
 		buf := make([]byte, 32*1024)
 		for {
-			n, err := stdout.Read(buf)
+			n, rerr := stdout.Read(buf)
 			if n > 0 {
 				w.variantRing.Push(buf[:n])
 			}
-			if err != nil {
+			if rerr != nil {
 				return
 			}
 		}
