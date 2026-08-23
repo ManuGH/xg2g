@@ -283,6 +283,17 @@ final class ZapCoordinator: ObservableObject {
         let session = makeSession()
         session.presentationContext = context
         _ = context.issueGeneration(to: session)
+
+        // Started before it is bound, and the order is not cosmetic. Starting a
+        // session tears down its previous one first, and that replaces the render
+        // synchronizer - the clock the surface is attached to. Binding first attaches
+        // the display layer to a synchronizer that is discarded moments later, so the
+        // layer waits on a clock that will never run: it reports itself never ready,
+        // the presenter's queue fills, and the picture freezes on the last frame that
+        // got through while the audio, which followed the new clock, plays on.
+        //
+        // This is the order the prepared path has always used, for the same reason.
+        session.startStreaming(url: url, requestedAt: requestedAt)
         context.bindWithoutPreparation(session)
 
         let retiring = playing
@@ -290,8 +301,6 @@ final class ZapCoordinator: ObservableObject {
         follow(session)
         phase = .idle
         installTelemetry(for: session)
-
-        session.startStreaming(url: url, requestedAt: requestedAt)
 
         if let retiring, retiring !== session {
             summarize(retiring, zapID: zapID, event: "retire.stats")

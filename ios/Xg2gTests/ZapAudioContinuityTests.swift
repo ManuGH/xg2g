@@ -377,3 +377,39 @@ struct ZapUnclassifiedFilterTests {
         #expect(UnclassifiedStreamInfo.isAudioCandidate(streamType: 0x06, descriptorTags: [0x7F]) == true)
     }
 }
+
+/// The clock a session presents on is replaced when the session starts.
+///
+/// `startStreaming` tears down whatever came before it, and that teardown builds a
+/// fresh render synchronizer. Anything that attached to the old one is then waiting
+/// on a clock nobody will ever start — the display layer reports itself never ready,
+/// the presenter's queue fills, and the picture freezes on its last frame while the
+/// audio, which follows the new clock, plays on. Measured on device, and the reason
+/// the surface must be bound after the session is started, never before.
+@MainActor
+struct PresentationSynchronizerIdentityTests {
+
+    @Test func startingASessionReplacesTheSynchronizerItPresentsOn() {
+        let pipeline = NativeTSVideoPipeline()
+        let before = pipeline.presentationSynchronizer
+
+        // A stop is what a start performs first, so it is the operation under test.
+        pipeline.stopStreaming()
+        let after = pipeline.presentationSynchronizer
+
+        #expect(before !== after, """
+            the synchronizer survived a teardown; if that ever becomes true, the \
+            ordering this depends on is no longer load-bearing and the comment in \
+            ZapCoordinator.startOutright should be revisited rather than trusted
+            """)
+    }
+
+    /// And the session keeps reporting the current one, so binding after a start
+    /// attaches to the clock that will actually run.
+    @Test func theSessionReportsItsCurrentSynchronizer() {
+        let pipeline = NativeTSVideoPipeline()
+        pipeline.stopStreaming()
+        let current = pipeline.presentationSynchronizer
+        #expect(pipeline.presentationSynchronizer === current)
+    }
+}
