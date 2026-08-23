@@ -6,7 +6,9 @@ package variant
 
 import (
 	"context"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 )
@@ -159,5 +161,83 @@ func TestAudioVariantManager_DistinctTrackWorkers(t *testing.T) {
 	}
 	if mgr.ActiveWorkerCount() != 2 {
 		t.Fatalf("expected 2 active workers, got %d", mgr.ActiveWorkerCount())
+	}
+}
+
+func TestAudioVariantWorker_RealCapture_TranscodeAndAttach(t *testing.T) {
+	capturePath := "../../../../testdata/segments/verify_final_v3.ts"
+	data, err := os.ReadFile(capturePath)
+	if err != nil {
+		t.Skipf("skipping real capture test: file %s not found: %v", capturePath, err)
+		return
+	}
+
+	masterRing := ring.NewMasterRing(len(data) + 1024*1024)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Push capture continuously until context ends
+	go func() {
+		defer masterRing.Close()
+		chunkSize := 10 * ring.TSPacketSize
+		for {
+			for i := 0; i < len(data); i += chunkSize {
+				if ctx.Err() != nil {
+					return
+				}
+				end := i + chunkSize
+				if end > len(data) {
+					end = len(data)
+				}
+				if (end-i)%ring.TSPacketSize != 0 {
+					end = i + ((end-i)/ring.TSPacketSize)*ring.TSPacketSize
+				}
+				if end > i {
+					if _, perr := masterRing.Push(data[i:end]); perr != nil {
+						return
+					}
+				}
+				time.Sleep(2 * time.Millisecond)
+			}
+		}
+	}()
+
+	key := AudioVariantKey{
+		StreamFingerprint: "capture-test",
+		ProgramNumber:     1,
+		AudioPID:          257,
+		Language:          "deu",
+		Role:              "main",
+		TargetCodec:       "aac",
+		SampleRate:        48000,
+		Channels:          2,
+		BitrateKbps:       192,
+	}
+
+	worker := NewAudioVariantWorker(key, masterRing, 4*1024*1024)
+	worker.Start(ctx)
+	defer worker.Stop()
+
+	attach, reader, err := worker.PrimedAttachWithTimeout(ctx, 4*time.Second)
+	if err != nil {
+		facts := worker.Ring().ReadinessFacts()
+		t.Fatalf("worker.PrimedAttachWithTimeout failed: %v | variant facts: hasPAT=%v hasPMT=%v vPID=%d vCodec=%v audioPIDs=%v cleanRAP=%d cleanAU=%d keyframeOffsets=%d",
+			err, facts.HasPAT, facts.HasPMT, facts.VideoPID, facts.VideoCodec, facts.AudioPIDs, facts.CleanEntryPoints, facts.CleanAccessUnits, facts.CleanEntryPoints)
+	}
+	defer reader.Close()
+
+	if len(attach.Preamble) == 0 {
+		t.Fatalf("expected non-empty preamble on audio variant attach")
+	}
+
+	vFacts := worker.Ring().ReadinessFacts()
+	if vFacts.VideoPID == 0 {
+		t.Fatalf("expected video PID in variant ring facts")
+	}
+	if len(vFacts.AudioTracks) > 0 {
+		if vFacts.AudioTracks[0].Codec != "aac" {
+			t.Fatalf("expected variant audio codec to be aac, got %s", vFacts.AudioTracks[0].Codec)
+		}
 	}
 }

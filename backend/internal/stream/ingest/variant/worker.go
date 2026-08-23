@@ -226,31 +226,20 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		defer wg.Done()
 		defer stdin.Close()
 
-		// Wait for primed attach from master ring to get PAT/PMT preamble
-		var attach ring.PrimedAttachPoint
-		var reader *ring.SubscriberReader
-		var aerr error
-
-		for attempts := 0; attempts < 50; attempts++ {
-			if ctx.Err() != nil {
-				return
-			}
-			attach, reader, aerr = w.masterRing.NewPrimedSubscriber()
-			if aerr == nil {
-				break
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-
-		if aerr != nil {
-			reader = w.masterRing.NewSubscriberReader(-1)
-		} else if len(attach.Preamble) > 0 {
-			if _, werr := stdin.Write(attach.Preamble); werr != nil {
-				reader.Close()
+		preamble := w.masterRing.PATPMTPreamble()
+		if len(preamble) > 0 {
+			if _, werr := stdin.Write(preamble); werr != nil {
 				return
 			}
 		}
+
+		reader := w.masterRing.NewSubscriberReader(-1)
 		defer reader.Close()
+
+		go func() {
+			<-ctx.Done()
+			reader.Close()
+		}()
 
 		buf := make([]byte, 32*1024)
 		for {
@@ -269,15 +258,31 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		}
 	}()
 
-	// Read transcoded MPEG-TS from FFmpeg stdout into VariantRing
+	// Read transcoded MPEG-TS from FFmpeg stdout into VariantRing with strict 188-byte TS packet alignment
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		var carry []byte
 		buf := make([]byte, 32*1024)
 		for {
 			n, rerr := stdout.Read(buf)
 			if n > 0 {
-				w.variantRing.Push(buf[:n])
+				chunk := append(carry, buf[:n]...)
+				start := 0
+				for start < len(chunk) && chunk[start] != ring.SyncByte {
+					start++
+				}
+				chunk = chunk[start:]
+				pushLen := (len(chunk) / ring.TSPacketSize) * ring.TSPacketSize
+				if pushLen > 0 {
+					w.variantRing.Push(chunk[:pushLen])
+				}
+				rem := len(chunk) - pushLen
+				if rem > 0 {
+					carry = append(carry[:0], chunk[pushLen:]...)
+				} else {
+					carry = carry[:0]
+				}
 			}
 			if rerr != nil {
 				return
