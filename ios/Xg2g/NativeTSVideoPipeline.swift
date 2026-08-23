@@ -572,8 +572,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // the wire. The backend logs it as a field and never as a metric label, so it
         // only has to be unique within this app run - not globally.
         request.setValue(Self.zapIdentifier(zapId), forHTTPHeaderField: "X-Xg2g-Zap-Id")
-        // Evidence of client-supported audio decoders for server-side planner evaluation:
+        // Evidence of client-supported decoders for server-side planner evaluation:
         request.setValue("aac,ac3,eac3", forHTTPHeaderField: "X-Client-Audio-Codecs")
+        request.setValue("h264,hevc", forHTTPHeaderField: "X-Client-Video-Codecs")
 
         let task = session.dataTask(with: request)
         self.streamTask = task

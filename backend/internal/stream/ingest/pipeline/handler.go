@@ -34,6 +34,9 @@ const zapIDHeader = "X-Xg2g-Zap-Id"
 // clientAudioCodecsHeader carries the client's supported audio codecs (e.g. "aac,ac3,eac3").
 const clientAudioCodecsHeader = "X-Client-Audio-Codecs"
 
+// clientVideoCodecsHeader carries the client's supported video codecs (e.g. "h264,hevc").
+const clientVideoCodecsHeader = "X-Client-Video-Codecs"
+
 func selectAudioTrack(tracks []ring.AudioTrackInfo, prefPID uint16, prefLang string) ring.AudioTrackInfo {
 	if len(tracks) == 0 {
 		return ring.AudioTrackInfo{}
@@ -242,8 +245,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Evaluate Audio Capabilities & Planner Decision
+	// Evaluate Client Video & Audio Capabilities
+	clientVideoCodecs := r.Header.Get(clientVideoCodecsHeader)
 	clientAudioCodecs := r.Header.Get(clientAudioCodecsHeader)
+	if clientVideoCodecs == "" && clientAudioCodecs != "" {
+		// Sterling/iOS client evidence: supports hardware H.264 & HEVC
+		clientVideoCodecs = "h264,hevc"
+	}
+
 	audioOverride := r.URL.Query().Get("audio")
 	prefLang := r.URL.Query().Get("lang")
 	var prefPID uint16
@@ -261,47 +270,71 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	if len(facts.AudioTracks) > 0 {
-		selectedTrack := selectAudioTrack(facts.AudioTracks, prefPID, prefLang)
-		needsTranscode := false
+	// 1. Video Compatibility Evaluation
+	needsVideoTranscode := false
+	targetVideoCodec := "copy"
+	scanPolicy := "passthrough"
+	srcVideoCodec := string(facts.VideoCodec)
+	if srcVideoCodec != "" && clientVideoCodecs != "" {
+		if !clientSupportsCodec(clientVideoCodecs, srcVideoCodec) {
+			needsVideoTranscode = true
+			targetVideoCodec = "h264"
+			scanPolicy = "deinterlace_50p"
+		}
+	}
 
+	// 2. Audio Compatibility Evaluation
+	needsAudioTranscode := false
+	targetAudioCodec := "copy"
+	var selectedTrack ring.AudioTrackInfo
+	if len(facts.AudioTracks) > 0 {
+		selectedTrack = selectAudioTrack(facts.AudioTracks, prefPID, prefLang)
 		if audioOverride == "aac" {
-			needsTranscode = true
+			needsAudioTranscode = true
+			targetAudioCodec = "aac"
 		} else if clientAudioCodecs != "" && selectedTrack.Codec != "" {
 			if !clientSupportsCodec(clientAudioCodecs, selectedTrack.Codec) {
-				needsTranscode = true
+				needsAudioTranscode = true
+				targetAudioCodec = "aac"
 			}
 		}
+	}
 
-		if needsTranscode {
-			logger.Info().
-				Uint16("sourceAudioPID", selectedTrack.PID).
-				Str("sourceCodec", selectedTrack.Codec).
-				Str("targetCodec", "aac").
-				Str("lang", selectedTrack.Language).
-				Msg("client audio capability gap detected: attaching to shared audio variant worker (MP2->AAC, video copy)")
+	if needsVideoTranscode || needsAudioTranscode {
+		logger.Info().
+			Str("srcVideo", srcVideoCodec).
+			Str("targetVideo", targetVideoCodec).
+			Str("scanPolicy", scanPolicy).
+			Uint16("srcAudioPID", selectedTrack.PID).
+			Str("srcAudioCodec", selectedTrack.Codec).
+			Str("targetAudio", targetAudioCodec).
+			Str("lang", selectedTrack.Language).
+			Msg("client capability gap detected: attaching to shared stream variant worker")
 
-			variantKey := variant.AudioVariantKey{
-				StreamFingerprint: fmt.Sprintf("prog%d-gen%d-v%d", key.TargetProgram, facts.Generation, facts.PMTVersion),
-				ProgramNumber:     key.TargetProgram,
-				AudioPID:          selectedTrack.PID,
-				Language:          selectedTrack.Language,
-				Role:              "main",
-				TargetCodec:       "aac",
-				SampleRate:        48000,
-				Channels:          2,
-				BitrateKbps:       192,
-			}
+		variantKey := variant.StreamVariantKey{
+			StreamFingerprint: fmt.Sprintf("prog%d-gen%d-v%d", key.TargetProgram, facts.Generation, facts.PMTVersion),
+			ProgramNumber:     key.TargetProgram,
+			SourceVideoCodec:  srcVideoCodec,
+			TargetVideoCodec:  targetVideoCodec,
+			ScanPolicy:        scanPolicy,
+			AudioPID:          selectedTrack.PID,
+			SourceAudioCodec:  selectedTrack.Codec,
+			TargetAudioCodec:  targetAudioCodec,
+			Language:          selectedTrack.Language,
+			Role:              "main",
+			SampleRate:        48000,
+			Channels:          2,
+			BitrateKbps:       192,
+		}
 
-			varAttach, varReader, release, varErr := pipe.AttachAudioVariantWithTimeout(r.Context(), variantKey, primedAttachTimeout)
-			if varErr == nil {
-				reader.Close()
-				reader = varReader
-				attach = varAttach
-				releaseVariant = release
-			} else {
-				logger.Warn().Err(varErr).Msg("failed to attach to audio variant; falling back to direct master stream")
-			}
+		varAttach, varReader, release, varErr := pipe.AttachAudioVariantWithTimeout(r.Context(), variantKey, primedAttachTimeout)
+		if varErr == nil {
+			reader.Close()
+			reader = varReader
+			attach = varAttach
+			releaseVariant = release
+		} else {
+			logger.Warn().Err(varErr).Msg("failed to attach to stream variant; falling back to direct master stream")
 		}
 	}
 	defer reader.Close()

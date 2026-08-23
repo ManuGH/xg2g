@@ -131,11 +131,13 @@ func (w *AudioVariantWorker) Err() error {
 func (w *AudioVariantWorker) run(ctx context.Context) error {
 	logger := log.L().With().
 		Str("variant", w.key.String()).
+		Str("srcVideo", w.key.SourceVideoCodec).
+		Str("tgtVideo", w.key.TargetVideoCodec).
 		Uint16("audioPID", w.key.AudioPID).
-		Str("targetCodec", w.key.TargetCodec).
+		Str("tgtAudio", w.key.TargetAudioCodec).
 		Logger()
 
-	logger.Info().Msg("starting audio variant transcode worker (video copy, audio transcode)")
+	logger.Info().Msg("starting stream variant transcode worker")
 
 	sampleRate := w.key.SampleRate
 	if sampleRate <= 0 {
@@ -150,7 +152,14 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		bitrate = 192
 	}
 
-	audioPIDSpec := fmt.Sprintf("0:i:0x%x", w.key.AudioPID)
+	targetVideo := w.key.TargetVideoCodec
+	if targetVideo == "" {
+		targetVideo = "copy"
+	}
+	targetAudio := w.key.TargetAudioCodec
+	if targetAudio == "" {
+		targetAudio = "copy"
+	}
 
 	args := []string{
 		"-y", "-nostdin", "-hide_banner", "-loglevel", "warning",
@@ -158,11 +167,51 @@ func (w *AudioVariantWorker) run(ctx context.Context) error {
 		"-analyzeduration", "1000000",
 		"-probesize", "1000000",
 		"-f", "mpegts", "-i", "pipe:0",
-		"-map", "0:v:0?", "-c:v", "copy",
-		"-map", audioPIDSpec, "-c:a", w.key.TargetCodec,
-		"-b:a", fmt.Sprintf("%dk", bitrate),
-		"-ar", fmt.Sprintf("%d", sampleRate),
-		"-ac", fmt.Sprintf("%d", channels),
+	}
+
+	// 1. Video stream mapping and encoding
+	args = append(args, "-map", "0:v:0?")
+	if targetVideo == "h264" {
+		if w.key.ScanPolicy == "deinterlace_50p" || w.key.ScanPolicy == "" {
+			args = append(args, "-vf", "bwdif=mode=send_field:parity=auto:deint=all")
+		}
+		args = append(args,
+			"-c:v", "libx264",
+			"-preset", "ultrafast",
+			"-tune", "zerolatency",
+			"-pix_fmt", "yuv420p",
+			"-g", "50",
+		)
+	} else {
+		args = append(args, "-c:v", "copy")
+	}
+
+	// 2. Audio stream mapping and encoding
+	if w.key.AudioPID > 0 {
+		audioPIDSpec := fmt.Sprintf("0:i:0x%x", w.key.AudioPID)
+		args = append(args, "-map", audioPIDSpec)
+		if targetAudio == "aac" {
+			args = append(args,
+				"-c:a", "aac",
+				"-b:a", fmt.Sprintf("%dk", bitrate),
+				"-ar", fmt.Sprintf("%d", sampleRate),
+				"-ac", fmt.Sprintf("%d", channels),
+			)
+		} else {
+			args = append(args, "-c:a", "copy")
+		}
+	} else {
+		args = append(args, "-map", "0:a:0?")
+		if targetAudio == "aac" {
+			args = append(args,
+				"-c:a", "aac",
+				"-b:a", fmt.Sprintf("%dk", bitrate),
+				"-ar", fmt.Sprintf("%d", sampleRate),
+				"-ac", fmt.Sprintf("%d", channels),
+			)
+		} else {
+			args = append(args, "-c:a", "copy")
+		}
 	}
 
 	if w.key.Language != "" && w.key.Language != "und" {
