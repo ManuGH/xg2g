@@ -311,6 +311,24 @@ struct RecordingPlayerScreen: View {
 
                 Spacer()
 
+                // 1-Tap Aspect Ratio Toggle Button (Identisch zum Live-Player: Standard vs Füllen)
+                Button {
+                    cycleAspectPreset()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: videoGravity == .resizeAspectFill ? "arrow.up.left.and.arrow.down.right" : "aspectratio")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(videoGravity == .resizeAspectFill ? "Füllen" : "Standard")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+
                 // AirPlay Button
                 AirPlayButton()
                     .frame(width: 36, height: 36)
@@ -325,14 +343,21 @@ struct RecordingPlayerScreen: View {
                             videoGravity = .resizeAspect
                             triggerHaptic(.light)
                         } label: {
-                            Label("Standard", systemImage: videoGravity == .resizeAspect ? "checkmark" : "")
+                            Label("Standard (16:9 • Nicht abgeschnitten)", systemImage: videoGravity == .resizeAspect ? "checkmark" : "")
                         }
 
                         Button {
                             videoGravity = .resizeAspectFill
                             triggerHaptic(.light)
                         } label: {
-                            Label("Ans iPhone anpassen", systemImage: videoGravity == .resizeAspectFill ? "checkmark" : "")
+                            Label("Bildschirm füllen (Zoom • Randlos)", systemImage: videoGravity == .resizeAspectFill ? "checkmark" : "")
+                        }
+
+                        Button {
+                            videoGravity = .resize
+                            triggerHaptic(.light)
+                        } label: {
+                            Label("Strecken (Vollbild ohne Abschneiden)", systemImage: videoGravity == .resize ? "checkmark" : "")
                         }
                     }
 
@@ -800,6 +825,18 @@ struct RecordingPlayerScreen: View {
                 }
             }
         }
+    }
+
+    private func cycleAspectPreset() {
+        triggerHaptic(.medium)
+        if videoGravity == .resizeAspect {
+            videoGravity = .resizeAspectFill
+            showZoomFeedback("Bildschirm füllen")
+        } else {
+            videoGravity = .resizeAspect
+            showZoomFeedback("Standard (16:9)")
+        }
+        resetAutoHideTimer()
     }
 
     private func skip(seconds: Double) {
