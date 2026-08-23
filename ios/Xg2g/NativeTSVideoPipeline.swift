@@ -573,7 +573,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // only has to be unique within this app run - not globally.
         request.setValue(Self.zapIdentifier(zapId), forHTTPHeaderField: "X-Xg2g-Zap-Id")
         // Evidence of client-supported decoders for server-side planner evaluation:
-        request.setValue("aac,ac3,eac3", forHTTPHeaderField: "X-Client-Audio-Codecs")
+        // AAC is the natively decoded, downmixable, rock-solid audio format on iOS
+        request.setValue("aac", forHTTPHeaderField: "X-Client-Audio-Codecs")
         request.setValue("h264,hevc", forHTTPHeaderField: "X-Client-Video-Codecs")
 
         let task = session.dataTask(with: request)
