@@ -96,10 +96,51 @@ public protocol PresentablePlaybackSession: AnyObject {
     func surfaceDidWarn(_ text: String)
 }
 
+/// The visible surface, as the presentation context needs it.
+///
+/// Narrow on purpose, and extracted for the same reason the audio sink was: the last
+/// thing keeping the deterministic proof of the zap transaction away from the ordinary
+/// test run was that this still built a real `AVSampleBufferDisplayLayer` and
+/// registered it with a synchronizer. That is media services, it dies on its own in a
+/// simulator, and it took the test host with it often enough that the suite had to be
+/// opt-in.
+///
+/// Production uses `SystemVideoPresenter` and therefore the real display layer, the
+/// real Picture-in-Picture controller and the real renderer registration. Only tests
+/// substitute anything.
+@MainActor
+public protocol PresentationSurface: AnyObject {
+    /// Which generation the surface admits. Anything else is discarded.
+    var currentGeneration: Int { get set }
+
+    /// How much is still queued, for diagnostics.
+    var pendingSamplesCount: Int { get }
+
+    /// Reported when the first field of a newly bound stream goes up immediately.
+    var onFirstFieldPresentedImmediately: (() -> Void)? { get set }
+
+    /// Reported when the surface has something to say about what it was given.
+    var onWarning: ((String) -> Void)? { get set }
+
+    /// Moves the surface onto a session's clock.
+    func attach(to synchronizer: AVSampleBufferRenderSynchronizer)
+
+    /// Takes it off again.
+    func detach(from synchronizer: AVSampleBufferRenderSynchronizer)
+
+    /// Discards what is queued and re-arms the immediate field.
+    func flush(generation: Int)
+
+    /// Tells the Picture-in-Picture controls that playback started or stopped.
+    func playbackStateDidChange()
+}
+
+extension SystemVideoPresenter: PresentationSurface {}
+
 /// Owns the visible surface and decides which session it belongs to.
 @MainActor
 public final class PresentationContext {
-    private let presenter: SystemVideoPresenter
+    private let presenter: any PresentationSurface
     private weak var renderView: MetalVideoView?
 
     /// The session currently on screen, if any.
@@ -111,7 +152,7 @@ public final class PresentationContext {
 
     private var nextGenerationValue = 1
 
-    public init(presenter: SystemVideoPresenter, renderView: MetalVideoView?) {
+    public init(presenter: any PresentationSurface, renderView: MetalVideoView?) {
         self.presenter = presenter
         self.renderView = renderView
         outlet.update(view: renderView, visibleGeneration: PresentationGeneration.none.rawValue)

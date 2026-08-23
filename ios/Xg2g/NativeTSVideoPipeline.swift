@@ -191,6 +191,72 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         TelemetryServer.shared.log(msg)
     }
 
+    private let recoveryLock = NSLock()
+    private var _lifecycle: PlaybackLifecycle = .stable
+    private var _recoveryEpoch: RecoveryEpoch = .initial
+
+    /// Whether this session is currently rebuilding itself.
+    ///
+    /// Set the instant a failure or a timeline change is seen, not when the rebuilding
+    /// gets around to running. The reset happens asynchronously on the ingest queue, and
+    /// anything anchored between the failure and the reset was anchored on a timeline
+    /// that no longer exists - so the session has to be known to be unusable from the
+    /// failure onwards, not from the reset onwards.
+    public var lifecycle: PlaybackLifecycle {
+        recoveryLock.lock(); defer { recoveryLock.unlock() }
+        return _lifecycle
+    }
+
+    /// Which recovery attempt is current.
+    public var recoveryEpoch: RecoveryEpoch {
+        recoveryLock.lock(); defer { recoveryLock.unlock() }
+        return _recoveryEpoch
+    }
+
+    /// Opens a recovery attempt and returns its epoch.
+    @discardableResult
+    private func beginRecovery(_ reason: String) -> RecoveryEpoch {
+        recoveryLock.lock()
+        _recoveryEpoch = _recoveryEpoch.next()
+        _lifecycle = .recovering
+        let epoch = _recoveryEpoch
+        recoveryLock.unlock()
+
+        let msg = "[1080i50-RECOVERY] ↻ \(epoch) opened: \(reason)"
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+        return epoch
+    }
+
+    /// Whether an asynchronous step still belongs to the current attempt.
+    ///
+    /// A second failure can arrive before the first attempt has finished. Without this,
+    /// the late half of the first would clear what the second had just rebuilt.
+    private func isCurrentRecovery(_ epoch: RecoveryEpoch) -> Bool {
+        recoveryLock.lock(); defer { recoveryLock.unlock() }
+        return _recoveryEpoch == epoch
+    }
+
+    /// Closes the current attempt.
+    ///
+    /// Deliberately not called when the reset finishes. Recovery is over when the
+    /// session can be used again - old timeline discarded, a new audio anchor
+    /// established and a picture anchored to it - which is exactly the moment a start
+    /// anchor is chosen. Reporting it any earlier would let a session be committed
+    /// while it still had nothing to show.
+    private func completeRecoveryIfNeeded() {
+        recoveryLock.lock()
+        let wasRecovering = _lifecycle == .recovering
+        _lifecycle = .stable
+        let epoch = _recoveryEpoch
+        recoveryLock.unlock()
+        guard wasRecovering else { return }
+
+        let msg = "[1080i50-RECOVERY] ✔ \(epoch) closed: a start anchor exists again"
+        logger.notice("\(msg, privacy: .public)")
+        TelemetryServer.shared.log(msg)
+    }
+
     /// The first picture this session decoded, whether or not it was ever shown.
     ///
     /// Session-local on purpose: it is what says the decoder is producing, which a
@@ -596,6 +662,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         ) else { return }
 
         commitAnchor = anchor
+        completeRecoveryIfNeeded()
 
         // Same rule as the ordinary clock start: only the session that owns the surface
         // runs a clock. A prepared session with no playable audio records its anchor
@@ -1365,6 +1432,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             // here. It is what a commit needs: the instant picture and audio share, so
             // the commit itself has nothing left to decide.
             commitAnchor = anchorPTS
+            completeRecoveryIfNeeded()
 
             let buffered = pts.seconds - anchorPTS.seconds
             if !requiresCushion || buffered >= effectiveAudioPreRoll {
@@ -1473,6 +1541,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// the pre-roll path below restarts it exactly as it does on a cold tune —
     /// one way to start the clock, not two.
     private func handleAudioTimelineJump(to pts: CMTime, delta: Double, codec: AudioStreamCodec) {
+        // Marked before anything is torn down. Everything anchored to the timeline that
+        // just ended is about to be discarded, and until a new anchor exists this
+        // session has nothing that could be committed.
+        beginRecovery("timeline jumped \(String(format: "%+.3f", delta))s")
+
         telemetry.mutate {
             $0.ptsDiscontinuities += 1
             $0.isAudioMasterClockActive = false
@@ -1650,8 +1723,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         guard sessionState.generation > 0 else { return }
 
+        let recovery = beginRecovery("renderer flushed by the system")
         ingestQueue.async { [weak self] in
             guard let self = self else { return }
+            guard self.isCurrentRecovery(recovery) else { return }
             self.isAudioClockStarted = false
             self.firstAudioPTS = nil
             // The picture anchor goes with it. Re-anchoring audio while keeping a
@@ -1678,8 +1753,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         guard sessionState.generation > 0 else { return }
 
+        let recovery = beginRecovery("audio renderer error")
         ingestQueue.async { [weak self] in
             guard let self = self else { return }
+            guard self.isCurrentRecovery(recovery) else { return }
             self.audioRenderer.reset()
             self.isAudioClockStarted = false
             self.firstAudioPTS = nil
@@ -2353,6 +2430,10 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
     ///   - their timestamps are coherent with it, which is what says the leading
     ///     orphan audio can be trimmed once rather than resynchronised forever.
     public var isPresentable: Bool {
+        // Never while rebuilding. A session mid-recovery may still be holding an anchor
+        // and a picture from the timeline it is discarding, and committing to that is
+        // committing to a stream that has already gone.
+        guard lifecycle == .stable else { return false }
         guard let anchor = commitAnchor, anchor.isValid else { return false }
         guard firstDecodedPicturePTS != nil else { return false }
         return audioRenderer.hasBuffersCovering(anchor)

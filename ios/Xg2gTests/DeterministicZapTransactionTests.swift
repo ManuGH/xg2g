@@ -28,32 +28,23 @@ import Testing
 /// decode are proved elsewhere; what is proved here is what the session does with a
 /// picture once it has one.
 ///
-/// Run alone, for now. The audio sink is substituted but `SystemVideoPresenter` is not,
-/// and it still builds a real `AVSampleBufferDisplayLayer` and registers it with a
-/// synchronizer - which is media services again. Alongside the rest of the target that
-/// is enough to take the test host down, so the suite is opt-in until the presenter is
-/// behind an abstraction too. That is the next piece of work, not a property of the
-/// proof: run alone, three of its four proofs pass a hundred times out of a hundred.
-///
-///     TEST_RUNNER_XG2G_ISOLATED_SUITE=1 TEST_RUNNER_XG2G_ZAP_ITERATIONS=100 \
-///         xcodebuild ... -only-testing:Xg2gTests/DeterministicZapTransactionTests test
+/// Nothing here touches media services. The audio sink and the visible surface are both
+/// substituted, so the suite runs in the ordinary test run rather than alone, and its
+/// answers do not depend on whether a simulator process happened to survive.
 /// How many times each proof is repeated.
 ///
 /// The point is that the answer never changes, not that it is asked a particular
 /// number of times. Each iteration builds one or two whole sessions - a decoder, a
 /// clock, queues, a URL session - and several hundred of them in one process is
-/// enough to exhaust the simulator, which would put the flakiness this suite exists
-/// to remove straight back in - measured: a hundred iterations alongside the rest of
-/// the target took the test host down about two runs in three.
-///
-/// Ten in the ordinary run, and the full hundred on demand when the suite runs alone:
+/// enough to keep the ordinary run brisk. Twenty-five every time, and the full hundred
+/// on demand:
 ///
 ///     TEST_RUNNER_XG2G_ZAP_ITERATIONS=100 xcodebuild ... \
 ///         -only-testing:Xg2gTests/DeterministicZapTransactionTests test
-let zapProofIterations = Int(ProcessInfo.processInfo.environment["XG2G_ZAP_ITERATIONS"] ?? "") ?? 10
+let zapProofIterations = Int(ProcessInfo.processInfo.environment["XG2G_ZAP_ITERATIONS"] ?? "") ?? 25
 
 @MainActor
-@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["XG2G_ISOLATED_SUITE"] != nil))
+@Suite(.serialized)
 struct DeterministicZapTransactionTests {
 
 
@@ -163,6 +154,29 @@ struct DeterministicZapTransactionTests {
         private var anyRenderer: NativeTSAudioRenderer { Self.sharedUnusedRenderer }
     }
 
+    /// The visible surface, recorded rather than rendered.
+    ///
+    /// The last piece of media services in this proof. A real `SystemVideoPresenter`
+    /// builds an `AVSampleBufferDisplayLayer` and registers it with a synchronizer, and
+    /// several hundred of those in one process is what kept taking the test host down.
+    final class ControllableSurface: PresentationSurface {
+        var currentGeneration: Int = 0
+        var pendingSamplesCount: Int { 0 }
+        var onFirstFieldPresentedImmediately: (() -> Void)?
+        var onWarning: ((String) -> Void)?
+
+        private(set) var attachedTo: AVSampleBufferRenderSynchronizer?
+        private(set) var flushes: [Int] = []
+        private(set) var playbackStateChanges = 0
+
+        func attach(to synchronizer: AVSampleBufferRenderSynchronizer) { attachedTo = synchronizer }
+        func detach(from synchronizer: AVSampleBufferRenderSynchronizer) {
+            if attachedTo === synchronizer { attachedTo = nil }
+        }
+        func flush(generation: Int) { flushes.append(generation) }
+        func playbackStateDidChange() { playbackStateChanges += 1 }
+    }
+
     // MARK: - Fixtures
 
     private func makeSession(_ channel: String) -> (NativeTSVideoPipeline, ControllableAudioOutput) {
@@ -265,9 +279,9 @@ struct DeterministicZapTransactionTests {
         return audioCursor
     }
 
-    private func makeContext() -> (PresentationContext, SystemVideoPresenter) {
-        let presenter = SystemVideoPresenter()
-        return (PresentationContext(presenter: presenter, renderView: nil), presenter)
+    private func makeContext() -> (PresentationContext, ControllableSurface) {
+        let surface = ControllableSurface()
+        return (PresentationContext(presenter: surface, renderView: nil), surface)
     }
 
     // MARK: - The transaction
@@ -378,10 +392,20 @@ struct DeterministicZapTransactionTests {
         #expect(b.isPresentable)
 
         audioB.failRenderer(b)
-        #expect(audioB.resetCount > 0, "iteration \(iteration): a failure must reset the renderer")
+
+        // Recovering from the instant the failure is seen, not from whenever the
+        // asynchronous rebuild gets around to running - anything anchored in between
+        // belongs to the timeline being discarded.
+        #expect(b.lifecycle == .recovering, "iteration \(iteration): a failure must open a recovery")
+        #expect(b.isPresentable == false, "iteration \(iteration): a recovering session is never presentable")
         #expect(audioB.isAudible == false, "iteration \(iteration): recovery must not grant audibility")
 
+        let epochDuringRecovery = b.recoveryEpoch
+        #expect(epochDuringRecovery != .initial)
+
         driveToPresentable(b, generation: genB, audioFrom: 600.0, pictureFrom: 600.4)
+        #expect(audioB.resetCount > 0, "iteration \(iteration): a failure must reset the renderer")
+        #expect(b.lifecycle == .stable, "iteration \(iteration): a new anchor closes the recovery")
         #expect(b.isPresentable, "iteration \(iteration): a failure must not make a session unanchorable")
         #expect(audioB.isAudible == false)
         #expect(audioB.rate == 0)
