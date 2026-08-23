@@ -30,6 +30,15 @@ type Principal struct {
 	// DPoP proof's jti is replay-cached, so validating the same proof a second
 	// time is indistinguishable from an attack and is refused.
 	DeviceID string
+
+	// Credential records how this identity was presented: a credential the
+	// browser attaches unprompted, or one the caller set deliberately.
+	//
+	// Recorded at the point authentication succeeds, so anything downstream that
+	// needs to reason about the channel reads a proven fact rather than
+	// re-inspecting headers and reaching its own conclusion. Empty on principals
+	// built before a source was known, which reads as CredentialNone.
+	Credential CredentialKind
 }
 
 // NewPrincipal creates a Principal from a token and optional user/scopes.

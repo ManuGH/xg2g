@@ -111,6 +111,11 @@ func (s *Server) authMiddlewareImpl(next http.Handler) http.Handler {
 			return
 		}
 		principal := result.Principal
+		// Recorded from the source that actually produced the token, so downstream
+		// code reads how this caller authenticated instead of guessing from headers.
+		if principal != nil {
+			principal.Credential = auth.SourceCredentialKind(authSource)
+		}
 
 		// State metadata for a successful request, set before the handler
 		// writes anything. Idempotent and not retry-relevant: a client that

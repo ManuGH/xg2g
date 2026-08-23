@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ManuGH/xg2g/internal/control/auth"
 	"github.com/ManuGH/xg2g/internal/control/http/problem"
 )
 
@@ -14,9 +15,17 @@ import (
 // It validates the Origin and Referer headers for state-changing requests (POST, PUT, DELETE, PATCH).
 //
 // The middleware enforces a strict fail-closed policy:
-// 1. Safe methods (GET, HEAD, OPTIONS) are allowed.
-// 2. Unsafe methods REQUIRE a valid Origin or Referer.
-// 3. If no allowedOrigins configured: Only strict same-origin (no proxies) allowed.
+//  1. Safe methods (GET, HEAD, OPTIONS) are allowed.
+//  2. Unsafe methods carrying an ambient credential - one the browser attaches on
+//     its own - REQUIRE a valid Origin or Referer. Those are the only requests a
+//     foreign page can forge, because they are the only ones that arrive with the
+//     victim's credentials already attached.
+//  3. If no allowedOrigins configured: Only strict same-origin (no proxies) allowed.
+//
+// Requests presenting no ambient credential are passed to authentication, which
+// refuses them unless they carry a valid credential of their own. Taking that
+// branch grants nothing: it is authentication, not this middleware, that decides
+// whether a caller may act.
 // 4. If allowedOrigins configured: Explicit origins or strict same-origin allowed.
 func CSRFProtection(allowedOrigins []string) func(http.Handler) http.Handler {
 	// Create map for O(1) lookup
@@ -46,14 +55,43 @@ func CSRFProtection(allowedOrigins []string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// 2. Extract request origin (MUST be present for unsafe methods)
+			// 2. Forgery needs a credential the browser attaches on its own.
+			//
+			// A cross-site page can make a browser send this request, but it cannot
+			// put credentials on it that it does not already hold. It rides on the
+			// ones the browser adds unprompted - cookies. A request that presents
+			// *only* a credential the caller had to set deliberately carries nothing
+			// a foreign page could have supplied, so there is nothing here to forge.
+			//
+			// Only that case is exempt. A request presenting no credential at all
+			// keeps the full check: the absence of a credential says nothing about
+			// the caller, and reading it as trustworthy would weaken every endpoint
+			// reachable without authentication.
+			//
+			// This is not "an Authorization header switches CSRF off". Nothing is
+			// granted by taking this branch: a request that presents no valid
+			// credential is refused by authentication a few frames further on, and
+			// omitting the cookie unlocks nothing that having it would have. The
+			// browser paths keep the full check, which is where forgery is possible
+			// at all.
+			//
+			// It is also what lets the native app reach the API over a LAN address,
+			// an HTTPS domain or a VPN without any of them being written down: its
+			// credentials are device-bound and request-bound, so its security never
+			// rested on which URL it happened to arrive by.
+			if auth.RequestCredentialKind(r) == auth.CredentialExplicit {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// 3. Extract request origin (MUST be present for unsafe methods)
 			requestOrigin := getRequestOrigin(r)
 			if requestOrigin == "" {
 				writeCSRFProblem(w, r, "Missing origin or referer header")
 				return
 			}
 
-			// 3. Check if origin is allowed
+			// 4. Check if origin is allowed
 			if !isOriginAllowed(requestOrigin, originsMap, r) {
 				writeCSRFProblem(w, r, "CSRF check failed: origin not trusted")
 				return
