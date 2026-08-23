@@ -30,6 +30,7 @@ struct RecordingPlayerScreen: View {
     @State private var currentTime: Double = 0
     @State private var durationOverride: Double = 0
     @State private var isScrubbing = false
+    @State private var isSeeking = false
     @State private var scrubTime: Double = 0
     @State private var showControls = true
     @State private var showRemainingTime = true
@@ -551,7 +552,8 @@ struct RecordingPlayerScreen: View {
     private func skip(seconds: Double) {
         guard player != nil else { return }
         triggerHaptic(.light)
-        let target = max(0, min(currentTime + seconds, totalDuration))
+        let baseTime = isScrubbing ? scrubTime : currentTime
+        let target = max(0, min(baseTime + seconds, totalDuration))
         seek(to: target)
 
         // Show Visual Feedback
@@ -573,16 +575,26 @@ struct RecordingPlayerScreen: View {
 
     private func seek(to seconds: Double) {
         guard let player else { return }
+        let clampedSec = max(0, min(seconds, totalDuration))
+        TelemetryServer.shared.log("[RecordingPlayer] ⏩ Seek requested to \(String(format: "%.1f", clampedSec))s")
+        isSeeking = true
+        currentTime = clampedSec
+        scrubTime = clampedSec
+
         let shouldResume = isPlaying
-        let targetTime = CMTime(seconds: seconds, preferredTimescale: 600)
-        player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak player] finished in
+        let targetTime = CMTime(seconds: clampedSec, preferredTimescale: 600)
+        let tolerance = CMTime(seconds: 2, preferredTimescale: 600)
+
+        player.seek(to: targetTime, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak player] finished in
             Task { @MainActor in
-                if finished && shouldResume {
+                self.isSeeking = false
+                TelemetryServer.shared.log("[RecordingPlayer] ⏩ Seek completed (finished=\(finished)) to \(String(format: "%.1f", clampedSec))s")
+                if shouldResume {
                     player?.play()
+                    self.isPlaying = true
                 }
             }
         }
-        currentTime = seconds
     }
 
     private func resetAutoHideTimer() {
@@ -716,7 +728,7 @@ struct RecordingPlayerScreen: View {
                     Task { @MainActor [weak p] in
                         guard let p else { return }
                         let sec = time.seconds
-                        if sec.isFinite && !sec.isNaN {
+                        if sec.isFinite && !sec.isNaN && !self.isScrubbing && !self.isSeeking {
                             self.currentTime = max(0, sec)
                         }
                         if let itemDur = p.currentItem?.duration.seconds, itemDur.isFinite && itemDur > 0 {
