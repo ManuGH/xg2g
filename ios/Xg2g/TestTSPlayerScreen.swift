@@ -86,8 +86,12 @@ public struct TestTSPlayerScreen: View {
     // in Settings uses it.
     init(model: AppModel? = nil, channel: Channel? = nil) {
         self.model = model
-        if let model, let channel, let url = model.directStreamURL(for: channel) {
-            _streamURLString = State(initialValue: url.absoluteString)
+        let initialURL = channel.flatMap {
+            model?.directStreamURL(for: $0)?.absoluteString
+                ?? model?.liveStreamURL(for: $0.serviceRef)?.absoluteString
+        }
+        if let initialURL, let channel {
+            _streamURLString = State(initialValue: initialURL)
             _currentChannelName = State(initialValue: channel.name)
         }
         // Built once with the screen and outliving every session on it. Without a
@@ -114,35 +118,66 @@ public struct TestTSPlayerScreen: View {
         return nil
     }
 
+    /// The serviceRef currently having actual visual presentation on screen.
+    private var activePresentedServiceRef: String {
+        coordinator.displayedServiceRef ?? coordinator.presentedServiceRef ?? currentServiceRef
+    }
+
+    /// The preset currently committed and presented on screen.
+    /// SINGLE SOURCE OF TRUTH for header, logo, EPG, audio HUD and Now Playing.
+    private var presentedPreset: ChannelPreset? {
+        presets.first { $0.serviceRef == activePresentedServiceRef }
+            ?? presets.first { $0.url == streamURLString || $0.name == currentChannelName }
+    }
+
+    /// The preset currently being prepared in-flight (if any).
+    private var requestedPreset: ChannelPreset? {
+        guard let reqRef = coordinator.requestedServiceRef else { return nil }
+        return presets.first { $0.serviceRef == reqRef }
+            ?? presets.first { $0.url.contains(reqRef) }
+    }
+
     private var currentLogoURL: URL? {
-        if let preset = currentPreset, let url = logoURL(forPreset: preset) {
+        if let preset = presentedPreset, let url = logoURL(forPreset: preset) {
             return url
         }
-        if let match = model?.channels.first(where: { $0.name == currentChannelName }) {
+        if let match = model?.channels.first(where: { $0.name == (presentedPreset?.name ?? currentChannelName) }) {
             return match.logoURL
         }
         return nil
     }
 
     private var currentChannel: Channel {
-        if let model, let match = model.channels.first(where: { $0.name == currentChannelName || $0.serviceRef == currentPreset?.serviceRef }) {
+        let name = presentedPreset?.name ?? currentChannelName
+        let sref = presentedPreset?.serviceRef ?? currentServiceRef
+        if let model, let match = model.channels.first(where: { $0.serviceRef == sref || $0.name == name }) {
             return match
         }
         return Channel(
-            id: currentPreset?.serviceRef ?? "native_lab",
-            name: currentChannelName,
+            id: sref.isEmpty ? "native_lab" : sref,
+            name: name,
             number: nil,
-            serviceRef: currentPreset?.serviceRef ?? "",
+            serviceRef: sref,
             logoURL: currentLogoURL
         )
     }
 
     private func switchToChannel(_ channel: Channel) {
-        guard let model, let url = model.directStreamURL(for: channel) else { return }
-        streamURLString = url.absoluteString
-        currentChannelName = channel.name
-        displayZapToast("Kanal: \(channel.name)")
-        startCurrentPreset()
+        if let match = presets.first(where: { $0.serviceRef == channel.serviceRef || $0.name == channel.name }) {
+            switchTo(preset: match)
+        } else {
+            let url = model?.directStreamURL(for: channel)?.absoluteString
+                ?? model?.liveStreamURL(for: channel.serviceRef)?.absoluteString
+                ?? "http://10.10.55.14:8089/api/v3/stream/live/\(channel.serviceRef)"
+            let newPreset = ChannelPreset(
+                name: channel.name,
+                serviceRef: channel.serviceRef,
+                url: url,
+                epgNow: model?.schedule[channel.serviceRef]?.now?.title ?? "",
+                category: ""
+            )
+            switchTo(preset: newPreset)
+        }
     }
 
     private func closePlayer() {
@@ -158,14 +193,16 @@ public struct TestTSPlayerScreen: View {
     /// Real catalogue when there is one — this screen is a normal player now,
     /// not only a bench — and the hard-coded services only when there is not.
     private var presets: [ChannelPreset] {
-        guard let model else { return Self.labPresets }
+        guard let model, !model.channels.isEmpty else { return Self.labPresets }
         let catalogue = model.filteredChannels.isEmpty ? model.channels : model.filteredChannels
-        let live = catalogue.compactMap { channel -> ChannelPreset? in
-            guard let url = model.directStreamURL(for: channel) else { return nil }
+        let live = catalogue.map { channel -> ChannelPreset in
+            let url = model.directStreamURL(for: channel)?.absoluteString
+                ?? model.liveStreamURL(for: channel.serviceRef)?.absoluteString
+                ?? "http://10.10.55.14:8089/api/v3/stream/live/\(channel.serviceRef)"
             return ChannelPreset(
                 name: channel.name,
                 serviceRef: channel.serviceRef,
-                url: url.absoluteString,
+                url: url,
                 epgNow: model.schedule[channel.serviceRef]?.now?.title ?? "",
                 category: ""
             )
@@ -173,9 +210,22 @@ public struct TestTSPlayerScreen: View {
         return live.isEmpty ? Self.labPresets : live
     }
 
+    private var currentServiceRef: String {
+        URL(string: streamURLString)?.lastPathComponent ?? streamURLString
+    }
+
+    private func isCurrentPreset(_ preset: ChannelPreset) -> Bool {
+        if let presented = presentedPreset {
+            return preset.serviceRef == presented.serviceRef || preset.name == presented.name
+        }
+        return preset.url == streamURLString ||
+            preset.serviceRef == currentServiceRef ||
+            preset.name == currentChannelName
+    }
+
     /// The preset currently streaming, for anything that needs more than its URL.
     private var currentPreset: ChannelPreset? {
-        presets.first { $0.url == streamURLString }
+        presets.first { isCurrentPreset($0) }
     }
 
     public var body: some View {
@@ -291,6 +341,33 @@ public struct TestTSPlayerScreen: View {
                                 }
                             }
                     )
+                    .overlay(alignment: .topTrailing) {
+                        if let requested = requestedPreset {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.75)
+                                    .frame(width: 14, height: 14)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(requested.name)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                    Text("Wird vorbereitet…")
+                                        .font(.system(size: 10, weight: .regular))
+                                        .foregroundStyle(.white.opacity(0.8))
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                            .shadow(color: Color.black.opacity(0.4), radius: 6, x: 0, y: 2)
+                            .padding(.top, isLandscape ? 16 : 8)
+                            .padding(.trailing, isLandscape ? 20 : 12)
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        }
+                    }
                     .overlay(alignment: .center) {
                         if let zapToast {
                             Text(zapToast)
@@ -327,6 +404,23 @@ public struct TestTSPlayerScreen: View {
                 Task { @MainActor in
                     self.currentSubtitleImage = frame?.image
                 }
+            }
+        }
+        .onChange(of: coordinator.displayedServiceRef ?? coordinator.presentedServiceRef) { _, newServiceRef in
+            guard let newServiceRef else { return }
+            if let preset = presets.first(where: { $0.serviceRef == newServiceRef }) {
+                currentChannelName = preset.name
+                streamURLString = preset.url
+            }
+            announceNowPlaying()
+        }
+        .onChange(of: coordinator.phase) { _, newPhase in
+            switch newPhase {
+            case .failed(let serviceRef, let reason):
+                let name = presets.first(where: { $0.serviceRef == serviceRef })?.name ?? serviceRef
+                displayZapToast("\(name) konnte nicht geladen werden (\(reason))")
+            case .warming, .buffering, .idle:
+                break
             }
         }
     }
@@ -685,14 +779,15 @@ public struct TestTSPlayerScreen: View {
                 // Channel Info Card
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 12) {
-                        ChannelLogo(url: currentLogoURL, name: currentChannelName, size: 44)
+                        let activeName = presentedPreset?.name ?? currentChannelName
+                        ChannelLogo(url: currentLogoURL, name: activeName, size: 44)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(currentChannelName)
+                            Text(activeName)
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(.white)
 
-                            if let preset = presets.first(where: { $0.url == streamURLString }) {
+                            if let preset = presentedPreset {
                                 Text(preset.epgNow)
                                     .font(.subheadline)
                                     .foregroundStyle(Theme.Colors.textSecondary)
@@ -735,6 +830,9 @@ public struct TestTSPlayerScreen: View {
                         .foregroundStyle(Theme.Colors.textSecondary)
 
                     ForEach(presets) { preset in
+                        let isPresented = (presentedPreset?.serviceRef == preset.serviceRef || (presentedPreset == nil && preset.name == currentChannelName))
+                        let isRequested = (coordinator.requestedServiceRef == preset.serviceRef)
+
                         Button {
                             switchTo(preset: preset)
                         } label: {
@@ -743,8 +841,8 @@ public struct TestTSPlayerScreen: View {
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(preset.name)
-                                        .font(.subheadline.weight(streamURLString == preset.url ? .bold : .medium))
-                                        .foregroundStyle(streamURLString == preset.url ? .white : Theme.Colors.textPrimary)
+                                        .font(.subheadline.weight(isPresented ? .bold : .medium))
+                                        .foregroundStyle(isPresented ? .white : Theme.Colors.textPrimary)
 
                                     Text(preset.epgNow)
                                         .font(.caption)
@@ -754,7 +852,19 @@ public struct TestTSPlayerScreen: View {
 
                                 Spacer()
 
-                                if streamURLString == preset.url {
+                                if isRequested {
+                                    HStack(spacing: 4) {
+                                        ProgressView()
+                                            .controlSize(.mini)
+                                            .tint(Theme.Colors.accentLive)
+                                        Text("WÄRMT…")
+                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(Theme.Colors.accentLive)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Theme.Colors.accentLive.opacity(0.15), in: Capsule())
+                                } else if isPresented {
                                     Text("AKTIV")
                                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.accentLive)
@@ -765,7 +875,7 @@ public struct TestTSPlayerScreen: View {
                             }
                             .padding(.vertical, 8)
                             .padding(.horizontal, 12)
-                            .background(streamURLString == preset.url ? Color.white.opacity(0.08) : Color.clear)
+                            .background(isPresented ? Color.white.opacity(0.08) : Color.clear)
                             .cornerRadius(10)
                         }
                         .buttonStyle(.plain)
@@ -1003,13 +1113,12 @@ public struct TestTSPlayerScreen: View {
     private func switchTo(preset: ChannelPreset) {
         viewPreset = .standard
         streamURLString = preset.url
-        currentChannelName = preset.name
-        displayZapToast("Kanal: \(preset.name)")
         startCurrentPreset()
     }
 
     private func zapRelative(delta: Int) {
-        guard let currentIndex = presets.firstIndex(where: { $0.url == streamURLString }) else { return }
+        guard !presets.isEmpty else { return }
+        let currentIndex = presets.firstIndex(where: { isCurrentPreset($0) }) ?? 0
         var nextIndex = currentIndex + delta
         if nextIndex < 0 { nextIndex = presets.count - 1 }
         if nextIndex >= presets.count { nextIndex = 0 }

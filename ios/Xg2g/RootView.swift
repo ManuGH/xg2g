@@ -26,9 +26,11 @@ struct RootView: View {
             }
         }
         .fullScreenCover(item: $model.playingChannel) { channel in
-            // Direct playback needs a receiver address, and it is only ever set
-            // by hand. Without one the choice cannot be honoured, so the server
-            // path runs instead of presenting a player that cannot tune.
+            // ARCHITECTURE TRANSITION NOTE:
+            // - .native routes to the direct VideoToolbox/Metal pipeline when a receiver address is configured.
+            // - .auto and .hls delegate to PlayerScreen, which queries the xg2g backend planner
+            //   (via /stream-info & playbackDecisionToken) to determine the optimal delivery mode.
+            // In the target architecture, the central planner will drive the unified player stage directly.
             if model.playbackEngine == .native, model.isDirectPlaybackAvailable {
                 TestTSPlayerScreen(model: model, channel: channel)
             } else {

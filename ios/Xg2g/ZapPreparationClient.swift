@@ -38,6 +38,11 @@ struct ZapPreparation: Decodable, Sendable {
         }
     }
 
+    /// Whether the preparation was rejected strictly because no tuner / capacity was available.
+    var isAdmissionDenied: Bool {
+        outcome == "admission_denied"
+    }
+
     /// Why it will not become ready, in a form worth showing.
     var failureSummary: String {
         if let detail, !detail.isEmpty { return detail }

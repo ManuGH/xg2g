@@ -30,16 +30,24 @@ public struct H264PictureStructure: Sendable {
     public let isBottomField: Bool
     /// For a frame picture, which of its two fields is temporally first.
     public let isTopFieldFirst: Bool
+    /// True when the picture/sequence is interlaced.
+    public let isInterlaced: Bool
 
-    public init(isFieldPicture: Bool, isBottomField: Bool, isTopFieldFirst: Bool) {
+    public init(isFieldPicture: Bool, isBottomField: Bool, isTopFieldFirst: Bool, isInterlaced: Bool = true) {
         self.isFieldPicture = isFieldPicture
         self.isBottomField = isBottomField
         self.isTopFieldFirst = isTopFieldFirst
+        self.isInterlaced = isInterlaced
     }
 
     /// DVB 1080i frame picture: both fields woven, top field first.
     public static let wovenTopFieldFirst = H264PictureStructure(
-        isFieldPicture: false, isBottomField: false, isTopFieldFirst: true
+        isFieldPicture: false, isBottomField: false, isTopFieldFirst: true, isInterlaced: true
+    )
+
+    /// Progressive frame picture (e.g. 720p50, 1080p50).
+    public static let progressive = H264PictureStructure(
+        isFieldPicture: false, isBottomField: false, isTopFieldFirst: true, isInterlaced: false
     )
 }
 
@@ -804,8 +812,10 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
     /// own parity, and that is what gets read.
     private func parseSliceStructure(from nal: Data) -> H264PictureStructure {
         // frame_mbs_only_flag == 1 means field pictures cannot occur, and
-        // field_pic_flag is then absent from the header entirely.
-        guard !frameMbsOnlyFlag, nal.count > 1 else { return .wovenTopFieldFirst }
+        // the stream is purely progressive.
+        guard !frameMbsOnlyFlag, nal.count > 1 else {
+            return frameMbsOnlyFlag ? .progressive : .wovenTopFieldFirst
+        }
 
         // 16 bytes of RBSP comfortably covers the header up to bottom_field_flag
         // for a slice with first_mb_in_slice == 0, which is the only kind parsed.
@@ -831,7 +841,8 @@ public final class H264AccessUnitAssembler: @unchecked Sendable {
         return H264PictureStructure(
             isFieldPicture: isFieldPicture,
             isBottomField: isBottomField,
-            isTopFieldFirst: true
+            isTopFieldFirst: true,
+            isInterlaced: true
         )
     }
 }

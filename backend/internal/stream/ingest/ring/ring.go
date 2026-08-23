@@ -200,7 +200,8 @@ type MasterRing struct {
 	// service whose video is through but whose audio is not can be told apart.
 	audioClearRun uint64
 	// audioPIDs holds the elementary audio streams named by the active PMT.
-	audioPIDs []uint16
+	audioPIDs   []uint16
+	audioTracks []AudioTrackInfo
 }
 
 // NewMasterRing creates a new MasterRing with the specified capacity (aligned to 188 bytes).
@@ -669,6 +670,14 @@ func (r *MasterRing) processCompletePSISectionLocked(isPAT bool, table []byte, r
 						}
 						if isAudioStreamType(st, descriptors) {
 							r.audioPIDs = appendPID(r.audioPIDs, elemPID)
+							codec := AudioCodecFromStreamType(st, descriptors)
+							lang := LanguageFromDescriptors(descriptors)
+							r.audioTracks = appendAudioTrack(r.audioTracks, AudioTrackInfo{
+								PID:        elemPID,
+								StreamType: st,
+								Codec:      codec,
+								Language:   lang,
+							})
 						}
 					}
 
@@ -699,6 +708,16 @@ func containsPacket(list [][]byte, pkt []byte) bool {
 	return false
 }
 
+func appendAudioTrack(list []AudioTrackInfo, track AudioTrackInfo) []AudioTrackInfo {
+	for i, existing := range list {
+		if existing.PID == track.PID {
+			list[i] = track
+			return list
+		}
+	}
+	return append(list, track)
+}
+
 func (r *MasterRing) invalidateVideoStateLocked() {
 	r.videoPID = 0
 	r.videoCodec = CodecUnknown
@@ -718,6 +737,7 @@ func (r *MasterRing) invalidateVideoStateLocked() {
 	r.videoClearRun = 0
 	r.audioClearRun = 0
 	r.audioPIDs = nil
+	r.audioTracks = nil
 	r.raObs = RandomAccessObservation{}
 	r.cleanRAPCount = 0
 	r.cleanAccessUnits = 0
@@ -1223,9 +1243,10 @@ type ReadinessFacts struct {
 	PMTVersion    uint8
 	ProgramNumber uint16
 
-	VideoPID   uint16
-	VideoCodec VideoCodec
-	AudioPIDs  []uint16
+	VideoPID    uint16
+	VideoCodec  VideoCodec
+	AudioPIDs   []uint16
+	AudioTracks []AudioTrackInfo
 
 	// ParameterSetsSeen reports whether the decoder configuration for the current
 	// codec has been observed: SPS and PPS, plus VPS for HEVC.
@@ -1256,6 +1277,9 @@ func (r *MasterRing) ReadinessFacts() ReadinessFacts {
 	pids := make([]uint16, len(r.audioPIDs))
 	copy(pids, r.audioPIDs)
 
+	tracks := make([]AudioTrackInfo, len(r.audioTracks))
+	copy(tracks, r.audioTracks)
+
 	parameterSets := r.pesHasSPS && r.pesHasPPS
 	if r.videoCodec == CodecH265 {
 		parameterSets = parameterSets && r.pesHasVPS
@@ -1275,6 +1299,7 @@ func (r *MasterRing) ReadinessFacts() ReadinessFacts {
 		VideoPID:          r.videoPID,
 		VideoCodec:        r.videoCodec,
 		AudioPIDs:         pids,
+		AudioTracks:       tracks,
 		ParameterSetsSeen: parameterSets,
 		RandomAccess:      r.raObs,
 		Scrambling: StreamScrambling{

@@ -93,13 +93,21 @@ struct ZapPreparationClientTests {
 final class PrepareStubURLProtocol: URLProtocol {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _lastRequest: URLRequest?
+    nonisolated(unsafe) private static var _responseHandler: (@Sendable (URLRequest) -> (Int, Data))?
 
     static var lastRequest: URLRequest? {
         lock.lock(); defer { lock.unlock() }; return _lastRequest
     }
 
     static func reset() {
-        lock.lock(); defer { lock.unlock() }; _lastRequest = nil
+        lock.lock(); defer { lock.unlock() }
+        _lastRequest = nil
+        _responseHandler = nil
+    }
+
+    static func setHandler(_ handler: @escaping @Sendable (URLRequest) -> (Int, Data)) {
+        lock.lock(); defer { lock.unlock() }
+        _responseHandler = handler
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -108,16 +116,19 @@ final class PrepareStubURLProtocol: URLProtocol {
     override func startLoading() {
         Self.lock.lock()
         Self._lastRequest = request
+        let handler = Self._responseHandler
         Self.lock.unlock()
+
+        let (statusCode, data) = handler?(request) ?? (202, Data(#"{"preparationId":"p1","state":"pending"}"#.utf8))
 
         let response = HTTPURLResponse(
             url: request.url ?? URL(string: "http://example.test")!,
-            statusCode: 202,
+            statusCode: statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(#"{"preparationId":"p1","state":"pending"}"#.utf8))
+        client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
     }
 

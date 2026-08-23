@@ -12,6 +12,7 @@ private let logger = Logger(subsystem: "io.github.manugh.xg2g.ios", category: "a
 final class AudioSessionManager: @unchecked Sendable {
 
     static let shared = AudioSessionManager()
+    private let queue = DispatchQueue(label: "io.github.manugh.xg2g.audiosession", qos: .userInitiated)
 
     private init() {}
 
@@ -20,33 +21,35 @@ final class AudioSessionManager: @unchecked Sendable {
     private static let stereoChannelCount = 2
 
     func configureForPlayback() {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .moviePlayback, options: [])
+        queue.async {
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .moviePlayback, options: [])
 
-            if #available(iOS 15.0, *) {
-                // Claiming multichannel support on a two-channel route asks the
-                // system to keep a 5.1 configuration alive across a link that
-                // cannot carry it, and the fold-down that follows is exactly
-                // where AirPods playback loses its dialogue. Claim it only where
-                // the route can actually take it (HDMI, AirPlay, multichannel USB).
-                //
-                // Set while the session is still inactive, as the category is:
-                // this is session configuration, and a route change re-runs the
-                // whole function anyway, so a route that appears later is picked
-                // up there rather than by reordering the setup.
-                let outputChannels = session.currentRoute.outputs
-                    .map { $0.channels?.count ?? 0 }
-                    .max() ?? session.outputNumberOfChannels
-                let supportsMultichannel = outputChannels > Self.stereoChannelCount
-                try session.setSupportsMultichannelContent(supportsMultichannel)
+                if #available(iOS 15.0, *) {
+                    // Claiming multichannel support on a two-channel route asks the
+                    // system to keep a 5.1 configuration alive across a link that
+                    // cannot carry it, and the fold-down that follows is exactly
+                    // where AirPods playback loses its dialogue. Claim it only where
+                    // the route can actually take it (HDMI, AirPlay, multichannel USB).
+                    //
+                    // Set while the session is still inactive, as the category is:
+                    // this is session configuration, and a route change re-runs the
+                    // whole function anyway, so a route that appears later is picked
+                    // up there rather than by reordering the setup.
+                    let outputChannels = session.currentRoute.outputs
+                        .map { $0.channels?.count ?? 0 }
+                        .max() ?? session.outputNumberOfChannels
+                    let supportsMultichannel = outputChannels > Self.stereoChannelCount
+                    try session.setSupportsMultichannelContent(supportsMultichannel)
+                }
+
+                try session.setActive(true)
+                self.logCurrentRoute(session)
+            } catch {
+                logger.error("[AudioSessionManager] ⚠️ Audio session config warning: \(String(describing: error), privacy: .public)")
+                print("[AudioSessionManager] ⚠️ Audio session config warning: \(error)")
             }
-
-            try session.setActive(true)
-            logCurrentRoute(session)
-        } catch {
-            logger.error("[AudioSessionManager] ⚠️ Audio session config warning: \(String(describing: error), privacy: .public)")
-            print("[AudioSessionManager] ⚠️ Audio session config warning: \(error)")
         }
     }
 
@@ -78,10 +81,12 @@ final class AudioSessionManager: @unchecked Sendable {
     }
 
     func deactivate() {
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        } catch {
-            // Best effort
+        queue.async {
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            } catch {
+                // Best effort
+            }
         }
     }
 }

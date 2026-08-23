@@ -43,6 +43,18 @@ final class ZapCoordinator: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
 
+    /// The service currently holding presentation ownership on the visible surface.
+    /// This is the Single Source of Truth for which channel is active in sound & picture.
+    @Published private(set) var presentedServiceRef: String?
+
+    /// The service whose first frame is actually visible on the display.
+    /// Header, Logo, EPG and NowPlaying switch exactly when this changes.
+    @Published private(set) var displayedServiceRef: String?
+
+    /// The service currently requested by the viewer and being prepared in the background.
+    /// Non-nil only while prepare / transport / presentable are in progress.
+    @Published private(set) var requestedServiceRef: String?
+
     /// The session on screen. Published so the screen's telemetry follows the channel
     /// that is actually visible rather than whichever one was built last.
     @Published private(set) var playing: NativeTSVideoPipeline?
@@ -152,6 +164,8 @@ final class ZapCoordinator: ObservableObject {
         guard isCurrent(zapID) else { return }
 
         let started = CACurrentMediaTime()
+        requestedServiceRef = serviceRef
+        note(zapID, "user.requested", serviceRef, extra: "presented=\(presentedServiceRef ?? "none")")
         note(zapID, "prepare.requested", serviceRef)
         phase = .warming(serviceRef: serviceRef)
 
@@ -189,9 +203,16 @@ final class ZapCoordinator: ObservableObject {
         guard settled.parsedState == .ready, let backendGeneration = settled.generation else {
             await abandonInFlight(reason: "preparation did not become ready")
             guard isCurrent(zapID) else { return }
-            return await failOrStartOutright(zapID, serviceRef, settled.failureSummary)
+            return await failOrStartOutright(
+                zapID,
+                serviceRef,
+                settled.failureSummary,
+                isAdmissionDenied: settled.isAdmissionDenied
+            )
         }
-        note(zapID, "transport.ready", serviceRef, extra: "after \(settled.readyAfterMs ?? -1)ms")
+        let transportReadyAt = CACurrentMediaTime()
+        let transportMs = Int((transportReadyAt - started) * 1000)
+        note(zapID, "transport.ready", serviceRef, extra: "stage=+\(transportMs)ms (backend=\(settled.readyAfterMs ?? -1)ms)")
 
         // The stream is warm on the backend, so opening it here coalesces onto the
         // ingest that was just proven rather than dialling the receiver a second time.
@@ -219,21 +240,59 @@ final class ZapCoordinator: ObservableObject {
             guard isCurrent(zapID) else { return }
             return fail(zapID, serviceRef, "the channel arrived but never became presentable")
         }
+        let presentationReadyAt = CACurrentMediaTime()
+        let presentationMs = Int((presentationReadyAt - transportReadyAt) * 1000)
         note(zapID, "presentation.ready", serviceRef,
-             extra: "after \(Int((CACurrentMediaTime() - started) * 1000))ms")
+             extra: "stage=+\(presentationMs)ms total=\(Int((presentationReadyAt - started) * 1000))ms")
 
         // The commit. Ownership of the surface moves in one step, and only then does the
-        // old channel stop.
+        // old channel stop and the presentedChannel change.
         guard context.bind(session) else {
             await abandonInFlight(reason: "commit refused")
             guard isCurrent(zapID) else { return }
             return fail(zapID, serviceRef, "the surface refused the channel")
         }
-        note(zapID, "commit", serviceRef,
-             extra: "generation \(session.presentationGeneration.rawValue)")
+        let bindAt = CACurrentMediaTime()
+        let bindMs = Int((bindAt - presentationReadyAt) * 1000)
+        note(zapID, "presentation.bind", serviceRef,
+             extra: "stage=+\(bindMs)ms generation=\(session.presentationGeneration.rawValue)")
 
         let retiring = playing
+
+        session.onFirstPictureVisible = { [weak self, weak session, weak retiring] in
+            Task { @MainActor [weak self, weak session, weak retiring] in
+                guard let self, let session, self.playing === session, self.isCurrent(zapID) else { return }
+                let firstFrameAt = CACurrentMediaTime()
+                let firstFrameMs = Int((firstFrameAt - bindAt) * 1000)
+                let totalMs = Int((firstFrameAt - started) * 1000)
+                self.note(zapID, "firstVisibleFrame", serviceRef, extra: "stage=+\(firstFrameMs)ms total=\(totalMs)ms")
+                self.displayedServiceRef = serviceRef
+                self.note(zapID, "displayedChannel.changed", serviceRef, extra: "total=\(totalMs)ms")
+                if self.requestedServiceRef == serviceRef {
+                    self.requestedServiceRef = nil
+                }
+                self.retireSession(retiring, zapID: zapID, startedAt: started, serviceRef: serviceRef)
+            }
+        }
+
+        // Safety fallback: if no first frame callback occurs within 500ms, retire old session anyway
+        Task { [weak self, weak retiring] in
+            try? await Task.sleep(for: .milliseconds(500))
+            await MainActor.run { [weak self, weak retiring] in
+                guard let self, self.isCurrent(zapID) else { return }
+                if self.requestedServiceRef == serviceRef {
+                    self.requestedServiceRef = nil
+                }
+                self.retireSession(retiring, zapID: zapID, startedAt: started, serviceRef: serviceRef)
+            }
+        }
+
         playing = session
+        presentedServiceRef = serviceRef
+        let totalMs = Int((bindAt - started) * 1000)
+        note(zapID, "presentedChannel.changed", serviceRef,
+             extra: "total=\(totalMs)ms [transport=\(transportMs)ms, presentation=\(presentationMs)ms, bind=\(bindMs)ms]")
+
         follow(session)
         inFlight = nil
         phase = .idle
@@ -241,13 +300,6 @@ final class ZapCoordinator: ObservableObject {
         // moves at the commit and not when the session was built: for the whole
         // preparation the numbers worth reading are still the playing channel's.
         installTelemetry(for: session)
-
-        if let retiring {
-            summarize(retiring, zapID: zapID, event: "retire.stats")
-            retiring.stopStreaming()
-        }
-        note(zapID, "retire", serviceRef,
-             extra: "total \(Int((CACurrentMediaTime() - started) * 1000))ms")
 
         // Told last, and its answer changes nothing on screen. The picture and audio are
         // already proven here; a bookkeeping call that fails is worth a log line, not a
@@ -298,6 +350,11 @@ final class ZapCoordinator: ObservableObject {
 
         let retiring = playing
         playing = session
+        presentedServiceRef = url.lastPathComponent
+        displayedServiceRef = url.lastPathComponent
+        requestedServiceRef = nil
+        note(zapID, "presentedChannel.changed", url.lastPathComponent)
+
         follow(session)
         phase = .idle
         installTelemetry(for: session)
@@ -306,6 +363,13 @@ final class ZapCoordinator: ObservableObject {
             summarize(retiring, zapID: zapID, event: "retire.stats")
             retiring.stopStreaming()
         }
+    }
+
+    private func retireSession(_ session: NativeTSVideoPipeline?, zapID: String, startedAt: Double, serviceRef: String) {
+        guard let session else { return }
+        summarize(session, zapID: zapID, event: "retire.stats")
+        session.stopStreaming()
+        note(zapID, "retire", serviceRef, extra: "total \(Int((CACurrentMediaTime() - startedAt) * 1000))ms")
     }
 
     /// Stops everything, for a screen going away.
@@ -318,6 +382,9 @@ final class ZapCoordinator: ObservableObject {
             playing.stopStreaming()
         }
         playing = nil
+        presentedServiceRef = nil
+        displayedServiceRef = nil
+        requestedServiceRef = nil
         visibleSessionObserver = nil
         phase = .idle
         TelemetryServer.shared.setTelemetryProvider { [:] }
@@ -353,6 +420,7 @@ final class ZapCoordinator: ObservableObject {
     /// holding a tuner rather than waiting to time out. The channel on screen is not
     /// touched: that is the guarantee the whole transaction exists for.
     private func abandonInFlight(reason: String) async {
+        requestedServiceRef = nil
         guard let flight = inFlight else { return }
         inFlight = nil
         flight.session?.stopStreaming()
@@ -365,27 +433,36 @@ final class ZapCoordinator: ObservableObject {
         (error as? APIError)?.diagnosticDescription ?? error.localizedDescription
     }
 
-    /// Reports a failed channel change, and starts the channel anyway when there is
-    /// nothing on screen to protect.
+    /// Reports a failed channel change, and falls back to starting the channel outright
+    /// only when either:
+    ///   1. Nothing is currently playing on screen (`playing == nil`), OR
+    ///   2. The preparation failed strictly due to tuner/resource exhaustion (`isAdmissionDenied == true`).
     ///
-    /// Make-before-break exists to keep a viewer's picture through a failed tune. With
-    /// no picture yet there is none to keep, and refusing to play because the
-    /// preparation could not be made would trade a diagnosable failure for a black
-    /// screen — which is the failure this whole rebuild set out to remove. The reason
-    /// is logged either way, so a backend that cannot be asked to prepare is visible
-    /// rather than silently worked around.
-    private func failOrStartOutright(_ zapID: String, _ serviceRef: String, _ reason: String) async {
+    /// For any stream-level failure (e.g. timeout, ingest_ended, unpresentable, scrambled,
+    /// no PAT/PMT, generation change), the running channel (`playing`) is kept alive and untouched,
+    /// preserving the core Make-before-Break safety guarantee.
+    private func failOrStartOutright(_ zapID: String, _ serviceRef: String, _ reason: String, isAdmissionDenied: Bool = false) async {
         note(zapID, "zap.failed", serviceRef, extra: reason)
 
-        guard playing == nil, let url = streamURL(serviceRef), isCurrent(zapID) else {
+        let allowFallback = (playing == nil) || isAdmissionDenied
+        guard allowFallback, let url = streamURL(serviceRef), isCurrent(zapID) else {
+            requestedServiceRef = nil
             phase = .failed(serviceRef: serviceRef, reason: reason)
             return
         }
-        note(zapID, "zap.fallback", serviceRef, extra: "nothing playing to protect; starting outright")
+
+        let fallbackReason = playing == nil
+            ? "nothing playing to protect; starting outright"
+            : "single tuner / admission denied; breaking before make"
+        if isAdmissionDenied {
+            note(zapID, "admission.denied", serviceRef, extra: "break-before-make required")
+        }
+        note(zapID, "zap.fallback", serviceRef, extra: fallbackReason)
         await startOutright(url: url, zapID: zapID, requestedAt: CACurrentMediaTime())
     }
 
     private func fail(_ zapID: String, _ serviceRef: String, _ reason: String) {
+        requestedServiceRef = nil
         phase = .failed(serviceRef: serviceRef, reason: reason)
         note(zapID, "zap.failed", serviceRef, extra: reason)
     }

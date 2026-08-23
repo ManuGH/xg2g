@@ -1051,7 +1051,8 @@ public final class MetalVideoView: UIView {
                 }
             }
 
-            guard sourceIsInterlaced else {
+            let isFrameInterlaced = sourceIsInterlaced && frame.structure.isInterlaced
+            guard isFrameInterlaced else {
                 fieldQueue.append(PendingField(pixelBuffer: frame.pixelBuffer, parity: 0, ptsSeconds: pts, generation: frame.generation))
                 wovenFrameCount += 1
                 continue

@@ -435,4 +435,239 @@ struct DeterministicZapTransactionTests {
         #expect(audioA.isAudible, "iteration \(iteration): a refused commit must not silence the running channel")
         #expect(audioA.rate == 1.0)
     }
+
+    // MARK: - Dual-State & Presentation Ownership Proofs
+
+    @Test("Presentation Ownership: presentedChannel only changes on atomic commit")
+    func presentationOwnershipChangesOnlyOnCommit() async throws {
+        let (a, audioA) = makeSession("channel-a")
+        let (b, audioB) = makeSession("channel-b")
+        defer { a.stopStreaming(); b.stopStreaming() }
+
+        let (context, presenter) = makeContext()
+        let genA = context.issueGeneration(to: a)
+        let genB = context.issueGeneration(to: b)
+
+        // 1. Initial State: A is driven to presentable and bound.
+        driveToPresentable(a, generation: genA, audioFrom: 100.0, pictureFrom: 100.4)
+        #expect(context.bind(a))
+        #expect(context.boundSession === a)
+        #expect(context.visibleGeneration == genA)
+        #expect(audioA.isAudible)
+
+        // 2. In-Flight Preparation: B prepares beside A.
+        // Before B is presentable:
+        #expect(context.boundSession === a, "A must remain bound presentation session while B prepares")
+        #expect(context.visibleGeneration == genA)
+        #expect(audioB.isAudible == false)
+
+        // 3. Presentation-Ready B: B achieves presentability, but commit has NOT occurred yet.
+        driveToPresentable(b, generation: genB, audioFrom: 500.0, pictureFrom: 500.4)
+        #expect(b.isPresentable)
+        #expect(context.boundSession === a, "A must still own presentation even when B is presentation-ready")
+        #expect(context.visibleGeneration == genA)
+        #expect(audioA.isAudible)
+        #expect(audioB.isAudible == false)
+
+        // 4. Commit: Atomic handover
+        #expect(context.bind(b))
+        #expect(context.boundSession === b, "B assumes presentation ownership upon successful bind")
+        #expect(context.visibleGeneration == genB)
+        #expect(presenter.currentGeneration == genB.rawValue)
+        #expect(audioB.isAudible)
+        #expect(audioA.isAudible == false, "A is silenced immediately upon handover")
+    }
+
+    @Test("Dual-State Coordinator: requested vs presented lifecycle")
+    func coordinatorDualStateLifecycle() async throws {
+        let srefORF = "1:0:19:132F:3EF:1:C00000:0:0:0:"
+        let srefATV = "1:0:19:1330:3EF:1:C00000:0:0:0:"
+
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PrepareStubURLProtocol.self]
+        PrepareStubURLProtocol.reset()
+        let api = HTTPAPIClient(
+            address: try ServerAddressParser.parseTrusted("http://example.test:8089/"),
+            session: URLSession(configuration: config)
+        )
+        let client = ZapPreparationClient(api: api, clientID: "sterling-test")
+        let coordinator = ZapCoordinator(
+            preparations: client,
+            streamURL: { sref in URL(string: "http://example.test:8089/api/v3/stream/live/\(sref)") }
+        )
+
+        // 1. Initial State
+        #expect(coordinator.presentedServiceRef == nil)
+        #expect(coordinator.requestedServiceRef == nil)
+
+        await coordinator.play(unprepared: URL(string: "http://example.test:8089/api/v3/stream/live/\(srefORF)")!)
+        #expect(coordinator.presentedServiceRef == srefORF)
+        #expect(coordinator.requestedServiceRef == nil)
+
+        // 2. Warming State: Prepare returns 200 with pending preparation
+        PrepareStubURLProtocol.setHandler { _ in
+            (200, Data("""
+            {
+                "preparationId": "prep-atv-1",
+                "state": "pending",
+                "generation": 1,
+                "serviceRef": "\(srefATV)"
+            }
+            """.utf8))
+        }
+
+        let zapTask = Task { await coordinator.zap(to: srefATV) }
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(coordinator.presentedServiceRef == srefORF, "ORF must remain presented while ATV warms")
+        #expect(coordinator.requestedServiceRef == srefATV, "requestedServiceRef must reflect ATV target")
+
+        zapTask.cancel()
+        await coordinator.stop()
+    }
+
+    @Test("Dual-State Coordinator: failure keeps presented channel intact and clears requested")
+    func coordinatorFailureKeepsPresentedIntact() async throws {
+        let srefORF = "1:0:19:132F:3EF:1:C00000:0:0:0:"
+        let srefATV = "1:0:19:1330:3EF:1:C00000:0:0:0:"
+
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PrepareStubURLProtocol.self]
+        PrepareStubURLProtocol.reset()
+        let api = HTTPAPIClient(
+            address: try ServerAddressParser.parseTrusted("http://example.test:8089/"),
+            session: URLSession(configuration: config)
+        )
+        let client = ZapPreparationClient(api: api, clientID: "sterling-test")
+        let coordinator = ZapCoordinator(
+            preparations: client,
+            streamURL: { sref in URL(string: "http://example.test:8089/api/v3/stream/live/\(sref)") }
+        )
+
+        // Initial channel ORF playing
+        await coordinator.play(unprepared: URL(string: "http://example.test:8089/api/v3/stream/live/\(srefORF)")!)
+        #expect(coordinator.presentedServiceRef == srefORF)
+
+        // Prepare fails with 500 error
+        PrepareStubURLProtocol.setHandler { _ in
+            (500, Data(#"{"error": "tuning timeout"}"#.utf8))
+        }
+
+        await coordinator.zap(to: srefATV)
+
+        #expect(coordinator.presentedServiceRef == srefORF, "ORF must remain presented when ATV fails")
+        #expect(coordinator.requestedServiceRef == nil, "requestedServiceRef must be cleared on failure")
+        if case .failed(let sref, _) = coordinator.phase {
+            #expect(sref == srefATV)
+        } else {
+            Issue.record("Expected failed phase, got \(coordinator.phase)")
+        }
+
+        await coordinator.stop()
+    }
+
+    @Test("Dual-State Coordinator: Rapid Zap A -> B -> C supersedes B cleanly")
+    func rapidZapABCCancelsBAndOnlyPresentsC() async throws {
+        let srefORF1 = "1:0:19:132F:3EF:1:C00000:0:0:0:"
+        let srefORF2 = "1:0:19:1330:3EF:1:C00000:0:0:0:"
+        let srefATV = "1:0:19:1331:3EF:1:C00000:0:0:0:"
+
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PrepareStubURLProtocol.self]
+        PrepareStubURLProtocol.reset()
+        let api = HTTPAPIClient(
+            address: try ServerAddressParser.parseTrusted("http://example.test:8089/"),
+            session: URLSession(configuration: config)
+        )
+        let client = ZapPreparationClient(api: api, clientID: "sterling-test")
+        let coordinator = ZapCoordinator(
+            preparations: client,
+            streamURL: { sref in URL(string: "http://example.test:8089/api/v3/stream/live/\(sref)") }
+        )
+
+        // Initial A (ORF1) playing
+        await coordinator.play(unprepared: URL(string: "http://example.test:8089/api/v3/stream/live/\(srefORF1)")!)
+        #expect(coordinator.presentedServiceRef == srefORF1)
+
+        // 1. Zap to B (ORF2) - pending
+        PrepareStubURLProtocol.setHandler { req in
+            if req.url?.query?.contains(srefORF2) == true {
+                return (200, Data("""
+                {
+                    "preparationId": "prep-orf2-1",
+                    "state": "pending",
+                    "generation": 1,
+                    "serviceRef": "\(srefORF2)"
+                }
+                """.utf8))
+            } else {
+                return (200, Data("""
+                {
+                    "preparationId": "prep-atv-2",
+                    "state": "pending",
+                    "generation": 2,
+                    "serviceRef": "\(srefATV)"
+                }
+                """.utf8))
+            }
+        }
+
+        let taskB = Task { await coordinator.zap(to: srefORF2) }
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(coordinator.presentedServiceRef == srefORF1)
+        #expect(coordinator.requestedServiceRef == srefORF2)
+
+        // 2. Immediately zap to C (ATV) before B settles
+        let taskC = Task { await coordinator.zap(to: srefATV) }
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(coordinator.presentedServiceRef == srefORF1, "ORF1 must remain presented while ATV is warming")
+        #expect(coordinator.requestedServiceRef == srefATV, "requestedServiceRef must now be ATV, not ORF2")
+
+        taskB.cancel()
+        taskC.cancel()
+        await coordinator.stop()
+    }
+
+    @Test("Dual-State Coordinator: admission_denied triggers explicit break-before-make")
+    func admissionDeniedTriggersBreakBeforeMake() async throws {
+        let srefORF = "1:0:19:132F:3EF:1:C00000:0:0:0:"
+        let srefATV = "1:0:19:1330:3EF:1:C00000:0:0:0:"
+
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PrepareStubURLProtocol.self]
+        PrepareStubURLProtocol.reset()
+        let api = HTTPAPIClient(
+            address: try ServerAddressParser.parseTrusted("http://example.test:8089/"),
+            session: URLSession(configuration: config)
+        )
+        let client = ZapPreparationClient(api: api, clientID: "sterling-test")
+        let coordinator = ZapCoordinator(
+            preparations: client,
+            streamURL: { sref in URL(string: "http://example.test:8089/api/v3/stream/live/\(sref)") }
+        )
+
+        await coordinator.play(unprepared: URL(string: "http://example.test:8089/api/v3/stream/live/\(srefORF)")!)
+        #expect(coordinator.presentedServiceRef == srefORF)
+
+        // Stub returns admission_denied
+        PrepareStubURLProtocol.setHandler { _ in
+            (200, Data("""
+            {
+                "preparationId": "prep-atv-denied",
+                "state": "failed",
+                "outcome": "admission_denied",
+                "serviceRef": "\(srefATV)"
+            }
+            """.utf8))
+        }
+
+        await coordinator.zap(to: srefATV)
+
+        // When admission is denied, fallback starts ATV outright
+        #expect(coordinator.presentedServiceRef == srefATV)
+        #expect(coordinator.requestedServiceRef == nil)
+        #expect(coordinator.phase == .idle)
+
+        await coordinator.stop()
+    }
 }

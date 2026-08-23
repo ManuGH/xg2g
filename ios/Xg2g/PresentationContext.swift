@@ -86,6 +86,12 @@ public protocol PresentablePlaybackSession: AnyObject {
     /// Whether this session has a picture and usable audio at a common start anchor.
     var isPresentable: Bool { get }
 
+    /// Whether this session carries an interlaced or progressive broadcast.
+    var isSourceInterlaced: Bool { get }
+
+    /// Callback invoked when the very first picture is actually rendered/presented on screen.
+    var onFirstPictureVisible: (@Sendable () -> Void)? { get set }
+
     // What the surface reports back to whoever owns it. The context installs these on
     // the view and presenter and forwards them to the bound session, so a session
     // never holds a reference to either and rebinding redirects them by itself.
@@ -223,6 +229,7 @@ public final class PresentationContext {
         presenter.flush(generation: incoming.rawValue)
 
         renderView?.synchronizer = session.presentationSynchronizer
+        renderView?.sourceIsInterlaced = session.isSourceInterlaced
         renderView?.resetForChannelZap(generation: incoming.rawValue)
 
         installSurfaceCallbacks(for: session)
@@ -416,6 +423,7 @@ public final class PresentationContext {
         presenter.flush(generation: incoming.rawValue)
 
         renderView?.synchronizer = session.presentationSynchronizer
+        renderView?.sourceIsInterlaced = session.isSourceInterlaced
         renderView?.resetForChannelZap(generation: incoming.rawValue)
 
         installSurfaceCallbacks(for: session)

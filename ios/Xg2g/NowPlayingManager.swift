@@ -280,13 +280,17 @@ final class NowPlayingManager {
     /// locked and drifted out of step once the app was open in front of the
     /// user — a foreground app is expected to declare this.
     private func applyPlaybackState() {
+        #if os(macOS)
         MPNowPlayingInfoCenter.default().playbackState = isPlayingNow ? .playing : .paused
+        #endif
     }
 
     func clear() {
         currentArtworkTask?.cancel()
         isPlayingNow = true
+        #if os(macOS)
         MPNowPlayingInfoCenter.default().playbackState = .stopped
+        #endif
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         resignRemoteControls()
     }

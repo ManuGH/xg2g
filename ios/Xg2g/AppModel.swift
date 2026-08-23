@@ -164,12 +164,33 @@ final class AppModel {
 
         var id: String { rawValue }
 
+        /// User-friendly label for standard settings UI
         var displayName: String {
             switch self {
-            case .auto: return "A: Copy fMP4 (Original Video + AAC)"
-            case .passthrough: return "B: Copy MPEG-TS (1:1 Bitstream Passthrough)"
-            case .qsvNormalize: return "C: QSV Normalisierung (Closed-GOP 50fps fMP4)"
-            case .dataSaver: return "Datensparmodus (HEVC/AV1)"
+            case .auto: return "Automatisch"
+            case .passthrough: return "Originalqualität"
+            case .qsvNormalize: return "Kompatibilität"
+            case .dataSaver: return "Datensparen"
+            }
+        }
+
+        /// Subtitle / explanation
+        var summary: String {
+            switch self {
+            case .auto: return "xg2g ermittelt die beste Balance aus Qualität und Latenz (Empfohlen)"
+            case .passthrough: return "1:1 Bitstream ohne Video-Transkodierung"
+            case .qsvNormalize: return "Standardisiertes HLS mit maximaler Gerätekompatibilität"
+            case .dataSaver: return "Bandbreitenoptimiertes Streaming (HEVC/AV1) für unterwegs"
+            }
+        }
+
+        /// Technical pipeline name for developer / expert diagnostic view
+        var technicalDetails: String {
+            switch self {
+            case .auto: return "Copy fMP4 (Original Video + AAC)"
+            case .passthrough: return "Copy MPEG-TS (1:1 Bitstream Passthrough)"
+            case .qsvNormalize: return "QSV Normalisierung (Closed-GOP 50fps fMP4)"
+            case .dataSaver: return "Transcode (HEVC / AV1 Datensparmodus)"
             }
         }
     }
@@ -185,62 +206,76 @@ final class AppModel {
 
     /// Which pipeline plays live television.
     ///
-    /// The two take fundamentally different routes to the picture, and neither
-    /// is better at everything, so this is the viewer's call rather than a
-    /// heuristic's. See `tradeoff` for what each one gives up.
+    /// The user can select a high-level intent:
+    /// - `.auto`: xg2g dynamically picks the best path based on network, client capabilities, and server resources.
+    /// - `.native`: Low-latency native player with direct bitstream delivery.
+    /// - `.hls`: Feature-rich HLS server playback with Timeshift, restart, and remote access.
     enum PlaybackEngine: String, CaseIterable, Identifiable, Sendable {
-        /// Through the xg2g server, which segments the stream into HLS.
-        case hls
-        /// Straight from the receiver, decoded on the device.
-        case native
+        /// Automatically selected by xg2g planner based on network, capabilities and policy.
+        case auto = "auto"
+        /// Native hardware decode (VideoToolbox/Metal), minimum latency.
+        case native = "native"
+        /// HLS stream through xg2g server with Timeshift/DVR and adaptive bitrate.
+        case hls = "hls"
 
         var id: String { rawValue }
 
         var displayName: String {
             switch self {
-            case .hls: return "Über den Server (HLS)"
-            case .native: return "Direkt vom Receiver"
+            case .auto: return "Automatisch"
+            case .native: return "Native Live-TV"
+            case .hls: return "Server-Streaming (HLS)"
             }
         }
 
         /// One line for the settings row.
         var summary: String {
             switch self {
-            case .hls: return "Pausieren und zurückspulen, funktioniert unterwegs"
-            case .native: return "Schärfer und schneller, aber ohne Pause"
+            case .auto: return "xg2g wählt dynamisch den besten Weg für dein Gerät und Netzwerk (Empfohlen)"
+            case .native: return "xg2g liefert den Sender möglichst unverändert an den nativen Player"
+            case .hls: return "Ermöglicht Timeshift/Pause, externe Nutzung und adaptive Bitrate"
             }
         }
 
         /// What the viewer gains and gives up, in their terms.
         var tradeoff: (gains: [String], costs: [String]) {
             switch self {
-            case .hls:
+            case .auto:
                 return (
                     gains: [
-                        "Live pausieren, zurückspulen und von vorn ansehen",
-                        "Funktioniert auch außerhalb des Heimnetzes",
-                        "Passt die Qualität an eine schwache Verbindung an",
-                        "AirPlay und Bildschirmübertragung"
+                        "Der xg2g Planner wählt automatisch die optimale Pipeline",
+                        "Verlustfreies Streaming und niedrigste Latenz im Heimnetz",
+                        "Nahtloser Wechsel zu adaptivem Streaming unterwegs"
                     ],
                     costs: [
-                        "Der Server rechnet das Bild um — das kostet Qualität",
-                        "Umschalten dauert länger",
-                        "Das Bild läuft der Live-Sendung weiter hinterher"
+                        "Timeshift/Pause steht nur zur Verfügung, wenn HLS aktiv ist"
                     ]
                 )
             case .native:
                 return (
                     gains: [
-                        "Bild und Ton exakt so, wie der Sender sie ausstrahlt",
-                        "Deutlich schnelleres Umschalten",
-                        "Näher an der Live-Sendung",
-                        "Der Server muss nichts umrechnen"
+                        "Bild und Ton möglichst unverändert mit minimaler Latenz",
+                        "Deutlich schnelleres Umschalten (Hardware-Decoding)",
+                        "Minimale Serverlast (keine Video-Transkodierung)",
+                        "Näher am Live-Signal"
                     ],
                     costs: [
-                        "Kein Pausieren und kein Zurückspulen",
-                        "Nur im selben Netz wie der Receiver",
-                        "Braucht durchgehend die volle Bandbreite",
-                        "Keine Bildschirmübertragung"
+                        "Kein Pausieren oder Zurückspulen (Timeshift)",
+                        "Nur im selben Netzwerk wie der Ingest verfügbar",
+                        "Benötigt durchgehend die volle Bitrate des Senders"
+                    ]
+                )
+            case .hls:
+                return (
+                    gains: [
+                        "Live pausieren, zurückspulen und von Beginn ansehen (Timeshift)",
+                        "Funktioniert auch zuverlässig außerhalb des Heimnetzes",
+                        "Adaptive Qualität bei schwankender Bandbreite",
+                        "AirPlay und System-Bildschirmübertragung"
+                    ],
+                    costs: [
+                        "Höhere Latenz als bei Native Live-TV",
+                        "Umschaltzeiten hängen von GOP-Segmenten ab"
                     ]
                 )
             }
@@ -248,11 +283,45 @@ final class AppModel {
     }
 
     var playbackEngine: PlaybackEngine = {
-        let raw = UserDefaults.standard.string(forKey: "xg2g.playback_engine") ?? PlaybackEngine.hls.rawValue
-        return PlaybackEngine(rawValue: raw) ?? .hls
+        let raw = UserDefaults.standard.string(forKey: "xg2g.playback_engine") ?? PlaybackEngine.auto.rawValue
+        return PlaybackEngine(rawValue: raw) ?? .auto
     }() {
         didSet {
             UserDefaults.standard.set(playbackEngine.rawValue, forKey: "xg2g.playback_engine")
+        }
+    }
+
+    /// Human-readable active playback plan description for settings & diagnostics.
+    ///
+    /// NOTE: Currently provides the baseline intent-derived description.
+    /// In the target architecture, this will be populated directly from live session telemetry
+    /// and the central planner decision token (actual video/audio codecs, transcode status, network path).
+    var activePlaybackPlanDescription: String {
+        switch playbackEngine {
+        case .native:
+            return "Native TS · Video Copy · Audio AC-3 · Minimale Serverlast"
+        case .auto:
+            switch qualityPreference {
+            case .auto:
+                return "Auto Plan · Dynamische Pipeline & Profil"
+            case .passthrough:
+                return "Auto Plan · 1:1 Bitstream Passthrough"
+            case .qsvNormalize:
+                return "Auto Plan · QSV Normalisierung (50fps)"
+            case .dataSaver:
+                return "Auto Plan · Transcode Datensparmodus (HEVC)"
+            }
+        case .hls:
+            switch qualityPreference {
+            case .auto:
+                return "HLS fMP4 · Auto Video Copy / Remux"
+            case .passthrough:
+                return "HLS TS · 1:1 Bitstream Passthrough"
+            case .qsvNormalize:
+                return "HLS fMP4 · QSV Normalisierung (50fps)"
+            case .dataSaver:
+                return "HLS fMP4 · Transcode Datensparmodus (HEVC)"
+            }
         }
     }
 

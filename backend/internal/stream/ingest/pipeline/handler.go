@@ -18,6 +18,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/session"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/variant"
 )
 
 // primedAttachTimeout bounds the wait for the first indexable keyframe after a cold session
@@ -29,6 +30,43 @@ const primedAttachTimeout = 5 * time.Second
 
 // zapIDHeader carries the client's identifier for one channel change.
 const zapIDHeader = "X-Xg2g-Zap-Id"
+
+// clientAudioCodecsHeader carries the client's supported audio codecs (e.g. "aac,ac3,eac3").
+const clientAudioCodecsHeader = "X-Client-Audio-Codecs"
+
+func selectAudioTrack(tracks []ring.AudioTrackInfo, prefPID uint16, prefLang string) ring.AudioTrackInfo {
+	if len(tracks) == 0 {
+		return ring.AudioTrackInfo{}
+	}
+	if prefPID > 0 {
+		for _, t := range tracks {
+			if t.PID == prefPID {
+				return t
+			}
+		}
+	}
+	if prefLang != "" {
+		for _, t := range tracks {
+			if strings.EqualFold(t.Language, prefLang) {
+				return t
+			}
+		}
+	}
+	return tracks[0]
+}
+
+func clientSupportsCodec(supportedHeader string, codec string) bool {
+	if supportedHeader == "" {
+		return true // Default direct if client reports no capability constraint
+	}
+	parts := strings.Split(supportedHeader, ",")
+	for _, p := range parts {
+		if strings.EqualFold(strings.TrimSpace(p), codec) {
+			return true
+		}
+	}
+	return false
+}
 
 // readinessObservationBudget bounds how long one ingest is watched. Comfortably past
 // the slowest tune measured against the reference receiver (2.3 s to PAT, 3.0 s to a
@@ -202,6 +240,69 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Msg("failed to perform primed attach to stream")
 		http.Error(w, fmt.Sprintf("failed to attach to live stream: %v (runErr: %v)", err, runErr), http.StatusBadGateway)
 		return
+	}
+
+	// Evaluate Audio Capabilities & Planner Decision
+	clientAudioCodecs := r.Header.Get(clientAudioCodecsHeader)
+	audioOverride := r.URL.Query().Get("audio")
+	prefLang := r.URL.Query().Get("lang")
+	var prefPID uint16
+	if pidStr := r.URL.Query().Get("audio_pid"); pidStr != "" {
+		if val, err := strconv.ParseUint(pidStr, 10, 16); err == nil {
+			prefPID = uint16(val)
+		}
+	}
+
+	facts := pipe.MasterRing().ReadinessFacts()
+	var releaseVariant func()
+	defer func() {
+		if releaseVariant != nil {
+			releaseVariant()
+		}
+	}()
+
+	if len(facts.AudioTracks) > 0 {
+		selectedTrack := selectAudioTrack(facts.AudioTracks, prefPID, prefLang)
+		needsTranscode := false
+
+		if audioOverride == "aac" {
+			needsTranscode = true
+		} else if clientAudioCodecs != "" && selectedTrack.Codec != "" {
+			if !clientSupportsCodec(clientAudioCodecs, selectedTrack.Codec) {
+				needsTranscode = true
+			}
+		}
+
+		if needsTranscode {
+			logger.Info().
+				Uint16("sourceAudioPID", selectedTrack.PID).
+				Str("sourceCodec", selectedTrack.Codec).
+				Str("targetCodec", "aac").
+				Str("lang", selectedTrack.Language).
+				Msg("client audio capability gap detected: attaching to shared audio variant worker (MP2->AAC, video copy)")
+
+			variantKey := variant.AudioVariantKey{
+				StreamFingerprint: fmt.Sprintf("prog%d-gen%d-v%d", key.TargetProgram, facts.Generation, facts.PMTVersion),
+				ProgramNumber:     key.TargetProgram,
+				AudioPID:          selectedTrack.PID,
+				Language:          selectedTrack.Language,
+				Role:              "main",
+				TargetCodec:       "aac",
+				SampleRate:        48000,
+				Channels:          2,
+				BitrateKbps:       192,
+			}
+
+			varAttach, varReader, release, varErr := pipe.AttachAudioVariantWithTimeout(r.Context(), variantKey, primedAttachTimeout)
+			if varErr == nil {
+				reader.Close()
+				reader = varReader
+				attach = varAttach
+				releaseVariant = release
+			} else {
+				logger.Warn().Err(varErr).Msg("failed to attach to audio variant; falling back to direct master stream")
+			}
+		}
 	}
 	defer reader.Close()
 

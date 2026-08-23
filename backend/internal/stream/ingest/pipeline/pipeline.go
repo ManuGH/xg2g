@@ -14,6 +14,7 @@ import (
 
 	"github.com/ManuGH/xg2g/internal/stream/ingest/normalizer"
 	"github.com/ManuGH/xg2g/internal/stream/ingest/ring"
+	"github.com/ManuGH/xg2g/internal/stream/ingest/variant"
 )
 
 var (
@@ -26,6 +27,7 @@ var (
 type SessionPipeline struct {
 	norm          *normalizer.StreamNormalizer
 	ring          *ring.MasterRing
+	variantMgr    *variant.AudioVariantManager
 	cancelFunc    context.CancelFunc
 	runErr        error
 	runErrMu      sync.Mutex
@@ -63,9 +65,10 @@ func NewSessionPipeline(normCfg normalizer.Config, ringCapacity int, targetProgr
 	}
 
 	p := &SessionPipeline{
-		norm:   norm,
-		ring:   master,
-		doneCh: make(chan struct{}),
+		norm:       norm,
+		ring:       master,
+		variantMgr: variant.NewAudioVariantManager(master),
+		doneCh:     make(chan struct{}),
 	}
 	return p, nil
 }
@@ -185,12 +188,43 @@ func (p *SessionPipeline) Normalizer() *normalizer.StreamNormalizer {
 	return p.norm
 }
 
+// AudioVariants returns the AudioVariantManager for this pipeline.
+func (p *SessionPipeline) AudioVariants() *variant.AudioVariantManager {
+	return p.variantMgr
+}
+
+// AttachAudioVariantWithTimeout attaches a subscriber to an audio variant stream.
+// It returns the primed attach point, subscriber reader, and a release function that the caller MUST invoke upon disconnect.
+func (p *SessionPipeline) AttachAudioVariantWithTimeout(ctx context.Context, key variant.AudioVariantKey, timeout time.Duration) (ring.PrimedAttachPoint, *ring.SubscriberReader, func(), error) {
+	if p.closed.Load() {
+		return ring.PrimedAttachPoint{}, nil, nil, ErrPipelineClosed
+	}
+
+	worker, err := p.variantMgr.GetOrCreateWorker(ctx, key)
+	if err != nil {
+		return ring.PrimedAttachPoint{}, nil, nil, err
+	}
+
+	attach, reader, err := worker.PrimedAttachWithTimeout(ctx, timeout)
+	if err != nil {
+		p.variantMgr.ReleaseWorker(key)
+		return ring.PrimedAttachPoint{}, nil, nil, err
+	}
+
+	releaseFunc := func() {
+		p.variantMgr.ReleaseWorker(key)
+	}
+
+	return attach, reader, releaseFunc, nil
+}
+
 // Close terminates the pipeline and wakes all subscribers.
 func (p *SessionPipeline) Close() {
 	if p.closed.CompareAndSwap(false, true) {
 		if p.cancelFunc != nil {
 			p.cancelFunc()
 		}
+		p.variantMgr.Close()
 		p.norm.Close()
 		p.ring.Close()
 	}

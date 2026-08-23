@@ -182,6 +182,9 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         didSet { decoder.decodeGeneration = presentationGeneration.rawValue }
     }
 
+    /// Whether this session carries an interlaced (e.g. 1080i50) or progressive (e.g. 720p50) stream.
+    public private(set) var isSourceInterlaced: Bool = true
+
     /// When the last anchor rejection was reported, so a stream that cannot anchor says
     /// so without filling the log.
     private var lastAnchorRejectionLog: CFTimeInterval = 0
@@ -264,6 +267,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.notice("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
     }
+
+    /// Callback invoked when the very first picture of this session is displayed on screen.
+    public var onFirstPictureVisible: (@Sendable () -> Void)?
+
+    /// Decoded frames buffered while preparing, flushed into the surface at becomeAudible().
+    private var preRollVideoFrames: [DecodedVideoFrame] = []
+    private let preRollVideoLock = NSLock()
 
     /// The first picture this session decoded, whether or not it was ever shown.
     ///
@@ -524,11 +534,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         ChannelJitterProfiler.shared.noteZap(for: channelKey)
 
         if let cached = H264ParameterSetCache.shared.parameterSets(for: channelKey) {
-            accessUnitAssembler.primeWithParameterSets(sps: cached.sps, pps: cached.pps)
-
             sessionState.mutate { state in
                 state.paramsReadyTime = CACurrentMediaTime()
             }
+            telemetry.mutate { $0.ttfpParamSetsMs = 0.0 }
+            accessUnitAssembler.primeWithParameterSets(sps: cached.sps, pps: cached.pps)
 
             let logMsg = "[ZAP-#\(zapId)-PARAMS] ⚡ Primed decoder with cached SPS/PPS for instant tuning!"
             print(logMsg)
@@ -562,6 +572,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         // the wire. The backend logs it as a field and never as a metric label, so it
         // only has to be unique within this app run - not globally.
         request.setValue(Self.zapIdentifier(zapId), forHTTPHeaderField: "X-Xg2g-Zap-Id")
+        // Evidence of client-supported audio decoders for server-side planner evaluation:
+        request.setValue("aac,ac3,eac3", forHTTPHeaderField: "X-Client-Audio-Codecs")
 
         let task = session.dataTask(with: request)
         self.streamTask = task
@@ -652,10 +664,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// audio that does turn up later is ahead of the clock and still plays.
     private func startVideoOnlyClockIfNeeded() {
         guard !isAudioClockStarted else { return }
-        guard let anchor = firstVideoFieldPTS, anchor.isValid, latestVideoPTS.isValid else { return }
+        guard let anchor = firstVideoFieldPTS ?? firstDecodedPicturePTS, anchor.isValid, latestVideoPTS.isValid else { return }
         let (known, decodable, since) = sessionState.mutate { state -> (Bool, Bool, Double) in
-            let elapsed = state.firstVideoFieldTime > 0
-                ? CACurrentMediaTime() - state.firstVideoFieldTime
+            let fieldTime = state.firstDecodedTime > 0 ? state.firstDecodedTime : state.firstVideoFieldTime
+            let elapsed = fieldTime > 0
+                ? CACurrentMediaTime() - fieldTime
                 : 0
             return (state.audioTracksKnown, state.hasDecodableAudio, elapsed)
         }
@@ -744,6 +757,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
+    public var isStreaming: Bool {
+        streamTask != nil
+    }
+
     public func stopStreaming() {
         streamTask?.cancel()
         notePlaybackStateChanged()
@@ -753,6 +770,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         stopSystemMonitoring()
         removeFirstPictureObserver()
+
+        preRollVideoLock.lock()
+        preRollVideoFrames.removeAll()
+        preRollVideoLock.unlock()
 
         audioRenderer.reset()
         isAudioClockStarted = false
@@ -1134,6 +1155,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                     $0.audioLanguage = track.language ?? "und"
                 }
             }
+        }
+
+        if !somethingDecodableExists {
+            startVideoOnlyClockIfNeeded()
         }
     }
 
@@ -1945,6 +1970,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
         // Drives whether the render view bob-deinterlaces or passes through.
         let interlaced = info.isInterlaced
+        self.isSourceInterlaced = interlaced
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.presentationContext?.setSourceInterlaced(interlaced, from: self)
@@ -2132,7 +2158,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             TelemetryServer.shared.log(decLog)
         }
 
-        surfaceOutlet?.enqueue(frame)
+        if surfaceOutlet?.owns(presentationGeneration) == true {
+            surfaceOutlet?.enqueue(frame)
+        } else {
+            preRollVideoLock.lock()
+            preRollVideoFrames.append(frame)
+            if preRollVideoFrames.count > 15 {
+                preRollVideoFrames.removeFirst(preRollVideoFrames.count - 15)
+            }
+            preRollVideoLock.unlock()
+        }
     }
 
     public func hardwareDecoder(_ decoder: HardwareVideoDecoder, didChangeHWActiveState isHWActive: Bool) {
@@ -2330,6 +2365,8 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             }
         }
         guard isFirst else { return }
+
+        onFirstPictureVisible?()
 
         let snapshot = telemetry.snapshot()
         // The submit-to-visible gap is the part nothing could see before: it is
@@ -2549,6 +2586,36 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
         guard lifecycle == .stable else { return false }
         guard let anchor = commitAnchor, anchor.isValid else { return false }
         guard firstDecodedPicturePTS != nil else { return false }
+
+        // Data-driven video cushion: derived from measured frame duration / cadence
+        // (25p, 50p, 50i, 24p, HEVC) to ensure continuous video motion without initial freeze.
+        let hasVideoCushion: Bool
+        if latestVideoPTS.isValid {
+            preRollVideoLock.lock()
+            let frames = preRollVideoFrames
+            preRollVideoLock.unlock()
+
+            if frames.count >= 2 {
+                let firstPTS = frames[0].pts.seconds
+                let secondPTS = frames[1].pts.seconds
+                let measuredCadence = max(0.016, abs(secondPTS - firstPTS))
+                let requiredVideoLead = isSourceInterlaced ? measuredCadence : (measuredCadence * 1.5)
+                let videoLead = latestVideoPTS.seconds - anchor.seconds
+                hasVideoCushion = videoLead >= (requiredVideoLead - 0.005) || frames.count >= 3
+            } else {
+                let videoLead = latestVideoPTS.seconds - anchor.seconds
+                let defaultRequiredLead = isSourceInterlaced ? 0.035 : 0.075
+                hasVideoCushion = videoLead >= defaultRequiredLead
+            }
+        } else {
+            hasVideoCushion = false
+        }
+        guard hasVideoCushion else { return false }
+
+        let (known, decodable) = sessionState.mutate { ($0.audioTracksKnown, $0.hasDecodableAudio) }
+        if known && !decodable {
+            return true
+        }
         return audioRenderer.hasBuffersCovering(anchor)
     }
 
@@ -2568,17 +2635,41 @@ extension NativeTSVideoPipeline: PresentablePlaybackSession {
         }
         guard !isAudioClockStarted else { return }
 
+        // Flush pre-rolled video frames into the surface outlet immediately
+        preRollVideoLock.lock()
+        let framesToFlush = preRollVideoFrames
+        preRollVideoFrames.removeAll()
+        preRollVideoLock.unlock()
+
+        for f in framesToFlush {
+            surfaceOutlet?.enqueue(f)
+        }
+
+        let (known, decodable) = sessionState.mutate { ($0.audioTracksKnown, $0.hasDecodableAudio) }
+        if known && !decodable {
+            audioRenderer.synchronizer.setRate(1.0, time: anchor)
+            isAudioClockStarted = true
+            let msg = "[COMMIT-\(presentationGeneration)] ⏱️ video-only clock started at \(String(format: "%.3f", anchor.seconds))s (no native audio codec on device) | flushed \(framesToFlush.count) pre-roll video frame(s)"
+            logger.notice("\(msg, privacy: .public)")
+            TelemetryServer.shared.log(msg)
+            return
+        }
+
         let pruned = audioRenderer.pruneBuffersBefore(time: anchor)
         audioRenderer.setAudible(true)
         audioRenderer.setRate(1.0, time: anchor)
         isAudioClockStarted = true
 
-        let msg = "[COMMIT-\(presentationGeneration)] ⏱️ clock started at \(String(format: "%.3f", anchor.seconds))s | trimmed \(pruned.prunedCount) leading audio buffer(s) | remaining lead \(String(format: "%.0f", pruned.remainingLeadMs))ms"
+        let msg = "[COMMIT-\(presentationGeneration)] ⏱️ clock started at \(String(format: "%.3f", anchor.seconds))s | trimmed \(pruned.prunedCount) leading audio buffer(s) | remaining lead \(String(format: "%.0f", pruned.remainingLeadMs))ms | flushed \(framesToFlush.count) pre-roll video frame(s)"
         logger.notice("\(msg, privacy: .public)")
         TelemetryServer.shared.log(msg)
     }
 
     public func silence() {
+        preRollVideoLock.lock()
+        preRollVideoFrames.removeAll()
+        preRollVideoLock.unlock()
+
         audioRenderer.setAudible(false)
         guard isAudioClockStarted else { return }
         audioRenderer.setRate(0.0, time: .invalid)

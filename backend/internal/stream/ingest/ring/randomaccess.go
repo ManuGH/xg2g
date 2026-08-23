@@ -304,3 +304,74 @@ func appendPID(list []uint16, pid uint16) []uint16 {
 	}
 	return append(list, pid)
 }
+
+// AudioTrackInfo describes an audio elementary stream discovered from PMT.
+type AudioTrackInfo struct {
+	PID        uint16 `json:"pid"`
+	StreamType byte   `json:"streamType"`
+	Codec      string `json:"codec"`    // "mp2", "aac", "ac3", "eac3", "dts", "unknown"
+	Language   string `json:"language"` // e.g. "deu", "eng", "und"
+}
+
+// AudioCodecFromStreamType identifies the audio codec normalized from stream type and descriptors.
+func AudioCodecFromStreamType(streamType byte, descriptors []byte) string {
+	switch streamType {
+	case 0x03, 0x04:
+		return "mp2"
+	case 0x0F, 0x11, 0x1C:
+		return "aac"
+	case 0x81, 0x87:
+		return "ac3"
+	case 0x06:
+		for i := 0; i+2 <= len(descriptors); {
+			tag := descriptors[i]
+			length := int(descriptors[i+1])
+			if i+2+length > len(descriptors) {
+				break
+			}
+			switch tag {
+			case descriptorAC3:
+				return "ac3"
+			case descriptorEnhAC3:
+				return "eac3"
+			case descriptorAAC:
+				return "aac"
+			case descriptorDTS, descriptorDTSHD:
+				return "dts"
+			case descriptorAudioReg:
+				if length >= 4 {
+					fmtID := string(descriptors[i+2 : i+6])
+					if fmtID == "AC-3" {
+						return "ac3"
+					}
+					if fmtID == "EAC3" {
+						return "eac3"
+					}
+				}
+			}
+			i += 2 + length
+		}
+		return "unknown"
+	default:
+		return "unknown"
+	}
+}
+
+// LanguageFromDescriptors extracts the 3-letter ISO-639-2 language code if present (descriptor tag 0x0A).
+func LanguageFromDescriptors(descriptors []byte) string {
+	for i := 0; i+2 <= len(descriptors); {
+		tag := descriptors[i]
+		length := int(descriptors[i+1])
+		if i+2+length > len(descriptors) {
+			break
+		}
+		if tag == 0x0A && length >= 3 {
+			lang := string(descriptors[i+2 : i+5])
+			if len(lang) == 3 {
+				return lang
+			}
+		}
+		i += 2 + length
+	}
+	return "und"
+}

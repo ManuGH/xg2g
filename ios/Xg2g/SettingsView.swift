@@ -15,41 +15,11 @@ struct SettingsView: View {
                 Theme.Colors.bgBase.ignoresSafeArea()
 
                 List {
-                    Section {
-                        HStack(spacing: 12) {
-                            SettingsIconBadge(systemName: "server.rack", backgroundColor: Theme.Colors.accentAction)
-                            Text("Server-Adresse")
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                            Spacer()
-                            Text(model.serverURLString)
-                                .font(.subheadline.monospaced())
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                        }
-
-                        HStack(spacing: 12) {
-                            SettingsIconBadge(systemName: "checkmark.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
-                            Text("Status")
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                            Spacer()
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(Theme.Colors.statusSuccess)
-                                    .frame(width: 8, height: 8)
-                                Text("Verbunden")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Theme.Colors.statusSuccess)
-                            }
-                        }
-                    } header: {
-                        Text("Server")
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    }
-                    .listRowBackground(Theme.Colors.surfaceElevated)
-
+                    // MARK: - 1. Ebene: Wiedergabe
                     Section {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "play.rectangle.on.rectangle", backgroundColor: Color.indigo)
-                            Picker("Wiedergabe-Art", selection: $model.playbackEngine) {
+                            Picker("Wiedergabemodus", selection: $model.playbackEngine) {
                                 ForEach(AppModel.PlaybackEngine.allCases) { engine in
                                     Text(engine.displayName).tag(engine)
                                 }
@@ -59,68 +29,37 @@ struct SettingsView: View {
 
                         PlaybackEngineComparison(selected: model.playbackEngine)
 
+                        // Kontextsensitive Qualitätsoptionen
                         if model.playbackEngine == .native {
                             HStack(spacing: 12) {
-                                SettingsIconBadge(systemName: "antenna.radiowaves.left.and.right", backgroundColor: Color.orange)
+                                SettingsIconBadge(systemName: "sparkles", backgroundColor: Theme.Colors.accentLive)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Receiver-Adresse")
+                                    Text("Qualität")
                                         .foregroundStyle(Theme.Colors.textPrimary)
-                                    TextField("http://192.168.1.50:8001", text: $model.receiverStreamBaseURL)
-                                        .textInputAutocapitalization(.never)
-                                        .autocorrectionDisabled()
-                                        .keyboardType(.URL)
-                                        .font(.subheadline.monospaced())
-                                        .foregroundStyle(Theme.Colors.textSecondary)
-                                }
-                            }
-
-                            if !model.isDirectPlaybackAvailable {
-                                Label(
-                                    "Ohne Receiver-Adresse läuft die Wiedergabe weiter über den Server.",
-                                    systemImage: "exclamationmark.triangle.fill"
-                                )
-                                .font(.footnote)
-                                .foregroundStyle(Theme.Colors.statusWarning)
-                            }
-                        }
-
-                        Toggle(isOn: $model.enableAdvancedAspectRatios) {
-                            HStack(spacing: 12) {
-                                SettingsIconBadge(systemName: "aspectratio", backgroundColor: Color.purple)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Erweiterte Seitenverhältnisse")
-                                        .foregroundStyle(Theme.Colors.textPrimary)
-                                    Text("Aktiviert manuelle Format-Overrides (16:9, 4:3, Cinemascope) im Player.")
+                                    Text("Original · Keine Video-Transkodierung · Minimale Serverlast")
                                         .font(.caption)
                                         .foregroundStyle(Theme.Colors.textSecondary)
                                 }
+                                Spacer()
+                                Text("Original")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(Theme.Colors.accentLive)
                             }
-                        }
-                        .tint(Theme.Colors.accentAction)
-                    } header: {
-                        Text("Wiedergabe-Art")
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    } footer: {
-                        Text("Aufnahmen und programmierte Timer sind von dieser Einstellung nicht betroffen — sie laufen immer über den Server und funktionieren in beiden Fällen.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    }
-                    .listRowBackground(Theme.Colors.surfaceElevated)
-
-                    Section {
-                        HStack(spacing: 12) {
-                            SettingsIconBadge(systemName: "bolt.badge.automatic", backgroundColor: Theme.Colors.accentLive)
-                            Picker("Streaming-Modus", selection: $model.qualityPreference) {
-                                ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
-                                    Text(pref.displayName).tag(pref)
+                        } else {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "bolt.badge.automatic", backgroundColor: Theme.Colors.accentLive)
+                                Picker("Streaming-Qualität", selection: $model.qualityPreference) {
+                                    ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
+                                        Text(pref.displayName).tag(pref)
+                                    }
                                 }
+                                .foregroundStyle(Theme.Colors.textPrimary)
                             }
-                            .foregroundStyle(Theme.Colors.textPrimary)
                         }
 
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "wifi", backgroundColor: Color.teal)
-                            Text("Verbindung")
+                            Text("Netzwerkzustand")
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Spacer()
                             HStack(spacing: 6) {
@@ -135,12 +74,23 @@ struct SettingsView: View {
                         Text("Wiedergabe")
                             .foregroundStyle(Theme.Colors.textTertiary)
                     } footer: {
-                        Text("Im Modus 'Automatisch' schaltet xg2g im WLAN automatisch auf verlustfreies 1:1 Direct-Streaming (0% Server-CPU) und mobil auf adaptives Streaming.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Colors.textTertiary)
+                        if model.playbackEngine == .auto {
+                            Text("Im Modus 'Automatisch' entscheidet der xg2g Planner dynamisch über die optimale Pipeline basierend auf Netzwerk, Gerätefähigkeiten und Serverressourcen.")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        } else if model.playbackEngine == .native {
+                            Text("Native Live-TV liefert das Signal unverändert an die VideoToolbox-Hardware-Pipeline mit minimaler Latenz.")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        } else {
+                            Text("Server-Streaming (HLS) ermöglicht Pause/Timeshift, externe Nutzung und adaptive Bitrate; xg2g entscheidet, ob Copy, Remux oder Transcode nötig ist.")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
+                    // MARK: - 2. Ebene: Offline & Downloads
                     Section {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "arrow.down.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
@@ -176,6 +126,108 @@ struct SettingsView: View {
                     }
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
+                    // MARK: - 3. Ebene: Erweitert & Diagnose
+                    Section {
+                        Toggle(isOn: $model.enableAdvancedAspectRatios) {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "aspectratio", backgroundColor: Color.purple)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Erweiterte Seitenverhältnisse")
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                    Text("Aktiviert manuelle Format-Overrides (16:9, 4:3, Cinemascope) im Player.")
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                }
+                            }
+                        }
+                        .tint(Theme.Colors.accentAction)
+
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "gauge.with.dots.needle.bottom.50percent", backgroundColor: Color.cyan)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Aktiver Wiedergabeplan")
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                Text(model.activePlaybackPlanDescription)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                            }
+                        }
+
+                        NavigationLink {
+                            DiagnosticPipelineOverrideView(model: model)
+                        } label: {
+                            HStack(spacing: 12) {
+                                SettingsIconBadge(systemName: "wrench.and.screwdriver", backgroundColor: Color.gray)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Streaming-Technik & Diagnose")
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                    Text("Pipeline-Profile, Test-Overrides & Diagnose-Status")
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Erweitert & Diagnose")
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    } footer: {
+                        Text("Aufnahmen und programmierte Timer sind von diesen Einstellungen nicht betroffen — sie laufen immer über den Server und funktionieren in allen Konfigurationen.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .listRowBackground(Theme.Colors.surfaceElevated)
+
+                    // MARK: - Verbindung & Infrastruktur
+                    Section {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "server.rack", backgroundColor: Theme.Colors.accentAction)
+                            Text("Server-Adresse")
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Spacer()
+                            Text(model.serverURLString)
+                                .font(.subheadline.monospaced())
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "checkmark.circle.fill", backgroundColor: Theme.Colors.statusSuccess)
+                            Text("Server-Status")
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Spacer()
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Theme.Colors.statusSuccess)
+                                    .frame(width: 8, height: 8)
+                                Text("Verbunden")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.Colors.statusSuccess)
+                            }
+                        }
+
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(systemName: "antenna.radiowaves.left.and.right", backgroundColor: Color.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Receiver-Adresse (Experten-Fallback)")
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                TextField("http://192.168.1.50:8001", text: $model.receiverStreamBaseURL)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .keyboardType(.URL)
+                                    .font(.subheadline.monospaced())
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                            }
+                        }
+                    } header: {
+                        Text("Verbindung & Infrastruktur")
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    } footer: {
+                        Text("Die Receiver-Adresse dient ausschließlich als optionaler lokaler Fallback für unmanaged Direct-Ingest im Heimnetz. Standardmäßig koordiniert xg2g alle Streams.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .listRowBackground(Theme.Colors.surfaceElevated)
+
+                    // MARK: - Geräteidentität
                     Section {
                         HStack(spacing: 12) {
                             SettingsIconBadge(systemName: "iphone.gen3", backgroundColor: Color.blue.opacity(0.85))
@@ -215,6 +267,7 @@ struct SettingsView: View {
                     .listRowBackground(Theme.Colors.surfaceElevated)
 
 #if DEBUG
+                    // MARK: - Labor
                     Section {
                         NavigationLink {
                             TestTSPlayerScreen(model: model)
@@ -241,6 +294,7 @@ struct SettingsView: View {
                     .listRowBackground(Theme.Colors.surfaceElevated)
 #endif
 
+                    // MARK: - Sitzung
                     Section {
                         Button(role: .destructive) {
                             showingRevokeConfirmation = true
@@ -280,6 +334,80 @@ struct SettingsView: View {
             }
             .navigationTitle("Einstellungen")
         }
+    }
+}
+
+/// Detailed diagnostics and test overrides view for developers & power users.
+struct DiagnosticPipelineOverrideView: View {
+
+    @Bindable var model: AppModel
+
+    var body: some View {
+        List {
+            Section {
+                Label(
+                    "Manuelle Overrides umgehen die automatische Pipeline-Auswahl des xg2g Planners und dienen zu Entwicklungs- und Diagnosezwecken.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.statusWarning)
+            } header: {
+                Text("Hinweis")
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            .listRowBackground(Theme.Colors.surfaceElevated)
+
+            Section {
+                Picker("Pipeline-Override", selection: $model.qualityPreference) {
+                    ForEach(AppModel.StreamingQualityPreference.allCases) { pref in
+                        VStack(alignment: .leading) {
+                            Text(pref.displayName)
+                            Text(pref.technicalDetails)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                        .tag(pref)
+                    }
+                }
+                .pickerStyle(.inline)
+            } header: {
+                Text("Test-Override")
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            } footer: {
+                Text("Legt die technische Backend-Pipeline fest: Copy fMP4, Copy MPEG-TS, QSV Closed-GOP Normalisierung oder Transcoding.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            .listRowBackground(Theme.Colors.surfaceElevated)
+
+            Section {
+                HStack {
+                    Text("Aktiver Intent")
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Spacer()
+                    Text(model.qualityPreference.rawValue)
+                        .font(.subheadline.monospaced())
+                        .foregroundStyle(Theme.Colors.accentAction)
+                }
+
+                HStack {
+                    Text("Technische Pipeline")
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Spacer()
+                    Text(model.qualityPreference.technicalDetails)
+                        .font(.subheadline.monospaced())
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+            } header: {
+                Text("Telemetrie-Details")
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            .listRowBackground(Theme.Colors.surfaceElevated)
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.Colors.bgBase.ignoresSafeArea())
+        .navigationTitle("Streaming-Technik")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

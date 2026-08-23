@@ -167,19 +167,17 @@ public enum VideoGeometry {
 
     /// Inspects Sample Aspect Ratio (SAR) from CVPixelBuffer attachments and reports if it was explicitly signaled.
     public static func inspectSAR(from pixelBuffer: CVPixelBuffer) -> (numerator: Int, denominator: Int, isSignaled: Bool) {
-        if #available(iOS 15.0, *) {
-            if let dict = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferPixelAspectRatioKey, nil) as? [CFString: Any] {
-                let hSpacing = (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey] as? Int ?? 1)
-                let vSpacing = (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey] as? Int ?? 1)
-                return (max(1, hSpacing), max(1, vSpacing), true)
-            }
-            if let dict = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferPixelAspectRatioKey, nil) as? [String: Any] {
-                let hSpacing = (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey as String] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey as String] as? Int ?? 1)
-                let vSpacing = (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey as String] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey as String] as? Int ?? 1)
-                return (max(1, hSpacing), max(1, vSpacing), true)
-            }
+        if let dict = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferPixelAspectRatioKey, nil) as? [CFString: Any] {
+            let hSpacing = (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey] as? Int ?? 1)
+            let vSpacing = (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey] as? Int ?? 1)
+            return (max(1, hSpacing), max(1, vSpacing), true)
         }
-        if let dict = CVBufferGetAttachment(pixelBuffer, kCVImageBufferPixelAspectRatioKey, nil)?.takeUnretainedValue() as? NSDictionary {
+        if let dict = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferPixelAspectRatioKey, nil) as? [String: Any] {
+            let hSpacing = (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey as String] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey as String] as? Int ?? 1)
+            let vSpacing = (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey as String] as? NSNumber)?.intValue ?? (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey as String] as? Int ?? 1)
+            return (max(1, hSpacing), max(1, vSpacing), true)
+        }
+        if let dict = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferPixelAspectRatioKey, nil) as? NSDictionary {
             let h = (dict[kCVImageBufferPixelAspectRatioHorizontalSpacingKey as String] as? NSNumber)?.intValue ?? 1
             let v = (dict[kCVImageBufferPixelAspectRatioVerticalSpacingKey as String] as? NSNumber)?.intValue ?? 1
             return (max(1, h), max(1, v), true)
@@ -379,7 +377,7 @@ public enum VideoGeometry {
         var isHDR = false
 
         // 1. Color Primaries
-        if let primaries = CVBufferGetAttachment(pixelBuffer, kCVImageBufferColorPrimariesKey, nil)?.takeUnretainedValue() as? String {
+        if let primaries = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferColorPrimariesKey, nil) as? String {
             if primaries == (kCVImageBufferColorPrimaries_ITU_R_709_2 as String) {
                 primariesStr = "ITU-R BT.709"
             } else if primaries == (kCVImageBufferColorPrimaries_EBU_3213 as String) {
@@ -396,7 +394,7 @@ public enum VideoGeometry {
         }
 
         // 2. Transfer Function
-        if let transfer = CVBufferGetAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey, nil)?.takeUnretainedValue() as? String {
+        if let transfer = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey, nil) as? String {
             if transfer == (kCVImageBufferTransferFunction_ITU_R_709_2 as String) {
                 transferStr = "SDR (BT.709)"
             } else if transfer == (kCVImageBufferTransferFunction_ITU_R_2100_HLG as String) {
@@ -413,7 +411,7 @@ public enum VideoGeometry {
         }
 
         // 3. YCbCr Matrix
-        if let matrix = CVBufferGetAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, nil)?.takeUnretainedValue() as? String {
+        if let matrix = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, nil) as? String {
             if matrix == (kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String) {
                 matrixStr = "ITU-R BT.709"
             } else if matrix == (kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String) {
@@ -447,7 +445,7 @@ public enum VideoGeometry {
 
         // 5. Field Detail
         var fieldDetailStr = "—"
-        if let fieldDetail = CVBufferGetAttachment(pixelBuffer, kCVImageBufferFieldDetailKey, nil)?.takeUnretainedValue() as? String {
+        if let fieldDetail = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferFieldDetailKey, nil) as? String {
             if fieldDetail == (kCVImageBufferFieldDetailTemporalTopFirst as String) || fieldDetail == (kCVImageBufferFieldDetailSpatialFirstLineEarly as String) {
                 fieldDetailStr = "Top Field First (TFF)"
             } else if fieldDetail == (kCVImageBufferFieldDetailTemporalBottomFirst as String) || fieldDetail == (kCVImageBufferFieldDetailSpatialFirstLineLate as String) {

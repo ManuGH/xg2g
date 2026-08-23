@@ -78,6 +78,7 @@ public final class SystemVideoPresenter: NSObject {
     /// timeline as normal, so the picture appears frozen for an instant and then
     /// runs — which is what a television does when you change channel.
     private var needsImmediateDisplay = true
+    private var generationFieldsEnqueuedCount = 0
 
     /// Fires when the field marked `DisplayImmediately` has actually been handed
     /// to the renderer — which, for that one field, is the moment it goes up.
@@ -337,6 +338,14 @@ public final class SystemVideoPresenter: NSObject {
             return
         }
 
+        generationFieldsEnqueuedCount += 1
+        if generationFieldsEnqueuedCount <= 4 {
+            let msg = "[SystemVideo] 🎬 Gen-\(currentGeneration) Field #\(generationFieldsEnqueuedCount) enqueued @ PTS \(String(format: "%.3f", pts.seconds))s (duration \(String(format: "%.1f", duration.seconds * 1000))ms)"
+            print(msg)
+            logger.notice("\(msg, privacy: .public)")
+            TelemetryServer.shared.log(msg)
+        }
+
         if needsImmediateDisplay {
             needsImmediateDisplay = false
             awaitingImmediateHandoff = true
@@ -498,6 +507,7 @@ public final class SystemVideoPresenter: NSObject {
         formatSAR = (1, 1)
         // Re-armed per tune: a zap is exactly the moment the wait is felt.
         needsImmediateDisplay = true
+        generationFieldsEnqueuedCount = 0
         raisedWarnings.removeAll()
         awaitingImmediateHandoff = false
     }

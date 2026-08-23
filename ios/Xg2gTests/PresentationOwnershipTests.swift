@@ -30,6 +30,8 @@ struct PresentationOwnershipTests {
         let presentationSynchronizer = AVSampleBufferRenderSynchronizer()
         var presentationGeneration: PresentationGeneration = .none
         var isPresentable: Bool
+        var isSourceInterlaced: Bool = true
+        var onFirstPictureVisible: (@Sendable () -> Void)?
         private(set) var audibleGrants: [AudibleGrant] = []
         private(set) var silenceCount = 0
 
