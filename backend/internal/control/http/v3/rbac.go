@@ -128,7 +128,14 @@ func (s *Server) TokenPrincipal(ctx context.Context, token string) auth.Result {
 	cfgTokenScopes := cfg.APITokenScopes
 	cfgTokens := cfg.APITokens
 
-	// 0. Check persistent Identity Web Sessions (WebAuthn / Passkeys / Recovery)
+	// 0. Check in-memory auth session store for exchanged session tokens/cookies
+	if s.authSessionStore != nil {
+		if principal, ok := s.authSessionStore.ResolveSessionPrincipal(token); ok && principal != nil {
+			return auth.Authenticated(s.projectTokenPrincipal(ctx, principal, cfg))
+		}
+	}
+
+	// 0a. Check persistent Identity Web Sessions (WebAuthn / Passkeys / Recovery)
 	if idSvc := s.getIdentityService(); idSvc != nil {
 		if sess, user, err := idSvc.ValidateWebSession(ctx, token, "", ""); err == nil && sess != nil && user != nil {
 			var scopes []string

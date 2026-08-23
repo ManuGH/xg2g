@@ -52,11 +52,11 @@ actor RecordingsRepository {
         if let root { query.append(URLQueryItem(name: "root", value: root)) }
         if let path { query.append(URLQueryItem(name: "path", value: path)) }
 
-        let items: [RecordingWire.Item] = try await api.send(
+        let response: RecordingWire.Response = try await api.send(
             APIRequest(method: .get, path: "recordings", query: query)
         )
 
-        return items
+        return (response.recordings ?? [])
             .compactMap { $0.toDomain() }
             .sorted { $0.beginDate > $1.beginDate }
     }
@@ -93,6 +93,31 @@ actor RecordingsRepository {
 // MARK: - Wire
 
 enum RecordingWire {
+
+    struct Response: Decodable, Sendable {
+        let requestId: String
+        let currentRoot: String?
+        let currentPath: String?
+        let recordings: [Item]?
+        let directories: [DirectoryItem]?
+        let roots: [RootItem]?
+        let breadcrumbs: [BreadcrumbItem]?
+    }
+
+    struct DirectoryItem: Decodable, Sendable {
+        let name: String?
+        let path: String?
+    }
+
+    struct RootItem: Decodable, Sendable {
+        let id: String?
+        let name: String?
+    }
+
+    struct BreadcrumbItem: Decodable, Sendable {
+        let name: String?
+        let path: String?
+    }
 
     struct ResumeInfo: Decodable, Sendable {
         let posSeconds: Int64?

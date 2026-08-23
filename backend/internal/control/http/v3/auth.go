@@ -143,13 +143,15 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	principal := auth.PrincipalFromContext(r.Context())
 	if principal == nil {
 		reqCtx := context.WithValue(r.Context(), dpopRequestContextKey{}, r)
-		if !s.TokenPrincipal(reqCtx, reqToken).OK() {
+		res := s.TokenPrincipal(reqCtx, reqToken)
+		if !res.OK() {
 			RespondError(w, r, http.StatusUnauthorized, ErrUnauthorized)
 			return
 		}
+		principal = res.Principal
 	}
 
-	sessionID, err := s.issueCookieSession(w, r, reqToken, s.authSessionTTLOrDefault())
+	sessionID, err := s.issueCookieSession(w, r, reqToken, principal, s.authSessionTTLOrDefault())
 	if err != nil {
 		if errors.Is(err, ErrHTTPSRequired) {
 			RespondError(w, r, http.StatusBadRequest, ErrHTTPSRequired, "session exchange requires HTTPS or a trusted HTTPS proxy; plain HTTP is only accepted from loopback")
@@ -231,8 +233,8 @@ func (s *Server) deleteAuthSession(sessionID string) {
 	}
 }
 
-func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) (string, error) {
-	if strings.TrimSpace(token) == "" {
+func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, token string, principal *auth.Principal, ttl time.Duration) (string, error) {
+	if strings.TrimSpace(token) == "" && principal == nil {
 		return "", auth.ErrInvalidSessionToken
 	}
 	if ttl <= 0 {
@@ -248,7 +250,7 @@ func (s *Server) issueCookieSession(w http.ResponseWriter, r *http.Request, toke
 		s.deleteAuthSession(existingCookie.Value)
 	}
 
-	sessionID, err := s.authSessionStoreOrDefault().CreateSession(token, ttl)
+	sessionID, err := s.authSessionStoreOrDefault().CreateSessionWithPrincipal(token, principal, ttl)
 	if err != nil {
 		return "", err
 	}

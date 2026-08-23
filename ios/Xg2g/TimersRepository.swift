@@ -40,11 +40,11 @@ actor TimersRepository {
     }
 
     func timers() async throws -> [DVRTimer] {
-        let items: [TimerWire.Item] = try await api.send(
+        let response: TimerWire.ListResponse = try await api.send(
             APIRequest(method: .get, path: "timers")
         )
 
-        return items
+        return response.items
             .compactMap { $0.toDomain() }
             .sorted { $0.beginDate < $1.beginDate }
     }
@@ -72,6 +72,10 @@ actor TimersRepository {
 // MARK: - Wire
 
 enum TimerWire {
+
+    struct ListResponse: Decodable, Sendable {
+        let items: [Item]
+    }
 
     struct CreateRequest: Encodable, Sendable {
         let serviceRef: String

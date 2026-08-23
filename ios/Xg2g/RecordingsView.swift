@@ -231,6 +231,7 @@ struct RecordingsView: View {
                     recording: item.recording,
                     serverAddress: model.serverURLString,
                     initialPosition: item.initialPosition,
+                    model: model,
                     onProgressUpdate: { current, total in
                         model.updateRecordingProgress(
                             id: item.recording.id,

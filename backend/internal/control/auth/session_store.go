@@ -17,15 +17,18 @@ var (
 	ErrInvalidSessionTTL   = errors.New("invalid session ttl")
 )
 
-// SessionTokenStore maps opaque session IDs to bearer tokens.
+// SessionTokenStore maps opaque session IDs to bearer tokens or principals.
 type SessionTokenStore interface {
 	CreateSession(token string, ttl time.Duration) (string, error)
+	CreateSessionWithPrincipal(token string, principal *Principal, ttl time.Duration) (string, error)
 	ResolveSessionToken(sessionID string) (string, bool)
+	ResolveSessionPrincipal(sessionID string) (*Principal, bool)
 	InvalidateSession(sessionID string)
 }
 
 type sessionEntry struct {
 	token     string
+	principal *Principal
 	expiresAt time.Time
 }
 
@@ -42,7 +45,11 @@ func NewInMemorySessionTokenStore() *InMemorySessionTokenStore {
 }
 
 func (s *InMemorySessionTokenStore) CreateSession(token string, ttl time.Duration) (string, error) {
-	if token == "" {
+	return s.CreateSessionWithPrincipal(token, nil, ttl)
+}
+
+func (s *InMemorySessionTokenStore) CreateSessionWithPrincipal(token string, principal *Principal, ttl time.Duration) (string, error) {
+	if token == "" && principal == nil {
 		return "", ErrInvalidSessionToken
 	}
 	if ttl <= 0 {
@@ -57,11 +64,45 @@ func (s *InMemorySessionTokenStore) CreateSession(token string, ttl time.Duratio
 	s.mu.Lock()
 	s.sessions[sessionID] = sessionEntry{
 		token:     token,
+		principal: principal,
 		expiresAt: time.Now().Add(ttl),
 	}
 	s.mu.Unlock()
 
 	return sessionID, nil
+}
+
+func (s *InMemorySessionTokenStore) ResolveSessionPrincipal(tokenOrSessionID string) (*Principal, bool) {
+	if tokenOrSessionID == "" {
+		return nil, false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// 1. Direct match by session ID
+	if entry, ok := s.sessions[tokenOrSessionID]; ok {
+		if time.Now().After(entry.expiresAt) {
+			return nil, false
+		}
+		if entry.principal != nil {
+			return entry.principal, true
+		}
+	}
+
+	// 2. Match by mapped token
+	for _, entry := range s.sessions {
+		if entry.token == tokenOrSessionID {
+			if time.Now().After(entry.expiresAt) {
+				return nil, false
+			}
+			if entry.principal != nil {
+				return entry.principal, true
+			}
+		}
+	}
+
+	return nil, false
 }
 
 func (s *InMemorySessionTokenStore) ResolveSessionToken(sessionID string) (string, bool) {

@@ -59,6 +59,9 @@ public final class ChannelJitterProfiler: @unchecked Sendable {
     public static let minPreRollSeconds: Double = 0.35
     public static let maxPreRollSeconds: Double = 0.90
     public static let safetyMarginMs: Double = 150.0
+
+    /// Global low-latency target lead override for step testing (e.g. 0.50 -> 0.35 -> 0.25 -> 0.15).
+    public nonisolated(unsafe) static var targetLiveLeadOverrideSeconds: Double? = 0.50
     /// The rate at which stall history loses weight. Used both for decaying a stale
     /// worst-stall observation and for walking the cushion down over stall-free zaps,
     /// so the two directions move at the same pace.
@@ -128,6 +131,10 @@ public final class ChannelJitterProfiler: @unchecked Sendable {
 
     /// Recommends the optimal initial audio pre-roll for this channel.
     public func recommendedAudioPreRoll(for channelKey: String) -> (preRollSeconds: Double, reason: String) {
+        if let target = Self.targetLiveLeadOverrideSeconds {
+            return (target, "step-test target (\(String(format: "%.0f", target * 1000))ms)")
+        }
+
         if channelKey.contains("/stream/smooth") {
             return (Self.minPreRollSeconds, "smoothed backend stream (350ms quick-zap cushion)")
         }

@@ -1646,7 +1646,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 }
 
                 let audioCeiling = pts.seconds - effectiveAudioPreRoll
-                let anchorSeconds = min(videoPTS.seconds, audioCeiling)
+                // Controlled Shrink-to-Live:
+                // When we have decoded video frames up to audioCeiling (latest audio PTS - target cushion),
+                // we anchor directly on audioCeiling. This sheds the 500-1200ms GOP startup backlog
+                // and locks the playback clock to the target live lead immediately without pitch distortion.
+                let anchorSeconds: Double
+                if latestVideoPTS.isValid && latestVideoPTS.seconds >= audioCeiling {
+                    anchorSeconds = max(videoPTS.seconds, audioCeiling)
+                } else {
+                    anchorSeconds = min(videoPTS.seconds, audioCeiling)
+                }
 
                 // Anchoring before the first audio we hold would start the clock
                 // in a region no track can serve.
@@ -1676,9 +1685,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 }
 
                 anchorPTS = CMTime(seconds: anchorSeconds, preferredTimescale: 90_000)
-                anchorSource = anchorSeconds >= videoPTS.seconds - 0.001
-                    ? "first picture"
-                    : "audio ceiling (picture \(String(format: "%.0f", (videoPTS.seconds - anchorSeconds) * 1000))ms ahead)"
+                if anchorSeconds >= audioCeiling - 0.001 && anchorSeconds > videoPTS.seconds + 0.001 {
+                    anchorSource = "shrink-to-live target (\(String(format: "%.0f", effectiveAudioPreRoll * 1000))ms lead)"
+                } else if anchorSeconds >= videoPTS.seconds - 0.001 {
+                    anchorSource = "first picture"
+                } else {
+                    anchorSource = "audio ceiling (picture \(String(format: "%.0f", (videoPTS.seconds - anchorSeconds) * 1000))ms ahead)"
+                }
                 requiresCushion = false
             } else if tsParser.videoPID == nil {
                 anchorPTS = firstPTS
@@ -1696,7 +1709,11 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 let longestStallMs = sessionState.mutate { $0.longestStallMs }
                 let observedStallCushion = longestStallMs > 0 ? (longestStallMs / 1000.0) + 0.15 : 0.35
                 let isSmoothed = currentChannelKey.contains("/stream/live") || currentChannelKey.contains("/stream/smooth")
-                effectiveAudioPreRoll = isSmoothed ? profilePreRoll : max(profilePreRoll, observedStallCushion)
+                if let target = ChannelJitterProfiler.targetLiveLeadOverrideSeconds {
+                    effectiveAudioPreRoll = target
+                } else {
+                    effectiveAudioPreRoll = isSmoothed ? profilePreRoll : max(profilePreRoll, observedStallCushion)
+                }
             } else {
                 effectiveAudioPreRoll = Self.audioPreRollSeconds
             }

@@ -11,19 +11,22 @@ struct RecordingPlayerScreen: View {
     let recording: Recording
     let serverAddress: String
     var initialPosition: Double? = nil
+    var model: AppModel? = nil
     var onProgressUpdate: @Sendable @MainActor (Double, Double) -> Void = { _, _ in }
 
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
     @State private var timeObserver: Any?
+    @State private var statusObserver: NSKeyValueObservation?
     @State private var isPreparing = true
+    @State private var errorMessage: String? = nil
 
     var body: some View {
         ZStack {
             Theme.Colors.bgVideoStage.ignoresSafeArea()
 
             let base = serverAddress.starts(with: "http") ? serverAddress : "https://\(serverAddress)"
-            if URL(string: base) != nil {
+            if errorMessage == nil && URL(string: base) != nil {
                 if let player {
                     NativeVideoPlayerView(
                         player: player,
@@ -166,11 +169,14 @@ struct RecordingPlayerScreen: View {
                 .font(.system(size: 48))
                 .foregroundStyle(Theme.Colors.statusWarning)
 
-            Text("Keine Streaming-URL für diese Aufnahme verfügbar.")
+            Text(errorMessage ?? "Keine Streaming-URL für diese Aufnahme verfügbar.")
                 .font(.headline)
                 .foregroundStyle(Theme.Colors.textPrimary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
 
             Button("Schließen") {
+                cleanup()
                 dismiss()
             }
             .buttonStyle(.borderedProminent)
@@ -183,44 +189,87 @@ struct RecordingPlayerScreen: View {
     private func setupPlayer() {
         AudioSessionManager.shared.configureForPlayback()
         let base = serverAddress.starts(with: "http") ? serverAddress : "https://\(serverAddress)"
-        guard let baseURL = URL(string: base) else { return }
-        let streamURL = baseURL.appendingPathComponent("api/v3/recordings/\(recording.id)/stream.mp4")
-
-        let item = PlayerAssetLoader.makePlayerItem(url: streamURL, baseURL: baseURL)
-        let p = AVPlayer(playerItem: item)
-
-        // Add periodic time observer to track resume progress
-        let progressCallback = self.onProgressUpdate
-        timeObserver = p.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 5, preferredTimescale: 1),
-            queue: .main
-        ) { [weak p] time in
-            guard let p, let duration = p.currentItem?.duration.seconds, duration > 0 else { return }
-            Task { @MainActor in
-                progressCallback(time.seconds, duration)
-            }
+        guard let baseURL = URL(string: base) else {
+            errorMessage = "Ungültige Server-Adresse"
+            isPreparing = false
+            return
         }
 
-        if let initPos = initialPosition, initPos > 5 {
-            let targetTime = CMTime(seconds: initPos, preferredTimescale: 600)
-            p.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak p] finished in
-                Task { @MainActor in
-                    if finished {
-                        p?.play()
-                    }
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        self.isPreparing = false
-                    }
+        Task {
+            var sessionCookie: String? = nil
+            if let model {
+                do {
+                    sessionCookie = try await model.mediaSessionCookie()
+                } catch {
+                    print("[RecordingPlayer] ⚠️ Could not acquire media session cookie: \(error)")
                 }
             }
-        } else {
-            p.play()
-            withAnimation(.easeInOut(duration: 0.3)) {
-                self.isPreparing = false
+
+            if let cookieValue = sessionCookie, let host = baseURL.host {
+                let cookie = HTTPCookie(properties: [
+                    .name: "xg2g_session",
+                    .value: cookieValue,
+                    .domain: host,
+                    .path: "/",
+                    .secure: baseURL.scheme?.lowercased() == "https" ? "TRUE" : "FALSE",
+                    .expires: Date().addingTimeInterval(86400)
+                ])
+                if let cookie {
+                    HTTPCookieStorage.shared.setCookie(cookie)
+                }
+            }
+
+            let streamURL = baseURL.appendingPathComponent("api/v3/recordings/\(recording.id)/stream.mp4")
+            var extraHeaders: [String: String] = [:]
+            if let cookieValue = sessionCookie {
+                extraHeaders["Cookie"] = "xg2g_session=\(cookieValue)"
+            }
+
+            let item = PlayerAssetLoader.makePlayerItem(url: streamURL, baseURL: baseURL, extraHeaders: extraHeaders)
+            let p = AVPlayer(playerItem: item)
+
+            await MainActor.run {
+                // Add periodic time observer to track resume progress
+                let progressCallback = self.onProgressUpdate
+                self.timeObserver = p.addPeriodicTimeObserver(
+                    forInterval: CMTime(seconds: 5, preferredTimescale: 1),
+                    queue: .main
+                ) { [weak p] time in
+                    guard let p, let duration = p.currentItem?.duration.seconds, duration > 0 else { return }
+                    Task { @MainActor in
+                        progressCallback(time.seconds, duration)
+                    }
+                }
+
+                self.statusObserver = item.observe(\.status, options: [.new]) { [weak p] observedItem, _ in
+                    Task { @MainActor in
+                        if observedItem.status == .readyToPlay {
+                            if let initPos = self.initialPosition, initPos > 5 {
+                                let targetTime = CMTime(seconds: initPos, preferredTimescale: 600)
+                                p?.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+                                    if finished {
+                                        p?.play()
+                                    }
+                                }
+                            } else {
+                                p?.play()
+                            }
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                self.isPreparing = false
+                            }
+                        } else if observedItem.status == .failed {
+                            print("[RecordingPlayer] ❌ AVPlayerItem failed: \(String(describing: observedItem.error))")
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                self.errorMessage = observedItem.error?.localizedDescription ?? "Wiedergabefehler"
+                                self.isPreparing = false
+                            }
+                        }
+                    }
+                }
+
+                self.player = p
             }
         }
-
-        self.player = p
     }
 
     private func cleanup() {
@@ -228,6 +277,8 @@ struct RecordingPlayerScreen: View {
             player.removeTimeObserver(observer)
             timeObserver = nil
         }
+        statusObserver?.invalidate()
+        statusObserver = nil
         player?.pause()
         AudioSessionManager.shared.deactivate()
     }

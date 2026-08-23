@@ -283,11 +283,21 @@ struct BouquetTests {
 
 struct RecordingsRepositoryTests {
 
-    @Test func recordingsDecodesAndSortsByDate() async throws {
+    @Test func recordingsDecodesEnvelopeAndSortsByDate() async throws {
         let api = ScriptedAPI()
         api.stub("recordings", json: """
-            [{"recordingId":"rec_1","title":"Older Movie","beginUnixSeconds":1700000000,"durationSeconds":7200,"status":"completed"},
-             {"recordingId":"rec_2","title":"Newer Show","beginUnixSeconds":1700010000,"durationSeconds":3600,"status":"completed"}]
+            {
+                "requestId": "req_123",
+                "currentRoot": "/media/hdd/movie",
+                "currentPath": "",
+                "roots": [{"id": "root_hdd", "name": "Harddisk"}],
+                "directories": [],
+                "breadcrumbs": [],
+                "recordings": [
+                    {"recordingId":"rec_1","title":"Older Movie","beginUnixSeconds":1700000000,"durationSeconds":7200,"status":"completed"},
+                    {"recordingId":"rec_2","title":"Newer Show","beginUnixSeconds":1700010000,"durationSeconds":3600,"status":"completed"}
+                ]
+            }
             """)
 
         let repo = RecordingsRepository(api: api)
@@ -301,15 +311,74 @@ struct RecordingsRepositoryTests {
         #expect(recordings[1].id == "rec_1")
         #expect(recordings[1].formattedDuration == "2h 0m")
     }
+
+    @Test func recordingsHandlesEmptyEnvelope() async throws {
+        let api = ScriptedAPI()
+        api.stub("recordings", json: """
+            {
+                "requestId": "req_empty",
+                "currentRoot": "/media/hdd/movie",
+                "currentPath": "",
+                "roots": [],
+                "directories": [],
+                "breadcrumbs": [],
+                "recordings": []
+            }
+            """)
+
+        let repo = RecordingsRepository(api: api)
+        let recordings = try await repo.recordings()
+        #expect(recordings.isEmpty)
+    }
+
+    @Test func recordingsDropsInvalidItemsWithoutTitleOrId() async throws {
+        let api = ScriptedAPI()
+        api.stub("recordings", json: """
+            {
+                "requestId": "req_filtered",
+                "recordings": [
+                    {"recordingId": "", "title": "No ID", "status": "completed"},
+                    {"recordingId": "rec_ok", "title": "Valid Movie", "beginUnixSeconds": 1700000000, "durationSeconds": 3600, "status": "completed"},
+                    {"recordingId": "rec_no_title", "title": "   ", "status": "completed"}
+                ]
+            }
+            """)
+
+        let repo = RecordingsRepository(api: api)
+        let recordings = try await repo.recordings()
+        #expect(recordings.count == 1)
+        #expect(recordings[0].id == "rec_ok")
+        #expect(recordings[0].title == "Valid Movie")
+    }
+
+    @Test func recordingsFailsOnInvalidSchema() async throws {
+        let api = ScriptedAPI()
+        // Flat array violates canonical RecordingResponse schema
+        api.stub("recordings", json: """
+            [{"recordingId":"rec_1","title":"Flat Array","status":"completed"}]
+            """)
+
+        let repo = RecordingsRepository(api: api)
+        do {
+            _ = try await repo.recordings()
+            Issue.record("Expected decoding failure for flat array")
+        } catch {
+            // Success: failed cleanly as expected
+        }
+    }
 }
 
 struct TimersRepositoryTests {
 
-    @Test func timersDecodesAndSortsByDate() async throws {
+    @Test func timersDecodesEnvelopeAndSortsByDate() async throws {
         let api = ScriptedAPI()
         api.stub("timers", json: """
-            [{"timerId":"t2","name":"Late Show","serviceRef":"1:0:1:2::","serviceName":"ZDF","begin":1700020000,"end":1700023600,"state":"waiting"},
-             {"timerId":"t1","name":"Early News","serviceRef":"1:0:1:1::","serviceName":"Das Erste","begin":1700010000,"end":1700011800,"state":"running"}]
+            {
+                "items": [
+                    {"timerId":"t2","name":"Late Show","serviceRef":"1:0:1:2::","serviceName":"ZDF","begin":1700020000,"end":1700023600,"state":"waiting"},
+                    {"timerId":"t1","name":"Early News","serviceRef":"1:0:1:1::","serviceName":"Das Erste","begin":1700010000,"end":1700011800,"state":"running"}
+                ]
+            }
             """)
 
         let repo = TimersRepository(api: api)
@@ -322,6 +391,54 @@ struct TimersRepositoryTests {
         #expect(timers[0].isRunning == true)
         #expect(timers[1].id == "t2")
         #expect(timers[1].isRunning == false)
+    }
+
+    @Test func timersHandlesEmptyList() async throws {
+        let api = ScriptedAPI()
+        api.stub("timers", json: """
+            {
+                "items": []
+            }
+            """)
+
+        let repo = TimersRepository(api: api)
+        let timers = try await repo.timers()
+        #expect(timers.isEmpty)
+    }
+
+    @Test func timersDropsInvalidItemsWithoutNameOrServiceRef() async throws {
+        let api = ScriptedAPI()
+        api.stub("timers", json: """
+            {
+                "items": [
+                    {"timerId":"t_invalid_1","name":"","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"waiting"},
+                    {"timerId":"t_valid","name":"Valid Timer","serviceRef":"1:0:1:1::","begin":1700010000,"end":1700011800,"state":"waiting"},
+                    {"timerId":"t_invalid_2","name":"Missing Ref","serviceRef":"  ","begin":1700010000,"end":1700011800,"state":"waiting"}
+                ]
+            }
+            """)
+
+        let repo = TimersRepository(api: api)
+        let timers = try await repo.timers()
+        #expect(timers.count == 1)
+        #expect(timers[0].id == "t_valid")
+        #expect(timers[0].name == "Valid Timer")
+    }
+
+    @Test func timersFailsOnMissingRequiredItems() async throws {
+        let api = ScriptedAPI()
+        // Missing required 'items' field
+        api.stub("timers", json: """
+            {}
+            """)
+
+        let repo = TimersRepository(api: api)
+        do {
+            _ = try await repo.timers()
+            Issue.record("Expected decoding failure for missing items field")
+        } catch {
+            // Success: failed cleanly as expected
+        }
     }
 }
 
