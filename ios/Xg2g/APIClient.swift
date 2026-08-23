@@ -28,19 +28,28 @@ struct APIRequest<Response: Decodable & Sendable>: Sendable {
     let query: [URLQueryItem]
     let body: Data?
     let contentType: String?
+    /// Request-specific headers, merged over the ones every request carries.
+    ///
+    /// Needed by endpoints that identify the caller or the operation rather than
+    /// authenticate it - the preparation endpoints name which client a channel change
+    /// belongs to and which zap it is part of, neither of which is authentication and
+    /// neither of which belongs in a path or a query.
+    let headers: [String: String]
 
     init(
         method: HTTPMethod = .get,
         path: String,
         query: [URLQueryItem] = [],
         body: Data? = nil,
-        contentType: String? = nil
+        contentType: String? = nil,
+        headers: [String: String] = [:]
     ) {
         self.method = method
         self.path = path
         self.query = query
         self.body = body
         self.contentType = contentType
+        self.headers = headers
     }
 }
 
@@ -181,6 +190,9 @@ struct HTTPAPIClient: APIClient {
         urlRequest.setValue("xg2g-ios/3.0", forHTTPHeaderField: "User-Agent")
         if let contentType = request.contentType {
             urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        }
+        for (name, value) in request.headers {
+            urlRequest.setValue(value, forHTTPHeaderField: name)
         }
         return urlRequest
     }

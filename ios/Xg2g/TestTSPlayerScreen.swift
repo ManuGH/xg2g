@@ -15,11 +15,20 @@ public struct TestTSPlayerScreen: View {
     /// catalogue's `Channel`. Without this the lock screen had nothing but the
     /// channel name to draw. Optional so the screen stays usable standalone.
     private let model: AppModel?
-    @StateObject private var pipeline = NativeTSVideoPipeline()
-    /// Owns the AVFoundation display layer and the PiP controller. Held here
-    /// rather than inside the UIViewRepresentable so it survives SwiftUI
-    /// rebuilding that view, which would otherwise tear down PiP mid-stream.
-    @StateObject private var systemPresenter = PresentationContextBox()
+    /// Owns the visible surface and whichever session is on it.
+    ///
+    /// Held here rather than inside the UIViewRepresentable so it survives SwiftUI
+    /// rebuilding that view, which would otherwise tear down PiP mid-stream — and
+    /// held as one object rather than as a pipeline plus a presenter, because with
+    /// channels prepared beside one another there is no longer a single pipeline for
+    /// the screen to own.
+    @StateObject private var coordinator: ZapCoordinator
+
+    /// The readouts of the channel actually on screen.
+    ///
+    /// Empty values while nothing is playing, so the HUD reads as "nothing yet"
+    /// rather than as the last channel's figures.
+    private var tele: TelemetryValues { coordinator.playing?.telemetry.display ?? TelemetryValues() }
     @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:"
     @State private var currentChannelName: String = "Sky Sport F1 HD"
     private enum StreamRouteMode: String, CaseIterable {
@@ -79,6 +88,16 @@ public struct TestTSPlayerScreen: View {
             _streamURLString = State(initialValue: url.absoluteString)
             _currentChannelName = State(initialValue: channel.name)
         }
+        // Built once with the screen and outliving every session on it. Without a
+        // configured backend it has nothing to prepare against and says so, rather
+        // than pretending a channel change is a transaction when it is not.
+        _coordinator = StateObject(wrappedValue: ZapCoordinator(
+            preparations: model?.makeZapPreparationClient(),
+            streamURL: { [weak model] serviceRef in
+                model?.liveStreamURL(for: serviceRef)
+                    ?? URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)")
+            }
+        ))
     }
 
     /// The catalogue logo for a preset, matched on `serviceRef` or `name`.
@@ -169,15 +188,15 @@ public struct TestTSPlayerScreen: View {
                     ZStack(alignment: .topLeading) {
                         // 1. Native Metal 1080p50 Hardware Stage
                         MetalVideoStageView(
-                            pipeline: pipeline,
-                            presenter: systemPresenter.presenter,
-                            presentationContext: systemPresenter.context,
+                            telemetry: coordinator.playing?.telemetry,
+                            presenter: coordinator.surface,
+                            presentationContext: coordinator.context,
                             presentationPath: presentationPath
                         )
                         .ignoresSafeArea(edges: isLandscape ? .all : [])
 
                         // 2. Format Notice
-                        if let unplayable = pipeline.telemetry.display.unplayableVideoCodec {
+                        if let unplayable = tele.unplayableVideoCodec {
                             UnplayableFormatNotice(
                                 formatDescription: unplayable,
                                 channelName: currentChannelName
@@ -370,11 +389,11 @@ public struct TestTSPlayerScreen: View {
                     } label: {
                         HStack(spacing: 5) {
                             Circle()
-                                .fill(pipeline.telemetry.display.isAudioMasterClockActive ? Color.green : Color.yellow)
+                                .fill(tele.isAudioMasterClockActive ? Color.green : Color.yellow)
                                 .frame(width: 7, height: 7)
                             Image(systemName: showHUD ? "chart.bar.fill" : "chart.bar")
                                 .font(.system(size: 12, weight: .bold))
-                            Text(String(format: "%.0f fps", pipeline.telemetry.display.fieldsSubmittedPerSec))
+                            Text(String(format: "%.0f fps", tele.fieldsSubmittedPerSec))
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                         }
                         .foregroundStyle(.white)
@@ -407,7 +426,7 @@ public struct TestTSPlayerScreen: View {
                     // Picture in Picture.
                     Button {
                         Haptics.shared.impact(.light)
-                        systemPresenter.presenter.startPictureInPicture()
+                        coordinator.surface.startPictureInPicture()
                     } label: {
                         Image(systemName: "pip.enter")
                             .font(.system(size: 15, weight: .semibold))
@@ -481,7 +500,7 @@ public struct TestTSPlayerScreen: View {
                             Image(systemName: "waveform")
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(Theme.Colors.accentAction)
-                            Text("\(pipeline.telemetry.display.audioCodec) (\(pipeline.telemetry.display.audioChannels == 6 ? "5.1 Surround" : "\(pipeline.telemetry.display.audioChannels) ch"))")
+                            Text("\(tele.audioCodec) (\(tele.audioChannels == 6 ? "5.1 Surround" : "\(tele.audioChannels) ch"))")
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.9))
                         }
@@ -501,7 +520,7 @@ public struct TestTSPlayerScreen: View {
                         .padding(.vertical, 4)
                         .background(.ultraThinMaterial, in: Capsule())
 
-                        Text(String(format: "%.1f Mbps", pipeline.telemetry.display.tsBitrateKbps / 1000.0))
+                        Text(String(format: "%.1f Mbps", tele.tsBitrateKbps / 1000.0))
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.7))
 
@@ -560,7 +579,7 @@ public struct TestTSPlayerScreen: View {
 
                         Button(isStreaming ? "Stoppen" : "Starten") {
                             if isStreaming {
-                                pipeline.stopStreaming()
+                                Task { await coordinator.stop() }
                                 isStreaming = false
                                 isPlaying = false
                             } else {
@@ -574,8 +593,8 @@ public struct TestTSPlayerScreen: View {
                     // Format Status Badges
                     HStack(spacing: 8) {
                         badgeItem(icon: "sparkles.tv", label: "1080i50 HW Bob", color: .green)
-                        badgeItem(icon: "speaker.wave.3.fill", label: "\(pipeline.telemetry.display.audioCodec) 5.1", color: .blue)
-                        badgeItem(icon: "thermometer.medium", label: pipeline.telemetry.display.thermalState, color: .orange)
+                        badgeItem(icon: "speaker.wave.3.fill", label: "\(tele.audioCodec) 5.1", color: .blue)
+                        badgeItem(icon: "thermometer.medium", label: tele.thermalState, color: .orange)
                     }
                 }
                 // Stream Routing Mode (A/B Test)
@@ -699,7 +718,7 @@ public struct TestTSPlayerScreen: View {
             VStack(alignment: .leading, spacing: 10) {
                 hudHeader
 
-                if let warning = pipeline.telemetry.display.validationWarning {
+                if let warning = tele.validationWarning {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
                         Text(warning).font(.caption.weight(.bold)).foregroundStyle(.white)
@@ -711,37 +730,37 @@ public struct TestTSPlayerScreen: View {
 
                 Group {
                     hudSection(title: "STARTUP GATES (TTFP)") {
-                        hudRow("TTFP (GPU Done)", pipeline.telemetry.display.ttfpGpuCompletedMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ttfpGpuCompletedMs) : (pipeline.telemetry.display.ttfpTotalMs > 0 ? String(format: "%.1f ms", pipeline.telemetry.display.ttfpTotalMs) : "Instant 🚀"), highlight: true)
-                        hudRow("Performance", pipeline.telemetry.display.ttfpRating, highlight: true)
-                        hudRow("t0→t1: Network", String(format: "%.1f ms", pipeline.telemetry.display.ttfpNetworkMs))
-                        hudRow("t1→t2: PSI Demux", String(format: "%.1f ms", pipeline.telemetry.display.ttfpPsiMs))
-                        hudRow("t4→t5: HW Decode", String(format: "%.1f ms", pipeline.telemetry.display.ttfpDecodeMs))
+                        hudRow("TTFP (GPU Done)", tele.ttfpGpuCompletedMs > 0 ? String(format: "%.1f ms", tele.ttfpGpuCompletedMs) : (tele.ttfpTotalMs > 0 ? String(format: "%.1f ms", tele.ttfpTotalMs) : "Instant 🚀"), highlight: true)
+                        hudRow("Performance", tele.ttfpRating, highlight: true)
+                        hudRow("t0→t1: Network", String(format: "%.1f ms", tele.ttfpNetworkMs))
+                        hudRow("t1→t2: PSI Demux", String(format: "%.1f ms", tele.ttfpPsiMs))
+                        hudRow("t4→t5: HW Decode", String(format: "%.1f ms", tele.ttfpDecodeMs))
                     }
 
                     hudSection(title: "VIDEO & RENDER") {
-                        let isInterlaced = pipeline.telemetry.display.isInterlaced
-                        let h = pipeline.telemetry.display.videoHeight
-                        let w = pipeline.telemetry.display.videoWidth
-                        let srcFps = pipeline.telemetry.display.sourceFrameRate
+                        let isInterlaced = tele.isInterlaced
+                        let h = tele.videoHeight
+                        let w = tele.videoWidth
+                        let srcFps = tele.sourceFrameRate
                         let fps = Int(round(srcFps > 0 ? (isInterlaced ? srcFps * 2 : srcFps) : 50))
                         let formatStr = (w > 0 && h > 0) ? "\(w)x\(h) \(h)\(isInterlaced ? "i" : "p")\(fps)" : "Detecting…"
                         hudRow("Format", formatStr)
-                        hudRow("HW Decode", pipeline.telemetry.display.hwDecodeActive ? "Active 🚀" : "Pending…", highlight: pipeline.telemetry.display.hwDecodeActive)
-                        hudRow("Fields Displayed", String(format: "%.1f fields/s", pipeline.telemetry.display.fieldsSubmittedPerSec), highlight: abs(pipeline.telemetry.display.fieldsSubmittedPerSec - 50.0) < 3.0)
-                        hudRow("Bitrate", String(format: "%.1f kbps", pipeline.telemetry.display.tsBitrateKbps))
+                        hudRow("HW Decode", tele.hwDecodeActive ? "Active 🚀" : "Pending…", highlight: tele.hwDecodeActive)
+                        hudRow("Fields Displayed", String(format: "%.1f fields/s", tele.fieldsSubmittedPerSec), highlight: abs(tele.fieldsSubmittedPerSec - 50.0) < 3.0)
+                        hudRow("Bitrate", String(format: "%.1f kbps", tele.tsBitrateKbps))
                     }
 
                     hudSection(title: "AUDIO (AVFoundation)") {
-                        hudRow("Codec", pipeline.telemetry.display.audioCodec)
-                        hudRow("Channels", "\(pipeline.telemetry.display.audioChannels) ch")
-                        hudRow("Master Clock", pipeline.telemetry.display.isAudioMasterClockActive ? "Synchronized 🟢" : "Pre-roll ⚪️", highlight: pipeline.telemetry.display.isAudioMasterClockActive)
+                        hudRow("Codec", tele.audioCodec)
+                        hudRow("Channels", "\(tele.audioChannels) ch")
+                        hudRow("Master Clock", tele.isAudioMasterClockActive ? "Synchronized 🟢" : "Pre-roll ⚪️", highlight: tele.isAudioMasterClockActive)
                     }
 
                     hudSection(title: "SYSTEM & PERFORMANCE") {
-                        hudRow("Thermal State", pipeline.telemetry.display.thermalState, highlight: pipeline.telemetry.display.thermalState.contains("Nominal"))
-                        hudRow("Footprint (Peak)", String(format: "%.1f MB (%.1f MB)", pipeline.telemetry.display.memoryUsageMB, pipeline.telemetry.display.peakMemoryFootprintMB))
-                        hudRow("Process CPU", String(format: "%.1f %%", pipeline.telemetry.display.processCpuUsagePercent), highlight: pipeline.telemetry.display.processCpuUsagePercent < 25.0)
-                        hudRow("VT In-Flight", "\(pipeline.telemetry.display.vtInFlightFrames)", highlight: pipeline.telemetry.display.vtInFlightFrames <= 3)
+                        hudRow("Thermal State", tele.thermalState, highlight: tele.thermalState.contains("Nominal"))
+                        hudRow("Footprint (Peak)", String(format: "%.1f MB (%.1f MB)", tele.memoryUsageMB, tele.peakMemoryFootprintMB))
+                        hudRow("Process CPU", String(format: "%.1f %%", tele.processCpuUsagePercent), highlight: tele.processCpuUsagePercent < 25.0)
+                        hudRow("VT In-Flight", "\(tele.vtInFlightFrames)", highlight: tele.vtInFlightFrames <= 3)
                     }
                 }
             }
@@ -779,7 +798,7 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func teardownPlayback() {
-        pipeline.stopStreaming()
+        Task { await coordinator.stop() }
         isStreaming = false
         UIApplication.shared.isIdleTimerDisabled = false
         autoHideControlsTask?.cancel()
@@ -811,23 +830,44 @@ public struct TestTSPlayerScreen: View {
         // Stamped here so the figure covers the wait as the viewer experiences
         // it, including whatever this function does before handing over.
         let requestedAt = CACurrentMediaTime()
+        let serviceRef = URL(string: streamURLString)?.lastPathComponent
+
+        // The live route is the only one with a backend to warm a channel on, so it is
+        // the only one that can make before it breaks: the channel playing keeps
+        // playing while the next is prepared, and the surface changes hands once. The
+        // direct and legacy routes go straight at the receiver, have nothing to prove
+        // against, and start outright — which is what every route used to do.
+        if streamRouteMode == .livePipeline, coordinator.canPrepare, let serviceRef {
+            Task { await coordinator.zap(to: serviceRef) }
+            isStreaming = true
+            isPlaying = true
+            announceNowPlaying()
+            return
+        }
+
         if let url = effectiveStreamURL(for: streamURLString) {
-            pipeline.startStreaming(url: url, requestedAt: requestedAt)
+            Task { await coordinator.play(unprepared: url, requestedAt: requestedAt) }
             isStreaming = true
             isPlaying = true
             // Publishes the entry itself, not just its rate: `updatePlaybackState`
             // returns at its first line when nothing has been published, which is
             // why this player's lock screen was empty and its controls inert.
-            NowPlayingManager.shared.updateLive(
-                title: currentChannelName,
-                subtitle: currentPreset?.epgNow,
-                logoURL: currentPreset.flatMap { logoURL(for: $0.serviceRef) }
-            )
-            // Resuming goes through here, and the manager remembers the paused
-            // state from before — without this the lock screen and the watch
-            // would keep showing a pause button over running playback.
-            NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
+            announceNowPlaying()
         }
+    }
+
+    /// Publishes the entry itself, not just its rate: `updatePlaybackState` returns at
+    /// its first line when nothing has been published, which is why this player's lock
+    /// screen was empty and its controls inert. Resuming goes through here too, and the
+    /// manager remembers the paused state from before — without that the lock screen
+    /// and the watch would keep showing a pause button over running playback.
+    private func announceNowPlaying() {
+        NowPlayingManager.shared.updateLive(
+            title: currentChannelName,
+            subtitle: currentPreset?.epgNow,
+            logoURL: currentPreset.flatMap { logoURL(for: $0.serviceRef) }
+        )
+        NowPlayingManager.shared.updatePlaybackState(isPlaying: true)
     }
 
     private func switchTo(preset: ChannelPreset) {
@@ -847,11 +887,12 @@ public struct TestTSPlayerScreen: View {
 
     private func togglePlayPause() {
         if isPlaying {
-            pipeline.stopStreaming()
+            let stopping = coordinator.playing
+            Task { await coordinator.stop() }
             isPlaying = false
             isStreaming = false
             NowPlayingManager.shared.updatePlaybackState(isPlaying: false)
-            pipeline.notePlaybackStateChanged()
+            stopping?.notePlaybackStateChanged()
         } else {
             startCurrentPreset()
         }
@@ -884,9 +925,9 @@ public struct TestTSPlayerScreen: View {
     }
 
     private var hudHeader: some View {
-        let isInterlaced = pipeline.telemetry.display.isInterlaced
-        let h = pipeline.telemetry.display.videoHeight
-        let srcFps = pipeline.telemetry.display.sourceFrameRate
+        let isInterlaced = tele.isInterlaced
+        let h = tele.videoHeight
+        let srcFps = tele.sourceFrameRate
         let fps = Int(round(srcFps > 0 ? (isInterlaced ? srcFps * 2 : srcFps) : 50))
         let title = (h > 0) ? "⚡️ Native \(h)\(isInterlaced ? "i" : "p")\(fps) Video Telemetry" : "⚡️ Native Video Telemetry"
         return HStack {
@@ -926,19 +967,23 @@ public struct TestTSPlayerScreen: View {
 }
 
 private struct MetalVideoStageView: UIViewRepresentable {
-    let pipeline: NativeTSVideoPipeline
+    /// The readouts of whichever session is on screen, or none while nothing is.
+    ///
+    /// Not the session itself: the stage draws what the surface is given, and which
+    /// session that is belongs to the presentation context.
+    let telemetry: StreamTelemetry?
     let presenter: SystemVideoPresenter
     let presentationContext: PresentationContext
     let presentationPath: MetalVideoView.PresentationPath
 
     func makeUIView(context: Context) -> MetalVideoView {
         let view = MetalVideoView(frame: .zero)
-        view.telemetry = pipeline.telemetry
+        view.telemetry = telemetry
 
-        // The session is given the context, never the view. Which session the surface
-        // belongs to is the context's decision alone.
+        // The context is given the view, and hands it to whichever session owns the
+        // surface. Sessions are never wired to it here: with a channel prepared beside
+        // one playing, the stage cannot know which of them is the visible one.
         presentationContext.setRenderView(view)
-        pipeline.presentationContext = presentationContext
 
         // Presenting through AVFoundation instead of our own drawable. The Metal
         // view keeps doing the decode-side work — reorder, field scheduling and
@@ -954,7 +999,7 @@ private struct MetalVideoStageView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: MetalVideoView, context: Context) {
-        uiView.telemetry = pipeline.telemetry
+        uiView.telemetry = telemetry
         uiView.presentationPath = presentationPath
         // The layer is not managed by Auto Layout, so it has to follow the view
         // itself. Without this it keeps its size across a rotation and the

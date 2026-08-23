@@ -287,6 +287,32 @@ final class AppModel {
         return URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)")
     }
 
+    /// A client identity for the preparation endpoints.
+    ///
+    /// Stable for the life of the installation and meaningless outside it: a random
+    /// value made once, not the device identifier and nothing derived from the user.
+    /// The backend needs it only to answer "is this the same client" - which channel
+    /// change supersedes which, and who may commit one - and that question needs no
+    /// idea who the person is.
+    static var zapClientID: String {
+        let key = "xg2g.zap.clientID"
+        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty {
+            return existing
+        }
+        let fresh = "sterling-" + UUID().uuidString.prefix(12).lowercased()
+        UserDefaults.standard.set(fresh, forKey: key)
+        return fresh
+    }
+
+    /// A preparation client, when a backend address has been configured.
+    ///
+    /// `nil` without one: preparation runs against xg2g, so the direct receiver route
+    /// has nothing to prepare and the player falls back to starting a channel outright.
+    func makeZapPreparationClient() -> ZapPreparationClient? {
+        guard let api else { return nil }
+        return ZapPreparationClient(api: api, clientID: Self.zapClientID)
+    }
+
     /// The legacy burst smoother URL for a service reference.
     func legacySmoothStreamURL(for serviceRef: String) -> URL? {
         if let base = address?.apiBaseURL {

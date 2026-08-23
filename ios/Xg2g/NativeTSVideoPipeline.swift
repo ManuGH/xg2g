@@ -393,14 +393,12 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
                 TelemetryServer.shared.restartAfterForeground()
             }
         }
-        TelemetryServer.shared.setTelemetryProvider { [weak self] in
-            return self?.telemetry.toDictionary() ?? [:]
-        }
-        // The server owns the main-thread hop and its timeout; this closure only
-        // has to promise it runs there.
-        TelemetryServer.shared.setScreenshotProvider { [weak self] in
-            self?.presentationContext?.captureVisibleFrameJPEG()
-        }
+        // The telemetry and screenshot endpoints answer for the channel on screen, and
+        // a session does not know whether it is that channel. Sessions are built one
+        // beside another now, so a session that pointed the endpoints at itself would
+        // be reporting a channel still being prepared while the viewer watches another
+        // one — and would blank both endpoints on its way out. Whoever owns the surface
+        // installs them.
     }
 
     private func setupLifecycleNotificationObservers() {
@@ -440,8 +438,6 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         if let obs = audioFlushedObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = telemetryForegroundObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = appBackgroundObserver { NotificationCenter.default.removeObserver(obs) }
-        TelemetryServer.shared.setTelemetryProvider { [:] }
-        TelemetryServer.shared.setScreenshotProvider { nil }
     }
 
     /// Identifier sent with a channel change so the backend timeline and this one

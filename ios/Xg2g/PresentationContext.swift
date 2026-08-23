@@ -417,19 +417,3 @@ public final class PresentationContext {
         logger.notice("[Presentation] surface released")
     }
 }
-
-/// Keeps the presenter and the surface ownership alive across SwiftUI view updates.
-///
-/// The context has to outlive every playback session, because it is what the sessions
-/// are handed to and taken from. Owning it in the screen rather than in a session is
-/// what makes a second session preparable at all.
-@MainActor
-public final class PresentationContextBox: ObservableObject {
-    public let presenter = SystemVideoPresenter()
-    public lazy var context = PresentationContext(presenter: presenter, renderView: nil)
-
-    public init() {
-        // Player-lifetime policy, configured once. Sessions come and go beneath it.
-        AudioSessionManager.shared.configureForPlayback()
-    }
-}
