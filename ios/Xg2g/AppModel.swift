@@ -299,13 +299,13 @@ final class AppModel {
     var activePlaybackPlanDescription: String {
         switch playbackEngine {
         case .native:
-            return "Native TS · Video Copy · Audio AC-3 · Minimale Serverlast"
+            return "Native TS · Direkt (Minimale Serverlast)"
         case .auto:
             switch qualityPreference {
             case .auto:
                 return "Auto Plan · Dynamische Pipeline & Profil"
             case .passthrough:
-                return "Auto Plan · 1:1 Bitstream Passthrough"
+                return "Auto Plan · Direkt"
             case .qsvNormalize:
                 return "Auto Plan · QSV Normalisierung (50fps)"
             case .dataSaver:
@@ -316,7 +316,7 @@ final class AppModel {
             case .auto:
                 return "HLS fMP4 · Auto Video Copy / Remux"
             case .passthrough:
-                return "HLS TS · 1:1 Bitstream Passthrough"
+                return "HLS TS · Direkt"
             case .qsvNormalize:
                 return "HLS fMP4 · QSV Normalisierung (50fps)"
             case .dataSaver:

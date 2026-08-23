@@ -60,6 +60,138 @@ private final class PipelineSessionState: @unchecked Sendable {
     }
 }
 
+public struct SessionRuntimePlan: Sendable, Equatable {
+    public enum Mode: String, Sendable, Equatable {
+        case direct = "direct"
+        case transcode = "transcode"
+        case unknown = "unknown"
+    }
+
+    public let videoMode: Mode
+    public let sourceVideoCodec: String
+    public let effectiveVideoCodec: String
+    public let scanPolicy: String
+
+    public let audioMode: Mode
+    public let sourceAudioCodec: String
+    public let effectiveAudioCodec: String
+    public let audioLanguage: String
+
+    public init(
+        videoMode: Mode = .unknown,
+        sourceVideoCodec: String = "unknown",
+        effectiveVideoCodec: String = "unknown",
+        scanPolicy: String = "passthrough",
+        audioMode: Mode = .unknown,
+        sourceAudioCodec: String = "unknown",
+        effectiveAudioCodec: String = "unknown",
+        audioLanguage: String = ""
+    ) {
+        self.videoMode = videoMode
+        self.sourceVideoCodec = sourceVideoCodec
+        self.effectiveVideoCodec = effectiveVideoCodec
+        self.scanPolicy = scanPolicy
+        self.audioMode = audioMode
+        self.sourceAudioCodec = sourceAudioCodec
+        self.effectiveAudioCodec = effectiveAudioCodec
+        self.audioLanguage = audioLanguage
+    }
+
+    /// User-friendly, succinct summary for standard UI & Settings.
+    public var userSummary: String {
+        switch (videoMode, audioMode) {
+        case (.direct, .direct):
+            return "Direkt"
+        case (.direct, .transcode):
+            return "Audio angepasst"
+        case (.transcode, .direct):
+            return "Video angepasst"
+        case (.transcode, .transcode):
+            return "Video & Audio angepasst"
+        default:
+            return "Direkt"
+        }
+    }
+
+    /// Technical summary for diagnostic HUD and advanced settings.
+    public var technicalSummary: String {
+        let vText: String
+        if videoMode == .transcode {
+            let scan = scanPolicy == "deinterlace_50p" ? " 50p" : ""
+            let src = sourceVideoCodec.isEmpty || sourceVideoCodec == "unknown" ? "SRC" : sourceVideoCodec.uppercased()
+            let eff = effectiveVideoCodec.isEmpty || effectiveVideoCodec == "unknown" ? "H264" : effectiveVideoCodec.uppercased()
+            vText = "\(src) → \(eff)\(scan)"
+        } else {
+            let eff = effectiveVideoCodec.isEmpty || effectiveVideoCodec == "unknown" ? "H.264" : effectiveVideoCodec.uppercased()
+            vText = "\(eff) Direct"
+        }
+
+        let aText: String
+        if audioMode == .transcode {
+            let src = sourceAudioCodec.isEmpty || sourceAudioCodec == "unknown" ? "SRC" : sourceAudioCodec.uppercased()
+            let eff = effectiveAudioCodec.isEmpty || effectiveAudioCodec == "unknown" ? "AAC" : effectiveAudioCodec.uppercased()
+            aText = "\(src) → \(eff) (Server)"
+        } else {
+            let eff = effectiveAudioCodec.isEmpty || effectiveAudioCodec == "unknown" ? "AC-3" : effectiveAudioCodec.uppercased()
+            aText = "\(eff) Direct"
+        }
+
+        return "\(vText) · \(aText)"
+    }
+
+    /// Concise Video Badge text.
+    public var videoBadge: String {
+        if videoMode == .transcode {
+            let scan = scanPolicy == "deinterlace_50p" ? " 50p" : ""
+            let src = sourceVideoCodec.isEmpty || sourceVideoCodec == "unknown" ? "SRC" : sourceVideoCodec.uppercased()
+            let eff = effectiveVideoCodec.isEmpty || effectiveVideoCodec == "unknown" ? "H264" : effectiveVideoCodec.uppercased()
+            return "\(src)→\(eff)\(scan)"
+        } else {
+            let eff = effectiveVideoCodec.isEmpty || effectiveVideoCodec == "unknown" ? "H.264" : effectiveVideoCodec.uppercased()
+            return "\(eff) Direct"
+        }
+    }
+
+    /// Concise Audio Badge text.
+    public var audioBadge: String {
+        if audioMode == .transcode {
+            let src = sourceAudioCodec.isEmpty || sourceAudioCodec == "unknown" ? "SRC" : sourceAudioCodec.uppercased()
+            let eff = effectiveAudioCodec.isEmpty || effectiveAudioCodec == "unknown" ? "AAC" : effectiveAudioCodec.uppercased()
+            return "\(src)→\(eff)"
+        } else {
+            let eff = effectiveAudioCodec.isEmpty || effectiveAudioCodec == "unknown" ? "AC-3" : effectiveAudioCodec.uppercased()
+            return "\(eff) Direct"
+        }
+    }
+
+    public static func from(httpResponse: HTTPURLResponse) -> SessionRuntimePlan? {
+        guard let vModeRaw = httpResponse.value(forHTTPHeaderField: "X-Xg2g-Video-Mode"),
+              let aModeRaw = httpResponse.value(forHTTPHeaderField: "X-Xg2g-Audio-Mode") else {
+            return nil
+        }
+        let vMode = Mode(rawValue: vModeRaw) ?? .unknown
+        let aMode = Mode(rawValue: aModeRaw) ?? .unknown
+        let srcV = httpResponse.value(forHTTPHeaderField: "X-Xg2g-Video-Source") ?? "unknown"
+        let effV = httpResponse.value(forHTTPHeaderField: "X-Xg2g-Video-Effective") ?? srcV
+        let scan = httpResponse.value(forHTTPHeaderField: "X-Xg2g-Scan-Policy") ?? "passthrough"
+
+        let srcA = httpResponse.value(forHTTPHeaderField: "X-Xg2g-Audio-Source") ?? "unknown"
+        let effA = httpResponse.value(forHTTPHeaderField: "X-Xg2g-Audio-Effective") ?? srcA
+        let lang = httpResponse.value(forHTTPHeaderField: "X-Xg2g-Audio-Language") ?? ""
+
+        return SessionRuntimePlan(
+            videoMode: vMode,
+            sourceVideoCodec: srcV,
+            effectiveVideoCodec: effV,
+            scanPolicy: scan,
+            audioMode: aMode,
+            sourceAudioCodec: srcA,
+            effectiveAudioCodec: effA,
+            audioLanguage: lang
+        )
+    }
+}
+
 public enum DecodeGateState: Sendable, Equatable {
     case closed(reason: DecodeGateCloseReason)
     case open
@@ -86,6 +218,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     URLSessionDataDelegate {
 
     public let telemetry = StreamTelemetry()
+    @Published public private(set) var runtimePlan: SessionRuntimePlan?
 
     private let tsParser = TSPacketParser()
     private let pesAssembler = PESPacketAssembler()
@@ -828,6 +961,17 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         if let httpResponse = response as? HTTPURLResponse {
             let serverName = httpResponse.value(forHTTPHeaderField: "Server") ?? "Enigma2 Streamserver"
             let contentType = httpResponse.mimeType ?? "video/mp2t"
+
+            if let plan = SessionRuntimePlan.from(httpResponse: httpResponse) {
+                DispatchQueue.main.async {
+                    self.runtimePlan = plan
+                }
+                let planLog = "[PLAN-RUNTIME] 🎯 Server plan: \(plan.technicalSummary) (\(plan.userSummary))"
+                print(planLog)
+                logger.notice("\(planLog, privacy: .public)")
+                TelemetryServer.shared.log(planLog)
+            }
+
             let httpLog = "[1080i50-HTTP] Connected: Status \(httpResponse.statusCode) | Type: \(contentType) | Server: \(serverName)"
             print(httpLog)
             logger.notice("\(httpLog, privacy: .public)")

@@ -809,12 +809,18 @@ public struct TestTSPlayerScreen: View {
                         .tint(isStreaming ? Theme.Colors.statusError : Theme.Colors.accentLive)
                     }
 
-                    // Format Status Badges
+                    // Format Status Badges (Runtime Plan Transparency)
                     HStack(spacing: 8) {
-                        let scanBadge = tele.videoScanSummary != "—" ? "\(tele.videoScanSummary) \(tele.isInterlaced ? "HW Bob" : "HW Direct")" : "Video HW"
+                        let plan = coordinator.playing?.runtimePlan
+                        let scanBadge = plan != nil ? plan!.videoBadge : (tele.videoScanSummary != "—" ? "\(tele.videoScanSummary) \(tele.isInterlaced ? "HW Bob" : "HW Direct")" : "Video HW")
                         badgeItem(icon: "sparkles.tv", label: scanBadge, color: .green)
-                        let audioBadge = tele.audioChannels > 0 ? "\(tele.audioCodec) \(tele.audioChannels == 6 ? "5.1" : "\(tele.audioChannels)ch")" : tele.audioCodec
+
+                        let audioBadge = plan != nil ? plan!.audioBadge : (tele.audioChannels > 0 ? "\(tele.audioCodec) \(tele.audioChannels == 6 ? "5.1" : "\(tele.audioChannels)ch")" : tele.audioCodec)
                         badgeItem(icon: "speaker.wave.3.fill", label: audioBadge, color: .blue)
+
+                        let modeBadge = plan?.userSummary ?? "Direkt"
+                        badgeItem(icon: "bolt.fill", label: modeBadge, color: .purple)
+
                         badgeItem(icon: "thermometer.medium", label: tele.thermalState, color: .orange)
                     }
                 }
