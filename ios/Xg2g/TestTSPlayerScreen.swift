@@ -238,48 +238,6 @@ public struct TestTSPlayerScreen: View {
                                 channelName: currentChannelName
                             )
                         }
-
-                        // 3. On-Screen Display Controls & Buttons
-                        if showControls && !showLandscapeZapBar {
-                            videoOverlayControls(isLandscape: isLandscape, safeInsets: geometry.safeAreaInsets)
-                                .transition(.opacity)
-                        }
-
-                        // 4. Floating Telemetry Inspector Modal
-                        if showHUD {
-                            telemetryHUDView
-                                .padding(.top, isLandscape ? 48 : max(geometry.safeAreaInsets.top, 8) + 40)
-                                .padding(.leading, max(geometry.safeAreaInsets.leading, 12))
-                                .transition(.scale(scale: 0.9).combined(with: .opacity))
-                        }
-
-                        // 5. Landscape Quick-Zap Channel Carousel
-                        if isLandscape && showLandscapeZapBar {
-                            VStack {
-                                Spacer()
-                                LandscapeQuickZapBar(
-                                    channels: model?.filteredChannels.isEmpty == false ? (model?.filteredChannels ?? []) : (model?.channels ?? []),
-                                    currentChannel: currentChannel,
-                                    schedule: model?.schedule ?? [:],
-                                    onSelect: { ch in
-                                        switchToChannel(ch)
-                                        withAnimation(.easeInOut(duration: 0.25)) {
-                                            showLandscapeZapBar = false
-                                        }
-                                        scheduleControlsAutoHide()
-                                    },
-                                    onClose: {
-                                        withAnimation(.easeInOut(duration: 0.25)) {
-                                            showLandscapeZapBar = false
-                                        }
-                                        scheduleControlsAutoHide()
-                                    }
-                                )
-                                .padding(.horizontal, max(geometry.safeAreaInsets.leading, geometry.safeAreaInsets.trailing, 16))
-                                .padding(.bottom, max(12, geometry.safeAreaInsets.bottom))
-                            }
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
                     }
                     .frame(
                         maxWidth: .infinity,
@@ -371,6 +329,48 @@ public struct TestTSPlayerScreen: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.28), value: showPortraitDrawer)
+
+                // 2. Full-Screen On-Screen Display Controls
+                if showControls && !showLandscapeZapBar {
+                    videoOverlayControls(isLandscape: isLandscape, safeInsets: geometry.safeAreaInsets)
+                        .transition(.opacity)
+                }
+
+                // 3. Floating Telemetry Inspector Modal
+                if showHUD {
+                    telemetryHUDView
+                        .padding(.top, isLandscape ? 48 : max(geometry.safeAreaInsets.top, 8) + 40)
+                        .padding(.leading, max(geometry.safeAreaInsets.leading, 12))
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                }
+
+                // 4. Landscape Quick-Zap Channel Carousel
+                if isLandscape && showLandscapeZapBar {
+                    VStack {
+                        Spacer()
+                        LandscapeQuickZapBar(
+                            channels: model?.filteredChannels.isEmpty == false ? (model?.filteredChannels ?? []) : (model?.channels ?? []),
+                            currentChannel: currentChannel,
+                            schedule: model?.schedule ?? [:],
+                            onSelect: { ch in
+                                switchToChannel(ch)
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    showLandscapeZapBar = false
+                                }
+                                scheduleControlsAutoHide()
+                            },
+                            onClose: {
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    showLandscapeZapBar = false
+                                }
+                                scheduleControlsAutoHide()
+                            }
+                        )
+                        .padding(.horizontal, max(geometry.safeAreaInsets.leading, geometry.safeAreaInsets.trailing, 16))
+                        .padding(.bottom, max(12, geometry.safeAreaInsets.bottom))
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
             // Real fullscreen, not merely an edge-to-edge video frame.
             .statusBarHidden(isLandscape)
@@ -498,8 +498,9 @@ public struct TestTSPlayerScreen: View {
                             Text(viewPreset.shortLabel)
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                         }
+                        .fixedSize()
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 9)
+                        .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(.ultraThinMaterial, in: Capsule())
                         .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
@@ -507,31 +508,6 @@ public struct TestTSPlayerScreen: View {
                     .buttonStyle(.plain)
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
-
-                    if !isLandscape {
-                        // 3b. Senderliste Drawer Button (Portrait direct access, 44pt hit target)
-                        Button {
-                            Haptics.shared.impact(.light)
-                            withAnimation(.easeInOut(duration: 0.28)) {
-                                showPortraitDrawer.toggle()
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: showPortraitDrawer ? "chevron.down" : "list.bullet")
-                                    .font(.system(size: 11, weight: .bold))
-                                Text("Sender")
-                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(showPortraitDrawer ? Theme.Colors.accentLive.opacity(0.35) : Color.white.opacity(0.12), in: Capsule())
-                            .overlay(Capsule().strokeBorder(showPortraitDrawer ? Theme.Colors.accentLive : Theme.Colors.borderSubtle, lineWidth: 0.8))
-                        }
-                        .buttonStyle(.plain)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
 
                     if isLandscape {
                         // 4. Picture in Picture Button (Landscape direct access, 44x44 hitbox)
@@ -777,6 +753,50 @@ public struct TestTSPlayerScreen: View {
                     }
                     .padding(.horizontal, sideInset)
                     .padding(.bottom, max(safeInsets.bottom, 12))
+                } else {
+                    // Portrait Bottom Controls: EPG Programme Pill & Prominent Senderliste Button
+                    if !showPortraitDrawer {
+                        VStack(spacing: 12) {
+                            if let preset = presets.first(where: { $0.url == streamURLString }), !preset.epgNow.isEmpty {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "tv")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(Theme.Colors.accentLive)
+                                    Text(preset.epgNow)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.white.opacity(0.9))
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 0.8))
+                            }
+
+                            Button {
+                                Haptics.shared.impact(.light)
+                                withAnimation(.easeInOut(duration: 0.28)) {
+                                    showPortraitDrawer = true
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "list.bullet")
+                                        .font(.system(size: 14, weight: .bold))
+                                    Text("Senderliste")
+                                        .font(.system(size: 14, weight: .bold))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().strokeBorder(Theme.Gradients.specularBorder, lineWidth: 1))
+                                .shadow(color: Color.black.opacity(0.4), radius: 10, y: 4)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, sideInset)
+                        .padding(.bottom, max(safeInsets.bottom, 24))
+                    }
                 }
             }
         }
