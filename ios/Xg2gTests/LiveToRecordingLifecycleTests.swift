@@ -264,4 +264,51 @@ struct LiveToRecordingLifecycleTests {
         await manager.stop()
         #expect(manager.state == .idle)
     }
+
+    @Test("Interrupted Live to Recording transition yields to subsequent Live request without committing recording")
+    func interruptedLiveToRecordingTransitionYieldsToNewLiveRequest() async throws {
+        let manager = makeManager()
+
+        // 1. Start Live A
+        await manager.play(channel: channelA, mode: .fullscreen)
+        #expect(manager.currentChannel == channelA)
+
+        // 2. Launch Live -> Recording and immediately supersede with Live B
+        async let recordingTask: Void = manager.play(recording: testRecording, startPosition: 10.0)
+        async let liveBTask: Void = manager.play(channel: channelB, mode: .fullscreen)
+
+        _ = await (recordingTask, liveBTask)
+
+        // 3. Assert Live B won exclusively and recording state was never committed
+        #expect(manager.state == .live(channelB, mode: .fullscreen))
+        #expect(manager.currentChannel == channelB)
+        #expect(manager.activeRecordingItem == nil)
+
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
+
+    @Test("Interrupted Live to Offline transition yields to subsequent Recording request without committing offline")
+    func interruptedLiveToOfflineTransitionYieldsToRecordingRequest() async throws {
+        let manager = makeManager()
+
+        // 1. Start Live A
+        await manager.play(channel: channelA, mode: .fullscreen)
+        #expect(manager.currentChannel == channelA)
+
+        // 2. Launch Live -> Offline and immediately supersede with Recording
+        async let offlineTask: Void = manager.play(offline: testOffline)
+        async let recordingTask: Void = manager.play(recording: testRecording, startPosition: 55.0)
+
+        _ = await (offlineTask, recordingTask)
+
+        // 3. Assert Recording won exclusively and offline was discarded
+        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 55.0)))
+        #expect(manager.activeRecordingItem != nil)
+        #expect(manager.activeOfflineRecording == nil)
+        #expect(manager.currentChannel == nil)
+
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
 }
