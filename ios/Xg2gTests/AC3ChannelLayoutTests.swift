@@ -57,15 +57,15 @@ struct AC3ChannelLayoutTests {
     /// The broadcast case that matters: 3/2 plus LFE, in AC-3 bitstream order
     /// (L, C, R, Ls, Rs, LFE) — which is what `MPEG_5_1_C` describes, and not
     /// what the more common `_A` variant (L, R, C, LFE, Ls, Rs) does.
-    @Test("5.1 broadcast maps to the bitstream-order 5.1 layout")
+    @Test("5.1 broadcast maps to the AudioUnit 5.1 layout")
     func fiveOneUsesBitstreamOrder() {
         #expect(
             AudioSampleBufferAssembler.channelLayoutTag(acmod: 7, lfeOn: true)
-                == kAudioChannelLayoutTag_MPEG_5_1_C
+                == kAudioChannelLayoutTag_AudioUnit_5_1
         )
         #expect(
             AudioSampleBufferAssembler.channelLayoutTag(acmod: 7, lfeOn: false)
-                == kAudioChannelLayoutTag_MPEG_5_0_C
+                == kAudioChannelLayoutTag_AudioUnit_5_0
         )
     }
 
@@ -108,9 +108,9 @@ struct AC3ChannelLayoutTests {
             AC3FrameParser(),
             didEmitFrame: ParsedAudioFrame(
                 info: info,
-                data: Data(repeating: 0, count: info.frameSizeBytes),
-                pts: CMTime(value: 0, timescale: 90000),
-                pts90k: 0
+                data: Data(repeating: 0, count: 1792),
+                pts: CMTime(seconds: 1.0, preferredTimescale: 90000),
+                pts90k: 90000
             )
         )
 
@@ -120,7 +120,7 @@ struct AC3ChannelLayoutTests {
             CMAudioFormatDescriptionGetChannelLayout(format, sizeOut: &layoutSize),
             "format description carries no channel layout"
         )
-        #expect(layout.pointee.mChannelLayoutTag == kAudioChannelLayoutTag_MPEG_5_1_C)
+        #expect(layout.pointee.mChannelLayoutTag == kAudioChannelLayoutTag_AudioUnit_5_1)
     }
 
     /// Captures the format description the assembler publishes.
