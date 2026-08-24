@@ -51,8 +51,9 @@ struct LiveToRecordingLifecycleTests {
     )
 
     private func makeManager() -> PlaybackManager {
-        let streamURL = URL(string: "http://127.0.0.1:8089/api/v3/stream/live/dummy")!
-        return PlaybackManager(streamURL: { _ in streamURL })
+        return PlaybackManager(streamURL: { ref in
+            URL(string: "http://127.0.0.1:8089/api/v3/stream/live/\(ref)")!
+        })
     }
 
     // MARK: - Invariant 1: Canonical State Integrity & Derived Properties
@@ -331,6 +332,64 @@ struct LiveToRecordingLifecycleTests {
         #expect(manager.currentChannel == channelB)
         #expect(manager.isStreaming == true)
         #expect(manager.coordinator.presentedServiceRef != nil, "Live B session must remain presented and not destroyed")
+
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
+
+    @Test("Deterministic Barrier: Suspended older stop resuming after Live B finishes zap does not destroy Live B")
+    func deterministicBarrierSuspendedStopDoesNotDestroyCompletedLiveB() async throws {
+        let manager = makeManager()
+
+        // 1. Session A starts and runs
+        await manager.play(channel: channelA, mode: .fullscreen)
+        let sessionA = manager.coordinator.playing
+        #expect(sessionA != nil)
+        #expect(manager.coordinator.presentedServiceRef == channelA.serviceRef)
+        #expect(manager.state == .live(channelA, mode: .fullscreen))
+
+        // 2. Setup a deterministic async barrier in stopYieldHook
+        var stopReachedBarrierContinuation: CheckedContinuation<Void, Never>?
+        var releaseStopBarrierContinuation: CheckedContinuation<Void, Never>?
+
+        manager.coordinator.stopYieldHook = {
+            await withCheckedContinuation { cont in
+                releaseStopBarrierContinuation = cont
+                stopReachedBarrierContinuation?.resume()
+                stopReachedBarrierContinuation = nil
+            }
+        }
+
+        // 3. Start older stop() in background Task
+        let oldStopTask = Task { @MainActor in
+            await manager.coordinator.stop()
+        }
+
+        // 4. Wait until old stop() is suspended exactly at the barrier inside await abandonInFlight
+        await withCheckedContinuation { cont in
+            stopReachedBarrierContinuation = cont
+        }
+
+        // 5. While old stop() is suspended at the barrier, start and completely finish Live B zap
+        await manager.play(channel: channelB, mode: .fullscreen)
+        let sessionB = manager.coordinator.playing
+        #expect(sessionB != nil)
+        #expect(sessionB !== sessionA)
+        #expect(manager.coordinator.presentedServiceRef == channelB.serviceRef)
+        #expect(manager.state == .live(channelB, mode: .fullscreen))
+
+        // 6. Now release the suspended old stop() barrier
+        manager.coordinator.stopYieldHook = nil
+        releaseStopBarrierContinuation?.resume()
+        _ = await oldStopTask.value
+
+        // 7. Verify Invariants:
+        // - Session B is STILL playing
+        // - Session B is STILL presented
+        // - State is STILL .live(channelB)
+        #expect(manager.coordinator.playing === sessionB, "Session B must remain playing and not be destroyed by old stop")
+        #expect(manager.coordinator.presentedServiceRef == channelB.serviceRef, "Channel B must remain presented")
+        #expect(manager.state == .live(channelB, mode: .fullscreen), "State must remain .live(channelB)")
 
         await manager.stop()
         #expect(manager.state == .idle)

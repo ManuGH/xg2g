@@ -381,14 +381,30 @@ final class ZapCoordinator: ObservableObject {
         note(zapID, "retire", serviceRef, extra: "total \(Int((CACurrentMediaTime() - startedAt) * 1000))ms")
     }
 
+    #if DEBUG
+    /// Test-only hook invoked during `stop()` after `abandonInFlight` has completed,
+    /// allowing deterministic barrier simulation of overlapping zap and stop operations.
+    var stopYieldHook: (@MainActor () async -> Void)?
+    #endif
+
     /// Stops everything, for a screen going away.
     func stop() async {
         let sessionToStop = self.playing
+        let serviceRefToStop = self.presentedServiceRef
         activeZapID = nil
         await abandonInFlight(reason: "player closed")
 
-        // Guard against a new zap having started while awaiting abandonInFlight
-        guard activeZapID == nil else {
+        #if DEBUG
+        if let stopYieldHook {
+            await stopYieldHook()
+        }
+        #endif
+
+        // Deterministic Identity & Generation Guard:
+        // If a subsequent zap has started (activeZapID != nil) or already committed a new session (playing !== sessionToStop),
+        // or a new service was presented (presentedServiceRef != serviceRefToStop),
+        // tear down ONLY the captured old session and leave the coordinator state and new session intact.
+        guard self.playing === sessionToStop && activeZapID == nil && presentedServiceRef == serviceRefToStop else {
             sessionToStop?.stopStreaming()
             return
         }
