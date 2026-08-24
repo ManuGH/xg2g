@@ -197,13 +197,13 @@ actor SessionCoordinator {
             throw Failure.notEnrolled
         }
 
-        let response: PairingWire.RefreshResponse
+        let response: Xg2gContract.DeviceGrantResponse
         do {
             response = try await api.send(
                 APIRequest(
                     method: .post,
                     path: "auth/device/refresh",
-                    body: try Self.encode(PairingWire.RefreshRequest(refreshToken: grant.secret)),
+                    body: try Self.encode(Xg2gContract.DeviceRefreshRequest(refreshToken: grant.secret)),
                     contentType: "application/json"
                 )
             )
@@ -222,11 +222,7 @@ actor SessionCoordinator {
 
         let rotated = EnrolledCredentials(
             grant: grant.rotated(to: response.refreshToken),
-            session: AccessSession(
-                refresh: response,
-                deviceID: response.deviceID ?? grant.id,
-                receivedAt: now()
-            )
+            session: AccessSession(grant: response, receivedAt: now())
         )
 
         // The old refresh token is dead the moment the server answered. It is
@@ -251,7 +247,7 @@ actor SessionCoordinator {
         }
     }
 
-    private static func validate(_ response: PairingWire.RefreshResponse) throws {
+    private static func validate(_ response: Xg2gContract.DeviceGrantResponse) throws {
         guard response.tokenType.caseInsensitiveCompare("DPoP") == .orderedSame else {
             throw Failure.malformedRefresh(.notSenderConstrained)
         }

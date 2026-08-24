@@ -148,6 +148,13 @@ final class AppModel {
         address?.rootURL.absoluteString ?? "–"
     }
 
+    /// The configured deployment, for the views that hand it to the transport.
+    ///
+    /// Exposed as a `ServerAddress` rather than as a string: a view that
+    /// received text had to decide what a missing scheme meant, and three of
+    /// them decided it separately.
+    var serverAddress: ServerAddress? { address }
+
     var currentDeviceName: String {
         Self.deviceName
     }
@@ -353,7 +360,7 @@ final class AppModel {
         }
     }
 
-    /// Where the receiver hands out its unmodified streams, e.g. `http://10.10.55.64:8001`.
+    /// Where the receiver hands out its unmodified streams, e.g. `http://receiver.local:8001`.
     ///
     /// Kept separate from the xg2g server address on purpose: direct playback
     /// bypasses the server and talks to the receiver, and nothing tells the app
@@ -375,13 +382,18 @@ final class AppModel {
         return URL(string: "\(normalised)/\(channel.serviceRef)")
     }
 
+    /// Media URLs for the configured deployment, or `nil` while there is none.
+    ///
+    /// Nothing here composes a URL any more: the transport owns what an API
+    /// path looks like, and an unconfigured app has no stream to offer rather
+    /// than a hard-coded one on somebody else's network.
+    var media: MediaEndpoints? {
+        address.map(MediaEndpoints.init(address:))
+    }
+
     /// The v3 Ingest Live Stream URL for a service reference.
     func liveStreamURL(for serviceRef: String) -> URL? {
-        if let base = address?.apiBaseURL {
-            let normalised = base.absoluteString.hasSuffix("/") ? base.absoluteString : base.absoluteString + "/"
-            return URL(string: "\(normalised)stream/live/\(serviceRef)")
-        }
-        return URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(serviceRef)")
+        media?.liveStream(serviceRef: serviceRef)
     }
 
     /// A client identity for the preparation endpoints.
@@ -412,11 +424,7 @@ final class AppModel {
 
     /// The legacy burst smoother URL for a service reference.
     func legacySmoothStreamURL(for serviceRef: String) -> URL? {
-        if let base = address?.apiBaseURL {
-            let normalised = base.absoluteString.hasSuffix("/") ? base.absoluteString : base.absoluteString + "/"
-            return URL(string: "\(normalised)stream/smooth/\(serviceRef)")
-        }
-        return URL(string: "http://10.10.55.14:8089/api/v3/stream/smooth/\(serviceRef)")
+        media?.smoothStream(serviceRef: serviceRef)
     }
 
     /// Whether direct playback can actually run right now.
@@ -935,7 +943,7 @@ final class AppModel {
         }
     }
 
-    func pairingStatus() async -> PairingStatus? {
+    func pairingStatus() async -> Xg2gContract.PairingStatus? {
         try? await enrollment?.pairingStatus()
     }
 

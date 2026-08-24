@@ -191,6 +191,69 @@ data class ApprovePairingResponse(
 }
 
 /**
+ * A freshly issued, DPoP-bound device grant.
+ *
+ * The field names are snake_case here and camelCase in
+ * ExchangePairingResponse. That is the wire as it stands, documented
+ * rather than quietly corrected: aligning the two casings is a breaking
+ * change for any device already speaking this endpoint.
+ */
+data class DeviceGrantResponse(
+    val accessToken: String,
+    val deviceId: String,
+    /**
+     * Access-token lifetime in seconds, counted from this response.
+     */
+    val expiresIn: Int,
+    /**
+     * Replaces the presented token. Presenting a superseded value is treated as replay and revokes the whole refresh family.
+     */
+    val refreshToken: String,
+    val scope: String,
+    /**
+     * Always "DPoP"; the token is sender-constrained to the device key.
+     */
+    val tokenType: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "DeviceGrantResponse"): DeviceGrantResponse = DeviceGrantResponse(
+            accessToken = requireString(json.requireField("access_token", owner), owner, "access_token"),
+            deviceId = requireString(json.requireField("device_id", owner), owner, "device_id"),
+            expiresIn = requireInt(json.requireField("expires_in", owner), owner, "expires_in"),
+            refreshToken = requireString(json.requireField("refresh_token", owner), owner, "refresh_token"),
+            scope = requireString(json.requireField("scope", owner), owner, "scope"),
+            tokenType = requireString(json.requireField("token_type", owner), owner, "token_type")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("access_token", accessToken)
+        put("device_id", deviceId)
+        put("expires_in", expiresIn)
+        put("refresh_token", refreshToken)
+        put("scope", scope)
+        put("token_type", tokenType)
+    }
+}
+
+data class DeviceRefreshRequest(
+    /**
+     * The rotating refresh token most recently issued to this device, either by the pairing exchange or by a previous refresh.
+     */
+    val refreshToken: String
+) {
+    companion object {
+        fun fromJson(json: JSONObject, owner: String = "DeviceRefreshRequest"): DeviceRefreshRequest = DeviceRefreshRequest(
+            refreshToken = requireString(json.requireField("refresh_token", owner), owner, "refresh_token")
+        )
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("refresh_token", refreshToken)
+    }
+}
+
+/**
  * P-256 public key in JWK form. The server computes the RFC 7638
  * thumbprint itself; a client-supplied thumbprint is never trusted.
  *

@@ -89,7 +89,7 @@ actor RecordingsRepository {
         )
     }
 
-    func playbackUrl(for id: String) async throws -> String {
+    func playbackUrl(for id: String) async throws -> String? {
         struct CapabilitiesPayload: Encodable, Sendable {
             let capabilitiesVersion: Int
             let supportsHls: Bool
@@ -139,7 +139,9 @@ actor RecordingsRepository {
             }
         }
 
-        return "api/v3/recordings/\(id)/playlist.m3u8"
+        // Nothing negotiated. The canonical playlist path is the transport's to
+        // know, not this repository's; `nil` says "the backend named no URL".
+        return nil
     }
 }
 

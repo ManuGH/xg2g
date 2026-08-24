@@ -215,7 +215,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     AudioPESAssemblerDelegate,
     AudioSampleBufferAssemblerDelegate,
     NativeTSAudioRendererDelegate,
-    URLSessionDataDelegate {
+    LiveStreamIngestDelegate {
 
     public let telemetry = StreamTelemetry()
     @Published public private(set) var runtimePlan: SessionRuntimePlan?
@@ -431,15 +431,16 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     private var audioFlushedObserver: NSObjectProtocol?
     private var isAudioInterrupted = false
 
-    private var urlSession: URLSession?
-    private var streamTask: URLSessionDataTask?
+    /// The open byte stream, when one is running. The pipeline holds a handle;
+    /// the transport holds the socket.
+    private var ingest: LiveStreamIngest?
     
     /// TTFP stage timestamps and decode-rate counters for the *current* stream.
     ///
     /// One object per `startStreaming`, replaced wholesale on a zap: callbacks
     /// still in flight for the previous stream then write into the retired state
     /// instead of contaminating the new stream's measurements. The reference is
-    /// swapped from the caller's thread and read from the URLSession delegate
+    /// swapped from the caller's thread and read from the ingest delegate
     /// queue, the ingest queue and the VideoToolbox callback thread, so the swap
     /// itself is locked too — the per-field locking inside `PipelineSessionState`
     /// protects its contents, not the pointer to it.
@@ -473,7 +474,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
 
     /// Owns the parse chain: TS → PES → access units → VideoToolbox.
     ///
-    /// Serial, and deliberately not the URLSession delegate queue. Parsing and
+    /// Serial, and deliberately not the ingest delegate queue. Parsing and
     /// decode submission used to run inline on that queue, which accepts no new
     /// data while a delegate callback is executing — so every slow stretch
     /// stalled the socket and the backlog then arrived as a burst. Picture
@@ -679,39 +680,14 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             TelemetryServer.shared.log(logMsg)
         }
 
-        let config = URLSessionConfiguration.ephemeral
-        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        config.timeoutIntervalForRequest = 10.0
-        config.waitsForConnectivity = false
-        config.allowsCellularAccess = true
-        config.allowsExpensiveNetworkAccess = true
-        config.allowsConstrainedNetworkAccess = true
-        config.httpShouldUsePipelining = true
-
-        let opQueue = OperationQueue()
-        opQueue.maxConcurrentOperationCount = 1
-        opQueue.qualityOfService = .userInteractive
-        let session = URLSession(configuration: config, delegate: self, delegateQueue: opQueue)
-        self.urlSession = session
-
         // Nothing here touches the presenter, the render view or the global telemetry
         // provider. Binding the visible surface is the presentation context's job and
         // happens at commit; a session that reached in here would black out whatever
         // channel is currently playing, which is exactly what a preparation must not do.
 
-        var request = URLRequest(url: targetURL)
-        request.setValue("xg2g-ios-native-poc/1.0", forHTTPHeaderField: "User-Agent")
-        // Stamps this channel change so one zap can be followed across both sides of
-        // the wire. The backend logs it as a field and never as a metric label, so it
-        // only has to be unique within this app run - not globally.
-        request.setValue(Self.zapIdentifier(zapId), forHTTPHeaderField: "X-Xg2g-Zap-Id")
-        // Evidence of client-supported decoders for server-side planner evaluation:
-        request.setValue("aac,ac3,eac3", forHTTPHeaderField: "X-Client-Audio-Codecs")
-        request.setValue("h264,hevc", forHTTPHeaderField: "X-Client-Video-Codecs")
-
-        let task = session.dataTask(with: request)
-        self.streamTask = task
-        task.resume()
+        let stream = LiveStreamIngest(delegate: self)
+        self.ingest = stream
+        stream.open(url: targetURL, correlationID: Self.zapIdentifier(zapId))
 
         let issuedAt = CACurrentMediaTime()
         sessionState.mutate { $0.requestIssuedTime = issuedAt }
@@ -726,7 +702,7 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         logger.notice("\(setupLog, privacy: .public)")
         TelemetryServer.shared.log(setupLog)
 
-        let startLog = "[ZAP-#\(zapId)-NET] ▶️ Requesting \(targetURL.absoluteString) | Timeout: \(config.timeoutIntervalForRequest)s | ZapID: \(Self.zapIdentifier(zapId))"
+        let startLog = "[ZAP-#\(zapId)-NET] ▶️ Requesting \(targetURL.absoluteString) | ZapID: \(Self.zapIdentifier(zapId))"
         print(startLog)
         logger.notice("\(startLog, privacy: .public)")
         TelemetryServer.shared.log(startLog)
@@ -892,15 +868,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     }
 
     public var isStreaming: Bool {
-        streamTask != nil
+        ingest?.isOpen ?? false
     }
 
     public func stopStreaming() {
-        streamTask?.cancel()
+        ingest?.close()
         notePlaybackStateChanged()
-        streamTask = nil
-        urlSession?.invalidateAndCancel()
-        urlSession = nil
+        ingest = nil
 
         stopSystemMonitoring()
         removeFirstPictureObserver()
@@ -955,10 +929,10 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
         }
     }
 
-    // MARK: - URLSessionDataDelegate (Streaming Ingest)
+    // MARK: - LiveStreamIngestDelegate (Streaming Ingest)
 
-    public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        if let httpResponse = response as? HTTPURLResponse {
+    func ingest(_ ingest: LiveStreamIngest, didReceiveResponse httpResponse: HTTPURLResponse) -> Bool {
+        do {
             let serverName = httpResponse.value(forHTTPHeaderField: "Server") ?? "Enigma2 Streamserver"
             let contentType = httpResponse.mimeType ?? "video/mp2t"
 
@@ -980,15 +954,13 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
             if httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 {
                 let rating = "❌ HTTP \(httpResponse.statusCode) (\(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)))"
                 telemetry.mutate { $0.ttfpRating = rating }
-                completionHandler(.cancel)
-                return
+                return false
             }
         }
-        completionHandler(.allow)
+        return true
     }
 
-    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        let received = task.countOfBytesReceived
+    func ingest(_ ingest: LiveStreamIngest, didCompleteWith error: Error?, bytesReceived received: Int64) {
         let elapsed = sessionState.mutate { state -> Double in
             state.requestStartTime > 0 ? (CACurrentMediaTime() - state.requestStartTime) : 0
         }
@@ -1025,28 +997,21 @@ public final class NativeTSVideoPipeline: NSObject, ObservableObject, @unchecked
     /// nothing to say where it went. These metrics separate DNS from TCP from the
     /// server's own think time, which are three different problems with three
     /// different fixes.
-    public func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        for transaction in metrics.transactionMetrics {
-            func ms(_ from: Date?, _ to: Date?) -> String {
-                guard let from = from, let to = to else { return "—" }
-                return String(format: "%.1f", to.timeIntervalSince(from) * 1000.0)
+    func ingest(_ ingest: LiveStreamIngest, didCollect phases: [LiveStreamIngest.ConnectionPhases]) {
+        for phase in phases {
+            func ms(_ value: Double?) -> String {
+                guard let value else { return "—" }
+                return String(format: "%.1f", value)
             }
 
-            let dns = ms(transaction.domainLookupStartDate, transaction.domainLookupEndDate)
-            let tcp = ms(transaction.connectStartDate, transaction.connectEndDate)
-            let tls = ms(transaction.secureConnectionStartDate, transaction.secureConnectionEndDate)
-            let request = ms(transaction.requestStartDate, transaction.requestEndDate)
-            let serverThink = ms(transaction.requestEndDate, transaction.responseStartDate)
-            let total = ms(transaction.fetchStartDate, transaction.responseStartDate)
-
-            let netLog = "[1080i50-NET] Setup: \(total)ms total | DNS: \(dns)ms | TCP: \(tcp)ms | TLS: \(tls)ms | Request: \(request)ms | ServerThink: \(serverThink)ms | Proto: \(transaction.networkProtocolName ?? "?") | Reused: \(transaction.isReusedConnection) | Cellular: \(transaction.isCellular) | Host: \(transaction.request.url?.host ?? "?")"
+            let netLog = "[1080i50-NET] Setup: \(ms(phase.totalMs))ms total | DNS: \(ms(phase.dnsMs))ms | TCP: \(ms(phase.tcpMs))ms | TLS: \(ms(phase.tlsMs))ms | Request: \(ms(phase.requestMs))ms | ServerThink: \(ms(phase.serverThinkMs))ms | Proto: \(phase.networkProtocol ?? "?") | Reused: \(phase.reusedConnection) | Cellular: \(phase.cellular) | Host: \(phase.host ?? "?")"
             print(netLog)
             logger.notice("\(netLog, privacy: .public)")
             TelemetryServer.shared.log(netLog)
         }
     }
 
-    public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    func ingest(_ ingest: LiveStreamIngest, didReceive data: Data) {
         let (netMs, stallMs) = sessionState.mutate { state -> (Double?, Double?) in
             let now = CACurrentMediaTime()
 

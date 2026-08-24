@@ -224,7 +224,7 @@ struct RecordingsView: View {
                 RecordingDetailSheet(
                     recording: rec,
                     model: model,
-                    serverAddress: model.serverURLString,
+                    serverAddress: model.serverAddress,
                     onPlay: { startPos in
                         selectedDetailRecording = nil
                         play(recording: rec, startPosition: startPos)
@@ -333,7 +333,7 @@ struct RecordingsView: View {
                         RecordingSpotlightHero(
                             recording: spotlight,
                             model: model,
-                            serverAddress: model.serverURLString,
+                            serverAddress: model.serverAddress,
                             onPlay: { handlePlayAction(for: spotlight) },
                             onShowInfo: { selectedDetailRecording = spotlight },
                             onDelete: { recordingToDelete = spotlight }
@@ -365,7 +365,7 @@ struct RecordingsView: View {
                             RecordingMediaCard(
                                 recording: recording,
                                 model: model,
-                                serverAddress: model.serverURLString,
+                                serverAddress: model.serverAddress,
                                 onPlay: { handlePlayAction(for: recording) },
                                 onShowInfo: { selectedDetailRecording = recording }
                             )
@@ -537,7 +537,7 @@ struct RecordingsView: View {
 struct RecordingSpotlightHero: View {
     let recording: Recording
     let model: AppModel
-    let serverAddress: String
+    let serverAddress: ServerAddress?
     var onPlay: () -> Void
     var onShowInfo: () -> Void
     var onDelete: () -> Void
@@ -744,7 +744,7 @@ struct RecordingSpotlightHero: View {
 struct RecordingMediaCard: View {
     let recording: Recording
     let model: AppModel
-    let serverAddress: String
+    let serverAddress: ServerAddress?
     var onPlay: () -> Void
     var onShowInfo: () -> Void
 
@@ -934,7 +934,7 @@ struct RecordingMediaCard: View {
 struct RecordingDetailSheet: View {
     let recording: Recording
     let model: AppModel
-    let serverAddress: String
+    let serverAddress: ServerAddress?
     var onPlay: (Double) -> Void
     var onDelete: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -1242,7 +1242,7 @@ struct OfflineRecordingRow: View {
 struct DownloadButton: View {
 
     let recording: Recording
-    let serverAddress: String
+    let serverAddress: ServerAddress?
     var model: AppModel? = nil
     let status: DownloadManager.DownloadStatus
 
@@ -1307,8 +1307,10 @@ struct DownloadButton: View {
     }
 
     private func start(quality: DownloadQuality) {
-        let base = serverAddress.starts(with: "http") ? serverAddress : "https://\(serverAddress)"
-        guard let url = URL(string: base) else { return }
+        // No configured deployment, nothing to download from. The repair this
+        // used to attempt — prepending a scheme to whatever text was stored —
+        // belonged to the address parser and now lives there.
+        guard let url = serverAddress?.rootURL else { return }
 
         Task {
             let sessionCookie = try? await model?.mediaSessionCookie()

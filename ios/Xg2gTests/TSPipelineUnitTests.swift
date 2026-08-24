@@ -472,12 +472,21 @@ struct TSPipelineUnitTests {
         #expect(auSink.info?.height == 1080)
     }
 
+    /// Live: needs a reachable receiver, so it is opt-in rather than part of the
+    /// ordinary unit run. It used to name one receiver on one network from
+    /// inside a file called *UnitTests*, which made every run of that file
+    /// quietly network-dependent.
     @Test func testLiveDirectStreamPipeline() async throws {
+        guard let testURL = liveReceiverStreamURL() else {
+            withKnownIssue("XG2G_LIVE_RECEIVER_STREAM_URL not set; live receiver test skipped") {
+                Issue.record("live receiver not configured")
+            }
+            return
+        }
         let pipeline = NativeTSVideoPipeline()
         let surface = await giveOwnSurface(to: pipeline)
         defer { _ = surface }
-        let testURL = URL(string: "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:")!
-        
+
         await MainActor.run {
             pipeline.startStreaming(url: testURL)
         }
@@ -807,4 +816,12 @@ private final class MockDecoderSink: HardwareVideoDecoderDelegate, @unchecked Se
     func hardwareDecoder(_ decoder: HardwareVideoDecoder, didRequestSessionReconfiguration error: OSStatus) {
         reconfigErrors.append(error)
     }
+}
+
+/// The receiver stream the opt-in live pipeline test observes.
+private func liveReceiverStreamURL() -> URL? {
+    let raw = ProcessInfo.processInfo.environment["XG2G_LIVE_RECEIVER_STREAM_URL"] ?? ""
+    let trimmed = raw.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty, !trimmed.contains("$(") else { return nil }
+    return URL(string: trimmed)
 }

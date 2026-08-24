@@ -93,9 +93,13 @@ struct RootContentView: View {
             get: { playbackManager.activeRecordingItem },
             set: { if $0 == nil { playbackManager.stop() } }
         )) { item in
+            // No configured deployment means nothing to play. The screen used to
+            // take a string and repair it; now the address either exists or the
+            // cover does not open.
+            if let serverAddress = model.serverAddress {
             RecordingPlayerScreen(
                 recording: item.recording,
-                serverAddress: model.serverURLString,
+                serverAddress: serverAddress,
                 initialPosition: item.initialPosition,
                 model: model,
                 onProgressUpdate: { current, total in
@@ -108,6 +112,7 @@ struct RootContentView: View {
                 }
             )
             .ignoresSafeArea(.all)
+            }
         }
         .fullScreenCover(item: Binding(
             get: { playbackManager.activeOfflineRecording },

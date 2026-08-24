@@ -99,6 +99,64 @@ enum Xg2gContract {
         }
     }
 
+    /// A freshly issued, DPoP-bound device grant.
+    ///
+    /// The field names are snake_case here and camelCase in
+    /// ExchangePairingResponse. That is the wire as it stands, documented
+    /// rather than quietly corrected: aligning the two casings is a breaking
+    /// change for any device already speaking this endpoint.
+    struct DeviceGrantResponse: Codable, Sendable, Equatable {
+        let accessToken: String
+        let deviceId: String
+        /// Access-token lifetime in seconds, counted from this response.
+        let expiresIn: Int
+        /// Replaces the presented token. Presenting a superseded value is treated as replay and revokes the whole refresh family.
+        let refreshToken: String
+        let scope: String
+        /// Always "DPoP"; the token is sender-constrained to the device key.
+        let tokenType: String
+
+        private enum CodingKeys: String, CodingKey {
+            case accessToken = "access_token"
+            case deviceId = "device_id"
+            case expiresIn = "expires_in"
+            case refreshToken = "refresh_token"
+            case scope
+            case tokenType = "token_type"
+        }
+
+        init(
+            accessToken: String,
+            deviceId: String,
+            expiresIn: Int,
+            refreshToken: String,
+            scope: String,
+            tokenType: String
+        ) {
+            self.accessToken = accessToken
+            self.deviceId = deviceId
+            self.expiresIn = expiresIn
+            self.refreshToken = refreshToken
+            self.scope = scope
+            self.tokenType = tokenType
+        }
+    }
+
+    struct DeviceRefreshRequest: Codable, Sendable, Equatable {
+        /// The rotating refresh token most recently issued to this device, either by the pairing exchange or by a previous refresh.
+        let refreshToken: String
+
+        private enum CodingKeys: String, CodingKey {
+            case refreshToken = "refresh_token"
+        }
+
+        init(
+            refreshToken: String
+        ) {
+            self.refreshToken = refreshToken
+        }
+    }
+
     /// P-256 public key in JWK form. The server computes the RFC 7638
     /// thumbprint itself; a client-supplied thumbprint is never trusted.
     ///

@@ -29,8 +29,16 @@ import Testing
 @Suite(.serialized)
 struct NativeRenderPathTests {
 
-    /// Same source the other live tests use.
-    private static let streamURL = URL(string: "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:")!
+    /// The broadcast source to render, supplied by whoever runs the test.
+    ///
+    /// Opt-in for the same reason as `LiveIngest`: a hard-coded receiver made
+    /// this suite silently network-dependent. `nil` skips.
+    private static let streamURL: URL? = {
+        let raw = ProcessInfo.processInfo.environment["XG2G_LIVE_RECEIVER_STREAM_URL"] ?? ""
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !trimmed.contains("$(") else { return nil }
+        return URL(string: trimmed)
+    }()
 
     private struct Harness {
         let pipeline: NativeTSVideoPipeline

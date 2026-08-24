@@ -117,6 +117,14 @@ struct ServerAddress: Hashable, Sendable, CustomStringConvertible {
     ///   walked up generally. Without that bound this quietly turns into a
     ///   prober that tries more than anyone intended, and every extra candidate
     ///   is another address the setup flow will send a request to.
+    /// Placeholder text for an address field.
+    ///
+    /// Here rather than in the view because it is an example of this type's own
+    /// input format; a screen that spelled one out was the last place in the app
+    /// naming a scheme and a host.
+    static let receiverPlaceholder = "http://192.168.1.50:8001"
+    static let streamURLPlaceholder = "http://…"
+
     var rootCandidates: [ServerAddress] {
         guard rootPath.hasSuffix(Self.webUISegment) else { return [self] }
 

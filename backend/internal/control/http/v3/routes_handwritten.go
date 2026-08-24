@@ -48,7 +48,9 @@ func handwrittenRoutes(svc *Server) []handwrittenRoute {
 		// Android / native device grant (RFC 9449 sender-constrained enrollment)
 		{http.MethodPost, "/auth/device/grant/start", svc.DeviceGrantStart, false},
 		{http.MethodPost, "/auth/device/grant/finish", svc.DeviceGrantFinish, false},
-		{http.MethodPost, "/auth/device/refresh", svc.DeviceRefresh, false},
+		// /auth/device/refresh is not listed here: it is declared in
+		// api/openapi.yaml and registered from the generated route catalog.
+
 		// Authenticated, unlike the two above: a device proves who it is with
 		// its live DPoP credential, and the handler revokes exactly that
 		// device.

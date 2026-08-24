@@ -19,13 +19,16 @@ import Testing
 /// cleanly rather than fail, while a deliberate run against staging must not be
 /// allowed to pass by skipping.
 enum LiveIngest {
-    /// Staging's v3 live ingest route. Overridable so this is not pinned to one host.
-    static let baseURL: String = {
+    /// The v3 live ingest route to observe, supplied by whoever runs the test.
+    ///
+    /// There is deliberately no default. A baked-in staging address made an
+    /// ordinary `xcodebuild test` reach for one particular machine on one
+    /// particular network — passing there, skipping everywhere else, and never
+    /// saying which. Unset means unset, and the suite skips for a stated reason.
+    static let baseURL: String? = {
         let raw = ProcessInfo.processInfo.environment["XG2G_LIVE_BASE_URL"] ?? ""
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !trimmed.contains("$(") else {
-            return "http://10.10.55.14:8089/api/v3/stream/live"
-        }
+        guard !trimmed.isEmpty, !trimmed.contains("$(") else { return nil }
         return trimmed
     }()
 
@@ -33,7 +36,10 @@ enum LiveIngest {
     static let serviceRef = ProcessInfo.processInfo.environment["XG2G_LIVE_SREF"]
         .flatMap { $0.isEmpty ? nil : $0 } ?? "1:0:19:132F:3EF:1:C00000:0:0:0:"
 
-    static var streamURL: URL? { URL(string: "\(baseURL)/\(serviceRef)") }
+    static var streamURL: URL? {
+        guard let baseURL else { return nil }
+        return URL(string: "\(baseURL)/\(serviceRef)")
+    }
 
     /// How long to watch. Long enough to cross several GOPs and let the audio
     /// cushion settle, short enough to stay a test.

@@ -14,7 +14,7 @@ import UIKit
 struct RecordingPlayerScreen: View {
 
     let recording: Recording
-    let serverAddress: String
+    let serverAddress: ServerAddress
     var initialPosition: Double? = nil
     var model: AppModel? = nil
     var onProgressUpdate: @Sendable @MainActor (Double, Double) -> Void = { _, _ in }
@@ -35,8 +35,7 @@ struct RecordingPlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            let base = serverAddress.starts(with: "http") ? serverAddress : "https://\(serverAddress)"
-            if errorMessage == nil && URL(string: base) != nil {
+            if errorMessage == nil {
                 if let player {
                     // 100% Native Apple System Player with built-in controls,
                     // PiP, AirPlay, native pinch-to-zoom, and scrubbing.
@@ -210,13 +209,6 @@ struct RecordingPlayerScreen: View {
 
     private func setupPlayer() {
         AudioSessionManager.shared.configureForPlayback()
-        let base = serverAddress.starts(with: "http") ? serverAddress : "https://\(serverAddress)"
-        guard let baseURL = URL(string: base) else {
-            errorMessage = "Ungültige Server-Adresse"
-            isPreparing = false
-            return
-        }
-
         Task {
             var sessionCookie: String? = nil
             var negotiatedPath: String? = nil
@@ -233,63 +225,43 @@ struct RecordingPlayerScreen: View {
                 }
             }
 
-            let streamURL: URL
-            if let path = negotiatedPath, !path.isEmpty {
-                if let directURL = URL(string: path), directURL.scheme != nil {
-                    streamURL = directURL
-                } else if let relURL = URL(string: path, relativeTo: baseURL)?.absoluteURL {
-                    streamURL = relURL
-                } else {
-                    let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-                    let rawBase = base.hasSuffix("/") ? base : base + "/"
-                    streamURL = URL(string: rawBase + cleanPath) ?? baseURL.appendingPathComponent(cleanPath)
+            // One resolution, owned by the transport: what the backend named,
+            // scope-checked against this deployment, with the canonical
+            // playlist path as the fallback.
+            guard let media = RecordingPlayback.resolve(
+                address: serverAddress,
+                recordingID: recording.id,
+                negotiatedPath: negotiatedPath,
+                sessionCookie: sessionCookie
+            ) else {
+                await MainActor.run {
+                    errorMessage = "Ungültige Server-Adresse"
+                    isPreparing = false
                 }
-            } else {
-                streamURL = baseURL.appendingPathComponent("api/v3/recordings/\(recording.id)/playlist.m3u8")
+                return
+            }
+            let streamURL = media.url
+
+            // The credential travels as cookies the transport built; this layer
+            // never spells the cookie's name or decides its scope.
+            for cookie in media.cookies {
+                HTTPCookieStorage.shared.setCookie(cookie)
+                HTTPCookieStorage.shared.setCookies([cookie], for: serverAddress.rootURL, mainDocumentURL: nil)
+                HTTPCookieStorage.shared.setCookies([cookie], for: streamURL, mainDocumentURL: nil)
             }
 
-            if let cookieValue = sessionCookie, let host = baseURL.host {
-                var props: [HTTPCookiePropertyKey: Any] = [
-                    .name: "xg2g_session",
-                    .value: cookieValue,
-                    .domain: host,
-                    .path: "/",
-                    .expires: Date().addingTimeInterval(86400)
-                ]
-                if baseURL.scheme?.lowercased() == "https" {
-                    props[.secure] = "TRUE"
-                }
-                if let cookie = HTTPCookie(properties: props) {
-                    HTTPCookieStorage.shared.setCookie(cookie)
-                    HTTPCookieStorage.shared.setCookies([cookie], for: baseURL, mainDocumentURL: nil)
-                    HTTPCookieStorage.shared.setCookies([cookie], for: streamURL, mainDocumentURL: nil)
-                }
-            }
+            let extraHeaders = HTTPCookie.requestHeaderFields(with: media.cookies)
 
-            var extraHeaders: [String: String] = [:]
-            if let cookieValue = sessionCookie {
-                extraHeaders["Cookie"] = "xg2g_session=\(cookieValue)"
-            }
-
-            // Ensure HLS playlist is ready on backend before handing to AVPlayer
+            // Ensure HLS playlist is ready on backend before handing to AVPlayer.
+            // The wait itself belongs to the transport: it owns the method, the
+            // cookie and the retry budget.
             if streamURL.path.hasSuffix(".m3u8") {
-                for _ in 0..<10 {
-                    var req = URLRequest(url: streamURL)
-                    req.httpMethod = "HEAD"
-                    if let cookieValue = sessionCookie {
-                        req.setValue("xg2g_session=\(cookieValue)", forHTTPHeaderField: "Cookie")
-                    }
-                    if let (_, response) = try? await URLSession.shared.data(for: req),
-                       let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                        break
-                    }
-                    try? await Task.sleep(nanoseconds: 800_000_000)
-                }
+                _ = await MediaFetcher.waitUntilServable(url: streamURL, sessionCookie: sessionCookie)
             }
 
             TelemetryServer.shared.log("[RecordingPlayer] ▶️ Loading '\(recording.title)' (\(recording.id)) URL: \(streamURL.absoluteString)")
 
-            let item = PlayerAssetLoader.makePlayerItem(url: streamURL, baseURL: baseURL, extraHeaders: extraHeaders)
+            let item = PlayerAssetLoader.makePlayerItem(url: streamURL, baseURL: serverAddress.rootURL, extraHeaders: extraHeaders)
             let p = AVPlayer(playerItem: item)
 
             await MainActor.run {

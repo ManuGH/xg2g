@@ -95,13 +95,13 @@ struct ECPublicKeyJWKTests {
     /// whitespace, padding — changes `jkt` and makes the server reject every
     /// proof, so it is pinned rather than described.
     @Test func thumbprintMatchesTheServerCanonicalForm() {
-        let jwk = ECPublicKeyJWK(x: "dGVzdC14", y: "dGVzdC15")
+        let jwk = Xg2gContract.ECPublicKeyJWK.p256(x: "dGVzdC14", y: "dGVzdC15")
 
         #expect(jwk.thumbprint == "KPkQZ9JAzMQ212Ca4HYCcvg3sX_zN-AldCezxFGLkH4")
     }
 
     @Test func thumbprintIsUnpaddedBase64URL() {
-        let jwk = ECPublicKeyJWK(x: "dGVzdC14", y: "dGVzdC15")
+        let jwk = Xg2gContract.ECPublicKeyJWK.p256(x: "dGVzdC14", y: "dGVzdC15")
 
         #expect(jwk.thumbprint.count == 43)
         #expect(!jwk.thumbprint.contains("="))

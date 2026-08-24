@@ -247,7 +247,7 @@ final class NowPlayingManager {
 
         let published = info
         currentArtworkTask = Task {
-            guard let (data, _) = try? await URLSession.shared.data(from: logoURL) else { return }
+            guard let data = await MediaFetcher.imageData(from: logoURL) else { return }
 
             // Decoding off the main thread keeps a full-resolution bitmap out of
             // both the cache and the UI.

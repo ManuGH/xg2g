@@ -53,41 +53,10 @@ enum DeviceKeyPolicy: Sendable, Equatable {
     }
 }
 
-/// The public half of the device key, in JWK form.
-struct ECPublicKeyJWK: Equatable, Sendable, Codable {
-    let kty = "EC"
-    let crv = "P-256"
-    /// Base64url, unpadded, 32 bytes.
-    let x: String
-    /// Base64url, unpadded, 32 bytes.
-    let y: String
-
-    private enum CodingKeys: String, CodingKey {
-        case kty, crv, x, y
-    }
-
-    init(x: String, y: String) {
-        self.x = x
-        self.y = y
-    }
-
-    /// RFC 7638 thumbprint.
-    ///
-    /// The canonical form is byte-identical to the server's
-    /// `identity.ComputeJWKThumbprint`:
-    /// `{"crv":"P-256","kty":"EC","x":…,"y":…}`, SHA-256, base64url unpadded.
-    /// Members in lexicographic order, no whitespace — any deviation yields a
-    /// different `jkt` and every proof is rejected.
-    var thumbprint: String {
-        let canonical = #"{"crv":"P-256","kty":"EC","x":"\#(x)","y":"\#(y)"}"#
-        return Base64URL.encode(Data(SHA256.hash(data: Data(canonical.utf8))))
-    }
-}
-
 /// What the app can say about the key it holds.
 struct DeviceKeyAttestation: Equatable, Sendable {
     let provenance: DeviceKeyProvenance
-    let publicKey: ECPublicKeyJWK
+    let publicKey: Xg2gContract.ECPublicKeyJWK
 
     var thumbprint: String { publicKey.thumbprint }
 }

@@ -209,7 +209,7 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Receiver-Adresse (Experten-Fallback)")
                                     .foregroundStyle(Theme.Colors.textPrimary)
-                                TextField("http://192.168.1.50:8001", text: $model.receiverStreamBaseURL)
+                                TextField(ServerAddress.receiverPlaceholder, text: $model.receiverStreamBaseURL)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
                                     .keyboardType(.URL)

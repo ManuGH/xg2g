@@ -626,23 +626,7 @@ enum ChannelWire {
                   let serviceRef = serviceRef?.trimmingCharacters(in: .whitespaces), !serviceRef.isEmpty
             else { return nil }
 
-            let resolvedLogo: URL?
-            if let rawLogo = logoUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !rawLogo.isEmpty {
-                if rawLogo.hasPrefix("http://") || rawLogo.hasPrefix("https://") {
-                    resolvedLogo = URL(string: rawLogo)
-                } else if let baseURL {
-                    let path = rawLogo.hasPrefix("/") ? String(rawLogo.dropFirst()) : rawLogo
-                    resolvedLogo = baseURL.appendingPathComponent(path)
-                } else {
-                    resolvedLogo = URL(string: rawLogo)
-                }
-            } else if let baseURL {
-                // Fallback: Default OpenWebif/xg2g logo path by normalized service reference
-                let sanitizedRef = serviceRef.replacingOccurrences(of: ":", with: "_").trimmingCharacters(in: CharacterSet(charactersIn: "_"))
-                resolvedLogo = baseURL.appendingPathComponent("logos/\(sanitizedRef).png")
-            } else {
-                resolvedLogo = nil
-            }
+            let resolvedLogo = MediaEndpoints.logoURL(raw: logoUrl, serviceRef: serviceRef, baseURL: baseURL)
 
             return Channel(
                 id: id?.isEmpty == false ? id! : serviceRef,

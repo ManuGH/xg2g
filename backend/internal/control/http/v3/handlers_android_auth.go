@@ -30,10 +30,6 @@ type DeviceGrantFinishRequest struct {
 	Scopes     string                     `json:"scopes,omitempty"`
 }
 
-type DeviceRefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
 // DeviceGrantStart handles POST /api/v3/auth/device/grant/start
 func (s *Server) DeviceGrantStart(w http.ResponseWriter, r *http.Request) {
 	svc := s.getIdentityService()
@@ -117,10 +113,9 @@ func (s *Server) DeviceGrantFinish(w http.ResponseWriter, r *http.Request) {
 		Msg("issued DPoP-bound device grant for android")
 
 	// Set mandatory RFC 9449 / OAuth2 token headers
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store, no-cache, private")
 	w.Header().Set("Pragma", "no-cache")
-	_ = json.NewEncoder(w).Encode(grantRes)
+	writeJSON(w, http.StatusOK, deviceGrantResponse(grantRes))
 }
 
 // DeviceSelfRevoke handles POST /api/v3/auth/device/revoke
@@ -176,22 +171,18 @@ func (s *Server) DeviceSelfRevoke(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeviceRefresh handles POST /api/v3/auth/device/refresh
-func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
+func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request, params DeviceRefreshParams) {
 	svc := s.getIdentityService()
 	if svc == nil {
 		writeRegisteredProblem(w, r, http.StatusServiceUnavailable, "auth/passkey_disabled", "Passkey Not Configured", problemcode.CodeServiceUnavailable, "Passkey authentication is not configured on this server", nil)
 		return
 	}
 
-	dpopProof := r.Header.Get("DPoP")
-	if dpopProof == "" {
-		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/dpop_required", "DPoP Header Required", problemcode.CodeInvalidInput, "DPoP proof header is required", nil)
-		return
-	}
-
+	// Presence is enforced by the generated wrapper now that the contract
+	// declares the header. What is left here is proving it.
 	validator := s.getDPoPValidator()
 	now := time.Now().UTC()
-	proofClaims, err := validator.ValidateProof(r, dpopProof, "", now)
+	proofClaims, err := validator.ValidateProof(r, params.DPoP, "", now)
 	if err != nil {
 		log.FromContext(r.Context()).Warn().Err(err).Msg("invalid DPoP proof during device refresh")
 		writeRegisteredProblem(w, r, http.StatusBadRequest, "auth/invalid_dpop", "Invalid DPoP Proof", problemcode.CodeInvalidInput, err.Error(), nil)
@@ -217,8 +208,28 @@ func (s *Server) DeviceRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	// Credentials must never be cached, by a proxy or by the client.
 	w.Header().Set("Cache-Control", "no-store, no-cache, private")
 	w.Header().Set("Pragma", "no-cache")
-	_ = json.NewEncoder(w).Encode(grantRes)
+	writeJSON(w, http.StatusOK, deviceGrantResponse(grantRes))
+}
+
+// deviceGrantResponse renders an issued grant in the shape DeviceGrantResponse
+// declares.
+//
+// Both issuance paths hand out the same thing — passkey enrollment at
+// /auth/device/grant/finish and rotation at /auth/device/refresh — but only the
+// second is declared in api/openapi.yaml. Sharing the mapping is what keeps the
+// undeclared one from drifting away from the shape its sibling is held to; it
+// also means bringing the grant endpoints into the contract later changes the
+// routing, not the bytes.
+func deviceGrantResponse(grant *identity.DeviceGrantResult) DeviceGrantResponse {
+	return DeviceGrantResponse{
+		TokenType:    grant.TokenType,
+		AccessToken:  grant.AccessToken,
+		RefreshToken: grant.RefreshToken,
+		ExpiresIn:    clampTokenLifetimeSeconds(grant.ExpiresIn),
+		DeviceId:     grant.DeviceID,
+		Scope:        grant.Scope,
+	}
 }

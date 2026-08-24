@@ -3,9 +3,10 @@
   "manifestVersion": 1,
   "spec": {
     "path": "backend/api/openapi.yaml",
-    "sha256": "bca7eaed139e2e64bfbca9e88f6a6b615f985f8c312e5f8c5668d66a88ee3671"
+    "sha256": "95f1e570e8c0b6efa92970335107ebbecc2e121a07f8b2de3115fad646cca606"
   },
   "paths": [
+    "/auth/device/refresh",
     "/auth/session",
     "/dvr/capabilities",
     "/dvr/status",
@@ -68,6 +69,47 @@
     "/timers/{timerId}"
   ],
   "operations": [
+    {
+      "operationId": "DeviceRefresh",
+      "method": "POST",
+      "path": "/auth/device/refresh",
+      "parameters": [
+        {
+          "name": "DPoP",
+          "in": "header",
+          "required": true
+        }
+      ],
+      "requestBodyContentTypes": [
+        "application/json"
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "contentTypes": [
+            "application/json"
+          ]
+        },
+        {
+          "status": "400",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "401",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        },
+        {
+          "status": "503",
+          "contentTypes": [
+            "application/problem+json"
+          ]
+        }
+      ]
+    },
     {
       "operationId": "deleteSession",
       "method": "DELETE",
@@ -2352,6 +2394,8 @@
     "CurrentServiceInfo",
     "DeviceAuthDeviceType",
     "DeviceBindingState",
+    "DeviceGrantResponse",
+    "DeviceRefreshRequest",
     "DirectoryItem",
     "DvrCapabilities",
     "ECPublicKeyJWK",
@@ -2484,6 +2528,8 @@
     "roots": [
       "ApprovePairingRequest",
       "ApprovePairingResponse",
+      "DeviceGrantResponse",
+      "DeviceRefreshRequest",
       "ECPublicKeyJWK",
       "ExchangePairingResponse",
       "PairingSecretRequest",
@@ -2496,6 +2542,8 @@
       "ApprovePairingRequest",
       "ApprovePairingResponse",
       "DeviceAuthDeviceType",
+      "DeviceGrantResponse",
+      "DeviceRefreshRequest",
       "ECPublicKeyJWK",
       "ExchangePairingResponse",
       "PairingSecretRequest",
@@ -2514,7 +2562,7 @@
       "path": "android/app/src/main/java/io/github/manugh/xg2g/android/contract/Xg2gContract.kt",
       "language": "kotlin",
       "generator": "gen-native-contract",
-      "sha256": "255ef4a8dd6da000b02d1ba165cefd12c3a51a3a8a1c41491acd48ae1e97058b"
+      "sha256": "940ebeb35e55bd16b1c18affe7aa228d30c74ea8ec07ceb3291a911bf5e86662"
     },
     {
       "path": "apps/webui/src/client-ts/client.gen.ts",
@@ -2532,7 +2580,7 @@
       "path": "apps/webui/src/client-ts/sdk.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "92b3b72f59be88de69bfd934047d7002568c073957f268504644f4c378512aea"
+      "sha256": "afeeea294eb2ea7d1e11f458a2a4ea30ad8a581e38823d986e95c1b71c1865a4"
     },
     {
       "path": "apps/webui/src/client-ts/types.gen.ts",
@@ -2550,31 +2598,31 @@
       "path": "backend/internal/api/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "3081381e5c9bf8330f2ab55bf781bc97df5ff9e7f298edd9d9d4c03b4fd6c6cb"
+      "sha256": "e1648937f41854604e1740fcff0892ad0cd3b190466a426198f4ace7c255a5c9"
     },
     {
       "path": "backend/internal/control/authz/operation_catalog_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "5e0ac7225a4f741675362ab9338f6a9879b84ea973b587505109e0096ffacf2c"
+      "sha256": "c1ebdad614fa6a4d9ce1d6bd81e686556685c1cf031c40363b0393189462fe4e"
     },
     {
       "path": "backend/internal/control/http/v3/operation_routes_gen.go",
       "language": "go",
       "generator": "gen-operation-catalog",
-      "sha256": "fdd3e5861544c64a040b67c5296ad3d9c5057cf6ab678652e2627764577012ac"
+      "sha256": "3a8c875ffb2a14f658c40af9b8ae09e2ce0bb3c4f6ca0bf7a2e2d16339ab9a00"
     },
     {
       "path": "backend/internal/control/http/v3/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "3bf5f08c4b44a934c2aa7b8668868c83cde162419f69a8b8cbb34562435b9856"
+      "sha256": "8982df1459e0cd6bda615de60566313e2317be865c306c4110ff6b3097a554de"
     },
     {
       "path": "ios/Xg2g/Generated/Xg2gContract.swift",
       "language": "swift",
       "generator": "gen-native-contract",
-      "sha256": "b96c5ed06ace365b6f0eed3f692b87b54915db91298060699c99b66763f47b4b"
+      "sha256": "f360047ba972f411c452edf2fcad655dbe23bd8fe692da01520673e66f877045"
     },
     {
       "path": "openapi/v3.normative.snapshot.yaml",

@@ -1458,8 +1458,7 @@ struct ChannelLogo: View {
             return
         }
 
-        guard let (data, _) = try? await URLSession.shared.data(from: url),
-              !Task.isCancelled else {
+        guard let data = await MediaFetcher.imageData(from: url), !Task.isCancelled else {
             return
         }
 

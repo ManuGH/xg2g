@@ -88,7 +88,7 @@ enum DPoPProof {
 private struct ProofHeader: Encodable {
     let typ = "dpop+jwt"
     let alg = "ES256"
-    let jwk: ECPublicKeyJWK
+    let jwk: Xg2gContract.ECPublicKeyJWK
 
     private enum CodingKeys: String, CodingKey {
         case typ, alg, jwk

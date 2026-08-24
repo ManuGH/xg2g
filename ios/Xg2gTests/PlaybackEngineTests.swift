@@ -159,7 +159,7 @@ struct PlaybackEngineTests {
         for (mode, filename) in modes {
             let model = AppModel()
             model.playbackEngine = mode
-            model.receiverStreamBaseURL = "http://10.10.55.64:8001"
+            model.receiverStreamBaseURL = "http://receiver.test:8001"
 
             let view = SettingsView(model: model)
                 .preferredColorScheme(.dark)
@@ -181,8 +181,7 @@ struct PlaybackEngineTests {
                 controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
             }
             if let data = image.pngData() {
-                let outURL = URL(fileURLWithPath: "/Users/manuel/.gemini/antigravity/brain/7d79d215-2ce0-4ff1-a82e-2b7842857601/\(filename)")
-                try? data.write(to: outURL)
+                writeSnapshot(data, named: filename)
             }
         }
 
@@ -207,14 +206,13 @@ struct PlaybackEngineTests {
             diagController.view.drawHierarchy(in: diagController.view.bounds, afterScreenUpdates: true)
         }
         if let diagData = diagImage.pngData() {
-            let diagURL = URL(fileURLWithPath: "/Users/manuel/.gemini/antigravity/brain/7d79d215-2ce0-4ff1-a82e-2b7842857601/settings_diagnostic_override.png")
-            try? diagData.write(to: diagURL)
+            writeSnapshot(diagData, named: "settings_diagnostic_override.png")
         }
     }
 
     @Test("Engine switching transitions cleanly between Native and Managed HLS routes")
     func engineSwitchingTransitionsCleanly() {
-        let model = makeModel(receiver: "http://10.10.55.64:8001")
+        let model = makeModel(receiver: "http://receiver.test:8001")
         
         // 1. Native mode
         model.playbackEngine = .native
@@ -235,4 +233,21 @@ struct PlaybackEngineTests {
         model.playbackEngine = .native
         #expect(model.playbackEngine == .native)
     }
+}
+
+/// Writes a rendered snapshot where the run can find it again.
+///
+/// These used to be written to one developer's home directory, which meant the
+/// test produced nothing anywhere else and silently swallowed the failure. The
+/// destination is now the run's own temporary directory, overridable with
+/// XG2G_SNAPSHOT_DIR for a run that wants to keep them.
+private func writeSnapshot(_ data: Data, named filename: String) {
+    let raw = ProcessInfo.processInfo.environment["XG2G_SNAPSHOT_DIR"] ?? ""
+    let trimmed = raw.trimmingCharacters(in: .whitespaces)
+    let directory = trimmed.isEmpty
+        ? FileManager.default.temporaryDirectory.appendingPathComponent("xg2g-snapshots", isDirectory: true)
+        : URL(fileURLWithPath: trimmed, isDirectory: true)
+
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try? data.write(to: directory.appendingPathComponent(filename))
 }

@@ -16,8 +16,13 @@ public struct TestTSPlayerScreen: View {
 
     /// The readouts of the channel actually on screen.
     private var tele: TelemetryValues { coordinator.playing?.telemetry.display ?? TelemetryValues() }
-    @State private var streamURLString: String = "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:"
-    @State private var currentChannelName: String = "Sky Sport F1 HD"
+    /// The stream currently selected, empty until a channel is chosen.
+    ///
+    /// This used to open on a hard-coded receiver on a specific LAN, which made
+    /// the screen appear to work on exactly one network and silently fail
+    /// everywhere else.
+    @State private var streamURLString: String = ""
+    @State private var currentChannelName: String = ""
     private enum StreamRouteMode: String, CaseIterable {
         case livePipeline = "LIVE (v3 Ingest)"
         case direct = "DIRECT (Vu+:8001)"
@@ -46,16 +51,6 @@ public struct TestTSPlayerScreen: View {
         let category: String
     }
 
-    private static let labPresets: [ChannelPreset] = [
-        ChannelPreset(name: "ORF 1 HD", serviceRef: "1:0:19:132F:3EF:1:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:132F:3EF:1:C00000:0:0:0:", epgNow: "ORF 1 HD Live Feed", category: "Vollprogramm"),
-        ChannelPreset(name: "Sky Sport F1 HD", serviceRef: "1:0:19:11:6:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:11:6:85:C00000:0:0:0:", epgNow: "Formel 1: GP Vorberichte & Live-Session", category: "Sport"),
-        ChannelPreset(name: "Sky Sport Top Event HD", serviceRef: "1:0:19:81:6:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:81:6:85:C00000:0:0:0:", epgNow: "Top-Event Highlights & Analysen", category: "Sport"),
-        ChannelPreset(name: "Sky Sport Bundesliga HD", serviceRef: "1:0:19:69:C:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:69:C:85:C00000:0:0:0:", epgNow: "Bundesliga Konferenz / Live", category: "Sport"),
-        ChannelPreset(name: "Sky Sport Premier League HD", serviceRef: "1:0:19:91:4:85:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:91:4:85:C00000:0:0:0:", epgNow: "Premier League Live Match", category: "Sport"),
-        ChannelPreset(name: "PULS 24 HD", serviceRef: "1:0:19:14B8:407:1:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:14B8:407:1:C00000:0:0:0:", epgNow: "PULS 24 News Live", category: "News"),
-        ChannelPreset(name: "ZDF HD", serviceRef: "1:0:19:2B66:3F3:1:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:2B66:3F3:1:C00000:0:0:0:", epgNow: "heute journal / Magazin", category: "Vollprogramm"),
-        ChannelPreset(name: "Das Erste HD", serviceRef: "1:0:19:283D:3FB:1:C00000:0:0:0:", url: "http://10.10.55.64:8001/1:0:19:283D:3FB:1:C00000:0:0:0:", epgNow: "Tagesschau / Reportage", category: "Vollprogramm")
-    ]
 
     init(model: AppModel? = nil, playbackManager: PlaybackManager? = nil, channel: Channel? = nil) {
         self.model = model
@@ -138,9 +133,9 @@ public struct TestTSPlayerScreen: View {
         if let match = presets.first(where: { $0.serviceRef == channel.serviceRef || $0.name == channel.name }) {
             switchTo(preset: match)
         } else {
-            let url = model?.directStreamURL(for: channel)?.absoluteString
+            guard let url = model?.directStreamURL(for: channel)?.absoluteString
                 ?? model?.liveStreamURL(for: channel.serviceRef)?.absoluteString
-                ?? "http://10.10.55.14:8089/api/v3/stream/live/\(channel.serviceRef)"
+            else { return }
             let newPreset = ChannelPreset(
                 name: channel.name,
                 serviceRef: channel.serviceRef,
@@ -159,15 +154,16 @@ public struct TestTSPlayerScreen: View {
 
     /// The channels this screen can tune, newest EPG title included.
     ///
-    /// Real catalogue when there is one — this screen is a normal player now,
-    /// not only a bench — and the hard-coded services only when there is not.
+    /// Only the real catalogue. There used to be a hard-coded bench list behind
+    /// this, addressed at one receiver on one network; a build with no server
+    /// configured showed eight channels that could never play.
     private var presets: [ChannelPreset] {
-        guard let model, !model.channels.isEmpty else { return Self.labPresets }
+        guard let model, !model.channels.isEmpty else { return [] }
         let catalogue = model.filteredChannels.isEmpty ? model.channels : model.filteredChannels
-        let live = catalogue.map { channel -> ChannelPreset in
-            let url = model.directStreamURL(for: channel)?.absoluteString
+        return catalogue.compactMap { channel -> ChannelPreset? in
+            guard let url = model.directStreamURL(for: channel)?.absoluteString
                 ?? model.liveStreamURL(for: channel.serviceRef)?.absoluteString
-                ?? "http://10.10.55.14:8089/api/v3/stream/live/\(channel.serviceRef)"
+            else { return nil }
             return ChannelPreset(
                 name: channel.name,
                 serviceRef: channel.serviceRef,
@@ -176,7 +172,6 @@ public struct TestTSPlayerScreen: View {
                 category: ""
             )
         }
-        return live.isEmpty ? Self.labPresets : live
     }
 
     private var currentServiceRef: String {
@@ -960,7 +955,7 @@ public struct TestTSPlayerScreen: View {
                         .foregroundStyle(Theme.Colors.textSecondary)
 
                     HStack(spacing: 8) {
-                        TextField("http://...", text: $streamURLString)
+                        TextField(ServerAddress.streamURLPlaceholder, text: $streamURLString)
                             .textFieldStyle(.roundedBorder)
                             .font(.caption.monospaced())
                             .autocapitalization(.none)
@@ -1119,17 +1114,14 @@ public struct TestTSPlayerScreen: View {
         guard let url = URL(string: rawURLString) else { return nil }
         let sref = url.lastPathComponent
 
+        // No configured server means no route. Returning nil surfaces the
+        // "configure a server" state; the hard-coded address that used to sit
+        // here made an unconfigured build look configured.
         switch streamRouteMode {
         case .livePipeline:
-            if let model, let liveURL = model.liveStreamURL(for: sref) {
-                return liveURL
-            }
-            return URL(string: "http://10.10.55.14:8089/api/v3/stream/live/\(sref)")
+            return model?.liveStreamURL(for: sref)
         case .legacySmoother:
-            if let model, let smoothURL = model.legacySmoothStreamURL(for: sref) {
-                return smoothURL
-            }
-            return URL(string: "http://10.10.55.14:8089/api/v3/stream/smooth/\(sref)")
+            return model?.legacySmoothStreamURL(for: sref)
         case .direct:
             return url
         }

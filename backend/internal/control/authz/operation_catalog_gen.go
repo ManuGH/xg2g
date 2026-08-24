@@ -16,6 +16,7 @@ var operationScopes = map[string][]string{
 	"DeleteStreamsId":                  {"v3:write"},
 	"DeleteSystemEntitlementOverride":  {"v3:admin"},
 	"DeleteTimer":                      {"v3:write"},
+	"DeviceRefresh":                    {},
 	"ExchangePairing":                  {},
 	"GetDvrCapabilities":               {"v3:read"},
 	"GetDvrStatus":                     {"v3:read"},
@@ -85,6 +86,7 @@ var operationScopes = map[string][]string{
 }
 
 var unscopedOperations = map[string]struct{}{
+	"DeviceRefresh":    {},
 	"ExchangePairing":  {},
 	"GetPairingStatus": {},
 	"StartPairing":     {},
@@ -104,6 +106,7 @@ var operationExposurePolicies = map[string]ExposurePolicy{
 	"DeleteStreamsId":                  {Class: ExposureClass("write"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: true, RedactErrors: false},
 	"DeleteSystemEntitlementOverride":  {Class: ExposureClass("admin"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("auth"), AuditRequired: true, RedactErrors: false},
 	"DeleteTimer":                      {Class: ExposureClass("write"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: true, RedactErrors: false},
+	"DeviceRefresh":                    {Class: ExposureClass("device"), AuthKind: ExposureAuthKind("device_grant"), BrowserTrust: ExposureBrowserTrust("not_browser"), RateLimitClass: ExposureRateLimitClass("device_grant"), AuditRequired: true, RedactErrors: true},
 	"ExchangePairing":                  {Class: ExposureClass("pairing"), AuthKind: ExposureAuthKind("pairing_secret"), BrowserTrust: ExposureBrowserTrust("not_browser"), RateLimitClass: ExposureRateLimitClass("pairing_secret"), AuditRequired: true, RedactErrors: true},
 	"GetDvrCapabilities":               {Class: ExposureClass("read"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: false, RedactErrors: false},
 	"GetDvrStatus":                     {Class: ExposureClass("read"), AuthKind: ExposureAuthKind("bearer_scope"), BrowserTrust: ExposureBrowserTrust("same_origin_or_allowed_origin"), RateLimitClass: ExposureRateLimitClass("global"), AuditRequired: false, RedactErrors: false},

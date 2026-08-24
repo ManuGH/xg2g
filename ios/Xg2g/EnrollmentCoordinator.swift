@@ -112,21 +112,21 @@ actor EnrollmentCoordinator {
     func startPairing(deviceName: String, deviceType: DeviceType) async throws -> Invitation {
         _ = try await keyStore.provisionKey()
 
-        let started: PairingWire.StartResponse = try await api.send(
+        let started: Xg2gContract.StartPairingResponse = try await api.send(
             APIRequest(
                 method: .post,
                 path: "pairing/start",
                 body: try Self.encode(
-                    PairingWire.StartRequest(deviceName: deviceName, deviceType: deviceType.rawValue)
+                    Xg2gContract.StartPairingRequest(deviceName: deviceName, deviceType: Xg2gContract.DeviceAuthDeviceType(rawValue: deviceType.rawValue) ?? .unknown)
                 ),
                 contentType: "application/json"
             )
         )
 
-        pending = PendingPairing(id: started.pairingID, secret: started.pairingSecret)
+        pending = PendingPairing(id: started.pairingId, secret: started.pairingSecret)
 
         return Invitation(
-            pairingID: started.pairingID,
+            pairingID: started.pairingId,
             userCode: started.userCode,
             qrPayload: started.qrPayload,
             expiresAt: started.expiresAt
@@ -136,10 +136,10 @@ actor EnrollmentCoordinator {
     // MARK: - 2. Poll
 
     /// Reads where the pairing stands. Runs no loop and sleeps for nobody.
-    func pairingStatus() async throws -> PairingStatus {
+    func pairingStatus() async throws -> Xg2gContract.PairingStatus {
         guard let pending else { throw Failure.noPairingInProgress }
 
-        let response: PairingWire.StatusResponse = try await api.send(
+        let response: Xg2gContract.PairingStatusResponse = try await api.send(
             APIRequest(
                 method: .post,
                 path: "pairing/\(pending.id)/status",
@@ -168,14 +168,14 @@ actor EnrollmentCoordinator {
         // sign, and `provisionKey` re-checks provenance on the way out.
         let attestation = try await keyStore.provisionKey()
 
-        let response: PairingWire.ExchangeResponse = try await api.send(
+        let response: Xg2gContract.ExchangePairingResponse = try await api.send(
             APIRequest(
                 method: .post,
                 path: "pairing/\(pending.id)/exchange",
                 body: try Self.encode(
-                    PairingWire.SecretRequest(
-                        pairingSecret: pending.secret,
-                        deviceJwk: attestation.publicKey
+                    Xg2gContract.PairingSecretRequest(
+                        deviceJwk: attestation.publicKey,
+                        pairingSecret: pending.secret
                     )
                 ),
                 contentType: "application/json"
@@ -210,14 +210,14 @@ actor EnrollmentCoordinator {
     /// Everything the client must be sure of before treating a 200 as an
     /// enrollment. Each check corresponds to a way the credentials could look
     /// fine now and fail inexplicably later.
-    private static func validate(_ response: PairingWire.ExchangeResponse, against pairingID: String) throws {
-        guard response.pairingID == pairingID else {
+    private static func validate(_ response: Xg2gContract.ExchangePairingResponse, against pairingID: String) throws {
+        guard response.pairingId == pairingID else {
             throw Failure.malformedExchange(.pairingMismatch)
         }
         guard response.tokenType.caseInsensitiveCompare("DPoP") == .orderedSame else {
             throw Failure.malformedExchange(.notSenderConstrained)
         }
-        guard !response.deviceID.isEmpty else {
+        guard !response.deviceId.isEmpty else {
             throw Failure.malformedExchange(.emptyDeviceID)
         }
         guard !response.accessToken.isEmpty else {
@@ -238,7 +238,7 @@ actor EnrollmentCoordinator {
     private func secretBody(_ secret: String) async throws -> Data {
         let attestation = try await keyStore.provisionKey()
         return try Self.encode(
-            PairingWire.SecretRequest(pairingSecret: secret, deviceJwk: attestation.publicKey)
+            Xg2gContract.PairingSecretRequest(deviceJwk: attestation.publicKey, pairingSecret: secret)
         )
     }
 
