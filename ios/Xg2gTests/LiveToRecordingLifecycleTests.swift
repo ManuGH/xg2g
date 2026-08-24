@@ -311,4 +311,28 @@ struct LiveToRecordingLifecycleTests {
         await manager.stop()
         #expect(manager.state == .idle)
     }
+
+    @Test("Superseded coordinator stop does not tear down subsequently started live session")
+    func supersededStopDoesNotTearDownSubsequentLiveSession() async throws {
+        let manager = makeManager()
+
+        // 1. Start Live A
+        await manager.play(channel: channelA, mode: .fullscreen)
+        #expect(manager.currentChannel == channelA)
+
+        // 2. Begin stop/transition to recording concurrently with switching to Live B
+        async let stopOrRecording: Void = manager.play(recording: testRecording, startPosition: 0)
+        async let switchToLiveB: Void = manager.play(channel: channelB, mode: .fullscreen)
+
+        _ = await (stopOrRecording, switchToLiveB)
+
+        // 3. Assert Live B is active and was not torn down by the superseded stop
+        #expect(manager.state == .live(channelB, mode: .fullscreen))
+        #expect(manager.currentChannel == channelB)
+        #expect(manager.isStreaming == true)
+        #expect(manager.coordinator.presentedServiceRef != nil, "Live B session must remain presented and not destroyed")
+
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
 }

@@ -383,8 +383,16 @@ final class ZapCoordinator: ObservableObject {
 
     /// Stops everything, for a screen going away.
     func stop() async {
+        let sessionToStop = self.playing
         activeZapID = nil
         await abandonInFlight(reason: "player closed")
+
+        // Guard against a new zap having started while awaiting abandonInFlight
+        guard activeZapID == nil else {
+            sessionToStop?.stopStreaming()
+            return
+        }
+
         context.unbind()
         if let playing {
             summarize(playing, zapID: "final", event: "stop.stats")
