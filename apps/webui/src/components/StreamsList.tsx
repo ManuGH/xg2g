@@ -65,8 +65,18 @@ const formatClientFamily = (family: string | undefined): string => {
       return 'Firefox';
     case 'safari_native':
       return 'Safari';
-    case 'ios_safari_native':
+    case 'ios_safari':
       return 'iOS Safari';
+    case 'ios_native':
+      return 'iOS App';
+    case 'apple_tv_native':
+      return 'Apple TV App';
+    case 'android_native':
+      return 'Android App';
+    case 'android_tv_native':
+      return 'Android TV App';
+    case 'android_tv_browser':
+      return 'Android TV Browser';
     default:
       return family ?? '';
   }

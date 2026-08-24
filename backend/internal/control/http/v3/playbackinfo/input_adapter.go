@@ -92,9 +92,9 @@ func ParseLivePlaybackPostInput(r *http.Request) (LivePlaybackInfoInput, *Playba
 		Str("service_ref", normalize.ServiceRef(req.ServiceRef)).
 		Str("request_context", requestContext).
 		Int("capabilities_version", req.Capabilities.CapabilitiesVersion).
-		Str("client_family_fallback", strings.TrimSpace(valueOrEmpty(req.Capabilities.ClientFamilyFallback))).
+		Str("client_platform", strings.TrimSpace(req.Capabilities.ClientIdentity.Platform)).
+		Str("client_surface", strings.TrimSpace(req.Capabilities.ClientIdentity.Surface)).
 		Str("preferred_hls_engine", strings.TrimSpace(valueOrEmpty(req.Capabilities.PreferredHlsEngine))).
-		Str("device_type", strings.TrimSpace(valueOrEmpty(req.Capabilities.DeviceType))).
 		Str("containers", strings.Join(req.Capabilities.Container, ",")).
 		Str("video_codecs", strings.Join(req.Capabilities.VideoCodecs, ",")).
 		Str("audio_codecs", strings.Join(req.Capabilities.AudioCodecs, ",")).

@@ -935,7 +935,7 @@ seg_2_000004.m4s
 			Container:    "fmp4",
 		},
 		ContextData: map[string]string{
-			model.CtxKeyClientFamily: "ios_safari_native",
+			model.CtxKeyClientFamily: "ios_safari",
 		},
 	}
 	rdrAudio, _, validAudio, errAudio := rewritePlaylist(strings.NewReader(audioPlContent), recClient, "", "t123", zerolog.Logger{})
@@ -1133,7 +1133,7 @@ seg_000000.m4s
 	_, ready := awaitNativeCopyReady(context.Background(), store, store.Session, 0)
 	assert.False(t, ready)
 
-	store.Session.ContextData[model.CtxKeyClientFamily] = "ios_safari_native"
+	store.Session.ContextData[model.CtxKeyClientFamily] = "ios_safari"
 	assert.True(t, shouldHoldNativeCopyPlaylist(nativeReq, store.Session), "iOS Safari Native must also be held until ready")
 
 	req := httptest.NewRequest(http.MethodGet, "/index.m3u8", nil)

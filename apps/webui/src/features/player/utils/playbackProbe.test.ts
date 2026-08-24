@@ -10,6 +10,19 @@ vi.mock('../lib/hlsRuntime', () => {
 });
 
 const originalMaxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(navigator, 'maxTouchPoints');
+const originalUserAgentDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent');
+
+/**
+ * Sets the user agent for a test.
+ *
+ * The AV1 probes ask what this runtime *is* — WebKit on a Mac, WebKit on iOS —
+ * and read it from the declared client identity. They used to infer it from the
+ * video element's `canPlayType`, which meant a mocked element was enough to
+ * make the browser look like Safari.
+ */
+function setUserAgent(value: string): void {
+  Object.defineProperty(window.navigator, 'userAgent', { configurable: true, value });
+}
 const originalWebkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(
   HTMLVideoElement.prototype,
   'webkitSupportsPresentationMode'
@@ -25,6 +38,10 @@ describe('probeRuntimePlaybackCapabilities', () => {
   afterEach(() => {
     if (originalMaxTouchPointsDescriptor) {
       Object.defineProperty(navigator, 'maxTouchPoints', originalMaxTouchPointsDescriptor);
+    }
+
+    if (originalUserAgentDescriptor) {
+      Object.defineProperty(window.navigator, 'userAgent', originalUserAgentDescriptor);
     }
 
     if (originalWebkitSupportsPresentationModeDescriptor) {
@@ -127,6 +144,9 @@ describe('probeRuntimePlaybackCapabilities', () => {
 
   it('advertises desktop Safari AV1 when the native runtime reports support', async () => {
     vi.mocked(Hls.isSupported).mockReturnValue(true);
+    setUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15'
+    );
     Object.defineProperty(navigator, 'maxTouchPoints', {
       configurable: true,
       value: 0,
@@ -181,6 +201,9 @@ describe('probeRuntimePlaybackCapabilities', () => {
   });
 
   it('keeps native HLS on touch WebKit when the iOS runtime reports AV1 support', async () => {
+    setUserAgent(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1'
+    );
     vi.mocked(Hls.isSupported).mockReturnValue(true);
     Object.defineProperty(navigator, 'maxTouchPoints', {
       configurable: true,

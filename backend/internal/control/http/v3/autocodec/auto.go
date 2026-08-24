@@ -147,7 +147,7 @@ func PickNativeHLSProfileForCodecs(raw, clientFamily string, hwaccelMode profile
 
 func PickNativeHLSProfileForCodecsAndHost(raw, clientFamily string, hwaccelMode profiles.HWAccelMode, hostRuntime playbackprofile.HostRuntimeSnapshot) string {
 	switch normalize.Token(clientFamily) {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 	default:
 		return ""
 	}
@@ -178,7 +178,7 @@ func PickNativeHLSProfileForCapabilitiesAndHostWithPolicy(clientFamily string, c
 		family = normalize.Token(clientCaps.ClientFamilyFallback)
 	}
 	switch family {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 	default:
 		return ""
 	}
@@ -245,7 +245,7 @@ func ApplyClientCompatibilityProfileID(clientFamily, effectiveProfileID string) 
 }
 
 func ApplyClientCompatibilityProfileIDWithPolicy(clientFamily, effectiveProfileID, iosNativeHEVCHWMode string) string {
-	if normalize.Token(clientFamily) != playbackprofile.ClientIOSSafariNative {
+	if !playbackprofile.IsIOSFamily(normalize.Token(clientFamily)) {
 		return effectiveProfileID
 	}
 
@@ -279,7 +279,7 @@ func ApplyClientCompatibilityPolicyWithPolicy(
 		return compatibleProfileID, resolveProfileSpec(compatibleProfileID)
 	}
 
-	if normalize.Token(clientFamily) != playbackprofile.ClientIOSSafariNative {
+	if !playbackprofile.IsIOSFamily(normalize.Token(clientFamily)) {
 		return effectiveProfileID, profileSpec
 	}
 

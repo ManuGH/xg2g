@@ -38,7 +38,7 @@ func TestIsBrowserClient(t *testing.T) {
 	assert.True(t, IsBrowserClient(ClientEvidence{Family: "safari_native"}))
 	assert.True(t, IsBrowserClient(ClientEvidence{Family: "Chromium_HLSJS"}))
 	assert.True(t, IsBrowserClient(ClientEvidence{Family: "firefox"}))
-	assert.True(t, IsBrowserClient(ClientEvidence{Family: "ios_safari_native"}))
+	assert.True(t, IsBrowserClient(ClientEvidence{Family: "ios_safari"}))
 	assert.False(t, IsBrowserClient(ClientEvidence{Family: "android_exoplayer", PreferredEngine: "exoplayer"}))
 	assert.False(t, IsBrowserClient(ClientEvidence{Family: "ios_native", PreferredEngine: "native_app"}))
 	assert.False(t, IsBrowserClient(ClientEvidence{}))

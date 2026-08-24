@@ -199,7 +199,7 @@ func (a *LocalAdapter) resolveLiveFPS(ctx context.Context, spec ports.StreamSpec
 
 func isNativeAppClientSpec(spec ports.StreamSpec) bool {
 	f := strings.ToLower(strings.TrimSpace(spec.ClientFamily))
-	return isAndroidTVNativeSpec(spec) || f == "ios_safari_native" || f == "safari_native" || f == "xg2g-ios" || strings.Contains(f, "ios")
+	return isAndroidTVNativeSpec(spec) || f == "safari_native" || f == "xg2g-ios" || strings.Contains(f, "ios")
 }
 
 func (a *LocalAdapter) resolveSkippedLiveFPS(ctx context.Context, spec ports.StreamSpec, inputURL, sourceKey string, fallback int) (int, bool) {

@@ -13,6 +13,21 @@ const listAllowed = process.argv.includes('--list-allowed');
 const includeExt = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const excludedFilePattern = [/\.test\./, /\.spec\./, /\.stories\./, /__tests__/, /\/client-ts\//];
 
+// The one file allowed to read the user agent.
+//
+// The rule this gate enforces is not "never look at the user agent" — a client
+// has to be able to say what it is. It is that no *decision* may be made from
+// it: what the client can play comes from capability probes, and what policy
+// applies comes from the backend.
+//
+// `src/services/clientIdentity.ts` is where the two meet. It reads the user
+// agent to report platform, engine and device facts, and returns them; it
+// branches on nothing and decides nothing. Keeping it to one file is what makes
+// that checkable, which a blanket ban did not: the ban was already being
+// violated in the capability builder, and the violation was invisible because
+// nothing ran this gate.
+const identityModulePattern = /\/src\/services\/clientIdentity\.ts$/;
+
 const uaAccessRe =
   /\b(?:navigator|window\s*\.\s*navigator)\s*\.\s*(?:userAgent|platform|vendor|appVersion)\b/;
 
@@ -27,6 +42,7 @@ async function collectFiles(dir, out = []) {
     if (!entry.isFile()) continue;
     if (!includeExt.has(path.extname(entry.name))) continue;
     if (excludedFilePattern.some((rx) => rx.test(abs))) continue;
+    if (identityModulePattern.test(abs.split(path.sep).join('/'))) continue;
     out.push(abs);
   }
   return out;

@@ -90,7 +90,7 @@ func (s *Server) handleV3Intents(w http.ResponseWriter, r *http.Request) {
 	modeLive := normalize.Token(model.ModeLive)
 	decisionTraceID := ""
 	var verifiedReceipt *v3intents.PlanningHandoff
-	clientCaps := normalizeIntentClientCaps(req.Client)
+	clientCaps := normalizeIntentClientCaps(req.Client, r.UserAgent())
 	clientCapHash := hashV3Capabilities(req.Client)
 	params := normalizeIntentParams(req.Params, clientCaps, clientCapHash)
 	if raw := normalize.Token(params["mode"]); raw != "" {

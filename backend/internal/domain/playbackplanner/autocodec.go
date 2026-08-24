@@ -143,7 +143,7 @@ func selectAutoTranscodeVideoCodec(ev PlaybackEvidence) (string, bool) {
 
 func nativeWebKitClient(family string) bool {
 	switch strings.ToLower(strings.TrimSpace(family)) {
-	case "safari_native", "ios_safari_native":
+	case "safari_native", "ios_safari", "ios_native", "apple_tv_native":
 		return true
 	default:
 		return false

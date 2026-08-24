@@ -702,7 +702,7 @@ func TestResolvePlaybackInfo_Shadow_RealScenarios_Matrix(t *testing.T) {
 	})
 
 	t.Run("iOS_Safari", func(t *testing.T) {
-		runCase(t, "iOS_Safari", playbackprofile.ClientIOSSafariNative, true,
+		runCase(t, "iOS_Safari", playbackprofile.ClientIOSSafari, true,
 			scan.Capability{ServiceRef: serviceRef, Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", BitrateKbps: 5000, Width: 1920, Height: 1080, FPS: 25, LastScan: time.Now().UTC()},
 			capabilities.PlaybackCapabilities{
 				CapabilitiesVersion: 1,

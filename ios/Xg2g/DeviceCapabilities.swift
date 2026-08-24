@@ -77,6 +77,14 @@ enum DeviceCapabilities {
     }
 
     /// Hardware context identifier payload (e.g. model "iPhone17,1", OS "18.0").
+    /// This build's version, as the client identity reports it.
+    ///
+    /// Diagnostic only: nothing the server decides is keyed on it, because a
+    /// policy that were would make every app release a server change.
+    static var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+    }
+
     static var deviceContext: DeviceContext {
         let version = ProcessInfo.processInfo.operatingSystemVersion
         let osVersion = version.patchVersion > 0

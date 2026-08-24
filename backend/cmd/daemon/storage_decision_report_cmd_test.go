@@ -294,7 +294,7 @@ func TestBuildStorageDecisionReport_FiltersByDecisionOrigin(t *testing.T) {
 		ServiceRef:       "1:0:1:AAA:1:1:1:0:0:0:",
 		SubjectKind:      "live",
 		Origin:           decisionaudit.OriginRuntime,
-		ClientFamily:     "ios_safari_native",
+		ClientFamily:     "ios_safari",
 		ClientCapsSource: "family_fallback",
 		RequestedIntent:  "quality",
 		ResolvedIntent:   "quality",

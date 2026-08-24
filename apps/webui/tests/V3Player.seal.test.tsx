@@ -20,6 +20,7 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(window.navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15' });
     vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
       if (contentType === 'application/vnd.apple.mpegurl') {
         return 'probably';
@@ -117,7 +118,7 @@ describe('V3Player Truth Sealing (UI-INV-PLAYER-001)', () => {
     expect(streamInfoBody.capabilities.preferredHlsEngine).toBe('native');
     expect(streamInfoBody.capabilities.runtimeProbeUsed).toBe(true);
     expect(streamInfoBody.capabilities.runtimeProbeVersion).toBe(2);
-    expect(streamInfoBody.capabilities.clientFamilyFallback).toBe('safari_native');
+    expect(streamInfoBody.capabilities.clientIdentity).toEqual({ platform: 'macos', surface: 'browser', browserEngine: 'webkit' });
   });
 
   it('surfaces session trace telemetry in the live stats overlay', async () => {

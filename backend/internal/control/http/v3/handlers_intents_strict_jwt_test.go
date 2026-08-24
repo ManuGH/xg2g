@@ -177,6 +177,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 			reqFunc: func() *http.Request {
 				expectedCaps := map[string]any{
 					"capabilitiesVersion": 3,
+					"clientIdentity":      map[string]any{"platform": "linux", "surface": "browser", "browserEngine": "blink"},
 					"container":           []string{"ts"},
 					"videoCodecs":         []string{"h264"},
 					"audioCodecs":         []string{"aac"},
@@ -197,6 +198,7 @@ func TestHandleV3Intents_FailClosed_Validation(t *testing.T) {
 					"params":                map[string]string{"mode": "live"},
 					"client": map[string]any{
 						"capabilitiesVersion": 3,
+						"clientIdentity":      map[string]any{"platform": "linux", "surface": "browser", "browserEngine": "blink"},
 						"container":           []string{"ts"},
 						"videoCodecs":         []string{"hevc"},
 						"audioCodecs":         []string{"aac"},

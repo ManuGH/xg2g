@@ -39,6 +39,27 @@ enum MediaFetcher {
         return data
     }
 
+    /// Reads an HLS playlist, or `nil` when it is not servable yet.
+    ///
+    /// The caller decides what "ready" means by looking at the text; the
+    /// request itself — method, cache directive, cookie, HTTP/3 opt-out — is a
+    /// transport concern and stays here.
+    static func playlistText(url: URL, cookie: HTTPCookie?) async -> String? {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.assumesHTTP3Capable = false
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        if let cookie {
+            request.setValue("\(cookie.name)=\(cookie.value)", forHTTPHeaderField: "Cookie")
+        }
+
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse,
+              http.statusCode == 200
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     /// Polls until `url` answers 200, and reports whether it ever did.
     ///
     /// HLS playback cannot start before the backend has written a playlist, and

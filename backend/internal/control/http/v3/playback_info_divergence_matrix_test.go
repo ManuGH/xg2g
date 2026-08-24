@@ -55,7 +55,7 @@ func TestPlaybackInfoDivergenceMatrix_AllowInteractive(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["hls","mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
@@ -107,7 +107,7 @@ func TestPlaybackInfoDivergenceMatrix_AllowEpgBadge(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["hls","mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
@@ -156,7 +156,7 @@ func TestPlaybackInfoDivergenceMatrix_Deny(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["mp4"],
 			"videoCodecs":["hevc"],
 			"audioCodecs":["ac3"],
@@ -209,7 +209,7 @@ func TestPlaybackInfoDivergenceMatrix_RequestIDPropagation(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["hls","mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],

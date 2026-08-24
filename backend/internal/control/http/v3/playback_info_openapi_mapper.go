@@ -202,19 +202,23 @@ func mapCapabilitiesToPlaybackInfoSubpackage(c *PlaybackCapabilities) *v3playbac
 		return nil
 	}
 	sub := &v3playbackinfo.PlaybackCapabilities{
-		AllowTranscode:       c.AllowTranscode,
-		AudioCodecs:          c.AudioCodecs,
-		CapabilitiesVersion:  c.CapabilitiesVersion,
-		ClientFamilyFallback: c.ClientFamilyFallback,
-		Container:            c.Container,
-		DeviceType:           c.DeviceType,
-		HlsEngines:           c.HlsEngines,
-		PreferredHlsEngine:   c.PreferredHlsEngine,
-		RuntimeProbeUsed:     c.RuntimeProbeUsed,
-		RuntimeProbeVersion:  c.RuntimeProbeVersion,
-		SupportsHls:          c.SupportsHls,
-		SupportsRange:        c.SupportsRange,
-		VideoCodecs:          c.VideoCodecs,
+		AllowTranscode:      c.AllowTranscode,
+		AudioCodecs:         c.AudioCodecs,
+		CapabilitiesVersion: c.CapabilitiesVersion,
+		ClientIdentity: v3playbackinfo.PlaybackClientIdentity{
+			Platform:      string(c.ClientIdentity.Platform),
+			Surface:       string(c.ClientIdentity.Surface),
+			BrowserEngine: browserEngineString(c.ClientIdentity.BrowserEngine),
+			AppVersion:    c.ClientIdentity.AppVersion,
+		},
+		Container:           c.Container,
+		HlsEngines:          c.HlsEngines,
+		PreferredHlsEngine:  c.PreferredHlsEngine,
+		RuntimeProbeUsed:    c.RuntimeProbeUsed,
+		RuntimeProbeVersion: c.RuntimeProbeVersion,
+		SupportsHls:         c.SupportsHls,
+		SupportsRange:       c.SupportsRange,
+		VideoCodecs:         c.VideoCodecs,
 	}
 	if c.DeviceContext != nil {
 		sub.DeviceContext = &v3playbackinfo.PlaybackDeviceContext{
@@ -307,4 +311,15 @@ func mapPlaybackTargetProfileToV3(target *v3playbackinfo.PlaybackTargetProfile) 
 			Width:  target.Video.Width,
 		},
 	}
+}
+
+// browserEngineString renders the optional declared engine. A native client
+// omits it, which is not the same as declaring "unknown": the first says the
+// question does not apply, the second says the client could not answer it.
+func browserEngineString(engine *PlaybackBrowserEngine) *string {
+	if engine == nil {
+		return nil
+	}
+	value := string(*engine)
+	return &value
 }

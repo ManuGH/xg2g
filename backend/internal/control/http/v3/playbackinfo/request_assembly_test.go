@@ -33,11 +33,14 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 		},
 	}
 	caps := &PlaybackCapabilities{
-		AllowTranscode:       boolPtr(false),
-		AudioCodecs:          []string{"aac"},
-		CapabilitiesVersion:  3,
-		ClientFamilyFallback: strPtr("safari"),
-		Container:            []string{"mpegts", "hls"},
+		AllowTranscode:      boolPtr(false),
+		AudioCodecs:         []string{"aac"},
+		CapabilitiesVersion: 3,
+		// An NVIDIA Shield running the native app. The fixture used to declare
+		// family "safari" and device type "tv" in the same breath — a
+		// combination only the client-authored fields made expressible.
+		ClientIdentity: PlaybackClientIdentity{Platform: "android_tv", Surface: "native_app"},
+		Container:      []string{"mpegts", "hls"},
 		DeviceContext: &PlaybackDeviceContext{
 			Brand:        strPtr("google"),
 			Device:       strPtr("foster"),
@@ -49,7 +52,6 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 			Product:      strPtr("mdarcy"),
 			SdkInt:       intPtr(34),
 		},
-		DeviceType: strPtr("tv"),
 		HlsEngines: &hlsEngines,
 		MaxVideo: &PlaybackMaxVideo{
 			Fps:    intPtr(60),
@@ -112,7 +114,8 @@ func TestBuildPlaybackInfoServiceRequest_LiveRequest(t *testing.T) {
 	assert.Equal(t, "native", got.Capabilities.PreferredHLSEngine)
 	assert.True(t, got.Capabilities.RuntimeProbeUsed)
 	assert.Equal(t, 2, got.Capabilities.RuntimeProbeVersion)
-	assert.Equal(t, "safari", got.Capabilities.ClientFamilyFallback)
+	// Both derived from the declared identity, not taken from the request.
+	assert.Equal(t, "android_tv_native", got.Capabilities.ClientFamilyFallback)
 	assert.Equal(t, "tv", got.Capabilities.DeviceType)
 	require.NotNil(t, got.Capabilities.DeviceContext)
 	assert.Equal(t, "google", got.Capabilities.DeviceContext.Brand)

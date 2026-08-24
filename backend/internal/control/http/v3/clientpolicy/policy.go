@@ -16,18 +16,19 @@ import (
 func ResolveProfileUserAgent(requestedPlaybackMode, clientFamily, requestUserAgent string) string {
 	switch normalize.Token(requestedPlaybackMode) {
 	case "", "native_hls":
+		// The native iOS app, and only it. This used to key on
+		// `ios_safari_native`, which Safari on iOS reported too, so a browser
+		// session was handed the app's profile user agent.
 		if normalize.Token(requestedPlaybackMode) == "native_hls" &&
-			normalize.Token(clientFamily) == playbackprofile.ClientIOSSafariNative {
+			normalize.Token(clientFamily) == playbackprofile.ClientIOSNative {
 			return "xg2g-ios-native"
 		}
 		return requestUserAgent
 	case "hlsjs":
-		switch normalize.Token(clientFamily) {
-		case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+		if playbackprofile.IsAppleFamily(normalize.Token(clientFamily)) {
 			return requestUserAgent
-		default:
-			return ""
 		}
+		return ""
 	default:
 		return ""
 	}
@@ -37,9 +38,7 @@ func ResolveProfileUserAgent(requestedPlaybackMode, clientFamily, requestUserAge
 // safeguards. The policy only mutates the resolved execution shape, not the
 // selected profile identity.
 func ApplyStartPackagingPolicy(clientFamily, effectiveProfileID string, profileSpec model.ProfileSpec, sourceVideoCodec, preferredEngine string) model.ProfileSpec {
-	switch normalize.Token(clientFamily) {
-	case playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
-	default:
+	if !playbackprofile.IsAppleFamily(normalize.Token(clientFamily)) {
 		return profileSpec
 	}
 	if requiresNativeWebKitFMP4(effectiveProfileID) &&
@@ -67,7 +66,7 @@ func ApplyStartPackagingPolicy(clientFamily, effectiveProfileID string, profileS
 		// and TranscodeVideo is untouched, so buildCopyVideoArgs (-c:v copy) is used.
 		profileSpec.VideoCodec = "hevc"
 	}
-	if normalize.Token(clientFamily) == playbackprofile.ClientIOSSafariNative &&
+	if playbackprofile.IsIOSFamily(normalize.Token(clientFamily)) &&
 		strings.EqualFold(strings.TrimSpace(preferredEngine), "native") &&
 		!profileSpec.TranscodeVideo {
 		// 1:1 Passthrough (Copy) for Native iOS AVPlayer must use fMP4/CMAF
@@ -114,7 +113,7 @@ func WantsFMP4Packaging(requestedProfile, clientFamily string) bool {
 	}
 
 	switch normalize.Token(clientFamily) {
-	case "android_native", "android_tv_native", playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafariNative:
+	case "android_native", "android_tv_native", playbackprofile.ClientSafariNative, playbackprofile.ClientIOSSafari, playbackprofile.ClientIOSNative:
 		return true
 	default:
 		return false
@@ -139,7 +138,7 @@ func AllowExperimentalNativeAV1TransportStreamWithPolicy(
 	enabled bool,
 ) bool {
 	if normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientSafariNative ||
-		normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientIOSSafariNative {
+		normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientIOSSafari {
 		return false
 	}
 	if !enabled {
@@ -174,7 +173,7 @@ func AllowPlannerExperimentalAV1MPEGTS(
 	enabled bool,
 ) bool {
 	if normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientSafariNative ||
-		normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientIOSSafariNative {
+		normalize.Token(resolvedCaps.ClientFamilyFallback) == playbackprofile.ClientIOSSafari {
 		return false
 	}
 	if !enabled {

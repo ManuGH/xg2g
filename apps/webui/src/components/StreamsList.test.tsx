@@ -40,7 +40,7 @@ describe('StreamsList', () => {
           sessionId: 'sid-live-1',
           requestId: 'req-live-1',
           channelName: 'Das Erste',
-          clientFamily: 'ios_safari_native',
+          clientFamily: 'ios_safari',
           preferredHlsEngine: 'native',
           deviceType: 'phone',
           clientIp: '192.168.0.54',

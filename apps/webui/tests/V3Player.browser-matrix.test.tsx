@@ -114,7 +114,7 @@ describe('V3Player Browser Family Matrix', () => {
       expect(streamInfoBody.capabilities.preferredHlsEngine).toBe(fixture.capabilities.live.preferredHlsEngine);
       expect(streamInfoBody.capabilities.runtimeProbeUsed).toBe(true);
       expect(streamInfoBody.capabilities.runtimeProbeVersion).toBe(2);
-      expect(streamInfoBody.capabilities.clientFamilyFallback).toBe(fixture.id);
+      expect(streamInfoBody.capabilities.clientIdentity).toEqual(fixture.expectedIdentity);
 
       const intentCall = findFetchCall(global.fetch as any, '/intents');
       const intentBody = JSON.parse(String(intentCall?.[1]?.body ?? '{}'));
@@ -162,7 +162,7 @@ describe('V3Player Browser Family Matrix', () => {
       expect(request?.body?.preferredHlsEngine).toBe(fixture.capabilities.recording.preferredHlsEngine);
       expect(request?.body?.runtimeProbeUsed).toBe(true);
       expect(request?.body?.runtimeProbeVersion).toBe(2);
-      expect(request?.body?.clientFamilyFallback).toBe(fixture.id);
+      expect(request?.body?.clientIdentity).toEqual(fixture.expectedIdentity);
     } finally {
       restoreBrowserFamily();
     }

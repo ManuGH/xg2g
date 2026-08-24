@@ -547,13 +547,13 @@ func TestReportPlaybackFeedback_IOSAV1HlsStallFallsBackToRepair(t *testing.T) {
 				VideoCodec: "av1",
 			},
 			ContextData: map[string]string{
-				model.CtxKeyClientFamily: playbackprofile.ClientIOSSafariNative,
+				model.CtxKeyClientFamily: playbackprofile.ClientIOSSafari,
 				model.CtxKeyClientPath:   "hlsjs",
 			},
 			PlaybackTrace: &model.PlaybackTrace{
 				ClientPath: "hlsjs",
 				Client: &model.PlaybackClientSnapshot{
-					ClientFamily:       playbackprofile.ClientIOSSafariNative,
+					ClientFamily:       playbackprofile.ClientIOSSafari,
 					PreferredHLSEngine: "hlsjs",
 				},
 				TargetProfile: &playbackprofile.TargetPlaybackProfile{
@@ -630,13 +630,13 @@ func TestReportPlaybackFeedback_HlsStallIgnoredOutsideIOSAV1HlsjsPath(t *testing
 				VideoCodec: "hevc",
 			},
 			ContextData: map[string]string{
-				model.CtxKeyClientFamily: playbackprofile.ClientIOSSafariNative,
+				model.CtxKeyClientFamily: playbackprofile.ClientIOSSafari,
 				model.CtxKeyClientPath:   "hlsjs",
 			},
 			PlaybackTrace: &model.PlaybackTrace{
 				ClientPath: "hlsjs",
 				Client: &model.PlaybackClientSnapshot{
-					ClientFamily: playbackprofile.ClientIOSSafariNative,
+					ClientFamily: playbackprofile.ClientIOSSafari,
 				},
 				TargetProfile: &playbackprofile.TargetPlaybackProfile{
 					Video: playbackprofile.VideoTarget{

@@ -9,8 +9,8 @@ func TestNormalizeClientFamilyID(t *testing.T) {
 	}{
 		{in: "safari", want: ClientSafariNative},
 		{in: "safari_native", want: ClientSafariNative},
-		{in: "ios_safari", want: ClientIOSSafariNative},
-		{in: "ios_safari_native", want: ClientIOSSafariNative},
+		{in: "ios_safari", want: ClientIOSSafari},
+		{in: "ios_safari", want: ClientIOSSafari},
 		{in: "firefox", want: ClientFirefoxHLSJS},
 		{in: "android_tv", want: ClientAndroidTVBrowser},
 		{in: "android_tv_hlsjs", want: ClientAndroidTVBrowser},

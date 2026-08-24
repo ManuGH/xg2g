@@ -12,6 +12,7 @@ import (
 	"github.com/ManuGH/xg2g/internal/control/auth"
 	v3recordings "github.com/ManuGH/xg2g/internal/control/http/v3/recordings"
 	"github.com/ManuGH/xg2g/internal/control/recordings/capabilities"
+	"github.com/ManuGH/xg2g/internal/domain/playbackprofile"
 	"github.com/ManuGH/xg2g/internal/log"
 	"github.com/ManuGH/xg2g/internal/normalize"
 )
@@ -55,7 +56,7 @@ func BuildPlaybackInfoServiceRequest(r *http.Request, subjectID string, caps *Pl
 		RequestID:        log.RequestIDFromContext(r.Context()),
 		ClientProfile:    detectClientProfile(r, wire.Profile),
 		Headers:          playbackRequestHeaders(r.Header),
-		Capabilities:     MapV3CapsToInternal(caps),
+		Capabilities:     MapV3CapsToInternal(caps, r.UserAgent()),
 		StartOffsetMs:    wire.StartOffsetMs,
 	}
 }
@@ -84,7 +85,11 @@ func playbackRequestHeaders(headers http.Header) map[string]string {
 	return requestHeaders
 }
 
-func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabilities {
+// MapV3CapsToInternal converts the wire capabilities into the domain's own.
+//
+// `userAgent` participates only in classifying a browser that declared no
+// engine; a declared identity is never overridden by it.
+func MapV3CapsToInternal(v3 *PlaybackCapabilities, userAgent string) *capabilities.PlaybackCapabilities {
 	if v3 == nil {
 		return nil
 	}
@@ -133,9 +138,6 @@ func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 	if v3.RuntimeProbeVersion != nil {
 		c.RuntimeProbeVersion = *v3.RuntimeProbeVersion
 	}
-	if v3.ClientFamilyFallback != nil {
-		c.ClientFamilyFallback = *v3.ClientFamilyFallback
-	}
 	c.SupportsRange = v3.SupportsRange
 	c.AllowTranscode = v3.AllowTranscode
 	if v3.MaxVideo != nil {
@@ -144,9 +146,6 @@ func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 			Height: derefInt(v3.MaxVideo.Height),
 			Fps:    derefInt(v3.MaxVideo.Fps),
 		}
-	}
-	if v3.DeviceType != nil {
-		c.DeviceType = *v3.DeviceType
 	}
 	if v3.DeviceContext != nil {
 		c.DeviceContext = &capabilities.DeviceContext{
@@ -175,6 +174,18 @@ func MapV3CapsToInternal(v3 *PlaybackCapabilities) *capabilities.PlaybackCapabil
 			c.NetworkContext.InternetValidated = &v
 		}
 	}
+	// Classification is the server's, derived from what the client declared
+	// about itself. It used to arrive as `clientFamilyFallback` and
+	// `deviceType`, which meant a client chose the policy applied to it and
+	// could name a family and a device category that contradicted each other.
+	family := playbackprofile.ClassifyClient(playbackprofile.ClientIdentity{
+		Platform:      playbackprofile.ClientPlatform(v3.ClientIdentity.Platform),
+		Surface:       playbackprofile.ClientSurface(v3.ClientIdentity.Surface),
+		BrowserEngine: playbackprofile.BrowserEngine(derefString(v3.ClientIdentity.BrowserEngine)),
+	}, userAgent)
+	c.ClientFamilyFallback = family
+	c.DeviceType = playbackprofile.DeviceTypeForFamily(family)
+
 	return &c
 }
 

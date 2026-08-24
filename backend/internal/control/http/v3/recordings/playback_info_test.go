@@ -3011,7 +3011,7 @@ func TestService_ResolvePlaybackInfo_LiveNativeAV1OnIOSUsesFMP4AndIgnoresMeasure
 			PreferredHLSEngine:   "native",
 			RuntimeProbeUsed:     true,
 			RuntimeProbeVersion:  2,
-			ClientFamilyFallback: "ios_safari_native",
+			ClientFamilyFallback: "ios_safari",
 			ClientCapsSource:     "runtime_plus_family",
 			DeviceContext:        &capabilities.DeviceContext{OSName: "ios", OSVersion: "17.5", Model: "iPhone 15 Pro A17 Pro"},
 		},

@@ -2861,7 +2861,7 @@ func TestBuildArgs_LiveMultiAudioRenditions_ZDF(t *testing.T) {
 
 	spec := ports.StreamSpec{
 		SessionID:    "zdf-multi-audio",
-		ClientFamily: "ios_safari_native",
+		ClientFamily: "ios_safari",
 		Mode:         ports.ModeLive,
 		Format:       ports.FormatHLS,
 		Quality:      ports.QualityStandard,

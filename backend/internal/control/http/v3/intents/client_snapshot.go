@@ -26,8 +26,11 @@ func clientFamilyForIntent(intent Intent) string {
 		if intent.ClientCaps.ClientFamilyFallback != "" {
 			return playbackprofile.NormalizeClientFamilyID(intent.ClientCaps.ClientFamilyFallback)
 		}
+		// Last resort for an intent that carried no resolved family: an iOS
+		// device context with nothing else to go on. Browser is the
+		// conservative reading — it claims less than the app does.
 		if intent.ClientCaps.DeviceContext != nil && strings.EqualFold(strings.TrimSpace(intent.ClientCaps.DeviceContext.Platform), "ios") {
-			return playbackprofile.ClientIOSSafariNative
+			return playbackprofile.ClientIOSSafari
 		}
 	}
 	return ""

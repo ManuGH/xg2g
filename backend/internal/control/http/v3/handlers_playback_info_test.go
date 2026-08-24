@@ -479,15 +479,14 @@ func TestPostLivePlaybackInfo_ValidServiceRef_AcceptsLiveRef(t *testing.T) {
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"},
 			"container":["mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
 			"hlsEngines":["native"],
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
-			"runtimeProbeVersion":1,
-			"clientFamilyFallback":"safari_native"
+			"runtimeProbeVersion":1
 		}
 	}`
 
@@ -508,15 +507,14 @@ func TestPostLivePlaybackInfo_WithoutVerifiedScanTruthReturnsServiceUnavailable(
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"},
 			"container":["mpegts","ts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
 			"hlsEngines":["native"],
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
-			"runtimeProbeVersion":1,
-			"clientFamilyFallback":"safari_native"
+			"runtimeProbeVersion":1
 		}
 	}`
 
@@ -545,18 +543,16 @@ func TestPostLivePlaybackInfo_RuntimeProbeThreadsClientCapabilityTrace(t *testin
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"macos","surface":"browser","browserEngine":"webkit"},
 			"container":["mp4","ts"],
 			"videoCodecs":["hevc","h264"],
 			"audioCodecs":["aac","mp3","ac3"],
 			"supportsHls":true,
 			"supportsRange":true,
-			"deviceType":"web",
 			"hlsEngines":["native"],
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
-			"runtimeProbeVersion":1,
-			"clientFamilyFallback":"safari_native"
+			"runtimeProbeVersion":1
 		}
 	}`
 
@@ -588,18 +584,16 @@ func TestPostLivePlaybackInfo_AndroidTVNativeCopyableTSReturnsFMP4HLS(t *testing
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"android_tv","surface":"native_app"},
 			"container":["hls","fmp4","mpegts","ts","mp4"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac","ac3"],
 			"supportsHls":true,
 			"supportsRange":true,
-			"deviceType":"android_tv",
 			"hlsEngines":["native"],
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
 			"runtimeProbeVersion":2,
-			"clientFamilyFallback":"android_tv_native",
 			"allowTranscode":true
 		}
 	}`
@@ -675,7 +669,7 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":3,
+			"capabilitiesVersion":3,"clientIdentity":{"platform":"ios","surface":"browser","browserEngine":"webkit"},
 			"container":["mp4","ts","fmp4"],
 			"videoCodecs":["av1","hevc","h264"],
 			"videoCodecSignals":[
@@ -685,7 +679,6 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 			"audioCodecs":["aac"],
 			"supportsHls":true,
 			"supportsRange":true,
-			"deviceType":"mobile",
 			"deviceContext":{
 				"model":"iPhone 15 Pro A17 Pro",
 				"osName":"ios",
@@ -696,7 +689,6 @@ func TestPostLivePlaybackInfo_IOSSafariNativeKeepsSourceTruthTopLevelWhileDecisi
 			"preferredHlsEngine":"native",
 			"runtimeProbeUsed":true,
 			"runtimeProbeVersion":2,
-			"clientFamilyFallback":"ios_safari_native",
 			"allowTranscode":true
 		}
 	}`
@@ -748,12 +740,10 @@ func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testin
 	body := `{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0:",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"ios","surface":"browser","browserEngine":"webkit"},
 			"container":["mp4","ts"],
 			"videoCodecs":["h264"],
-			"audioCodecs":["aac","mp3"],
-			"deviceType":"web",
-			"clientFamilyFallback":"ios_safari_native"
+			"audioCodecs":["aac","mp3"]
 		}
 	}`
 
@@ -774,7 +764,7 @@ func TestPostLivePlaybackInfo_FamilyFallbackOnlyThreadsCapabilityTrace(t *testin
 	trace, ok := dec["trace"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "family_fallback", trace["clientCapsSource"])
-	assert.Equal(t, "ios_safari_native", trace["clientFamily"])
+	assert.Equal(t, "ios_safari", trace["clientFamily"])
 }
 
 func TestPostRecordingPlaybackInfo_AndroidTVNativeReturnsFMP4VariantURL(t *testing.T) {
@@ -794,18 +784,16 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeReturnsFMP4VariantURL(t *testi
 
 	s := createTestServerDTO(svc)
 	body := `{
-		"capabilitiesVersion":3,
+		"capabilitiesVersion":3,"clientIdentity":{"platform":"android_tv","surface":"native_app"},
 		"container":["hls","mpegts","mp4"],
 		"videoCodecs":["h264"],
 		"audioCodecs":["aac","ac3"],
 		"supportsHls":true,
 		"supportsRange":true,
-		"deviceType":"android_tv",
 		"hlsEngines":["native"],
 		"preferredHlsEngine":"native",
 		"runtimeProbeUsed":false,
 		"runtimeProbeVersion":1,
-		"clientFamilyFallback":"android_tv_native",
 		"allowTranscode":true
 	}`
 
@@ -857,18 +845,16 @@ func TestPostRecordingPlaybackInfo_AndroidTVNativeCopyableTSReturnsDirectPlayStr
 
 	s := createTestServerDTO(svc)
 	body := `{
-		"capabilitiesVersion":3,
+		"capabilitiesVersion":3,"clientIdentity":{"platform":"android_tv","surface":"native_app"},
 		"container":["hls","mpegts","mp4"],
 		"videoCodecs":["h264"],
 		"audioCodecs":["aac","ac3"],
 		"supportsHls":true,
 		"supportsRange":true,
-		"deviceType":"android_tv",
 		"hlsEngines":["native"],
 		"preferredHlsEngine":"native",
 		"runtimeProbeUsed":false,
 		"runtimeProbeVersion":1,
-		"clientFamilyFallback":"android_tv_native",
 		"allowTranscode":true
 	}`
 
@@ -912,7 +898,7 @@ func TestPostLivePlaybackInfo_InvalidServiceRef_RejectsNonLiveFormat(t *testing.
 	body := `{
 		"serviceRef":"channel_abc",
 		"capabilities":{
-			"capabilitiesVersion":1,
+			"capabilitiesVersion":1,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["mpegts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"]

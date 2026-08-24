@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/ManuGH/xg2g/internal/control/recordings/decision"
+	"github.com/ManuGH/xg2g/internal/domain/playbackcompat"
 	"github.com/ManuGH/xg2g/internal/domain/playbackplanner"
 	"github.com/ManuGH/xg2g/internal/domain/session/model"
 	"github.com/ManuGH/xg2g/internal/domain/session/ports"
@@ -338,7 +339,7 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 				item.Disposition = DiffAccepted
 				item.Reason = playbackplanner.ReasonBrowserCannotDecodeDolby
 			} else if evidence != nil && evidence.Scope == "live" &&
-				strings.EqualFold(strings.TrimSpace(evidence.ClientEvidence.Family), "ios_safari_native") {
+				playbackcompat.IsIOSClient(evidence.ClientEvidence.Family) {
 				item.Disposition = DiffAccepted
 				item.Reason = "ios_native_live_stream_requires_closed_gop_normalization"
 			}
@@ -350,7 +351,7 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 			}
 		case "video_codec_mismatch":
 			if evidence != nil && evidence.Scope == "live" &&
-				strings.EqualFold(strings.TrimSpace(evidence.ClientEvidence.Family), "ios_safari_native") {
+				playbackcompat.IsIOSClient(evidence.ClientEvidence.Family) {
 				item.Disposition = DiffAccepted
 				item.Reason = "ios_native_live_stream_requires_closed_gop_normalization"
 			}
@@ -361,7 +362,7 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 				item.Disposition = DiffAccepted
 				item.Reason = playbackplanner.ReasonBrowserCannotDecodeDolby
 			} else if evidence != nil && evidence.Scope == "live" &&
-				strings.EqualFold(strings.TrimSpace(evidence.ClientEvidence.Family), "ios_safari_native") &&
+				playbackcompat.IsIOSClient(evidence.ClientEvidence.Family) &&
 				legacy.Mode == "remux" && planner.Mode == "transcode" {
 				item.Disposition = DiffAccepted
 				item.Reason = "ios_native_live_stream_requires_closed_gop_normalization"
@@ -374,7 +375,7 @@ func classifyComparableDiffs(legacy, planner ComparablePlaybackPlan, evidence *p
 				item.Disposition = DiffAccepted
 				item.Reason = "compatible_video_copy_avoids_reencode_during_audio_transcode"
 			} else if evidence != nil && evidence.Scope == "live" &&
-				strings.EqualFold(strings.TrimSpace(evidence.ClientEvidence.Family), "ios_safari_native") &&
+				playbackcompat.IsIOSClient(evidence.ClientEvidence.Family) &&
 				legacy.VideoMode == "copy" && planner.VideoMode == "transcode" {
 				item.Disposition = DiffAccepted
 				item.Reason = "ios_native_live_stream_requires_closed_gop_normalization"

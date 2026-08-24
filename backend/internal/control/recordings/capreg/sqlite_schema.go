@@ -263,3 +263,53 @@ func ensureSchemaV8Columns(tx *sql.Tx) error {
 	}
 	return nil
 }
+
+// migrateClientFamiliesToV9 rewrites the retired `ios_safari_native` family.
+//
+// The identifier stood for Safari on iOS and, because the native app reported
+// it too, for the app as well. Splitting it into `ios_safari` and `ios_native`
+// leaves rows here naming a family that no longer exists — and a stale family
+// is not inert: it keys the capability lookup that seeds playback decisions,
+// so a row nobody can resolve silently degrades every decision made for that
+// device.
+//
+// The rows are rewritten rather than deleted. What they record is a device's
+// observed capabilities, which are still true; only the label for the client
+// changed. They resolve to `ios_safari` because that is what the recorded
+// capabilities describe: browser-reported claims, gathered before the app had
+// an identity of its own.
+//
+// Idempotent, so it is safe to run on every open.
+func migrateClientFamiliesToV9(tx *sql.Tx) error {
+	rewrites := []struct {
+		from string
+		to   string
+	}{
+		{"ios_safari_native", "ios_safari"},
+	}
+
+	for _, rewrite := range rewrites {
+		// The device fingerprint includes the family, so a rewrite can collide
+		// with a row that already carries the new one. The existing row is the
+		// newer observation of the same device; keep it.
+		if _, err := tx.Exec(`
+			DELETE FROM capability_devices
+			WHERE client_family = ?
+			  AND EXISTS (
+			    SELECT 1 FROM capability_devices AS existing
+			    WHERE existing.client_family = ?
+			      AND existing.device_type = capability_devices.device_type
+			      AND existing.model = capability_devices.model
+			      AND existing.updated_at_ms >= capability_devices.updated_at_ms
+			  )`, rewrite.from, rewrite.to); err != nil {
+			return fmt.Errorf("capability registry: prune superseded %q rows: %w", rewrite.from, err)
+		}
+		if _, err := tx.Exec(
+			`UPDATE capability_devices SET client_family = ? WHERE client_family = ?`,
+			rewrite.to, rewrite.from,
+		); err != nil {
+			return fmt.Errorf("capability registry: rewrite %q rows: %w", rewrite.from, err)
+		}
+	}
+	return nil
+}

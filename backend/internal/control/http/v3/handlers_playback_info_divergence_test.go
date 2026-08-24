@@ -39,7 +39,7 @@ func TestPlaybackInfoDivergenceMatrix_FourWayCombinations(t *testing.T) {
 			legacyAllow:  true,
 			plannerAllow: true,
 			capabilitiesBody: `{
-				"capabilitiesVersion":3,
+				"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 				"container":["hls","mpegts","ts"],
 				"videoCodecs":["h264"],
 				"audioCodecs":["aac"],
@@ -56,7 +56,7 @@ func TestPlaybackInfoDivergenceMatrix_FourWayCombinations(t *testing.T) {
 			legacyAllow:  true,
 			plannerAllow: false,
 			capabilitiesBody: `{
-				"capabilitiesVersion":3,
+				"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 				"container":["mp4"],
 				"videoCodecs":["hevc"],
 				"audioCodecs":["ac3"],
@@ -73,7 +73,7 @@ func TestPlaybackInfoDivergenceMatrix_FourWayCombinations(t *testing.T) {
 			legacyAllow:  false,
 			plannerAllow: true,
 			capabilitiesBody: `{
-				"capabilitiesVersion":3,
+				"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 				"container":["hls","mpegts","ts"],
 				"videoCodecs":["h264"],
 				"audioCodecs":["aac"],
@@ -90,7 +90,7 @@ func TestPlaybackInfoDivergenceMatrix_FourWayCombinations(t *testing.T) {
 			legacyAllow:  false,
 			plannerAllow: false,
 			capabilitiesBody: `{
-				"capabilitiesVersion":3,
+				"capabilitiesVersion":3,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 				"container":["mp4"],
 				"videoCodecs":["hevc"],
 				"audioCodecs":["ac3"],

@@ -127,9 +127,10 @@ actor PlaybackCoordinator {
             // Planner probe failed or was skipped
         }
 
+        // No client family here. The server derives it from the identity the
+        // capabilities carry, and ignores anything a client puts in params.
         var params: [String: String] = [
             "intent": intentName,
-            "client_family": "ios_safari_native",
             "preferred_engine": "native",
             "codecs": DeviceCapabilities.supportedCodecsHeader
         ]
@@ -182,19 +183,10 @@ actor PlaybackCoordinator {
 
     private func waitForPlaylistReady(url: URL, ticket: PlaybackTicket) async {
         guard api is HTTPAPIClient else { return }
-        var request = URLRequest(url: url)
-        request.assumesHTTP3Capable = false
-        request.httpMethod = "GET"
-        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        if let cookie = ticket.httpCookie(for: url) {
-            request.setValue("\(cookie.name)=\(cookie.value)", forHTTPHeaderField: "Cookie")
-        }
+        let cookie = ticket.httpCookie(for: url)
 
         for _ in 0..<30 {
-            if let (data, response) = try? await HTTPAPIClient.sharedSession.data(for: request),
-               let http = response as? HTTPURLResponse,
-               http.statusCode == 200,
-               let text = String(data: data, encoding: .utf8) {
+            if let text = await MediaFetcher.playlistText(url: url, cookie: cookie) {
                 // If the playlist has at least 1 segment or is a valid master playlist, hand off to AVPlayer immediately
                 let hasSegment = text.contains("#EXTINF:")
                 let isMaster = text.contains("#EXT-X-STREAM-INF")
@@ -270,8 +262,23 @@ enum PlaybackWire {
             let metered: Bool
         }
 
+        /// What this client is. Two facts, no conclusions.
+        ///
+        /// It used to send `clientFamilyFallback: "ios_safari_native"` and
+        /// `deviceType: "apple_native"` — the app declaring both which policy
+        /// family applied to it and what kind of device it was, using the
+        /// identifier for Safari on iOS. The backend believed it, and handed a
+        /// native player browser policy. Now the app says what it is and the
+        /// server decides what that makes it.
+        struct ClientIdentity: Encodable, Sendable {
+            let platform = "ios"
+            let surface = "native_app"
+            let appVersion: String
+        }
+
         struct Capabilities: Encodable, Sendable {
             let capabilitiesVersion = 3
+            let clientIdentity: ClientIdentity
             let container = ["mp4", "ts", "fmp4"]
             let videoCodecs = DeviceCapabilities.supportedCodecsList
             let videoCodecSignals = DeviceCapabilities.codecSignals
@@ -279,8 +286,6 @@ enum PlaybackWire {
             let supportsHls = true
             let preferredHlsEngine = "native"
             let hlsEngines = ["native"]
-            let clientFamilyFallback = "ios_safari_native"
-            let deviceType = "apple_native"
             let runtimeProbeUsed = true
             let runtimeProbeVersion = 3
             let allowTranscode: Bool
@@ -294,6 +299,7 @@ enum PlaybackWire {
         init(serviceRef: String, networkType: String = "wifi", isMetered: Bool = false, allowTranscode: Bool = true) {
             self.serviceRef = serviceRef
             self.capabilities = Capabilities(
+                clientIdentity: ClientIdentity(appVersion: DeviceCapabilities.appVersion),
                 allowTranscode: allowTranscode,
                 networkContext: NetworkContext(kind: networkType, metered: isMetered)
             )

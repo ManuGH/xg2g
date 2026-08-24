@@ -62,7 +62,8 @@ class NativePlaybackCapabilitiesTest {
             )
         )
 
-        assertEquals("android_tv", capabilities.deviceType)
+        assertEquals("android_tv", capabilities.clientIdentity.platform)
+        assertEquals("native_app", capabilities.clientIdentity.surface)
         assertEquals(listOf("hls", "fmp4", "mpegts", "ts", "mp4"), capabilities.container)
         assertEquals(listOf("h264", "hevc", "mpeg2"), capabilities.videoCodecs)
         assertEquals(listOf("aac", "ac3", "eac3", "mp2", "mp3"), capabilities.audioCodecs)

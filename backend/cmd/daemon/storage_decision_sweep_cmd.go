@@ -55,7 +55,7 @@ func runStorageDecisionSweep(args []string) int {
 	fs.StringVar(&opts.Bouquet, "bouquet", "", "Bouquet/group filter (for example Premium)")
 	fs.StringVar(&opts.ChannelNamesCSV, "channel", "", "Comma-separated exact channel names to sweep")
 	fs.StringVar(&opts.ServiceRefsCSV, "service-ref", "", "Comma-separated service refs to sweep")
-	fs.StringVar(&opts.ClientFamiliesCSV, "client-family", "ios_safari_native,chromium_hlsjs", "Comma-separated built-in client families")
+	fs.StringVar(&opts.ClientFamiliesCSV, "client-family", "ios_native,ios_safari,chromium_hlsjs", "Comma-separated built-in client families")
 	fs.StringVar(&opts.RequestedProfile, "requested-profile", "quality", "Requested playback profile/intent")
 	fs.StringVar(&opts.APIVersion, "api-version", "v3.1", "API version label recorded for decisions")
 	fs.StringVar(&opts.SchemaType, "schema-type", "live", "Schema type for the decision engine")

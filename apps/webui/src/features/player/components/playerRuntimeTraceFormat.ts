@@ -90,20 +90,28 @@ export function formatHostPressureSummary(hostPressureBand: string | null, hostO
   return hostOverrideApplied ? `${hostPressureBand} · applied` : hostPressureBand;
 }
 
+/** `platform/surface`, e.g. `macos/browser`, for a trace with no server verdict yet. */
+function declaredIdentityLabel(snapshot: CapabilitySnapshot | null): string | null {
+  const identity = snapshot?.clientIdentity;
+  if (!identity) {
+    return null;
+  }
+  return `${identity.platform}/${identity.surface}`;
+}
+
 export function formatTraceClientSummary(
   client: PlaybackClientSnapshot | null | undefined,
   fallbackSnapshot: CapabilitySnapshot | null,
 ): string {
-  const family = client?.clientFamily || fallbackSnapshot?.clientFamilyFallback || null;
+  // The family and the device type are the server's conclusions, so the trace
+  // shows what the server said. A local snapshot can no longer supply either;
+  // what it can supply is the identity this client declared, which is the
+  // input those conclusions were drawn from.
+  const family = client?.clientFamily || declaredIdentityLabel(fallbackSnapshot) || null;
   const source =
-    client?.clientCapsSource ||
-    (fallbackSnapshot?.runtimeProbeUsed
-      ? 'runtime'
-      : fallbackSnapshot?.clientFamilyFallback
-        ? 'family_fallback'
-        : null);
+    client?.clientCapsSource || (fallbackSnapshot?.runtimeProbeUsed ? 'runtime' : null);
   const engine = client?.preferredHlsEngine || fallbackSnapshot?.preferredHlsEngine || null;
-  const deviceType = client?.deviceType || fallbackSnapshot?.deviceType || null;
+  const deviceType = client?.deviceType || null;
   return [family, source, engine, deviceType].filter(Boolean).join(' · ') || '-';
 }
 

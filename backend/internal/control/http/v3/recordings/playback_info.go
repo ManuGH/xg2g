@@ -861,7 +861,7 @@ func plannerAutoTranscodeVideoCodecs(req PlaybackInfoRequest, resolvedCaps capab
 
 	codecs := autocodec.ResolveAutoTranscodeCodecsWithPolicy(resolvedCaps, clientAV1Disabled)
 	family := strings.ToLower(strings.TrimSpace(resolvedCaps.ClientFamilyFallback))
-	if family != playbackprofile.ClientSafariNative && family != playbackprofile.ClientIOSSafariNative {
+	if !playbackprofile.IsAppleFamily(family) {
 		return codecs
 	}
 	if !stringSliceContainsFold(resolvedCaps.VideoCodecs, "hevc") || stringSliceContainsFold(codecs, "hevc") {

@@ -51,7 +51,7 @@ describe('hostBridge', () => {
         },
         playbackCapabilities: {
           capabilitiesVersion: 3,
-          deviceType: 'android_tv',
+          clientIdentity: { platform: 'android_tv', surface: 'native_app' },
           videoCodecs: ['h264'],
         },
         nativePlaybackState: {
@@ -65,7 +65,7 @@ describe('hostBridge', () => {
 
     expect(resolveHostEnvironment().platform).toBe('android-tv');
     expect(getNativePlaybackCapabilities()).toEqual(expect.objectContaining({
-      deviceType: 'android_tv',
+      clientIdentity: { platform: 'android_tv', surface: 'native_app' },
       videoCodecs: ['h264'],
     }));
     expect(getNativePlaybackState()?.playerState).toBe(3);
@@ -164,7 +164,6 @@ describe('hostBridge', () => {
         preferredHlsEngine: 'native',
         runtimeProbeUsed: false,
         runtimeProbeVersion: 1,
-        clientFamilyFallback: 'android_tv_native',
         allowTranscode: true,
       }),
       getNativePlaybackStateJson: () => JSON.stringify({

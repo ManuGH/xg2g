@@ -2,6 +2,8 @@ package playbackplanner
 
 import (
 	"strings"
+
+	"github.com/ManuGH/xg2g/internal/domain/playbackcompat"
 )
 
 // resolveMediaTargets populates Video, Audio, Packaging, Filters, and RateControl based on the selected Mode.
@@ -16,7 +18,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 		plan.Video = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.VideoCodec}
 		plan.Audio = TrackPlan{Mode: "copy", Codec: ev.SourceTruth.AudioCodec}
 		plan.Packaging = Packaging{Container: "mpegts"}
-		if ev.ClientEvidence.PrefersFMP4 || strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") {
+		if ev.ClientEvidence.PrefersFMP4 || playbackcompat.IsIOSClient(ev.ClientEvidence.Family) {
 			plan.Packaging.Container = "fmp4"
 		}
 
@@ -25,7 +27,7 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 		plan.Audio = TrackPlan{Mode: "transcode", Codec: "aac", BitrateKbps: 320, Channels: 2, SampleRate: 48000}
 		autoTranscodeProfile := false
 		plan.Packaging = Packaging{Container: "mpegts"}
-		if ev.ClientEvidence.PrefersFMP4 || strings.EqualFold(strings.TrimSpace(ev.ClientEvidence.Family), "ios_safari_native") {
+		if ev.ClientEvidence.PrefersFMP4 || playbackcompat.IsIOSClient(ev.ClientEvidence.Family) {
 			plan.Packaging.Container = "fmp4"
 		}
 
@@ -101,10 +103,10 @@ func resolveMediaTargets(plan *PlaybackPlan, ev PlaybackEvidence) {
 }
 
 func allowsCopiedH264FMP4(client ClientEvidence) bool {
-	fam := strings.ToLower(strings.TrimSpace(client.Family))
-	if fam == "ios_safari_native" {
+	if playbackcompat.IsIOSClient(client.Family) {
 		return true
 	}
+	fam := strings.ToLower(strings.TrimSpace(client.Family))
 	return fam == "android_tv_native" && client.PrefersFMP4
 }
 

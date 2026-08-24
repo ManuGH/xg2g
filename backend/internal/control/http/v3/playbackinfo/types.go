@@ -8,23 +8,32 @@ import "time"
 
 // PlaybackCapabilities Client capabilities for playback decision
 type PlaybackCapabilities struct {
-	AllowTranscode       *bool                       `json:"allowTranscode,omitempty"`
-	AudioCodecs          []string                    `json:"audioCodecs"`
-	CapabilitiesVersion  int                         `json:"capabilitiesVersion"`
-	ClientFamilyFallback *string                     `json:"clientFamilyFallback,omitempty"`
-	Container            []string                    `json:"container"`
-	DeviceContext        *PlaybackDeviceContext      `json:"deviceContext,omitempty"`
-	DeviceType           *string                     `json:"deviceType,omitempty"`
-	HlsEngines           *[]string                   `json:"hlsEngines,omitempty"`
-	MaxVideo             *PlaybackMaxVideo           `json:"maxVideo,omitempty"`
-	NetworkContext       *PlaybackNetworkContext     `json:"networkContext,omitempty"`
-	PreferredHlsEngine   *string                     `json:"preferredHlsEngine,omitempty"`
-	RuntimeProbeUsed     *bool                       `json:"runtimeProbeUsed,omitempty"`
-	RuntimeProbeVersion  *int                        `json:"runtimeProbeVersion,omitempty"`
-	SupportsHls          *bool                       `json:"supportsHls,omitempty"`
-	SupportsRange        *bool                       `json:"supportsRange,omitempty"`
-	VideoCodecSignals    *[]PlaybackVideoCodecSignal `json:"videoCodecSignals,omitempty"`
-	VideoCodecs          []string                    `json:"videoCodecs"`
+	AllowTranscode      *bool                       `json:"allowTranscode,omitempty"`
+	AudioCodecs         []string                    `json:"audioCodecs"`
+	CapabilitiesVersion int                         `json:"capabilitiesVersion"`
+	ClientIdentity      PlaybackClientIdentity      `json:"clientIdentity"`
+	Container           []string                    `json:"container"`
+	DeviceContext       *PlaybackDeviceContext      `json:"deviceContext,omitempty"`
+	HlsEngines          *[]string                   `json:"hlsEngines,omitempty"`
+	MaxVideo            *PlaybackMaxVideo           `json:"maxVideo,omitempty"`
+	NetworkContext      *PlaybackNetworkContext     `json:"networkContext,omitempty"`
+	PreferredHlsEngine  *string                     `json:"preferredHlsEngine,omitempty"`
+	RuntimeProbeUsed    *bool                       `json:"runtimeProbeUsed,omitempty"`
+	RuntimeProbeVersion *int                        `json:"runtimeProbeVersion,omitempty"`
+	SupportsHls         *bool                       `json:"supportsHls,omitempty"`
+	SupportsRange       *bool                       `json:"supportsRange,omitempty"`
+	VideoCodecSignals   *[]PlaybackVideoCodecSignal `json:"videoCodecSignals,omitempty"`
+	VideoCodecs         []string                    `json:"videoCodecs"`
+}
+
+// PlaybackClientIdentity is what the client declares about itself. Two facts,
+// no conclusions: the family and the device category are derived from it on the
+// server, by playbackprofile.ClassifyClient.
+type PlaybackClientIdentity struct {
+	Platform      string  `json:"platform"`
+	Surface       string  `json:"surface"`
+	BrowserEngine *string `json:"browserEngine,omitempty"`
+	AppVersion    *string `json:"appVersion,omitempty"`
 }
 
 type PlaybackMaxVideo struct {

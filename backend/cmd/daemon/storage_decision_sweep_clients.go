@@ -17,7 +17,7 @@ func selectStorageDecisionSweepClientProfiles(requested []string) ([]storageDeci
 		available[family] = storageDecisionSweepClientProfile{Name: family}
 	}
 	if len(requested) == 0 {
-		requested = []string{"ios_safari_native", "chromium_hlsjs"}
+		requested = []string{"ios_native", "ios_safari", "chromium_hlsjs"}
 	}
 
 	out := make([]storageDecisionSweepClientProfile, 0, len(requested))

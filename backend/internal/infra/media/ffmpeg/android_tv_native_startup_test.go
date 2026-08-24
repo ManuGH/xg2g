@@ -61,7 +61,7 @@ func TestIOSNativeStartupSkipsFPSProbeForDirectTuner(t *testing.T) {
 	}
 
 	iosSpec := androidTVNativeTranscodeSpec()
-	iosSpec.ClientFamily = "ios_safari_native"
+	iosSpec.ClientFamily = "ios_safari"
 	_, err := adapter.buildArgs(context.Background(), iosSpec, "http://10.10.55.64:8001/live")
 	require.NoError(t, err)
 	assert.Zero(t, probeCalls)

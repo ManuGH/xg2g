@@ -53,7 +53,7 @@ var Cases = []CharacterizationTest{
 		Name:           "3_iOS_Safari",
 		Mode:           model.ModeLive,
 		SourceCap:      scan.Capability{State: scan.CapabilityStateOK, Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", Width: 1280, Height: 720, FPS: 50},
-		ClientFam:      playbackprofile.ClientIOSSafariNative,
+		ClientFam:      playbackprofile.ClientIOSSafari,
 		WantProfile:    "high",
 		WantVideoRung:  "",
 		WantVideoCodec: "",

@@ -345,7 +345,7 @@ func isStartupHLSState(state model.SessionState) bool {
 
 func isNativePlaybackClientFamily(family string) bool {
 	switch strings.ToLower(strings.TrimSpace(family)) {
-	case "android_tv_native", "ios_safari_native", "safari_native":
+	case "android_tv_native", "android_native", "ios_native", "ios_safari", "apple_tv_native", "safari_native":
 		return true
 	default:
 		return false

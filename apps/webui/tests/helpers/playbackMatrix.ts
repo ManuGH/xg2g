@@ -2,7 +2,18 @@ import Hls from '../../src/features/player/lib/hlsRuntime';
 import { vi } from 'vitest';
 import { resetCachedCodecs } from '../../src/features/player/utils/codecDetection';
 
-export type BrowserFamily = 'safari_native' | 'ios_safari_native' | 'firefox_hlsjs' | 'chromium_hlsjs';
+// Keyed by the family the *server* resolves each fixture to. The client no
+// longer sends a family; what it sends is `expectedIdentity`, and these names
+// stay as the cases' labels so the matrix still reads as "what happens to a
+// Safari client".
+export type BrowserFamily = 'safari_native' | 'ios_safari' | 'firefox_hlsjs' | 'chromium_hlsjs';
+
+/** The identity a fixture's browser reports about itself. */
+export type ExpectedClientIdentity = {
+  platform: string;
+  surface: 'browser';
+  browserEngine: 'webkit' | 'blink' | 'gecko' | 'unknown';
+};
 
 type CapabilityExpectation = {
   container: string[];
@@ -21,6 +32,7 @@ type TraceExpectation = {
 
 export type BrowserFamilyMatrixCase = {
   id: BrowserFamily;
+  expectedIdentity: ExpectedClientIdentity;
   liveMode: 'native_hls' | 'hlsjs';
   recordingMode: 'native_hls' | 'hlsjs';
   expectedOverlayClientPath: string;
@@ -45,6 +57,7 @@ type BrowserProbeFixture = BrowserFamilyMatrixCase & {
 const browserProbeFixtures: Record<BrowserFamily, BrowserProbeFixture> = {
   safari_native: {
     id: 'safari_native',
+    expectedIdentity: { platform: 'macos', surface: 'browser', browserEngine: 'webkit' },
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
     liveMode: 'native_hls',
     recordingMode: 'native_hls',
@@ -79,8 +92,9 @@ const browserProbeFixtures: Record<BrowserFamily, BrowserProbeFixture> = {
       degradedFrom: null,
     },
   },
-  ios_safari_native: {
-    id: 'ios_safari_native',
+  ios_safari: {
+    id: 'ios_safari',
+    expectedIdentity: { platform: 'ios', surface: 'browser', browserEngine: 'webkit' },
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
     liveMode: 'native_hls',
     recordingMode: 'native_hls',
@@ -117,6 +131,7 @@ const browserProbeFixtures: Record<BrowserFamily, BrowserProbeFixture> = {
   },
   firefox_hlsjs: {
     id: 'firefox_hlsjs',
+    expectedIdentity: { platform: 'macos', surface: 'browser', browserEngine: 'gecko' },
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:124.0) Gecko/20100101 Firefox/124.0',
     liveMode: 'hlsjs',
     recordingMode: 'hlsjs',
@@ -153,6 +168,7 @@ const browserProbeFixtures: Record<BrowserFamily, BrowserProbeFixture> = {
   },
   chromium_hlsjs: {
     id: 'chromium_hlsjs',
+    expectedIdentity: { platform: 'linux', surface: 'browser', browserEngine: 'blink' },
     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
     liveMode: 'hlsjs',
     recordingMode: 'hlsjs',
@@ -191,6 +207,7 @@ const browserProbeFixtures: Record<BrowserFamily, BrowserProbeFixture> = {
 
 export const browserFamilyMatrixCases: BrowserFamilyMatrixCase[] = Object.values(browserProbeFixtures).map((fixture) => ({
   id: fixture.id,
+  expectedIdentity: fixture.expectedIdentity,
   liveMode: fixture.liveMode,
   recordingMode: fixture.recordingMode,
   expectedOverlayClientPath: fixture.expectedOverlayClientPath,

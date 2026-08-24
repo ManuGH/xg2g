@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "spec": {
     "path": "backend/api/openapi.yaml",
-    "sha256": "95f1e570e8c0b6efa92970335107ebbecc2e121a07f8b2de3115fad646cca606"
+    "sha256": "a29bf65d6647907b185f9777e9f822700008fca1edb79ff0068e8f2d9ea16cd5"
   },
   "paths": [
     "/auth/device/refresh",
@@ -2439,9 +2439,13 @@
     "PairingStatus",
     "PairingStatusResponse",
     "PiconsConfig",
+    "PlaybackBrowserEngine",
     "PlaybackCapabilities",
+    "PlaybackClientIdentity",
+    "PlaybackClientPlatform",
     "PlaybackClientSnapshot",
     "PlaybackClientSummary",
+    "PlaybackClientSurface",
     "PlaybackDecision",
     "PlaybackDeviceContext",
     "PlaybackEngineErrorContext",
@@ -2574,7 +2578,7 @@
       "path": "apps/webui/src/client-ts/index.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "42da4b529fe7adc6ae826001990c32c79ff7fd4a58cbbced620019d888cdb1b9"
+      "sha256": "1a2af6f7e61ee9555671eed6416dc1d6dd8f4d7bf9f9115e98f3746fdb1f2809"
     },
     {
       "path": "apps/webui/src/client-ts/sdk.gen.ts",
@@ -2586,7 +2590,7 @@
       "path": "apps/webui/src/client-ts/types.gen.ts",
       "language": "typescript",
       "generator": "@hey-api/openapi-ts",
-      "sha256": "c34a85527b866b31fd164eaec75250898247a2c76543ba9e12b1936d3248906b"
+      "sha256": "8ba9c523157451d6d3cabea8aedf1b6cef7d6f3197620b74dd6a311ad13eca01"
     },
     {
       "path": "apps/webui/src/types/api/consumption.d.ts",
@@ -2598,7 +2602,7 @@
       "path": "backend/internal/api/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "e1648937f41854604e1740fcff0892ad0cd3b190466a426198f4ace7c255a5c9"
+      "sha256": "d838f991535ac0b86ce498bcef4f1daa3355e65441b86cfc33ff697917817374"
     },
     {
       "path": "backend/internal/control/authz/operation_catalog_gen.go",
@@ -2616,7 +2620,7 @@
       "path": "backend/internal/control/http/v3/server_gen.go",
       "language": "go",
       "generator": "oapi-codegen",
-      "sha256": "8982df1459e0cd6bda615de60566313e2317be865c306c4110ff6b3097a554de"
+      "sha256": "241e478305b6622f898a1945286b52aa25c64be0eb73e3edaa3ea189ee4b5288"
     },
     {
       "path": "ios/Xg2g/Generated/Xg2gContract.swift",
@@ -2628,7 +2632,7 @@
       "path": "openapi/v3.normative.snapshot.yaml",
       "language": "yaml",
       "generator": "generate-normative-snapshot",
-      "sha256": "d3f921cf247c629c280c4343674200d278588fd8b8d96b1aa2ede3119dcb5236"
+      "sha256": "bae802ae54085fe974b5f4a755d6a24eb7e6bd0a86f5f87eb9ddfe1bceca4f7f"
     }
   ]
 }

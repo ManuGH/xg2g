@@ -17,7 +17,7 @@ import (
 
 func TestParseRecordingPlaybackPostInput_Success(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/rec1/stream-info", strings.NewReader(`{
-		"capabilitiesVersion":2,
+		"capabilitiesVersion":2,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 		"container":["mp4","hls"],
 		"videoCodecs":["h264"],
 		"audioCodecs":["aac"],
@@ -62,7 +62,7 @@ func TestParseRecordingPlaybackPostInput_Success(t *testing.T) {
 
 func TestParseRecordingPlaybackPostInput_InvalidCapabilitiesVersion(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/recordings/rec1/stream-info", strings.NewReader(`{
-		"capabilitiesVersion":0,
+		"capabilitiesVersion":0,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 		"container":["mp4"],
 		"videoCodecs":["h264"],
 		"audioCodecs":["aac"]
@@ -82,7 +82,7 @@ func TestParseLivePlaybackPostInput_NormalizesServiceRef(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(`{
 		"serviceRef":" 1:0:1:1234:5678:9abc:0:0:0:0: ",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["mpegts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"],
@@ -122,7 +122,7 @@ func TestParseLivePlaybackPostInput_MissingServiceRef(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(`{
 		"serviceRef":"",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["mpegts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"]
@@ -143,7 +143,7 @@ func TestParseLivePlaybackPostInput_RecognizesPreviewContextHeader(t *testing.T)
 	req := httptest.NewRequest(http.MethodPost, "/api/v3/live/stream-info", strings.NewReader(`{
 		"serviceRef":"1:0:1:1234:5678:9ABC:0:0:0:0",
 		"capabilities":{
-			"capabilitiesVersion":2,
+			"capabilitiesVersion":2,"clientIdentity":{"platform":"linux","surface":"browser","browserEngine":"blink"},
 			"container":["mpegts"],
 			"videoCodecs":["h264"],
 			"audioCodecs":["aac"]

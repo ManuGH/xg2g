@@ -94,7 +94,7 @@ func printStorageUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  --bouquet string       Bouquet/group filter (required unless --channel or --service-ref is set)")
 	_, _ = fmt.Fprintln(w, "  --channel string       Comma-separated exact channel names to sweep")
 	_, _ = fmt.Fprintln(w, "  --service-ref string   Comma-separated service refs to sweep")
-	_, _ = fmt.Fprintln(w, "  --client-family string Comma-separated SSOT client fixture families (default: ios_safari_native,chromium_hlsjs)")
+	_, _ = fmt.Fprintln(w, "  --client-family string Comma-separated SSOT client fixture families (default: ios_native,ios_safari,chromium_hlsjs)")
 	_, _ = fmt.Fprintln(w, "  --limit int            Maximum matched senders to sweep (0 = all)")
 	_, _ = fmt.Fprintln(w, "  --skip-scan            Decide only from existing capabilities.sqlite truth; no new probes")
 	_, _ = fmt.Fprintln(w, "  --state-path string    Persist and diff against sweep snapshot JSON")

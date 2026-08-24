@@ -433,6 +433,15 @@ describe('V3Player ServiceRef Input', () => {
 
   it('keeps relaxed iOS AV1 playback on native HLS for live transcodes', async () => {
     const maxTouchPointsDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    const userAgentDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent');
+    // The client identity reads the platform off the user agent, so a test that
+    // means "iOS Safari" has to say so there rather than only mocking
+    // `canPlayType`.
+    Object.defineProperty(window.navigator, 'userAgent', {
+      configurable: true,
+      value:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+    });
     const mediaCapabilitiesDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'mediaCapabilities');
     const webkitSupportsPresentationModeDescriptor = Object.getOwnPropertyDescriptor(
       HTMLVideoElement.prototype,
@@ -534,7 +543,7 @@ describe('V3Player ServiceRef Input', () => {
       expect(streamInfoCall).toBeDefined();
       const [, streamInfoOptions] = streamInfoCall;
       const streamInfoBody = JSON.parse(streamInfoOptions.body);
-      expect(streamInfoBody.capabilities?.clientFamilyFallback).toBe('ios_safari_native');
+      expect(streamInfoBody.capabilities?.clientIdentity).toEqual({ platform: 'ios', surface: 'browser', browserEngine: 'webkit' });
       expect(streamInfoBody.capabilities?.preferredHlsEngine).toBe('native');
       expect(streamInfoBody.capabilities?.container).toEqual(['mp4', 'ts', 'fmp4']);
       expect(streamInfoBody.capabilities?.capabilitiesVersion).toBe(3);
@@ -570,6 +579,10 @@ describe('V3Player ServiceRef Input', () => {
 
       if (maxTouchPointsDescriptor) {
         Object.defineProperty(window.navigator, 'maxTouchPoints', maxTouchPointsDescriptor);
+      }
+
+      if (userAgentDescriptor) {
+        Object.defineProperty(window.navigator, 'userAgent', userAgentDescriptor);
       }
     }
   });

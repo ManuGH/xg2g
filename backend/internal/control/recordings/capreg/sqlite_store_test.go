@@ -849,7 +849,7 @@ func TestSqliteStore_MigratesV1ObservationSchemaToLatest(t *testing.T) {
 
 	var version int
 	require.NoError(t, store.DB.QueryRow(`PRAGMA user_version`).Scan(&version))
-	assert.Equal(t, 8, version)
+	assert.Equal(t, SQLiteSchemaVersion, version)
 
 	var columnCount int
 	require.NoError(t, store.DB.QueryRow(`

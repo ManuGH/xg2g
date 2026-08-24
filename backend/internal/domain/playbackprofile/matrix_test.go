@@ -13,7 +13,8 @@ func TestClientFixtureIDs_AreStable(t *testing.T) {
 	got := ClientFixtureIDs()
 	want := []string{
 		ClientSafariNative,
-		ClientIOSSafariNative,
+		ClientIOSSafari,
+		ClientIOSNative,
 		ClientFirefoxHLSJS,
 		ClientAndroidTVBrowser,
 		ClientChromiumHLSJS,
@@ -51,7 +52,7 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 			wantMaxHeight:    2160,
 		},
 		{
-			id:               ClientIOSSafariNative,
+			id:               ClientIOSSafari,
 			wantDeviceType:   "ios_safari",
 			wantEngine:       "native_hls",
 			wantVideoCodecs:  []string{"h264", "hevc"},
@@ -131,7 +132,7 @@ func TestClientFixture_ReturnsCanonicalProfiles(t *testing.T) {
 
 func TestClientFixture_SafariFamiliesRemainDistinct(t *testing.T) {
 	safari := MustClientFixture(ClientSafariNative)
-	ios := MustClientFixture(ClientIOSSafariNative)
+	ios := MustClientFixture(ClientIOSSafari)
 
 	if safari.DeviceType == ios.DeviceType {
 		t.Fatalf("desktop and ios safari fixtures must stay distinct: safari=%q ios=%q", safari.DeviceType, ios.DeviceType)

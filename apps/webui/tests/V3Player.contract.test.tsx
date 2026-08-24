@@ -95,6 +95,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
   });
 
   it('does not advertise ac3 for recording playback capability probes', async () => {
+    Object.defineProperty(window.navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15' });
     vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockImplementation((contentType: string) => {
       if (contentType === 'application/vnd.apple.mpegurl') {
         return 'probably';
@@ -138,7 +139,7 @@ describe('V3Player Contract Consumption (UI-CON-PLAYER-001)', () => {
     expect(request?.body?.preferredHlsEngine).toBe('native');
     expect(request?.body?.runtimeProbeUsed).toBe(true);
     expect(request?.body?.runtimeProbeVersion).toBe(2);
-    expect(request?.body?.clientFamilyFallback).toBe('safari_native');
+    expect(request?.body?.clientIdentity).toEqual({ platform: 'macos', surface: 'browser', browserEngine: 'webkit' });
 
     await waitFor(() => {
       const playlistProbe = fetchSpy.mock.calls.find((call: any[]) =>

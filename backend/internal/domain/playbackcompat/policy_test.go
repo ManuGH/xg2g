@@ -16,7 +16,7 @@ func TestResolve_BrowserDolbyClaimsAreNotEffective(t *testing.T) {
 		engine string
 	}{
 		{name: "desktop safari", family: "safari_native", engine: "native"},
-		{name: "ios safari", family: "ios_safari_native", engine: "native"},
+		{name: "ios safari", family: "ios_safari", engine: "native"},
 		{name: "firefox", family: "firefox_hlsjs", engine: "hlsjs"},
 		{name: "chromium", family: "chromium_hlsjs", engine: "hlsjs"},
 		{name: "android tv browser", family: "android_tv_browser", engine: "hlsjs"},

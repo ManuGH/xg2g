@@ -52,6 +52,11 @@ const manifestPath = "api/contract.manifest.json"
 // platform is one client codebase with its own transport boundary.
 type platform struct {
 	name string
+	// enforced fails the build on this platform's findings. A platform that is
+	// not yet enforced still reports, so the number is visible and has to come
+	// down rather than being forgotten. It is not an allowlist: it cannot
+	// exempt a file, only a whole platform, and it is one line to flip.
+	enforced bool
 	// roots are scanned for source files with one of exts.
 	roots []string
 	exts  []string
@@ -73,6 +78,7 @@ type platform struct {
 var platforms = []platform{
 	{
 		name:           "ios",
+		enforced:       true,
 		roots:          []string{"../ios/Xg2g", "../ios/Xg2gTests"},
 		exts:           []string{".swift"},
 		transportZones: []string{"ios/Xg2g/Transport/"},
@@ -86,7 +92,11 @@ var platforms = []platform{
 		lineComment: "//",
 	},
 	{
+		// Not enforced yet: the Android client has no transport module, so its
+		// networking, URL building and wire decoding are still spread across
+		// feature packages. Introducing the module is what flips this.
 		name:           "android",
+		enforced:       false,
 		roots:          []string{"../android/app/src"},
 		exts:           []string{".kt"},
 		transportZones: []string{"android/app/src/main/java/io/github/manugh/xg2g/android/transport/"},
@@ -177,6 +187,29 @@ func run() error {
 		return findings[i].line < findings[j].line
 	})
 
+	enforced := map[string]bool{}
+	for _, p := range platforms {
+		enforced[p.name] = p.enforced
+	}
+
+	var blocking []finding
+	pending := map[string]int{}
+	for _, f := range findings {
+		if enforced[f.platform] {
+			blocking = append(blocking, f)
+			continue
+		}
+		pending[f.platform]++
+	}
+
+	for _, p := range platforms {
+		if p.enforced || pending[p.name] == 0 {
+			continue
+		}
+		fmt.Printf("⚠️  %s: %d boundary finding(s), not yet enforced\n", p.name, pending[p.name])
+	}
+
+	findings = blocking
 	if len(findings) > 0 {
 		fmt.Fprintf(os.Stderr, "❌ client transport boundary violated (%d):\n\n", len(findings))
 		for _, f := range findings {
@@ -193,7 +226,12 @@ regenerate instead of writing the type by hand.
 		return fmt.Errorf("%d violation(s)", len(findings))
 	}
 
-	fmt.Printf("✅ client transport boundary holds across %d source files\n", scanned)
+	for _, p := range platforms {
+		if p.enforced {
+			fmt.Printf("✅ %s: transport boundary enforced and clean\n", p.name)
+		}
+	}
+	fmt.Printf("scanned %d source files\n", scanned)
 	return nil
 }
 

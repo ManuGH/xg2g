@@ -58,7 +58,7 @@ function cacheChannelPlaybackBadge(cacheKey: string, badge: ChannelPlaybackBadge
 
 function buildCapabilityCacheKey(capabilities: CapabilitySnapshot, requestProfile?: PlaybackRequestProfile): string {
   return JSON.stringify({
-    deviceType: capabilities.deviceType || 'unknown',
+    clientIdentity: capabilities.clientIdentity,
     container: [...(capabilities.container || [])].sort(),
     videoCodecs: [...(capabilities.videoCodecs || [])].sort(),
     audioCodecs: [...(capabilities.audioCodecs || [])].sort(),
@@ -68,7 +68,6 @@ function buildCapabilityCacheKey(capabilities: CapabilitySnapshot, requestProfil
     supportsRange: capabilities.supportsRange === true,
     supportsHls: capabilities.supportsHls === true,
     runtimeProbeUsed: capabilities.runtimeProbeUsed === true,
-    clientFamilyFallback: capabilities.clientFamilyFallback || '',
     requestProfile: requestProfile || '',
   });
 }

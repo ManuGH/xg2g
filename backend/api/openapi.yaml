@@ -2095,7 +2095,7 @@ components:
 
     PlaybackCapabilities:
       type: object
-      required: [capabilitiesVersion, container, videoCodecs, audioCodecs]
+      required: [capabilitiesVersion, clientIdentity, container, videoCodecs, audioCodecs]
       additionalProperties: false
       description: Client capabilities for playback decision (P4-1)
       properties:
@@ -2151,10 +2151,8 @@ components:
           type: boolean
           description: Whether client supports HTTP range requests
           example: true
-        deviceType:
-          type: string
-          description: Client device category for policy decisions
-          example: "desktop"
+        clientIdentity:
+          $ref: "#/components/schemas/PlaybackClientIdentity"
         hlsEngines:
           type: array
           items:
@@ -2173,15 +2171,64 @@ components:
           type: integer
           description: Version of the runtime playback probe contract
           example: 2
-        clientFamilyFallback:
-          type: string
-          description: Browser-family fallback used when the server needs conservative capability defaults
-          example: "chromium_hlsjs"
         allowTranscode:
           type: boolean
           description: Whether client allows transcoding (force bypass)
           default: true
           example: true
+
+    PlaybackClientIdentity:
+      type: object
+      description: |
+        What the client *is*. Platform and surface are facts about the running
+        client; the family it belongs to, the capability defaults that follow
+        from it, and the playback policy applied to it are all the server's to
+        decide.
+
+        This replaces `clientFamilyFallback` and `deviceType`, which asked the
+        client to classify itself. It could not: the native iOS app called
+        itself `ios_safari_native` — the identifier for Safari on iOS — so the
+        backend applied browser policy to an app that ships its own transport
+        stream demuxer, and no browser and no app could be told apart.
+      required: [platform, surface]
+      additionalProperties: false
+      properties:
+        platform:
+          $ref: "#/components/schemas/PlaybackClientPlatform"
+        surface:
+          $ref: "#/components/schemas/PlaybackClientSurface"
+        browserEngine:
+          $ref: "#/components/schemas/PlaybackBrowserEngine"
+        appVersion:
+          type: string
+          description: |
+            Version of the native client, when there is one. Diagnostic only:
+            no policy is keyed on it, because a policy that were would make
+            every client release a server change.
+
+    PlaybackClientPlatform:
+      type: string
+      description: |
+        The operating system the client runs on. `unknown` is a legitimate
+        answer and is treated as the most conservative case rather than as an
+        error.
+      enum: [ios, ipados, macos, tvos, android, android_tv, windows, linux, unknown]
+
+    PlaybackClientSurface:
+      type: string
+      description: |
+        Whether the client is a native application or a page in a browser. The
+        distinction the old identifiers could not express, and the one that
+        decides whether capability claims are decoder truth or a browser's
+        best guess.
+      enum: [native_app, browser]
+
+    PlaybackBrowserEngine:
+      type: string
+      description: |
+        Rendering engine, for `surface: browser` only. A native client omits
+        it; sending one is not an error but carries no meaning.
+      enum: [webkit, blink, gecko, unknown]
 
     PlaybackVideoCodecSignal:
       type: object

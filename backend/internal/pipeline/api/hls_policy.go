@@ -61,13 +61,13 @@ func deriveHLSStartupPolicy(rec *model.SessionRecord, content []byte) hlsStartup
 	}
 
 	switch clientFamily {
-	case "ios_safari_native":
+	case "ios_native", "ios_safari":
 		reasons = append(reasons, "client_family_ios_native")
 		if headroom <= 9 {
 			headroom = 6
 		}
 		mode = "native_guarded"
-	case "safari_native", "android_tv_native":
+	case "safari_native", "apple_tv_native", "android_tv_native", "android_native":
 		reasons = append(reasons, "client_family_native")
 		if headroom <= 9 {
 			headroom = 8
