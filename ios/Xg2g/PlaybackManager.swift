@@ -59,6 +59,7 @@ final class PlaybackManager: ObservableObject {
     private let streamURLProvider: @MainActor (String) -> URL?
     private var cancellables = Set<AnyCancellable>()
     private var recordingCleanupHook: (@MainActor () -> Void)?
+    private var activeTransitionID: UUID = UUID()
 
     init(preparations: ZapPreparationClient? = nil,
          preparationsProvider: (@MainActor () -> ZapPreparationClient?)? = nil,
@@ -133,7 +134,10 @@ final class PlaybackManager: ObservableObject {
 
     // MARK: - Handover & Transitions
 
-    func play(channel: Channel, mode: PlaybackPresentationMode = .fullscreen) {
+    func play(channel: Channel, mode: PlaybackPresentationMode = .fullscreen) async {
+        let transactionID = UUID()
+        self.activeTransitionID = transactionID
+
         // 1. Teardown active recording if transitioning away from recording
         if case .recording = state {
             recordingCleanupHook?()
@@ -146,31 +150,38 @@ final class PlaybackManager: ObservableObject {
         // 3. Drive Live Zap Transaction
         let serviceRef = channel.serviceRef
         if coordinator.canPrepare {
-            Task { @MainActor in
-                await coordinator.zap(to: serviceRef)
-            }
+            await coordinator.zap(to: serviceRef)
         } else if let url = streamURLProvider(serviceRef) {
-            Task { @MainActor in
-                await coordinator.play(unprepared: url, requestedAt: CACurrentMediaTime())
-            }
+            await coordinator.play(unprepared: url, requestedAt: CACurrentMediaTime())
         }
     }
 
-    func zap(to channel: Channel) {
+    func play(channel: Channel, mode: PlaybackPresentationMode = .fullscreen) {
+        Task { @MainActor in
+            await play(channel: channel, mode: mode)
+        }
+    }
+
+    func zap(to channel: Channel) async {
         let targetMode = (presentationMode == .hidden) ? .fullscreen : presentationMode
         self.state = .live(channel, mode: targetMode)
         let serviceRef = channel.serviceRef
+        await coordinator.zap(to: serviceRef)
+    }
+
+    func zap(to channel: Channel) {
         Task { @MainActor in
-            await coordinator.zap(to: serviceRef)
+            await zap(to: channel)
         }
     }
 
-    func play(recording: Recording, startPosition: Double) {
+    func play(recording: Recording, startPosition: Double) async {
+        let transactionID = UUID()
+        self.activeTransitionID = transactionID
+
         // 1. Teardown active Live TV session before switching ownership
         if case .live = state {
-            Task { @MainActor in
-                await coordinator.stop()
-            }
+            await coordinator.stop()
         }
 
         // 2. Teardown existing recording cleanup if switching between recordings
@@ -179,17 +190,27 @@ final class PlaybackManager: ObservableObject {
             recordingCleanupHook = nil
         }
 
-        // 3. Set canonical Recording state
+        // 3. Guard against race if a new transition began while awaiting stop()
+        guard self.activeTransitionID == transactionID else { return }
+
+        // 4. Set canonical Recording state
         let item = PlayingRecordingItem(id: recording.id, recording: recording, initialPosition: startPosition)
         self.state = .recording(item)
     }
 
-    func play(offline: OfflineRecording) {
+    func play(recording: Recording, startPosition: Double) {
+        Task { @MainActor in
+            await play(recording: recording, startPosition: startPosition)
+        }
+    }
+
+    func play(offline: OfflineRecording) async {
+        let transactionID = UUID()
+        self.activeTransitionID = transactionID
+
         // 1. Teardown active Live TV session
         if case .live = state {
-            Task { @MainActor in
-                await coordinator.stop()
-            }
+            await coordinator.stop()
         }
 
         // 2. Teardown existing recording if any
@@ -198,8 +219,17 @@ final class PlaybackManager: ObservableObject {
             recordingCleanupHook = nil
         }
 
-        // 3. Set canonical Offline state
+        // 3. Guard against race if a new transition began while awaiting stop()
+        guard self.activeTransitionID == transactionID else { return }
+
+        // 4. Set canonical Offline state
         self.state = .offline(offline)
+    }
+
+    func play(offline: OfflineRecording) {
+        Task { @MainActor in
+            await play(offline: offline)
+        }
     }
 
     func minimize() {
@@ -212,15 +242,24 @@ final class PlaybackManager: ObservableObject {
         self.state = .live(channel, mode: .fullscreen)
     }
 
-    func stop() {
+    func stop() async {
+        let transactionID = UUID()
+        self.activeTransitionID = transactionID
+
         if case .live = state {
-            Task { @MainActor in
-                await coordinator.stop()
-            }
+            await coordinator.stop()
         } else if case .recording = state {
             recordingCleanupHook?()
             recordingCleanupHook = nil
         }
+
+        guard self.activeTransitionID == transactionID else { return }
         self.state = .idle
+    }
+
+    func stop() {
+        Task { @MainActor in
+            await stop()
+        }
     }
 }

@@ -70,11 +70,11 @@ struct LiveToRecordingLifecycleTests {
     }
 
     @Test("Live TV mode transitions between fullscreen and miniplayer within single state")
-    func liveTvPresentationTransitions() {
+    func liveTvPresentationTransitions() async {
         let manager = makeManager()
 
         // 1. Play Fullscreen
-        manager.play(channel: channelA, mode: .fullscreen)
+        await manager.play(channel: channelA, mode: .fullscreen)
         #expect(manager.state == .live(channelA, mode: .fullscreen))
         #expect(manager.currentChannel == channelA)
         #expect(manager.presentationMode == .fullscreen)
@@ -92,7 +92,7 @@ struct LiveToRecordingLifecycleTests {
         #expect(manager.presentationMode == .fullscreen)
 
         // 4. Stop
-        manager.stop()
+        await manager.stop()
         #expect(manager.state == .idle)
         #expect(manager.currentChannel == nil)
         #expect(manager.presentationMode == .hidden)
@@ -105,12 +105,12 @@ struct LiveToRecordingLifecycleTests {
         let manager = makeManager()
 
         // 1. Start Live TV
-        manager.play(channel: channelA, mode: .fullscreen)
+        await manager.play(channel: channelA, mode: .fullscreen)
         try? await Task.sleep(for: .milliseconds(30))
         #expect(manager.coordinator.presentedServiceRef != nil)
 
         // 2. Start Recording
-        manager.play(recording: testRecording, startPosition: 120.0)
+        await manager.play(recording: testRecording, startPosition: 120.0)
 
         // 3. Assert exact canonical state
         let expectedItem = PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 120.0)
@@ -122,7 +122,7 @@ struct LiveToRecordingLifecycleTests {
         #expect(manager.isPlaying == true, "isPlaying is true while watching a recording")
 
         // 4. Teardown
-        manager.stop()
+        await manager.stop()
         #expect(manager.state == .idle)
         #expect(manager.activeRecordingItem == nil)
     }
@@ -134,7 +134,7 @@ struct LiveToRecordingLifecycleTests {
         let manager = makeManager()
 
         // 1. Start Recording
-        manager.play(recording: testRecording, startPosition: 0)
+        await manager.play(recording: testRecording, startPosition: 0)
         #expect(manager.activeRecordingItem != nil)
 
         // 2. Recording Player registers its cleanup hook (e.g. AVPlayer teardown)
@@ -144,7 +144,7 @@ struct LiveToRecordingLifecycleTests {
         }
 
         // 3. User switches to Live TV (ORF 2)
-        manager.play(channel: channelB, mode: .fullscreen)
+        await manager.play(channel: channelB, mode: .fullscreen)
 
         // 4. Assert cleanup executed BEFORE live playback committed
         #expect(cleanupExecutionCount == 1, "Recording cleanup hook must be executed deterministically")
@@ -153,33 +153,33 @@ struct LiveToRecordingLifecycleTests {
         #expect(manager.activeRecordingItem == nil, "Recording item must be nil")
 
         // 5. Teardown
-        manager.stop()
+        await manager.stop()
         #expect(manager.state == .idle)
     }
 
     // MARK: - Invariant 4: Offline Playback Handover
 
     @Test("Offline recording playback integrates into the single state machine")
-    func offlinePlaybackHandover() {
+    func offlinePlaybackHandover() async {
         let manager = makeManager()
 
         // 1. Play Live
-        manager.play(channel: channelA, mode: .fullscreen)
+        await manager.play(channel: channelA, mode: .fullscreen)
         #expect(manager.currentChannel == channelA)
 
         // 2. Switch to Offline
-        manager.play(offline: testOffline)
+        await manager.play(offline: testOffline)
         #expect(manager.state == .offline(testOffline))
         #expect(manager.activeOfflineRecording == testOffline)
         #expect(manager.currentChannel == nil)
         #expect(manager.activeRecordingItem == nil)
 
         // 3. Switch back to Live
-        manager.play(channel: channelB, mode: .fullscreen)
+        await manager.play(channel: channelB, mode: .fullscreen)
         #expect(manager.state == .live(channelB, mode: .fullscreen))
         #expect(manager.activeOfflineRecording == nil)
 
-        manager.stop()
+        await manager.stop()
         #expect(manager.state == .idle)
     }
 
@@ -190,20 +190,78 @@ struct LiveToRecordingLifecycleTests {
         let manager = makeManager()
 
         for _ in 1...10 {
-            manager.play(channel: channelA, mode: .fullscreen)
+            await manager.play(channel: channelA, mode: .fullscreen)
             #expect(manager.currentChannel == channelA)
             #expect(manager.activeRecordingItem == nil)
 
-            manager.play(recording: testRecording, startPosition: 50.0)
+            await manager.play(recording: testRecording, startPosition: 50.0)
             #expect(manager.activeRecordingItem?.id == testRecording.id)
             #expect(manager.currentChannel == nil)
 
-            manager.play(channel: channelB, mode: .fullscreen)
+            await manager.play(channel: channelB, mode: .fullscreen)
             #expect(manager.currentChannel == channelB)
             #expect(manager.activeRecordingItem == nil)
         }
 
-        manager.stop()
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
+
+    // MARK: - Invariant 6: Fully Awaited Handover Teardown & Concurrency
+
+    @Test("Live to recording handover awaits live coordinator stop before committing recording state")
+    func liveToRecordingAwaitsLiveTeardown() async throws {
+        let manager = makeManager()
+
+        // 1. Start Live TV
+        await manager.play(channel: channelA, mode: .fullscreen)
+        #expect(manager.state == .live(channelA, mode: .fullscreen))
+
+        // 2. Play recording using the awaited transition
+        await manager.play(recording: testRecording, startPosition: 42.0)
+
+        // 3. Verify Live is completely torn down
+        #expect(manager.coordinator.playing == nil)
+        #expect(manager.coordinator.presentedServiceRef == nil)
+        #expect(manager.state == .recording(PlayingRecordingItem(id: testRecording.id, recording: testRecording, initialPosition: 42.0)))
+
+        await manager.stop()
+        #expect(manager.state == .idle)
+    }
+
+    @Test("Competing rapid async transitions resolve deterministically to the final winner")
+    func competingAsyncTransitionsResolveDeterministically() async throws {
+        let manager = makeManager()
+
+        // Trigger rapid concurrent transitions
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await manager.play(channel: self.channelA) }
+            group.addTask { await manager.play(recording: self.testRecording, startPosition: 10) }
+            group.addTask { await manager.play(channel: self.channelB) }
+            group.addTask { await manager.play(offline: self.testOffline) }
+        }
+
+        // Must be in exactly one valid state (not a broken or partial hybrid)
+        switch manager.state {
+        case .idle:
+            #expect(manager.currentChannel == nil)
+            #expect(manager.activeRecordingItem == nil)
+            #expect(manager.activeOfflineRecording == nil)
+        case .live(let ch, _):
+            #expect(ch == self.channelA || ch == self.channelB)
+            #expect(manager.activeRecordingItem == nil)
+            #expect(manager.activeOfflineRecording == nil)
+        case .recording(let rec):
+            #expect(rec.id == self.testRecording.id)
+            #expect(manager.currentChannel == nil)
+            #expect(manager.activeOfflineRecording == nil)
+        case .offline(let off):
+            #expect(off.id == self.testOffline.id)
+            #expect(manager.currentChannel == nil)
+            #expect(manager.activeRecordingItem == nil)
+        }
+
+        await manager.stop()
         #expect(manager.state == .idle)
     }
 }
