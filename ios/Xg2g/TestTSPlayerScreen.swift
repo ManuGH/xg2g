@@ -293,6 +293,11 @@ public struct TestTSPlayerScreen: View {
                                 showLandscapeZapBar = false
                             }
                             scheduleControlsAutoHide()
+                        } else if showPortraitDrawer {
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                showPortraitDrawer = false
+                            }
+                            scheduleControlsAutoHide()
                         } else {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 showControls.toggle()
@@ -1219,7 +1224,7 @@ public struct TestTSPlayerScreen: View {
     }
 
     private func scheduleControlsAutoHide() {
-        guard !showLandscapeZapBar && !showHUD else { return }
+        guard !showLandscapeZapBar && !showHUD && !showPortraitDrawer else { return }
         autoHideControlsTask?.cancel()
         autoHideControlsTask = Task {
             try? await Task.sleep(for: .seconds(4))
